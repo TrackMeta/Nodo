@@ -104,76 +104,59 @@
 
   <section class="mapa">
     <h2>El recorrido, de un vistazo</h2>
-    <p class="mapa-sub">Lo que más confunde no es cada paso, sino <strong>dónde</strong> se hace cada uno. La conexión va y viene entre dos sitios tres veces.</p>
+    <p class="mapa-sub">Un solo viaje de ida y vuelta: todo lo de Meta primero, <strong>una parada en Nodo</strong>, y a publicar. Los trámites escondidos que antes había que hacer en Meta los hace Nodo en esa parada.</p>
     <div class="mapawrap">
-      <svg viewBox="0 0 860 300" role="img" aria-label="Diagrama del recorrido: seis pasos alternando entre Meta y Nodo, de crear la app a la prueba final" style="min-width:680px;width:100%;height:auto">
-        <!-- carriles -->
-        <rect x="118" y="26" width="726" height="92" rx="12" fill="var(--surface-2)"/>
-        <rect x="118" y="182" width="726" height="92" rx="12" fill="var(--accent-soft)"/>
-        <text x="16" y="66" font-family="JetBrains Mono, monospace" font-size="12" letter-spacing="1.6" fill="var(--muted)">EN META</text>
-        <text x="16" y="84" font-family="Source Sans 3, sans-serif" font-size="11.5" fill="var(--muted)">developers.facebook.com</text>
-        <text x="16" y="222" font-family="JetBrains Mono, monospace" font-size="12" letter-spacing="1.6" fill="var(--accent)">EN NODO</text>
-        <text x="16" y="240" font-family="Source Sans 3, sans-serif" font-size="11.5" fill="var(--muted)">tu panel → Canales</text>
+      <svg viewBox="0 0 900 300" role="img" aria-label="Diagrama del recorrido: crear la app, agregar el número, cargar tarjeta y generar el token en Meta; pegar dos datos en Nodo; publicar la app; y probar escribiéndote" style="min-width:700px;width:100%;height:auto">
+        <rect x="88" y="26" width="790" height="92" rx="12" fill="var(--surface-2)"/>
+        <rect x="88" y="182" width="790" height="92" rx="12" fill="var(--accent-soft)"/>
+        <text x="10" y="66" font-family="JetBrains Mono, monospace" font-size="12" letter-spacing="1.6" fill="var(--muted)">EN META</text>
+        <text x="10" y="84" font-family="Source Sans 3, sans-serif" font-size="11.5" fill="var(--muted)">developers.facebook.com</text>
+        <text x="10" y="222" font-family="JetBrains Mono, monospace" font-size="12" letter-spacing="1.6" fill="var(--accent)">EN NODO</text>
+        <text x="10" y="240" font-family="Source Sans 3, sans-serif" font-size="11.5" fill="var(--muted)">tu panel &#8594; Canales</text>
 
-        <!-- trazo del recorrido: Meta → Nodo → Meta → Nodo -->
-        <path d="M188 118 L188 150 L318 150 L318 182" fill="none" stroke="var(--line)" stroke-width="2"/>
-        <path d="M318 274 L318 150 L448 150 L448 118" fill="none" stroke="var(--line)" stroke-width="2"/>
-        <path d="M708 118 L708 150 L578 150 L578 182" fill="none" stroke="var(--line)" stroke-width="2"/>
-        <path d="M448 72 L578 72" fill="none" stroke="var(--line)" stroke-width="2"/>
-        <path d="M578 72 L708 72" fill="none" stroke="var(--line)" stroke-width="2"/>
-        <path d="M578 228 L708 228" fill="none" stroke="var(--line)" stroke-width="2"/>
+        <path d="M228 72 L238 72" fill="none" stroke="var(--line)" stroke-width="2"/>
+        <path d="M358 72 L368 72" fill="none" stroke="var(--line)" stroke-width="2"/>
+        <path d="M428 104 L428 150 L558 150 L558 196" fill="none" stroke="var(--line)" stroke-width="2"/>
+        <path d="M618 228 L688 228 L688 104" fill="none" stroke="var(--line)" stroke-width="2"/>
+        <path d="M748 72 L818 72 L818 196" fill="none" stroke="var(--line)" stroke-width="2"/>
 
-        <!-- paso 1 · Meta -->
         <g>
-          <rect x="128" y="40" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--line)"/>
-          <text x="140" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--muted)">01</text>
-          <text x="140" y="82" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Crear la app</text>
-          <text x="140" y="97" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">caso de uso WhatsApp</text>
+          <rect x="108" y="40" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--line)"/>
+          <text x="120" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--muted)">01</text>
+          <text x="120" y="82" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Crear la app</text>
+          <text x="120" y="97" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">caso de uso WhatsApp</text>
         </g>
-        <!-- paso 2 · Nodo -->
         <g>
-          <rect x="258" y="196" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--accent)"/>
-          <text x="270" y="218" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--accent)">02</text>
-          <text x="270" y="238" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Guardar token</text>
-          <text x="270" y="253" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">de verificación</text>
+          <rect x="238" y="40" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--line)"/>
+          <text x="250" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--muted)">02</text>
+          <text x="250" y="82" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Tu n&#250;mero</text>
+          <text x="250" y="97" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">agregar + SMS</text>
         </g>
-        <!-- paso 3 · Meta -->
         <g>
-          <rect x="388" y="40" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--line)"/>
-          <text x="400" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--muted)">03</text>
-          <text x="400" y="82" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Webhook</text>
-          <text x="400" y="97" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">verificar + suscribir</text>
+          <rect x="368" y="40" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--line)"/>
+          <text x="380" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--muted)">03</text>
+          <text x="380" y="82" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Tarjeta y token</text>
+          <text x="380" y="97" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">el permanente</text>
         </g>
-        <!-- paso 4 · Meta -->
         <g>
-          <rect x="518" y="40" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--line)"/>
-          <text x="530" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--muted)">04</text>
-          <text x="530" y="82" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Número</text>
-          <text x="530" y="97" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">registrar + PIN</text>
+          <rect x="498" y="196" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--accent)" stroke-width="2"/>
+          <text x="510" y="218" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--accent)">04</text>
+          <text x="510" y="238" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Pegar 2 datos</text>
+          <text x="510" y="253" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">y guardar</text>
         </g>
-        <!-- paso 5 · Meta -->
         <g>
-          <rect x="648" y="40" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--line)"/>
-          <text x="660" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--muted)">05</text>
-          <text x="660" y="82" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Token + Secret</text>
-          <text x="660" y="97" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">y publicar la app</text>
+          <rect x="628" y="40" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--line)"/>
+          <text x="640" y="62" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--muted)">05</text>
+          <text x="640" y="82" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Publicar la app</text>
+          <text x="640" y="97" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">o no llega nada real</text>
         </g>
-        <!-- paso 6 · Nodo -->
         <g>
-          <rect x="518" y="196" width="120" height="64" rx="9" fill="var(--surface)" stroke="var(--accent)"/>
-          <text x="530" y="218" font-family="JetBrains Mono, monospace" font-size="11" fill="var(--accent)">06</text>
-          <text x="530" y="238" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="600" fill="var(--text)">Token + Secret</text>
-          <text x="530" y="253" font-family="Source Sans 3, sans-serif" font-size="11" fill="var(--muted)">guardar y listo</text>
-        </g>
-        <!-- final · Nodo -->
-        <g>
-          <rect x="648" y="196" width="120" height="64" rx="9" fill="var(--accent)"/>
-          <text x="660" y="224" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="700" fill="var(--surface)">Escríbete</text>
-          <text x="660" y="243" font-family="Source Sans 3, sans-serif" font-size="11.5" fill="var(--surface)">y mira la Bandeja</text>
+          <rect x="758" y="196" width="120" height="64" rx="9" fill="var(--accent)"/>
+          <text x="770" y="224" font-family="Bricolage Grotesque, sans-serif" font-size="14.5" font-weight="700" fill="var(--surface)">Escr&#237;bete</text>
+          <text x="770" y="243" font-family="Source Sans 3, sans-serif" font-size="11.5" fill="var(--surface)">y mira la Bandeja</text>
         </g>
 
-        <!-- nota del cruce clave -->
-        <text x="258" y="176" font-family="Source Sans 3, sans-serif" font-size="11.5" font-style="italic" fill="var(--warn)">el 02 va antes que el 03, o Meta no verifica</text>
+        <text x="470" y="292" font-family="Source Sans 3, sans-serif" font-size="11.5" font-style="italic" fill="var(--accent)">en el 04, Nodo configura el webhook, lo suscribe y registra el n&#250;mero</text>
       </svg>
     </div>
   </section>
@@ -183,12 +166,12 @@
       <div class="n">1</div>
       <div class="cuerpo">
         <h2>Crea la app en Meta</h2>
-        <p class="donde">developers.facebook.com → Mis apps → Crear app</p>
+        <p class="donde">developers.facebook.com &#8594; Mis apps &#8594; Crear app</p>
         <p>La «app» no es algo que tus clientes vean: es el permiso que deja a Nodo mandar y recibir mensajes por tu número. Ponle el nombre de tu negocio.</p>
-        <p>Cuando pregunte los casos de uso, marca <strong>solo</strong> «Conectarte con los clientes a través de WhatsApp». En «Negocio», elige tu portfolio comercial.</p>
+        <p>Cuando pregunte los casos de uso, marca <strong>solo «Conectarte con los clientes a través de WhatsApp»</strong>. En «Negocio», elige tu portfolio comercial.</p>
         <div class="ojo">
           <span class="t">Ojo</span>
-          <p>«Negocio no verificado» no te bloquea: puedes conectar y vender igual, con un tope de ~250 conversaciones nuevas al día. La verificación tarda días, así que arráncala aparte si piensas escalar con anuncios.</p>
+          <p>Si eliges un caso de uso de más, Meta te va a pedir permisos y revisiones que no necesitas, y la app se queda trabada esperando una aprobación que nunca hacía falta.</p>
         </div>
       </div>
     </div>
@@ -196,15 +179,14 @@
     <div class="paso">
       <div class="n">2</div>
       <div class="cuerpo">
-        <h2>Guarda el token de verificación en Nodo</h2>
-        <p class="donde">Nodo → selector de bot → tu canal → Canales</p>
-        <p>Deja el campo <strong>Token de verificación</strong> vacío y dale a <strong>Generar y guardar</strong>, el botón de ese mismo bloque: Nodo inventa la frase y la guarda. Después la copias con el botón de copiar que tiene al lado.</p>
-        <p>Ese orden —guardar primero, copiar después— no es un capricho: es lo que evita el error del recuadro de abajo. Si prefieres tu propia frase, escríbela y el botón pasa a decir «Guardar token».</p>
-        <p>Copia también la URL que Nodo te muestra ahí:</p>
-        <div class="dato">https://ahoxdyffbwjlshmdezwi.supabase.co/functions/v1/whatsapp-webhook</div>
+        <h2>Agrega tu número</h2>
+        <p class="donde">Casos de uso &#8594; Personalizar &#8594; Paso 2: Configuración de producción &#8594; Agregar número nuevo</p>
+        <p>Meta te regala un <strong>número de prueba</strong>: no lo uses. Solo escribe a 5 contactos que registres a mano y no sirve para vender.</p>
+        <p>Agrega tu número real y verifícalo con el SMS que te llega. Ese paso es tuyo — nadie puede leer tu SMS por ti.</p>
+        <p>Después Meta te ofrece un botón <strong>Registrar</strong>. <strong>Sáltatelo.</strong> Y si le das y contesta «se produjo un error» sin explicar nada, déjalo así: ese trámite lo hace Nodo en el paso 4, y si algo falla te dice el motivo de verdad.</p>
         <div class="ojo">
-          <span class="t">Este es el paso que todos hacen al revés</span>
-          <p>Cuando Meta verifique el webhook, va a buscar en la base de Nodo un canal con <em>exactamente</em> ese token. Si no lo guardaste antes, Meta responde «no se pudo verificar» y no explica por qué.</p>
+          <span class="t">El número tiene que estar libre</span>
+          <p>Si ese número tiene WhatsApp activo en un celular, primero elimina la cuenta desde la app — desinstalar no basta. Al registrarse en la API, el número deja de funcionar en el celular: pasa a atenderse desde Nodo.</p>
         </div>
       </div>
     </div>
@@ -212,23 +194,39 @@
     <div class="paso">
       <div class="n">3</div>
       <div class="cuerpo">
-        <h2>Enlaza el webhook en Meta</h2>
-        <p class="donde">Casos de uso → Personalizar → Paso 2: Configuración de producción → Configurar webhooks</p>
-        <p>Pega la URL y el mismo token que guardaste en Nodo, y dale a <strong>Verificar y guardar</strong>. Debería ponerse en verde al instante.</p>
-        <p>Si falla, casi siempre es un espacio de más al copiar el token, o que te saltaste el Guardar del paso 2.</p>
+        <h2>Carga la tarjeta y genera el token permanente</h2>
+        <p class="donde">Mismo Paso 2 &#8594; Agrega la información de pago · y business.facebook.com &#8594; Usuarios del sistema</p>
+        <p>La tarjeta conviene cargarla ya, no al final: en varias cuentas Meta no deja registrar el número hasta que hay un método de pago.</p>
+        <p>Para el token, crea un <strong>usuario del sistema</strong> con rol <strong>Admin</strong> (ponle un nombre que reconozcas en un año, como «Nodo WhatsApp»). Después, <strong>en este orden</strong>:</p>
+        <ul>
+          <li><strong>Agregar activos</strong> &#8594; tu <em>app</em> y tu <em>cuenta de WhatsApp (WABA)</em>, las dos con control total.</li>
+          <li><strong>Generar nuevo token</strong> &#8594; tu app &#8594; caducidad <strong>Nunca</strong> &#8594; permisos <code>whatsapp_business_messaging</code> y <code>whatsapp_business_management</code>.</li>
+          <li>Cópialo en ese momento: Meta lo muestra <strong>una sola vez</strong>.</li>
+        </ul>
+        <div class="ojo">
+          <span class="t">Dos trampas seguidas</span>
+          <p>El token que Meta te muestra en la pantalla de la API <strong>caduca en 24 horas</strong>. Si usas ese, el bot deja de responder al día siguiente sin motivo aparente. El permanente es el del usuario del sistema.</p>
+          <p>Y si generas el token <em>antes</em> de asignar los activos, sale «válido» pero sin permiso sobre tu número: al enviar, Meta responde con un error que no se parece en nada a la causa.</p>
+        </div>
       </div>
     </div>
 
     <div class="paso">
       <div class="n">4</div>
       <div class="cuerpo">
-        <h2>Enciende «Suscribir webhooks»</h2>
-        <p class="donde">Mismo Paso 2 → Registra tu número → interruptor a la derecha del nombre de tu cuenta</p>
-        <p>Es un interruptor aparte, y viene apagado.</p>
+        <h2>Pega dos datos en Nodo y guarda</h2>
+        <p class="donde">Nodo &#8594; selector de bot &#8594; tu canal &#8594; Canales</p>
+        <p>Son los dos únicos datos que hay que ir a buscar, porque son secretos:</p>
+        <ul>
+          <li><strong>Access token</strong> — el permanente del paso 3.</li>
+          <li><strong>App Secret</strong> — Configuración de la app &#8594; Básica &#8594; «Clave secreta de la app» &#8594; Mostrar.</li>
+        </ul>
+        <p>Con el token pegado, dale a <strong>Buscar mis datos</strong>: Nodo le pregunta a Meta de qué cuenta es ese token y rellena solo el <strong>Phone Number ID</strong> y el <strong>WABA ID</strong>. Si el token alcanza varios números, te deja elegir cuál atiende en este canal. Esos dos no son secretos, son etiquetas: no hace falta que los escribas.</p>
+        <p>Después dale a <strong>Guardar datos del número</strong>. <strong>Ahí se termina la conexión</strong>: Nodo configura el webhook en Meta, lo suscribe a los mensajes y registra el número. Al final te dice qué hizo, y si tuvo que registrar te muestra el <strong>PIN</strong> que le puso.</p>
         <div class="ojo">
-          <span class="t">No es lo mismo que el paso anterior</span>
-          <p>Verificar el webhook y suscribirlo son dos cosas distintas. Si te saltas este interruptor, todo se ve verde y <strong>no llega ni un mensaje</strong>. Es el error más común de toda la conexión.</p>
-          <p><strong>O no lo hagas acá.</strong> Una vez que Nodo tenga el token (paso 8), dale a <strong>Probar conexión</strong>: si el interruptor está apagado, te lo dice con un botón <strong>Suscribir ahora</strong> al lado que lo enciende por ti. Es lo mismo, sin volver a Meta.</p>
+          <span class="t">Anota ese PIN</span>
+          <p>Es la verificación en dos pasos de tu número. No lo usas para nada del día a día, pero Meta te lo va a pedir si algún día migras el número a otra plataforma — y Nodo no lo guarda. Si ese número ya tenía uno, Nodo no puede adivinarlo y te lo pide.</p>
+          <p>Si algo no le sale, te dice el motivo que le dio Meta — que es justo lo que los botones de Meta no cuentan. Y si ya estaba todo hecho, no toca nada.</p>
         </div>
       </div>
     </div>
@@ -236,18 +234,15 @@
     <div class="paso">
       <div class="n">5</div>
       <div class="cuerpo">
-        <h2>Agrega tu número y regístralo</h2>
-        <p class="donde">Mismo Paso 2 → Agregar número nuevo → Registrar</p>
-        <p>Meta te regala un <strong>número de prueba</strong>: no lo uses. Solo escribe a 5 contactos que registres a mano y no sirve para vender.</p>
-        <p>Agrega tu número real, verifícalo por SMS, y dale a <strong>Registrar</strong>. Te pedirá crear un <strong>PIN de 6 dígitos</strong> — anótalo donde no lo pierdas: te lo van a pedir si algún día migras el número.</p>
-        <p>Al registrarlo, ese número deja de poder usarse en la app de WhatsApp de un celular. Pasa a vivir en la API y se atiende desde Nodo.</p>
+        <h2>Publica la app</h2>
+        <p class="donde">Panel de la app &#8594; arriba &#8594; Publicar</p>
+        <p>Te va a pedir una <strong>URL de política de privacidad</strong>. Es el único requisito real para un caso de uso de WhatsApp; el resto ya lo cumpliste.</p>
+        <p>Si no tienes una, la de este negocio está publicada acá y sirve de modelo:</p>
+        <div class="dato">https://trackmeta.github.io/Nodo/privacidad.html</div>
+        <p>Cada negocio necesita <strong>la suya</strong>, con su propio nombre y su correo de contacto: es el documento al que un cliente acude para pedir sus datos o su baja, y lo firma tu empresa.</p>
         <div class="ojo">
-          <span class="t">Si sale «Se produjo un error durante el registro»</span>
-          <p>El botón de Meta no dice el motivo. <strong>Déjalo y sigue.</strong> Cuando llegues al paso 8 y Nodo tenga el token, dale a <strong>Probar conexión</strong>: si el número no está registrado te lo dice con un botón <strong>Registrar ahora</strong> que lo hace por ti — y si Meta lo rechaza, te muestra el motivo real, que es justo lo que el botón de Meta te esconde.</p>
-          <p>El PIN de 6 dígitos lo genera Nodo y te lo muestra para que lo anotes. Si ese número ya tenía uno de antes, te lo pedirá: Nodo no puede adivinarlo.</p>
-          <p>Si aun así quieres verlo a mano, la ruta por el <strong>Explorador de la API Graph</strong> (Herramientas, con un token que tenga <code>whatsapp_business_management</code> y <code>whatsapp_business_messaging</code>) es <strong>POST</strong> a:</p>
-          <div class="dato">&lt;PHONE_NUMBER_ID&gt;/register?messaging_product=whatsapp&amp;pin=123456</div>
-          <p>El motivo más común es que el número sigue «Pendiente» de revisión del nombre, y entonces toca esperar a Meta — eso no lo arregla ningún botón.</p>
+          <span class="t">Mientras la app esté sin publicar, no llegan mensajes reales</span>
+          <p>Meta solo entrega webhooks de prueba a las apps sin publicar. Puedes tener el número registrado, el webhook en verde y los datos correctos — y aun así escribirte a ti mismo y que no aparezca nada.</p>
         </div>
       </div>
     </div>
@@ -255,74 +250,10 @@
     <div class="paso">
       <div class="n">6</div>
       <div class="cuerpo">
-        <h2>Agrega el método de pago</h2>
-        <p class="donde">Mismo Paso 2 → Agrega la información de pago</p>
-        <p>Es una de las tareas del asistente y conviene no dejarla para el final: en varias cuentas, Meta no deja registrar el número hasta que hay una tarjeta cargada.</p>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="n">7</div>
-      <div class="cuerpo">
-        <h2>Genera el token que no caduca</h2>
-        <p class="donde">business.facebook.com → Configuración del negocio → Usuarios del sistema</p>
-        <p>Crea un usuario del sistema con rol <strong>Admin</strong> (ponle un nombre que reconozcas en un año, como «Nodo WhatsApp»). Después, y en este orden:</p>
-        <ul>
-          <li><strong>Agregar activos</strong> → tu <em>app</em> y tu <em>cuenta de WhatsApp (WABA)</em>, las dos con control total.</li>
-          <li><strong>Generar nuevo token</strong> → tu app → caducidad <strong>Nunca</strong> → permisos <code>whatsapp_business_messaging</code> y <code>whatsapp_business_management</code>.</li>
-          <li>Cópialo en ese momento: Meta lo muestra <strong>una sola vez</strong>.</li>
-        </ul>
-        <div class="ojo">
-          <span class="t">Dos trampas seguidas</span>
-          <p>El token que Meta te muestra en la pantalla de la API <strong>caduca en 24 horas</strong>. Si usas ese, el bot deja de responder al día siguiente sin motivo aparente.</p>
-          <p>Y si generas el token <em>antes</em> de asignar los activos, sale «válido» pero sin permiso sobre tu número: al enviar, Meta responde con un error que no se parece en nada a la causa.</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="n">8</div>
-      <div class="cuerpo">
-        <h2>Pega el token y el App Secret en Nodo</h2>
-        <p class="donde">Nodo → Canales → bloque 2</p>
-        <p>Son los dos únicos datos que tienes que ir a buscar, porque son secretos:</p>
-        <ul>
-          <li><strong>Access token</strong> — el permanente del paso 7.</li>
-          <li><strong>App Secret</strong> — Configuración de la app → Básica → «Clave secreta de la app» → Mostrar.</li>
-        </ul>
-        <p>Con el token pegado, dale a <strong>Buscar mis datos</strong>: Nodo le pregunta a Meta de qué cuenta es ese token y rellena solo el <strong>Phone Number ID</strong> y el <strong>WABA ID</strong>. Si el token alcanza varios números, te deja elegir cuál atiende en este canal.</p>
-        <p>Esos dos IDs no son secretos, son etiquetas — y copiarlos a mano es de donde salen los errores más tontos. No hace falta que los escribas.</p>
-        <p><strong>Y acá es donde se termina la conexión.</strong> Al darle a <strong>Guardar datos del número</strong> con los cuatro campos llenos, Nodo hace por su cuenta los dos trámites que te saltaste: enciende el interruptor del paso 4 y registra el número del paso 5. Después te dice qué hizo — y si tuvo que registrar, te muestra el PIN que le puso para que lo anotes.</p>
-        <p>Si algo no le sale, te dice el motivo que le dio Meta, que es justo lo que los botones de Meta no te cuentan. Y si ya estaba todo hecho, no toca nada.</p>
-        <div class="ojo">
-          <span class="t">Sin el App Secret no entra nada</span>
-          <p>El webhook de Nodo rechaza con 401 cualquier mensaje que no venga firmado. Meta te lo entrega, Nodo lo descarta y tú no ves nada en la Bandeja — con todo lo demás en verde.</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="n">9</div>
-      <div class="cuerpo">
-        <h2>Publica la app</h2>
-        <p class="donde">Menú izquierdo de la app → Publicar</p>
-        <p>Te va a pedir una <strong>URL de política de privacidad</strong>. Es el único requisito real para un caso de uso de WhatsApp; el resto ya lo cumpliste.</p>
-        <p>Si no tienes una, la de este negocio está publicada acá y sirve de modelo:</p>
-        <div class="dato">https://trackmeta.github.io/Nodo/privacidad.html</div>
-        <p style="color:var(--muted);font-size:14.5px">Cada negocio necesita <strong>la suya</strong>, con su propio nombre y su correo de contacto: es el documento al que un cliente acude para pedir sus datos o su baja, y lo firma tu empresa.</p>
-        <div class="ojo">
-          <span class="t">Mientras la app esté sin publicar, no llegan mensajes reales</span>
-          <p>Meta solo entrega webhooks de prueba a las apps sin publicar. Puedes tener el número registrado, el webhook verde y los cuatro datos correctos — y aun así escribirte a ti mismo y que no aparezca nada.</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="paso">
-      <div class="n">10</div>
-      <div class="cuerpo">
         <h2>Pruébalo con tu propio celular</h2>
         <p>Escríbele «Hola» al número desde tu teléfono y abre la <strong>Bandeja</strong> de Nodo, en ese canal.</p>
         <p>Si tu mensaje aparece ahí, la conexión está hecha. Ese es el único tramo que no se puede probar de antemano, y se comprueba en cinco minutos antes de gastar un sol en anuncios.</p>
+        <p>¿Quieres verlo por dentro? <strong>Probar conexión</strong>, en la misma tarjeta de Canales, revisa una por una todas las piezas: el número, el App Secret, el webhook de la app y a qué campos está suscrito, y si el número está registrado. Lo que se pueda arreglar, trae su botón al lado.</p>
         <div class="ojo">
           <span class="t">Que no te responda no significa que esté roto</span>
           <p>Un canal recién creado no hereda nada: sin clave de IA, sin datos de pago y sin productos, el bot recibe tu mensaje y lo deja en la Bandeja — que es lo correcto cuando no sabe qué decir. Llenar el canal es el paso siguiente, no parte de la conexión.</p>
@@ -331,7 +262,6 @@
     </div>
 
   </div>
-
     <section class="seccion">
       <h2>Cuando algo no funciona</h2>
     <p style="margin-top:8px;color:var(--muted);max-width:62ch">Los síntomas de esta lista salieron de conexiones reales. El mensaje que muestra Meta casi nunca apunta a la causa.</p>
@@ -343,18 +273,18 @@
         <tbody>
           <tr>
             <td>«No se pudo verificar» el webhook</td>
-            <td>El token no está guardado en Nodo, o no coincide</td>
-            <td>Guarda el token en Nodo primero; revisa espacios al copiar</td>
+            <td>El webhook apunta a otro sitio, o el token no coincide</td>
+            <td>Ya no se toca a mano: <b>Guardar datos del número</b> lo configura</td>
           </tr>
           <tr>
             <td>Webhook verde, pero no llega nada</td>
-            <td>Falta el interruptor «Suscribir webhooks», o la app sigue sin publicar</td>
-            <td><b>Probar conexión</b> → «Suscribir ahora»; y publica la app</td>
+            <td>La app no está suscrita a «messages», o sigue sin publicar</td>
+            <td><b>Guardar datos del número</b> lo suscribe; publicar la app es tuyo</td>
           </tr>
           <tr>
             <td>«Se produjo un error durante el registro»</td>
             <td>El número está «Pendiente» de revisión, o el chip aún tiene WhatsApp</td>
-            <td><b>Probar conexión</b> → «Registrar ahora»: dice el motivo real</td>
+            <td><b>Guardar datos del número</b> lo registra y dice el motivo real</td>
           </tr>
           <tr>
             <td>Funcionó ayer y hoy no responde</td>
