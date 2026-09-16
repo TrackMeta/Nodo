@@ -57,8 +57,15 @@ const REFERENCIAS: Array<[string, string, string?]> = [
   ["contacts", "memoria_ia"],
   // Las fichas de las 552 oficinas Shalom. Faltaba, y por eso se borraron.
   ["sede_imagenes", "url", "slug"],
-  // `ultima_imagen` y cualquier otro campo capturado que guarde una URL.
-  ["contact_field_values", "value", "contact_id"],
+  // `ultima_imagen` y cualquier otro campo capturado que guarde una URL. La PK es compuesta
+  // (contact_id, field_id): paginar ordenando solo por contact_id no es estable y puede
+  // saltarse filas → una URL en uso que no se ve → archivo borrado. Las dos columnas.
+  ["contact_field_values", "value", "contact_id,field_id"],
+  // Avatar del usuario del panel (perfil.html sube con media-upload). Faltaba: se borraba
+  // a las 24 h y el chip del sidebar quedaba roto.
+  ["app_users", "avatar_url"],
+  // Ejemplos de comprobante del validador OCR (ia.html). Faltaba, igual que las fichas.
+  ["channels", "ocr_config"],
 ];
 
 Deno.serve(async (req) => {
@@ -116,13 +123,15 @@ Deno.serve(async (req) => {
     // tablas la tienen: `sede_imagenes` se identifica por `slug` y con "id" la consulta
     // reventaba entera. (Reventar es lo MENOS malo que podía pasar: la función devuelve
     // "no_pude_verificar" y no borra nada. Pero así tampoco limpiaba.)
-    const orden = clave || "id";
+    // Puede ser una clave compuesta ("contact_id,field_id"): se ordena por todas.
+    const ordenes = (clave || "id").split(",").map((s) => s.trim()).filter(Boolean);
     // PostgREST corta en 1000 filas y .limit() NO lo sube: hay que paginar con
     // .range() hasta que la pagina venga corta. Sin esto solo se revisarian los
     // primeros 1000 mensajes y el recolector borraria comprobantes en uso.
     for (let desde = 0; ; desde += PAGINA) {
-      const { data, error } = await db.from(tabla).select(`${orden}, ${col}`)
-        .order(orden, { ascending: true }).range(desde, desde + PAGINA - 1);
+      let q = db.from(tabla).select(`${ordenes.join(", ")}, ${col}`);
+      for (const o of ordenes) q = q.order(o, { ascending: true });
+      const { data, error } = await q.range(desde, desde + PAGINA - 1);
       // supabase-js NO lanza ante un error de consulta: devuelve { data: null, error }.
       // Y no poder comprobar una fuente es exactamente cuando NO se debe borrar.
       if (error) return json({ error: "no_pude_verificar", detalle: `${tabla}.${col}: ${error.message}` }, 500);

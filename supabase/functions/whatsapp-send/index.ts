@@ -118,13 +118,21 @@ Deno.serve(async (req) => {
     const wamid = mediaKind
       ? await sendMedia(channel.phone_number_id, secrets.access_token, contact.wa_id, mediaKind as any, media!.url!, caption, media?.filename)
       : await sendText(channel.phone_number_id, secrets.access_token, contact.wa_id, caption);
-    await db.from("messages").insert({
+    const { error: insErr } = await db.from("messages").insert({
       channel_id, contact_id, direction: "out", type: msgType,
       // wamid || null: si Meta omite el id, guardar null (no ""), para que los webhooks de
       // status (delivered/read/failed) puedan matchear por wamid — un "" no matchea nada.
       content: outContent, wamid: wamid || null, status: "sent",
       sent_by: "human", sent_by_user: uid,
     });
+    // Meta YA lo entregó: no se puede "deshacer". Pero devolver ok sin decir nada dejaba al
+    // operador viendo "enviado" con una burbuja que no existe en el hilo, y para un adjunto
+    // el archivo quedaba sin referencia → media-gc lo borraba esa noche aunque el cliente lo
+    // tuviera. Se avisa y se registra.
+    if (insErr) {
+      console.error("[whatsapp-send] enviado pero NO guardado en messages:", insErr.message);
+      return json({ ok: true, wamid, guardado: false, aviso: "Se envió, pero no se pudo guardar en el historial: " + insErr.message });
+    }
     // El bot se pausa recién con el envío CONFIRMADO, igual que en la rama de plantilla.
     // Estaba antes del envío: si Meta rechazaba el mensaje, al cliente no le llegaba nada
     // Y ADEMÁS el bot quedaba apagado, así que nadie lo atendía hasta reactivarlo a mano.

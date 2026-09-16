@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
 
   let body: {
     channel_id?: string; text?: string; buttonId?: string; reset?: boolean; flow_id?: string;
-    media?: { kind?: string; url?: string; mime?: string; caption?: string };
+    media?: { kind?: string; url?: string; mime?: string; caption?: string; filename?: string; size?: number };
     // 📍 Ubicación de WhatsApp. El banco de pruebas no la sabía mandar, así que el camino
     // que la convierte en la dirección del pedido no se podía probar sin un WhatsApp real.
     // Se arma igual que en el webhook: lugar con nombre/dirección → texto; pin → coordenadas.
@@ -194,7 +194,9 @@ Deno.serve(async (req) => {
   const content = location
     ? { lat: location.lat, lng: location.lng, name: location.name ?? null, address: location.address ?? null }
     : mediaKind
-    ? { media_url: media!.url, caption: media?.caption ?? "", mime: media?.mime ?? "" }
+    // filename/size igual que el webhook real: sin ellos la Bandeja pintaba todo documento
+    // de prueba como "archivo".
+    ? { media_url: media!.url, caption: media?.caption ?? "", mime: media?.mime ?? "", ...(media?.filename ? { filename: String(media.filename) } : {}), ...(Number(media?.size) > 0 ? { size: Number(media!.size) } : {}) }
     : (buttonId ? { id: buttonId, title: body.text ?? buttonId } : { text: text ?? "" });
   const { data: msgRow } = await db.from("messages").insert({
     channel_id, contact_id: contactId, direction: "in",
@@ -215,9 +217,12 @@ Deno.serve(async (req) => {
     ? { type: "button" as const, buttonId, title: text ?? buttonId }
     : {
       type: "message" as const, text: _ubiTxt || media?.caption || text || "",
-      msgType: location ? "location" : (mediaKind ?? "text"),
+      // Un DOCUMENTO con mime de imagen o PDF se trata como IMAGEN (msgType "image" → OCR),
+      // igual que en el webhook real (el Yape en PDF es lo más común en Perú): antes el
+      // banco de pruebas probaba un camino distinto del de producción.
+      msgType: location ? "location" : ((mediaKind === "document" && /^image\/|^application\/pdf$/i.test(String(media?.mime ?? ""))) ? "image" : (mediaKind ?? "text")),
       // Media de prueba (URL pública de Storage): imagen → OCR, audio → STT.
-      mediaRef: (mediaKind === "image" || mediaKind === "audio") ? media!.url : undefined,
+      mediaRef: (mediaKind === "image" || mediaKind === "audio" || (mediaKind === "document" && /^image\/|^application\/pdf$/i.test(String(media?.mime ?? "")))) ? media!.url : undefined,
     };
   // Buffer SOLO para texto, igual que el webhook: un botón rutea al toque, y una imagen
   // (comprobante) tiene que llegar entera y sin espera.

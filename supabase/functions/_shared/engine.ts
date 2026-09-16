@@ -874,7 +874,7 @@ async function runEngineInner(
     if (url) {
       run.vars.ultima_imagen = url;
       await setField(db, channelId, contactId, "ultima_imagen", url);
-      await annotateImageUrl(db, contactId, url); // rescata el fallback de la foto en Pagos/Compras
+      await annotateImageUrl(db, contactId, url, event.mediaRef.startsWith("wa-media:") ? event.mediaRef.slice("wa-media:".length) : undefined); // rescata el fallback de la foto en Pagos/Compras
     }
   }
   await execute(db, run);
@@ -6346,13 +6346,26 @@ export function esAlucinacionSTT(texto?: string | null): boolean {
 
 // D4 · comprobantes en bucket PRIVADO + URL firmada larga (data financiera).
 const COMPROBANTES_BUCKET = "comprobantes";
-const SIGNED_TTL = 60 * 60 * 24 * 365; // 1 año
+// 10 años: la URL queda guardada para siempre en messages, orders.shipping, ultima_imagen y
+// Sheets, y NADIE la renueva. Con 1 año, al año la Bandeja y Compras mostraban la foto rota.
+const SIGNED_TTL = 60 * 60 * 24 * 365 * 10;
 
 // Sube una imagen entrante (comprobante) al bucket privado y devuelve una URL
 // FIRMADA de larga duración. El webchat manda URLs http públicas → tal cual.
 async function ingestImage(db: SupabaseClient, channelId: string, contactId: string, mediaRef: string): Promise<string | null> {
   if (/^https?:/.test(mediaRef)) return mediaRef;            // webchat: ya pública
   if (!mediaRef.startsWith("wa-media:")) return null;
+  // El webhook ya archiva TODO media entrante (misma imagen, mismo bucket) y deja la URL en
+  // messages.content.media_url por media_id. Si ya está, se reutiliza: antes cada comprobante
+  // se bajaba de Meta y se subía hasta 4 veces en el mismo turno (ingest + auto-adelanto +
+  // auto-saldo + OCR), cada una con su propio path → 4 copias idénticas y 3 huérfanas.
+  const _mid = mediaRef.slice("wa-media:".length);
+  try {
+    const { data: ya } = await db.from("messages").select("content").eq("contact_id", contactId).eq("direction", "in")
+      .eq("content->>media_id", _mid).not("content->>media_url", "is", null).limit(1).maybeSingle();
+    const u = String((ya as any)?.content?.media_url ?? "");
+    if (/^https?:/.test(u)) return u;
+  } catch (_) { /* si no se puede leer, se sube como siempre */ }
   const secrets = await getChannelSecrets(db, channelId);
   if (!secrets?.access_token) return null;
   const { bytes, mime } = await fetchMediaBytes(mediaRef.slice("wa-media:".length), secrets.access_token);
@@ -6413,12 +6426,22 @@ async function annotateAudioTranscript(db: SupabaseClient, contactId: string, te
 // de "Pagos por validar"/Compras (que lee content.media_url para mostrar la foto cuando
 // el pedido no la capturó en su shipping) quedaba MUERTO. Con esto ese respaldo funciona
 // y el operador nunca aprueba un pago sin poder ver el comprobante. Best-effort.
-async function annotateImageUrl(db: SupabaseClient, contactId: string, url: string) {
+async function annotateImageUrl(db: SupabaseClient, contactId: string, url: string, mediaId?: string) {
   if (!/^https?:/.test(url)) return;
   try {
-    const { data: m } = await db.from("messages")
-      .select("id, content").eq("contact_id", contactId).eq("direction", "in").eq("type", "image")
-      .order("ts", { ascending: false }).limit(1).maybeSingle();
+    // Anclado por media_id (como la transcripción del audio): con dos comprobantes seguidos,
+    // "la última imagen" colgaba la URL en la burbuja equivocada. Y el Yape mandado como
+    // DOCUMENTO/PDF es type='document': buscando solo 'image' se parchaba otra foto anterior.
+    let m: any = null;
+    if (mediaId) {
+      ({ data: m } = await db.from("messages").select("id, content").eq("contact_id", contactId).eq("direction", "in")
+        .in("type", ["image", "document"]).eq("content->>media_id", mediaId).order("ts", { ascending: false }).limit(1).maybeSingle());
+    }
+    if (!m) {
+      ({ data: m } = await db.from("messages")
+        .select("id, content").eq("contact_id", contactId).eq("direction", "in").eq("type", "image")
+        .order("ts", { ascending: false }).limit(1).maybeSingle());
+    }
     if (m && !((m as any).content?.media_url)) {
       await db.from("messages").update({ content: { ...((m as any).content ?? {}), media_url: url } }).eq("id", (m as any).id);
     }

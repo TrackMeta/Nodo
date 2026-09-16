@@ -1142,9 +1142,12 @@ async function sendStoredMedia(m){
     // la pasamos así para que la imagen llegue con su texto en la misma burbuja.
     const r=await callFn("whatsapp-send", { channel_id:state.channelId, contact_id:state.contactId, media, text:m.caption||"" });
     const o=await r.json().catch(()=>({})); if(!r.ok){ toast(o.detalle?.message||o.detalle||o.error||"Error al enviar media",true); return false; }
-    setBotPill(false); return true;
+    setBotPill(false); avisoSinGuardar(o); return true;
   }catch{ toast("Error al enviar multimedia",true); return false; }
 }
+// whatsapp-send devuelve ok:true con guardado:false cuando Meta SÍ entregó el mensaje
+// pero no se pudo escribir en el historial: la burbuja no va a aparecer y hay que decirlo.
+function avisoSinGuardar(o){ if(o && o.guardado===false) toast(o.aviso||"Se envió, pero no quedó guardado en el historial", true); }
 const EMOJI_CATS=[
   { n:"Caras", e:"😀😃😄😁😆😅😂🤣🥲☺️😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😱😨😰😥😓🤗🤔🤭🤫🤥😶😐😑😬🙄😯😦😧😮😲🥱😴🤤😪😵🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃😺😸😹😻😼😽🙀😿😾" },
   { n:"Gestos", e:"👋🤚🖐️✋🖖👌🤌🤏✌️🤞🤟🤘🤙👈👉👆🖕👇☝️👍👎✊👊🤛🤜👏🙌👐🤲🤝🙏✍️💅🤳💪🦾🦵🦿🦶👂🦻👃🧠🫀🫁🦷🦴👀👁️👅👄" },
@@ -1344,7 +1347,10 @@ async function loadContactPanel(c){
     supa.from("contact_tags").select("tag_id").eq("contact_id", c.id),
     supa.from("custom_fields").select("id,nombre,key,tipo").eq("channel_id", state.channelId).order("nombre"),
     supa.from("contact_field_values").select("field_id,value").eq("contact_id", c.id),
-    supa.from("messages").select("id,type,content,ts,direction").eq("contact_id", c.id).order("ts",{ascending:false}).limit(120),
+    // Solo los mensajes CON archivo, filtrados en el servidor: antes se traían los últimos 120
+    // mensajes de cualquier tipo y en un chat largo «Medios y archivos» decía "sin archivos"
+    // (y el Copiloto se quedaba sin la foto del comprobante) aunque estuvieran más atrás.
+    supa.from("messages").select("id,type,content,ts,direction").eq("contact_id", c.id).not("content->>media_url","is",null).order("ts",{ascending:false}).limit(60),
     supa.from("flow_runs").select("id,estado,created_at,flow:flows(nombre)").eq("contact_id", c.id).order("created_at",{ascending:false}),
     supa.from("sequence_subscriptions").select("id,estado,paso_actual,suscrito_at,sequence:sequences(nombre)").eq("contact_id", c.id).order("suscrito_at",{ascending:false}),
     supa.from("contact_events").select("*").eq("contact_id", c.id).order("created_at",{ascending:false}).limit(100),
@@ -1591,6 +1597,8 @@ async function actionHandler(a){
   if(a==="delchat"){ if(!await confirmDialog({title:"Eliminar chat",message:"¿Eliminar esta conversación y todos sus mensajes? No se puede deshacer.",confirmText:"Eliminar",danger:true})) return;
     const { error:e1 }=await supa.from("messages").delete().eq("contact_id",cid); const { error:e2 }=await conv().delete().eq("contact_id",cid);
     if(e1||e2){ toast("No se pudo eliminar el chat: "+((e1||e2).message),true); return; }
+    // Sin mensajes ya no "envió imagen": el sello lo pone un trigger al insertar y nadie lo quitaba.
+    await supa.from("contacts").update({ ultima_imagen_at:null }).eq("id",cid);
     toast("Chat eliminado"); backToList(); loadConversations(); return; }
 }
 async function exportMessages(){
@@ -2208,7 +2216,7 @@ async function sendMsg() {
       const res = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: state.contactId, text });
       const out = await res.json();
       if (!res.ok) { toast(out.detalle?.message || out.detalle || out.error || "Error al enviar", true); devolver(); }
-      else { setBotPill(false); }
+      else { setBotPill(false); avisoSinGuardar(o); }
     }
   } catch { toast("Error de red", true); devolver(); }
   finally { sending = false; $("sendBtn").disabled = false; }
@@ -2347,7 +2355,7 @@ async function sendAttachment(file){
       const r = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: cid, media });
       const o = await r.json().catch(() => ({}));
       if (!r.ok) { toast(o.detalle?.message || o.detalle || o.error || "Error al enviar", true); }
-      else setBotPill(false);
+      else { setBotPill(false); avisoSinGuardar(o); }
     }
   } catch { toast("Error al adjuntar", true); }
   finally { $("attachBtn").disabled = false; }

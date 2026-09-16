@@ -545,7 +545,8 @@ function extractContent(msg: any): { text: string; type: string; content: any } 
 // bucket, y además `messages.content` está en su lista de referencias.
 const MEDIA_ARCHIVABLE = new Set(["image", "audio", "video", "document", "sticker"]);
 const MEDIA_BUCKET = "comprobantes";
-const MEDIA_SIGNED_TTL = 60 * 60 * 24 * 365;
+// 10 años (igual que el motor): la URL se guarda para siempre y nadie la renueva.
+const MEDIA_SIGNED_TTL = 60 * 60 * 24 * 365 * 10;
 const MEDIA_MAX_BYTES = 25 * 1024 * 1024; // un video largo no vale la pena guardarlo
 
 function extPorMime(mime: string, tipo: string): string {
@@ -595,6 +596,16 @@ async function archivarMediaEntrante(channelId: string, contactId: string, wamid
     }
     // "audio/ogg; codecs=opus" → el bucket quiere el mime pelado.
     const mime = String(mimeCrudo || content?.mime_type || "application/octet-stream").split(";")[0].trim();
+    // Carrera con el motor: para una foto con el bot activo, ingestImage puede haber
+    // subido ya su copia y colgado la URL. Si ya hay, no se sube otra igual.
+    {
+      const { data: ya } = await db.from("messages").select("id, content").eq("wamid", wamid).eq("channel_id", channelId).maybeSingle();
+      const c0 = ((ya as any)?.content ?? {}) as Record<string, unknown>;
+      if (c0.media_url) {
+        if (tipo === "audio" && botEnPausa && ya) await transcribirParaOperador(channelId, contactId, String((ya as any).id), bytes, mime);
+        return;
+      }
+    }
     const acc = await accountOfChannel(db, channelId);
     const path = `${acc || "misc"}/${contactId}/${Date.now()}-${tipo}.${extPorMime(mime, tipo)}`;
     let up = await db.storage.from(MEDIA_BUCKET).upload(path, bytes, { contentType: mime, upsert: true });
@@ -613,6 +624,10 @@ async function archivarMediaEntrante(channelId: string, contactId: string, wamid
     if (!c.media_url) {
       // `size` en bytes: la Bandeja lo muestra junto al archivo y sirve para medir espacio.
       await db.from("messages").update({ content: { ...c, media_url: signed.signedUrl, mime, size: bytes.length, storage_path: `${MEDIA_BUCKET}/${path}` } }).eq("id", (m as any).id);
+    } else {
+      // Perdió la carrera contra el motor: la copia que acaba de subir no la referencia nadie
+      // y este bucket no se barre → se borra ahora, no queda huérfana para siempre.
+      await db.storage.from(MEDIA_BUCKET).remove([path]).catch(() => {});
     }
     if (tipo === "audio" && botEnPausa) await transcribirParaOperador(channelId, contactId, String((m as any).id), bytes, mime);
   } catch (e) {
