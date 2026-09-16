@@ -222,7 +222,7 @@
           <li><strong>App Secret</strong> — Configuración de la app &#8594; Básica &#8594; «Clave secreta de la app» &#8594; Mostrar.</li>
         </ul>
         <p>Con el token pegado, dale a <strong>Buscar mis datos</strong>: Nodo le pregunta a Meta de qué cuenta es ese token y rellena solo el <strong>Phone Number ID</strong> y el <strong>WABA ID</strong>. Si el token alcanza varios números, te deja elegir cuál atiende en este canal. Esos dos no son secretos, son etiquetas: no hace falta que los escribas.</p>
-        <p>Después dale a <strong>Guardar datos del número</strong>. <strong>Ahí se termina la conexión</strong>: Nodo configura el webhook en Meta, lo suscribe a los mensajes y registra el número. Al final te dice qué hizo, y si tuvo que registrar te muestra el <strong>PIN</strong> que le puso.</p>
+        <p>Después dale a <strong>Guardar y conectar</strong>. <strong>Ahí se termina la conexión</strong>: Nodo configura el webhook en Meta, lo suscribe a los mensajes y registra el número. Al final te dice qué hizo, y si tuvo que registrar te muestra el <strong>PIN</strong> que le puso.</p>
         <div class="ojo">
           <span class="t">Anota ese PIN</span>
           <p>Es la verificación en dos pasos de tu número. No lo usas para nada del día a día, pero Meta te lo va a pedir si algún día migras el número a otra plataforma — y Nodo no lo guarda. Si ese número ya tenía uno, Nodo no puede adivinarlo y te lo pide.</p>
@@ -274,17 +274,17 @@
           <tr>
             <td>«No se pudo verificar» el webhook</td>
             <td>El webhook apunta a otro sitio, o el token no coincide</td>
-            <td>Ya no se toca a mano: <b>Guardar datos del número</b> lo configura</td>
+            <td>Ya no se toca a mano: <b>Guardar y conectar</b> lo configura</td>
           </tr>
           <tr>
             <td>Webhook verde, pero no llega nada</td>
             <td>La app no está suscrita a «messages», o sigue sin publicar</td>
-            <td><b>Guardar datos del número</b> lo suscribe; publicar la app es tuyo</td>
+            <td><b>Guardar y conectar</b> lo suscribe; publicar la app es tuyo</td>
           </tr>
           <tr>
             <td>«Se produjo un error durante el registro»</td>
             <td>El número está «Pendiente» de revisión, o el chip aún tiene WhatsApp</td>
-            <td><b>Guardar datos del número</b> lo registra y dice el motivo real</td>
+            <td><b>Guardar y conectar</b> lo registra y dice el motivo real</td>
           </tr>
           <tr>
             <td>Funcionó ayer y hoy no responde</td>
