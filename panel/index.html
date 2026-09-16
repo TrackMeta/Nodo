@@ -1749,6 +1749,17 @@ function renderEvent(e){
 // `enVivo` = la burbuja acaba de llegar por realtime, así que entra con animación.
 // El historial (renderThread) llama SIN ese flag: pintar cincuenta burbujas animadas al
 // abrir un chat marea y retrasa la lectura.
+// El contenido de una burbuja (media o texto + transcripción + hora/tick). Separado de
+// renderMsg porque un mensaje entrante puede cambiar DESPUÉS de pintarse: el webhook le
+// cuelga la URL del audio/foto unos segundos más tarde, y el motor la transcripción.
+function msgInner(m){
+  const mh = mediaHtml(m);
+  const txt = m.content?.text || m.content?.caption || m.content?.title || `[${m.type}]`;
+  // Transcripción de nota de voz (STT): el bot la escribe bajo el audio.
+  const tr = m.content?.transcription
+    ? `<div class="transcript" title="Transcripción automática del audio">${icon("mic")} ${esc(m.content.transcription)}</div>` : "";
+  return `${mh || waFmt(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?statusTick(m.status):""}</div>`;
+}
 function renderMsg(m, enVivo) {
   const t = $("thread");
   // ¿El operador ya estaba al fondo? Si había subido a leer mensajes viejos,
@@ -1768,12 +1779,7 @@ function renderMsg(m, enVivo) {
   const el = document.createElement("div");
   el.className = "msg " + (enVivo ? "nueva " : "") + (m.direction === "in" ? "in-m" : "out-m" + (si ? " " + si.kind : ""));
   el.dataset.id = m.id;
-  const mh = mediaHtml(m);
-  const txt = m.content?.text || m.content?.caption || m.content?.title || `[${m.type}]`;
-  // Transcripción de nota de voz (STT): el bot la escribe bajo el audio.
-  const tr = m.content?.transcription
-    ? `<div class="transcript" title="Transcripción automática del audio">${icon("mic")} ${esc(m.content.transcription)}</div>` : "";
-  el.innerHTML = `${mh || waFmt(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?statusTick(m.status):""}</div>`;
+  el.innerHTML = msgInner(m);
   t.appendChild(el);
   // Los botones se MUESTRAN siempre: si no, en una conversación real verías el
   // texto pero no los botones que le llegaron al cliente, y no entenderías por
@@ -1867,7 +1873,7 @@ function mediaHtml(m){
   const url = m.content?.media_url; if(!url) return null;
   const cap = m.content?.caption ? `<div style="margin-top:5px">${waFmt(m.content.caption)}</div>` : "";
   const u = esc(safeUrl(url));
-  if(m.type==="image") return `<img data-light="${u}" data-lk="image" src="${u}" alt="" style="cursor:zoom-in"/>${cap}`;
+  if(m.type==="image"||m.type==="sticker") return `<img data-light="${u}" data-lk="image" src="${u}" alt="" style="cursor:zoom-in"/>${cap}`;
   if(m.type==="audio") return `<audio controls src="${u}"></audio>${cap}`;
   if(m.type==="video") return `<video controls src="${u}"></video>${cap}`;
   return `<a class="file" href="${u}" target="_blank">${icon("file")} ${esc(m.content?.filename||"archivo")}</a>${cap}`;
@@ -2354,11 +2360,18 @@ function subscribeRealtime() {
       const m = p.new;
       // Mantiene la caché al día para que reabrir el chat muestre el tick correcto.
       const cache = state.threadCache[m.contact_id];
-      if (cache) { const cm = cache.find(x=>x.id===m.id); if (cm) cm.status = m.status; }
+      if (cache) { const cm = cache.find(x=>x.id===m.id); if (cm) { cm.status = m.status; if (m.content) cm.content = m.content; } }
       if (m.contact_id === state.contactId) {
         const el = document.querySelector(`.msg[data-id="${m.id}"] .meta`);
         // animate=true → el tick de "leído" hace su pop azul justo cuando el cliente ve el mensaje.
         if (el && m.direction === "out") el.innerHTML = `${fmtTime.format(new Date(m.ts))}${statusTick(m.status, true)}`;
+        // Entrante que cambió de contenido: le llegó la URL del archivo (foto, nota de voz)
+        // o la transcripción. Se repinta la burbuja entera en su sitio → el operador ve el
+        // reproductor/la foto sin cerrar y volver a abrir el chat.
+        if (m.direction === "in" && m.content && (m.content.media_url || m.content.transcription)) {
+          const b = document.querySelector(`.msg[data-id="${m.id}"]`);
+          if (b) b.innerHTML = msgInner(m);
+        }
       }
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "conversations", filter: fCh }, () => loadConversationsSoon())

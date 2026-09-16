@@ -3,7 +3,8 @@
 //   GET  → verificación de Meta (hub.challenge)
 //   POST → recepción de mensajes/estados, validando firma por canal.
 // ═══════════════════════════════════════════════════════════════════
-import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
+import { serviceClient, getChannelSecrets, accountOfChannel } from "../_shared/db.ts";
+import { fetchMediaBytes } from "../_shared/meta.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
 import { runEngine, avisarEnvioFallido, type EngineEvent } from "../_shared/engine.ts";
 
@@ -317,6 +318,18 @@ async function processInbound(
     throw new Error(`insert message: ${msgErr.message}`);
   }
 
+  // 📎 Foto / nota de voz / video / archivo / sticker: el mensaje quedó guardado con solo el
+  // `media_id` de Meta, que el panel no puede abrir (hace falta el token del canal). La URL
+  // recién la generaba el motor, y solo para la foto que llegaba a un nodo de OCR: con el bot
+  // en pausa —o sea, justo cuando un HUMANO está atendiendo— la Bandeja mostraba «[audio]» y
+  // «[image]» pelados y el operador no podía ni oír ni ver lo que el cliente mandó. Se
+  // archiva SIEMPRE, en segundo plano y aparte del motor. Va ANTES del corte por bot en pausa.
+  if (MEDIA_ARCHIVABLE.has(type) && content?.media_id) {
+    const t = archivarMediaEntrante(channelId, contact.id, msg.id, type, content);
+    if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(t);
+    else await t;
+  }
+
   // ── Motor de flujos ────────────────────────────────────────────────
   // Bot pausado para este contacto (humano atendiendo) → no responder.
   if ((contact as any).bot_activo === false) return;
@@ -488,7 +501,8 @@ function extractContent(msg: any): { text: string; type: string; content: any } 
       return {
         text: media.caption ?? `[${t}]`,
         type: t,
-        content: { media_id: media.id, mime_type: media.mime_type, caption: media.caption ?? null },
+        // `filename` solo viene en documentos; el panel lo usa como texto del enlace.
+        content: { media_id: media.id, mime_type: media.mime_type, caption: media.caption ?? null, ...(media.filename ? { filename: String(media.filename) } : {}) },
       };
     }
     case "interactive": {
@@ -518,5 +532,70 @@ function extractContent(msg: any): { text: string; type: string; content: any } 
     }
     default:
       return { text: `[${t}]`, type: "system", content: { raw_type: t } };
+  }
+}
+
+// ── Archivo del media entrante ───────────────────────────────────────
+// Descarga el media de Meta con el token del canal, lo sube al bucket PRIVADO (el mismo de
+// los comprobantes: una foto del cliente puede ser un Yape, así que nada de bucket público)
+// y deja en `messages.content.media_url` una URL firmada de un año, que es lo que el panel
+// ya sabe pintar (imagen con visor, <audio>, <video>, enlace de archivo). Best-effort: si
+// falla, el mensaje queda como estaba y se registra el motivo. `media-gc` no barre este
+// bucket, y además `messages.content` está en su lista de referencias.
+const MEDIA_ARCHIVABLE = new Set(["image", "audio", "video", "document", "sticker"]);
+const MEDIA_BUCKET = "comprobantes";
+const MEDIA_SIGNED_TTL = 60 * 60 * 24 * 365;
+const MEDIA_MAX_BYTES = 25 * 1024 * 1024; // un video largo no vale la pena guardarlo
+
+function extPorMime(mime: string, tipo: string): string {
+  const m = mime.toLowerCase();
+  if (m.includes("pdf")) return "pdf";
+  if (m.includes("png")) return "png";
+  if (m.includes("webp")) return "webp";
+  if (m.includes("gif")) return "gif";
+  if (m.includes("jpeg") || m.includes("jpg")) return "jpg";
+  if (m.includes("ogg") || m.includes("opus")) return "ogg";
+  if (m.includes("mpeg") && tipo === "audio") return "mp3";
+  if (m.includes("mp4") && tipo === "audio") return "m4a";
+  if (m.includes("aac")) return "aac";
+  if (m.includes("amr")) return "amr";
+  if (m.includes("mp4") || m.includes("3gpp")) return "mp4";
+  if (m.includes("spreadsheet") || m.includes("excel")) return "xlsx";
+  if (m.includes("wordprocessing") || m.includes("msword")) return "docx";
+  if (m.includes("zip")) return "zip";
+  if (m.includes("plain")) return "txt";
+  return tipo === "image" || tipo === "sticker" ? "jpg" : tipo === "audio" ? "ogg" : tipo === "video" ? "mp4" : "bin";
+}
+
+async function archivarMediaEntrante(channelId: string, contactId: string, wamid: string, tipo: string, content: any): Promise<void> {
+  try {
+    const mediaId = String(content?.media_id ?? "");
+    if (!mediaId) return;
+    const secrets = await getChannelSecrets(db, channelId);
+    if (!secrets?.access_token) return;
+    const { bytes, mime: mimeCrudo } = await fetchMediaBytes(mediaId, secrets.access_token);
+    if (!bytes?.length) return;
+    if (bytes.length > MEDIA_MAX_BYTES) { console.warn(`[webhook] media ${tipo} de ${bytes.length} bytes: demasiado grande, no se archiva`); return; }
+    // "audio/ogg; codecs=opus" → el bucket quiere el mime pelado.
+    const mime = String(mimeCrudo || content?.mime_type || "application/octet-stream").split(";")[0].trim();
+    const acc = await accountOfChannel(db, channelId);
+    const path = `${acc || "misc"}/${contactId}/${Date.now()}-${tipo}.${extPorMime(mime, tipo)}`;
+    let up = await db.storage.from(MEDIA_BUCKET).upload(path, bytes, { contentType: mime, upsert: true });
+    if (up.error && /bucket|not found/i.test(up.error.message)) {
+      await db.storage.createBucket(MEDIA_BUCKET, { public: false }).catch(() => {});
+      up = await db.storage.from(MEDIA_BUCKET).upload(path, bytes, { contentType: mime, upsert: true });
+    }
+    if (up.error) { console.error("[webhook] archivar media upload:", up.error.message); return; }
+    const { data: signed } = await db.storage.from(MEDIA_BUCKET).createSignedUrl(path, MEDIA_SIGNED_TTL);
+    if (!signed?.signedUrl) return;
+    // Se lee la fila de nuevo: si el motor ya le colgó su propia URL (OCR) o una
+    // transcripción mientras tanto, no se pisa nada, solo se agrega lo que falta.
+    const { data: m } = await db.from("messages").select("id, content").eq("wamid", wamid).eq("channel_id", channelId).maybeSingle();
+    if (!m) return;
+    const c = ((m as any).content ?? {}) as Record<string, unknown>;
+    if (c.media_url) return;
+    await db.from("messages").update({ content: { ...c, media_url: signed.signedUrl, mime } }).eq("id", (m as any).id);
+  } catch (e) {
+    console.error("[webhook] archivar media:", (e as any)?.message ?? e);
   }
 }
