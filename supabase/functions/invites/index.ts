@@ -22,7 +22,9 @@ function linkToken(): string {
 // Código corto y tipeable para el equipo (sin O/0/I/1 para no confundir).
 function teamCode(): string {
   const A = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  return Array.from(crypto.getRandomValues(new Uint8Array(8)), (x) => A[x % A.length]).join("");
+  // 12 caracteres (60 bits), no 8 (40): signup es pública y contesta distinto según el código
+  // exista o no, así que el largo es la única defensa contra enumerarlos.
+  return Array.from(crypto.getRandomValues(new Uint8Array(12)), (x) => A[x % A.length]).join("");
 }
 
 Deno.serve(async (req) => {

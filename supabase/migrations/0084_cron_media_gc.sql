@@ -22,7 +22,10 @@ select cron.unschedule('nodo-media-gc')
 select cron.schedule('nodo-media-gc', '17 9 * * *', $cmd$
     select net.http_post(
       url     := 'https://ahoxdyffbwjlshmdezwi.supabase.co/functions/v1/media-gc',
-      headers := jsonb_build_object('Content-Type','application/json','x-scheduler-secret', '67848a8dedba46e34f6f43219be363bf7db886c21bbaf463'),
+      -- ⛔ NUNCA el secreto real acá: el repo es público. Ese valor se pega a mano en el SQL
+      -- editor (o se rota con `supabase secrets set` + update de cron.job). El que estuvo
+      -- versionado hasta el 2026-09-17 se rotó ese mismo día.
+      headers := jsonb_build_object('Content-Type','application/json','x-scheduler-secret', '<PEGAR_SCHEDULER_SECRET_A_MANO>'),
       body    := '{"horas":24}'::jsonb,
       timeout_milliseconds := 55000
     );

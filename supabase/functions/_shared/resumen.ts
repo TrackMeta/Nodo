@@ -72,7 +72,7 @@ export async function construirResumen(
     // PAGINADO: un día con más de 1000 pedidos devolvía solo los 1000 primeros y TODO el
     // resumen salía corto — ventas, ingresos, ganancia y ROAS — justo el día que más
     // vendiste. Y sin avisar de nada, que es lo peor para un mensaje que se lee de reojo.
-    pageAll((f, t) => db.from("orders").select("amount, order_bumps, estado, shipping, created_at, product:product_id(tipo)")
+    pageAll((f, t) => db.from("orders").select("contact_id, amount, order_bumps, estado, shipping, created_at, product:product_id(tipo)")
       .eq("channel_id", chId).gte("created_at", fromISO).lt("created_at", toISO)
       .order("created_at", { ascending: true }).order("id", { ascending: true }).range(f, t)),
     db.from("contacts").select("id", { count: "exact", head: true })
@@ -102,7 +102,13 @@ export async function construirResumen(
   // mentiroso); ante fallo de ads, mostramos el digest pero SIN neta y con aviso.
   if (ordR.error) throw new Error("resumen: no se pudo leer pedidos — " + ordR.error.message);
   const adsFail = !!adsR.error;
-  const orders = (ordR.data ?? []) as Order[];
+  // Sin los pedidos del contacto de PRUEBA (Probar flujos): anunciaban por Telegram una
+  // venta de S/129 que no existía.
+  let orders = (ordR.data ?? []) as Order[];
+  try {
+    const { data: tc } = await db.from("contacts").select("id").eq("channel_id", chId).eq("wa_id", "webchat-test").maybeSingle();
+    if ((tc as any)?.id) orders = orders.filter((o: any) => o.contact_id !== (tc as any).id);
+  } catch (_) { /* si no se puede saber, se deja como está */ }
   const dg = resumirPedidos(orders);
   const nuevosContactos = typeof contR.count === "number" ? contR.count : 0;
   const leads = typeof leadR.count === "number" ? leadR.count : 0;

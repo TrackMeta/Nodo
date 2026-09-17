@@ -36,6 +36,8 @@ export type EngineEvent =
   | { type: "resume" }; // despertar tras Esperar
 
 const MAX_STEPS = 50; // tope de nodos por invocación (evita bucles infinitos)
+// Claves del contexto que ningún campo del bot (fijo) puede pisar: son del cliente/sistema.
+const VETO_CAMPOS_FIJOS = new Set(["nombre", "telefono", "wa_id", "username", "stage", "ad_id", "ctwa_clid", "origen", "source", "fecha", "hora", "fecha_hora", "sin_numero", "angulo", "angulo_gancho", "angulo_slug", "nombre_completo", "producto_nombre", "precio"]);
 
 // Por contacto, la hora del mensaje ENTRANTE más nuevo que el prompt de la IA tuvo a la
 // vista en este turno (lo fija historial(); lo consume el insert de la burbuja saliente como
@@ -2425,14 +2427,21 @@ const OPT_OUT = [
   "no quiero mas mensajes", "no me manden mas mensajes", "no me envien mas mensajes",
   "no quiero mas publicidad", "no mas publicidad", "no quiero promociones", "no mas promociones",
   "stop", "unsubscribe",
+  // Formas que faltaban (medidas en chats reales): el enclítico y el usted.
+  "dejen de escribirme", "deja de escribirme", "dejen de escribirle", "no me escriba", "no escriba",
+  "no me escriban mas", "no me escriba mas", "saquenme de la lista", "sacame de la lista",
+  "retirenme de la lista", "quiero darme de baja", "darme de baja de los mensajes",
+  "no quiero recibir mas mensajes", "no quiero recibir mensajes", "no me manden nada",
 ];
 // Reusa normalize() (el helper que ya tiene el motor: minúsculas + sin tildes)
 // y además saca la puntuación, para que "¡No, gracias!" == "no gracias".
 const limpiaOpt = (s: string) => normalize(s).replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
 
-function esOptOut(text: string): boolean {
+export function esOptOut(text: string): boolean {
   const t = limpiaOpt(text);
-  if (!t || t.length > 80) return false; // un texto largo rara vez es un "no" seco
+  // 200 y no 80: el mensaje enojado largo («les he dicho mil veces que no quiero más
+  // publicidad, dejen de escribirme por favor») era justo el más inequívoco y no contaba.
+  if (!t || t.length > 200) return false;
   return OPT_OUT.some((f) => {
     const n = limpiaOpt(f);
     if (!n) return false;
@@ -2446,12 +2455,16 @@ function esOptOut(text: string): boolean {
 }
 
 // Marca el opt-out y CANCELA las secuencias activas del contacto.
-async function aplicarOptOut(db: SupabaseClient, channelId: string, contactId: string) {
+export async function aplicarOptOut(db: SupabaseClient, channelId: string, contactId: string) {
   try {
-    await db.from("contacts").update({ no_remarketing: true }).eq("id", contactId);
-    await db.from("sequence_subscriptions")
+    // supabase-js NO lanza: devuelve {error}. Si la marca no se escribe, no se registra el
+    // evento (antes la ficha decía «pidió baja» con la campanita apagada y las secuencias vivas).
+    const { error: e1 } = await db.from("contacts").update({ no_remarketing: true }).eq("id", contactId);
+    if (e1) { console.error("[optout] no se pudo marcar no_remarketing:", e1.message); return; }
+    const { error: e2 } = await db.from("sequence_subscriptions")
       .update({ estado: "cancelada", updated_at: new Date().toISOString() })
       .eq("contact_id", contactId).eq("estado", "activa");
+    if (e2) console.error("[optout] no se pudieron cancelar las secuencias:", e2.message);
     await logEvent(db, channelId, contactId, "nota", "🚫 Pidió no recibir más mensajes",
       "Remarketing apagado para este contacto");
   } catch (_) { /* columna pendiente (0031) */ }
@@ -7871,10 +7884,13 @@ async function subscribeSeq(db: SupabaseClient, run: Run, a: any) {
   // re-cancela cada tick = churn, y un estado momentáneo inconsistente).
   const { data: ct } = await db.from("contacts").select("no_remarketing").eq("id", run.contact_id).maybeSingle();
   if ((ct as any)?.no_remarketing === true) return;
+  // ignoreDuplicates: sin él, el upsert hacía DO UPDATE paso_actual=0 y una secuencia YA
+  // recorrida (completada) se rebobinaba → el cliente recibía los 5 toques otra vez el mes
+  // siguiente por volver a escribir la palabra clave. Solo se crea si no existe.
   await db.from("sequence_subscriptions").upsert({
     channel_id: run.channel_id, contact_id: run.contact_id, sequence_id: seqId,
     estado: "activa", paso_actual: 0, updated_at: new Date().toISOString(),
-  }, { onConflict: "contact_id,sequence_id" });
+  }, { onConflict: "contact_id,sequence_id", ignoreDuplicates: true });
 }
 async function unsubscribeSeq(db: SupabaseClient, run: Run, a: any) {
   let q = db.from("sequence_subscriptions").update({ estado: "cancelada", updated_at: new Date().toISOString() })
@@ -19764,7 +19780,10 @@ async function buildContext(db: SupabaseClient, run: Run) {
       for (const f of fixed ?? []) if ((f as any).valor != null) bf[(f as any).key] = (f as any).valor;
       (run as any)._botFields = bf;
     }
-    for (const [k, v] of Object.entries(bf)) ctx[k] = v;
+    // Mismo veto que los campos capturados: un campo FIJO «Teléfono» (el del negocio, para
+    // las plantillas) con slug `telefono` pisaba el número del CLIENTE en todos los pedidos y
+    // el courier llamaba a la tienda; «Nombre» hacía saludar a todos con el nombre del negocio.
+    for (const [k, v] of Object.entries(bf)) if (!VETO_CAMPOS_FIJOS.has(k)) ctx[k] = v;
   } catch (_) { /* columna valor pendiente (0013) */ }
 
   // 2) Campos FIJOS del producto (§6-SEXIES): la ficha del producto expone sus

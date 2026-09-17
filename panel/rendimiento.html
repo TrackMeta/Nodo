@@ -273,15 +273,19 @@ async function loadData(){
 async function reload(){ await loadData(); render(); }
 
 // Todas las métricas derivadas de una fila de totales.
+// Sin denominador → null (se pinta «—»), no 0: «CPA real S/ 0.00» en un anuncio con S/500 de
+// gasto y 0 ventas se leía como «no me cuesta nada vender», y «ROAS 0.00×» en rojo sobre un
+// anuncio que sí vendió pero sin gasto en el rango. El detalle por día ya hacía lo correcto.
 function metrics(a){
   return {
-    gasto:a.gasto, impr:a.impr, alcance:a.alcance, frec:a.alcance?a.impr/a.alcance:0,
-    clics:a.clics, ctr:a.impr?a.clics/a.impr:0, cpm:a.impr?a.gasto/a.impr*1000:0, cpc:a.clics?a.gasto/a.clics:0,
-    clicsWA:a.clicsWA, conf:a.conf, cpaConf:a.conf?a.gasto/a.conf:0,
-    ventas:a.ventas, cpaReal:a.ventas?a.gasto/a.ventas:0, ingresos:a.ingresos,
-    neta:a.neta, roas:a.gasto?a.ingresos/a.gasto:0,
+    gasto:a.gasto, impr:a.impr, alcance:a.alcance, frec:a.alcance?a.impr/a.alcance:null,
+    clics:a.clics, ctr:a.impr?a.clics/a.impr:null, cpm:a.impr?a.gasto/a.impr*1000:null, cpc:a.clics?a.gasto/a.clics:null,
+    clicsWA:a.clicsWA, conf:a.conf, cpaConf:a.conf?a.gasto/a.conf:null,
+    ventas:a.ventas, cpaReal:a.ventas?a.gasto/a.ventas:null, ingresos:a.ingresos,
+    neta:a.neta, roas:a.gasto?a.ingresos/a.gasto:null,
   };
 }
+const oDash=(v,f)=> v==null||!Number.isFinite(Number(v)) ? "—" : f(v);
 const sumAds=(arr)=>{ const k=["gasto","impr","alcance","clics","clicsWA","conf","ventas","ingresos","neta"]; const o={}; k.forEach(x=>o[x]=0); arr.forEach(a=>k.forEach(x=>o[x]+=a[x])); return o; };
 
 // Catálogo de columnas: key, label, grupo, cómo se pinta, y si es fija.
@@ -289,19 +293,19 @@ const COLS=[
   {k:"gasto",  l:"Gasto",         g:"Inversión", fix:true,  cell:m=>`<td class="num money">${money0(m.gasto)}</td>`},
   {k:"impr",   l:"Impresiones",   g:"Entrega",   cell:m=>`<td class="num">${nf(m.impr)}</td>`},
   {k:"alcance",l:"Alcance",       g:"Entrega",   cell:m=>`<td class="num">${nf(m.alcance)}</td>`},
-  {k:"frec",   l:"Frecuencia",    g:"Entrega",   cell:m=>`<td class="num">${nf(m.frec,2)}</td>`},
+  {k:"frec",   l:"Frecuencia",    g:"Entrega",   cell:m=>`<td class="num">${oDash(m.frec,v=>nf(v,2))}</td>`},
   {k:"clics",  l:"Clics",         g:"Entrega",   cell:m=>`<td class="num">${nf(m.clics)}</td>`},
-  {k:"ctr",    l:"CTR",           g:"Entrega",   cell:m=>`<td class="num">${pct(m.ctr)}</td>`},
-  {k:"cpm",    l:"CPM",           g:"Entrega",   cell:m=>`<td class="num">${money(m.cpm)}</td>`},
-  {k:"cpc",    l:"CPC",           g:"Entrega",   cell:m=>`<td class="num">${money(m.cpc)}</td>`},
+  {k:"ctr",    l:"CTR",           g:"Entrega",   cell:m=>`<td class="num">${oDash(m.ctr,pct)}</td>`},
+  {k:"cpm",    l:"CPM",           g:"Entrega",   cell:m=>`<td class="num">${oDash(m.cpm,money)}</td>`},
+  {k:"cpc",    l:"CPC",           g:"Entrega",   cell:m=>`<td class="num">${oDash(m.cpc,money)}</td>`},
   {k:"clicsWA",l:"Clics a WhatsApp",g:"Entrega", cell:m=>`<td class="num">${nf(m.clicsWA)}</td>`},
   {k:"conf",   l:"Confirmaciones",g:"Ventas",    fix:true,  cell:m=>`<td class="num">${m.conf}</td>`},
-  {k:"cpaConf",l:"CPA conf.",     g:"Ventas",    fix:true,  cell:m=>`<td class="num">${money(m.cpaConf)}</td>`},
+  {k:"cpaConf",l:"CPA conf.",     g:"Ventas",    fix:true,  cell:m=>`<td class="num">${oDash(m.cpaConf,money)}</td>`},
   {k:"ventas", l:"Ventas reales", g:"Ventas",    fix:true,  cell:m=>`<td class="num">${m.ventas}</td>`},
-  {k:"cpaReal",l:"CPA real",      g:"Ventas",    fix:true,  cell:m=>`<td class="num">${money(m.cpaReal)}</td>`},
+  {k:"cpaReal",l:"CPA real",      g:"Ventas",    fix:true,  cell:m=>`<td class="num">${oDash(m.cpaReal,money)}</td>`},
   {k:"ingresos",l:"Ingresos",     g:"Dinero",    cell:m=>`<td class="num money">${money0(m.ingresos)}</td>`},
   {k:"neta",   l:"Ganancia neta", g:"Dinero",    fix:true,  cell:m=>`<td class="num money ${m.neta<0?'neg':'pos'}">${money(m.neta)}</td>`},
-  {k:"roas",   l:"ROAS",          g:"Dinero",    fix:true,  cell:m=>{ const c=m.roas>=2?'g':m.roas>=1?'a':'r'; return `<td class="num"><span class="roas ${c}"><span class="rd"></span>${nf(m.roas,2)}×</span></td>`; }},
+  {k:"roas",   l:"ROAS",          g:"Dinero",    fix:true,  cell:m=>{ if(m.roas==null) return `<td class="num">—</td>`; const c=m.roas>=2?'g':m.roas>=1?'a':'r'; return `<td class="num"><span class="roas ${c}"><span class="rd"></span>${nf(m.roas,2)}×</span></td>`; }},
 ];
 const DEFAULT_ON=new Set(["gasto","conf","cpaConf","ventas","cpaReal","neta","roas"]);
 
@@ -466,9 +470,9 @@ function renderKpis(){
   const K=[
     ["Gasto en anuncios",money0(m.gasto),"var(--brand)",m.ventas+" ventas reales"],
     ["Ventas reales",String(m.ventas),"var(--green)","cobradas de verdad"],
-    ["CPA real",money(m.cpaReal),"var(--amber)","costo por venta cobrada"],
+    ["CPA real",oDash(m.cpaReal,money),"var(--amber)","costo por venta cobrada"],
     ["Ganancia neta",money(m.neta),m.neta<0?"var(--red)":"var(--green)","margen − gasto de ads"],
-    ["ROAS",nf(m.roas,2)+"×","var(--green)",money0(m.ingresos)+" por "+money0(m.gasto)],
+    ["ROAS",oDash(m.roas,v=>nf(v,2)+"×"),"var(--green)",money0(m.ingresos)+" por "+money0(m.gasto)],
   ];
   $("kpis").innerHTML=K.map(([k,v,c,s])=>`<div class="kpi"><div class="k"><span class="kd" style="background:${c}"></span>${k}</div><div class="v num" style="color:${c}">${v}</div><div class="s">${s}</div></div>`).join("");
 }
@@ -834,9 +838,9 @@ function renderDetail(){
     <div class="kpis">
       ${kpiMini("Gasto",money0(m.gasto),"var(--brand)")}
       ${kpiMini("Ventas reales",m.ventas,"var(--green)")}
-      ${kpiMini("CPA real",money(m.cpaReal),"var(--amber)")}
+      ${kpiMini("CPA real",oDash(m.cpaReal,money),"var(--amber)")}
       ${kpiMini("Ganancia neta",money(m.neta),m.neta<0?"var(--red)":"var(--green)")}
-      ${kpiMini("ROAS",nf(m.roas,2)+"×","var(--green)")}
+      ${kpiMini("ROAS",oDash(m.roas,v=>nf(v,2)+"×"),"var(--green)")}
     </div>
     <div class="dgrid">
       <div class="chartcard"><h3>Gasto vs. ingresos</h3><div class="cs">barras = gasto del día · línea = ingresos reales</div>${chartBarsLine(S,d=>d.gasto,d=>d.ingresos)}<div class="legend"><span><i style="background:var(--brand)"></i>Gasto</span><span><i style="background:var(--green)"></i>Ingresos</span></div></div>

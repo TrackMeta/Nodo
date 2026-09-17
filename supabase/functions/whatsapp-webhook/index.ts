@@ -7,7 +7,7 @@ import { serviceClient, getChannelSecrets, accountOfChannel } from "../_shared/d
 import { fetchMediaBytes } from "../_shared/meta.ts";
 import { transcribeAudio } from "../_shared/ai.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
-import { runEngine, avisarEnvioFallido, esAlucinacionSTT, type EngineEvent } from "../_shared/engine.ts";
+import { runEngine, avisarEnvioFallido, esAlucinacionSTT, esOptOut, aplicarOptOut, type EngineEvent } from "../_shared/engine.ts";
 
 // Runtime de Supabase Edge: permite terminar trabajo DESPUÉS de responder
 // (Meta exige un 200 rápido; el motor puede tardar por el LLM).
@@ -350,14 +350,14 @@ async function processInbound(
   let { data: contact, error: upErr } = await db
     .from("contacts")
     .upsert(patch, { onConflict: "channel_id,wa_id" })
-    .select("id, bot_activo, fep_hasta")
+    .select("id, bot_activo, fep_hasta, bloqueado")
     .single();
   if (upErr && /user_id|username|telefono|column/i.test(upErr.message)) {
     // Migración 0062 aún no aplicada → reintenta sin las columnas nuevas.
     const { user_id: _u, username: _n, telefono: _t, ...base } = patch as any;
     ({ data: contact, error: upErr } = await db
       .from("contacts").upsert(base, { onConflict: "channel_id,wa_id" })
-      .select("id, bot_activo, fep_hasta").single());
+      .select("id, bot_activo, fep_hasta, bloqueado").single());
   }
   if (upErr || !contact) throw new Error(`upsert contact: ${upErr?.message ?? "sin contacto"}`);
 
@@ -425,7 +425,15 @@ async function processInbound(
 
   // ── Motor de flujos ────────────────────────────────────────────────
   // Bot pausado para este contacto (humano atendiendo) → no responder.
-  if ((contact as any).bot_activo === false) return;
+  // Bloqueado desde el panel: el bot NO responde (antes solo se ocultaba de la Bandeja y el
+  // bot le seguía vendiendo a ciegas). El mensaje queda guardado igual.
+  if ((contact as any).bloqueado === true) return;
+  if ((contact as any).bot_activo === false) {
+    // «Ya no me escriban» con un humano atendiendo (bot en pausa): la detección de baja vive
+    // en el motor y acá no se corría → nadie marcaba no_remarketing y las secuencias seguían.
+    if (type === "text" && text && esOptOut(text)) await aplicarOptOut(db, channelId, contact.id);
+    return;
+  }
 
   const adId = ref?.source_id ? String(ref.source_id) : undefined;
   const msgTs = new Date(tsMetaMs).toISOString();
@@ -577,6 +585,9 @@ async function processStatus(channelId: string, st: any) {
   if (status === "failed" && st.errors?.[0]) {
     const e = st.errors[0];
     patch.error = { code: e.code, title: e.title, message: e.message };
+    // Meta aceptó y DESPUÉS no entregó (bloqueado, ventana): no lo cobra. Sin esto el
+    // reporte «Mensajes que Meta cobra» sumaba las 6 burbujas al cliente que te bloqueó.
+    patch.ventana = null;
     console.error(`[status] failed wamid=${wamid} code=${e.code} ${e.title}`);
     esFallo = true;
   }

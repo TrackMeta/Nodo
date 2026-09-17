@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
   // estado del lado de Meta) → coherente con el resto del gating, solo admin.
   // whatsapp_fix escribe en la cuenta de Meta DEL CLIENTE (suscribe la app, registra el
   // número): mismo criterio que el resto de acciones de conexión, solo admin.
-  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "channel_archive", "channel_delete", "channel_delete_preview", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit", "template_delete"]);
+  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "channel_archive", "channel_delete", "channel_delete_preview", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit", "template_delete", "contact_files_delete"]);
   if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 
   try {

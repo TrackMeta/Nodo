@@ -1640,7 +1640,7 @@ async function actionHandler(a){
   if(a==="unarchive"){ await conv().update({ archivada:false }).eq("contact_id",cid); logEvent(cid,"nota","Conversación desarchivada"); toast("Desarchivado"); await loadConversations(); renderActionsMenu(); return; }
   if(a==="export"){ return exportMessages(); }
   if(a==="block"){ if(!await confirmDialog({title:"Bloquear contacto",message:"El bot dejará de responderle y saldrá de la bandeja.",confirmText:"Bloquear",danger:true})) return;
-    let { error }=await supa.from("contacts").update({ bloqueado:true }).eq("id",cid);
+    let { error }=await supa.from("contacts").update({ bloqueado:true, bot_activo:false }).eq("id",cid);
     if(error && /bloqueado|column/.test(error.message)){ toast("Aplica la migración 0021 para bloquear",true); return; }
     logEvent(cid,"nota","Contacto bloqueado"); toast("Contacto bloqueado"); backToList(); loadConversations(); return; }
   if(a==="unblock"){ let { error }=await supa.from("contacts").update({ bloqueado:false }).eq("id",cid);

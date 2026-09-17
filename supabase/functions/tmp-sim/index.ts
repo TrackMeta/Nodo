@@ -1,7 +1,7 @@
 // TEMPORAL — driver de simulación multi-contacto (igual que webchat pero con
 // wa_id/nombre parametrizables). Auth: miembro + userOwnsChannel. BORRAR después.
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
+import { serviceClient, userClient, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
 import { runEngine, aplicarStock } from "../_shared/engine.ts";
 
 const db = serviceClient();
@@ -21,6 +21,10 @@ Deno.serve(async (req) => {
   const { channel_id, wa_id, nombre, text, buttonId, reset, media, ad_id } = body;
   if (!channel_id || !wa_id) return json({ error: "faltan_campos" }, 400);
   if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
+  // Solo ADMIN del canal: el simulador crea contactos con cualquier wa_id, corre el motor y su
+  // `reset` borra pedidos/mensajes de ese contacto — un operador (que por RLS no puede tocar
+  // orders/messages) lo usaba como puerta trasera.
+  if (!(await userIsChannelAdmin(db, uid, channel_id))) return json({ error: "forbidden", detalle: "Solo un administrador puede usar el simulador" }, 403);
   const mediaKind = media?.url ? (media.kind || "document") : null;
 
   const { data: contact } = await db.from("contacts").upsert({

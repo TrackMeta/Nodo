@@ -173,7 +173,10 @@ export function resumirPedidos(orders: Order[]): Digest {
         // cambio exige los dos: un margen a medias es peor que ninguno.
         if (cpN != null) costoProd += cpN;
         if (fN != null) envio += fN;
-        if (cpN == null || fN == null) {
+        if (cobrado(o) <= 0) {
+          // Contraentrega aún sin cobrar: no hay ganancia que medir todavía (antes entraba
+          // como 0 − costo − flete y el resumen de las 8 a. m. decía «🔻 −S/600» con 10 ventas).
+        } else if (cpN == null || fN == null) {
           sinDatos++; // físico sin costo o sin flete → no se afirma margen
         } else {
           // Resta el EMPAQUE (snapshot en shipping.empaque, físico) como la fuente de

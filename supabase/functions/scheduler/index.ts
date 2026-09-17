@@ -345,12 +345,17 @@ async function processResumenes(tickInicio: number): Promise<number> {
           diaYmd = ymd(ay.y, ay.mo, ay.d);
         }
         const cual = tipo === "manana" ? "ayer" : "hoy";
+        // RECLAMAR antes de enviar (update condicional): dos ticks solapados (el cron corre
+        // cada minuto y con muchos canales un tick pasa del minuto) leían el mismo estado y
+        // mandaban el resumen DOS veces. Solo el que logra escribir la marca envía.
+        estado[tipo] = hoy; dirty = true;
+        const { data: gano } = await db.from("channels").update({ resumen_estado: estado }).eq("id", (ch as any).id)
+          .or(`resumen_estado->>${tipo}.is.null,resumen_estado->>${tipo}.neq.${hoy}`).select("id");
+        if (!gano?.length) continue; // otro tick ya lo tomó
         const texto = await construirResumen(db, ch, diaYmd, cual);
         const secrets = await getChannelSecrets(db, (ch as any).id);
         const token = secrets?.telegram_bot_token;
         if (token) { await sendTelegram(token, chatIds, texto); sent++; }
-        estado[tipo] = hoy; // marcar aunque falte token (no reintentar en bucle)
-        dirty = true;
       }
       if (dirty) await db.from("channels").update({ resumen_estado: estado }).eq("id", (ch as any).id);
     } catch (e) { console.error("[processResumenes]", (e as any)?.message ?? e); }
@@ -509,11 +514,20 @@ async function processOrderReminders(now: number): Promise<number> {
       if (!(o as any).contact_id) continue;
       // Si un HUMANO tomó la conversación (bot_activo=false), NO inyectar un flujo
       // automático encima del agente — mismo guard que processAdelantos/processSub.
-      const { data: ct } = await db.from("contacts").select("bot_activo").eq("id", (o as any).contact_id).maybeSingle();
+      const { data: ct } = await db.from("contacts").select("bot_activo, bloqueado, ultimo_auto_msg_at").eq("id", (o as any).contact_id).maybeSingle();
       if ((ct as any)?.bot_activo === false) continue;
+      if ((ct as any)?.bloqueado === true) continue;
       const ship = (o as any).shipping ?? {};
-      const mark = "_nudge_" + estado; // una sola vez por estado
-      if (ship[mark]) continue;
+      // Marca por estado Y horas: un flujo con dos recordatorios del mismo estado (24 h «llegó
+      // tu paquete» y 72 h «mañana lo devuelven») compartía la marca y el segundo nunca salía.
+      // La marca vieja (sin horas) se respeta para no re-avisar a los pedidos ya marcados.
+      const mark = `_nudge_${estado}_${horas}h`;
+      if (ship[mark] || ship["_nudge_" + estado]) continue;
+      // Mismos frenos que los demás automáticos (antes: ni horario ni anti-spam → tres
+      // automáticos la misma tarde, o un recordatorio a las 3 a. m.).
+      if (!await enHorario((t as any).channel_id)) continue;
+      const _asRec = await antispamMs((t as any).channel_id);
+      if (_asRec && tocoMktReciente(ct, now, _asRec)) continue;
       try {
         // El flujo del recordatorio emite texto libre → fuera de la ventana de
         // 24h Meta lo rechaza y el cliente no recibe nada. Si no se le puede
@@ -525,6 +539,7 @@ async function processOrderReminders(now: number): Promise<number> {
         if (ok) {
           await db.from("orders").update({ shipping: { ...ship, [mark]: new Date().toISOString() } })
             .eq("id", (o as any).id);
+          await marcarTocoMkt((o as any).contact_id); // cuenta para el anti-spam de los demás
           n++;
         }
       } catch (e) { console.error("[scheduler] nudge:", (e as any)?.message ?? e); }
@@ -778,9 +793,20 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // ≈ suscrito_at → cuenta desde que mostró interés / su último mensaje.)
   // En 'goteo' el ancla NO incluye el mensaje del cliente → el reloj corre desde
   // la suscripción / el paso anterior, sin reiniciarse si el cliente responde.
+  // En silencio también cuenta el ÚLTIMO MENSAJE SALIENTE (operador o bot): si el operador
+  // contestó a mano hace una hora sin pausar el bot, el reenganche caía ENCIMA de su respuesta
+  // («¿sigues interesado?» a quien acaba de recibir una respuesta humana).
+  let ultimoOut: string | null = null;
+  if (!esGoteo) {
+    try {
+      const { data: lo } = await db.from("messages").select("ts").eq("contact_id", s.contact_id).eq("direction", "out")
+        .order("ts", { ascending: false }).limit(1).maybeSingle();
+      ultimoOut = (lo as any)?.ts ?? null;
+    } catch (_) { /* sin dato → como antes */ }
+  }
   const marcas = (esGoteo
     ? [s.updated_at, s.suscrito_at]
-    : [(c as any).ultimo_mensaje_cliente_at, s.updated_at, s.suscrito_at])
+    : [(c as any).ultimo_mensaje_cliente_at, s.updated_at, s.suscrito_at, ultimoOut])
     .map((t) => (t ? new Date(t).getTime() : NaN))
     .filter((t) => Number.isFinite(t));
   const anchor = marcas.length ? Math.max(...marcas) : now;
@@ -851,9 +877,14 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // la oferta: si no, el cliente nunca vería "te dejo a S/Y" pero el validador aceptaría
   // igual ese precio rebajado (descuento fantasma / pérdida de margen).
   const enVentana = await ventana24hAbierta(db, s.contact_id);
+  // Con contenido REAL: una variante vacía (todas las versiones apagadas) contaba como «va a
+  // enviar», grababa la oferta rebajada y el paso avanzaba sin mandar nada → el validador de
+  // OCR aceptaba un descuento que el cliente nunca vio.
+  const hayVariante = Array.isArray(paso.variantes) && paso.variantes.some((v: any) =>
+    v && v.activo !== false && Array.isArray(v.bubbles) && v.bubbles.some((b: any) => String(b?.text ?? "").trim() || b?.media_url));
   const vaAEnviar = !!paso.template_name
     || (!!paso.flow_id && enVentana)
-    || (!!(paso.mensaje || paso.bubbles?.length || paso.variantes?.length) && enVentana);
+    || (!!(String(paso.mensaje ?? "").trim() || paso.bubbles?.length || hayVariante) && enVentana);
   if (vaAEnviar && paso.oferta && paso.oferta.version_id && paso.oferta.precio != null) {
     // SIEMPRE con caducidad: si el paso no configura `vence_horas` (o es 0), antes
     // quedaba `vence=null` = descuento ETERNO → el validador aceptaba el precio rebajado

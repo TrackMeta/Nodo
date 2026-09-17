@@ -534,6 +534,10 @@ async function setNoRemarketing(ids, val){
   let error=null; const chNR=st.channelId;
   for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").update({ no_remarketing:val }).eq("channel_id",chNR).in("id",trozo); if(r.error){ error=r.error; break; } }
   if(error){ toast(error.message,true); return; }
+  // «Vuelve al remarketing» no reanudaba nada: la baja dejó sus secuencias en `cancelada` y el
+  // scheduler solo procesa `activa` (y «Agregar a secuencia» ignora duplicados, así que la fila
+  // cancelada bloqueaba el alta). Se reactivan desde el paso 0.
+  if(!val){ for(const trozo of enTrozos(ids)){ await supa.from("sequence_subscriptions").update({ estado:"activa", paso_actual:0, proximo_at:null, updated_at:new Date().toISOString() }).eq("channel_id",chNR).in("contact_id",trozo).eq("estado","cancelada").then(()=>{},()=>{}); } }
   toast(val?`${ids.length>1?ids.length+" excluidos":"Excluido"} del remarketing`
            :`${ids.length>1?ids.length+" reactivados":"Vuelve"} al remarketing`);
   if(val) ids.forEach(id=>st.sel.delete(id));
@@ -560,7 +564,10 @@ async function saveContact(){
   if(!wa){ toast("Escribe un teléfono",true); return; }
   // No sobrescribir en silencio: el upsert pisaría el nombre del contacto que ya
   // exista con ese número y diría "guardado" como si fuera nuevo.
-  const ya=st.contacts.find(c=>c.wa_id===wa);
+  // Contra el SERVIDOR, no contra la lista cargada (truncada a 2000): con más contactos el
+  // existente podía quedar fuera de la ventana y el upsert le borraba el nombre en silencio.
+  let ya=st.contacts.find(c=>c.wa_id===wa);
+  if(!ya){ const { data:yaDb }=await supa.from("contacts").select("id,nombre").eq("channel_id",st.channelId).eq("wa_id",wa).maybeSingle(); if(yaDb) ya=yaDb; }
   if(ya){ toast(`Ya tienes un contacto con ese número${ya.nombre?` (${ya.nombre})`:""}. Ábrelo desde la lista para editarlo.`,true); return; }
   // El wa_id de WhatsApp SIEMPRE incluye el código de país (ej. 51 en Perú). Un
   // número muy corto casi seguro lo omite → el bot no lo reconocería al chatear.
@@ -620,7 +627,9 @@ async function bulk(act){
     const on=act==="block";
     if(on && !await confirmDialog({ title:`Bloquear ${ids.length} contacto(s)`, message:"El bot dejará de responderles y saldrán de la bandeja.", confirmText:"Bloquear", danger:true })) return;
     let error=null;
-    for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").update({ bloqueado:on }).eq("channel_id",ch).in("id",trozo); if(r.error){ error=r.error; break; } }
+    // bot_activo:!on además de bloqueado: el webhook ya no responde a bloqueados, y al
+    // desbloquear el bot vuelve a atender (antes «bloquear» solo ocultaba de la Bandeja).
+    for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").update({ bloqueado:on, bot_activo:!on }).eq("channel_id",ch).in("id",trozo); if(r.error){ error=r.error; break; } }
     if(error){ toast(error.message,true); return; }
     toast(on?`${ids.length} bloqueado(s)`:`${ids.length} desbloqueado(s)`); await load(); return;
   }
@@ -716,7 +725,10 @@ async function importCsv(file){
   const rows=[]; let sinCP=0, sinTel=0;
   for(let i=start;i<lines.length;i++){
     const cols=parseCsvLine(lines[i], delim);
-    const wa=(cols[ci.tel]||"").replace(/[^0-9]/g,"");
+    // «0051 999…» (prefijo internacional 00) → se quita; y un número fuera de 8-15 dígitos no es
+    // un wa_id posible (entraba igual: contacto huérfano y envíos fallidos que pesan en la calidad).
+    let wa=(cols[ci.tel]||"").replace(/[^0-9]/g,"").replace(/^00/,"");
+    if(wa && !/^\d{8,15}$/.test(wa)){ sinTel++; continue; }
     // Las filas sin número se saltaban EN SILENCIO. Si la columna del teléfono no era la que
     // el archivo trae (o el CSV usa otro separador), se descartaban casi todas y el aviso
     // final igual decía "Importados ✓" — te quedabas creyendo que subiste tu lista entera.
@@ -739,6 +751,9 @@ async function importCsv(file){
   const { data:ins, error }=await supa.from("contacts")
     .upsert(rows,{ onConflict:"channel_id,wa_id", ignoreDuplicates:true }).select("id");
   if(error){ toast(error.message,true); return; }
+  // La fila de `conversations` es la que los hace visibles en la Bandeja: sin ella, una
+  // campaña a 500 importados no dejaba hilo ni seguimiento hasta que cada uno respondiera.
+  if(ins&&ins.length){ for(const trozo of enTrozos(ins.map(x=>x.id))){ await supa.from("conversations").upsert(trozo.map(id=>({ channel_id:st.channelId, contact_id:id })),{ onConflict:"contact_id", ignoreDuplicates:true }).then(()=>{},()=>{}); } }
   const nuevos=(ins||[]).length, repes=Math.max(0, rows.length-nuevos);
   const p=(n,a,b)=>n===1?a:b;
   const partes=[`${nuevos} ${p(nuevos,"contacto nuevo","contactos nuevos")}`];

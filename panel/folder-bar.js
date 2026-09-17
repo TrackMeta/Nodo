@@ -121,8 +121,11 @@ export async function mountFolders(opts){
       if (meta.emoji) inner += `<span class="femo">${esc(meta.emoji)}</span>`;
       // La carpeta BRILLA en su propio color: glow fuerte cuando está activa,
       // sutil cuando no (para que se reconozca por su color de un vistazo).
-      if (meta.color){
-        const c = esc(meta.color);
+      // Solo un color hexadecimal: `esc()` no escapa `;` ni `(`, y el valor lo escribe cualquier
+      // miembro → un «color» como `red;background:url(https://…)` hacía una petición saliente al
+      // abrir la página (baliza por CSS). Cualquier otra cosa se ignora.
+      if (meta.color && /^#[0-9a-f]{3,8}$/i.test(String(meta.color))){
+        const c = meta.color;
         style = active
           ? `background:${c}1f;border-color:${c};box-shadow:0 0 0 1px ${c}66, 0 0 14px ${c}66`
           : `border-color:${c}55;box-shadow:0 0 7px ${c}30`;

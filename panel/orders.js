@@ -229,6 +229,11 @@ export function margen(o, prod, cantidad = 1){
   const f  = flete(o);
   if (cp == null) return null;
   if (esFisico(o) && f == null) return null; // físico sin flete registrado
+  // Caja para el ingreso y devengo para el costo daban ganancia NEGATIVA a todo pedido
+  // contraentrega recién confirmado (cobrado 0 − costo − flete): la banda del Dashboard, la
+  // Bitácora de ayer y el resumen de las 8 a. m. decían «🔻 −S/600» con 10 ventas del día.
+  // Mientras no entró nada de plata no hay ganancia que medir: null = pendiente de cobro.
+  if (cobrado(o) <= 0) return null;
   // El empaque es un costo FÍSICO (caja/bolsa/etiqueta del despacho): en digital NO se
   // resta (el Dashboard y el digest definen la ganancia digital = cobrado − COGS). Sin este
   // gate, Rendimiento/CPA restaba el empaque a un digital y daba una ganancia distinta al Dashboard.

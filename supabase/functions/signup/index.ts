@@ -27,9 +27,12 @@ Deno.serve(async (req) => {
   // Pre-validar la invitación ANTES de crear el usuario (para no dejar huérfanos).
   const { data: inv } = await db.from("invitations")
     .select("id, kind, used_at, expires_at").eq("token", token).maybeSingle();
-  if (!inv) return json({ error: "invite_invalido", detalle: "La invitación no existe." }, 400);
-  if ((inv as any).used_at) return json({ error: "invite_usado", detalle: "Esta invitación ya fue usada." }, 400);
-  if (new Date((inv as any).expires_at) < new Date()) return json({ error: "invite_vencido", detalle: "La invitación venció." }, 400);
+  // Un solo mensaje para los tres casos: distinguir «no existe» de «usada» / «vencida» era un
+  // oráculo anónimo para enumerar códigos. (El detalle exacto queda en el log del servidor.)
+  const NO_SIRVE = json({ error: "invite_invalida", detalle: "La invitación no es válida, ya fue usada o venció. Pide una nueva." }, 400);
+  if (!inv) { console.warn("[signup] invitación inexistente"); return NO_SIRVE; }
+  if ((inv as any).used_at) { console.warn("[signup] invitación ya usada", (inv as any).id); return NO_SIRVE; }
+  if (new Date((inv as any).expires_at) < new Date()) { console.warn("[signup] invitación vencida", (inv as any).id); return NO_SIRVE; }
 
   // Crear el usuario (admin API → no pasa por enable_signup, que sigue apagado).
   const { data: created, error: cErr } = await db.auth.admin.createUser({

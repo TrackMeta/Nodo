@@ -86,8 +86,12 @@ Deno.serve(async (req) => {
     const { data: u } = await userClient(auth).auth.getUser();
     const uid = u?.user?.id;
     if (!uid) return json({ error: "no_auth" }, 401);
-    const { data: member } = await db.from("app_users").select("id").eq("id", uid).eq("activo", true).maybeSingle();
+    // Solo administrador de PLATAFORMA: el barrido es sobre el bucket entero (todas las
+    // cuentas) y `dry` es false por defecto. Con la puerta «cualquier miembro activo», un
+    // operador de una cuenta podía borrar lo recién subido de todas las demás.
+    const { data: member } = await db.from("app_users").select("id, platform_admin").eq("id", uid).eq("activo", true).maybeSingle();
     if (!member) return json({ error: "not_member" }, 403);
+    if ((member as any).platform_admin !== true) return json({ error: "forbidden", detalle: "Solo el administrador de la plataforma puede correr el recolector" }, 403);
   }
 
   let body: { horas?: number; dry?: boolean; limite?: number } = {};
