@@ -185,7 +185,7 @@
 import { supa, getChannel, mountShell, toast, icon, pageAll, recargaConFreno } from "./shell.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 import * as O from "./orders.js";
-import { mountDateRange, computePreset, rangeLabel, ymd, startOfDayLima, endOfDayLima } from "./date-range.js";
+import { mountDateRange, computePreset, rangeLabel, ymd, startOfDayLima, endOfDayLima, tzNombre } from "./date-range.js";
 
 const $=(id)=>document.getElementById(id);
 const nf=new Intl.NumberFormat("es-PE");
@@ -206,7 +206,7 @@ async function boot(){
   const onResize=()=>igualarAlto($("metPanel")); window.addEventListener("resize",onResize);
   shell.onLeave?.(()=>window.removeEventListener("resize",onResize));
   shell.onChannel(id=>{ st.channelId=id; subscribe(); load(); });
-  st.dr=mountDateRange($("dateHost"), { valor:st.range, nota:"Por fecha de llegada del contacto · Hora de Lima", onChange:(r)=>{ st.range=r; render(); } });
+  st.dr=mountDateRange($("dateHost"), { valor:st.range, nota:`Por fecha de llegada del contacto · hora de ${tzNombre()}`, onChange:(r)=>{ st.range=r; render(); } });
   $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{ st.tipo=b.dataset.t; $("tipoSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); st.prod="all"; st.zona="total"; $("zonaSeg").style.display= st.tipo==="fisico"?"":"none"; $("zonaSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.z==="total")); fillProdSel(); render(); });
   $("zonaSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{ st.zona=b.dataset.z; $("zonaSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); render(); });
   $("prodSel").onchange=(e)=>{ st.prod=e.target.value; render(); };

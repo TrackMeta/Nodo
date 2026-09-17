@@ -47,6 +47,9 @@ export const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStar
 let _TZ = "America/Lima";
 export const setTZ = (tz) => { if (tz && typeof tz === "string") _TZ = tz; };
 export const getTZ = () => _TZ;
+// Nombre legible de la zona para los rótulos («hora de Lima», «hora de Ciudad de México»):
+// antes decían «Hora de Lima» fijo aunque el negocio estuviera en otra zona.
+export const tzNombre = () => { const s = String(_TZ || "America/Lima").split("/").pop().replace(/_/g, " "); return s === "Mexico City" ? "Ciudad de México" : s; };
 
 // Offset de una zona (en minutos respecto de UTC) EN UN INSTANTE dado. Se calcula
 // preguntándole a Intl qué hora local ve esa zona en ese instante: no se puede hardcodear
@@ -177,7 +180,7 @@ const ICO_DOWN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const ICO_L = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`;
 const ICO_R = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>`;
 
-export function mountDateRange(host, { valor = null, onChange = null, nota = "Las fechas se muestran en la Hora de Lima" } = {}) {
+export function mountDateRange(host, { valor = null, onChange = null, nota = `Las fechas se muestran en la hora de ${tzNombre()}` } = {}) {
   ponerCss();
   let rango = valor || computePreset("30d");
   let pk = null;

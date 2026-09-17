@@ -308,7 +308,7 @@
 import { supa, getChannel, mountShell, toast, icon, confirmDialog, pageAll, patchProductConfig, factorAds, getUsdRate } from "./shell.js";
 import * as O from "./orders.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
-import { ymdTZ } from "./date-range.js";
+import { ymdTZ, startOfDayTZ, endOfDayTZ, tzNombre } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
 // Moneda del canal (se carga de channels.moneda; símbolo por código ISO).
 const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
@@ -527,10 +527,15 @@ function ymd(d){ const x=new Date(d); return `${x.getFullYear()}-${String(x.getM
 // definiciones que puedan divergir.
 const ymdLima = ymdTZ;
 function addDays(base,n){ const x=new Date(base); x.setDate(x.getDate()+n); return x; }
+// «Hoy» = el día calendario en la zona del NEGOCIO (como día local a las 00:00, para que la
+// aritmética de días siga igual). Antes salía del navegador: un negocio en México mirado
+// desde Lima a las 23:30 cortaba el rango en otro día que el de los buckets (ymdTZ) → barras
+// que no sumaban lo que decía el total, y «Hoy» distinto al del Embudo/Rendimiento.
+function hoyNegocio(){ const [Y,M,D]=ymdTZ(Date.now()).split("-").map(Number); return new Date(Y,M-1,D); }
 
 // Un preset → {from, toDay} (Date a las 00:00). null = selección manual del calendario.
 function presetRango(p){
-  const today=startOfDay(new Date());
+  const today=hoyNegocio();
   switch(p){
     case "hoy": return { from:today, toDay:today };
     case "ayer": return { from:addDays(today,-1), toDay:addDays(today,-1) };
@@ -550,7 +555,7 @@ function presetRango(p){
 function resolveRange(o){
   const p=presetRango(o.preset);
   if(p) return p;
-  const today=startOfDay(new Date());
+  const today=hoyNegocio();
   let f=startOfDay(o.from||today), t=startOfDay(o.to||o.from||today);
   if(f>t){ const x=f; f=t; t=x; }
   return { from:f, toDay:t };
@@ -610,7 +615,7 @@ function renderDatePop(){
       </div></div>
     </div>
     <div class="dfp-foot">
-      <div class="dfp-rt">${rt}<small>Las fechas se muestran en la Hora de Lima</small></div>
+      <div class="dfp-rt">${rt}<small>Las fechas se muestran en la hora de ${esc(tzNombre())}</small></div>
       <button class="dfp-btn" id="dfCancel">Cancelar</button>
       <button class="dfp-btn pri" id="dfApply">Actualizar</button>
     </div>`;
@@ -737,7 +742,8 @@ async function load(){
   const cid=channelId; // anti-carrera: si cambias de bot a media carga, esta se descarta
   await loadCurrency();
   const r=computeRange();
-  const fromISO=r.from.toISOString(), toISO=r.to.toISOString();
+  // Los días elegidos → instantes en la zona del NEGOCIO (no medianoche del navegador).
+  const fromISO=startOfDayTZ(r.from).toISOString(), toISO=new Date(endOfDayTZ(r.toDay).getTime()+1).toISOString();
   // Live totals + eventos + órdenes en paralelo.
   // El RPC dashboard_stats cuenta el contacto de prueba (webchat-test); la
   // sección Contactos lo excluye, así que los dos números no cuadraban. Se
@@ -1330,7 +1336,7 @@ async function loadBitacora(monthStart){
   const [ordR,prodR,insR,expR,iaR,admR2,wsB]=await Promise.all([
     // Paginado por lo mismo que arriba: un mes con más de 1000 pedidos (o el cruce de
     // anuncios × días de ads_insights) dejaba la Bitácora corta y sin avisar.
-    pageAll((f,t)=>supa.from("orders").select("contact_id,product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",from.toISOString()).lt("created_at",to.toISOString()).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    pageAll((f,t)=>supa.from("orders").select("contact_id,product_id,version_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",startOfDayTZ(from).toISOString()).lt("created_at",startOfDayTZ(to).toISOString()).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     supa.from("products").select("id,config,product_versions(id,cantidad)").eq("channel_id",channelId),
     pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(from)).lt("fecha",ymd(to)).order("fecha",{ascending:false}).order("ad_id",{ascending:false}).range(f,t)),
     pageAll((f,t)=>supa.from("manual_expenses").select("fecha,monto").eq("channel_id",channelId).gte("fecha",ymd(from)).lt("fecha",ymd(to)).order("fecha",{ascending:false}).order("id",{ascending:false}).range(f,t)),
