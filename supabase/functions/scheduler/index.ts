@@ -484,7 +484,7 @@ async function processOrderReminders(now: number): Promise<number> {
   const trigs: any[] = [];
   for (let desde = 0; desde < 100000; desde += 1000) {
     const { data, error } = await db.from("flow_triggers")
-      .select("flow_id, channel_id, config, interrumpe, flows!inner(estado)")
+      .select("id, flow_id, channel_id, config, interrumpe, flows!inner(estado)")
       .eq("tipo", "pedido_recordatorio").eq("activo", true)
       // Desempate por id: un mismo flujo puede tener VARIOS recordatorios de pedido (uno a
       // las 24h, otro a las 72h), así que flow_id no ordena de forma única y al paginar se
@@ -521,8 +521,10 @@ async function processOrderReminders(now: number): Promise<number> {
       // Marca por estado Y horas: un flujo con dos recordatorios del mismo estado (24 h «llegó
       // tu paquete» y 72 h «mañana lo devuelven») compartía la marca y el segundo nunca salía.
       // La marca vieja (sin horas) se respeta para no re-avisar a los pedidos ya marcados.
-      const mark = `_nudge_${estado}_${horas}h`;
-      if (ship[mark] || ship["_nudge_" + estado]) continue;
+      // Por id del disparador (no por horas: si el negocio edita las horas, la marca vieja
+      // dejaba de calzar y el pedido recibía el recordatorio otra vez).
+      const mark = `_nudge_${estado}_t${(t as any).id}`;
+      if (ship[mark] || ship[`_nudge_${estado}_${horas}h`] || ship["_nudge_" + estado]) continue;
       // Mismos frenos que los demás automáticos (antes: ni horario ni anti-spam → tres
       // automáticos la misma tarde, o un recordatorio a las 3 a. m.).
       if (!await enHorario((t as any).channel_id)) continue;
@@ -799,7 +801,9 @@ async function processSub(s: any, now: number): Promise<boolean> {
   let ultimoOut: string | null = null;
   if (!esGoteo) {
     try {
-      const { data: lo } = await db.from("messages").select("ts").eq("contact_id", s.contact_id).eq("direction", "out")
+      // Solo lo que escribió una PERSONA (sent_by human): los mensajes del propio bot no cuentan,
+      // si no el reenganche se pospondría para siempre (el bot casi siempre habla último).
+      const { data: lo } = await db.from("messages").select("ts").eq("contact_id", s.contact_id).eq("direction", "out").eq("sent_by", "human")
         .order("ts", { ascending: false }).limit(1).maybeSingle();
       ultimoOut = (lo as any)?.ts ?? null;
     } catch (_) { /* sin dato → como antes */ }

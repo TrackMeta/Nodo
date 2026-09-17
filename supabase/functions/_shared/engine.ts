@@ -39,11 +39,14 @@ const MAX_STEPS = 50; // tope de nodos por invocación (evita bucles infinitos)
 // Claves del contexto que ningún campo del bot (fijo) puede pisar: son del cliente/sistema.
 const VETO_CAMPOS_FIJOS = new Set(["nombre", "telefono", "wa_id", "username", "stage", "ad_id", "ctwa_clid", "origen", "source", "fecha", "hora", "fecha_hora", "sin_numero", "angulo", "angulo_gancho", "angulo_slug", "nombre_completo", "producto_nombre", "precio"]);
 
-// Por contacto, la hora del mensaje ENTRANTE más nuevo que el prompt de la IA tuvo a la
-// vista en este turno (lo fija historial(); lo consume el insert de la burbuja saliente como
-// content.cubre_hasta). Vive en el aislado y solo dentro del turno: runEngine lo limpia al
-// entrar y al salir, así un turno determinista no hereda el sello del anterior.
+// Por RUN, la hora del mensaje ENTRANTE más nuevo que el prompt de la IA tuvo a la vista en
+// este turno (lo fija historial(); lo consume el insert de la burbuja saliente como
+// content.cubre_hasta). Clave = run.id: así un emit de otro camino para el mismo contacto en
+// el mismo aislado (recordatorio, paso de secuencia) nunca hereda el sello. Se poda por tamaño.
 const _cubreHasta = new Map<string, string>();
+// La Recepción arma un run sin id (id: null): sin esto todas las recepciones del aislado
+// compartirían la clave "null" y el sello de un cliente contaminaría al siguiente.
+const claveSello = (run: any) => String(run?.id || ("recepcion:" + String(run?.contact_id || "")));
 async function yaCubiertoPorTurnoAnterior(db: SupabaseClient, contactId: string, msgTs: string): Promise<boolean> {
   const mio = new Date(msgTs).getTime();
   if (!Number.isFinite(mio)) return false;
@@ -142,7 +145,6 @@ export async function runEngine(
   // índice único de runs vivos y los CAS de pedido/pago). Pero queda el rastro: si algún día
   // aparece una doble respuesta o un dato pisado, esta línea es la que lo explica.
   if (!locked) console.warn(`[runEngine] sin lock tras ~30s (contacto ${contactId}) — se procede igual`);
-  _cubreHasta.delete(contactId);
   try {
     // 🔁 DOBLE RESPUESTA a dos mensajes seguidos (medido en vivo el 2026-09-17: «No gracias»
     // y «Como estas» con 12 s de diferencia → dos «Estoy bien…»). El turno 1 arma su prompt
@@ -157,7 +159,6 @@ export async function runEngine(
     }
     return await runEngineInner(db, channelId, contactId, event);
   } finally {
-    _cubreHasta.delete(contactId);
     if (locked) {
       // db.rpc(...) devuelve un builder thenable SIN método .catch → hay que
       // envolver en try/catch, no encadenar .catch (tiraría "catch is not a
@@ -3749,7 +3750,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     await db.from("messages").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       direction: "out", type: mediaKind,
-      content: { media_url: mediaUrl, caption: caption || "", mime: bubble.mime ?? "", filename: bubble.filename ?? "", ...(_cubreHasta.get(run.contact_id) ? { cubre_hasta: _cubreHasta.get(run.contact_id) } : {}) },
+      content: { media_url: mediaUrl, caption: caption || "", mime: bubble.mime ?? "", filename: bubble.filename ?? "", ...(_cubreHasta.get(claveSello(run)) ? { cubre_hasta: _cubreHasta.get(claveSello(run)) } : {}) },
       status, wamid: wamid || null, error, sent_by: "bot",
       ventana: await ventanaDeCobro(db, run.contact_id),
     });
@@ -3855,7 +3856,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   await db.from("messages").insert({
     channel_id: run.channel_id, contact_id: run.contact_id,
     direction: "out", type: isInteractive ? "interactive" : "text",
-    content: (_cubreHasta.get(run.contact_id) ? { ...content, cubre_hasta: _cubreHasta.get(run.contact_id) } : content),
+    content: (_cubreHasta.get(claveSello(run)) ? { ...content, cubre_hasta: _cubreHasta.get(claveSello(run)) } : content),
     status, wamid: wamid || null, error, sent_by: "bot",
     ventana: await ventanaDeCobro(db, run.contact_id),
   });
@@ -7936,6 +7937,12 @@ async function subscribeSeq(db: SupabaseClient, run: Run, a: any) {
     channel_id: run.channel_id, contact_id: run.contact_id, sequence_id: seqId,
     estado: "activa", paso_actual: 0, updated_at: new Date().toISOString(),
   }, { onConflict: "contact_id,sequence_id", ignoreDuplicates: true });
+  // Una sub CANCELADA (se dio de baja por un nodo «desuscribir» o por opt-out ya revertido) sí
+  // se reactiva desde el paso 0; una COMPLETADA no (eso era el rebobinado que spameaba).
+  await db.from("sequence_subscriptions")
+    .update({ estado: "activa", paso_actual: 0, proximo_at: null, updated_at: new Date().toISOString() })
+    .eq("contact_id", run.contact_id).eq("sequence_id", seqId).eq("estado", "cancelada")
+    .then(() => {}, () => {});
 }
 async function unsubscribeSeq(db: SupabaseClient, run: Run, a: any) {
   let q = db.from("sequence_subscriptions").update({ estado: "cancelada", updated_at: new Date().toISOString() })
@@ -8044,6 +8051,7 @@ export async function avisarEnvioFallido(db: SupabaseClient, channelId: string, 
       // fuera de ventana llegaba UN aviso y los otros 5 se descartaban sin rastro. Sigue
       // habiendo un tope por canal (20 en 10 min) contra el spam de un token vencido.
       const ahora = Date.now();
+      if (ultimoAvisoFallo.size > 2000) { for (const [k, t] of ultimoAvisoFallo) if (ahora - t > 10 * 60 * 1000) ultimoAvisoFallo.delete(k); }
       const kContacto = `${channelId}|${contactId}`;
       if (ahora - (ultimoAvisoFallo.get(kContacto) ?? 0) < 10 * 60 * 1000) return;
       const kCanal = `${channelId}|#`;
@@ -14915,7 +14923,12 @@ async function historial(db: SupabaseClient, run: Run, max = 12): Promise<string
       .order("ts", { ascending: false }).limit(max);
     // Sello para el anti-doble-respuesta: el entrante más nuevo que este prompt tuvo a la vista.
     const ultimoIn = (data ?? []).find((m: any) => m.direction === "in")?.ts;
-    if (ultimoIn) _cubreHasta.set(run.contact_id, String(ultimoIn));
+    // Por RUN (no por contacto): un emit de otro camino para el mismo contacto en el mismo
+    // aislado (recordatorio de pedido, paso de secuencia) heredaba el sello y podía hacer que
+    // el turno siguiente diera por contestado un mensaje real. Con la clave del run, solo
+    // las burbujas de ESTE turno llevan el sello. Se poda para no crecer sin tope.
+    if (_cubreHasta.size > 500) _cubreHasta.clear();
+    if (ultimoIn) _cubreHasta.set(claveSello(run), String(ultimoIn));
     const filas = (data ?? []).reverse()
       .map((m: any) => {
         const quien = m.direction === "in" ? "Cliente" : "Tú";
