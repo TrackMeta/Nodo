@@ -274,7 +274,7 @@
   .msg{position:relative;max-width:min(66%,560px);padding:7px 10px 6px 11px;border-radius:12px;font-size:14.5px;line-height:1.42;
     word-wrap:break-word;overflow-wrap:anywhere;white-space:pre-wrap;margin-top:7px;box-shadow:0 1px 1px rgba(0,0,0,.07)}
   .msg::after{content:"";display:block;clear:both}
-  .msg::before{content:"";position:absolute;top:0;width:0;height:0;border-top:10px solid var(--bb);pointer-events:none}
+  .msg::before{content:"";position:absolute;top:0;width:0;height:0;border-top:10px solid var(--bb);pointer-events:none;filter:drop-shadow(0 1px 1px rgba(0,0,0,.10))}
   .in-m{--bb:var(--bubble-in)} .out-m{--bb:var(--bubble-out)} .out-m.bot{--bb:var(--bubble-bot-solid)}
   html[data-theme="light"] .in-m{--bb:var(--surface)}
   html[data-theme="light"] .out-m.bot{--bubble-bot-solid:#f1e6ff}
