@@ -8,6 +8,8 @@ export interface MetaError {
   message?: string;
   type?: string;
   fbtrace_id?: string;
+  status?: number;      // HTTP de la respuesta de Graph (5xx = transitorio)
+  transitorio?: boolean; // red/timeout: vale reintentar más tarde
 }
 
 export class MetaApiError extends Error {
@@ -167,7 +169,10 @@ export async function fetchMediaAsDataUri(mediaId: string, accessToken: string):
 // Errores de Meta que son TRANSITORIOS (vale reintentar) vs permanentes. 130429 = rate
 // limit del número (muy común en ráfagas de pedidos), 131056 = par (from,to) rate-limited,
 // 80007 = rate limit de la app, 133016 = restauración en curso. Un 5xx también es transitorio.
-const META_RETRYABLE = new Set([130429, 131056, 80007, 133016]);
+// 4 = "Application request limit reached", 2 = "temporary API issue", 613 = tope de llamadas:
+// son los que Graph devuelve con HTTP 429/400 en ráfagas (un 429 no es ≥500, así que sin
+// listarlos se trataban como PERMANENTES al primer intento).
+const META_RETRYABLE = new Set([130429, 131056, 80007, 133016, 4, 2, 613]);
 
 // ¿Este rechazo de Meta se va a resolver SOLO con el tiempo? Sirve para no quemar un
 // destinatario por un tope temporal: en una campaña, marcarlo "fallido" es definitivo (esa
@@ -181,6 +186,7 @@ const META_RETRYABLE = new Set([130429, 131056, 80007, 133016]);
 export function esRechazoTemporal(meta: any): boolean {
   const code = Number(meta?.code);
   if (META_RETRYABLE.has(code) || code === 131048) return true;
+  if (meta?.transitorio === true) return true; // red / timeout
   const st = Number(meta?.status);
   return Number.isFinite(st) && st >= 500;
 }
@@ -207,14 +213,16 @@ async function postMessage(phoneNumberId: string, accessToken: string, payload: 
       }, META_TIMEOUT_MS);
     } catch (e) {
       // Timeout o caída de red: transitorio por definición → que lo agarre el reintento.
-      lastErr = new MetaApiError({ message: `red o timeout hablando con Meta: ${String((e as any)?.message ?? e)}` });
+      lastErr = new MetaApiError({ message: `red o timeout hablando con Meta: ${String((e as any)?.message ?? e)}`, transitorio: true });
       continue;
     }
     let data: any = {};
     try { const t = await res.text(); data = t ? JSON.parse(t) : {}; } catch (_) { data = {}; }
     if (res.ok && !data.error) return data.messages?.[0]?.id ?? "";
     const e = data.error ?? {};
-    lastErr = new MetaApiError({ code: e.code, subcode: e.error_subcode, message: e.message, type: e.type, fbtrace_id: e.fbtrace_id });
+    // `status` viaja en el error: sin él, `esRechazoTemporal` nunca veía el 5xx (era código
+    // muerto) y campañas marcaba "fallido" definitivo a un destinatario por un 503 de Meta.
+    lastErr = new MetaApiError({ code: e.code, subcode: e.error_subcode, message: e.message, type: e.type, fbtrace_id: e.fbtrace_id, status: res.status });
     const transitorio = res.status >= 500 || META_RETRYABLE.has(Number(e.code));
     if (!transitorio) throw lastErr; // permanente → no reintentar
   }

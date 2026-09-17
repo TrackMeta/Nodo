@@ -55,8 +55,19 @@ Deno.serve(async (req) => {
   // Ruteo: por phone_number_id (mensajes) o por WABA id (estado de plantillas,
   // que no trae phone_number_id — llega a nivel de la cuenta de WhatsApp).
   const change0 = payload?.entry?.[0]?.changes?.[0];
-  const phoneNumberId = change0?.value?.metadata?.phone_number_id as string | undefined;
-  const esPlantilla = change0?.field === "message_template_status_update";
+  // El canal para validar la firma se busca en TODOS los changes, no solo en el primero: el
+  // canal está suscrito también a account_alerts / phone_number_quality_update / security, y
+  // si Meta batchea uno de esos como changes[0] y los mensajes como changes[1], el `else`
+  // de abajo descartaba el POST completo (200 mudo) y esos mensajes se perdían.
+  let phoneNumberId: string | undefined;
+  for (const en of (payload?.entry ?? []) as any[]) {
+    for (const ch of (en?.changes ?? []) as any[]) {
+      const p = ch?.value?.metadata?.phone_number_id;
+      if (p) { phoneNumberId = String(p); break; }
+    }
+    if (phoneNumberId) break;
+  }
+  const esPlantilla = ((payload?.entry ?? []) as any[]).some((en) => (en?.changes ?? []).some((ch: any) => ch?.field === "message_template_status_update"));
   const wabaId = payload?.entry?.[0]?.id as string | undefined;
   let channel: { id: string; buffer_default_seg?: number } | null = null;
   if (phoneNumberId) {
@@ -126,15 +137,19 @@ async function processPayload(fallback: { id: string; buffer_default_seg?: numbe
       // trae user_id (BSUID, siempre), username (@handle) y wa_id (el número,
       // solo si lo comparte). Se pasa todo para keyar bien e identificar al
       // cliente sin número. Ver migración 0062.
-      const c0 = (value.contacts?.[0] ?? {}) as any;
-      const sender = {
-        profileName: c0.profile?.name as string | undefined,
-        phone: c0.wa_id as string | undefined,
-        bsuid: c0.user_id as string | undefined,
-        username: c0.username as string | undefined,
-      };
-
+      const contactos = (value.contacts ?? []) as any[];
       for (const msg of value.messages ?? []) {
+        // El remitente se cruza por `msg.from` contra contacts[] (Meta puede meter mensajes
+        // de DOS clientes en el mismo change). Con contacts[0] fijo para todos, el mensaje
+        // del cliente B se insertaba en el contacto de A y el bot le respondía a A con la
+        // conversación de B. contacts[0] queda solo como respaldo (payloads sin `from`).
+        const c0 = (contactos.find((c) => c && (c.wa_id === msg?.from || c.user_id === msg?.from)) ?? (contactos.length === 1 ? contactos[0] : {})) as any;
+        const sender = {
+          profileName: c0.profile?.name as string | undefined,
+          phone: c0.wa_id as string | undefined,
+          bsuid: c0.user_id as string | undefined,
+          username: c0.username as string | undefined,
+        };
         await processInbound(channel, msg, sender);
       }
       for (const st of value.statuses ?? []) {
@@ -180,6 +195,16 @@ async function processInbound(
   const waId: string = sender.phone || sender.bsuid || msg.from;
   const { text, type, content } = extractContent(msg);
   const ref = msg.referral; // Click-to-WhatsApp (oro para atribución)
+  // Hora REAL del mensaje según Meta (segundos epoch), con el mismo guard NaN del insert.
+  // La ventana de 24 h se sellaba con now(): un webhook que Meta entrega en cola 40 min
+  // tarde (pasa tras una caída) "regalaba" 40 min de ventana y a la hora 23:40 el motor
+  // mandaba texto libre que Meta rechazaba con 131047. Se toma la menor (Meta vs ahora).
+  const tsMetaMs = Number.isFinite(Number(msg.timestamp)) && Number(msg.timestamp) > 0 ? Number(msg.timestamp) * 1000 : Date.now();
+  const tsCliente = new Date(Math.min(tsMetaMs, Date.now())).toISOString();
+  // Una reacción (👍) no es un mensaje que atender ni (con seguridad) reabre la ventana de
+  // servicio: no sella ultimo_mensaje_cliente_at ni pisa last_input (el scheduler, el resume
+  // y detectarOpcion leían "[reaction]" como lo último que dijo el cliente).
+  const esReaccion = msg.type === "reaction";
 
   // ── Dedup TEMPRANO por wamid (antes de mutar contacto/conversación) ──────
   // Meta reintenta el MISMO mensaje ante cualquier timeout. Si dejamos que el
@@ -221,11 +246,12 @@ async function processInbound(
   const patch: Record<string, unknown> = {
     channel_id: channelId,
     wa_id: waId,
-    last_input: text,
-    last_input_type: type,
     ultimo_mensaje_at: new Date().toISOString(),
-    ultimo_mensaje_cliente_at: new Date().toISOString(),
   };
+  if (!esReaccion) patch.ultimo_mensaje_cliente_at = tsCliente;
+  // Los tipos que el motor NO procesa (reacción, tarjeta de contacto, no soportado) no deben
+  // quedar como "lo último que dijo el cliente".
+  if (type !== "system") { patch.last_input = text; patch.last_input_type = type; }
   // El nombre del perfil de WhatsApp NO va en el upsert: pisaba el que el dueño hubiera
   // puesto a mano. Uno renombra al contacto en el panel para reconocerlo ("Ana · mayorista",
   // o corrige "ana" por su nombre real) y al siguiente mensaje del cliente se revertía solo,
@@ -286,18 +312,22 @@ async function processInbound(
   // de escritura es la MAYOR entre la de servicio (últ. msg + 24h) y la
   // Free Entry Point del contacto, si sigue viva.
   const ahora = Date.now();
-  const svc = ahora + 24 * 60 * 60 * 1000;
+  const svc = new Date(tsCliente).getTime() + 24 * 60 * 60 * 1000;
   const fepMs = contact.fep_hasta ? new Date(contact.fep_hasta as string).getTime() : 0;
-  await db.from("conversations").upsert(
-    {
-      channel_id: channelId,
-      contact_id: contact.id,
-      window_type: fepMs > ahora ? "fep_72h" : "service_24h",
-      expira_at: new Date(Math.max(svc, fepMs)).toISOString(),
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "contact_id" },
-  );
+  const convRow: Record<string, unknown> = {
+    channel_id: channelId,
+    contact_id: contact.id,
+    updated_at: new Date().toISOString(),
+    // El cliente volvió a escribir → la conversación sale del archivo (como hace WhatsApp).
+    // Antes seguía archivada: oculta en la Bandeja y fuera de los contadores; con el bot en
+    // pausa en ese contacto era dead air total sin que nadie lo viera.
+    archivada: false,
+  };
+  if (!esReaccion) {
+    convRow.window_type = fepMs > ahora ? "fep_72h" : "service_24h";
+    convRow.expira_at = new Date(Math.max(svc, fepMs)).toISOString();
+  }
+  await db.from("conversations").upsert(convRow, { onConflict: "contact_id" });
 
   // Insertar mensaje entrante (dedup por wamid; el trigger sube no_leidos).
   const { error: msgErr } = await db.from("messages").insert({
@@ -310,7 +340,7 @@ async function processInbound(
     status: "delivered",
     // Guard NaN: si `timestamp` viniera ausente/no numérico, `new Date(NaN).toISOString()`
     // LANZA → 500 → Meta reintenta el MISMO payload para siempre (poison). Cae a ahora.
-    ts: new Date((Number.isFinite(Number(msg.timestamp)) && Number(msg.timestamp) > 0 ? Number(msg.timestamp) * 1000 : Date.now())).toISOString(),
+    ts: new Date(tsMetaMs).toISOString(),
   });
   // 23505 = unique_violation → mensaje repetido (reintento de Meta). No
   // volver a correr el motor: la primera entrega ya lo hizo (idempotencia).
@@ -405,7 +435,7 @@ async function runEngineTask(
   try {
     if (bufferSeg > 0 && event.type === "message") {
       await new Promise((r) => setTimeout(r, bufferSeg * 1000));
-      const { data: msgs } = await db.from("messages")
+      const { data: msgsRaw, error: qErr } = await db.from("messages")
         .select("wamid, ts, type, content")
         .eq("contact_id", contactId).eq("direction", "in")
         // `ts` viene de Meta con granularidad de SEGUNDOS: dos mensajes del MISMO segundo
@@ -413,31 +443,44 @@ async function runEngineTask(
         // distinto → o ambos ceden (dead-air) o ambos corren (doble respuesta). `wamid` (único)
         // como 2ª clave hace el orden DETERMINÍSTICO: las dos queries coinciden y solo una corre.
         .order("ts", { ascending: false }).order("wamid", { ascending: false }).limit(10);
-      if (!msgs?.length) return;
-      // ¿Sigue siendo el último mensaje del cliente? Si no, cede el turno.
-      if ((msgs[0] as any).wamid !== wamid) return;
-      // Una IMAGEN/AUDIO corre de inmediato (bufferSeg=0) y ABSORBE los textos previos
-      // dentro de su ventana de plegado. No entra en el protocolo de `msgs[0]` (el
-      // desempate por wamid solo cubre texto-vs-texto), así que en el MISMO segundo con
-      // un wamid desfavorable el texto quedaba como msgs[0] y se procesaba DOS VECES
-      // (una plegado en la imagen, otra por su propio task). Si hay una imagen/audio con
-      // ts >= el de este texto y dentro de la ventana de plegado, ya lo procesó → cede.
-      const selfTs = new Date((msgs.find((m: any) => m.wamid === wamid) as any)?.ts ?? 0).getTime();
-      const foldWindow = (bufferSeg + 2) * 1000;
-      if (selfTs && msgs.some((m: any) => (m.type === "image" || m.type === "audio") && (() => { const it = new Date(m.ts).getTime(); return it >= selfTs && (it - selfTs) <= foldWindow; })())) return;
-      // Unir la cadena de textos con separación ≤ buffer (más reciente hacia
-      // atrás) en un solo texto, en orden cronológico.
-      const chain: string[] = [];
-      for (let i = 0; i < msgs.length; i++) {
-        const m: any = msgs[i];
-        if (m.type !== "text") break;
-        if (i > 0) {
-          const gap = new Date((msgs[i - 1] as any).ts).getTime() - new Date(m.ts).getTime();
-          if (gap > bufferSeg * 1000) break;
+      // Si la consulta FALLA (hipo de PostgREST), antes se hacía `return`: Meta ya tenía el 200,
+      // no hay reintento, y el cliente se quedaba sin respuesta sin dejar rastro. Ahora se corre
+      // el motor con el evento propio (a lo sumo se pierde el plegado de textos seguidos).
+      if (qErr) console.error("[webhook] consulta del buffer falló, se responde igual:", qErr.message);
+      // Solo participan del protocolo "cede el turno a msgs[0]" los tipos que este camino
+      // procesa: texto (con buffer) e imagen/audio (que absorben el texto). Una reacción 👍, una
+      // tarjeta de contacto o un no-soportado (tipo 'system', que NUNCA corre el motor) y los
+      // inmediatos sin plegado (sticker/video/ubicación) NO deben robarle el turno al texto:
+      // "sí, 2 talla M" + 👍 dentro del buffer → msgs[0] era la reacción → el texto cedía →
+      // nadie contestaba jamás.
+      const msgs = qErr ? null : (msgsRaw ?? []).filter((m: any) => m.type === "text" || m.type === "image" || m.type === "audio");
+      if (msgs) {
+        if (!msgs.length) return;
+        // ¿Sigue siendo el último mensaje del cliente? Si no, cede el turno.
+        if ((msgs[0] as any).wamid !== wamid) return;
+        // Una IMAGEN/AUDIO corre de inmediato (bufferSeg=0) y ABSORBE los textos previos
+        // dentro de su ventana de plegado. No entra en el protocolo de `msgs[0]` (el
+        // desempate por wamid solo cubre texto-vs-texto), así que en el MISMO segundo con
+        // un wamid desfavorable el texto quedaba como msgs[0] y se procesaba DOS VECES
+        // (una plegado en la imagen, otra por su propio task). Si hay una imagen/audio con
+        // ts >= el de este texto y dentro de la ventana de plegado, ya lo procesó → cede.
+        const selfTs = new Date((msgs.find((m: any) => m.wamid === wamid) as any)?.ts ?? 0).getTime();
+        const foldWindow = (bufferSeg + 2) * 1000;
+        if (selfTs && msgs.some((m: any) => (m.type === "image" || m.type === "audio") && (() => { const it = new Date(m.ts).getTime(); return it >= selfTs && (it - selfTs) <= foldWindow; })())) return;
+        // Unir la cadena de textos con separación ≤ buffer (más reciente hacia
+        // atrás) en un solo texto, en orden cronológico.
+        const chain: string[] = [];
+        for (let i = 0; i < msgs.length; i++) {
+          const m: any = msgs[i];
+          if (m.type !== "text") break;
+          if (i > 0) {
+            const gap = new Date((msgs[i - 1] as any).ts).getTime() - new Date(m.ts).getTime();
+            if (gap > bufferSeg * 1000) break;
+          }
+          chain.unshift(m.content?.text ?? "");
         }
-        chain.unshift(m.content?.text ?? "");
+        if (chain.length > 1) event = { ...event, text: chain.join("\n") };
       }
-      if (chain.length > 1) event = { ...event, text: chain.join("\n") };
     }
     // El operador pudo TOMAR el chat DURANTE la espera del buffer (hasta 20s). El chequeo de
     // bot_activo del ingest ocurrió ANTES de esperar → se revalida acá para no responder ENCIMA
@@ -469,22 +512,40 @@ async function processStatus(channelId: string, st: any) {
   // NO RETROCEDER: los status de Meta NO llegan ordenados; un 'delivered' tardío no debe
   // pisar un 'read' ya registrado (sent<delivered<read). 'failed' es terminal → siempre.
   const bloquea: Record<string, string> = { sent: "(delivered,read,failed)", delivered: "(read,failed)", read: "(failed)" };
-  let q = db.from("messages").update(patch).eq("wamid", wamid).eq("channel_id", channelId);
-  if (!esFallo && bloquea[status]) q = q.not("status", "in", bloquea[status]);
-  // 'failed' es terminal, pero SIN dedup de statuses un reintento de Meta (o el camino
-  // síncrono que ya marcó failed) volvía a matchear y disparaba avisarEnvioFallido OTRA VEZ
-  // (alerta de Telegram duplicada). Al exigir que NO estuviera ya en 'failed', el segundo
-  // pase devuelve 0 filas → sin re-aviso. El primero sí actualiza y avisa.
-  if (esFallo) q = q.neq("status", "failed");
-  const { data: upd } = await q.select("contact_id");
+  const ejecutar = () => {
+    let q = db.from("messages").update(patch).eq("wamid", wamid).eq("channel_id", channelId);
+    if (!esFallo && bloquea[status]) q = q.not("status", "in", bloquea[status]);
+    // 'failed' es terminal, pero SIN dedup de statuses un reintento de Meta (o el camino
+    // síncrono que ya marcó failed) volvía a matchear y disparaba avisarEnvioFallido OTRA VEZ
+    // (alerta de Telegram duplicada). Al exigir que NO estuviera ya en 'failed', el segundo
+    // pase devuelve 0 filas → sin re-aviso. El primero sí actualiza y avisa.
+    if (esFallo) q = q.neq("status", "failed");
+    return q.select("contact_id");
+  };
   // 'failed' ASÍNCRONO: Meta aceptó el envío (status 'sent' con wamid) y RECIÉN AHORA
   // reporta que no se entregó (el cliente bloqueó al negocio, ventana vencida). El camino
   // síncrono avisa por Telegram; este NO lo hacía → el operador veía "enviado" y creía que
   // llegó (justo con una clave de recojo o una entrega digital eso es grave). Se avisa igual.
-  if (esFallo) {
+  const avisarSiFallo = async (upd: any[] | null) => {
+    if (!esFallo) return;
     const cid = (upd && upd[0] && (upd[0] as any).contact_id) || null;
     if (cid) { try { await avisarEnvioFallido(db, channelId, cid, patch.error); } catch (_) { /* no encadenar fallos */ } }
-  }
+  };
+  const { data: upd } = await ejecutar();
+  if (upd?.length || status === "read") { await avisarSiFallo(upd); return; }
+  // Carrera con el insert: la fila saliente se guarda DESPUÉS de que Meta responde el POST, y
+  // el status (`sent`, o un `failed` inmediato por 131047/131026) puede llegar por webhook
+  // antes de que ese insert termine → 0 filas → el status se descartaba para siempre. Con un
+  // 'failed' eso dejaba el mensaje "enviado" y sin aviso de Telegram (justo con una clave de
+  // recojo). Un único reintento tras 1,5 s, EN SEGUNDO PLANO (el 200 a Meta no espera); si
+  // sigue en 0, el wamid no es nuestro (o el estado ya era mayor) y se deja.
+  const tarde = (async () => {
+    await new Promise((r) => setTimeout(r, 1500));
+    const { data: upd2 } = await ejecutar();
+    await avisarSiFallo(upd2);
+  })();
+  if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(tarde);
+  else await tarde;
 }
 
 // Extrae texto/tipo/contenido de un mensaje entrante de WhatsApp.
@@ -530,6 +591,28 @@ function extractContent(msg: any): { text: string; type: string; content: any } 
         type: "location",
         content: { lat: L.latitude, lng: L.longitude, name: L.name ?? null, address: L.address ?? null },
       };
+    }
+    case "reaction": {
+      // Antes caía al default: burbuja "[system]" en la Bandeja y el emoji se tiraba. Sigue
+      // siendo tipo 'system' (no corre el motor); solo se conserva lo que el operador debe ver.
+      const r = msg.reaction ?? {};
+      const emoji = String(r.emoji ?? "").trim();
+      const texto = emoji ? `Reaccionó ${emoji}` : "Quitó su reacción";
+      return { text: texto, type: "system", content: { raw_type: "reaction", emoji: emoji || null, message_id: r.message_id ?? null, text: texto } };
+    }
+    case "contacts": {
+      // Tarjeta de contacto compartida (p. ej. "mándaselo a mi hermana"): nombre y números se
+      // descartaban por completo. Se guardan y se muestran; no corre el motor (tipo 'system').
+      const lista = (Array.isArray(msg.contacts) ? msg.contacts : []).map((c: any) => {
+        const n = c?.name ?? {};
+        const nombre = String(n.formatted_name ?? [n.first_name, n.last_name].filter(Boolean).join(" ")).trim();
+        const telefonos = (Array.isArray(c?.phones) ? c.phones : []).map((p: any) => String(p?.wa_id ?? p?.phone ?? "").trim()).filter(Boolean);
+        return { nombre, telefonos };
+      });
+      const texto = lista.length
+        ? "Compartió un contacto: " + lista.map((c: any) => [c.nombre, c.telefonos.join(" / ")].filter(Boolean).join(" · ")).join("; ")
+        : "Compartió un contacto";
+      return { text: texto, type: "system", content: { raw_type: "contacts", contacts: lista, text: texto } };
     }
     default:
       return { text: `[${t}]`, type: "system", content: { raw_type: t } };

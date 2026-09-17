@@ -14,12 +14,17 @@ const MAX_BYTES = 16 * 1024 * 1024; // 16 MB
 // image/svg+xml (ambos ejecutan <script> al servirse) daría XSS almacenado / phishing
 // bajo el dominio de Supabase. Se sirve con el content_type que se sube, así que basta
 // con no permitir tipos ejecutables (todo lo que no esté acá se rechaza).
+// Y solo lo que la WhatsApp Cloud API acepta por `link`: webp/gif (webp es solo sticker),
+// video/quicktime (el .mov por defecto del iPhone), webm y wav subían bien, se veía la
+// miniatura, y recién al enviar Meta contestaba 131053 → el cliente no recibía nada.
 const ALLOWED_CT = new Set([
-  "image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif",
-  "audio/mpeg", "audio/mp3", "audio/ogg", "audio/webm", "audio/wav", "audio/mp4", "audio/aac", "audio/amr", "audio/x-m4a",
-  "video/mp4", "video/3gpp", "video/webm", "video/quicktime",
+  "image/png", "image/jpeg", "image/jpg",
+  "audio/mpeg", "audio/mp3", "audio/ogg", "audio/mp4", "audio/aac", "audio/amr", "audio/x-m4a",
+  "video/mp4", "video/3gpp",
   "application/pdf",
 ]);
+// Meta: imagen 5 MB, audio/video 16 MB, documento 100 MB (acá el bucket corta en 16).
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -40,7 +45,7 @@ Deno.serve(async (req) => {
   if (channel_id && !(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
   // Solo tipos de media reales (bucket público → nada de HTML/SVG/JS ejecutables).
   const ct = String(content_type || "").toLowerCase().split(";")[0].trim();
-  if (!ALLOWED_CT.has(ct)) return json({ error: "tipo_no_permitido", detalle: "Solo imagen, audio, video o PDF." }, 415);
+  if (!ALLOWED_CT.has(ct)) return json({ error: "tipo_no_permitido", detalle: "WhatsApp no acepta este formato: usa JPG/PNG, MP3/OGG, MP4 o PDF." }, 415);
 
   await ensureBucket();
 
@@ -53,6 +58,7 @@ Deno.serve(async (req) => {
   try { bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); }
   catch { return json({ error: "base64_invalido" }, 400); }
   if (bytes.length > MAX_BYTES) return json({ error: "muy_grande", detalle: "Máx 16 MB" }, 413);
+  if (ct.startsWith("image/") && bytes.length > MAX_IMAGE_BYTES) return json({ error: "muy_grande", detalle: "Máx 5 MB para imágenes (límite de WhatsApp)" }, 413);
   // Sniff de magic bytes: si se declara IMAGEN o PDF, los bytes deben coincidir con un
   // formato real. Sin esto, un miembro podía subir un HTML/binario etiquetado image/png
   // y quedaba servido bajo el dominio de Supabase (hosting de phishing/malware bajo un

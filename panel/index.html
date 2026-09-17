@@ -381,6 +381,8 @@
   .msg .mmeta .ico{width:13px;height:13px;flex:none}
   .msg img.stk{max-width:140px;background:transparent}
   .msg a.file .fsz{margin-left:6px;font-size:11.5px;color:var(--muted)}
+  .msg .mfail{margin-top:6px;font-size:12px;line-height:1.4;color:var(--red);display:flex;gap:6px;align-items:flex-start;border-top:1px dashed var(--red-bg);padding-top:5px}
+  .msg .mfail svg{width:13px;height:13px;flex:none;margin-top:2px}
   .msg .transcript{margin-top:6px;font-size:12.5px;font-style:italic;opacity:.9;border-left:2px solid var(--brand);padding-left:8px;line-height:1.45}
   .msg a.file{color:inherit;text-decoration:underline;display:inline-flex;gap:6px;align-items:center}
   .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px}
@@ -1122,8 +1124,9 @@ async function sendTextMsg(text){
       return true;
     }
     const res=await callFn("whatsapp-send", { channel_id:state.channelId, contact_id:state.contactId, text });
-    if(!res.ok){ const o=await res.json().catch(()=>({})); toast(o.detalle?.message||o.detalle||o.error||"Error al enviar",true); return false; }
-    setBotPill(false); return true;
+    const o=await res.json().catch(()=>({}));
+    if(!res.ok){ toast(errorMetaLegible(o)||"Error al enviar",true); return false; }
+    setBotPill(false); avisoSinGuardar(o); return true;
   }catch{ toast("Error de red al enviar",true); return false; }   // antes un error de red dejaba el botón trabado en "Enviando…"
 }
 // Envía una media ya subida (guardada en una respuesta rápida) reusando el
@@ -1148,6 +1151,36 @@ async function sendStoredMedia(m){
 // whatsapp-send devuelve ok:true con guardado:false cuando Meta SÍ entregó el mensaje
 // pero no se pudo escribir en el historial: la burbuja no va a aparecer y hay que decirlo.
 function avisoSinGuardar(o){ if(o && o.guardado===false) toast(o.aviso||"Se envió, pero no quedó guardado en el historial", true); }
+// Códigos de Meta que el operador va a ver de verdad, en su idioma y con qué hacer. Antes el
+// toast y la burbuja fallida mostraban el mensaje crudo de Meta en inglés (o nada).
+const META_MOTIVO = {
+  131047: "Pasaron más de 24 h desde el último mensaje del cliente: solo se puede mandar una plantilla",
+  131026: "Ese número no tiene WhatsApp o no recibe mensajes de negocios",
+  131048: "Meta frenó los envíos a este cliente por un rato (límite de spam). Reintenta más tarde",
+  131049: "Meta frenó este mensaje para no saturar al cliente (límite de marketing)",
+  131053: "WhatsApp no pudo descargar el archivo (formato o tamaño no aceptado)",
+  131030: "La app de Meta está en modo desarrollo: este número no está en su lista de prueba",
+  133010: "El número del negocio no está registrado en la API de WhatsApp (Canales → Probar conexión)",
+  130429: "WhatsApp está limitando el ritmo de envío del número. Reintenta en un momento",
+  190:    "El token de WhatsApp venció o fue revocado: reconecta el número en Canales",
+  470:    "El cliente bloqueó al negocio o el número dejó de ser válido",
+  100:    "Meta rechazó un parámetro del mensaje (formato del número o del archivo)",
+};
+function motivoFallo(err){
+  const e = (err && typeof err==="object") ? err : {};
+  const code = Number(e.code ?? e.error?.code ?? 0);
+  const claro = META_MOTIVO[code];
+  const orig = String(e.message ?? e.error?.message ?? (typeof err==="string" ? err : "") ?? "").trim();
+  if (claro) return orig ? `${claro} (Meta ${code}: ${orig})` : `${claro} (Meta ${code})`;
+  return orig || "WhatsApp no aceptó el mensaje";
+}
+// Respuesta de whatsapp-send / media-upload → texto para el toast.
+function errorMetaLegible(o){
+  if(!o) return "";
+  const d = o.detalle;
+  if (d && typeof d==="object") return motivoFallo(d);
+  return d || o.error || "";
+}
 const EMOJI_CATS=[
   { n:"Caras", e:"😀😃😄😁😆😅😂🤣🥲☺️😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😱😨😰😥😓🤗🤔🤭🤫🤥😶😐😑😬🙄😯😦😧😮😲🥱😴🤤😪😵🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃😺😸😹😻😼😽🙀😿😾" },
   { n:"Gestos", e:"👋🤚🖐️✋🖖👌🤌🤏✌️🤞🤟🤘🤙👈👉👆🖕👇☝️👍👎✊👊🤛🤜👏🙌👐🤲🤝🙏✍️💅🤳💪🦾🦵🦿🦶👂🦻👃🧠🫀🫁🦷🦴👀👁️👅👄" },
@@ -1372,6 +1405,8 @@ async function loadContactPanel(c){
     subs: subsRes.error ? [] : (subsRes.data||[]),
     events: evRes.error ? [] : (evRes.data||[]),
   };
+  // El pill del header se pintaba desde la lista (caché); acá ya está el bot_activo real.
+  if (state.contactId===c.id && panelData.contact) setBotPill(panelData.contact.bot_activo!==false);
   renderContactPanel();
 }
 function renderContactPanel(){
@@ -1624,7 +1659,12 @@ function setBotPill(on){ const b=$("chBot"); if(!b) return; b.className="botbtn 
 // Un solo botón para activar/desactivar el bot en este chat (header, al centro).
 async function toggleBot(){
   const cid=state.contactId; if(!cid) return;
-  const on=$("chBot").classList.contains("on"); // estado visible = fuente de verdad
+  // Fuente de verdad: el contacto cargado en la ficha (fresco de BD), no el DOM. El pill se
+  // pintaba desde la caché de la lista y nadie lo repintaba cuando el motor, el Copiloto o
+  // whatsapp-send pausaban el bot por detrás → decía "activo" con el bot ya en pausa; el
+  // primer toque no cambiaba nada y el segundo REACTIVABA el bot encima del operador.
+  const on=(panelData.contact && panelData.contact.id===cid && typeof panelData.contact.bot_activo==="boolean")
+    ? panelData.contact.bot_activo : $("chBot").classList.contains("on");
   // Sin chequear el error el botón mentía: mostraba "pausado ✓" aunque la
   // escritura fallara y el bot seguía respondiendo al cliente.
   const { error }=await supa.from("contacts").update({ bot_activo:!on }).eq("id",cid);
@@ -1757,7 +1797,11 @@ async function loadThread() {
     const extra = (state.threadCache[cid]||[]).filter(m=>!freshIds.has(m.id));
     const merged = extra.length ? [...fresh, ...extra].sort((a,b)=> new Date(a.ts)-new Date(b.ts)) : fresh;
     const prev = state.threadCache[cid];
-    const unchanged = painted && prev && prev.length===merged.length && (!merged.length || prev[prev.length-1]?.id===merged[merged.length-1]?.id);
+    // Compara también status/contenido: con solo "misma cantidad + mismo último id", un tick
+    // que cambió mientras el websocket estaba caído (leído, o un 'failed' asíncrono de Meta)
+    // quedaba congelado en "enviado" al reabrir el chat, hasta que llegara un mensaje nuevo.
+    const unchanged = painted && prev && prev.length===merged.length
+      && prev.every((pm,i)=> pm.id===merged[i].id && pm.status===merged[i].status && (pm.content?.media_url||"")===(merged[i].content?.media_url||"") && (pm.content?.transcription||"")===(merged[i].content?.transcription||""));
     state.threadCache[cid] = merged;
     if (unchanged) return;
     renderThread(merged, []);
@@ -1782,7 +1826,12 @@ function msgInner(m){
   // Transcripción de nota de voz (STT): el bot la escribe bajo el audio.
   const tr = m.content?.transcription
     ? `<div class="transcript" title="Transcripción automática del audio">${icon("mic")} ${esc(m.content.transcription)}</div>` : "";
-  return `${mh || waFmt(txt)}${tr}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?statusTick(m.status):""}</div>`;
+  // Saliente que Meta rechazó: el motivo (messages.error, que llenan whatsapp-send y el
+  // webhook de estados) se guardaba pero no se mostraba: solo un triángulo de 12 px. Un
+  // 131047 (mandar plantilla) y un 131026 (número sin WhatsApp) piden acciones distintas.
+  const fail = (m.direction==="out" && m.status==="failed")
+    ? `<div class="mfail">${icon("alert")} ${esc(motivoFallo(m.error))}</div>` : "";
+  return `${mh || waFmt(txt)}${tr}${fail}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?statusTick(m.status):""}</div>`;
 }
 function renderMsg(m, enVivo) {
   const t = $("thread");
@@ -2218,9 +2267,13 @@ async function sendMsg() {
       }
     } else {
       const res = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: state.contactId, text });
-      const out = await res.json();
-      if (!res.ok) { toast(out.detalle?.message || out.detalle || out.error || "Error al enviar", true); devolver(); }
-      else { setBotPill(false); avisoSinGuardar(o); }
+      // .catch: un 502 del gateway sin JSON caía al catch de abajo ("Error de red") con el
+      // mensaje YA entregado → el operador reenviaba y el cliente lo recibía dos veces.
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) { toast(errorMetaLegible(out) || "Error al enviar", true); devolver(); }
+      // 🔴 Decía `avisoSinGuardar(o)` con `o` inexistente: ReferenceError en la rama de ÉXITO →
+      // "Error de red" + texto devuelto al compositor en TODOS los envíos reales (desde dbe5e6b).
+      else { setBotPill(false); avisoSinGuardar(out); }
     }
   } catch { toast("Error de red", true); devolver(); }
   finally { sending = false; $("sendBtn").disabled = false; }
@@ -2269,10 +2322,21 @@ function quitarAdjunto() {
 }
 
 // Deja el archivo listo (y subiendo) para que el próximo "Enviar" lo mande con el texto.
+// Lo que WhatsApp acepta de verdad al enviar por link. Antes el único tope era 16 MB para
+// todo y se admitían formatos que Meta rechaza (webp/gif, .mov de iPhone, webm, wav): subía
+// bien, se veía la miniatura y recién al enviar Meta devolvía 131053 → el cliente sin nada.
+const WA_MIME_OK = /^(image\/(jpeg|jpg|png)|video\/(mp4|3gpp)|audio\/(aac|mp4|mpeg|mp3|amr|ogg|x-m4a)|application\/pdf)$/i;
+function excesoAdjunto(file){
+  const t = String(file.type||"").toLowerCase();
+  if (t && !WA_MIME_OK.test(t)) return "WhatsApp no acepta este formato. Usa JPG/PNG, MP4, MP3/OGG o PDF" + (/quicktime/.test(t) ? " (el .mov del iPhone hay que convertirlo a MP4)" : "");
+  const lim = t.startsWith("image/") ? 5 : 16; // Meta: imagen 5 MB, video/audio 16 MB, documento más pero el bucket corta en 16
+  if (file.size > lim*1024*1024) return `Archivo muy grande (máx ${lim} MB para ${t.startsWith("image/") ? "imágenes" : "este tipo"})`;
+  return "";
+}
 async function prepararAdjunto(file) {
   if (!state.contactId) return;
   if (state.winLocked && !state.isTest) { toast("La ventana está cerrada — usa una plantilla", true); return; }
-  if (file.size > 16 * 1024 * 1024) { toast("Archivo muy grande (máx 16 MB)", true); return; }
+  { const bad = excesoAdjunto(file); if (bad) { toast(bad, true); return; } }
   // El audio no admite pie de foto: se comporta como antes, directo.
   if ((file.type || "").startsWith("audio/")) { sendAttachment(file); return; }
 
@@ -2320,8 +2384,8 @@ async function enviarAdjuntoConTexto(caption) {
     // whatsapp-send lee la caption del campo `text`, no de media.caption.
     const r = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: cid, media, text: caption });
     const o = await r.json().catch(() => ({}));
-    if (!r.ok) { toast(o.detalle?.message || o.detalle || o.error || "Error al enviar", true); return false; }
-    setBotPill(false);
+    if (!r.ok) { toast(errorMetaLegible(o) || "Error al enviar", true); return false; }
+    setBotPill(false); avisoSinGuardar(o);
   }
   return true;
 }
@@ -2338,7 +2402,7 @@ async function sendAttachment(file){
   const cid = state.contactId;
   if (state.winLocked && !state.isTest) { toast("La ventana está cerrada — usa una plantilla", true); return; }
   if (!await okManualEnvio()) return;
-  if (file.size > 16*1024*1024) { toast("Archivo muy grande (máx 16 MB)", true); return; }
+  { const bad = excesoAdjunto(file); if (bad) { toast(bad, true); return; } }
   $("attachBtn").disabled = true; toast("Subiendo…");
   try {
     const dataUrl = await fileToDataURL(file);
@@ -2393,6 +2457,10 @@ function subscribeRealtime() {
         // de BD sube no_leidos +1 por cada entrante, así que sin esto el badge "sin responder"
         // revivía sobre la conversación que estás LEYENDO (solo se veía si leías sin contestar).
         if (m.direction === "in") { const _cid = m.contact_id; clearTimeout(state.rtReadTimer); state.rtReadTimer = setTimeout(() => markRead(_cid), 800); } // captura el contacto: si cambias de chat antes de los 800ms, marca leído el correcto (no deja un no-leído fantasma en el que sí viste)
+        // El cliente acaba de escribir → la ventana de 24 h se REABRIÓ. El candado solo se
+        // recalculaba al abrir el chat y cada 60 s: hasta un minuto con "Solo plantillas" a la
+        // vista, y el operador mandaba una plantilla (cuesta y pausa el bot) sin necesidad.
+        if (m.direction === "in") updateWindow();
         // Con Actividad ON, recarga el hilo para intercalar los eventos que el
         // motor acaba de registrar; con OFF basta con pintar el mensaje.
         if (state.chatView === "timeline") { clearTimeout(threadReloadTimer); threadReloadTimer = setTimeout(loadThread, 350); }
@@ -2411,6 +2479,12 @@ function subscribeRealtime() {
         const el = document.querySelector(`.msg[data-id="${m.id}"] .meta`);
         // animate=true → el tick de "leído" hace su pop azul justo cuando el cliente ve el mensaje.
         if (el && m.direction === "out") el.innerHTML = `${fmtTime.format(new Date(m.ts))}${statusTick(m.status, true)}`;
+        // 'failed' asíncrono (Meta aceptó y luego no entregó): repinta la burbuja entera para
+        // que aparezca el motivo, no solo el tick.
+        if (m.direction === "out" && m.status === "failed") {
+          const b = document.querySelector(`.msg[data-id="${m.id}"]`);
+          if (b) b.innerHTML = msgInner(m);
+        }
         // Entrante que cambió de contenido: le llegó la URL del archivo (foto, nota de voz)
         // o la transcripción. Se repinta la burbuja entera en su sitio → el operador ve el
         // reproductor/la foto sin cerrar y volver a abrir el chat.
@@ -2419,6 +2493,16 @@ function subscribeRealtime() {
           if (b) b.innerHTML = msgInner(m);
         }
       }
+    })
+    // El bot del contacto abierto cambió por detrás (motor escaló/devolvió, Copiloto, envío
+    // manual, otra pestaña) → repinta el pill y la ficha para que el toggle no mienta.
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "contacts", filter: fCh }, (p) => {
+      const c = p.new; if (!c || c.id !== state.contactId) return;
+      if (panelData.contact && panelData.contact.id === c.id && panelData.contact.bot_activo !== c.bot_activo) {
+        panelData.contact.bot_activo = c.bot_activo;
+        if (!document.querySelector(".overlay, .nodo-modal-back")) renderContactPanel();
+      }
+      setBotPill(c.bot_activo !== false);
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "conversations", filter: fCh }, () => loadConversationsSoon())
     // El pedido del contacto abierto cambió (el bot capturó/movió algo mientras
