@@ -386,8 +386,14 @@ function abrirExport(courier){
   // registran a mano en la agencia). El bot ya los marca (shipping.aereo); acá se
   // muestran pero no se pueden seleccionar, y se avisa.
   const esAer=(o)=>!!(o.shipping&&o.shipping.aereo);
+  // Ya exportado: exportar no cambia el estado, así que un segundo Excel del mismo día traía
+  // otra vez las filas de la mañana → dos guías y dos fletes por el mismo paquete. Se sella
+  // shipping.exportado_at al generar; acá se marca y NO se preselecciona.
+  const yaExp=(o)=>!!(o.shipping&&o.shipping.exportado_at);
+  const expTxt=(o)=>{ const d=new Date(o.shipping.exportado_at); const hoy=new Date(); const mismoDia=d.toDateString()===hoy.toDateString();
+    return mismoDia?`hoy ${d.toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"})}`:d.toLocaleDateString("es-PE",{day:"numeric",month:"short"}); };
   const detalle=(o)=>{ const s=o.shipping||{}; const d=zona==="lima"?(s.distrito||"—"):(s.destino||s.sede||s.ciudad||"—");
-    return (esAer(o)?`<span class="aermark">${icon("plane")} AÉREO</span>`:"")+esc(d); };
+    return (esAer(o)?`<span class="aermark">${icon("plane")} AÉREO</span>`:"")+esc(d)+(yaExp(o)?` <span title="Ya se exportó a ${esc(s.exportado_a||"courier")} ${esc(expTxt(o))}. Si lo vuelves a subir, el courier genera otra guía y cobra otro flete." style="font-size:11px;color:var(--amber);white-space:nowrap">${icon("download")} exportado ${esc(expTxt(o))}</span>`:""); };
   function foot(arr){ const n=arr.filter(o=>S.sel.has(o.id)).length;
     $q("#emHint").textContent = n?`${n} pedido${n>1?"s":""} seleccionado${n>1?"s":""}`:"Selecciona pedidos de la tabla";
     $q("#emDl").disabled=!n; }
@@ -412,8 +418,8 @@ function abrirExport(courier){
     if(!seleccionables.length) all.disabled=true;
     syncAll(); foot(arr);
   }
-  // Preselección: todo lo "por despachar" EXCEPTO los aéreos (van a mano).
-  filtrar().filter(o=>!esAer(o)).forEach(o=>S.sel.add(o.id));
+  // Preselección: todo lo "por despachar" EXCEPTO los aéreos (van a mano) y los YA exportados.
+  filtrar().filter(o=>!esAer(o)&&!yaExp(o)).forEach(o=>S.sel.add(o.id));
   $q("#emPer").onchange=(e)=>{ S.periodo=e.target.value; render(); };
   $q("#emQ").oninput=(e)=>{ S.q=e.target.value.trim(); render(); };
   $q(".em-x").onclick=()=>ov.remove();
@@ -426,6 +432,12 @@ function abrirExport(courier){
     // Nunca exportar aéreos, aunque por algún motivo quedaran marcados.
     const sel=filtrar().filter(o=>S.sel.has(o.id) && !esAer(o));
     if(!sel.length) return;
+    const repes=sel.filter(yaExp);
+    if(repes.length){
+      const lista=repes.slice(0,6).map(o=>`• ${esc((o.shipping||{}).cliente||(o.contact||{}).nombre||"—")} (exportado ${esc(expTxt(o))})`).join("<br>");
+      const ok=await confirmDialog({title:`${repes.length} pedido${repes.length>1?"s":""} ya exportado${repes.length>1?"s":""}`,messageHtml:`Estos ya salieron en un Excel anterior:<br><br>${lista}${repes.length>6?`<br>…y ${repes.length-6} más`:""}<br><br>Si los vuelves a subir, ${courier.nombre.split(" ")[0]} genera <b>otra guía y cobra otro flete</b>. ¿Exportarlos igual?`,confirmText:"Exportar igual",danger:true});
+      if(!ok) return;
+    }
     const cfg=(st.entregas&&st.entregas.courier)||{};
     const issues=(await courier.revisar(sel,cfg))||[];
     if(issues.length){
@@ -435,7 +447,16 @@ function abrirExport(courier){
       if(!ok) return;
     }
     const btn=$q("#emDl"); btn.disabled=true; btn.textContent="Generando…";
-    try{ const n=await generar(courier,sel,cfg); toast(`Listo: ${n} pedido(s) exportados a ${courier.nombre}`); ov.remove(); }
+    try{
+      const n=await generar(courier,sel,cfg);
+      // Sello por pedido (patch atómico vía order-update, sin aviso al cliente). Best-effort:
+      // si alguno falla, el Excel ya está generado igual.
+      btn.textContent="Marcando como exportados…";
+      const ahora=new Date().toISOString(); let sellados=0;
+      for(const o of sel){ const r=await updateOrder({ order_id:o.id, shipping:{ exportado_at:ahora, exportado_a:courier.nombre }, aviso:{ modo:"ninguno" } }); if(r) sellados++; }
+      toast(`Listo: ${n} pedido(s) exportados a ${courier.nombre}${sellados<sel.length?` · ${sel.length-sellados} sin marcar como exportado`:""}`);
+      ov.remove(); load();
+    }
     catch(e){ toast(e.message||"No pude generar el Excel",true); btn.disabled=false; btn.innerHTML=`${DL_ICO} Descargar Excel`; }
   };
   render();

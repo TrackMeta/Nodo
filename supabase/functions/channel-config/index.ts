@@ -26,6 +26,17 @@ async function metaGet(token: string, path: string) {
     return { status: 0, body: { error: { message: String((e as any)?.message ?? e) } } as any };
   }
 }
+async function metaDelete(token: string, path: string) {
+  try {
+    const r = await fetchConTimeout(`https://graph.facebook.com/${GRAPH_V}/${path}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return { status: r.status, body: await r.json().catch(() => ({})) as any };
+  } catch (e) {
+    return { status: 0, body: { error: { message: String((e as any)?.message ?? e) } } as any };
+  }
+}
 async function metaPost(token: string, path: string, payload?: Record<string, unknown>) {
   try {
     const r = await fetchConTimeout(`https://graph.facebook.com/${GRAPH_V}/${path}`, {
@@ -114,7 +125,7 @@ Deno.serve(async (req) => {
   // estado del lado de Meta) → coherente con el resto del gating, solo admin.
   // whatsapp_fix escribe en la cuenta de Meta DEL CLIENTE (suscribe la app, registra el
   // número): mismo criterio que el resto de acciones de conexión, solo admin.
-  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "channel_archive", "channel_delete", "channel_delete_preview", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit"]);
+  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "channel_archive", "channel_delete", "channel_delete_preview", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit", "template_delete"]);
   if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 
   try {
@@ -662,17 +673,30 @@ Deno.serve(async (req) => {
         return json({ ok: true, sincronizado: false, falta: { waba: !wabaId, token: !token } });
       }
       const V = "v25.0";
-      let res: any;
-      try {
-        const r = await fetchConTimeout(`https://graph.facebook.com/${V}/${wabaId}/message_templates?fields=name,language,status,category,components&limit=200`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        res = await r.json();
-      } catch (e) {
-        return json({ ok: false, error: String((e as any)?.message ?? e) });
+      // Se recorren TODAS las páginas (paging.cursors.after). Antes solo la primera: con más de
+      // ~200 plantillas las demás nunca se creaban ni actualizaban, y una que Meta pausó seguía
+      // «aprobada» en Nodo. `completo` = se llegó al final → recién entonces vale reconciliar.
+      const metaTpls: any[] = [];
+      let completo = false;
+      {
+        let after = "";
+        for (let pag = 0; pag < 25; pag++) {
+          let res: any;
+          try {
+            const r = await fetchConTimeout(`https://graph.facebook.com/${V}/${wabaId}/message_templates?fields=name,language,status,category,components&limit=200${after ? `&after=${encodeURIComponent(after)}` : ""}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            res = await r.json();
+          } catch (e) {
+            return json({ ok: false, error: String((e as any)?.message ?? e) });
+          }
+          if (res?.error) return json({ ok: false, error: res.error.message ?? "Meta rechazó la consulta" });
+          for (const t of (Array.isArray(res?.data) ? res.data : [])) metaTpls.push(t);
+          const sig = res?.paging?.cursors?.after;
+          if (!res?.paging?.next || !sig || sig === after) { completo = true; break; }
+          after = String(sig);
+        }
       }
-      if (res?.error) return json({ ok: false, error: res.error.message ?? "Meta rechazó la consulta" });
-      const metaTpls = Array.isArray(res?.data) ? res.data : [];
 
       // Meta → los 3 estados que maneja el panel. Solo APPROVED puede enviarse;
       // PAUSED/DISABLED/REJECTED se marcan "rechazada" para que Nodo no las ofrezca.
@@ -707,11 +731,12 @@ Deno.serve(async (req) => {
       };
 
       const { data: existentes } = await db.from("wa_templates")
-        .select("id, name, language").eq("channel_id", channel_id);
+        .select("id, name, language, estado_meta").eq("channel_id", channel_id);
       const idx = new Map<string, string>();
       for (const r of existentes ?? []) idx.set(`${(r as any).name}::${(r as any).language ?? "es"}`, (r as any).id);
 
-      let creadas = 0, actualizadas = 0;
+      let creadas = 0, actualizadas = 0, eliminadas = 0;
+      const vistas = new Set<string>();
       for (const t of metaTpls) {
         const name = t?.name;
         if (!name) continue;
@@ -719,6 +744,7 @@ Deno.serve(async (req) => {
         const estado = mapEstado(t?.status);
         const bodyTxt = bodyOf(t?.components);
         const puedeEnviar = soportaEnvio(t?.components);
+        vistas.add(`${name}::${language}`);
         const prevId = idx.get(`${name}::${language}`);
         if (prevId) {
           // params se PRESERVAN: es el mapeo de huecos {{1}},{{2}} que hizo el usuario.
@@ -742,7 +768,52 @@ Deno.serve(async (req) => {
           creadas++;
         }
       }
-      return json({ ok: true, sincronizado: true, total: metaTpls.length, creadas, actualizadas });
+      // Reconciliación: una plantilla que Nodo tiene como «aprobada» y Meta YA NO lista (la
+      // borraron desde el WhatsApp Manager) seguía verde en el selector de Campañas → 132001
+      // con toda la audiencia. Solo con la lista COMPLETA, y solo las que decían «aprobada»
+      // (las pendientes/borradores registradas a mano pueden no existir aún en Meta).
+      if (completo) {
+        for (const r of existentes ?? []) {
+          const k = `${(r as any).name}::${(r as any).language ?? "es"}`;
+          if (vistas.has(k) || (r as any).estado_meta !== "aprobada") continue;
+          await db.from("wa_templates").update({ estado_meta: "eliminada", activa: false }).eq("id", (r as any).id);
+          eliminadas++;
+        }
+      }
+      return json({ ok: true, sincronizado: true, total: metaTpls.length, creadas, actualizadas, eliminadas, completo });
+    }
+
+    // ── Eliminar plantilla EN META (y en todos los canales de esa WABA) ─────────────────
+    // «Eliminar» en el panel solo borraba la fila local: en Meta seguía viva y en la siguiente
+    // sincronización reaparecía sin el mapeo de variables → las secuencias/campañas que la
+    // usaban pasaban a fallar. DELETE /{waba}/message_templates?name= borra TODOS los idiomas.
+    if (action === "template_delete") {
+      const name = String(body.name || "").trim();
+      if (!name) return json({ error: "falta_nombre" }, 400);
+      const { data: c } = await db.from("channels").select("waba_id").eq("id", channel_id).maybeSingle();
+      const wabaId = (c as any)?.waba_id;
+      const secrets = await getChannelSecrets(db, channel_id);
+      const token = secrets?.access_token;
+      let metaBorrada = false, metaError: string | null = null;
+      if (wabaId && token && body.solo_local !== true) {
+        const r = await metaDelete(token, `${wabaId}/message_templates?name=${encodeURIComponent(name)}`);
+        if (r.status === 200 && r.body?.success !== false) metaBorrada = true;
+        else {
+          const msg = String(r.body?.error?.message ?? "");
+          // 100 con "does not exist" = ya no estaba en Meta: se sigue con el borrado local.
+          if (/not exist|no existe|doesn't exist/i.test(msg) || r.body?.error?.code === 100 && /exist/i.test(msg)) metaBorrada = true;
+          else metaError = msg || `Meta respondió ${r.status}`;
+        }
+        if (metaError) return json({ ok: false, error: "meta_error", detalle: metaError });
+      }
+      // Local: en todos los canales activos de la misma WABA (la plantilla es de la WABA).
+      let ids = [channel_id];
+      if (wabaId) {
+        const { data: chs } = await db.from("channels").select("id").eq("waba_id", wabaId);
+        if (chs?.length) ids = (chs as any[]).map((x) => x.id);
+      }
+      const { data: del } = await db.from("wa_templates").delete().in("channel_id", ids).eq("name", name).select("id");
+      return json({ ok: true, meta_borrada: metaBorrada, locales: (del ?? []).length, canales: ids.length });
     }
 
     if (action === "template_submit") {
