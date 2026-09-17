@@ -1012,7 +1012,10 @@ function buildMensajeCfg(m, body){
   };
   paint(); body.appendChild(box);
   const add=document.createElement("button"); add.className="fbtn"; add.innerHTML=PLUS+" botón";
-  add.onclick=()=>{ last.buttons.push({ id:"b"+Date.now().toString(36).slice(-4), title:"Opción "+(last.buttons.length+1) }); syncMensajeHandles(m); paint(); };
+  // Tope de 3: WhatsApp solo muestra 3 botones y el motor recorta a 3 al enviar, así que el
+  // 4.º nunca llegaba al cliente y su rama en el editor quedaba muerta sin ningún aviso.
+  add.onclick=()=>{ if((last.buttons||[]).length>=3){ toast("WhatsApp permite máximo 3 botones por mensaje. Para más opciones usa otro mensaje o una lista numerada.",true); return; } last.buttons.push({ id:"b"+Date.now().toString(36).slice(-4), title:"Opción "+(last.buttons.length+1) }); syncMensajeHandles(m); paint(); };
+  if((last.buttons||[]).length>3) body.appendChild(hint("⚠ Este mensaje tiene más de 3 botones: WhatsApp solo muestra los 3 primeros; las ramas del resto nunca se usan."));
   body.appendChild(add);
 }
 function syncMensajeHandles(m){
@@ -1088,7 +1091,19 @@ function buildIniciarFlujoCfg(m, body){
 // ── Plantilla de WhatsApp ──
 function buildPlantillaCfg(m, body){
   body.appendChild(mkLabel("Nombre de la plantilla (aprobada en Meta)"));
-  body.appendChild(mkInput(m.config.template_name, (v)=>{ m.config.template_name=v; updateNodeDom(m); }));
+  // Con lista de las APROBADAS del canal (como en Secuencias) y aviso si el nombre no está:
+  // antes era texto libre a ciegas y un typo o una plantilla en revisión pasaban el guardado y
+  // recién fallaban en producción (Meta 132001) con el cliente sin mensaje.
+  const inp=mkInput(m.config.template_name, (v)=>{ m.config.template_name=v; updateNodeDom(m); pintaAvisoTpl(); });
+  const dl=document.createElement("datalist"); dl.id="tplList_"+m.id; inp.setAttribute("list",dl.id); body.appendChild(inp); body.appendChild(dl);
+  const aviso=hint(""); aviso.style.display="none"; body.appendChild(aviso);
+  let aprobadas=null;
+  const pintaAvisoTpl=()=>{ if(!aprobadas) return; const n=String(m.config.template_name||"").trim(); const ok=!n||aprobadas.some(t=>t.name===n); aviso.style.display=ok?"none":""; aviso.innerHTML=ok?"":`⚠ «${esc(n)}» no está entre las plantillas aprobadas de este bot. Revisa el nombre en Plantillas (o sincroniza con Meta); si no existe, el envío falla y el cliente no recibe nada.`; };
+  supa.from("wa_templates").select("name,language,estado_meta,activa,soporta_envio").eq("channel_id",st.channelId).then(({data})=>{
+    aprobadas=(data||[]).filter(t=>(t.estado_meta||"aprobada")==="aprobada"&&t.activa!==false&&t.soporta_envio!==false);
+    dl.innerHTML=aprobadas.map(t=>`<option value="${esc(t.name)}">${esc(t.language||"es")}</option>`).join("");
+    pintaAvisoTpl();
+  }).catch(()=>{});
   body.appendChild(mkLabel("Idioma"));
   body.appendChild(mkInput(m.config.template_lang||"es", (v)=>m.config.template_lang=v));
   body.appendChild(hint("Las plantillas se crean y aprueban en Meta; aquí solo se referencian por su nombre."));

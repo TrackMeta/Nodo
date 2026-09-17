@@ -128,7 +128,10 @@ export async function runEngine(
   for (let i = 0; i < 120 && !locked; i++) {          // hasta ~30s de espera (120 × 250ms)
     try {
       const { data } = await db.rpc("contact_lock_try", {
-        p_channel_id: channelId, p_contact_id: contactId, p_ttl_seconds: 90, p_holder: holder,
+        // 240 s (eran 90): un turno real encadena Recepción + venta (2 IA), OCR, extracción y
+        // Telegram; con un proveedor lento pasaba de 90 s, el TTL vencía y el siguiente webhook
+        // tomaba el lock → dos motores en paralelo sobre el mismo contacto (doble respuesta).
+        p_channel_id: channelId, p_contact_id: contactId, p_ttl_seconds: 240, p_holder: holder,
       });
       locked = data === true;
     } catch { break; }                                // RPC ausente → proceder sin lock
@@ -3556,6 +3559,14 @@ async function execute(db: SupabaseClient, run: Run) {
           run.current_node_id =
             (await nextNode(db, run.flow_id, node.id, "fallo")) ??
             (await nextNode(db, run.flow_id, node.id, "continuar"));
+          // Sin rama «fallo» ni «continuar» cableada, el run se completaba EN SILENCIO (mismo
+          // dead-air que ya se cerró en «condición»): el cliente no recibió la plantilla y nadie
+          // lo atiende. Se escala a humano y se avisa que el flujo tiene un hueco.
+          if (!run.current_node_id) {
+            await pasarAHumano(db, run.channel_id, run.contact_id, `No se pudo enviar la plantilla "${String(node.config?.template_name ?? "")}" y el paso "${node.nombre || node.tipo}" no tiene rama «fallo» conectada. Atiéndelo y conecta esa rama en el editor.`, { aviso: true }).catch(() => {});
+            run.estado = "completado";
+            await saveRun(db, run); return;
+          }
         }
         break;
       }
@@ -3572,7 +3583,15 @@ async function execute(db: SupabaseClient, run: Run) {
       }
     }
   }
-  if (run.estado === "activo") run.estado = "completado"; // agotó MAX_STEPS
+  if (run.estado === "activo") {
+    // Agotó MAX_STEPS: un ciclo en el editor sin nodo «esperar» (condición → acción → la misma
+    // condición). Antes se cerraba como «Flujo finalizado» normal: el cliente recibía hasta 50
+    // mensajes de golpe (ráfaga = riesgo de baneo) o se quedaba mudo, y nadie se enteraba.
+    run.estado = "completado"; run.current_node_id = null;
+    await logEvent(db, run.channel_id, run.contact_id, "error", "El flujo entró en bucle",
+      `Se cortó tras ${MAX_STEPS} pasos seguidos sin esperar al cliente → escalado a humano. Revisa el flujo en el editor.`).catch(() => {});
+    await pasarAHumano(db, run.channel_id, run.contact_id, "El flujo entró en un bucle y se cortó. Revisa el flujo en el editor.", { aviso: true }).catch(() => {});
+  }
   if (run.estado === "completado") await logEvent(db, run.channel_id, run.contact_id, "flujo_fin", "Flujo finalizado");
   await saveRun(db, run);
   } catch (e) {
@@ -7894,6 +7913,17 @@ async function subscribeSeq(db: SupabaseClient, run: Run, a: any) {
     seqId = (data as any)?.id;
   }
   if (!seqId) return;
+  // ¿Sigue existiendo? Si la secuencia se borró después de configurar el nodo, el upsert
+  // reventaba por la FK, lo agarraba el catch global de execute() y TUMBABA EL RUN ENTERO
+  // («el bot tropezó» + escalado) a mitad de una venta por un id colgado. Se avisa y se sigue.
+  {
+    const { data: sq } = await db.from("sequences").select("id").eq("id", seqId).eq("channel_id", run.channel_id).maybeSingle();
+    if (!sq) {
+      await logEvent(db, run.channel_id, run.contact_id, "error", "Secuencia no encontrada",
+        `El paso «Suscribir a secuencia» apunta a una secuencia que ya no existe${a.nombre ? ` (${a.nombre})` : ""}. Corrígelo en el editor.`).catch(() => {});
+      return;
+    }
+  }
   // Respetar el opt-out (como enrolarSegmento): no re-suscribir a quien pidió baja. Sin esto,
   // un nodo subscribe_seq resucitaba una sub 'activa' para un "no me escriban" (el scheduler la
   // re-cancela cada tick = churn, y un estado momentáneo inconsistente).
