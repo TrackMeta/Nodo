@@ -572,6 +572,18 @@ function pintarWA(r){
   }else{
     filas.push(fila(false, "Meta rechazó el token o el Phone Number ID", esc(r.numero_error||"Revisa que el Access token sea válido (mejor uno permanente) y que el Phone Number ID sea el correcto.")));
   }
+  // 1b) Vida del token: el temporal de 24 h del Explorador de la API sale verde en todo lo
+  // demás y al día siguiente deja el bot mudo (Meta 190).
+  if(r.token){
+    if(r.token.permanente){
+      filas.push(fila(true, "Token permanente (no caduca)", r.token.datos_expiran?`El acceso a datos vence el ${new Date(r.token.datos_expiran).toLocaleDateString("es-PE",{day:"numeric",month:"long",year:"numeric"})}; Meta lo renueva solo mientras se use.`:""));
+    }else if(r.token.expira){
+      const ms=new Date(r.token.expira).getTime()-Date.now();
+      const cuando=new Date(r.token.expira).toLocaleString("es-PE",{day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"});
+      filas.push(fila(false, ms<=0?"El token YA CADUCÓ":`Este token es temporal: caduca el ${esc(cuando)}${ms>0?` (en ${Math.max(1,Math.round(ms/36e5))} h)`:""}`,
+        "Cuando caduque, el bot deja de contestar sin aviso. Genera un token permanente de <b>usuario del sistema</b> (Meta → Configuración del negocio → Usuarios del sistema) y pégalo arriba."));
+    }
+  }
   // 2) Webhook listo para recibir.
   filas.push(r.webhook?.app_secret
     ? fila(true, "App Secret cargado (la firma del webhook se puede validar)")

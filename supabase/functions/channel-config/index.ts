@@ -349,8 +349,22 @@ Deno.serve(async (req) => {
       //    era invisible. El app_id sale de debug_token; el app access token, de juntarlo
       //    con el App Secret que el usuario ya pegó.
       let appHook: { comprobado: boolean; apunta_aqui?: boolean; url?: string | null; campos?: string[]; error?: string } | null = null;
+      // Vida del token. `debug_token` trae `expires_at` (0 = permanente, de System User) y se
+      // descartaba: el token temporal de 24 h del Explorador de la API pasaba todas las
+      // pruebas en verde y al día siguiente Meta contestaba 190 y el bot se quedaba mudo.
+      const dbg = await metaGet(token, `debug_token?input_token=${encodeURIComponent(token)}`);
+      const tokenInfo = dbg.status === 200 && dbg.body?.data ? (() => {
+        const d = dbg.body.data;
+        const exp = Number(d.expires_at ?? 0);
+        const dexp = Number(d.data_access_expires_at ?? 0);
+        return {
+          tipo: d.type ?? null,
+          permanente: exp === 0,
+          expira: exp > 0 ? new Date(exp * 1000).toISOString() : null,
+          datos_expiran: dexp > 0 ? new Date(dexp * 1000).toISOString() : null,
+        };
+      })() : null;
       if (secrets?.app_secret) {
-        const dbg = await metaGet(token, `debug_token?input_token=${encodeURIComponent(token)}`);
         const appId = dbg.status === 200 ? String(dbg.body?.data?.app_id ?? "") : "";
         if (appId) {
           const callback = `${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp-webhook`;
@@ -385,6 +399,7 @@ Deno.serve(async (req) => {
         numero_error: numOk ? null : ((num.body as any)?.error?.message ?? "Meta rechazó el token o el Phone Number ID"),
         webhook: { app_secret: !!secrets?.app_secret, verify_token: !!(c as any)?.verify_token },
         suscripcion,
+        token: tokenInfo,
       });
     }
 
