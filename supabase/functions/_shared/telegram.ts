@@ -32,7 +32,9 @@ export async function sendTelegram(
     try {
       const body: Record<string, unknown> = usePhoto
         ? { chat_id: chatId, photo: photoUrl, caption: text.slice(0, 1024), parse_mode: "HTML" }
-        : { chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true };
+        // 4096 es el tope duro de sendMessage; «message is too long» no cae en el reintento
+        // en texto plano y el aviso se perdía entero.
+        : { chat_id: chatId, text: text.length > 4090 ? text.slice(0, 4080) + "…" : text, parse_mode: "HTML", disable_web_page_preview: true };
       if (markup) body.reply_markup = markup;
       let res = await fetchConTimeout(url, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),

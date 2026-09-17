@@ -274,18 +274,6 @@ export const AVISOS: AvisoDef[] = [
       "\n" +
       "⏸ El bot quedó en pausa en esa conversación.{{horario}}",
   },
-  {
-    clave: "transferido", grupo: "atencion",
-    titulo: "Transferido a una persona",
-    desc: "Cuando un flujo transfiere la conversación a mano (acción \"Transferir a humano\").",
-    vars: ["cliente", "telefono", "motivo"],
-    texto:
-      "🤝 *CONVERSACIÓN TRANSFERIDA*\n" +
-      "\n" +
-      "👤 {{cliente}}\n" +
-      "📱 {{telefono}}\n" +
-      "💬 {{motivo}}",
-  },
 ];
 
 export const AVISO_POR_CLAVE = new Map(AVISOS.map((a) => [a.clave, a]));
@@ -296,7 +284,7 @@ export const AVISO_POR_CLAVE = new Map(AVISOS.map((a) => [a.clave, a]));
 // PLANTILLA (que la escribimos/edita el operador), y recién después se meten
 // los valores ya escapados. Al revés, un cliente llamado "Ana & <Co>" —o con un
 // asterisco en el nombre— reventaría el aviso.
-const escaparHtml = (s: string) =>
+export const escaparHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 function marcadoAHtml(t: string): string {

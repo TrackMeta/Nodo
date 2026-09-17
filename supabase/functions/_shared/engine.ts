@@ -8,7 +8,7 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { imageBlock, runAI, transcribeAudio, type ContentBlock, type Provider } from "./ai.ts";
 import { sendCapiEvent, maybePurchase, maybePurchaseUpsell } from "./capi.ts";
 import { sendTelegram, type TgButton } from "./telegram.ts";
-import { renderAviso, avisoActivo, avisoConFoto, textoDeAviso, type AvisosConfig } from "./avisos.ts";
+import { renderAviso, avisoActivo, avisoConFoto, textoDeAviso, escaparHtml, type AvisosConfig } from "./avisos.ts";
 import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
@@ -1189,9 +1189,14 @@ export async function crearVentaManual(
   if ((ct as any)?.ctwa_clid) ship.ctwa_clid = (ct as any).ctwa_clid;
   if ((ct as any)?.ad_id) ship.ad_id = (ct as any).ad_id;
 
+  // Moneda del CANAL, no "PEN" fijo (todos los demás caminos usan ctx.moneda): en un canal en
+  // USD el pedido nacía en soles, el Purchase a Meta iba con moneda equivocada y el resumen
+  // sumaba monedas distintas.
+  let monedaVenta = "PEN";
+  try { const { data: chM } = await db.from("channels").select("moneda").eq("id", channelId).maybeSingle(); monedaVenta = String((chM as any)?.moneda || "PEN").toUpperCase(); } catch (_) { /* PEN */ }
   const { data: ord, error } = await db.from("orders").insert({
     channel_id: channelId, contact_id: contactId, product_id: productId, version_id: versionId,
-    amount, currency: "PEN", estado, shipping: ship,
+    amount, currency: monedaVenta, estado, shipping: ship,
   }).select("id").single();
   if (error) throw new Error(error.message);
   const orderId = (ord as any).id;
@@ -1231,7 +1236,7 @@ export async function crearVentaManual(
   // real. Ignora lo que no sea cierre real; usa el ctwa_clid congelado; no lanza
   // si el canal no tiene pixel/token.
   try {
-    await maybePurchase(db, { id: orderId, channel_id: channelId, contact_id: contactId, estado, amount, currency: "PEN", shipping: ship });
+    await maybePurchase(db, { id: orderId, channel_id: channelId, contact_id: contactId, estado, amount, currency: monedaVenta, shipping: ship });
   } catch (e) { console.error("[ventaManual] capi:", (e as any)?.message ?? e); }
 
   // Entrega DIGITAL: el link del producto + los extras/regalos digitales.
@@ -6623,10 +6628,10 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
         // + alerta al operador + logEvent. Antes este caso pausaba el bot pero dejaba
         // al cliente MUDO si el flujo no traía su propio nodo de "enviar mensaje".
         const nota = a.mensaje ? resolve(String(a.mensaje), ctx) : "";
+        // El aviso «pide_humano» ya lleva la nota como motivo y es de los NO silenciables
+        // (AVISOS_CRITICOS), así que el notifyAdmin aparte que había aquí mandaba la misma
+        // nota DOS veces al Telegram por cada transferencia.
         await pasarAHumano(db, run.channel_id, run.contact_id, nota || "Lo transfirió el flujo.", { aviso: true });
-        // Si el flujo definió un mensaje propio al operador, se lo mandamos aparte
-        // (notifyAdmin no depende de que el aviso "pide_humano" esté encendido).
-        if (nota) await notifyAdmin(db, run, nota);
         break;
       }
       case "subscribe_seq": await subscribeSeq(db, run, a); await logEvent(db, run.channel_id, run.contact_id, "secuencia_inicio", "Secuencia suscrita", a.nombre ?? null); break;
@@ -8188,7 +8193,9 @@ async function avisar(
     const botones = [...(opts.botones ?? [])];
     if (contactId) botones.push([{ text: "💬 Abrir el chat", url: `${PANEL_URL}/index.html?c=${contactId}` }]);
 
-    const prefix = (channel as any)?.nombre ? `<b>[${(channel as any).nombre}]</b>\n` : "";
+    // Nombre del canal escapado: «Tienda R&M» rompía el HTML de CADA aviso de ese canal y todos
+    // caían al fallback en texto plano (llegaban, pero sin formato, y sin que nadie lo notara).
+    const prefix = (channel as any)?.nombre ? `<b>[${escaparHtml(String((channel as any).nombre))}]</b>\n` : "";
     await sendTelegram(token, chatIds, prefix + texto, foto, botones.length ? botones : undefined);
   } catch (e) {
     console.error("[avisar]", (e as any)?.message ?? e);

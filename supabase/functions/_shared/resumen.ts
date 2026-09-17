@@ -9,6 +9,7 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resumirPedidos, type Order } from "./order-stats.ts";
 import { pageAll } from "./paginar.ts";
+import { escaparHtml } from "./avisos.ts";
 
 export const CUR_SYM: Record<string, string> = {
   PEN: "S/", USD: "$", MXN: "$", COP: "$", ARS: "$", CLP: "$", BOB: "Bs", EUR: "€",
@@ -145,7 +146,7 @@ export async function construirResumen(
     timeZone: tz, weekday: "long", day: "numeric", month: "long",
   }).format(new Date(from.getTime() + 12 * 3600 * 1000));
 
-  const prefix = ch?.nombre ? `<b>[${ch.nombre}]</b>\n` : "";
+  const prefix = ch?.nombre ? `<b>[${escaparHtml(String(ch.nombre))}]</b>\n` : "";
   const L: string[] = [];
   L.push(`${TITULO[cual]} · <i>${fechaLbl}</i>`);
   L.push("");

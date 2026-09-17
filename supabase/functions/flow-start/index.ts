@@ -36,8 +36,10 @@ Deno.serve(async (req) => {
   if (!flow || flow.channel_id !== channel_id) return json({ error: "flujo_invalido" }, 400);
   // …y que el CONTACTO también: sin esto un miembro del tenant A podría prender el bot y
   // arrancar un flujo sobre un contacto del tenant B (corre con service_role, salta RLS).
-  const { data: okContact } = await db.from("contacts").select("id").eq("id", contact_id).eq("channel_id", channel_id).maybeSingle();
+  const { data: okContact } = await db.from("contacts").select("id, bloqueado").eq("id", contact_id).eq("channel_id", channel_id).maybeSingle();
   if (!okContact) return json({ error: "contacto_invalido" }, 400);
+  // Bloqueado: no se le reactiva el bot en silencio (quedaba bloqueado:true + bot_activo:true).
+  if ((okContact as any).bloqueado === true) return json({ error: "contacto_bloqueado", detalle: "Este contacto está bloqueado. Desbloquéalo primero si quieres enviarle un flujo." }, 400);
 
   // Reactivar el bot (el flujo lo gestiona) y arrancar.
   await db.from("contacts").update({ bot_activo: true }).eq("id", contact_id);

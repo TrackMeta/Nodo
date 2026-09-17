@@ -44,12 +44,23 @@ Deno.serve(async (req) => {
   const { data: okVer } = await db.from("product_versions").select("id")
     .eq("id", version_id).eq("product_id", product_id).maybeSingle();
   if (!okVer) return json({ error: "version_invalida", detalle: "Esa presentación no es de ese producto." }, 400);
+  // Los EXTRAS también: se pasaban tal cual a crearVentaManual, que los leía por id a secas y
+  // luego entregarExtrasDigitales mandaba por WhatsApp el archivo de esa versión → con un
+  // productId/versionId de OTRO canal, el cliente recibía contenido pagado de otra cuenta.
+  const extrasOk: NonNullable<typeof extras> = [];
+  for (const ex of (Array.isArray(extras) ? extras : [])) {
+    if (!ex || !ex.productId || !ex.versionId) continue;
+    const { data: okEx } = await db.from("product_versions").select("id, products!inner(channel_id)")
+      .eq("id", ex.versionId).eq("product_id", ex.productId).eq("products.channel_id", channel_id).maybeSingle();
+    if (!okEx) return json({ error: "extra_invalido", detalle: "Uno de los extras no es de este bot." }, 400);
+    extrasOk.push(ex);
+  }
 
   try {
     const res = await crearVentaManual(db, channel_id, contact_id, {
       productId: product_id, versionId: version_id, amount: Number(amount) || 0,
       estado, entregarLink: entregar !== false, atributos: atributos || null,
-      extras: Array.isArray(extras) ? extras : null, envio: envio || null,
+      extras: extrasOk.length ? extrasOk : null, envio: envio || null,
     });
     return json({ ok: true, order_id: res.orderId });
   } catch (e) {
