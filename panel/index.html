@@ -2033,7 +2033,9 @@ function contactCardHtml(m){
     const pais=tel?prefixLook(tel, COUNTRY_BY_PREFIX, ""):"";
     const sub=tel?esc(fmtTel(tel))+(pais?" · "+esc(pais):""):"Sin número";
     const acciones=tel?`<div class="cc-actions"><button type="button" data-ccmsg="${esc(tel)}" data-ccname="${esc(c.nombre||"")}">Mensaje</button><button type="button" data-cccopy="${esc(tel)}">Copiar número</button></div>`:"";
-    return `<div class="ccard"><div class="cc-head"><div class="av cc-av">${esc(initials(nombre, tel))}</div><div class="cc-info"><div class="cc-name">${esc(nombre)}</div><div class="cc-sub">${sub}</div></div></div>${acciones}</div>`;
+    // Iniciales sin emojis: «Nelita ❤️» daba «N❤»; se toman solo letras/números.
+    const limpio=nombre.replace(/[^\p{L}\p{N}\s]/gu,"").trim();
+    return `<div class="ccard"><div class="cc-head"><div class="av cc-av">${esc(initials(limpio||nombre, tel))}</div><div class="cc-info"><div class="cc-name">${esc(nombre)}</div><div class="cc-sub">${sub}</div></div></div>${acciones}</div>`;
   }).join("");
 }
 async function abrirChatDe(tel, nombre){
