@@ -572,7 +572,7 @@ function renderVendedor(b){
     </div>
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.sliders}</span><span class="nm">Espera antes de responder</span></div>
-      <div class="desc">Cuando llega un mensaje, el bot espera este tiempo por si el cliente sigue escribiendo, y contesta una sola vez a todo junto. No es lo que tarda en responder: es una espera que se <b>suma</b> a los segundos que la IA usa para escribir. <b>0</b> = contesta cada mensaje al toque (a «hola» y «cuánto cuesta» seguidos les llegan dos respuestas). Solo en conversaciones individuales.</div>
+      <div class="desc">Cuando llega un mensaje, el bot espera este tiempo por si el cliente sigue escribiendo en ráfaga, y le pasa a la IA todos los textos juntos como una sola pregunta («hola» + «cuánto cuesta» = una respuesta que saluda y da el precio). No es lo que tarda en responder: es una espera que se <b>suma</b> a los segundos que la IA usa para escribir. Si un mensaje llega después de esta espera pero antes de que el bot termine de redactar, igual no se contesta dos veces: la respuesta que ya está en camino lo cubre. <b>0</b> = sin espera; cada mensaje va solo a la IA. Solo en conversaciones individuales.</div>
       <label>Segundos</label>
       <input class="in" id="pf_retraso" type="number" min="0" max="60" value="${Number(retraso)}" style="max-width:140px"/>
     </div>
