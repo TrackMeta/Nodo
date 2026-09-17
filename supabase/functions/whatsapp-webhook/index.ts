@@ -366,6 +366,7 @@ async function processInbound(
   if ((contact as any).bot_activo === false) return;
 
   const adId = ref?.source_id ? String(ref.source_id) : undefined;
+  const msgTs = new Date(tsMetaMs).toISOString();
   let event: EngineEvent | null = null;
   let debounce = false;
   if (type === "interactive") {
@@ -375,22 +376,27 @@ async function processInbound(
     // Imagen (ej. comprobante) → inmediata, con referencia para el nodo IA. También un DOCUMENTO
     // con mime de imagen o PDF: en Perú es común mandar el Yape como archivo/PDF en vez de foto —
     // se trata como "imagen" para que el OCR lo lea (Claude procesa imágenes y PDFs).
-    event = { type: "message", text, msgType: "image", mediaRef: `wa-media:${content.media_id}`, adId };
+    event = { type: "message", text, msgType: "image", mediaRef: `wa-media:${content.media_id}`, adId, msgTs };
   } else if (type === "audio") {
     // Nota de voz → referencia para que el motor la transcriba (STT).
-    event = { type: "message", text, msgType: "audio", mediaRef: content.media_id ? `wa-media:${content.media_id}` : undefined, adId };
+    event = { type: "message", text, msgType: "audio", mediaRef: content.media_id ? `wa-media:${content.media_id}` : undefined, adId, msgTs };
   } else if (type === "text") {
     // Texto → con debounce (junta mensajes seguidos, anti respuesta triple).
-    event = { type: "message", text, msgType: "text", adId };
+    event = { type: "message", text, msgType: "text", adId, msgTs };
     debounce = true;
+  } else if (type === "sticker") {
+    // Un sticker no lleva texto: iba a la IA como el literal "[sticker]" y salía un segundo
+    // saludo sin sentido (medido en vivo el 2026-09-17: 👍 de sticker → «Hola, ¿quieres que te
+    // cuente…?» encima de la respuesta anterior). Queda guardado y visible; el bot no contesta.
+    return;
   } else if (type === "system") {
     // Reacción (👍) o tipo NO soportado (extractContent → type:"system"): el mensaje ya quedó
     // guardado, pero NO se dispara el bot de ventas. Responder a "[reaction]" es ruido y podría
     // reabrir el buffer/relanzar la conversación. Una reacción no es un mensaje que atender.
     return;
   } else {
-    // video/document/sticker/location → el flujo decide por last_input_type.
-    event = { type: "message", text, msgType: type, adId };
+    // video/document/location → el flujo decide por last_input_type.
+    event = { type: "message", text, msgType: type, adId, msgTs };
   }
   if (!event) return;
 

@@ -29,11 +29,32 @@ export type EngineEvent =
   // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
   // URL pública en webchat) — la consume el nodo IA "analizar imagen".
   // adId: source_id del referral CTWA (solo primer mensaje desde un anuncio).
-  | { type: "message"; text: string; msgType?: string; mediaRef?: string; adId?: string }
+  // msgTs: hora (ISO) del mensaje del cliente según Meta. Sirve para saber si un turno
+  // anterior ya lo tenía a la vista al contestar (ver yaCubiertoPorTurnoAnterior).
+  | { type: "message"; text: string; msgType?: string; mediaRef?: string; adId?: string; msgTs?: string }
   | { type: "button"; buttonId: string; title?: string }
   | { type: "resume" }; // despertar tras Esperar
 
 const MAX_STEPS = 50; // tope de nodos por invocación (evita bucles infinitos)
+
+// Por contacto, la hora del mensaje ENTRANTE más nuevo que el prompt de la IA tuvo a la
+// vista en este turno (lo fija historial(); lo consume el insert de la burbuja saliente como
+// content.cubre_hasta). Vive en el aislado y solo dentro del turno: runEngine lo limpia al
+// entrar y al salir, así un turno determinista no hereda el sello del anterior.
+const _cubreHasta = new Map<string, string>();
+async function yaCubiertoPorTurnoAnterior(db: SupabaseClient, contactId: string, msgTs: string): Promise<boolean> {
+  const mio = new Date(msgTs).getTime();
+  if (!Number.isFinite(mio)) return false;
+  try {
+    const { data } = await db.from("messages").select("content, ts")
+      .eq("contact_id", contactId).eq("direction", "out").eq("sent_by", "bot")
+      .gt("ts", msgTs).order("ts", { ascending: false }).limit(3);
+    return (data ?? []).some((m: any) => {
+      const c = m?.content?.cubre_hasta ? new Date(m.content.cubre_hasta).getTime() : NaN;
+      return Number.isFinite(c) && c >= mio;
+    });
+  } catch (_) { return false; }
+}
 
 interface Run {
   id: string;
@@ -116,9 +137,22 @@ export async function runEngine(
   // índice único de runs vivos y los CAS de pedido/pago). Pero queda el rastro: si algún día
   // aparece una doble respuesta o un dato pisado, esta línea es la que lo explica.
   if (!locked) console.warn(`[runEngine] sin lock tras ~30s (contacto ${contactId}) — se procede igual`);
+  _cubreHasta.delete(contactId);
   try {
+    // 🔁 DOBLE RESPUESTA a dos mensajes seguidos (medido en vivo el 2026-09-17: «No gracias»
+    // y «Como estas» con 12 s de diferencia → dos «Estoy bien…»). El turno 1 arma su prompt
+    // DESPUÉS de que llegó el mensaje 2 (la IA tarda), así que ya lo contestó; el turno 2,
+    // que esperó el lock, vuelve a contestarlo. Si la última respuesta del bot se armó con
+    // este mensaje a la vista (content.cubre_hasta ≥ msgTs), no hay nada que contestar.
+    // Solo se salta cuando hay PRUEBA de que se vio (el sello lo pone historial()): un turno
+    // determinista sin sello, o un prompt armado antes del mensaje, sigue contestando.
+    if (event.type === "message" && event.msgTs && await yaCubiertoPorTurnoAnterior(db, contactId, event.msgTs)) {
+      await logEvent(db, channelId, contactId, "nota", "🔁 Ya contestado por el turno anterior", String(event.text ?? "").slice(0, 80)).catch(() => {});
+      return;
+    }
     return await runEngineInner(db, channelId, contactId, event);
   } finally {
+    _cubreHasta.delete(contactId);
     if (locked) {
       // db.rpc(...) devuelve un builder thenable SIN método .catch → hay que
       // envolver en try/catch, no encadenar .catch (tiraría "catch is not a
@@ -3683,7 +3717,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     await db.from("messages").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       direction: "out", type: mediaKind,
-      content: { media_url: mediaUrl, caption: caption || "", mime: bubble.mime ?? "", filename: bubble.filename ?? "" },
+      content: { media_url: mediaUrl, caption: caption || "", mime: bubble.mime ?? "", filename: bubble.filename ?? "", ...(_cubreHasta.get(run.contact_id) ? { cubre_hasta: _cubreHasta.get(run.contact_id) } : {}) },
       status, wamid: wamid || null, error, sent_by: "bot",
       ventana: await ventanaDeCobro(db, run.contact_id),
     });
@@ -3789,7 +3823,8 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   await db.from("messages").insert({
     channel_id: run.channel_id, contact_id: run.contact_id,
     direction: "out", type: isInteractive ? "interactive" : "text",
-    content, status, wamid: wamid || null, error, sent_by: "bot",
+    content: (_cubreHasta.get(run.contact_id) ? { ...content, cubre_hasta: _cubreHasta.get(run.contact_id) } : content),
+    status, wamid: wamid || null, error, sent_by: "bot",
     ventana: await ventanaDeCobro(db, run.contact_id),
   });
   return status !== "failed";   // false = no salió → el caller no debe darlo por entregado
@@ -14794,6 +14829,9 @@ async function historial(db: SupabaseClient, run: Run, max = 12): Promise<string
     const { data } = await db.from("messages")
       .select("direction, type, content, ts").eq("contact_id", run.contact_id)
       .order("ts", { ascending: false }).limit(max);
+    // Sello para el anti-doble-respuesta: el entrante más nuevo que este prompt tuvo a la vista.
+    const ultimoIn = (data ?? []).find((m: any) => m.direction === "in")?.ts;
+    if (ultimoIn) _cubreHasta.set(run.contact_id, String(ultimoIn));
     const filas = (data ?? []).reverse()
       .map((m: any) => {
         const quien = m.direction === "in" ? "Cliente" : "Tú";
