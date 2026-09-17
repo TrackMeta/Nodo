@@ -131,9 +131,9 @@ const MAX_INPUT_CHARS = 200_000;
 // cliente recibe DEAD-AIR hasta que el reaper de runs zombi lo libere. Al abortar, lanza →
 // los call sites ya degradan (rama "fallo"/fallback).
 const AI_TIMEOUT_MS = 28_000;
-async function fetchAI(url: string, init: RequestInit): Promise<Response> {
+async function fetchAI(url: string, init: RequestInit, timeoutMs = AI_TIMEOUT_MS): Promise<Response> {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), AI_TIMEOUT_MS);
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try { return await fetch(url, { ...init, signal: ctrl.signal }); }
   finally { clearTimeout(t); }
 }
@@ -221,6 +221,12 @@ function toAnthropicContent(content: string | ContentBlock[]): unknown[] {
     if (b.data && b.media_type === "application/pdf") {
       return { type: "document", source: { type: "base64", media_type: "application/pdf", data: b.data } };
     }
+    // PDF por URL: Claude también lo lee como `document` con source url. Antes iba como `image`
+    // y la API contestaba 400 → el OCR de adelanto/saldo caía a «comprobante a revisar» con
+    // TODOS los pagos que llegaban en PDF.
+    if (!b.data && b.media_type === "application/pdf" && b.url) {
+      return { type: "document", source: { type: "url", url: b.url } };
+    }
     // Imagen: base64 si viene data-URI parseado, si no por URL.
     if (b.data && b.media_type) {
       return { type: "image", source: { type: "base64", media_type: b.media_type, data: b.data } };
@@ -285,6 +291,11 @@ function toOpenAIContent(content: string | ContentBlock[]): unknown {
   // Contenido mixto (texto + imagen) → formato de partes de OpenAI.
   return content.map((b) => {
     if (b.type === "text") return { type: "text", text: b.text };
+    // PDF: OpenAI lo acepta como parte `file` (base64), nunca como image_url (400).
+    if (b.media_type === "application/pdf") {
+      if (b.data) return { type: "file", file: { filename: "comprobante.pdf", file_data: `data:application/pdf;base64,${b.data}` } };
+      return { type: "text", text: "[El comprobante llegó como PDF por URL y este proveedor no puede leerlo así: márcalo como no legible]" };
+    }
     const url = b.data && b.media_type ? `data:${b.media_type};base64,${b.data}` : b.url;
     return { type: "image_url", image_url: { url } };
   });
@@ -313,11 +324,14 @@ export async function transcribeAudio(
   form.append("file", new Blob([bytes], { type: mime }), opts.filename || `audio.${ext}`);
   form.append("model", opts.model || "whisper-1");
   form.append("language", opts.language || "es"); // español por defecto (mejora la precisión)
+  // 90 s y no los 28 s genéricos: una nota de voz de 8-10 min (la dirección completa con
+  // referencias) tarda más en Whisper y con el timeout corto se perdía → «no pude escuchar
+  // tu audio» y el cliente tenía que escribirlo todo.
   const res = await fetchAI("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
-  });
+  }, 90_000);
   // Ver nota en callAnthropic: leer texto + parse con guarda para no perder el status real
   // ante un 5xx no-JSON del gateway.
   const raw = await res.text();
@@ -344,8 +358,12 @@ export async function transcribeAudio(
 }
 
 // ── Helper: convierte una URL o data-URI base64 en ContentBlock ────
-export function imageBlock(src: string): ContentBlock {
+export function imageBlock(src: string, mime?: string): ContentBlock {
   const m = /^data:([^;]+);base64,(.*)$/s.exec(src);
   if (m) return { type: "image", url: "", media_type: m[1], data: m[2] };
+  // PDF por URL (el Yape/BCP mandado como documento, archivado en Storage con .pdf): se marca
+  // el media_type para que toAnthropicContent lo mande como `document`, no como `image` (400).
+  const esPdf = /pdf/i.test(String(mime ?? "")) || /\.pdf(\?|#|$)/i.test(src.split("?")[0] + (src.includes("?") ? "?" : ""));
+  if (esPdf) return { type: "image", url: src, media_type: "application/pdf" };
   return { type: "image", url: src };
 }

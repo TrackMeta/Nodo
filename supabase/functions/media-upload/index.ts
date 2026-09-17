@@ -21,7 +21,11 @@ const ALLOWED_CT = new Set([
   "image/png", "image/jpeg", "image/jpg",
   "audio/mpeg", "audio/mp3", "audio/ogg", "audio/mp4", "audio/aac", "audio/amr", "audio/x-m4a",
   "video/mp4", "video/3gpp",
-  "application/pdf",
+  // Documentos que WhatsApp entrega por link (docs de Meta): PDF, Office y texto plano.
+  "application/pdf", "text/plain",
+  "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ]);
 // Meta: imagen 5 MB, audio/video 16 MB, documento 100 MB (acá el bucket corta en 16).
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;

@@ -74,7 +74,8 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, confirmDialog, icon } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog, icon, getChannel } from "./shell.js";
+let NOMBRE_NEGOCIO="Tu negocio"; // la vista previa decía «[Prime Digital]» a cualquier cuenta
 import { getTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
 const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -114,6 +115,7 @@ async function callFn(name, body){
 
 async function boot(){
   const sh=await mountShell({ active:"canales" });
+  try{ const ch=await getChannel(); if(ch&&ch.nombre) NOMBRE_NEGOCIO=ch.nombre; }catch(_){}
   st.channelId=sh.channelId;
   // El ejemplo del comando /fecha estaba escrito a mano ("2026-07-20") y envejecía
   // solo: se leía como una fecha rara meses después. Se pone la de AYER en la zona del
@@ -304,7 +306,7 @@ function previsualizar(plantilla, a){
   // confirmada, solo si el operador prendió "Adjuntar comprobante".
   const llevaFoto = ["adelanto_validar","saldo_validar","pago_digital_validar","pago_extra_validar"].includes(a.clave) || conFoto(a);
   const foto = llevaFoto ? `<div style="background:#0d1620;border:1px dashed #33465a;border-radius:8px;padding:14px;text-align:center;color:#6f8398;font-size:12px;margin-bottom:8px">🧾 Comprobante de pago (foto)</div>` : "";
-  return `<b>[Prime Digital]</b>\n`+foto+html+botones.map(t=>`<div class="tgbtn">${t}</div>`).join("");
+  return `<b>[${esc(NOMBRE_NEGOCIO)}]</b>\n`+foto+html+botones.map(t=>`<div class="tgbtn">${t}</div>`).join("");
 }
 
 async function guardar(e){

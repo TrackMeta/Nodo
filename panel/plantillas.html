@@ -349,9 +349,13 @@ async function createTpl(){
   let name=await askText({title:"Registrar plantilla",message:"Debe coincidir EXACTAMENTE con el nombre aprobado en Meta.",label:"Nombre de la plantilla",placeholder:"Ej. remarketing_pago",confirmText:"Registrar"}); if(!name) return;
   name=await nombreValidoMeta(name.trim()); if(!name) return;
   const folder=(Fbar&&Fbar.current!=="__all"&&Fbar.current!=="__none"&&Fbar.current!=="__reco")?Fbar.current:null;
-  let { data,error }=await supa.from("wa_templates").insert({ channel_id:st.channelId, name:name.trim(), language:"es", categoria:"MARKETING", folder }).select("id").single();
-  if(error && /folder|column/.test(error.message)){ ({ data,error }=await supa.from("wa_templates").insert({ channel_id:st.channelId, name:name.trim(), language:"es", categoria:"MARKETING" }).select("id").single()); }
+  // Nace «En revisión», no «Aprobada»: registrada a mano con un typo o antes de que Meta la
+  // apruebe, salía verde en el selector de Campañas y quemaba la audiencia entera con 132001.
+  // «Sincronizar con Meta» (o el webhook de estado) la pone en aprobada cuando lo esté.
+  let { data,error }=await supa.from("wa_templates").insert({ channel_id:st.channelId, name:name.trim(), language:"es", categoria:"MARKETING", folder, estado_meta:"pendiente" }).select("id").single();
+  if(error && /folder|column/.test(error.message)){ ({ data,error }=await supa.from("wa_templates").insert({ channel_id:st.channelId, name:name.trim(), language:"es", categoria:"MARKETING", estado_meta:"pendiente" }).select("id").single()); }
   if(error){ toast(error.message,true); return; }
+  toast("Registrada como «En revisión»: dale a Sincronizar con Meta para confirmar que existe y está aprobada");
   await loadList(); openTpl(data.id);
 }
 async function openTpl(id){ const { data }=await supa.from("wa_templates").select("*").eq("id",id).maybeSingle(); st.tpl=data; renderDetail(); showDetail(); }

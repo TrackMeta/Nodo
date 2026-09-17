@@ -952,7 +952,13 @@ async function confirmSet(o,estado,label){
   }
   if(!await confirmDialog({title:label.replace(/^[^\wÁÉÍÓÚáéíóú]+\s*/,""),message:`${c.nombre||"cliente"} — cambiar a "${O.label(estado)}".`,confirmText:"Confirmar"})) return;
   const r=await updateOrder({ order_id:o.id, estado });
-  if(r){ toast(r.flow_started?"Estado actualizado · el bot está notificando al cliente":"Estado actualizado"); await load(); }
+  if(r){ toast(toastEstado(r), !!r.aviso_error); await load(); }
+}
+// «Cobré el saldo → dar clave», «Salió a reparto», «Recogido»… decían «Estado actualizado» aunque
+// el aviso (la CLAVE DE RECOJO incluida) no hubiera salido: order-update lo devuelve en aviso_error.
+function toastEstado(r){
+  if(r.aviso_error) return "Estado actualizado · el aviso al cliente NO salió: "+r.aviso_error;
+  return r.flow_started?"Estado actualizado · el bot está notificando al cliente":(r.aviso_enviado?"Estado actualizado · cliente avisado":"Estado actualizado");
 }
 
 function cerrarLima(o,estado,label){
@@ -965,7 +971,7 @@ function cerrarLima(o,estado,label){
     ${fleteHtml(O.costoZonaLima(st.entregas, s.zona_nombre), rechazo?"Lo que le pagaste al motorizado por salir":"Lo que le pagaste al motorizado")}`,
     async(ov)=>{
       const r=await updateOrder({ order_id:o.id, estado, shipping:fleteDe(ov) });
-      if(r){ toast(r.flow_started?"Estado actualizado · el bot está notificando al cliente":"Estado actualizado"); await load(); }
+      if(r){ toast(toastEstado(r), !!r.aviso_error); await load(); }
       return !!r;
     });
 }

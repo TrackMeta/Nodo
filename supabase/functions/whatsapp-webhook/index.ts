@@ -130,6 +130,22 @@ async function processPayload(fallback: { id: string; buffer_default_seg?: numbe
         await processTemplateStatus(fallback.id, change.value ?? {}, entry.id);
         continue;
       }
+      // Meta recategorizó la plantilla (UTILITY→MARKETING): cambia la tarifa y el trato del
+      // opt-out. Se refleja en todos los canales de la WABA.
+      if (change.field === "template_category_update") {
+        const v = change.value ?? {};
+        const name = v.message_template_name, language = v.message_template_language ?? "es";
+        const cat = String(v.new_category ?? "").toUpperCase();
+        if (name && cat) {
+          let ids = [fallback.id];
+          try {
+            const { data: chs } = await db.from("channels").select("id").eq("waba_id", entry.id).eq("activo", true);
+            if (chs?.length) ids = (chs as any[]).map((c) => c.id);
+          } catch (_) { /* usa el canal resuelto */ }
+          await db.from("wa_templates").update({ categoria: cat }).in("channel_id", ids).eq("name", name).eq("language", language);
+        }
+        continue;
+      }
       const value = change.value ?? {};
       const channel = await chanFor(value?.metadata?.phone_number_id as string | undefined);
       if (!channel) continue; // número desconocido en este POST → no lo cruces a otro canal

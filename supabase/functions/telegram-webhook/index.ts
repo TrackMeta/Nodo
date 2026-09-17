@@ -222,7 +222,11 @@ Deno.serve(async (req) => {
     return json({ ok: true });
   }
 
-  await answerCallback(token, cb.id, def.ok);
+  // order-update devuelve el fallo del AVISO en `aviso_error`, no en `error`: «Avisado ✅» y
+  // «el bot manda la clave» salían aunque el cliente no recibiera nada (ventana de 24 h
+  // cerrada, sin clave, Meta rechazó). Se dice claro y con alerta.
+  if (res?.aviso_error) await answerCallback(token, cb.id, `⚠️ ${def.ok} — pero el aviso al cliente NO salió: ${String(res.aviso_error).slice(0, 150)}`, true);
+  else await answerCallback(token, cb.id, def.ok);
   // Quita los botones y deja el resultado escrito: no se puede tocar dos veces.
   if (cb.message) await editButtons(token, cb.message.chat.id, cb.message.message_id);
   return json({ ok: true });

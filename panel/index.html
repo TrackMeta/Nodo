@@ -620,7 +620,7 @@
         <button class="ctool ctool-ia" id="suggestBtn" title="Sugerencias de respuesta (IA)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>
         </button>
-        <input type="file" id="fileInput" accept="image/*,audio/*,video/*,application/pdf" hidden />
+        <input type="file" id="fileInput" accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" hidden />
         <textarea id="msgInput" placeholder="Escribe un mensaje…" rows="1" autocomplete="off"></textarea>
         <button class="send" id="sendBtn" title="Enviar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>
@@ -1496,7 +1496,9 @@ function renderContactPanel(){
   const diagBody = `<div class="mia-mini">Nodos ejecutados</div>${nodosBody}<div class="mia-mini">Errores</div>${errsBody}<div class="mia-mini">Campos técnicos</div>${techBody}`;
   const advBody = sec("Automatizaciones activas", autoBody, {count:autoRows.length}) + sec("Datos de sistema", sysRows, {}) + sec("Diagnóstico del motor", diagBody, {});
   const cet = copilotoEtapa(order); // ¿este contacto tiene algo que decidir?
-  const compFallback = (media.find(m=>m.direction==="in" && m.type==="image")||{}).content?.media_url || null;
+  // También `document`: el Yape mandado como archivo/PDF llega con ese tipo y el respaldo decía
+  // «Sin comprobante todavía» aunque el cliente lo hubiera enviado.
+  const compFallback = (media.find(m=>m.direction==="in" && (m.type==="image" || m.type==="document"))||{}).content?.media_url || null;
   p.innerHTML = `
     <div class="chd">
       <div style="position:relative">
@@ -2420,7 +2422,7 @@ function quitarAdjunto() {
 // Lo que WhatsApp acepta de verdad al enviar por link. Antes el único tope era 16 MB para
 // todo y se admitían formatos que Meta rechaza (webp/gif, .mov de iPhone, webm, wav): subía
 // bien, se veía la miniatura y recién al enviar Meta devolvía 131053 → el cliente sin nada.
-const WA_MIME_OK = /^(image\/(jpeg|jpg|png)|video\/(mp4|3gpp)|audio\/(aac|mp4|mpeg|mp3|amr|ogg|x-m4a)|application\/pdf)$/i;
+const WA_MIME_OK = /^(image\/(jpeg|jpg|png)|video\/(mp4|3gpp)|audio\/(aac|mp4|mpeg|mp3|amr|ogg|x-m4a)|application\/(pdf|msword|vnd\.ms-excel|vnd\.ms-powerpoint|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation))|text\/plain)$/i;
 function excesoAdjunto(file){
   const t = String(file.type||"").toLowerCase();
   if (t && !WA_MIME_OK.test(t)) return "WhatsApp no acepta este formato. Usa JPG/PNG, MP4, MP3/OGG o PDF" + (/quicktime/.test(t) ? " (el .mov del iPhone hay que convertirlo a MP4)" : "");

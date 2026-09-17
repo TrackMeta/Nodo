@@ -428,8 +428,11 @@ Deno.serve(async (req) => {
           // pegado al momento. Va como burbuja aparte y DESPUÉS del texto, para que el
           // cliente lea primero de qué se trata; un archivo suelto sin contexto no se abre.
           const mmA = cfg.media && cfg.media.media_url ? cfg.media : null;
+          // La guía puede ser un PDF (Shalom la entrega así): mandarla como `image` la rechaza
+          // Meta (131053) y como la burbuja es única, el cliente se quedaba sin guía Y sin texto.
+          const gk = String((order as any).shipping?.guia_foto_kind || "image");
           const bubbles = cfg.foto_guia
-            ? [{ media_kind: "image", media_url: "{{pedido_guia_foto}}", caption: texto, text: texto }]
+            ? [{ media_kind: gk, media_url: "{{pedido_guia_foto}}", caption: texto, text: texto, ...(gk === "document" ? { filename: "guia.pdf", mime: "application/pdf" } : {}) }]
             : [{ text: texto }];
           if (mmA) {
             bubbles.push({
@@ -456,10 +459,13 @@ Deno.serve(async (req) => {
   // 2º llega con newEstado=null pero el CAS no cubre la plantilla) reenviaba la plantilla al cliente.
   if (avisoModo === "plantilla" && newEstado && aviso.template?.name && (order as any).contact_id) {
     try {
-      await sendTemplateToContact(db, (order as any).channel_id, (order as any).contact_id, {
+      const wamidTpl = await sendTemplateToContact(db, (order as any).channel_id, (order as any).contact_id, {
         name: aviso.template.name, language: aviso.template.language, params: aviso.template.params ?? [],
       }, undefined, (order as any).id);
-      avisoEnviado = aviso.template.name;
+      // Sin token / número / wa_id la función NO lanza: devuelve "" y deja el mensaje `failed`.
+      // Antes acá se daba por enviada igual → «✅ plantilla enviada» con el cliente sin nada.
+      if (wamidTpl) avisoEnviado = aviso.template.name;
+      else { avisoError = "el canal no pudo enviar la plantilla (token, número o contacto sin WhatsApp)"; try { await avisarEnvioFallido(db, (order as any).channel_id, (order as any).contact_id, { message: avisoError }, { critico: true }); } catch (_) { /* best-effort */ } }
     } catch (e) {
       avisoError = String((e as any)?.message ?? e);
       console.error("[order-update] plantilla:", avisoError);
@@ -510,8 +516,16 @@ Deno.serve(async (req) => {
   // {modo:"ninguno"}, y los modales de despacho/lote/llegada lo ofrecen), este fallback por DEFECTO
   // NO debe mandar nada. Sin el guard, mover "en silencio" a saldo_pagado/recogido igual le mandaba
   // al cliente la CLAVE DE RECOJO (o el aviso de despacho), incumpliendo el contrato {ninguno}→no avisar.
-  if (avisoModo !== "ninguno" && newEstado && !avisoEnviado && !flowStarted && (order as any).contact_id) {
-    const ship2 = { ...((order as any).shipping ?? {}), ...((patch.shipping as any) ?? {}) };
+  // !extrasOfrecidos: al validar el adelanto de un producto con venta extra, la conversación se
+  // reanuda hacia el ofrecimiento («¡Recibido! ¿te agrego…?») EN VEZ del aviso normal; sin este
+  // guard salían los dos y el ofrecimiento quedaba sepultado entre dos «recibí tu adelanto».
+  if (avisoModo !== "ninguno" && newEstado && !avisoEnviado && !flowStarted && !extrasOfrecidos && (order as any).contact_id) {
+    // Se relee el shipping REAL: el crédito de un sobre-adelanto (order_patch_shipping, más
+    // arriba) no está ni en `order` ni en `patch` → el aviso decía «falta S/130» a quien ya
+    // pagó todo, justo después del «queda cubierto por completo».
+    let shipFresco: Record<string, unknown> | null = null;
+    try { const { data: fr } = await db.from("orders").select("shipping").eq("id", (order as any).id).maybeSingle(); shipFresco = ((fr as any)?.shipping ?? null) as Record<string, unknown> | null; } catch { /* cae al snapshot */ }
+    const ship2 = { ...((order as any).shipping ?? {}), ...(shipFresco ?? {}), ...((patch.shipping as any) ?? {}) };
     // El "Ten listo S/X" / "A cobrar" para Lima debe ser el TOTAL (base + extras), como
     // el rótulo del motorizado y el Excel del courier. Antes pasaba solo `amount` (base) →
     // el motorizado cobraba total pero al cliente se le decía la base → conflicto en la
@@ -522,7 +536,9 @@ Deno.serve(async (req) => {
     // ⏱️ El plazo de la agencia, si el negocio lo configuró (Negocio → Entrega y logística).
     let _dem = "";
     try {
-      const { data: chD } = await db.from("channels").select("entregas").eq("id", channelId).maybeSingle();
+      // `channelId` no existía en este archivo: ReferenceError tragado por el catch → el plazo
+      // de la agencia («suele estar en 2 a 4 días») nunca salía por el aviso por defecto.
+      const { data: chD } = await db.from("channels").select("entregas").eq("id", (order as any).channel_id).maybeSingle();
       _dem = demoraProvincia((chD as any)?.entregas, String((ship2 as any)?.ciudad ?? ""));
     } catch { /* sin config → el mensaje va sin plazo, como siempre */ }
     const txt = mensajeEstadoDefault(newEstado, ship2, _total, (order as any).currency, _bumps as any[],

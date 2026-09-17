@@ -285,7 +285,10 @@ export function mountStepsEditor(el, opts){
         actBody.innerHTML=`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Plantilla</div><select class="sel se-ts" style="width:100%;height:36px"><option value="">— elige —</option>${(actions.templates||[]).map(t=>`<option value="${t.name}" data-lang="${esc(t.language)}" ${paso.template_name===t.name?"selected":""}>${esc(t.name)} (${esc(t.language)})</option>`).join("")}</select>
           ${(actions.templates||[]).length?`<div style="font-size:12px;color:var(--muted);margin:9px 0 5px">Variables (una por línea)</div><textarea class="in se-pta" style="width:100%;min-height:60px">${esc((paso.template_params||[]).join("\n"))}</textarea>`:`<div style="font-size:11.5px;color:var(--amber);margin-top:8px">No hay plantillas activas.</div>`}</div>`;
         actBody.querySelector(".se-ts").onchange=(e)=>{ paso.template_name=e.target.value||undefined; paso.template_lang=e.target.selectedOptions[0]?.dataset.lang||"es"; };
-        const pta=actBody.querySelector(".se-pta"); if(pta) pta.oninput=()=>paso.template_params=pta.value.split("\n").map(x=>x.trim()).filter(Boolean);
+        // Las líneas son POSICIONALES ({{1}}, {{2}}…): una vacía en medio debe quedar (antes
+        // `.filter(Boolean)` la borraba y los huecos se corrían → Meta 132000 y el paso se
+        // saltaba). Solo se recortan las vacías del FINAL.
+        const pta=actBody.querySelector(".se-pta"); if(pta) pta.oninput=()=>{ const ls=pta.value.split("\n").map(x=>x.trim()); while(ls.length&&!ls[ls.length-1]) ls.pop(); paso.template_params=ls; };
       } else {
         ofer.style.display="block"; oferta(ofer,paso);
         delete paso.flow_id; delete paso.template_name;

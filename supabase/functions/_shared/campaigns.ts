@@ -229,6 +229,12 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
     await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id);
     return;
   }
+  // Desmarcar «Plantilla activa» en el panel no frenaba lo que ya estaba en cola.
+  if ((tpl as any).activa === false) {
+    await db.from("campaign_sends").update({ estado: "fallido", error: { message: "La plantilla está desactivada en Plantillas" } }).eq("campaign_id", c.id).eq("estado", "pendiente");
+    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id);
+    return;
+  }
   const nVars = new Set(String((tpl as any).body_preview ?? "").match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
   const nParams = ((tpl as any).params ?? []).length;
   if (nVars !== nParams) {
@@ -243,8 +249,25 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
   const token = secrets?.access_token;
   const canSend = (ch as any)?.channel_type === "whatsapp" && (ch as any).phone_number_id && token;
 
-  const { data: pend, error: errPend } = await db.from("campaign_sends").select("id, contact_id")
-    .eq("campaign_id", c.id).eq("estado", "pendiente").limit(BATCH);
+  // Filas 'enviando' HUÉRFANAS: el worker murió (reciclado, deploy, OOM) entre el claim y el
+  // envío. Nadie las devolvía → al agotarse las 'pendiente' la campaña se marcaba COMPLETADA
+  // con «Fallidos 0» y esos clientes nunca recibieron nada ni había forma de retomarlos. El
+  // claim sella error.claimed_at; lo que lleve >10 min 'enviando' vuelve a la cola.
+  {
+    const limite = new Date(Date.now() - 10 * 60_000).toISOString();
+    const { data: huerf } = await db.from("campaign_sends").select("id, error")
+      .eq("campaign_id", c.id).eq("estado", "enviando")
+      .or(`error->>claimed_at.is.null,error->>claimed_at.lt.${limite}`).limit(BATCH);
+    for (const h of huerf ?? []) {
+      await db.from("campaign_sends").update({
+        estado: "pendiente",
+        error: { ...(((h as any).error ?? {}) as Record<string, unknown>), message: "Se quedó a medio enviar (el proceso se cortó) — se reintenta", claimed_at: null },
+      }).eq("id", (h as any).id).eq("estado", "enviando");
+    }
+    if (huerf?.length) console.warn(`[campañas] "${c.nombre ?? c.id}": ${huerf.length} fila(s) 'enviando' huérfana(s) devueltas a la cola`);
+  }
+  const { data: pend, error: errPend } = await db.from("campaign_sends").select("id, contact_id, error")
+    .eq("campaign_id", c.id).eq("estado", "pendiente").order("id").limit(BATCH);
   // Distinguir "no quedan pendientes" de "no pude leerlos". Antes el error no se recogía:
   // `data` venía undefined, `!pend?.length` daba true y la campaña se marcaba COMPLETADA por
   // un hipo de red — a mitad del envío, con el resto de la audiencia sin recibir nada y sin
@@ -267,7 +290,8 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
     // éxito pero el update final falla, la fila queda 'enviando' (no se reintenta) →
     // no hay doble envío; el mensaje ya salió, solo queda sin marcar 'enviado'.
     const { data: claim } = await db.from("campaign_sends")
-      .update({ estado: "enviando" }).eq("id", s.id).eq("estado", "pendiente").select("id");
+      .update({ estado: "enviando", error: { ...(((s as any).error ?? {}) as Record<string, unknown>), claimed_at: new Date().toISOString() } })
+      .eq("id", s.id).eq("estado", "pendiente").select("id");
     if (!claim || !claim.length) continue; // otro worker la reclamó
     // Re-chequeo de opt-out/bloqueo EN VUELO: matchSegment los excluyó al EXPANDIR, pero un lote
     // grande tarda HORAS en drenar (25/tick, cron cada minuto). Si el cliente pide baja (o lo
@@ -334,11 +358,25 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
       // vez de 25, y el próximo tick retoma donde quedó.
       const meta = (e as any)?.meta;
       if (meta && esRechazoTemporal(meta)) {
+        // Con tope de intentos: una fila que Meta frena SIEMPRE (131048 persistente con ese
+        // número, timeouts repetidos) volvía a ser la primera del lote en cada tick, fallaba y
+        // cortaba el lote → la campaña se quedaba clavada días en «Enviando 340/3000» y el
+        // resto de la audiencia nunca salía. A los 5 intentos se marca fallida y la cola sigue.
+        const intentos = Number(((s as any).error ?? {}).intentos ?? 0) + 1;
+        if (intentos >= 5) {
+          await db.from("campaign_sends").update({
+            estado: "fallido",
+            error: { message: `Meta lo frenó ${intentos} veces seguidas (tope temporal que no se levantó)`, code: meta?.code ?? null, intentos },
+          }).eq("id", s.id);
+          fail++;
+          console.warn(`[campañas] "${c.nombre ?? c.id}": fila ${s.id} agotó ${intentos} intentos (code ${meta?.code}) → fallido`);
+          continue;
+        }
         await db.from("campaign_sends").update({
           estado: "pendiente",
-          error: { message: "Meta frenó el envío por un tope temporal — se reintenta", code: meta?.code ?? null },
+          error: { message: "Meta frenó el envío por un tope temporal — se reintenta", code: meta?.code ?? null, intentos },
         }).eq("id", s.id);
-        console.warn(`[campañas] "${c.nombre ?? c.id}": tope temporal de Meta (code ${meta?.code}) → se corta el lote y se reintenta`);
+        console.warn(`[campañas] "${c.nombre ?? c.id}": tope temporal de Meta (code ${meta?.code}, intento ${intentos}) → se corta el lote y se reintenta`);
         break;
       }
       await db.from("campaign_sends").update({ estado: "fallido", error: { message: String((e as any)?.message ?? e) } }).eq("id", s.id);
@@ -386,7 +424,7 @@ export async function sendTemplateToContact(
   // aprobada por Meta y (b) caer a sus params guardados si el caller no los pasó.
   // El filtro por idioma evita que un canal con la MISMA plantilla en dos idiomas
   // reviente maybeSingle (múltiples filas) → params vacíos → mismatch 132000.
-  let tq = db.from("wa_templates").select("estado_meta, params, body_preview, soporta_envio, language").eq("channel_id", channelId).eq("name", tpl.name);
+  let tq = db.from("wa_templates").select("estado_meta, params, body_preview, soporta_envio, language, categoria").eq("channel_id", channelId).eq("name", tpl.name);
   if (tpl.language) tq = tq.eq("language", tpl.language);
   let { data: tplRow } = await tq.maybeSingle();
   // Sin fila para (canal, nombre, idioma): antes de darla por perdida, se reintenta SIN el
@@ -394,7 +432,7 @@ export async function sendTemplateToContact(
   // exactamente una con ese nombre, esa es.
   if (!tplRow && tpl.language) {
     const { data: solaPorNombre } = await db.from("wa_templates")
-      .select("estado_meta, params, body_preview, soporta_envio, language")
+      .select("estado_meta, params, body_preview, soporta_envio, language, categoria")
       .eq("channel_id", channelId).eq("name", tpl.name);
     if ((solaPorNombre ?? []).length === 1) tplRow = solaPorNombre![0] as any;
   }
@@ -410,6 +448,15 @@ export async function sendTemplateToContact(
   }
   if ((tplRow as any)?.soporta_envio === false) {
     throw new Error(`Plantilla "${tpl.name}" usa variables en el encabezado o botón (Nodo solo llena el cuerpo).`);
+  }
+  // Opt-out: una plantilla de MARKETING no le llega a quien pidió que no le escriban. Campañas
+  // y secuencias ya lo miraban; el nodo «plantilla» del flujo y el aviso de pedido por plantilla
+  // no → mandaban promo al que pidió baja (block, calidad del número en riesgo).
+  if (String((tplRow as any)?.categoria ?? "").toUpperCase() === "MARKETING") {
+    try {
+      const { data: ct } = await db.from("contacts").select("no_remarketing").eq("id", contactId).maybeSingle();
+      if ((ct as any)?.no_remarketing === true) throw new Error(`El contacto pidió no recibir promociones y "${tpl.name}" es de marketing`);
+    } catch (e) { if (String((e as any)?.message ?? "").includes("pidió no recibir")) throw e; /* si no se pudo leer, se envía */ }
   }
   if (!rawParams || rawParams.length === 0) rawParams = ((tplRow as any)?.params as string[]) ?? [];
   // El conteo de params debe cuadrar con las variables {{N}} del cuerpo aprobado
@@ -441,7 +488,9 @@ export async function sendTemplateToContact(
     channel_id: channelId, contact_id: contactId, direction: "out",
     type: "template", content: { template: tpl.name, params: bodyParams }, wamid: wamid || null, status,
     sent_by: sender?.sentBy ?? "bot", sent_by_user: sender?.sentByUser ?? null,
-    ventana: await ventanaDeCobro(db, contactId),
+    // Un envío que NO salió no lo cobra Meta: sin ventana, para que el reporte «Mensajes
+    // que Meta cobra» no sume 400 avisos fallidos por un token vencido.
+    ventana: status === "failed" ? null : await ventanaDeCobro(db, contactId),
   });
   return wamid;
 }

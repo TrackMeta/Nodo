@@ -130,8 +130,13 @@ async function revisarShalom(orders, cfg) {
   if (!sh.origen) p.push("Falta tu oficina de ORIGEN Shalom (Negocio → Entrega → Exportar a couriers).");
   orders.forEach((o) => {
     const c = o.contact || {}, s = o.shipping || {}, q = c.nombre || s.cliente || s.dni || "un pedido";
+    // Formato, no solo presencia: un DNI de 7 dígitos o un celular de 6 pasaban el pre-chequeo
+    // y Shalom rechazaba la fila del Excel.
     if (!s.dni) p.push(`${q}: falta DNI. (Editar pedido)`);
-    if (!telCliente(c, s)) p.push(`${q}: falta un teléfono válido para el courier. (Editar pedido)`);
+    else if (!/^\d{8}$/.test(String(s.dni).trim())) p.push(`${q}: el DNI “${String(s.dni).trim()}” no tiene 8 dígitos. (Editar pedido)`);
+    const telC = telCliente(c, s);
+    if (!telC) p.push(`${q}: falta un teléfono válido para el courier. (Editar pedido)`);
+    else if (tel9(telC).length !== 9 || !/^9/.test(tel9(telC))) p.push(`${q}: el celular “${telC}” no parece un móvil peruano de 9 dígitos. (Editar pedido)`);
     // Se resuelve el DESTINO igual que filasShalom y se valida contra la lista OFICIAL:
     // si sale una ciudad cruda ("CUSCO") en vez de una agencia real, la columna DESTINO
     // tiene validación de lista en la plantilla de Shalom → la fila (o el archivo) se

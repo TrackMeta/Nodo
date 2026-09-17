@@ -147,6 +147,11 @@ export async function fetchMediaBytes(
     const e = meta.error ?? {};
     throw new MetaApiError({ code: e.code, subcode: e.error_subcode, message: e.message ?? "media sin url", type: e.type, fbtrace_id: e.fbtrace_id });
   }
+  // Tope ANTES de bajar: Meta admite documentos de 100 MB y el motor los bajaba enteros a
+  // memoria y los pasaba a base64 (×1,4) → el aislado moría con el turno adentro (dead air sin
+  // rastro). El webhook ya cortaba en 25 MB para el archivo; acá faltaba.
+  const declarado = Number(meta.file_size ?? 0);
+  if (declarado > MEDIA_MAX_BYTES) throw new MetaApiError({ message: `archivo demasiado grande (${Math.round(declarado / 1048576)} MB; máx ${Math.round(MEDIA_MAX_BYTES / 1048576)} MB)` });
   const bin = await fetchConTimeout(
     meta.url,
     { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -154,8 +159,11 @@ export async function fetchMediaBytes(
   );
   if (!bin.ok) throw new MetaApiError({ code: bin.status, message: "no se pudo descargar el media" });
   const mime = meta.mime_type || bin.headers.get("content-type") || "application/octet-stream";
-  return { bytes: new Uint8Array(await bin.arrayBuffer()), mime };
+  const bytes = new Uint8Array(await bin.arrayBuffer());
+  if (bytes.length > MEDIA_MAX_BYTES) throw new MetaApiError({ message: `archivo demasiado grande (${Math.round(bytes.length / 1048576)} MB)` });
+  return { bytes, mime };
 }
+const MEDIA_MAX_BYTES = 20 * 1024 * 1024;
 
 // Igual que arriba pero devuelve un data-URI base64 (para pasar imágenes al LLM).
 export async function fetchMediaAsDataUri(mediaId: string, accessToken: string): Promise<string> {
@@ -185,7 +193,10 @@ const META_RETRYABLE = new Set([130429, 131056, 80007, 133016, 4, 2, 613]);
 // este es el sitio donde sumarlo.
 export function esRechazoTemporal(meta: any): boolean {
   const code = Number(meta?.code);
-  if (META_RETRYABLE.has(code) || code === 131048) return true;
+  // 131049 = tope de marketing POR USUARIO (Meta frena la promo a ese cliente esta semana):
+  // temporal por definición; marcarlo 'fallido' dejaba a la parte más activa de la base sin
+  // la campaña para siempre.
+  if (META_RETRYABLE.has(code) || code === 131048 || code === 131049) return true;
   if (meta?.transitorio === true) return true; // red / timeout
   const st = Number(meta?.status);
   return Number.isFinite(st) && st >= 500;

@@ -66,6 +66,11 @@ const REFERENCIAS: Array<[string, string, string?]> = [
   ["app_users", "avatar_url"],
   // Ejemplos de comprobante del validador OCR (ia.html). Faltaba, igual que las fichas.
   ["channels", "ocr_config"],
+  // Los ARCHIVOS DE ENTREGA de los productos digitales (el PDF/curso que el cliente PAGA):
+  // productos.html los sube con media-upload y los guarda en product_versions.entrega[].url,
+  // que el motor lee de esta tabla (no de products.config). Faltaba → un entregable subido
+  // hoy y vendido pasado mañana se borraba a las 04:17 y la entrega salía 404 (131053).
+  ["product_versions", "entrega"],
 ];
 
 Deno.serve(async (req) => {

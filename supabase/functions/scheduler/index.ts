@@ -10,6 +10,7 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
 import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
+import { esRechazoTemporal } from "../_shared/meta.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
 import { construirResumen, localParts, localDayStartUTC, ymd } from "../_shared/resumen.ts";
 import { enParalelo, repartoJusto } from "../_shared/concurrencia.ts";
@@ -429,7 +430,9 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
           .select("no_remarketing, bot_activo, ultimo_auto_msg_at").eq("id", (o as any).contact_id).maybeSingle();
         if ((c as any)?.no_remarketing === true) continue;
         if ((c as any)?.bot_activo === false) continue; // lo tomó un humano
-        const _asNudge = await antispamMs((o as any).channel_id);
+        // chId, no o.channel_id: el select no traía channel_id → antispamMs(undefined) fallaba y
+        // caía a las 18 h fijas aunque el negocio hubiera apagado o bajado el anti-spam.
+        const _asNudge = await antispamMs(chId);
         if (_asNudge && tocoMktReciente(c, now, _asNudge)) continue; // anti-spam (si está activo): ya recibió un envío automático hace poco
         if (!await enHorario(chId)) continue;
         try {
@@ -914,6 +917,15 @@ async function processSub(s: any, now: number): Promise<boolean> {
       });
       toco = true;
     } catch (e) {
+      // Rechazo TEMPORAL de Meta (rate limit del número, 5xx, tope por usuario): no es culpa
+      // del paso ni del contacto. Avanzar igual le quitaba el toque a 200 suscriptores por un
+      // minuto malo de Graph. Se pospone 15 min sin consumir el paso.
+      const meta = (e as any)?.meta;
+      if (meta && esRechazoTemporal(meta)) {
+        await db.from("sequence_subscriptions").update({ proximo_at: new Date(Date.now() + 15 * 60_000).toISOString() }).eq("id", s.id);
+        console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta frenó la plantilla "${paso.template_name}" (code ${meta?.code}) → se pospone 15 min`);
+        return false;
+      }
       console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: plantilla "${paso.template_name}" falló (${String((e as any)?.message ?? e)}) → se salta este toque y avanza`);
     }
   }

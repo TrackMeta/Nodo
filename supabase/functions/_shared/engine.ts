@@ -7979,10 +7979,19 @@ export async function avisarEnvioFallido(db: SupabaseClient, channelId: string, 
     // un fallo genérico en otro contacto haría desaparecer "este cliente pagó y no
     // le llegó su clave".
     if (!opts?.critico) {
+      // Por canal+contacto, no solo por canal: en un lote de 20 despachos con 6 clientes
+      // fuera de ventana llegaba UN aviso y los otros 5 se descartaban sin rastro. Sigue
+      // habiendo un tope por canal (20 en 10 min) contra el spam de un token vencido.
       const ahora = Date.now();
-      const previo = ultimoAvisoFallo.get(channelId) ?? 0;
-      if (ahora - previo < 10 * 60 * 1000) return;
-      ultimoAvisoFallo.set(channelId, ahora);
+      const kContacto = `${channelId}|${contactId}`;
+      if (ahora - (ultimoAvisoFallo.get(kContacto) ?? 0) < 10 * 60 * 1000) return;
+      const kCanal = `${channelId}|#`;
+      const cnt = ultimoAvisoFallo.get(`${kCanal}n`) ?? 0;
+      const desde = ultimoAvisoFallo.get(kCanal) ?? 0;
+      if (ahora - desde >= 10 * 60 * 1000) { ultimoAvisoFallo.set(kCanal, ahora); ultimoAvisoFallo.set(`${kCanal}n`, 0); }
+      else if (cnt >= 20) return;
+      ultimoAvisoFallo.set(`${kCanal}n`, (ultimoAvisoFallo.get(`${kCanal}n`) ?? 0) + 1);
+      ultimoAvisoFallo.set(kContacto, ahora);
     }
     // motivoLegible traduce los códigos que de verdad salen (24h vencidas, número inválido,
     // token caído…) y conserva el texto de Meta al final. Antes el aviso llegaba en inglés y
@@ -17776,7 +17785,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     }
     if (op === "analizar_imagen") {
       // La imagen viene de una variable de config, o del último input del contacto.
-      const img = cfg.imagen_var ? ctx[cfg.imagen_var] : (ctx.last_image ?? run.vars._last_image);
+      // `_media_ref` (wa-media:<id>) es el respaldo cuando ingestImage falló (Storage 5xx, token
+      // rotado a mitad de turno): se escribía y nadie lo leía, así que el nodo lanzaba «no hay
+      // imagen» y el flujo caía a humano aunque la foto se pudiera bajar de nuevo de Meta.
+      const _ref = (run.vars as any)._media_ref;
+      const img = cfg.imagen_var ? ctx[cfg.imagen_var] : (ctx.last_image ?? run.vars._last_image ?? _ref);
       // CONSUMIR la imagen: se limpia _last_image tras leerla para que un TURNO POSTERIOR con
       // TEXTO ("ya te lo mandé pes") no re-analice esta MISMA imagen vieja como comprobante
       // nuevo. Sin esto, el nodo OCR del extra guardaba el comprobante del PRINCIPAL como

@@ -2221,7 +2221,7 @@ export async function openDespachoLoteModal(orders, deps) {
       });
       if (!listos.length) { toast("Ningún pedido tiene N° de guía y código de envío", true); return; }
       const btn = ov.querySelector(".m-foot .save"); btn.disabled = true;
-      let ok = 0, fail = 0;
+      let ok = 0, fail = 0, sinAviso = 0; const sinAvisoNombres = [];
       for (const it of listos) {
         btn.textContent = `Registrando ${ok + fail + 1}/${listos.length}…`;
         const r = await updateOrder({ order_id: it.id, estado: "despachado", aviso, shipping: {
@@ -2229,9 +2229,11 @@ export async function openDespachoLoteModal(orders, deps) {
           ...(fotos[it.id] ? { guia_foto: fotos[it.id].url, guia_foto_kind: fotos[it.id].kind } : {}),
           ...(it.flete === "" || it.flete == null ? {} : { flete: Number(it.flete) || 0 }),
         } });
-        r ? ok++ : fail++;
+        // Registrado ≠ avisado: `r` es truthy aunque traiga aviso_error (ventana de 24 h cerrada
+        // para ese cliente). Antes «20 envío(s) registrado(s)» con 19 clientes sin su guía.
+        if (r) { ok++; if (r.aviso_error) { sinAviso++; sinAvisoNombres.push("guía " + String(it.g).slice(0, 14)); } } else fail++;
       }
-      toast(`${ok} envío(s) registrado(s)${fail ? ` · ${fail} con error` : ""}`);
+      toast(`${ok} envío(s) registrado(s)${fail ? ` · ${fail} con error` : ""}${sinAviso ? ` · ⚠ ${sinAviso} sin aviso al cliente (${sinAvisoNombres.slice(0, 4).join(", ")}${sinAviso > 4 ? "…" : ""}): avísales con una plantilla` : ""}`, sinAviso > 0 || fail > 0);
       cerrar(ok);
     };
     document.body.appendChild(ov);
@@ -2246,7 +2248,7 @@ export function avisoMsg(r, aviso, base) {
   // MENSAJE (p. ej. fuera de la ventana de 24h), y ahí se leía "la plantilla no salió: …usa
   // una plantilla", que se contradice solo.
   if (r.aviso_error) return `${base} · el aviso no salió: ${r.aviso_error}`;
-  if (r.aviso_enviado) return `${base} · plantilla enviada`;
+  if (r.aviso_enviado) return `${base} · ${(r.aviso_enviado === "mensaje" || r.aviso_enviado === "default") ? "cliente avisado" : "plantilla enviada"}`;
   if (aviso.modo === "ninguno") return `${base} · sin avisar al cliente`;
   return r.flow_started ? `${base} · el bot está avisando al cliente` : `${base} · no hay aviso armado para este estado`;
 }
@@ -2332,7 +2334,9 @@ export function copilotoCardHtml(o, et, fallbackImg) {
   const needClave = et.id === "saldo" && !s.clave_recojo;
   return `<div class="cx-copiloto" data-order="${esc(o.id)}">
     <div class="cx-cop2-hd">${ROBOT}<span class="cx-cop2-pill ${et.pill}">${esc(et.titulo)}</span></div>
-    ${img ? `<img class="cx-cop2-img" src="${esc(img)}" data-full="${esc(img)}" alt="Comprobante" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><div class="cx-cop2-noimg" style="display:none">${icon("alert","cxi")} No se pudo cargar el comprobante. Ábrelo en la Bandeja para verlo.</div>`
+    ${img ? (/\.pdf(\?|#|$)/i.test(String(img).split("?")[0] + (String(img).includes("?") ? "?" : ""))
+        ? `<a class="cx-cop2-pdf" href="${esc(img)}" target="_blank" rel="noopener" style="display:flex;gap:8px;align-items:center;padding:10px 12px;border:1px dashed var(--border);border-radius:8px;text-decoration:none;color:var(--brand);font-weight:600;font-size:13px">${icon("file","cxi")} Ver el comprobante (PDF)</a>`
+        : `<img class="cx-cop2-img" src="${esc(img)}" data-full="${esc(img)}" alt="Comprobante" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><div class="cx-cop2-noimg" style="display:none">${icon("alert","cxi")} No se pudo cargar el comprobante. Ábrelo en la Bandeja para verlo.</div>`)
       : (et.id === "adelanto" || et.id === "saldo" || et.id === "digital") ? `<div class="cx-cop2-noimg">Sin comprobante todavía</div>` : ""}
     <div class="cx-cop2-amt"><span class="cx-cop2-lbl">${esc(montoLbl)}</span><span class="cx-cop2-val">${monto != null && monto !== "" ? sym + " " + esc(monto) : "—"}</span></div>
     ${s.clave_recojo ? `<div class="cx-cop2-amt"><span class="cx-cop2-lbl">Clave de recojo</span><span class="cx-cop2-val" style="font-size:15px;color:var(--green)">${esc(s.clave_recojo)}</span></div>` : ""}

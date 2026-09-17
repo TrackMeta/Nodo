@@ -530,7 +530,9 @@ Deno.serve(async (req) => {
           // que Nodo necesita borraría los que Meta pone por defecto desde su panel
           // (account_alerts, phone_number_quality_update…), que son los avisos de que tu
           // número está en riesgo. Se manda la UNIÓN de lo que ya había con lo que hace falta.
-          const QUIERO = ["messages", "message_template_status_update"];
+          // template_category_update: Meta recategoriza UTILITY→MARKETING por su cuenta y desde
+          // el 01/10/2026 eso es tarifa distinta; sin este campo el panel seguía diciendo «Utilidad».
+          const QUIERO = ["messages", "message_template_status_update", "template_category_update"];
           const DEFECTO = ["account_alerts", "account_review_update", "account_update",
             "message_template_quality_update", "phone_number_name_update",
             "phone_number_quality_update", "security"];

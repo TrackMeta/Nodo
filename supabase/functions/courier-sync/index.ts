@@ -40,9 +40,16 @@ function etapaNorm(s: string): string {
 // sede, flete, clave…). Nunca se escribe `estado` por acá: eso lo hace
 // order-update, que además dispara los flujos y el aviso al cliente.
 async function sellarShipping(orderId: string, extra: Record<string, unknown>) {
-  const { data: o } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
-  const s = { ...((o as any)?.shipping ?? {}), ...extra };
-  await db.from("orders").update({ shipping: s }).eq("id", orderId);
+  // Patch ATÓMICO (RPC de la 0068), no leer-mezclar-escribir: el rastreo corre en bucle y el
+  // operador puede estar corrigiendo la sede o la clave en «Editar pedido» en ese mismo
+  // segundo; el read-modify-write se lo pisaba (paquete a la agencia equivocada).
+  const { error } = await db.rpc("order_patch_shipping", { p_order_id: orderId, p_patch: extra });
+  if (error) {
+    console.warn(`[courier-sync] order_patch_shipping falló (${error.message}); se cae al merge`);
+    const { data: o } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
+    const s = { ...((o as any)?.shipping ?? {}), ...extra };
+    await db.from("orders").update({ shipping: s }).eq("id", orderId);
+  }
 }
 
 Deno.serve(async (req) => {
