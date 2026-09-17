@@ -20273,7 +20273,11 @@ async function buildContext(db: SupabaseClient, run: Run) {
   try {
     const { data: chL } = await db.from("channels").select("pedidos_config, moneda").eq("id", run.channel_id).maybeSingle();
     ctx.logistica_modo = String((chL as any)?.pedidos_config?.log?.modo ?? "manual");
-    ctx.moneda = String((chL as any)?.moneda || "PEN");
+    // La moneda del PRODUCTO (Opciones → «Moneda — aplica a todo el producto») manda sobre la
+    // del canal: el selector existía en el panel pero el motor nunca lo leía → un curso en
+    // dólares se cotizaba «S/ 99» y el pedido nacía en PEN.
+    const monProd = String((run as any)._prodCtx?.moneda ?? "").trim().toUpperCase();
+    ctx.moneda = monProd || String((chL as any)?.moneda || "PEN");
     // {{promesa_despacho}} — la prueba que va a recibir, dicha ANTES de cobrarle el
     // adelanto. Se arma con lo que este canal realmente manda (ver promesaDespacho).
     ctx.promesa_despacho = promesaDespacho((chL as any)?.pedidos_config, String(ctx.zona_entrega ?? ""));

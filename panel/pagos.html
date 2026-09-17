@@ -256,6 +256,14 @@ function render(b){
         <input class="in" id="pAdelTol" type="number" min="0" step="0.5" value="${Number(p.adelanto.tolerancia ?? 1)}" style="width:110px"/>
         <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Acepta si pagó al menos el adelanto menos esta diferencia. Pagar de más siempre se acepta.</span>
       </div>
+      <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="margin:0;font-size:12.5px;font-weight:700">${icon("shield")} Revisar a mano si el adelanto supera lo pedido en más de</label>
+        <div style="display:flex;align-items:center;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
+          <span style="font-size:12.5px;color:var(--muted);font-weight:700;padding:0 4px 0 10px">S/</span>
+          <input class="in" id="pAdelRev" type="number" min="0" step="5" value="${Number(p.adelanto.revisar_sobre_sol ?? p.digital.revisar_sobre_sol ?? 50)}" style="width:80px;border:none"/>
+        </div>
+        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Freno anti-error del OCR para los adelantos de provincia. Antes usaba, sin decirlo, el valor de «Pagos digitales».</span>
+      </div>
 
       <div style="border-top:1px solid var(--border);margin:18px 0 4px"></div>
       <div class="desc">Si no paga, esto mantiene limpia sola la columna “Esperando adelanto”.
@@ -443,6 +451,7 @@ function render(b){
     });
     if(fotoGuia) (p.avisos.despachado=p.avisos.despachado||{}).foto_guia=true;
     p.adelanto.tolerancia=Math.max(0,Number($("pAdelTol").value)||0);
+    if($("pAdelRev")) p.adelanto.revisar_sobre_sol=Math.max(0,Number($("pAdelRev").value)||0);
     p.adelanto.nudge.horas=Math.max(1,parseInt($("pnHoras").value,10)||12);
     p.adelanto.nudge.mensaje=$("pnMsg").value.trim();
     // Plantilla de respaldo para cuando el recordatorio cae fuera de la ventana

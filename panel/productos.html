@@ -3540,7 +3540,12 @@ function paintOpciones(fisico){
     const odesc=el.querySelector(".odesc"); if(odesc) odesc.oninput=(e)=>{ v.descripcion=e.target.value; };
     const oem=el.querySelector(".oemsg"); if(oem) oem.oninput=(e)=>{ v.entrega_mensaje=e.target.value; };
     const odel=el.querySelector(".odel"); if(odel) odel.onclick=async()=>{
-      if(!await confirmDialog({title:"Eliminar opción",message:`¿Eliminar "${esc(v.nombre||"esta opción")}"? Los pedidos ya hechos con ella no se tocan.`,confirmText:"Eliminar",danger:true})) return;
+      // ¿Clientes que la ELIGIERON y aún no pagan? `opcion_id` vive en la ficha del contacto
+      // días enteros; si se borra la versión, su comprobante ya no calza con ningún precio.
+      let vivos=0;
+      if(v.id){ try{ const { count }=await supa.from("contact_field_values").select("contact_id, custom_fields!inner(key,channel_id)",{ count:"exact", head:true }).eq("custom_fields.key","opcion_id").eq("custom_fields.channel_id",st.channelId).eq("value",String(v.id)); vivos=count||0; }catch(_){} }
+      const avisoVivos=vivos?` <b>${vivos} cliente${vivos>1?"s":""}</b> la eligi${vivos>1?"eron":"ó"} y todavía no paga${vivos>1?"n":""}: si la borras, su pago no calzará con ningún precio y caerá a revisión manual.`:"";
+      if(!await confirmDialog({title:"Eliminar opción",messageHtml:`¿Eliminar "${esc(v.nombre||"esta opción")}"? Los pedidos ya hechos con ella no se tocan.${avisoVivos}`,confirmText:"Eliminar",danger:true})) return;
       if(v.id) st.delVersions.push(v.id);
       st.versions.splice(i,1);
       // Si quedó 1 (o 0), volver al layout SIMPLE limpio en vez del híbrido multi.
@@ -4392,10 +4397,14 @@ async function saveProduct(){
   // cliente lo sufría (le pedían dirección para un digital, o le mandaban link de un físico).
   if(st.prod.id && st.tipoGuardado && (st.prod.tipo||"digital")!==st.tipoGuardado){
     const nuevo=(st.prod.tipo||"digital")==="fisico"?"Físico":"Digital", viejo=st.tipoGuardado==="fisico"?"Físico":"Digital";
+    const conEntrega=(st.prod.tipo||"digital")==="fisico" && (st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.length);
     const ok=await confirmDialog({ title:"Cambiaste el tipo de producto",
-      message:`Pasó de ${viejo} a ${nuevo}. Es el cambio más grande que hay: el flujo de venta se rehará entero al guardar (un ${nuevo.toLowerCase()} no se vende igual que un ${viejo.toLowerCase()}). ¿Guardar igual?`,
+      message:`Pasó de ${viejo} a ${nuevo}. Es el cambio más grande que hay: el flujo de venta se rehará entero al guardar (un ${nuevo.toLowerCase()} no se vende igual que un ${viejo.toLowerCase()}).${conEntrega?" Los links y archivos de entrega digital de sus presentaciones se quitarán (un físico no los usa).":""} ¿Guardar igual?`,
       confirmText:"Guardar", cancelText:"Cancelar", danger:true });
     if(!ok) return;
+    // Digital → físico: los links/archivos de entrega quedaban guardados en las versiones y el
+    // motor los entregaba igual si esa versión aparecía como extra/regalo de otro producto.
+    if(conEntrega) (st.versions||[]).forEach(v=>{ v.entrega=[]; v.entrega_mensaje=null; });
   }
   st.tipoGuardado=st.prod.tipo||"digital";
   // Recompila el conocimiento del producto a config.contexto_producto (lo que
