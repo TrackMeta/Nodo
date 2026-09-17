@@ -381,6 +381,19 @@
   .msg .mmeta .ico{width:13px;height:13px;flex:none}
   .msg img.stk{max-width:140px;background:transparent}
   .msg a.file .fsz{margin-left:6px;font-size:11.5px;color:var(--muted)}
+  /* Tarjeta de contacto compartido, con el aspecto de WhatsApp: avatar, nombre, número y
+     acciones apiladas (Mensaje / Copiar número). */
+  .msg .ccard{min-width:230px;max-width:280px;border-radius:12px;overflow:hidden;background:var(--surface-2);border:1px solid var(--border)}
+  .msg .ccard+.ccard{margin-top:6px}
+  .cc-head{display:flex;gap:12px;align-items:center;padding:12px 14px}
+  .cc-av{width:46px;height:46px;font-size:16px}
+  .cc-info{min-width:0}
+  .cc-name{font-weight:600;font-size:15px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cc-sub{font-size:12.5px;opacity:.72;margin-top:2px}
+  .cc-actions{display:flex;flex-direction:column;border-top:1px solid var(--border)}
+  .cc-actions button{all:unset;box-sizing:border-box;width:100%;cursor:pointer;text-align:center;padding:11px 8px;font-weight:600;font-size:14px;color:var(--brand)}
+  .cc-actions button+button{border-top:1px solid var(--border)}
+  .cc-actions button:hover{background:var(--brand-bg)}
   .msg .mfail{margin-top:6px;font-size:12px;line-height:1.4;color:var(--red);display:flex;gap:6px;align-items:flex-start;border-top:1px dashed var(--red-bg);padding-top:5px}
   .msg .mfail svg{width:13px;height:13px;flex:none;margin-top:2px}
   .msg .transcript{margin-top:6px;font-size:12.5px;font-style:italic;opacity:.9;border-left:2px solid var(--brand);padding-left:8px;line-height:1.45}
@@ -1821,7 +1834,7 @@ function renderEvent(e){
 // renderMsg porque un mensaje entrante puede cambiar DESPUÉS de pintarse: el webhook le
 // cuelga la URL del audio/foto unos segundos más tarde, y el motor la transcripción.
 function msgInner(m){
-  const mh = mediaHtml(m);
+  const mh = contactCardHtml(m) || mediaHtml(m);
   const txt = m.content?.text || m.content?.caption || m.content?.title || `[${m.type}]`;
   // Transcripción de nota de voz (STT): el bot la escribe bajo el audio.
   const tr = m.content?.transcription
@@ -2001,6 +2014,49 @@ function openLightbox(url, kind){
 // Delegación global: un clic en cualquier [data-light] abre el visor (no pestaña).
 // Nombrado para poder removerlo en onLeave: la Bandeja re-ejecuta este módulo en
 // cada re-entrada (SPA), y sin remover se acumulaba un listener por entrada.
+// ── Tarjeta de contacto compartido (el cliente mandó "un contacto" desde WhatsApp) ──
+// Se pinta como la ve él en su teléfono: avatar, nombre, número y dos acciones. «Mensaje»
+// abre el chat con ese número (o lo crea, avisando que solo cabe una plantilla porque esa
+// persona nunca ha escrito); «Copiar número» para pegarlo donde haga falta.
+function fmtTel(tel){
+  const d=String(tel||"").replace(/\D/g,""); if(!d) return "";
+  const cc=[3,2,1].map(n=>d.slice(0,n)).find(p=>COUNTRY_BY_PREFIX[p])||d.slice(0,2);
+  return "+"+cc+" "+d.slice(cc.length).replace(/(\d{3})(?=\d)/g,"$1 ");
+}
+function contactCardHtml(m){
+  if(m.content?.raw_type!=="contacts") return "";
+  const lista=Array.isArray(m.content.contacts)?m.content.contacts:[];
+  if(!lista.length) return `<div class="ccard"><div class="cc-head"><div class="av cc-av">${icon("user")}</div><div class="cc-info"><div class="cc-name">Contacto compartido</div><div class="cc-sub">Sin número</div></div></div></div>`;
+  return lista.map(c=>{
+    const tel=String((c.telefonos||[])[0]||"").replace(/\D/g,"");
+    const nombre=c.nombre||fmtTel(tel)||"Contacto";
+    const pais=tel?prefixLook(tel, COUNTRY_BY_PREFIX, ""):"";
+    const sub=tel?esc(fmtTel(tel))+(pais?" · "+esc(pais):""):"Sin número";
+    const acciones=tel?`<div class="cc-actions"><button type="button" data-ccmsg="${esc(tel)}" data-ccname="${esc(c.nombre||"")}">Mensaje</button><button type="button" data-cccopy="${esc(tel)}">Copiar número</button></div>`:"";
+    return `<div class="ccard"><div class="cc-head"><div class="av cc-av">${esc(initials(nombre, tel))}</div><div class="cc-info"><div class="cc-name">${esc(nombre)}</div><div class="cc-sub">${sub}</div></div></div>${acciones}</div>`;
+  }).join("");
+}
+async function abrirChatDe(tel, nombre){
+  if(!tel||!state.channelId) return;
+  const { data: ya }=await supa.from("contacts").select("id,nombre,wa_id,bot_activo").eq("channel_id", state.channelId).eq("wa_id", tel).maybeSingle();
+  if(ya){ openChat(ya); return; }
+  const quien=esc(nombre||fmtTel(tel));
+  const ok=await confirmDialog({ title:"Todavía no tienes chat con ese número", messageHtml:`<b>${quien}</b> (${esc(fmtTel(tel))}) nunca te ha escrito. Si creas el contacto podrás abrirle conversación con una <b>plantilla</b> (WhatsApp no permite texto libre hasta que responda). El bot queda en pausa en ese chat para que lo lleves tú.`, confirmText:"Crear y abrir" });
+  if(!ok) return;
+  const { data: nuevo, error }=await supa.from("contacts").insert({ channel_id: state.channelId, wa_id: tel, nombre: nombre||null, bot_activo: false }).select("id,nombre,wa_id,bot_activo").single();
+  if(error){ toast("No se pudo crear el contacto: "+error.message, true); return; }
+  // La fila de conversación es la que lo hace aparecer en la lista de la Bandeja.
+  await supa.from("conversations").upsert({ channel_id: state.channelId, contact_id: nuevo.id, expira_at: new Date(0).toISOString() }, { onConflict:"contact_id" }).then(()=>{},()=>{});
+  logEvent(nuevo.id, "nota", "Contacto creado desde una tarjeta compartida", state.contactName ? "La compartió "+state.contactName : null);
+  toast("Contacto creado");
+  openChat(nuevo); loadConversations();
+}
+document.addEventListener("click", (e)=>{
+  const b=e.target && e.target.closest && e.target.closest("[data-ccmsg],[data-cccopy]"); if(!b) return;
+  e.preventDefault();
+  if(b.dataset.cccopy){ (navigator.clipboard?.writeText(b.dataset.cccopy)||Promise.reject()).then(()=>toast("Número copiado"),()=>toast("No se pudo copiar el número",true)); }
+  else abrirChatDe(b.dataset.ccmsg, b.dataset.ccname||"");
+});
 function onDocClickLightbox(e){
   const el=e.target && e.target.closest && e.target.closest("[data-light]");
   if(el){ e.preventDefault(); openLightbox(el.getAttribute("data-light"), el.getAttribute("data-lk")||"image"); }
