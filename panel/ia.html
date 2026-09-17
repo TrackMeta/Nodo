@@ -514,6 +514,16 @@ function compileNegocio(form){
   const faq=(form.faq||[]).filter(x=>x&&(x.q||x.a));
   if(faq.length) L.push("## Preguntas frecuentes\n"+faq.map(x=>`- P: ${(x.q||"").trim()}\n  R: ${(x.a||"").trim()}`).join("\n"));
   if(form.extra&&form.extra.trim()) L.push("## Información adicional\n"+form.extra.trim());
+  // MISMO bloque que negocio.html: las dos pantallas recompilan `channels.negocio` con su
+  // propia copia de esta función, y a esta le faltaba la biblioteca de archivos → guardar
+  // «Vendedor IA» borraba del contexto las instrucciones para mandar [[media:TAG]] (los
+  // archivos seguían en negocio_form, pero el modelo ya no sabía que podía enviarlos).
+  const mm=(form.multimedia||[]).filter(m=>m&&m.media_url&&m.tag);
+  if(mm.length) L.push("## Archivos que puedes enviar\n" +
+    "Cuando la situación lo pida, envía el archivo escribiendo `[[media:TAG]]` en una línea aparte.\n" +
+    mm.map(m=>`- [[media:${m.tag}]] — ${(m.descripcion||"").trim()||"archivo del negocio"}`).join("\n") +
+    "\n⛔ Como MUCHO uno por conversación, y solo si responde algo que el cliente preguntó o una duda que mostró. " +
+    "No los mandes de saludo ni encadenes varios: cada archivo es una burbuja más que él tiene que abrir.");
   return L.join("\n\n");
 }
 // Semilla común del formulario del negocio, compartida por las pestañas
@@ -523,6 +533,8 @@ function seedForm(){
   const c=st.channel||{};
   let form=c.negocio_form && typeof c.negocio_form==="object" ? {...c.negocio_form} : {};
   if(!c.negocio_form && c.negocio) form.extra=c.negocio; // migra el texto libre anterior
+  if(!form.nombre && c.nombre) form.nombre=c.nombre; // igual que negocio.html: canal nuevo con nombre
+  if(!Array.isArray(form.multimedia)) form.multimedia=[];
   if(!Array.isArray(form.faq)) form.faq=[];
   if(form.negritas===undefined) form.negritas=true;
   if(form.emoji_min===undefined) form.emoji_min=0;
