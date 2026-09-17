@@ -114,8 +114,10 @@ async function boot(){
   await load();
 }
 async function load(){
+  const gen=(st.loadGen=(st.loadGen||0)+1), forChannel=st.channelId; // anti-carrera al cambiar de bot
   st.deleted=[];
-  const { data }=await supa.from("custom_fields").select("*").eq("channel_id",st.channelId).order("created_at");
+  const { data }=await supa.from("custom_fields").select("*").eq("channel_id",forChannel).order("created_at");
+  if(gen!==st.loadGen) return;
   // Unificado: Fijos (valor que tú pones) + Capturados (los que el bot recoge).
   st.fields=(data||[]);
   if(!Fbar){ Fbar=await mountFolders({ el:$("folders"), tipo:"custom_field", table:"custom_fields", channelId:st.channelId, items:()=>inTab(), onChange:render, labelAll:"Todos" }); }

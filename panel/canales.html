@@ -148,17 +148,23 @@ async function boot(){
   if(st.channelId) await load();
 }
 async function load(){
+  // Anti-carrera al cambiar de bot rápido (A→B→A): la respuesta que llega ÚLTIMA pintaba, no
+  // la pedida última → la tarjeta mostraba el bot B mientras st.channelId ya era A, y
+  // «Archivar»/«Desconectar» actuaban sobre A con el nombre de B en pantalla.
+  const gen=(st.loadGen=(st.loadGen||0)+1), forChannel=st.channelId;
   // NOTA: el panel ya NO lee channels.telegram_webhook_secret (material del webhook, que
   // un miembro podría usar para forjar el webhook y aprobar pagos — migración 0073 lo
   // revoca). El booleano "Copiloto activo" viene del endpoint status (st.secrets.copiloto).
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,phone_number_id,waba_id,verify_token,telegram_chat_ids,ia_router").eq("id",st.channelId).maybeSingle();
+    .select("nombre,phone_number_id,waba_id,verify_token,telegram_chat_ids,ia_router").eq("id",forChannel).maybeSingle();
   if(chErr){ ({ data:ch } = await supa.from("channels")
-    .select("nombre,phone_number_id,waba_id,verify_token,ia_router").eq("id",st.channelId).maybeSingle()); }
+    .select("nombre,phone_number_id,waba_id,verify_token,ia_router").eq("id",forChannel).maybeSingle()); }
+  if(gen!==st.loadGen) return; // cambiaste de bot mientras cargaba
   st.channel=ch||{};
   st.channelNombre=st.channel.nombre||"";
   st.secrets={};
-  try{ const r=await callFn("channel-config",{ action:"status", channel_id:st.channelId }); st.secrets=r?.secrets||{}; }catch(_){}
+  try{ const r=await callFn("channel-config",{ action:"status", channel_id:forChannel }); if(gen!==st.loadGen) return; st.secrets=r?.secrets||{}; }catch(_){}
+  if(gen!==st.loadGen) return;
   // Una sola guarda para todo lo que pinta esta seccion, en vez de una por render:
   // entre el await de arriba y esta linea puedes haberte ido a otra pantalla. Las
   // lecturas por `supa` las cancela shell.js al salir, pero la de arriba va por Edge

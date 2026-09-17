@@ -172,7 +172,9 @@ function updatePreview(){
   p.innerHTML=`<span class="dot"></span>${esc(name)}`;
 }
 async function load(){
-  const { data }=await supa.from("tags").select("*").eq("channel_id",st.channelId).order("nombre");
+  const gen=(st.loadGen=(st.loadGen||0)+1), forChannel=st.channelId; // anti-carrera al cambiar de bot
+  const { data }=await supa.from("tags").select("*").eq("channel_id",forChannel).order("nombre");
+  if(gen!==st.loadGen) return;
   st.tags=data||[]; render();
 }
 function render(){

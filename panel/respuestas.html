@@ -135,7 +135,9 @@ function showGrid(){ $("gridView").style.display=""; $("detailView").style.displ
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
 
 async function load(){
-  const { data }=await supa.from("quick_replies").select("*").eq("channel_id",st.channelId).order("orden").order("created_at");
+  const gen=(st.loadGen=(st.loadGen||0)+1), forChannel=st.channelId; // anti-carrera al cambiar de bot
+  const { data }=await supa.from("quick_replies").select("*").eq("channel_id",forChannel).order("orden").order("created_at");
+  if(gen!==st.loadGen) return;
   st.list=data||[];
   if(!Fbar){
     Fbar=await mountFolders({ el:$("folders"), tipo:"quick_reply", table:"quick_replies", channelId:st.channelId, items:()=>st.list, onChange:renderCards, labelAll:"Todas" });
@@ -307,6 +309,9 @@ async function saveQR(){
   const cuerpo=bubs.map(b=> b.text||b.caption||"").filter(s=>s&&String(s).trim()).join("\n\n");
   const patch={ titulo:$("q_titulo").value.trim(), atajo:$("q_atajo").value.trim()||null, folder:st.qr.folder||null, cuerpo, color:st.qr.color||null, media:bubs.length?bubs:null };
   if(!patch.titulo){ toast("El título no puede estar vacío",true); return; }
+  // Atajo repetido: dos respuestas con «/precio» y cuál sale en la Bandeja dependía del orden
+  // de la consulta. Se avisa antes de guardar.
+  if(patch.atajo){ const a=patch.atajo.toLowerCase(); const otra=(st.list||[]).find(q=>q.id!==st.qr.id&&String(q.atajo||"").toLowerCase()===a); if(otra){ toast(`El atajo «${patch.atajo}» ya lo usa «${otra.titulo||"otra respuesta"}». Cámbialo para que no se confundan.`,true); return; } }
   let { error }=await supa.from("quick_replies").update(patch).eq("id",st.qr.id);
   if(error && /color|media|column/.test(error.message)){ const { color, media, ...base }=patch; ({ error }=await supa.from("quick_replies").update(base).eq("id",st.qr.id)); if(!error) toast("Guardado (aplica la migración 0028 para color/multimedia)"); }
   if(error){ toast(error.message,true); return; }
