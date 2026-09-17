@@ -498,7 +498,7 @@ async function load(){
     } else data=r1.data;
   }
   if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó
-  st.list=data||[]; render();
+  st.list=(data||[]).filter(o=>((o.contact||{}).wa_id)!=="webchat-test"); render(); // sin los pedidos de Probar flujos
   // RESCATE de los pedidos en curso que quedaron fuera del corte por fecha. El tablero
   // trae los 1000 más recientes, y eso dejaba fuera justo los que más importa ver: el
   // pedido que se atascó (el que lleva 40 días "en agencia" porque el cliente no fue a
@@ -514,7 +514,7 @@ async function load(){
       if(gen!==st.loadGen) return;
       if(extra?.length){
         const vistos=new Set(st.list.map(o=>o.id));
-        st.list=[...st.list, ...extra.filter(o=>!vistos.has(o.id))];
+        st.list=[...st.list, ...extra.filter(o=>!vistos.has(o.id)&&((o.contact||{}).wa_id)!=="webchat-test")];
         render();
       }
     }catch(_){ /* el tablero ya está pintado: el rescate es un extra, no puede tumbarlo */ }
@@ -535,7 +535,9 @@ async function load(){
 
 function render(){
   let list=st.list.filter(isFisico);
-  if(st.q) list=list.filter(o=>{ const c=o.contact||{}; return norm(c.nombre).includes(st.q)||(c.wa_id||"").includes(st.q); });
+  // También por el nombre/DNI/guía del PEDIDO (shipping): el destinatario suele no ser el
+  // contacto de WhatsApp («María» cuando el contacto es «Juan (esposo)»).
+  if(st.q) list=list.filter(o=>{ const c=o.contact||{}, s=o.shipping||{}; const qd=st.q.replace(/\D/g,""); return norm(c.nombre).includes(st.q)||(c.wa_id||"").includes(st.q)||norm(s.cliente).includes(st.q)||(qd&&((s.dni||"").replace(/\D/g,"").includes(qd)||(s.guia||"").toString().includes(qd)||(s.tel||"").replace(/\D/g,"").includes(qd))); });
   const box=$("kb");
 
   const FIN=new Set(["entregado_cobrado","recogido","rechazado","no_recogido","cancelado"]);
@@ -705,10 +707,15 @@ function kcard(o){
     </div>
     <div class="kc-when">${rel(o.updated_at||o.created_at)}</div>`;
   const mb=el.querySelector("[data-main]");
-  if(mb&&act) mb.onclick=()=>{
-    if(act.modal==="despacho") openDespacho(o);
-    else if(act.modal==="llegada") avisarLlegada(o);
-    else confirmSet(o,act.estado,act.label);
+  // Bloqueado mientras se resuelve: un doble clic apilaba dos confirmaciones y mandaba el
+  // mismo estado dos veces (clave de recojo repetida, segundo «salió a reparto»).
+  if(mb&&act) mb.onclick=async()=>{
+    if(mb.disabled) return; mb.disabled=true;
+    try{
+      if(act.modal==="despacho") await openDespacho(o);
+      else if(act.modal==="llegada") await avisarLlegada(o);
+      else await confirmSet(o,act.estado,act.label);
+    } finally { mb.disabled=false; }
   };
   el.querySelector(".edit").onclick=(ev)=>{ ev.stopPropagation(); openEnvio(o); };
   el.querySelector(".rot:not(.edit)").onclick=(ev)=>{ ev.stopPropagation(); printRotulo(o); };
@@ -1019,7 +1026,9 @@ function openMenu(ev,o){
   // haberlo recibido y pagado. Cerrar desde confirmado no se salta ninguna plata: el cobro
   // ES la entrega. (saldo_pagado y recogido sí siguen atados a su paso previo: ahí el cobro
   // ocurre ANTES y saltárselo manda una clave vacía y atribuye a Meta una venta sin cobrar.)
-  const preReq={ saldo_pagado:["despachado","en_agencia"], recogido:["saldo_pagado"], entregado_cobrado:["en_reparto","confirmado"] };
+  // no_recogido también exige haber salido: desde «esperando adelanto» se marcaba «perdido con
+  // adelanto» un paquete que nunca se envió, ensuciando las pérdidas de provincia.
+  const preReq={ saldo_pagado:["despachado","en_agencia"], recogido:["saldo_pagado"], entregado_cobrado:["en_reparto","confirmado"], no_recogido:["despachado","en_agencia","saldo_pagado"] };
   trans.forEach(([e])=>{
     if(e===o.estado) return;
     if(preReq[e] && !preReq[e].includes(o.estado)) return; // salto que se salta pasos → no ofrecerlo

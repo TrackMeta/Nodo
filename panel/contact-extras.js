@@ -1891,7 +1891,8 @@ export async function openEditarPedido(o, deps) {
       // zona:"digital" hacía que esFisico lo tomara como físico y zonaDe lo
       // clasificara como "provincia" (embudo de provincia en un digital).
       const ship = {};
-      if (zona !== "digital") { ship.zona = zona; ship.cliente = g("#eNom").value.trim(); ship.tel = g("#eTel").value.trim(); }
+      // tel sin «+» ni espacios: el rótulo antepone el «+» y salía «++51…»; el Excel del courier quiere solo dígitos.
+      if (zona !== "digital") { ship.zona = zona; ship.cliente = g("#eNom").value.trim(); ship.tel = g("#eTel").value.trim().replace(/^\+/, "").replace(/[\s-]+/g, ""); }
       // Variante (talla/color) del principal → shipping.atributos (rótulo/agencia/stock).
       const ejesP = ejesDe(g("#eProd") ? g("#eProd").value : o.product_id);
       if (ejesP.length) {
@@ -1906,7 +1907,7 @@ export async function openEditarPedido(o, deps) {
         if (es && es !== o.estado) estadoNuevo = es;
       } else if (zona === "provincia") {
         const dst = g("#eDestino").value.trim();
-        Object.assign(ship, { dni: g("#eDni").value.trim(), ciudad: g("#eCiudad").value.trim(),
+        Object.assign(ship, { dni: g("#eDni").value.replace(/\s+/g, ""), ciudad: g("#eCiudad").value.trim(),
           destino: dst, mercaderia: g("#eMerc").value,
           alto: numU("#eAlto"), ancho: numU("#eAncho"), largo: numU("#eLargo"), peso: numU("#ePeso"),
           adelanto: numU("#eAdel"), saldo: numU("#eSaldo"), // número o null (no string): un "80" de texto rompía sumas aguas abajo (concat/NaN)

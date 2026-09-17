@@ -238,7 +238,7 @@ async function conciliar(){
       fecha: ultimaImg.get(o.contact_id) || new Date(o.confirmed_at||o.updated_at||o.created_at),
       _o:o, _orderId:o.id, _parte:null, _parteTxt:"", _yaConciliado:(conc.partes?null:(s.conciliacion||null)) }];
   };
-  st.ventas=cerradas.flatMap(entradasDe);
+  st.ventas=cerradas.filter(o=>((o.contact||{}).wa_id)!=="webchat-test").flatMap(entradasDe); // sin ventas de Probar flujos
 
   // Para el LEDGER anti-reúso: una venta creada JUSTO ANTES del rango pero pagada
   // dentro de la ventana de movimientos (desde-6h) no entra a st.ventas → su depósito

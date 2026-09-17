@@ -108,7 +108,13 @@ async function boot(){
 // seguidas; (2) no re-renderizar con un modal o el lightbox abierto — le
 // movería la tarjeta bajo el dedo justo cuando iba a aprobar. Si está ocupado,
 // reintenta hasta que cierre.
-function ocupado(){ return !!document.querySelector(".nodo-modal-back") || $("lightbox").classList.contains("show"); }
+// También si el operador está TIPEANDO la clave de recojo en una tarjeta: el repintado por
+// realtime (otro comprobante que entra) borraba lo tecleado sin aviso.
+function ocupado(){ return !!document.querySelector(".nodo-modal-back") || $("lightbox").classList.contains("show") || !!(document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("clave-in")); }
+// Una acción de plata a la vez: doble clic (o dos operadores en la misma tarjeta con 1-2 s de
+// ventana antes de que realtime la quite) mandaba dos order-update → doble entrega/clave.
+let _enVuelo=false;
+async function enVuelo(fn){ if(_enVuelo){ toast("Espera: se está procesando la acción anterior"); return; } _enVuelo=true; try{ return await fn(); } finally{ _enVuelo=false; } }
 function wireRealtime(){
   if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; }
   if(!st.channelId) return;
@@ -149,7 +155,8 @@ async function load(){
   if(error){ ({ data }=await pageAll((f,t)=>supa.from("orders").select("id,amount,currency,estado,shipping,contact_id,product_id,created_at")
     .eq("channel_id",st.channelId).in("estado",TODOS).order("created_at",{ascending:true}).order("id").range(f,t))); }
   if(gen!==st.loadGen) return; // cambiaste de bot mientras cargaba
-  st.list=data||[];
+  // Sin las ventas del contacto de PRUEBA (Probar flujos): pedían aprobación como si fueran reales.
+  st.list=(data||[]).filter(o=>((o.contact||{}).wa_id)!=="webchat-test");
 
   // Pedidos con un pago de VENTA EXTRA pendiente de aprobar: ya están
   // 'confirmada' (fuera de TODOS), así que se traen aparte y se suman.
@@ -448,7 +455,10 @@ async function updateOrder(body){
   return data;
 }
 
-async function aprobar(o,nuevo,titulo,detalle,extraShip){
+async function aprobar(...a){ return enVuelo(()=>_aprobar(...a)); }
+async function aprobarExtra(...a){ return enVuelo(()=>_aprobarExtra(...a)); }
+async function rechazar(...a){ return enVuelo(()=>_rechazar(...a)); }
+async function _aprobar(o,nuevo,titulo,detalle,extraShip){
   const c=o.contact||{};
   if(!await confirmDialog({ title:titulo, message:`${c.nombre||"Cliente"} — ${detalle}`, confirmText:"Confirmar" })) return;
   const r=await updateOrder({ order_id:o.id, estado:nuevo, ...(extraShip?{shipping:extraShip}:{}) });
@@ -458,7 +468,7 @@ async function aprobar(o,nuevo,titulo,detalle,extraShip){
 // Aprobar la venta extra: el pedido ya está confirmado, no cambia de estado.
 // `resume:true` hace que order-update reanude el run parqueado → el bot entrega
 // el extra y sigue (siguiente extra o fin).
-async function aprobarExtra(o){
+async function _aprobarExtra(o){
   const c=o.contact||{};
   if(!await confirmDialog({ title:"Aprobar la venta extra",
     message:`${c.nombre||"Cliente"} — el bot le entrega el extra al instante y continúa.`, confirmText:"Confirmar" })) return;
@@ -467,7 +477,7 @@ async function aprobarExtra(o){
   if(r){ toast(r.resumed?"Extra entregado · el bot le está escribiendo":"Aprobado"); await load(); }
 }
 
-async function rechazar(o,tipo){
+async function _rechazar(o,tipo){
   const c=o.contact||{};
   // El pago digital y el de extra dejan la conversación PARQUEADA esperando tu
   // visto bueno, así que rechazar tiene que decidir además qué pasa con el chat:
@@ -497,8 +507,12 @@ async function rechazar(o,tipo){
   const r=await updateOrder({ order_id:o.id, shipping:patch,
     ...(parqueado?{ reject:quien, reject_motivo:"No pude validar ese comprobante. ¿Me lo reenvías, por favor?" }:{}) });
   const pausa=parqueado&&quien==="humano";
-  if(r && pausa){ try{ await supa.from("contacts").update({ bot_activo:false }).eq("id",o.contact_id); }catch(_){} }
-  if(r){ toast(pausa?"Rechazado · el bot quedó en pausa en ese chat"
+  let pausaOk=pausa;
+  // Antes el catch tragaba el error y el toast decía «el bot quedó en pausa» igual: el operador
+  // escribía a mano mientras el bot seguía contestando en paralelo.
+  if(r && pausa){ const { error:ePausa }=await supa.from("contacts").update({ bot_activo:false }).eq("id",o.contact_id); if(ePausa){ pausaOk=false; toast("Rechazado, pero NO pude pausar el bot: "+ePausa.message+". Páusalo desde la Bandeja.",true); } }
+  if(r){ if(pausa&&!pausaOk){ await load(); await ofrecerGuardarFraude(o,tipo); return; }
+    toast(pausa?"Rechazado · el bot quedó en pausa en ese chat"
                     :(r.rejected?"Rechazado · el bot le está pidiendo otro comprobante":"Marcado como rechazado")); await load();
     await ofrecerGuardarFraude(o,tipo); } // #4: aprender del rechazo (si era un montaje, guardarlo como ejemplo)
 }
