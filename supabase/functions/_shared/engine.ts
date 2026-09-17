@@ -11376,6 +11376,20 @@ function normalizarDraftProducto(d: any): any {
       .map((a: any) => ({ nombre: String(a?.nombre ?? "").trim(), valores: Array.isArray(a?.valores) ? a.valores.join(", ") : String(a?.valores ?? "") }))
       .filter((a: any) => a.nombre);
   }
+  // faq / objeciones como OBJETO {pregunta: respuesta} (OpenAI con json_object sin schema
+  // lo devuelve así a veces): el aplicador solo aceptaba arrays y las descartaba en silencio
+  // → el producto quedaba con 0 objeciones aunque el asistente sí las generó.
+  if (d.faq && !Array.isArray(d.faq) && typeof d.faq === "object") {
+    d.faq = Object.entries(d.faq).map(([q, a]) => ({ q, a: typeof a === "string" ? a : String((a as any)?.a ?? (a as any)?.respuesta ?? "") }));
+  }
+  if (d.objeciones && !Array.isArray(d.objeciones) && typeof d.objeciones === "object") {
+    d.objeciones = Object.entries(d.objeciones).map(([o, r]) => ({ o, r: typeof r === "string" ? r : String((r as any)?.r ?? (r as any)?.respuesta ?? "") }));
+  }
+  if (Array.isArray(d.objeciones)) {
+    d.objeciones = d.objeciones
+      .map((x: any) => typeof x === "string" ? { o: x.trim(), r: "" } : { o: String(x?.o ?? x?.objecion ?? x?.pega ?? "").trim(), r: String(x?.r ?? x?.respuesta ?? x?.rebate ?? "").trim() })
+      .filter((x: any) => x.o);
+  }
   // faq: acepta {q,a} o {pregunta,respuesta} (o question/answer).
   if (Array.isArray(d.faq)) {
     d.faq = d.faq
