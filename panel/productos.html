@@ -680,6 +680,10 @@ async function openProduct(id){
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
   if(gen!==st.openGen) return; // otra apertura más nueva ya ganó
   st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="inicio";
+  // Snapshot del config al ABRIR: al guardar se mezcla por delta contra el config FRESCO
+  // (otra pestaña —palabras clave, adelanto, secuencias— pudo escribir una clave mientras
+  // esta ficha estaba abierta; escribir el config completo desde la copia vieja la pisaba).
+  st._cfgOrig=JSON.parse(JSON.stringify(p.config||{}));
   // Snapshot del stock al ABRIR: al guardar se reconcilia por DELTA contra el stock FRESCO
   // de la BD (el motor pudo decrementar por ventas mientras la ficha estaba abierta), para
   // no revertir esos descuentos ni perder una edición manual del dueño. Ver saveProduct.
@@ -2945,7 +2949,11 @@ function selloEstructura(){
   const cfg = st.prod?.config || {};
   const est = {};
   for (const k of Object.keys(cfg).sort()) if (!CONTENIDO_EN_VIVO.has(k)) est[k] = cfg[k];
-  return JSON.stringify({ tipo: st.prod?.tipo || "digital", est });
+  // Las presentaciones viven en product_versions (fuera de config): borrarlas, apagarlas o
+  // cambiarles el precio no movía el sello y el flujo publicado seguía vendiendo lo que ya
+  // no existía, sin aviso.
+  const vers = (st.versions || []).map(v => [v.id || v.nombre || "", v.activo !== false, Number(v.precio) || 0, Number(v.cantidad) || 1]);
+  return JSON.stringify({ tipo: st.prod?.tipo || "digital", est, vers });
 }
 // Huella de los bloques del flujo, SIN los ids (cambian en cada generación) y sin depender
 // del orden en que los devuelva la base. Sirve para una sola pregunta: ¿esto sigue siendo lo
@@ -3684,7 +3692,7 @@ function paintVals(box, a, onChange, onRename){
     ed.onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); commit(); } else if(e.key==="Escape"){ e.preventDefault(); ed.onblur=null; paintVals(box,a,onChange,onRename); } };
   });
   const inp=box.querySelector(".valnew");
-  const add=()=>{ const v=inp.value.trim(); if(!v) return false; inp.onblur=null; inp.value=""; arr.push(v); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange,onRename); const ni=box.querySelector(".valnew"); if(ni) ni.focus(); return true; };
+  const add=()=>{ const v=inp.value.trim(); if(!v) return false; if(arr.some(x=>String(x).trim().toLowerCase()===v.toLowerCase())){ inp.value=""; toast(`«${v}» ya existe en este atributo`,true); return false; } inp.onblur=null; inp.value=""; arr.push(v); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange,onRename); const ni=box.querySelector(".valnew"); if(ni) ni.focus(); return true; };
   inp.onkeydown=(e)=>{ if(e.key==="Enter"||e.key===","){ e.preventDefault(); add(); } else if(e.key==="Backspace" && !inp.value && arr.length){ arr.pop(); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange,onRename); const ni=box.querySelector(".valnew"); if(ni) ni.focus(); } };
   inp.onblur=()=>{ add(); };
   // Al tocar la caja (no un chip), enfoca el input para escribir.
@@ -4492,6 +4500,23 @@ async function saveProduct(){
       }
     }
   }catch(e){ console.warn("[productos] reconciliar stock:",e); }
+  // 🔒 Mismo delta para el RESTO del config: lo que otra pantalla cambió en la base desde que
+  // se abrió esta ficha (y que acá no se tocó) se conserva; lo que se editó acá manda.
+  try{
+    const { data:fr2 }=await supa.from("products").select("config").eq("id",st.prod.id).maybeSingle();
+    const dbCfg=(fr2&&fr2.config&&typeof fr2.config==="object")?fr2.config:null;
+    if(dbCfg){
+      const orig=st._cfgOrig||{}; const local=st.prod.config||{}; const J=(x)=>JSON.stringify(x===undefined?null:x);
+      for(const k of new Set([...Object.keys(dbCfg),...Object.keys(orig)])){
+        if(k==="stock") continue; // ya reconciliado arriba por unidades
+        const dbChanged=J(dbCfg[k])!==J(orig[k]), localChanged=J(local[k])!==J(orig[k]);
+        if(dbChanged&&!localChanged){ if(k in dbCfg) local[k]=dbCfg[k]; else delete local[k]; }
+      }
+    }
+  }catch(e){ console.warn("[productos] reconciliar config:",e); }
+  // Tags de la biblioteca: únicos y no vacíos (dos archivos con el mismo tag compartían el
+  // marcador [[media:tag]] y el segundo nunca se podía enviar).
+  { const mm=(st.prod.config||{}).ia_multimedia; if(Array.isArray(mm)){ const seen=new Set(); mm.forEach((m,i)=>{ if(!m) return; let t=String(m.tag||"").replace(/[^\w-]/g,"").toLowerCase()||("archivo"+(i+1)); const b=t; let n=2; while(seen.has(t)) t=b+(n++); seen.add(t); m.tag=t; }); } }
   const base={ nombre:st.prod.nombre, config:st.prod.config||{}, updated_at:new Date().toISOString() };
   let { error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null, tipo:st.prod.tipo||"digital" }).eq("id",st.prod.id);
   if(e1 && /tipo|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null }).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0022 para el tipo físico)"); }
@@ -4511,6 +4536,13 @@ async function saveProduct(){
   {
     const mal=(st.versions||[]).find(v=>(v.precio!==""&&v.precio!=null&&Number(v.precio)<0)||(v.costo!==""&&v.costo!=null&&Number(v.costo)<0));
     if(mal){ toast(`"${mal.nombre||"Única"}": el precio y el costo no pueden ser negativos`,true); return; }
+    // Cantidad del pack: con un valor negativo el motor descartaba el movimiento de stock
+    // entero (ni resta ni suma) → sobreventa muda.
+    const malCant=(st.versions||[]).find(v=>v.cantidad!==""&&v.cantidad!=null&&!(Number(v.cantidad)>=1));
+    if(malCant){ toast(`"${malCant.nombre||"Única"}": la cantidad del pack debe ser 1 o más`,true); return; }
+    // Todas las presentaciones apagadas: el bot no tiene qué vender y el validador de pagos
+    // no tiene contra qué medir. Se avisa (no se bloquea: puede ser a propósito).
+    if((st.versions||[]).length && (st.versions||[]).every(v=>v.activo===false)) toast("Ojo: todas las presentaciones están desactivadas; el bot no podrá vender este producto hasta que actives una.",true);
   }
   st.delVersions=[];
   for(let i=0;i<st.versions.length;i++){

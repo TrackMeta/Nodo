@@ -18106,6 +18106,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             try {
               const opsB = await loadOpciones(db, run, ctx._product_id);
               if ((opsB || []).some((o: any) => o && Number(o.precio) > 0)) precioSinResolver = true;
+              else if ((opsB || []).length) precioSinResolver = true; // hay presentaciones activas pero todas a S/0: nada contra qué medir
+              else {
+                // Sin opciones ACTIVAS: si el producto tiene presentaciones (todas apagadas o a
+                // precio 0), tampoco hay precio esperado → manual. Un producto simple (sin
+                // presentaciones) sigue juzgándose con su precio único, como antes.
+                const { count } = await db.from("product_versions").select("id", { count: "exact", head: true }).eq("product_id", ctx._product_id);
+                if ((count ?? 0) > 0) precioSinResolver = true;
+              }
             } catch (_) { /* sin catálogo de opciones → como antes, juzga el modelo */ }
           }
         } else {
