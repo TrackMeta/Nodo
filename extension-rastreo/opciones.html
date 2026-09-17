@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Nodo · Rastreo</title>
+<style>
+  :root{ --bg:#0B1120; --surface:#151E32; --surface-2:#1C2740; --border:rgba(148,163,184,.16);
+         --text:#F1F5F9; --muted:#94A3B8; --brand:#007dfd; --green:#10B981; --red:#EF4444; --amber:#F59E0B; }
+  *{box-sizing:border-box}
+  body{margin:0;width:360px;padding:18px;background:var(--bg);color:var(--text);
+       font:13.5px/1.55 "Segoe UI",system-ui,sans-serif}
+  h1{font-size:15px;margin:0 0 3px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:12px;margin:0 0 16px}
+  label{display:block;font-size:11.5px;color:var(--muted);font-weight:700;margin:14px 0 6px}
+  input{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;
+        color:var(--text);padding:9px 11px;font-size:13px;font-family:inherit;outline:none}
+  input:focus{border-color:var(--brand)}
+  .hint{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.5}
+  .fila{display:flex;gap:8px;margin-top:16px}
+  button{flex:1;height:36px;border-radius:9px;border:1px solid var(--border);background:transparent;
+         color:var(--text);font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer}
+  button.primary{background:var(--brand);border-color:transparent;color:#fff}
+  button:disabled{opacity:.5;cursor:default}
+  .estado{margin-top:16px;padding:11px 12px;border-radius:10px;background:var(--surface);
+          border:1px solid var(--border);font-size:12px;line-height:1.6}
+  .estado b{display:block;margin-bottom:3px}
+  .ok{border-color:rgba(16,185,129,.4)} .mal{border-color:rgba(239,68,68,.5)}
+  .cuando{color:var(--muted);font-size:11px;margin-top:5px}
+</style>
+</head>
+<body>
+  <h1>Nodo · Rastreo de guías</h1>
+  <p class="sub">Revisa tus envíos Shalom y, cuando llegan a la agencia, mueve el pedido en Nodo — que le avisa solo al cliente.</p>
+
+  <label for="secreto">Código de Nodo</label>
+  <input id="secreto" type="password" placeholder="pégalo una sola vez" autocomplete="off" />
+  <div class="hint">Es lo único que conecta la extensión con tu Nodo. No es tu contraseña y no sirve para entrar al panel.</div>
+
+  <label for="horas">Revisar cada</label>
+  <input id="horas" type="number" min="1" max="24" step="1" placeholder="4" />
+  <div class="hint">Horas. Un paquete no cambia de etapa más seguido que eso, y menos consultas es menos riesgo de que Shalom te corte. Recomendado: 4.</div>
+
+  <div class="fila">
+    <button id="guardar" class="primary">Guardar</button>
+    <button id="ahora">Revisar ahora</button>
+  </div>
+
+  <div id="estado" class="estado">Sin revisar todavía.</div>
+
+  <script src="opciones.js"></script>
+</body>
+</html>

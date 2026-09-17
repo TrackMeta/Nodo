@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Nodo · Rastreo de guías",
+  "version": "1.0.0",
+  "description": "Lee el estado de tus envíos Shalom y mueve el pedido en Nodo cuando llegan a la agencia.",
+  "permissions": ["storage", "alarms", "tabs", "scripting"],
+  "host_permissions": [
+    "https://shalom.com.pe/*",
+    "https://ahoxdyffbwjlshmdezwi.supabase.co/*"
+  ],
+  "background": { "service_worker": "fondo.js", "type": "module" },
+  "options_page": "opciones.html",
+  "action": { "default_popup": "opciones.html", "default_title": "Nodo · Rastreo" }
+}

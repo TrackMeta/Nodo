@@ -994,8 +994,8 @@ export async function openDespachoModal(o, deps) {
         <div><label>Sede / destino</label><input data-d="sede" value="${esc(s.sede || "")}" placeholder="Ej. Shalom Huancayo Centro"/></div>
       </div>
       <div class="row2">
-        <div><label>N° de guía</label><input data-d="guia" value="${esc(s.guia || "")}" placeholder="Ej. 034-123456"/></div>
-        <div><label>Código de envío</label><input data-d="codigo" value="${esc(s.codigo_envio || "")}" placeholder="Ej. SH-77120"/></div>
+        <div><label>N° de orden</label><input data-d="guia" value="${esc(s.guia || "")}" inputmode="numeric" placeholder="Ej. 96060938"/></div>
+        <div><label>Código de orden</label><input data-d="codigo" value="${esc(s.codigo_envio || "")}" placeholder="Ej. wcjk"/></div>
       </div>
       <label>Clave de recojo</label><input data-d="clave" value="${esc(s.clave_recojo || "")}" placeholder="La pones tú, el cliente la usa para recoger"/>
       <label>Costo del envío ${sugerido != null ? `<span style="font-weight:400;color:var(--faint)">· sugerido S/ ${esc(sugerido)}</span>` : ""}</label>
@@ -1809,8 +1809,8 @@ export async function openEditarPedido(o, deps) {
           </div>
           <div class="pm-sec-h" style="margin-top:14px">${icon("truck","cxi")} Guía, clave y costo</div>
           <div class="row2">
-            <div><label>N° de guía</label><input id="eGuia" value="${esc(s.guia || "")}" placeholder="Ej. 034-123456"/></div>
-            <div><label>Código de envío</label><input id="eCodigo" value="${esc(s.codigo_envio || "")}" placeholder="Ej. SH-77120"/></div>
+            <div><label>N° de orden</label><input id="eGuia" value="${esc(s.guia || "")}" inputmode="numeric" placeholder="Ej. 96060938"/></div>
+            <div><label>Código de orden</label><input id="eCodigo" value="${esc(s.codigo_envio || "")}" placeholder="Ej. wcjk"/></div>
           </div>
           <div class="row2">
             <div><label>Clave de recojo</label><input id="eClave" value="${esc(s.clave_recojo || "")}" placeholder="La pones tú; el cliente la usa"/></div>

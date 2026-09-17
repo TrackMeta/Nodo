@@ -112,3 +112,9 @@ verify_jwt = true
 # telegram_chat_ids del canal.
 [functions.telegram-webhook]
 verify_jwt = false
+
+# courier-sync: la mitad de Nodo del rastreo de guías. La llama una extensión de
+# Chrome (no un usuario del panel), así que va sin JWT y se protege con el
+# secreto compartido x-rastreo-secret, fail-closed.
+[functions.courier-sync]
+verify_jwt = false
