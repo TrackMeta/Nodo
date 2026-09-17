@@ -9,6 +9,7 @@ import { getChannelSecrets } from "./db.ts";
 import { sendTemplate, esRechazoTemporal } from "./meta.ts";
 import { enParalelo } from "./concurrencia.ts";
 import { pageAll } from "./paginar.ts";
+import { sendTelegram } from "./telegram.ts";
 
 // Envíos por tick, por campaña. El cron corre cada minuto, así que ESTE número es el ritmo
 // real de una campaña. Se EXPORTA porque el panel lo muestra al programar ("salen de a N por
@@ -206,6 +207,30 @@ export async function matchSegment(db: SupabaseClient, channelId: string, seg: a
   return ids;
 }
 
+// Códigos que significan «el canal no puede enviar NADA»: no es culpa del destinatario.
+const META_CANAL_ROTO = new Set([190, 131030, 133010, 133005, 133006]);
+const _avisoCanalRoto = new Map<string, number>();
+async function avisarCanalRoto(db: SupabaseClient, c: any, meta: any) {
+  try {
+    const k = String(c.id);
+    const ahora = Date.now();
+    if (ahora - (_avisoCanalRoto.get(k) ?? 0) < 10 * 60_000) return;
+    _avisoCanalRoto.set(k, ahora);
+    const { data: ch } = await db.from("channels").select("nombre, telegram_chat_ids").eq("id", c.channel_id).maybeSingle();
+    const secrets = await getChannelSecrets(db, c.channel_id);
+    const chatIds: string[] = Array.isArray((ch as any)?.telegram_chat_ids) ? (ch as any).telegram_chat_ids.map(String) : [];
+    const token = secrets?.telegram_bot_token;
+    if (!token || !chatIds.length) return;
+    const code = Number(meta?.code);
+    const que = code === 190 ? "el token de WhatsApp venció o fue revocado: reconecta el número en Canales"
+      : code === 131030 ? "la app de Meta está en modo desarrollo y el destinatario no está en su lista de prueba"
+      : code === 133010 ? "el número del negocio no está registrado en la API (Canales → Probar conexión)"
+      : `Meta ${code}: ${String(meta?.message ?? "")}`;
+    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    await sendTelegram(token, chatIds, `⚠️ <b>Campaña «${esc(String(c.nombre ?? c.id))}» detenida</b>\nWhatsApp no puede enviar: ${esc(que)}.\nLos envíos quedan en cola y se retoman solos cuando el canal vuelva a funcionar.`);
+  } catch (_) { /* avisar de un fallo no puede provocar otro */ }
+}
+
 async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
   const { data: tpl } = await db.from("wa_templates").select("*").eq("id", c.template_id).maybeSingle();
   if (!tpl) { await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id); return; }
@@ -357,6 +382,17 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
       // los 24 envíos que siguen chocarían igual. Así se gastan 1-2 intentos por minuto en
       // vez de 25, y el próximo tick retoma donde quedó.
       const meta = (e as any)?.meta;
+      // Error del CANAL, no del contacto: token vencido (190), app en modo desarrollo con un
+      // número fuera de la lista (131030), número sin registrar (133010). Marcar «fallido» al
+      // contacto quemaba 25 destinatarios por tick, indefinidamente y en silencio (campañas no
+      // pasaba por avisarEnvioFallido). Ahora: la fila vuelve a la cola, se corta el lote y se
+      // avisa por Telegram (una vez cada 10 min por campaña).
+      if (meta && META_CANAL_ROTO.has(Number(meta.code))) {
+        await db.from("campaign_sends").update({ estado: "pendiente", error: { message: "El canal de WhatsApp no puede enviar (token/número) — se reintenta", code: meta.code } }).eq("id", s.id);
+        await avisarCanalRoto(db, c, meta);
+        console.error(`[campañas] "${c.nombre ?? c.id}": canal roto (Meta ${meta.code}: ${meta.message}) → lote cortado`);
+        break;
+      }
       if (meta && esRechazoTemporal(meta)) {
         // Con tope de intentos: una fila que Meta frena SIEMPRE (131048 persistente con ese
         // número, timeouts repetidos) volvía a ser la primera del lote en cada tick, fallaba y
