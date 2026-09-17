@@ -394,6 +394,13 @@
   .cc-actions button{all:unset;box-sizing:border-box;width:100%;cursor:pointer;text-align:center;padding:11px 8px;font-weight:600;font-size:14px;color:var(--brand)}
   .cc-actions button+button{border-top:1px solid var(--border)}
   .cc-actions button:hover{background:var(--brand-bg)}
+  .msg .quote{display:flex;gap:8px;align-items:center;margin:-2px 0 6px;padding:6px 8px;border-left:3px solid var(--brand);border-radius:6px;background:var(--surface-2);font-size:12.5px;cursor:pointer;max-width:100%}
+  .msg .quote .qwho{color:var(--brand);font-weight:600;flex:none}
+  .msg .quote .qtxt{opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .msg .quote img{width:34px;height:34px;object-fit:cover;border-radius:4px;flex:none}
+  .msg.hl{box-shadow:0 0 0 3px var(--brand-bg);transition:box-shadow .3s}
+  .msg .fwd{font-size:11.5px;opacity:.6;display:flex;gap:4px;align-items:center;margin-bottom:3px}
+  .msg .fwd svg{width:12px;height:12px}
   .msg .mfail{margin-top:6px;font-size:12px;line-height:1.4;color:var(--red);display:flex;gap:6px;align-items:flex-start;border-top:1px dashed var(--red-bg);padding-top:5px}
   .msg .mfail svg{width:13px;height:13px;flex:none;margin-top:2px}
   .msg .transcript{margin-top:6px;font-size:12.5px;font-style:italic;opacity:.9;border-left:2px solid var(--brand);padding-left:8px;line-height:1.45}
@@ -1842,9 +1849,13 @@ function msgInner(m){
   // Saliente que Meta rechazó: el motivo (messages.error, que llenan whatsapp-send y el
   // webhook de estados) se guardaba pero no se mostraba: solo un triángulo de 12 px. Un
   // 131047 (mandar plantilla) y un 131026 (número sin WhatsApp) piden acciones distintas.
+  // Cita (el cliente respondió a un mensaje concreto) y reenviado, como en WhatsApp.
+  const qd = m.content?.quoted;
+  const quote = qd ? `<div class="quote" data-qw="${esc(qd.wamid||"")}" title="Toca para ir al mensaje citado"><span class="qwho">${qd.direction==="out"?"Tú":(qd.direction==="in"?esc(state.contactName||"Cliente"):"Mensaje")}</span>${qd.media_url?`<img src="${safeUrl(qd.media_url)}" alt=""/>`:""}<span class="qtxt">${esc(qd.text||"Mensaje")}</span></div>` : "";
+  const fwd = m.content?.forwarded ? `<div class="fwd">${icon("refresh")} Reenviado</div>` : "";
   const fail = (m.direction==="out" && m.status==="failed")
     ? `<div class="mfail">${icon("alert")} ${esc(motivoFallo(m.error))}</div>` : "";
-  return `${mh || waFmt(txt)}${tr}${fail}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?statusTick(m.status):""}</div>`;
+  return `${fwd}${quote}${mh || waFmt(txt)}${tr}${fail}<div class="meta">${fmtTime.format(new Date(m.ts))}${m.direction==="out"?statusTick(m.status):""}</div>`;
 }
 function renderMsg(m, enVivo) {
   const t = $("thread");
@@ -2060,6 +2071,9 @@ document.addEventListener("click", (e)=>{
   else abrirChatDe(b.dataset.ccmsg, b.dataset.ccname||"");
 });
 function onDocClickLightbox(e){
+  // Tocar la cita lleva al mensaje citado (si está en el hilo cargado).
+  const qe=e.target && e.target.closest && e.target.closest(".quote[data-qw]");
+  if(qe){ const w=qe.getAttribute("data-qw"); const cache=state.threadCache[state.contactId]||[]; const m=cache.find(x=>x.wamid===w); const b=m&&document.querySelector('.msg[data-id="'+((window.CSS&&CSS.escape)?CSS.escape(m.id):m.id)+'"]'); if(b){ b.scrollIntoView({behavior:"smooth",block:"center"}); b.classList.add("hl"); setTimeout(()=>b.classList.remove("hl"),1500); } else toast("Ese mensaje no está en el hilo cargado"); return; }
   const el=e.target && e.target.closest && e.target.closest("[data-light]");
   if(el){ e.preventDefault(); openLightbox(el.getAttribute("data-light"), el.getAttribute("data-lk")||"image"); }
 }

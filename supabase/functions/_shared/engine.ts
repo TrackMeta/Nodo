@@ -14836,7 +14836,11 @@ async function historial(db: SupabaseClient, run: Run, max = 12): Promise<string
       .map((m: any) => {
         const quien = m.direction === "in" ? "Cliente" : "Tú";
         const txt = m.content?.text ?? m.content?.caption ?? "";
-        if (txt) return `${quien}: ${txt}`;
+        // Cita: «este me llevo» respondiendo a la foto del producto rojo. Sin esto la IA
+        // no sabía a qué se refería y volvía a preguntar o asumía el producto equivocado.
+        const q = m.direction === "in" ? String(m.content?.quoted?.text ?? "").trim() : "";
+        const cita = q ? ` (respondiendo a «${q.slice(0, 100)}»)` : "";
+        if (txt) return `${quien}${cita}: ${txt}`;
         // Un "[imagen]" es información: el cliente mandó algo aunque no sea texto.
         return m.type && m.type !== "text" ? `${quien}: [${m.type}]` : null;
       })

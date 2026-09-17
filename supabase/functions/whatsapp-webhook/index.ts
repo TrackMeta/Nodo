@@ -192,7 +192,7 @@ async function processInbound(
   // Llave del contacto: el NÚMERO cuando el usuario lo comparte (compat con todos
   // los contactos existentes), el BSUID cuando usa username sin número, y msg.from
   // como respaldo legacy. Así los contactos de siempre no se re-keyan.
-  const waId: string = sender.phone || sender.bsuid || msg.from;
+  let waId: string = sender.phone || sender.bsuid || msg.from;
   const { text, type, content } = extractContent(msg);
   const ref = msg.referral; // Click-to-WhatsApp (oro para atribución)
   // Hora REAL del mensaje según Meta (segundos epoch), con el mismo guard NaN del insert.
@@ -206,6 +206,28 @@ async function processInbound(
   // y detectarOpcion leían "[reaction]" como lo último que dijo el cliente).
   const esReaccion = msg.type === "reaction";
 
+  // ── Cita y reenviado (msg.context) ──────────────────────────────────────
+  // «Este me llevo» citando la foto del producto de hace dos días: sin la cita, la IA solo
+  // veía "este me llevo" y el operador tampoco sabía a qué respondía. Se resuelve el texto
+  // citado por wamid (puede ser un mensaje nuestro o suyo) y queda en content.quoted; la
+  // Bandeja lo pinta como cita y historial() se lo cuenta a la IA. Un reenviado se marca.
+  if (msg.context?.id) {
+    const quoted: Record<string, unknown> = { wamid: String(msg.context.id) };
+    try {
+      const { data: q } = await db.from("messages").select("direction, type, content")
+        .eq("wamid", String(msg.context.id)).maybeSingle();
+      if (q) {
+        const qc = (q as any).content ?? {};
+        const qt = String(qc.text ?? qc.caption ?? "").trim() || ((q as any).type && (q as any).type !== "text" ? `[${(q as any).type}]` : "");
+        quoted.direction = (q as any).direction;
+        quoted.text = qt.slice(0, 240);
+        if (qc.media_url) quoted.media_url = qc.media_url;
+      }
+    } catch (_) { /* la cita es un extra: sin ella el mensaje igual se procesa */ }
+    (content as any).quoted = quoted;
+  }
+  if (msg.context?.forwarded || msg.context?.frequently_forwarded) (content as any).forwarded = true;
+
   // ── Dedup TEMPRANO por wamid (antes de mutar contacto/conversación) ──────
   // Meta reintenta el MISMO mensaje ante cualquier timeout. Si dejamos que el
   // upsert de abajo corra primero, se re-extiende la ventana FEP (+72h) y se
@@ -218,6 +240,30 @@ async function processInbound(
         .select("id").eq("wamid", msg.id).maybeSingle();
       if (yaProc) return; // ya procesado → no re-mutar nada
     } catch (_) { /* si falla el chequeo, sigue: el insert dedup igual protege */ }
+  }
+
+  // ── El cliente CAMBIÓ DE NÚMERO (Meta: type "system" / user_changed_number) ──
+  // Antes se tiraba: el contacto seguía keyado al número viejo y el primer mensaje desde
+  // el nuevo creaba un contacto VACÍO (historial, pedido en curso, run del flujo y
+  // atribución huérfanos; el bot arrancaba la venta desde cero con alguien que ya había
+  // pagado el adelanto). Se migra el wa_id si el número nuevo no existe ya en el canal.
+  if (msg.type === "system" && /changed_number/i.test(String(msg.system?.type ?? ""))) {
+    const nuevo = String(msg.system?.new_wa_id ?? msg.system?.wa_id ?? "").replace(/\D/g, "");
+    const viejo = String(msg.from ?? waId ?? "").replace(/\D/g, "");
+    if (nuevo && viejo && nuevo !== viejo) {
+      try {
+        const { data: yaNuevo } = await db.from("contacts").select("id")
+          .eq("channel_id", channelId).eq("wa_id", nuevo).maybeSingle();
+        if (!yaNuevo) {
+          const { data: mov } = await db.from("contacts").update({ wa_id: nuevo })
+            .eq("channel_id", channelId).eq("wa_id", viejo).select("id");
+          if (mov?.length) console.log(`[webhook] contacto ${(mov[0] as any).id} cambió de número ${viejo} → ${nuevo}`);
+        } else {
+          console.warn(`[webhook] cambio de número ${viejo} → ${nuevo}: el nuevo ya existe en el canal; no se fusiona`);
+        }
+      } catch (e) { console.error("[webhook] cambio de número:", (e as any)?.message ?? e); }
+      waId = nuevo; // el aviso queda en el contacto (ya renombrado, o el que ya tenía ese número)
+    }
   }
 
   // ── Reconciliación username→número (evita contacto huérfano) ─────────────
@@ -372,6 +418,12 @@ async function processInbound(
   if (type === "interactive") {
     // Botón tocado → ruteo determinista inmediato (sin buffer).
     if (content?.id) event = { type: "button", buttonId: String(content.id), title: content.title };
+    // Subtipo sin id (Flow / catálogo): antes `event` quedaba null → return → silencio.
+    else if (text) event = { type: "message", text, msgType: "text", adId, msgTs };
+  } else if (type === "button") {
+    // Quick-reply de plantilla: botón con su payload (si el flujo no lo espera, el motor lo
+    // convierte en texto con el título, como cualquier botón).
+    event = { type: "button", buttonId: String(content?.payload || content?.text || ""), title: content?.text };
   } else if (type === "image" || (type === "document" && /^image\/|^application\/pdf$/i.test(String(content?.mime_type ?? "")) && content?.media_id)) {
     // Imagen (ej. comprobante) → inmediata, con referencia para el nodo IA. También un DOCUMENTO
     // con mime de imagen o PDF: en Perú es común mandar el Yape como archivo/PDF en vez de foto —
@@ -575,11 +627,18 @@ function extractContent(msg: any): { text: string; type: string; content: any } 
     }
     case "interactive": {
       const i = msg.interactive ?? {};
-      const reply = i.button_reply ?? i.list_reply ?? {};
-      return { text: reply.title ?? "", type: "interactive", content: { id: reply.id, title: reply.title } };
+      const reply = i.button_reply ?? i.list_reply;
+      if (reply) return { text: reply.title ?? "", type: "interactive", content: { id: reply.id, title: reply.title } };
+      // Otro subtipo (respuesta de un Flow `nfm_reply`, catálogo…): sin id no hay ruteo por
+      // botón, pero tampoco dead air: va como texto con lo que traiga.
+      const nfm = i.nfm_reply ?? {};
+      const txt = String(nfm.body ?? nfm.response_json ?? "").trim() || `[${i.type ?? "interactive"}]`;
+      return { text: txt, type: "interactive", content: { id: null, title: null, text: txt, raw_type: i.type ?? null } };
     }
     case "button":
-      return { text: msg.button?.text ?? "", type: "button", content: { text: msg.button?.text } };
+      // Quick-reply de una PLANTILLA: `payload` es el id que definió el negocio; se conserva
+      // para que un flujo pueda esperar justo ese botón (antes solo quedaba el texto).
+      return { text: msg.button?.text ?? "", type: "button", content: { text: msg.button?.text, payload: msg.button?.payload ?? null } };
     case "location": {
       // Compartir la ubicación es de lo más normal para coordinar un delivery, y
       // llegaba como el texto pelado "[ubicación]": el extractor de dirección no
@@ -619,6 +678,13 @@ function extractContent(msg: any): { text: string; type: string; content: any } 
         ? "Compartió un contacto: " + lista.map((c: any) => [c.nombre, c.telefonos.join(" / ")].filter(Boolean).join(" · ")).join("; ")
         : "Compartió un contacto";
       return { text: texto, type: "system", content: { raw_type: "contacts", contacts: lista, text: texto } };
+    }
+    case "system": {
+      // Aviso de WhatsApp (cambio de número, etc.): se guarda el texto para que el operador
+      // lo lea; el cambio de número se aplica en processInbound.
+      const s = msg.system ?? {};
+      const body = String(s.body ?? "").trim();
+      return { text: body || "[system]", type: "system", content: { raw_type: "system", system_type: s.type ?? null, new_wa_id: s.new_wa_id ?? s.wa_id ?? null, ...(body ? { text: body } : {}) } };
     }
     default:
       return { text: `[${t}]`, type: "system", content: { raw_type: t } };
