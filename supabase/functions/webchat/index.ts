@@ -202,7 +202,7 @@ Deno.serve(async (req) => {
     channel_id, contact_id: contactId, direction: "in",
     type: location ? "location" : (mediaKind ?? (buttonId ? "interactive" : "text")),
     content, status: "delivered",
-  }).select("id").single();
+  }).select("id, ts").single();
 
   // Si el bot está en pausa (operador tomó la conversación), NO responder:
   // guarda el mensaje entrante pero no corre el motor. Igual que el webhook.
@@ -217,6 +217,11 @@ Deno.serve(async (req) => {
     ? { type: "button" as const, buttonId, title: text ?? buttonId }
     : {
       type: "message" as const, text: _ubiTxt || media?.caption || text || "",
+      // Hora del mensaje, igual que el webhook (`msgTs`): sin ella el motor no puede saber
+      // que un turno anterior YA contestó este mensaje (sello `cubre_hasta`) y el banco de
+      // pruebas respondía DOS veces a la pregunta que entraba mientras salían los mensajes
+      // iniciales — justo lo que WhatsApp real ya no hace. Medido 2026-09-17.
+      msgTs: String((msgRow as any)?.ts ?? new Date().toISOString()),
       // Un DOCUMENTO con mime de imagen o PDF se trata como IMAGEN (msgType "image" → OCR),
       // igual que en el webhook real (el Yape en PDF es lo más común en Perú): antes el
       // banco de pruebas probaba un camino distinto del de producción.

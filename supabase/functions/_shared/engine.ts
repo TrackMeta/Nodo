@@ -4560,7 +4560,13 @@ function sinSedeConfirmada(texto: string, ciudad: string): string {
   // Los tres lookaheads descartan el complemento temporal —«en 2 días», «en 1 a 2 días», «en
   // 24 horas», «en unos días», «en días hábiles»— sin tocar las sedes que empiezan por número
   // («de 28 de Julio» sigue recortándose, que en Perú son direcciones de verdad).
-  const RE = /\b(en|a|para)\s+(?:la\s+)?(?:sede|oficina|agencia)\s+(?:de\s+)?(?:shalom\s+)?(?:de\s+|en\s+)(?:la\s+|el\s+)?(?!\d+\s*(?:a|-|–|hasta)?\s*\d*\s*(?:d[ií]as?|semanas?|horas?|hrs?|h)\b)(?!(?:un[oa]s?|pocos|varios|algunos|m[aá]ximo|aprox\w*)\s+(?:d[ií]as?|semanas?|horas?|hrs?)\b)(?!(?:d[ií]as?|semanas?|horas?|hrs?)\b)[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9'.-]+(?:\s+(?!(?:en|entre|dentro|desde|hasta|aprox\w*|un[oa]s?|\d+)\b)[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9'.-]+){0,2}/gi;
+  const RE = /\b(en|a|para)\s+(?:la\s+)?(?:sede|oficina|agencia)\s+(?:de\s+)?(?:shalom\s+)?(?:de\s+|en\s+|del\s+(?!destino\b|lugar\b|pueblo\b|distrito\b))(?:la\s+|el\s+)?(?!\d+\s*(?:a|-|–|hasta)?\s*\d*\s*(?:d[ií]as?|semanas?|horas?|hrs?|h)\b)(?!(?:un[oa]s?|pocos|varios|algunos|m[aá]ximo|aprox\w*)\s+(?:d[ií]as?|semanas?|horas?|hrs?)\b)(?!(?:d[ií]as?|semanas?|horas?|hrs?)\b)[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9'.-]+(?:(?<![A-Za-zÁÉÍÓÚÜÑáéíóúüñ]{5,}\.)\s+(?!(?:en|entre|dentro|desde|hasta|aprox\w*|un[oa]s?|\d+|y|o|que|para|por|te|le|les|lo|se|ya|ah[ií]|as[ií]|m[aá]s|donde|cuando|antes|apenas|con|sin)\b)[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9'.-]+){0,2}/gi;
+  // Y en la misma corrida (2026-09-17): «te hago el pedido para la agencia DEL mercado» pasaba
+  // limpio —la contracción no era «de »— y la IA daba por buena una oficina inventada. Se
+  // acepta «del» salvo los genéricos (del destino / del lugar). Las palabras extra tampoco
+  // pueden ser conectores de la frase (y, que, te, ahí…) ni cruzar un punto que cierra la
+  // oración («del mercado. Para dejarlo listo» se comía el «Para dejarlo»); las abreviaturas
+  // cortas con punto (JR., Av., Psje.) sí siguen.
   // 🔴 (2026-09-17, regresión 14/15) Los lookaheads de arriba solo vigilan la PRIMERA palabra del
   // nombre; las dos siguientes entraban libres. Con «en la agencia de Tarapoto EN 1 a 2 días» la
   // ciudad pasaba el lookahead y el nombre se extendía a «Tarapoto en» (o «Tarapoto en 1»): el
@@ -4568,7 +4574,7 @@ function sinSedeConfirmada(texto: string, ciudad: string): string {
   // palabra extra del nombre tampoco puede ser un conector temporal ni un número.
   if (!RE.test(t)) return t;
   RE.lastIndex = 0;
-  t = t.replace(RE, (_m, prep) => `${prep} la agencia${dest ? " de " + dest : ""}`);
+  t = t.replace(RE, (m, prep) => `${prep} la agencia${dest ? " de " + dest : ""}${/\.$/.test(m) ? "." : ""}`);
   if (!RE_YA_COORDINA_SEDE.test(t)) {
     t = t.trimEnd() + (/[.!?…]$/.test(t.trimEnd()) ? " " : ". ") +
       "La oficina exacta te la confirmo antes de mandártelo 🙌";
