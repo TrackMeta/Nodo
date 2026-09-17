@@ -373,6 +373,7 @@ function renderGsheets(b){
       <div><h2 style="margin:0">Google Sheets</h2>
         <p class="sub" style="margin:2px 0 0">Registra ventas y datos en tu hoja desde los flujos (nodo ${icon("sheet")} Google Sheets). Elige cómo conectarla.</p></div>
     </div>
+    ${g.last_error?`<div style="display:flex;gap:10px;align-items:flex-start;background:var(--red-bg,#2c1615);border:1px solid var(--red);border-radius:11px;padding:11px 13px;margin:0 0 12px;font-size:12.5px;line-height:1.5;color:var(--text)"><span style="color:var(--red);font-weight:800;flex:none">${icon("alert")}</span><div><b>La última venta no llegó a tu hoja.</b> ${esc(g.last_error)}${g.last_error_at?` <span style="color:var(--muted)">(${esc(new Date(g.last_error_at).toLocaleString("es-PE",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}))})</span>`:""}<br>Si Google revocó el acceso, vuelve a conectar la cuenta abajo. El cartel se apaga solo cuando una venta vuelva a sincronizar.</div></div>`:""}
     <div class="tabs" style="margin-bottom:16px">
       <button class="tab ${method==='oauth'?'active':''}" data-gm="oauth">${icon("link")} Acceder con Google</button>
       <button class="tab ${method==='apps_script'?'active':''}" data-gm="apps_script">${icon("note")} Apps Script</button>
@@ -516,10 +517,12 @@ function renderGsScript(box, g){
   $("saveGs").onclick=async(e)=>{
     const url=$("gs_url").value.trim();
     if(!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(url)){ toast("La URL debe terminar en /exec (app web de Apps Script)",true); return; }
-    await saveGsheets(e.target, { connected:true, mode:"apps_script", webhook_url:url, tab:$("gs_tab").value.trim()||null });
+    // {...actual}: sin el spread, conectar por Apps Script borraba spreadsheet_id/google_email de
+    // la conexión OAuth previa (el refresh token quedaba huérfano en el Vault sin que la UI lo supiera).
+    await saveGsheets(e.target, { ...(st.channel.gsheets||{}), connected:true, mode:"apps_script", webhook_url:url, tab:$("gs_tab").value.trim()||null, last_error:null });
   };
   $("testGs").onclick=testGsheets;
-  const disc=$("discGs"); if(disc) disc.onclick=(e)=>saveGsheets(e.target,{ connected:false });
+  const disc=$("discGs"); if(disc) disc.onclick=(e)=>saveGsheets(e.target,{ ...(st.channel.gsheets||{}), connected:false });
 }
 // Prueba REAL: el backend hace POST de una fila de prueba a tu app web
 // (no se puede desde el navegador por CORS de Google).

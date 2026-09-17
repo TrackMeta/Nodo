@@ -18,6 +18,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient } from "../_shared/db.ts";
+import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
 
@@ -146,7 +147,10 @@ Deno.serve(async (req) => {
         // mueve el pedido y order-update dispara el aviso al cliente que ya existe.
         if (etapa === "en_destino" && (o as any).estado === "despachado") {
           await sellarShipping(orderId, base);
-          const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/order-update`, {
+          // Con timeout: la extensión manda hasta 60 guías por llamada y un order-update colgado
+          // (cold start, lock del contacto) dejaba esperando la función entera y se perdían los
+          // resultados de TODAS las guías siguientes del lote.
+          const r = await fetchConTimeout(`${Deno.env.get("SUPABASE_URL")}/functions/v1/order-update`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

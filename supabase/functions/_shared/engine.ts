@@ -6870,13 +6870,28 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
       // silencio → la fila nunca se escribía y nadie se enteraba. Que caiga al catch.
       if (!res.ok) throw new Error("Apps Script respondió " + res.status);
     }
+    if (_chId) await marcarErrorSheets(db, _chId, null); // volvió a funcionar → se limpia el cartel
   } catch (e) {
     // Nunca romper la venta por la hoja — pero SÍ dejar rastro. Antes solo iba a console:
     // si el token de Google se revoca/expira, ninguna venta llega a la hoja y el negocio
     // podía pasar SEMANAS sin enterarse. Ahora queda un evento en el timeline del pedido.
     console.error("[syncPedidoSheet]", (e as any)?.message ?? e);
     if (_chId && _ctId) await logEvent(db, _chId, _ctId, "error", "No se pudo sincronizar el pedido con Google Sheets", String((e as any)?.message ?? e).slice(0, 200)).catch(() => {});
+    // Aviso PERSISTENTE a nivel de canal (como ads_sync_error): el evento en el timeline de cada
+    // pedido solo lo ve quien abre ese pedido; con el token de Google revocado, todas las ventas
+    // dejaban de espejarse durante semanas sin un cartel en Ajustes.
+    if (_chId) await marcarErrorSheets(db, _chId, String((e as any)?.message ?? e).slice(0, 200));
   }
+}
+async function marcarErrorSheets(db: SupabaseClient, channelId: string, msg: string | null) {
+  try {
+    const { data: ch } = await db.from("channels").select("gsheets").eq("id", channelId).maybeSingle();
+    const g = ((ch as any)?.gsheets && typeof (ch as any).gsheets === "object") ? (ch as any).gsheets : null;
+    if (!g) return;
+    if (msg === null && !g.last_error) return;
+    const nuevo = { ...g, last_error: msg, last_error_at: msg ? new Date().toISOString() : null };
+    await db.from("channels").update({ gsheets: nuevo }).eq("id", channelId);
+  } catch (_) { /* el aviso nunca rompe la venta */ }
 }
 
 // Acción entregar: { mensaje?, una_burbuja?, diferir?, incluir_buffer?, version_id? }

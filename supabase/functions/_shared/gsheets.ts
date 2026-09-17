@@ -135,7 +135,10 @@ export async function sheetsBootstrap(token: string, id: string): Promise<{ crea
 // venta— no se escribía nada y nadie se enteraba.
 async function ensureTab(token: string, id: string, tab: string): Promise<void> {
   const d = await api(token, `${SHEETS}/${id}?fields=sheets.properties.title`);
-  const existe = (d.sheets ?? []).some((s: any) => s?.properties?.title === tab);
+  // norm(): igual que ensureHeaders/sheetsBootstrap. Con `===` exacto, si el dueño renombraba
+  // «Lima» a «lima» (o dejaba un espacio) se creaba una pestaña NUEVA y vacía y las ventas
+  // siguientes caían ahí mientras él seguía mirando la vieja.
+  const existe = (d.sheets ?? []).some((s: any) => norm(String(s?.properties?.title ?? "")) === norm(tab));
   if (existe) return;
   await api(token, `${SHEETS}/${id}:batchUpdate`, "POST", {
     requests: [{ addSheet: { properties: { title: tab } } }],

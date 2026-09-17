@@ -10,7 +10,9 @@
 import * as O from "./orders.js";
 import { leerZip, textoDe, entradaPorNombre, ponerTexto, rellenarSheet, ajustarTablaRef, escribirZip, descargar } from "./xlsx-fill.js";
 
-const N = (v) => ({ t: "n", v: Number(v) || 0 });
+// Redondeado a 2 decimales: total − adelanto en JS deja colas tipo 66.67000000000002 y así
+// iba a la celda numérica del Excel del courier.
+const N = (v) => ({ t: "n", v: Math.round((Number(v) || 0) * 100) / 100 });
 // Los couriers piden el celular sin código de país (9 dígitos en Perú).
 const tel9 = (wa) => String(wa || "").replace(/\D/g, "").slice(-9);
 const atrTexto = (s) => Object.entries((s && s.atributos) || {}).map(([k, v]) => `${k}: ${v}`).join(", ");
