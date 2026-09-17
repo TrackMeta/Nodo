@@ -118,12 +118,21 @@ Deno.serve(async (req) => {
     const wamid = mediaKind
       ? await sendMedia(channel.phone_number_id, secrets.access_token, contact.wa_id, mediaKind as any, media!.url!, caption, media?.filename)
       : await sendText(channel.phone_number_id, secrets.access_token, contact.wa_id, caption);
+    // 💵 Sello de cobro (fep | servicio), igual que el motor y campañas: los mensajes que
+    // escribe el OPERADOR también los cobra Meta desde el 01/10/2026 y quedaban con ventana
+    // NULL → el reporte «Mensajes que Meta cobra» no los contaba.
+    let ventana: "fep" | "servicio" = "servicio";
+    try {
+      const { data: cf } = await db.from("contacts").select("fep_hasta").eq("id", contact_id).maybeSingle();
+      const fep = (cf as any)?.fep_hasta ? new Date((cf as any).fep_hasta).getTime() : 0;
+      if (fep > Date.now()) ventana = "fep";
+    } catch (_) { /* se etiqueta por lo que sí sabemos */ }
     const { error: insErr } = await db.from("messages").insert({
       channel_id, contact_id, direction: "out", type: msgType,
       // wamid || null: si Meta omite el id, guardar null (no ""), para que los webhooks de
       // status (delivered/read/failed) puedan matchear por wamid — un "" no matchea nada.
       content: outContent, wamid: wamid || null, status: "sent",
-      sent_by: "human", sent_by_user: uid,
+      sent_by: "human", sent_by_user: uid, ventana,
     });
     // Meta YA lo entregó: no se puede "deshacer". Pero devolver ok sin decir nada dejaba al
     // operador viendo "enviado" con una burbuja que no existe en el hilo, y para un adjunto
