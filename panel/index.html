@@ -1734,6 +1734,29 @@ async function buscarOperacion(q){
     return state.searchOps.size>0 || antes>0;
   }catch(_){ state.searchOps=new Set(); return false; }
 }
+// La lista trae las 200 conversaciones más recientes; buscar «Mariana» en una cuenta con
+// más chats decía «Ningún contacto coincide» aunque existiera. Con 3+ caracteres se
+// pregunta también al servidor y lo que falte se suma a la lista cargada.
+async function buscarEnServidor(raw){
+  const q=String(raw||"").trim(); if(q.length<3) return false;
+  const qd=q.replace(/\D/g,"");
+  const seguro=q.replace(/[,()*%]/g," ").trim();
+  const ors=[`nombre.ilike.*${seguro}*`]; if(qd.length>=3) ors.push(`wa_id.ilike.*${qd}*`);
+  const base="contact_id,no_leidos,updated_at,expira_at,window_type,requiere_humano,archivada";
+  const sel=(p)=>`${base},contact:contacts!inner(id,nombre,wa_id,last_input,bot_activo,stage,source${p?",product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado":""})`;
+  const pedir=(p)=>supa.from("conversations").select(sel(p)).eq("channel_id",state.channelId)
+    .or(ors.join(","),{ referencedTable:"contacts", foreignTable:"contacts" }).order("updated_at",{ascending:false}).limit(30);
+  try{
+    let { data, error }=await pedir(true);
+    if(error){ ({ data }=await pedir(false)); }
+    const have=new Set(state.convs.map(c=>c.contact_id)); let added=0;
+    for(const cv of (data||[])){
+      if(!cv.contact||cv.contact.bloqueado||cv.contact.wa_id==="webchat-test"||have.has(cv.contact_id)) continue;
+      state.convs.push(cv); have.add(cv.contact_id); added++;
+    }
+    return added>0;
+  }catch(_){ return false; }
+}
 (()=>{ const inp=$("convSearch"), x=$("convSearchX"); if(!inp) return;
   let t=null;
   const limpiar=()=>{ inp.value=""; state.search=""; state.searchOps=new Set(); x.hidden=true; renderConversations(); };
@@ -1743,8 +1766,8 @@ async function buscarOperacion(q){
     // La consulta a pedidos va aparte y con retraso: el filtro por nombre debe
     // responder en cada tecla sin esperar a la red.
     clearTimeout(t);
-    const q=state.search;
-    t=setTimeout(async()=>{ if(state.search!==q) return; if(await buscarOperacion(q)) renderConversations(); }, 320);
+    const q=state.search, raw=inp.value.trim();
+    t=setTimeout(async()=>{ if(state.search!==q) return; const [a,b]=await Promise.all([buscarOperacion(q), buscarEnServidor(raw)]); if(state.search!==q) return; if(a||b) renderConversations(); }, 320);
   });
   inp.addEventListener("keydown", (e)=>{ if(e.key==="Escape") limpiar(); });
   x.addEventListener("click", ()=>{ limpiar(); inp.focus(); });
