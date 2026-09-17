@@ -247,6 +247,12 @@ async function update(t, patch){
   // Renombrar una etiqueta desengancha en SILENCIO las campañas/secuencias que segmentan por su
   // NOMBRE (se guardan por nombre, no por id → el segmento deja de encontrarla). Se avisa para que
   // el dueño las re-apunte. (Solo al cambiar el nombre; los cambios de color no afectan.)
+  // «Lima», «Provincia» y «Digital» las escribe el MOTOR en cada venta (por nombre exacto): si
+  // se renombran, en la siguiente venta crea otra con el nombre original y los contactos quedan
+  // repartidos entre las dos sin que nadie lo vea.
+  if(patch.nombre!==undefined && patch.nombre!==t.nombre && ["Lima","Provincia","Digital"].includes(String(t.nombre||"").trim())){
+    if(!await confirmDialog({title:"Etiqueta del motor",messageHtml:`<b>${esc(t.nombre)}</b> la pone el bot solo a cada venta según la zona de entrega. Si la renombras, en la próxima venta el bot creará otra vez una etiqueta <b>${esc(t.nombre)}</b> y tus contactos quedarán repartidos en dos etiquetas. Si solo quieres cambiarle el color, cancela y cambia el color.`,confirmText:"Renombrar igual",danger:true})) return false;
+  }
   if(patch.nombre!==undefined && patch.nombre!==t.nombre){
     if(!await confirmDialog({title:"Renombrar etiqueta",message:`Si alguna campaña o secuencia segmenta por la etiqueta "${esc(t.nombre)}", dejará de encontrarla al renombrarla (los segmentos guardan la etiqueta por su nombre). Tendrás que volver a elegirla en esos segmentos. ¿Renombrar igual?`,confirmText:"Renombrar",cancelText:"Cancelar"})) return false;
   }
