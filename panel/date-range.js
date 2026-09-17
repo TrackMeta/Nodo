@@ -71,7 +71,7 @@ function offsetMin(tz, at) {
 // Instante absoluto de una hora-de-pared (y/m/d h:m:s) EN la zona del negocio. El offset se
 // aplica dos veces a propósito: la primera pasada usa el offset del instante aproximado, y si
 // ese ajuste cruzó un cambio de horario de verano el offset real es otro, así que se corrige.
-function instanteEn(tz, y, m, d, hh, mi, ss, ms) {
+export function instanteEn(tz, y, m, d, hh, mi, ss, ms) {
   const base = Date.UTC(y, m - 1, d, hh, mi, ss, ms);
   const t1 = base - offsetMin(tz, new Date(base)) * 60000;
   const t2 = base - offsetMin(tz, new Date(t1)) * 60000;

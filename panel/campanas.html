@@ -125,6 +125,7 @@
 
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { instanteEn, getTZ, tzNombre } from "./date-range.js";
 import { mountFolders } from "./folder-bar.js";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=13";
 let Fbar = null;
@@ -156,6 +157,7 @@ async function boot(){
   await load();
 }
 async function load(){
+  const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
   const [{ data:c },{ data:tpl },{ data:tg }, ch]=await Promise.all([
     supa.from("campaigns").select("*").eq("channel_id",st.channelId).order("created_at",{ascending:false}),
     supa.from("wa_templates").select("id,name,language,activa,estado_meta,soporta_envio,body_preview,ejemplos").eq("channel_id",st.channelId).eq("activa",true).order("name"),
@@ -163,6 +165,7 @@ async function load(){
     // El horario de envío del negocio, para poder avisar si una campaña larga termina fuera de él.
     getChannel(st.channelId),
   ]);
+  if(gen!==st.loadGen) return; // cambiaste de bot mientras cargaba → no pintes lo del anterior
   st.remarketing=(ch&&ch.remarketing)||{};
   // Solo plantillas APROBADAS por Meta (el copy lo promete). Una activa pero
   // pendiente/rechazada → Meta rechaza cada envío del lote (132001) y toda la
@@ -226,9 +229,19 @@ function renderGrid(){
 async function action(a, c){
   if(a==="edit") return openModal(c);
   if(a==="del"){ if(!await confirmDialog({title:"Eliminar campaña",message:"Esta acción no se puede deshacer.",confirmText:"Eliminar",danger:true})) return; const { error }=await supa.from("campaigns").delete().eq("id",c.id); if(error){ toast(error.message,true); return; } toast("Eliminada"); return load(); }
-  if(a==="cancel"){ const { error }=await supa.from("campaigns").update({estado:"cancelada"}).eq("id",c.id); if(error){ toast(error.message,true); return; } toast("Cancelada"); return load(); }
+  if(a==="cancel"){
+    // Cancelar es terminal (no se deshace) y antes iba sin confirmación, a un clic de «Activar».
+    if(!await confirmDialog({title:"Cancelar campaña",message:`«${c.nombre||"Campaña"}» dejará de enviarse; los pendientes no salen. No se puede deshacer.`,confirmText:"Cancelar campaña",danger:true})) return;
+    const { error }=await supa.from("campaigns").update({estado:"cancelada"}).eq("id",c.id); if(error){ toast(error.message,true); return; } toast("Cancelada"); return load(); }
   if(a==="activate"){
     if(!c.template_id){ toast("La campaña necesita una plantilla",true); return openModal(c); }
+    // Confirmación con la audiencia a la vista: «Activar» disparaba el masivo a un clic, sin
+    // decir a cuánta gente (y con segmento vacío = TODA la base) ni si la fecha ya pasó.
+    const seg=c.segmento||{}; const sinSeg=!(seg.tags||[]).length&&!(seg.stage||[]).length&&!(seg.order_estados||[]).length;
+    let n=null; try{ n=await contarAudiencia(seg); }catch(_){}
+    const cuando=c.programada_at?(new Date(c.programada_at)<new Date()?"<b>la fecha programada ya pasó</b>: sale apenas actives":`programada para ${esc(fmtTZ(c.programada_at))}`):"sale de inmediato";
+    const okA=await confirmDialog({title:"Activar campaña",messageHtml:`«${esc(c.nombre||"Campaña")}» le llegará a ${n==null?"":`<b>${n}</b> `}${sinSeg?"<b>TODA tu base de contactos</b> (no tiene segmento)":"los contactos del segmento"} y ${cuando}. Cada mensaje cuesta plantilla de Meta. ¿Activar?`,confirmText:"Activar",danger:sinSeg});
+    if(!okA) return;
     const { error }=await supa.from("campaigns").update({ estado:"programada" }).eq("id",c.id);
     if(error){ toast(error.message,true); return; }
     toast("Campaña activada — el envío empieza pronto"); return load();
@@ -263,7 +276,7 @@ function openModal(c){
   // datetime-local espera hora LOCAL. toISOString() daba dígitos UTC → mostraba la
   // hora corrida (5h en Lima) y al re-guardar la volvía a correr. Se arma con los
   // componentes locales. (El guardado ya convierte local→UTC con new Date(value).)
-  $("m_prog").value=c?.programada_at?(d=>{const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;})(new Date(c.programada_at)):"";
+  $("m_prog").value=c?.programada_at?instanteAProg(c.programada_at):""; // mostrado en la zona del negocio
   paintModalPreview();
   estimarAudiencia();                     // a cuánta gente le llega y hasta qué hora
   $("m_prog").oninput = estimarAudiencia;  // cambiar la hora cambia dónde termina
@@ -286,7 +299,9 @@ function pintaEstimacion(total){
   if(total===0){ box.innerHTML=`<b style="color:var(--amber)">No le llega a nadie</b> con estos filtros. Revisa el segmento antes de programarla.`; return; }
   const mins=Math.ceil(total/ENVIOS_POR_MINUTO);
   const dur = mins<60 ? `${mins} min` : `${Math.floor(mins/60)} h ${mins%60 ? (mins%60)+" min" : ""}`.trim();
-  const inicio = $("m_prog")?.value ? new Date($("m_prog").value) : new Date();
+  // Todo en la zona del NEGOCIO: el datetime-local se interpreta ahí y las horas de fin/horario
+  // se comparan ahí (antes con la del navegador: «9 pm de Lima» programado desde otro huso salía a otra hora).
+  const inicio = enTZ($("m_prog")?.value ? (progAInstante($("m_prog").value)||new Date()) : new Date());
   const fin = new Date(inicio.getTime() + mins*60000);
   const hh = (d)=>`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
   const otroDia = fin.toDateString()!==inicio.toDateString();
@@ -311,6 +326,12 @@ function pintaEstimacion(total){
     + `<div style="color:var(--faint);font-size:11.5px;margin-top:4px">Salen de a <b>${ENVIOS_POR_MINUTO} por minuto</b>, espaciados a propósito: WhatsApp mide cómo reacciona la gente, y una ráfaga masiva desde el mismo número es lo que te baja la calidad o te lo banea.</div>`
     + aviso;
 }
+// Conteo de audiencia de un segmento ya guardado (para la confirmación de «Activar»).
+async function contarAudiencia(segmento){
+  const { data, error }=await supa.functions.invoke("channel-config",{ body:{ action:"campana_audiencia", channel_id:st.channelId, segmento } });
+  if(error || data?.error) throw new Error(error?.message || data?.detalle || data?.error);
+  return Number(data?.total)||0;
+}
 async function estimarAudiencia(){
   clearTimeout(_estimT);
   pintaEstimacion(null);
@@ -328,11 +349,22 @@ async function estimarAudiencia(){
   }, 350);
 }
 async function saveCampaign(){
+  const btnS=$("m_save"); if(btnS&&btnS.disabled) return; if(btnS) btnS.disabled=true; // doble clic = dos campañas
+  try{ await _saveCampaign(); } finally{ if(btnS) btnS.disabled=false; }
+}
+// Instante ABSOLUTO a partir del datetime-local, en la zona del NEGOCIO (no del navegador).
+function progAInstante(v){ const m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(v||"")); if(!m) return null; return instanteEn(getTZ(), +m[1], +m[2], +m[3], +m[4], +m[5], 0, 0); }
+// Y al revés: un instante → valor del datetime-local mostrado en la zona del negocio.
+function instanteAProg(iso){ const p=new Intl.DateTimeFormat("en-CA",{timeZone:getTZ(),year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date(iso)); const g=(t)=>p.find(x=>x.type===t)?.value; return `${g("year")}-${g("month")}-${g("day")}T${g("hour")==="24"?"00":g("hour")}:${g("minute")}`; }
+const fmtTZ=(iso)=>new Date(iso).toLocaleString("es-PE",{timeZone:getTZ(),day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+const enTZ=(d)=>new Date(new Date(d).toLocaleString("en-US",{timeZone:getTZ()}));
+async function _saveCampaign(){
   const nombre=$("m_nombre").value.trim();
   if(!nombre){ toast("Escribe un nombre",true); return; }
+  if($("m_prog").value){ const inst=progAInstante($("m_prog").value); if(inst && inst<new Date() && !await confirmDialog({title:"Esa fecha ya pasó",message:`Programaste ${fmtTZ(inst)} (hora de ${tzNombre()}). La campaña saldría apenas la actives. ¿Guardar igual?`,confirmText:"Guardar igual"})) return; }
   const segmento={ tags:[...st.pickTags], stage:[...st.pickStages], order_estados:[...st.pickOStates], modo:$("m_modo").value };
   const row={ channel_id:st.channelId, nombre, folder:(st.editing?st.editing.folder:((Fbar&&Fbar.current!=="__all"&&Fbar.current!=="__none")?Fbar.current:null))||null, template_id:$("m_tpl").value||null,
-    segmento, programada_at:$("m_prog").value?new Date($("m_prog").value).toISOString():null };
+    segmento, programada_at:$("m_prog").value?(progAInstante($("m_prog").value)||new Date($("m_prog").value)).toISOString():null };
   let error;
   if(st.editing){ ({ error }=await supa.from("campaigns").update(row).eq("id",st.editing.id)); }
   else { ({ error }=await supa.from("campaigns").insert(row)); }

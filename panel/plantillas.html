@@ -205,7 +205,9 @@ function showGrid(){ $("gridView").style.display=""; $("detailView").style.displ
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
 
 async function loadList(){
-  const { data }=await supa.from("wa_templates").select("*").eq("channel_id",st.channelId).order("created_at");
+  const gen=(st.loadGen=(st.loadGen||0)+1), forChannel=st.channelId; // anti-carrera al cambiar de bot
+  const { data }=await supa.from("wa_templates").select("*").eq("channel_id",forChannel).order("created_at");
+  if(gen!==st.loadGen) return;
   st.list=data||[];
   if(!Fbar){ Fbar=await mountFolders({ el:$("folders"), tipo:"template", table:"wa_templates", channelId:st.channelId, items:()=>st.list, onChange:()=>{ renderCards(); renderReco(); }, labelAll:"Todas", trailingTabs:()=>[{ v:"__reco", label:"Recomendadas", cls:"reco", count:()=>recoPend().length, icon:'<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" style="vertical-align:-2px;margin-right:2px"><path d="M12 2 13.8 9.2 21 11 13.8 12.8 12 20 10.2 12.8 3 11 10.2 9.2Z"/></svg>' }] }); }
   else if(Fbar.channelId()!==st.channelId){ await Fbar.setChannel(st.channelId); }
@@ -550,7 +552,7 @@ async function deleteTpl(){
   // Se borra TAMBIÉN en Meta (para todos los bots de esa cuenta de WhatsApp): antes solo se
   // quitaba de Nodo, en Meta seguía viva y en la siguiente sincronización reaparecía sin el
   // mapeo de variables → las secuencias y campañas que la usaban empezaban a fallar.
-  const enMeta = !["borrador"].includes(st.tpl.estado_meta||"aprobada");
+  const enMeta = !["borrador","eliminada"].includes(st.tpl.estado_meta||"aprobada"); // «eliminada» ya no está en Meta
   if(!await confirmDialog({title:"Eliminar plantilla",messageHtml:`¿Eliminar la plantilla "${esc(st.tpl.name||"")}"? ${aviso}${enMeta?"Se borra <b>también en Meta</b> (en todos sus idiomas y para todos tus bots de esta cuenta de WhatsApp). ":""}Esto no se puede deshacer.`,confirmText:"Eliminar",danger:true})) return;
   try{
     const r=await callFn("channel-config",{ action:"template_delete", channel_id:st.channelId, name:st.tpl.name, solo_local:!enMeta });

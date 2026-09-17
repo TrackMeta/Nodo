@@ -284,7 +284,13 @@ export function mountStepsEditor(el, opts){
         delete paso.mensaje; delete paso.flow_id; delete paso.variantes; delete paso.bubbles; delete paso.rotacion;
         actBody.innerHTML=`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Plantilla</div><select class="sel se-ts" style="width:100%;height:36px"><option value="">— elige —</option>${(actions.templates||[]).map(t=>`<option value="${t.name}" data-lang="${esc(t.language)}" ${paso.template_name===t.name?"selected":""}>${esc(t.name)} (${esc(t.language)})</option>`).join("")}</select>
           ${(actions.templates||[]).length?`<div style="font-size:12px;color:var(--muted);margin:9px 0 5px">Variables (una por línea)</div><textarea class="in se-pta" style="width:100%;min-height:60px">${esc((paso.template_params||[]).join("\n"))}</textarea>`:`<div style="font-size:11.5px;color:var(--amber);margin-top:8px">No hay plantillas activas.</div>`}</div>`;
-        actBody.querySelector(".se-ts").onchange=(e)=>{ paso.template_name=e.target.value||undefined; paso.template_lang=e.target.selectedOptions[0]?.dataset.lang||"es"; };
+        // Texto real de la plantilla y cuántos huecos {{n}} tiene: sin esto el operador escribía
+        // las variables (posicionales) a ciegas → desfase = Meta 132000 o el dato en el hueco equivocado.
+        const prev=document.createElement("div"); prev.className="fhint"; prev.style.cssText="margin-top:8px;white-space:pre-wrap;font-size:12px;line-height:1.45;background:var(--surface-2);border-radius:8px;padding:8px 10px";
+        const sel=actBody.querySelector(".se-ts"); sel.insertAdjacentElement("afterend",prev);
+        const pintaPrev=()=>{ const t=(actions.templates||[]).find(x=>x.name===paso.template_name); if(!t||!t.body_preview){ prev.style.display="none"; return; } const n=new Set(String(t.body_preview).match(/\{\{\s*\d+\s*\}\}/g)||[]).size; prev.style.display=""; prev.innerHTML=`<div style="font-weight:700;margin-bottom:4px">${n} variable${n===1?"":"s"} · en orden {{1}}, {{2}}…</div>${esc(t.body_preview)}`; };
+        pintaPrev();
+        actBody.querySelector(".se-ts").onchange=(e)=>{ paso.template_name=e.target.value||undefined; paso.template_lang=e.target.selectedOptions[0]?.dataset.lang||"es"; pintaPrev(); };
         // Las líneas son POSICIONALES ({{1}}, {{2}}…): una vacía en medio debe quedar (antes
         // `.filter(Boolean)` la borraba y los huecos se corrían → Meta 132000 y el paso se
         // saltaba). Solo se recortan las vacías del FINAL.
