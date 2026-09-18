@@ -710,6 +710,7 @@ async function boot() {
     document.removeEventListener("click", onDocClickComposer);
     document.removeEventListener("click", onDocClickActions);
     document.removeEventListener("click", onDocClickLightbox);
+    document.removeEventListener("click", onDocClickContactCard);
   });
   // Selector de bot propio de la Bandeja (el rail minimal no lo incluye).
   // El cambio de bot lo maneja el selector del sidebar (shell); aquí solo reaccionamos.
@@ -2145,12 +2146,15 @@ async function abrirChatDe(tel, nombre){
   toast("Contacto creado");
   openChat(nuevo); loadConversations();
 }
-document.addEventListener("click", (e)=>{
+// Con nombre, para quitarlo al salir (SPA): anónimo se apilaba uno por cada entrada a la
+// Bandeja y «Mensaje» de la tarjeta de contacto abría/creaba el chat N veces.
+function onDocClickContactCard(e){
   const b=e.target && e.target.closest && e.target.closest("[data-ccmsg],[data-cccopy]"); if(!b) return;
   e.preventDefault();
   if(b.dataset.cccopy){ (navigator.clipboard?.writeText(b.dataset.cccopy)||Promise.reject()).then(()=>toast("Número copiado"),()=>toast("No se pudo copiar el número",true)); }
   else abrirChatDe(b.dataset.ccmsg, b.dataset.ccname||"");
-});
+}
+document.addEventListener("click", onDocClickContactCard);
 function onDocClickLightbox(e){
   // Tocar la cita lleva al mensaje citado (si está en el hilo cargado).
   const qe=e.target && e.target.closest && e.target.closest(".quote[data-qw]");

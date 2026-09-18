@@ -167,7 +167,7 @@ async function conciliar(){
   // devueltas). Con más de 1000 ventas en el rango, el conciliador comparaba contra una lista
   // corta y cantaba "pago sin venta" sobre ventas que sí existían.
   const { data:ords }=await pageAll((f,t)=>supa.from("orders")
-    .select("id,amount,currency,order_bumps,estado,shipping,contact_id,product_id,created_at,updated_at,confirmed_at,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)")
+    .select("id,amount,currency,order_bumps,estado,shipping,contact_id,product_id,created_at,updated_at,confirmed_at,contact:contact_id(nombre,wa_id,source),product:product_id(nombre,emoji)")
     .eq("channel_id",st.channelId).gte("created_at",desde.toISOString()).lte("created_at",hasta.toISOString())
     .order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t));
   const cerradas=(ords||[]).filter(o=>O.EST[o.estado] && O.EST[o.estado].cobro==="todo");
@@ -238,7 +238,7 @@ async function conciliar(){
       fecha: ultimaImg.get(o.contact_id) || new Date(o.confirmed_at||o.updated_at||o.created_at),
       _o:o, _orderId:o.id, _parte:null, _parteTxt:"", _yaConciliado:(conc.partes?null:(s.conciliacion||null)) }];
   };
-  st.ventas=cerradas.filter(o=>((o.contact||{}).wa_id)!=="webchat-test").flatMap(entradasDe); // sin ventas de Probar flujos
+  st.ventas=cerradas.filter(o=>{ const c=o.contact||{}; return c.wa_id!=="webchat-test" && c.source!=="sim"; }).flatMap(entradasDe); // sin ventas de Probar flujos ni simuladas
 
   // Para el LEDGER anti-reúso: una venta creada JUSTO ANTES del rango pero pagada
   // dentro de la ventana de movimientos (desde-6h) no entra a st.ventas → su depósito
@@ -499,7 +499,7 @@ async function anular(v,el){
   // ("<orderId>::saldo") y order-update no encontraría el pedido.
   const { data,error }=await supa.functions.invoke("order-update",{ body:{ order_id:v._orderId, estado,
     shipping:{ anulada_motivo:motivo, anulada_at:new Date().toISOString() } } });
-  if(error||data?.error){ toast(error?.message||data.error,true); return; }
+  if(error||data?.error){ let det=""; try{ const j=await error?.context?.json?.(); det=(j&&(j.detalle||j.error))||""; }catch(_){} toast(det||error?.message||(data&&(data.detalle||data.error)),true); return; }
   toast("Venta anulada"); el.style.opacity=.4; el.querySelectorAll("button").forEach(b=>b.disabled=true);
 }
 function actualizarCuenta(){

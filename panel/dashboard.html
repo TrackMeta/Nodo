@@ -648,7 +648,9 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"dashboard" });
   document.addEventListener("click",onDocClickDF);
-  shell.onLeave?.(()=>document.removeEventListener("click",onDocClickDF));
+  // Al salir, además de quitar el listener, se invalida `channelId`: un load() en vuelo que
+  // termine después ve `cid!==channelId` y no pinta sobre la sección nueva.
+  shell.onLeave?.(()=>{ document.removeEventListener("click",onDocClickDF); channelId=null; });
   channelId=shell.channelId;
   const c=shell.channels.find(x=>x.id===channelId);
   $("subtitle").textContent="Rendimiento de "+(c?c.nombre:"tu bot");

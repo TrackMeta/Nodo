@@ -319,9 +319,15 @@ const RESULTS=[
   { k:"volver",    e:icon("calendar"), label:"Volver a llamar",  color:"#2b7fff", reagendar:true },
   { k:"nocontesto",e:icon("directo"), label:"No contestó",     color:"#8a97a8" },
   { k:"nointeres", e:icon("x"), label:"No le interesa",   color:"#e2564a", stage:"perdido", estado:"descartado" },
-  { k:"malnumero", e:icon("ban"), label:"Número equivocado",color:"#e2564a" },
+  // «descartado»: sin esto caía al default «seguimiento» y, con el bot en pausa, urgencia()
+  // lo ponía PRIMERO en la cola («a quién llamar ya») para siempre.
+  { k:"malnumero", e:icon("ban"), label:"Número equivocado",color:"#e2564a", estado:"descartado" },
 ];
 const RES=Object.fromEntries(RESULTS.map(r=>[r.k,r]));
+// Teléfono marcable. Un cliente que llegó por USUARIO de WhatsApp (BSUID) sin compartir su
+// número tiene un `wa_id` que no es un teléfono: «tel:+<id interno>» marcaba un número que
+// no existe. Sin dato real → null (la fila lo dice y el botón de llamar se apaga).
+function telDe(c){ const t=String((c&&c.telefono)||"").replace(/\D/g,""); if(t.length>=9) return t; const w=String((c&&c.wa_id)||""); return /^\d{9,15}$/.test(w)?w:null; }
 const MEDIOS=[{k:"llamada",label:"Llamada"},{k:"whatsapp",label:"WhatsApp"},{k:"otro",label:"Otro"}];
 
 async function boot(){
@@ -573,7 +579,7 @@ function rowEl(c){
       <div class="ava" style="background:${avaC}22;color:${avaC}">${avaInner}</div>
       <div class="cli-tx">
         <div class="nm">${esc(c.nombre||"Sin nombre")}</div>
-        <div class="ph">${PHONE_SVG}+${esc(c.telefono||c.wa_id)}</div>
+        <div class="ph">${telDe(c)?`${PHONE_SVG}+${esc(telDe(c))}`:`${PHONE_SVG}<span style="color:var(--amber)">sin número (llegó sin compartirlo)</span>`}</div>
         <div class="org">${esc(org)}${c.product?.nombre?` · ${esc(c.product.nombre)}`:""}</div>
       </div>
     </div>
@@ -584,7 +590,7 @@ function rowEl(c){
     <div class="c-asig">${asHtml}</div>
     <div class="c-acts acts">
       <button class="ico info" data-info title="Ver info del cliente (contexto para la llamada)">${INFO_SVG}</button>
-      <a class="ico call" href="tel:+${esc(c.telefono||c.wa_id)}" title="Llamar">${PHONE_SVG}</a>
+      ${telDe(c)?`<a class="ico call" href="tel:+${esc(telDe(c))}" title="Llamar">${PHONE_SVG}</a>`:`<span class="ico call" style="opacity:.35;cursor:not-allowed" title="Sin número: llegó por usuario de WhatsApp sin compartir su celular. Pídeselo por el chat.">${PHONE_SVG}</span>`}
       <a class="ico chat" href="index.html?c=${esc(c.id)}" title="Abrir chat">${CHAT_SVG}</a>
       <button class="ico reg" data-reg title="Registrar resultado">${REG_SVG}</button>
     </div>`;
@@ -722,8 +728,8 @@ async function openInfo(c){
   const avaC=avaColor(c.nombre||c.wa_id);
   $("iAv").style.background=avaC+"22"; $("iAv").style.color=avaC; $("iAv").textContent=ini(c.nombre||c.wa_id);
   $("iNm").textContent=c.nombre||"Sin nombre";
-  $("iPh").textContent="+"+c.wa_id;
-  $("iCall").href="tel:+"+(c.telefono||c.wa_id);
+  $("iPh").textContent=telDe(c)?("+"+telDe(c)):"sin número (usuario de WhatsApp sin celular compartido)";
+  $("iCall").href=telDe(c)?("tel:+"+telDe(c)):"#";
   $("iChat").href="index.html?c="+c.id;
   $("iBody").innerHTML=`<div class="iload">Cargando contexto…</div>`;
   $("infoModal").classList.add("show");

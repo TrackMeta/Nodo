@@ -144,7 +144,7 @@ const TODOS=[...new Set(ETAPAS.flatMap(e=>e.estados))];
 
 async function load(){
   const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
-  const sel="id,amount,currency,estado,shipping,order_bumps,contact_id,product_id,created_at,updated_at,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)";
+  const sel="id,amount,currency,estado,shipping,order_bumps,contact_id,product_id,created_at,updated_at,contact:contact_id(nombre,wa_id,source),product:product_id(nombre,emoji)";
   // PAGINADO: `esperando_adelanto` se acumula para siempre (todo lead de provincia que dejó
   // sus datos y nunca pagó se queda ahí), así que esta cola cruza las 1000 filas donde
   // PostgREST corta. Y como el orden es ascendente, lo que quedaba afuera era justo lo MÁS
@@ -156,7 +156,7 @@ async function load(){
     .eq("channel_id",st.channelId).in("estado",TODOS).order("created_at",{ascending:true}).order("id").range(f,t))); }
   if(gen!==st.loadGen) return; // cambiaste de bot mientras cargaba
   // Sin las ventas del contacto de PRUEBA (Probar flujos): pedían aprobación como si fueran reales.
-  st.list=(data||[]).filter(o=>((o.contact||{}).wa_id)!=="webchat-test");
+  st.list=(data||[]).filter(o=>{ const c=o.contact||{}; return c.wa_id!=="webchat-test" && c.source!=="sim"; });   // ni prueba ni simulados (tmp-sim)
 
   // Pedidos con un pago de VENTA EXTRA pendiente de aprobar: ya están
   // 'confirmada' (fuera de TODOS), así que se traen aparte y se suman.
@@ -450,8 +450,13 @@ function botones(o,et){
 
 async function updateOrder(body){
   const { data,error }=await supa.functions.invoke("order-update",{ body });
-  if(error){ toast(error.message||"No se pudo actualizar",true); return null; }
-  if(data&&data.error){ toast(data.error,true); return null; }
+  if(error){
+    // El motivo real (operación reusada, transición inválida) viene en el cuerpo del 4xx.
+    let det=""; try{ const j=await error.context?.json?.(); det=(j&&(j.detalle||j.error))||""; }catch(_){}
+    toast(det||error.message||"No se pudo actualizar",true); return null;
+  }
+  if(data&&data.error){ toast(data.detalle||data.error,true); return null; }
+  if(data&&data.deduped){ toast("Ese pago ya lo aprobó alguien más (o fue un doble clic) — no se cambió nada",true); return null; }
   return data;
 }
 

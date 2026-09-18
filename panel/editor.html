@@ -238,6 +238,7 @@ const NODE_DEFS = {
 
 const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura", flows:[], filter:"__all", localFolders:new Set() };
 let editor, canvas, zoomCtl, shell;
+let onKeyEditor=null, onClickEditor=null, onBeforeUnloadEditor=null;   // listeners globales, para quitarlos al salir (SPA)
 const CONTENT_TYPES = new Set(["mensaje","pregunta","ia","evento_fb"]);
 
 function esc(s){ return (s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -257,23 +258,28 @@ async function boot(){
   editor.on("nodeUnselected", ()=> { st.selected=null; renderCfg(); });
   // Historial: capturar tras crear/borrar/mover nodos y conexiones.
   ["nodeCreated","nodeRemoved","connectionCreated","connectionRemoved","nodeMoved"].forEach(ev=>editor.on(ev, ()=>{ if(!histLock) pushHistory(); }));
-  document.addEventListener("keydown",(e)=>{
-    if($("editorMain").style.display==="none") return;
+  // Con nombre y limpiados al salir (SPA): anónimos, cada entrada al Editor apilaba otro
+  // Ctrl+Z (deshacía varias veces sobre historiales de instancias viejas) y otro listener de clic.
+  onKeyEditor=(e)=>{
+    const em=$("editorMain"); if(!em || em.style.display==="none") return;
     const mod=e.ctrlKey||e.metaKey; if(!mod) return;
     const k=e.key.toLowerCase();
     if(k==="z" && !e.shiftKey){ e.preventDefault(); undo(); }
     else if((k==="y")||(k==="z"&&e.shiftKey)){ e.preventDefault(); redo(); }
-  });
+  };
+  document.addEventListener("keydown",onKeyEditor);
   buildPalette();
   // Cierra el menú de acciones al hacer clic fuera (un solo listener global).
-  document.addEventListener("click",(e)=>{ document.querySelectorAll(".apick-menu").forEach(mn=>{ if(!mn.parentElement.contains(e.target)) mn.style.display="none"; }); });
+  onClickEditor=(e)=>{ document.querySelectorAll(".apick-menu").forEach(mn=>{ if(!mn.parentElement.contains(e.target)) mn.style.display="none"; }); };
+  document.addEventListener("click",onClickEditor);
   await loadChannels();
   $("addFlow").onclick = createFlow;
   $("saveBtn").onclick = save;
   $("pubBtn").onclick = publish;
   $("trigBtn").onclick = openTriggers;
   // Aviso de cambios sin guardar al cerrar/recargar la pestaña (el editor no autoguarda).
-  window.addEventListener("beforeunload",(e)=>{ if(st.dirty){ e.preventDefault(); e.returnValue=""; } });
+  onBeforeUnloadEditor=(e)=>{ if(st.dirty){ e.preventDefault(); e.returnValue=""; } };
+  window.addEventListener("beforeunload",onBeforeUnloadEditor);
   $("backBtn").onclick = async ()=>{ if(st.dirty && !await confirmDialog({title:"Cambios sin guardar",message:"Tienes cambios en este flujo que no guardaste. Si sales, se pierden.",confirmText:"Salir sin guardar",cancelText:"Seguir editando",danger:true})) return; st.dirty=false; st.flowId=null; showOverview(); loadFlows(); };
   $("delFlowBtn").onclick = deleteFlow;
   // 🔴 EDITAR EL CONTENIDO DE UN NODO TAMBIÉN ES UN CAMBIO SIN GUARDAR.
@@ -587,6 +593,11 @@ function buildIA(m, body){
 async function loadChannels(){
   shell=await mountShell({ active:"editor" });
   st.channelId = shell.channelId;
+  shell.onLeave?.(()=>{
+    if(onKeyEditor) document.removeEventListener("keydown",onKeyEditor);
+    if(onClickEditor) document.removeEventListener("click",onClickEditor);
+    if(onBeforeUnloadEditor) window.removeEventListener("beforeunload",onBeforeUnloadEditor);
+  });
   const params=new URLSearchParams(location.search);
   const flowParam = params.get("flow");
   if(flowParam){

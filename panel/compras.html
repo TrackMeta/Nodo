@@ -239,15 +239,15 @@ async function boot(){
 
 async function load(){
   if(!st.channelId){ st.list=[]; render(); return; }
-  const sel="id,amount,currency,order_bumps,estado,created_at,updated_at,confirmed_at,shipping,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
+  const sel="id,amount,currency,order_bumps,estado,created_at,updated_at,confirmed_at,shipping,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id,source),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
   // Paginado (trae TODAS las cerradas): antes .limit(1000) topaba el archivo Y el
   // "cobrado en total" a los 1000 pedidos más recientes, sin aviso → el histórico
   // salía corto. Orden estable (created_at + id como desempate) para no repetir/saltar.
   let { data, error }=await pageAll((f,t)=>supa.from("orders").select(sel)
     .eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t));
-  if(error){ ({ data }=await pageAll((f,t)=>supa.from("orders").select("id,amount,currency,order_bumps,estado,created_at,shipping,contact_id,product_id,contact:contact_id(nombre,wa_id),product:product_id(nombre,emoji)")
+  if(error){ ({ data }=await pageAll((f,t)=>supa.from("orders").select("id,amount,currency,order_bumps,estado,created_at,shipping,contact_id,product_id,contact:contact_id(nombre,wa_id,source),product:product_id(nombre,emoji)")
     .eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t))); }
-  st.list=(data||[]).filter(esCerrada).filter(o=>((o.contact||{}).wa_id)!=="webchat-test"); // sin ventas de Probar flujos
+  st.list=(data||[]).filter(esCerrada).filter(o=>{ const c=o.contact||{}; return c.wa_id!=="webchat-test" && c.source!=="sim"; }); // sin ventas de Probar flujos ni simuladas
 
   // Último comprobante entrante por contacto — respaldo cuando el pedido no lo
   // guardó en shipping (típico en digital, donde el pago valida y sigue).
@@ -363,6 +363,7 @@ async function buscarOperacionUsada(q){
 }
 
 function render(){
+  if(!$("grid")) return;   // load() terminó después de salir de la sección por SPA
   renderStats();
   $("vistaSeg").querySelectorAll("[data-v]").forEach(b=>b.classList.toggle("on",b.dataset.v===st.vista));
   const lista = st.vista==="lista";
@@ -517,8 +518,8 @@ async function anular(o){
   const estado = tipoDe(o)==="digital" ? "anulada" : "cancelado";
   const body = { order_id:o.id, estado, shipping:{ anulada_motivo:motivo, anulada_at:new Date().toISOString() } };
   const { data, error } = await supa.functions.invoke("order-update", { body });
-  if(error){ toast(error.message||"No se pudo anular la venta", true); return; }
-  if(data && data.error){ toast(data.error, true); return; }
+  if(error){ let det=""; try{ const j=await error.context?.json?.(); det=(j&&(j.detalle||j.error))||""; }catch(_){} toast(det||error.message||"No se pudo anular la venta", true); return; }
+  if(data && data.error){ toast(data.detalle||data.error, true); return; }
   toast("Venta anulada");
   await load();
 }

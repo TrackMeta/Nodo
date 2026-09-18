@@ -145,6 +145,9 @@ async function boot(){
   const shell=await mountShell({ active:"canales" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); });
+  // Al salir por SPA, el sondeo de vinculación de Telegram no queda colgado (seguía llamando a
+  // channel-config cada 2 s y pintando una página que ya no existe).
+  shell.onLeave?.(()=>clearInterval(st.pairTimer));
   if(st.channelId) await load();
 }
 async function load(){
