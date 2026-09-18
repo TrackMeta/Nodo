@@ -839,7 +839,14 @@ Deno.serve(async (req) => {
       if (!wabaId || !token) return json({ ok: true, enviado: false, falta: { waba: !wabaId, token: !token } });
 
       // Meta exige un ejemplo por cada variable {{N}} del cuerpo.
-      const nVars = (text.match(/\{\{\s*\d+\s*\}\}/g) || []).length;
+      // Variables DISTINTAS y CONSECUTIVAS desde {{1}}: contar ocurrencias desalineaba los
+      // ejemplos ({{1}} y {{3}} → 2 ejemplos para huecos 1 y 3) y Meta rechazaba sin que el
+      // panel explicara por qué. Se valida acá con un mensaje claro.
+      const nums = [...new Set(([...text.matchAll(/\{\{\s*(\d+)\s*\}\}/g)]).map((m) => Number(m[1])))].sort((a, b) => a - b);
+      const nVars = nums.length;
+      if (nVars && nums.some((n, i) => n !== i + 1)) {
+        return json({ error: "variables_no_consecutivas", detalle: `Las variables tienen que ir {{1}}, {{2}}, {{3}}… sin saltos. Encontré: ${nums.map((n) => `{{${n}}}`).join(", ")}.` }, 400);
+      }
       const components: any[] = [{ type: "BODY", text }];
       if (nVars > 0) {
         const ex: string[] = [];

@@ -67,7 +67,12 @@ Deno.serve(async (req) => {
     }
     if (phoneNumberId) break;
   }
-  const esPlantilla = ((payload?.entry ?? []) as any[]).some((en) => (en?.changes ?? []).some((ch: any) => ch?.field === "message_template_status_update"));
+  // …y la RECATEGORIZACIÓN (template_category_update) también llega a nivel de WABA, sin
+  // phone_number_id: sin incluirla acá caía al «eventos sin mensajes» y se devolvía 200 antes
+  // de llegar a su handler → la plantilla seguía como UTILITY en el panel, con la tarifa y el
+  // opt-out de MARKETING sin aplicar.
+  const esPlantilla = ((payload?.entry ?? []) as any[]).some((en) => (en?.changes ?? []).some((ch: any) =>
+    ch?.field === "message_template_status_update" || ch?.field === "template_category_update"));
   const wabaId = payload?.entry?.[0]?.id as string | undefined;
   let channel: { id: string; buffer_default_seg?: number } | null = null;
   if (phoneNumberId) {

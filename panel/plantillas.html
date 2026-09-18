@@ -515,9 +515,16 @@ async function saveTpl(){
   // (una por hueco del cuerpo) para que las posiciones nunca se desalineen.
   const N=bodyMaxN(); const params=[];
   for(let n=1;n<=N;n++) params.push((st.vars[n]||"").trim());
-  const patch={ name:$("f_name").value.trim(), language:$("f_lang").value.trim()||"es",
+  // Nombre, idioma y estado los manda META una vez enviada: editarlos a mano en una plantilla
+  // ya enviada/aprobada rompía el envío (132001 «no existe» por un idioma cambiado) o dejaba
+  // elegir en Campañas una plantilla marcada «aprobada» a dedo. Solo en borrador se tocan.
+  const enBorrador=String(st.tpl.estado_meta||"borrador")==="borrador";
+  if(!enBorrador && ($("f_name").value.trim()!==String(st.tpl.name||"") || ($("f_lang").value.trim()||"es")!==String(st.tpl.language||"es") || $("f_estado").value!==String(st.tpl.estado_meta||""))){
+    toast("Nombre, idioma y estado los fija Meta: en una plantilla ya enviada no se cambian a mano (usa «Sincronizar»)",true);
+  }
+  const patch={ name: enBorrador ? $("f_name").value.trim() : st.tpl.name, language: enBorrador ? ($("f_lang").value.trim()||"es") : (st.tpl.language||"es"),
     categoria:$("f_cat").value, body_preview:$("f_body").value, params, activa:$("f_activa").checked };
-  const estado=$("f_estado").value, folder=st.tpl.folder||null;
+  const estado=enBorrador ? $("f_estado").value : (st.tpl.estado_meta||"borrador"), folder=st.tpl.folder||null;
   let { error }=await supa.from("wa_templates").update({ ...patch, estado_meta:estado, folder }).eq("id",st.tpl.id);
   if(error && /estado_meta|folder|column/.test(error.message)){ ({ error }=await supa.from("wa_templates").update(patch).eq("id",st.tpl.id)); if(!error) toast("Guardado (aplica 0015/0018 para estado y carpetas)"); }
   if(error){ toast(error.message,true); return; }

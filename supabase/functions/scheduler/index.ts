@@ -976,6 +976,13 @@ async function processSub(s: any, now: number): Promise<boolean> {
         return false;
       }
       console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: plantilla "${paso.template_name}" falló (${String((e as any)?.message ?? e)}) → se salta este toque y avanza`);
+      // Que quede en la Actividad del contacto: un fallo permanente (variables que no calzan,
+      // plantilla borrada) se saltaba en silencio, contacto por contacto, para siempre.
+      await db.from("contact_events").insert({
+        channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
+        titulo: "🔕 Plantilla de la secuencia no salió",
+        detalle: `Paso ${s.paso_actual}: «${paso.template_name}» — ${String((e as any)?.message ?? e).slice(0, 160)}. Se saltó este toque.`,
+      }).then(() => {}, () => {});
     }
   }
   // Mensaje del paso: texto simple, burbujas multimedia o rotación de variantes.
