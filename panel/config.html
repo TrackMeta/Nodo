@@ -541,7 +541,7 @@ async function testGsheets(e){
   if(!/\/exec/.test(url)){ toast("Primero pega la URL de la app web",true); return; }
   btn.disabled=true; const old=btn.textContent; btn.textContent="Probando…"; out.innerHTML="";
   try{
-    const r=await callFn("gsheets-test",{ webhook_url:url, tab:$("gs_tab").value.trim()||null });
+    const r=await callFn("gsheets-test",{ webhook_url:url, tab:$("gs_tab").value.trim()||null, channel_id:st.channelId });
     if(r&&r.ok){ out.innerHTML=`<span style="color:var(--green)"> Funcionó.</span> Se escribió una fila de prueba en tu hoja. Ya puedes borrarla.`; toast("Google Sheets conectado"); }
     else { out.innerHTML=`<span style="color:var(--red)">La app web respondió pero con error:</span> ${esc((r&&r.detalle)||JSON.stringify(r))}`; }
   }catch(err){

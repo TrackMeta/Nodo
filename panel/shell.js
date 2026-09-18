@@ -741,6 +741,7 @@ const S = {
   paintBrand: null, subs: [], leaves: [],
   channels: [], channelId: null, loaded: false,
   routerReady: false, pageStyles: [],
+  navSeq: 0,   // nº de la última navegación SPA: una navegación vieja que termina tarde no pinta
 };
 
 const fileOf = (path) => path.split("/").pop() || "";
@@ -1391,6 +1392,11 @@ async function navigate(href, { push = true } = {}) {
   // Navegación deliberada (clic del sidebar): frena si hay cambios sin guardar.
   // El back/forward (push=false) se controla en el listener de popstate.
   if (push && !(await _dirtyGate())) return;
+  // Dos clics seguidos en el sidebar lanzaban dos navigate() en paralelo: la que terminaba
+  // de bajar su HTML más tarde volvía a hacer teardown + swap ENCIMA de la página que ya se
+  // estaba mostrando (y su boot() reseteaba S.subs/S.leaves de la página viva). Solo la
+  // última navegación pedida tiene derecho a pintar.
+  const _mia = ++S.navSeq;
   try {
     let html = pageCache.get(dest.pathname);
     if (html == null) {
@@ -1399,6 +1405,7 @@ async function navigate(href, { push = true } = {}) {
       html = await res.text();
       pageCache.set(dest.pathname, html);
     }
+    if (_mia !== S.navSeq) return;   // ya hay una navegación más nueva: esta no pinta
     const doc = new DOMParser().parseFromString(html, "text/html");
     const newStyles = pageHeadAssets(doc).map((s) => s.cloneNode(true));
     const contentNodes = []; const scripts = [];

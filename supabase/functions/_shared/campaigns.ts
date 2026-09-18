@@ -110,7 +110,10 @@ async function expandCampaign(db: SupabaseClient, c: any) {
     }
     insertados += trozo.length;
   }
-  await db.from("campaigns").update({ estado: "enviando", total: insertados }).eq("id", c.id);
+  // Condicionado al estado que tenía al leerla: si el dueño la CANCELÓ desde el panel mientras
+  // se expandía, este update no debe revivirla como «enviando» (y los cierres a «completada»
+  // de sendBatch tampoco deben pisar una «cancelada»: llevan .eq("estado","enviando")).
+  await db.from("campaigns").update({ estado: "enviando", total: insertados }).eq("id", c.id).eq("estado", "programada");
 }
 
 // Parte una lista de ids en trozos: un `.in()` con miles de ids arma una URL enorme.
@@ -236,14 +239,14 @@ async function avisarCanalRoto(db: SupabaseClient, c: any, meta: any) {
 
 async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
   const { data: tpl } = await db.from("wa_templates").select("*").eq("id", c.template_id).maybeSingle();
-  if (!tpl) { await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id); return; }
+  if (!tpl) { await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando"); return; }
   // Defensa en profundidad: si Meta pausó/rechazó la plantilla DESPUÉS de crear la
   // campaña (baja calidad, sin aviso en la UI), no quemar la audiencia entera contra
   // un rechazo 132001. Se detiene la campaña y se marcan los pendientes con motivo.
   // (La UI ya filtra por estado_meta al elegir; esto cubre el cambio posterior.)
   if ((tpl as any).estado_meta && (tpl as any).estado_meta !== "aprobada") {
     await db.from("campaign_sends").update({ estado: "fallido", error: { message: "La plantilla ya no está aprobada por Meta" } }).eq("campaign_id", c.id).eq("estado", "pendiente");
-    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id);
+    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando");
     return;
   }
   // El nº de parámetros mapeados debe COINCIDIR con las variables {{N}} del cuerpo
@@ -254,20 +257,20 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
   // cuerpo → Meta rechazaría el lote (132000). La marca la sincronización (0074).
   if ((tpl as any).soporta_envio === false) {
     await db.from("campaign_sends").update({ estado: "fallido", error: { message: "La plantilla usa variables en el encabezado o en un botón, que Nodo aún no puede llenar. Usa una plantilla con variables solo en el cuerpo." } }).eq("campaign_id", c.id).eq("estado", "pendiente");
-    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id);
+    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando");
     return;
   }
   // Desmarcar «Plantilla activa» en el panel no frenaba lo que ya estaba en cola.
   if ((tpl as any).activa === false) {
     await db.from("campaign_sends").update({ estado: "fallido", error: { message: "La plantilla está desactivada en Plantillas" } }).eq("campaign_id", c.id).eq("estado", "pendiente");
-    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id);
+    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando");
     return;
   }
   const nVars = new Set(String((tpl as any).body_preview ?? "").match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
   const nParams = ((tpl as any).params ?? []).length;
   if (nVars !== nParams) {
     await db.from("campaign_sends").update({ estado: "fallido", error: { message: `La plantilla tiene ${nVars} variable(s) {{N}} pero ${nParams} parámetro(s) mapeado(s). Mapea los huecos en Plantillas antes de enviar.` } }).eq("campaign_id", c.id).eq("estado", "pendiente");
-    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id);
+    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando");
     return;
   }
 
@@ -301,11 +304,22 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
   // un hipo de red — a mitad del envío, con el resto de la audiencia sin recibir nada y sin
   // forma de retomarla. Ahora un error deja la campaña 'enviando' y el próximo tick sigue.
   if (errPend) { console.error(`[campañas] leer pendientes de "${c.nombre ?? c.id}": ${errPend.message} — se reintenta`); return; }
-  if (!pend?.length) { await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id); return; }
+  if (!pend?.length) { await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando"); return; }
 
   let ok = 0, fail = 0;
   let first = true;
   for (const s of pend) {
+    // 🛑 ¿La cancelaron mientras se enviaba el lote? El panel escribe «cancelada» directo en
+    // campaigns; este bucle solo cortaba por tiempo, así que hasta 25 plantillas del lote ya
+    // reclamado salían igual después del clic — y el modal promete que «los pendientes no
+    // salen». Un SELECT chico por envío, al lado del retraso anti-baneo, no se nota.
+    {
+      const { data: cst } = await db.from("campaigns").select("estado").eq("id", c.id).maybeSingle();
+      if (cst && (cst as any).estado !== "enviando") {
+        console.warn(`[campañas] "${c.nombre ?? c.id}": ya no está 'enviando' (${(cst as any).estado}) — se corta el lote`);
+        break;
+      }
+    }
     // Corte por tiempo a mitad del lote: lo ya enviado quedo marcado y lo que falta sigue
     // "pendiente", asi que el proximo tick retoma justo aca. Cortar es seguro porque cada
     // envio se reclama de a uno con el claim atomico de abajo.

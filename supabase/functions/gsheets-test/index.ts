@@ -64,6 +64,10 @@ Deno.serve(async (req) => {
   }
 
   // ── Modo Apps Script: POST a la app web ──
+  // 🔒 También exige el canal (y arriba, ser de su cuenta): sin eso cualquier miembro de la
+  // plataforma usaba esta función como relé ciego para disparar CUALQUIER Apps Script /exec
+  // ajeno desde nuestro servidor.
+  if (!body.channel_id) return json({ error: "faltan_datos", detalle: "Falta el canal" }, 400);
   const url = body.webhook_url?.trim();
   if (!url || !/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(url)) {
     return json({ error: "url_invalida", detalle: "La URL debe ser una app web de Apps Script (/exec)" }, 400);

@@ -105,7 +105,17 @@ async function boot(){
   const authSince=session.user.created_at;
   const { data:me }=await supa.from("app_users").select("nombre,role,avatar_url,created_at").eq("id",st.uid).maybeSingle();
   st.me=me||{};
-  $("vRole").textContent=me?.role||"—";
+  // El rol REAL es el de account_members para la cuenta del bot activo; app_users.role es un
+  // campo global legado que diverge (un admin invitado podía leer «operador» aquí).
+  let rol=me?.role||"";
+  try{
+    const { data:ch }=await supa.from("channels").select("account_id").eq("id",st.channelId).maybeSingle();
+    if(ch?.account_id){
+      const { data:am }=await supa.from("account_members").select("role").eq("account_id",ch.account_id).eq("user_id",st.uid).eq("activo",true).maybeSingle();
+      if(am?.role) rol=am.role;
+    }
+  }catch(_){ /* se queda con el legado */ }
+  $("vRole").textContent=rol==="admin"?"Administrador":(rol==="operador"?"Operador":(rol||"—"));
   $("vSince").textContent=fmt.format(new Date(me?.created_at||authSince));
   $("pNombre").value=me?.nombre||"";
   paintAvatar(me?.avatar_url);

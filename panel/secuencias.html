@@ -203,6 +203,24 @@ async function deleteSeq(){
   if(!await confirmDialog({title:"Eliminar secuencia",message:`¿Eliminar "${st.seq.nombre}"? Esta acción no se puede deshacer.`,confirmText:"Eliminar",danger:true})) return;
   const { error }=await supa.from("sequences").delete().eq("id",st.seq.id);
   if(error){ toast(error.message,true); return; }
+  // 🔗 Y se desenlaza de los productos que la tenían en remarketing_seqs / remarketing_seq_id.
+  // El cascade borra las suscripciones, pero products.config seguía apuntando a un id que ya
+  // no existe: enrolarSegmento lo resolvía, el upsert violaba la FK y el try/catch se lo
+  // tragaba → el remarketing de ese producto/segmento quedaba muerto en silencio, para siempre.
+  {
+    const sid=st.seq.id;
+    for(const [pid,cfg] of (st.prodConfig||new Map())){
+      const rs=(cfg&&cfg.remarketing_seqs&&typeof cfg.remarketing_seqs==="object")?cfg.remarketing_seqs:{};
+      const apunta=Object.values(rs).includes(sid) || (cfg&&cfg.remarketing_seq_id===sid);
+      if(!apunta) continue;
+      await patchProdConfig(pid,(c)=>{
+        const r={ ...(c.remarketing_seqs||{}) };
+        for(const k of Object.keys(r)) if(r[k]===sid) delete r[k];
+        c.remarketing_seqs=r;
+        if(c.remarketing_seq_id===sid) delete c.remarketing_seq_id;
+      });
+    }
+  }
   // La secuencia ya no existe: sus cambios sin guardar tampoco. Sin esto el aviso de
   // "cambios sin guardar" seguía saltando al salir de la página, por una secuencia borrada.
   st.seq=null; st.dirty=false; toast("Secuencia eliminada"); showGrid(); await load();

@@ -8080,10 +8080,19 @@ async function enrolarSegmento(db: SupabaseClient, channelId: string, contactId:
         .update({ estado: "cancelada", updated_at: new Date().toISOString() })
         .in("id", activosMios.map((a: any) => a.id));
     }
+    // ignoreDuplicates: el mismo blindaje que subscribeSeq. Sin él, el upsert hacía DO UPDATE
+    // sobre una sub COMPLETADA (paso_actual=0, activa) y una secuencia ya recorrida se
+    // rebobinaba: el cliente que vuelve a escribir meses después recibía los 5 toques de nuevo.
+    // Y esta es la vía más transitada (markProduct, setField, 2+/4+ mensajes), no un nodo raro.
+    // Solo se crea si no existe; una CANCELADA sí se reactiva desde el paso 0 (abajo).
     await db.from("sequence_subscriptions").upsert({
       channel_id: channelId, contact_id: contactId, sequence_id: seqId,
       estado: "activa", paso_actual: 0, segmento: seg, updated_at: new Date().toISOString(),
-    }, { onConflict: "contact_id,sequence_id" });
+    }, { onConflict: "contact_id,sequence_id", ignoreDuplicates: true });
+    await db.from("sequence_subscriptions")
+      .update({ estado: "activa", paso_actual: 0, segmento: seg, proximo_at: null, updated_at: new Date().toISOString() })
+      .eq("contact_id", contactId).eq("sequence_id", seqId).eq("estado", "cancelada")
+      .then(() => {}, () => {});
   } catch (_) { /* columnas pendientes / etc → no rompe el flujo */ }
 }
 
@@ -12519,7 +12528,24 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // guía salía vacía. Mientras falte la ciudad de un envío por agencia, hay que seguir
   // escuchando: sin ella no hay a dónde despachar.
   const _faltaCiudadProv = String(ctx.zona_entrega ?? "") === "provincia" && !String(ctx.ciudad ?? "").trim();
-  if (!a?.forzar && String(ctx.zona_entrega ?? "").trim() && ctx.zona_distrito_incierto !== "si" && !_faltaCiudadProv) return;
+  const _yaResuelta = !a?.forzar && !!String(ctx.zona_entrega ?? "").trim() && ctx.zona_distrito_incierto !== "si" && !_faltaCiudadProv;
+  // 🔁 …salvo que ANTES del pedido el cliente esté MOVIENDO el destino con todas sus letras
+  // («ah no, mejor mándalo a Trujillo, mi hermano lo recoge»). Medido (2026-09-18): con la
+  // zona sellada en San Miguel/Lima, la IA le contestó «Trujillo está perfecto para enviar
+  // por agencia Shalom» —porque el mensaje lo dice— mientras el run seguía en Lima: le iba
+  // a pedir la dirección y el pedido nacía en contraentrega a un distrito del que acababa
+  // de irse. Con pedido ya creado lo atiende maybeCambioDatos (edita el pedido); acá se
+  // cubre el hueco de ANTES, y solo con la señal explícita de cambio (RE_CAMBIA_DESTINO) y
+  // mirando ÚNICAMENTE el último mensaje: el historial lo diría de dónde era antes.
+  // Si ese mensaje no nombra ningún lugar («mejor mándalo a la casa de mi hermano»), más
+  // abajo no se toca nada, como siempre.
+  let _soloUltimo = false;
+  if (_yaResuelta) {
+    const _ultZ = String(ctx.last_input ?? "").toLowerCase();
+    const _cambiaAntesDelPedido = !a?.texto && String(ctx.pedido_creado ?? "") !== "si" && RE_CAMBIA_DESTINO.test(_ultZ);
+    if (!_cambiaAntesDelPedido) return;
+    _soloUltimo = true;
+  }
 
   const cfg = await loadEntregas(db, run);
   const zonas: Zona[] = cfg?.entregas?.zonas ?? [];
@@ -12543,7 +12569,7 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   } else {
     const ultimo = String(ctx.last_input ?? "").trim();
     if (ultimo) textos.push(ultimo);
-    try {
+    if (!_soloUltimo) try {
       const { data: previos } = await db.from("messages")
         .select("content, ts").eq("contact_id", run.contact_id).eq("direction", "in")
         .order("ts", { ascending: false }).limit(6);
@@ -14256,10 +14282,28 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
       }
     } catch (_) { /* sin historial legible → se le pregunta, como antes */ }
   }
-  const completo = pendientes.length === 0 && !faltaOpcion && !faltaVariante && !packMixto;
+  // 🗺️ Sin ZONA no hay datos completos. Los campos de una sola zona (la dirección en Lima,
+  // el DNI y la sede en provincia) se filtran arriba mientras la zona no se conoce, así
+  // que a un cliente que solo dio nombre y celular —y NUNCA dijo de dónde es— el motor le
+  // marcaba `datos_completos = si`. Medido (2026-09-18): «Listo, Juan, gracias por la
+  // compra 🙌📦» sin dirección ni sede; el flujo no creaba el pedido (sus rutas exigen la
+  // zona) y encima `sinPreguntaFinal` le recortaba a la IA justo la pregunta del distrito,
+  // porque cree que con datos completos ya no hay nada que preguntar. La regla de prompt
+  // «Antes que nada: ¿de dónde es?» ya existía por este mismo incidente y no alcanzó: el
+  // motor la contradecía. Solo aplica cuando el producto SÍ tiene campos por zona (una
+  // venta digital o un producto solo-Lima no la necesitan).
+  const _zonaPendiente = !esDigital(ctx) && !String(ctx.zona_entrega ?? "").trim() &&
+    todos.some((c) => !!c.solo_si_zona);
+  const completo = pendientes.length === 0 && !faltaOpcion && !faltaVariante && !packMixto && !_zonaPendiente;
   run.vars.datos_completos = completo ? "si" : "no";
   ctx.datos_completos = completo ? "si" : "no";
   await setField(db, run.channel_id, run.contact_id, "datos_completos", completo ? "si" : "no");
+  // Y la zona entra a la lista de lo que falta, para que la IA la pida por su nombre (en la
+  // misma lista que lo demás) y el «cierre honesto» no invente otro dato. `_datos_faltan`
+  // es la misma referencia que `pendientes`, así que basta con empujarla acá.
+  if (_zonaPendiente) {
+    pendientes.push({ clave: "zona_entrega", label: "De qué distrito o ciudad eres (para saber cómo te llega)", requerido: true } as CampoDato);
+  }
 
   // "Provincia sin adelanto" por DATO (no por el pedido): si es un lead de
   // provincia que ya dejó su DNI —el dato que SOLO pide el envío por agencia—
@@ -15320,9 +15364,34 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // contraentrega) y él acaba de decirnos de dónde es. Regla de Rodrigo: «se le puede
     // preguntar al momento de saber la ubicación, no tan tarde tampoco».
     const _zonaAntes = String(ctx.zona_entrega ?? "").trim();
+    const _ciudadAntes = String(ctx.ciudad ?? "").trim();
     await resolverZonaAccion(db, run, {}, ctx).catch(() => null);
     const _zonaAhora = String(ctx.zona_entrega ?? "").trim();
     if (_zonaAhora && _zonaAhora !== _zonaAntes) (run.vars as any)._zona_recien = 1;
+    // 🔁 Cambió de destino ANTES del pedido (ver resolverZonaAccion): lo que era de la zona
+    // vieja ya no sirve —la dirección de Lima si ahora va por agencia; la sede y su ficha si
+    // ahora va a su puerta— y dejarlo puesto es lo que después sale en el rótulo o hace que
+    // el flujo crea que ya tiene todo. Se limpia por la configuración de campos (solo los de
+    // la zona anterior) y se avisa en Actividad.
+    if (_zonaAntes && _zonaAhora && String(ctx.pedido_creado ?? "") !== "si" &&
+        (_zonaAhora !== _zonaAntes || String(ctx.ciudad ?? "").trim() !== _ciudadAntes)) {
+      try {
+        const _limpiar = async (k: string) => {
+          if (!String(ctx[k] ?? run.vars?.[k] ?? "").trim()) return;
+          ctx[k] = ""; run.vars[k] = "";
+          await setField(db, run.channel_id, run.contact_id, k, "").catch(() => {});
+        };
+        if (_zonaAhora !== _zonaAntes) {
+          for (const c of (Array.isArray(cfg.campos) ? cfg.campos : [])) {
+            if (c && c.clave && c.solo_si_zona === _zonaAntes) await _limpiar(String(c.clave));
+          }
+        }
+        for (const k of ["sede_por_confirmar", "distrito_ambiguo", "zona_ambigua"]) await _limpiar(k);
+        if (_zonaAhora !== "provincia") { delete (run.vars as any)._ficha_sede; delete (run.vars as any)._ficha_ahora; }
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "🔁 Cambió de destino antes del pedido",
+          `${_ciudadAntes || _zonaAntes} → ${String(ctx.ciudad ?? "") || _zonaAhora}: se limpian los datos de la zona anterior`).catch(() => {});
+      } catch (_) { /* limpiar es cortesía; la zona nueva ya quedó puesta */ }
+    }
   }
 
   // Vende Y recolecta a la vez: pesca del mensaje los datos que hagan falta,

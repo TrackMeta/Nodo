@@ -83,10 +83,14 @@ function ponerCss() {
 
 // Campos personalizados del canal (los del negocio). Se cachean por canal:
 // el picker se abre muchas veces seguidas mientras se arma un mensaje.
+// …pero con caducidad corta: el módulo vive toda la sesión SPA, y sin ella un campo recién
+// creado (o borrado) en Campos no aparecía (o seguía apareciendo) hasta recargar la pestaña.
 const cacheCampos = new Map();
+const CACHE_MS = 20_000;
 async function camposDelCanal(supa, channelId) {
   if (!supa || !channelId) return [];
-  if (cacheCampos.has(channelId)) return cacheCampos.get(channelId);
+  const hit = cacheCampos.get(channelId);
+  if (hit && (Date.now() - hit.at) < CACHE_MS) return hit.out;
   let out = [];
   try {
     const { data } = await supa.from("custom_fields").select("key,nombre,modo")
@@ -94,7 +98,7 @@ async function camposDelCanal(supa, channelId) {
     out = (data || []).filter((f) => f.key && !String(f.key).startsWith("_"))
       .map((f) => [f.key, f.nombre || f.key, f.modo === "fijo" ? "Campo del bot (mismo valor para todos)" : "Lo captura el bot en la conversación"]);
   } catch (_) { /* sin campos */ }
-  cacheCampos.set(channelId, out);
+  cacheCampos.set(channelId, { at: Date.now(), out });
   return out;
 }
 

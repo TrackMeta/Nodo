@@ -25,6 +25,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { supa, toast, icon, askText, confirmDialog } from "./shell.js";
 
+let _offPick = null;   // listener de «clic afuera» del picker de carpeta (uno solo vivo)
 const PALETTE = ["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e","#10b981","#14b8a6","#0ea5e9","#3b82f6","#6366f1","#8b5cf6","#a855f7","#ec4899","#64748b"];
 const EMOJIS  = ["📁","👟","💊","🎁","🔥","⭐","🛒","📦","💎","🎯","🏷️","✨","📚","🧴","👕","🍫"];
 const PIPETTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 0 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>';
@@ -161,7 +162,10 @@ export async function mountFolders(opts){
     // Garantiza una fila en `folders` para ese nombre (al crear/asignar).
     if (!S.hasTable) return;
     const orden = S.metas.length;
-    await supa.from("folders").insert({ channel_id:S.channelId, tipo:S.tipo, nombre, orden }).select("id").maybeSingle().then(()=>{},()=>{});
+    // Se mira el error: antes se tragaba y el item quedaba con `folder = nombre` sin fila real
+    // en `folders` (sin color/emoji/orden) y nadie se enteraba.
+    const { error } = await supa.from("folders").insert({ channel_id:S.channelId, tipo:S.tipo, nombre, orden }).select("id").maybeSingle();
+    if (error && !/duplicate|unique/i.test(error.message||"")) toast("No se pudo crear la carpeta: "+error.message, true);
   }
 
   async function createFolder(){
@@ -244,24 +248,31 @@ export async function mountFolders(opts){
       // el .error de cada escritura a `folders`.
       const renom = live.filter(r=>r._orig && r.nombre!==r._orig);
       renom.forEach(r=>{ r._tmp = " tmp "+(r.id||r._orig); });
+      // Las escrituras a la tabla de ITEMS también se miran: si la carpeta se renombró pero sus
+      // items no (RLS, red), el paso 2 no los encuentra y quedan huérfanos con el nombre viejo
+      // — y el modal cerraba con «Carpetas actualizadas». Ahora un fallo aborta y avisa.
+      const mueve = async (q)=>{ const { error }=await q; if(error) throw new Error(error.message); };
       if (!S.hasTable){
         // Modo texto: solo item.folder. Fase 1 → temp, Fase 2 → nombre final. Borrados aparte.
-        for (const r of rows){ if (r._del && r._orig){ await supa.from(S.table).update({ folder:null }).eq("channel_id",S.channelId).eq("folder",r._orig); } }
-        for (const r of renom){ await supa.from(S.table).update({ folder:r._tmp }).eq("channel_id",S.channelId).eq("folder",r._orig); }
-        for (const r of renom){ await supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",r._tmp); }
-        close(); await load(); render(); S.onChange(); toast("Carpetas actualizadas"); return;
+        try{
+          for (const r of rows){ if (r._del && r._orig){ await mueve(supa.from(S.table).update({ folder:null }).eq("channel_id",S.channelId).eq("folder",r._orig)); } }
+          for (const r of renom){ await mueve(supa.from(S.table).update({ folder:r._tmp }).eq("channel_id",S.channelId).eq("folder",r._orig)); }
+          for (const r of renom){ await mueve(supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",r._tmp)); }
+          close(); await load(); render(); S.onChange(); toast("Carpetas actualizadas");
+        } catch(e){ toast("No se pudo guardar las carpetas: "+(e.message||""), true); }
+        return;
       }
       try{
         // Borrados: quita la fila + manda sus items a Sin carpeta.
         for (const r of rows.filter(r=>r._del)){
-          if (r.id) await supa.from("folders").delete().eq("id", r.id);
-          if (r._orig) await supa.from(S.table).update({ folder:null }).eq("channel_id",S.channelId).eq("folder",r._orig);
+          if (r.id) await mueve(supa.from("folders").delete().eq("id", r.id));
+          if (r._orig) await mueve(supa.from(S.table).update({ folder:null }).eq("channel_id",S.channelId).eq("folder",r._orig));
         }
         // FASE 1: las carpetas renombradas van a un nombre TEMPORAL único (evita colisión del
         // unique y libera su nombre viejo/nuevo), y sus items también.
         for (const r of renom){
           if (r.id && !r._new){ const { error }=await supa.from("folders").update({ nombre:r._tmp }).eq("id", r.id); if(error){ toast("No se pudo guardar las carpetas: "+error.message, true); return; } }
-          await supa.from(S.table).update({ folder:r._tmp }).eq("channel_id",S.channelId).eq("folder",r._orig);
+          await mueve(supa.from(S.table).update({ folder:r._tmp }).eq("channel_id",S.channelId).eq("folder",r._orig));
         }
         // FASE 2: nombre FINAL + color/emoji/orden; y arrastra los items del temp (o del original
         // si no estaba renombrada) al nombre final.
@@ -272,12 +283,12 @@ export async function mountFolders(opts){
             if(error){ toast("No se pudo crear la carpeta “"+r.nombre+"”: "+error.message, true); return; }
             // Carpeta "fantasma" renombrada (existía como texto en los items pero no en la tabla).
             const from = r._tmp || r._orig;
-            if (from && r.nombre!==from){ await supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",from); }
+            if (from && r.nombre!==from){ await mueve(supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",from)); }
           } else {
             const { error }=await supa.from("folders").update({ nombre:r.nombre, color:r.color, emoji:r.emoji, orden:i }).eq("id", r.id);
             if(error){ toast("No se pudo guardar la carpeta “"+r.nombre+"”: "+error.message, true); return; }
             const from = r._tmp || r._orig;
-            if (from && r.nombre!==from){ await supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",from); }
+            if (from && r.nombre!==from){ await mueve(supa.from(S.table).update({ folder:r.nombre }).eq("channel_id",S.channelId).eq("folder",from)); }
           }
         }
         close(); await load(); render(); S.onChange(); toast("Carpetas actualizadas");
@@ -331,7 +342,10 @@ export async function mountFolders(opts){
         if(!n) return;
         if(!S.metas.some(m=>m.nombre===n)) await ensureRow(n);
         await load(); paintBtn(n); pOpts.onPick&&pOpts.onPick(n); };
-      setTimeout(()=>{ const off=(e)=>{ if(!pop.contains(e.target)&&e.target!==btn){ pop.remove(); document.removeEventListener("mousedown",off);} }; document.addEventListener("mousedown",off); },30);
+      // Un solo listener de «clic afuera» vivo: si se reabre tocando el mismo botón (sin haber
+      // clicado fuera), el anterior se quita antes de registrar el nuevo, o se apilaban.
+      if (_offPick) { document.removeEventListener("mousedown", _offPick); _offPick=null; }
+      setTimeout(()=>{ const off=(e)=>{ if(!pop.contains(e.target)&&e.target!==btn){ pop.remove(); document.removeEventListener("mousedown",off); if(_offPick===off) _offPick=null; } }; _offPick=off; document.addEventListener("mousedown",off); },30);
     };
     return btn;
   }
