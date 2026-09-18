@@ -29,15 +29,20 @@ Deno.serve(async (req) => {
 
   const { data: contact } = await db.from("contacts").upsert({
     channel_id, wa_id, nombre: nombre || wa_id,
+    // 🔴 Marca de SIMULADO: `ensureDelivery` solo eximía a «webchat-test» del envío real. Un
+    // script de simulación sobre un canal con WhatsApp conectado hacía POST a Graph con estos
+    // números (y si uno coincidía con una persona real, le llegaba el bot). Con `source: "sim"`
+    // el motor los trata como prueba y nunca sale nada por Meta.
+    source: "sim",
     last_input: media?.caption ?? text ?? buttonId ?? (mediaKind ? `[${mediaKind}]` : ""),
     last_input_type: mediaKind ?? (buttonId ? "interactive" : "text"),
     ...(ad_id ? { ad_id } : {}),
     ultimo_mensaje_at: new Date().toISOString(), ultimo_mensaje_cliente_at: new Date().toISOString(),
-  }, { onConflict: "channel_id,wa_id" }).select("id,bot_activo").single();
+  }, { onConflict: "channel_id,wa_id" }).select("id,bot_activo,bloqueado").single();
   const contactId = contact!.id;
 
   await db.from("conversations").upsert({
-    channel_id, contact_id: contactId, window_type: "service_24h",
+    channel_id, contact_id: contactId, window_type: "service_24h", archivada: false,   // igual que el webhook: un mensaje del cliente la reabre
     expira_at: new Date(Date.now() + 3650 * 24 * 3600 * 1000).toISOString(), updated_at: new Date().toISOString(),
   }, { onConflict: "contact_id" });
 
@@ -52,6 +57,14 @@ Deno.serve(async (req) => {
         }
       }
     } catch (_) { /* best-effort */ }
+    // 🔓 Soltar las operaciones de pago reclamadas por este contacto (candado anti-reúso de
+    // comprobantes): igual que el webchat. Sin esto, un Yape sintético servía UNA sola vez.
+    try {
+      const { data: ords2 } = await db.from("orders").select("id").eq("contact_id", contactId);
+      const ids = (ords2 ?? []).map((o: any) => o.id);
+      await db.from("payment_operations").delete().eq("channel_id", channel_id).eq("contact_id", contactId);
+      if (ids.length) await db.from("payment_operations").delete().eq("channel_id", channel_id).is("contact_id", null).in("order_id", ids);
+    } catch (_) { /* best-effort */ }
     await Promise.all([
       db.from("messages").delete().eq("contact_id", contactId),
       db.from("flow_runs").delete().eq("contact_id", contactId),
@@ -61,17 +74,23 @@ Deno.serve(async (req) => {
       db.from("contact_field_values").delete().eq("contact_id", contactId),
       db.from("orders").delete().eq("contact_id", contactId),
     ]);
-    await db.from("contacts").update({ stage: "nuevo", bot_activo: true, product_id: null, ctwa_clid: null, source: null, last_input: null, last_input_type: null, consecutive_failed_reply: 0, memoria_ia: {}, primera_interaccion: new Date().toISOString(), ultimo_mensaje_at: new Date().toISOString(), ultimo_mensaje_cliente_at: null }).eq("id", contactId);
+    // `angulo`, `oferta_activa` y `ultima_imagen_at` también se limpian: el ángulo sellado y la
+    // oferta de remarketing de una prueba anterior contaminaban la siguiente (gancho y precio).
+    await db.from("contacts").update({ angulo: null, oferta_activa: null, ultima_imagen_at: null, bloqueado: false }).eq("id", contactId).then(() => {}, () => {});
+    await db.from("contacts").update({ stage: "nuevo", bot_activo: true, product_id: null, ctwa_clid: null, source: "sim", last_input: null, last_input_type: null, consecutive_failed_reply: 0, memoria_ia: {}, primera_interaccion: new Date().toISOString(), ultimo_mensaje_at: new Date().toISOString(), ultimo_mensaje_cliente_at: null }).eq("id", contactId);
     return json({ ok: true, reset: true, contact_id: contactId });
   }
 
   const content = mediaKind ? { media_url: media!.url, caption: media?.caption ?? "", mime: media?.mime ?? "" } : (buttonId ? { id: buttonId, title: body.text ?? buttonId } : { text: text ?? "" });
-  await db.from("messages").insert({ channel_id, contact_id: contactId, direction: "in", type: mediaKind ?? (buttonId ? "interactive" : "text"), content, status: "delivered" });
+  const { data: msgRow } = await db.from("messages").insert({ channel_id, contact_id: contactId, direction: "in", type: mediaKind ?? (buttonId ? "interactive" : "text"), content, status: "delivered" }).select("id, ts").single();
+  if ((contact as any)?.bloqueado === true) return json({ ok: true, contact_id: contactId, bloqueado: true });   // igual que el webhook: bloqueado = sin motor
   if (contact!.bot_activo === false) return json({ ok: true, contact_id: contactId, paused: true });
 
   try {
+    // `msgTs` como el webhook: sin él, el sello anti-doble-respuesta no actúa en las regresiones.
+    const msgTs = String((msgRow as any)?.ts ?? new Date().toISOString());
     const event = buttonId ? { type: "button" as const, buttonId, title: text ?? buttonId }
-      : { type: "message" as const, text: media?.caption ?? text ?? "", msgType: mediaKind ?? "text", mediaRef: (mediaKind === "image" || mediaKind === "audio") ? media!.url : undefined };
+      : { type: "message" as const, text: media?.caption ?? text ?? "", msgType: mediaKind ?? "text", msgTs, mediaRef: (mediaKind === "image" || mediaKind === "audio") ? media!.url : undefined };
     await runEngine(db, channel_id, contactId, event);
   } catch (e) { console.error("[tmp-sim] engine error:", e); return json({ error: "engine_error", detalle: String(e) }, 500); }
   return json({ ok: true, contact_id: contactId });

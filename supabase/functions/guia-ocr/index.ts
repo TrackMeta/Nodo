@@ -27,9 +27,13 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   if (!body.channel_id || !body.image_url) return json({ error: "faltan_datos" }, 400);
   if (!(await userOwnsChannel(db, uid, body.channel_id))) return json({ error: "forbidden_channel" }, 403);
+  // Solo URLs http(s) cortas (lo que sube media-upload, que sí topa el tamaño). Un data-URI de
+  // cientos de MB pasaba entero a memoria y al proveedor de IA sin ningún tope.
+  const imgUrl = String(body.image_url);
+  if (!/^https?:\/\//i.test(imgUrl) || imgUrl.length > 2048) return json({ error: "image_url_invalida", detalle: "Sube la imagen primero (media-upload) y manda su URL." }, 400);
 
   try {
-    const guia = await leerGuiaShalom(db, body.channel_id, String(body.image_url));
+    const guia = await leerGuiaShalom(db, body.channel_id, imgUrl);
     return json({ ok: true, guia });
   } catch (e) {
     return json({ error: String((e as any)?.message ?? e) }, 500);

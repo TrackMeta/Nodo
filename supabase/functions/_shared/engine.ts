@@ -353,6 +353,21 @@ async function runEngineInner(
     return;
   }
 
+  // 🇵🇪 «cancelar» A SECAS (una palabra, sin objeto) con un pedido esperando plata: no entra ni
+  // por `pideCancelar` (pide «quiero cancelar…») ni por `cancelarSignificaPagar` (pide un objeto
+  // de pago), así que caía al nodo de IA del flujo, que contestaba genérico y escalaba a un
+  // humano (medido 2026-09-18 con el pedido en esperando_adelanto). La pregunta que desempata
+  // ya existía más abajo; acá se le abre la puerta a la forma más corta.
+  if (event.type === "message" && /^\s*(?:quiero\s+|deseo\s+|necesito\s+)?cancelar(?:lo|la)?\s*[.!?…]*\s*$/i.test(String(event.text ?? ""))) {
+    const ordC = await tienePedidoVivo(db, contactId);
+    if (ordC && ["esperando_adelanto", "pendiente", "adelanto_validado", "por_despachar"].includes(String(ordC.estado ?? ""))) {
+      await deliverMessage(db, channelId, contactId,
+        "Para no equivocarme 🙂 ¿quieres *anular* tu pedido, o *cancelar el pago* (osea pagarlo)? Dime cuál y lo hacemos al toque.").catch(() => {});
+      await logEvent(db, channelId, contactId, "nota", "🇵🇪 «cancelar» ambiguo", "Pedido esperando plata: se le preguntó si anular o pagar").catch(() => {});
+      return;
+    }
+  }
+
   if (event.type === "message" && pideCancelar(event.text) && !cancelarSignificaPagar(event.text)) {
     const ord = await tienePedidoVivo(db, contactId);
     if (ord) {
@@ -3628,7 +3643,10 @@ async function ensureDelivery(db: SupabaseClient, run: any) {
   // entregada (falso negativo). No hay fuga a un cliente real ("webchat-test" no es un número);
   // es divergencia prueba-vs-real que muerde JUSTO al conectar Meta.
   let esPrueba = false;
-  try { const { data: cc } = await db.from("contacts").select("wa_id").eq("id", run.contact_id).maybeSingle(); esPrueba = (cc as any)?.wa_id === "webchat-test"; } catch (_) {}
+  // …y los contactos SIMULADOS (tmp-sim marca `source: "sim"`): antes solo «webchat-test» era
+  // prueba, y un script de simulación sobre un canal con Meta conectado mandaba por Graph a
+  // números inventados (o reales, si coincidían).
+  try { const { data: cc } = await db.from("contacts").select("wa_id, source").eq("id", run.contact_id).maybeSingle(); esPrueba = (cc as any)?.wa_id === "webchat-test" || (cc as any)?.source === "sim"; } catch (_) {}
   if (!esPrueba && (ch as any)?.channel_type === "whatsapp" && (ch as any).phone_number_id) {
     const secrets = await getChannelSecrets(db, run.channel_id);
     run._delivery = { mode: "whatsapp", phoneNumberId: (ch as any).phone_number_id, token: secrets?.access_token ?? null };
@@ -11315,7 +11333,12 @@ export async function sugerirRespuestas(db: SupabaseClient, channelId: string, c
     const m = /\{[\s\S]*\}/.exec(raw);
     const parsed = m ? JSON.parse(m[0]) : {};
     arr = Array.isArray(parsed?.sugerencias) ? parsed.sugerencias.map((s: any) => String(s ?? "").trim()).filter(Boolean) : [];
-  } catch (_) { arr = []; }
+  } catch (e) {
+    // Que quede rastro: «0 sugerencias» sin log no distingue «no tuvo nada que proponer» de
+    // «el modelo contestó en un formato que no parseamos».
+    console.warn("[sugerirRespuestas] respuesta no parseable:", String((e as any)?.message ?? e), String(raw ?? "").slice(0, 200));
+    arr = [];
+  }
   return arr.slice(0, 3);
 }
 

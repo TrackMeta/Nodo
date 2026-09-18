@@ -13,6 +13,7 @@ const db = serviceClient();
 
 const TIER_LABEL: Record<string, string> = {
   referral: "Anuncio (referral)",
+  anuncio: "Anuncio (banco de anuncios del producto)",
   keyword: "Palabra clave",
   entrada: "Flujo de entrada",
   ia: "IA Router (intención)",

@@ -97,13 +97,14 @@ Deno.serve(async (req) => {
       ultimo_mensaje_cliente_at: new Date().toISOString(),
     },
     { onConflict: "channel_id,wa_id" },
-  ).select("id,bot_activo").single();
+  ).select("id,bot_activo,bloqueado").single();
   const contactId = contact!.id;
 
   // Ventana siempre abierta para el webchat de pruebas.
   await db.from("conversations").upsert(
     {
       channel_id, contact_id: contactId, window_type: "service_24h",
+      archivada: false,   // igual que el webhook: un mensaje del cliente reabre la conversación
       expira_at: new Date(Date.now() + 3650 * 24 * 3600 * 1000).toISOString(),
       updated_at: new Date().toISOString(),
     },
@@ -174,6 +175,10 @@ Deno.serve(async (req) => {
       ultimo_mensaje_cliente_at: null,
       ultima_imagen_at: null,
     }).eq("id", contactId);
+    // `angulo` y `oferta_activa` aparte (columnas de migraciones posteriores; si faltan, que no
+    // tumben el reset): el ángulo sellado y la oferta de remarketing de una prueba anterior
+    // contaminaban la siguiente (gancho del copy y precio con descuento).
+    await db.from("contacts").update({ angulo: null, oferta_activa: null, bloqueado: false }).eq("id", contactId).then(() => {}, () => {});
     return json({ ok: true, reset: true, contact_id: contactId });
   }
 
@@ -206,6 +211,8 @@ Deno.serve(async (req) => {
 
   // Si el bot está en pausa (operador tomó la conversación), NO responder:
   // guarda el mensaje entrante pero no corre el motor. Igual que el webhook.
+  // Igual que el webhook: un contacto BLOQUEADO no corre el motor (el banco de pruebas seguía contestando).
+  if ((contact as any)?.bloqueado === true) return json({ ok: true, contact_id: contactId, bloqueado: true });
   if (contact!.bot_activo === false) {
     return json({ ok: true, contact_id: contactId, paused: true });
   }
