@@ -87,10 +87,20 @@ Deno.serve(async (req) => {
     const bumpsP = ((order as any).order_bumps ?? []) as any[];
     const totalP = (Number((order as any).amount) || 0) +
       bumpsP.reduce((a, b) => a + (Number((b as any)?.precio) || 0), 0);
+    // Si el negocio escribió su PROPIO aviso para este estado (Pagos y atención → Avisos de
+    // pedido), ESE es el que sale — la preview mostraba el genérico del motor y el operador
+    // confirmaba viendo un texto que no era el que le llegaba al cliente.
+    let previoPropio = "";
+    try {
+      const { data: chAv } = await db.from("channels").select("pedidos_config").eq("id", (order as any).channel_id).maybeSingle();
+      const avP = (chAv as any)?.pedidos_config?.avisos?.[String(body.estado ?? "")] ?? {};
+      if (String(avP.modo ?? "mensaje") !== "flujo") previoPropio = String(avP.texto ?? "").trim();
+    } catch { /* sin config → el genérico */ }
     return json({
       ok: true,
-      preview: mensajeEstadoDefault(String(body.estado ?? ""), shipP, totalP,
-        (order as any).currency, bumpsP, (order as any).products?.nombre ?? null, demP) ?? "",
+      propio: !!previoPropio,
+      preview: previoPropio || (mensajeEstadoDefault(String(body.estado ?? ""), shipP, totalP,
+        (order as any).currency, bumpsP, (order as any).products?.nombre ?? null, demP) ?? ""),
     });
   }
 
@@ -124,6 +134,24 @@ Deno.serve(async (req) => {
   if (newEstado && !EST[newEstado]) {
     return json({ error: "estado_desconocido", detalle: `"${newEstado}" no es un estado de pedido. Válidos: ${Object.keys(EST).join(", ")}` }, 400);
   }
+  // 🚦 Saltos IMPOSIBLES. No había matriz de transiciones: un pedido cancelado podía pasar
+  // directo a «despachado» (y el bloque de «revivir stock» le descontaba otra unidad), y uno
+  // ya recogido/cobrado podía volver a «esperando adelanto». Los perdidos se reactivan solo
+  // por el principio (pendiente / confirmado / esperando_adelanto / adelanto_validado), y de
+  // un pedido cerrado no se retrocede.
+  if (newEstado) {
+    const _origen = String((order as any).estado ?? "");
+    const _PERDIDOS = ["cancelado", "anulada", "rechazado", "no_recogido"];
+    const _AVANZADOS = ["por_despachar", "despachado", "en_agencia", "saldo_pagado", "recogido", "entregado_cobrado"];
+    const _CERRADOS = ["recogido", "entregado_cobrado"];
+    const _INICIALES = ["pendiente", "esperando_adelanto", "adelanto_validado", "confirmado", "confirmada"];
+    if (_PERDIDOS.includes(_origen) && _AVANZADOS.includes(newEstado)) {
+      return json({ error: "transicion_invalida", detalle: `Un pedido «${_origen}» no puede pasar directo a «${newEstado}». Reactívalo primero (pendiente, confirmado o esperando adelanto).` }, 400);
+    }
+    if (_CERRADOS.includes(_origen) && _INICIALES.includes(newEstado)) {
+      return json({ error: "transicion_invalida", detalle: `Un pedido «${_origen}» ya está cerrado; no puede volver a «${newEstado}».` }, 400);
+    }
+  }
   if (newEstado) {
     patch.estado = newEstado;
     if (CONFIRM_STATES.includes(newEstado)) patch.confirmed_at = new Date().toISOString();
@@ -145,6 +173,17 @@ Deno.serve(async (req) => {
     else if (newEstado === "confirmada") opChk = String(((patch.shipping as any) ?? sh).digital_operacion || ((patch.shipping as any) ?? sh).digital_operacion_leida || "");
     else if (aprobandoExtra) opChk = String(((patch.shipping as any) ?? sh).extra_operacion || ((patch.shipping as any) ?? sh).extra_operacion_leida || "");
     const opN = opChk.toUpperCase().replace(/\s+/g, "").trim();
+    // ⚠️ Aprobar un pago SIN nº de operación (el OCR no lo leyó, o «Aprobar» a ojo) salta el
+    // candado anti-reúso y no deja rastro: el pedido avanza, se entrega, y ninguna operación
+    // queda registrada. Se permite (es decisión del operador) pero queda anotado en la Actividad.
+    const _aprobandoPago = ["adelanto_validado", "saldo_pagado", "confirmada"].includes(String(newEstado ?? "")) || aprobandoExtra;
+    if (_aprobandoPago && opN.length < 4 && (order as any).contact_id) {
+      await db.from("contact_events").insert({
+        channel_id: (order as any).channel_id, contact_id: (order as any).contact_id, tipo: "nota",
+        titulo: "⚠️ Pago aprobado sin nº de operación",
+        detalle: `Se aprobó «${newEstado ?? "venta extra"}» sin operación legible: no entra al candado anti-reúso. Si tienes el comprobante, anota la operación en el pedido.`,
+      }).then(() => {}, () => {});
+    }
     if (opN.length >= 4) {
       const { data: prev } = await db.from("payment_operations").select("order_id")
         .eq("channel_id", (order as any).channel_id).eq("operacion", opN).maybeSingle();

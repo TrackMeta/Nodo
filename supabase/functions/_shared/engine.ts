@@ -2579,6 +2579,10 @@ function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?
     }
     // La keyword solo se adjunta si apunta al MISMO flujo que ganó: la de otro producto no
     // dice nada sobre lo que el cliente escribió de este.
+    // 🗣️ Lo que ESCRIBIÓ manda sobre el anuncio del que vino: hizo clic en el anuncio de A y su
+    // primer mensaje dice «en realidad quiero el B» (palabra clave de B) → B. Antes el referral
+    // fresco ganaba incondicionalmente (el parche de arriba solo cubría el ad_id GUARDADO).
+    if (refHit && kwHit && kwHit.id !== refHit.id) return { tier: "keyword", flow: kwHit, keyword: kwTexto };
     if (refHit) return { tier: "referral", flow: refHit, keyword: kwHit?.id === refHit.id ? kwTexto : undefined };
     if (kwHit) return { tier: "keyword", flow: kwHit, keyword: kwTexto };
     if (entrada) return { tier: "entrada", flow: entrada };
@@ -8136,6 +8140,7 @@ function datosAviso(ctx: any): Record<string, unknown> {
     cliente: ctx.nombre_completo || ctx.nombre || ctx.wa_id || "",
     producto: ctx.producto_nombre || "",
     monto: ctx.precio ?? "",
+    moneda: simboloMoneda(ctx.moneda as string),   // las plantillas de aviso usan {{moneda}} (antes «S/» fijo)
     telefono: ctx.telefono ? `+${ctx.telefono}` : "",
   };
 }
@@ -8155,8 +8160,11 @@ async function avisar(
 ) {
   try {
     const { data: channel } = await db.from("channels")
-      .select("telegram_chat_ids, nombre, telegram_avisos, timezone").eq("id", channelId).maybeSingle();
+      .select("telegram_chat_ids, nombre, telegram_avisos, timezone, moneda").eq("id", channelId).maybeSingle();
     const chatIds = (channel as any)?.telegram_chat_ids ?? [];
+    // Símbolo de la moneda para las plantillas ({{moneda}}): los avisos que no pasan por
+    // datosAviso (pagos, cancelación…) lo toman del canal.
+    if (datos.moneda == null) datos.moneda = simboloMoneda((channel as any)?.moneda);
     // 🔕 Un aviso que no sale NO puede irse en silencio. Se apagan por tres motivos
     // legítimos —sin Telegram conectado, apagado desde el panel, sin token— y hasta ahora
     // los tres devolvían sin dejar rastro: si algo no te llegaba, no había forma de saber si
@@ -8208,7 +8216,9 @@ async function avisar(
     }
 
     let texto = renderAviso(textoDeAviso(cfg, clave), datos);
-    if (!texto) return;
+    // Clave que no existe en el catálogo (o texto vacío): que quede rastro, como los otros
+    // motivos de «no sale» — antes se apagaba en silencio.
+    if (!texto) { await _noSale(`la plantilla «${clave}» no existe en el catálogo o quedó vacía`); return; }
 
     // Adjuntar el comprobante de pago: si el operador lo pidió para este aviso
     // (Canales → Avisos) y quien lo dispara no mandó ya una foto, se busca el
@@ -10326,7 +10336,10 @@ async function limpiarCandadosVenta(db: SupabaseClient, contactId: string) {
     const { data } = await db.from("contact_field_values")
       .select("id, custom_fields!inner(key)").eq("contact_id", contactId);
     for (const r of (data ?? [])) {
-      if (/^_once_(venta|aviso)_/.test(String((r as any).custom_fields?.key ?? ""))) {
+      // También los de las ventas EXTRA (`una_vez: "extra_<version>"` / `"extraf_<version>"`):
+      // sin limpiarlos, en una recompra que acepta el mismo adicional el aviso «Venta extra»
+      // quedaba mudo para siempre.
+      if (/^_once_(venta|aviso|extra|extraf)_/.test(String((r as any).custom_fields?.key ?? ""))) {
         await db.from("contact_field_values").delete().eq("id", (r as any).id);
       }
     }
@@ -10854,6 +10867,16 @@ async function maybeCambioProducto(
   if (ok) {
     await logEvent(db, channelId, contactId, "nota", "🔀 Cambió de producto",
       "Nombró otro producto del catálogo por palabra clave — se abrió su venta").catch(() => {});
+    // 🔁 Y se le REINYECTA el mensaje, igual que en la recompra: «mejor mándame el Curso, ¿en
+    // cuántas cuotas puedo pagar?» abría la venta del Curso y solo salía el saludo fijo — la
+    // pregunta de las cuotas se perdía y el cliente tenía que repetirla.
+    try {
+      const runNuevo = await getActiveRun(db, contactId);
+      if (runNuevo && (runNuevo.vars as any)?._await) {
+        const listo = await resumeRun(db, runNuevo, event);
+        if (listo) await execute(db, runNuevo);
+      }
+    } catch (e) { console.error("[cambioProducto] reinyectar:", (e as any)?.message ?? e); }
   }
   return ok;
 }
@@ -13247,7 +13270,7 @@ const RE_BLOQUE_DE_REGLAS_FIS =
   /^## (C[oó]mo cerrar|C[oó]mo vendes|C[oó]mo hablas|Cuando te cuenta algo suyo|Cuando necesites a una persona|Escribe CORTO|El precio se da|Lo que no controlas del env[ií]o|Del pago se dice|Sobre los pagos|No des por recibido|La agencia tiene nombre|Si te dice que lo va a pensar|Si lo vas a preguntar|Usa lo que ya sabes|Hablas en PRIMERA persona|Reglas de seguridad|⏳ Cu[aá]nto dura)/;
 
 const RE_BLOQUE_DE_DATOS =
-  /^## (Sobre el negocio|Sobre el producto|Preguntas frecuentes|Opciones de compra|Datos|No hay ning[uú]n dato|Ya eligi[oó]|Ya se lo dijiste|Con qu[eé] (empezaste|cerraste)|C[oó]mo se ve tu mensaje|Este turno|Formas de pago|Existencias|Te mand[oó]|⚠️|🎁)/;
+  /^## (Sobre el negocio|Sobre el producto|Otros productos|Preguntas frecuentes|Opciones de compra|Datos|No hay ning[uú]n dato|Ya eligi[oó]|Ya se lo dijiste|Con qu[eé] (empezaste|cerraste)|C[oó]mo se ve tu mensaje|Este turno|Formas de pago|Existencias|Te mand[oó]|⚠️|🎁)/;
 
 // 📍 EL ÚNICO SITIO QUE SELLA UNA SEDE.
 //

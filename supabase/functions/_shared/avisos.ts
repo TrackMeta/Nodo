@@ -36,7 +36,7 @@ export const AVISOS: AvisoDef[] = [
       "\n" +
       "🛍 {{producto}}\n" +
       "📦 {{opcion}}\n" +
-      "💵 *S/ {{monto}}* · {{pago_metodo}}\n" +
+      "💵 *{{moneda}} {{monto}}* · {{pago_metodo}}\n" +
       "\n" +
       "👤 {{cliente}}\n" +
       "📱 {{telefono}}\n" +
@@ -51,7 +51,7 @@ export const AVISOS: AvisoDef[] = [
       "🛵 *PEDIDO NUEVO · LIMA*\n" +
       "\n" +
       "🛍 {{producto}} — {{opcion}}\n" +
-      "💵 *A COBRAR: S/ {{total_cobrar}}* (contraentrega)\n" +
+      "💵 *A COBRAR: {{moneda}} {{total_cobrar}}* (contraentrega)\n" +
       "\n" +
       "👤 {{cliente}}\n" +
       "📱 {{telefono}}\n" +
@@ -68,8 +68,8 @@ export const AVISOS: AvisoDef[] = [
       "📦 *PEDIDO NUEVO · PROVINCIA*\n" +
       "\n" +
       "🛍 {{producto}} — {{opcion}}\n" +
-      "💵 Total: *S/ {{total_cobrar}}*\n" +
-      "⏳ Esperando adelanto de *S/ {{adelanto}}*\n" +
+      "💵 Total: *{{moneda}} {{total_cobrar}}*\n" +
+      "⏳ Esperando adelanto de *{{moneda}} {{adelanto}}*\n" +
       "\n" +
       "👤 {{cliente}}\n" +
       "🪪 DNI {{dni}}\n" +
@@ -86,7 +86,7 @@ export const AVISOS: AvisoDef[] = [
       "🎁 *VENTA EXTRA*\n" +
       "\n" +
       "🛍 {{extra}}\n" +
-      "💵 *S/ {{monto}}*\n" +
+      "💵 *{{moneda}} {{monto}}*\n" +
       "\n" +
       "👤 {{cliente}}\n" +
       "📱 {{telefono}}",
@@ -102,7 +102,7 @@ export const AVISOS: AvisoDef[] = [
       "💰 *ADELANTO POR VALIDAR*\n" +
       "\n" +
       "👤 {{cliente}}\n" +
-      "💵 Mandó: *S/ {{monto_leido}}* · esperado: S/ {{monto_esperado}}\n" +
+      "💵 Mandó: *{{moneda}} {{monto_leido}}* · esperado: {{moneda}} {{monto_esperado}}\n" +
       "🧾 Operación: {{operacion}}\n" +
       "⚠️ {{motivo}}",
   },
@@ -113,7 +113,7 @@ export const AVISOS: AvisoDef[] = [
     vars: ["cliente", "monto", "operacion"],
     texto:
       "✅ *Adelanto validado*\n" +
-      "👤 {{cliente}} · 💵 S/ {{monto}} · 🧾 {{operacion}}\n" +
+      "👤 {{cliente}} · 💵 {{moneda}} {{monto}} · 🧾 {{operacion}}\n" +
       "_Lo aprobó el bot. Ya le avisó al cliente._",
   },
   {
@@ -125,7 +125,7 @@ export const AVISOS: AvisoDef[] = [
       "🕵️ *SALDO POR REVISAR*\n" +
       "\n" +
       "👤 {{cliente}}\n" +
-      "💵 Mandó: *S/ {{monto_leido}}* · esperado: S/ {{monto_esperado}}\n" +
+      "💵 Mandó: *{{moneda}} {{monto_leido}}* · esperado: {{moneda}} {{monto_esperado}}\n" +
       "🧾 Operación: {{operacion}}\n" +
       "⚠️ {{motivo}}\n" +
       "\n" +
@@ -138,7 +138,7 @@ export const AVISOS: AvisoDef[] = [
     vars: ["cliente", "monto", "operacion"],
     texto:
       "✅ *Saldo validado · clave enviada*\n" +
-      "👤 {{cliente}} · 💵 S/ {{monto}} · 🧾 {{operacion}}\n" +
+      "👤 {{cliente}} · 💵 {{moneda}} {{monto}} · 🧾 {{operacion}}\n" +
       "_Lo aprobó el bot y ya le pasó la clave de recojo._",
   },
   {
@@ -150,7 +150,7 @@ export const AVISOS: AvisoDef[] = [
       "💳 *PAGO DIGITAL POR VALIDAR*\n" +
       "\n" +
       "🛍 {{producto}}\n" +
-      "💵 *S/ {{monto}}* · 🧾 {{operacion}}\n" +
+      "💵 *{{moneda}} {{monto}}* · 🧾 {{operacion}}\n" +
       "\n" +
       "👤 {{cliente}}\n" +
       "📱 {{telefono}}\n" +
@@ -166,7 +166,7 @@ export const AVISOS: AvisoDef[] = [
       "🎁 *PAGO DE VENTA EXTRA*\n" +
       "\n" +
       "🛍 {{extra}}\n" +
-      "💵 *S/ {{monto}}*\n" +
+      "💵 *{{moneda}} {{monto}}*\n" +
       "\n" +
       "👤 {{cliente}}\n" +
       "⏳ Espera que lo apruebes para recibirlo.",
@@ -180,7 +180,7 @@ export const AVISOS: AvisoDef[] = [
       "💸 *PAGÓ DE MÁS*\n" +
       "\n" +
       "👤 {{cliente}}\n" +
-      "💵 Pagó S/ {{monto}} — *le sobran S/ {{vuelto}}*\n" +
+      "💵 Pagó {{moneda}} {{monto}} — *le sobran {{moneda}} {{vuelto}}*\n" +
       "\n" +
       "🤔 Decide si se lo devuelves o le queda a favor.",
   },
@@ -194,7 +194,7 @@ export const AVISOS: AvisoDef[] = [
       "\n" +
       "👤 {{cliente}}\n" +
       "📱 {{telefono}}\n" +
-      "💵 A favor: *S/ {{vuelto}}*\n" +
+      "💵 A favor: *{{moneda}} {{vuelto}}*\n" +
       "\n" +
       "🙏 Hazle la devolución y mándale la captura. El bot lo sigue atendiendo.",
   },
