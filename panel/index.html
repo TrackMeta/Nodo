@@ -1665,9 +1665,11 @@ async function actionHandler(a){
     let { error }=await supa.from("contacts").update({ bloqueado:true, bot_activo:false }).eq("id",cid);
     if(error && /bloqueado|column/.test(error.message)){ toast("Aplica la migración 0021 para bloquear",true); return; }
     logEvent(cid,"nota","Contacto bloqueado"); toast("Contacto bloqueado"); backToList(); loadConversations(); return; }
-  if(a==="unblock"){ let { error }=await supa.from("contacts").update({ bloqueado:false }).eq("id",cid);
+  // Desbloquear reactiva el bot: bloquear lo pausa, y sin esto el contacto volvía a la Bandeja
+  // con el bot en pausa sin que nada lo dijera.
+  if(a==="unblock"){ let { error }=await supa.from("contacts").update({ bloqueado:false, bot_activo:true }).eq("id",cid);
     if(error){ toast("No se pudo desbloquear",true); return; }
-    if(panelData.contact && panelData.contact.id===cid) panelData.contact.bloqueado=false;
+    if(panelData.contact && panelData.contact.id===cid){ panelData.contact.bloqueado=false; panelData.contact.bot_activo=true; }
     logEvent(cid,"nota","Contacto desbloqueado"); toast("Contacto desbloqueado"); await loadConversations(); renderActionsMenu(); return; }
   if(a==="clearinfo"){ if(!await confirmDialog({title:"Borrar información",message:"¿Borrar todos los campos personalizados de este contacto?",confirmText:"Borrar",danger:true})) return;
     const { error }=await supa.from("contact_field_values").delete().eq("contact_id",cid); if(error){ toast("No se pudo borrar: "+error.message,true); return; }

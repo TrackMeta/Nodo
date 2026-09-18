@@ -1060,7 +1060,11 @@ export async function openDespachoModal(o, deps) {
       const aviso = avisoValor(ov);
       const r = await updateOrder({ order_id: o.id, estado: "despachado", aviso, shipping: {
         agencia: q("agencia").value, sede: q("sede").value.trim(), guia, codigo_envio: codigo,
-        clave_recojo: q("clave").value.trim(), sede_por_confirmar: null,
+        clave_recojo: q("clave").value.trim(),
+        // El aviso ámbar «sede por confirmar» solo se quita si el operador ESCRIBIÓ una sede
+        // distinta: registrar la guía sin tocar la sede lo borraba y el paquete podía salir a
+        // la agencia que inventó el bot.
+        ...(q("sede").value.trim() && q("sede").value.trim() !== String((o.shipping || {}).sede || "").trim() ? { sede_por_confirmar: null } : {}),
         guia_foto: foto || null, guia_foto_kind: foto ? fotoKind : null,
         ...(flete === "" || flete == null ? {} : { flete: Number(flete) || 0 }),
       } });
@@ -2003,7 +2007,10 @@ export async function openEditarPedido(o, deps) {
         } else { toast("Pedido actualizado"); }
         cerrar(true);
       }
-      else { toast((error && error.message) || (data && data.error) || "No se pudo actualizar", true); btn.disabled = false; btn.textContent = "Guardar cambios"; }
+      else {
+        let det = ""; try { const j = await error?.context?.json?.(); det = (j && (j.detalle || j.error)) || ""; } catch (_) {}
+        toast(det || (data && (data.detalle || data.error)) || (error && error.message) || "No se pudo actualizar", true); btn.disabled = false; btn.textContent = "Guardar cambios";
+      }
     };
     document.body.appendChild(ov);
   });
@@ -2357,8 +2364,11 @@ export function wireCopiloto(root, o, et, deps) {
   if (img) img.onclick = () => window.open(img.dataset.full, "_blank");
   const update = async (body) => {
     const { data, error } = await supa.functions.invoke("order-update", { body });
-    if (error) { toast(error.message || "No se pudo actualizar", true); return null; }
-    if (data && data.error) { toast(data.error, true); return null; }
+    if (error) {
+      let det = ""; try { const j = await error.context?.json?.(); det = (j && (j.detalle || j.error)) || ""; } catch (_) {}
+      toast(det || error.message || "No se pudo actualizar", true); return null;
+    }
+    if (data && data.error) { toast(data.detalle || data.error, true); return null; }
     return data;
   };
   const aprobar = async (nuevo, titulo, detalle, extraShip) => {

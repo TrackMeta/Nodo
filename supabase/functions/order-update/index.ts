@@ -144,7 +144,7 @@ Deno.serve(async (req) => {
     // `no_recogido` NO va acá: el Kanban lo redespacha (→ despachado / en_agencia) y es la
     // corrección más común de ese estado.
     const _PERDIDOS = ["cancelado", "anulada", "rechazado"];
-    const _AVANZADOS = ["por_despachar", "despachado", "en_agencia", "saldo_pagado", "recogido", "entregado_cobrado"];
+    const _AVANZADOS = ["por_despachar", "despachado", "en_agencia", "saldo_pagado", "recogido", "entregado_cobrado", "en_reparto", "reprogramado"];
     const _CERRADOS = ["recogido", "entregado_cobrado"];
     const _INICIALES = ["pendiente", "esperando_adelanto", "adelanto_validado", "confirmado", "confirmada"];
     if (_PERDIDOS.includes(_origen) && _AVANZADOS.includes(newEstado)) {
@@ -215,6 +215,15 @@ Deno.serve(async (req) => {
   // La hoja sigue al pedido: acá pasan TODOS los cambios que hace un humano
   // (el Kanban y el Copiloto, incluido el de Telegram). No lanza.
   await syncPedidoSheet(db, order.id);
+  // 📦 Stock: si el pedido salta de «esperando adelanto / pendiente» directo a un estado
+  // avanzado (Editar pedido lo permite: pagó por fuera), el stock nunca se apartaba —solo
+  // se reservaba al pasar por «adelanto validado»— y la venta cerraba sin descontar nada.
+  // reservarStockPedido es idempotente (claim atómico).
+  if (newEstado && ["esperando_adelanto", "pendiente"].includes(String((order as any).estado ?? "")) &&
+      ["por_despachar", "despachado", "en_agencia", "saldo_pagado", "recogido", "entregado_cobrado", "confirmado"].includes(newEstado)) {
+    try { await reservarStockPedido(db, order.id, (order as any).channel_id); }
+    catch (e) { console.error("[order-update] reservar stock (salto directo):", (e as any)?.message ?? e); }
+  }
 
   // Purchase a Meta SOLO cuando la venta es real (dinero cobrado): Lima
   // entregado y cobrado, provincia recogido / saldo pagado, digital confirmado.

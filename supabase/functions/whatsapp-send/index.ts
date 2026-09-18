@@ -83,7 +83,18 @@ Deno.serve(async (req) => {
       // atendiendo (antes se pausaba ANTES de enviar → un fallo dejaba el bot mudo/pausado
       // sin que saliera nada al cliente, hasta re-activarlo a mano).
       await db.from("contacts").update({ bot_activo: false }).eq("id", contact_id);
-      await db.from("conversations").update({ no_leidos: 0 }).eq("contact_id", contact_id);
+      // Marcar leído y QUITAR «requiere humano»: el operador ya contestó (antes la etiqueta
+    // «Seguimiento» quedaba para siempre si dejaba el bot en pausa a propósito). Y si el
+    // contacto no tenía fila en conversations (plantilla en frío a un contacto que nunca
+    // escribió), se crea: sin ella la conversación no aparecía en la Bandeja.
+    {
+      const { data: cvU } = await db.from("conversations").update({ no_leidos: 0, requiere_humano: false, updated_at: new Date().toISOString() })
+        .eq("contact_id", contact_id).select("id");
+      if (!cvU || !cvU.length) {
+        await db.from("conversations").insert({ channel_id, contact_id, window_type: "service_24h", no_leidos: 0, updated_at: new Date().toISOString() })
+          .then(() => {}, () => {});
+      }
+    }
       return json({ ok: true, wamid });
     } catch (e) {
       const meta = e instanceof MetaApiError ? e.meta : { message: String((e as any)?.message ?? e) };
@@ -152,7 +163,18 @@ Deno.serve(async (req) => {
     // intentaras escribir se quedaba, de una sola vez, sin respuesta tuya y sin bot.
     await db.from("contacts").update({ bot_activo: false }).eq("id", contact_id);
     // El operador está atendiendo → marcar leído.
-    await db.from("conversations").update({ no_leidos: 0 }).eq("contact_id", contact_id);
+    // Marcar leído y QUITAR «requiere humano»: el operador ya contestó (antes la etiqueta
+    // «Seguimiento» quedaba para siempre si dejaba el bot en pausa a propósito). Y si el
+    // contacto no tenía fila en conversations (plantilla en frío a un contacto que nunca
+    // escribió), se crea: sin ella la conversación no aparecía en la Bandeja.
+    {
+      const { data: cvU } = await db.from("conversations").update({ no_leidos: 0, requiere_humano: false, updated_at: new Date().toISOString() })
+        .eq("contact_id", contact_id).select("id");
+      if (!cvU || !cvU.length) {
+        await db.from("conversations").insert({ channel_id, contact_id, window_type: "service_24h", no_leidos: 0, updated_at: new Date().toISOString() })
+          .then(() => {}, () => {});
+      }
+    }
     return json({ ok: true, wamid });
   } catch (e) {
     // Guardar el mensaje como fallido para que se vea en el hilo.

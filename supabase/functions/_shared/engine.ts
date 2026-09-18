@@ -1740,6 +1740,11 @@ export async function reconciliarStockManual(
 // IA la responde. Escalar de más es tan malo como no escalar.
 const PIDE_HUMANO = [
   "quiero hablar con una persona", "hablar con una persona", "con una persona real",
+  // «mejor que me atienda una persona por favor» no escalaba (medido 2026-09-18): la IA
+  // contestó «soy el asistente y te atiendo yo mismo».
+  "que me atienda una persona", "me atienda una persona", "que me atienda alguien", "me atienda alguien",
+  "que me atienda un asesor", "me atienda un asesor", "que me atienda un humano", "una persona por favor",
+  "con un humano", "no con un bot", "no quiero un bot", "no quiero hablar con un bot",
   "quiero hablar con un humano", "hablar con un humano", "atencion humana",
   "quiero hablar con un asesor", "hablar con un asesor",
   "quiero hablar con alguien", "hablar con alguien",
