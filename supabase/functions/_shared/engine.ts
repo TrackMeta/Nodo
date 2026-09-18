@@ -3992,7 +3992,7 @@ function sinPedirPermisoPago(texto: string): string {
     // El «¿» que abría la pregunta quitada, con las pocas palabras que la introducían
     // («¿Vamos con todo y 🪖📋»): la cabeza de la regex frena en «¿» y no se lo llevaba.
     .replace(/[¿¡]\s*(?:[\p{L}\p{N}]+[\s,]*){0,4}(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "")
-    .replace(/\s{2,}/g, " ").trim();
+    .replace(/\s{2,}/g, " ").replace(/^[\s👇]+/u, "").trim();   // la flecha de la promesa quitada no puede abrir la frase
   return limpio.replace(/[\s\p{P}]/gu, "").length >= 25 ? limpio : texto;
 }
 
@@ -4035,7 +4035,7 @@ function sinAnuncioDePago(texto: string): string {
     // renglón (ya pasó con sinDespachar).
     .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n")
     // La flecha «👇» que apuntaba al anuncio quitado, sola al final del renglón.
-    .replace(/[ \t]*👇(?=[ \t]*(?:\n|$))/gu, "").trim();
+    .replace(/[ \t]*👇(?=[ \t]*(?:\n|$))/gu, "").replace(/^[\s👇]+/u, "").trim();   // y la flecha que quedó ABRIENDO la frase siguiente («👇 Apenas me mandes…»)
   // Si al quitarla no queda mensaje, se deja el original: mejor la burbuja de más que una
   // vacía. El piso es bajo a propósito: lo que suele quedar es el acuse («¡Listo, Bertha!»),
   // que es un mensaje perfectamente válido porque los datos vienen en la burbuja siguiente.
@@ -4071,7 +4071,7 @@ function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
     // con las pocas palabras que la introducían («¿Vamos con todo y 🪖📋», medido en C2-gratis-1).
     .replace(/[¿¡]\s*(?:[\p{L}\p{N}]+[\s,]*){0,4}(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "")
     // Y la flecha «👇» que apuntaba a los datos que ya no vienen (C5-estafa-1: «…ni trucos 🪖💪 👇»).
-    .replace(/[ \t]*👇(?=[ \t]*(?:\n|$))/gu, "").trim();
+    .replace(/[ \t]*👇(?=[ \t]*(?:\n|$))/gu, "").replace(/^[\s👇]+/u, "").trim();   // y la flecha que quedó ABRIENDO la frase siguiente («👇 Apenas me mandes…»)
   if (limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8) return limpio;
   return unico ? "¿La quieres? 🙂" : "¿Cuál de las dos prefieres?";
 }
