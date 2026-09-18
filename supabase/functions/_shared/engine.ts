@@ -2925,8 +2925,12 @@ const TEMAS_FICHA_DIGITAL: Array<[string, RegExp, RegExp, "producto" | "negocio"
   ["si se descarga o solo se ve en línea",
     /\b(descarg|offline|sin internet|online|en l[ií]nea|solo se ve|se puede bajar|bajar los|bajarlo)/,
     /\b(descarg|offline|sin internet|online|en l[ií]nea|streaming)/, "producto"],
+  // ⚠️ Nombrar la plataforma no basta: «vi lo de la plantilla en facebook, me interesa» es de
+  // dónde VIENE, no por dónde es el grupo (medido N-porganico-1: se registró el hueco y la IA
+  // se puso a contestar una duda que nadie hizo). Tiene que hablar del grupo/soporte/comunidad,
+  // o preguntar por la plataforma con signo de pregunta.
   ["por dónde es el grupo o el soporte",
-    /\b(whatsapp|telegram|discord|facebook|comunidad|el grupo es)\b/,
+    /\b(el grupo es|grupo (de|por|en) (whatsapp|telegram|discord|facebook)|(whatsapp|telegram|discord|facebook)[^.?!]{0,25}(grupo|comunidad|soporte)|(grupo|comunidad|soporte)[^.?!]{0,25}(whatsapp|telegram|discord|facebook)|\bcomunidad\b[^.?!]{0,30}\?|\b(whatsapp|telegram|discord)\b[^.?!]{0,20}\?)/,
     /\b(whatsapp|telegram|discord|facebook|comunidad)\b/, "producto"],
 ];
 
@@ -4016,7 +4020,7 @@ function sinPedirPermisoPago(texto: string): string {
     // («¿Vamos con todo y 🪖📋»): la cabeza de la regex frena en «¿» y no se lo llevaba.
     .replace(/[¿¡]\s*(?:[\p{L}\p{N}]+[\s,]*){0,4}(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "")
     .replace(/\s{2,}/g, " ").replace(/^[\s👇]+/u, "").trim();   // la flecha de la promesa quitada no puede abrir la frase
-  return limpio.replace(/[\s\p{P}]/gu, "").length >= 25 ? limpio : texto;
+  return limpio.replace(/[\s\p{P}]/gu, "").length >= 25 ? conMayusculaInicial(limpio) : texto;
 }
 
 // 📣 EL ANUNCIO DE LO QUE EL MOTOR YA VA A MANDAR. La IA acusa el pedido y cierra con
@@ -4048,6 +4052,13 @@ const RE_ANUNCIA_DATOS_QUE_SIGUEN =
 // reescrito como «cuando llegue a la agencia» (sinPagarEnLaAgencia corre antes).
 const RE_ORACION_DE_ENTREGA =
   /\b(?:domicilio|contra\s*entrega|al\s+recibir(?:lo|la)?|cuando\s+(?:lo|la)\s+recib[ae]s|revis(?:ar|as|es)\s+antes|a\s+tu\s+(?:casa|puerta|direcci[oó]n)|en\s+tu\s+(?:casa|direcci[oó]n)|delivery)\b/i;
+// 🔠 Al quitar la frase con que ARRANCABA el mensaje, lo que queda empieza en minúscula:
+// «Perfecto, te paso los datos para el pago 👇 cuando me mandes la captura…» → «cuando me
+// mandes la captura, te llega el acceso» (medido N-kdirecto-1 y N-ke2e-1, 2026-09-18).
+function conMayusculaInicial(t: string): string {
+  const i = String(t ?? "").search(/\p{L}/u);
+  return i < 0 ? t : t.slice(0, i) + t[i].toUpperCase() + t.slice(i + 1);
+}
 function sinAnuncioDePago(texto: string): string {
   const t = String(texto ?? "");
   RE_ANUNCIA_DATOS_QUE_SIGUEN.lastIndex = 0;
@@ -4062,7 +4073,7 @@ function sinAnuncioDePago(texto: string): string {
   // Si al quitarla no queda mensaje, se deja el original: mejor la burbuja de más que una
   // vacía. El piso es bajo a propósito: lo que suele quedar es el acuse («¡Listo, Bertha!»),
   // que es un mensaje perfectamente válido porque los datos vienen en la burbuja siguiente.
-  return limpio.replace(/[\s\p{P}]/gu, "").length >= 10 ? limpio : texto;
+  return limpio.replace(/[\s\p{P}]/gu, "").length >= 10 ? conMayusculaInicial(limpio) : texto;
 }
 
 // 🫥 LA PROMESA COLGADA. «El precio es S/19 💰 Te paso los datos para el pago 👇» — y debajo,
@@ -4095,7 +4106,7 @@ function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
     .replace(/[¿¡]\s*(?:[\p{L}\p{N}]+[\s,]*){0,4}(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "")
     // Y la flecha «👇» que apuntaba a los datos que ya no vienen (C5-estafa-1: «…ni trucos 🪖💪 👇»).
     .replace(/[ \t]*👇(?=[ \t]*(?:\n|$))/gu, "").replace(/^[\s👇]+/u, "").trim();   // y la flecha que quedó ABRIENDO la frase siguiente («👇 Apenas me mandes…»)
-  if (limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8) return limpio;
+  if (limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8) return conMayusculaInicial(limpio);
   return unico ? "¿La quieres? 🙂" : "¿Cuál de las dos prefieres?";
 }
 
@@ -4203,7 +4214,11 @@ function sinPoliticaInventada(texto: string, huecos: Array<[string, RegExp, RegE
   if (!t.trim() || !huecos?.length) return texto;
   // Por FRASE, conservando el espacio o salto que la sigue: lo que se quita desaparece
   // entero y lo demás queda en su sitio (nada de split/join que aplaste la lista de precios).
-  const partes = t.split(/(?<=[.!?…]\s)|(?<=\n)/);
+  // 🔴 Y el emoji también separa frases: este modelo escribe «No, no es una app ni hace
+  // facturas 📊 Solo es un archivo de Excel que te ordena…» sin punto en medio. Medido
+  // (N-papp-1): las dos frases eran UNA parte, el hueco «factura» se llevó también la que sí
+  // estaba en la ficha, y al cliente le llegó solo «De factura o boleta no tengo el dato acá».
+  const partes = t.split(/(?<=[.!?…]\s)|(?<=\n)|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u);
   const usados = new Set<string>();
   let cambiado = false;
   const honesta = /no tengo (el |ese |este )?dato|no lo tengo (ac[aá]|aqu[ií])|no te (lo )?(puedo|podr[ií]a) (confirmar|asegurar)|no est[aá] (escrito|en la ficha)|\[\[/i;
@@ -10412,6 +10427,27 @@ async function otroProductoPorKeyword(db: SupabaseClient, channelId: string, tex
       const pid = (fr as any)?.product_id;
       if (pid && pid !== actualProductId) return pid; // otro producto del catálogo
     }
+    // 🏷️ Por el NOMBRE del producto, también determinista. La palabra clave del anuncio es
+    // una frase entera («QUIERO LA PLANTILLA») y el cliente que cambia de idea a mitad de
+    // otra venta no la escribe: dice «mejor la plantilla de presupuestos». Medido
+    // (N-pmejorotro-1, 2026-09-18): se quedó en el Curso, la IA le contestó «te paso los
+    // datos para que la puedas comprar» y no salió nada. Se exige que el mensaje traiga las
+    // DOS primeras palabras significativas del nombre (o la única, si solo hay una y es larga)
+    // y que calce UN solo producto: «zapatillas» a secas no cambia nada.
+    const _norm = (s: string) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const _STOP = new Set(["de", "del", "en", "para", "con", "el", "la", "los", "las", "un", "una", "y", "o", "al", "por", "sin", "pro", "plus"]);
+    const _sig = (nombre: string) => _norm(nombre).replace(/[^a-z0-9ñ\s]/g, " ").split(/\s+/).filter((w) => w.length >= 4 && !_STOP.has(w));
+    const txtN = " " + _norm(text).replace(/[^a-z0-9ñ\s]/g, " ").replace(/\s+/g, " ") + " ";
+    const { data: prods } = await db.from("products").select("id, nombre").eq("channel_id", channelId);
+    const cand: string[] = [];
+    for (const p of (prods ?? []) as any[]) {
+      if (!p?.id || p.id === actualProductId) continue;
+      const sig = _sig(String(p.nombre ?? ""));
+      const req = sig.length >= 2 ? sig.slice(0, 2) : (sig.length === 1 && sig[0].length >= 6 ? sig : []);
+      if (!req.length) continue;
+      if (req.every((w) => txtN.includes(" " + w + " ") || txtN.includes(" " + w.replace(/s$/, "") + " "))) cand.push(String(p.id));
+    }
+    if (cand.length === 1) return cand[0];
   } catch (_) { /* sin match → null */ }
   return null;
 }
