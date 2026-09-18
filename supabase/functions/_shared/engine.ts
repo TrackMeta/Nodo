@@ -9172,7 +9172,9 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   const sigDir = DIRECCION_KW.test(low);
   const sigNombre = NOMBRE_KW.test(low);
   const sigTel = /\b9\d{8}\b/.test(txt) || TEL_KW.test(low);
-  if (!sigSede && !sigDni && !sigDir && !sigNombre && !sigTel) return false;    // sin señal de cambio → nada que hacer
+  // Sin señal de cambio → nada que hacer… salvo el caso de abajo (pedido de PROVINCIA vivo y el
+  // cliente contesta con su distrito u oficina a secas). Se decide después de leer el pedido.
+  const _haySenal = sigSede || sigDni || sigDir || sigNombre || sigTel;
   // Último pedido AÚN editable (no despachado/pagado/cerrado).
   const { data: order } = await db.from("orders").select("id, shipping, estado")
     .eq("channel_id", channelId).eq("contact_id", contactId)
@@ -9206,6 +9208,31 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   // algo que el bot pueda ejecutar — así que no se toca nada y se avisa al dueño.
   const yaSalio = ESTADOS_DESPACHADO.has(String((order as any).estado ?? ""));
   const sh = { ...(((order as any).shipping) ?? {}) } as Record<string, any>;
+  // 🏢 El DISTRITO u OFICINA a secas, con el pedido de provincia ya creado. Medido
+  // (P-pdirecto-1, 2026-09-18): el motor listó «Cusco · Wanchaq · Santiago…», el pedido nació
+  // con la ciudad (sede por confirmar), el cliente contestó «Wanchaq» y la sede se quedó en
+  // «Cusco»: ese mensaje no trae ninguna palabra gatillo, así que este camino ni lo miraba, y
+  // la IA le dijo «te dejo registrado Wanchaq» sin que nada lo registrara. Si contesta con un
+  // distrito con oficina de SU ciudad o nombra una oficina, es la sede — sin llamar a la IA.
+  let _sedeDirecta: string | null = null;
+  if (String(sh.zona ?? "") === "provincia") {
+    try {
+      const _ofi = oficinaNombradaEn(txt, String(sh.ciudad ?? ""), String(sh.sede ?? ""));
+      if (_ofi) _sedeDirecta = _ofi.l;
+      else {
+        const _tn = normalize(txt).replace(/[^a-z0-9ñ\s]/g, " ").replace(/\b(la|el|en|de|del|es|esa|ese|esta|este|mejor|sede|oficina|agencia|shalom|por|favor|porfa|gracias)\b/g, " ").replace(/\s+/g, " ").trim();
+        if (_tn && _tn.split(" ").length <= 4) {
+          const _d = distritosConOficina(String(sh.ciudad ?? "")).find((x) => normalize(x.t) === _tn);
+          if (_d && normalize(_d.t) !== normalize(String(sh.sede ?? ""))) _sedeDirecta = _d.t;
+        }
+      }
+    } catch (_) { /* sin padrón legible → como antes */ }
+  }
+  if (!_haySenal && !_sedeDirecta) return false;
+  let p: any = {};
+  if (_sedeDirecta && !_haySenal) {
+    p = { sede: _sedeDirecta };
+  } else {
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
   if (!ai?.api_key) return false;
@@ -9215,7 +9242,18 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
     content: `Mensaje del cliente:\n"""${txt}"""\n\nDevuelve SOLO lo que el cliente indique concretamente:\n- "sede": la oficina/sede de agencia (Shalom/Olva) donde recoge, si la nombra.\n- "dni": su número de DNI (documento de identidad peruano, 8 dígitos), si lo da. OJO: NO pongas acá un número de celular.\n- "direccion": la dirección de entrega (calle/avenida/jirón con número o un punto concreto), si la da.\n- "nombre": el nombre completo del DESTINATARIO que recoge/recibe el paquete, si el cliente lo cambia o aclara (ej. "que salga a nombre de María Torres").\n- "telefono": el número de celular de contacto (9 dígitos), si lo da como su teléfono. NUNCA lo pongas en "dni".\nJSON: {"sede":"","dni":"","direccion":"","nombre":"","telefono":""}`,
   });
   const m = /\{[\s\S]*\}/.exec(String(raw ?? ""));
-  let p: any = {}; try { p = m ? JSON.parse(m[0]) : {}; } catch (_) { p = {}; }
+  try { p = m ? JSON.parse(m[0]) : {}; } catch (_) { p = {}; }
+  }
+  // 🏢 En PROVINCIA no hay dirección de entrega: recoge en la agencia. Si el clasificador leyó
+  // una «dirección» y ninguna sede («la de Av España» → direccion: Av España, medido en
+  // P-ptrujillo-1: el pedido salió con dirección y la sede seguía en Trujillo), eso que nombró
+  // es la oficina que cree que existe: va a la sede (queda por confirmar si no está en el
+  // padrón) y NUNCA a la dirección.
+  if (String(sh.zona ?? "") === "provincia" && String(p.direccion ?? "").trim() && !String(p.sede ?? "").trim()) {
+    p.sede = String(p.direccion).trim(); p.direccion = "";
+    await logEvent(db, channelId, contactId, "nota", "🏢 En provincia no hay dirección: va a la sede",
+      `"${p.sede.slice(0, 60)}"`).catch(() => {});
+  }
   const cambios: string[] = [];
   // 🏢 Una AGENCIA que se llama como una calle NO es una dirección. Medido en 9 de 25
   // departamentos: «mejor mandamelo a la de AV Tacna» se guardó como cambio de DIRECCIÓN y
