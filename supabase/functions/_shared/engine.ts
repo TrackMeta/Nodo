@@ -4056,8 +4056,12 @@ const RE_ORACION_DE_ENTREGA =
 // «Perfecto, te paso los datos para el pago 👇 cuando me mandes la captura…» → «cuando me
 // mandes la captura, te llega el acceso» (medido N-kdirecto-1 y N-ke2e-1, 2026-09-18).
 function conMayusculaInicial(t: string): string {
-  const i = String(t ?? "").search(/\p{L}/u);
-  return i < 0 ? t : t.slice(0, i) + t[i].toUpperCase() + t.slice(i + 1);
+  const s = String(t ?? "");
+  const i = s.search(/\p{L}/u);
+  const cab = i < 0 ? s : s.slice(0, i) + s[i].toUpperCase() + s.slice(i + 1);
+  // Y a mitad del mensaje, cuando la frase quitada iba después de un punto: «cuesta *S/39*.
+  // Te paso los datos 👇 cuando me mandes la captura…» → «*S/39*. cuando me mandes» (N2-pmejorotro-1).
+  return cab.replace(/([.!?…]\s+)(\p{Ll})/gu, (_m, a: string, b: string) => a + b.toUpperCase());
 }
 function sinAnuncioDePago(texto: string): string {
   const t = String(texto ?? "");
