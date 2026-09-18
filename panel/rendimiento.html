@@ -389,6 +389,9 @@ function emptyStateHtml(){
 function render(){
   if(st.sel!=null){ renderDetail(); return; }
   const v=$("view");
+  // Se llama después de varios await (loadAccount → reload → render): si ya cambiaste de
+  // sección, el hueco no existe y tiraba «Cannot set properties of null» en la consola.
+  if(!v) return;
   // ⚠️ Aviso de MONEDA: si la cuenta de Meta factura en otra moneda que el negocio, el gasto
   // (y por ende CPA/ROAS/ganancia neta) NO está convertido → los números no son comparables.
   const monedaMismatch=(st.adCurrencies||[]).find(c=>c!==CUR) || (st.monedaDesconocida?"desconocida":null);
