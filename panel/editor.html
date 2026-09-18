@@ -625,6 +625,7 @@ function renderFlowCards(){
   if(Fbar && Fbar.current==="__skeleton") list=list.filter(f=>f.kind==="skeleton");
   else if(Fbar) list=Fbar.filter(list);
   const box=$("flowCards");
+  if(!box) return;   // la carga terminó después de salir del Editor (SPA): no hay dónde pintar
   if(!st.flows.length){
     box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div><h3>Aún no hay flujos</h3><p>Crea tu primer flujo o esqueleto para empezar a automatizar conversaciones.</p></div>`;
     return;

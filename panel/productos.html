@@ -528,6 +528,7 @@ async function loadProducts(){
 // Opciones activas de un producto (para las tarjetas del grid).
 function opcionesDe(p){ return (p.product_versions||[]).filter(v=>v.activo!==false); }
 function renderCards(){
+  if(!$("cards")||!$("claseSeg")) return;   // la carga terminó después de salir de Productos (SPA): no hay dónde pintar
   // Control Todos / Principales / Extras (los extras son complementos de ventas extra).
   const esEx=(p)=>p.clase==="extra";
   const esReg=(p)=>p.clase==="regalo";

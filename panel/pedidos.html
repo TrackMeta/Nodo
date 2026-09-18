@@ -539,6 +539,7 @@ function render(){
   // contacto de WhatsApp («María» cuando el contacto es «Juan (esposo)»).
   if(st.q) list=list.filter(o=>{ const c=o.contact||{}, s=o.shipping||{}; const qd=st.q.replace(/\D/g,""); return norm(c.nombre).includes(st.q)||(c.wa_id||"").includes(st.q)||norm(s.cliente).includes(st.q)||(qd&&((s.dni||"").replace(/\D/g,"").includes(qd)||(s.guia||"").toString().replace(/D/g,"").includes(qd)||(s.tel||"").replace(/\D/g,"").includes(qd))); });
   const box=$("kb");
+  if(!box) return;   // la carga terminó después de salir de Pedidos (SPA): no hay dónde pintar
 
   const FIN=new Set(["entregado_cobrado","recogido","rechazado","no_recogido","cancelado"]);
   const activos=(z)=>list.filter(o=>zonaDe(o)===z && !FIN.has(o.estado)).length;
