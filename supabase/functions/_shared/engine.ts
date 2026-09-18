@@ -4146,7 +4146,12 @@ function sinPreguntaDeRelleno(texto: string): string {
   RE_PREGUNTA_RELLENO.lastIndex = 0;
   if (!RE_PREGUNTA_RELLENO.test(t)) return texto;
   RE_PREGUNTA_RELLENO.lastIndex = 0;
-  const limpio = t.replace(RE_PREGUNTA_RELLENO, " ").replace(/[ \t]{2,}/g, " ").trim();
+  const limpio = t.replace(RE_PREGUNTA_RELLENO, " ").replace(/[ \t]{2,}/g, " ")
+    // «¿Te la paso o quieres que te explique algo más? 📊✨» → quitada la segunda mitad quedaba
+    // «¿Te la paso o 📊✨» (medido 2026-09-18): la disyunción colgada se cierra como pregunta.
+    .replace(/(¿[^¿?\n]*?)\s+(?:o|u|y|ni)\s*(?=[\s\p{Extended_Pictographic}️]*$)/u, "$1?")
+    .replace(/(¿[^¿?\n]*?)\s+(?:o|u|y|ni)\s*(?=[\s\p{Extended_Pictographic}️]*\n)/gu, "$1?")
+    .trim();
   return limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20 ? limpio : texto;
 }
 
@@ -15996,6 +16001,33 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // 🛒 Los adicionales que este producto vende. NO son para ofrecer: la cadena de
     // ventas extra los ofrece sola al cerrar, con su mensaje y su precio. Están acá solo
     // para que el bot no NIEGUE algo que sí vendes cuando el cliente lo nombra primero.
+    // 🏪 LOS OTROS PRODUCTOS DEL NEGOCIO. Medido 2026-09-18 (Guia Experta, 3 productos): dentro
+    // del flujo de la plantilla, «¿qué cursos tienen?» → «Por ahora solo vendo la plantilla».
+    // Mentira y venta perdida: el prompt solo conocía este producto y sus adicionales. Solo los
+    // principales con flujo de venta activo (lo mismo que atiende el router), sin su ficha.
+    if (op === "generar_texto" && ctx._product_id) {
+      try {
+        const { data: _otrosF } = await db.from("flows")
+          .select("product_id, products!inner(id, nombre, emoji, clase, tipo, config)")
+          .eq("channel_id", run.channel_id).eq("role", "venta").eq("estado", "activo").neq("product_id", String(ctx._product_id));
+        const _vistosP = new Set<string>();
+        const _otros = (_otrosF ?? []).map((f: any) => f.products).filter((p: any) =>
+          p && p.clase !== "extra" && p.clase !== "regalo" && !_vistosP.has(p.id) && _vistosP.add(p.id));
+        if (_otros.length) {
+          const _lin = _otros.slice(0, 8).map((p: any) => {
+            const r = String(p.config?.ia?.resumen ?? p.config?.contexto_producto ?? "").split("\n")
+              .map((s: string) => s.replace(/^#+\s*/, "").trim()).filter((s: string) => s && !/^sobre el producto/i.test(s))[0] ?? "";
+            return `- ${p.emoji ? p.emoji + " " : ""}${p.nombre}${r ? ` — ${r.slice(0, 120)}` : ""}`;
+          }).join("\n");
+          parts.push(
+            "## Otros productos del negocio\n" + _lin + "\n" +
+            "⛔ NUNCA digas que «solo vendes» este producto. Si pregunta qué más vendes o por uno de estos, nómbralo " +
+            "en una línea con su nombre exacto; si lo quiere, dile que con gusto y que te lo pida por su nombre. " +
+            "No lo describas más allá de esa línea (no tienes su ficha) ni le inventes precio.",
+          );
+        }
+      } catch (_) { /* sin catálogo legible → sin el bloque */ }
+    }
     const extrasCtx = Array.isArray((ctx as any)._extras_nombres) ? (ctx as any)._extras_nombres : [];
     if (extrasCtx.length) {
       parts.push(
