@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
   // mudo). `test` queda abierto (solo prueba la key existente, no la cambia).
   // Rol POR CUENTA (account_members.role), NO el legacy global app_users.role que diverge.
   const esAdmin = await userIsChannelAdmin(db, uid, channel_id);
-  if (["save", "delete", "default", "test"].includes(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede gestionar las claves de IA del canal." }, 403);
+  if (["save", "delete", "default"].includes(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede gestionar las claves de IA del canal." }, 403);
 
   try {
     switch (action) {

@@ -141,7 +141,9 @@ Deno.serve(async (req) => {
   // un pedido cerrado no se retrocede.
   if (newEstado) {
     const _origen = String((order as any).estado ?? "");
-    const _PERDIDOS = ["cancelado", "anulada", "rechazado", "no_recogido"];
+    // `no_recogido` NO va acá: el Kanban lo redespacha (→ despachado / en_agencia) y es la
+    // corrección más común de ese estado.
+    const _PERDIDOS = ["cancelado", "anulada", "rechazado"];
     const _AVANZADOS = ["por_despachar", "despachado", "en_agencia", "saldo_pagado", "recogido", "entregado_cobrado"];
     const _CERRADOS = ["recogido", "entregado_cobrado"];
     const _INICIALES = ["pendiente", "esperando_adelanto", "adelanto_validado", "confirmado", "confirmada"];

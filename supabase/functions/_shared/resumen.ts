@@ -95,7 +95,7 @@ export async function construirResumen(
     db.from("channels").select("usd_rate").eq("id", chId).maybeSingle(),
     // Lo que costó la IA ese día. El Dashboard ya lo resta de la ganancia; si el digest
     // no lo hiciera, los dos darían una neta distinta para el mismo día.
-    pageAll((f, t) => db.from("ai_usage").select("costo_usd").eq("channel_id", chId).eq("dia", diaYmd).order("id").range(f, t)),
+    pageAll((f, t) => db.from("ai_usage").select("costo_usd").eq("channel_id", chId).eq("dia", diaYmd).order("provider").order("model").order("origen").range(f, t)),
   ]);
 
   // supabase-js NO lanza ante error de query (devuelve {data:null, error}). Sin revisar:

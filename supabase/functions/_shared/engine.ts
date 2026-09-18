@@ -364,7 +364,7 @@ async function runEngineInner(
   // ya existía más abajo; acá se le abre la puerta a la forma más corta.
   if (event.type === "message" && /^\s*(?:quiero\s+|deseo\s+|necesito\s+)?cancelar(?:lo|la)?\s*[.!?…]*\s*$/i.test(String(event.text ?? ""))) {
     const ordC = await tienePedidoVivo(db, contactId);
-    if (ordC && ["esperando_adelanto", "pendiente", "adelanto_validado", "por_despachar"].includes(String(ordC.estado ?? ""))) {
+    if (ordC && ["esperando_adelanto", "pendiente", "adelanto_validado", "por_despachar", "en_agencia"].includes(String(ordC.estado ?? ""))) {
       await deliverMessage(db, channelId, contactId,
         "Para no equivocarme 🙂 ¿quieres *anular* tu pedido, o *cancelar el pago* (osea pagarlo)? Dime cuál y lo hacemos al toque.").catch(() => {});
       await logEvent(db, channelId, contactId, "nota", "🇵🇪 «cancelar» ambiguo", "Pedido esperando plata: se le preguntó si anular o pagar").catch(() => {});
@@ -604,7 +604,9 @@ async function runEngineInner(
     // de la plantilla ya pagada, con el flujo del Curso abierto, lo contestaba la IA vendedora
     // del Curso («te paso el link apenas me mandes la captura») — medido 2026-09-18. Si suena a
     // reclamo y tiene una compra hecha, primero el soporte post-venta; si no aplica, sigue.
-    if (event.type === "message" && RE_QUEJA_SUAVE.test(String(event.text ?? ""))) {
+    // Solo con señal FUERTE de reclamo sobre algo recibido/pagado (no «disculpa la molestia»):
+    // RE_QUEJA_SUAVE casa «molest…» y secuestraba la venta en curso del otro producto.
+    if (event.type === "message" && /\b(no me lleg|no (?:lo|la|los|las) (?:veo|recib|encuentro)|reembols|devoluci[oó]n|devolver|estafa|lleg[oó] (?:mal|roto|abierto|d[ae]ñad))/i.test(String(event.text ?? ""))) {
       try { if (await maybePostventa(db, channelId, contactId, event)) return; }
       catch (e) { console.error("[postventa/run vivo]", (e as any)?.message ?? e); }
     }
@@ -10606,7 +10608,10 @@ async function respondeSiALosDatos(db: SupabaseClient, contactId: string, texto:
   // que va junto con los datos. Medido 2026-09-18 (Guia Experta): la IA ofreció «¿listo para
   // que te envíe los datos?», el cliente dijo «sí, ¿cuánto cuesta?», le llegó solo el precio y
   // al «ya te yapeé» se le pidió la captura de un pago para el que nunca tuvo el número.
-  const _siMasPrecio = /^[\s¡!.]*(?:s[ií]+|ya|dale|ok(?:ey)?|claro|listo|va|de una|perfecto|genial)\b/i.test(_t) &&
+  // Sin «ya» (abre «ya no…») y sin ningún «no» en el mensaje: «ya no, ¿cuánto sería si compro
+  // después?» no es un sí.
+  const _siMasPrecio = /^[\s¡!.]*(?:s[ií]+|dale|ok(?:ey)?|claro|listo|va|de una|perfecto|genial)\b/i.test(_t) &&
+    !/\bno\b/i.test(_t) &&
     (RE_CLIENTE_PIDE_PRECIO.test(_t) || /\b(cu[aá]nto|precio|cuesta|vale|costo)\b/i.test(_t));
   if (!RE_AFIRMA_CORTO.test(_t) && !_siMasPrecio) return false;
   try {
@@ -16081,6 +16086,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               .map((s: string) => s.replace(/^#+\s*/, "").trim()).filter((s: string) => s && !/^sobre el producto/i.test(s))[0] ?? "";
             return `- ${p.emoji ? p.emoji + " " : ""}${p.nombre}${r ? ` — ${r.slice(0, 120)}` : ""}`;
           }).join("\n");
+          (run as any)._otrosBloque = true;   // el bloque viejo («Lo demás que vende…», por keyword) no se repite
           parts.push(
             "## Otros productos del negocio\n" + _lin + "\n" +
             "⛔ NUNCA digas que «solo vendes» este producto. Si pregunta qué más vendes o por uno de estos, nómbralo " +
@@ -17187,7 +17193,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         (run as any)._otrosProd = nombres.slice(0, 15);
       }
       const otros = ctx._product_id ? (run as any)._otrosProd as string[] : null;
-      if (otros?.length) {
+      // Si ya salió «## Otros productos del negocio» (catálogo por flujo de venta activo, más
+      // completo), este no se manda: eran dos listas del mismo tema, con fuentes distintas.
+      if (otros?.length && !(run as any)._otrosBloque) {
         parts.push("## Lo demás que vende el negocio\n" + otros.map((n) => "- " + n).join("\n") +
           "\nEstos productos SÍ existen y SÍ se venden: nunca digas que no los tenemos ni que no sabes de ellos. " +
           "No los ofrezcas por tu cuenta ni te desvíes de la venta en curso; solo si el cliente pregunta por alguno, " +
