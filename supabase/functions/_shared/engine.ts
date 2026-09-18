@@ -10534,7 +10534,12 @@ async function otroProductoPorKeyword(db: SupabaseClient, channelId: string, tex
 // contexto, y aparecen igual en una recompra. Quedan solo las que describen una FALLA
 // concreta ("no me llega", "llegó roto", "quiero devolver"), que nadie escribe queriendo
 // comprar.
-const RE_RECLAMO = /\b(no me (ha )?lleg(a|o|ó|ado)|nunca me lleg|todav[ií]a no (me )?lleg|no me (entregan|entregaron|responden|contestan)|lleg[oó] (roto|mal|incompleto|fallado|otra cosa)|no (me )?funciona|no sirve|quiero (devolver|un cambio|mi dinero|un reembolso)|reembolso|me estafaron)\b/i;
+// + «mi adaptador no llegó a la agencia» y «ya pagué mi adaptador y no llega»: sin el «me», y
+// medido (L-lreclamo-1, P-preclamo-1, 2026-09-18) los dos entraron por el ruteo de IA a la
+// VENTA y recibieron el pitch con la lista de precios. Se admite el «no llega/llegó» cuando el
+// sujeto es su pedido/paquete/producto o ya dijo que pagó — nunca el «no llega» suelto de una
+// pregunta («¿y si no llega mañana?»).
+const RE_RECLAMO = /\b(no me (ha )?lleg(a|o|ó|ado)|nunca me lleg|todav[ií]a no (me )?lleg|mi (pedido|paquete|producto|compra|[a-záéíóúñ]+) (a[uú]n |todav[ií]a )?no (ha )?lleg(a|o|ó|ado)|no lleg(a|o|ó|ado) a la agencia|ya pagu[eé][^.!?]{0,50}\bno (me )?(ha )?lleg(a|o|ó|ado)|no me (entregan|entregaron|responden|contestan)|lleg[oó] (roto|mal|incompleto|fallado|otra cosa)|no (me )?funciona|no sirve|quiero (devolver|un cambio|mi dinero|un reembolso)|reembolso|me estafaron)\b/i;
 
 async function maybeReclamoSinPedido(
   db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
