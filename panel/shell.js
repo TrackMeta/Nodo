@@ -956,6 +956,20 @@ function ensureFX() {
 }
 
 // ── Cascarón ────────────────────────────────────────────────────────
+// ¿Este mountShell({active}) viene de una página que YA NO es la mostrada? Solo se decide cuando
+// el ítem de menú de `active` existe, su archivo no es el actual, y el actual SÍ es de otro ítem
+// (Conciliar usa «compras» y Pagos usa «pedidos» sin ser ítems: esos pasan siempre).
+function _bootAjeno(active) {
+  try {
+    if (!S.routerReady) return false;
+    const items = NAV_GROUPS.flatMap((g) => g.items);
+    const mio = items.find((it) => it.id === active);
+    if (!mio) return false;
+    const cur = fileOf(new URL(_curHref, location.href).pathname);
+    if (fileOf(mio.href) === cur) return false;
+    return items.some((it) => fileOf(it.href) === cur);
+  } catch (_) { return false; }
+}
 export async function mountShell({ active } = {}) {
   _bootLlego(); // la navegación SPA en curso ya puede dar paso a la siguiente (ver navigate)
   // Branding inicial desde caché (mismo bot que la última página) → sin parpadeo.
@@ -973,6 +987,11 @@ export async function mountShell({ active } = {}) {
 
   // ── Re-entrada SPA: el shell ya está montado → no reconstruir.
   if (S.nav && document.body.contains(S.nav)) {
+    // Boot AJENO: el script de una página que ya no se muestra (el usuario siguió navegando
+    // mientras cargaba; el Editor, por ejemplo, llega acá después de arrancar Drawflow). Si
+    // siguiera, resetearía S.subs/S.leaves de la página viva y marcaría en el menú una sección
+    // que no está. Se le corta el paso: la promesa no resuelve y su boot() se queda quieto.
+    if (_bootAjeno(active)) return new Promise(() => {});
     S.subs = []; S.leaves = [];      // limpia suscripciones/cleanups de la página anterior
     updateActive(active);
     applyInboxCollapse(active);
@@ -1445,11 +1464,11 @@ async function _navigateNow(href, { push = true } = {}) {
     const page = document.querySelector(".nodo-page");
     if (page) page.scrollTop = 0; else window.scrollTo(0, 0);
     esqueletoDeCarga();        // el hueco de los datos deja de estar en blanco
-    const _esperaBoot = scripts.some((s) => !s.src)
-      ? Promise.race([new Promise((r) => _bootWaiters.push(r)), new Promise((r) => setTimeout(r, 1500))])
-      : Promise.resolve();
+    const _bootP = scripts.some((s) => !s.src) ? new Promise((r) => _bootWaiters.push(r)) : Promise.resolve();
     await runScripts(scripts); // corre el boot() de la nueva página (usa mountShell idempotente)
-    await _esperaBoot;         // …y se espera a que ese boot llegue a mountShell antes de dejar pasar otra navegación
+    // …y se espera a que ese boot llegue a mountShell antes de dejar pasar otra navegación. El
+    // tope de tiempo arranca AQUÍ, no antes: runScripts ya esperó los externos (Drawflow del CDN).
+    await Promise.race([_bootP, new Promise((r) => setTimeout(r, 2000))]);
   } catch (e) {
     console.error("[SPA] fallback a navegación normal:", e);
     location.href = dest.href; // degradación limpia
