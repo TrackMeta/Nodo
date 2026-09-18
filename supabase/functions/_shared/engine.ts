@@ -15739,6 +15739,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         .eq("contact_id", run.contact_id).eq("direction", "in")
         .order("ts", { ascending: false }).limit(1).maybeSingle();
       const _txtOut = String((_lastOut as any)?.content?.text ?? "").trim();
+      // 🤝 RETOMA TRAS UNA PERSONA. El último mensaje del bot fue el acuse «en un momento te
+      // atiende un asesor» (pidió humano, lo pausaron, lo reactivaron) y al volver la IA se
+      // presentaba «Soy el asistente 🤖 y te atiendo yo mismo» — se contradice y le recuerda
+      // que no quería un bot (medido 2026-09-18). Que retome sin presentarse ni justificarse.
+      if (/\b(te atiende|lo atiende|un asesor|asesor de nuestro equipo|una persona del equipo)\b/i.test(_txtOut)) {
+        _bloqueTurno += "\n\n## Retomas después de una persona del equipo\n" +
+          "El último mensaje del bot le dijo que lo atendería una persona; ese momento ya pasó y ahora sigues tú. " +
+          "⛔ NO te presentes («soy el asistente…»), NO digas que eres un bot ni menciones su pedido de hablar con " +
+          "una persona: retoma la venta donde quedó, natural, como si la charla no se hubiera cortado.";
+      }
       if (_lastOut && _lastIn && new Date((_lastOut as any).ts).getTime() > new Date((_lastIn as any).ts).getTime() &&
           /\?[\s\p{Extended_Pictographic}️]*$/u.test(_txtOut)) {
         const _preg = (_txtOut.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? "").slice(-140);
