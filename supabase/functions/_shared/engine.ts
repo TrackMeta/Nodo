@@ -15570,6 +15570,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (_lastOut && _lastIn && new Date((_lastOut as any).ts).getTime() > new Date((_lastIn as any).ts).getTime() &&
           /\?[\s\p{Extended_Pictographic}️]*$/u.test(_txtOut)) {
         const _preg = (_txtOut.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? "").slice(-140);
+        // Se deja también en ctx para pegarlo al lado del mensaje del cliente (el modelo
+        // ignoró el bloque del system 1 de 1 veces medidas) y en la Actividad, para verlo.
+        (ctx as any)._preg_pendiente = _preg;
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🙋 Pregunta del bot sin responder",
+          `La IA sabe que «${_preg.slice(0, 90)}» salió después del mensaje del cliente y no debe darla por contestada`).catch(() => {});
         _bloqueTurno += "\n\n## Tu última pregunta salió DESPUÉS de su mensaje y NO está respondida\n" +
           `Le preguntaste «${_preg}» cuando él ya había escrito lo de arriba. ⛔ No la des por respondida ni ` +
           "asumas la respuesta (nada de «perfecto que tengas…» si él no lo dijo). Contesta lo que ÉL escribió; " +
@@ -17925,6 +17930,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         content = `${prompt}\n\n## La conversación hasta ahora\n${hist}\n\n` + (preguntaColgada
           ? `Antes que nada responde la pregunta que te hizo al inicio y que quedó sin contestar ("${preguntaColgada}"), y recién sigue con su último mensaje. No repitas el saludo si ya saludaste.`
           : `Responde SOLO al último mensaje del cliente. No repitas el saludo si ya saludaste.`);
+        // 🙋 Y si lo último del hilo es una pregunta TUYA posterior a su mensaje, se le dice acá,
+        // pegado al hilo: en el system, el modelo la daba por respondida igual («perfecto,
+        // entonces aprovechas tu taladro» sin que él dijera que tiene uno).
+        const _pp = String((ctx as any)._preg_pendiente ?? "").trim();
+        if (_pp) {
+          content += `\n\n⚠️ OJO: tu última línea («${_pp}») es una pregunta que hiciste DESPUÉS de su último mensaje y que él TODAVÍA NO respondió. ` +
+            `No asumas su respuesta ni la des por hecha: contesta lo que ÉL escribió y, si esa pregunta sigue importando, hazla de nuevo al final.`;
+        }
       }
     }
     if (op === "analizar_imagen") {
