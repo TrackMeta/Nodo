@@ -1415,7 +1415,7 @@ async function loadContactPanel(c){
       <div class="cph">${isT ? "Contacto de prueba (Web Chat)" : "+"+esc(c.wa_id||"")}</div>
     </div>
     <div class="cx-skel"><div class="cx-skrow sm"></div><div class="cx-skrow"></div><div class="cx-skrow sm"></div><div class="cx-skrow"></div></div>`;
-  const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,bloqueado,source,ad_id,ctwa_clid,primera_interaccion,ultimo_mensaje_cliente_at,ultimo_mensaje_at,created_at,memoria_ia${prod?",product_id,product:products(nombre,emoji)":""}`;
+  const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,bloqueado,no_remarketing,source,ad_id,ctwa_clid,primera_interaccion,ultimo_mensaje_cliente_at,ultimo_mensaje_at,created_at,memoria_ia${prod?",product_id,product:products(nombre,emoji)":""}`;
   const [ctRes, tagsRes, ctagsRes, fieldsRes, valsRes, msgRes, runsRes, subsRes, evRes, orderRes] = await Promise.all([
     supa.from("contacts").select(cSel(true)).eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select(cSel(false)).eq("id",c.id).maybeSingle() : r),
     supa.from("tags").select("id,nombre,color").eq("channel_id", state.channelId).order("nombre"),
@@ -1463,7 +1463,10 @@ function renderContactPanel(){
   const subsA = subs.filter(s=>s.estado==="activa");
   const nodos = events.filter(e=>e.tipo==="nodo");
   const errs  = events.filter(e=>e.tipo==="error");
-  const botTxt = contact.bot_activo!==false ? '<span style="color:var(--green)">● Bot activo</span>' : '<span style="color:var(--amber)">● Bot en pausa</span>';
+  const botTxt = (contact.bot_activo!==false ? '<span style="color:var(--green)">● Bot activo</span>' : '<span style="color:var(--amber)">● Bot en pausa</span>')
+    // 🔕 Pidió que no le escriban más: la marca existía (Contactos, Directo) pero acá no se veía
+    // y el operador podía meterlo en un seguimiento o mandarle una promoción.
+    + (contact.no_remarketing ? ' <span style="color:var(--amber)" title="Pidió que no le manden promociones ni remarketing. El bot lo respeta; tú también.">'+icon("bell")+' Sin remarketing (pidió no recibir promociones)</span>' : '');
   const sysRows = isTest ? "" : `
     <div class="kv"><span class="k">País</span><span class="v">${prefixLook(contact.wa_id, COUNTRY_BY_PREFIX, "—")}</span></div>
     <div class="kv"><span class="k">Hora local</span><span class="v">${localTime(contact.wa_id)}</span></div>
@@ -1542,7 +1545,10 @@ function renderContactPanel(){
     ${sec("Etiquetas", tagsBody, {count:assigned.size})}
     ${sec("Medios y archivos", mediaBody, {count:media.length})}
     ${!isTest?sec("Avanzado", advBody, {open:false}):""}`;
-  p.querySelectorAll("[data-stagepick]").forEach(b=> b.onclick=async()=>{ const k=b.dataset.stagepick; if(k===(contact.stage||"nuevo")) return; const { error }=await supa.from("contacts").update({ stage:k }).eq("id",contact.id); if(error){ toast("No se pudo cambiar la etapa: "+error.message,true); return; } contact.stage=k; logEvent(contact.id,"nota","Etapa cambiada a "+k); toast("Etapa actualizada"); renderContactPanel(); loadConversations(); });
+  p.querySelectorAll("[data-stagepick]").forEach(b=> b.onclick=async()=>{ const k=b.dataset.stagepick; if(k===(contact.stage||"nuevo")) return;
+    // Confirmar: un clic accidental pisaba la etapa que puso el motor (p. ej. «Comprado» tras una venta).
+    if(!await confirmDialog({title:"Cambiar etapa",message:`${contact.nombre||"Este contacto"} pasará a «${(b.textContent||k).trim()}». La etapa la mueve el motor solo; cambiarla a mano afecta el Embudo y los segmentos de remarketing.`,confirmText:"Cambiar"})) return;
+    const { error }=await supa.from("contacts").update({ stage:k }).eq("id",contact.id); if(error){ toast("No se pudo cambiar la etapa: "+error.message,true); return; } contact.stage=k; logEvent(contact.id,"nota","Etapa cambiada a "+k); toast("Etapa actualizada"); renderContactPanel(); loadConversations(); });
   // Mismo motivo que el toggle del bot: sin mirar el error, la etiqueta se veía puesta (o
   // quitada) aunque la escritura hubiera fallado, y al recargar volvía como estaba. Peor
   // todavía si con esa etiqueta filtras o segmentas una campaña: creías tenerlos marcados.
@@ -1619,8 +1625,14 @@ function renderContactPanel(){
     reload:()=>{ loadContactPanel({ id:contact.id, nombre:contact.nombre||state.contactName, wa_id:contact.wa_id }); loadConversations(); } });
 }
 // ── Eventos / Timeline ──
+// Quién lo hizo: con varios operadores, «Contacto bloqueado» o «Etapa cambiada» sin autor no
+// se puede rastrear. Va en `meta.por` (el nombre del chip del usuario, o su correo).
+function autorActual(){
+  try{ const me=JSON.parse(localStorage.getItem("nodo.me")||"null"); if(me&&me.name) return String(me.name); }catch(_){}
+  const nm=document.getElementById("nodoUserName"); return (nm&&nm.textContent.trim())||"";
+}
 async function logEvent(contactId, tipo, titulo, detalle){
-  try{ await supa.from("contact_events").insert({ channel_id:state.channelId, contact_id:contactId, tipo, titulo, detalle:detalle||null }); }catch(_){}
+  try{ await supa.from("contact_events").insert({ channel_id:state.channelId, contact_id:contactId, tipo, titulo, detalle:detalle||null, meta:{ por:autorActual()||null } }); }catch(_){}
 }
 const ACT_ICON={ etiqueta_add:"etiquetas", etiqueta_del:"etiquetas", campo:"edit", flujo_inicio:"flujos", flujo_fin:"flag", secuencia_inicio:"secuencias", secuencia_cancel:"stop", compra:"dollar", humano:"user", bot_pausa:"pause", bot_reactiva:"play", nodo:"node", error:"alert", nota:"note" };
 function fmtFull(ts){ try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(ts)); }catch(_){ return ""; } }
@@ -1898,7 +1910,8 @@ async function loadThread() {
 }
 function renderEvent(e){
   const t=$("thread"); const el=document.createElement("div"); el.className="actline";
-  el.innerHTML=`<span class="ai">${icon(ACT_ICON[e.tipo]||"node")}</span><span class="at">${esc(e.titulo)}</span>${e.detalle?`<span class="ad">${esc(e.detalle)}</span>`:""}<span class="atm">${fmtTime.format(new Date(e.created_at))}</span>`;
+  const por=e.meta&&e.meta.por?` · por ${esc(String(e.meta.por))}`:"";
+  el.innerHTML=`<span class="ai">${icon(ACT_ICON[e.tipo]||"node")}</span><span class="at">${esc(e.titulo)}</span>${e.detalle?`<span class="ad">${esc(e.detalle)}</span>`:""}<span class="atm">${fmtTime.format(new Date(e.created_at))}${por}</span>`;
   t.appendChild(el);
 }
 // `enVivo` = la burbuja acaba de llegar por realtime, así que entra con animación.

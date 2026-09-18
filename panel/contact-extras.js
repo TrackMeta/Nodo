@@ -1845,7 +1845,12 @@ export async function openEditarPedido(o, deps) {
     // Saldo nuevo = saldo guardado + lo que cambiaron los extras. Solo aplica si el
     // pedido tiene un saldo (provincia siempre; Lima cuando se cobra contraentrega)
     // y hay campo visible (#eSaldo, provincia). Lima lo sincroniza al guardar.
-    const saldoNuevo = () => saldoBase + (sumaExtras() - sumaBumpsVieja);
+    // …y lo que cambie el PRECIO BASE al cambiar de presentación (1 unidad S/69 → 2 unidades
+    // S/109): antes `amount` subía pero el «Saldo por cobrar» (lo que paga en la agencia) se
+    // quedaba con el cálculo viejo y se cobraba de menos.
+    const precioBase0 = Number(o.amount) || 0;
+    let deltaBase = 0;
+    const saldoNuevo = () => saldoBase + deltaBase + (sumaExtras() - sumaBumpsVieja);
     const recalcSaldo = () => { const inp = g("#eSaldo"); if (inp && saldoBase > 0) inp.value = +(saldoNuevo().toFixed(2)); };
     ov.querySelectorAll(".eb-del").forEach((btn) => { btn.onclick = () => { const r = btn.closest(".eb-row"); if (r) r.remove(); recalcSaldo(); }; });
     ov.querySelectorAll("#eBumps .eb-precio").forEach((inp) => { inp.oninput = recalcSaldo; });
@@ -1858,6 +1863,9 @@ export async function openEditarPedido(o, deps) {
       const pr = precioVer(pid, vid);
       const inp = g("#eAmountL") || g("#eAmountD"); // Lima (importe) o digital (monto)
       if (pr != null && inp) inp.value = pr;
+      // Provincia: el saldo sigue al precio base nuevo.
+      deltaBase = (pr != null && precioBase0 > 0) ? (Number(pr) - precioBase0) : 0;
+      recalcSaldo();
     };
     if (g("#eProd")) g("#eProd").onchange = () => {
       const pid = g("#eProd").value; g("#eVer").innerHTML = verOpts(pid, ""); sugerirImporte();
@@ -1994,9 +2002,21 @@ export async function openEditarPedido(o, deps) {
         kept.push(nuevo);
       });
       if (faltaVar) { toast("Elige la talla/color de los productos con variante", true); return; }
-      // Solo mando order_bumps si había antes (aunque los borre todos → []) o si
-      // agregué algo. Así no piso con [] un pedido que nunca tuvo extras.
-      if (bumps0.length || kept.length) body.order_bumps = kept;
+      // 🔒 Sin pisar lo que el motor agregó mientras el modal estaba abierto (un extra que el
+      // cliente aceptó, un regalo): se releen los extras ACTUALES. Si los que vi al abrir siguen
+      // igual, lo que se sumó después se conserva; si alguien los cambió por debajo, se aborta
+      // y se vuelve a abrir con lo fresco (mejor eso que borrar una venta extra sin saberlo).
+      if (bumps0.length || kept.length) {
+        try {
+          const { data: fr } = await supa.from("orders").select("order_bumps").eq("id", o.id).maybeSingle();
+          const fresh = Array.isArray(fr && fr.order_bumps) ? fr.order_bumps : [];
+          const mismoPrefijo = fresh.length >= bumps0.length && bumps0.every((b, i) => JSON.stringify(b) === JSON.stringify(fresh[i]));
+          if (!mismoPrefijo) { toast("Los extras de este pedido cambiaron mientras lo editabas. Vuelve a abrirlo para verlos.", true); cerrar(true); return; }
+          const agregados = fresh.slice(bumps0.length);
+          if (agregados.length) { kept.push(...agregados.map((b) => ({ ...b }))); toast(`Se conservaron ${agregados.length} extra(s) que se sumaron mientras editabas`); }
+        } catch (_) { /* si no se puede releer, se guarda como antes */ }
+        body.order_bumps = kept;
+      }
       const btn = g(".save"); btn.disabled = true; btn.textContent = "Guardando…";
       const { data, error } = await supa.functions.invoke("order-update", { body });
       if (!error && !(data && data.error)) {
