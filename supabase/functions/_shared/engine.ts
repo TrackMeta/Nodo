@@ -14796,6 +14796,20 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   if (!prodId) return null;
   const list = await loadOpciones(db, run, prodId);
   if (list.length < 2) return null; // una sola opción → nada que elegir
+  // 🔢 «2 adaptadores», «3 plantillas»: el número pegado al NOMBRE del producto es tan fuerte
+  // como «2 unidades». Medido (L-ldictado-1, 2026-09-18): dictó «2 adaptadores para Lima,
+  // Breña, Jr Zorritos 1200, Ana Vargas 987654321» —todo— y el motor le volvió a preguntar
+  // cuántas quería. UNIDAD_VENTA no puede conocer cada producto: se traduce acá con las
+  // palabras del nombre del que se está vendiendo.
+  try {
+    const _pn = String(ctx.producto_nombre ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const _pal = _pn.split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !["para", "pro", "plus", "con", "del", "sin", "las", "los"].includes(w));
+    if (_pal.length) {
+      const _re = new RegExp("(^|[^a-z0-9])(\\d{1,2}|un|una|uno|dos|tres|cuatro|cinco|seis)\\s+(?:" +
+        _pal.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")(?:es|s)?(?![a-z0-9])", "gi");
+      texto = String(texto ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(_re, "$1$2 unidades");
+    }
+  } catch (_) { /* sin nombre legible → como antes */ }
   if (!String(ctx.opcion_id ?? "").trim() && RE_DOS_DESTINOS.test(String(texto ?? ""))) {
     await logEvent(db, run.channel_id, run.contact_id, "nota", "👥 Dos destinos en un mensaje",
       `«${String(texto ?? "").slice(0, 80)}» — no se sella la cantidad por el número: cada destino es un pedido aparte`).catch(() => {});
