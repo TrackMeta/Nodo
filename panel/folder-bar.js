@@ -143,6 +143,9 @@ export async function mountFolders(opts){
     return `<button class="nodo-folder${cls}${on}" data-f="${esc(t.v)}">${t.icon?t.icon:""}${esc(t.label)}${cnt==null?"":`<span class="cnt">${cnt}</span>`}</button>`;
   }
   function render(){
+    // La carga de la página terminó DESPUÉS de que el usuario navegó a otra: la barra ya no
+    // está en el DOM. Pintar ahí es una excepción en consola (innerHTML de null) y nada más.
+    if (!S.el || !document.body.contains(S.el)) return;
     const extra = (opts.extraTabs ? (opts.extraTabs()||[]) : []);
     const trailing = (opts.trailingTabs ? (opts.trailingTabs()||[]) : []);
     const chips = [ chip("__all", opts.labelAll||"Todos", null),
