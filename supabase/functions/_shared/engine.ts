@@ -14605,11 +14605,23 @@ function eligePorAtributo(texto: string, list: Opcion[]): Opcion | null {
   const n = hits.filter(Boolean).length;
   return n === 1 ? list[hits.indexOf(true)] : null;
 }
+// 👥 DOS DESTINOS EN UN MENSAJE: «quiero 2: uno para mí y otro para mi hermana que vive en
+// Trujillo». Medido 2026-09-18: se selló «2 unidades» para la dirección de Lima y se ignoró
+// Trujillo — dos unidades a la casa del cliente y la hermana sin nada. Cada destino es un
+// pedido aparte; este turno no se sella cantidad por el número y la IA lo explica (ver el
+// bloque «Dos destinos» del prompt).
+const RE_DOS_DESTINOS =
+  /\b(?:otr[oa]|uno|una|el otro|la otra|el segundo|la segunda)\s+(?:es\s+|va\s+)?para\s+(?:mi|una?|la|el)\s+(?:herman[oa]|mam[aá]|madre|pap[aá]|padre|prim[oa]|t[ií][oa]|amig[oa]|espos[oa]|novi[oa]|hij[oa]|abuel[oa]|cu[ñn]ad[oa]|sobrin[oa]|soci[oa]|colega|compadre|comadre|vecin[oa]|suegr[oa]|pareja)\b[^.!?\n]{0,50}?\b(?:en|de|a|para)\s+[A-ZÁÉÍÓÚÑ][\p{L}]+/iu;
 async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: string): Promise<Clasificacion | null> {
   const prodId = ctx._product_id;
   if (!prodId) return null;
   const list = await loadOpciones(db, run, prodId);
   if (list.length < 2) return null; // una sola opción → nada que elegir
+  if (!String(ctx.opcion_id ?? "").trim() && RE_DOS_DESTINOS.test(String(texto ?? ""))) {
+    await logEvent(db, run.channel_id, run.contact_id, "nota", "👥 Dos destinos en un mensaje",
+      `«${String(texto ?? "").slice(0, 80)}» — no se sella la cantidad por el número: cada destino es un pedido aparte`).catch(() => {});
+    return null;
+  }
   // Lo que el cliente ya dijo ANTES, no solo su último mensaje — mismo problema que
   // ya se arregló en extraerDatos: el PRIMER mensaje lo atiende el rotador (el saludo)
   // y este nodo recién corre en el turno siguiente, así que "hola quiero el curso de
@@ -15697,6 +15709,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "«explicar el valor» o «hablar en beneficios» —no toca ahora—, y NO describas el producto: los " +
           "mensajes iniciales ya se lo contaron. Acusas lo que te dio, contestas si preguntó algo y das el " +
           "siguiente paso. Dos líneas.");
+    }
+    // 👥 DOS DESTINOS («uno para mí y otro para mi hermana en Trujillo»): cada uno es un pedido.
+    if (RE_DOS_DESTINOS.test(String(ctx.last_input ?? ""))) {
+      _bloqueTurno += "\n\n## Dos destinos en un mensaje\n" +
+        "Quiere unidades para DOS personas o lugares distintos. Cada destino es un PEDIDO APARTE (otra ciudad = " +
+        "otro envío; si es provincia, va por agencia con adelanto). Cierra primero el SUYO con SU cantidad " +
+        "(NO sumes la de la otra persona) y dile, en una línea, que el de la otra persona lo arma un asesor " +
+        "aparte apenas cierren este, con los datos de ella (nombre, ciudad y, si es provincia, DNI y agencia).";
     }
     // 🙋 LA PREGUNTA QUE ÉL TODAVÍA NO CONTESTÓ. El primer mensaje del cliente («hola, soy de
     // Lima, San Borja») dispara los mensajes iniciales, que cierran con una pregunta del guion
