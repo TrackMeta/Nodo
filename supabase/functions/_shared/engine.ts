@@ -12976,6 +12976,30 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // La lista manda: un distrito destildado (cubro=false) es provincia.
   if (z) {
     const esLima = z.cubro !== false;
+    // 🧭 «soy de Miraflores, AREQUIPA»: el distrito de Lima calzó, pero él mismo dijo de qué
+    // departamento es. Medido (P-pmiraflores-1, 2026-09-18): se selló Lima, se le pidió la
+    // dirección para el motorizado y se le insistió «confírmame que es Miraflores de Lima»
+    // tres veces. Si el nombre existe fuera de Lima y el texto nombra ese otro sitio, va por
+    // agencia: la ciudad es lo que él nombró (Arequipa) y el distrito queda como sede.
+    if (esLima) {
+      try {
+        const _fueraL = provinciasDeDistrito(z.nombre).filter((p) => limpiaZona(p.dep) !== "lima");
+        const _dichoL = _fueraL.length ? lugarQueDesambigua(z.nombre, texto) : null;
+        if (_dichoL && limpiaZona(_dichoL) !== "lima" && !/\blima\b/i.test(limpiaZona(texto))) {
+          await set("zona_ambigua", "");
+          await set("zona_entrega", "provincia");
+          await set("zona_nombre", z.nombre);
+          await set("ciudad", enTitulo(_dichoL));
+          await set("sede", z.nombre);
+          await set("zona_distrito_incierto", "");
+          await set("entrega_hoy", "no");
+          await set("entrega_motivo", "no cubrimos esa zona con reparto propio");
+          await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona resuelta",
+            `${z.nombre} de ${enTitulo(_dichoL)} → provincia (él nombró el departamento; no es el de Lima)`);
+          return;
+        }
+      } catch { /* sin padrón → sigue como Lima */ }
+    }
     await set("zona_ambigua", "");   // ya se resolvió: no queda empate que preguntar
     await set("zona_entrega", esLima ? "lima" : "provincia");
     await set("zona_nombre", z.nombre);
@@ -19350,7 +19374,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
         }
         const _pendAdel = String((run as any)?._estadoPedTurno ?? "") === "esperando_adelanto";
-        if (String(ctx.zona_entrega ?? "") === "provincia"
+        // …salvo que sea ÉL quien pregunta por las sedes: «¿qué sedes hay en Chiclayo?» con el
+        // pedido esperando el adelanto recibía «Listo, ya tengo tus datos, envíame la foto»
+        // (P-pchiclayosedes-1, 2026-09-18): el guard le borró la respuesta a su pregunta.
+        const _clientePideSede = /\b(sedes?|oficinas?|agencias?|shalom|d[oó]nde (lo |la )?(recojo|recoger|retiro))\b/i.test(String(ctx.last_input ?? ""));
+        if (String(ctx.zona_entrega ?? "") === "provincia" && !_clientePideSede
             && (_pendAdel || (String(ctx.datos_completos ?? "") === "si"
                 && String(ctx.pedido_creado ?? "") !== "si" && !(run.vars as any)?._order_id))
             && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
@@ -19360,6 +19388,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se quitó la pregunta por la sede",
               "El pedido se cierra en este turno y el flujo no iba a esperar la respuesta").catch(() => {});
           }
+        }
+        // 💰 «¿Hay que pagar adelanto?» se contesta, y con el monto. Medido (P-padelanto-2,
+        // 2026-09-18): la IA se fue al pitch y a la lista de sedes sin decir una palabra del
+        // adelanto; el cliente preguntó justo lo que decide si compra. Si la IA no lo nombró,
+        // la línea la pone el motor, que es quien sabe cuánto es.
+        if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia" && Number(ctx.adelanto) > 0
+            && /\b(adelanto|anticipo|pag(ar|o|amos) (algo )?(antes|adelantad[oa]|por adelantado)|se paga antes)\b/i.test(String(ctx.last_input ?? ""))
+            && !/adelanto|anticipo/i.test(String(salida ?? ""))) {
+          salida = `Sí: para provincia se confirma con un adelanto de *S/ ${Number(ctx.adelanto)}* y el resto lo pagas cuando el pedido ya esté en la agencia 🙌\n\n` + String(salida ?? "");
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Preguntó por el adelanto y la IA no lo nombró",
+            "Se le contestó por código, con el monto").catch(() => {});
         }
         // ✅ Y si acaba de decir su departamento y se le está repreguntando la ciudad, primero
         // se le confirma que sí le llega, con la agencia nombrada.
