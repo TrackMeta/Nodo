@@ -4145,6 +4145,21 @@ const RE_PRUEBA_SOCIAL =
   /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(?:(?:much[oa]s|vari[oa]s|cientos|miles|otr[oa]s|nuestr[oa]s|un mont[oó]n)\s+(?:de\s+)?(?:clientes?|compradores?|usuarios?|personas)|(?:el|la)\s+m[aá]s\s+vendid[oa]|best\s?seller|todos\s+(?:quedan|est[aá]n)\s+(?:satisfech|content|encantad))\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 // Lo que, si está en la ficha, convierte la frase en un dato del negocio y no en un invento.
 const RE_FICHA_TRAE_PRUEBA = /(clientes?|compradores?|rese[nñ]as?|testimoni|valoraci|calificaci|m[aá]s vendid|satisfech|estrellas)/i;
+// 🧍 EL NOMBRE LEÍDO COMO LUGAR. «Perfecto, en *Miguel Torres* ¿qué distrito de Tacna te queda?»,
+// «En *Luis Paredes*, en Chiclayo, tenemos varias sedes»: el cliente manda «nombre + celular +
+// DNI» contestando a «¿en cuál distrito estás?» y el modelo mete su nombre donde iba el
+// distrito. Medido 3 veces en la batería física (2026-09-18). Se quita la preposición y el
+// nombre; el resto de la frase se conserva.
+function sinNombreComoLugar(texto: string, nombre: string): string {
+  const t = String(texto ?? "");
+  const n = String(nombre ?? "").trim();
+  if (!t || n.split(/\s+/).length < 2) return t;
+  const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  const re = new RegExp("\\b(en|desde|hacia|hasta|por)\\s+\\*?" + esc + "\\*?\\s*,?\\s*", "gi");
+  if (!re.test(t)) return t;
+  return t.replace(re, "").replace(/[ \t]{2,}/g, " ").replace(/,\s*,/g, ",").replace(/\(\s*\)/g, "").trim();
+}
+
 function sinPruebaSocialInventada(texto: string, ficha: string): string {
   const t = String(texto ?? "");
   if (RE_FICHA_TRAE_PRUEBA.test(String(ficha ?? ""))) return texto;
@@ -20052,6 +20067,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // media pregunta) no se puede explicar leyendo el chat: son veinte guards y ninguno
       // deja el original a la vista. Es un evento por turno retocado, y solo cuando de
       // verdad cambió el texto — pegar precios u oficinas no lo dispara.
+      if (op === "generar_texto" && String(ctx.nombre_completo ?? "").trim()) {
+        const _antesN = salida;
+        salida = sinNombreComoLugar(String(salida ?? ""), String(ctx.nombre_completo));
+        if (salida !== _antesN) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🧍 Leyó el nombre como un lugar",
+            `Se quitó «en ${String(ctx.nombre_completo)}»`).catch(() => {});
+        }
+      }
       // 🔠 Una sola vez, al final: cualquiera de los veinte guards pudo quitar la frase con que
       // arrancaba el mensaje o la que iba tras un punto, y lo que queda empieza en minúscula.
       if (op === "generar_texto" && String(salida ?? "").trim()) salida = conMayusculaInicial(String(salida));
