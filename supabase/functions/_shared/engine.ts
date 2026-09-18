@@ -452,7 +452,7 @@ async function runEngineInner(
           cliente: (cC as any)?.nombre || (cC as any)?.wa_id || "Un cliente",
           telefono: (cC as any)?.wa_id || "",
           pedido: String(ord.estado ?? ""),
-          monto: ord.amount ? `S/ ${ord.amount}` : "",
+          monto: ord.amount ? `${simboloMoneda((ord as any).currency)} ${ord.amount}` : "",
           texto: String(event.text ?? "").slice(0, 120),
           adelanto: conAdelanto ? "\n\n⚠️ Dejó ADELANTO: hay que devolvérselo." : "",
         }).catch(() => {});
@@ -8885,6 +8885,24 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
       { aviso: true }).catch(() => {});
     return true;
   }
+  // 💸 Tiene un pedido VIVO que NO espera adelanto (despachado, en agencia, saldo pagado…):
+  // guardarlo como «prepago del adelanto» lo dejaba invisible para siempre (solo se engancha
+  // al crear un pedido nuevo en esperando_adelanto) y al cliente se le decía «en un momento
+  // te confirmo el envío» sobre un pedido ya despachado. Lo toma una persona, con la foto.
+  {
+    const _vivo = await tienePedidoVivo(db, contactId);
+    if (_vivo && !["esperando_adelanto", "pendiente"].includes(String(_vivo.estado ?? ""))) {
+      const montoV = parseMonto(parsed?.monto, {});
+      await logEvent(db, channelId, contactId, "nota", "💸 Comprobante con un pedido ya en curso",
+        `Pedido en «${_vivo.estado}» — no se guardó como prepago; lo revisa una persona`).catch(() => {});
+      await deliverMessage(db, channelId, contactId,
+        "¡Gracias por la captura! 🙌 La reviso con el equipo y te confirmo por aquí en un momento. 😊").catch(() => {});
+      await pasarAHumano(db, channelId, contactId,
+        `Mandó un comprobante${montoV != null ? ` de ${montoV}` : ""} pero su pedido está en «${_vivo.estado}» (no espera adelanto). Revisa a qué corresponde.`,
+        { aviso: true, foto: url }).catch(() => {});
+      return true;
+    }
+  }
   await setField(db, channelId, contactId, "_prepago_adel_url", url);
   const _montoLeido = parseMonto(parsed?.monto, {});
   await setField(db, channelId, contactId, "_prepago_adel_monto", String(_montoLeido ?? ""));
@@ -9592,7 +9610,7 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
     await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
     const nuevoTotal = valorOrden(amount, bumps.filter((_, i) => i !== hit.i));
     await deliverMessage(db, channelId, contactId,
-      `Claro, te saco *${hit.nombre}*${hit.precio > 0 ? ` (S/${hit.precio})` : ""}. Tu pedido quedaría en *${sym}${nuevoTotal}*. ¿Te lo confirmo así? 🙂`).catch(() => {});
+      `Claro, te saco *${hit.nombre}*${hit.precio > 0 ? ` (${sym}${hit.precio})` : ""}. Tu pedido quedaría en *${sym}${nuevoTotal}*. ¿Te lo confirmo así? 🙂`).catch(() => {});
     return true;
   }
   if (p.accion === "cantidad") {
@@ -9921,7 +9939,11 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual",
       "El monto que dice leer no aparece en el texto de la imagen — puede no ser un comprobante").catch(() => {});
   }
-  const puedeAuto = cfg.validacion === "auto" && cubre && !sobrepagoAdel && !!oper && _hayPrueba;
+  // 🔒 Operación de MENOS de 4 caracteres («07», «12»): el candado anti-reúso ni la registra
+  // ni la compara (ver operacionYaUsada/reclamarOperacion), así que «oper» truthy pasaba el
+  // freno y se auto-aprobaba SIN candado — dos comprobantes leídos como «07» acreditaban dos
+  // pedidos. Corta = ilegible = manual.
+  const puedeAuto = cfg.validacion === "auto" && cubre && !sobrepagoAdel && !!oper && oper.length >= 4 && _hayPrueba;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU del pre-chequeo
   // `reuse`): si esta operación ya fue reclamada por otra ruta o un reintento del MISMO Yape,
   // no la ganamos → se degrada a manual (para que un solo comprobante no acredite dos pedidos).
@@ -10180,7 +10202,8 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante del saldo a revisión manual",
       "El monto que dice leer no aparece en el texto de la imagen").catch(() => {});
   }
-  const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper && _pruebaSaldo;
+  // Ídem adelanto: operación de menos de 4 caracteres = sin candado posible → manual.
+  const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper && oper.length >= 4 && _pruebaSaldo;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU): si esta
   // operación ya fue reclamada por otra ruta/reintento del mismo Yape, no ganamos → manual.
   if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "saldo", contactId))) reuse = true;
@@ -10548,7 +10571,14 @@ const RE_OFRECIO_DATOS =
 // acceso» y ningún número al que pagar (la oferta ya no está, la quitó sinPromesaDeDatosColgada).
 const RE_DIJO_PRECIO = /\bS\/\s?\d|\d+\s?soles\b/i;
 async function respondeSiALosDatos(db: SupabaseClient, contactId: string, texto: string): Promise<boolean> {
-  if (!RE_AFIRMA_CORTO.test(String(texto ?? ""))) return false;
+  const _t = String(texto ?? "");
+  // «sí, ¿cuánto cuesta?» también es un sí: empieza afirmando y lo que pregunta es el PRECIO,
+  // que va junto con los datos. Medido 2026-09-18 (Guia Experta): la IA ofreció «¿listo para
+  // que te envíe los datos?», el cliente dijo «sí, ¿cuánto cuesta?», le llegó solo el precio y
+  // al «ya te yapeé» se le pidió la captura de un pago para el que nunca tuvo el número.
+  const _siMasPrecio = /^[\s¡!.]*(?:s[ií]+|ya|dale|ok(?:ey)?|claro|listo|va|de una|perfecto|genial)\b/i.test(_t) &&
+    (RE_CLIENTE_PIDE_PRECIO.test(_t) || /\b(cu[aá]nto|precio|cuesta|vale|costo)\b/i.test(_t));
+  if (!RE_AFIRMA_CORTO.test(_t) && !_siMasPrecio) return false;
   try {
     const { data: outs } = await db.from("messages").select("content")
       .eq("contact_id", contactId).eq("direction", "out")
@@ -16067,15 +16097,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // cliente tuviera un descuento (S/39); el pago sí lo respetaba, pero el
         // quote no, y quedaba una incoherencia (le decía un precio y le cobraba otro).
         const ofertaLista = await ofertaActiva(db, run);
+        const _symC = simboloMoneda(ctx.moneda as string);   // «S/» fijo cotizaba en soles a un canal en USD
         const lista = ops.map((o) => {
           const conOferta = ofertaLista && ofertaLista.opcion_id === o.id && Number.isFinite(Number(ofertaLista.precio));
           const precioTxt = conOferta
-            ? `: S/ ${ofertaLista.precio} (precio con su descuento vigente${o.precio != null ? `, antes S/ ${o.precio}` : ""})`
-            : (o.precio != null ? `: S/ ${o.precio}` : "");
+            ? `: ${_symC} ${ofertaLista.precio} (precio con su descuento vigente${o.precio != null ? `, antes ${_symC} ${o.precio}` : ""})`
+            : (o.precio != null ? `: ${_symC} ${o.precio}` : "");
           return `- ${o.nombre}${precioTxt}${o.descripcion ? ` — ${o.descripcion}` : ""}`;
         }).join("\n");
         const estado = ctx.opcion
-          ? `\n\nAhora mismo el cliente se inclina por: **${ctx.opcion}**${ctx.precio != null ? ` (S/ ${ctx.precio})` : ""}. ` +
+          ? `\n\nAhora mismo el cliente se inclina por: **${ctx.opcion}**${ctx.precio != null ? ` (${_symC} ${ctx.precio})` : ""}. ` +
             `Puede cambiar de opinión en cualquier momento: si lo hace, respétalo sin reprocharle.`
           : `\n\nEl cliente AÚN NO eligió. No des ninguna por elegida: si pregunta o compara, informa y ayúdalo a decidir. ` +
             `Solo cuando decida, confirma cuál y su precio.`;
@@ -18199,7 +18230,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             try { bolsa = JSON.parse(String(ctx._bolsa_pago ?? "{}")); } catch (_) { bolsa = {}; }
             const prevAb = Array.isArray(bolsa.abonos) ? bolsa.abonos : [];
             const opB = String(run.vars.pago_operacion ?? "").trim() || null;
-            const dupB = opB ? prevAb.some((a: any) => a.op && String(a.op) === String(opB)) : false;
+            // Sin nº de operación, el MISMO monto que un abono previo se trata como el mismo
+            // comprobante reenviado (igual que evaluarAbono en adelanto/saldo): antes `dupB`
+            // era false y una captura borrosa de S/50 mandada dos veces «cubría» S/100 — la
+            // tarjeta de Pagos por validar decía cobrado lo que no había entrado.
+            const dupB = opB
+              ? prevAb.some((a: any) => a.op && String(a.op) === String(opB))
+              : prevAb.some((a: any) => !a.op && Math.abs((Number(a.monto) || 0) - montoB) < 0.01);
+            if (dupB && !opB) await logEvent(db, run.channel_id, run.contact_id, "nota", "🔁 Abono repetido sin nº de operación",
+              `Mismo monto (${montoB}) que un abono anterior sin operación legible: no se suma a la bolsa`).catch(() => {});
             const abonos = dupB ? prevAb : [...prevAb, { op: opB, monto: montoB, at: new Date().toISOString() }];
             const total = Math.round(abonos.reduce((s: number, a: any) => s + (Number(a.monto) || 0), 0) * 100) / 100;
             if (total < esperadoB - tolB) {
@@ -18288,7 +18327,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // → opNum vacío → el chequeo de reúso se salta). Ante esa duda, NO se auto-entrega:
           // va a validación MANUAL (seguridad del dinero > conveniencia). Aplica al principal
           // Y al extra: un comprobante legible sí trae la operación y sigue en auto.
-          const sinOpVerificable = !opNum;
+          const sinOpVerificable = !opNum || String(opNum).length < 4;   // corta (<4) = sin candado posible = manual
           // Va a validación manual si el canal/producto lo pide (modo.manual), si el
           // freno detectó un sobrepago sospechoso (Capa 1), si no se sabe QUÉ compró
           // (precioSinResolver), o si es un extra sin operación verificable — aunque

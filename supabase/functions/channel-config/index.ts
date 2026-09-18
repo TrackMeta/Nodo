@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
   // estado del lado de Meta) → coherente con el resto del gating, solo admin.
   // whatsapp_fix escribe en la cuenta de Meta DEL CLIENTE (suscribe la app, registra el
   // número): mismo criterio que el resto de acciones de conexión, solo admin.
-  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "channel_archive", "channel_delete", "channel_delete_preview", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit", "template_delete", "contact_files_delete"]);
+  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "channel_archive", "channel_delete", "channel_delete_preview", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit", "template_delete", "templates_sync", "contact_files_delete"]);
   if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 
   try {
@@ -809,7 +809,11 @@ Deno.serve(async (req) => {
       // Local: en todos los canales activos de la misma WABA (la plantilla es de la WABA).
       let ids = [channel_id];
       if (wabaId) {
-        const { data: chs } = await db.from("channels").select("id").eq("waba_id", wabaId);
+        // Solo los canales de LA MISMA CUENTA: `waba_id` no es único entre cuentas (solo se
+        // valida en `save`, sin constraint), y sin este filtro un admin de la cuenta A borraba
+        // las plantillas locales de la cuenta B con la que compartiera WABA.
+        const { data: myCh } = await db.from("channels").select("account_id").eq("id", channel_id).maybeSingle();
+        const { data: chs } = await db.from("channels").select("id").eq("waba_id", wabaId).eq("account_id", (myCh as any)?.account_id ?? "");
         if (chs?.length) ids = (chs as any[]).map((x) => x.id);
       }
       const { data: del } = await db.from("wa_templates").delete().in("channel_id", ids).eq("name", name).select("id");
@@ -1043,8 +1047,12 @@ Deno.serve(async (req) => {
       // Los secretos del Vault NO cuelgan de channels por clave foránea (channel_secrets
       // guarda ids, y las filas cifradas viven en vault.secrets): si no se borran acá, el
       // token de Meta y el App Secret quedarían vivos y huérfanos después de borrar el bot.
+      // Si el borrado de un secreto FALLA de verdad (no «no había»: la función SQL ya es
+      // idempotente), NO se borra el canal: quedarían tokens vivos y huérfanos en el Vault sin
+      // ninguna fila que los referencie ni forma de verlos desde el panel.
       for (const kind of ["access_token", "app_secret", "capi_token", "telegram_bot_token", "ads_token"]) {
-        await db.rpc("delete_channel_secret", { p_channel_id: channel_id, p_kind: kind }).then(() => {}, () => {});
+        const { error: eSec } = await db.rpc("delete_channel_secret", { p_channel_id: channel_id, p_kind: kind });
+        if (eSec) return json({ error: "vault", detalle: `No se pudo borrar el secreto ${kind} del Vault (${eSec.message}). No se borró el bot.` }, 500);
       }
       // Los archivos se inventarían ANTES de borrar: el bucket de comprobantes se organiza por
       // contacto, y los contactos se van en la cascada. Se borran DESPUÉS de que el canal se

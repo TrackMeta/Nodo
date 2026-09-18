@@ -1355,7 +1355,10 @@ async function loadBitacora(monthStart){
   const delTipo=(o)=> tipo==="todo"||(tipo==="fisico"?O.esFisico(o):!O.esFisico(o));
   const testId=wsB&&wsB.data&&wsB.data.id;
   const allOrd=(ordR.error?[]:(ordR.data||[])).filter(o=>!testId||o.contact_id!==testId); // sin los pedidos de Probar flujos
-  const orders=allOrd.filter(delTipo).filter(O.esVenta);
+  // Sin los PERDIDOS, igual que la banda de arriba: un no_recogido con costo y flete registrados
+  // sumaba a la ganancia del calendario y contaba como venta → el mes de la Bitácora no cuadraba
+  // con la «Ganancia bruta» del mismo periodo.
+  const orders=allOrd.filter(delTipo).filter(o=>O.esVenta(o)&&!O.esPerdido(o));
   // Tipo del anuncio por MAYORÍA de sus pedidos (no "primero visto": el orden es arbitrario
   // sin ORDER BY → mandaba el gasto de un anuncio mixto al segmento equivocado, y el profit
   // diario de la Bitácora no cuadraba con el del Dashboard, que ya usa la mayoría).

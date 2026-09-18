@@ -85,15 +85,17 @@ export async function construirResumen(
     db.from("capi_events").select("id", { count: "exact", head: true })
       .eq("channel_id", chId).eq("event_name", "Lead")
       .gte("created_at", fromISO).lt("created_at", toISO),
-    db.from("ads_insights").select("gasto").eq("channel_id", chId).eq("fecha", diaYmd),
-    db.from("manual_expenses").select("monto").eq("channel_id", chId).eq("fecha", diaYmd),
+    // PAGINADO también: más de 1000 filas de gasto en un día (muchos anuncios) cortaba el gasto
+    // → ROAS y ganancia neta del digest salían MEJORES que en el Dashboard (que sí pagina).
+    pageAll((f, t) => db.from("ads_insights").select("gasto").eq("channel_id", chId).eq("fecha", diaYmd).order("ad_id").range(f, t)),
+    pageAll((f, t) => db.from("manual_expenses").select("monto").eq("channel_id", chId).eq("fecha", diaYmd).order("id").range(f, t)),
     db.from("ads_meta").select("account_currency").eq("channel_id", chId),
     // Cuánto vale un dólar en la moneda del negocio: sin esto el gasto de Meta que
     // llega en USD no se puede convertir, y el ROAS del digest sale ~3.75× inflado.
     db.from("channels").select("usd_rate").eq("id", chId).maybeSingle(),
     // Lo que costó la IA ese día. El Dashboard ya lo resta de la ganancia; si el digest
     // no lo hiciera, los dos darían una neta distinta para el mismo día.
-    db.from("ai_usage").select("costo_usd").eq("channel_id", chId).eq("dia", diaYmd),
+    pageAll((f, t) => db.from("ai_usage").select("costo_usd").eq("channel_id", chId).eq("dia", diaYmd).order("id").range(f, t)),
   ]);
 
   // supabase-js NO lanza ante error de query (devuelve {data:null, error}). Sin revisar:
