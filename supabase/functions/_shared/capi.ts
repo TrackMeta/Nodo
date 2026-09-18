@@ -220,6 +220,13 @@ export async function maybePurchase(db: SupabaseClient, order: OrderLike): Promi
     const { data: br } = await db.from("orders").select("order_bumps").eq("id", order.id).maybeSingle();
     const bumps = Array.isArray((br as any)?.order_bumps) ? (br as any).order_bumps : [];
     for (const b of bumps) val += Number((b as any)?.precio) || 0;
+    // 🔴 Si algún upsell YA se mandó como evento aparte (Purchase:<id>:x:…) porque el principal
+    // había fallado en su momento (sin token, timeout), al reintentar el principal los bumps
+    // se sumaban OTRA vez: Meta recibía base+bump y además el bump suelto. Se descuenta lo ya
+    // atribuido, así el total de los dos eventos es exactamente base + bumps.
+    const { data: yaX } = await db.from("capi_events").select("value")
+      .eq("channel_id", order.channel_id).eq("estado", "enviado").like("event_id", `Purchase:${order.id}:x:%`);
+    for (const x of (yaX ?? [])) val -= Number((x as any)?.value) || 0;
   } catch (_) { /* si falla, cae al amount base */ }
   return await sendCapiEvent(db, order.channel_id, order.contact_id, {
     eventName: "Purchase",

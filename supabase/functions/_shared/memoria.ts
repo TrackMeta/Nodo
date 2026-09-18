@@ -69,9 +69,13 @@ function curar(arr: unknown): string[] {
   const out: string[] = [];
   const vistos = new Set<string>();
   for (const x of arr) {
-    const s = String(x ?? "").trim().replace(/\s+/g, " ").slice(0, MAX_LEN);
+    const entero = String(x ?? "").trim().replace(/\s+/g, " ");
+    // 🛡️ El filtro se aplica sobre el texto ENTERO, antes de recortarlo: cortado a 60 justo
+    // antes de la palabra gatillo («…vive en Av. España 200, Jr.» → «…vive en Av. España 2»)
+    // la dirección pasaba a la ficha igual.
+    if (!entero || PROHIBIDO_MEM.test(entero)) continue;   // fuera datos operativos / intentos de inyección
+    const s = entero.slice(0, MAX_LEN);
     if (!s) continue;
-    if (PROHIBIDO_MEM.test(s)) continue;   // 🛡️ fuera datos operativos / intentos de inyección
     const k = s.toLowerCase();
     if (vistos.has(k)) continue;
     vistos.add(k);
@@ -122,7 +126,10 @@ const _DEPARTAMENTOS = ["amazonas", "ancash", "apurimac", "arequipa", "ayacucho"
 // pasa en `lugares`, porque un pueblo como "Mazuko" no está en ninguna lista fija.
 export function loQueDijoElCliente(thread: string, lugares: string[] = []): string {
   let t = _norm(String(thread ?? "").split("\n")
-    .filter((l) => /^cliente\s*:/i.test(l.trim())).join(" "));
+    // «Cliente (respondiendo a «…»): …» también es una línea del cliente: con `\s*:` a secas
+    // esas líneas no contaban, y un dato real dicho al citar un mensaje se descartaba como
+    // «inventado» (filtrarInventado no le encontraba respaldo).
+    .filter((l) => /^cliente\b[^:\n]{0,120}:/i.test(l.trim())).join(" "));
   for (const l of [..._DEPARTAMENTOS, ...lugares.map((x) => _norm(String(x ?? "")))]) {
     if (l && l.length >= 3) t = t.split(l).join(" ");
   }

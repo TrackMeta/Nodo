@@ -4110,7 +4110,12 @@ function conCierrePendiente(texto: string, cta: string, yaLoNombra: RegExp): str
 // fue entero y quedó «Entonces, 📍🔧». Ahora solo «dé» con tilde (sin `\b` detrás, que no
 // existe tras una vocal acentuada) y las colas frenan en `. ¿ …`.
 const RE_PREGUNTA_RELLENO =
-  /\s*[¿]?\s*(?:te\s+)?(?:quieres|deseas|gustar[ií]a|te\s+gustar[ií]a|quieres\s+que)\b[^?¡!.¿…\n]{0,70}\b(?:(?:cuente|cuento|explique|explico|mande|mando|env[ií]e|env[ií]o|comparta|comparto|doy|diga|digo|muestre|muestro)\b|dé(?=\s|$))[^?.¿…\n]{0,40}\?/gi;
+  // 🔴 Tercer agujero (2026-09-17, chat de Lima): «¿Cuántas unidades quieres llevar para que te lo
+  // reserve y te lo MANDE a tu dirección en San Borja?» casaba «quieres … mande» y salió
+  // «¿Cuántas unidades 📦🔧». Ahora exige el «que» del ofrecimiento («¿quieres QUE te cuente…?»),
+  // no toca una pregunta que hable de unidades/cuántas/cuál, y «te LO mande/envíe» (el paquete,
+  // no la info) tampoco es relleno.
+  /\s*[¿]?\s*(?:te\s+)?(?:quieres|deseas|gustar[ií]a|te\s+gustar[ií]a|prefieres)\s+que\b(?![^?¡!.¿…\n]{0,70}\b(?:unidades|cu[aá]nt[ao]s|cu[aá]l(?:es)?)\b)[^?¡!.¿…\n]{0,70}\b(?:(?<!\b(?:lo|la|los|las)\s)(?:cuente|cuento|explique|explico|mande|mando|env[ií]e|env[ií]o|comparta|comparto|doy|diga|digo|muestre|muestro)\b|dé(?=\s|$))[^?.¿…\n]{0,40}\?/gi;
 function sinPreguntaDeRelleno(texto: string): string {
   const t = String(texto ?? "");
   RE_PREGUNTA_RELLENO.lastIndex = 0;
@@ -9120,7 +9125,11 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   // siempre, dos caminos y solo uno protegido. Se comprueba contra el padrón, y si el nombre
   // no resuelve a ninguna oficina se deja pasar como antes: puede ser una sede que Shalom
   // abrió y nuestro padrón todavía no tiene, y ahí manda el cliente (queda por confirmar).
-  const _ofiSede = agenciasQueSuenanA(nSede)[0] ?? null;
+  // Entre varias oficinas que suenan igual («Santiago» está en Cusco y en Ica) se prefiere la
+  // de SU departamento: tomando la primera del padrón, al cliente de Ica que pedía «la de
+  // Santiago» se le resolvía la de Cusco y el guard de abajo le rechazaba un cambio legítimo.
+  const _candsSede = nSede ? agenciasQueSuenanA(nSede) : [];
+  const _ofiSede = _candsSede.find((a) => mismoDepartamentoQue(a, String(sh.sede ?? ""), String(sh.ciudad ?? ""))) ?? _candsSede[0] ?? null;
   if (nSede && _ofiSede && !mismoDepartamentoQue(_ofiSede, String(sh.sede ?? ""), String(sh.ciudad ?? ""))) {
     await logEvent(db, channelId, contactId, "nota", "🛡️ Sede de otro departamento",
       `"${nSede}" es de ${_ofiSede.d} y él es de ${sh.ciudad ?? "?"} — no se cambia`).catch(() => {});
@@ -13191,8 +13200,12 @@ async function sellarSede(
     // ⛔ El nombre que es de varios departamentos NO sella por sí solo. `forzar` lo salta
     // porque hay dos casos donde el cliente YA eligió y no hay nada que adivinar: cuando
     // nombra la oficina con su nombre y cuando pide cambiarse a otra.
+    // …y tampoco cuando la oficina se llama distinto pero está en el DISTRITO de ese nombre:
+    // «Anta» existe en Áncash y en Cusco; la única oficina con distrito ANTA se llama «ANTA
+    // IZCUCHACA» (Cusco), así que el chequeo por nombre no la frenaba y un cliente de Áncash
+    // recibía la ficha de Cusco. Se compara también el distrito de la oficina.
     if (!opts?.forzar && _ciu && nombreDeVariasProvincias(_ciu) &&
-        limpiaZona(ag.l) === limpiaZona(_ciu)) {
+        (limpiaZona(ag.l) === limpiaZona(_ciu) || limpiaZona(String(ag.t ?? "")) === limpiaZona(_ciu))) {
       await logEvent(db, run.channel_id, run.contact_id, "nota", "🧭 Nombre de varios departamentos",
         `"${_ciu}" existe en más de un departamento con oficina — no se sella por el nombre`).catch(() => {});
       return false;
@@ -15538,6 +15551,31 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "mensajes iniciales ya se lo contaron. Acusas lo que te dio, contestas si preguntó algo y das el " +
           "siguiente paso. Dos líneas.");
     }
+    // 🙋 LA PREGUNTA QUE ÉL TODAVÍA NO CONTESTÓ. El primer mensaje del cliente («hola, soy de
+    // Lima, San Borja») dispara los mensajes iniciales, que cierran con una pregunta del guion
+    // («¿ya tienes un taladro?»), y recién después entra este nodo a contestar ESE primer
+    // mensaje. Para el modelo, lo último del chat es su propia pregunta y justo antes está el
+    // mensaje del cliente: lo lee como respuesta y arranca con «Perfecto, que tengas taladro»
+    // — el cliente nunca lo dijo. Medido 3 de 3 chats de Lima (2026-09-17), y también cuando
+    // el cliente escribe mientras salen las burbujas. Se le dice, en el turno, que esa pregunta
+    // salió DESPUÉS y no está respondida.
+    try {
+      const { data: _lastOut } = await db.from("messages").select("ts, content")
+        .eq("contact_id", run.contact_id).eq("direction", "out")
+        .order("ts", { ascending: false }).limit(1).maybeSingle();
+      const { data: _lastIn } = await db.from("messages").select("ts")
+        .eq("contact_id", run.contact_id).eq("direction", "in")
+        .order("ts", { ascending: false }).limit(1).maybeSingle();
+      const _txtOut = String((_lastOut as any)?.content?.text ?? "").trim();
+      if (_lastOut && _lastIn && new Date((_lastOut as any).ts).getTime() > new Date((_lastIn as any).ts).getTime() &&
+          /\?[\s\p{Extended_Pictographic}️]*$/u.test(_txtOut)) {
+        const _preg = (_txtOut.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? "").slice(-140);
+        _bloqueTurno += "\n\n## Tu última pregunta salió DESPUÉS de su mensaje y NO está respondida\n" +
+          `Le preguntaste «${_preg}» cuando él ya había escrito lo de arriba. ⛔ No la des por respondida ni ` +
+          "asumas la respuesta (nada de «perfecto que tengas…» si él no lo dijo). Contesta lo que ÉL escribió; " +
+          "si esa pregunta sigue importando, la vuelves a hacer al final, y si ya no toca, la dejas.";
+      }
+    } catch (_) { /* sin historial legible → sin el bloque */ }
     // 🔢 LA CANTIDAD SE PREGUNTA UNA VEZ, Y ES ACÁ. Regla de Rodrigo: lo que decide cómo
     // procede la venta es la ZONA, no la cantidad — provincia lleva adelanto (S/ 20 del
     // negocio, que no depende del pack) y Lima es contraentrega. Y si el cliente escribió,

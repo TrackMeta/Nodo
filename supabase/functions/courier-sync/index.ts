@@ -46,7 +46,13 @@ async function sellarShipping(orderId: string, extra: Record<string, unknown>) {
   // segundo; el read-modify-write se lo pisaba (paquete a la agencia equivocada).
   const { error } = await db.rpc("order_patch_shipping", { p_order_id: orderId, p_patch: extra });
   if (error) {
-    console.warn(`[courier-sync] order_patch_shipping falló (${error.message}); se cae al merge`);
+    // Solo se cae al merge si la RPC NO EXISTE (base sin la 0068). Ante cualquier otro error
+    // (timeout, permiso) el fallback reintroducía justo la carrera que la RPC evita: leer,
+    // mezclar y escribir encima de lo que el operador acababa de corregir. Mejor no sellar
+    // ahora: el rastreo corre en bucle y lo vuelve a intentar en la siguiente pasada.
+    const noExiste = /42883|PGRST202|does not exist|Could not find the function/i.test(`${(error as any).code ?? ""} ${error.message}`);
+    if (!noExiste) { console.warn(`[courier-sync] order_patch_shipping falló (${error.message}); se deja para la próxima pasada`); return; }
+    console.warn(`[courier-sync] order_patch_shipping no existe (${error.message}); se cae al merge`);
     const { data: o } = await db.from("orders").select("shipping").eq("id", orderId).maybeSingle();
     const s = { ...((o as any)?.shipping ?? {}), ...extra };
     await db.from("orders").update({ shipping: s }).eq("id", orderId);

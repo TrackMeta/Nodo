@@ -166,6 +166,11 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
     }
     url = body.paging?.next ?? "";
   }
+  // El tope de páginas es una red contra bucles, no un límite de negocio: si Meta todavía
+  // tenía más, la sincronización quedó INCOMPLETA y hay que decirlo (ads_sync_error), no marcar
+  // el canal como sano con el gasto subcontado. Mismo agujero que ya se cerró arriba para la
+  // paginación de ad_accounts.
+  if (url) throw new Error(`insights con más de ${guard - 1} páginas: sincronización incompleta, acorta el rango o divide la cuenta`);
 
   // Se REVISA el .error de cada upsert y se LANZA: sin esto, una escritura fallida (timeout de
   // DB, error transitorio) dejaba syncCuenta devolviendo "éxito" y el canal marcado sano, con el
