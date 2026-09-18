@@ -13629,6 +13629,16 @@ function datoDudoso(clave: string, valor: string, ctx?: any): string | null {
   // Y solo tiene sentido en PROVINCIA: ahí la agencia no entrega si el nombre no coincide
   // con el DNI que presenta quien recoge. En Lima va un motorizado a una dirección y con el
   // nombre de pila basta, así que marcarlo sería ruido en la lista de pendientes.
+  // 👋 «Hola» NO es un nombre. La palabra clave del anuncio arranca con «Hola. ¿Puedo obtener más
+  // información…» y el extractor, mirando el historial, la tomó como nombre del cliente: el
+  // pedido de L-lpaso-1 (2026-09-18) salió «¡Listo, Hola! Tu pedido quedó confirmado» con
+  // cliente = «Hola» en el rótulo. Saludos, muletillas y palabras sueltas de la charla no
+  // pasan como nombre, en ninguna zona.
+  if (clave === "nombre_completo" || clave === "cliente") {
+    const _n = s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zñ\s]/g, " ").replace(/\s+/g, " ").trim();
+    const _SALUDO = /^(hola+|holis|hello|hi|hey|alo|buenas|buenos dias|buenas tardes|buenas noches|buen dia|info|informacion|si|ok|okey|dale|ya|gracias|quiero|hola buenas|hola que tal|disculpe|disculpa|amigo|amiga|senor|senora|joven|caballero|jefe|jefa|bro|pe|ps)$/;
+    if (!_n || _SALUDO.test(_n) || _n.length < 3) return "eso es un saludo o una muletilla, no su nombre — pídeselo de nuevo";
+  }
   if (clave === "nombre_completo" && String(ctx?.zona_entrega ?? "") === "provincia") {
     if (s.split(/\s+/).filter(Boolean).length < 2) return "falta el apellido (la agencia lo exige igual al DNI)";
   }
