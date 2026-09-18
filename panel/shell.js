@@ -957,6 +957,7 @@ function ensureFX() {
 
 // ── Cascarón ────────────────────────────────────────────────────────
 export async function mountShell({ active } = {}) {
+  _bootLlego(); // la navegación SPA en curso ya puede dar paso a la siguiente (ver navigate)
   // Branding inicial desde caché (mismo bot que la última página) → sin parpadeo.
   const savedId = localStorage.getItem("nodo.channelId");
   const cachedBrand = readBrandCache();
@@ -1384,7 +1385,22 @@ function teardown() {
 }
 
 let _curHref = location.href; // página SPA mostrada ahora (para restaurar si se cancela un back/forward)
-async function navigate(href, { push = true } = {}) {
+// Las navegaciones van EN FILA. Los <script type="module"> de la página nueva se ejecutan en
+// diferido (el navegador los corre cuando le toca, no al hacer appendChild), así que dos clics
+// seguidos dejaban el boot() de la página intermedia corriendo sobre el DOM de la última:
+// «Cannot set properties of null (setting 'oninput')» en consola y, peor, su mountShell()
+// reseteaba S.subs/S.leaves de la página viva. Ahora la siguiente navegación espera a que la
+// anterior haya llegado a su mountShell (o 1,5 s si el script no lo llama / revienta antes).
+let _navChain = Promise.resolve();
+let _bootWaiters = [];
+function _bootLlego() { const w = _bootWaiters; _bootWaiters = []; w.forEach((r) => { try { r(); } catch (_) { /* nada */ } }); }
+async function navigate(href, opts) {
+  const prev = _navChain;
+  let done;
+  _navChain = new Promise((r) => { done = r; });
+  try { await prev; await _navigateNow(href, opts); } finally { done(); }
+}
+async function _navigateNow(href, { push = true } = {}) {
   const dest = new URL(href, location.href);
   if (BOUNDARY.has(fileOf(dest.pathname)) || dest.origin !== location.origin) {
     location.href = dest.href; return; // frontera → navegación normal
@@ -1429,7 +1445,11 @@ async function navigate(href, { push = true } = {}) {
     const page = document.querySelector(".nodo-page");
     if (page) page.scrollTop = 0; else window.scrollTo(0, 0);
     esqueletoDeCarga();        // el hueco de los datos deja de estar en blanco
+    const _esperaBoot = scripts.some((s) => !s.src)
+      ? Promise.race([new Promise((r) => _bootWaiters.push(r)), new Promise((r) => setTimeout(r, 1500))])
+      : Promise.resolve();
     await runScripts(scripts); // corre el boot() de la nueva página (usa mountShell idempotente)
+    await _esperaBoot;         // …y se espera a que ese boot llegue a mountShell antes de dejar pasar otra navegación
   } catch (e) {
     console.error("[SPA] fallback a navegación normal:", e);
     location.href = dest.href; // degradación limpia
