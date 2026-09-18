@@ -15382,8 +15382,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           await setField(db, run.channel_id, run.contact_id, k, "").catch(() => {});
         };
         if (_zonaAhora !== _zonaAntes) {
-          for (const c of (Array.isArray(cfg.campos) ? cfg.campos : [])) {
-            if (c && c.clave && c.solo_si_zona === _zonaAntes) await _limpiar(String(c.clave));
+          const _todosC: any[] = Array.isArray(cfg.campos) ? cfg.campos : [];
+          // Solo lo EXCLUSIVO de la zona vieja. Una clave que existe en las dos zonas con
+          // distinto texto (el nombre: «¿a nombre de quién?» en Lima, «como en su DNI» en
+          // provincia) sigue valiendo — medido: se le borró «Juan Perez» al pasar a Trujillo.
+          const _sigueValiendo = (k: string) => _todosC.some((x) => x && x.clave === k && (!x.solo_si_zona || x.solo_si_zona === _zonaAhora));
+          for (const c of _todosC) {
+            if (c && c.clave && c.solo_si_zona === _zonaAntes && !_sigueValiendo(String(c.clave))) await _limpiar(String(c.clave));
           }
         }
         for (const k of ["sede_por_confirmar", "distrito_ambiguo", "zona_ambigua"]) await _limpiar(k);
