@@ -4061,7 +4061,9 @@ function conMayusculaInicial(t: string): string {
   const cab = i < 0 ? s : s.slice(0, i) + s[i].toUpperCase() + s.slice(i + 1);
   // Y a mitad del mensaje, cuando la frase quitada iba después de un punto: «cuesta *S/39*.
   // Te paso los datos 👇 cuando me mandes la captura…» → «*S/39*. cuando me mandes» (N2-pmejorotro-1).
-  return cab.replace(/([.!?…]\s+)(\p{Ll})/gu, (_m, a: string, b: string) => a + b.toUpperCase());
+  // Entre el punto y la letra puede quedar la flecha «👇» que apuntaba a lo quitado (o un
+  // selector de variante): se salta, y si la flecha quedó colgando a mitad de frase, se va.
+  return cab.replace(/([.!?…][\s️]*)(?:👇[\s️]*)?(\p{Ll})/gu, (_m, a: string, b: string) => a + b.toUpperCase());
 }
 function sinAnuncioDePago(texto: string): string {
   const t = String(texto ?? "");
@@ -19898,6 +19900,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // media pregunta) no se puede explicar leyendo el chat: son veinte guards y ninguno
       // deja el original a la vista. Es un evento por turno retocado, y solo cuando de
       // verdad cambió el texto — pegar precios u oficinas no lo dispara.
+      // 🔠 Una sola vez, al final: cualquiera de los veinte guards pudo quitar la frase con que
+      // arrancaba el mensaje o la que iba tras un punto, y lo que queda empieza en minúscula.
+      if (op === "generar_texto" && String(salida ?? "").trim()) salida = conMayusculaInicial(String(salida));
       if (op === "generar_texto") {
         const _crudo = String(result ?? "").trim();
         if (_crudo && String(salida ?? "").trim() !== _crudo && !String(salida ?? "").includes(_crudo)) {
