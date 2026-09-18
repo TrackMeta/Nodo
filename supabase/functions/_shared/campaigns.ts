@@ -129,7 +129,10 @@ const enTrozos = <T,>(arr: T[], n: number): T[][] => {
 export async function matchSegment(db: SupabaseClient, channelId: string, seg: any): Promise<string[]> {
   const stages: string[] = seg.stage ?? seg.stages ?? [];
   const base = (f: number, t: number) => {
-    let q = db.from("contacts").select("id").eq("channel_id", channelId).neq("wa_id", "webchat-test");
+    // Sin el contacto de prueba NI los simulados (`source = "sim"`, tmp-sim): una simulación
+    // dejaba contactos en «caliente» que entraban a la audiencia de una campaña real.
+    let q = db.from("contacts").select("id").eq("channel_id", channelId).neq("wa_id", "webchat-test")
+      .or("source.is.null,source.neq.sim");
     if (stages.length) q = q.in("stage", stages);
     return q.order("id", { ascending: true }).range(f, t);
   };

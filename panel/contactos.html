@@ -306,7 +306,7 @@ async function load(){
   // por request → el aviso de truncado no aparecía jamás y el bulk seguía mintiendo en
   // silencio, justo lo que este bloque quería evitar.
   st.truncado=!!topeCs && st.total>(cs||[]).length;
-  st.contacts=(cs||[]).filter(c=>c.wa_id!=="webchat-test");
+  st.contacts=(cs||[]).filter(c=>c.wa_id!=="webchat-test"&&c.source!=="sim");   // ni el de prueba ni los simulados (tmp-sim)
   st.tags=tg||[];
   st.ordersBy={}; _ltvCache={};
   (os||[]).forEach(o=>{ if(!o.contact_id) return; (st.ordersBy[o.contact_id]||(st.ordersBy[o.contact_id]=[])).push(o); });

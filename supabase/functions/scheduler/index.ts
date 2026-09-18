@@ -165,7 +165,11 @@ Deno.serve(async (req) => {
   // recuperación automática. Ningún run real dura horas → un 'activo' inactivo hace
   // más de RUN_STALE_MS es un zombi: se cierra para liberar el lock (el próximo
   // mensaje del cliente arranca un run limpio).
-  const zombieCut = new Date(now - RUN_STALE_MS).toISOString();
+  // Un run 'activo' de verdad vive segundos (el candado del contacto lo acota a minutos): con
+  // el corte de 3 h el cliente quedaba MUDO hasta 3 h tras un isolate muerto. 15 min alcanza
+  // para el turno más largo posible y cierra la ventana de silencio.
+  const ACTIVO_ZOMBI_MS = 15 * 60_000;
+  const zombieCut = new Date(now - ACTIVO_ZOMBI_MS).toISOString();
   const { data: zombies } = await db.from("flow_runs")
     .select("id, channel_id, contact_id")
     .eq("estado", "activo").lt("updated_at", zombieCut).limit(50);

@@ -134,7 +134,11 @@ export async function runEngine(
         // 240 s (eran 90): un turno real encadena Recepción + venta (2 IA), OCR, extracción y
         // Telegram; con un proveedor lento pasaba de 90 s, el TTL vencía y el siguiente webhook
         // tomaba el lock → dos motores en paralelo sobre el mismo contacto (doble respuesta).
-        p_channel_id: channelId, p_contact_id: contactId, p_ttl_seconds: 240, p_holder: holder,
+        // 400 s = el tope de wall-clock de una invocación: un turno no puede durar más, así que
+        // el candado nunca vence ANTES de que termine el turno (con 240 s, audio 90 s + OCR y
+        // venta con reintento lo pasaban y un segundo mensaje corría en paralelo). Al cliente
+        // no lo bloquea: tras 30 s de espera el siguiente mensaje procede igual (never-drop).
+        p_channel_id: channelId, p_contact_id: contactId, p_ttl_seconds: 400, p_holder: holder,
       });
       locked = data === true;
     } catch { break; }                                // RPC ausente → proceder sin lock
@@ -596,6 +600,14 @@ async function runEngineInner(
     // respondía sin enterarse y contradecía al sistema ("no se puede cambiar" ya cambiado).
     try { if (await maybeCambioDatos(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[maybeCambioDatos]", (e as any)?.message ?? e); }
+    // 🛎️ RECLAMO de un comprador mientras hay un run vivo de OTRA venta: «no me llegó el link»
+    // de la plantilla ya pagada, con el flujo del Curso abierto, lo contestaba la IA vendedora
+    // del Curso («te paso el link apenas me mandes la captura») — medido 2026-09-18. Si suena a
+    // reclamo y tiene una compra hecha, primero el soporte post-venta; si no aplica, sigue.
+    if (event.type === "message" && RE_QUEJA_SUAVE.test(String(event.text ?? ""))) {
+      try { if (await maybePostventa(db, channelId, contactId, event)) return; }
+      catch (e) { console.error("[postventa/run vivo]", (e as any)?.message ?? e); }
+    }
     const ready = await resumeRun(db, run, event);
     if (!ready) return; // esperaba otra cosa (ej. buffer) → nada que hacer
   } else {
@@ -10666,6 +10678,9 @@ async function maybeDatosPago(
     // preguntar por su rodilla, que es lo que veníamos a evitar. Si él mismo pide los datos
     // o anuncia que va a pagar, manda él: ahí ya decidió y el número sale como siempre.
     if (dudaDeSalud(texto) && !loPide && !metodoPreg && !RE_ANUNCIA_PAGO.test(texto)) return;
+    // 💸 Al que RECLAMA o pide su plata no se le manda el número a pagar: «quiero devolución,
+    // no me sirve» recibió «Son S/ 79 👇 Yape…» (medido 2026-09-18). Solo si él mismo lo pide.
+    if ((RE_PIDE_DEVOLUCION.test(String(texto ?? "")) || RE_QUEJA_SUAVE.test(String(texto ?? ""))) && !loPide && !RE_ANUNCIA_PAGO.test(texto)) return;
     // 🔑 Sin la palabra clave del anuncio: «QUIERO LA PLANTILLA» no es «la quiero».
     const _textoSinKw = await sinKeywordsDelCanal(db, channelId, texto);
     let pidio = yaEligio || loPide || RE_ANUNCIA_PAGO.test(texto)
@@ -14757,7 +14772,11 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
     }
   }
   // 🏷️ La describió sin nombrarla («la que trae las plantillas para imprimir»). Ver eligePorAtributo.
-  if (!String(ctx.opcion_id ?? "").trim()) {
+  // 🛑 Ni con una negación ni con un reclamo: «quiero devolución, no me sirve la plantilla»
+  // sellaba «Premium» porque su descripción trae «plantillas imprimibles» (medido 2026-09-18)
+  // y el motor le mandó los datos de pago de S/79 a alguien que pedía su plata.
+  const _niegaAtr = /\b(no|ni|tampoco|nunca|jam[aá]s|devoluci[oó]n|devolver|reembolso|reclamo|estafa)\b/i.test(String(texto ?? ""));
+  if (!String(ctx.opcion_id ?? "").trim() && !_niegaAtr) {
     const op3 = eligePorAtributo(texto, list);
     if (op3) {
       run.vars.opcion_id = op3.id;
