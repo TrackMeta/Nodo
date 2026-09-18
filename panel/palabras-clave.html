@@ -271,6 +271,13 @@
 import { supa, getChannel, mountShell, toast, icon, confirmDialog, patchProductConfig } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, flows:[], products:{}, triggers:[], router:{}, intents:{}, prodList:[], newKws:[] };
+// Escribe en channels y COMPRUEBA que tocó la fila: `channels` es solo-admin por RLS, así que a
+// un operador el UPDATE le afecta 0 filas sin error y el panel decía «guardado» sin guardar.
+async function updCanal(patch){
+  const { data, error }=await supa.from("channels").update(patch).eq("id",st.channelId).select("id");
+  if(!error && !(data&&data.length)) return { error:{ message:"No se guardó: solo un administrador puede cambiar esto" } };
+  return { error };
+}
 
 const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 const TRASH='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>';
@@ -309,10 +316,14 @@ async function boot(){
 }
 
 async function loadAll(){
+  // Guardia anti-carrera: si cambias de bot mientras esto carga, la carga vieja no puede
+  // escribir sobre el estado del bot nuevo (una palabra clave apuntaría a un flujo de OTRO bot).
+  const gen=(st.gen=(st.gen||0)+1);
   // Flujos (copias reales, no esqueletos) + productos
   const { data:flows }=await supa.from("flows")
     .select("id,nombre,estado,product_id,products(nombre,emoji)")
     .eq("channel_id",st.channelId).eq("kind","flow").order("nombre");
+  if(gen!==st.gen) return;
   st.flows=flows||[];
   st.products={};
   for(const f of st.flows){ if(f.product_id&&f.products) st.products[f.product_id]=f.products; }
@@ -320,9 +331,11 @@ async function loadAll(){
   const { data:trg }=await supa.from("flow_triggers")
     .select("id,flow_id,tipo,config,activo")
     .eq("channel_id",st.channelId).eq("tipo","keyword").order("id");
+  if(gen!==st.gen) return;
   st.triggers=trg||[];
   // Config del router + intenciones por producto
   const ch=await getChannel(st.channelId);
+  if(gen!==st.gen) return;
   st.router=ch?.ia_router||{};
   let { data:prods, error:pe }=await supa.from("products").select("id,nombre,emoji,config,clase").eq("channel_id",st.channelId).order("nombre");
   if(pe){ ({ data:prods }=await supa.from("products").select("id,nombre,emoji,config").eq("channel_id",st.channelId).order("nombre")); }
@@ -521,7 +534,7 @@ async function saveRouter(){
   try{
     const { data:fresh }=await supa.from("channels").select("ia_router").eq("id",st.channelId).maybeSingle();
     if(fresh&&fresh.ia_router&&typeof fresh.ia_router==="object") base=fresh.ia_router;
-  }catch(_){ base=st.channel?.ia_router||{}; }
+  }catch(_){ base=st.router||{}; }   // st.channel no existe en esta pantalla; lo cargado es st.router
   const router={
     ...base,
     activo:!!st.router.activo,
@@ -530,7 +543,7 @@ async function saveRouter(){
     recepcion,
     fallback_flow_id:null, // reemplazado por la Recepción con IA
   };
-  const { error }=await supa.from("channels").update({ ia_router:router }).eq("id",st.channelId);
+  const { error }=await updCanal({ ia_router:router });
   if(error){ toast(error.message,true); return; }
   st.router=router; toast("IA Router guardado");
 }

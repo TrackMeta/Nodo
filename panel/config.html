@@ -129,6 +129,13 @@ const PROVIDERS = [
     keyHint:"sk-...", models:["gpt-4o","gpt-4o-mini"] },
 ];
 const st = { channelId:null, tab:"marca", iaProvider:null, cfg:{}, channel:{}, secrets:{}, pendingLogo:null };
+// Escribe en channels y COMPRUEBA que tocó la fila: `channels` es solo-admin por RLS, así que a
+// un operador el UPDATE le afecta 0 filas sin error y el panel decía «guardado» sin guardar.
+async function updCanal(patch){
+  const { data, error }=await supa.from("channels").update(patch).eq("id",st.channelId).select("id");
+  if(!error && !(data&&data.length)) return { error:{ message:"No se guardó: solo un administrador puede cambiar esto" } };
+  return { error };
+}
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
 // ── Uso de Supabase (barra del DUEÑO de la plataforma) ──────────────
@@ -202,11 +209,13 @@ async function boot(){
   if(st.channelId) await loadCfg();
 }
 async function loadCfg(){
+  const gen=(st.gen=(st.gen||0)+1);   // guardia anti-carrera al cambiar de bot
   let { data:ch, error:chErr } = await supa.from("channels")
     .select("nombre,logo_url,ia_provider,pixel_id,page_id,ad_account_id,ads_sync_error,buffer_default_seg,timezone,moneda,gsheets,negocio,ia_perfiles,entregas").eq("id",st.channelId).maybeSingle();
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider,pixel_id,page_id,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
+  if(gen!==st.gen) return;   // cambiaste de bot mientras cargaba: esta carga ya no manda
   st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {};
   // El tipo de cambio se pide APARTE a propósito: es una columna nueva (0089) y si
   // se pidiera junto al resto, un proyecto sin la migración tiraría el select entero
@@ -308,14 +317,14 @@ function renderGeneral(b){
     const tc=Number($("g_tc")?.value);
     const patch={ timezone:$("g_tz").value, moneda:$("g_moneda").value,
       usd_rate: ($("g_moneda").value!=="USD" && tc>0) ? +tc.toFixed(4) : null };
-    let { error }=await supa.from("channels").update(patch).eq("id",st.channelId);
+    let { error }=await updCanal(patch);
     // Si falta la columna del tipo de cambio (migración 0089 sin aplicar), se guarda
     // el resto y se dice qué falta — en vez de perder también la zona y la moneda.
     if(error && /usd_rate/.test(error.message)){
-      ({ error }=await supa.from("channels").update({ timezone:patch.timezone, moneda:patch.moneda }).eq("id",st.channelId));
+      ({ error }=await updCanal({ timezone:patch.timezone, moneda:patch.moneda }));
       if(!error){ btn.disabled=false; btn.textContent=old; toast("Guardado; falta aplicar la migración 0089 para el tipo de cambio",true); return; }
     }
-    if(error && /moneda|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ timezone:patch.timezone }).eq("id",st.channelId)); if(!error) toast("Zona guardada; falta la columna 'moneda' (migración)",true); }
+    if(error && /moneda|column/.test(error.message)){ ({ error }=await updCanal({ timezone:patch.timezone })); if(!error) toast("Zona guardada; falta la columna 'moneda' (migración)",true); }
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/timezone|column/.test(error.message)?"Falta aplicar la migración 0014 (timezone)":error.message,true); return; }
     st.channel.timezone=patch.timezone; st.channel.moneda=patch.moneda; st.channel.usd_rate=patch.usd_rate; toast("Guardado");
@@ -546,7 +555,7 @@ async function testGsheets(e){
 }
 async function saveGsheets(btn, gs){
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-  const { error }=await supa.from("channels").update({ gsheets:gs }).eq("id",st.channelId);
+  const { error }=await updCanal({ gsheets:gs });
   btn.disabled=false; btn.textContent=old;
   if(error){ toast(/gsheets|column/.test(error.message)?"Falta aplicar la migración 0014 (gsheets)":error.message,true); return; }
   st.channel.gsheets=gs; toast("Guardado"); render();
@@ -591,10 +600,13 @@ async function handleLogoFile(file){
 }
 async function saveBrand(btn){
   const nombre=$("b_nombre").value.trim();
-  const logo_url = st.pendingLogo || ($("b_logo").value.trim()||null);
+  // El campo de URL va VACÍO cuando el logo actual es una imagen subida (data-URI): si solo
+  // cambias el nombre y guardas, se mandaba logo_url:null y el logo se borraba. Se conserva.
+  const logoActual=String(st.channel?.logo_url||"");
+  const logo_url = st.pendingLogo || ($("b_logo").value.trim() || (logoActual.startsWith("data:") ? logoActual : null));
   if(!nombre){ toast("El nombre no puede estar vacío",true); return; }
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-  const { error }=await supa.from("channels").update({ nombre, logo_url }).eq("id",st.channelId);
+  const { error }=await updCanal({ nombre, logo_url });
   btn.disabled=false; btn.textContent=old;
   if(error){ toast(error.message.includes("logo_url")?"Falta aplicar la migración 0012 (logo_url)":error.message,true); return; }
   toast("Marca guardada");

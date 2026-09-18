@@ -386,7 +386,10 @@ async function runEngineInner(
       // baja o PAGAR. Cuando no hay una palabra que lo desempate ("mi pedido", "ya no
       // quiero", "me arrepentí"), se pregunta en vez de decidir: cancelar por error el
       // pedido de alguien que venía a pagar es mucho peor que un turno de más.
-      const ESPERA_PLATA = new Set(["esperando_adelanto", "pendiente", "en_agencia", "adelanto_validado"]);
+      // `por_despachar` (adelanto cobrado, saldo pendiente, aún sin salir) faltaba: un «cancelar»
+      // a secas ahí anulaba un pedido con plata ya puesta cuando el cliente venía a pagar el
+      // saldo. `en_agencia` queda por si el orden de los chequeos cambia (hoy `yaSalio` corta antes).
+      const ESPERA_PLATA = new Set(["esperando_adelanto", "pendiente", "en_agencia", "adelanto_validado", "por_despachar"]);
       const desempata = /\b(pedido|orden|compra|envio|env[ií]o|arrepent|ya no (lo |la )?(quiero|voy)|anula|devolver)\b/i
         .test(String(event.text ?? ""));
       // ⛔ …y solo si usó la palabra CANCELAR, que es la única ambigua. «Dalo de baja»,
@@ -7966,8 +7969,10 @@ async function subscribeSeq(db: SupabaseClient, run: Run, a: any) {
     .then(() => {}, () => {});
 }
 async function unsubscribeSeq(db: SupabaseClient, run: Run, a: any) {
+  // Solo las ACTIVAS: sin el filtro, una suscripción ya «completada» (recorrió toda la
+  // secuencia) se reescribía a «cancelada» y las métricas de finalización mentían.
   let q = db.from("sequence_subscriptions").update({ estado: "cancelada", updated_at: new Date().toISOString() })
-    .eq("contact_id", run.contact_id);
+    .eq("contact_id", run.contact_id).eq("estado", "activa");
   if (a.sequence_id) q = q.eq("sequence_id", a.sequence_id);
   await q;
 }
@@ -9310,8 +9315,12 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   // "el pedido ya está confirmado con la dirección original, contáctame por soporte para
   // ver si es posible" cuando la dirección YA estaba cambiada en el pedido. El cliente se
   // queda creyendo que va a la vieja mientras el paquete sale a la nueva.
+  // Si el distrito quedó por confirmar, el acuse lo dice: el motor decidió NO resolverlo solo
+  // y el cliente no puede quedarse creyendo que ya está todo listo.
   await deliverMessage(db, channelId, contactId,
-    `✅ Listo, actualicé tu pedido — ${cambios.join(" · ")}. Cualquier otra cosa me avisas. 🙌`).catch(() => {});
+    `✅ Listo, actualicé tu pedido — ${cambios.join(" · ")}.` +
+    (sh.distrito_por_confirmar ? " El distrito de esa dirección lo confirma una persona del equipo antes de enviarlo, por si hay que ajustar algo te escribe." : "") +
+    " Cualquier otra cosa me avisas. 🙌").catch(() => {});
   return true;
 }
 
@@ -9426,7 +9435,15 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
 
   // ── FASE 2: hay un cambio propuesto esperando confirmación ──────────────────
-  const pend = ship._mod_pendiente;
+  let pend = ship._mod_pendiente;
+  // ⏳ Un cambio propuesto que nadie confirmó CADUCA. Sin esto, «ok» o «listo» semanas después,
+  // contestando cualquier otra cosa, aplicaba la cantidad vieja (y su cobro). 12 horas: si en
+  // medio día no dijo «sí», ya no está hablando de eso.
+  if (pend && typeof pend === "object" && pend.at && Date.now() - new Date(String(pend.at)).getTime() > 12 * 3600_000) {
+    delete ship._mod_pendiente; pend = null;
+    await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id).then(() => {}, () => {});
+    await logEvent(db, channelId, contactId, "nota", "⏳ Cambio propuesto caducado", "Pasaron más de 12 h sin confirmación; se descarta").catch(() => {});
+  }
   if (pend && typeof pend === "object") {
     // ¿El cliente confirmó? Clasificación mínima sí/no (barata; solo corre cuando
     // hay un pendiente, o sea justo después de que preguntamos "¿confirmo?").
@@ -9549,7 +9566,7 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
     const hit = removibles.find((b) => b.nombre === nom) ?? (nom ? removibles.find((b) => b.nombre.toLowerCase().includes(nom.toLowerCase()) || nom.toLowerCase().includes(b.nombre.toLowerCase())) : undefined);
     if (!hit) return false;                                  // no identificó QUÉ quitar → deja seguir el flujo normal
     const resumen = `quitar "${hit.nombre}"${hit.precio > 0 ? ` (−${sym}${hit.precio})` : ""} → queda ${sym}${valorOrden(amount, bumps.filter((_, i) => i !== hit.i))}`;
-    ship._mod_pendiente = { tipo: "quitar", bump_idx: hit.i, bump_nombre: hit.nombre, bump_precio: hit.precio, resumen };
+    ship._mod_pendiente = { at: new Date().toISOString(), tipo: "quitar", bump_idx: hit.i, bump_nombre: hit.nombre, bump_precio: hit.precio, resumen };
     await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
     const nuevoTotal = valorOrden(amount, bumps.filter((_, i) => i !== hit.i));
     await deliverMessage(db, channelId, contactId,
@@ -9566,7 +9583,7 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
       const cantNew = Number(opt.cantidad) || 1;
       const costoNew = (opt.costo != null && opt.costo !== "" && Number.isFinite(Number(opt.costo))) ? Number(opt.costo) * cantNew : null;
       const resumen = `cambiar a "${opt.nombre}" → ${sym}${valorOrden(amountNew, bumps)}`;
-      ship._mod_pendiente = { tipo: "cantidad", presentacion_id: opt.id, presentacion_nombre: opt.nombre, amount_new: amountNew, cantidad_new: cantNew, costo_new: costoNew, resumen };
+      ship._mod_pendiente = { at: new Date().toISOString(), tipo: "cantidad", presentacion_id: opt.id, presentacion_nombre: opt.nombre, amount_new: amountNew, cantidad_new: cantNew, costo_new: costoNew, resumen };
       await db.from("orders").update({ shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
       await deliverMessage(db, channelId, contactId,
         `¡Perfecto! Te lo dejo como *${opt.nombre}*. Tu pedido quedaría en *${sym}${valorOrden(amountNew, bumps)}*. ¿Lo confirmo? 🙂`).catch(() => {});
@@ -11187,6 +11204,11 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
     // El motor ya NO cambia sede/dirección/DNI/destinatario de un pedido despachado (la guía
     // salió impresa con los datos viejos). Faltaba que la IA lo supiera: sin esta regla decía
     // "listo, lo mando a la otra agencia", el cliente iba a esa agencia y su paquete no estaba.
+    // …y en `saldo_pagado` (pagado, en preparación) el motor TAMPOCO aplica cambios de datos
+    // (maybeCambioDatos lo excluye), así que la IA tampoco puede prometerlos.
+    (String((order as any).estado ?? "") === "saldo_pagado"
+      ? "- ⚠️ Su pedido ya está PAGADO y en preparación. Si te pide cambiar la agencia, la dirección, su DNI o quién lo recibe, NO se lo confirmes ni digas «listo, lo cambié»: dile que lo revisa una persona del equipo y escribe `[[humano]]`.\n"
+      : "") +
     (ESTADOS_DESPACHADO.has(String((order as any).estado ?? ""))
       ? "- ⚠️ Su pedido YA SALIÓ al courier con los datos impresos en la guía. Si te pide cambiar la agencia, la dirección, su DNI o quién lo recibe, NO se lo confirmes ni digas «listo, lo cambié»: eso ya no depende de ti. Dile que el pedido ya está en camino, que lo consultas con el equipo y que le confirman si se puede redirigir.\n"
       : "") +

@@ -65,7 +65,7 @@ const CONC_SEQ = 5;
 // repartir entre bots: si se pidiera justo lo que se atiende, el reparto no serviría de nada
 // (ya vendrían todas del negocio con más movimiento). El pool es barato: son 2 columnas.
 const WAKE_TICK = 300, WAKE_POOL = 900;
-const SEQ_TICK = 500, SEQ_POOL = 2000;
+const SEQ_TICK = 500, SEQ_POOL = 1000;   // PostgREST corta en 1000 filas: pedir 2000 era mentirse sobre el colchón del reparto
 // PRESUPUESTO DE TIEMPO del tick. Es el freno que de verdad importa, más que los topes de
 // cantidad de arriba: el cron dispara cada 60 s sin esperar respuesta, así que un tick que se
 // pasa no da error — el siguiente arranca encima y el atraso se acumula en silencio.
@@ -871,6 +871,12 @@ async function processSub(s: any, now: number): Promise<boolean> {
   _claimQ = s.updated_at ? _claimQ.eq("updated_at", s.updated_at) : _claimQ.is("updated_at", null);
   const { data: _claim } = await _claimQ.select("id");
   if (!_claim || !_claim.length) return false;
+  // Si después del claim NO se envía y se va a reintentar (run activo, Meta frenó), hay que
+  // devolver el `updated_at` viejo: es el ANCLA del silencio, y con el sello del claim el
+  // siguiente intento medía silencio ≈ 0 y reprogramaba el paso casi el umbral entero otra
+  // vez (un «reintento en 15 min» que terminaba en 3 días).
+  const _desclamar = () => db.from("sequence_subscriptions").update({ updated_at: s.updated_at ?? null })
+    .eq("id", s.id).eq("updated_at", _claimStamp).then(() => {}, () => {});
 
   // Oferta identificada: el paso puede pegar un DESCUENTO al contacto para una
   // opción concreta. El motor lo lee al validar el pago (precioEsperado), así un
@@ -889,7 +895,9 @@ async function processSub(s: any, now: number): Promise<boolean> {
   const vaAEnviar = !!paso.template_name
     || (!!paso.flow_id && enVentana)
     || (!!(String(paso.mensaje ?? "").trim() || paso.bubbles?.length || hayVariante) && enVentana);
+  let _ofertaEscrita = false;
   if (vaAEnviar && paso.oferta && paso.oferta.version_id && paso.oferta.precio != null) {
+    _ofertaEscrita = true;
     // SIEMPRE con caducidad: si el paso no configura `vence_horas` (o es 0), antes
     // quedaba `vence=null` = descuento ETERNO → el validador aceptaba el precio rebajado
     // para siempre (y en recompras/extras de esa misma versión). Default de 72h.
@@ -934,6 +942,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
           // libere. Antes se caía a avanzar `paso_actual` igual (el `return` faltaba) → el
           // paso de re-enganche se perdía en silencio sin enviar nada.
           console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo NO arrancó (run activo/esperando) → se reintenta el próximo tick`);
+          await _desclamar();
           return false;
         }
       }
@@ -959,6 +968,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
       if (meta && esRechazoTemporal(meta)) {
         await db.from("sequence_subscriptions").update({ proximo_at: new Date(Date.now() + 15 * 60_000).toISOString() }).eq("id", s.id);
         console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta frenó la plantilla "${paso.template_name}" (code ${meta?.code}) → se pospone 15 min`);
+        await _desclamar();
         return false;
       }
       console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: plantilla "${paso.template_name}" falló (${String((e as any)?.message ?? e)}) → se salta este toque y avanza`);
@@ -985,6 +995,20 @@ async function processSub(s: any, now: number): Promise<boolean> {
     }
   }
   if (toco) await marcarTocoMkt(s.contact_id);
+  // 🔴 Descuento fantasma por la puerta de la plantilla: la oferta se graba ANTES de enviar
+  // (`vaAEnviar` da por hecho que la plantilla sale), pero Meta puede rechazarla en firme
+  // (no aprobada, pausada, params) y el paso avanza igual → el cliente nunca vio «te dejo a
+  // S/Y» y el validador aceptaba ese precio. Si no salió nada, la oferta recién grabada se quita.
+  if (_ofertaEscrita && !toco) {
+    try {
+      const { data: cOf } = await db.from("contacts").select("oferta_activa").eq("id", s.contact_id).maybeSingle();
+      const of = (cOf as any)?.oferta_activa;
+      if (of && of.origen === "remarketing" && String(of.opcion_id) === String(paso.oferta.version_id)) {
+        await db.from("contacts").update({ oferta_activa: null }).eq("id", s.contact_id);
+        console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: no salió nada → se retira la oferta grabada (evita el descuento fantasma)`);
+      }
+    } catch (_) { /* best-effort */ }
+  }
   // 🎯 El toque habla de UN producto: se le deja sellado al contacto para que su RESPUESTA
   // entre a la venta de ese producto. Sin esto el cliente contestaba al reenganche y el bot
   // no sabía de qué le hablaba él mismo un minuto antes — medido: recibió "me quedan pocas
