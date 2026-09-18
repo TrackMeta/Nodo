@@ -13792,9 +13792,16 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
                   const _resto = _linea.slice(_sn(_linea).indexOf(_sn(val)) + val.length);
                   // Hasta DOS palabras más, solo letras, y cortando en cuanto aparece algo que
                   // no es nombre (una cifra, una coma, un "dni", el celular en la línea de al lado).
-                  const _mas = (_resto.match(/^(?:[ \t]+[\p{L}'´`]{2,})+/u)?.[0] ?? "")
-                    .trim().split(/\s+/).filter(Boolean).slice(0, 2)
-                    .filter((w) => !/^(dni|ce|con|mi|el|la|de|y|celular|tel|numero|n[uú]mero|direccion|direcci[oó]n)$/i.test(w));
+                  // …y FRENANDO en la primera palabra de dirección: «Rodrigo Flores Av Los Pinos 123»
+                  // sin coma daba nombre «Rodrigo Flores Av Los». Antes solo se filtraban
+                  // conectores sueltos y las siguientes se seguían pegando.
+                  const _STOP = /^(dni|ce|con|mi|el|la|de|y|celular|tel|numero|n[uú]mero|direccion|direcci[oó]n|av|avenida|jr|jir[oó]n|calle|ca|mz|mza|lote|lt|urb|urbanizaci[oó]n|psje|pasaje|block|dpto|departamento|piso|cuadra|cdra|nro|num|km|carretera|sector|barrio|asoc|coop|distrito|ciudad|provincia|sede|agencia|shalom|olva|lima|trujillo|arequipa)\.?$/i;
+                  const _mas: string[] = [];
+                  for (const w of (_resto.match(/^(?:[ \t]+[\p{L}'´`]{2,})+/u)?.[0] ?? "").trim().split(/\s+/).filter(Boolean)) {
+                    if (_STOP.test(w)) break;
+                    _mas.push(w);
+                    if (_mas.length >= 2) break;
+                  }
                   if (_mas.length) val = `${val} ${_mas.join(" ")}`;
                 }
               } catch (_) { /* si algo falla, queda el nombre tal como lo extrajo la IA */ }
@@ -13853,6 +13860,11 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
                 `"${String(val).slice(0, 40)}" es un parentesco, no un nombre`).catch(() => {});
               continue;
             }
+            // DNI y celular se guardan LIMPIOS: validarDato limpiaba solo para contar dígitos y
+            // persistía el crudo («45.678.912», «+51 987 654 321») → rótulo y Excel del courier
+            // con formatos mezclados (la corrección posterior sí limpiaba: dos caminos, dos datos).
+            if ((c as any).validar === "dni") val = String(val).replace(/\D/g, "");
+            if ((c as any).validar === "telefono") val = String(val).replace(/[^\d]/g, "").replace(/^51(?=9\d{8}$)/, "");
             run.vars[c.clave] = val;
             ctx[c.clave] = val;
             // 📍 Eligió su oficina: se marca para mandarle la FICHA después del mensaje
@@ -14691,7 +14703,16 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
     // entre palabras. Sellar ahí le manda los datos de pago a alguien que está preguntando.
     // Dos caminos para lo mismo y el freno en uno solo: la familia de siempre.
     const _nombradasAhora = list.filter((o) => mencionaLaOpcion(texto, o, list));
-    if (_fuertes.length === 1 && _nombradasAhora.length <= 1) {
+    // 🛑 Con una NEGACIÓN en el mensaje la red no sella: «no quiero la básica, mejor no» nombra
+    // UNA opción y la red la fijaba — justo la que rechazó. El clasificador sigue pudiendo
+    // (lee la intención); esta red solo actúa cuando el mensaje es limpio. «nomás» no cuenta
+    // («1 nomás» es elegir): se exige la palabra entera.
+    const _niega = /\b(no|ni|tampoco|nunca|jam[aá]s)\b/i.test(String(texto ?? ""));
+    if (_niega && _fuertes.length === 1) {
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "🛑 La red no sella: hay una negación",
+        `Nombró «${_fuertes[0].nombre}» junto a un «no»; lo decide el clasificador`).catch(() => {});
+    }
+    if (_fuertes.length === 1 && _nombradasAhora.length <= 1 && !_niega) {
       const op2 = _fuertes[0];
       run.vars.opcion_id = op2.id;
       ctx.opcion_id = op2.id;
@@ -15907,7 +15928,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const _noPreguntaPorElProducto =
       /\b(bot|robot|persona|humano|m[aá]quina|autom[aá]tic[oa]|descuento|rebaja|d[eé]jalo|me lo dejas|dejas en|m[aá]s barato|quiero \d|llevo \d|dame \d|\d+ unidades)\b/i
         .test(String(ctx.last_input ?? ""));
-    (run as any)._sinPitchTurno = _noPreguntaPorElProducto;   // lo usa sinPitchDelProducto al salir
+    // 🔴 Pero en una OBJECIÓN DE PRECIO el argumento de valor ES la respuesta. Medido 2026-09-18:
+    // «está caro, ¿me lo dejas en 50?» → la IA contestó «Entiendo que quieras el mejor precio,
+    // pero con el Adaptador Pro inviertes en…» y el recorte de salida se llevó ESA oración
+    // (nombra el producto, >70 letras, sin cifra) y el «Además, es original…» que colgaba: al
+    // cliente le llegó solo «¿Quieres que te pase las opciones?» con la lista. La ficha sigue
+    // yendo sin presentación (eso se decide abajo); el recorte de salida no corre en descuento.
+    const _esObjecionPrecio = /\b(descuento|rebaja|d[eé]jalo|me lo dejas|dejas en|m[aá]s barato|caro|car[ií]simo)\b/i
+      .test(String(ctx.last_input ?? ""));
+    (run as any)._sinPitchTurno = _noPreguntaPorElProducto && !_esObjecionPrecio;   // lo usa sinPitchDelProducto al salir
     if (ctx.contexto_producto) {
       const _fichaTxt = resolve(String(ctx.contexto_producto), ctx);
       parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` +

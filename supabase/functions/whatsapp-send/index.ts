@@ -49,8 +49,11 @@ Deno.serve(async (req) => {
   // (si no, un miembro del tenant A podría apagar el bot, contaminar la conversación o
   // mandar un WhatsApp a un contacto del tenant B — corre con service_role, salta RLS).
   const { data: contact } = await db
-    .from("contacts").select("id, wa_id").eq("id", contact_id).eq("channel_id", channel_id).maybeSingle();
+    .from("contacts").select("id, wa_id, bloqueado").eq("id", contact_id).eq("channel_id", channel_id).maybeSingle();
   if (!contact) return json({ error: "contacto_invalido" }, 400);
+  // Bloqueado: el panel lo saca de la Bandeja, pero desde Contactos se llegaba al chat y el
+  // mensaje salía igual. El bloqueo se respeta también acá.
+  if ((contact as any).bloqueado === true) return json({ error: "contacto_bloqueado", detalle: "Este contacto está bloqueado. Desbloquéalo en Contactos si quieres escribirle." }, 400);
 
   // ── Plantilla: el único mensaje que WhatsApp acepta FUERA de ventana ──
   // No pasa por el gate de abajo. La plantilla debe existir en el canal,

@@ -1186,7 +1186,7 @@ async function sendStoredMedia(m){
     // whatsapp-send toma la caption del campo `text` (no de media.caption) → se
     // la pasamos así para que la imagen llegue con su texto en la misma burbuja.
     const r=await callFn("whatsapp-send", { channel_id:state.channelId, contact_id:state.contactId, media, text:m.caption||"" });
-    const o=await r.json().catch(()=>({})); if(!r.ok){ toast(o.detalle?.message||o.detalle||o.error||"Error al enviar media",true); return false; }
+    const o=await r.json().catch(()=>({})); if(!r.ok){ toast(errorMetaLegible(o)||"Error al enviar media",true); return false; }   // motivo en español, como el texto
     setBotPill(false); avisoSinGuardar(o); return true;
   }catch{ toast("Error al enviar multimedia",true); return false; }
 }
@@ -2376,6 +2376,8 @@ async function sendMsg() {
     if (sending) return;
     if (adjunto.error) { toast(adjunto.error, true); return; }
     if (adjunto.subiendo) { toast("El archivo todavía se está subiendo…"); return; }
+    // La ventana pudo cerrarse mientras escribías el pie de foto: mismo aviso que el texto.
+    if (state.winLocked && !state.isTest) { toast("La ventana está cerrada — usa una plantilla", true); return; }
     sending = true; $("sendBtn").disabled = true;
     try {
       if (!await okManualEnvio()) return;
@@ -2465,7 +2467,11 @@ function quitarAdjunto() {
 // bien, se veía la miniatura y recién al enviar Meta devolvía 131053 → el cliente sin nada.
 const WA_MIME_OK = /^(image\/(jpeg|jpg|png)|video\/(mp4|3gpp)|audio\/(aac|mp4|mpeg|mp3|amr|ogg|x-m4a)|application\/(pdf|msword|vnd\.ms-excel|vnd\.ms-powerpoint|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation))|text\/plain)$/i;
 function excesoAdjunto(file){
-  const t = String(file.type||"").toLowerCase();
+  // Sin MIME (HEIC en algunos navegadores, archivos sueltos) se deduce por la extensión: antes
+  // un `type` vacío saltaba el filtro entero y el archivo subía para que recién Meta lo rechazara.
+  const _ext = String(file.name||"").split(".").pop().toLowerCase();
+  const _porExt = { jpg:"image/jpeg", jpeg:"image/jpeg", png:"image/png", mp4:"video/mp4", "3gp":"video/3gpp", mp3:"audio/mpeg", ogg:"audio/ogg", m4a:"audio/x-m4a", aac:"audio/aac", amr:"audio/amr", pdf:"application/pdf", doc:"application/msword", docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document", xls:"application/vnd.ms-excel", xlsx:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ppt:"application/vnd.ms-powerpoint", pptx:"application/vnd.openxmlformats-officedocument.presentationml.presentation", txt:"text/plain" }[_ext] || "";
+  const t = String(file.type||_porExt||"application/octet-stream").toLowerCase();
   if (t && !WA_MIME_OK.test(t)) return "WhatsApp no acepta este formato. Usa JPG/PNG, MP4, MP3/OGG o PDF" + (/quicktime/.test(t) ? " (el .mov del iPhone hay que convertirlo a MP4)" : "");
   const lim = t.startsWith("image/") ? 5 : 16; // Meta: imagen 5 MB, video/audio 16 MB, documento más pero el bucket corta en 16
   if (file.size > lim*1024*1024) return `Archivo muy grande (máx ${lim} MB para ${t.startsWith("image/") ? "imágenes" : "este tipo"})`;
@@ -2560,7 +2566,7 @@ async function sendAttachment(file){
     } else {
       const r = await callFn("whatsapp-send", { channel_id: state.channelId, contact_id: cid, media });
       const o = await r.json().catch(() => ({}));
-      if (!r.ok) { toast(o.detalle?.message || o.detalle || o.error || "Error al enviar", true); }
+      if (!r.ok) { toast(errorMetaLegible(o) || "Error al enviar", true); }
       else { setBotPill(false); avisoSinGuardar(o); }
     }
   } catch { toast("Error al adjuntar", true); }
