@@ -614,6 +614,15 @@ async function productoDeSecuencia(channelId: string, sequenceId: string): Promi
     return hit ? hit.id : null;
   } catch (_) { return null; }
 }
+// TODOS los productos que comparten una secuencia (Guia Experta: los tres apuntan a la misma
+// «general»). Sirve para no pisarle el producto al contacto cuando el suyo ya es uno de ellos.
+async function productosDeSecuencia(channelId: string, sequenceId: string): Promise<string[]> {
+  try {
+    await productoDeSecuencia(channelId, sequenceId);   // llena la caché
+    const prods = prodSeqCache.get(channelId) ?? [];
+    return prods.filter((p) => p.seqs.has(String(sequenceId))).map((p) => p.id);
+  } catch (_) { return []; }
+}
 
 // Horario permitido del remarketing (hora local del negocio). Sin configurar,
 // se manda a cualquier hora (lo de antes). Cacheado por tick.
@@ -1030,9 +1039,17 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // Se escribe solo product_id (no markProduct: ese además auto-suscribe a secuencias, y
   // llamarlo desde el propio remarketing lo realimentaría). Solo tras un envío REAL, y el
   // scheduler ya no toca a quien está a mitad de conversación, así que no pisa una venta viva.
+  // ⚠️ …salvo que el producto que YA tiene el contacto comparta esta misma secuencia: entonces
+  // el toque habla de SU producto y pisarlo con el «dueño» (el primero del mapa) lo cambiaba de
+  // producto por debajo. Medido (M-mremarketing-1): lead de la Plantilla → tras el toque quedó
+  // como lead del Curso y contestó con los precios del Curso.
   if (toco && subProductId) {
-    await db.from("contacts").update({ product_id: subProductId }).eq("id", s.contact_id)
-      .then(() => {}, () => {});
+    const _cur = String((c as any).product_id ?? "");
+    const _comparten = _cur ? await productosDeSecuencia(s.channel_id, s.sequence_id) : [];
+    if (!(_cur && _comparten.includes(_cur))) {
+      await db.from("contacts").update({ product_id: subProductId }).eq("id", s.contact_id)
+        .then(() => {}, () => {});
+    }
   }
 
   const next = s.paso_actual + 1;

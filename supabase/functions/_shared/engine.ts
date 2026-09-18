@@ -4051,7 +4051,10 @@ const RE_ANUNCIA_DATOS_QUE_SIGUEN =
 // se respeta entera. Solo vocabulario de contraentrega: en provincia «al recibir» ya llega
 // reescrito como «cuando llegue a la agencia» (sinPagarEnLaAgencia corre antes).
 const RE_ORACION_DE_ENTREGA =
-  /\b(?:domicilio|contra\s*entrega|al\s+recibir(?:lo|la)?|cuando\s+(?:lo|la)\s+recib[ae]s|revis(?:ar|as|es)\s+antes|a\s+tu\s+(?:casa|puerta|direcci[oó]n)|en\s+tu\s+(?:casa|direcci[oó]n)|delivery)\b/i;
+  // 💻 Y la entrega DIGITAL: «el acceso te llega al instante, apenas validamos tu pago» es la
+  // respuesta a «¿en cuánto tiempo me llega?», no un anuncio de datos (M-mtiempo-1 se quedó en
+  // «Así puedes empezar sin esperar»).
+  /\b(?:domicilio|contra\s*entrega|al\s+recibir(?:lo|la)?|cuando\s+(?:lo|la)\s+recib[ae]s|revis(?:ar|as|es)\s+antes|a\s+tu\s+(?:casa|puerta|direcci[oó]n)|en\s+tu\s+(?:casa|direcci[oó]n)|delivery|(?:el\s+)?(?:acceso|link|enlace|archivo)\s+(?:te\s+)?(?:llega|lo\s+entrego|lo\s+env[ií]o)|te\s+llega\s+(?:el\s+)?(?:acceso|link|enlace|archivo))\b/i;
 // 🔠 Al quitar la frase con que ARRANCABA el mensaje, lo que queda empieza en minúscula:
 // «Perfecto, te paso los datos para el pago 👇 cuando me mandes la captura…» → «cuando me
 // mandes la captura, te llega el acceso» (medido N-kdirecto-1 y N-ke2e-1, 2026-09-18).
@@ -4063,14 +4066,23 @@ function conMayusculaInicial(t: string): string {
   // Te paso los datos 👇 cuando me mandes la captura…» → «*S/39*. cuando me mandes» (N2-pmejorotro-1).
   // Entre el punto y la letra puede quedar la flecha «👇» que apuntaba a lo quitado (o un
   // selector de variante): se salta, y si la flecha quedó colgando a mitad de frase, se va.
-  return cab.replace(/([.!?…][\s️]*)(?:👇[\s️]*)?(\p{Ll})/gu, (_m, a: string, b: string) => a + b.toUpperCase());
+  return cab.replace(/([.!?…](?:[\s️]|\p{Extended_Pictographic})*)(\p{Ll})/gu, (_m, a: string, b: string) => a + b.toUpperCase());
+}
+// ✂️ La cola de la frase quitada. «…2 horas. 💪 Te paso los datos para el pago 👇 cuando estés
+// listo.» → la regex del anuncio frena en el emoji y deja « cuando estés listo.» colgando
+// (M-mlinknopago-1). Si justo después de lo quitado sigue una minúscula, es la continuación de
+// esa misma frase: se va hasta el fin de la oración. `0001` marca dónde se quitó.
+function sinColaDeLoQuitado(t: string): string {
+  return String(t ?? "")
+    .replace(/0001(?:[ \t️]|\p{Extended_Pictographic})*\p{Ll}[^.!?…\n]*[.!?…]?/gu, " ")
+    .replace(/0001/g, " ");
 }
 function sinAnuncioDePago(texto: string): string {
   const t = String(texto ?? "");
   RE_ANUNCIA_DATOS_QUE_SIGUEN.lastIndex = 0;
   if (!RE_ANUNCIA_DATOS_QUE_SIGUEN.test(t)) return texto;
   RE_ANUNCIA_DATOS_QUE_SIGUEN.lastIndex = 0;
-  const limpio = t.replace(RE_ANUNCIA_DATOS_QUE_SIGUEN, (m) => (/\d{6,}|https?:/i.test(m) || RE_ORACION_DE_ENTREGA.test(m) ? m : " "))
+  const limpio = sinColaDeLoQuitado(t.replace(RE_ANUNCIA_DATOS_QUE_SIGUEN, (m) => (/\d{6,}|https?:/i.test(m) || RE_ORACION_DE_ENTREGA.test(m) ? m : "0001")))
     // Solo espacios y tabs: \s se come los saltos de línea y pega la lista de datos en un
     // renglón (ya pasó con sinDespachar).
     .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n")
@@ -4103,7 +4115,7 @@ function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
   RE_FRASE_PROMETE_DATOS.lastIndex = 0;
   if (!RE_FRASE_PROMETE_DATOS.test(t)) return texto;
   RE_FRASE_PROMETE_DATOS.lastIndex = 0;
-  const limpio = t.replace(RE_FRASE_PROMETE_DATOS, (m) => (/\d{6,}|https?:/i.test(m) ? m : " "))
+  const limpio = sinColaDeLoQuitado(t.replace(RE_FRASE_PROMETE_DATOS, (m) => (/\d{6,}|https?:/i.test(m) ? m : "0001")))
     .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n")
     // La coma o la «y» que quedaron colgando delante de lo que se quitó.
     .replace(/[,;:]\s*(?=\n|$)/g, "").replace(/\s+y\s*(?=\n|$)/g, "")
@@ -10444,6 +10456,10 @@ async function otroProductoPorKeyword(db: SupabaseClient, channelId: string, tex
     const _STOP = new Set(["de", "del", "en", "para", "con", "el", "la", "los", "las", "un", "una", "y", "o", "al", "por", "sin", "pro", "plus"]);
     const _sig = (nombre: string) => _norm(nombre).replace(/[^a-z0-9ñ\s]/g, " ").split(/\s+/).filter((w) => w.length >= 4 && !_STOP.has(w));
     const txtN = " " + _norm(text).replace(/[^a-z0-9ñ\s]/g, " ").replace(/\s+/g, " ") + " ";
+    // «la quiero y TAMBIÉN el protocolo»: está SUMANDO, no cambiando. Cambiarle el producto
+    // por debajo tiraba la venta abierta y la IA inventó «S/20 total por ambos» (M-mdosprod-1).
+    // Se queda en el que estaba; el bloque «Otros productos» ya le deja contar del otro.
+    if (/\b(tambi[eé]n|adem[aá]s|ambos|ambas|los dos|las dos|junto (con|al|a la))\b/i.test(_norm(text))) return null;
     const { data: prods } = await db.from("products").select("id, nombre").eq("channel_id", channelId);
     const cand: string[] = [];
     for (const p of (prods ?? []) as any[]) {
@@ -10479,9 +10495,11 @@ async function maybeReclamoSinPedido(
   if ((o ?? []).length) return false; // tiene pedidos → es cosa de maybePostventa
   await deliverMessage(db, channelId, contactId,
     "Lamento el inconveniente 🙏 Déjame revisarlo con alguien del equipo y te respondemos por acá.").catch(() => {});
+  // aviso:false — el «Lamento el inconveniente… te respondemos por acá» de arriba YA es el aviso;
+  // con aviso:true el cliente recibía dos disculpas seguidas (M-mreclamo-1).
   await pasarAHumano(db, channelId, contactId,
     `Reclama por una compra que NO figura a su nombre en el bot: “${String(event.text).slice(0, 160)}”. ` +
-    `Puede haber comprado desde otro número o estar cargada a mano.`, { aviso: true, molesto: true }).catch(() => {});
+    `Puede haber comprado desde otro número o estar cargada a mano.`, { aviso: false, molesto: true }).catch(() => {});
   await logEvent(db, channelId, contactId, "nota", "🛟 Reclamo sin pedido registrado",
     "Se atendió y pasó a un humano en vez de arrancarle la venta").catch(() => {});
   return true;
@@ -19903,6 +19921,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // 🔠 Una sola vez, al final: cualquiera de los veinte guards pudo quitar la frase con que
       // arrancaba el mensaje o la que iba tras un punto, y lo que queda empieza en minúscula.
       if (op === "generar_texto" && String(salida ?? "").trim()) salida = conMayusculaInicial(String(salida));
+      // 📦 Y el paquete/camión fuera del digital también acá, al final: en M-mfin-1 llegó igual.
+      if (op === "generar_texto" && esDigital(ctx)) salida = String(salida ?? "").replace(/[ \t]*(?:📦|🚚)️?/gu, "");
       if (op === "generar_texto") {
         const _crudo = String(result ?? "").trim();
         if (_crudo && String(salida ?? "").trim() !== _crudo && !String(salida ?? "").includes(_crudo)) {
@@ -20292,7 +20312,24 @@ async function buildContext(db: SupabaseClient, run: Run) {
   // datos como variables ({{precio}}, {{link_entrega}}, {{producto_nombre}},
   // {{adelanto}}, {{envio_*}}…). Cacheado por run (no cambian a mitad).
   try {
-    const prodId = (c as any)?.product_id;
+    let prodId = (c as any)?.product_id;
+    // 🎯 El producto del TURNO es el del flujo que está corriendo, no el último que alguien le
+    // escribió al contacto. `contacts.product_id` es last-write: el remarketing de una
+    // secuencia COMPARTIDA por varios productos lo pisa con el «dueño» de la secuencia (el
+    // primero del mapa). Medido (M-mremarketing-1, 2026-09-18): lead de la Plantilla, toque de
+    // remarketing, contesta «sí, ¿cuánto cuesta?» y el bot —con el run de la Plantilla vivo—
+    // le dijo «La Plantilla cuesta S/39» y le pegó la lista Básica/Premium del Curso. Si el
+    // flujo tiene producto, manda ese; los flujos sin producto (recepción, post-venta) siguen
+    // con el del contacto.
+    try {
+      let fp = (run as any)._flowProd;
+      if (fp === undefined) {
+        const { data: fl } = await db.from("flows").select("product_id").eq("id", run.flow_id).maybeSingle();
+        fp = (fl as any)?.product_id ?? null;
+        (run as any)._flowProd = fp;
+      }
+      if (fp) prodId = fp;
+    } catch (_) { /* sin flujo legible → el del contacto, como antes */ }
     ctx._product_id = prodId ?? null; // "_" = interno, no se filtra a {{...}}
     if (prodId) {
       let pc = (run as any)._prodCtx;
