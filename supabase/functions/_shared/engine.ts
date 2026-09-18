@@ -327,7 +327,12 @@ async function runEngineInner(
   // el patrón de siempre: si el motor no contesta, la IA inventa. `cancelarSignificaPagar`
   // ya exige un objeto de pago detrás, así que abrir la puerta no arrastra las bajas reales.
   const _dicecancelar = /\bcancel\w*/i.test(String(event.text ?? ""));
-  if (event.type === "message" && (pideCancelar(event.text) || _dicecancelar) && cancelarSignificaPagar(event.text)) {
+  // ⚠️ …pero NO el pasado: «ya cancelé los 20» es «ya pagué», y esta rama —que va primero—
+  // le contestaba cómo pagar («¡Claro! Para cancelar el adelanto de S/20: Yape…»), o sea le
+  // mandaba el número a quien acababa de decir que ya lo usó (P-pcancelepago-1, 2026-09-18).
+  // El pasado tiene su rama justo debajo, que pide la captura.
+  const _canceloYa = RE_CANCELE_PASADO.test(limpiaOpt(event.text));
+  if (event.type === "message" && (pideCancelar(event.text) || _dicecancelar) && !_canceloYa && cancelarSignificaPagar(event.text)) {
     const ordP = await tienePedidoVivo(db, contactId);
     if (ordP && await responderComoPagar(db, channelId, contactId, ordP)) return;
     // Sin pedido o sin métodos configurados: sigue la conversación normal.
@@ -4216,7 +4221,10 @@ function sinPreguntaDeRelleno(texto: string): string {
 const RE_PAGO_DADO_POR_RECIBIDO =
   /[^.!?…¿¡\n\p{Extended_Pictographic}]*\b(?:(?:ya\s+)?(?:lo|la|los)\s+recib[ií](?![\p{L}\p{N}])|recib[ií]\s+(?:tu|el|la|su)\s+(?:pago|adelanto|yape|plin|transferencia|dep[oó]sito)|(?:pago|adelanto|yape|plin)\s+(?:recibido|confirmado|validado|verificado)|ya\s+(?:me\s+)?lleg[oó]\s+(?:tu|el)\s+(?:pago|yape|plin|adelanto)|(?:ya\s+)?(?:est[aá]|qued[oó])\s+(?:confirmado|validado|registrado|verificado))(?![\p{L}\p{N}])[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 const RE_DICE_QUE_PAGO =
-  /\b(ya (te |le |les )?(yape[eéo]|yapi[eé]|plin[eé]e?|plineo|deposit[eéo]|transfer[ií]|transfiero|pagu[eé]|pague|hice (el|la|mi) (yape|pago|dep[oó]sito|transferencia|plin))|(acabo|acabamos) de (yapear|pagar|depositar|transferir|plinear|hacer (el|la) (yape|pago|transferencia|dep[oó]sito))|reci[eé]n (te )?(yape[eé]|pagu[eé]|deposit[eé]|transfer[ií])|ya (te |le )?(mand[eé]|hice) (el|la|mi) (yape|pago|transferencia|dep[oó]sito)|ya est[aá] (pagado|yapeado|depositado|transferido)|ya (lo |la )?pagu[eé])\b/i;
+  // 🇵🇪 «ya cancelé (los 20)» = ya PAGUÉ. Medido (P-pcancelepago-1, 2026-09-18): con el pedido
+  // esperando el adelanto, «ya cancelé los 20» recibió «¡Claro! Para cancelar el adelanto de
+  // S/20: Yape…» — le mandó el número otra vez en vez de pedirle la captura.
+  /\b(ya (te |le |les )?(yape[eéo]|yapi[eé]|plin[eé]e?|plineo|deposit[eéo]|transfer[ií]|transfiero|pagu[eé]|pague|cancel[eé]|hice (el|la|mi) (yape|pago|dep[oó]sito|transferencia|plin))|(acabo|acabamos) de (yapear|pagar|depositar|transferir|plinear|hacer (el|la) (yape|pago|transferencia|dep[oó]sito))|reci[eé]n (te )?(yape[eé]|pagu[eé]|deposit[eé]|transfer[ií])|ya (te |le )?(mand[eé]|hice) (el|la|mi) (yape|pago|transferencia|dep[oó]sito)|ya est[aá] (pagado|yapeado|depositado|transferido)|ya (lo |la )?pagu[eé])\b/i;
 
 // 🧾 LA POLÍTICA INVENTADA. «Por ser un producto digital no hay devoluciones ni reembolsos»,
 // «no podemos cancelar», «no está diseñada para Google Sheets»: frases que NADIE escribió en
@@ -9474,6 +9482,10 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   await deliverMessage(db, channelId, contactId,
     `✅ Listo, actualicé tu pedido — ${cambios.join(" · ")}.` +
     (sh.distrito_por_confirmar ? " El distrito de esa dirección lo confirma una persona del equipo antes de enviarlo, por si hay que ajustar algo te escribe." : "") +
+    // Sede que no está en el padrón («la sede de la plaza de armas», P-psedeinvent-1): se guardó
+    // por confirmar, y el acuse lo dice — «actualicé tu pedido → sede: la plaza de armas» a
+    // secas sonaba a que esa oficina existe.
+    (sh.sede_por_confirmar && cambios.some((c) => /sede/i.test(c)) ? " Esa oficina la confirma una persona del equipo antes de despachar, por si hay que ajustarla te escribe." : "") +
     " Cualquier otra cosa me avisas. 🙌").catch(() => {});
   return true;
 }
