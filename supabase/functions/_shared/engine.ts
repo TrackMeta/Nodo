@@ -2090,6 +2090,10 @@ function cancelarSignificaPagar(text: string): boolean {
   if (RE_PIDE_DEVOLUCION.test(String(text ?? ""))) return false;
   // "S/ 129", "129 soles" pegado a cancelar → está hablando de plata
   if (/\bcancel\w*\b[^.]{0,30}\b(s\/?\s*\d|\d+\s*(soles|lucas))/i.test(t)) return true;
+  // «pagarlo, ¿cómo lo cancelo?»: el verbo PAGAR en el mismo mensaje que «cancelar» desempata
+  // solo (medido 2026-09-18: caía al nodo IA, que inventó «para pagar el resto de S/89 me haces
+  // OTRO Yape» con el adelanto todavía sin pagar).
+  if (/\bcancel\w*/.test(t) && /\bpag(ar|arlo|arla|arte|o|ue|ues?)\b/.test(t)) return true;
   if (CANCELAR_ES_PAGO.some((p) => {
     const n = limpiaOpt(p);
     return n && new RegExp(`(^|\\s)${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\s|$)`).test(t);
