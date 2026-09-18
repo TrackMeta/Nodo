@@ -2723,7 +2723,10 @@ async function generarFlujoFisico(flowId, N, E){
            "CÓMO VENDER (aplícalo con tacto, la venta manda):\n"+
            "· Habla en BENEFICIOS, no en características ('no te van a doler los pies' > 'suela de EVA').\n"+
            "· Ante una objeción ('está caro', 'lo pienso', 'no confío', '¿es original?'), NO te rindas ni discutas: reconoce, rebate con valor/garantía/prueba y reencamina al cierre. Si el producto tiene una sección de objeciones o FAQ, úsala.\n"+
-           "· CIERRE ASUMIDO: en vez de '¿lo quieres?', avanza dando por hecha la compra ('¿te lo mando hoy o mañana?', '¿a qué dirección te lo mando?').\n"+
+           // ⚠️ El ejemplo se copia tal cual (regla «el ejemplo del prompt pesa más»): con '¿a qué
+           // dirección te lo mando?' a secas, la IA le pedía DIRECCIÓN a un cliente de provincia
+           // que recoge en agencia Shalom (medido 2026-09-17). El ejemplo va por zona.
+           "· CIERRE ASUMIDO: en vez de '¿lo quieres?', avanza dando por hecha la compra ('¿te lo mando hoy o mañana?'; si es Lima '¿a qué dirección te lo mando?', si es provincia '¿en cuál sede de la agencia lo recoges?' — en provincia NUNCA pidas dirección).\n"+
            "· UNA sola cosa a la vez: un mensaje corto, una pregunta. Nada de listas largas ni interrogatorios.\n"+
            "· Usa la prueba social, la urgencia real (stock, regalo, envío incluido) y la multimedia SOLO si el conocimiento del producto te la dio. NUNCA inventes datos, precios, reseñas ni escasez.\n"+
            "Pregúntale a dónde se lo enviamos para saber cómo mandárselo. Pide los datos que falten de a uno, "+
