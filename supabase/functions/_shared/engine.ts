@@ -13963,6 +13963,22 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
                 `${c.clave}: "${val}" → se conserva "${String(ctx[c.clave] ?? "") || "(vacío)"}"`).catch(() => {});
               continue;
             }
+            // 🪪 El DNI tiene que estar ESCRITO por el cliente, entero y solo. Medido
+            // (P-pnodni-2, 2026-09-18): dio «Juan Perez 987654321» —sin DNI— y el extractor
+            // devolvió «98765432», o sea los 8 primeros dígitos de su CELULAR; el pedido nació
+            // con un DNI inventado y la agencia no le habría entregado el paquete. La regla del
+            // último mensaje (valorEnMensaje) no corre en la extracción de historial, y por ahí
+            // entró. Un DNI que solo existe dentro de un número más largo no es un DNI.
+            if (c.validar === "dni") {
+              const _d = String(val).replace(/\D/g, "");
+              const _suelto = new RegExp("(^|[^0-9])" + _d + "([^0-9]|$)").test(String(fuente ?? "").replace(/[\s.\-]/g, ""))
+                || new RegExp("(^|[^0-9])" + _d + "([^0-9]|$)").test(String(fuente ?? ""));
+              if (_d.length === 8 && !_suelto) {
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "🪪 DNI que el cliente no escribió",
+                  `El extractor devolvió ${_d}, que no aparece solo en sus mensajes (¿parte del celular?) — no se guarda`).catch(() => {});
+                continue;
+              }
+            }
             const v = validarDato(c, val, ctx);
             if (!v.ok) {
               // Dato inválido de verdad (ej. DNI de 7 dígitos): NO se guarda, y se
