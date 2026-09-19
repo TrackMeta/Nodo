@@ -16237,6 +16237,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // el motor (maybeDatosPago) justo después de su respuesta, siempre igual y bien armado.
     const pm = ctx.zona_entrega === "lima" ? [] : (info.ocr?.metodos ?? []).filter((m: any) => m && (m.app || m.numero || m.titular))
       .map((m: any) => "- " + String(m.app ?? "pago").trim());
+    // Se guardan los NOMBRES de los métodos para el guard de «¿se puede Plin?» (al emitir).
+    (run as any)._metodosPago = ((info.ocr?.metodos ?? []) as any[]).map((m) => String(m?.app ?? "").trim()).filter(Boolean);
     if (pm.length) {
       parts.push("## Formas de pago aceptadas\n" + [...new Set(pm)].join("\n") +
         "\n⛔ NO escribas tú el número ni el titular, ni siquiera si te los piden y ni aunque los veas " +
@@ -20067,6 +20069,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // media pregunta) no se puede explicar leyendo el chat: son veinte guards y ninguno
       // deja el original a la vista. Es un evento por turno retocado, y solo cuando de
       // verdad cambió el texto — pegar precios u oficinas no lo dispara.
+      // 💳 «¿Se puede Plin?» se contesta con un SÍ. Medido (P-pplin-1/2, 2026-09-18): «Piura, ¿se
+      // puede plin?» → «Claro, te llega por agencia Shalom… ¿cuántas unidades?» sin la palabra
+      // Plin en ninguna parte (y en la otra corrida, el pitch). Si el método que pregunta está
+      // entre los aceptados y la IA no lo nombró, el motor lo confirma delante.
+      if (op === "generar_texto") {
+        try {
+          const _mets: string[] = Array.isArray((run as any)._metodosPago) ? (run as any)._metodosPago : [];
+          const _li = normalize(String(ctx.last_input ?? ""));
+          const _pide = /\b(plin|yape|bcp|bbva|interbank|scotiabank|transferencia|deposito)\b/.exec(_li);
+          if (_mets.length && _pide && /\?|se puede|puedo|acepta|aceptan|reciben|sirve/.test(_li)
+              && !new RegExp("\\b" + _pide[1] + "\\b", "i").test(normalize(String(salida ?? "")))) {
+            const _hit = _mets.find((m) => normalize(m).includes(_pide![1]) || (_pide![1] === "transferencia" && /bcp|bbva|interbank|scotiabank|banco/i.test(m)) || (_pide![1] === "deposito" && /bcp|bbva|interbank|scotiabank|banco/i.test(m)));
+            if (_hit) {
+              salida = `Sí, puedes pagar con *${_hit}* 👍\n\n` + String(salida ?? "");
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "💳 Preguntó por un método de pago y la IA no lo confirmó",
+                `Se antepuso «Sí, puedes pagar con ${_hit}»`).catch(() => {});
+            }
+          }
+        } catch (_) { /* sin métodos legibles → nada */ }
+      }
       if (op === "generar_texto" && String(ctx.nombre_completo ?? "").trim()) {
         const _antesN = salida;
         salida = sinNombreComoLugar(String(salida ?? ""), String(ctx.nombre_completo));
