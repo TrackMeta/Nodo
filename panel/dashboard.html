@@ -339,7 +339,7 @@ function apartarOtrasMonedas(ordR){
 const otrasMonedasTxt=(otras)=>Object.entries(otras||{}).sort((a,b)=>b[1].n-a[1].n)
   .map(([c,k])=>`${k.n} pedido${k.n>1?"s":""} en ${c} (${(CUR_SYM[c]||c)+" "+k.cobrado.toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2})} cobrados)`).join(" · ");
 const avisoOtrasMonedas=(otras)=>Object.keys(otras||{}).length
-  ? `<div style="grid-column:1/-1;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">${icon("alert")} ${esc(otrasMonedasTxt(otras))} <b>no entran</b> en estos números: el negocio ahora factura en <b>${esc(CUR)}</b> y no hay cómo convertirlos sin inventar una tasa. Los ves, con su moneda, en Compras y Pedidos.</div>`
+  ? `<div style="grid-column:1/-1;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">${icon("alert")} ${esc(otrasMonedasTxt(otras))} <b>${Object.values(otras).reduce((a,k)=>a+k.n,0)>1?"no entran":"no entra"}</b> en estos números: el negocio ahora factura en <b>${esc(CUR)}</b> y no hay cómo convertirlos sin inventar una tasa. Los ves, con su moneda, en Compras y Pedidos.</div>`
   : "";
 // Versión corta (sin decimales) para el calendario de la Bitácora.
 // Ojo con el CERO NEGATIVO: Math.round(-0.21) da -0 y se imprime "S/ -0", que en el

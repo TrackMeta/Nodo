@@ -237,8 +237,10 @@ async function load(){
   // Pedidos en OTRA moneda (el negocio cambió de moneda y los viejos conservan la suya):
   // siguen contando para el embudo (etapas, recojos), pero NO se suman en la plata
   // («Plata en juego», flete perdido): S/ y US$ en un mismo total es un número inventado.
+  // Solo pedidos de contactos que están en el embudo (los de prueba ya quedaron fuera de `contacts`).
   st.otrasMonedas={};
-  (oR.data||[]).forEach(o=>{ const c=String(o.currency||"PEN").toUpperCase(); if(c===CUR) return; const k=st.otrasMonedas[c]||(st.otrasMonedas[c]={n:0,porCobrar:0}); k.n++; k.porCobrar+=O.porCobrar(o); });
+  { const _enEmbudo=new Set(st.contacts.map(c=>c.id));
+    (oR.data||[]).forEach(o=>{ if(!_enEmbudo.has(o.contact_id)) return; const c=String(o.currency||"PEN").toUpperCase(); if(c===CUR) return; const k=st.otrasMonedas[c]||(st.otrasMonedas[c]={n:0,porCobrar:0}); k.n++; k.porCobrar+=O.porCobrar(o); }); }
   // Zona (Lima/Provincia) por contacto: el bot setea el campo zona_entrega TEMPRANO
   // (apenas dice de dónde es, antes del pedido). Así el split de Físico es limpio.
   st.zonaMap={};
@@ -436,7 +438,7 @@ function renderPlata(cs){
   let porCobrar=0, conPed=0;
   confirmados.forEach(c=>{ const ords=st.ordersBy[c.id]||[]; let s=0; ords.forEach(o=>{ if(!enMoneda(o)) return; s+=O.porCobrar(o); }); if(s>0){ porCobrar+=s; conPed++; } });
   const otras=Object.entries(st.otrasMonedas||{}).filter(([,k])=>k.porCobrar>0);
-  const avisoOtras=otras.length?`<div class="plata" style="margin-top:10px;border-color:var(--amber,#f59e0b);background:rgba(245,158,11,.08)"><span style="font-size:17px">${icon("alert")}</span><div>${otras.map(([c,k])=>`<b>${k.n}</b> pedido${k.n>1?"s":""} en <b>${c}</b> (${(CUR_SYM[c]||c)+" "+Math.round(k.porCobrar).toLocaleString("es-PE")} por cobrar)`).join(" · ")} quedan fuera de esta suma: el negocio ahora factura en <b>${CUR}</b>. Los ves con su moneda en Pedidos.</div></div>`:"";
+  const avisoOtras=otras.length?`<div class="plata" style="margin-top:10px;border-color:var(--amber,#f59e0b);background:rgba(245,158,11,.08)"><span style="font-size:17px">${icon("alert")}</span><div>${otras.map(([c,k])=>`<b>${k.n}</b> pedido${k.n>1?"s":""} en <b>${c}</b> (${(CUR_SYM[c]||c)+" "+Math.round(k.porCobrar).toLocaleString("es-PE")} por cobrar)`).join(" · ")} ${otras.reduce((a,[,k])=>a+k.n,0)>1?"quedan":"queda"} fuera de esta suma: el negocio ahora factura en <b>${CUR}</b>. Los ves con su moneda en Pedidos.</div></div>`:"";
   if(porCobrar<=0){ el.innerHTML=avisoOtras; return; }
   el.innerHTML=`<div class="plata"><span style="font-size:17px">${icon("dollar")}</span><div>Plata en juego: <span class="pv">${money(porCobrar)}</span> comprometidos por <b>${conPed}</b> confirmado(s) que todavía no pagan el saldo. Ciérralos en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</div></div>`;
 }
