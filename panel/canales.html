@@ -133,7 +133,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, askChoice, SUPABASE_URL } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, askChoice, SUPABASE_URL, updateChannel } from "./shell.js";
 const WEBHOOK_URL = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channel:{}, secrets:{} };
@@ -323,7 +323,7 @@ function renderWA(){
       if(fresh&&fresh.ia_router&&typeof fresh.ia_router==="object") actual=fresh.ia_router;
     }catch(_){ /* sin lo fresco, se usa lo que hay en pantalla */ }
     const ir={ ...actual, solo_anuncios:on };
-    const { error }=await supa.from("channels").update({ ia_router:ir }).eq("id",st.channelId);
+    const { error }=await updateChannel(st.channelId, { ia_router:ir });
     if(error){ toast(error.message,true); return; }
     sw.classList.toggle("on",on); sw.setAttribute("aria-checked",on?"true":"false");
     st.channel.ia_router=ir;

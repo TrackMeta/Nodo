@@ -80,7 +80,7 @@
 <div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, confirmDialog, askChoice, enTrozos, pageAll } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, confirmDialog, askChoice, enTrozos, pageAll, updateChannel } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], imgs:{}, dudas:{}, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -541,7 +541,7 @@ async function ofrecerGuardarFraude(o,tipo){
     const fraudes = ej.filter(e=>e&&e.tipo==="fraude");
     if(fraudes.length>=5){ const drop=fraudes[0]; nuevos=ej.filter(e=>e!==drop); } // tope 5, dropea el más viejo
     nuevos=[...nuevos, { url:img, tipo:"fraude" }];
-    const { error } = await supa.from("channels").update({ ocr_config:{ ...ocr, ejemplos:nuevos } }).eq("id",st.channelId);
+    const { error } = await updateChannel(st.channelId, { ocr_config:{ ...ocr, ejemplos:nuevos } });
     if(error){ toast("No se pudo guardar el ejemplo",true); return; }
     toast("Guardado como ejemplo de fraude — el validador aprenderá de esto");
   }catch(_){}

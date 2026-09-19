@@ -149,7 +149,7 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, icon, pageAll, factorAds, getUsdRate, toast } from "./shell.js";
+import { supa, getChannel, mountShell, icon, pageAll, factorAds, getUsdRate, toast, updateChannel } from "./shell.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, startOfDayTZ as startOfDayLima, endOfDayTZ as endOfDayLima, ymdTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -482,7 +482,7 @@ function wireVentana(){
   b.onclick=async()=>{
     const v=Number($("tarifaMsg").value); const val=v>0?+v.toFixed(6):null;
     b.disabled=true;
-    const {error}=await supa.from("channels").update({ tarifa_msg_usd:val }).eq("id",st.channelId);
+    const {error}=await updateChannel(st.channelId, { tarifa_msg_usd:val });
     b.disabled=false;
     if(error){ toast(/tarifa_msg_usd/.test(error.message)?"Falta aplicar la migración 0092 (tarifa por mensaje)":error.message,true); return; }
     st.tarifaMsg=val; toast(val?"Tarifa guardada":"Tarifa borrada: solo conteos"); await reload();

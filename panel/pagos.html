@@ -62,7 +62,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon } from "./shell.js";
+import { supa, mountShell, toast, icon, updateChannel } from "./shell.js";
 import { attachVarPicker } from "./var-picker.js";
 const $=(id)=>document.getElementById(id);
 const IC={
@@ -477,7 +477,7 @@ function render(b){
       const base=(fresh&&fresh.pedidos_config&&typeof fresh.pedidos_config==="object")?fresh.pedidos_config:null;
       if(base){ if(base.humano) p.humano=base.humano; if(base.postventa) p.postventa=base.postventa; }
     }catch(_){}
-    const { error }=await supa.from("channels").update({ pedidos_config:p }).eq("id",st.channelId);
+    const { error }=await updateChannel(st.channelId, { pedidos_config:p });
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
     st.channel.pedidos_config=p; toast("Pagos y avisos guardado");

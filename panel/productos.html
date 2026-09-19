@@ -248,7 +248,7 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
@@ -1649,7 +1649,7 @@ async function renderRemarketing(host){
     rm.desde=$("hrDesde")?.value||rm.desde; rm.hasta=$("hrHasta")?.value||rm.hasta;
     if(rm.activo && rm.desde && rm.hasta && rm.hasta<=rm.desde){ toast("La hora final debe ser mayor a la inicial",true); return; }
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-    const { error }=await supa.from("channels").update({ remarketing:rm }).eq("id",st.channelId);
+    const { error }=await updateChannel(st.channelId, { remarketing:rm });
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/remarketing|column/.test(error.message)?"Falta aplicar la migración 0031":error.message,true); return; }
     toast("Horario guardado");
