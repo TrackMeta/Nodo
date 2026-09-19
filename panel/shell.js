@@ -507,6 +507,27 @@ export function refreshUserChip(info) {
 // Un bot es un `channels` con su propia bandeja, contactos, flujos,
 // productos, configuración y pixel. Solo `nombre` es obligatorio; el
 // número de WhatsApp/pixel se conectan luego en Canales.
+// 👋 Bienvenida de la cuenta vacía: sin bots no hay nada que mirar en ninguna sección, así
+// que se tapa la pantalla con el único paso que corresponde. No se puede cerrar «por error»
+// (no hay nada detrás); se va sola en cuanto el bot existe, porque crear recarga la página.
+function mostrarPrimerBot() {
+  if (document.getElementById("nodo-primerbot")) return;
+  const back = document.createElement("div");
+  back.id = "nodo-primerbot"; back.className = "nodo-modal-back";
+  back.innerHTML = `
+    <div class="nodo-modal" role="dialog" aria-modal="true" aria-label="Crea tu primer bot">
+      <h3>Empecemos: crea tu primer bot 🤖</h3>
+      <p>Un <b>bot</b> es tu negocio dentro de Nodo: su bandeja, sus productos, sus pedidos y su
+      número de WhatsApp. Hasta que crees uno, las secciones se ven vacías porque todavía no hay
+      de qué llenarlas.</p>
+      <div class="nb-acts">
+        <button class="nb-btn primary" id="pbCrear" type="button">Crear mi primer bot</button>
+      </div>
+    </div>`;
+  document.body.appendChild(back);
+  back.querySelector("#pbCrear").onclick = () => { back.remove(); openCreateBot(); };
+}
+
 function openCreateBot() {
   if (document.getElementById("nb-modal")) return;
   const back = document.createElement("div");
@@ -1182,6 +1203,12 @@ export async function mountShell({ active } = {}) {
   // date-range.js y las pantallas la usen sin tener que consultar cada una por su lado.
   setTZ(S.channels.find((c) => c.id === saved)?.timezone);
   S.loaded = true;
+  // 👋 PRIMERA VEZ, SIN NINGÚN BOT. Una cuenta recién creada no tiene canales, así que
+  // `channelId` es null y TODAS las secciones consultan con `channel_id = null`: listas
+  // vacías, tarjetas en cero y ni una palabra que explique qué pasa. El único camino para
+  // arrancar estaba escondido dentro del selector de bots, arriba a la izquierda. Se le
+  // dice, una sola vez y sobre cualquier pantalla, qué tiene que hacer.
+  if (!S.channels.length) mostrarPrimerBot();
 
   // Selector de bot personalizado (con logos + "Crear nuevo bot")
   const escBot = (s) => (s ?? "").toString().replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
