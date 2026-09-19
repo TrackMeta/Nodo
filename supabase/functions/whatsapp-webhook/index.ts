@@ -327,7 +327,17 @@ async function processInbound(
   if (!esReaccion) patch.ultimo_mensaje_cliente_at = tsCliente;
   // Los tipos que el motor NO procesa (reacción, tarjeta de contacto, no soportado) no deben
   // quedar como "lo último que dijo el cliente".
-  if (type !== "system") { patch.last_input = text; patch.last_input_type = type; }
+  // 🧾 Y el DOCUMENTO con mime de imagen o PDF cuenta como IMAGEN para el flujo. En Perú el
+  // Yape se comparte muchas veces como archivo/PDF desde la app del banco: más abajo el evento
+  // ya se arma como `image` con su referencia (para que el OCR lo lea), pero acá se guardaba el
+  // tipo crudo de Meta ("document") y la condición del flujo —«¿Mandó comprobante?» es
+  // `last_input_type == image`— daba FALSO: el comprobante nunca llegaba al validador y el bot
+  // le pedía «mándame la captura» a quien acababa de mandársela. La venta se quedaba ahí.
+  // Medido el 2026-09-19. El mensaje guardado conserva su tipo real (la burbuja sigue siendo
+  // un archivo); lo que cambia es solo lo que leen las condiciones.
+  const _docComoImagen = type === "document" &&
+    /^image\/|^application\/pdf$/i.test(String((content as any)?.mime_type ?? "")) && !!(content as any)?.media_id;
+  if (type !== "system") { patch.last_input = text; patch.last_input_type = _docComoImagen ? "image" : type; }
   // El nombre del perfil de WhatsApp NO va en el upsert: pisaba el que el dueño hubiera
   // puesto a mano. Uno renombra al contacto en el panel para reconocerlo ("Ana · mayorista",
   // o corrige "ana" por su nombre real) y al siguiente mensaje del cliente se revertía solo,

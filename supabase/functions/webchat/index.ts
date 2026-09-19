@@ -92,7 +92,12 @@ Deno.serve(async (req) => {
     {
       channel_id, wa_id: TEST_WA_ID, nombre: "Prueba (webchat)",
       last_input: _ubiTxt || media?.caption || text || buttonId || (mediaKind ? `[${mediaKind}]` : ""),
-      last_input_type: location ? "location" : (mediaKind ?? (buttonId ? "interactive" : "text")),
+      // Un documento con mime de imagen o PDF cuenta como IMAGEN para las condiciones del
+      // flujo (el evento ya se arma así para el OCR). Ver el mismo arreglo en whatsapp-webhook:
+      // guardar "document" dejaba el comprobante en PDF fuera del validador.
+      last_input_type: location ? "location"
+        : ((mediaKind === "document" && /^image\/|^application\/pdf$/i.test(String(media?.mime ?? ""))) ? "image"
+          : (mediaKind ?? (buttonId ? "interactive" : "text"))),
       ultimo_mensaje_at: new Date().toISOString(),
       ultimo_mensaje_cliente_at: new Date().toISOString(),
     },

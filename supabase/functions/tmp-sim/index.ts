@@ -46,7 +46,10 @@ Deno.serve(async (req) => {
     // el motor los trata como prueba y nunca sale nada por Meta.
     source: "sim",
     last_input: media?.caption ?? text ?? buttonId ?? (mediaKind ? `[${mediaKind}]` : ""),
-    last_input_type: mediaKind ?? (buttonId ? "interactive" : "text"),
+    // Igual que el webhook: el documento con mime de imagen o PDF cuenta como IMAGEN para las
+    // condiciones del flujo (si no, el comprobante en PDF nunca entra al validador).
+    last_input_type: ((mediaKind === "document" && /^image\/|^application\/pdf$/i.test(String(media?.mime ?? ""))) ? "image"
+      : (mediaKind ?? (buttonId ? "interactive" : "text"))),
     ...(ad_id ? { ad_id } : {}),
     ultimo_mensaje_at: new Date().toISOString(), ultimo_mensaje_cliente_at: new Date().toISOString(),
   }, { onConflict: "channel_id,wa_id" }).select("id,bot_activo,bloqueado").single();
@@ -100,8 +103,18 @@ Deno.serve(async (req) => {
   try {
     // `msgTs` como el webhook: sin él, el sello anti-doble-respuesta no actúa en las regresiones.
     const msgTs = String((msgRow as any)?.ts ?? new Date().toISOString());
+    // 🪞 El evento tiene que salir IGUAL que el del webhook, o el banco de pruebas mide otro
+    // producto. Dos divergencias que costaron caro (2026-09-19):
+    //  · un DOCUMENTO con mime de imagen o PDF (el Yape mandado como archivo, común en Perú)
+    //    el webhook lo entrega como `image` CON referencia para que el OCR lo lea; acá iba
+    //    como `document` sin referencia → el camino del comprobante en PDF no se podía probar.
+    //  · un STICKER el webhook lo guarda y NO despierta al bot (si no, sale un segundo
+    //    saludo); acá sí corría el motor, o sea el simulador contestaba donde el real calla.
+    const esDocLeible = mediaKind === "document" && /^image\/|^application\/pdf$/i.test(String(media?.mime ?? ""));
+    if (mediaKind === "sticker") return json({ ok: true, contact_id: contactId, sin_motor: "sticker" });
+    const kindEngine = esDocLeible ? "image" : mediaKind;
     const event = buttonId ? { type: "button" as const, buttonId, title: text ?? buttonId }
-      : { type: "message" as const, text: media?.caption ?? text ?? "", msgType: mediaKind ?? "text", msgTs, mediaRef: (mediaKind === "image" || mediaKind === "audio") ? media!.url : undefined };
+      : { type: "message" as const, text: media?.caption ?? text ?? "", msgType: kindEngine ?? "text", msgTs, mediaRef: (kindEngine === "image" || kindEngine === "audio") ? media!.url : undefined };
     await runEngine(db, channel_id, contactId, event);
   } catch (e) { console.error("[tmp-sim] engine error:", e); return json({ error: "engine_error", detalle: String(e) }, 500); }
   return json({ ok: true, contact_id: contactId });

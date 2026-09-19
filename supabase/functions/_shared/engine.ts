@@ -4158,6 +4158,37 @@ function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
   return unico ? "¿La quieres? 🙂" : "¿Cuál de las dos prefieres?";
 }
 
+// 🧾❌ LA VALIDACIÓN QUE NUNCA PASÓ. Cuando entra un archivo que el motor NO puede abrir
+// (un PDF por un camino sin OCR, un .docx, un video de la pantalla), la IA lo toma por el
+// comprobante y contesta «¡Listo, ya validé la captura! En breve te llegará el link» — y no
+// hay pedido, ni pago validado, ni link. El cliente se sienta a esperar un producto que
+// nadie le va a mandar, creyendo que ya está pagado, y reclama recién al día siguiente.
+// Medido en la tanda de medios M9 (2026-09-19): 4 de 8 chats con archivo adjunto, uno de
+// ellos con una COTIZACIÓN como «comprobante». La regla de siempre: si el motor no lo hizo,
+// la IA no lo puede decir (ver patrón motor-calla / IA-promete).
+// Se corta DESDE el verbo hasta el fin de la frase, nunca hacia atrás.
+const RE_DICE_QUE_VALIDO =
+  /(?:\b(?:ya|listo|perfecto|genial)[,!]?\s+)?\b(?:valid[eé]|verifiqu[eé]|confirm[eé]|revis[eé]|recib[ií]\s+y\s+valid[eé])\b[^.!?…\n\p{Extended_Pictographic}]*\b(?:pago|captura|comprobante|yape|plin|dep[oó]sito|transferencia|abono)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
+const RE_DICE_QUE_ENVIO =
+  /(?:\b(?:ya|listo|perfecto)[,!]?\s+)?\b(?:te\s+(?:envi[eé]|mand[eé]|pas[eé]|dej[eé])|en\s+breve\s+te\s+(?:llega|llegar[aá]|env[ií]o|mando)|ya\s+te\s+(?:lleg[oó]|va)\b)[^.!?…\n\p{Extended_Pictographic}]*\b(?:link|enlace|acceso|archivo|plantilla|curso|protocolo|descarga)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
+// Se usa SOLO en el turno que disparó un archivo ilegible: en ese turno el motor no validó
+// nada ni entregó nada (eso vive en sus propios nodos), así que cualquier frase que lo
+// afirme es invento. Si al quitarla no queda mensaje, se pone la frase honesta.
+function sinValidacionInventada(texto: string): string {
+  const t = String(texto ?? "");
+  if (!t.trim()) return texto;
+  RE_DICE_QUE_VALIDO.lastIndex = 0; RE_DICE_QUE_ENVIO.lastIndex = 0;
+  if (!RE_DICE_QUE_VALIDO.test(t) && !RE_DICE_QUE_ENVIO.test(t)) return texto;
+  RE_DICE_QUE_VALIDO.lastIndex = 0; RE_DICE_QUE_ENVIO.lastIndex = 0;
+  // Una frase con link de verdad se respeta: ahí el link SÍ está delante del cliente.
+  const limpio = t.replace(RE_DICE_QUE_VALIDO, (m) => (/https?:/i.test(m) ? m : " "))
+    .replace(RE_DICE_QUE_ENVIO, (m) => (/https?:/i.test(m) ? m : " "))
+    .replace(/[ \t]{2,}/g, " ").replace(/^[\s👇]+/u, "").trim();
+  return limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 12
+    ? conMayusculaInicial(limpio)
+    : "Me llegó tu archivo, pero no puedo abrirlo por acá 🙈 ¿Me mandas la captura de pantalla como foto?";
+}
+
 // 🗣️ LA PRUEBA SOCIAL INVENTADA. Medido: el cliente preguntó «¿y el producto es bueno?» y el
 // bot contestó «Muchos clientes en *Chiclayo* ya lo usan y quedan satisfechos». La ficha no
 // menciona clientes, ni reseñas, ni satisfacción — y la ciudad la sacó de la conversación,
@@ -17673,6 +17704,25 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // Dermachem puede ayudar a aclarar» —un diagnóstico inventado sobre la piel de una
     // persona—, y a otra, con una imagen que no tenía nada que ver, «¿me ayudas con una
     // foto para ver qué tipo de mancha tienes?». Lo honesto: acusar recibo y preguntar.
+    // 📄 EL ARCHIVO QUE NADIE PUEDE ABRIR. Un PDF, un .docx, un video de la pantalla: llega
+    // como «[document]» / «[video]» y el motor NO lo mira (solo la FOTO pasa por el OCR). Sin
+    // decírselo, la IA da por hecho que era el comprobante y contesta «¡Listo, ya validé la
+    // captura! En breve te llegará el link» — y no hay pedido, ni validación, ni link: el
+    // cliente se queda esperando un producto que nadie le va a mandar, convencido de que ya
+    // está pagado. Medido en la tanda de medios M9 (2026-09-19): 4 de 8 chats con un archivo
+    // adjunto salieron con esa frase, incluido uno donde el archivo era una COTIZACIÓN.
+    // (En WhatsApp real el PDF y el documento con mime de imagen SÍ entran como foto al OCR;
+    // esto cubre el resto: .docx, .xlsx, un video, o el PDF que el celular manda con mime raro.)
+    if (["document", "video", "sticker", "contacts", "unknown"].includes(String(ctx.last_input_type ?? ""))) {
+      parts.push("## Te mandó un ARCHIVO que no puedes abrir\n" +
+        "Llegó un archivo suyo (documento, video o similar) y tú NO lo ves ni lo puedes leer. " +
+        "⛔ NUNCA digas que lo revisaste, que «validaste» el pago, que el comprobante está conforme, " +
+        "ni que ya le enviaste el acceso, el link o el archivo: nada de eso ocurrió. " +
+        "⛔ Tampoco describas lo que trae.\n" +
+        "Lo que haces: acusas recibo en una línea y le pides que te lo mande de la forma que sí sirve — " +
+        "si estaban en el pago, la CAPTURA DE PANTALLA como foto; si no, que te lo cuente con sus palabras. " +
+        "Una sola pregunta, sin trabar la conversación.");
+    }
     if (String(ctx.last_input_type ?? "") === "image") {
       parts.push("## Te mandó una FOTO y tú NO puedes verla\n" +
         "Llegó una imagen suya, pero tú no la ves: no tienes ni idea de qué hay ahí. " +
@@ -19056,6 +19106,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         if (salida !== _antesPitch) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Se quitó el pitch de una respuesta que no lo pedía",
             "Preguntó por el bot, un descuento o dijo cuántas lleva; el párrafo del producto sobraba").catch(() => {});
+        }
+      }
+      // 🧾❌ El turno lo disparó un archivo que el motor no puede abrir: nada se validó y nada
+      // se entregó, así que la IA no puede decir que sí. Ver sinValidacionInventada.
+      if (op === "generar_texto" && ["document", "video", "sticker", "contacts", "unknown"].includes(String(ctx.last_input_type ?? ""))) {
+        const _antesVal = salida;
+        salida = sinValidacionInventada(salida);
+        if (salida !== _antesVal) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🧾 Dijo que validó un pago que nadie validó",
+            `Llegó un archivo ilegible (${String(ctx.last_input_type)}) y la respuesta lo daba por validado o entregado: «${_antesVal.slice(0, 140)}»`).catch(() => {});
         }
       }
       // El recorte de "¿te paso el Yape?" SOLO cuando los datos van a salir de verdad
