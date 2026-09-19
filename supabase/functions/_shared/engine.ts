@@ -19204,7 +19204,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 const _cuerpo = _entrada.replace(/[👇:\s]+$/u, "");
                 const _hay = (s: string) => s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20;
                 let _mejor = "";
-                for (const m of _cuerpo.matchAll(/[.!?…]|\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*/gu)) {
+                for (const m of _cuerpo.matchAll(/[!?…]|\.(?!\d)|\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*/gu)) {
                   const _cab = _cuerpo.slice(0, (m.index ?? 0) + m[0].length).trim();
                   if (_hay(_cab)) _mejor = _cab;
                 }
@@ -19222,7 +19222,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               if (/[?¿]/.test(_entrada)) {
                 const _hay = (s: string) => s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20;
                 const _puntos: number[] = [];
-                for (const m of _entrada.matchAll(/[.!?…]|\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*/gu)) {
+                // ⚠️ El punto de un DECIMAL no es fin de frase: «láminas de hasta 1.5 mm» se
+                // cortaba en «hasta 1.» (P5-pchiclayosedes-1, 2026-09-18).
+                for (const m of _entrada.matchAll(/[!?…]|\.(?!\d)|\p{Extended_Pictographic}(?:️|‍\p{Extended_Pictographic})*/gu)) {
                   _puntos.push((m.index ?? 0) + m[0].length);
                 }
                 for (const m of _entrada.matchAll(/¿/g)) _puntos.push(m.index ?? 0);
