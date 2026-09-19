@@ -8960,8 +8960,11 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   {
     const _op = normOperacion(String(parsed?.operacion ?? ""));
     if (_op.length >= 4) {
+      // Incluye los bots hermanos que cobran al MISMO número (ver canalesQueCobranIgual):
+      // si no, la misma captura se podía usar una vez en cada bot de la cuenta.
       const { data: yaCl } = await db.from("payment_operations")
-        .select("contact_id, order_id").eq("channel_id", channelId).eq("operacion", _op).maybeSingle();
+        .select("contact_id, order_id, channel_id")
+        .in("channel_id", await canalesQueCobranIgual(db, channelId)).eq("operacion", _op).limit(1).maybeSingle();
       if (yaCl) {
         let _dueno = (yaCl as any).contact_id as string | null;
         // Reclamada antes de la 0085 (sin contacto): se deduce por el pedido.
@@ -15548,11 +15551,39 @@ function enTitulo(txt: string): string {
 function normOperacion(op: string): string {
   return String(op ?? "").toUpperCase().replace(/\s+/g, "").trim();
 }
+// 💸 Los bots HERMANOS que cobran al MISMO número. El candado vive en (channel_id, operacion),
+// así que la misma captura de Yape servía UNA VEZ EN CADA BOT: la cuenta de Rodrigo tiene dos
+// canales con el mismo Yape (977533352), o sea que un cliente podía pagar S/19 una vez y
+// llevarse el producto de los dos bots. Medido contra la configuración real el 2026-09-19.
+// No se amplía a TODA la cuenta a ciegas: dos bots con bancos distintos pueden tener el mismo
+// número de operación por pura coincidencia (8 dígitos) y se bloquearían pagos buenos. Solo
+// cuentan los canales que comparten al menos un NÚMERO de cobro con este.
+export const _hermanosCache = new Map<string, { ids: string[]; at: number }>();
+export async function canalesQueCobranIgual(db: SupabaseClient, channelId: string): Promise<string[]> {
+  const cache = _hermanosCache.get(channelId);
+  if (cache && Date.now() - cache.at < 5 * 60 * 1000) return cache.ids;
+  let ids = [channelId];
+  try {
+    const { data: yo } = await db.from("channels").select("account_id, ocr_config").eq("id", channelId).maybeSingle();
+    const nums = (m: any) => new Set((Array.isArray(m?.metodos) ? m.metodos : [])
+      .map((x: any) => String(x?.numero ?? "").replace(/\D/g, "")).filter((s: string) => s.length >= 6));
+    const mios = nums((yo as any)?.ocr_config);
+    if ((yo as any)?.account_id && mios.size) {
+      const { data: hs } = await db.from("channels").select("id, ocr_config")
+        .eq("account_id", (yo as any).account_id).neq("id", channelId);
+      for (const h of hs ?? []) {
+        for (const n of nums((h as any).ocr_config)) { if (mios.has(n)) { ids.push((h as any).id); break; } }
+      }
+    }
+  } catch (_) { /* ante la duda, solo este canal (nunca menos candado del que había) */ }
+  _hermanosCache.set(channelId, { ids, at: Date.now() });
+  return ids;
+}
 async function operacionYaUsada(db: SupabaseClient, channelId: string, op: string): Promise<boolean> {
   const n = normOperacion(op);
   if (n.length < 4) return false; // muy corto/ilegible → no bloquea (lo juzga la IA)
   const { data } = await db.from("payment_operations").select("id")
-    .eq("channel_id", channelId).eq("operacion", n).maybeSingle();
+    .in("channel_id", await canalesQueCobranIgual(db, channelId)).eq("operacion", n).limit(1).maybeSingle();
   return !!data;
 }
 export async function registrarOperacion(db: SupabaseClient, channelId: string, op: string, orderId: string | null, contexto: string): Promise<void> {
@@ -15586,6 +15617,11 @@ export async function registrarOperacion(db: SupabaseClient, channelId: string, 
 export async function reclamarOperacion(db: SupabaseClient, channelId: string, op: string, orderId: string | null, contexto: string, contactId?: string | null): Promise<boolean> {
   const n = normOperacion(op);
   if (n.length < 4) return true;
+  // 💸 Primero los bots HERMANOS que cobran al mismo número: el índice único solo serializa
+  // dentro del canal, así que sin esto la misma captura se reclamaba una vez en cada bot de
+  // la cuenta y pagaba dos productos (ver canalesQueCobranIgual). Es un check antes del
+  // insert: la carrera dentro del MISMO canal la sigue cerrando el índice.
+  if (await operacionYaUsada(db, channelId, n)) return false;
   const { data, error } = await db.from("payment_operations")
     .insert({ channel_id: channelId, operacion: n, order_id: orderId, contexto, contact_id: contactId ?? null })
     .select("id").maybeSingle();

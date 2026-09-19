@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, enviarClaveRecojo, mensajeEstadoDefault, demoraProvincia, saldoTrasAdelanto, avisarPagadoTotal, ventana24hAbierta, avisarEnvioFallido } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, canalesQueCobranIgual, enviarClaveRecojo, mensajeEstadoDefault, demoraProvincia, saldoTrasAdelanto, avisarPagadoTotal, ventana24hAbierta, avisarEnvioFallido } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 import { EST } from "../_shared/order-stats.ts";
@@ -185,8 +185,13 @@ Deno.serve(async (req) => {
     // ocurrió.
     notaSinOperacion = _aprobandoPago && opN.length < 4 && !!(order as any).contact_id;
     if (opN.length >= 4) {
+      // 💸 También los bots HERMANOS que cobran al MISMO número: el ledger se llevaba por
+      // canal, así que un Yape ya acreditado en el otro bot de la cuenta se podía aprobar
+      // acá a mano y un solo pago pagaba dos ventas (los dos canales de Rodrigo comparten
+      // el 977533352). Ver canalesQueCobranIgual en engine.ts.
       const { data: prev } = await db.from("payment_operations").select("order_id, contact_id")
-        .eq("channel_id", (order as any).channel_id).eq("operacion", opN).maybeSingle();
+        .in("channel_id", await canalesQueCobranIgual(db, (order as any).channel_id))
+        .eq("operacion", opN).limit(1).maybeSingle();
       // Ya reclamada por OTRO pedido → reúso. Y si quedó con order_id null (el pago digital
       // principal se reclama ANTES de que exista el pedido, así que su fila no lleva order_id),
       // se compara por CONTACTO: la misma operación en manos de otro cliente es un reúso igual.
