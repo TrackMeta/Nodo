@@ -20071,6 +20071,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // media pregunta) no se puede explicar leyendo el chat: son veinte guards y ninguno
       // deja el original a la vista. Es un evento por turno retocado, y solo cuando de
       // verdad cambió el texto — pegar precios u oficinas no lo dispara.
+      // 💰 «¿Y cuánto cuesta?» dentro de un mensaje con varias preguntas se quedaba sin precio.
+      // Medido (D-mvarias-1, 2026-09-18): «sirve para construcción? viene con video? y cuánto
+      // cuesta?» → contestó las dos primeras y el precio no. En digital con precio conocido, si
+      // preguntó el precio y la respuesta no trae ningún «S/», el motor lo pone al final.
+      if (op === "generar_texto" && esDigital(ctx) && Number(ctx.precio) > 0
+          && /\b(cu[aá]nto (cuesta|vale|est[aá]|es|sale|cobran)|precio|cu[aá]nto\s*\?)/i.test(String(ctx.last_input ?? ""))
+          && !/s\/\s*\d|\d+\s*soles/i.test(String(salida ?? ""))) {
+        salida = String(salida ?? "").trim() + `\n\nCuesta *S/ ${Number(ctx.precio)}* 👌`;
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Preguntó el precio y la IA no lo dijo",
+          `Se agregó «Cuesta S/ ${Number(ctx.precio)}»`).catch(() => {});
+      }
       // 💳 «¿Se puede Plin?» se contesta con un SÍ. Medido (P-pplin-1/2, 2026-09-18): «Piura, ¿se
       // puede plin?» → «Claro, te llega por agencia Shalom… ¿cuántas unidades?» sin la palabra
       // Plin en ninguna parte (y en la otra corrida, el pitch). Si el método que pregunta está
