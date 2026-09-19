@@ -122,7 +122,9 @@ const PALETTE=[
 ];
 // Compatibilidad con colores viejos guardados por nombre.
 const NAMED={ blue:"#3b82f6",green:"#22c55e",amber:"#f59e0b",red:"#ef4444",purple:"#a855f7",teal:"#14b8a6",pink:"#ec4899",gray:"#8a97a8" };
-function hex(c){ if(!c) return PALETTE[0]; if(c[0]==="#") return c; return NAMED[c]||PALETTE[0]; }
+// Solo un hex de verdad entra al innerHTML: `color` es texto libre en la tabla (cualquier miembro
+// puede escribirlo por REST) y sin esta validación un valor con «"» rompía el atributo style.
+function hex(c){ if(!c) return PALETTE[0]; if(/^#[0-9a-f]{3,8}$/i.test(c)) return c; return NAMED[c]||PALETTE[0]; }
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function normHex(v){ v=(v||"").trim(); if(/^#?[0-9a-fA-F]{6}$/.test(v)) return (v[0]==="#"?v:"#"+v).toUpperCase(); if(/^#?[0-9a-fA-F]{3}$/.test(v)){ v=v.replace("#",""); return ("#"+v[0]+v[0]+v[1]+v[1]+v[2]+v[2]).toUpperCase(); } return null; }
 const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';

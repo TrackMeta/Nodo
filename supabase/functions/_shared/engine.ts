@@ -9327,6 +9327,22 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   // Santiago» se le resolvía la de Cusco y el guard de abajo le rechazaba un cambio legítimo.
   const _candsSede = nSede ? agenciasQueSuenanA(nSede) : [];
   const _ofiSede = _candsSede.find((a) => mismoDepartamentoQue(a, String(sh.sede ?? ""), String(sh.ciudad ?? ""))) ?? _candsSede[0] ?? null;
+  // 🚚 Con el paquete YA en camino, cualquier cambio de oficina se contesta con la verdad y lo
+  // ve una persona. Medido (V-despsede-1): «mejor mándalo a la sede de La Esperanza» con el
+  // pedido despachado cayó al nodo de IA, que prometió «te confirmo cuál queda… antes de
+  // enviar» —un envío que ya había salido.
+  if (nSede && yaSalio) {
+    const _d = enTitulo(String(sh.destino ?? sh.sede ?? sh.ciudad ?? "").trim().replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, ""));
+    await deliverMessage(db, channelId, contactId,
+      `Tu pedido ya salió${_d ? ` rumbo a *${_d}*` : ""}, así que cambiar la oficina ya no depende de mí. ` +
+      "Se lo paso al equipo para ver con la agencia si todavía se puede redirigir, y te confirman por acá. 🙏").catch(() => {});
+    await pasarAHumano(db, channelId, contactId,
+      `🚚 Quiere cambiar la OFICINA de recojo a «${nSede}» y el pedido YA SALIÓ (${(order as any).estado}). Verlo con el courier.`,
+      { aviso: false }).catch(() => {});
+    await logEvent(db, channelId, contactId, "nota", "🛡️ Cambio de sede con el pedido en camino",
+      `Pidió «${nSede}» — se le dijo que ya salió y lo ve una persona`).catch(() => {});
+    return true;
+  }
   if (nSede && _ofiSede && !mismoDepartamentoQue(_ofiSede, String(sh.sede ?? ""), String(sh.ciudad ?? ""))) {
     await logEvent(db, channelId, contactId, "nota", "🛡️ Sede de otro departamento",
       `"${nSede}" es de ${_ofiSede.d} y él es de ${sh.ciudad ?? "?"} — no se cambia`).catch(() => {});
@@ -14226,7 +14242,26 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
                 .not("estado", "in", `(${[...ORDER_FINAL, "saldo_pagado"].map((e) => `"${e}"`).join(",")})`)
                 .order("created_at", { ascending: false }).limit(1).maybeSingle();
               const sh = { ...(((ord as any)?.shipping) ?? {}) } as Record<string, any>;
-              if (ord && String(sh.zona ?? "").toLowerCase() === "provincia" && String(sh.sede ?? "") !== nuevaSede) {
+              // ⛔ Dos guardias que el OTRO camino (maybeCambioDatos) ya tenía y este no —la
+              // familia de siempre: dos sitios que escriben la sede y uno sin freno. Medido
+              // (V-despsede-1, 2026-09-19): con el pedido YA DESPACHADO a Wanchaq (Cusco), «mejor
+              // mándalo a la sede de La Esperanza» (Trujillo) fue rechazado por maybeCambioDatos
+              // («sede de otro departamento — no se cambia») y acto seguido este bloque escribió
+              // «sede de La Esperanza» en el pedido. Ni un pedido en camino ni una oficina de otro
+              // departamento se tocan acá.
+              const _yaSalioS = ESTADOS_DESPACHADO.has(String((ord as any)?.estado ?? ""));
+              let _otroDep = false;
+              try {
+                const _cands = agenciasQueSuenanA(nuevaSede);
+                const _ofi = _cands.find((a) => mismoDepartamentoQue(a, String(sh.sede ?? ""), String(sh.ciudad ?? ctx.ciudad ?? ""))) ?? _cands[0] ?? null;
+                _otroDep = !!(_ofi && !mismoDepartamentoQue(_ofi, String(sh.sede ?? ""), String(sh.ciudad ?? ctx.ciudad ?? "")));
+              } catch (_) { /* sin padrón → sin veto */ }
+              if (ord && (_yaSalioS || _otroDep)) {
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "🛡️ Sede NO cambiada en el pedido",
+                  _yaSalioS ? `El pedido ya salió (${(ord as any).estado}) — «${nuevaSede}» no se aplica` : `«${nuevaSede}» es de otro departamento`).catch(() => {});
+                // Y el dato del flujo vuelve a la sede real del pedido, o la IA sigue hablando de la nueva.
+                if (String(sh.sede ?? "").trim()) { ctx[sedeCampo.clave] = sh.sede; run.vars[sedeCampo.clave] = sh.sede; }
+              } else if (ord && String(sh.zona ?? "").toLowerCase() === "provincia" && String(sh.sede ?? "") !== nuevaSede) {
                 sh.sede = nuevaSede; sh.destino = nuevaSede;
                 const motivo = sedeImprecisa(nuevaSede, String(sh.ciudad ?? ctx.ciudad ?? ""));
                 if (motivo) sh.sede_por_confirmar = motivo; else delete sh.sede_por_confirmar;

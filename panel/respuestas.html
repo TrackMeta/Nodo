@@ -90,7 +90,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=13";
 let Fbar = null;
@@ -99,7 +99,7 @@ const st={ channelId:null, list:[], qr:null, folder:"__all", localFolders:new Se
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 // Paleta para identificar cada respuesta con un color (como Etiquetas).
 const PALETTE=["#2b7fff","#22c079","#f0a92b","#e2564a","#a855f7","#18b7be","#e264a8","#8a97a8","#ef4444","#f97316","#84cc16","#06b6d4"];
-function qrColor(c){ return c && /^#/.test(c) ? c : "#2b7fff"; }
+function qrColor(c){ return c && /^#[0-9a-f]{3,8}$/i.test(c) ? c : "#2b7fff"; }   // solo hex real: va a innerHTML
 // Sube un archivo y lo agrega a st.qr.media (multimedia que se envía con la
 // respuesta). Reusa la Edge Function media-upload.
 function pickQrMedia(kind, onDone){
@@ -123,6 +123,7 @@ function pickQrMedia(kind, onDone){
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"respuestas" });
+  guardUnsaved(".nodo-page"); // avisa si sales con una respuesta a medio editar (igual que Productos)
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; st.qr=null; showGrid(); load(); });
   $("addBtn").onclick=createQR;
@@ -203,7 +204,12 @@ function qrBubbles(qr){
   if(!bubs.length) bubs.push({text:""});
   return bubs;
 }
-async function openQR(id){ const { data }=await supa.from("quick_replies").select("*").eq("id",id).maybeSingle(); st.qr=data; st.qr.bubbles=qrBubbles(data); renderDetail(); showDetail(); }
+async function openQR(id){
+  const forChannel=st.channelId;   // anti-carrera: si cambiaste de bot mientras cargaba, no abre la del anterior
+  const { data }=await supa.from("quick_replies").select("*").eq("id",id).maybeSingle();
+  if(forChannel!==st.channelId || !data) return;
+  st.qr=data; st.qr.bubbles=qrBubbles(data); renderDetail(); showDetail();
+}
 function renderDetail(){
   const q=st.qr; if(!q) return;
   $("detail").innerHTML=`

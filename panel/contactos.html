@@ -221,7 +221,7 @@ const f={ q:"", source:"", sort:"activity", stages:new Set(), tags:new Set(), co
 const STAGE=Object.fromEntries(EMBUDO_STAGES.map(s=>[s.k,s]));
 const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"2-digit",year:"numeric" });
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
-function tagHex(c){ const N={blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8"}; if(!c) return "#2b7fff"; return c[0]==="#"?c:(N[c]||"#2b7fff"); }
+function tagHex(c){ const N={blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8"}; if(!c) return "#2b7fff"; return /^#[0-9a-f]{3,8}$/i.test(c)?c:(N[c]||"#2b7fff"); }   // solo hex real: va a innerHTML
 // Color estable del avatar a partir del nombre/número (como una lista de contactos).
 const AVA_COLORS=["#2b7fff","#22c079","#f0a92b","#e2564a","#9b6cf0","#18b7be","#e264a8","#e0803a","#6d8ea0","#7c8cf8"];
 function avaColor(s){ const str=String(s||"?"); let h=0; for(let i=0;i<str.length;i++) h=(h*31+str.charCodeAt(i))>>>0; return AVA_COLORS[h%AVA_COLORS.length]; }
@@ -537,9 +537,11 @@ async function setNoRemarketing(ids, val){
   // «Vuelve al remarketing» no reanudaba nada: la baja dejó sus secuencias en `cancelada` y el
   // scheduler solo procesa `activa` (y «Agregar a secuencia» ignora duplicados, así que la fila
   // cancelada bloqueaba el alta). Se reactivan desde el paso 0.
-  if(!val){ for(const trozo of enTrozos(ids)){ await supa.from("sequence_subscriptions").update({ estado:"activa", paso_actual:0, proximo_at:null, updated_at:new Date().toISOString() }).eq("channel_id",chNR).in("contact_id",trozo).eq("estado","cancelada").then(()=>{},()=>{}); } }
+  let fallaSeq=false;
+  if(!val){ for(const trozo of enTrozos(ids)){ const r=await supa.from("sequence_subscriptions").update({ estado:"activa", paso_actual:0, proximo_at:null, updated_at:new Date().toISOString() }).eq("channel_id",chNR).in("contact_id",trozo).eq("estado","cancelada"); if(r&&r.error) fallaSeq=true; } }
+  // Si reanudar las secuencias falló, se dice: antes el toast decía «vuelve al remarketing» igual.
   toast(val?`${ids.length>1?ids.length+" excluidos":"Excluido"} del remarketing`
-           :`${ids.length>1?ids.length+" reactivados":"Vuelve"} al remarketing`);
+           :(fallaSeq?`${ids.length>1?ids.length+" reactivados":"Reactivado"}, pero sus secuencias no se pudieron reanudar`:`${ids.length>1?ids.length+" reactivados":"Vuelve"} al remarketing`), fallaSeq);
   if(val) ids.forEach(id=>st.sel.delete(id));
   await load();
 }
@@ -582,12 +584,17 @@ async function saveContact(){
 async function borrarArchivosDe(ids, ch){
   try{
     const { data:{ session } }=await supa.auth.getSession();
-    const r=await fetch(`${SUPABASE_URL}/functions/v1/channel-config`,{ method:"POST",
-      headers:{ "Content-Type":"application/json", apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${session?.access_token||SUPABASE_ANON_KEY}` },
-      body:JSON.stringify({ action:"contact_files_delete", channel_id:ch, contact_ids:ids, modo:"todo" }) });
-    const o=await r.json().catch(()=>null);
-    if(!r.ok||!o||!o.ok) return " · sus archivos no se pudieron borrar";
-    return o.borrados?` · ${o.borrados} archivo(s) borrados`:"";
+    // El backend corta a 500 ids por llamada (y no avisa): se manda por trozos y se suma.
+    let borrados=0;
+    for(let i=0;i<ids.length;i+=500){
+      const r=await fetch(`${SUPABASE_URL}/functions/v1/channel-config`,{ method:"POST",
+        headers:{ "Content-Type":"application/json", apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${session?.access_token||SUPABASE_ANON_KEY}` },
+        body:JSON.stringify({ action:"contact_files_delete", channel_id:ch, contact_ids:ids.slice(i,i+500), modo:"todo" }) });
+      const o=await r.json().catch(()=>null);
+      if(!r.ok||!o||!o.ok) return " · sus archivos no se pudieron borrar";
+      borrados+=Number(o.borrados)||0;
+    }
+    return borrados?` · ${borrados} archivo(s) borrados`:"";
   }catch(_){ return " · sus archivos no se pudieron borrar"; }
 }
 async function removeContact(c){
@@ -753,7 +760,9 @@ async function importCsv(file){
   if(error){ toast(error.message,true); return; }
   // La fila de `conversations` es la que los hace visibles en la Bandeja: sin ella, una
   // campaña a 500 importados no dejaba hilo ni seguimiento hasta que cada uno respondiera.
-  if(ins&&ins.length){ for(const trozo of enTrozos(ins.map(x=>x.id))){ await supa.from("conversations").upsert(trozo.map(id=>({ channel_id:st.channelId, contact_id:id })),{ onConflict:"contact_id", ignoreDuplicates:true }).then(()=>{},()=>{}); } }
+  let sinHilo=0;
+  if(ins&&ins.length){ for(const trozo of enTrozos(ins.map(x=>x.id))){ const r=await supa.from("conversations").upsert(trozo.map(id=>({ channel_id:st.channelId, contact_id:id })),{ onConflict:"contact_id", ignoreDuplicates:true }); if(r&&r.error) sinHilo+=trozo.length; } }
+  if(sinHilo) toast(`${sinHilo} importado(s) quedaron sin hilo en la Bandeja (no se pudo crear su conversación)`,true);
   const nuevos=(ins||[]).length, repes=Math.max(0, rows.length-nuevos);
   const p=(n,a,b)=>n===1?a:b;
   const partes=[`${nuevos} ${p(nuevos,"contacto nuevo","contactos nuevos")}`];

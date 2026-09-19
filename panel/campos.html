@@ -69,7 +69,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
@@ -108,6 +108,7 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   $("plusIc").innerHTML=PLUS;
   const shell=await mountShell({ active:"campos" });
+  guardUnsaved(".nodo-page"); // los campos editados/borrados viven en memoria hasta «Guardar»
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); });
   $("addBtn").onclick=addField; $("saveBtn").onclick=save;

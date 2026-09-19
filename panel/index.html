@@ -1148,6 +1148,8 @@ async function sendBubblesInOrder(bubs){
   // 2ª de 3 fallaba (Meta rechazó, media mala), el modal se cerraba "en verde" como si todo
   // hubiera salido. Ahora el caller no cierra el modal ante una falla parcial.
   let allOk=true;
+  // Una respuesta rápida sin contenido «se enviaba» en verde sin mandar nada.
+  if(!(bubs||[]).some(b=>b.media_url||(b.text||"").trim())){ toast("Esta respuesta no tiene nada que enviar",true); return false; }
   for(const b of (bubs||[])){
     let ok;
     if(b.media_url){ ok=await sendStoredMedia({ media_kind:b.media_kind, media_url:b.media_url, mime:b.mime, filename:b.filename, caption:b.caption||"" }); }
