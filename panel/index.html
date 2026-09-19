@@ -1691,8 +1691,18 @@ async function actionHandler(a){
     logEvent(cid,"nota","Información del contacto borrada"); toast("Información borrada");
     loadContactPanel({ id:cid, nombre:state.contactName, wa_id:panelData.contact?.wa_id }); return; }
   if(a==="delchat"){ if(!await confirmDialog({title:"Eliminar chat",message:"¿Eliminar esta conversación y todos sus mensajes? No se puede deshacer.",confirmText:"Eliminar",danger:true})) return;
-    const { error:e1 }=await supa.from("messages").delete().eq("contact_id",cid); const { error:e2 }=await conv().delete().eq("contact_id",cid);
-    if(e1||e2){ toast("No se pudo eliminar el chat: "+((e1||e2).message),true); return; }
+    // 🔴 Bajo RLS un DELETE que no alcanza ninguna fila NO devuelve error: afecta 0 y listo.
+    // `messages` es solo-admin, así que a un OPERADOR se le borraba la conversación (esa tabla
+    // sí la puede tocar) y los MENSAJES se quedaban: el chat desaparecía de la Bandeja, él leía
+    // «Chat eliminado» y el historial reaparecía con el siguiente mensaje del cliente. Se pide
+    // de vuelta lo borrado (`select`) y, si no se borró nada habiendo mensajes, se para ANTES
+    // de tocar la conversación. Mismo patrón que el «guardado que no guarda» de Negocio/IA.
+    const { count:nMsgs }=await supa.from("messages").select("id",{ count:"exact", head:true }).eq("contact_id",cid);
+    const { data:borrados, error:e1 }=await supa.from("messages").delete().eq("contact_id",cid).select("id");
+    if(e1){ toast("No se pudo eliminar el chat: "+e1.message,true); return; }
+    if((nMsgs||0)>0 && !(borrados||[]).length){ toast("No se pudo eliminar el chat: eliminar mensajes es solo para administradores.",true); return; }
+    const { error:e2 }=await conv().delete().eq("contact_id",cid);
+    if(e2){ toast("No se pudo eliminar el chat: "+e2.message,true); return; }
     // Sin mensajes ya no "envió imagen": el sello lo pone un trigger al insertar y nadie lo quitaba.
     await supa.from("contacts").update({ ultima_imagen_at:null }).eq("id",cid);
     // Sus archivos (fotos, audios, adjuntos) se van con el chat; se conserva el comprobante

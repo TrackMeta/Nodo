@@ -599,8 +599,12 @@ async function borrarArchivosDe(ids, ch){
 }
 async function removeContact(c){
   if(!await confirmDialog({title:"Eliminar contacto",message:`¿Eliminar a ${c.nombre||c.wa_id}? Se borra su conversación, historial y archivos.`,confirmText:"Eliminar",danger:true})) return;
-  const { error }=await supa.from("contacts").delete().eq("id",c.id);
+  // 🔴 Un DELETE que la RLS no deja pasar NO da error: afecta 0 filas en silencio. Borrar
+  // contactos es solo-admin, así que a un operador le salía «Contacto eliminado» y el contacto
+  // seguía ahí al recargar. Se pide de vuelta lo borrado y se dice la verdad si no se borró.
+  const { data:borrado, error }=await supa.from("contacts").delete().eq("id",c.id).select("id");
   if(error){ toast(error.message,true); return; }
+  if(!(borrado||[]).length){ toast("No se pudo eliminar: borrar contactos es solo para administradores.",true); return; }
   st.sel.delete(c.id); toast("Contacto eliminado"+await borrarArchivosDe([c.id], c.channel_id||st.channelId)); await load();
 }
 
@@ -675,11 +679,14 @@ async function bulk(act){
   }
   if(act==="del"){
     if(!await confirmDialog({title:`Eliminar ${ids.length} contacto(s)`,message:"Se borran sus conversaciones, historial y archivos. No se puede deshacer.",confirmText:"Eliminar",danger:true})) return;
-    let error=null;
-    for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").delete().eq("channel_id",ch).in("id",trozo); if(r.error){ error=r.error; break; } }
+    let error=null, n=0;
+    // Igual que en removeContact: la RLS no devuelve error, devuelve 0 filas. Se cuenta lo
+    // que SÍ se borró y se informa eso, no lo que se pidió borrar.
+    for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").delete().eq("channel_id",ch).in("id",trozo).select("id"); if(r.error){ error=r.error; break; } n+=(r.data||[]).length; }
     if(error){ toast(error.message,true); return; }
+    if(!n){ toast("No se pudo eliminar: borrar contactos es solo para administradores.",true); return; }
     const extra=await borrarArchivosDe(ids, ch);
-    st.sel.clear(); toast(`${ids.length} eliminado(s)${extra}`); await load(); return;
+    st.sel.clear(); toast(`${n} eliminado(s)${n<ids.length?` · ${ids.length-n} no se pudieron (solo un administrador puede)`:""}${extra}`); await load(); return;
   }
 }
 

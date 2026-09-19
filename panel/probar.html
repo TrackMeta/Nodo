@@ -322,6 +322,16 @@ const ACT_ICON={ etiqueta_add:"etiquetas", etiqueta_del:"etiquetas", campo:"edit
 const st={ channelId:null, contactId:null, contactName:"Prueba (webchat)", showActivity:false, testAs:"cliente", isTest:true, inboxFlows:[], quickReplies:[], rt:null };
 let panelData={};
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+// 🔒 «Simular al bot» escribe en `messages`, que por RLS es solo-admin: a un OPERADOR el
+// insert fallaba y NADIE se lo decía (la burbuja simplemente no aparecía). El mensaje de
+// Postgres («new row violates row-level security policy») no le dice nada a nadie; se
+// traduce. El resto de errores se muestran tal cual.
+function msgRls(e){
+  const m=String(e?.message||e||"");
+  return /row-level security|permission denied|42501/i.test(m)
+    ? "Simular al bot es solo para administradores. Escribe como cliente y deja que conteste el bot."
+    : ("No se pudo enviar: "+m);
+}
 function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
 function tagHex(c){ const N={blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8"}; if(!c) return "#2b7fff"; /* solo un hex real: el color va dentro de style="" por innerHTML y lo escribe cualquier miembro por REST */ return /^#[0-9a-f]{3,8}$/i.test(c)?c:(N[c]||"#2b7fff"); }
 function fmtDate(ts){ if(!ts) return "—"; try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(ts)); }catch(_){ return "—"; } }
@@ -531,7 +541,7 @@ async function sendMsg(){
   $("sendBtn").disabled=true;
   limpiar();
   try{
-    if(st.testAs==="bot"){ const { error }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:"text", content:{ text }, status:"sent" }); if(error){ toast(error.message,true); devolver(); } }
+    if(st.testAs==="bot"){ const { error }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:"text", content:{ text }, status:"sent" }); if(error){ toast(msgRls(error),true); devolver(); } }
     else { await callFn("webchat",{ channel_id:st.channelId, text }); }
   }catch{ toast("Error de red",true); devolver(); }
   $("sendBtn").disabled=false;
@@ -591,7 +601,7 @@ async function sendAttachment(file){
     const up=await (await callFn("media-upload",{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataUrl })).json();
     if(!up.url){ toast(up.detalle||up.error||"No se pudo subir",true); return; }
     const media={ kind:up.kind, url:up.url, mime:file.type, filename:file.name };
-    if(st.testAs==="bot"){ await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:media.kind, content:{ media_url:media.url, caption:"", mime:media.mime, filename:media.filename }, status:"sent" }); }
+    if(st.testAs==="bot"){ const { error:eIns }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:media.kind, content:{ media_url:media.url, caption:"", mime:media.mime, filename:media.filename }, status:"sent" }); if(eIns){ toast(msgRls(eIns),true); return; } }
     else await callFn("webchat",{ channel_id:st.channelId, media });
   }catch{ toast("Error al adjuntar",true); }
   finally{ $("attachBtn").disabled=false; }
@@ -694,11 +704,11 @@ async function sendQrBubbles(bubs){
   if(!st.contactId) return;
   for(const b of (bubs||[])){
     if(b.media_url){
-      if(st.testAs==="bot"){ await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:b.media_kind, content:{ media_url:b.media_url, caption:b.caption||"", mime:b.mime||"", filename:b.filename||"" }, status:"sent" }); }
+      if(st.testAs==="bot"){ const { error:eIns }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:b.media_kind, content:{ media_url:b.media_url, caption:b.caption||"", mime:b.mime||"", filename:b.filename||"" }, status:"sent" }); if(eIns){ toast(msgRls(eIns),true); return; } }
       else { await callFn("webchat",{ channel_id:st.channelId, media:{ kind:b.media_kind, url:b.media_url, mime:b.mime||"", filename:b.filename||"", caption:b.caption||"" } }); }
     } else {
       const t=(b.text||"").trim(); if(!t) continue;
-      if(st.testAs==="bot"){ await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:"text", content:{text:t}, status:"sent" }); }
+      if(st.testAs==="bot"){ const { error:eIns }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:"text", content:{text:t}, status:"sent" }); if(eIns){ toast(msgRls(eIns),true); return; } }
       else { await callFn("webchat",{ channel_id:st.channelId, text:t }); }
     }
   }
