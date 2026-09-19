@@ -226,7 +226,7 @@ async function load(){
   // truncado (numerador y denominador falseados). Orden estable con id de desempate.
   const [cR, oR, chR] = await Promise.all([
     pageAll((f,t)=>supa.from("contacts").select("id,nombre,wa_id,stage,product_id,created_at,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim").order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
-    pageAll((f,t)=>supa.from("orders").select("contact_id,amount,order_bumps,estado,shipping,created_at").eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    pageAll((f,t)=>supa.from("orders").select("contact_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     getChannel(st.channelId),
   ]);
   if(gen!==st.loadGen) return;
@@ -234,6 +234,11 @@ async function load(){
   st.ordersBy={};
   (oR.data||[]).forEach(o=>{ if(!o.contact_id) return; (st.ordersBy[o.contact_id]||(st.ordersBy[o.contact_id]=[])).push(o); });
   CUR=(chR&&chR.moneda)||"PEN";
+  // Pedidos en OTRA moneda (el negocio cambió de moneda y los viejos conservan la suya):
+  // siguen contando para el embudo (etapas, recojos), pero NO se suman en la plata
+  // («Plata en juego», flete perdido): S/ y US$ en un mismo total es un número inventado.
+  st.otrasMonedas={};
+  (oR.data||[]).forEach(o=>{ const c=String(o.currency||"PEN").toUpperCase(); if(c===CUR) return; const k=st.otrasMonedas[c]||(st.otrasMonedas[c]={n:0,porCobrar:0}); k.n++; k.porCobrar+=O.porCobrar(o); });
   // Zona (Lima/Provincia) por contacto: el bot setea el campo zona_entrega TEMPRANO
   // (apenas dice de dónde es, antes del pedido). Así el split de Físico es limpio.
   st.zonaMap={};
@@ -422,13 +427,17 @@ function renderFunnel(F){
   el.innerHTML=html;
 }
 
+// ¿El pedido está en la moneda actual del negocio? Solo esos suman plata.
+const enMoneda=(o)=>String(o.currency||"PEN").toUpperCase()===CUR;
 function renderPlata(cs){
   const el=$("plata");
   // Plata comprometida y aún NO cobrada de quienes están en "confirmado".
   const confirmados=cs.filter(c=>(c.stage||"")==="confirmado");
   let porCobrar=0, conPed=0;
-  confirmados.forEach(c=>{ const ords=st.ordersBy[c.id]||[]; let s=0; ords.forEach(o=>{ s+=O.porCobrar(o); }); if(s>0){ porCobrar+=s; conPed++; } });
-  if(porCobrar<=0){ el.innerHTML=""; return; }
+  confirmados.forEach(c=>{ const ords=st.ordersBy[c.id]||[]; let s=0; ords.forEach(o=>{ if(!enMoneda(o)) return; s+=O.porCobrar(o); }); if(s>0){ porCobrar+=s; conPed++; } });
+  const otras=Object.entries(st.otrasMonedas||{}).filter(([,k])=>k.porCobrar>0);
+  const avisoOtras=otras.length?`<div class="plata" style="margin-top:10px;border-color:var(--amber,#f59e0b);background:rgba(245,158,11,.08)"><span style="font-size:17px">${icon("alert")}</span><div>${otras.map(([c,k])=>`<b>${k.n}</b> pedido${k.n>1?"s":""} en <b>${c}</b> (${(CUR_SYM[c]||c)+" "+Math.round(k.porCobrar).toLocaleString("es-PE")} por cobrar)`).join(" · ")} quedan fuera de esta suma: el negocio ahora factura en <b>${CUR}</b>. Los ves con su moneda en Pedidos.</div></div>`:"";
+  if(porCobrar<=0){ el.innerHTML=avisoOtras; return; }
   el.innerHTML=`<div class="plata"><span style="font-size:17px">${icon("dollar")}</span><div>Plata en juego: <span class="pv">${money(porCobrar)}</span> comprometidos por <b>${conPed}</b> confirmado(s) que todavía no pagan el saldo. Ciérralos en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</div></div>`;
 }
 
@@ -448,7 +457,7 @@ function renderEntrega(cs){
       // "Pagaron saldo" incluye a los que ya mandaron el comprobante estando en
       // agencia (aún por validar), no solo a los ya aprobados (saldo_pagado).
       if(e==="en_agencia" && (s.saldo_comprobante||s.saldo_recibido_at)) agConPago++;
-      if(e==="no_recogido") fleteCaido+=Number(s.flete||0); }); });
+      if(e==="no_recogido" && enMoneda(o)) fleteCaido+=Number(s.flete||0); }); });
   const g=(k)=>cnt[k]||0;
   // Niveles acumulados (cada uno incluye a los que ya pasaron de largo).
   const conAdelanto = g("adelanto_validado")+g("por_despachar")+g("despachado")+g("en_agencia")+g("saldo_pagado")+g("recogido")+g("no_recogido");

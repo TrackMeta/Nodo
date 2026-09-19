@@ -20,7 +20,7 @@ Deno.serve(async (req) => {
   let body: {
     channel_id?: string; contact_id?: string; product_id?: string; version_id?: string;
     amount?: number; estado?: string; entregar?: boolean; atributos?: Record<string, string> | null;
-    extras?: Array<{ productId: string; versionId: string; nombre?: string; precio: number; digital?: boolean }> | null;
+    extras?: Array<{ productId: string; versionId: string; nombre?: string; precio: number; digital?: boolean; atributos?: Record<string, string> | null }> | null;
     envio?: { zona?: string; cliente?: string; tel?: string; dni?: string; direccion?: string; distrito?: string; referencia?: string; ciudad?: string; destino?: string } | null;
   };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }

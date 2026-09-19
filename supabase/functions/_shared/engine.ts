@@ -1194,7 +1194,7 @@ export async function adjuntarRegalos(db: SupabaseClient, channelId: string, con
 // adjunta regalos y descuenta stock. Espeja los pasos de `crearPedido`.
 export async function crearVentaManual(
   db: SupabaseClient, channelId: string, contactId: string,
-  opts: { productId: string; versionId: string; amount: number; estado: string; entregarLink?: boolean; atributos?: Record<string, string> | null; extras?: Array<{ productId: string; versionId: string; nombre?: string; precio: number; digital?: boolean }> | null; envio?: { zona?: string; cliente?: string; tel?: string; dni?: string; direccion?: string; distrito?: string; referencia?: string; ciudad?: string; destino?: string } | null },
+  opts: { productId: string; versionId: string; amount: number; estado: string; entregarLink?: boolean; atributos?: Record<string, string> | null; extras?: Array<{ productId: string; versionId: string; nombre?: string; precio: number; digital?: boolean; atributos?: Record<string, string> | null }> | null; envio?: { zona?: string; cliente?: string; tel?: string; dni?: string; direccion?: string; distrito?: string; referencia?: string; ciudad?: string; destino?: string } | null },
 ): Promise<{ orderId: string }> {
   const { productId, versionId, estado } = opts;
   const amount = Number(opts.amount) || 0;
@@ -1247,7 +1247,9 @@ export async function crearVentaManual(
   // entregan si son digitales (entregarExtrasDigitales), descuentan stock si son
   // físicos (bloque de stock) y SUMAN al valor del Purchase de Meta (maybePurchase
   // relee order_bumps). Se adjuntan ANTES de maybePurchase para que el valor sea
-  // el real. La talla del extra se deja en "_" (la venta a mano no la pregunta).
+  // el real. La variante del extra (talla/color) la pide el modal y llega en `atributos`:
+  // con ella se arma el stock_key real (igual que el principal), así aplicarStock descuenta
+  // la talla correcta y el rótulo/Excel del courier la muestran.
   const extras = Array.isArray(opts.extras) ? opts.extras : [];
   if (extras.length) {
     const bumps: Array<Record<string, unknown>> = [];
@@ -1257,25 +1259,28 @@ export async function crearVentaManual(
       let costo = 0;
       const { data: exv } = await db.from("product_versions").select("costo").eq("id", ex.versionId).maybeSingle();
       const cv = Number((exv as any)?.costo); if (Number.isFinite(cv)) costo = cv;
-      if (digital == null) {
-        const { data: exp } = await db.from("products").select("tipo").eq("id", ex.productId).maybeSingle();
-        digital = String((exp as any)?.tipo || "digital") !== "fisico";
-      }
-      bumps.push({ nombre: ex.nombre || "extra", precio: Number(ex.precio) || 0, costo, digital, version_id: ex.versionId, product_id: ex.productId, stock_key: "_", entregado: false });
+      const { data: exp } = await db.from("products").select("tipo, config").eq("id", ex.productId).maybeSingle();
+      if (digital == null) digital = String((exp as any)?.tipo || "digital") !== "fisico";
+      const exAtr = (ex.atributos && typeof ex.atributos === "object")
+        ? Object.fromEntries(Object.entries(ex.atributos).filter(([k, v]) => k && String(v ?? "").trim() !== ""))
+        : {};
+      const conAtr = Object.keys(exAtr).length > 0;
+      const stockKey = (!digital && conAtr) ? stockKeyEngine((exp as any)?.config?.atributos, exAtr) : "_";
+      bumps.push({ nombre: ex.nombre || "extra", precio: Number(ex.precio) || 0, costo, digital, version_id: ex.versionId, product_id: ex.productId, stock_key: stockKey, ...(conAtr ? { atributos: exAtr } : {}), entregado: false });
     }
     if (bumps.length) await db.from("orders").update({ order_bumps: bumps }).eq("id", orderId);
-    // ⚠️ Un extra FÍSICO con stock por VARIANTE (talla/color) queda con stock_key "_" y
-    // aplicarStock lo salta en silencio (la clave no existe en el mapa): el inventario de
-    // ese extra no baja y nadie se entera. Hasta que la venta manual pregunte la variante,
-    // se deja constancia en la Timeline para que se ajuste a mano.
+    // ⚠️ Un extra FÍSICO con stock por VARIANTE (talla/color) al que NO se le eligió la
+    // variante queda con stock_key "_" y aplicarStock lo salta en silencio (la clave no
+    // existe en el mapa): el inventario de ese extra no baja y nadie se entera. Se deja
+    // constancia en la Timeline para que se ajuste a mano.
     for (const b of bumps) {
-      if (b.digital) continue;
+      if (b.digital || b.stock_key !== "_") continue;
       try {
         const { data: pe } = await db.from("products").select("nombre, config").eq("id", String(b.product_id)).maybeSingle();
         const st = (pe as any)?.config?.stock;
         if (st && typeof st === "object" && Object.keys(st).some((k) => k !== "_") && !("_" in st)) {
           await logEvent(db, channelId, contactId, "nota", "⚠️ Stock del extra sin descontar",
-            `«${(pe as any)?.nombre ?? b.nombre}» lleva stock por variante y la venta manual no pidió cuál — ajústalo en Productos`).catch(() => {});
+            `«${(pe as any)?.nombre ?? b.nombre}» lleva stock por variante y no se eligió cuál al registrar la venta — ajústalo en Productos`).catch(() => {});
         }
       } catch (_) { /* sin ficha legible → nada */ }
     }

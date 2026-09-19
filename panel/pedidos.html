@@ -446,18 +446,39 @@ function abrirExport(courier){
       const ok=await confirmDialog({title:"Revisa antes de exportar",messageHtml:`Detecté datos incompletos:<br><br>${lista}${extra}<br><br>Ábrelos con <b>Editar</b> y complétalos. Si continúas se exportan igual, pero el courier podría rechazar esas filas. ¿Continuar?`,confirmText:"Exportar igual"});
       if(!ok) return;
     }
-    const btn=$q("#emDl"); btn.disabled=true; btn.textContent="Generando…";
+    const btn=$q("#emDl"); btn.disabled=true; btn.textContent="Reservando…";
+    const restaurar=()=>{ btn.disabled=false; btn.innerHTML=`${DL_ICO} Descargar Excel`; };
+    // Sello ATÓMICO y PRIMERO (RPC orders_sellar_exportacion, migración 0102): antes se
+    // generaba el Excel y recién después se sellaba fila por fila → dos operadores (o dos
+    // pestañas) que exportaban a la vez leían todo «sin exportar», los dos bajaban el Excel
+    // y el mismo paquete subía dos veces al courier (dos guías, dos fletes). Ahora una sola
+    // sentencia sella solo lo que sigue sin sello; lo que otro se llevó un segundo antes
+    // NO entra en este Excel y se avisa. Para los que el operador vio ya exportados y
+    // confirmó reexportar, se manda la marca que vio: si cambió mientras tanto, tampoco van.
+    const marca=new Date().toISOString();
+    const vistas={}; repes.forEach(o=>{ vistas[o.id]=o.shipping.exportado_at; });
+    let sellados;
     try{
-      const n=await generar(courier,sel,cfg);
-      // Sello por pedido (patch atómico vía order-update, sin aviso al cliente). Best-effort:
-      // si alguno falla, el Excel ya está generado igual.
-      btn.textContent="Marcando como exportados…";
-      const ahora=new Date().toISOString(); let sellados=0;
-      for(const o of sel){ const r=await updateOrder({ order_id:o.id, shipping:{ exportado_at:ahora, exportado_a:courier.nombre }, aviso:{ modo:"ninguno" } }); if(r) sellados++; }
-      toast(`Listo: ${n} pedido(s) exportados a ${courier.nombre}${sellados<sel.length?` · ${sel.length-sellados} sin marcar como exportado`:""}`);
+      const { data, error }=await supa.rpc("orders_sellar_exportacion",{ p_channel_id:st.channelId, p_ids:sel.map(o=>o.id), p_courier:courier.nombre, p_marca:marca, p_reexportar:vistas });
+      if(error) throw new Error(error.message||"rpc");
+      sellados=new Set(Array.isArray(data)?data:[]);
+    }catch(e){ toast("No pude reservar los pedidos para exportar: "+(e.message||e),true); restaurar(); return; }
+    const van=sel.filter(o=>sellados.has(o.id));
+    const ajenos=sel.length-van.length;
+    if(!van.length){ toast("Alguien más acaba de exportar estos mismos pedidos: no hay nada nuevo que bajar.",true); ov.remove(); load(); return; }
+    btn.textContent="Generando…";
+    try{
+      const n=await generar(courier,van,cfg);
+      toast(`Listo: ${n} pedido(s) exportados a ${courier.nombre}${ajenos?` · ${ajenos} quedaron fuera: alguien más los exportó hace un momento`:""}`);
       ov.remove(); load();
     }
-    catch(e){ toast(e.message||"No pude generar el Excel",true); btn.disabled=false; btn.innerHTML=`${DL_ICO} Descargar Excel`; }
+    catch(e){
+      // El Excel no salió: se quita SOLO el sello de esta pestaña (por su marca), para no
+      // dejar pedidos «exportados» que nunca subieron. Si alguien los volvió a sellar
+      // después, el RPC no los toca.
+      try{ await supa.rpc("orders_quitar_sello_exportacion",{ p_channel_id:st.channelId, p_ids:van.map(o=>o.id), p_marca:marca }); }catch(_){}
+      toast(e.message||"No pude generar el Excel",true); restaurar();
+    }
   };
   render();
 }

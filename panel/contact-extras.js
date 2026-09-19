@@ -1203,6 +1203,21 @@ export function openMetaDetalle(order, capiEvent, contact, deps) {
   });
 }
 
+// Ejes de variante (talla/color…) de un producto de un catálogo cargado con `config`,
+// y los <select> para elegirlos. Compartidos por el modal de venta a mano (principal
+// Y extras). Antes el modal llamaba a un `ejesDe` que solo existía dentro de
+// openEditarPedido → ReferenceError al abrirlo: la talla del principal nunca se pidió.
+function ejesDeProducto(catalogo, pid) {
+  const pr = (catalogo || []).find((x) => String(x.id) === String(pid));
+  const atrs = (pr && pr.config && Array.isArray(pr.config.atributos)) ? pr.config.atributos : [];
+  return atrs.map((a) => ({ nombre: a.nombre, vals: Array.isArray(a.valores) ? a.valores : String(a.valores || "").split(",").map((s) => s.trim()).filter(Boolean) }))
+    .filter((a) => a.nombre && a.vals.length);
+}
+function varSelectsDe(catalogo, pid, sel, cls, extraAttrs = "") {
+  return ejesDeProducto(catalogo, pid).map((a) =>
+    `<select class="${cls}" data-eje="${esc(a.nombre)}" ${extraAttrs} style="min-width:82px;font-size:12px"><option value="">${esc(a.nombre)}…</option>${a.vals.map((val) => `<option${String((sel || {})[a.nombre] || "").toLowerCase() === String(val).toLowerCase() ? " selected" : ""}>${esc(val)}</option>`).join("")}</select>`).join("");
+}
+
 // Registrar una venta a MANO (cerrada por fuera: llamada, número personal). Crea
 // el pedido de cero contra ESTE contacto vía la Edge Function venta-manual, que
 // congela la atribución del anuncio, entrega el link digital, mueve el embudo y
@@ -1264,9 +1279,12 @@ export function openVentaManual(contact, deps) {
     const prodOpts = (sel) => cat.map((p) => `<option value="${p.id}"${p.id === sel ? " selected" : ""}>${esc((p.emoji ? p.emoji + " " : "") + p.nombre)} · ${p.tipo === "digital" ? "Digital" : "Físico"}</option>`).join("");
     const verOpts = (p, sel) => (p.product_versions || []).map((v) => `<option value="${v.id}" data-precio="${v.precio ?? 0}"${v.id === sel ? " selected" : ""}>${esc(v.nombre)} — ${money(v.precio)}</option>`).join("");
 
+    const ejesDe = (pid) => ejesDeProducto(cat, pid);
+    const varSelectsHtml = (pid, sel, cls, extraAttrs) => varSelectsDe(cat, pid, sel, cls, extraAttrs);
+
     // Estado del formulario (fuente de la verdad para el resumen en vivo).
     let estado = "confirmada"; // se ajusta según el tipo del principal
-    const extras = []; // { id, productId, versionId, precio }
+    const extras = []; // { id, productId, versionId, precio, atributos:{Eje:valor} }
     let extraSeq = 0;
 
     const ov = document.createElement("div"); ov.className = "overlay vm-ov";
@@ -1363,17 +1381,27 @@ export function openVentaManual(contact, deps) {
       const box = g("#vmExtras");
       box.innerHTML = extras.map((ex) => {
         const p = prodById(ex.productId) || cat[0];
+        // Variante (talla/color) del extra FÍSICO: sin ella el pedido nacía con stock_key "_",
+        // el stock de esa talla no bajaba y el que empaca no sabía cuál mandar.
+        const vars = (p && p.tipo === "fisico") ? varSelectsHtml(p.id, ex.atributos || {}, "vm-eatr", `data-id="${ex.id}"`) : "";
         return `<div class="vm-erow" data-id="${ex.id}">
           <select class="vm-sel vm-ep" data-id="${ex.id}">${prodOpts(ex.productId)}</select>
           <select class="vm-sel vm-ev" data-id="${ex.id}">${verOpts(p, ex.versionId)}</select>
           <div class="vm-money sm"><span class="vm-cur">S/</span><input class="vm-inp vm-eprice" data-id="${ex.id}" type="number" min="0" step="0.5" value="${ex.precio ?? 0}"/></div>
           <button type="button" class="vm-del" data-id="${ex.id}" title="Quitar">${icon("trash","cxi")}</button>
+          ${vars ? `<div class="vm-evars">${vars}</div>` : ""}
         </div>`;
       }).join("");
       box.querySelectorAll(".vm-ep").forEach((s) => s.onchange = () => {
         const ex = extras.find((e) => e.id === s.dataset.id); const p = prodById(s.value);
         ex.productId = s.value; ex.versionId = (p.product_versions[0] || {}).id; ex.precio = (p.product_versions[0] || {}).precio ?? 0;
+        ex.atributos = {}; // otro producto, otros ejes
         renderExtras(); recomputeTotal();
+      });
+      box.querySelectorAll(".vm-eatr").forEach((s) => s.onchange = () => {
+        const ex = extras.find((e) => e.id === s.dataset.id); if (!ex) return;
+        ex.atributos = ex.atributos || {};
+        const v = (s.value || "").trim(); if (v) ex.atributos[s.dataset.eje] = v; else delete ex.atributos[s.dataset.eje];
       });
       box.querySelectorAll(".vm-ev").forEach((s) => s.onchange = () => {
         const ex = extras.find((e) => e.id === s.dataset.id);
@@ -1486,7 +1514,7 @@ export function openVentaManual(contact, deps) {
     g("#vmMonto").oninput = recomputeTotal;
     g("#vmAddExtra").onclick = () => {
       const p = cat[0]; const v = p.product_versions[0] || {};
-      extras.push({ id: "ex" + (++extraSeq), productId: p.id, versionId: v.id, precio: v.precio ?? 0 });
+      extras.push({ id: "ex" + (++extraSeq), productId: p.id, versionId: v.id, precio: v.precio ?? 0, atributos: {} });
       renderExtras(); recomputeTotal();
     };
     onProdChange();
@@ -1517,7 +1545,8 @@ export function openVentaManual(contact, deps) {
         amount: monto, estado, entregar: g("#vmEnt").checked, envio,
         extras: extras.filter((e) => e.productId && e.versionId).map((e) => {
           const p = prodById(e.productId), v = (p?.product_versions || []).find((x) => x.id === e.versionId);
-          return { productId: e.productId, versionId: e.versionId, nombre: (p?.emoji ? p.emoji + " " : "") + (p?.nombre || "extra") + (v && v.nombre && v.nombre !== "Única" ? " · " + v.nombre : ""), precio: Number(e.precio) || 0, digital: (p?.tipo || "digital") !== "fisico" };
+          const atr = {}; Object.entries(e.atributos || {}).forEach(([k, val]) => { if (String(val || "").trim()) atr[k] = String(val).trim(); });
+          return { productId: e.productId, versionId: e.versionId, atributos: Object.keys(atr).length ? atr : null, nombre: (p?.emoji ? p.emoji + " " : "") + (p?.nombre || "extra") + (v && v.nombre && v.nombre !== "Única" ? " · " + v.nombre : ""), precio: Number(e.precio) || 0, digital: (p?.tipo || "digital") !== "fisico" };
         }),
       };
       let data, error;
@@ -1560,7 +1589,9 @@ function injectVentaManualCss() {
   .vm-gift-ic{font-size:15px;flex:none}
   .vm-extras{display:flex;flex-direction:column;gap:8px}
   .vm-extras:empty{display:none}
-  .vm-erow{display:flex;align-items:center;gap:6px;padding:8px;border:1px solid var(--border,#e5e7eb);border-radius:12px;background:var(--bg,#fff)}
+  .vm-erow{display:flex;align-items:center;gap:6px;padding:8px;border:1px solid var(--border,#e5e7eb);border-radius:12px;background:var(--bg,#fff);flex-wrap:wrap}
+  .vm-evars{display:flex;gap:6px;flex-wrap:wrap;width:100%}
+  .vm-evars select{padding:6px 8px;border:1px solid var(--border,#e5e7eb);border-radius:8px;background:var(--bg,#fff);color:inherit}
   .vm-erow .vm-ep{flex:1.4;min-width:0}.vm-erow .vm-ev{flex:1;min-width:0}
   .vm-del{border:none;background:none;color:var(--muted,#6b7280);cursor:pointer;padding:6px;border-radius:8px;flex:none;display:flex}
   .vm-del:hover{background:color-mix(in srgb,#ef4444 14%,transparent);color:#ef4444}
