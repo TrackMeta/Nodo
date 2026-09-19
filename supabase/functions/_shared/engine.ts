@@ -15321,10 +15321,14 @@ function anclaDeFechaOcr(tz?: string | null): string {
   let hoyStr = ahora.toISOString();
   let anioActual = String(ahora.getUTCFullYear());
   try {
-    hoyStr = ahora.toLocaleString("es-PE", { timeZone: tzNeg, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    // 🕐 `hour12: false` NO es cosmética. es-PE escribe «01:59 p. m.» y el Yape de las
+    // «12:59 pm» le parecía al modelo POSTERIOR (12 > 1): rechazó dos pagos legítimos de
+    // hace 40 minutos por «fecha futura» (D8-pe2e-2 y D8-ke2e-1, 2026-09-19). Con 13:59 el
+    // orden se lee solo. Le pasa a todo cliente que yapea entre las 12:00 y las 12:59.
+    hoyStr = ahora.toLocaleString("es-PE", { timeZone: tzNeg, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
     anioActual = ahora.toLocaleDateString("es-PE", { timeZone: tzNeg, year: "numeric" });
   } catch (_) { /* Intl/timezone no disponible: se queda con el ISO */ }
-  return `## Fecha de HOY (referencia obligatoria)\nAhora mismo es ${hoyStr} (hora local del negocio). El año en curso es ${anioActual}. Usa SIEMPRE esta fecha como el presente: un comprobante fechado hoy o en días recientes es NORMAL. NUNCA marques un comprobante como sospechoso, futuro o falso por su año o su fecha (por ejemplo por decir ${anioActual}); juzga la antigüedad ÚNICAMENTE comparándola contra esta fecha de hoy. Si el comprobante es de HOY y solo su HORA va por delante de la hora actual, acéptalo igual: los relojes de los celulares y de los bancos no van sincronizados. Solo un comprobante fechado otro DÍA posterior a hoy cuenta como futuro.`;
+  return `## Fecha de HOY (referencia obligatoria)\nAhora mismo es ${hoyStr} (hora local del negocio, en formato de 24 horas). Antes de comparar horas, pasa la del comprobante a 24 horas: «12:40 pm» son las 12:40 y «1:10 pm» son las 13:10, así que las 12:40 pm son ANTERIORES. El año en curso es ${anioActual}. Usa SIEMPRE esta fecha como el presente: un comprobante fechado hoy o en días recientes es NORMAL. NUNCA marques un comprobante como sospechoso, futuro o falso por su año o su fecha (por ejemplo por decir ${anioActual}); juzga la antigüedad ÚNICAMENTE comparándola contra esta fecha de hoy. Si el comprobante es de HOY y solo su HORA va por delante de la hora actual, acéptalo igual: los relojes de los celulares y de los bancos no van sincronizados. Solo un comprobante fechado otro DÍA posterior a hoy cuenta como futuro.`;
 }
 // El system mínimo para validar un comprobante cuando el dueño NO configuró el validador.
 // Lleva el ancla de fecha sí o sí: es lo único sin lo cual el OCR se equivoca solo.
