@@ -4045,7 +4045,7 @@ function sinPedirPermisoPago(texto: string): string {
     // («¿Vamos con todo y 🪖📋»): la cabeza de la regex frena en «¿» y no se lo llevaba.
     .replace(/[¿¡]\s*(?:[\p{L}\p{N}]+[\s,]*){0,4}(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "")
     .replace(/\s{2,}/g, " ").replace(/^[\s👇]+/u, "").trim();   // la flecha de la promesa quitada no puede abrir la frase
-  return limpio.replace(/[\s\p{P}]/gu, "").length >= 25 ? conMayusculaInicial(limpio) : texto;
+  return limpio.replace(/[\s\p{P}]/gu, "").length >= 25 ? conMayusculaInicial(sinConectorColgado(limpio, t)) : texto;
 }
 
 // 📣 EL ANUNCIO DE LO QUE EL MOTOR YA VA A MANDAR. La IA acusa el pedido y cierra con
@@ -4121,7 +4121,7 @@ function sinAnuncioDePago(texto: string): string {
   // Si al quitarla no queda mensaje, se deja el original: mejor la burbuja de más que una
   // vacía. El piso es bajo a propósito: lo que suele quedar es el acuse («¡Listo, Bertha!»),
   // que es un mensaje perfectamente válido porque los datos vienen en la burbuja siguiente.
-  return limpio.replace(/[\s\p{P}]/gu, "").length >= 10 ? conMayusculaInicial(limpio) : texto;
+  return limpio.replace(/[\s\p{P}]/gu, "").length >= 10 ? conMayusculaInicial(sinConectorColgado(limpio, t)) : texto;
 }
 
 // 🫥 LA PROMESA COLGADA. «El precio es S/19 💰 Te paso los datos para el pago 👇» — y debajo,
@@ -4154,7 +4154,7 @@ function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
     .replace(/[¿¡]\s*(?:[\p{L}\p{N}]+[\s,]*){0,4}(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "")
     // Y la flecha «👇» que apuntaba a los datos que ya no vienen (C5-estafa-1: «…ni trucos 🪖💪 👇»).
     .replace(/[ \t]*👇(?=[ \t]*(?:\n|$))/gu, "").replace(/^[\s👇]+/u, "").trim();   // y la flecha que quedó ABRIENDO la frase siguiente («👇 Apenas me mandes…»)
-  if (limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8) return conMayusculaInicial(limpio);
+  if (limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8) return conMayusculaInicial(sinConectorColgado(limpio, t));
   return unico ? "¿La quieres? 🙂" : "¿Cuál de las dos prefieres?";
 }
 
@@ -4187,6 +4187,23 @@ function sinValidacionInventada(texto: string): string {
   return limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 12
     ? conMayusculaInicial(limpio)
     : "Me llegó tu archivo, pero no puedo abrirlo por acá 🙈 ¿Me mandas la captura de pantalla como foto?";
+}
+
+// 🔗 EL CONECTOR QUE SE QUEDÓ SIN FRASE. Cuando un guard borra la oración de ADELANTE, la que
+// sigue empieza con un «Así,» / «Así que» / «Con eso» que apunta a algo que el cliente ya no
+// va a leer: «Perfecto, te paso los datos para el pago 👇 Así, apenas me mandes la captura,
+// te llega el acceso» salió como «Así, apenas me mandes la captura, te llega el acceso»
+// (medido M9-memoji-1, 2026-09-19). Se quita SOLO el conector, no la frase: lo que queda
+// («Apenas me mandes la captura, te llega el acceso») es exactamente lo que se quería decir.
+// No corre si el mensaje YA empezaba así: ahí el conector es del modelo, no del recorte.
+const RE_CONECTOR_SIN_FRASE = /^(?:as[ií](?:\s+que)?|y\s+as[ií]|de\s+(?:esa|esta)\s+(?:forma|manera)|con\s+eso|de\s+ah[ií])\s*,?\s+/i;
+function sinConectorColgado(limpio: string, original: string): string {
+  const l = String(limpio ?? "");
+  const cabeza = (s: string) => String(s ?? "").replace(/^[\s\p{Extended_Pictographic}\p{P}]+/u, "");
+  if (!RE_CONECTOR_SIN_FRASE.test(cabeza(l)) || RE_CONECTOR_SIN_FRASE.test(cabeza(original))) return l;
+  const i = l.search(/[\p{L}\p{N}]/u);
+  const pre = i > 0 ? l.slice(0, i) : "";
+  return pre + cabeza(l).replace(RE_CONECTOR_SIN_FRASE, "");
 }
 
 // 🗣️ LA PRUEBA SOCIAL INVENTADA. Medido: el cliente preguntó «¿y el producto es bueno?» y el
@@ -17686,7 +17703,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // al cliente que acaba de mandar lo más preciso que tiene, eso se le lee como que no
     // le hicimos caso. Lo único que sí ayuda es una referencia, y se pide UNA vez, sin
     // trabar la venta si no la da.
-    if (String(ctx.last_input_type ?? "") === "location") {
+    // 💻 En una venta DIGITAL la ubicación no pinta nada: no hay nada que llevar. El bot
+    // contestaba «Perfecto, ya tengo tu ubicación anotada» (2 de 2, M9-mubic) y el cliente
+    // se queda creyendo que le va a llegar algo a su casa. Se le dice la verdad en una línea.
+    if (String(ctx.last_input_type ?? "") === "location" && esDigital(ctx)) {
+      parts.push("## Te mandó su ubicación y acá no se envía nada\n" +
+        "Compartió su ubicación, pero esto es un producto DIGITAL: no hay envío ni dirección que anotar. " +
+        "⛔ NO le digas que «quedó anotada» ni que ya sabes a dónde llevárselo: no le vas a llevar nada. " +
+        "Aclárale en una línea, sin drama, que le llega por acá mismo apenas confirme el pago, y sigue con la venta.");
+    } else if (String(ctx.last_input_type ?? "") === "location") {
       const _pin = !/[a-záéíóúñ]{3}/i.test(String(ctx.last_input ?? "").replace(/^\[ubicación\]\s*/i, ""));
       parts.push("## Te mandó su ubicación\nCompartió su ubicación por WhatsApp y ESA es su dirección: ya quedó anotada. " +
         "Dale el acuse en una línea (que sabes a dónde llevárselo) y sigue con lo que falte del pedido. " +
