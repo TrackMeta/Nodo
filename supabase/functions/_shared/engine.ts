@@ -3042,7 +3042,16 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   if (rec.activo === false) return { hecho: false }; // recepción apagada → a la Bandeja (humano)
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
-  if (!ai?.api_key) return { hecho: false }; // sin IA configurada → a la Bandeja
+  // 🔑 Sin clave de IA el mensaje se queda en la Bandeja esperando a una persona. Está bien
+  // como diseño, pero ANTES no dejaba rastro: un dueño que acaba de crear su bot le escribe
+  // para probarlo, no recibe NADA y concluye que Nodo no funciona — no tiene forma de saber
+  // que le falta la clave. Medido el 2026-09-19 en un canal recién creado: cero respuesta y
+  // cero eventos. Ahora el motor dice por qué se calló y dónde se arregla.
+  if (!ai?.api_key) {
+    await logEvent(db, channelId, contactId, "error", "🔑 Sin clave de IA: el bot no contestó",
+      "Este bot todavía no tiene una clave de IA, así que el mensaje se queda para que lo conteste una persona. Se configura en IA → Clave de IA.").catch(() => {});
+    return { hecho: false }; // sin IA configurada → a la Bandeja
+  }
   const run: any = { id: null, channel_id: channelId, contact_id: contactId, flow_id: null, current_node_id: null, vars: { last_input: event.text ?? "" } };
   const ctx = await buildContext(db, run);
   ctx.last_input = event.text ?? "";
@@ -3113,7 +3122,19 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
       "dile con calidez que ya lo estás encaminando y pregúntale por el producto que quiere.\n" +
       "\nEn cualquier otro caso, guía al cliente hacia UNO de estos productos. Cuando el cliente deje claro cuál le interesa, el sistema lo llevará solo a la venta de ese producto (tú solo encamínalo, con naturalidad). NO inventes productos ni precios. Si pide algo que no vendemos, dilo con amabilidad. Si necesita un humano, escribe [[humano]].");
   } else {
-    parts.push("Aún no hay productos configurados; responde con amabilidad y ofrece tomar sus datos.");
+    // 📭 SIN CATÁLOGO. La instrucción vieja («responde con amabilidad y ofrece tomar sus datos»)
+    // dejaba al modelo llenando el hueco: medido en un canal sin productos, a «hola, ¿qué
+    // venden?» contestó «Vendemos productos variados, ¿cuál te interesa?» — una frase que no
+    // dice nada y que además afirma un catálogo que no existe. Le pasa a todo cliente que
+    // conecta su WhatsApp antes de cargar lo que vende. Acá lo honesto es no inventar: que
+    // pregunte QUÉ necesita y avise que lo verá una persona.
+    parts.push("## Este negocio todavía no tiene productos cargados\n" +
+      "⛔ NO digas qué vendemos, ni «productos variados», ni nada parecido: no tienes catálogo y " +
+      "afirmarlo es inventar. ⛔ No prometas precios, envíos ni tiempos.\n" +
+      "Lo que haces: saluda, pregúntale con naturalidad QUÉ está buscando, y dile que lo va a ver " +
+      "una persona del equipo y le responde por acá. Nada más.");
+    await logEvent(db, channelId, contactId, "error", "📭 El bot atendió sin catálogo",
+      "Este bot no tiene productos cargados: la Recepción solo puede tomar el dato y pasar a una persona. Carga tu producto en Productos para que empiece a vender.").catch(() => {});
   }
   if (saludoEmitido) {
     parts.push("## Ojo: el saludo de apertura YA salió\nAcabas de enviarle esto:\n\"" + saludoEmitido.slice(0, 400) +
