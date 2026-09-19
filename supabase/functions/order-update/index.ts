@@ -653,7 +653,16 @@ Deno.serve(async (req) => {
   let stockAlerts: Array<{ nombre: string; key: string; restante: number; agotado: boolean }> = [];
   if (body.shipping || Array.isArray(body.order_bumps) || body.product_id) {
     try {
-      const shipFinal = (patch.shipping as any) ?? (order as any).shipping;
+      // 🔄 El shipping FRESCO, no el snapshot con que entró la petición: el bloque «revivir»
+      // de arriba ya cambió stock_devuelto/stock_descontado por RPC, y con la copia vieja
+      // reconciliarStockManual veía «stock_devuelto: true» y no tocaba nada — un pedido revivido
+      // y cambiado de producto en el mismo guardado se quedaba con el stock del producto viejo.
+      let shipBase = (order as any).shipping;
+      try {
+        const { data: fresco } = await db.from("orders").select("shipping").eq("id", (order as any).id).maybeSingle();
+        if ((fresco as any)?.shipping) shipBase = (fresco as any).shipping;
+      } catch (_) { /* se sigue con el snapshot */ }
+      const shipFinal = patch.shipping ? { ...(shipBase ?? {}), ...(patch.shipping as any) } : shipBase;
       const bumpsFinal = Array.isArray(body.order_bumps) ? body.order_bumps : ((order as any).order_bumps ?? []);
       const prodFinal = (patch.product_id as string) ?? (order as any).product_id ?? null;
       const estadoFinal = String(newEstado ?? (order as any).estado);

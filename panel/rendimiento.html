@@ -210,12 +210,21 @@ async function loadData(){
     // equivocada y ninguno avisaba. Orden estable + desempate para no repetir ni saltar filas.
     pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto,impresiones,alcance,clics,clics_wa").eq("channel_id",cid).gte("fecha",from).lte("fecha",to).order("fecha",{ascending:false}).order("ad_id").range(f,t)),
     pageAll((f,t)=>supa.from("ads_meta").select("ad_id,ad_name,adset_name,campaign_name,account_id,account_currency").eq("channel_id",cid).order("ad_id").range(f,t)),
-    pageAll((f,t)=>supa.from("orders").select("estado,amount,order_bumps,currency,shipping,product_id,created_at,product:product_id(nombre,emoji,tipo,config)").eq("channel_id",cid).not("shipping->>ad_id","is",null).gte("created_at",ordDesde).lte("created_at",ordHasta).order("created_at",{ascending:false}).order("id").range(f,t)),
+    pageAll((f,t)=>supa.from("orders").select("contact_id,estado,amount,order_bumps,currency,shipping,product_id,created_at,product:product_id(nombre,emoji,tipo,config)").eq("channel_id",cid).not("shipping->>ad_id","is",null).gte("created_at",ordDesde).lte("created_at",ordHasta).order("created_at",{ascending:false}).order("id").range(f,t)),
   ]); }catch(_){ st.loaded=true; return; }
   // pageAll DEVUELVE el error en vez de lanzarlo, así que el catch de arriba ya no lo ve: sin
   // esto, una consulta que falla a media paginación se veía como un periodo con menos ventas
   // (o menos gasto) en vez de como un fallo, que es justo la lectura que hace apagar un anuncio.
   if(insR.error||metaR.error||ordR.error){ st.loaded=true; return; }
+  // Fuera los pedidos de los contactos de PRUEBA (Probar flujos y simulador): esta pantalla
+  // no los excluía en ningún punto, y una tanda de simulaciones con ad_id inflaba las ventas,
+  // el ROAS y el CPA de un anuncio real — justo la pantalla que decide qué anuncio se apaga.
+  try{
+    const { data:_pr }=await supa.from("contacts").select("id").eq("channel_id",cid).or("wa_id.eq.webchat-test,source.eq.sim");
+    if(cid!==st.channelId) return;
+    const _ids=new Set((_pr||[]).map(c=>c.id));
+    if(_ids.size) ordR.data=(ordR.data||[]).filter(o=>!_ids.has(o.contact_id));
+  }catch(_){ /* sin la lista se sigue como antes */ }
   const meta=Object.fromEntries((metaR.data||[]).map(m=>[m.ad_id,m]));
   // Ángulos (aparte, con su propio try/catch: si falta la migración 0063 no debe
   // romper toda la carga). Mapa ad_id → nombre del ángulo.

@@ -5,6 +5,7 @@
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
 import { crearVentaManual } from "../_shared/engine.ts";
+import { EST } from "../_shared/order-stats.ts";
 
 const db = serviceClient();
 
@@ -25,6 +26,9 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const { channel_id, contact_id, product_id, version_id, amount, estado, entregar, atributos, extras, envio } = body;
   if (!channel_id || !contact_id || !product_id || !version_id || !estado) return json({ error: "faltan_campos" }, 400);
+  // Mismo cerrojo que order-update: un estado inventado no cae en ninguna columna del Kanban,
+  // desaparece de la plata del Dashboard y la etapa del contacto queda en null, todo en silencio.
+  if (!EST[String(estado)]) return json({ error: "estado_invalido", detalle: `Estado desconocido: ${String(estado)}` }, 400);
   // Monto > 0: una venta manual en S/0 se contabiliza como cerrada, entrega el digital gratis
   // y dispara un Purchase(0) a Meta. El front ya lo bloquea; acá es la red de seguridad.
   if (!(Number(amount) > 0)) return json({ error: "monto_invalido", detalle: "El monto debe ser mayor a 0." }, 400);

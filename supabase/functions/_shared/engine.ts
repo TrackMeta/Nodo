@@ -1264,6 +1264,21 @@ export async function crearVentaManual(
       bumps.push({ nombre: ex.nombre || "extra", precio: Number(ex.precio) || 0, costo, digital, version_id: ex.versionId, product_id: ex.productId, stock_key: "_", entregado: false });
     }
     if (bumps.length) await db.from("orders").update({ order_bumps: bumps }).eq("id", orderId);
+    // ⚠️ Un extra FÍSICO con stock por VARIANTE (talla/color) queda con stock_key "_" y
+    // aplicarStock lo salta en silencio (la clave no existe en el mapa): el inventario de
+    // ese extra no baja y nadie se entera. Hasta que la venta manual pregunte la variante,
+    // se deja constancia en la Timeline para que se ajuste a mano.
+    for (const b of bumps) {
+      if (b.digital) continue;
+      try {
+        const { data: pe } = await db.from("products").select("nombre, config").eq("id", String(b.product_id)).maybeSingle();
+        const st = (pe as any)?.config?.stock;
+        if (st && typeof st === "object" && Object.keys(st).some((k) => k !== "_") && !("_" in st)) {
+          await logEvent(db, channelId, contactId, "nota", "⚠️ Stock del extra sin descontar",
+            `«${(pe as any)?.nombre ?? b.nombre}» lleva stock por variante y la venta manual no pidió cuál — ajústalo en Productos`).catch(() => {});
+        }
+      } catch (_) { /* sin ficha legible → nada */ }
+    }
   }
 
   try { await adjuntarRegalos(db, channelId, contactId, orderId, productId, {}); } catch (e) { console.error("[ventaManual] regalos:", (e as any)?.message ?? e); }

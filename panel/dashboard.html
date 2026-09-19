@@ -778,7 +778,10 @@ async function load(){
     // El RPC dashboard_stats cuenta el contacto de prueba (webchat-test) también
     // en por_stage, así que el embudo del Dashboard daba 1 de más que la sección
     // Embudo (que lo excluye). Traemos su etapa para descontarlo del mismo bucket.
-    supa.from("contacts").select("id,stage").eq("channel_id",channelId).eq("wa_id","webchat-test").maybeSingle(),
+    // TODOS los contactos de prueba: el de Probar flujos (webchat-test) y los del simulador
+    // (source = 'sim', cualquier wa_id). Antes solo se descontaba el primero y los pedidos de
+    // una tanda de simulaciones contaban como plata real (el Embudo y el RPC ya los excluyen).
+    supa.from("contacts").select("id,stage").eq("channel_id",channelId).or("wa_id.eq.webchat-test,source.eq.sim"),
     supa.from("ads_meta").select("account_currency").eq("channel_id",channelId),
     // Lo que costó la IA en el periodo. Viene acumulado por día (ai_usage), siempre
     // en dólares —que es como lo factura el proveedor— y se convierte más abajo.
@@ -790,17 +793,22 @@ async function load(){
   // Los pedidos del contacto de PRUEBA (Probar flujos) contaban como plata real: «Ventas
   // confirmadas: 1 · S/129» por una venta que no existe (el Embudo, que sí excluye al contacto,
   // decía 0 → las dos pantallas se contradecían).
-  if(!ordR.error && wsR && wsR.data && wsR.data.id) ordR.data=(ordR.data||[]).filter(o=>o.contact_id!==wsR.data.id);
+  const pruebaIds=new Set(((wsR&&!wsR.error&&wsR.data)||[]).map(c=>c.id));
+  if(!ordR.error && pruebaIds.size) ordR.data=(ordR.data||[]).filter(o=>!pruebaIds.has(o.contact_id));
   const s=stats.data||{};
-  if(typeof contR?.count==="number") s.contactos=contR.count;
-  // Copia de por_stage con el contacto de prueba descontado de su etapa cruda
-  // (la etapa null vive bajo la clave "null", que renderFunnel pliega a "nuevo").
+  // `contactos` y `por_stage` vienen del RPC ya SIN los contactos de prueba (migración 0099):
+  // pisarlos con un conteo propio que solo excluía a webchat-test los volvía a contar, y
+  // restar 1 «a mano» de la etapa del contacto de prueba restaba de más.
   const porStage={...(s.por_stage||{})};
-  if(wsR && wsR.data){
-    const wk = wsR.data.stage==null ? "null" : wsR.data.stage;
-    if(porStage[wk]!=null) porStage[wk]=Math.max(0, Number(porStage[wk])-1);
+  let leadsCount=(evR&&!evR.error&&typeof evR.count==="number")?evR.count:0;
+  // Los Lead de los contactos de prueba tampoco cuentan (mismo criterio que los pedidos).
+  if(leadsCount>0 && pruebaIds.size){
+    try{
+      const { count:cPrueba }=await supa.from("capi_events").select("id",{count:"exact",head:true}).eq("channel_id",channelId).eq("event_name","Lead").gte("created_at",fromISO).lt("created_at",toISO).in("contact_id",[...pruebaIds]);
+      if(typeof cPrueba==="number") leadsCount=Math.max(0, leadsCount-cPrueba);
+    }catch(_){ /* se queda el conteo bruto */ }
+    if(cid!==channelId) return;
   }
-  const leadsCount=(evR&&!evR.error&&typeof evR.count==="number")?evR.count:0;
   // Ventas CERRADAS del periodo (no "solo las digitales", que era el bug: se
   // filtraba estado==="confirmada" y las de Lima nacen como "confirmado").
   const prods=prodR.error?[]:(prodR.data||[]);
@@ -1349,14 +1357,15 @@ async function loadBitacora(monthStart){
     // La moneda de las cuentas de ads, por lo mismo: si arriba el gasto de Meta se
     // convierte y acá no, el profit del día no coincide con el del periodo.
     supa.from("ads_meta").select("account_currency").eq("channel_id",channelId),
-    supa.from("contacts").select("id").eq("channel_id",channelId).eq("wa_id","webchat-test").maybeSingle(),
+    supa.from("contacts").select("id").eq("channel_id",channelId).or("wa_id.eq.webchat-test,source.eq.sim"),
   ]);
+  // Fuera los pedidos de TODOS los contactos de prueba (Probar flujos y simulador), como arriba.
+  { const _pr=new Set(((wsB&&!wsB.error&&wsB.data)||[]).map(c=>c.id)); if(!ordR.error && _pr.size) ordR.data=(ordR.data||[]).filter(o=>!_pr.has(o.contact_id)); }
   const prods=prodR.error?[]:(prodR.data||[]);
   const prodPorId={},cantPorVersion={};
   prods.forEach(p=>{ prodPorId[p.id]=p; (p.product_versions||[]).forEach(v=>{ cantPorVersion[v.id]=v.cantidad??1; }); });
   const delTipo=(o)=> tipo==="todo"||(tipo==="fisico"?O.esFisico(o):!O.esFisico(o));
-  const testId=wsB&&wsB.data&&wsB.data.id;
-  const allOrd=(ordR.error?[]:(ordR.data||[])).filter(o=>!testId||o.contact_id!==testId); // sin los pedidos de Probar flujos
+  const allOrd=(ordR.error?[]:(ordR.data||[])); // ya sin los pedidos de los contactos de prueba (filtrados arriba)
   // Sin los PERDIDOS, igual que la banda de arriba: un no_recogido con costo y flete registrados
   // sumaba a la ganancia del calendario y contaba como venta → el mes de la Bitácora no cuadraba
   // con la «Ganancia bruta» del mismo periodo.

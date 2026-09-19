@@ -699,6 +699,7 @@ function kcard(o){
     ${par?`<div style="font-size:11.5px;margin-top:3px;font-weight:${par.pasado?"700":"500"};color:${par.pasado?"var(--red)":"var(--faint)"}">&#9203; ${par.dias<1?"movido hoy":esc(par.texto)}</div>`:""}
     ${shipBits.length?`<div class="kc-ship">${shipBits.join("<br>")}</div>`:""}
     ${s.sede_por_confirmar?`<button class="kc-warn" data-cfsede>${icon("alert")} Confirmar agencia Shalom<br><span style="font-weight:500;opacity:.85">${esc(s.sede_por_confirmar)}</span></button>`:""}
+    ${s.rastreo_alerta==="entregado_sin_saldo"?`<div class="kc-warn" style="cursor:default">${icon("alert")} Shalom lo dio por ENTREGADO y el saldo no está cobrado<br><span style="font-weight:500;opacity:.85">revisa si se lo llevaron sin pagar</span></div>`:""}
     ${s.distrito_por_confirmar?`<button class="kc-warn" data-cfdist>${icon("alert")} Confirmar distrito<br><span style="font-weight:500;opacity:.85">cambió su dirección y sigue en ${esc(s.distrito||"—")}</span></button>`:""}
     ${s.variante_agotada?`<button class="kc-warn" data-cfvar>${icon("alert")} Confirmar qué se despacha<br><span style="font-weight:500;opacity:.85">${esc(s.variante_por_confirmar||"la variante pedida")} estaba agotada</span></button>`:""}
     <div class="kc-act">
