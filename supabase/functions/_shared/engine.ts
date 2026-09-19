@@ -4079,7 +4079,12 @@ const RE_ORACION_DE_ENTREGA =
   // 💻 Y la entrega DIGITAL: «el acceso te llega al instante, apenas validamos tu pago» es la
   // respuesta a «¿en cuánto tiempo me llega?», no un anuncio de datos (M-mtiempo-1 se quedó en
   // «Así puedes empezar sin esperar»).
-  /\b(?:domicilio|contra\s*entrega|al\s+recibir(?:lo|la)?|cuando\s+(?:lo|la)\s+recib[ae]s|revis(?:ar|as|es)\s+antes|a\s+tu\s+(?:casa|puerta|direcci[oó]n)|en\s+tu\s+(?:casa|direcci[oó]n)|delivery|(?:el\s+)?(?:acceso|link|enlace|archivo)\s+(?:te\s+)?(?:llega|lo\s+entrego|lo\s+env[ií]o)|te\s+llega\s+(?:el\s+)?(?:acceso|link|enlace|archivo))\b/i;
+  // 🔴 Faltaba la MISMA frase con preposición: «Por acá te llega POR link, apenas confirmemos
+  // tu pago 📲 Así la descargas donde estés» salió sin la primera mitad — o sea, el cliente
+  // preguntó «¿me lo mandan por correo?» y recibió una frase huérfana que arrancaba en «Así».
+  // Medido en D7-pcorreo-2 (2026-09-19) con el evento 🔬. «te llega EL link» estaba cubierto;
+  // «te llega POR link / por WhatsApp / por acá», no. Es por dónde le llega, no un anuncio.
+  /\b(?:domicilio|contra\s*entrega|al\s+recibir(?:lo|la)?|cuando\s+(?:lo|la)\s+recib[ae]s|revis(?:ar|as|es)\s+antes|a\s+tu\s+(?:casa|puerta|direcci[oó]n)|en\s+tu\s+(?:casa|direcci[oó]n)|delivery|(?:el\s+)?(?:acceso|link|enlace|archivo)\s+(?:te\s+)?(?:llega|lo\s+entrego|lo\s+env[ií]o)|te\s+llega\s+(?:el\s+)?(?:acceso|link|enlace|archivo)|te\s+(?:llega|lo\s+(?:env[ií]o|mando|entrego))\s+(?:por|v[ií]a|mediante)\s+(?:este\s+|el\s+|un\s+)?(?:link|enlace|chat|whatsapp|correo|ac[aá]|aqu[ií]))\b/i;
 // 🔠 Al quitar la frase con que ARRANCABA el mensaje, lo que queda empieza en minúscula:
 // «Perfecto, te paso los datos para el pago 👇 cuando me mandes la captura…» → «cuando me
 // mandes la captura, te llega el acceso» (medido N-kdirecto-1 y N-ke2e-1, 2026-09-18).
@@ -15319,7 +15324,7 @@ function anclaDeFechaOcr(tz?: string | null): string {
     hoyStr = ahora.toLocaleString("es-PE", { timeZone: tzNeg, weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
     anioActual = ahora.toLocaleDateString("es-PE", { timeZone: tzNeg, year: "numeric" });
   } catch (_) { /* Intl/timezone no disponible: se queda con el ISO */ }
-  return `## Fecha de HOY (referencia obligatoria)\nAhora mismo es ${hoyStr} (hora local del negocio). El año en curso es ${anioActual}. Usa SIEMPRE esta fecha como el presente: un comprobante fechado hoy o en días recientes es NORMAL. NUNCA marques un comprobante como sospechoso, futuro o falso por su año o su fecha (por ejemplo por decir ${anioActual}); juzga la antigüedad ÚNICAMENTE comparándola contra esta fecha de hoy.`;
+  return `## Fecha de HOY (referencia obligatoria)\nAhora mismo es ${hoyStr} (hora local del negocio). El año en curso es ${anioActual}. Usa SIEMPRE esta fecha como el presente: un comprobante fechado hoy o en días recientes es NORMAL. NUNCA marques un comprobante como sospechoso, futuro o falso por su año o su fecha (por ejemplo por decir ${anioActual}); juzga la antigüedad ÚNICAMENTE comparándola contra esta fecha de hoy. Si el comprobante es de HOY y solo su HORA va por delante de la hora actual, acéptalo igual: los relojes de los celulares y de los bancos no van sincronizados. Solo un comprobante fechado otro DÍA posterior a hoy cuenta como futuro.`;
 }
 // El system mínimo para validar un comprobante cuando el dueño NO configuró el validador.
 // Lleva el ancla de fecha sí o sí: es lo único sin lo cual el OCR se equivoca solo.
@@ -18198,6 +18203,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (_cond) {
         const _reCond = new RegExp("\\b" + _cond.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
         if (!_reCond.test(fichaTxt)) huecos.push([`si sirve para ${_cond}`, _reCond, _reCond, "producto"]);
+      }
+      // 🧾 «¿Es una app? ¿También hace facturas?» NO es la pregunta por la factura del negocio.
+      // La primera pregunta por lo que el PRODUCTO hace, y eso sí está escrito: los Límites de
+      // la plantilla dicen «No es un software ni una app. No hace seguimiento de obra ni
+      // facturación». La IA contestó bien —«No, no es una app ni hace facturas»— y el guard de
+      // salida se llevó la frase entera por traer la palabra «facturas», así que al cliente le
+      // llegó «De factura o boleta no tengo el dato acá» y su primera pregunta quedó sin
+      // responder (2 de 2 en D7-papp, 2026-09-19; el hueco además se registraba en falso).
+      // El tema de la factura del NEGOCIO («¿me dan factura?», «con RUC») sigue siendo hueco:
+      // lo que se descarta es solo la pregunta por lo que el producto HACE, y solo cuando la
+      // ficha lo dice. Ver TEMAS_FICHA y sinPoliticaInventada.
+      const _preguntaCapacidad = /\b(?:hace|emite|genera|saca|sirve para|es para|permite|puedo (?:hacer|emitir|sacar))\s+(?:las?\s+|los?\s+)?(?:facturas?|boletas?|facturaci[oó]n|facturar)/i;
+      const _fichaHablaDeFacturar = /\b(?:facturaci[oó]n|facturar|(?:hace|emite|genera)\s+(?:las?\s+)?facturas?)\b/i;
+      if (_preguntaCapacidad.test(preg) && _fichaHablaDeFacturar.test(fichaTxt)) {
+        for (let i = huecos.length - 1; i >= 0; i--) {
+          if (huecos[i][0] === "factura o boleta") huecos.splice(i, 1);
+        }
       }
       const faltan = huecos.map(([nombre]) => nombre);
       // Lo que quedó como hueco ESTE turno lo lee el guard de salida (sinPoliticaInventada):
