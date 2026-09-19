@@ -73,11 +73,14 @@ export async function construirResumen(
     // PAGINADO: un día con más de 1000 pedidos devolvía solo los 1000 primeros y TODO el
     // resumen salía corto — ventas, ingresos, ganancia y ROAS — justo el día que más
     // vendiste. Y sin avisar de nada, que es lo peor para un mensaje que se lee de reojo.
-    pageAll((f, t) => db.from("orders").select("contact_id, amount, order_bumps, estado, shipping, created_at, product:product_id(tipo)")
+    pageAll((f, t) => db.from("orders").select("contact_id, amount, currency, order_bumps, estado, shipping, created_at, product:product_id(tipo)")
       .eq("channel_id", chId).gte("created_at", fromISO).lt("created_at", toISO)
       .order("created_at", { ascending: true }).order("id", { ascending: true }).range(f, t)),
+    // Sin los contactos de PRUEBA: el de Probar flujos (webchat-test) y los del simulador
+    // (source = 'sim'). Antes solo se descontaba el primero: una tanda de simulaciones
+    // anunciaba por Telegram «👥 Nuevos contactos: 100» que no existen.
     db.from("contacts").select("id", { count: "exact", head: true })
-      .eq("channel_id", chId).neq("wa_id", "webchat-test")
+      .eq("channel_id", chId).neq("wa_id", "webchat-test").or("source.is.null,source.neq.sim")
       .gte("created_at", fromISO).lt("created_at", toISO),
     // Los Lead solo se CUENTAN: se traían las filas para medir su largo, y ahí el tope de
     // 1000 hacía que el número se quedara corto en cuanto un día pasara de mil leads — que
@@ -105,16 +108,36 @@ export async function construirResumen(
   // mentiroso); ante fallo de ads, mostramos el digest pero SIN neta y con aviso.
   if (ordR.error) throw new Error("resumen: no se pudo leer pedidos — " + ordR.error.message);
   const adsFail = !!adsR.error;
-  // Sin los pedidos del contacto de PRUEBA (Probar flujos): anunciaban por Telegram una
-  // venta de S/129 que no existía.
+  // Sin los pedidos de TODOS los contactos de PRUEBA: el de Probar flujos (webchat-test) y
+  // los del simulador (source = 'sim'). Antes solo se descontaba el primero, y una tanda de
+  // 100 simulaciones anunciaba por Telegram 100 ventas que no existían (el Dashboard, que ya
+  // excluye a los dos, decía otra cosa). Los Lead de esos contactos tampoco cuentan.
   let orders = (ordR.data ?? []) as Order[];
+  let leads = typeof leadR.count === "number" ? leadR.count : 0;
   try {
-    const { data: tc } = await db.from("contacts").select("id").eq("channel_id", chId).eq("wa_id", "webchat-test").maybeSingle();
-    if ((tc as any)?.id) orders = orders.filter((o: any) => o.contact_id !== (tc as any).id);
+    const { data: tcs } = await db.from("contacts").select("id").eq("channel_id", chId).or("wa_id.eq.webchat-test,source.eq.sim");
+    const pruebaIds = new Set(((tcs ?? []) as any[]).map((c) => c.id));
+    if (pruebaIds.size) {
+      orders = orders.filter((o: any) => !pruebaIds.has(o.contact_id));
+      if (leads > 0) {
+        const { count: cPrueba } = await db.from("capi_events").select("id", { count: "exact", head: true })
+          .eq("channel_id", chId).eq("event_name", "Lead").gte("created_at", fromISO).lt("created_at", toISO)
+          .in("contact_id", [...pruebaIds]);
+        if (typeof cPrueba === "number") leads = Math.max(0, leads - cPrueba);
+      }
+    }
   } catch (_) { /* si no se puede saber, se deja como está */ }
+  // Pedidos en OTRA moneda que la actual del negocio (cambió de moneda en Ajustes): no se
+  // suman como si fueran de la actual (mismo criterio que el Dashboard); se avisa abajo.
+  const _curNeg = String(ch?.moneda || "PEN").toUpperCase();
+  const otrasMonedas: Record<string, number> = {};
+  orders = orders.filter((o: any) => {
+    const c = String(o?.currency || "PEN").toUpperCase();
+    if (c === _curNeg) return true;
+    otrasMonedas[c] = (otrasMonedas[c] || 0) + 1; return false;
+  });
   const dg = resumirPedidos(orders);
   const nuevosContactos = typeof contR.count === "number" ? contR.count : 0;
-  const leads = typeof leadR.count === "number" ? leadR.count : 0;
   // ⚠ Moneda: el gasto de Meta viene en la moneda de la CUENTA publicitaria, que puede
   // no ser la del negocio. Sin convertir, ROAS y neta salen inflados ~3.75× (USD/PEN).
   // Misma regla que el panel (shell.js › factorAds), para que el digest de Telegram y el
@@ -177,9 +200,11 @@ export async function construirResumen(
   L.push(`👥 Nuevos contactos: ${nuevosContactos}`);
   if (leads > 0) L.push(`🎯 Leads (anuncios): ${leads}`);
   if (dg.perdidos > 0) L.push(`❌ Perdidos: ${dg.perdidos}`);
+  const _otras = Object.entries(otrasMonedas);
+  if (_otras.length) L.push(`⚠️ <i>${_otras.map(([c, n]) => `${n} pedido${n > 1 ? "s" : ""} en ${escaparHtml(c)}`).join(" · ")} fuera de estos números: el negocio ahora factura en ${escaparHtml(_curNeg)}.</i>`);
 
   // Sin ninguna venta ni movimiento, un mensaje honesto en vez de puros ceros.
-  if (dg.pedidosNuevos === 0 && nuevosContactos === 0 && gastoAds === 0 && gastosExtra === 0) {
+  if (dg.pedidosNuevos === 0 && nuevosContactos === 0 && gastoAds === 0 && gastosExtra === 0 && !_otras.length) {
     return prefix + `${TITULO[cual]} · <i>${fechaLbl}</i>\n\n😴 Sin movimiento este día.`;
   }
   return prefix + L.join("\n");
