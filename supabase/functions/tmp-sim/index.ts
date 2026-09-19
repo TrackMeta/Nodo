@@ -27,6 +27,17 @@ Deno.serve(async (req) => {
   if (!(await userIsChannelAdmin(db, uid, channel_id))) return json({ error: "forbidden", detalle: "Solo un administrador puede usar el simulador" }, 403);
   const mediaKind = media?.url ? (media.kind || "document") : null;
 
+  // 🔒 Nunca pisar un contacto REAL: el upsert por (channel_id, wa_id) convertía en «sim» a un
+  // cliente de verdad si el número coincidía → desaparecía del Dashboard/Embudo, el bot dejaba
+  // de escribirle por WhatsApp para siempre (ensureDelivery lo trata como prueba) y un `reset`
+  // le borraba pedidos y mensajes. El simulador solo puede tocar contactos que él mismo creó.
+  {
+    const { data: ya } = await db.from("contacts").select("id, source, wa_id").eq("channel_id", channel_id).eq("wa_id", wa_id).maybeSingle();
+    if (ya && (ya as any).source !== "sim" && (ya as any).wa_id !== "webchat-test") {
+      return json({ error: "contacto_real", detalle: `El número ${wa_id} es un contacto real de este bot: el simulador no puede usarlo. Elige otro wa_id.` }, 409);
+    }
+  }
+
   const { data: contact } = await db.from("contacts").upsert({
     channel_id, wa_id, nombre: nombre || wa_id,
     // 🔴 Marca de SIMULADO: `ensureDelivery` solo eximía a «webchat-test» del envío real. Un

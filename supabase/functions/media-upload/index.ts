@@ -45,8 +45,12 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const { channel_id, filename, content_type, data } = body;
   if (!data) return json({ error: "falta_data" }, 400);
-  // Multi-tenant: si se sube a la carpeta de un canal, debe ser de tu cuenta.
-  if (channel_id && !(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
+  // Multi-tenant: todo archivo va a la carpeta de un canal de tu cuenta. Sin channel_id se
+  // subía a `acct/misc/…`, una carpeta sin dueño ni cuota en un bucket público: cualquier
+  // miembro de cualquier cuenta podía usarlo de hosting. Todos los callers del panel (avatar
+  // incluido) mandan channel_id.
+  if (!channel_id) return json({ error: "falta_channel_id" }, 400);
+  if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
   // Solo tipos de media reales (bucket público → nada de HTML/SVG/JS ejecutables).
   const ct = String(content_type || "").toLowerCase().split(";")[0].trim();
   if (!ALLOWED_CT.has(ct)) return json({ error: "tipo_no_permitido", detalle: "WhatsApp no acepta este formato: usa JPG/PNG, MP3/OGG, MP4 o PDF." }, 415);

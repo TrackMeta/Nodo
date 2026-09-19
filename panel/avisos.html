@@ -74,7 +74,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, confirmDialog, icon, getChannel } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog, icon, getChannel, guardUnsaved, markClean } from "./shell.js";
 let NOMBRE_NEGOCIO="Tu negocio"; // la vista previa decía «[Prime Digital]» a cualquier cuenta
 import { getTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -104,6 +104,8 @@ const DEMO={
   // borra la línea entera (esa es la regla de "línea sin ningún dato") y el aviso se ve
   // más pobre de lo que va a llegar de verdad.
   cambios:"sede: Shalom La Esperanza · DNI: 70123456",
+  // Faltaban y la vista previa mostraba «💵 *— 210*», «📦 —» y un «.20» colgado.
+  moneda:"S/", pedido:"#A1B2C3", texto:"¿Me pueden mandar la guía?",
 };
 
 async function callFn(name, body){
@@ -115,6 +117,7 @@ async function callFn(name, body){
 
 async function boot(){
   const sh=await mountShell({ active:"canales" });
+  guardUnsaved(".nodo-page"); // avisa si sales con textos/perillas editados sin guardar
   try{ const ch=await getChannel(); if(ch&&ch.nombre) NOMBRE_NEGOCIO=ch.nombre; }catch(_){}
   st.channelId=sh.channelId;
   // El ejemplo del comando /fecha estaba escrito a mano ("2026-07-20") y envejecía
@@ -316,7 +319,7 @@ async function guardar(e){
       items:st.cfg.items, hora:st.cfg.hora });
     await callFn("channel-config",{ action:"resumen_guardar", channel_id:st.channelId,
       resumenes:st.resumen });
-    toast("Avisos guardados");
+    markClean(); toast("Avisos guardados");
   }catch(err){ toast(err.message||"No se pudo guardar",true); }
   b.disabled=false; b.textContent=old;
 }

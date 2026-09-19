@@ -663,6 +663,23 @@ export function guardUnsaved(selector) {
 export function markClean() { _dirty = false; }
 export function markDirty() { if (_guardSel) _dirty = true; }
 export function isDirty() { return _dirty; }
+// Si hay cambios sin guardar, pregunta antes de descartarlos (pestañas internas de una
+// página, cambio de bot). Devuelve true si se puede seguir. Las pestañas de Negocio/IA
+// rehacían el formulario desde el snapshot sin preguntar y lo editado se perdía.
+export async function confirmDescartar() {
+  if (!_dirty) return true;
+  const ok = await confirmDialog({ title: "Cambios sin guardar", message: "Tienes cambios sin guardar. Si sigues, se pierden.", confirmText: "Descartar", danger: true });
+  if (ok) _dirty = false;
+  return ok;
+}
+// Escribe en `channels` y COMPRUEBA que tocó la fila: la tabla es solo-admin por RLS, así
+// que a un OPERADOR el UPDATE le afecta 0 filas SIN error y la pantalla decía «guardado»
+// sin guardar (Negocio, IA → Vendedor/Atención/Perfiles/Validador). Devuelve { error }.
+export async function updateChannel(channelId, patch) {
+  const { data, error } = await supa.from("channels").update(patch).eq("id", channelId).select("id");
+  if (!error && !(data && data.length)) return { error: { message: "No se guardó: solo un administrador puede cambiar esto", soloAdmin: true } };
+  return { error };
+}
 // Trae TODAS las filas de una consulta paginando (Supabase/PostgREST topa en ~1000 por
 // request). `makeQuery(from,to)` debe devolver una query FRESCA con `.range(from,to)` y
 // un orden ESTABLE (incluye un desempate por id para no repetir/saltar filas entre

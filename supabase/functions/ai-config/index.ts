@@ -54,14 +54,23 @@ Deno.serve(async (req) => {
         });
         if (error) return json({ error: "guardar", detalle: error.message }, 400);
         if (make_default) {
-          await db.from("channels").update({ ia_provider: provider }).eq("id", channel_id);
+          // Se LEE el error: antes se respondía ok:true aunque el UPDATE no cambiara nada.
+          const { error: eDef } = await db.from("channels").update({ ia_provider: provider }).eq("id", channel_id);
+          if (eDef) return json({ error: "guardar_default", detalle: eDef.message }, 400);
         }
         return json({ ok: true });
       }
 
       case "default": {
-        // provider null → deshabilitar IA del canal.
-        await db.from("channels").update({ ia_provider: provider ?? null }).eq("id", channel_id);
+        // provider null → deshabilitar IA del canal. Con proveedor, tiene que existir su fila en
+        // channel_ai (con key): apuntar ia_provider a un proveedor sin configurar dejaba el bot
+        // en «IA no configurada» (get_channel_ai_active vacío) sin ningún aviso.
+        if (provider) {
+          const { data: cfgRow } = await db.from("channel_ai").select("provider").eq("channel_id", channel_id).eq("provider", provider).maybeSingle();
+          if (!cfgRow) return json({ error: "proveedor_sin_configurar", detalle: "Primero guarda la clave de ese proveedor." }, 400);
+        }
+        const { error: eDef } = await db.from("channels").update({ ia_provider: provider ?? null }).eq("id", channel_id);
+        if (eDef) return json({ error: "guardar_default", detalle: eDef.message }, 400);
         return json({ ok: true });
       }
 

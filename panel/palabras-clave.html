@@ -556,7 +556,7 @@ function renderIntents(){
     const el=document.createElement("div"); el.className="intent";
     const fallbackHint=p.config?.contexto_producto?`Actualmente usa la descripción de la ficha.`:"";
     el.innerHTML=`
-      <div class="ih">${p.emoji?p.emoji+" ":""}${esc(p.nombre)}</div>
+      <div class="ih">${p.emoji?esc(p.emoji)+" ":""}${esc(p.nombre)}</div>
       <textarea class="in intent-t" placeholder="Ej. El cliente pregunta por zapatillas, zapatos deportivos, talla, running… ${fallbackHint}">${esc(st.intents[p.id]||"")}</textarea>`;
     const ta=el.querySelector(".intent-t");
     ta.onchange=()=>saveIntent(p,ta.value.trim());

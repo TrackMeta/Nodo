@@ -8119,12 +8119,16 @@ const SEG_RANK: Record<string, number> = {
 async function enrolarSegmento(db: SupabaseClient, channelId: string, contactId: string, segmento: string) {
   try {
     // Producto del contacto → su mapa de remarketing por segmento.
-    const { data: c } = await db.from("contacts").select("product_id, no_remarketing").eq("id", contactId).maybeSingle();
+    const { data: c } = await db.from("contacts").select("product_id, no_remarketing, wa_id, source").eq("id", contactId).maybeSingle();
     // Pidió que no le escriban: NO re-enrolarlo por "graduación". Antes se le creaba
     // una sub 'activa' nueva (el scheduler la re-cancelaba al siguiente tick por
     // no_remarketing, pero era churn constante crear→cancelar y un estado
     // inconsistente: una sub activa para alguien opt-out). Se corta en la fuente.
     if ((c as any)?.no_remarketing === true) return;
+    // Contactos de PRUEBA (Probar flujos / simulador): no se suscriben a remarketing. Una tanda
+    // de simulaciones dejaba cientos de suscripciones activas que el scheduler atendía tick a
+    // tick (y, por la puerta de la plantilla, mandaba por Meta a números inventados).
+    if ((c as any)?.wa_id === "webchat-test" || (c as any)?.source === "sim") return;
     const productId = (c as any)?.product_id;
     if (!productId) return; // sin producto → no hay a qué remarketing engancharlo
     const { data: p } = await db.from("products").select("config").eq("id", productId).maybeSingle();
@@ -8285,9 +8289,11 @@ async function avisar(
     // Contacto de PRUEBA (panel "Probar"): NO disparar avisos reales al Telegram del dueño.
     // Probar una venta no debe spamear el grupo ni, peor, crear botones (pago por validar /
     // entregar) que al tocarse operen sobre un pedido FALSO vía telegram-webhook.
+    // …ni los del SIMULADOR (source = 'sim'): una tanda de 100 simulaciones mandaba 100
+    // «💰 ADELANTO POR VALIDAR» reales con botón adel_ok sobre pedidos de mentira.
     if (contactId) {
-      const { data: ctp } = await db.from("contacts").select("wa_id").eq("id", contactId).maybeSingle();
-      if ((ctp as any)?.wa_id === "webchat-test") return;
+      const { data: ctp } = await db.from("contacts").select("wa_id, source").eq("id", contactId).maybeSingle();
+      if ((ctp as any)?.wa_id === "webchat-test" || (ctp as any)?.source === "sim") return;
     }
 
     const cfg = (channel as any)?.telegram_avisos as AvisosConfig | null;
@@ -9978,6 +9984,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // comprobante y se engancha al crear el pedido (no se pierde ni se ignora).
   if (!order) return await stashPrepagoAdelanto(db, channelId, contactId, event);
   const ship = ((order as any).shipping ?? {}) as Record<string, any>;
+$H
 
   const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config, entregas, timezone").eq("id", channelId).maybeSingle();
   const cfg = (ch as any)?.pedidos_config?.adelanto ?? {};
@@ -10070,8 +10077,14 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   if (ab && ab.ambiguo) {
     await db.from("orders").update({
       updated_at: new Date().toISOString(),
-      shipping: { ...ship, adelanto_parcial: true, adelanto_revisar_dup: true,
-        adelanto_comprobante: url, adelanto_metodo: metodo },
+      // Con recibido_at + revisar + monto leído: sin ellos la tarjeta de «Pagos por validar» no
+      // salía (el Copiloto la oculta si el último rechazo es posterior al último recibido) o
+      // salía con el veredicto VIEJO del comprobante anterior, y al cliente ya se le dijo «te
+      // confirmo en un ratito».
+      shipping: { ...(await shipFresco()), adelanto_parcial: true, adelanto_revisar_dup: true,
+        adelanto_comprobante: url, adelanto_metodo: metodo, adelanto_recibido_at: new Date().toISOString(),
+        adelanto_revisar: "2º comprobante del mismo monto sin nº de operación: ¿reenvío o 2º pago?",
+        adelanto_monto_leido: monto, adelanto_operacion_leida: null, adelanto_ok_ia: false },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "⚠️ 2º comprobante del mismo monto sin nº de operación",
       `${monto} — ¿reenvío o 2º pago? Revisar manualmente antes de validar el adelanto`).catch(() => {});
@@ -10084,7 +10097,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   if (ab && !ab.cubre) {
     await db.from("orders").update({
       updated_at: new Date().toISOString(),
-      shipping: { ...ship, [ab.key]: ab.abonos, adelanto_abonado: ab.total, adelanto_parcial: true,
+      shipping: { ...(await shipFresco()), [ab.key]: ab.abonos, adelanto_abonado: ab.total, adelanto_parcial: true,
         adelanto_comprobante: url, adelanto_metodo: metodo },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Abono parcial del adelanto", `${ab.total} de ${piso}${piso !== esperado ? " (mínimo)" : ""} · falta ${ab.falta}`);
@@ -10132,7 +10145,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     const { saldo: saldoNuevo, pagadoTotal } = saldoTrasAdelanto(ship, totalAdel);
     const _patchAdel = {
       estado: "adelanto_validado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      shipping: { ...ship, adelanto_operacion: oper, adelanto_metodo: metodo, adelanto_validado_auto: true, adelanto_comprobante: url,
+      shipping: { ...(await shipFresco()), adelanto_operacion: oper, adelanto_metodo: metodo, adelanto_validado_auto: true, adelanto_comprobante: url,
         saldo: String(saldoNuevo), adelanto_abonado: totalAdel, pago_acreditado_adelanto: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}),
         ...(ab && ab.abonos.length > 1 ? { adelanto_abonos: ab.abonos } : {}) },
     };
@@ -10234,7 +10247,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   await db.from("orders").update({
     updated_at: new Date().toISOString(),
     shipping: {
-      ...ship, adelanto_comprobante: url, adelanto_recibido_at: new Date().toISOString(),
+      ...(await shipFresco()), adelanto_comprobante: url, adelanto_recibido_at: new Date().toISOString(),
       adelanto_revisar: motivo, adelanto_monto_leido: montoLeido,
       adelanto_operacion_leida: oper, adelanto_metodo: metodo,
       adelanto_ok_ia: !!parsed?.valido && cubre && !reuse,
@@ -10263,6 +10276,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!order) return false;
   const ship = ((order as any).shipping ?? {}) as Record<string, any>;
+$H
 
   // 2) ¿Modo automático activado en IA · Pedidos?
   const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config, timezone").eq("id", channelId).maybeSingle();
@@ -10338,8 +10352,12 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   if (ab && ab.ambiguo) {
     await db.from("orders").update({
       updated_at: new Date().toISOString(),
-      shipping: { ...ship, saldo_parcial: true, saldo_revisar_dup: true,
-        saldo_comprobante: url, saldo_metodo: metodo },
+      // Mismas claves que el camino manual, o la tarjeta de «Saldo por validar» no sale / sale
+      // con el veredicto viejo (ver el bloque gemelo del adelanto).
+      shipping: { ...(await shipFresco()), saldo_parcial: true, saldo_revisar_dup: true,
+        saldo_comprobante: url, saldo_metodo: metodo, saldo_recibido_at: new Date().toISOString(),
+        saldo_revisar: "2º comprobante del mismo monto sin nº de operación: ¿reenvío o 2º pago?",
+        saldo_monto_leido: monto, saldo_operacion_leida: null },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "⚠️ 2º comprobante del mismo monto sin nº de operación",
       `${monto} — ¿reenvío o 2º pago? Revisar manualmente antes de soltar la clave de recojo`).catch(() => {});
@@ -10351,7 +10369,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   if (ab && !ab.cubre) {
     await db.from("orders").update({
       updated_at: new Date().toISOString(),
-      shipping: { ...ship, [ab.key]: ab.abonos, saldo_abonado: ab.total, saldo_parcial: true,
+      shipping: { ...(await shipFresco()), [ab.key]: ab.abonos, saldo_abonado: ab.total, saldo_parcial: true,
         saldo_comprobante: url, saldo_metodo: metodo },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "Abono parcial del saldo", `${ab.total} de ${saldo} · falta ${ab.falta}`);
@@ -10389,7 +10407,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     // ✅ Todo cuadra → saldo_pagado (la operación ya la reclamó el claim de arriba) + entrega.
     const _patchSaldo = {
       estado: "saldo_pagado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      shipping: { ...ship, saldo_operacion: oper, saldo_metodo: metodo, saldo_validado_auto: true, saldo_comprobante: url,
+      shipping: { ...(await shipFresco()), saldo_operacion: oper, saldo_metodo: metodo, saldo_validado_auto: true, saldo_comprobante: url,
         ...(ab && ab.abonos.length > 1 ? { saldo_abonos: ab.abonos, saldo_abonado: ab.total } : {}) },
     };
     // Igual que en el adelanto: la operación ya está reclamada, así que un fallo de escritura
@@ -10448,7 +10466,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     : "listo para tu aprobación";
   await db.from("orders").update({
     updated_at: new Date().toISOString(),
-    shipping: { ...ship, saldo_comprobante: url, saldo_recibido_at: new Date().toISOString(), saldo_revisar: motivo, saldo_metodo: metodo,
+    shipping: { ...(await shipFresco()), saldo_comprobante: url, saldo_recibido_at: new Date().toISOString(), saldo_revisar: motivo, saldo_metodo: metodo,
       saldo_monto_leido: montoLeido, saldo_operacion_leida: oper,
       ...(ab && ab.abonos.length > 1 ? { saldo_abonos: ab.abonos, saldo_abonado: ab.total } : {}) },
   }).eq("id", (order as any).id);

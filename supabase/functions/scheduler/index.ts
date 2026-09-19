@@ -459,10 +459,12 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
             await deliverStep(db, chId, (o as any).contact_id, { mensaje: nudge.mensaje }, (o as any).id);
             enviado = true;
           } else if (nudge.template_name) {
-            await sendTemplateToContact(db, chId, (o as any).contact_id, {
+            // Solo cuenta si SALIÓ (wamid): si no, `_nudge_adelanto` se sellaba y ese pedido
+            // no se recordaba nunca más aunque el cliente jamás recibió el recordatorio.
+            const wamidN = await sendTemplateToContact(db, chId, (o as any).contact_id, {
               name: nudge.template_name, language: nudge.template_lang, params: nudge.template_params,
             });
-            enviado = true;
+            enviado = !!wamidN;
           }
           if (enviado) {
             await db.from("orders").update({
@@ -518,9 +520,12 @@ async function processOrderReminders(now: number): Promise<number> {
       if (!(o as any).contact_id) continue;
       // Si un HUMANO tomó la conversación (bot_activo=false), NO inyectar un flujo
       // automático encima del agente — mismo guard que processAdelantos/processSub.
-      const { data: ct } = await db.from("contacts").select("bot_activo, bloqueado, ultimo_auto_msg_at").eq("id", (o as any).contact_id).maybeSingle();
+      const { data: ct } = await db.from("contacts").select("bot_activo, bloqueado, ultimo_auto_msg_at, no_remarketing").eq("id", (o as any).contact_id).maybeSingle();
       if ((ct as any)?.bot_activo === false) continue;
       if ((ct as any)?.bloqueado === true) continue;
+      // Opt-out: un recordatorio sobre `esperando_adelanto` es marketing («paga el adelanto»);
+      // processAdelantos ya lo respetaba y este no. Los estados logísticos no se frenan.
+      if ((ct as any)?.no_remarketing === true && estado === "esperando_adelanto") continue;
       const ship = (o as any).shipping ?? {};
       // Marca por estado Y horas: un flujo con dos recordatorios del mismo estado (24 h «llegó
       // tu paquete» y 72 h «mañana lo devuelven») compartía la marca y el segundo nunca salía.
@@ -969,10 +974,22 @@ async function processSub(s: any, now: number): Promise<boolean> {
     // reintento infinito cada tick (y jamás llegaban los pasos siguientes). Ahora se
     // registra y se AVANZA igual (se salta ese toque) para no bloquear la secuencia.
     try {
-      await sendTemplateToContact(db, s.channel_id, s.contact_id, {
+      // sendTemplateToContact NO lanza cuando no pudo enviar (canal sin token, contacto BSUID
+      // sin número): registra el mensaje como `failed` y devuelve "". Contar eso como toque
+      // sellaba el anti-spam, dejaba grabada la oferta que el cliente nunca vio y consumía el
+      // paso: con un token vencido, las secuencias «recorrían» todos sus toques sin que nadie
+      // recibiera nada. Solo cuenta si hay wamid (o "simulado" en un contacto de prueba).
+      const wamidSeq = await sendTemplateToContact(db, s.channel_id, s.contact_id, {
         name: paso.template_name, language: paso.template_lang, params: paso.template_params,
       });
-      toco = true;
+      toco = !!wamidSeq;
+      if (!toco) {
+        await db.from("contact_events").insert({
+          channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
+          titulo: "🔕 Plantilla de la secuencia no salió",
+          detalle: `Paso ${s.paso_actual}: «${paso.template_name}» — el canal no pudo enviar (¿WhatsApp desconectado o contacto sin número?). Se saltó este toque.`,
+        }).then(() => {}, () => {});
+      }
     } catch (e) {
       // Rechazo TEMPORAL de Meta (rate limit del número, 5xx, tope por usuario): no es culpa
       // del paso ni del contacto. Avanzar igual le quitaba el toque a 200 suscriptores por un

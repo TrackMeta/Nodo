@@ -108,7 +108,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, guardUnsaved, markClean, markDirty, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, guardUnsaved, markClean, markDirty, confirmDialog, confirmDescartar, updateChannel } from "./shell.js";
 import { cargarListas } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
 const IC={ book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>' };
@@ -119,7 +119,8 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   $("tabCon").innerHTML=IC.book+"<span>Conocimiento del negocio</span>";
   $("tabEnt").innerHTML=icon("truck")+"<span>Entrega y logística</span>";
-  document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
+  // Cambiar de pestaña rehace el formulario desde el snapshot: si hay cambios sin guardar, se pregunta.
+  document.querySelectorAll(".tab").forEach(b=> b.onclick=async()=>{ if(st.tab===b.dataset.t) return; if(!await confirmDescartar()) return; st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"negocio" });
   st.channelId=shell.channelId;
   guardUnsaved(".nodo-page"); // avisa si sales con el formulario a medio editar
@@ -128,11 +129,38 @@ async function boot(){
   if(st.channelId) await load();
 }
 async function load(){
+  // Anti-carrera al cambiar de bot: si la respuesta del bot ANTERIOR llegaba después, la
+  // pantalla mostraba su conocimiento/entregas con st.channelId ya apuntando al nuevo, y al
+  // guardar se escribía el negocio de A dentro de B.
+  const gen=(st.gen=(st.gen||0)+1);
   let { data:ch, error }=await supa.from("channels")
     .select("nombre,negocio,negocio_form,buffer_default_seg,entregas").eq("id",st.channelId).maybeSingle();
   if(error){ ({ data:ch }=await supa.from("channels").select("nombre,negocio,negocio_form,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
+  if(gen!==st.gen) return;
   st.channel=ch||{};
+  markClean();
   render();
+}
+// Antes de escribir negocio_form ENTERO se re-lee lo fresco y solo se pisa lo que ESTA
+// página cambió respecto de su snapshot: IA → Vendedor y Negocio escriben la misma columna
+// desde snapshots distintos (dos pestañas del navegador), y el último en guardar revertía
+// lo del otro (nombre de la IA, tono, retraso…). Devuelve { form, retraso } listos para guardar.
+async function mezclarConFresco(form, retraso){
+  const J=(v)=>JSON.stringify(v===undefined?null:v);
+  try{
+    const { data:fresh }=await supa.from("channels").select("negocio_form,buffer_default_seg").eq("id",st.channelId).maybeSingle();
+    const fr=(fresh&&fresh.negocio_form&&typeof fresh.negocio_form==="object")?fresh.negocio_form:null;
+    const snap=st.snap||{};
+    if(fr){
+      const merged={...fr};
+      for(const k of new Set([...Object.keys(form),...Object.keys(snap)])){
+        if(J(form[k])!==J(snap[k])){ if(form[k]===undefined) delete merged[k]; else merged[k]=form[k]; }
+      }
+      form=merged;
+    }
+    if(fresh && fresh.buffer_default_seg!=null && retraso===(st.snapRetraso??4)) retraso=fresh.buffer_default_seg;
+  }catch(_){ /* sin lo fresco, se guarda tal cual */ }
+  return { form, retraso };
 }
 function render(){
   const b=$("body");
@@ -238,7 +266,13 @@ function compileNegocio(form){
 }
 function seedForm(){
   const c=st.channel||{};
-  let form=c.negocio_form && typeof c.negocio_form==="object" ? {...c.negocio_form} : {};
+  // Copia PROFUNDA (antes era superficial y el array de FAQ quedaba compartido con el
+  // snapshot: lo editado «sobrevivía» a un cambio de pestaña por accidente y el diff contra
+  // el snapshot no veía el cambio). El snapshot se guarda aparte para mezclarConFresco.
+  const base=c.negocio_form && typeof c.negocio_form==="object" ? c.negocio_form : {};
+  st.snap=JSON.parse(JSON.stringify(base));
+  st.snapRetraso=c.buffer_default_seg ?? 4;
+  let form=JSON.parse(JSON.stringify(base));
   if(!c.negocio_form && c.negocio) form.extra=c.negocio;
   // Prellenar el nombre del negocio con el del canal cuando aún no se configuró
   // (un canal nuevo salía con el campo vacío aunque el bot ya tiene nombre).
@@ -255,14 +289,20 @@ function seedForm(){
 }
 async function saveForm(btn){
   const old=btn.textContent; btn.disabled=true; btn.textContent="Guardando…";
-  const form=st.form;
+  const cid=st.channelId;
+  const { form, retraso }=await mezclarConFresco(st.form, st.retraso);
   const negocio=compileNegocio(form).trim()||null;
-  let { error }=await supa.from("channels").update({ negocio, negocio_form:form, buffer_default_seg:st.retraso }).eq("id",st.channelId);
-  if(error && /negocio_form|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio, buffer_default_seg:st.retraso }).eq("id",st.channelId)); }
-  if(error && /buffer_default_seg|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio }).eq("id",st.channelId)); }
+  // updateChannel comprueba que la fila se tocó: a un operador (channels es solo-admin por
+  // RLS) el UPDATE le afecta 0 filas sin error y esto decía «guardado» sin guardar.
+  let { error }=await updateChannel(cid, { negocio, negocio_form:form, buffer_default_seg:retraso });
+  if(error && /negocio_form|column/.test(error.message)){ ({ error }=await updateChannel(cid, { negocio, buffer_default_seg:retraso })); }
+  if(error && /buffer_default_seg|column/.test(error.message)){ ({ error }=await updateChannel(cid, { negocio })); }
   btn.disabled=false; btn.textContent=old;
-  if(error){ toast(/negocio|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return false; }
-  st.channel.negocio=negocio; st.channel.negocio_form=form; st.channel.buffer_default_seg=st.retraso;
+  if(error){ toast(/negocio|column/.test(error.message)&&!error.soloAdmin?"Falta aplicar la migración 0023":error.message,true); return false; }
+  if(cid!==st.channelId) return true; // cambió de bot mientras guardaba: no pintar lo de A en B
+  st.form=form; st.retraso=retraso;
+  st.channel.negocio=negocio; st.channel.negocio_form=form; st.channel.buffer_default_seg=retraso;
+  st.snap=JSON.parse(JSON.stringify(form)); st.snapRetraso=retraso;
   markClean();
   return true;
 }
@@ -580,7 +620,7 @@ function renderEntregas(b){
       <p class="sub">Lo que te cuesta <b>a ti</b> el motorizado — no lo que paga el cliente. Se usa para calcular tu <b>ganancia real</b> y viene precargado cuando cierres el pedido (ahí puedes editarlo o marcar que no pagaste nada).</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <label style="margin:0;font-size:12.5px;font-weight:700">Costo para todo Lima</label>
-        <input class="in" id="entCostoDef" type="number" min="0" step="0.5" placeholder="0.00" value="${E.costos.default??""}" style="width:120px"/>
+        <input class="in" id="entCostoDef" type="number" min="0" step="0.5" placeholder="0.00" value="${esc(E.costos.default??"")}" style="width:120px"/>
         <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:220px">Es el valor por defecto. Abajo puedes afinarlo por grupo o por zona suelta — <b>lo más específico manda</b>.</span>
       </div>
     </div>
@@ -603,9 +643,9 @@ function renderEntregas(b){
     x.style.background=on?"var(--brand)":"transparent";
     x.style.color=on?"#fff":"var(--muted)";
   });
-  $("entCostoDef").onchange=(ev)=>{ E.costos.default = ev.target.value===""?undefined:Number(ev.target.value); paintZonas(); };
-  $("entAdelDef").onchange=(ev)=>{ E.adelanto_default = ev.target.value===""?undefined:Number(ev.target.value); };
-  { const m=$("entAdelMin"); if(m) m.onchange=(ev)=>{ E.adelanto_minimo_default = ev.target.value===""?undefined:Number(ev.target.value); }; }
+  $("entCostoDef").onchange=(ev)=>{ E.costos.default = ev.target.value===""?undefined:Math.max(0,Number(ev.target.value)||0); paintZonas(); };
+  $("entAdelDef").onchange=(ev)=>{ E.adelanto_default = ev.target.value===""?undefined:Math.max(0,Number(ev.target.value)||0); };
+  { const m=$("entAdelMin"); if(m) m.onchange=(ev)=>{ E.adelanto_minimo_default = ev.target.value===""?undefined:Math.max(0,Number(ev.target.value)||0); }; }
   $("aerDest").oninput=(ev)=>{ E.aereo.destinos = ev.target.value.split("\n").map(s=>s.trim()).filter(Boolean); };
   $("aerMsg").oninput=(ev)=>{ E.aereo.mensaje = ev.target.value.trim(); };
   $("coOrigen").oninput=(ev)=>{ E.courier.shalom.origen = ev.target.value.trim(); };
@@ -667,14 +707,14 @@ function paintEnvio(){
       <span style="font-size:12.5px;font-weight:700">Cuánto le cobras</span>
       <label style="margin:0;display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600">Lima
         <span style="color:var(--muted)">S/</span>
-        <input class="in" id="envLima" type="number" min="0" step="0.5" placeholder="0" value="${E.envio_cobro_lima??""}" style="width:90px"/></label>
+        <input class="in" id="envLima" type="number" min="0" step="0.5" placeholder="0" value="${esc(E.envio_cobro_lima??"")}" style="width:90px"/></label>
       <label style="margin:0;display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600">Provincia
         <span style="color:var(--muted)">S/</span>
-        <input class="in" id="envProv" type="number" min="0" step="0.5" placeholder="0" value="${E.envio_cobro_provincia??""}" style="width:90px"/></label>
+        <input class="in" id="envProv" type="number" min="0" step="0.5" placeholder="0" value="${esc(E.envio_cobro_provincia??"")}" style="width:90px"/></label>
       <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Se suma al total del pedido. Disponible en tus flujos como <b style="color:var(--brand)">{{total_cobrar}}</b> (precio + envío).</span>
     </div>`;
-  $("envLima").onchange=(ev)=>{ E.envio_cobro_lima = ev.target.value===""?undefined:Number(ev.target.value); };
-  $("envProv").onchange=(ev)=>{ E.envio_cobro_provincia = ev.target.value===""?undefined:Number(ev.target.value); };
+  $("envLima").onchange=(ev)=>{ E.envio_cobro_lima = ev.target.value===""?undefined:Math.max(0,Number(ev.target.value)||0); };
+  $("envProv").onchange=(ev)=>{ E.envio_cobro_provincia = ev.target.value===""?undefined:Math.max(0,Number(ev.target.value)||0); };
 }
 
 function paintFeriados(){
@@ -728,8 +768,8 @@ function paintZonas(){
           <span style="color:var(--faint);font-weight:400;font-size:12px">· ${nCub}/${zs.length} cubiertas · ${nMd} con mismo día</span></div>
         <div style="display:flex;gap:6px;align-items:center">
           <label style="margin:0;font-size:11.5px;color:var(--muted);font-weight:700">Costo</label>
-          <input class="in gcost" data-g="${g}" type="number" min="0" step="0.5" value="${cg??""}"
-            placeholder="${heredaDe}" title="Vacío = hereda de todo Lima" style="width:92px;height:28px;font-size:12px"/>
+          <input class="in gcost" data-g="${g}" type="number" min="0" step="0.5" value="${esc(cg??"")}"
+            placeholder="${esc(heredaDe)}" title="Vacío = hereda de todo Lima" style="width:92px;height:28px;font-size:12px"/>
           <button class="btn ga" data-g="${g}" data-k="cubro" data-v="1" style="height:28px;font-size:11.5px">Cubrir todas</button>
           <button class="btn ga" data-g="${g}" data-k="cubro" data-v="0" style="height:28px;font-size:11.5px">Ninguna</button>
           <button class="btn ga" data-g="${g}" data-k="mismo_dia" data-v="1" style="height:28px;font-size:11.5px">Mismo día: todas</button>
@@ -746,15 +786,15 @@ function paintZonas(){
           <div style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(z.nombre)}</div>
           ${(z.alias&&z.alias.length)?`<div style="font-size:10.5px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(z.alias.join(", "))}</div>`:""}
         </div>
-        <input class="in zcost" type="number" min="0" step="0.5" value="${E.costos.zonas[z.nombre]??""}"
-          placeholder="${fallback!=null?"S/ "+fallback:"—"}" title="Vacío = hereda del grupo" style="width:78px;height:28px;font-size:11.5px;flex:none"/>
+        <input class="in zcost" type="number" min="0" step="0.5" value="${esc(E.costos.zonas[z.nombre]??"")}"
+          placeholder="${esc(fallback!=null?"S/ "+fallback:"—")}" title="Vacío = hereda del grupo" style="width:78px;height:28px;font-size:11.5px;flex:none"/>
         <label class="ent-chk" style="flex:none;font-size:11px"><input type="checkbox" class="zc" ${z.cubro!==false?"checked":""}/> Cubro</label>
         <label class="ent-chk" style="flex:none;font-size:11px"><input type="checkbox" class="zm" ${z.mismo_dia===true?"checked":""}/> Mismo día</label>`;
       el.querySelector(".zc").onchange=(ev)=>{ z.cubro=ev.target.checked; paintZonas(); };
       el.querySelector(".zm").onchange=(ev)=>{ z.mismo_dia=ev.target.checked; paintZonas(); };
       el.querySelector(".zcost").onchange=(ev)=>{
         const v=ev.target.value;
-        if(v==="") delete E.costos.zonas[z.nombre]; else E.costos.zonas[z.nombre]=Number(v);
+        if(v==="") delete E.costos.zonas[z.nombre]; else E.costos.zonas[z.nombre]=Math.max(0,Number(v)||0);
       };
       grid.appendChild(el);
     });
@@ -767,7 +807,7 @@ function paintZonas(){
   });
   box.querySelectorAll(".gcost").forEach(inp=> inp.onchange=()=>{
     const v=inp.value;
-    if(v==="") delete E.costos.grupos[inp.dataset.g]; else E.costos.grupos[inp.dataset.g]=Number(v);
+    if(v==="") delete E.costos.grupos[inp.dataset.g]; else E.costos.grupos[inp.dataset.g]=Math.max(0,Number(v)||0);
     paintZonas();
   });
 }
@@ -788,8 +828,10 @@ async function guardarEntregas(){
   // Se fija el modo aunque no lo hayan tocado: así el motor deja de adivinarlo
   // desde el toggle viejo y hay una sola respuesta a "¿quién paga el envío?".
   E.envio_modo=envModoDe(E);
-  const { error }=await supa.from("channels").update({ entregas:E }).eq("id",st.channelId);
-  if(error){ toast(/entregas|column/.test(error.message)?"Falta aplicar la migración 0032":error.message,true); return; }
+  const cid=st.channelId;
+  const { error }=await updateChannel(cid, { entregas:E });
+  if(error){ toast(/entregas|column/.test(error.message)&&!error.soloAdmin?"Falta aplicar la migración 0032":error.message,true); return; }
+  if(cid!==st.channelId) return; // cambió de bot mientras guardaba
   st.channel.entregas=JSON.parse(JSON.stringify(E));
   markClean();
   toast("Entrega guardada");

@@ -1,3 +1,7 @@
+// Las fechas del reporte del banco se leen en la ZONA DEL NEGOCIO (no en la del navegador): los comprobantes
+// (messages.ts) son instantes UTC y el emparejamiento compara minutos; con la laptop en otro huso
+// todo salía «sin respaldo» y la huella anti-reúso cambiaba entre sesiones.
+import { instanteEn, getTZ } from "./date-range.js";
 // ═══════════════════════════════════════════════════════════════════
 // Nodo · conciliar.js — motor de conciliación de pagos.
 //
@@ -185,13 +189,13 @@ function parseFecha(s) {
     if (serial >= 20000 && serial <= 80000) { // ~1954–2119: rango razonable de fecha
       const days = Math.floor(serial), secs = Math.round((serial - days) * 86400);
       const u = new Date((days - 25569) * 86400000 + secs * 1000); // 25569 = serie de 1970-01-01
-      return new Date(u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate(), u.getUTCHours(), u.getUTCMinutes(), u.getUTCSeconds());
+      return instanteEn(getTZ(), u.getUTCFullYear(), u.getUTCMonth() + 1, u.getUTCDate(), u.getUTCHours(), u.getUTCMinutes(), u.getUTCSeconds(), 0);
     }
   }
   let m = t.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
-  if (m) return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  if (m) return instanteEn(getTZ(), +m[3], +m[2], +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0), 0);
   m = t.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  if (m) return instanteEn(getTZ(), +m[1], +m[2], +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0), 0);
   const d = new Date(t);
   return isNaN(d) ? null : d;
 }

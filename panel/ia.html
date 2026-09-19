@@ -142,7 +142,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, guardUnsaved, markClean } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, guardUnsaved, markClean, confirmDescartar, updateChannel } from "./shell.js";
 import { mountDateRange, computePreset, ymd as ymdDia } from "./date-range.js";
 const $ = (id) => document.getElementById(id);
 // ── Catálogo de modelos (nombre bonito → ID exacto y FUNCIONAL) ─────
@@ -256,7 +256,8 @@ async function boot(){
   $("tabPerf").innerHTML=IC.sliders+"<span>Perfiles</span>";
   $("tabVal").innerHTML=IC.shield+"<span>Validador</span>";
   $("tabProv").innerHTML=IC.spark+"<span>Proveedores</span>";
-  document.querySelectorAll(".tab").forEach(b=> b.onclick=()=>{ st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
+  // Cambiar de pestaña rehace el formulario desde el snapshot: si hay cambios sin guardar, se pregunta.
+  document.querySelectorAll(".tab").forEach(b=> b.onclick=async()=>{ if(st.tab===b.dataset.t) return; if(!await confirmDescartar()) return; st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"ia" });
   st.channelId=shell.channelId;
   guardUnsaved(".nodo-page"); // avisa si sales con un formulario de IA a medio editar
@@ -264,15 +265,41 @@ async function boot(){
   if(st.channelId) await loadCfg();
 }
 async function loadCfg(){
+  // Anti-carrera al cambiar de bot (misma guardia que Negocio): la respuesta lenta del bot
+  // anterior no debe pintarse —ni guardarse— sobre el nuevo.
+  const gen=(st.gen=(st.gen||0)+1);
   let { data:ch, error:chErr } = await supa.from("channels")
     .select("nombre,ia_provider,negocio,negocio_form,ia_perfiles,ocr_config,buffer_default_seg,pedidos_config").eq("id",st.channelId).maybeSingle();
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,ia_provider,negocio,negocio_form,ia_perfiles,ocr_config,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,ia_provider,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider").eq("id",st.channelId).maybeSingle()); }
+  if(gen!==st.gen) return;
   st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {}; st.perfMod={};
   const { data:rows } = await supa.from("channel_ai").select("provider,model,updated_at").eq("channel_id",st.channelId);
+  if(gen!==st.gen) return;
   st.cfg = {}; (rows||[]).forEach(r=> st.cfg[r.provider] = { model:r.model, updated_at:r.updated_at });
+  markClean();
   render();
+}
+// Antes de escribir negocio_form ENTERO se re-lee lo fresco y solo se pisa lo que ESTA
+// página cambió respecto de su snapshot (Negocio escribe la misma columna desde otro
+// snapshot; el último en guardar revertía al otro). Espejo de negocio.html.
+async function mezclarConFresco(form, retraso){
+  const J=(v)=>JSON.stringify(v===undefined?null:v);
+  try{
+    const { data:fresh }=await supa.from("channels").select("negocio_form,buffer_default_seg").eq("id",st.channelId).maybeSingle();
+    const fr=(fresh&&fresh.negocio_form&&typeof fresh.negocio_form==="object")?fresh.negocio_form:null;
+    const snap=st.snap||{};
+    if(fr){
+      const merged={...fr};
+      for(const k of new Set([...Object.keys(form),...Object.keys(snap)])){
+        if(J(form[k])!==J(snap[k])){ if(form[k]===undefined) delete merged[k]; else merged[k]=form[k]; }
+      }
+      form=merged;
+    }
+    if(fresh && fresh.buffer_default_seg!=null && retraso===(st.snapRetraso??4)) retraso=fresh.buffer_default_seg;
+  }catch(_){ /* sin lo fresco, se guarda tal cual */ }
+  return { form, retraso };
 }
 function render(){
   const b=$("body");
@@ -401,9 +428,9 @@ function renderAtencion(b){
     let base=src;
     try{ const { data:fresh }=await supa.from("channels").select("pedidos_config").eq("id",st.channelId).maybeSingle(); if(fresh&&fresh.pedidos_config&&typeof fresh.pedidos_config==="object") base=fresh.pedidos_config; }catch(_){}
     const full={ ...base, humano:p.humano, postventa:p.postventa };
-    const { error }=await supa.from("channels").update({ pedidos_config:full }).eq("id",st.channelId);
+    const { error }=await updateChannel(st.channelId, { pedidos_config:full });
     btn.disabled=false; btn.textContent=old;
-    if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
+    if(error){ toast(/pedidos_config|column/.test(error.message)&&!error.soloAdmin?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
     st.channel.pedidos_config=full; markClean(); toast("Atención guardada");
   };
 }
@@ -531,7 +558,11 @@ function compileNegocio(form){
 // Ambas guardan el formulario COMPLETO, así que editar una preserva la otra.
 function seedForm(){
   const c=st.channel||{};
-  let form=c.negocio_form && typeof c.negocio_form==="object" ? {...c.negocio_form} : {};
+  // Copia profunda + snapshot aparte (ver negocio.html seedForm).
+  const base=c.negocio_form && typeof c.negocio_form==="object" ? c.negocio_form : {};
+  st.snap=JSON.parse(JSON.stringify(base));
+  st.snapRetraso=c.buffer_default_seg ?? 4;
+  let form=JSON.parse(JSON.stringify(base));
   if(!c.negocio_form && c.negocio) form.extra=c.negocio; // migra el texto libre anterior
   if(!form.nombre && c.nombre) form.nombre=c.nombre; // igual que negocio.html: canal nuevo con nombre
   if(!Array.isArray(form.multimedia)) form.multimedia=[];
@@ -547,14 +578,19 @@ function seedForm(){
 // Guarda el formulario completo + retraso (la única fuente de ambos es st).
 async function saveForm(btn){
   const old=btn.textContent; btn.disabled=true; btn.textContent="Guardando…";
-  const form=st.form;
+  const cid=st.channelId;
+  const { form, retraso }=await mezclarConFresco(st.form, st.retraso);
   const negocio=compileNegocio(form).trim()||null;
-  let { error }=await supa.from("channels").update({ negocio, negocio_form:form, buffer_default_seg:st.retraso }).eq("id",st.channelId);
-  if(error && /negocio_form|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio, buffer_default_seg:st.retraso }).eq("id",st.channelId)); }
-  if(error && /buffer_default_seg|column/.test(error.message)){ ({ error }=await supa.from("channels").update({ negocio }).eq("id",st.channelId)); }
+  // updateChannel comprueba que la fila se tocó (a un operador el UPDATE afecta 0 filas sin error).
+  let { error }=await updateChannel(cid, { negocio, negocio_form:form, buffer_default_seg:retraso });
+  if(error && /negocio_form|column/.test(error.message)){ ({ error }=await updateChannel(cid, { negocio, buffer_default_seg:retraso })); }
+  if(error && /buffer_default_seg|column/.test(error.message)){ ({ error }=await updateChannel(cid, { negocio })); }
   btn.disabled=false; btn.textContent=old;
-  if(error){ toast(/negocio|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return false; }
-  st.channel.negocio=negocio; st.channel.negocio_form=form; st.channel.buffer_default_seg=st.retraso;
+  if(error){ toast(/negocio|column/.test(error.message)&&!error.soloAdmin?"Falta aplicar la migración 0023":error.message,true); return false; }
+  if(cid!==st.channelId) return true;
+  st.form=form; st.retraso=retraso;
+  st.channel.negocio=negocio; st.channel.negocio_form=form; st.channel.buffer_default_seg=retraso;
+  st.snap=JSON.parse(JSON.stringify(form)); st.snapRetraso=retraso;
   markClean();
   return true;
 }
@@ -651,9 +687,9 @@ function renderPerfiles(b){
       const prov=$("pf_prov_"+k).value, mod=(st.perfMod[k]||"").trim();
       if(prov||mod) ia_perfiles[k]={ ...(prov?{proveedor:prov}:{}), ...(mod?{modelo:mod}:{}) };
     });
-    const { error }=await supa.from("channels").update({ ia_perfiles }).eq("id",st.channelId);
+    const { error }=await updateChannel(st.channelId, { ia_perfiles });
     btn.disabled=false; btn.textContent=old;
-    if(error){ toast(/ia_perfiles|column/.test(error.message)?"Falta aplicar la migración 0023":error.message,true); return; }
+    if(error){ toast(/ia_perfiles|column/.test(error.message)&&!error.soloAdmin?"Falta aplicar la migración 0023":error.message,true); return; }
     st.channel.ia_perfiles=ia_perfiles; markClean(); toast("Perfiles guardados");
   };
 }
@@ -936,8 +972,11 @@ function renderValidador(b){
         o.ejemplos=merged;
       }
     }catch(_){ /* sin lo fresco, se guarda tal cual */ }
-    const { error }=await supa.from("channels").update({ ocr_config:o }).eq("id",st.channelId);
-    if(error){ btn.disabled=false; btn.textContent=old; toast(/ocr_config|column/.test(error.message)?"Falta aplicar la migración 0026":error.message,true); return; }
+    // Si esto no escribe (operador: 0 filas sin error), se ABORTA antes del upsert de
+    // custom_fields, que sí le está permitido: si no, {{datos_pago}} quedaba con el Yape nuevo
+    // y el validador seguía aceptando comprobantes con el titular/número viejo.
+    const { error }=await updateChannel(st.channelId, { ocr_config:o });
+    if(error){ btn.disabled=false; btn.textContent=old; toast(/ocr_config|column/.test(error.message)&&!error.soloAdmin?"Falta aplicar la migración 0026":error.message,true); return; }
     st.channel.ocr_config=o;
     // Fuente única: sincroniza el campo del bot {{datos_pago}} (para el mensaje de cobro).
     const datos = (o.gen_datos!==false) ? genDatosPago(o.metodos) : (o.datos_pago||"").trim();

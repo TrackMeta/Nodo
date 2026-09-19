@@ -105,6 +105,7 @@ Deno.serve(async (req) => {
   }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  let notaSinOperacion = false; // se anota tras el CAS (ver más abajo)
   if (body.shipping && typeof body.shipping === "object") {
     patch.shipping = { ...((order as any).shipping ?? {}), ...body.shipping };
   }
@@ -179,19 +180,48 @@ Deno.serve(async (req) => {
     // candado anti-reúso y no deja rastro: el pedido avanza, se entrega, y ninguna operación
     // queda registrada. Se permite (es decisión del operador) pero queda anotado en la Actividad.
     const _aprobandoPago = ["adelanto_validado", "saldo_pagado", "confirmada"].includes(String(newEstado ?? "")) || aprobandoExtra;
-    if (_aprobandoPago && opN.length < 4 && (order as any).contact_id) {
-      await db.from("contact_events").insert({
-        channel_id: (order as any).channel_id, contact_id: (order as any).contact_id, tipo: "nota",
-        titulo: "⚠️ Pago aprobado sin nº de operación",
-        detalle: `Se aprobó «${newEstado ?? "venta extra"}» sin operación legible: no entra al candado anti-reúso. Si tienes el comprobante, anota la operación en el pedido.`,
-      }).then(() => {}, () => {});
-    }
+    // La nota se deja DESPUÉS del CAS (más abajo): acá, antes, un doble clic o un 2º operador
+    // (que termina en `deduped`) la escribía dos veces, y una describía una aprobación que no
+    // ocurrió.
+    notaSinOperacion = _aprobandoPago && opN.length < 4 && !!(order as any).contact_id;
     if (opN.length >= 4) {
-      const { data: prev } = await db.from("payment_operations").select("order_id")
+      const { data: prev } = await db.from("payment_operations").select("order_id, contact_id")
         .eq("channel_id", (order as any).channel_id).eq("operacion", opN).maybeSingle();
-      if (prev && (prev as any).order_id && (prev as any).order_id !== order.id) {
+      // Ya reclamada por OTRO pedido → reúso. Y si quedó con order_id null (el pago digital
+      // principal se reclama ANTES de que exista el pedido, así que su fila no lleva order_id),
+      // se compara por CONTACTO: la misma operación en manos de otro cliente es un reúso igual.
+      // Antes `prev.order_id &&` dejaba pasar justo ese caso: un Yape ya usado para un digital,
+      // mandado como adelanto de un físico, se aprobaba a mano y un solo pago acreditaba dos ventas.
+      const pOrd = (prev as any)?.order_id ?? null, pCt = (prev as any)?.contact_id ?? null;
+      const reusada = !!prev && (pOrd ? pOrd !== order.id : (!!pCt && pCt !== (order as any).contact_id));
+      if (reusada) {
         return json({ error: "operacion_reusada", detalle: `Esa operación (${opN}) ya se acreditó en otro pedido. Revísalo antes de aprobar.` }, 409);
       }
+    }
+  }
+  // Comprobante RECHAZADO: el abono que ese comprobante había sumado a la bolsa de pagos
+  // parciales (`*_abonos`) tiene que salir de ella. Antes se quedaba: una captura falsa de
+  // S/10 rechazada + un Yape real de S/10 después sumaban S/20 y «cubrían» el adelanto (o el
+  // saldo): se despachaba (o se soltaba la clave) con la mitad del dinero. Se quita el abono
+  // que corresponde al ÚLTIMO comprobante leído (por su nº de operación; sin operación, el
+  // último de ese monto sin operación) y se recalcula lo abonado.
+  if (patch.shipping) {
+    const shp = patch.shipping as any;
+    for (const pre of ["adelanto", "saldo"]) {
+      if (!(body.shipping as any)?.[`${pre}_rechazado_at`]) continue;
+      const abonos = Array.isArray(shp[`${pre}_abonos`]) ? [...shp[`${pre}_abonos`]] : [];
+      if (!abonos.length) continue;
+      const opL = String(shp[`${pre}_operacion_leida`] ?? "").toUpperCase().replace(/\s+/g, "").trim();
+      const mL = Number(shp[`${pre}_monto_leido`]);
+      let idx = -1;
+      if (opL.length >= 4) idx = abonos.map((a: any) => String(a?.op ?? "").toUpperCase().replace(/\s+/g, "")).lastIndexOf(opL);
+      if (idx < 0 && Number.isFinite(mL)) { for (let i = abonos.length - 1; i >= 0; i--) { if (!abonos[i]?.op && Number(abonos[i]?.monto) === mL) { idx = i; break; } } }
+      if (idx < 0) idx = abonos.length - 1;
+      abonos.splice(idx, 1);
+      const total = Math.round(abonos.reduce((s: number, a: any) => s + (Number(a?.monto) || 0), 0) * 100) / 100;
+      shp[`${pre}_abonos`] = abonos;
+      if (abonos.length) shp[`${pre}_abonado`] = total;
+      else { delete shp[`${pre}_abonos`]; delete shp[`${pre}_abonado`]; delete shp[`${pre}_parcial`]; }
     }
   }
 
@@ -212,6 +242,13 @@ Deno.serve(async (req) => {
   const { data: upd, error } = await uq.select("id");
   if (error) return json({ error: error.message }, 500);
   if ((newEstado || aprobandoExtraCas) && (!upd || !upd.length)) return json({ ok: true, deduped: true });
+  if (notaSinOperacion) {
+    await db.from("contact_events").insert({
+      channel_id: (order as any).channel_id, contact_id: (order as any).contact_id, tipo: "nota",
+      titulo: "⚠️ Pago aprobado sin nº de operación",
+      detalle: `Se aprobó «${newEstado ?? "venta extra"}» sin operación legible: no entra al candado anti-reúso. Si tienes el comprobante, anota la operación en el pedido.`,
+    }).then(() => {}, () => {});
+  }
   // La hoja sigue al pedido: acá pasan TODOS los cambios que hace un humano
   // (el Kanban y el Copiloto, incluido el de Telegram). No lanza.
   await syncPedidoSheet(db, order.id);
@@ -385,7 +422,20 @@ Deno.serve(async (req) => {
       // Se avisa DESPUÉS del bloque (tras resumeIntoExtras), para que el mensaje no
       // se le adelante al "¡Adelanto recibido!" del flujo. Ver avisarPagadoTotal.
       avisoPagadoTotal = pagadoTotal && saldoNuevo < (Number(shipNow.saldo) || 0) && yaAcreditado !== totalAdel;
-      if (saldoNuevo < (Number(shipNow.saldo) || 0) && yaAcreditado !== totalAdel) {
+      // También cuando el saldo SUBE: aprobar a mano un adelanto MENOR al pedido (el cliente
+      // pagó solo el mínimo, o el operador aceptó menos) dejaba el saldo intacto → en la
+      // agencia se le cobraba S/100 en vez de S/110 y el Dashboard contaba S/20 cobrados
+      // cuando entraron S/10. El camino AUTO ya escribía el saldo nuevo siempre; este no.
+      const _saldoAct = Number(shipNow.saldo) || 0;
+      const _sube = saldoNuevo > _saldoAct && totalAdel > 0;
+      if (_sube && (order as any).contact_id) {
+        await db.from("contact_events").insert({
+          channel_id: (order as any).channel_id, contact_id: (order as any).contact_id, tipo: "nota",
+          titulo: "💰 Adelanto aprobado por debajo de lo pedido",
+          detalle: `Se acreditó ${totalAdel} de los ${Number(shipNow.adelanto) || 0} pedidos: el saldo pasa de ${_saldoAct} a ${saldoNuevo}. Si el monto leído está mal, corrige el saldo en Editar pedido.`,
+        }).then(() => {}, () => {});
+      }
+      if ((saldoNuevo < _saldoAct || _sube) && yaAcreditado !== totalAdel) {
         // MERGE atómico (order_patch_shipping, 0068), NO write del shipping completo:
         // order-update no toma el contact_lock y el handler del cliente escribe shipping
         // (sede/dirección) en paralelo → un write completo pisaría una sede recién editada

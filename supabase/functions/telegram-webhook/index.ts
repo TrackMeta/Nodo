@@ -200,6 +200,25 @@ Deno.serve(async (req) => {
     if (cb.message) await editButtons(token, cb.message.chat.id, cb.message.message_id);
     return json({ ok: true });
   }
+  // Comprobante RECHAZADO desde el panel: el estado NO cambia al rechazar (el digital sigue
+  // `pendiente`, el adelanto `esperando_adelanto`), así que la guarda de arriba lo dejaba
+  // pasar y un 2º admin, minutos después y con sus botones todavía en pantalla, aprobaba el
+  // mismo pago rechazado: `confirmada` + Purchase a Meta, y sin entrega (el run ya no está
+  // parqueado esperando aprobación). Se cierra por DATO, con la misma regla que el Copiloto:
+  // el digital exige `digital_pendiente`; adelanto/saldo, que el último rechazo no sea
+  // posterior al último comprobante recibido.
+  {
+    const shT = ((order as any).shipping || {}) as any;
+    const rechazadoDespues = (pre: string) => { const r = shT[`${pre}_rechazado_at`], v = shT[`${pre}_recibido_at`]; return !!r && (!v || String(r) >= String(v)); };
+    const yaRechazado = accion === "digital_ok" ? shT.digital_pendiente !== true
+      : accion === "adel_ok" ? rechazadoDespues("adelanto")
+      : accion === "saldo_ok" ? rechazadoDespues("saldo") : false;
+    if (yaRechazado) {
+      await answerCallback(token, cb.id, "Ese comprobante ya fue rechazado desde el panel. Si mandó otro, llegará un aviso nuevo.", true);
+      if (cb.message) await editButtons(token, cb.message.chat.id, cb.message.message_id);
+      return json({ ok: true });
+    }
+  }
 
   // Se reusa order-update para que el camino sea EXACTAMENTE el mismo que el
   // del panel: cambia el estado y dispara el flujo que le escribe al cliente.

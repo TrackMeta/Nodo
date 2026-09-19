@@ -74,16 +74,16 @@ Deno.serve(async (req) => {
   const esPlantilla = ((payload?.entry ?? []) as any[]).some((en) => (en?.changes ?? []).some((ch: any) =>
     ch?.field === "message_template_status_update" || ch?.field === "template_category_update"));
   const wabaId = payload?.entry?.[0]?.id as string | undefined;
-  let channel: { id: string; buffer_default_seg?: number } | null = null;
+  let channel: { id: string; buffer_default_seg?: number; account_id?: string | null } | null = null;
   if (phoneNumberId) {
-    ({ data: channel } = await db.from("channels").select("id, buffer_default_seg")
+    ({ data: channel } = await db.from("channels").select("id, buffer_default_seg, account_id")
       .eq("phone_number_id", phoneNumberId).eq("activo", true).maybeSingle());
   } else if (esPlantilla && wabaId) {
     // waba_id NO es único (un negocio puede tener 2 números bajo una misma WABA): con
     // maybeSingle() eso REVENTABA (múltiples filas) → channel null → el status de la
     // plantilla se descartaba y nunca se reflejaba. Se toma uno (para la firma) y la
     // actualización se hace sobre TODOS los canales de la WABA en processTemplateStatus.
-    ({ data: channel } = await db.from("channels").select("id, buffer_default_seg")
+    ({ data: channel } = await db.from("channels").select("id, buffer_default_seg, account_id")
       .eq("waba_id", wabaId).eq("activo", true).order("id").limit(1).maybeSingle());
   } else {
     return new Response("OK", { status: 200 }); // eventos sin mensajes ni plantilla
@@ -111,28 +111,48 @@ Deno.serve(async (req) => {
 });
 
 // ── Procesamiento del payload ──────────────────────────────────────
-async function processPayload(fallback: { id: string; buffer_default_seg?: number }, payload: any) {
+async function processPayload(fallback: { id: string; buffer_default_seg?: number; account_id?: string | null }, payload: any) {
   // El canal se resuelve POR CADA change según su phone_number_id, NO una sola vez
   // desde entry[0]. Meta puede meter varias entries/changes en un mismo POST con
   // distinto número; si un negocio tiene 2 números bajo la misma WABA (mismo
   // app_secret → la firma ya validó), procesarlos todos con el canal de entry[0]
   // cruzaría los mensajes del número 2 al canal 1 (contacto fantasma, el motor del
   // canal 1 responde con su número) y perdería los statuses del número 2.
+  //
+  // 🔒 …pero SOLO canales de la MISMA CUENTA que el canal que validó la firma. La firma se
+  // comprueba con el app_secret de UN canal (el del primer phone_number_id), y sin este
+  // cerrojo un admin del tenant A, que conoce su propio App Secret, podía firmar un POST con
+  // su número en changes[0] y el phone_number_id de B en changes[1]: mensajes inventados en
+  // el canal de B, y el motor de B contestándole por Meta con el token de B a quien A quisiera.
+  // Un canal de otra cuenta en este POST se descarta como si no existiera (Meta jamás mezcla
+  // dos apps en un mismo webhook; si un negocio tiene 2 números, están en su misma cuenta).
   const cache = new Map<string, { id: string; buffer_default_seg?: number } | null>();
   async function chanFor(pnid: string | undefined) {
     if (!pnid) return fallback; // sin metadata (p.ej. cambios de plantilla): usa el de entry[0]
     if (cache.has(pnid)) return cache.get(pnid) ?? null;
-    const { data } = await db.from("channels").select("id, buffer_default_seg")
-      .eq("phone_number_id", pnid).eq("activo", true).maybeSingle();
+    let q = db.from("channels").select("id, buffer_default_seg")
+      .eq("phone_number_id", pnid).eq("activo", true);
+    q = fallback.account_id ? q.eq("account_id", fallback.account_id) : q.eq("id", fallback.id);
+    const { data } = await q.maybeSingle();
     cache.set(pnid, data ?? null);
     return data ?? null;
   }
+  // Mismo cerrojo para lo que llega a nivel de WABA (`entry.id` lo controla quien firma).
+  const canalesDeLaWaba = async (wabaId: string | undefined): Promise<string[]> => {
+    if (!wabaId) return [fallback.id];
+    try {
+      let q = db.from("channels").select("id").eq("waba_id", wabaId).eq("activo", true);
+      q = fallback.account_id ? q.eq("account_id", fallback.account_id) : q.eq("id", fallback.id);
+      const { data: chs } = await q;
+      return chs?.length ? (chs as any[]).map((c) => c.id) : [fallback.id];
+    } catch (_) { return [fallback.id]; }
+  };
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
       // Meta avisó que cambió el estado de una plantilla (aprobada/rechazada/…):
       // se refleja solo en Nodo, sin que el usuario toque "Sincronizar".
       if (change.field === "message_template_status_update") {
-        await processTemplateStatus(fallback.id, change.value ?? {}, entry.id);
+        await processTemplateStatus(await canalesDeLaWaba(entry.id), change.value ?? {});
         continue;
       }
       // Meta recategorizó la plantilla (UTILITY→MARKETING): cambia la tarifa y el trato del
@@ -142,11 +162,7 @@ async function processPayload(fallback: { id: string; buffer_default_seg?: numbe
         const name = v.message_template_name, language = v.message_template_language ?? "es";
         const cat = String(v.new_category ?? "").toUpperCase();
         if (name && cat) {
-          let ids = [fallback.id];
-          try {
-            const { data: chs } = await db.from("channels").select("id").eq("waba_id", entry.id).eq("activo", true);
-            if (chs?.length) ids = (chs as any[]).map((c) => c.id);
-          } catch (_) { /* usa el canal resuelto */ }
+          const ids = await canalesDeLaWaba(entry.id);
           await db.from("wa_templates").update({ categoria: cat }).in("channel_id", ids).eq("name", name).eq("language", language);
         }
         continue;
@@ -181,25 +197,18 @@ async function processPayload(fallback: { id: string; buffer_default_seg?: numbe
 }
 
 // Refleja en wa_templates el estado que Meta acaba de comunicar por webhook.
-// Se cruza por name + language dentro del canal dueño del WABA.
-async function processTemplateStatus(channelId: string, value: any, wabaId?: string) {
+// Se cruza por name + language en los canales de la WABA (ya acotados a la cuenta del
+// canal que validó la firma por canalesDeLaWaba: la plantilla pertenece a la WABA, o sea a
+// todos sus números; antes actualizaba un único channel_id y en un negocio con 2 números el
+// otro veía la plantilla "pendiente" para siempre).
+async function processTemplateStatus(ids: string[], value: any) {
   const name = value?.message_template_name;
   const language = value?.message_template_language ?? "es";
   const event = String(value?.event || "").toUpperCase();
-  if (!name) return;
+  if (!name || !ids.length) return;
   const estado = event === "APPROVED" ? "aprobada"
     : (event === "PENDING" || event === "IN_APPEAL" || event === "PENDING_DELETION") ? "pendiente"
     : "rechazada"; // REJECTED, PAUSED, DISABLED, FLAGGED…
-  // La plantilla pertenece a la WABA (todos sus números): se refleja en TODOS los canales
-  // de esa WABA, no solo en uno. Antes actualizaba un único channel_id → en un negocio con
-  // 2 números el otro veía la plantilla "pendiente" para siempre.
-  let ids = [channelId];
-  if (wabaId) {
-    try {
-      const { data: chs } = await db.from("channels").select("id").eq("waba_id", wabaId).eq("activo", true);
-      if (chs?.length) ids = (chs as any[]).map((c) => c.id);
-    } catch (_) { /* usa el canal resuelto */ }
-  }
   await db.from("wa_templates").update({ estado_meta: estado })
     .in("channel_id", ids).eq("name", name).eq("language", language);
 }

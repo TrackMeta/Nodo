@@ -239,7 +239,13 @@ async function avisarCanalRoto(db: SupabaseClient, c: any, meta: any) {
 
 async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
   const { data: tpl } = await db.from("wa_templates").select("*").eq("id", c.template_id).maybeSingle();
-  if (!tpl) { await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando"); return; }
+  if (!tpl) {
+    // Plantilla borrada (FK on delete set null): antes se marcaba «completada» dejando las filas
+    // pendientes huérfanas para siempre («Enviados 0 · Fallidos 0 · Total N · Completada»).
+    await db.from("campaign_sends").update({ estado: "fallido", error: { message: "La plantilla de la campaña ya no existe" } }).eq("campaign_id", c.id).eq("estado", "pendiente");
+    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando");
+    return;
+  }
   // Defensa en profundidad: si Meta pausó/rechazó la plantilla DESPUÉS de crear la
   // campaña (baja calidad, sin aviso en la UI), no quemar la audiencia entera contra
   // un rechazo 132001. Se detiene la campaña y se marcan los pendientes con motivo.
@@ -278,18 +284,32 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
     .select("phone_number_id, channel_type").eq("id", c.channel_id).maybeSingle();
   const secrets = await getChannelSecrets(db, c.channel_id);
   const token = secrets?.access_token;
-  const canSend = (ch as any)?.channel_type === "whatsapp" && (ch as any).phone_number_id && token;
+  const esWhatsCanal = (ch as any)?.channel_type === "whatsapp";
+  const canSend = esWhatsCanal && (ch as any).phone_number_id && token;
 
   // Filas 'enviando' HUÉRFANAS: el worker murió (reciclado, deploy, OOM) entre el claim y el
   // envío. Nadie las devolvía → al agotarse las 'pendiente' la campaña se marcaba COMPLETADA
   // con «Fallidos 0» y esos clientes nunca recibieron nada ni había forma de retomarlos. El
-  // claim sella error.claimed_at; lo que lleve >10 min 'enviando' vuelve a la cola.
+  // claim sella error.claimed_at; lo que lleve >10 min 'enviando' vuelve a la cola…
+  // …salvo que el mensaje SÍ haya salido (murió entre el POST a Graph y la marca): el envío
+  // registra el `messages` antes de marcar la fila, así que si hay una plantilla de ESTA
+  // campaña para ese contacto posterior al claim, se marca 'enviado' en vez de reenviarla
+  // (reenviar era una segunda HSM al mismo cliente y dos conversaciones cobradas por Meta).
   {
     const limite = new Date(Date.now() - 10 * 60_000).toISOString();
-    const { data: huerf } = await db.from("campaign_sends").select("id, error")
+    const { data: huerf } = await db.from("campaign_sends").select("id, contact_id, error")
       .eq("campaign_id", c.id).eq("estado", "enviando")
       .or(`error->>claimed_at.is.null,error->>claimed_at.lt.${limite}`).limit(BATCH);
     for (const h of huerf ?? []) {
+      const desde = String((h as any).error?.claimed_at ?? "") || new Date(Date.now() - 24 * 3600_000).toISOString();
+      const { data: yaSalio } = await db.from("messages").select("wamid, created_at")
+        .eq("contact_id", (h as any).contact_id).eq("type", "template").eq("content->>campaign_id", c.id)
+        .gte("created_at", desde).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (yaSalio) {
+        await db.from("campaign_sends").update({ estado: "enviado", wamid: (yaSalio as any).wamid ?? null, sent_at: (yaSalio as any).created_at })
+          .eq("id", (h as any).id).eq("estado", "enviando");
+        continue;
+      }
       await db.from("campaign_sends").update({
         estado: "pendiente",
         error: { ...(((h as any).error ?? {}) as Record<string, unknown>), message: "Se quedó a medio enviar (el proceso se cortó) — se reintenta", claimed_at: null },
@@ -370,20 +390,25 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
       if (canSend && ctx.wa_id) {
         wamid = await sendTemplate((ch as any).phone_number_id, token!, ctx.wa_id, (tpl as any).name, (tpl as any).language, bodyParams);
       }
-      // Canal que PUEDE enviar (WhatsApp con token) pero el contacto no tiene wa_id (lead BSUID
-      // sin número) → NO marcar "enviado" (fantasma que nunca salió, ensucia el hilo con un
-      // "sent" e infla `enviados` sin reintento). Se marca fallido, como sendTemplateToContact.
-      if (canSend && !wamid) {
-        await db.from("campaign_sends").update({ estado: "fallido", error: { message: "El contacto no tiene número de WhatsApp" } }).eq("id", s.id);
+      // Canal WhatsApp que NO mandó nada → NO marcar "enviado" (fantasma que nunca salió, ensucia
+      // el hilo con un "sent" e infla `enviados` sin reintento). Dos causas: el contacto no tiene
+      // wa_id (lead BSUID sin número), o el canal está DESCONECTADO (sin token/número). Antes el
+      // guard era `canSend && !wamid`, así que con el canal desconectado toda la campaña terminaba
+      // «completada · 100 % enviados» sin que nadie recibiera nada. Solo en webchat (canal de
+      // prueba) el insert ES la entrega.
+      if (esWhatsCanal && !wamid) {
+        await db.from("campaign_sends").update({ estado: "fallido", error: { message: canSend ? "El contacto no tiene número de WhatsApp" : "El canal no tiene WhatsApp conectado (sin token o sin número)" } }).eq("id", s.id);
         fail++;
         continue;
       }
-      await db.from("campaign_sends").update({ estado: "enviado", wamid: wamid || null, sent_at: new Date().toISOString() }).eq("id", s.id);
+      // El mensaje se registra ANTES de marcar la fila: si el proceso muere entre el envío y la
+      // marca, el rescate de huérfanas (arriba) encuentra este registro y NO reenvía.
       await db.from("messages").insert({
         channel_id: c.channel_id, contact_id: s.contact_id, direction: "out",
-        type: "template", content: { template: (tpl as any).name, params: bodyParams }, wamid: wamid || null, status: "sent",
+        type: "template", content: { template: (tpl as any).name, params: bodyParams, campaign_id: c.id }, wamid: wamid || null, status: "sent",
         sent_by: "bot", ventana: await ventanaDeCobro(db, s.contact_id),
       });
+      await db.from("campaign_sends").update({ estado: "enviado", wamid: wamid || null, sent_at: new Date().toISOString() }).eq("id", s.id);
       // Anti-spam: una campaña (deliberada) no se frena, pero marca el "último
       // toque de marketing" del contacto para que el scheduler NO le encime hoy
       // un paso de secuencia ni un nudge automático. Columna 0056; best-effort.
@@ -528,7 +553,21 @@ export async function sendTemplateToContact(
   // recurso solo si ni el caller ni la fila lo tienen.
   const lang = tpl.language || (tplRow as any)?.language || "es";
   const esWhats = (ch as any)?.channel_type === "whatsapp";
+  // 🔴 Contacto de PRUEBA (Probar flujos o simulador): NUNCA por Graph. Este camino no pasa
+  // por ensureDelivery (que sí los exime) y una tanda de simulación con secuencias activas
+  // mandaba plantillas de marketing REALES a números inventados (o reales, si coincidían).
+  // Se registra el mensaje como en webchat y se devuelve un wamid ficticio para que el
+  // llamador lo cuente como enviado (la secuencia avanza igual que en una prueba).
+  const esPrueba = ctx.wa_id === "webchat-test" || ctx.source === "sim";
   let wamid = "";
+  if (esPrueba) {
+    await db.from("messages").insert({
+      channel_id: channelId, contact_id: contactId, direction: "out",
+      type: "template", content: { template: tpl.name, params: bodyParams }, wamid: null, status: "sent",
+      sent_by: sender?.sentBy ?? "bot", sent_by_user: sender?.sentByUser ?? null, ventana: null,
+    });
+    return "simulado";
+  }
   if (esWhats && (ch as any).phone_number_id && token && ctx.wa_id) {
     wamid = await sendTemplate((ch as any).phone_number_id, token, ctx.wa_id, tpl.name, lang, bodyParams);
   }
@@ -550,7 +589,7 @@ export async function sendTemplateToContact(
 
 // ── Contexto del contacto para resolver variables ─────────────────
 async function contactCtx(db: SupabaseClient, contactId: string, orderId?: string | null): Promise<any> {
-  const { data: c } = await db.from("contacts").select("nombre, wa_id, stage, telefono, user_id").eq("id", contactId).maybeSingle();
+  const { data: c } = await db.from("contacts").select("nombre, wa_id, stage, telefono, user_id, source").eq("id", contactId).maybeSingle();
   const { data: fields } = await db.from("contact_field_values")
     .select("value, custom_fields!inner(key)").eq("contact_id", contactId);
   // {{telefono}}: la columna REAL primero; cae a wa_id SOLO si no es un BSUID (un lead que
@@ -560,7 +599,7 @@ async function contactCtx(db: SupabaseClient, contactId: string, orderId?: strin
   const _wa = (c as any)?.wa_id ?? "";
   const _telReal = String((c as any)?.telefono ?? "").trim();
   const _telefono = _telReal || (_wa && _wa === (c as any)?.user_id ? "" : _wa);
-  const ctx: any = { nombre: (c as any)?.nombre ?? "", wa_id: _wa, telefono: _telefono, stage: (c as any)?.stage ?? "" };
+  const ctx: any = { nombre: (c as any)?.nombre ?? "", wa_id: _wa, telefono: _telefono, stage: (c as any)?.stage ?? "", source: (c as any)?.source ?? null };
   for (const f of fields ?? []) ctx[(f as any).custom_fields.key] = (f as any).value;
   // Datos del último pedido, con los mismos nombres que usan los flujos
   // ({{pedido_guia}}, {{pedido_sede}}, {{pedido_saldo}}…). Sin esto una
