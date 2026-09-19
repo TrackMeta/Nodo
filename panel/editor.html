@@ -211,7 +211,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.js"></script>
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog, avanzadoPermitido } from "./shell.js";
 import { NODE_TYPES, nodeHtml, nodeIcon, decorateNode, installCanvas, mountZoomControls, autoLayout, ACCION_LABELS } from "./flow-canvas.js";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
@@ -592,6 +592,9 @@ function buildIA(m, body){
 
 async function loadChannels(){
   shell=await mountShell({ active:"editor" });
+  // 🔐 «Avanzado» oculto para las cuentas que no lo tienen: esconder el menú no basta, la
+  // dirección se puede escribir a mano. Ver avanzadoPermitido (accounts.features.avanzado).
+  if(!await avanzadoPermitido()){ location.replace("index.html"); return; }
   st.channelId = shell.channelId;
   shell.onLeave?.(()=>{
     if(onKeyEditor) document.removeEventListener("keydown",onKeyEditor);

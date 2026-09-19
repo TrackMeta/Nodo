@@ -62,8 +62,10 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, updateChannel } from "./shell.js";
+import { supa, mountShell, toast, icon, updateChannel, avanzadoPermitido } from "./shell.js";
 import { attachVarPicker } from "./var-picker.js";
+// 🔐 ¿La cuenta ve «Avanzado»? Si no, no se pinta el enlace al editor visual (ver shell.js).
+let AV = false;
 const $=(id)=>document.getElementById(id);
 const IC={
   clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
@@ -103,6 +105,7 @@ function defaultPedidos(){
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"pedidos" });
+  AV = await avanzadoPermitido();
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); });
   if(st.channelId) await load();
@@ -348,7 +351,7 @@ function render(b){
               ${st.tpls.map(x=>`<option value="${esc(x.name)}|${esc(x.language||'es')}" ${(a.template===x.name)?'selected':''}>${esc(x.name)}${x.language?' · '+esc(x.language):''}</option>`).join("")}
             </select>` : `<span style="font-size:12px;color:var(--faint)">Necesitas una plantilla aprobada (sección <b>Plantillas</b>)</span>`}
           </div>
-          ${fl ? `<div style="font-size:11px;color:var(--faint);margin-top:8px">También tienes el flujo <b>${esc(fl.nombre)}</b> escuchando este estado. Si escribes un mensaje acá, <b>manda este</b> y el flujo no se dispara. <a href="editor.html?flow=${encodeURIComponent(fl.id)}" target="_blank" style="color:var(--brand);text-decoration:none">verlo →</a></div>` : ""}
+          ${fl ? `<div style="font-size:11px;color:var(--faint);margin-top:8px">También tienes el flujo <b>${esc(fl.nombre)}</b> escuchando este estado. Si escribes un mensaje acá, <b>manda este</b> y el flujo no se dispara. ${AV ? `<a href="editor.html?flow=${encodeURIComponent(fl.id)}" target="_blank" style="color:var(--brand);text-decoration:none">verlo →</a>` : ""}</div>` : ""}
         </div>`;}).join("")}</div>
       <div class="snote"><span class="si">${IC.shield}</span><span>Con <b>Insertar dato</b> pones cosas como el número de guía o la sede: se reemplazan por los datos reales de cada cliente al enviar. ${st.tpls.length
         ? "En las plantillas también se rellenan solos."

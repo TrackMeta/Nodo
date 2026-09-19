@@ -305,7 +305,9 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, confirmDialog, pageAll, patchProductConfig, factorAds, getUsdRate } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, confirmDialog, pageAll, patchProductConfig, factorAds, getUsdRate, avanzadoPermitido } from "./shell.js";
+// 🔐 ¿La cuenta ve «Avanzado» (Flujos y Campos)? Decide a dónde apunta el checklist.
+let AV = false;
 import * as O from "./orders.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 import { ymdTZ, startOfDayTZ, endOfDayTZ, tzNombre } from "./date-range.js";
@@ -664,6 +666,7 @@ function onDayClick(s){
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"dashboard" });
+  AV = await avanzadoPermitido();
   document.addEventListener("click",onDocClickDF);
   // Al salir, además de quitar el listener, se invalida `channelId`: un load() en vuelo que
   // termine después ve `cid!==channelId` y no pinta sobre la sección nueva.
@@ -729,7 +732,9 @@ async function renderOnboarding(cid){
   const pasos=[
     { ok:!!(cd.negocio&&String(cd.negocio).trim()), t:"Cuéntale a la IA de tu negocio", h:"negocio.html", d:"Qué vendes, a quién, cómo hablas" },
     { ok:(prod.count||0)>0, t:"Crea tu primer producto", h:"productos.html", d:"Con su precio, entrega y presentaciones" },
-    { ok:(flows.count||0)>0, t:"Activa un flujo de venta", h:"editor.html", d:"La conversación que vende ese producto" },
+    // 🔐 Sin «Avanzado» el editor de flujos no existe para esta cuenta: el paso se cumple
+    // igual (el flujo lo genera el producto), así que el atajo lleva a Productos.
+    { ok:(flows.count||0)>0, t:"Activa un flujo de venta", h:AV?"editor.html":"productos.html", d:"La conversación que vende ese producto" },
     { ok:(ai.count||0)>0, t:"Conecta la IA (API key)", h:"ia.html", d:"Sin esto el vendedor IA no puede responder" },
     { ok:!!cd.phone_number_id, t:"Conecta tu WhatsApp", h:"canales.html", d:"El último paso para salir a clientes reales" },
   ];

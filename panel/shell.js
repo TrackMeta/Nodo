@@ -376,6 +376,40 @@ const NAV_GROUPS = [
   ]},
 ];
 
+// ── «Avanzado» (Flujos y Campos): visible solo si la cuenta lo tiene ────
+// Decisión de Rodrigo (2026-09-19): un cliente nuevo no ve el editor de flujos ni los
+// campos — son herramientas de poder y tocadas a ciegas rompen la venta. La perilla vive en
+// `accounts.features.avanzado` (migración 0104) y la enciende la PLATAFORMA, no el dueño.
+// El admin de plataforma la ve siempre (si no, no podría entrar a arreglarle el flujo a nadie).
+// El sidebar se pinta ANTES de poder preguntarlo, así que se usa lo último que se supo
+// (localStorage) y, cuando llega la respuesta de verdad, el grupo se agrega o se quita.
+const AV_KEY = "nodo.avanzado";
+let _avSabido = null;
+export function avanzadoCache() { try { return localStorage.getItem(AV_KEY) === "1"; } catch { return false; } }
+export async function avanzadoPermitido() {
+  if (_avSabido !== null) return _avSabido;
+  try {
+    const { data: u } = await supa.auth.getUser();
+    const uid = u?.user?.id;
+    let ok = false;
+    if (uid) {
+      const { data: me } = await supa.from("app_users").select("platform_admin").eq("id", uid).maybeSingle();
+      ok = me?.platform_admin === true;
+      if (!ok) {
+        const ch = await getChannel();
+        const acc = ch?.account_id;
+        if (acc) {
+          const { data: a } = await supa.from("accounts").select("features").eq("id", acc).maybeSingle();
+          ok = a?.features?.avanzado === true;
+        }
+      }
+    }
+    _avSabido = ok;
+    try { localStorage.setItem(AV_KEY, ok ? "1" : "0"); } catch { /* sin storage: se pregunta cada vez */ }
+    return ok;
+  } catch { return avanzadoCache(); }   // sin red: lo último que se supo, nunca una pantalla rota
+}
+
 // ── grupos del sidebar colapsados (persistencia) ────────────────────
 function closedGroups() {
   // Primera visita (sin preferencia guardada): "Avanzado" arranca colapsado
@@ -1025,11 +1059,15 @@ export async function mountShell({ active } = {}) {
     : `<a class="nodo-link${it.special ? " nodo-link-" + it.special : ""}${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="nodo-lbl">${it.label}</span></a>`;
   const topGroup = NAV_GROUPS.find((g) => !g.sec);
   const primaryHTML = (topGroup ? topGroup.items : []).map(itemHTML).join("");
-  const groupsHTML = NAV_GROUPS.filter((g) => g.sec).map((g) => {
+  const grupoHTML = (g) => {
     const items = g.items.map(itemHTML).join("");
     const closed = closedGroups().includes(g.key) && !g.items.some((it) => it.id === active);
     return `<div class="nodo-group${closed ? " closed" : ""}" data-g="${g.key}"><button class="nodo-sec" type="button">${g.sec}${svg("chevron")}</button><div class="nodo-gitems">${items}</div></div>`;
-  }).join("");
+  };
+  // «Avanzado» solo si la cuenta lo tiene (ver avanzadoPermitido). Acá se usa lo último que
+  // se supo, porque el menú se pinta antes de poder preguntar; se corrige abajo al saberlo.
+  const _avAlPintar = avanzadoCache();
+  const groupsHTML = NAV_GROUPS.filter((g) => g.sec && (g.key !== "avanzado" || _avAlPintar)).map(grupoHTML).join("");
   nav.innerHTML = `
     <div class="nodo-brand">
       <button class="nodo-botsel" id="nodoBotBtn" type="button" title="Cambiar de bot">
@@ -1064,6 +1102,31 @@ export async function mountShell({ active } = {}) {
   };
   paintTheme();
   themeBtn.onclick = () => { applyTheme(getTheme() === "dark" ? "light" : "dark"); paintTheme(); fxRetheme(); };
+
+  // 🔐 «Avanzado»: se pintó con lo último que se supo. Cuando llega la respuesta de verdad,
+  // se agrega o se quita el grupo — sin recargar y sin que el usuario vea el menú saltar
+  // (el grupo va siempre antes de «Configuración», en su sitio de siempre).
+  const cablearGrupo = (g) => {
+    const b = g.querySelector(".nodo-sec");
+    if (b) b.onclick = () => { g.classList.toggle("closed"); toggleGroup(g.dataset.g, g.classList.contains("closed")); };
+  };
+  avanzadoPermitido().then((ok) => {
+    const ya = nav.querySelector('.nodo-group[data-g="avanzado"]');
+    if (ok && !ya) {
+      const def = NAV_GROUPS.find((g) => g.key === "avanzado");
+      const conf = nav.querySelector('.nodo-group[data-g="conf"]');
+      const cont = nav.querySelector(".nodo-links");
+      if (def && cont) {
+        const tmp = document.createElement("div");
+        tmp.innerHTML = grupoHTML(def);
+        const nuevo = tmp.firstElementChild;
+        conf ? cont.insertBefore(nuevo, conf) : cont.appendChild(nuevo);
+        cablearGrupo(nuevo);
+      }
+    } else if (!ok && ya) {
+      ya.remove();
+    }
+  }).catch(() => { /* si no se puede saber, se queda como se pintó */ });
 
   // Grupos colapsables (persisten en localStorage)
   nav.querySelectorAll(".nodo-group > .nodo-sec").forEach((btn) => {

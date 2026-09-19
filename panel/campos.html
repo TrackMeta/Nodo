@@ -69,7 +69,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, avanzadoPermitido } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
@@ -108,6 +108,9 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   $("plusIc").innerHTML=PLUS;
   const shell=await mountShell({ active:"campos" });
+  // 🔐 «Avanzado» oculto para las cuentas que no lo tienen: esconderlo del menú no basta,
+  // la dirección se puede escribir a mano. Ver avanzadoPermitido (accounts.features.avanzado).
+  if(!await avanzadoPermitido()){ location.replace("index.html"); return; }
   guardUnsaved(".nodo-page"); // los campos editados/borrados viven en memoria hasta «Guardar»
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); });
