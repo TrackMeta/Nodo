@@ -211,9 +211,19 @@
 
 <script src="https://cdn.jsdelivr.net/npm/drawflow@0.0.59/dist/drawflow.min.js"></script>
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog, avanzadoPermitido } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { NODE_TYPES, nodeHtml, nodeIcon, decorateNode, installCanvas, mountZoomControls, autoLayout, ACCION_LABELS } from "./flow-canvas.js";
 import { mountFolders } from "./folder-bar.js";
+// 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se pregunta a shell.js, pero SIN
+// importarlo estático: si el navegador tiene cacheado un shell.js viejo (sin ese export),
+// un `import { avanzadoPermitido }` deja la página EN BLANCO — el módulo entero no carga y
+// no arranca nada. Medido el 2026-09-19 con el panel ya desplegado. Con el import dinámico,
+// un shell.js viejo solo hace que caiga al valor cacheado, y la pantalla sigue viva.
+async function avPermitido(){
+  let ok = (()=>{ try{ return localStorage.getItem("nodo.avanzado")==="1"; }catch(_){ return false; } })();
+  try{ const m = await import("./shell.js"); if(typeof m.avanzadoPermitido==="function") ok = await m.avanzadoPermitido(); }catch(_){}
+  return ok;
+}
 let Fbar = null;
 import { attachVarPicker } from "./var-picker.js";
 const $ = (id) => document.getElementById(id);
@@ -594,7 +604,7 @@ async function loadChannels(){
   shell=await mountShell({ active:"editor" });
   // 🔐 «Avanzado» oculto para las cuentas que no lo tienen: esconder el menú no basta, la
   // dirección se puede escribir a mano. Ver avanzadoPermitido (accounts.features.avanzado).
-  if(!await avanzadoPermitido()){ location.replace("index.html"); return; }
+  if(!await avPermitido()){ location.replace("index.html"); return; }
   st.channelId = shell.channelId;
   shell.onLeave?.(()=>{
     if(onKeyEditor) document.removeEventListener("keydown",onKeyEditor);

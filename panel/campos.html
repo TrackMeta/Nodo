@@ -69,8 +69,18 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, avanzadoPermitido } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
+// 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se pregunta a shell.js, pero SIN
+// importarlo estático: si el navegador tiene cacheado un shell.js viejo (sin ese export),
+// un `import { avanzadoPermitido }` deja la página EN BLANCO — el módulo entero no carga y
+// no arranca nada. Medido el 2026-09-19 con el panel ya desplegado. Con el import dinámico,
+// un shell.js viejo solo hace que caiga al valor cacheado, y la pantalla sigue viva.
+async function avPermitido(){
+  let ok = (()=>{ try{ return localStorage.getItem("nodo.avanzado")==="1"; }catch(_){ return false; } })();
+  try{ const m = await import("./shell.js"); if(typeof m.avanzadoPermitido==="function") ok = await m.avanzadoPermitido(); }catch(_){}
+  return ok;
+}
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, fields:[], deleted:[], tab:"dinamico", folder:"__all", localFolders:new Set() };
@@ -110,7 +120,7 @@ async function boot(){
   const shell=await mountShell({ active:"campos" });
   // 🔐 «Avanzado» oculto para las cuentas que no lo tienen: esconderlo del menú no basta,
   // la dirección se puede escribir a mano. Ver avanzadoPermitido (accounts.features.avanzado).
-  if(!await avanzadoPermitido()){ location.replace("index.html"); return; }
+  if(!await avPermitido()){ location.replace("index.html"); return; }
   guardUnsaved(".nodo-page"); // los campos editados/borrados viven en memoria hasta «Guardar»
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); });

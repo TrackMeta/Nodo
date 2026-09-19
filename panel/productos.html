@@ -248,8 +248,18 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, avanzadoPermitido } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
+// 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se pregunta a shell.js, pero SIN
+// importarlo estático: si el navegador tiene cacheado un shell.js viejo (sin ese export),
+// un `import { avanzadoPermitido }` deja la página EN BLANCO — el módulo entero no carga y
+// no arranca nada. Medido el 2026-09-19 con el panel ya desplegado. Con el import dinámico,
+// un shell.js viejo solo hace que caiga al valor cacheado, y la pantalla sigue viva.
+async function avPermitido(){
+  let ok = (()=>{ try{ return localStorage.getItem("nodo.avanzado")==="1"; }catch(_){ return false; } })();
+  try{ const m = await import("./shell.js"); if(typeof m.avanzadoPermitido==="function") ok = await m.avanzadoPermitido(); }catch(_){}
+  return ok;
+}
 // 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se resuelve al montar. Si no lo ve,
 // tampoco se le pintan los atajos al editor visual: llevarían a una pantalla que lo
 // devuelve al inicio. Ver avanzadoPermitido en shell.js (accounts.features.avanzado).
@@ -278,7 +288,7 @@ async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
   if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"productos" });
-  AV = await avanzadoPermitido();
+  AV = await avPermitido();
   st.channelId=shell.channelId;
   guardUnsaved(".nodo-page"); // avisa si sales con la ficha del producto a medio editar
   shell.onChannel(id=>{ st.channelId=id; st.prod=null; showGrid(); loadProducts(); });
