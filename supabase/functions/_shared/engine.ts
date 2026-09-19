@@ -4578,7 +4578,13 @@ function sinPedirLosDatos(texto: string): string {
       // un taladro y» — medido en N-color-2: «tienes un taladro y Así te digo cómo te llega»),
       // la de después no arranca con el conector que colgaba de la que se fue («Entonces,»),
       // y un trozo sin letras («📍🔧») no es una frase.
-      const _partes = l.split(/(?<=[.!?…])\s+/).filter((f) => f.trim());
+      // 📦 Y el EMOJI también separa oraciones: este modelo escribe «El paquete llega a la
+      // agencia en *1 a 2 días* 📦 ¿me pasas tu nombre, celular y DNI?» sin punto en medio.
+      // Sin contarlo, todo era UNA frase: la petición hacía que se borrara entera y el cliente
+      // que preguntó CUÁNDO LE LLEGA recibió solo «¿Cuántas unidades o qué oferta te preparo?»
+      // (medido en F9-fpcuando-2, 2026-09-19). Es la misma piedra que ya frenaron los guards
+      // del pago y el de la política inventada.
+      const _partes = l.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u).filter((f) => f.trim());
       const _sobra: string[] = [];
       let _quitada = false;
       for (const f of _partes) {
@@ -6655,6 +6661,21 @@ async function ingestImage(db: SupabaseClient, channelId: string, contactId: str
   // el bucket (no público, no listable, revocable rotando el secreto del bucket).
   const { data: signed } = await db.storage.from(COMPROBANTES_BUCKET).createSignedUrl(path, SIGNED_TTL);
   return signed?.signedUrl ?? null;
+}
+
+// 🧾 El bloque del COMPROBANTE para el modelo. Un PDF pasado por URL no lo lee NINGÚN
+// proveedor: a OpenAI hay que mandarle el archivo en base64 (por URL devolvemos el aviso
+// «márcalo como no legible») y Anthropic necesita un bloque `document`. Los tres
+// interceptores de pago (digital, adelanto y saldo) mandaban `imageBlock(url)` a secas, así
+// que TODO Yape enviado como PDF caía a revisión manual con «no se puede leer el
+// comprobante» — medido en G9-fppdf (2 de 2, 2026-09-19). El nodo de OCR del flujo no tenía
+// el problema porque ya bajaba la imagen a data-URI. Las fotos siguen yendo por URL.
+async function bloqueDeComprobante(url: string): Promise<ContentBlock> {
+  const sinQuery = String(url ?? "").split("?")[0];
+  if (/\.pdf$/i.test(sinQuery)) {
+    try { return imageBlock(await urlToDataUri(url)); } catch (_) { /* si no se puede bajar, que lo intente por URL */ }
+  }
+  return imageBlock(url);
 }
 
 // Descarga cualquier URL http(s) a data-URI base64 (para pasar imágenes de un
@@ -8925,7 +8946,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
         "estás mirando la imagen y no suponiendo lo que debería decir.";
       const raw = await runAI({ db, channelId: channelId, origen: "ocr",
         provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
-        content: [imageBlock(url), { type: "text", text: "¿Es un comprobante de pago? Extrae el monto pagado y el nº de operación." }],
+        content: [await bloqueDeComprobante(url), { type: "text", text: "¿Es un comprobante de pago? Extrae el monto pagado y el nº de operación." }],
         maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
       });
       parsed = JSON.parse(raw);
@@ -10040,7 +10061,20 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // comprobante y se engancha al crear el pedido (no se pierde ni se ignora).
   if (!order) return await stashPrepagoAdelanto(db, channelId, contactId, event);
   const ship = ((order as any).shipping ?? {}) as Record<string, any>;
-$H
+  // 🔄 El shipping FRESCO, releído justo antes de escribirlo ENTERO. Entre que se leyó el
+  // pedido y se escribe pasan segundos (la vuelta del OCR), y en esa ventana otro camino pudo
+  // cargar la clave de recojo o la sede: con el snapshot viejo se pisaban. Si la relectura
+  // falla, se usa el que ya teníamos (nunca se escribe menos de lo que había).
+  // ⚠️ Esta función ES la que el commit ef1a307 perdió: quedó como un «$H» suelto y, al ser un
+  // identificador inexistente, reventaba el interceptor en su primera línea — o sea que desde
+  // ese despliegue NINGÚN adelanto ni saldo se validaba solo (el bot recibía la captura y
+  // seguía conversando). Medido el 2026-09-19 con la batería física F9.
+  const shipFresco = async (): Promise<Record<string, any>> => {
+    try {
+      const { data } = await db.from("orders").select("shipping").eq("id", (order as any).id).maybeSingle();
+      return (((data as any)?.shipping ?? ship) ?? {}) as Record<string, any>;
+    } catch (_) { return ship; }
+  };
 
   const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config, entregas, timezone").eq("id", channelId).maybeSingle();
   const cfg = (ch as any)?.pedidos_config?.adelanto ?? {};
@@ -10084,7 +10118,7 @@ $H
         "suponiendo lo que debería decir.";
       const raw = await runAI({ db, channelId: channelId, origen: "ocr",
         provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
-        content: [imageBlock(url), { type: "text", text: `Es el comprobante del ADELANTO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
+        content: [await bloqueDeComprobante(url), { type: "text", text: `Es el comprobante del ADELANTO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
         maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
       });
       parsed = JSON.parse(raw);
@@ -10332,7 +10366,20 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!order) return false;
   const ship = ((order as any).shipping ?? {}) as Record<string, any>;
-$H
+  // 🔄 El shipping FRESCO, releído justo antes de escribirlo ENTERO. Entre que se leyó el
+  // pedido y se escribe pasan segundos (la vuelta del OCR), y en esa ventana otro camino pudo
+  // cargar la clave de recojo o la sede: con el snapshot viejo se pisaban. Si la relectura
+  // falla, se usa el que ya teníamos (nunca se escribe menos de lo que había).
+  // ⚠️ Esta función ES la que el commit ef1a307 perdió: quedó como un «$H» suelto y, al ser un
+  // identificador inexistente, reventaba el interceptor en su primera línea — o sea que desde
+  // ese despliegue NINGÚN adelanto ni saldo se validaba solo (el bot recibía la captura y
+  // seguía conversando). Medido el 2026-09-19 con la batería física F9.
+  const shipFresco = async (): Promise<Record<string, any>> => {
+    try {
+      const { data } = await db.from("orders").select("shipping").eq("id", (order as any).id).maybeSingle();
+      return (((data as any)?.shipping ?? ship) ?? {}) as Record<string, any>;
+    } catch (_) { return ship; }
+  };
 
   // 2) ¿Modo automático activado en IA · Pedidos?
   const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config, timezone").eq("id", channelId).maybeSingle();
@@ -10368,7 +10415,7 @@ $H
     const raw = await runAI({ db, channelId: channelId, origen: "ocr",
       provider: ai.provider, apiKey: ai.api_key, model: ai.model,
       system,
-      content: [imageBlock(url), { type: "text", text: `Es el comprobante del SALDO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
+      content: [await bloqueDeComprobante(url), { type: "text", text: `Es el comprobante del SALDO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
       maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
     });
     parsed = JSON.parse(raw);
