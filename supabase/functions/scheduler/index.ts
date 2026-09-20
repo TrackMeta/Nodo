@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
-import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss } from "../_shared/engine.ts";
+import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 import { esRechazoTemporal } from "../_shared/meta.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
@@ -408,7 +408,19 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
         .eq("channel_id", chId).eq("estado", "esperando_adelanto")
         .lte("created_at", cutoff).limit(50);
       for (const o of viejos ?? []) {
-        await db.from("orders").update({ estado: "cancelado", updated_at: new Date().toISOString() }).eq("id", (o as any).id);
+        // 🔴 Solo se cancela si SIGUE esperando adelanto. Entre el select de arriba y este
+        // update pasan segundos, y en esos segundos el cliente puede estar pagando: el motor
+        // valida su Yape, mueve el pedido a `adelanto_validado`… y este update lo devolvía a
+        // CANCELADO. Pagó y le matamos el pedido, en silencio. Con el `.eq(estado)` el update
+        // no afecta filas y se sale.
+        // Y el error se MIRA: si el update falla, abajo se escribía igual «Pedido vencido» y se
+        // bajaba la etapa a perdido — con el pedido VIVO. Peor: el próximo tick lo volvía a
+        // elegir (sigue en esperando_adelanto) y repetía la nota cada minuto, para siempre.
+        const { data: _canc, error: _eCanc } = await db.from("orders")
+          .update({ estado: "cancelado", updated_at: new Date().toISOString() })
+          .eq("id", (o as any).id).eq("estado", "esperando_adelanto").select("id");
+        if (_eCanc) { console.error(`[scheduler] vencer pedido ${(o as any).id}:`, _eCanc.message); continue; }
+        if (!_canc || !_canc.length) continue;   // se movió mientras tanto (¿pagó?) → no se toca
         // Recalcular la ETAPA del embudo (igual que la cancelación manual en order-update):
         // sin esto el contacto se quedaba en "interesado" (mapeo de esperando_adelanto)
         // aunque su pedido ya venció → el embudo lo mostraba como lead vivo y ofrecía
@@ -450,6 +462,14 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
           // negocio configuró una plantilla de recordatorio, esa sí llega (y
           // dentro del FEP, gratis); si no, se POSTERGA sin marcar → se reintenta
           // cuando el cliente reabra la ventana, o el pedido vence solo (arriba).
+          // ¿Sigue esperando el adelanto? El select de arriba puede tener segundos, y en ese
+          // rato el cliente pudo pagar (el motor valida el Yape solo). Mandarle entonces
+          // «recuerda que falta tu adelanto» a quien acaba de pagar es el mensaje que más
+          // desconfianza genera de todo el recorrido. Una lectura chica antes de enviar.
+          {
+            const { data: _oNow } = await db.from("orders").select("estado").eq("id", (o as any).id).maybeSingle();
+            if (!_oNow || (_oNow as any).estado !== "esperando_adelanto") continue;
+          }
           let enviado = false;
           if (await ventana24hAbierta(db, (o as any).contact_id)) {
             // Se pasa `o.id` para que {{pedido_saldo}}/{{pedido_sede}} resuelvan ESTE pedido
@@ -467,10 +487,11 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
             enviado = !!wamidN;
           }
           if (enviado) {
-            await db.from("orders").update({
-              shipping: { ...ship, _nudge_adelanto: new Date().toISOString() },
-              updated_at: new Date().toISOString(),
-            }).eq("id", (o as any).id);
+            // Patch ESTRECHO: `ship` se leyó ANTES de mandar el mensaje, y mandarlo tarda
+            // segundos (Meta + IA). Reescribir el shipping entero con esa copia borraba lo
+            // que se hubiera guardado en el medio — por ejemplo el comprobante del adelanto
+            // que el cliente acaba de mandar, que es justo lo que este recordatorio provoca.
+            await patchShipping(db, (o as any).id, { _nudge_adelanto: new Date().toISOString() }, { ship });
             await marcarTocoMkt((o as any).contact_id); // sella el anti-spam
             recordados++;
           }
@@ -548,8 +569,9 @@ async function processOrderReminders(now: number): Promise<number> {
         const ok = await startFlowRun(db, (t as any).channel_id, (o as any).contact_id,
           (t as any).flow_id, { force: !!(t as any).interrumpe });
         if (ok) {
-          await db.from("orders").update({ shipping: { ...ship, [mark]: new Date().toISOString() } })
-            .eq("id", (o as any).id);
+          // Patch estrecho, por lo mismo que el recordatorio de adelanto: `ship` se leyó antes
+          // de arrancar el flujo y reescribirlo entero pisa lo que se haya guardado mientras.
+          await patchShipping(db, (o as any).id, { [mark]: new Date().toISOString() }, { ship });
           await marcarTocoMkt((o as any).contact_id); // cuenta para el anti-spam de los demás
           n++;
         }

@@ -1358,12 +1358,12 @@ export async function crearVentaManual(
         if (estado === "esperando_adelanto") {
           // Provincia sin adelanto pagado: no apartar stock todavía (regla de provincia,
           // igual que crearPedido); se guarda el plan y baja al validar el adelanto.
-          await db.from("orders").update({ shipping: { ...ship, stock_mov_plan: mov } }).eq("id", orderId);
+          await patchShipping(db, orderId, { stock_mov_plan: mov }, { ship });
         } else {
           // Solo se marca stock_mov/descontado si el descuento SALIÓ (ok): si el CAS agotó
           // reintentos, no marcar → así al cancelar no se devuelve (+1) algo que nunca bajó.
           const { ok } = await aplicarStock(db, mov, -1);
-          if (ok) await db.from("orders").update({ shipping: { ...ship, stock_mov: mov, stock_descontado: true } }).eq("id", orderId);
+          if (ok) await patchShipping(db, orderId, { stock_mov: mov, stock_descontado: true }, { ship });
           else console.error("[ventaManual] stock no aplicado (CAS agotó reintentos)");
         }
       }
@@ -1387,7 +1387,7 @@ export async function crearVentaManual(
 // `shipEntero` es el shipping que el llamador leyó: si se pasa, el respaldo escribe el merge
 // en JS. Pisa lo que otro haya escrito en paralelo, pero perder el dato es peor.
 // Devuelve true si quedó escrito.
-async function patchShipping(
+export async function patchShipping(
   db: SupabaseClient, orderId: string, patch: Record<string, unknown>,
   opts?: { ship?: Record<string, unknown> | null; remove?: string[] },
 ): Promise<boolean> {
@@ -7860,12 +7860,12 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
           // (reservarStockPedido). Lima (contraentrega) y ventas ya confirmadas
           // reservan al crear: ahí el cliente ya está comprometido.
           if (a.estado === "esperando_adelanto") {
-            await db.from("orders").update({ shipping: { ...ship, stock_mov_plan: mov } }).eq("id", (ord as any).id);
+            await patchShipping(db, (ord as any).id, { stock_mov_plan: mov }, { ship });
           } else {
             const { alerts, ok } = await aplicarStock(db, mov, -1);
             // Solo marcar descontado/stock_mov si el descuento SALIÓ (ok): si el CAS agotó
             // reintentos no marcar → así al cancelar no se devuelve (+1) algo que no bajó.
-            if (ok) await db.from("orders").update({ shipping: { ...ship, stock_mov: mov, stock_descontado: true } }).eq("id", (ord as any).id);
+            if (ok) await patchShipping(db, (ord as any).id, { stock_mov: mov, stock_descontado: true }, { ship });
             else console.error("[crearPedido] stock no aplicado (CAS agotó reintentos)");
             for (const al of alerts) {
               const detalle = al.key !== "_" ? ` (${al.key.replace(/=/g, " ").replace(/\|/g, " · ")})` : "";
@@ -8167,7 +8167,7 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         const shc = ((oc as any)?.shipping ?? {}) as any;
         if (shc.stock_descontado && !shc.stock_devuelto && Array.isArray(shc.stock_mov)) {
           const { ok } = await aplicarStock(db, shc.stock_mov, 1);   // solo marcar si aplicó
-          if (ok) await db.from("orders").update({ shipping: { ...shc, stock_devuelto: true } }).eq("id", orderId);
+          if (ok) await patchShipping(db, orderId, { stock_devuelto: true }, { ship: shc });
           else console.error("[actualizarPedido] devolver stock: CAS agotó reintentos — NO marcado");
         }
       } catch (e) { console.error("[actualizarPedido] devolver stock:", (e as any)?.message ?? e); }
@@ -8187,12 +8187,12 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         const esperaReserva = !yaReservado && Array.isArray((ship2 as any).stock_mov_plan);
         if (esperaReserva) {
           const plan = [...((ship2 as any).stock_mov_plan as any[]), extraStock];
-          await db.from("orders").update({ shipping: { ...ship2, stock_mov_plan: plan } }).eq("id", orderId);
+          await patchShipping(db, orderId, { stock_mov_plan: plan }, { ship: ship2 });
         } else {
           // Ya reservado (Lima contraentrega, o adelanto ya validado): descuenta el extra ya.
           const mov = Array.isArray((ship2 as any).stock_mov) ? [...(ship2 as any).stock_mov, extraStock] : [extraStock];
           const { alerts, ok } = await aplicarStock(db, [extraStock], -1);
-          if (ok) await db.from("orders").update({ shipping: { ...ship2, stock_mov: mov, stock_descontado: true } }).eq("id", orderId);
+          if (ok) await patchShipping(db, orderId, { stock_mov: mov, stock_descontado: true }, { ship: ship2 });
           else console.error("[actualizarPedido] stock extra no aplicado (CAS)");
           for (const al of alerts) await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
         }
