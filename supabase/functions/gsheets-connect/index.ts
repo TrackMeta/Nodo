@@ -33,7 +33,14 @@ Deno.serve(async (req) => {
 
   // Desconectar: borra el refresh token del Vault (no necesita OAuth configurado).
   if (body.disconnect) {
-    await db.rpc("delete_gsheets_token", { p_channel_id: body.channel_id });
+    // El error se MIRA (db.rpc no lanza): si el token NO se borró del Vault y acá abajo se
+    // marcaba `connected:false`, el panel decía «desconectado» con la credencial de Google
+    // todavía guardada. Desconectar tiene que ser verdad.
+    const { error: eDel } = await db.rpc("delete_gsheets_token", { p_channel_id: body.channel_id });
+    if (eDel) {
+      console.error("[gsheets-connect] delete_gsheets_token:", eDel.message);
+      return json({ error: "no_desconectado", detalle: "No se pudo borrar el permiso de Google. Reintenta." }, 500);
+    }
     // Limpia también el estado en channels.gsheets (que el callback escribe al conectar). Sin
     // esto el panel seguía mostrando "conectado" y syncPedidoSheet entraba por la rama oauth
     // hasta que el token daba null. Se conserva el resto (spreadsheet_id, webhook_url).

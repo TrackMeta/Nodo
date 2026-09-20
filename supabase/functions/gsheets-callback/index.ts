@@ -63,7 +63,11 @@ Deno.serve(async (req) => {
       email = (await ui.json())?.email ?? null;
     } catch { /* opcional */ }
 
-    await db.rpc("set_gsheets_token", { p_channel_id: (st as any).channel_id, p_refresh_token: tok.refresh_token, p_email: email });
+    // El error se MIRA: `db.rpc()` no lanza. Sin esto, un fallo al guardar el refresh token en
+    // el Vault seguía de largo, marcaba `connected: true` y el panel decía «conectado» — con la
+    // sincronización muerta: cada pedido intentaba entrar por la rama OAuth y se caía sin token.
+    const { error: eTok } = await db.rpc("set_gsheets_token", { p_channel_id: (st as any).channel_id, p_refresh_token: tok.refresh_token, p_email: email });
+    if (eTok) { console.error("[gsheets-callback] set_gsheets_token:", eTok.message); return back("sin_guardar"); }
     // Marcar el modo OAuth en channels.gsheets (conservando spreadsheet si ya existía).
     const { data: ch } = await db.from("channels").select("gsheets").eq("id", (st as any).channel_id).maybeSingle();
     const g = ((ch as any)?.gsheets ?? {}) as Record<string, unknown>;

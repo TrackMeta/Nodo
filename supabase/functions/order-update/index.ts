@@ -303,7 +303,9 @@ Deno.serve(async (req) => {
           // toma el contact_lock y el handler del cliente (sede/dirección) escribe shipping
           // en paralelo → `{ ...ship(snapshot viejo), ... }` PISABA una sede recién editada
           // (paquete a la agencia equivocada). El patch fusiona SOLO la bandera, atómico.
-          if (ok) { try { await db.rpc("order_patch_shipping", { p_order_id: (order as any).id, p_patch: { stock_devuelto: true } }); } catch (e) { console.error("[order-update] patch devuelto:", (e as any)?.message ?? e); } }
+          // El error se MIRA (db.rpc no lanza): si la marca no se graba, el stock ya volvió
+          // pero el pedido no lo sabe → la próxima cancelación lo devuelve OTRA VEZ.
+          if (ok) { const { error: _eDev } = await db.rpc("order_patch_shipping", { p_order_id: (order as any).id, p_patch: { stock_devuelto: true } }); if (_eDev) console.error("[order-update] patch devuelto:", _eDev.message); }
           else console.error("[order-update] devolver stock: CAS agotó reintentos — NO marcado stock_devuelto");
         } catch (e) { console.error("[order-update] devolver stock:", (e as any)?.message ?? e); }
       }
@@ -319,7 +321,7 @@ Deno.serve(async (req) => {
           const { ok } = await aplicarStock(db, ship.stock_mov, -1);
           // Igual que arriba: patch atómico de las banderas, no un write del shipping completo
           // (que pisaría ediciones concurrentes de sede/dirección hechas bajo el lock).
-          if (ok) { try { await db.rpc("order_patch_shipping", { p_order_id: (order as any).id, p_patch: { stock_devuelto: false, stock_descontado: true } }); } catch (e) { console.error("[order-update] patch revivir:", (e as any)?.message ?? e); } }
+          if (ok) { const { error: _eRev } = await db.rpc("order_patch_shipping", { p_order_id: (order as any).id, p_patch: { stock_devuelto: false, stock_descontado: true } }); if (_eRev) console.error("[order-update] patch revivir:", _eRev.message); }
           else console.error("[order-update] revivir stock: CAS agotó reintentos — NO re-descontado");
         } catch (e) { console.error("[order-update] revivir stock:", (e as any)?.message ?? e); }
       }
@@ -445,9 +447,19 @@ Deno.serve(async (req) => {
         // order-update no toma el contact_lock y el handler del cliente escribe shipping
         // (sede/dirección) en paralelo → un write completo pisaría una sede recién editada
         // (paquete a la agencia equivocada). Se tocan SOLO las claves de pago.
-        try {
-          await db.rpc("order_patch_shipping", { p_order_id: order.id, p_patch: { saldo: String(saldoNuevo), adelanto_abonado: totalAdel, pago_acreditado_adelanto: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}) } });
-        } catch (e) { console.error("[order-update] patch crédito adelanto:", (e as any)?.message ?? e); }
+        // 🔴 El error se MIRA: `db.rpc()` no lanza (devuelve `{ error }`), así que el
+        // try/catch que había acá no corría nunca y un fallo se perdía entero — el pedido se
+        // quedaba con el saldo VIEJO después de acreditarle el adelanto, o sea cobrándole de
+        // más al cliente, sin una línea en ningún log.
+        const { error: _ePatch } = await db.rpc("order_patch_shipping", { p_order_id: order.id, p_patch: { saldo: String(saldoNuevo), adelanto_abonado: totalAdel, pago_acreditado_adelanto: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}) } });
+        if (_ePatch) {
+          console.error("[order-update] patch crédito adelanto:", _ePatch.message);
+          await db.from("contact_events").insert({
+            channel_id: (order as any).channel_id, contact_id: (order as any).contact_id, tipo: "error",
+            titulo: "⚠️ No se pudo acreditar el adelanto al saldo",
+            detalle: `El pedido quedó con el saldo anterior (${_saldoAct}) en vez de ${saldoNuevo}. Corrígelo en «Editar pedido» antes de cobrarle. (${_ePatch.message})`,
+          }).then(() => {}, () => {});
+        }
       }
     } catch (e) { console.error("[order-update] crédito saldo adelanto:", (e as any)?.message ?? e); }
     try {

@@ -130,7 +130,12 @@ export async function runEngine(
   // no existía todavía para él. Esperar es feo, contestar dos veces lo mismo es peor.
   for (let i = 0; i < 120 && !locked; i++) {          // hasta ~30s de espera (120 × 250ms)
     try {
-      const { data } = await db.rpc("contact_lock_try", {
+      // ⏱️ El `error` se MIRA y corta el bucle: `db.rpc()` NO lanza (devuelve `{ error }`), así
+      // que el `catch { break }` de abajo no cubre lo que decía cubrir. Si la RPC fallara —no
+      // está en la base, un permiso, un hipo— este bucle daba sus 120 vueltas COMPLETAS antes
+      // de seguir: 30 segundos de espera muerta en CADA mensaje de CADA cliente, con el
+      // síntoma más difícil de diagnosticar que hay (el bot "lento", sin un solo error).
+      const { data, error: eLock } = await db.rpc("contact_lock_try", {
         // 240 s (eran 90): un turno real encadena Recepción + venta (2 IA), OCR, extracción y
         // Telegram; con un proveedor lento pasaba de 90 s, el TTL vencía y el siguiente webhook
         // tomaba el lock → dos motores en paralelo sobre el mismo contacto (doble respuesta).
@@ -140,6 +145,7 @@ export async function runEngine(
         // no lo bloquea: tras 30 s de espera el siguiente mensaje procede igual (never-drop).
         p_channel_id: channelId, p_contact_id: contactId, p_ttl_seconds: 400, p_holder: holder,
       });
+      if (eLock) { console.error("[runEngine] contact_lock_try:", eLock.message, "— se procede sin lock"); break; }
       locked = data === true;
     } catch { break; }                                // RPC ausente → proceder sin lock
     if (!locked) await new Promise((r) => setTimeout(r, 250));
@@ -168,9 +174,13 @@ export async function runEngine(
       // envolver en try/catch, no encadenar .catch (tiraría "catch is not a
       // function" al final de CADA mensaje). Best-effort: si falla, el TTL libera.
       try {
-        await db.rpc("contact_lock_release", {
+        const { error: eRel } = await db.rpc("contact_lock_release", {
           p_channel_id: channelId, p_contact_id: contactId, p_holder: holder,
         });
+        // Mirado, no tapado: si no se soltó, el contacto queda trabado hasta que venza el TTL
+        // (400 s) y sus mensajes de ese rato esperan 30 s cada uno. No rompe nada —por eso no
+        // se reintenta—, pero tiene que quedar dicho en el log.
+        if (eRel) console.error("[runEngine] contact_lock_release:", eRel.message, "— lo libera el TTL");
       } catch { /* el TTL lo libera igual */ }
     }
   }
@@ -494,15 +504,8 @@ async function runEngineInner(
     const _shR = ((ordR as any)?.shipping ?? {}) as any;
     if (ordR && !ESTADOS_DESPACHADO.has(String((ordR as any).estado ?? ""))) {
       const _txtR = String(event.text ?? "").slice(0, 160);
-      try {
-        await db.rpc("order_patch_shipping", {
-          p_order_id: (ordR as any).id,
-          p_patch: { reprogramacion_pedida: _txtR, reprogramacion_at: new Date().toISOString() },
-        });
-      } catch (_) {
-        await db.from("orders").update({ shipping: { ..._shR, reprogramacion_pedida: _txtR } })
-          .eq("id", (ordR as any).id);
-      }
+      await patchShipping(db, (ordR as any).id,
+        { reprogramacion_pedida: _txtR, reprogramacion_at: new Date().toISOString() }, { ship: _shR });
       await logEvent(db, channelId, contactId, "nota", "📅 Pide reprogramar la entrega", _txtR).catch(() => {});
       await deliverMessage(db, channelId, contactId,
         "¡Anotado! 🙌 Le aviso al equipo para que no salga cuando no estés y lo coordinamos para el día " +
@@ -1371,6 +1374,43 @@ export async function crearVentaManual(
   return { orderId };
 }
 
+// 🔒 Escritura parcial de orders.shipping (order_patch_shipping, 0068) CON EL ERROR MIRADO.
+//
+// 🔴 `db.rpc(...)` NO LANZA: el builder de supabase-js devuelve `{ data, error }`. Todas las
+// llamadas a esta RPC estaban envueltas en `try { await db.rpc(...) } catch { respaldo }`, así
+// que el catch no corría nunca y un fallo de la RPC se perdía ENTERO — sin respaldo, sin log y
+// sin que nadie se entere. Medido contra la base: una RPC inexistente devuelve PGRST202 con
+// `error` lleno y sin lanzar. Lo que se perdía en silencio no era poca cosa: la marca
+// `stock_descontado` de una reserva ya aplicada (inventario descuadrado), el `stock_devuelto`
+// de una cancelación, la sede del pedido.
+//
+// `shipEntero` es el shipping que el llamador leyó: si se pasa, el respaldo escribe el merge
+// en JS. Pisa lo que otro haya escrito en paralelo, pero perder el dato es peor.
+// Devuelve true si quedó escrito.
+async function patchShipping(
+  db: SupabaseClient, orderId: string, patch: Record<string, unknown>,
+  opts?: { ship?: Record<string, unknown> | null; remove?: string[] },
+): Promise<boolean> {
+  const remove = opts?.remove ?? [];
+  try {
+    const { error } = await db.rpc("order_patch_shipping",
+      { p_order_id: orderId, p_patch: patch, ...(remove.length ? { p_remove: remove } : {}) });
+    if (!error) return true;
+    console.error("[shipping] order_patch_shipping:", error.message);
+  } catch (e) {
+    console.error("[shipping] order_patch_shipping:", (e as any)?.message ?? e);
+  }
+  const ship = opts?.ship;
+  if (!ship) return false;
+  const merged: Record<string, unknown> = { ...ship, ...patch };
+  for (const k of remove) delete merged[k];
+  const { error } = await db.from("orders")
+    .update({ shipping: merged, updated_at: new Date().toISOString() })
+    .eq("id", orderId);
+  if (error) { console.error("[shipping] respaldo del patch:", error.message); return false; }
+  return true;
+}
+
 // ── Stock / inventario ─────────────────────────────────────────────
 // Clave estable de una variante a partir de los atributos del producto (los que
 // tienen VALORES declarados) y lo capturado en el pedido. DEBE coincidir con
@@ -1635,8 +1675,7 @@ async function reconciliarStockExtras(db: SupabaseClient, run: Run, ctx: any) {
       // el snapshot viejo pisaría esa sede (paquete a la agencia equivocada) o reviviría una
       // bandera stock_devuelto de una cancelación concurrente. Se tocan SOLO las claves de stock.
       await db.from("orders").update({ order_bumps: bumps }).eq("id", oid);
-      try { await db.rpc("order_patch_shipping", { p_order_id: oid, p_patch: { stock_mov: mov, stock_descontado: true } }); }
-      catch (e) { console.error("[reconciliarStockExtras] patch shipping:", (e as any)?.message ?? e); }
+      await patchShipping(db, oid, { stock_mov: mov, stock_descontado: true });
       for (const al of alerts) await notifyAdmin(db, run, `📦 Stock ${al.agotado ? "AGOTADO" : "bajo"}: ${al.nombre} — quedan ${al.restante}. Sigues vendiendo; repón cuando puedas.`);
     }
   } catch (e) { console.error("[reconciliarStockExtras]", (e as any)?.message ?? e); }
@@ -2247,8 +2286,7 @@ async function cancelarPedidoDelCliente(
     if (devuelto) patch.stock_devuelto = true;
     // Patch atómico del shipping (0068), no un write completo: no puede pisar una
     // sede/dirección que se esté editando en paralelo.
-    try { await db.rpc("order_patch_shipping", { p_order_id: ord.id, p_patch: patch }); }
-    catch (_) { await db.from("orders").update({ shipping: { ...ship, ...patch } }).eq("id", ord.id); }
+    await patchShipping(db, ord.id, patch, { ship });
     const { error } = await db.from("orders")
       .update({ estado: "cancelado", updated_at: new Date().toISOString() }).eq("id", ord.id);
     if (error) throw new Error(error.message);
@@ -7884,14 +7922,8 @@ export async function reservarStockPedido(db: SupabaseClient, orderId: string, c
     // Si el CAS no aplicó, revertir el claim con un merge ATÓMICO (restaura el plan, baja
     // la bandera, quita stock_mov) → un reintento posterior lo vuelve a tomar.
     if (!ok) {
-      // db.rpc(...) no tiene .catch (builder thenable) → try/catch, no .catch encadenado.
-      try {
-        await db.rpc("order_patch_shipping", {
-          p_order_id: orderId,
-          p_patch: { stock_mov_plan: plan, stock_descontado: false },
-          p_remove: ["stock_mov"],
-        });
-      } catch { /* best-effort: un reintento posterior lo vuelve a tomar */ }
+      await patchShipping(db, orderId, { stock_mov_plan: plan, stock_descontado: false },
+        { remove: ["stock_mov"] });
       console.error("[reservarStockPedido] stock no aplicado (CAS agotó reintentos) — claim revertido, se reintenta");
       return;
     }
@@ -9085,12 +9117,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
         pago_adelantado_comprobante: url, pago_adelantado_monto: _monto ?? "",
         pago_adelantado_operacion: _oper, pago_adelantado_por_validar: true,
       };
-      try {
-        await db.rpc("order_patch_shipping", { p_order_id: (ordLima as any).id, p_patch: _patch });
-      } catch (_) {
-        await db.from("orders").update({ shipping: { ..._shL, ..._patch } })
-          .eq("id", (ordLima as any).id);
-      }
+      await patchShipping(db, (ordLima as any).id, _patch, { ship: _shL });
       await logEvent(db, channelId, contactId, "nota", "💸 Pagó por adelantado un pedido de Lima",
         `${_monto != null ? "Monto leído: " + _monto + ". " : ""}Por cobrar en la puerta: ${_porCobrar}. ` +
         `Queda por validar: si está bien, el motorizado NO debe cobrar.`).catch(() => {});
@@ -9648,7 +9675,20 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
         `📍 Cambió su dirección a “${nDir}” pero el pedido sigue con distrito ${_dist}. Confirma el distrito en Pedidos antes de enviarlo.`).catch(() => {});
     }
   }
-  await db.from("orders").update({ shipping: sh, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
+  // 🔒 Patch ESTRECHO (order_patch_shipping, 0068) en vez de reescribir `sh` entero. Este es
+  // el peor sitio posible para un read-modify-write: `sh` se leyó al empezar el turno y un
+  // turno tarda segundos, y lo que dispara esta función es justo un mensaje del cliente —
+  // o sea, el momento en que el operador está mirando ese pedido. Si él guardó la guía, la
+  // sede o el flete en esos segundos, escribir `sh` entero se los borraba sin dejar rastro.
+  // Se manda SOLO lo que esta función cambió, que es lo que el merge del servidor necesita.
+  {
+    const _orig = ((order as any).shipping ?? {}) as Record<string, any>;
+    const _patch: Record<string, unknown> = {};
+    for (const k of Object.keys(sh)) {
+      if (JSON.stringify((sh as any)[k]) !== JSON.stringify(_orig[k])) _patch[k] = (sh as any)[k];
+    }
+    await patchShipping(db, (order as any).id, _patch, { ship: _orig });
+  }
   await logEvent(db, channelId, contactId, "nota", "📍 Datos del pedido actualizados", cambios.join(" · ").slice(0, 120)).catch(() => {});
   // Acuse por CÓDIGO y corte del flujo. Sin esto la IA respondía por su cuenta y, como no
   // se entera de que el motor ya aplicó el cambio, le decía justo lo contrario: medido —
@@ -18103,8 +18143,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // esté editando en paralelo desde el panel.
         const _oid = (run.vars as any)?._order_id;
         if (_oid) {
-          try { await db.rpc("order_patch_shipping", { p_order_id: _oid, p_patch: { sede: _ofi.l } }); }
-          catch (_) { /* sin RPC → el panel lo corrige a mano; el evento queda abajo */ }
+          await patchShipping(db, _oid, { sede: _ofi.l });
           await logEvent(db, run.channel_id, run.contact_id, "campo", "📦 Sede del pedido actualizada",
             `El pedido ya existía: ahora sale a ${_ofi.l}`).catch(() => {});
         }

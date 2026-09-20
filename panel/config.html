@@ -203,6 +203,7 @@ async function boot(){
     if(gsRet==="ok") toast("Google conectado — ahora elige tu hoja");
     else if(gsRet==="sin_refresh") toast("Google no devolvió permiso permanente. Reintenta y acepta todos los permisos.",true);
     else if(gsRet==="expirado") toast("El enlace expiró, vuelve a conectar.",true);
+    else if(gsRet==="sin_guardar") toast("Google dio el permiso pero no pudimos guardarlo acá. Reintenta; si sigue, avísanos.",true);
     else toast("No se pudo conectar con Google. Reintenta.",true);
     history.replaceState(null,"",location.pathname);
   }

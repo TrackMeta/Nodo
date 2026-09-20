@@ -104,7 +104,11 @@ async function registraUso(
     const costo = t
       ? +((((_in - _cache) * t.in + _cache * (t.cache ?? t.in) + _out * t.out)) / 1_000_000).toFixed(6)
       : 0;
-    await call.db.rpc("ai_usage_add", {
+    // El error se MIRA: `db.rpc()` no lanza —devuelve `{ error }`—, así que el catch de acá
+    // abajo no corría nunca y un fallo del contador se perdía ENTERO. Es el gasto de IA del
+    // negocio: lo que no se anota se resta de menos y la ganancia sale inflada, sin rastro.
+    // Sigue sin tumbar la llamada: solo deja la línea en el log.
+    const { error } = await call.db.rpc("ai_usage_add", {
       p_channel_id: call.channelId,
       p_provider: call.provider,
       p_model: model,
@@ -114,6 +118,7 @@ async function registraUso(
       p_costo: costo,
       p_cache: _cache,
     });
+    if (error) console.error("[ai_usage_add]", error.message);
   } catch (_) { /* el contador nunca tumba una llamada */ }
 }
 
@@ -348,10 +353,11 @@ export async function transcribeAudio(
   try {
     if (opts.db && opts.channelId) {
       const minutos = Math.max(0.1, bytes.byteLength / 500_000);
-      await opts.db.rpc("ai_usage_add", {
+      const { error: eStt } = await opts.db.rpc("ai_usage_add", {
         p_channel_id: opts.channelId, p_provider: "openai", p_model: opts.model || "whisper-1",
         p_origen: "stt", p_in: 0, p_out: 0, p_costo: +(minutos * 0.006).toFixed(6),
       });
+      if (eStt) console.error("[ai_usage_add/stt]", eStt.message);   // no lanza: hay que mirarlo
     }
   } catch (_) { /* el contador nunca tumba una transcripción */ }
   return String(data.text ?? "").trim();
