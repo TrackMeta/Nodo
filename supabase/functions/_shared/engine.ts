@@ -841,9 +841,34 @@ async function runEngineInner(
       // Sin producto claro (hola / anuncio sin banco / mensaje vago): la RECEPCIÓN
       // con IA lo recibe y lo encamina a un producto. Si está apagada o no hay IA,
       // no responde y queda en la Bandeja para un humano (comportamiento anterior).
+      // 1️⃣ UN SOLO PRODUCTO: no hay nada que averiguar, y la puerta sobra. Si el negocio
+      // vende una sola cosa, quien escribe —diga lo que diga— escribe por ESA. Hacerlo pasar
+      // por la Recepción le costaba un turno entero preguntándole «¿qué producto te
+      // interesa?» (medido: a «¿tienen factura?» se lo preguntó dos veces seguidas sin
+      // contestarle nunca), y eso le pasa a TODO cliente nuevo de TODO negocio que arranca,
+      // que casi siempre arranca con un producto. Se abre su venta directamente, que es quien
+      // tiene la ficha para contestarle. Los reclamos no se cuelan: el guard de reclamo/
+      // devolución corre ANTES del ruteo y escala solo. Decisión de Rodrigo (2026-09-20).
+      // ⛔ …salvo que venga por un PROBLEMA. Con el atajo puesto a secas, a «tengo un problema
+      // con un pedido anterior» se le soltó la presentación del producto entera con precios
+      // antes de atenderlo (medido). La Recepción sí sabe distinguirlo y escalar: cuando suena
+      // a reclamo o post-venta, el atajo NO se toma y se atiende como siempre.
+      // Señales de algo YA comprado o recibido — no las preguntas de ANTES de comprar
+      // («¿tienen garantía?», «¿si no me gusta lo puedo devolver?»), que sí van a la venta:
+      // esas las contesta mejor la ficha, y mandarlas a la Recepción sería volver al turno
+      // perdido que este atajo vino a quitar.
+      const _suenaAProblema = /\b(problema|reclamo|queja|inconveniente|no me (ha )?lleg|no (me )?lleg[oó]|nunca me lleg|lleg[oó] (roto|mal|incompleto|da[ñn]ad)|no (me )?funciona|no sirve|me estafaron|(?:es|fue|era) una estafa|son unos? estafador|reembols|quiero (devolver|mi (plata|dinero)|un cambio)|pedido (anterior|pasado)|ya (lo )?compr[eé]|compr[eé] (hace|el|la|ayer))\b/i
+        .test(String((event as any).text ?? ""));
       let recFlowId: string | undefined;
-      try { recFlowId = (await runReception(db, channelId, contactId, event)).flowId; }
-      catch (e) { console.error("[recepcion]", (e as any)?.message ?? e); }
+      let _unico = false;
+      try {
+        const _cands = await receptionCands(db, channelId);
+        if (_cands.length === 1 && !_suenaAProblema) { recFlowId = _cands[0].flow_id; _unico = true; }
+      } catch (e) { console.error("[ruteo/unico]", (e as any)?.message ?? e); }
+      if (!recFlowId) {
+        try { recFlowId = (await runReception(db, channelId, contactId, event)).flowId; }
+        catch (e) { console.error("[recepcion]", (e as any)?.message ?? e); }
+      }
       // Recepción ya sabe qué quiere el cliente y lo entrega: se abre la venta de ese
       // producto en ESTE mismo turno (si no, el cliente esperaría un mensaje más).
       if (recFlowId) {
@@ -851,6 +876,10 @@ async function runEngineInner(
           .select("id, nombre, estado").eq("id", recFlowId).eq("channel_id", channelId).maybeSingle();
         if (fRec && (fRec as any).estado === "activo") {
           flow = { id: (fRec as any).id, nombre: (fRec as any).nombre };
+          if (_unico) {
+            await logEvent(db, channelId, contactId, "nota", "🎯 Un solo producto: directo a la venta",
+              `No se pasó por la Recepción — el catálogo entero es «${(fRec as any).nombre}».`).catch(() => {});
+          }
           // 🔁 La Recepción ya venía conversando: el saludo del flujo NO puede tratarlo como
           // si acabara de escribir. Medido: la clienta contestó «Lucero Ramos, DNI 70112345,
           // Arequipa» y el flujo arrancó soltándole «¿Desde dónde nos escribe?» — le pidió
@@ -2928,6 +2957,16 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   // «¿Me devuelven la plata?» no calzaba con `devolver` (devuelv- ≠ devolv-) y el bot
   // inventó «no hay devoluciones» 4 de 4 veces sin que el hueco quedara registrado.
   ["devoluciones o cambios", /\b(devoluci[oó]n|devolver|devuelv|devolv|reembols|(plata|dinero) de vuelta|me regresan (la|mi) (plata|dinero)|cambio de talla|cambiar la talla)/, /\b(devoluci[oó]n|devolver|reembols|cambio)/, "negocio"],
+  // 🔴 «No lo rompí, simplemente no me gustó» es OTRA pregunta. La ficha del Adaptador dice
+  // «no hay devoluciones por MAL USO», y con eso el tema de arriba quedaba por cubierto: el
+  // bot contestó «no ofrecemos devoluciones por uso o GUSTO PERSONAL» — estiró la regla del
+  // dueño a un caso que él nunca escribió, y de paso cerró la venta. Medido el 2026-09-20.
+  // Las dos partes (devolver + no me gustó) tienen que ir CERCA, si no «no me gusta el color»
+  // dispararía el hueco. Se da por cubierto si la ficha habla del arrepentimiento (días para
+  // devolver, satisfacción, retracto) o si niega TODA devolución, no solo la del mal uso.
+  ["la devolución si no te gusta",
+    /(?:devolv|devoluci|devuelv|reembols|cambiar|cambio)[^.!?]{0,40}(?:no me gust|no le gust|no te gust|gusto personal|arrepent|no me convenc)|(?:no me gust|no le gust|no te gust|arrepent|no me convenc)[^.!?]{0,40}(?:devolv|devoluci|devuelv|reembols|cambiar)/,
+    /\b(no te gusta|no le gusta|arrepent|retracto|satisfacci[oó]n|\d+\s*d[ií]as para (devolver|cambiar)|devoluci[oó]n sin|de ning[uú]n motivo|ninguna circunstancia)/, "negocio"],
   ["envío al extranjero", /\b(extranjero|internacional|fuera del pa[ií]s)/, /\b(extranjero|internacional)/, "negocio"],
   ["pago en cuotas", /\b(cuotas|financiamiento|en partes)/, /\b(cuotas|financiamiento)/, "negocio"],
   // ⏳ Cuánto tiempo le guarda el paquete la AGENCIA. Medido: «no puedo ir hasta el sábado,
