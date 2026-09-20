@@ -4217,7 +4217,13 @@ function sinValidacionInventada(texto: string): string {
 // (medido M9-memoji-1, 2026-09-19). Se quita SOLO el conector, no la frase: lo que queda
 // («Apenas me mandes la captura, te llega el acceso») es exactamente lo que se quería decir.
 // No corre si el mensaje YA empezaba así: ahí el conector es del modelo, no del recorte.
-const RE_CONECTOR_SIN_FRASE = /^(?:as[ií](?:\s+que)?|y\s+as[ií]|de\s+(?:esa|esta)\s+(?:forma|manera)|con\s+eso|de\s+ah[ií])\s*,?\s+/i;
+// ⚠️ «Así» NO siempre es el conector huérfano: «Así es, funciona en cualquier Excel», «Así de
+// fácil: pones cantidades», «Así son los tiempos de la agencia» son frases completas, y la
+// primera versión de esta regex las dejaba en «Es, funciona…», «De fácil: pones…», «Son los
+// tiempos…». Lo encontré leyendo mi propio cambio el mismo día que lo escribí. Solo se quita
+// cuando detrás NO viene el verbo/complemento que lo convierte en frase.
+const RE_CONECTOR_SIN_FRASE =
+  /^(?:as[ií](?!\s*(?:es\b|era\b|son\b|ser[aá]\b|fue\b|mismo\b|de\b|tal\b|ser\b|funciona\b|lo\b))(?:\s+que)?|y\s+as[ií]|de\s+(?:esa|esta)\s+(?:forma|manera)|con\s+eso|de\s+ah[ií])\s*,?\s+/i;
 function sinConectorColgado(limpio: string, original: string): string {
   const l = String(limpio ?? "");
   const cabeza = (s: string) => String(s ?? "").replace(/^[\s\p{Extended_Pictographic}\p{P}]+/u, "");
