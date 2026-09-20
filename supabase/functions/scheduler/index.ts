@@ -896,177 +896,198 @@ async function processSub(s: any, now: number): Promise<boolean> {
   const _desclamar = () => db.from("sequence_subscriptions").update({ updated_at: s.updated_at ?? null })
     .eq("id", s.id).eq("updated_at", _claimStamp).then(() => {}, () => {});
 
-  // Oferta identificada: el paso puede pegar un DESCUENTO al contacto para una
-  // opción concreta. El motor lo lee al validar el pago (precioEsperado), así un
-  // "te dejo el X a S/Y" no es solo texto: el OCR valida contra el precio con
-  // descuento, y el {{precio}} del mensaje ya sale rebajado. Vence a las N horas.
-  // ¿Este paso REALMENTE va a enviar? La plantilla (HSM) sale SIEMPRE; el flujo y el
-  // mensaje de texto libre SOLO dentro de la ventana de 24h. Se calcula ANTES de grabar
-  // la oferta: si no, el cliente nunca vería "te dejo a S/Y" pero el validador aceptaría
-  // igual ese precio rebajado (descuento fantasma / pérdida de margen).
-  const enVentana = await ventana24hAbierta(db, s.contact_id);
-  // Con contenido REAL: una variante vacía (todas las versiones apagadas) contaba como «va a
-  // enviar», grababa la oferta rebajada y el paso avanzaba sin mandar nada → el validador de
-  // OCR aceptaba un descuento que el cliente nunca vio.
-  const hayVariante = Array.isArray(paso.variantes) && paso.variantes.some((v: any) =>
-    v && v.activo !== false && Array.isArray(v.bubbles) && v.bubbles.some((b: any) => String(b?.text ?? "").trim() || b?.media_url));
-  const vaAEnviar = !!paso.template_name
-    || (!!paso.flow_id && enVentana)
-    || (!!(String(paso.mensaje ?? "").trim() || paso.bubbles?.length || hayVariante) && enVentana);
-  let _ofertaEscrita = false;
-  if (vaAEnviar && paso.oferta && paso.oferta.version_id && paso.oferta.precio != null) {
-    _ofertaEscrita = true;
-    // SIEMPRE con caducidad: si el paso no configura `vence_horas` (o es 0), antes
-    // quedaba `vence=null` = descuento ETERNO → el validador aceptaba el precio rebajado
-    // para siempre (y en recompras/extras de esa misma versión). Default de 72h.
-    const venceH = Number(paso.oferta.vence_horas);
-    const vh = Number.isFinite(venceH) && venceH > 0 ? venceH : 72;
-    const vence = new Date(now + vh * 3600 * 1000).toISOString();
-    await db.from("contacts").update({
-      oferta_activa: { opcion_id: paso.oferta.version_id, precio: Number(paso.oferta.precio), vence, origen: "remarketing" },
-    }).eq("id", s.contact_id).then(() => {}, () => {}); // best-effort (columna 0030)
-  }
-
-  // Disparar el paso: flujo, plantilla HSM (fuera de 24h) o mensaje/burbujas.
-  // `toco` marca si de verdad salió algo (para sellar el anti-spam solo entonces).
+  // Todo lo que sigue va DESPUÉS del claim: si algo revienta acá (un hipo de red leyendo la
+  // ventana de 24h, la base que no contesta) la sub se queda RECLAMADA —con `updated_at` sellado
+  // recién— y el reintento de 10 minutos mide silencio ≈ 0 contra ese sello: el paso no se
+  // pierde, pero se corre el umbral ENTERO (un toque de «3 días» se iba tres días más) y nadie
+  // se entera. Si NO llegó a salir nada se devuelve el ancla y el reintento sí manda. Si ya
+  // salió, el sello se queda: mejor atrasar un toque que repetírselo al cliente.
   let toco = false;
-  if (paso.flow_id) {
-    // El flujo arranca con texto libre (un saludo) casi siempre → igual que el mensaje,
-    // SOLO se corre dentro de la ventana; fuera, se avanza sin correrlo. Antes esta rama
-    // NO chequeaba la ventana → emitía texto libre fuera de 24h (violación de política de
-    // WhatsApp: degrada/banea el número). Para alcanzar a un silencioso, usa una plantilla.
-    // `toco` refleja el RETORNO de startFlowRun: devuelve false si ya hay un run
-    // activo/esperando (p.ej. un run rancio que el guard dejó pasar) → el flujo NO
-    // corrió, así que NO se debe consumir el paso ni sellar el anti-spam (se reintenta
-    // el próximo tick). Antes se marcaba toco=true a ciegas → paso perdido + oferta ya
-    // escrita sin que el cliente viera nada (descuento fantasma).
-    if (enVentana) {
-      // `startFlowRun` devuelve false por DOS motivos muy distintos, y confundirlos deja la
-      // secuencia muerta: (a) el cliente está a mitad de otra conversación → hay que
-      // reintentar; (b) el flujo está en BORRADOR o lo borraron → no va a arrancar nunca, y
-      // reintentar cada tick clava al contacto en este paso para siempre (jamás le llegan los
-      // siguientes toques) sin que nadie se entere. El caso (b) se trata como la rama de
-      // plantilla de abajo: se registra el motivo y se AVANZA saltándose el toque.
-      const { data: fl } = await db.from("flows").select("estado").eq("id", paso.flow_id).maybeSingle();
-      const flujoUsable = !!fl && (fl as any).estado === "activo";
-      if (!flujoUsable) {
-        console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: el flujo ${paso.flow_id} ${fl ? `está en "${(fl as any).estado}"` : "ya no existe"} → no puede arrancar; se salta este toque y avanza`);
-      } else {
-        const ok = await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id);
-        toco = !!ok;
-        if (!ok) {
-          // Ya hay un run activo/esperando: el cliente está a mitad de una conversación. NO se
-          // consume el paso ni se avanza: se REINTENTA el próximo tick, cuando el run se
-          // libere. Antes se caía a avanzar `paso_actual` igual (el `return` faltaba) → el
-          // paso de re-enganche se perdía en silencio sin enviar nada.
-          console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo NO arrancó (run activo/esperando) → se reintenta el próximo tick`);
+  let _ofertaEscrita = false;
+  try {
+    // Oferta identificada: el paso puede pegar un DESCUENTO al contacto para una
+    // opción concreta. El motor lo lee al validar el pago (precioEsperado), así un
+    // "te dejo el X a S/Y" no es solo texto: el OCR valida contra el precio con
+    // descuento, y el {{precio}} del mensaje ya sale rebajado. Vence a las N horas.
+    // ¿Este paso REALMENTE va a enviar? La plantilla (HSM) sale SIEMPRE; el flujo y el
+    // mensaje de texto libre SOLO dentro de la ventana de 24h. Se calcula ANTES de grabar
+    // la oferta: si no, el cliente nunca vería "te dejo a S/Y" pero el validador aceptaría
+    // igual ese precio rebajado (descuento fantasma / pérdida de margen).
+    const enVentana = await ventana24hAbierta(db, s.contact_id);
+    // Con contenido REAL: una variante vacía (todas las versiones apagadas) contaba como «va a
+    // enviar», grababa la oferta rebajada y el paso avanzaba sin mandar nada → el validador de
+    // OCR aceptaba un descuento que el cliente nunca vio.
+    const hayVariante = Array.isArray(paso.variantes) && paso.variantes.some((v: any) =>
+      v && v.activo !== false && Array.isArray(v.bubbles) && v.bubbles.some((b: any) => String(b?.text ?? "").trim() || b?.media_url));
+    const vaAEnviar = !!paso.template_name
+      || (!!paso.flow_id && enVentana)
+      || (!!(String(paso.mensaje ?? "").trim() || paso.bubbles?.length || hayVariante) && enVentana);
+    if (vaAEnviar && paso.oferta && paso.oferta.version_id && paso.oferta.precio != null) {
+      _ofertaEscrita = true;
+      // SIEMPRE con caducidad: si el paso no configura `vence_horas` (o es 0), antes
+      // quedaba `vence=null` = descuento ETERNO → el validador aceptaba el precio rebajado
+      // para siempre (y en recompras/extras de esa misma versión). Default de 72h.
+      const venceH = Number(paso.oferta.vence_horas);
+      const vh = Number.isFinite(venceH) && venceH > 0 ? venceH : 72;
+      const vence = new Date(now + vh * 3600 * 1000).toISOString();
+      await db.from("contacts").update({
+        oferta_activa: { opcion_id: paso.oferta.version_id, precio: Number(paso.oferta.precio), vence, origen: "remarketing" },
+      }).eq("id", s.contact_id).then(() => {}, () => {}); // best-effort (columna 0030)
+    }
+
+    // Disparar el paso: flujo, plantilla HSM (fuera de 24h) o mensaje/burbujas.
+    // `toco` marca si de verdad salió algo (para sellar el anti-spam solo entonces).
+    if (paso.flow_id) {
+      // El flujo arranca con texto libre (un saludo) casi siempre → igual que el mensaje,
+      // SOLO se corre dentro de la ventana; fuera, se avanza sin correrlo. Antes esta rama
+      // NO chequeaba la ventana → emitía texto libre fuera de 24h (violación de política de
+      // WhatsApp: degrada/banea el número). Para alcanzar a un silencioso, usa una plantilla.
+      // `toco` refleja el RETORNO de startFlowRun: devuelve false si ya hay un run
+      // activo/esperando (p.ej. un run rancio que el guard dejó pasar) → el flujo NO
+      // corrió, así que NO se debe consumir el paso ni sellar el anti-spam (se reintenta
+      // el próximo tick). Antes se marcaba toco=true a ciegas → paso perdido + oferta ya
+      // escrita sin que el cliente viera nada (descuento fantasma).
+      if (enVentana) {
+        // `startFlowRun` devuelve false por DOS motivos muy distintos, y confundirlos deja la
+        // secuencia muerta: (a) el cliente está a mitad de otra conversación → hay que
+        // reintentar; (b) el flujo está en BORRADOR o lo borraron → no va a arrancar nunca, y
+        // reintentar cada tick clava al contacto en este paso para siempre (jamás le llegan los
+        // siguientes toques) sin que nadie se entere. El caso (b) se trata como la rama de
+        // plantilla de abajo: se registra el motivo y se AVANZA saltándose el toque.
+        const { data: fl } = await db.from("flows").select("estado").eq("id", paso.flow_id).maybeSingle();
+        const flujoUsable = !!fl && (fl as any).estado === "activo";
+        if (!flujoUsable) {
+          console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: el flujo ${paso.flow_id} ${fl ? `está en "${(fl as any).estado}"` : "ya no existe"} → no puede arrancar; se salta este toque y avanza`);
+          // Que quede en la Actividad del contacto, igual que el fallo de plantilla. Antes esto
+          // solo iba a la consola: un paso apuntando a un flujo en BORRADOR (o borrado) se
+          // saltaba para todos los suscritos, toque tras toque, y el negocio veía la secuencia
+          // «corriendo» sin que llegara nunca nada.
+          await db.from("contact_events").insert({
+            channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
+            titulo: "🔕 El flujo de la secuencia no arrancó",
+            detalle: `Paso ${s.paso_actual}: el flujo ${fl ? `está en «${(fl as any).estado}»` : "ya no existe"}. Publícalo (o cámbiale el paso a la secuencia) — se saltó este toque.`,
+          }).then(() => {}, () => {});
+        } else {
+          const ok = await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id);
+          toco = !!ok;
+          if (!ok) {
+            // Ya hay un run activo/esperando: el cliente está a mitad de una conversación. NO se
+            // consume el paso ni se avanza: se REINTENTA el próximo tick, cuando el run se
+            // libere. Antes se caía a avanzar `paso_actual` igual (el `return` faltaba) → el
+            // paso de re-enganche se perdía en silencio sin enviar nada.
+            console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo NO arrancó (run activo/esperando) → se reintenta el próximo tick`);
+            await _desclamar();
+            return false;
+          }
+        }
+      }
+      else console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo fuera de 24h → no se corre (ponle plantilla al paso)`);
+    }
+    else if (paso.template_name) {
+      // El envío de plantilla puede FALLAR (Meta la rechaza: plantilla no aprobada,
+      // pausada, o params inválidos). Sin este try/catch el throw se propagaba fuera
+      // de processSub y `paso_actual` NUNCA avanzaba → la secuencia se trababa en un
+      // reintento infinito cada tick (y jamás llegaban los pasos siguientes). Ahora se
+      // registra y se AVANZA igual (se salta ese toque) para no bloquear la secuencia.
+      try {
+        // sendTemplateToContact NO lanza cuando no pudo enviar (canal sin token, contacto BSUID
+        // sin número): registra el mensaje como `failed` y devuelve "". Contar eso como toque
+        // sellaba el anti-spam, dejaba grabada la oferta que el cliente nunca vio y consumía el
+        // paso: con un token vencido, las secuencias «recorrían» todos sus toques sin que nadie
+        // recibiera nada. Solo cuenta si hay wamid (o "simulado" en un contacto de prueba).
+        const wamidSeq = await sendTemplateToContact(db, s.channel_id, s.contact_id, {
+          name: paso.template_name, language: paso.template_lang, params: paso.template_params,
+        });
+        toco = !!wamidSeq;
+        if (!toco) {
+          await db.from("contact_events").insert({
+            channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
+            titulo: "🔕 Plantilla de la secuencia no salió",
+            detalle: `Paso ${s.paso_actual}: «${paso.template_name}» — el canal no pudo enviar (¿WhatsApp desconectado o contacto sin número?). Se saltó este toque.`,
+          }).then(() => {}, () => {});
+        }
+      } catch (e) {
+        // Rechazo TEMPORAL de Meta (rate limit del número, 5xx, tope por usuario): no es culpa
+        // del paso ni del contacto. Avanzar igual le quitaba el toque a 200 suscriptores por un
+        // minuto malo de Graph. Se pospone 15 min sin consumir el paso.
+        const meta = (e as any)?.meta;
+        if (meta && esRechazoTemporal(meta)) {
+          await db.from("sequence_subscriptions").update({ proximo_at: new Date(Date.now() + 15 * 60_000).toISOString() }).eq("id", s.id);
+          console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta frenó la plantilla "${paso.template_name}" (code ${meta?.code}) → se pospone 15 min`);
           await _desclamar();
           return false;
         }
-      }
-    }
-    else console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo fuera de 24h → no se corre (ponle plantilla al paso)`);
-  }
-  else if (paso.template_name) {
-    // El envío de plantilla puede FALLAR (Meta la rechaza: plantilla no aprobada,
-    // pausada, o params inválidos). Sin este try/catch el throw se propagaba fuera
-    // de processSub y `paso_actual` NUNCA avanzaba → la secuencia se trababa en un
-    // reintento infinito cada tick (y jamás llegaban los pasos siguientes). Ahora se
-    // registra y se AVANZA igual (se salta ese toque) para no bloquear la secuencia.
-    try {
-      // sendTemplateToContact NO lanza cuando no pudo enviar (canal sin token, contacto BSUID
-      // sin número): registra el mensaje como `failed` y devuelve "". Contar eso como toque
-      // sellaba el anti-spam, dejaba grabada la oferta que el cliente nunca vio y consumía el
-      // paso: con un token vencido, las secuencias «recorrían» todos sus toques sin que nadie
-      // recibiera nada. Solo cuenta si hay wamid (o "simulado" en un contacto de prueba).
-      const wamidSeq = await sendTemplateToContact(db, s.channel_id, s.contact_id, {
-        name: paso.template_name, language: paso.template_lang, params: paso.template_params,
-      });
-      toco = !!wamidSeq;
-      if (!toco) {
+        console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: plantilla "${paso.template_name}" falló (${String((e as any)?.message ?? e)}) → se salta este toque y avanza`);
+        // Que quede en la Actividad del contacto: un fallo permanente (variables que no calzan,
+        // plantilla borrada) se saltaba en silencio, contacto por contacto, para siempre.
         await db.from("contact_events").insert({
           channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
           titulo: "🔕 Plantilla de la secuencia no salió",
-          detalle: `Paso ${s.paso_actual}: «${paso.template_name}» — el canal no pudo enviar (¿WhatsApp desconectado o contacto sin número?). Se saltó este toque.`,
+          detalle: `Paso ${s.paso_actual}: «${paso.template_name}» — ${String((e as any)?.message ?? e).slice(0, 160)}. Se saltó este toque.`,
         }).then(() => {}, () => {});
       }
-    } catch (e) {
-      // Rechazo TEMPORAL de Meta (rate limit del número, 5xx, tope por usuario): no es culpa
-      // del paso ni del contacto. Avanzar igual le quitaba el toque a 200 suscriptores por un
-      // minuto malo de Graph. Se pospone 15 min sin consumir el paso.
-      const meta = (e as any)?.meta;
-      if (meta && esRechazoTemporal(meta)) {
-        await db.from("sequence_subscriptions").update({ proximo_at: new Date(Date.now() + 15 * 60_000).toISOString() }).eq("id", s.id);
-        console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta frenó la plantilla "${paso.template_name}" (code ${meta?.code}) → se pospone 15 min`);
-        await _desclamar();
-        return false;
+    }
+    // Mensaje del paso: texto simple, burbujas multimedia o rotación de variantes.
+    // Las secuencias se disparan por silencio → la ventana de 24h casi siempre
+    // está cerrada, y el texto libre lo rechaza Meta. Si el paso no tiene
+    // plantilla (rama de arriba), solo se envía dentro de la ventana; fuera, se
+    // avanza igual para no estancar la secuencia (para alcanzar a un silencioso
+    // hay que ponerle una plantilla a este paso).
+    else if (paso.mensaje || paso.bubbles?.length || paso.variantes?.length) {
+      if (enVentana) {
+        // Solo cuenta como "toque de marketing" si REALMENTE salió: deliverStep devuelve false
+        // cuando Meta lo rechaza (no lanza). Marcarlo igual le quema al contacto el cooldown de
+        // remarketing sin haber recibido nada.
+        // Se le pasa de qué secuencia y paso viene: es lo que permite medir después qué
+        // variante de copy reenganchó (ver variante_envios).
+        if (await deliverStep(db, s.channel_id, s.contact_id, paso, null,
+          { sequence_id: s.sequence_id, paso: s.paso_actual })) toco = true;
+        else console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta rechazó el envío → no cuenta como toque`);
+      } else {
+        console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: fuera de 24h y sin plantilla → no se envía (ponle plantilla al paso para alcanzarlo)`);
       }
-      console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: plantilla "${paso.template_name}" falló (${String((e as any)?.message ?? e)}) → se salta este toque y avanza`);
-      // Que quede en la Actividad del contacto: un fallo permanente (variables que no calzan,
-      // plantilla borrada) se saltaba en silencio, contacto por contacto, para siempre.
-      await db.from("contact_events").insert({
-        channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
-        titulo: "🔕 Plantilla de la secuencia no salió",
-        detalle: `Paso ${s.paso_actual}: «${paso.template_name}» — ${String((e as any)?.message ?? e).slice(0, 160)}. Se saltó este toque.`,
-      }).then(() => {}, () => {});
     }
-  }
-  // Mensaje del paso: texto simple, burbujas multimedia o rotación de variantes.
-  // Las secuencias se disparan por silencio → la ventana de 24h casi siempre
-  // está cerrada, y el texto libre lo rechaza Meta. Si el paso no tiene
-  // plantilla (rama de arriba), solo se envía dentro de la ventana; fuera, se
-  // avanza igual para no estancar la secuencia (para alcanzar a un silencioso
-  // hay que ponerle una plantilla a este paso).
-  else if (paso.mensaje || paso.bubbles?.length || paso.variantes?.length) {
-    if (enVentana) {
-      // Solo cuenta como "toque de marketing" si REALMENTE salió: deliverStep devuelve false
-      // cuando Meta lo rechaza (no lanza). Marcarlo igual le quema al contacto el cooldown de
-      // remarketing sin haber recibido nada.
-      // Se le pasa de qué secuencia y paso viene: es lo que permite medir después qué
-      // variante de copy reenganchó (ver variante_envios).
-      if (await deliverStep(db, s.channel_id, s.contact_id, paso, null,
-        { sequence_id: s.sequence_id, paso: s.paso_actual })) toco = true;
-      else console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta rechazó el envío → no cuenta como toque`);
-    } else {
-      console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: fuera de 24h y sin plantilla → no se envía (ponle plantilla al paso para alcanzarlo)`);
+    if (toco) await marcarTocoMkt(s.contact_id);
+    // 🔴 Descuento fantasma por la puerta de la plantilla: la oferta se graba ANTES de enviar
+    // (`vaAEnviar` da por hecho que la plantilla sale), pero Meta puede rechazarla en firme
+    // (no aprobada, pausada, params) y el paso avanza igual → el cliente nunca vio «te dejo a
+    // S/Y» y el validador aceptaba ese precio. Si no salió nada, la oferta recién grabada se quita.
+    if (_ofertaEscrita && !toco) {
+      try {
+        const { data: cOf } = await db.from("contacts").select("oferta_activa").eq("id", s.contact_id).maybeSingle();
+        const of = (cOf as any)?.oferta_activa;
+        if (of && of.origen === "remarketing" && String(of.opcion_id) === String(paso.oferta.version_id)) {
+          await db.from("contacts").update({ oferta_activa: null }).eq("id", s.contact_id);
+          console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: no salió nada → se retira la oferta grabada (evita el descuento fantasma)`);
+        }
+      } catch (_) { /* best-effort */ }
     }
-  }
-  if (toco) await marcarTocoMkt(s.contact_id);
-  // 🔴 Descuento fantasma por la puerta de la plantilla: la oferta se graba ANTES de enviar
-  // (`vaAEnviar` da por hecho que la plantilla sale), pero Meta puede rechazarla en firme
-  // (no aprobada, pausada, params) y el paso avanza igual → el cliente nunca vio «te dejo a
-  // S/Y» y el validador aceptaba ese precio. Si no salió nada, la oferta recién grabada se quita.
-  if (_ofertaEscrita && !toco) {
-    try {
-      const { data: cOf } = await db.from("contacts").select("oferta_activa").eq("id", s.contact_id).maybeSingle();
-      const of = (cOf as any)?.oferta_activa;
-      if (of && of.origen === "remarketing" && String(of.opcion_id) === String(paso.oferta.version_id)) {
-        await db.from("contacts").update({ oferta_activa: null }).eq("id", s.contact_id);
-        console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: no salió nada → se retira la oferta grabada (evita el descuento fantasma)`);
+    // 🎯 El toque habla de UN producto: se le deja sellado al contacto para que su RESPUESTA
+    // entre a la venta de ese producto. Sin esto el cliente contestaba al reenganche y el bot
+    // no sabía de qué le hablaba él mismo un minuto antes — medido: recibió "me quedan pocas
+    // en tu talla, ¿te la aparto?", contestó "sí, apártamela, talla 39 negra" y le respondió
+    // el saludo de bienvenida preguntándole qué producto quería; a otro que preguntó "¿qué
+    // precio tenía?" le contestó "¿qué producto te interesa?". El cliente ya dijo que sí y el
+    // bot lo manda al principio: se pierde la venta que el propio remarketing acababa de abrir.
+    // Se escribe solo product_id (no markProduct: ese además auto-suscribe a secuencias, y
+    // llamarlo desde el propio remarketing lo realimentaría). Solo tras un envío REAL, y el
+    // scheduler ya no toca a quien está a mitad de conversación, así que no pisa una venta viva.
+    // ⚠️ …salvo que el producto que YA tiene el contacto comparta esta misma secuencia: entonces
+    // el toque habla de SU producto y pisarlo con el «dueño» (el primero del mapa) lo cambiaba de
+    // producto por debajo. Medido (M-mremarketing-1): lead de la Plantilla → tras el toque quedó
+    // como lead del Curso y contestó con los precios del Curso.
+    if (toco && subProductId) {
+      const _cur = String((c as any).product_id ?? "");
+      const _comparten = _cur ? await productosDeSecuencia(s.channel_id, s.sequence_id) : [];
+      if (!(_cur && _comparten.includes(_cur))) {
+        await db.from("contacts").update({ product_id: subProductId }).eq("id", s.contact_id)
+          .then(() => {}, () => {});
       }
-    } catch (_) { /* best-effort */ }
-  }
-  // 🎯 El toque habla de UN producto: se le deja sellado al contacto para que su RESPUESTA
-  // entre a la venta de ese producto. Sin esto el cliente contestaba al reenganche y el bot
-  // no sabía de qué le hablaba él mismo un minuto antes — medido: recibió "me quedan pocas
-  // en tu talla, ¿te la aparto?", contestó "sí, apártamela, talla 39 negra" y le respondió
-  // el saludo de bienvenida preguntándole qué producto quería; a otro que preguntó "¿qué
-  // precio tenía?" le contestó "¿qué producto te interesa?". El cliente ya dijo que sí y el
-  // bot lo manda al principio: se pierde la venta que el propio remarketing acababa de abrir.
-  // Se escribe solo product_id (no markProduct: ese además auto-suscribe a secuencias, y
-  // llamarlo desde el propio remarketing lo realimentaría). Solo tras un envío REAL, y el
-  // scheduler ya no toca a quien está a mitad de conversación, así que no pisa una venta viva.
-  // ⚠️ …salvo que el producto que YA tiene el contacto comparta esta misma secuencia: entonces
-  // el toque habla de SU producto y pisarlo con el «dueño» (el primero del mapa) lo cambiaba de
-  // producto por debajo. Medido (M-mremarketing-1): lead de la Plantilla → tras el toque quedó
-  // como lead del Curso y contestó con los precios del Curso.
-  if (toco && subProductId) {
-    const _cur = String((c as any).product_id ?? "");
-    const _comparten = _cur ? await productosDeSecuencia(s.channel_id, s.sequence_id) : [];
-    if (!(_cur && _comparten.includes(_cur))) {
-      await db.from("contacts").update({ product_id: subProductId }).eq("id", s.contact_id)
-        .then(() => {}, () => {});
     }
+
+  } catch (e) {
+    if (!toco) await _desclamar();
+    throw e;   // lo agarra el catch del lote, que además la aparta 10 minutos
   }
 
   const next = s.paso_actual + 1;

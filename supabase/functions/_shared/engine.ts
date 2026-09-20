@@ -3518,7 +3518,7 @@ async function execute(db: SupabaseClient, run: Run) {
               await registrarVariante(db, run.channel_id, run.contact_id, {
                 ambito: "inicial", ref_id: run.flow_id,
                 variante: chosen, indice: active.indexOf(chosen), angulo: slug,
-                waId: String(ctx.wa_id ?? ""),
+                waId: String(ctx.wa_id ?? ""), origen: String(ctx.origen ?? ""),
               });
             }
           }
@@ -6501,7 +6501,7 @@ export async function deliverStep(
     await registrarVariante(db, channelId, contactId, {
       ambito: "secuencia", ref_id: meta.sequence_id, paso: meta.paso ?? null,
       variante: elegida.v, indice: elegida.i, angulo: elegida.angulo,
-      waId: String(ctx.wa_id ?? ""),
+      waId: String(ctx.wa_id ?? ""), origen: String(ctx.origen ?? ""),
     });
   }
   return allOk;
@@ -21695,7 +21695,7 @@ function idVariante(v: any, i: number): string {
 async function registrarVariante(
   db: SupabaseClient, channelId: string, contactId: string,
   d: { ambito: "inicial" | "secuencia"; ref_id?: string | null; paso?: number | null;
-       variante: any; indice: number; angulo?: string | null; waId?: string },
+       variante: any; indice: number; angulo?: string | null; waId?: string; origen?: string },
 ): Promise<void> {
   try {
     // ⛔ El contacto de "Probar flujos" NO se mide. Es el dueño probando: manda el saludo y
@@ -21705,12 +21705,20 @@ async function registrarVariante(
     // El wa_id lo pasan los dos llamadores desde el contexto (ya lo tienen cargado): así
     // esto no agrega una consulta por cada envío. El scheduler manda cientos de pasos por
     // tick, y ahí un SELECT extra por paso sí se nota.
+    // Lo mismo, y por más razones, con los contactos SIMULADOS (`source = "sim"`, la puerta
+    // tmp-sim): una tanda de pruebas son cientos de chats de golpe, y ahí el "cliente"
+    // contesta SIEMPRE — así que no solo ensucia, sino que INFLA la tasa de la variante que
+    // le tocó a la simulación. Todo lo demás ya los exime (envío real, secuencias, reportes);
+    // esta medición era el último sitio donde se colaban. El origen viene del contexto que el
+    // llamador ya armó (`ctx.origen` = contacts.source), sin consulta extra.
     let wa = d.waId;
-    if (wa === undefined) {
-      const { data: ct } = await db.from("contacts").select("wa_id").eq("id", contactId).maybeSingle();
-      wa = (ct as any)?.wa_id ?? "";
+    let origen = d.origen;
+    if (wa === undefined || origen === undefined) {
+      const { data: ct } = await db.from("contacts").select("wa_id, source").eq("id", contactId).maybeSingle();
+      if (wa === undefined) wa = (ct as any)?.wa_id ?? "";
+      if (origen === undefined) origen = (ct as any)?.source ?? "";
     }
-    if (wa === "webchat-test") return;
+    if (wa === "webchat-test" || origen === "sim") return;
     await db.from("variante_envios").insert({
       channel_id: channelId, contact_id: contactId,
       ambito: d.ambito, ref_id: d.ref_id ?? null, paso: d.paso ?? null,
