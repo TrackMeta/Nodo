@@ -15464,6 +15464,32 @@ function anclaDeFechaOcr(tz?: string | null): string {
   } catch (_) { /* Intl/timezone no disponible: se queda con el ISO */ }
   return `## Fecha de HOY (referencia obligatoria)\nAhora mismo es ${hoyStr} (hora local del negocio, en formato de 24 horas). Antes de comparar horas, pasa la del comprobante a 24 horas: «12:40 pm» son las 12:40 y «1:10 pm» son las 13:10, así que las 12:40 pm son ANTERIORES. El año en curso es ${anioActual}. Usa SIEMPRE esta fecha como el presente: un comprobante fechado hoy o en días recientes es NORMAL. NUNCA marques un comprobante como sospechoso, futuro o falso por su año o su fecha (por ejemplo por decir ${anioActual}); juzga la antigüedad ÚNICAMENTE comparándola contra esta fecha de hoy. Si el comprobante es de HOY y solo su HORA va por delante de la hora actual, acéptalo igual: los relojes de los celulares y de los bancos no van sincronizados. Solo un comprobante fechado otro DÍA posterior a hoy cuenta como futuro.`;
 }
+// 🗓️ ¿La fecha que el OCR dice haber LEÍDO es de hoy o anterior? Sirve para desmentir un
+// motivo inventado: el modelo rechaza «porque tiene fecha futura» un comprobante cuya fecha
+// él mismo transcribió como la de hoy. Devuelve null si no se entiende lo que leyó (ahí no
+// se opina). Acepta «20 sep. 2026», «2026-09-20», «20/09/2026» y «20 de setiembre de 2026».
+const _MESES_ES: Record<string, number> = {
+  ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8,
+  sep: 9, set: 9, oct: 10, nov: 11, dic: 12,
+};
+export function fechaLeidaNoEsFutura(fecha: unknown, tz?: string | null): boolean | null {
+  const s = String(fecha ?? "").toLowerCase().trim();
+  if (!s) return null;
+  let a = 0, m = 0, d = 0;
+  const iso = /(20\d\d)[-/](\d{1,2})[-/](\d{1,2})/.exec(s);
+  const dmy = /(\d{1,2})[-/](\d{1,2})[-/](20\d\d)/.exec(s);
+  const txt = /(\d{1,2})\s*(?:de\s+)?([a-záéíóú]{3})[a-záéíóú]*\.?\s*(?:de\s+)?(20\d\d)/.exec(s);
+  if (iso) { a = +iso[1]; m = +iso[2]; d = +iso[3]; }
+  else if (dmy) { d = +dmy[1]; m = +dmy[2]; a = +dmy[3]; }
+  else if (txt) { d = +txt[1]; m = _MESES_ES[txt[2]] ?? 0; a = +txt[3]; }
+  if (!a || !m || !d) return null;
+  try {
+    const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: tz || "America/Lima", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const leida = `${a}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    return leida <= hoy;
+  } catch (_) { return null; }
+}
+
 // El system mínimo para validar un comprobante cuando el dueño NO configuró el validador.
 // Lleva el ancla de fecha sí o sí: es lo único sin lo cual el OCR se equivoca solo.
 function ocrSystemMinimo(tz?: string | null): string {
@@ -18798,7 +18824,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       } catch (_) { /* sin memoria → responde normal */ }
     }
 
-    const result = await runAI({ db, channelId: run.channel_id, origen: op === "analizar_imagen" ? "ocr" : "vender",
+    let result = await runAI({ db, channelId: run.channel_id, origen: op === "analizar_imagen" ? "ocr" : "vender",
       provider, apiKey: ai.api_key, model, system, content, maxTokens,
       jsonSchema: op === "extraer" ? cfg.json_schema : undefined,
     });
@@ -18853,10 +18879,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       run.vars.pago_monto = ""; ctx.pago_monto = "";
       run.vars.pago_metodo = ""; ctx.pago_metodo = "";
       run.vars.pago_titular = ""; ctx.pago_titular = "";
+      let _ocrLeyo: any = null;
       try {
         const m = /\{[\s\S]*\}/.exec(String(result ?? ""));
         if (m) {
           const p = JSON.parse(m[0]);
+          _ocrLeyo = p;
           const guarda = async (k: string, v: any) => {
             const s = String(v ?? "").trim();
             if (!s) return;
@@ -18870,6 +18898,41 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           await guarda("pago_titular", p.titular);
         }
       } catch (_) { /* no trajo JSON: el flujo sigue igual con el texto crudo */ }
+      // 🗓️❌ EL MOTIVO INVENTADO. Medido el 2026-09-20: un Yape de S/100 sobre un producto de
+      // S/19, con la fecha de HOY hace 20 minutos, se rechazó con «el comprobante tiene fecha
+      // futura respecto a hoy». Tres comprobantes idénticos por el monto justo salieron
+      // PAGO_OK 3 de 3, así que no es el ancla de fecha: el modelo quiso rechazar por el monto
+      // y se inventó la razón. El cliente que pagó de más recibe una acusación falsa y la
+      // venta muere ahí. Se comprueba contra la fecha que el propio OCR dice haber leído: si
+      // NO es futura, el motivo es mentira. No se aprueba (puede haber otra razón real): se
+      // le quita la acusación, se le dice la verdad y lo mira una persona.
+      // 🔎 Y si acusa de fecha futura SIN decir qué fecha leyó (el JSON vino sin `fecha`,
+      // que es justo lo que pasó en PV-g3), tampoco vale: una acusación que no se puede
+      // comprobar no se le manda a alguien que acaba de pagar. Solo se respeta el rechazo
+      // cuando la fecha leída SÍ es futura de verdad (=== false).
+      if (/PAGO_NO/i.test(String(result ?? "")) && /\bfutur/i.test(String(result ?? ""))) {
+        const _noFutura = fechaLeidaNoEsFutura(_ocrLeyo?.fecha, await tzDe(db, run));
+        if (_noFutura !== false) {
+          const _antes = String(result ?? "");
+          // El flujo antepone «Mmm, revisé tu comprobante 🤔», así que la frase tiene que
+          // continuar esa, no repetirla (salía «revisé tu comprobante… estoy revisando tu
+          // comprobante»). Medido en PV-k6.
+          result = "PAGO_NO Déjame confirmarlo con calma 🙌 En un momento te aviso por acá.";
+          // ⚠️ El nodo YA guardó el veredicto crudo unas líneas más arriba, y el mensaje que le
+          // llega al cliente sale de ESE campo ({{pago_resultado_motivo}}), no de esta variable:
+          // sin re-escribirlo, el evento quedaba registrado pero el cliente igual recibía la
+          // acusación (medido en PV-h1 y PV-h4). Lo que se corrige hay que volver a guardarlo.
+          if (cfg.guardar_en) {
+            run.vars[cfg.guardar_en] = result;
+            await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, result);
+          }
+          await logEvent(db, run.channel_id, run.contact_id, "error", "🗓️ El OCR inventó que la fecha era futura",
+            `Leyó la fecha «${String(_ocrLeyo?.fecha ?? "")}» (de hoy o anterior) y aun así rechazó: «${_antes.slice(0, 120)}». Se le quitó la acusación al cliente y pasa a revisión de una persona.`).catch(() => {});
+          await pasarAHumano(db, run.channel_id, run.contact_id,
+            `El validador rechazó un comprobante por «fecha futura» pero la fecha que leyó (${String(_ocrLeyo?.fecha ?? "")}) no lo es. Revísalo tú.`,
+            { aviso: true }).catch(() => {});
+        }
+      }
     }
     // ── Anti-reúso determinista + validación manual (pagos digitales) ──
     // Cuando el OCR da el pago por VÁLIDO (PAGO_OK), dos cosas antes de entregar:
