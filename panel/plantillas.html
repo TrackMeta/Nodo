@@ -283,7 +283,11 @@ async function agregarReco(c, { enviar }){
   const { error }=await supa.from("wa_templates").insert({
     channel_id:st.channelId, name:c.name, language:c.language, categoria:c.categoria,
     body_preview:c.body, params:c.params, ejemplos:c.ejemplos, folder:c.folder,
-    estado_meta: enviar?"pendiente":"borrador", activa:true });
+    // Nace SIEMPRE en borrador, aunque se vaya a enviar: el «pendiente» lo sella el backend
+    // cuando Meta de verdad la aceptó. Antes se guardaba «pendiente» de entrada y, si Meta la
+    // rechazaba o WhatsApp no estaba conectado, se quedaba diciendo «en revisión» para siempre
+    // — nadie la iba a arreglar porque parecía estar esperando a Meta.
+    estado_meta:"borrador", activa:true });
   if(error){ toast(error.message,true); return false; }
   if(!enviar){ await loadList(); toast(`"${c.titulo}" agregada como borrador — revísala y envíala cuando quieras`); return true; }
   let r=null; try{ r=await callFn("channel-config",{ action:"template_submit", channel_id:st.channelId,
@@ -431,7 +435,25 @@ function renderDetail(){
 }
 // Crea la plantilla EN Meta y la manda a aprobación (usa el cuerpo actual + los
 // ejemplos guardados). El estado vuelve por el webhook o por "Sincronizar".
+// Graba lo que el usuario tiene EN PANTALLA (es lo que se le va a mandar a Meta).
+// Devuelve null si grabó, o el mensaje de error.
+async function guardarCampos({ name, language, categoria, body }){
+  readSlots();
+  const N=bodyMaxN(); const params=[];
+  for(let n=1;n<=N;n++) params.push((st.vars[n]||"").trim());
+  const patch={ name, language, categoria, body_preview:body, params };
+  const { error }=await supa.from("wa_templates").update(patch).eq("id",st.tpl.id);
+  if(error) return error.message;
+  st.tpl={ ...st.tpl, ...patch };
+  return null;
+}
 async function enviarMeta(){
+  // Solo se manda lo que TODAVÍA no está en Meta. Con una ya enviada/aprobada, Meta responde
+  // «ese nombre ya existe» — y ahora que se guarda antes de enviar, insistir le pisaría a la
+  // fila aprobada el texto de la pantalla. Para cambiar una aprobada se edita en Meta y se
+  // trae con «Sincronizar».
+  const _est=String(st.tpl?.estado_meta||"borrador");
+  if(_est==="pendiente"||_est==="aprobada"){ toast(_est==="pendiente"?"Ya está en revisión en Meta — espera su respuesta o usa «Sincronizar»":"Ya está aprobada en Meta. Para cambiarla, edítala en el WhatsApp Manager y toca «Sincronizar»",true); return; }
   let name=$("f_name").value.trim();
   const body=$("f_body").value.trim();
   const language=$("f_lang").value.trim()||"es", category=$("f_cat").value;
@@ -442,6 +464,15 @@ async function enviarMeta(){
   // antes de mandarla y se ofrece el nombre ya corregido.
   { const bueno=await nombreValidoMeta(name); if(!bueno) return; if(bueno!==name){ name=bueno; $("f_name").value=bueno; } }
   const btn=$("sendMetaBtn"), old=btn.textContent; btn.disabled=true; btn.textContent="Enviando…";
+  // 🔴 GUARDAR ANTES DE ENVIAR. Esto mandaba a Meta lo que estaba EN PANTALLA sin grabarlo:
+  //  · Meta aprobaba un texto y Nodo guardaba otro (la vista previa de Campañas mentía).
+  //  · Si el nombre se corrigió recién (nombreValidoMeta), la plantilla quedaba en Meta con el
+  //    nombre nuevo y en Nodo con el viejo: el backend sella el estado buscando por NOMBRE, así
+  //    que no encontraba la fila → se quedaba en «borrador» para siempre y al sincronizar
+  //    aparecía DUPLICADA. Y cada envío fallaba con «la plantilla no existe».
+  //  · Un hueco {{2}} agregado y no guardado = Meta con 2 variables y Nodo con 1 → Meta rechaza
+  //    el lote entero de la campaña (132000).
+  { const _e=await guardarCampos({ name, language, categoria:category, body }); if(_e){ btn.disabled=false; btn.textContent=old; toast("No se pudo guardar antes de enviar: "+_e,true); return; } }
   // Meta EXIGE un valor de ejemplo por CADA {{N}} del cuerpo, o rechaza la plantilla. Una
   // plantilla hecha a mano no guarda `ejemplos` → antes se enviaba examples:[] y Meta la
   // rechazaba. Se derivan: los ejemplos guardados; y para lo que falte, el `param` sample

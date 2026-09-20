@@ -733,7 +733,14 @@ Deno.serve(async (req) => {
       const { data: existentes } = await db.from("wa_templates")
         .select("id, name, language, estado_meta").eq("channel_id", channel_id);
       const idx = new Map<string, string>();
-      for (const r of existentes ?? []) idx.set(`${(r as any).name}::${(r as any).language ?? "es"}`, (r as any).id);
+      // También el estado anterior: una plantilla que VUELVE (la borraron en Meta y la
+      // recrearon) necesita que le devolvamos el `activa`, ver abajo.
+      const prevEstado = new Map<string, string>();
+      for (const r of existentes ?? []) {
+        const k = `${(r as any).name}::${(r as any).language ?? "es"}`;
+        idx.set(k, (r as any).id);
+        prevEstado.set(k, String((r as any).estado_meta ?? ""));
+      }
 
       let creadas = 0, actualizadas = 0, eliminadas = 0;
       const vistas = new Set<string>();
@@ -750,11 +757,19 @@ Deno.serve(async (req) => {
           // params se PRESERVAN: es el mapeo de huecos {{1}},{{2}} que hizo el usuario.
           // Si la columna soporta_envio no existe aún (migración 0074 sin aplicar), se
           // reintenta sin ella para no romper la sincronización.
-          let up = await db.from("wa_templates").update({
-            estado_meta: estado, body_preview: bodyTxt, categoria: t?.category ?? null, soporta_envio: puedeEnviar,
-          }).eq("id", prevId);
+          // La plantilla VOLVIÓ: la reconciliación de abajo apaga `activa` cuando Meta deja de
+          // listarla, y al recrearla en el WhatsApp Manager la fila volvía a decir «aprobada»
+          // pero seguía DESACTIVADA — no aparecía en Campañas y nada explicaba por qué. Se le
+          // devuelve el `activa` SOLO si el apagón lo pusimos nosotros (estaba «eliminada»);
+          // si el dueño la desactivó a mano, se respeta.
+          const _volvio = prevEstado.get(`${name}::${language}`) === "eliminada";
+          const _campos: Record<string, unknown> = {
+            estado_meta: estado, body_preview: bodyTxt, categoria: t?.category ?? null,
+            ...(_volvio ? { activa: true } : {}),
+          };
+          let up = await db.from("wa_templates").update({ ..._campos, soporta_envio: puedeEnviar }).eq("id", prevId);
           if ((up as any)?.error && /soporta_envio|column/.test(String((up as any).error.message))) {
-            await db.from("wa_templates").update({ estado_meta: estado, body_preview: bodyTxt, categoria: t?.category ?? null }).eq("id", prevId);
+            await db.from("wa_templates").update(_campos).eq("id", prevId);
           }
           actualizadas++;
         } else {
