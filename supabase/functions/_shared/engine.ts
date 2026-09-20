@@ -3316,20 +3316,8 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
     return { hecho: true, flowId };
   }
   await logEvent(db, channelId, contactId, "nota", "👋 Recepción (IA)", (event.text ?? "").slice(0, 80)).catch(() => {});
-  // 🛡️ Los guards de dinero, también EN LA PUERTA. La familia de retoques de salida
-  // (sinAnuncioDePago y compañía) vive en el nodo «generar_texto» de la venta, así que la
-  // Recepción —que es el PRIMER mensaje que recibe un cliente nuevo, y la que menos contexto
-  // tiene— salía sin ninguno. Acá no hay pedido ni monto ni método de pago que valga: si
-  // anuncia que «te paso los datos para el pago» o pide permiso para mandarlos, es aire.
-  // Solo los tres que son texto puro y no necesitan el contexto de la venta.
-  {
-    const _antesRec = result;
-    result = sinPedirPermisoPago(sinAnuncioDePago(sinPromesaDeDatosColgada(result, true)));
-    if (result !== _antesRec) {
-      await logEvent(db, channelId, contactId, "nota", "✂️ La Recepción hablaba de datos de pago",
-        `En la puerta no hay pedido ni monto: se le quitó la frase. Antes: «${_antesRec.slice(0, 140)}»`).catch(() => {});
-    }
-  }
+  // (Los tres retoques de dinero ya no van acá: viven dentro de emitIaText, así valen
+  // también para el soporte post-venta y para cualquier otra salida de IA.)
   await emitIaText(db, run, result || "¡Hola! 👋 ¿Qué producto te interesa? Con gusto te ayudo a encontrar lo que buscas.", ctx);
   return { hecho: true };
 }
@@ -6433,6 +6421,34 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       }
       await logEvent(db, run.channel_id, run.contact_id, "nota", "🔗 Iba a mandar un enlace que no existe",
         "Se le quitó la frase y se pasó a una persona.").catch(() => {});
+    }
+  }
+  // 🛡️ Los tres retoques de DINERO, para TODA salida de IA. Vivían sueltos en el nodo
+  // «generar_texto» de la venta, así que los otros dos sitios donde la IA le habla al cliente
+  // salían sin red: la RECEPCIÓN (el primer mensaje de un cliente nuevo) y el SOPORTE
+  // POST-VENTA (gente que YA PAGÓ, preguntando por su pedido, su saldo o su plata). Anunciar
+  // «te paso los datos para el pago» o pedir permiso para mandarlos es aire en los dos: los
+  // datos los manda el motor, o no los manda nadie. Son texto puro y no necesitan contexto de
+  // venta, así que se aplican acá una sola vez. En la venta ya vienen aplicados: volver a
+  // pasarlos no cambia nada (no queda nada que quitar).
+  {
+    const _antesD = result;
+    result = sinPedirPermisoPago(sinAnuncioDePago(sinPromesaDeDatosColgada(result, true)));
+    if (result !== _antesD) {
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Anunciaba datos de pago que no manda ella",
+        `Los datos los manda el motor (o no van). Antes: «${_antesD.slice(0, 140)}»`).catch(() => {});
+    }
+    // 🧾❌ Y el archivo que NADIE pudo abrir. Mismo motivo: el guard estaba solo en la venta,
+    // pero el que manda su comprobante en PDF muchas veces ya compró y está en POST-VENTA
+    // (pagando el saldo). Ahí «ya validé tu pago» es todavía peor: el cliente se queda
+    // esperando la clave de recojo de un pago que nadie miró.
+    if (["document", "video", "sticker", "contacts", "unknown"].includes(String(ctx?.last_input_type ?? ""))) {
+      const _antesV = result;
+      result = sinValidacionInventada(result);
+      if (result !== _antesV) {
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🧾 Dijo que validó un pago que nadie validó",
+          `Llegó un archivo ilegible (${String(ctx?.last_input_type)}) y la respuesta lo daba por validado: «${_antesV.slice(0, 140)}»`).catch(() => {});
+      }
     }
   }
   // El acuse del traspaso va DESPUÉS del mensaje que escribió la IA, no antes.
