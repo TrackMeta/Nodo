@@ -4105,7 +4105,16 @@ const RE_ORACION_DE_ENTREGA =
   // preguntó «¿me lo mandan por correo?» y recibió una frase huérfana que arrancaba en «Así».
   // Medido en D7-pcorreo-2 (2026-09-19) con el evento 🔬. «te llega EL link» estaba cubierto;
   // «te llega POR link / por WhatsApp / por acá», no. Es por dónde le llega, no un anuncio.
-  /\b(?:domicilio|contra\s*entrega|al\s+recibir(?:lo|la)?|cuando\s+(?:lo|la)\s+recib[ae]s|revis(?:ar|as|es)\s+antes|a\s+tu\s+(?:casa|puerta|direcci[oó]n)|en\s+tu\s+(?:casa|direcci[oó]n)|delivery|(?:el\s+)?(?:acceso|link|enlace|archivo)\s+(?:te\s+)?(?:llega|lo\s+entrego|lo\s+env[ií]o)|te\s+llega\s+(?:el\s+)?(?:acceso|link|enlace|archivo)|te\s+(?:llega|lo\s+(?:env[ií]o|mando|entrego))\s+(?:por|v[ií]a|mediante)\s+(?:este\s+|el\s+|un\s+)?(?:link|enlace|chat|whatsapp|correo|ac[aá]|aqu[ií]))\b/i;
+  // 🔴 El `\b` del final NO servía cuando la alternativa termina en TILDE: en JavaScript el
+  // límite de palabra es ASCII, así que después de la «á» de «acá» no hay frontera y la rama
+  // entera fallaba — «Te llega por acá» y «por aquí» nunca estuvieron protegidos, aunque el
+  // comentario de arriba diga que sí (medido el 2026-09-20). Se cambia por un lookahead con
+  // `u`, que sí entiende letras acentuadas. Es la prima hermana de la regla del emoji sin `u`.
+  // 🔴 Y faltaba la forma más común de contestar «¿me lo mandan por correo?»: «el acceso no va
+  // por correo, sino con un LINK que te mando ACÁ mismo» — el link y el «acá» en la misma
+  // oración, con cualquier verbo en medio. Sin eso, sinAnuncioDePago se la llevaba y al
+  // cliente le quedaba «Lo abres al toque desde cualquier dispositivo» (RG-dcorreo-2).
+  /(?:domicilio|contra\s*entrega|al\s+recibir(?:lo|la)?|cuando\s+(?:lo|la)\s+recib[ae]s|revis(?:ar|as|es)\s+antes|a\s+tu\s+(?:casa|puerta|direcci[oó]n)|en\s+tu\s+(?:casa|direcci[oó]n)|delivery|(?:el\s+)?(?:acceso|link|enlace|archivo)\s+(?:te\s+)?(?:llega|lo\s+entrego|lo\s+env[ií]o)|te\s+llega\s+(?:el\s+)?(?:acceso|link|enlace|archivo)|te\s+(?:llega|lo\s+(?:env[ií]o|mando|entrego))\s+(?:por|v[ií]a|mediante)\s+(?:este\s+|el\s+|un\s+)?(?:link|enlace|chat|whatsapp|correo|ac[aá]|aqu[ií])|(?:link|enlace|acceso|archivo|descarga)[^.!?…]{0,45}(?:ac[aá]|aqu[ií]|por\s+este\s+chat|por\s+whatsapp)|(?:ac[aá]|aqu[ií])[^.!?…]{0,35}(?:link|enlace|acceso|archivo))(?![\p{L}\p{N}])/iu;
 // 🔠 Al quitar la frase con que ARRANCABA el mensaje, lo que queda empieza en minúscula:
 // «Perfecto, te paso los datos para el pago 👇 cuando me mandes la captura…» → «cuando me
 // mandes la captura, te llega el acceso» (medido N-kdirecto-1 y N-ke2e-1, 2026-09-18).
