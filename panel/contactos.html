@@ -597,8 +597,24 @@ async function borrarArchivosDe(ids, ch){
     return borrados?` · ${borrados} archivo(s) borrados`:"";
   }catch(_){ return " · sus archivos no se pudieron borrar"; }
 }
+// 🔴 `orders.contact_id` es ON DELETE SET NULL: al borrar un contacto su pedido NO se va, se
+// queda HUÉRFANO (contact_id null). Para un cliente de verdad eso está bien —la venta ocurrió—,
+// pero para un contacto de PRUEBA es una fuga: el Dashboard y Rendimiento descartan los pedidos
+// de prueba comparando contact_id contra la lista de contactos de prueba, y un huérfano no está
+// en ninguna lista → la venta de mentira pasa a contar como plata real, para siempre y sin
+// forma de rastrearla. Medido: borré un contacto simulado y su pedido de S/69 quedó vivo en
+// Prime Digital. Así que los pedidos de los contactos de prueba se borran ANTES que el contacto.
+async function borrarPedidosDePrueba(cs){
+  const ids=(cs||[]).filter(c=>c && (c.source==="sim"||c.wa_id==="webchat-test")).map(c=>c.id);
+  if(!ids.length) return;
+  for(const trozo of enTrozos(ids)){
+    const { error }=await supa.from("orders").delete().in("contact_id",trozo);
+    if(error){ console.warn("[contactos] pedidos de prueba:",error.message); return; }
+  }
+}
 async function removeContact(c){
   if(!await confirmDialog({title:"Eliminar contacto",message:`¿Eliminar a ${c.nombre||c.wa_id}? Se borra su conversación, historial y archivos.`,confirmText:"Eliminar",danger:true})) return;
+  await borrarPedidosDePrueba([c]);
   // 🔴 Un DELETE que la RLS no deja pasar NO da error: afecta 0 filas en silencio. Borrar
   // contactos es solo-admin, así que a un operador le salía «Contacto eliminado» y el contacto
   // seguía ahí al recargar. Se pide de vuelta lo borrado y se dice la verdad si no se borró.
@@ -680,6 +696,7 @@ async function bulk(act){
   if(act==="del"){
     if(!await confirmDialog({title:`Eliminar ${ids.length} contacto(s)`,message:"Se borran sus conversaciones, historial y archivos. No se puede deshacer.",confirmText:"Eliminar",danger:true})) return;
     let error=null, n=0;
+    await borrarPedidosDePrueba(st.contacts.filter(c=>st.sel.has(c.id)));
     // Igual que en removeContact: la RLS no devuelve error, devuelve 0 filas. Se cuenta lo
     // que SÍ se borró y se informa eso, no lo que se pidió borrar.
     for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").delete().eq("channel_id",ch).in("id",trozo).select("id"); if(r.error){ error=r.error; break; } n+=(r.data||[]).length; }
