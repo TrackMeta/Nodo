@@ -574,6 +574,18 @@ async function saveIntent(p, val){
 }
 
 // ── Simulador ──
+// ¿Esta palabra clave pega con este mensaje? ESPEJO EXACTO del motor (contienePalabra /
+// empiezaPalabra en engine.ts): límite de PALABRA y plural opcional. Acá abajo era un
+// `includes`/`startsWith` pelado, así que decía «la palabra clave sí coincide, pero el flujo
+// está en borrador» para mensajes que el motor NUNCA habría enrutado ("oro" dentro de
+// "doctorado") — el operador publicaba el flujo, seguía sin pasar nada y no había pista.
+function pegaClave(t, n, modo){
+  if(modo==="exacta") return t===n;
+  if(modo==="empieza") return t.startsWith(n) && /^(es|s)?([^\p{L}\p{N}]|$)/u.test(t.slice(n.length));
+  const esc=n.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  try{ return new RegExp(`(^|[^\\p{L}\\p{N}])${esc}(es|s)?([^\\p{L}\\p{N}]|$)`,"u").test(t); }
+  catch(_){ return t.includes(n); }
+}
 async function simulate(){
   const text=$("simText").value.trim();
   if(!text){ toast("Escribe un mensaje",true); return; }
@@ -594,8 +606,7 @@ async function simulate(){
       if(!tr.activo) continue;
       const kws=(tr.config?.keywords||[]).filter(Boolean);
       const pega=kws.some(k=>{ const n=norm(k); if(!n) return false;
-        const m=tr.config?.match||"contiene";
-        return m==="exacta" ? t===n : m==="empieza" ? t.startsWith(n) : t.includes(n); });
+        return pegaClave(t, n, tr.config?.match||"contiene"); });
       if(!pega) continue;
       const f=(st.flows||[]).find(x=>x.id===tr.flow_id);
       if(f && f.estado!=="activo"){

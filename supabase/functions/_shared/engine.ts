@@ -4087,7 +4087,12 @@ const RE_ANUNCIA_DATOS_QUE_SIGUEN =
   // 🔴 Tercera pasada. «En breve te llegará EL ADELANTO de S/ 20 para que confirmes»: sin
   // ninguna de las palabras del medio (datos/mensaje/número), porque nombra directamente lo
   // que va a llegar. Se permite que el medio no esté cuando el objeto ya es el pago mismo.
-  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\bte\s+(?:llegar[aá]n?|llegan?|env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|comparto|compartir[eé])\b[^.!?…\n\p{Extended_Pictographic}]*(?:\b(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta|mensaje|indicaciones|instrucciones)\b[^.!?…\n\p{Extended_Pictographic}]*)?\b(?:pago|pagar|adelanto|yape|plin|dep[oó]sito|transferencia)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
+  // 🔴 Cuarta pasada, y la peor: el grupo de verbos cerraba con `\b`, y la «é» no es carácter
+  // de palabra para el regex → TODO EL FUTURO estaba muerto. «Te enviaré los datos para el
+  // pago», «te pasaré el número para el yape», «te compartiré la cuenta», «en breve te
+  // llegará el adelanto»: ninguno matcheaba (solo el presente, «te paso»). Justo el tiempo
+  // verbal con el que se promete algo. Por eso `(?![\p{L}\p{N}])` en vez de `\b`.
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*\bte\s+(?:llegar[aá]n?|llegan?|env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|comparto|compartir[eé])(?![\p{L}\p{N}])[^.!?…\n\p{Extended_Pictographic}]*(?:\b(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta|mensaje|indicaciones|instrucciones)\b[^.!?…\n\p{Extended_Pictographic}]*)?\b(?:pago|pagar|adelanto|yape|plin|dep[oó]sito|transferencia)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 // 🔴 «Te llega a domicilio en Lima, pagas al recibir y puedes revisar antes de pagar» NO es
 // un anuncio de datos: es la explicación de la contraentrega, justo lo que el cliente de Lima
 // necesita oír. «Te llega» es también el verbo de la ENTREGA, y con «pagar» en la misma
@@ -4197,10 +4202,13 @@ function sinPromesaDeDatosColgada(texto: string, unico: boolean): string {
 // ellos con una COTIZACIÓN como «comprobante». La regla de siempre: si el motor no lo hizo,
 // la IA no lo puede decir (ver patrón motor-calla / IA-promete).
 // Se corta DESDE el verbo hasta el fin de la frase, nunca hacia atrás.
+// ⚠️ Los cierres de grupo van con `(?![\p{L}\p{N}])`, NO con `\b`: para el regex la «é» no es
+// carácter de palabra, así que `valid[eé]\b` matcheaba «valide» y NUNCA «validé» — y el
+// modelo escribe con tilde. Medido: «Ya validé tu pago» pasaba entero por este guard.
 const RE_DICE_QUE_VALIDO =
-  /(?:\b(?:ya|listo|perfecto|genial)[,!]?\s+)?\b(?:valid[eé]|verifiqu[eé]|confirm[eé]|revis[eé]|recib[ií]\s+y\s+valid[eé])\b[^.!?…\n\p{Extended_Pictographic}]*\b(?:pago|captura|comprobante|yape|plin|dep[oó]sito|transferencia|abono)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
+  /(?:\b(?:ya|listo|perfecto|genial)[,!]?\s+)?\b(?:valid[eé]|verifiqu[eé]|confirm[eé]|revis[eé]|recib[ií]\s+y\s+valid[eé])(?![\p{L}\p{N}])[^.!?…\n\p{Extended_Pictographic}]*\b(?:pago|captura|comprobante|yape|plin|dep[oó]sito|transferencia|abono)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 const RE_DICE_QUE_ENVIO =
-  /(?:\b(?:ya|listo|perfecto)[,!]?\s+)?\b(?:te\s+(?:envi[eé]|mand[eé]|pas[eé]|dej[eé])|en\s+breve\s+te\s+(?:llega|llegar[aá]|env[ií]o|mando)|ya\s+te\s+(?:lleg[oó]|va)\b)[^.!?…\n\p{Extended_Pictographic}]*\b(?:link|enlace|acceso|archivo|plantilla|curso|protocolo|descarga)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
+  /(?:\b(?:ya|listo|perfecto)[,!]?\s+)?\b(?:te\s+(?:envi[eé]|mand[eé]|pas[eé]|dej[eé])|en\s+breve\s+te\s+(?:llega|llegar[aá]|env[ií]o|mando)|ya\s+te\s+(?:lleg[oó]|va)(?![\p{L}\p{N}]))[^.!?…\n\p{Extended_Pictographic}]*\b(?:link|enlace|acceso|archivo|plantilla|curso|protocolo|descarga)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 // Se usa SOLO en el turno que disparó un archivo ilegible: en ese turno el motor no validó
 // nada ni entregó nada (eso vive en sus propios nodos), así que cualquier frase que lo
 // afirme es invento. Si al quitarla no queda mensaje, se pone la frase honesta.

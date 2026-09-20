@@ -806,7 +806,10 @@ function renderProducto(){
   const prods=[...new Set(rows.map(key))];
   $("tbody").innerHTML=prods.map(p=>{
     const pads=rows.filter(a=>key(a)===p); const a0=pads[0];
-    const parts=String(p).split(" "); const em=/\p{Emoji}/u.test(parts[0])?parts.shift():"";
+    // \p{Emoji} es true para los DÍGITOS y para # y * (así lo define Unicode), así que un
+    // producto llamado «2 en 1 Cargador» o «3M Adaptador» perdía su primera palabra: se la
+    // llevaba como si fuera su emoji. Extended_Pictographic son los pictogramas de verdad.
+    const parts=String(p).split(" "); const em=/\p{Extended_Pictographic}/u.test(parts[0])?parts.shift():"";
     return `<tr class="ad"><td>${nameCell(parts.join(" ")||p,a0.prodTag,em,false)}</td>${cells(metrics(sumAds(pads)))}</tr>`;
   }).join("");
 }
@@ -854,7 +857,7 @@ function renderDetail(){
   v.innerHTML=`
     <button class="back" id="back">${icon("chevronLeft")||'‹'} Volver a Rendimiento</button>
     <div class="dhd">
-      ${/\p{Emoji}/u.test(emoji)?`<span class="em">${esc(emoji)}</span>`:""}
+      ${/\p{Extended_Pictographic}/u.test(emoji)?`<span class="em">${esc(emoji)}</span>`:""}
       <div><h2>${esc(a.name)}</h2><div class="ctx">${esc(a.campaign)} · Conjunto ${esc(a.adset)}${a.tag?` · <span class="tag ${a.tag}">${TAGLBL[a.tag]}</span>`:""}${a.prod?` · ${esc(a.prod)}`:""}</div></div>
       <span class="okpill" style="margin-left:auto">${icon("megaphone")} ${esc(rangeLabel(st.range))}</span>
     </div>
