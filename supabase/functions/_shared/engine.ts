@@ -12133,10 +12133,32 @@ export async function armarProducto(
     // explicarlo, el modelo lo leyó como "limitaciones" y metió ahí «Stock limitado a 50
     // unidades, ¡aprovecha antes que se agote!» — un argumento de VENTA guardado justo en el
     // campo que le prohíbe usarlo. Lo dejó mudo y encima le quitó su mejor gancho.
+    // 🔴 LA POLÍTICA COMERCIAL NO ES MATERIAL DE VENTA: es una decisión del dueño. Medido el
+    // 2026-09-20 armando una lámpara solar: el asistente escribió solo «No hay garantía
+    // extendida ni devoluciones por mal uso» en `reglas_producto`. Suena razonable, pero nadie
+    // la decidió — y desde ese momento el bot la repite como si fuera del negocio, y encima el
+    // detector de huecos de ficha la da por CUBIERTA, así que la pregunta ya nunca le llega al
+    // dueño. Una política inventada por el asistente se vuelve la política de la casa en
+    // silencio. Va a `faltan`, que es justo el mecanismo para esto.
+    "- `ia.reglas_producto` = lo que hay que saber del PRODUCTO EN SÍ para usarlo bien: qué " +
+    "incluye y qué no, cuidados, compatibilidad, cómo se usa. ⛔ NUNCA escribas acá —ni en " +
+    "ningún otro campo— la POLÍTICA COMERCIAL del negocio: garantía, devoluciones, cambios, " +
+    "reembolsos, factura o boleta, plazos de entrega. Eso lo decide el dueño y tú no lo puedes " +
+    "saber; aunque suene de sentido común («no hay devoluciones por mal uso»), su bot la va a " +
+    "repetir a los clientes como si él la hubiera escrito. Esas van a `faltan`: «Si das " +
+    "garantía y por cuánto tiempo», «Si aceptas devoluciones y en qué casos», «Si das factura».\n" +
     "- `ia.limites` = lo que el bot NUNCA debe decir ni prometer (promesas de resultado, " +
     "afirmaciones de salud si es un suplemento o cosmético, plazos que no controlas, " +
-    "devoluciones que el dueño no ofrece). ⛔ NO es la disponibilidad ni el stock: la escasez " +
-    "es un argumento de venta y va en `ia.tecnicas`, no acá.\n" +
+    "garantías o devoluciones que el dueño no haya escrito). ⛔ NO es la disponibilidad ni el " +
+    "stock: la escasez es un argumento de venta y va en `ia.tecnicas`, no acá.\n" +
+    // 🔴 La política se colaba por acá: con «devoluciones que el dueño no ofrece» de ejemplo,
+    // el modelo escribió «No ofrece garantía extendida ni devoluciones por mal uso» — una
+    // AFIRMACIÓN de política, en el campo que debía ser una prohibición al bot. Y el bot la
+    // recita igual, venga del campo que venga. Medido el 2026-09-20 con la lámpara solar.
+    "  · ⛔ Se escribe como PROHIBICIÓN al bot («no prometas garantía», «no asegures plazos de " +
+    "entrega»), NUNCA como afirmación de lo que el negocio ofrece o deja de ofrecer («no hay " +
+    "garantía», «no se aceptan devoluciones»): eso es una política que el dueño no escribió, y " +
+    "el bot se la va a decir al cliente como si fuera suya. Si falta, va a `faltan`.\n" +
     // 📦 El STOCK es un dato que el dueño SÍ sabe y suele decir en el brief, pero no tenía
     // casilla: en el brief del Magnesio venía «Stock limitado a 50 unidades» y el modelo, sin
     // dónde ponerlo, lo metió en `limites` —el campo de "nunca digas esto"—, guardando el
@@ -12234,6 +12256,15 @@ export async function armarNegocio(
     "## Reglas duras (MUY IMPORTANTE)\n" +
     "- NUNCA inventes datos que no puedes saber: número de Yape/Plin/cuenta, horarios exactos si no los da, direcciones, links, precios. Los métodos de pago exactos NO van aquí (se ponen en IA → Validador de comprobantes): en `pagos` describe solo la modalidad general (ej. \"contraentrega en Lima, adelanto para provincia\"). Lo que no sepas, anótalo en `faltan` (ej. \"Horario de atención real\", \"Tu Yape / cuentas (van en el Validador)\").\n" +
     "- `tono` debe ser uno de: cercano, formal, directo, divertido, ventas.\n" +
+    // 🔴 La POLÍTICA es una decisión del dueño, no material de relleno. Si el asistente la
+    // escribe «de sentido común» («no aceptamos devoluciones salvo falla de fábrica»), el bot
+    // se la repite a los clientes como si fuera de la casa y el dueño nunca se entera de que
+    // la decidió un modelo. Mismo criterio que el Yape o el horario: si no lo dijo, falta.
+    "- ⛔ `politicas` (garantías, devoluciones, cambios) SOLO se llena con lo que el dueño " +
+    "escribió en su brief. Si no lo dijo, va VACÍO y se anota en `faltan` («Si das garantía y " +
+    "por cuánto tiempo», «Si aceptas devoluciones y en qué casos»). No la deduzcas ni la " +
+    "completes con lo que suele hacer el rubro: su bot se la va a decir a los clientes como " +
+    "una promesa suya. Lo mismo para la factura/boleta y para los plazos de entrega.\n" +
     "- `faq`: 3 a 6 preguntas frecuentes reales del negocio, cada una como {\"q\":\"pregunta\",\"a\":\"respuesta\"}.\n" +
     "- Redacta cada campo claro y útil, como lo diría el propio dueño, sin relleno.\n" +
     "- `resumen_cambios`: una sola frase de qué llenaste.\n\n" +
