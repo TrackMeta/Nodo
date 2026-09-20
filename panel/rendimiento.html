@@ -220,7 +220,10 @@ async function loadData(){
   // no los excluía en ningún punto, y una tanda de simulaciones con ad_id inflaba las ventas,
   // el ROAS y el CPA de un anuncio real — justo la pantalla que decide qué anuncio se apaga.
   try{
-    const { data:_pr }=await supa.from("contacts").select("id").eq("channel_id",cid).or("wa_id.eq.webchat-test,source.eq.sim");
+    // Paginada: una tanda de simulaciones pasa de 1000 contactos con facilidad, y la lista
+    // truncada deja entrar de vuelta justo lo que se quería sacar (ventas de mentira
+    // inflando el ROAS del anuncio).
+    const { data:_pr }=await pageAll((f,t)=>supa.from("contacts").select("id").eq("channel_id",cid).or("wa_id.eq.webchat-test,source.eq.sim").order("id",{ascending:true}).range(f,t));
     if(cid!==st.channelId) return;
     const _ids=new Set((_pr||[]).map(c=>c.id));
     if(_ids.size) ordR.data=(ordR.data||[]).filter(o=>!_ids.has(o.contact_id));

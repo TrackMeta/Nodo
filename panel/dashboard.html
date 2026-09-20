@@ -813,7 +813,11 @@ async function load(){
     // TODOS los contactos de prueba: el de Probar flujos (webchat-test) y los del simulador
     // (source = 'sim', cualquier wa_id). Antes solo se descontaba el primero y los pedidos de
     // una tanda de simulaciones contaban como plata real (el Embudo y el RPC ya los excluyen).
-    supa.from("contacts").select("id,stage").eq("channel_id",channelId).or("wa_id.eq.webchat-test,source.eq.sim"),
+    // 🔢 PAGINADO, y no es un detalle: esta es la lista de a quién NO contar. Una tanda de
+    // simulaciones deja cientos de contactos 'sim' (y «Probar flujos» va sumando), así que
+    // pasar de 1000 es normal — y truncada, los que quedan fuera de la lista vuelven a contar
+    // como plata real. El corte de PostgREST hacía fallar justo la defensa que evita eso.
+    pageAll((f,t)=>supa.from("contacts").select("id,stage").eq("channel_id",channelId).or("wa_id.eq.webchat-test,source.eq.sim").order("id",{ascending:true}).range(f,t)),
     supa.from("ads_meta").select("account_currency").eq("channel_id",channelId),
     // Lo que costó la IA en el periodo. Viene acumulado por día (ai_usage), siempre
     // en dólares —que es como lo factura el proveedor— y se convierte más abajo.
@@ -1395,7 +1399,9 @@ async function loadBitacora(monthStart){
     // La moneda de las cuentas de ads, por lo mismo: si arriba el gasto de Meta se
     // convierte y acá no, el profit del día no coincide con el del periodo.
     supa.from("ads_meta").select("account_currency").eq("channel_id",channelId),
-    supa.from("contacts").select("id").eq("channel_id",channelId).or("wa_id.eq.webchat-test,source.eq.sim"),
+    // Paginado por lo mismo que arriba: truncar la lista de contactos de prueba hace que los
+    // que se caen del corte cuenten como ventas reales en la bitácora del día.
+    pageAll((f,t)=>supa.from("contacts").select("id").eq("channel_id",channelId).or("wa_id.eq.webchat-test,source.eq.sim").order("id",{ascending:true}).range(f,t)),
   ]);
   // Fuera los pedidos de TODOS los contactos de prueba (Probar flujos y simulador), como arriba.
   { const _pr=new Set(((wsB&&!wsB.error&&wsB.data)||[]).map(c=>c.id)); if(!ordR.error && _pr.size) ordR.data=(ordR.data||[]).filter(o=>!_pr.has(o.contact_id)); }
