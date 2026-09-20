@@ -3124,7 +3124,16 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
       parts.push("## Solo vendemos UN producto\n" +
         `El catálogo entero es **${cands[0].label}**. NO le ofrezcas elegir ni des a entender que hay más de uno: ` +
         "nada de «cuál de los dos», «cuál de estos» ni «los que tenemos». En cuanto se entienda que le interesa, " +
-        "pásalo con `[[ir:1]]`.");
+        "pásalo con `[[ir:1]]`.\n" +
+        // 🔴 Y NO le preguntes «qué producto te interesa»: no hay nada que preguntar, la
+        // respuesta ya la sabes. Medido: a «¿tienen factura?» se le contestó dos veces «¿cuál
+        // de los productos de nuestro catálogo te llama más?» y nunca se le respondió lo que
+        // preguntó — en un negocio con UN producto, o sea a todo el que escriba.
+        "⛔ Tampoco le preguntes QUÉ producto quiere ni le pidas que elija del catálogo: ya lo sabes. " +
+        "Si escribe por cualquier cosa de compra —el precio, si hay stock, si dan factura, el envío, " +
+        "una duda del producto— es por ESE producto: pásalo con `[[ir:1]]` de una vez, que la venta " +
+        "es quien tiene los datos para contestarle. Dar vueltas preguntándole cuál quiere, teniendo uno " +
+        "solo, lo deja sin respuesta y parece que no lo escuchaste.");
     }
     parts.push("## Productos que vendemos\n" + cands.map((c, i) => `[${i + 1}] ${c.label}${c.intent ? `: ${c.intent}` : ""}`).join("\n") +
       "\n\n## 🎯 Cómo lo pasas a la venta (lo más importante de tu trabajo)\n" +
@@ -3151,7 +3160,15 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
       "que preguntó «¿me pueden dar factura con RUC?» se le respondió «claro que sí, sin problema» — nadie sabía si " +
       "este negocio factura, y esa promesa la termina pagando el dueño. Ojo: tampoco empieces con «claro que sí» " +
       "ni «por supuesto» y luego lo matices — el cliente se queda con el sí. Así se dice: «Eso lo vemos apenas me " +
-      "digas cuál te interesa 🙂 ¿Cuál de los dos te llama más?».\n" +
+      // 🔴 El EJEMPLO sale por la boca del bot. Acá decía «…¿Cuál de los dos te llama más?» y
+      // eso fue exactamente lo que le contestó a un cliente de un negocio con UN SOLO producto
+      // —dos veces seguidas, sin responderle nunca lo que preguntó—, pisando la instrucción de
+      // tres párrafos más arriba que prohíbe ofrecer a elegir cuando hay uno solo. El ejemplo
+      // concreto le gana a la regla abstracta: por eso el ejemplo ya no trae la pregunta.
+      // Medido el 2026-09-20 con «¿tienen factura?» en Prime Digital. Ver la memoria
+      // «el ejemplo del prompt pesa más».
+      "digas qué necesitas 🙂», y después sigues con la pregunta que corresponda al catálogo " +
+      "(si es un solo producto, NO le preguntes cuál).\n" +
       "\n⛔ NO TOMES DATOS NI CIERRES NADA. Tú solo recibes: no pidas ni anotes nombre, dirección, DNI ni " +
       "teléfono, no confirmes tallas, colores ni cantidades («te preparo la 39 y la 40»), y nunca digas que el " +
       "pedido está listo o «casi listo». Nada de eso se guarda desde acá: eso lo hace la venta del producto, un " +
@@ -3260,6 +3277,20 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
     return { hecho: true, flowId };
   }
   await logEvent(db, channelId, contactId, "nota", "👋 Recepción (IA)", (event.text ?? "").slice(0, 80)).catch(() => {});
+  // 🛡️ Los guards de dinero, también EN LA PUERTA. La familia de retoques de salida
+  // (sinAnuncioDePago y compañía) vive en el nodo «generar_texto» de la venta, así que la
+  // Recepción —que es el PRIMER mensaje que recibe un cliente nuevo, y la que menos contexto
+  // tiene— salía sin ninguno. Acá no hay pedido ni monto ni método de pago que valga: si
+  // anuncia que «te paso los datos para el pago» o pide permiso para mandarlos, es aire.
+  // Solo los tres que son texto puro y no necesitan el contexto de la venta.
+  {
+    const _antesRec = result;
+    result = sinPedirPermisoPago(sinAnuncioDePago(sinPromesaDeDatosColgada(result, true)));
+    if (result !== _antesRec) {
+      await logEvent(db, channelId, contactId, "nota", "✂️ La Recepción hablaba de datos de pago",
+        `En la puerta no hay pedido ni monto: se le quitó la frase. Antes: «${_antesRec.slice(0, 140)}»`).catch(() => {});
+    }
+  }
   await emitIaText(db, run, result || "¡Hola! 👋 ¿Qué producto te interesa? Con gusto te ayudo a encontrar lo que buscas.", ctx);
   return { hecho: true };
 }
