@@ -909,6 +909,19 @@ async function runEngineInner(
         if ((_out ?? 0) > 0) reinyectarTrasArranque = true;
       } catch (_) { /* sin el conteo, se arranca como antes */ }
     }
+    // 🔢 …PERO no si su mensaje no dice nada. Reinyectar existe para que lo que el cliente
+    // escribió no se pierda bajo el saludo; si escribió «1», «👍» o «?», no hay nada que
+    // atender — y la IA, que ve el saludo recién emitido en el historial, lo lee como LA
+    // RESPUESTA a la pregunta que el saludo acaba de hacer. Medido el 2026-09-20: primer y
+    // único mensaje «1» → el bot soltó la presentación y cerró con «Perfecto, con eso claro
+    // te puedo ayudar mejor. Para dejarlo listo, pásame estos datos: Celular, Nombre,
+    // Distrito». El cliente escribió UN carácter y ya le estaban pidiendo el teléfono.
+    // Un número LARGO (DNI, celular) sí dice algo y se sigue reinyectando.
+    if (reinyectarTrasArranque && event.type === "message" && mensajeSinInformacion(event.text)) {
+      reinyectarTrasArranque = false;
+      await logEvent(db, channelId, contactId, "nota", "🔢 Su mensaje no decía nada",
+        `«${String(event.text ?? "").slice(0, 40)}» no contesta nada: sale el saludo y se espera su respuesta.`).catch(() => {});
+    }
     // Registrar en la Timeline si el ruteo lo decidió la IA (transparencia).
     if (decision.tier === "ia" || decision.tier === "fallback") {
       await logEvent(db, channelId, contactId, "nota", "🧭 Ruteo por IA", decision.reason ?? "").catch(() => {});
@@ -15228,6 +15241,24 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   if (!prodId) return null;
   const list = await loadOpciones(db, run, prodId);
   if (list.length < 2) return null; // una sola opción → nada que elegir
+  // 🔢 Un número SOLO («1», «2») elige de verdad SI YA le habíamos dicho las opciones. Si es
+  // lo PRIMERO que escribe —antes de que existiera ninguna lista—, no está eligiendo nada:
+  // puede ser un dedazo, la costumbre de otro bot de menús, o vaya a saber. Medido el
+  // 2026-09-20: primer y único mensaje «1» → el motor selló «1 unidad (90%)» y el bot cerró
+  // con «Perfecto… pásame estos datos: Celular, Nombre, Distrito». Un carácter y ya le pedían
+  // el teléfono. A partir del segundo mensaje sí vale: ahí el número contesta lo que
+  // preguntamos (ver «contestar la pregunta que hicimos»).
+  if (mensajeSinInformacion(texto)) {
+    try {
+      const { count: _ins } = await db.from("messages").select("id", { count: "exact", head: true })
+        .eq("contact_id", run.contact_id).eq("direction", "in");
+      if ((_ins ?? 0) <= 1) {
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🔢 Un número suelto no elige",
+          `«${String(texto ?? "").slice(0, 30)}» llegó antes de que le diéramos las opciones: no se sella ninguna.`).catch(() => {});
+        return null;
+      }
+    } catch (_) { /* sin el conteo, se sigue como antes */ }
+  }
   // 🔢 «2 adaptadores», «3 plantillas»: el número pegado al NOMBRE del producto es tan fuerte
   // como «2 unidades». Medido (L-ldictado-1, 2026-09-18): dictó «2 adaptadores para Lima,
   // Breña, Jr Zorritos 1200, Ana Vargas 987654321» —todo— y el motor le volvió a preguntar
@@ -21826,6 +21857,17 @@ async function removeTag(db: SupabaseClient, channelId: string, contactId: strin
 //
 // (El detector de opt-out ya usaba límites de palabra por la misma razón; acá
 // faltaba.)
+// ¿Este mensaje NO dice nada? Un número corto suelto («1»), un emoji, o solo signos. Se usa
+// para no reinyectarlo al arrancar la venta: ahí la IA ve el saludo recién emitido y lo toma
+// por la respuesta a la pregunta que el saludo acaba de hacer. Con LETRAS (aunque sean dos,
+// «ok», «si») sí dice algo, y un número de 4+ dígitos también (un DNI, un celular).
+function mensajeSinInformacion(texto?: string | null): boolean {
+  const t = String(texto ?? "").trim();
+  if (!t) return true;
+  if (/\p{L}/u.test(t)) return false;
+  return t.replace(/\D/g, "").length < 4;
+}
+
 function contienePalabra(texto: string, clave: string): boolean {
   const esc = clave.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   try {
