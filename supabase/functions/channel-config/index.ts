@@ -555,8 +555,8 @@ Deno.serve(async (req) => {
             ? "Tu token de WhatsApp no sirve para anuncios: los permisos quedan grabados al generar el token, y ese se generó solo con los de WhatsApp. Hay que hacer uno nuevo (el nuevo sí puede servir para las dos cosas). "
             : "Ese token no tiene el permiso «ads_read». ") +
             "En Meta, en este orden: 1) en tu app → Agregar producto → «Marketing API» (sin eso, «ads_read» ni siquiera aparece en la lista de permisos); " +
-            "2) en Usuarios del sistema, asígnale tu cuenta publicitaria; " +
-            "3) Generar nuevo token marcando «ads_read» junto con los dos de WhatsApp. Pégalo acá.",
+            "2) Generar nuevo token marcando los cuatro permisos: los dos de WhatsApp, «ads_read» y «business_management». Pégalo acá. " +
+            "Con «business_management» Nodo se asigna solo tus cuentas publicitarias y no tienes que ir a «Agregar activos»; si prefieres no dárselo, marca los tres primeros y asígnaselas tú ahí.",
         }, 400);
       }
       // 2) Qué cuentas ve. Si el usuario de sistema no tiene cuentas ASIGNADAS, Meta
