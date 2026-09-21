@@ -49,6 +49,63 @@ async function metaPost(token: string, path: string, payload?: Record<string, un
     return { status: 0, body: { error: { message: String((e as any)?.message ?? e) } } as any };
   }
 }
+// 📊 Le da a ESTE usuario de sistema acceso de LECTURA a las cuentas publicitarias que su
+// portfolio ya posee, para que el dueño no tenga que volver a «Agregar activos» en Meta.
+// Exige que el token traiga `business_management`, que es un permiso MUCHO más ancho que
+// `ads_read` (con él se puede reestructurar el negocio). Por eso lo único que Nodo se
+// concede es la tarea ANALYZE: ver rendimiento, sin poder crear, pausar ni gastar.
+// Si algo falla devuelve `detalle` y el que llama cae al mensaje de siempre — o sea que en
+// el peor caso se comporta como antes de existir esta función.
+async function asignarseCuentas(token: string, dbg: any): Promise<{ cuentas: any[]; detalle: string }> {
+  const leerCuentas = async () => {
+    const r = await metaGet(token, "me/adaccounts?fields=account_id,name,currency,account_status&limit=100");
+    return ((r.body?.data ?? []) as any[]).map((a) => ({
+      account_id: String(a.account_id ?? "").startsWith("act_") ? String(a.account_id) : `act_${a.account_id}`,
+      nombre: String(a.name ?? ""),
+      moneda: String(a.currency ?? ""),
+      activa: Number(a.account_status) === 1,
+    }));
+  };
+
+  // El token es del usuario de sistema, así que `me` ES el usuario al que hay que asignar.
+  const yo = await metaGet(token, "me?fields=id");
+  const uid = String(yo.body?.id ?? "");
+  if (!uid) return { cuentas: [], detalle: String(yo.body?.error?.message ?? "Meta no dijo de quién es el token.") };
+
+  // A qué portfolios alcanza. Sale de granular_scopes, igual que las WABAs en
+  // whatsapp_descubrir; si el token no los detalla, se preguntan aparte.
+  const negocios = new Set<string>();
+  for (const s of ((dbg?.granular_scopes ?? []) as any[])) {
+    if (s?.scope === "business_management") for (const t of (s.target_ids ?? [])) negocios.add(String(t));
+  }
+  if (!negocios.size) {
+    const b = await metaGet(token, "me/businesses?fields=id&limit=50");
+    for (const x of ((b.body?.data ?? []) as any[])) negocios.add(String(x.id));
+  }
+  if (!negocios.size) return { cuentas: [], detalle: "no encontré a qué portfolio comercial pertenece el token." };
+
+  let ultimoError = "";
+  for (const biz of negocios) {
+    const r = await metaGet(token, `${biz}/owned_ad_accounts?fields=account_id&limit=100`);
+    if (r.status !== 200 || r.body?.error) { ultimoError = String(r.body?.error?.message ?? ""); continue; }
+    for (const a of ((r.body?.data ?? []) as any[])) {
+      const actId = String(a.account_id ?? "").startsWith("act_") ? String(a.account_id) : `act_${a.account_id}`;
+      const asg = await metaPost(token, `${actId}/assigned_users`, { user: uid, tasks: ["ANALYZE"] });
+      // Una que YA estuviera asignada contesta error y no pasa nada: lo que vale es la
+      // lista de abajo, no lo que diga este POST.
+      if (asg.status !== 200 || asg.body?.error) ultimoError = String(asg.body?.error?.message ?? "");
+    }
+  }
+
+  // 🔴 No se cree lo que contestó el POST: vuelve a PREGUNTAR qué ve el token. Si una
+  // asignación no prendió, esta lista no la trae — y eso es mucho mejor que mostrar una
+  // cuenta que después el cron no puede leer y que falla en silencio tres horas más tarde.
+  const finales = await leerCuentas();
+  if (!finales.length) {
+    return { cuentas: [], detalle: ultimoError || "Meta aceptó la asignación pero el token sigue sin ver ninguna cuenta." };
+  }
+  return { cuentas: finales, detalle: "" };
+}
 const pinNuevo = () => String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
 // Campos planos del canal editables desde el panel.
 const PLAIN = ["phone_number_id", "waba_id", "verify_token", "pixel_id", "page_id"];
@@ -516,6 +573,25 @@ Deno.serve(async (req) => {
         // sincronizar una cuenta cerrada no rompe nada, solo no trae gasto nuevo.
         activa: Number(a.account_status) === 1,
       }));
+      // 3) Lista vacía = el usuario de sistema no tiene cuentas ASIGNADAS, y ese es el fallo
+      //    que nadie diagnostica solo. Si el token trae `business_management`, Nodo se las
+      //    asigna él mismo en vez de mandar al dueño de vuelta a «Agregar activos».
+      //    Decisión de Rodrigo (2026-09-21) sabiendo que ese permiso es MUCHO más ancho que
+      //    `ads_read`: con él se puede reestructurar el negocio entero. Por eso lo único que
+      //    Nodo se concede es la tarea ANALYZE — ver rendimiento, sin tocar ni gastar nada.
+      if (!cuentas.length && scopes.includes("business_management")) {
+        const auto = await asignarseCuentas(token, d);
+        if (auto.cuentas.length) {
+          return json({ ok: true, cuentas: auto.cuentas, de_whatsapp: _deWhatsapp, asignadas_por_nodo: true });
+        }
+        if (auto.detalle) {
+          return json({
+            ok: true, cuentas: [],
+            motivo: "El token tiene permiso para leer anuncios y para administrar el negocio, pero no pude asignarte las cuentas solo: " +
+              auto.detalle + " Hazlo a mano en Meta → Configuración del portafolio → Usuarios del sistema → Agregar activos.",
+          });
+        }
+      }
       if (!cuentas.length) {
         return json({
           ok: true, cuentas: [],
