@@ -459,8 +459,17 @@ Deno.serve(async (req) => {
     // más común— el dueño se enteraba HASTA TRES HORAS DESPUÉS, cuando el cron fallaba y
     // escribía `ads_sync_error`. Acá se sabe al instante y con el motivo exacto.
     if (action === "ads_descubrir") {
+      // 🔁 Sin token pegado y sin `ads_token` guardado, se prueba el de WHATSAPP. Un token de
+      // usuario de sistema lleva grabados los permisos que se marcaron al generarlo: si el
+      // dueño marcó `ads_read` junto con los de WhatsApp —Meta lo permite y es lo más simple
+      // para un negocio solo—, el mismo token sirve para las dos cosas y no hay que generar
+      // nada. Si no lo marcó, el chequeo de abajo lo dice con todas las letras en vez de
+      // dejarlo adivinando. `_deWhatsapp` viaja en la respuesta para que el panel lo explique.
       const tokenDado = String(body.token ?? "").trim();
-      const token = tokenDado || (await getChannelSecrets(db, channel_id))?.ads_token;
+      const secs = await getChannelSecrets(db, channel_id);
+      let _deWhatsapp = false;
+      let token = tokenDado || secs?.ads_token;
+      if (!token && secs?.access_token) { token = secs.access_token; _deWhatsapp = true; }
       if (!token) return json({ error: "falta_token", detalle: "Pega primero el token de lectura (ads_read)." }, 400);
 
       // 1) ¿El token es válido y trae el permiso? `debug_token` lo dice sin gastar una
@@ -480,7 +489,10 @@ Deno.serve(async (req) => {
       if (!scopes.includes("ads_read")) {
         return json({
           error: "sin_permiso",
-          detalle: "Ese token no tiene el permiso «ads_read». Al generarlo en Meta hay que marcar ese permiso.",
+          detalle: _deWhatsapp
+            ? "Tu token de WhatsApp no sirve para anuncios: se generó solo con los permisos de WhatsApp y «ads_read» no se le puede agregar después. " +
+              "Genera un token nuevo del mismo usuario de sistema marcando también «ads_read» (ese nuevo sí puede servir para las dos cosas) y pégalo acá."
+            : "Ese token no tiene el permiso «ads_read». Al generarlo en Meta hay que marcar ese permiso.",
         }, 400);
       }
       // 2) Qué cuentas ve. Si el usuario de sistema no tiene cuentas ASIGNADAS, Meta
@@ -504,7 +516,7 @@ Deno.serve(async (req) => {
             "En Meta → Business Settings → Usuarios del sistema, asígnale tus cuentas de anuncios con acceso de «ver rendimiento».",
         });
       }
-      return json({ ok: true, cuentas });
+      return json({ ok: true, cuentas, de_whatsapp: _deWhatsapp });
     }
 
     if (action === "whatsapp_descubrir") {

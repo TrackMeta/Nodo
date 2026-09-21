@@ -657,6 +657,7 @@ function renderPixel(box){
 
       <label style="margin-top:16px">Token de lectura (ads_read) ${s.ads_token?'<span class="badge on">Conectado</span>':'<span class="badge">Sin conectar</span>'}</label>
       <input class="in" type="password" id="s_ads_token" autocomplete="off" placeholder="${s.ads_token?'•••••••• guardado':'token del usuario de sistema con permiso ads_read'}"/>
+      <div style="font-size:11.5px;color:var(--faint);margin-top:5px">¿Ya conectaste WhatsApp? Toca el botón <b>sin pegar nada</b>: si el token que usas para WhatsApp trae también el permiso de anuncios, sirve el mismo y no tienes que generar otro.</div>
       <div class="acts"><button class="btn primary" id="saveAdsToken">Guardar y buscar mis cuentas</button></div>
       <div id="adsDescubre" style="margin-top:10px"></div>
 
@@ -743,7 +744,8 @@ async function guardarYDescubrirAds(btn){
     }
     const { data:ya }=await supa.from("ad_accounts").select("account_id").eq("channel_id",st.channelId);
     const tengo=new Set((ya||[]).map(a=>a.account_id));
-    out.innerHTML=`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">El token puede leer ${r.cuentas.length} cuenta(s). Agrega las que quieras seguir:</div>`+
+    out.innerHTML=(r.de_whatsapp?`<div style="border:1px solid var(--green);background:rgba(34,197,94,.08);border-radius:10px;padding:9px 12px;font-size:12.5px;color:var(--green);margin-bottom:8px">${icon("check")} Tu token de WhatsApp ya trae el permiso de anuncios: no necesitas generar otro.</div>`:"")+
+      `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">El token puede leer ${r.cuentas.length} cuenta(s). Agrega las que quieras seguir:</div>`+
       r.cuentas.map(a=>`<div style="display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 11px;margin-bottom:6px">
         <span style="font-family:monospace;font-size:12.5px">${esc(a.account_id)}</span>
         <span style="color:var(--muted);font-size:12px">${esc(a.nombre||"")}${a.moneda?` · ${esc(a.moneda)}`:""}${a.activa?"":' · <span style="color:var(--amber)">inactiva</span>'}</span>
