@@ -11046,7 +11046,12 @@ const RE_QUIERE_COMPRAR =
   // KIERO 1 FRASKO PARA LIMA COMAS» no contaba como querer comprar —por la K— y el cliente
   // recibió solo el saludo preguntándole de dónde escribe, después de haber dicho que era
   // de Comas. Escribir con faltas no es dudar.
-  /\b((?:lo|la|los) quier[oa]|me lo llevo|me llevo|(?:quiero|kiero|kero|qiero) comprar|(?:quiero|kiero|kero|qiero) (?:el |la |uno|una|dos|tres|cuatro|cinco|\d)|d[ae]me (?:uno|una|dos|tres|\d)|voy a (?:comprar|llevar|pedir)|hazme el pedido|ap[aá]rtame|sep[aá]rame|s[ií] quiero|comprarlo|comprarla|me inscribo|inscribirme|apuntarme|dale pues|ya dale|de una|lo compro|env[ií]amelo|m[aá]ndamelo|ll[eé]vame)\b/i;
+  // 🔢 `\d+`, NO `\d`: con un solo dígito y el `\b` del final, «quiero 500 unidades» NO
+  // matcheaba — el patrón consumía el «5» y ahí exigía un límite de palabra que entre «5» y
+  // «0» no existe. O sea que el que compra MÁS (10, 24, 500: el que revende) no contaba como
+  // comprador. Medido 5 de 5 el 2026-09-20: «quiero 500 unidades para revender en mi
+  // ferretería» como primer mensaje recibía SOLO el saludo y su pedido moría ahí.
+  /\b((?:lo|la|los) quier[oa]|me lo llevo|me llevo|(?:quiero|kiero|kero|qiero) comprar|(?:quiero|kiero|kero|qiero) (?:el |la |uno|una|dos|tres|cuatro|cinco|\d+)|d[ae]me (?:uno|una|dos|tres|\d+)|voy a (?:comprar|llevar|pedir)|hazme el pedido|ap[aá]rtame|sep[aá]rame|s[ií] quiero|comprarlo|comprarla|me inscribo|inscribirme|apuntarme|dale pues|ya dale|de una|lo compro|env[ií]amelo|m[aá]ndamelo|ll[eé]vame)\b/i;
 // ¿Ya mostró intención de COMPRAR (no solo de preguntar)? Mira su último mensaje y los
 // anteriores: la señal puede haber quedado un par de turnos atrás.
 // 🔑 Las palabras clave del canal («QUIERO LA PLANTILLA», «QUIERO EL CURSO DE CORTES»). El
