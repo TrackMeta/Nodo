@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
   // estado del lado de Meta) → coherente con el resto del gating, solo admin.
   // whatsapp_fix escribe en la cuenta de Meta DEL CLIENTE (suscribe la app, registra el
   // número): mismo criterio que el resto de acciones de conexión, solo admin.
-  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "channel_archive", "channel_delete", "channel_delete_preview", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit", "template_delete", "contact_files_delete"]);
+  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "ads_descubrir", "channel_archive", "channel_delete", "channel_delete_preview", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit", "template_delete", "contact_files_delete"]);
   if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 
   try {
@@ -450,6 +450,63 @@ Deno.serve(async (req) => {
     // a autocompletar el Phone Number ID con el nombre de una empresa guardada, "Square",
     // y eso rompía el canal en silencio; ver la validación numérica en el panel).
     // Todo acá es de SOLO LECTURA: mira, no toca.
+    // 📊 ¿QUÉ CUENTAS PUBLICITARIAS PUEDE LEER ESTE TOKEN? Mismo trato que
+    // `whatsapp_descubrir` le da a las WABAs: el dueño pega SOLO el token y Nodo descubre el
+    // resto, en vez de hacerle copiar el `act_…` del Ads Manager a mano.
+    //
+    // Antes el token se guardaba sin comprobar nada y la pantalla decía «Conectado»: si estaba
+    // mal —sin el permiso, o con el usuario de sistema sin cuentas asignadas, que es el error
+    // más común— el dueño se enteraba HASTA TRES HORAS DESPUÉS, cuando el cron fallaba y
+    // escribía `ads_sync_error`. Acá se sabe al instante y con el motivo exacto.
+    if (action === "ads_descubrir") {
+      const tokenDado = String(body.token ?? "").trim();
+      const token = tokenDado || (await getChannelSecrets(db, channel_id))?.ads_token;
+      if (!token) return json({ error: "falta_token", detalle: "Pega primero el token de lectura (ads_read)." }, 400);
+
+      // 1) ¿El token es válido y trae el permiso? `debug_token` lo dice sin gastar una
+      //    llamada a anuncios, y distingue «token vencido» de «token sin ads_read».
+      const dbg = await metaGet(token, `debug_token?input_token=${encodeURIComponent(token)}`);
+      if (dbg.status !== 200 || dbg.body?.error) {
+        return json({ error: "meta", detalle: String(dbg.body?.error?.message ?? "Meta no reconoció el token.") }, 400);
+      }
+      const d = dbg.body?.data ?? {};
+      if (d.is_valid === false) {
+        return json({ error: "token_invalido", detalle: "Ese token ya no es válido (vencido o revocado). Genera uno nuevo." }, 400);
+      }
+      const scopes: string[] = [
+        ...((d.scopes ?? []) as string[]),
+        ...(((d.granular_scopes ?? []) as any[]).map((s) => String(s?.scope ?? ""))),
+      ];
+      if (!scopes.includes("ads_read")) {
+        return json({
+          error: "sin_permiso",
+          detalle: "Ese token no tiene el permiso «ads_read». Al generarlo en Meta hay que marcar ese permiso.",
+        }, 400);
+      }
+      // 2) Qué cuentas ve. Si el usuario de sistema no tiene cuentas ASIGNADAS, Meta
+      //    responde una lista vacía — y ese es justo el fallo que nadie diagnostica solo.
+      const acc = await metaGet(token, "me/adaccounts?fields=account_id,name,currency,account_status&limit=100");
+      if (acc.status !== 200 || acc.body?.error) {
+        return json({ error: "meta", detalle: String(acc.body?.error?.message ?? "No se pudieron listar las cuentas.") }, 400);
+      }
+      const cuentas = ((acc.body?.data ?? []) as any[]).map((a) => ({
+        account_id: String(a.account_id ?? "").startsWith("act_") ? String(a.account_id) : `act_${a.account_id}`,
+        nombre: String(a.name ?? ""),
+        moneda: String(a.currency ?? ""),
+        // 1 = activa. El resto (cerrada, con pagos pendientes…) se muestra igual pero avisado:
+        // sincronizar una cuenta cerrada no rompe nada, solo no trae gasto nuevo.
+        activa: Number(a.account_status) === 1,
+      }));
+      if (!cuentas.length) {
+        return json({
+          ok: true, cuentas: [],
+          motivo: "El token es válido y tiene el permiso, pero no ve ninguna cuenta publicitaria. " +
+            "En Meta → Business Settings → Usuarios del sistema, asígnale tus cuentas de anuncios con acceso de «ver rendimiento».",
+        });
+      }
+      return json({ ok: true, cuentas });
+    }
+
     if (action === "whatsapp_descubrir") {
       // El token puede venir recién escrito (aún sin guardar) o estar ya en Vault.
       const tokenDado = String(body.token ?? "").trim();

@@ -657,7 +657,8 @@ function renderPixel(box){
 
       <label style="margin-top:16px">Token de lectura (ads_read) ${s.ads_token?'<span class="badge on">Conectado</span>':'<span class="badge">Sin conectar</span>'}</label>
       <input class="in" type="password" id="s_ads_token" autocomplete="off" placeholder="${s.ads_token?'•••••••• guardado':'token del usuario de sistema con permiso ads_read'}"/>
-      <div class="acts"><button class="btn primary" id="saveAdsToken">Guardar token</button></div>
+      <div class="acts"><button class="btn primary" id="saveAdsToken">Guardar y buscar mis cuentas</button></div>
+      <div id="adsDescubre" style="margin-top:10px"></div>
 
       <label style="margin-top:16px">Cada cuánto sincronizar</label>
       <div id="adsFreqWrap" style="display:flex;gap:6px;flex-wrap:wrap"><span style="color:var(--faint);font-size:12.5px">Cargando…</span></div>
@@ -673,7 +674,7 @@ function renderPixel(box){
   $("savePixel").onclick=(e)=>saveChannel(e.target,{ pixel_id:$("m_pixel_id").value, page_id:$("m_page_id").value, capi_token:$("s_capi_token").value||undefined });
   $("testPixel").onclick=(e)=>testPixel(e.target);
   $("addAdAcc").onclick=addAdAccount;
-  $("saveAdsToken").onclick=(e)=>saveChannel(e.target,{ ads_token:$("s_ads_token").value||undefined });
+  $("saveAdsToken").onclick=(e)=>guardarYDescubrirAds(e.target);
   loadAdAccounts(); loadAdsFreq();
 }
 const ADS_FREQS=[["1h","Cada hora"],["3h","Cada 3h"],["6h","Cada 6h"],["12h","Cada 12h"],["off","Apagada"]];
@@ -709,6 +710,52 @@ async function loadAdAccounts(){
     if(error) toast("No se pudo quitar la cuenta: "+error.message, true);
     loadAdAccounts();
   });
+}
+// 📊 Pegas el token y Nodo descubre SOLO qué cuentas puede leer, como ya hace con las WABAs
+// de WhatsApp. Antes había que copiar el `act_…` del Ads Manager a mano y, si el token estaba
+// mal, la pantalla igual decía «Conectado»: el fallo aparecía tres horas después, cuando el
+// cron se caía. Acá se sabe al instante y con el motivo exacto (sin permiso / sin cuentas
+// asignadas / vencido), que son los tres tropiezos de siempre.
+async function guardarYDescubrirAds(btn){
+  const tok=$("s_ads_token").value.trim();
+  const out=$("adsDescubre"); out.innerHTML="";
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+  try{
+    // El guardado va por su propio camino (saveChannel exige un botón y recarga toda la
+    // pantalla, lo que borraría la lista que estamos por pintar).
+    if(tok){
+      try{ await callFn("channel-config",{ action:"save", channel_id:st.channelId, ads_token:tok }); toast("Token guardado"); }
+      catch(err){ toast(err.message||"No se pudo guardar el token",true); return; }
+    }
+    btn.textContent="Buscando cuentas…";
+    let r=null;
+    try{ r=await callFn("channel-config",{ action:"ads_descubrir", channel_id:st.channelId, ...(tok?{token:tok}:{}) }); }
+    catch(err){ r={ error:"red", detalle:String(err&&err.message||err) }; }
+    if(!r||r.error){
+      out.innerHTML=`<div style="border:1px solid var(--amber);background:rgba(240,169,43,.08);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--amber)">${icon("alert")} ${esc(r&&(r.detalle||r.error)||"No se pudo comprobar el token.")}</div>`;
+      return;
+    }
+    if(!r.cuentas||!r.cuentas.length){
+      out.innerHTML=`<div style="border:1px solid var(--amber);background:rgba(240,169,43,.08);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--amber)">${icon("alert")} ${esc(r.motivo||"El token no ve ninguna cuenta publicitaria.")}</div>`;
+      return;
+    }
+    const { data:ya }=await supa.from("ad_accounts").select("account_id").eq("channel_id",st.channelId);
+    const tengo=new Set((ya||[]).map(a=>a.account_id));
+    out.innerHTML=`<div style="font-size:12px;color:var(--muted);margin-bottom:6px">El token puede leer ${r.cuentas.length} cuenta(s). Agrega las que quieras seguir:</div>`+
+      r.cuentas.map(a=>`<div style="display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 11px;margin-bottom:6px">
+        <span style="font-family:monospace;font-size:12.5px">${esc(a.account_id)}</span>
+        <span style="color:var(--muted);font-size:12px">${esc(a.nombre||"")}${a.moneda?` · ${esc(a.moneda)}`:""}${a.activa?"":' · <span style="color:var(--amber)">inactiva</span>'}</span>
+        ${tengo.has(a.account_id)
+          ? `<span style="margin-left:auto;font-size:12px;color:var(--green)">Ya agregada</span>`
+          : `<button class="btn" data-add="${esc(a.account_id)}" data-nom="${esc(a.nombre||"")}" style="margin-left:auto;height:30px;padding:0 11px;font-size:12px">Agregar</button>`}
+      </div>`).join("");
+    out.querySelectorAll("[data-add]").forEach(b=>b.onclick=async()=>{
+      const { error }=await supa.from("ad_accounts").upsert({ channel_id:st.channelId, account_id:b.dataset.add, nombre:b.dataset.nom||null },{ onConflict:"channel_id,account_id" });
+      if(error){ toast(error.message,true); return; }
+      toast("Cuenta agregada"); b.outerHTML=`<span style="margin-left:auto;font-size:12px;color:var(--green)">Ya agregada</span>`;
+      loadAdAccounts();
+    });
+  } finally { btn.disabled=false; btn.textContent=old; }
 }
 async function addAdAccount(){
   let v=$("m_ad_acc_new").value.trim();
