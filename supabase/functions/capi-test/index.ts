@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
   if (!(await userOwnsChannel(db, uid, body.channel_id))) return json({ error: "forbidden_channel" }, 403);
 
   const { data: channel } = await db.from("channels")
-    .select("pixel_id").eq("id", body.channel_id).maybeSingle();
+    .select("pixel_id, waba_id").eq("id", body.channel_id).maybeSingle();
   if (!channel?.pixel_id) return json({ ok: false, error: "Falta el Pixel ID. Cárgalo y guarda antes de probar." }, 200);
 
   const secrets = await getChannelSecrets(db, body.channel_id);
@@ -42,8 +42,22 @@ Deno.serve(async (req) => {
   // del pixel (Meta la cuenta y la usa para optimización/audiencias) — el comentario "no toca las
   // métricas reales" era falso del lado de Meta. Con el código, el evento cae en Events Manager →
   // Probar eventos y no ensucia nada. Se obliga para que "Probar" NUNCA contamine el pixel real.
-  if (!body.test_event_code || !String(body.test_event_code).trim()) {
-    return json({ ok: false, error: "Pega el código de prueba de Meta (Events Manager → Probar eventos → «Código de prueba», suele empezar con TEST). Sin él, el evento entraría como conversión real en tu pixel." }, 200);
+  // …pero negarse a secas dejaba al dueño sin forma de saber si sus credenciales sirven: pegaba
+  // el Pixel y el token, tocaba el botón, y lo único que recibía era una orden. Así que sin
+  // código se hace la comprobación que NO ensucia nada: preguntarle a Meta por ese pixel CON ese
+  // token. Si Meta contesta, el par pixel+token es bueno y el dueño ya lo sabe sin ir a ningún
+  // lado; el evento de prueba queda para cuando quiera verlo llegar en vivo.
+  // 🔴 Probé comprobar el par pixel+token SIN mandar evento (un GET al pixel con el token) y
+  // Meta contesta «(#100) Missing Permission»: un token CAPI nace solo para ESCRIBIR eventos
+  // en su pixel, no para leerlo. No hay ensayo en seco. Así que el código de prueba es
+  // obligatorio de verdad, y lo único honesto es decir dónde sacarlo.
+  const code = String(body.test_event_code ?? "").trim();
+  if (!code) {
+    return json({
+      ok: false,
+      error: "Falta el código de prueba. En Meta: Events Manager → tu pixel → pestaña «Probar eventos» → copia el código que empieza con TEST y pégalo acá. " +
+        "Es obligatorio porque sin él este evento entraría como una conversión REAL en tu pixel, y Meta la contaría para optimizar tus campañas.",
+    }, 200);
   }
 
   // Evento de prueba: un Lead que imita a los reales (business_messaging), con
@@ -57,10 +71,13 @@ Deno.serve(async (req) => {
     user_data: {
       ph: [await sha256Hex("51900000000")],
       ctwa_clid: "NODO_TEST_" + Date.now(),
+      // 🔴 El mismo campo que manda el evento REAL (capi.ts). Si la prueba no lo lleva, puede
+      // pasar verde mientras las ventas de verdad se mandan mal: un banco de pruebas que no
+      // imita a lo que prueba no prueba nada.
+      ...(channel.waba_id ? { whatsapp_business_account_id: String(channel.waba_id) } : {}),
     },
   };
-  const payload: Record<string, unknown> = { data: [evt], access_token: capiToken };
-  if (body.test_event_code && body.test_event_code.trim()) payload.test_event_code = body.test_event_code.trim();
+  const payload: Record<string, unknown> = { data: [evt], access_token: capiToken, test_event_code: code };
 
   try {
     const res = await fetchConTimeout(`https://graph.facebook.com/${GRAPH_VERSION}/${channel.pixel_id}/events`, {

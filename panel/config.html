@@ -732,9 +732,9 @@ function renderPixel(box){
 
       <div class="sep"></div>
       <label>Probar la conexión</label>
-      <div class="hint" style="margin:0 0 10px">Manda un evento de prueba a Meta con estos datos, sin hacer una venta. Con el código de <b>Probar eventos</b> lo ves llegar en vivo; sin código igual se manda, pero cuenta como un evento real.</div>
+      <div class="hint" style="margin:0 0 10px">Manda un Lead de prueba a Meta con estos datos, sin hacer una venta. <b>El código es obligatorio</b>: sin él, el evento entraría como una conversión <b>real</b> en tu pixel y Meta la contaría para optimizar tus campañas. Lo sacas de <b>Events Manager → tu pixel → Probar eventos</b>, y en esa misma pantalla vas a ver llegar el evento.</div>
       <div class="row" style="align-items:flex-end;gap:8px">
-        <div class="f" style="flex:1;margin:0"><input class="in" id="m_test_code" placeholder="TEST12345 (opcional)"/></div>
+        <div class="f" style="flex:1;margin:0"><input class="in" id="m_test_code" placeholder="TEST12345"/></div>
         <button class="btn" id="testPixel">Enviar evento de prueba</button>
       </div>
       <div id="testPixelOut" style="margin-top:10px;font-size:13px;line-height:1.5"></div>
