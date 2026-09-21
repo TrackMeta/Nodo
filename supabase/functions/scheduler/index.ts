@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
-import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping } from "../_shared/engine.ts";
+import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, soloAnunciosBloquea } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 import { esRechazoTemporal } from "../_shared/meta.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
@@ -789,6 +789,17 @@ async function processSub(s: any, now: number): Promise<boolean> {
   if ((c as any).bot_activo === false) { await posponer(s.id, 30 * 60_000); return false; }
 
   // ── Salvaguardas (requisitos 2 y 16) ──
+  // 0) 📢 Modo «solo anuncios»: si el canal lo tiene puesto y este contacto NO vino por un
+  //    anuncio, tampoco se le hace remarketing. Antes la perilla solo frenaba al bot cuando
+  //    el cliente ESCRIBÍA, así que a un orgánico se le seguían mandando toques automáticos:
+  //    desde octubre eso es pagar por escribirle a alguien a quien después no le vas a
+  //    contestar. Se POSPONE (no se cancela) a propósito: si mañana apagas la perilla, o si
+  //    ese contacto entra por un anuncio, su secuencia sigue donde estaba.
+  //    El guard es el MISMO que usa el motor (importado, no copiado): dos copias se separan.
+  if (await soloAnunciosBloquea(db, s.channel_id, s.contact_id)) {
+    await posponer(s.id, 6 * 60 * 60_000);
+    return false;
+  }
   // 1) Pidió que no le escriban → se cancela, no se reintenta nunca más.
   if ((c as any).no_remarketing === true) {
     await db.from("sequence_subscriptions")

@@ -81,7 +81,7 @@ interface Node {
 // El flag vive en channels.ia_router.solo_anuncios (activable desde Canales).
 // "Vino por anuncio" = el webhook le capturó referral CTWA alguna vez
 // (ad_id / ctwa_clid / source). El contacto de pruebas del webchat está exento.
-async function soloAnunciosBloquea(
+export async function soloAnunciosBloquea(
   db: SupabaseClient, channelId: string, contactId: string,
 ): Promise<boolean> {
   const { data: ch } = await db.from("channels")
