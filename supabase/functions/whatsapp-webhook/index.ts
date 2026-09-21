@@ -452,6 +452,29 @@ async function processInbound(
   // Bloqueado desde el panel: el bot NO responde (antes solo se ocultaba de la Bandeja y el
   // bot le seguía vendiendo a ciegas). El mensaje queda guardado igual.
   if ((contact as any).bloqueado === true) return;
+  // 🔌 Vuelve a encender el bot si lo apagamos NOSOTROS por el modo «solo anuncios» y este
+  // mensaje SÍ viene de un anuncio: ya califica. Sin esto, el que escribió orgánico un martes
+  // y tocó tu anuncio el jueves se quedaba sin bot para siempre — justo el lead que pagaste
+  // por traer. Va antes del corte de abajo, o si no este mismo mensaje se perdería.
+  // Se exige que la pausa sea NUESTRA (hay un `organico_sin_atender` en su bitácora): la que
+  // puso un humano para atender él no se toca.
+  if ((contact as any).bot_activo === false && ref) {
+    const { data: auto } = await db.from("contact_events")
+      .select("id").eq("contact_id", (contact as any).id)
+      .eq("tipo", "organico_sin_atender").limit(1);
+    if (auto && auto.length) {
+      const { error: eOn } = await db.from("contacts").update({ bot_activo: true }).eq("id", (contact as any).id);
+      if (!eOn) {
+        (contact as any).bot_activo = true;
+        await db.from("contact_events").insert({
+          channel_id: channelId, contact_id: (contact as any).id, tipo: "bot_reactiva",
+          titulo: "Bot reactivado", detalle: "Entró por un anuncio, así que ya no le aplica el modo «solo anuncios».",
+        }).then(() => {}, () => {});
+      } else {
+        console.error("[solo_anuncios] no pude reactivar el bot:", eOn.message);
+      }
+    }
+  }
   if ((contact as any).bot_activo === false) {
     // «Ya no me escriban» con un humano atendiendo (bot en pausa): la detección de baja vive
     // en el motor y acá no se corría → nadie marcaba no_remarketing y las secuencias seguían.

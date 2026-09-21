@@ -212,6 +212,12 @@ async function runEngineInner(
         const { data: ya } = await db.from("contact_events")
           .select("id").eq("contact_id", contactId).eq("tipo", "organico_sin_atender")
           .gte("created_at", desde).limit(1);
+        // 🔌 El bot se APAGA de verdad para este contacto, no se queda «activo pero mudo».
+        // Decisión de Rodrigo (2026-09-21): así el interruptor del chat dice la verdad, el
+        // filtro Humano/Bot de la Bandeja lo agrupa bien, y el operador puede encenderlo a
+        // mano si decide atender a ese orgánico con el bot igual. De paso, el webhook corta
+        // antes del motor cuando está en pausa → este aviso no se repite solo.
+        await db.from("contacts").update({ bot_activo: false }).eq("id", contactId).eq("bot_activo", true);
         if (!ya || !ya.length) {
           // 🔴 La anotación va ANTES del Telegram a propósito: si el aviso falla (canal sin
           // bot de Telegram, token vencido), el rastro de que alguien quedó sin atender no
