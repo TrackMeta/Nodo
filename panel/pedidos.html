@@ -1001,8 +1001,24 @@ async function updateOrder(body){
 }
 const CIERRE_LIMA=["entregado_cobrado","rechazado"];
 
+// Estados en los que el paquete YA SALE: a partir de acá la agencia que el cliente eligió
+// deja de ser una charla y se convierte en el destino real del envío.
+const DESPACHA=["por_despachar","despachado","en_agencia"];
 async function confirmSet(o,estado,label){
   const c=o.contact||{};
+  // 🔴 La agencia sin confirmar NO puede salir en silencio. El bot acepta lo que el cliente
+  // diga («la agencia de Trujillo, la de Av España») y lo marca para que una persona lo
+  // confirme —está bien, es la regla de la casa—, pero nada frenaba el despacho: se movía la
+  // tarjeta y al cliente le salía «tu pedido ya llegó a la agencia Shalom de La Agencia de
+  // Trujillo, la de Av España», una oficina que no existe. Medido el 2026-09-21 de punta a
+  // punta. Acá se avisa en el único momento en que todavía se puede arreglar.
+  if(DESPACHA.includes(estado) && (o.shipping||{}).sede_por_confirmar && zonaDe(o)==="provincia"){
+    const arreglar=await confirmDialog({
+      title:"Falta confirmar la agencia",
+      messageHtml:`El bot anotó «<b>${esc((o.shipping||{}).sede||"—")}</b>» tal como lo dijo ${esc(c.nombre||"el cliente")}, y quedó marcada para confirmar.<br><br>Si la despachas así, al cliente le va a llegar ese nombre como si fuera la oficina Shalom — y puede no existir.`,
+      confirmText:"Confirmarla ahora", cancelText:"Despachar así", danger:true });
+    if(arreglar){ openConfirmSede(o); return; }
+  }
   if(zonaDe(o)==="lima" && CIERRE_LIMA.includes(estado) && (o.shipping||{}).flete==null){
     return cerrarLima(o,estado,label);
   }
