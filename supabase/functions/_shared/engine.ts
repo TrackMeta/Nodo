@@ -90,7 +90,13 @@ async function soloAnunciosBloquea(
   const { data: c } = await db.from("contacts")
     .select("wa_id, ad_id, ctwa_clid, source").eq("id", contactId).maybeSingle();
   if (!c) return false;
-  if ((c as any).wa_id === "webchat-test") return false;
+  // Los contactos de prueba quedan exentos: el de «Probar flujos» y los del simulador, que
+  // llevan source="sim". Antes el de simulación pasaba de rebote —por el `|| source` de
+  // abajo, que lo contaba como «vino por anuncio»—, y eso escondía que son dos cosas
+  // distintas: uno está exento por ser prueba, no por venir de un anuncio.
+  if ((c as any).wa_id === "webchat-test" || (c as any).source === "sim") return false;
+  // `source` solo se escribe cuando el webhook ve un referral CTWA (`ref.source_type ?? "ctwa"`),
+  // así que acá ya significa «vino por anuncio».
   const deAnuncio = Boolean((c as any).ad_id || (c as any).ctwa_clid || (c as any).source);
   return !deAnuncio;
 }
@@ -194,7 +200,40 @@ async function runEngineInner(
   // de 72h). Un contacto orgánico no recibe respuesta automática: su mensaje
   // ya quedó guardado y visible en la Bandeja para que lo tome un humano.
   // El contacto de Probar flujos queda exento para no romper las pruebas.
-  if (await soloAnunciosBloquea(db, channelId, contactId)) return;
+  if (await soloAnunciosBloquea(db, channelId, contactId)) {
+    // 🔴 El bot se calla, pero ALGUIEN tiene que enterarse: si no, el cliente espera en la
+    // Bandeja hasta que a alguien se le ocurra mirar. Un lead orgánico puede ser una venta
+    // igual de buena — la perilla es para no PAGAR por atenderlo, no para perderlo.
+    // Una sola vez cada 12 h por contacto: el que escribe cinco mensajes seguidos no puede
+    // convertirse en cinco Telegrams.
+    if (event.type === "message") {
+      try {
+        const desde = new Date(Date.now() - 12 * 3600 * 1000).toISOString();
+        const { data: ya } = await db.from("contact_events")
+          .select("id").eq("contact_id", contactId).eq("tipo", "organico_sin_atender")
+          .gte("created_at", desde).limit(1);
+        if (!ya || !ya.length) {
+          // 🔴 La anotación va ANTES del Telegram a propósito: si el aviso falla (canal sin
+          // bot de Telegram, token vencido), el rastro de que alguien quedó sin atender no
+          // puede irse con él. Primero queda escrito, después se intenta avisar.
+          await logEvent(db, channelId, contactId, "organico_sin_atender",
+            "El bot no le contestó",
+            "No vino por anuncio y el canal tiene activado «Responder solo a clientes que llegan por anuncio».");
+          const { data: c } = await db.from("contacts").select("nombre, telefono, wa_id").eq("id", contactId).maybeSingle();
+          await avisar(db, channelId, contactId, "organico_sin_atender", {
+            cliente: (c as any)?.nombre || "Sin nombre",
+            telefono: (c as any)?.telefono || (c as any)?.wa_id || "",
+            texto: String((event as any)?.text ?? "").slice(0, 300),
+          });
+        }
+      } catch (e) {
+        console.error("[organico_sin_atender]", (e as any)?.message ?? e);
+        await logEvent(db, channelId, contactId, "error", "No pude avisarte de un orgánico sin atender",
+          String((e as any)?.message ?? e)).catch(() => {});
+      }
+    }
+    return;
+  }
 
   // 📊 Contestó: se marca la variante de copy que le habíamos mandado (la del saludo
   // inicial o la del último paso de remarketing). Es la métrica que de verdad mide el

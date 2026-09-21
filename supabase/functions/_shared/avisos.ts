@@ -261,6 +261,20 @@ export const AVISOS: AvisoDef[] = [
       "El stock ya volvió al inventario.{{adelanto}}",
   },
   {
+    clave: "organico_sin_atender", grupo: "atencion",
+    titulo: "Escribió alguien que no vino por anuncio",
+    desc: "Tienes activado «Responder solo a clientes que llegan por anuncio», así que el bot NO le contestó. Su mensaje está en la Bandeja esperando a que lo tomes tú. Sin este aviso, ese cliente se queda esperando hasta que alguien mire la Bandeja.",
+    vars: ["cliente", "telefono", "texto"],
+    texto:
+      "🌱 *ESCRIBIÓ UN ORGÁNICO Y EL BOT NO CONTESTA*\n" +
+      "\n" +
+      "👤 {{cliente}}\n" +
+      "📱 {{telefono}}\n" +
+      "💬 {{texto}}\n" +
+      "\n" +
+      "_No vino por un anuncio y tienes el modo «solo anuncios» activado. Contéstale tú desde la Bandeja._",
+  },
+  {
     clave: "pide_humano", grupo: "atencion",
     titulo: "Te necesita a ti",
     desc: "El cliente pidió hablar con una persona, o el bot detectó un reclamo. El bot queda en pausa en ese chat.",
