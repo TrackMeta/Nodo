@@ -2268,7 +2268,17 @@ async function updateWindow() {
         : `<span class="win fep">${icon("megaphone")} Sin costo por anuncio · ${fmt(rem)}</span>`)
       : `<span class="win fep${poco ? " urge" : ""}" title="Las 24h para escribir libre ya cerraron, pero por venir de un anuncio la plantilla no te cuesta">${icon("megaphone")} Plantilla gratis · ${fmt(rem)}</span>`;
   }
-  w.innerHTML = svcChip + fepChip;
+  // Chip 3 — 💸 ¿este chat se cobra? «Escribe libre» dice si PUEDES escribir, no si CUESTA, y
+  // desde el 1-oct-2026 Meta cobra por mensaje todo lo que no caiga dentro de las 72 h de un
+  // clic en anuncio. Sin esto, la barra decía exactamente lo mismo en un chat gratis y en uno
+  // que se paga: una decisión de plata sin un solo indicador. Solo sale cuando NO hay FEP
+  // vivo (si lo hay, el chip 2 ya dice que es gratis) y solo desde esa fecha — antes sería
+  // mentira, porque hoy todavía no se cobra.
+  const COBRO_DESDE = Date.UTC(2026, 9, 1);   // 1 de octubre de 2026
+  const cobraChip = (!fepOpen && now >= COBRO_DESDE)
+    ? `<span class="win closed" title="Este contacto no vino por un anuncio, así que no tiene la ventana de 72 h sin costo: Meta cobra cada mensaje que le mandes. El precio por mensaje se configura en Ajustes → Meta.">${icon("banknote")} Se cobra</span>`
+    : "";
+  w.innerHTML = svcChip + fepChip + cobraChip;
   // ⚠ El candado mira SOLO la ventana de servicio (24h), y así debe quedarse.
   // Las 72h del anuncio (Free Entry Point) son sobre el COBRO, no sobre el permiso: durante
   // esa ventana los mensajes no se cobran, pero para mandar TEXTO LIBRE sigue haciendo falta
