@@ -64,6 +64,22 @@ const EVENTO_MENSAJERIA: Record<string, string> = {
   CompleteRegistration: "LeadSubmitted",
 };
 
+// Prefijo internacional → código ISO de país, en minúscula, que es como Meta lo quiere antes
+// de hashear. Se prueban primero los de 3 dígitos: 51 (Perú) es prefijo de 591 (Bolivia), así
+// que mirar los de 2 antes le pondría Perú a todo boliviano.
+const PREFIJO_PAIS: Array<[string, string]> = [
+  ["591", "bo"], ["593", "ec"], ["595", "py"], ["598", "uy"], ["502", "gt"], ["503", "sv"],
+  ["504", "hn"], ["505", "ni"], ["506", "cr"], ["507", "pa"], ["509", "ht"], ["592", "gy"],
+  ["51", "pe"], ["52", "mx"], ["53", "cu"], ["54", "ar"], ["55", "br"], ["56", "cl"],
+  ["57", "co"], ["58", "ve"], ["34", "es"], ["1", "us"],
+];
+function paisDeTelefono(tel: unknown): string | null {
+  const n = String(tel ?? "").replace(/\D/g, "");
+  if (!n) return null;
+  for (const [pre, iso] of PREFIJO_PAIS) if (n.startsWith(pre)) return iso;
+  return null;
+}
+
 export interface CapiResult {
   ok: boolean;
   deduped?: boolean;
@@ -159,7 +175,14 @@ export async function sendCapiEvent(
   }
   const ct = await hashPii(String(opts.match?.city || "").replace(/\s+/g, ""));
   if (ct) userData.ct = [ct];
-  const country = await hashPii(opts.match?.country); // ej. "pe"
+  // 🔴 El país iba "pe" FIJO desde los dos sitios que mandan Purchase. Es la misma clase de
+  // bug que ya mordió con la moneda ("no PEN fijo": el Purchase viajaba con la moneda
+  // equivocada). Y Meta quiere el país del CLIENTE, no el del negocio — así que sale de su
+  // número, que es el dato más fiable que hay: el prefijo internacional. Si no se reconoce,
+  // NO se manda: un país equivocado es una clave de match errónea, y eso solo puede empeorar
+  // la atribución. Se calcula acá dentro, que es por donde pasan TODOS los eventos, en vez
+  // de en cada sitio que llama (los Lead del nodo de flujo no mandaban país ninguno).
+  const country = await hashPii(paisDeTelefono(phReal) ?? opts.match?.country);
   if (country) userData.country = [country];
 
   const customData: Record<string, unknown> = {};
@@ -260,7 +283,7 @@ export async function maybePurchase(db: SupabaseClient, order: OrderLike): Promi
     currency: (order.currency as string) || "PEN",
     orderId: order.id, // → event_id "Purchase:<id>" = una sola vez por pedido
     ctwaClid: (ship.ctwa_clid as string) || undefined,
-    match: { fullName: (ship.cliente as string) || undefined, city: (ship.ciudad as string) || undefined, country: "pe" },
+    match: { fullName: (ship.cliente as string) || undefined, city: (ship.ciudad as string) || undefined },
   });
 }
 
@@ -287,6 +310,6 @@ export async function maybePurchaseUpsell(
     orderId: order.id,        // va a customData.order_id (Meta)
     noOrderLock: true,        // pero NO a la columna (evita el choque con el Purchase principal)
     ctwaClid: (ship.ctwa_clid as string) || undefined,
-    match: { fullName: (ship.cliente as string) || undefined, city: (ship.ciudad as string) || undefined, country: "pe" },
+    match: { fullName: (ship.cliente as string) || undefined, city: (ship.ciudad as string) || undefined },
   });
 }
