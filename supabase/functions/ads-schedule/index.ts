@@ -81,6 +81,15 @@ Deno.serve(async (req) => {
   if (action === "run") {
     const secret = Deno.env.get("SCHEDULER_SECRET") ?? "";
     if (!secret) return json({ error: "sin_scheduler_secret" }, 500);
+    // ⏱️ Freno: una corrida procesa TODOS los tenants y pega contra la API de Meta por cada
+    // cuenta. Sin esto, un doble clic (o alguien machacando el botón) dispara ese trabajo
+    // entero varias veces y acerca el límite de peticiones de Meta para todos. Si algo se
+    // bajó hace menos de un minuto, no se vuelve a correr: no hay nada nuevo que traer.
+    const { data: reciente } = await db.from("channels")
+      .select("ads_sync_at").not("ads_sync_at", "is", null)
+      .order("ads_sync_at", { ascending: false }).limit(1).maybeSingle();
+    const ultima = (reciente as any)?.ads_sync_at ? Date.parse((reciente as any).ads_sync_at) : 0;
+    if (ultima && Date.now() - ultima < 60_000) return json({ ok: true, reciente: true });
     try {
       const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/ads-sync`, {
         method: "POST",
