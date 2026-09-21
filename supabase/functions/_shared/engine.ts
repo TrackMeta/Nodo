@@ -21084,13 +21084,23 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   // En una compra confirmada, registrar la orden (métricas de producto del
   // Dashboard) y un evento de compra en el Timeline.
   if (res.ok && eventName === "Purchase") {
-    const { data: c } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
+    const { data: c } = await db.from("contacts").select("product_id, ctwa_clid").eq("id", run.contact_id).maybeSingle();
+    // 🔴 Este pedido nacía SIN `shipping`, o sea sin el clic del anuncio congelado — el único
+    // sitio de los cuatro que crean pedidos al que se le había escapado. Consecuencias: el
+    // panel mide la salud de atribución con `shipping.ctwa_clid`, así que una venta de
+    // anuncio hecha por este nodo contaba como orgánica; y «Reintentar envío a Meta» sobre
+    // ella no hacía nada (maybePurchase corta sin ctwa_clid) sin decir por qué.
+    // Se congela acá, como en los otros tres caminos: el del contacto puede cambiar mañana
+    // si vuelve a tocar otro anuncio, y la venta tiene que quedar pegada al que la originó.
+    const shipNodo: Record<string, unknown> = {};
+    if ((c as any)?.ctwa_clid) shipNodo.ctwa_clid = (c as any).ctwa_clid;
     const insOrd = await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       product_id: (c as any)?.product_id ?? null, version_id: versionIdDe(ctx),
       amount: Number.isFinite(value as number) ? value : 0,
       currency, order_id: orderId ?? null, estado: "confirmada",
       confirmed_at: new Date().toISOString(),
+      shipping: shipNodo,
     });
     // El error se ignoraba entero, y eso dejaba al sistema AFIRMANDO una venta que no
     // registró: el timeline decía "Compra registrada" y el contacto pasaba a comprado, pero
