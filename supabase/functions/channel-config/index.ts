@@ -56,7 +56,7 @@ async function metaPost(token: string, path: string, payload?: Record<string, un
 // concede es la tarea ANALYZE: ver rendimiento, sin poder crear, pausar ni gastar.
 // Si algo falla devuelve `detalle` y el que llama cae al mensaje de siempre — o sea que en
 // el peor caso se comporta como antes de existir esta función.
-async function asignarseCuentas(token: string, dbg: any): Promise<{ cuentas: any[]; detalle: string }> {
+async function asignarseCuentas(token: string, dbg: any, wabaId?: string): Promise<{ cuentas: any[]; detalle: string }> {
   const leerCuentas = async () => {
     const r = await metaGet(token, "me/adaccounts?fields=account_id,name,currency,account_status&limit=100");
     return ((r.body?.data ?? []) as any[]).map((a) => ({
@@ -78,11 +78,24 @@ async function asignarseCuentas(token: string, dbg: any): Promise<{ cuentas: any
   for (const s of ((dbg?.granular_scopes ?? []) as any[])) {
     if (s?.scope === "business_management") for (const t of (s.target_ids ?? [])) negocios.add(String(t));
   }
+  const diag: string[] = [];
   if (!negocios.size) {
     const b = await metaGet(token, "me/businesses?fields=id&limit=50");
     for (const x of ((b.body?.data ?? []) as any[])) negocios.add(String(x.id));
+    diag.push("me/businesses:" + (b.body?.error?.message ?? ((b.body?.data ?? []).length + " filas")));
   }
-  if (!negocios.size) return { cuentas: [], detalle: "no encontré a qué portfolio comercial pertenece el token." };
+  // 🔴 `me/businesses` vino vacío con un token de usuario de sistema REAL (medido con el de
+  // Rodrigo): ese edge es del usuario de Facebook, no del de sistema. El portfolio sí se
+  // puede sacar del activo que el canal ya tiene: la cuenta de WhatsApp dice quién la posee.
+  if (!negocios.size && wabaId) {
+    const w = await metaGet(token, `${wabaId}?fields=owner_business_info`);
+    const dueno = (w.body as any)?.owner_business_info?.id;
+    if (dueno) negocios.add(String(dueno));
+    diag.push("waba:" + (w.body?.error?.message ?? (dueno ? "ok" : "sin owner_business_info")));
+  }
+  if (!negocios.size) {
+    return { cuentas: [], detalle: "no encontré a qué portfolio comercial pertenece el token. [" + diag.join(" | ") + "]" };
+  }
 
   let ultimoError = "";
   for (const biz of negocios) {
@@ -587,7 +600,8 @@ Deno.serve(async (req) => {
       //    `ads_read`: con él se puede reestructurar el negocio entero. Por eso lo único que
       //    Nodo se concede es la tarea ANALYZE — ver rendimiento, sin tocar ni gastar nada.
       if (!cuentas.length && scopes.includes("business_management")) {
-        const auto = await asignarseCuentas(token, d);
+        const { data: chRow } = await db.from("channels").select("waba_id").eq("id", channel_id).maybeSingle();
+        const auto = await asignarseCuentas(token, d, (chRow as any)?.waba_id ? String((chRow as any).waba_id) : undefined);
         if (auto.cuentas.length) {
           return json({ ok: true, cuentas: auto.cuentas, de_whatsapp: _deWhatsapp, asignadas_por_nodo: true });
         }
