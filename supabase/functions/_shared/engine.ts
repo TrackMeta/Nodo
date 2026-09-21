@@ -12948,7 +12948,23 @@ function matchZona(zonas: Zona[], texto: string): Zona | null {
     for (const a of (z.alias ?? [])) cands.push({ z, s: limpiaZona(a) });
   }
   cands.sort((a, b) => b.s.length - a.s.length);
-  for (const c of cands) if (c.s && t.includes(" " + c.s + " ")) return c.z;
+  // 🔴 Un alias CORTO puede ser una palabra corriente. Medido el 2026-09-21: el cliente
+  // escribió «VES que no me alcanza, me lo dejas más barato?» —un regateo, sin decir de dónde
+  // es— y el motor le selló el distrito **Villa El Salvador** (su alias es «VES»), en silencio.
+  // Con eso el pedido sale con una zona que él nunca dijo: flete equivocado y rótulo a otro
+  // distrito. Así que con 3 letras o menos se exige que venga COMO UBICACIÓN («de/en/por/desde
+  // VES», «vivo en VES») o escrito en MAYÚSCULAS, que es como se escribe una sigla.
+  // Los alias largos («SAN JUAN LURIGANCHO») no necesitan esto: nadie los escribe sin querer.
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const c of cands) {
+    if (!c.s || !t.includes(" " + c.s + " ")) continue;
+    if (c.s.length <= 3) {
+      const comoUbicacion = new RegExp("(?:^| )(?:a|al|de|del|en|por|desde|hacia|para|zona|distrito) " + esc(c.s) + "(?: |$)").test(t);
+      const enMayusculas = new RegExp("(?:^|[^\\p{L}])" + esc(c.s.toUpperCase()) + "(?:[^\\p{L}]|$)", "u").test(String(texto ?? ""));
+      if (!comoUbicacion && !enMayusculas) continue;
+    }
+    return c.z;
+  }
   return null;
 }
 
