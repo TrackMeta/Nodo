@@ -21084,7 +21084,7 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   // En una compra confirmada, registrar la orden (métricas de producto del
   // Dashboard) y un evento de compra en el Timeline.
   if (res.ok && eventName === "Purchase") {
-    const { data: c } = await db.from("contacts").select("product_id, ctwa_clid").eq("id", run.contact_id).maybeSingle();
+    const { data: c } = await db.from("contacts").select("product_id, ctwa_clid, ad_id").eq("id", run.contact_id).maybeSingle();
     // 🔴 Este pedido nacía SIN `shipping`, o sea sin el clic del anuncio congelado — el único
     // sitio de los cuatro que crean pedidos al que se le había escapado. Consecuencias: el
     // panel mide la salud de atribución con `shipping.ctwa_clid`, así que una venta de
@@ -21094,6 +21094,10 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // si vuelve a tocar otro anuncio, y la venta tiene que quedar pegada al que la originó.
     const shipNodo: Record<string, unknown> = {};
     if ((c as any)?.ctwa_clid) shipNodo.ctwa_clid = (c as any).ctwa_clid;
+    // …y el `ad_id`, que es por donde Rendimiento atribuye: su consulta filtra los pedidos
+    // con `shipping->>ad_id not null`, así que sin él esta venta NI SIQUIERA APARECE en el
+    // informe por anuncio. Congelar solo el ctwa_clid (mi primer arreglo) no alcanzaba.
+    if ((c as any)?.ad_id) shipNodo.ad_id = (c as any).ad_id;
     const insOrd = await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       product_id: (c as any)?.product_id ?? null, version_id: versionIdDe(ctx),
