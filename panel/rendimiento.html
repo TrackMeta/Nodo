@@ -474,7 +474,7 @@ function ventanaHtml(){
     <div class="vh"><div><h3>${icon("message")} Mensajes que Meta cobra</h3>
       <p>Desde el <b>1 de octubre de 2026</b> Meta cobra cada mensaje del bot, salvo los que caen dentro de las 72 h de un clic en tu anuncio. Se cuenta desde el 11 de septiembre de 2026 · ${esc(rangeLabel(st.range))}.</p></div>
       <div class="vt"><label for="tarifaMsg">Tarifa por mensaje (US$)</label><input id="tarifaMsg" type="number" step="0.0001" min="0" placeholder="Meta aún no publica la de Perú" value="${tarifa??""}"><button id="tarifaSave">Guardar</button></div></div>
-    <div class="scroll"><table><thead><tr><th>Origen</th><th>Conversaciones</th><th>Gratis (72 h del anuncio)</th><th>Cobrables</th><th>Costo estimado</th></tr></thead>
+    <div class="scroll"><table><thead><tr><th>Origen</th><th>Conversaciones</th><th>Mensajes gratis (72 h del anuncio)</th><th>Mensajes cobrables</th><th>Costo estimado</th></tr></thead>
     <tbody>${fila("Vinieron por anuncio",an)}${fila("Orgánicos",or)}</tbody>
     <tfoot><tr><td>Total</td><td class="num">${nf(tot.conversaciones)}</td><td class="num">${nf(tot.msgs_gratis)}</td><td class="num">${nf(tot.msgs_cobrables)}</td><td class="num">${usd(tot.costo_usd)}</td></tr></tfoot></table></div>
     ${tarifa?"":`<p class="vn">Sin tarifa no se estima el costo: por ahora solo los conteos. Cuando Meta publique la tarifa de tu país, ponla arriba y el costo aparece solo.</p>`}
