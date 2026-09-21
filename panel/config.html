@@ -625,11 +625,8 @@ function renderPixel(box){
     <p class="sub">Todo lo de Meta en un lugar: el <b>Pixel / Conversions API</b> (envía Lead, InitiateCheckout y Purchase para optimizar tus campañas Click-to-WhatsApp) y la <b>conexión de anuncios</b> que alimenta la sección Rendimiento.</p>
     <div class="card">
       <div class="chd"><span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span><span class="nm">Pixel / Conversions API</span></div>
-      <div class="desc">El Pixel ID y el Page ID identifican tu activo publicitario; el token CAPI autoriza el envío de eventos.</div>
-      <div class="row">
-        <div class="f"><label>Pixel ID</label><input class="in" id="m_pixel_id" value="${esc(c.pixel_id)}" placeholder="p. ej. 998798536397963"/></div>
-        <div class="f"><label>Page ID</label><input class="in" id="m_page_id" value="${esc(c.page_id)}" placeholder="página del anuncio (CTWA)"/></div>
-      </div>
+      <div class="desc">El <b>Pixel ID</b> dice a qué activo publicitario mandar los eventos y el <b>token CAPI</b> autoriza el envío. Son los dos únicos datos: la cuenta de WhatsApp que Meta necesita para cruzar la venta con el anuncio la toma sola del canal.</div>
+      <div class="f"><label>Pixel ID</label><input class="in" id="m_pixel_id" value="${esc(c.pixel_id)}" placeholder="p. ej. 998798536397963"/></div>
       <label>Token CAPI (Conversions API) ${s.capi_token?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'}</label>
       <input class="in" type="password" id="s_capi_token" autocomplete="off" placeholder="${s.capi_token?'•••••••• guardado':'token del pixel (Eventos → Configuración)'}"/>
       <div class="acts"><button class="btn primary" id="savePixel">Guardar Pixel</button></div>
@@ -673,7 +670,7 @@ function renderPixel(box){
         <span style="color:var(--muted)">Un mismo token de usuario de sistema puede leer <b>varias cuentas</b>: lo conectas una vez y agregas arriba todas las que quieras seguir.</span>
       </div>
     </div>`;
-  $("savePixel").onclick=(e)=>saveChannel(e.target,{ pixel_id:$("m_pixel_id").value, page_id:$("m_page_id").value, capi_token:$("s_capi_token").value||undefined });
+  $("savePixel").onclick=(e)=>saveChannel(e.target,{ pixel_id:$("m_pixel_id").value, capi_token:$("s_capi_token").value||undefined });
   $("testPixel").onclick=(e)=>testPixel(e.target);
   $("addAdAcc").onclick=addAdAccount;
   $("saveAdsToken").onclick=(e)=>guardarYDescubrirAds(e.target);

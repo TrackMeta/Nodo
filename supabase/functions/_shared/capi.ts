@@ -71,7 +71,7 @@ export async function sendCapiEvent(
 ): Promise<CapiResult> {
   // Datos de canal y contacto.
   const { data: channel } = await db.from("channels")
-    .select("pixel_id, page_id").eq("id", channelId).maybeSingle();
+    .select("pixel_id, waba_id").eq("id", channelId).maybeSingle();
   // Defensivo por la col telefono (0062): número REAL para el match de Meta.
   let contact: any = null, hasTel = true;
   {
@@ -133,6 +133,11 @@ export async function sendCapiEvent(
   const phReal = hasTel ? contact?.telefono : contact?.wa_id;
   if (phReal) userData.ph = [await sha256Hex(String(phReal).replace(/\D/g, ""))];
   if (hasCtwa) userData.ctwa_clid = ctwa;
+  // 📊 Para un evento de WhatsApp, Meta pide en `user_data` la cuenta de WhatsApp Business
+  // JUNTO con el ctwa_clid — el par es lo que le deja encontrar el clic del anuncio. Antes
+  // acá se leía `page_id`, que es de MESSENGER: se pedía en el panel, se guardaba… y nunca
+  // se mandaba. O sea que el dato que Meta sí necesita no viajaba nunca.
+  if (hasCtwa && (channel as any)?.waba_id) userData.whatsapp_business_account_id = String((channel as any).waba_id);
   // Nombre: preferimos el que dio para el envío (opts.match.fullName), y si no,
   // el del perfil. Se parte en nombre/apellido.
   const full = String(opts.match?.fullName || contact?.nombre || "").trim();
