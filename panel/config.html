@@ -79,6 +79,23 @@
   .step .st-d{font-size:12.5px;color:var(--muted);line-height:1.55}
   .copybox{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;margin-top:8px;font-size:12px;font-family:monospace;word-break:break-all}
   .copybox button{margin-left:auto;flex:none;background:var(--brand-bg);color:var(--brand);border:none;border-radius:7px;padding:5px 10px;font-size:11.5px;font-weight:700}
+  /* Encabezado de tarjeta con subtítulo y estado a la derecha */
+  .chd .sub2{font-size:11.5px;color:var(--faint);margin-top:3px;font-family:monospace;letter-spacing:.02em}
+  .chd .badge{margin-left:auto;align-self:flex-start}
+  /* Guía plegada DENTRO de su propia tarjeta: los pasos viven al lado del campo
+     que hay que llenar, no en otra pantalla. Cerrada por defecto para que el que
+     ya sabe no tenga que pasar por encima de ella. */
+  .guia{border:1px solid var(--border);border-radius:12px;background:var(--surface-2);margin:14px 0 2px;overflow:hidden}
+  .guia>summary{list-style:none;cursor:pointer;padding:11px 14px;font-size:12.5px;font-weight:700;color:var(--muted);display:flex;align-items:center;gap:8px}
+  .guia>summary::-webkit-details-marker{display:none}
+  .guia>summary:hover{color:var(--text)}
+  .guia>summary::after{content:"";width:7px;height:7px;margin-left:auto;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .2s}
+  .guia[open]>summary::after{transform:rotate(225deg) translateY(-2px)}
+  .guia .gb{padding:0 15px 10px}
+  .guia .step{padding:12px 0}
+  .hint{font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.6}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:1px 5px;color:var(--text)}
+  .sep{height:1px;background:var(--border);margin:20px 0 4px}
 </style>
 </head>
 <body>
@@ -618,57 +635,109 @@ async function saveBrand(btn){
 }
 
 // ── Pixel de Meta (CAPI) ────────────────────────────────────────────
+// 📊 La sección de Meta son DOS conexiones que van en sentidos OPUESTOS, y apiladas sin
+// jerarquía se confundían: una TRAE el gasto (alimenta Rendimiento) y la otra MANDA las
+// ventas (para que Meta optimice). Ahora cada una lo dice en su encabezado, lleva su propia
+// guía plegada al lado del campo que hay que llenar, y su forma de comprobarla. La guía va
+// DENTRO de la tarjeta a propósito: mandar a alguien a otra pantalla a buscar los pasos es
+// donde se pierde.
 function renderPixel(box){
   const c=st.channel||{}, s=st.secrets||{};
+  const adsOn=!!s.ads_token, capiOn=!!(c.pixel_id&&s.capi_token);
   box.innerHTML=`
     <h2>Meta</h2>
-    <p class="sub">Todo lo de Meta en un lugar: el <b>Pixel / Conversions API</b> (envía Lead, InitiateCheckout y Purchase para optimizar tus campañas Click-to-WhatsApp) y la <b>conexión de anuncios</b> que alimenta la sección Rendimiento.</p>
-    <div class="card">
-      <div class="chd"><span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span><span class="nm">Pixel / Conversions API</span></div>
-      <div class="desc">El <b>Pixel ID</b> dice a qué activo publicitario mandar los eventos y el <b>token CAPI</b> autoriza el envío. Son los dos únicos datos: la cuenta de WhatsApp que Meta necesita para cruzar la venta con el anuncio la toma sola del canal.</div>
-      <div class="f"><label>Pixel ID</label><input class="in" id="m_pixel_id" value="${esc(c.pixel_id)}" placeholder="p. ej. 998798536397963"/></div>
-      <label>Token CAPI (Conversions API) ${s.capi_token?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'}</label>
-      <input class="in" type="password" id="s_capi_token" autocomplete="off" placeholder="${s.capi_token?'•••••••• guardado':'token del pixel (Eventos → Configuración)'}"/>
-      <div class="acts"><button class="btn primary" id="savePixel">Guardar Pixel</button></div>
-    </div>
-    <div class="card">
-      <div class="chd"><span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span><span class="nm">Probar la conexión</span></div>
-      <div class="desc">Manda un evento de prueba a Meta con tu Pixel y token, sin hacer una venta. En Meta ve a <b>Events Manager → Probar eventos</b>, copia el código y pégalo acá para verlo llegar en vivo.</div>
-      <div class="f"><label>Código de prueba <span style="font-weight:400;color:var(--faint)">(opcional)</span></label><input class="in" id="m_test_code" placeholder="p. ej. TEST12345"/></div>
-      <div class="acts"><button class="btn" id="testPixel">Enviar evento de prueba</button></div>
-      <div id="testPixelOut" style="margin-top:10px;font-size:13px;line-height:1.5"></div>
-    </div>
-    <div class="card">
-      <div class="chd"><span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span><span class="nm">Conexión de anuncios (Rendimiento)</span></div>
-      <div class="desc">Conecta tus cuentas publicitarias para ver el <b>gasto</b> de cada anuncio junto a tus ventas reales en la sección <b>Rendimiento</b> (CPA de confirmación, CPA real, ganancia neta y ROAS). Puedes seguir <b>varias cuentas</b>; las ventas, el margen y la atribución por anuncio ya los tiene Nodo.</div>
-
-      ${c.ads_sync_error?`<div style="display:flex;gap:10px;align-items:flex-start;background:var(--red-bg,#2c1615);border:1px solid var(--red);border-radius:11px;padding:11px 13px;margin:12px 0;font-size:12.5px;line-height:1.5;color:var(--text)"><span style="color:var(--red);font-weight:800;flex:none">${icon("alert")}</span><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(c.ads_sync_error)}<br>Genera un token nuevo (ads_read) y pégalo abajo para reconectar.</div></div>`:""}
-
-      <label>Cuentas publicitarias</label>
-      <div id="adAccList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"><span style="color:var(--faint);font-size:12.5px">Cargando…</span></div>
-      <div class="row" style="align-items:flex-end;gap:8px">
-        <div class="f" style="flex:1;margin:0"><input class="in" id="m_ad_acc_new" placeholder="act_1234567890"/></div>
-        <div class="f" style="margin:0"><input class="in" id="m_ad_acc_name" placeholder="Nombre (opcional)" style="max-width:170px"/></div>
-        <button class="btn" id="addAdAcc">Agregar</button>
+    <p class="sub">Dos conexiones que van en sentidos contrarios: una <b>trae</b> de Meta el gasto de tus anuncios, para que Rendimiento sepa cuánto te costó cada venta. La otra <b>le manda</b> a Meta tus ventas reales, para que su algoritmo aprenda a quién mostrarte. Son independientes: puedes tener una sin la otra.</p>
+    <div class="card${adsOn?" on":""}">
+      <div class="chd">
+        <span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span>
+        <div><div class="nm">Gasto de anuncios</div><div class="sub2">Meta &#8594; Nodo</div></div>
+        <span class="badge${adsOn?" on":""}">${adsOn?"Conectado":"Sin conectar"}</span>
       </div>
+      <div class="desc">Trae lo que gastaste en cada anuncio y lo pone al lado de tus ventas reales en <b>Rendimiento</b>: CPA de confirmación, CPA real, ganancia neta y ROAS. Sin esto, Rendimiento te muestra las ventas pero no lo que te costaron — y la ganancia sale inflada.</div>
 
-      <label style="margin-top:16px">Token de lectura (ads_read) ${s.ads_token?'<span class="badge on">Conectado</span>':'<span class="badge">Sin conectar</span>'}</label>
-      <input class="in" type="password" id="s_ads_token" autocomplete="off" placeholder="${s.ads_token?'•••••••• guardado':'token del usuario de sistema con permiso ads_read'}"/>
-      <div style="font-size:11.5px;color:var(--faint);margin-top:5px">¿Ya conectaste WhatsApp? Toca el botón <b>sin pegar nada</b>: si el token que usas para WhatsApp trae también el permiso de anuncios, sirve el mismo y no tienes que generar otro.</div>
-      <div class="acts"><button class="btn primary" id="saveAdsToken">Guardar y buscar mis cuentas</button></div>
+      ${c.ads_sync_error?`<div style="display:flex;gap:10px;align-items:flex-start;background:var(--red-bg,#2c1615);border:1px solid var(--red);border-radius:11px;padding:11px 13px;margin:12px 0;font-size:12.5px;line-height:1.5;color:var(--text)"><span style="color:var(--red);font-weight:800;flex:none">${icon("alert")}</span><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(c.ads_sync_error)}<br>Genera un token nuevo y pégalo abajo para reconectar.</div></div>`:""}
+
+      <details class="guia">
+        <summary>${icon("help")} Cómo conectarlo</summary>
+        <div class="gb"><div class="steps">
+          <div class="step"><div class="num"></div><div class="st-b">
+            <div class="st-t">Antes que nada: prueba sin pegar nada</div>
+            <div class="st-d">Si ya conectaste WhatsApp, <b>el mismo token puede servir</b>. Toca <b>Buscar mis cuentas</b> con el campo vacío. Si sirve, terminaste acá y te saltas todo lo de abajo.</div></div></div>
+          <div class="step"><div class="num"></div><div class="st-b">
+            <div class="st-t">Prepara tu app</div>
+            <div class="st-d">En <b>developers.facebook.com</b> &#8594; tu app &#8594; <b>Agregar producto</b> &#8594; <b>Marketing API</b>. Sin ese clic, <code>ads_read</code> ni siquiera aparece en la lista de permisos del paso siguiente. No dispara ninguna revisión de Meta: leer tus propias cuentas no necesita aprobación.</div></div></div>
+          <div class="step"><div class="num"></div><div class="st-b">
+            <div class="st-t">Genera el token</div>
+            <div class="st-d">En <b>business.facebook.com</b> &#8594; Configuración del portafolio &#8594; <b>Usuarios del sistema</b> &#8594; <b>Generar nuevo token</b>. Caducidad <b>Nunca</b> y marca <code>ads_read</code>. Márcale también <code>business_management</code> y Nodo se asigna solo tus cuentas publicitarias; sin ese permiso, se las asignas tú en <b>Agregar activos</b>. Cópialo en ese momento: Meta lo muestra una sola vez.</div></div></div>
+          <div class="step"><div class="num"></div><div class="st-b">
+            <div class="st-t">Elige qué cuentas sigue este bot</div>
+            <div class="st-d">Nodo te lista las que el token puede leer y tú marcas cuáles. Agrega <b>solo las del producto que vende este bot</b>: si le metes la cuenta de otro negocio, le sumas gasto ajeno y su ganancia sale falsa. Y no pongas la misma cuenta en dos bots — cada uno mostraría el gasto entero.</div></div></div>
+        </div></div>
+      </details>
+
+      <label>Token de lectura ${s.ads_token?'<span class="badge on">Guardado</span>':""}</label>
+      <input class="in" type="password" id="s_ads_token" autocomplete="off" placeholder="${s.ads_token?'•••••••• guardado':"pégalo acá, o déjalo vacío para probar el de WhatsApp"}"/>
+      <div class="hint">Con el campo <b>vacío</b> Nodo prueba el token que ya usas para WhatsApp: si ese trae el permiso de anuncios, sirve el mismo y no tienes que generar otro.</div>
+      <div class="acts"><button class="btn primary" id="saveAdsToken">Buscar mis cuentas</button></div>
       <div id="adsDescubre" style="margin-top:10px"></div>
 
-      <label style="margin-top:16px">Cada cuánto sincronizar</label>
-      <div id="adsFreqWrap" style="display:flex;gap:6px;flex-wrap:wrap"><span style="color:var(--faint);font-size:12.5px">Cargando…</span></div>
-      <div style="font-size:11.5px;color:var(--faint);margin-top:6px">Cada cuánto Nodo baja el gasto de Meta. También puedes forzar una actualización desde la sección Rendimiento con el botón "Actualizar".</div>
+      <label>Cuentas que sigue este bot</label>
+      <div id="adAccList" style="display:flex;flex-direction:column;gap:8px"><span style="color:var(--faint);font-size:12.5px">Cargando…</span></div>
+      <details class="guia">
+        <summary>${icon("plus")} Agregar una a mano</summary>
+        <div class="gb">
+          <div class="hint" style="margin:8px 0 10px">Solo si la tuya no salió en la búsqueda. El <code>act_…</code> está en <b>Ads Manager</b>, arriba a la izquierda, en el selector de cuenta.</div>
+          <div class="row" style="align-items:flex-end;gap:8px">
+            <div class="f" style="flex:1;margin:0"><input class="in" id="m_ad_acc_new" placeholder="act_1234567890"/></div>
+            <div class="f" style="margin:0"><input class="in" id="m_ad_acc_name" placeholder="Nombre (opcional)" style="max-width:170px"/></div>
+            <button class="btn" id="addAdAcc">Agregar</button>
+          </div>
+        </div>
+      </details>
 
-      <div style="font-size:12px;color:var(--faint);margin-top:12px;line-height:1.7;border-top:1px solid var(--border);padding-top:12px">
-        <b style="color:var(--muted)">Cómo conectarlo:</b><br>
-        1. <b>ID de cuenta:</b> en <b>Meta Ads Manager</b>, arriba a la izquierda, está el selector de cuenta — el <span style="font-family:monospace">act_…</span> es tu ID. Agrégalo arriba.<br>
-        2. <b>Token de lectura:</b> en <b>Business Settings → Usuarios del sistema</b>, crea uno, asígnale tus cuentas de anuncios con acceso, y genera un token con el permiso <span style="font-family:monospace">ads_read</span>. Pégalo aquí.<br>
-        <span style="color:var(--muted)">Si <span style="font-family:monospace">ads_read</span> no aparece en la lista de permisos, tu app no tiene la Marketing API: <b>tu app → Agregar producto → Marketing API</b> y vuelve a generarlo. Es un clic y no dispara ninguna revisión — leer tus propias cuentas no necesita aprobación de Meta.</span><br>
-        <span style="color:var(--muted)">Un mismo token de usuario de sistema puede leer <b>varias cuentas</b>: lo conectas una vez y agregas arriba todas las que quieras seguir.</span>
+      <label>Cada cuánto sincronizar</label>
+      <div id="adsFreqWrap" style="display:flex;gap:6px;flex-wrap:wrap"><span style="color:var(--faint);font-size:12.5px">Cargando…</span></div>
+      <div class="hint">Cada cuánto Nodo baja el gasto de Meta. También puedes forzarlo desde <b>Rendimiento</b> con el botón «Actualizar».</div>
+    </div>
+
+    <div class="card${capiOn?" on":""}">
+      <div class="chd">
+        <span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span>
+        <div><div class="nm">Eventos de conversión</div><div class="sub2">Nodo &#8594; Meta</div></div>
+        <span class="badge${capiOn?" on":""}">${capiOn?"Conectado":"Sin conectar"}</span>
       </div>
+      <div class="desc">Cada vez que alguien escribe, avanza o compra, Nodo se lo cuenta a Meta junto con el clic del anuncio que lo trajo. Eso es lo que le enseña a su algoritmo a quién mostrarte. Sin esto tu bot vende igual, pero <b>Meta optimiza a ciegas</b>: no sabe cuáles de tus clics terminaron en plata.</div>
+
+      <details class="guia">
+        <summary>${icon("help")} Cómo conectarlo</summary>
+        <div class="gb"><div class="steps">
+          <div class="step"><div class="num"></div><div class="st-b">
+            <div class="st-t">Copia el Pixel ID</div>
+            <div class="st-d">En <b>Events Manager</b> (business.facebook.com/events_manager) &#8594; <b>Orígenes de datos</b>, elige tu pixel. El número largo que sale bajo el nombre es el ID.</div></div></div>
+          <div class="step"><div class="num"></div><div class="st-b">
+            <div class="st-t">Genera el token CAPI</div>
+            <div class="st-d">En ese mismo pixel: <b>Configuración</b> &#8594; <b>Conversions API</b> &#8594; <b>Generar token de acceso</b>. Cópialo al momento, Meta lo muestra una sola vez. Es un token distinto del de WhatsApp: este es del pixel.</div></div></div>
+          <div class="step"><div class="num"></div><div class="st-b">
+            <div class="st-t">Compruébalo antes de confiar</div>
+            <div class="st-d">En <b>Events Manager</b> &#8594; <b>Probar eventos</b> sale un código tipo <code>TEST12345</code>. Pégalo abajo y manda un evento de prueba: lo vas a ver llegar en vivo, sin hacer una venta.</div></div></div>
+        </div></div>
+      </details>
+
+      <label>Pixel ID</label>
+      <input class="in" id="m_pixel_id" value="${esc(c.pixel_id)}" placeholder="p. ej. 998798536397963"/>
+      <label>Token CAPI ${s.capi_token?'<span class="badge on">Guardado</span>':""}</label>
+      <input class="in" type="password" id="s_capi_token" autocomplete="off" placeholder="${s.capi_token?'•••••••• guardado':"token del pixel (Configuración → Conversions API)"}"/>
+      <div class="hint">La cuenta de WhatsApp que Meta necesita para cruzar la venta con el anuncio la toma sola del canal: no hay un tercer dato que buscar.</div>
+      <div class="acts"><button class="btn primary" id="savePixel">Guardar</button></div>
+
+      <div class="sep"></div>
+      <label>Probar la conexión</label>
+      <div class="hint" style="margin:0 0 10px">Manda un evento de prueba a Meta con estos datos, sin hacer una venta. Con el código de <b>Probar eventos</b> lo ves llegar en vivo; sin código igual se manda, pero cuenta como un evento real.</div>
+      <div class="row" style="align-items:flex-end;gap:8px">
+        <div class="f" style="flex:1;margin:0"><input class="in" id="m_test_code" placeholder="TEST12345 (opcional)"/></div>
+        <button class="btn" id="testPixel">Enviar evento de prueba</button>
+      </div>
+      <div id="testPixelOut" style="margin-top:10px;font-size:13px;line-height:1.5"></div>
     </div>`;
   $("savePixel").onclick=(e)=>saveChannel(e.target,{ pixel_id:$("m_pixel_id").value, capi_token:$("s_capi_token").value||undefined });
   $("testPixel").onclick=(e)=>testPixel(e.target);
