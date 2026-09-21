@@ -2027,7 +2027,16 @@ function esParentesco(v: string): boolean {
 // los datos de pago a alguien que acaba de pagar. Medido: «ya te hice el yape de 119»
 // recibió solo el saludo «¿desde dónde nos escribe?» — a alguien que ya mandó la plata.
 const RE_YA_PAGO =
-  /\b(ya (te )?(pagu[eé]|deposit[eé]|transfer[ií]|yape[eé]|yapi[eé]|plin[eé]|abon[eé])|ya (te )?hice (el|la|un|una) (yape|dep[oó]sito|transferencia|pago|plin)|ya (te )?mand[eé] (el|la) (yape|pago|dep[oó]sito|transferencia|voucher|comprobante)|ya (est[aá]|qued[oó]) (pagado|cancelado|depositado)|te (yape[eé]|deposit[eé]|transfer[ií])|acabo de (pagar|yapear|depositar|transferir)|hice el (yape|dep[oó]sito|pago)|aqu[ií] (est[aá]|te dejo) (el|mi) (voucher|comprobante|constancia))\b/i;
+  // 🔴 Cierra con `(?![\p{L}\p{N}])`, NO con `\b`: la «é» no es carácter de palabra para el
+  // regex, así que «ya pagué», «ya te yapeé» y «ya yapeé» —las tres formas en que de verdad
+  // se escribe— daban FALSE, y solo pasaban las versiones sin tilde. Medido el 2026-09-20.
+  // Dos caminos dependían de esto: (a) el mensaje de quien dice que ya pagó no se reinyectaba
+  // al flujo, así que recibía el saludo y su aviso de pago moría ahí; (b) `metodoQuePregunta`
+  // lo tomaba por alguien PREGUNTANDO por los métodos y le contestaba «sí, aceptamos Yape» a
+  // quien acababa de mandar la plata.
+  // Y se completaron las formas que faltaban: «ya le pagué», «ya lo pagué», «ahí te mandé el
+  // yape», «ya te envié el pago», «ya te pasé el voucher», «ya te mandé la captura», «plineé».
+  /\b(ya (?:te |le |lo )?(?:pagu[eé]|deposit[eé]|transfer[ií]|yape[eé]+|yapi[eé]+|pline[eé]*|plin[eé]|abon[eé])|ya (?:te |le )?hice (?:el|la|un|una) (?:yape|dep[oó]sito|transferencia|pago|plin)|(?:ya|ah[ií]|ac[aá]|aqu[ií]) (?:te |le )?(?:mand[eé]|envi[eé]|pas[eé]) (?:el|la|tu|su|mi) (?:yape|pago|dep[oó]sito|transferencia|voucher|comprobante|captura|constancia)|ya (?:est[aá]|qued[oó]) (?:pagado|cancelado|depositado)|te (?:yape[eé]+|deposit[eé]|transfer[ií]|pagu[eé])|acabo de (?:pagar|yapear|depositar|transferir|plinear)|hice el (?:yape|dep[oó]sito|pago)|aqu[ií] (?:est[aá]|te dejo) (?:el|mi) (?:voucher|comprobante|constancia))(?![\p{L}\p{N}])/iu;
 // 📅 Pide que se lo separen/guarden para cuando cobre. Es un cliente decidido, no uno que
 // duda: lo único que dice es que su plata entra otro día.
 const RE_PIDE_SEPARAR =
@@ -2063,7 +2072,13 @@ const RE_RECOGE_OTRO =
 const RE_TRAE_OBJECION =
   /\b(descuento|rebaja|rebajas|m[aá]s barato|otro lado|otra tienda|la competencia|[uú]ltimo precio|precio final|me lo dejas|me lo deja|te lo compro|lo compro all[aá]|est[aá] caro|muy caro|carazo|no me alcanza|promoci[oó]n|oferta especial)\b/i;
 const RE_TRAE_PREGUNTA =
-  /[?¿]|\b(cu[aá]nto|cu[aá]nta|cu[aá]l|cu[aá]ndo|c[oó]mo|d[oó]nde|qu[eé]\s|por\s?qu[eé]|se\s+puede|puedo|tienen|tienes|hay\s|hacen|env[ií]an|sirve|funciona|es\s+bueno|me\s+sirve)\b/i;
+  // 📝 En WhatsApp se pregunta SIN signo: «es original», «viene con garantía», «me llega a
+  // Huancayo», «está disponible», «me pueden enviar hoy». Ninguna de esas entraba, y de esto
+  // depende que el primer mensaje se le entregue al flujo: sin match, el cliente recibía el
+  // saludo y su pregunta moría debajo. Medido el 2026-09-20 (5 de 12 formas comunes fallaban).
+  // Probadas contra los mensajes que NO son pregunta («hola», «quiero el adaptador», su
+  // nombre y DNI, «listo», una dirección): ninguno da falso positivo.
+  /[?¿]|\b(cu[aá]nto|cu[aá]nta|cu[aá]l|cu[aá]ndo|c[oó]mo|d[oó]nde|qu[eé]\s|por\s?qu[eé]|se\s+puede|puedo|puede[ns]?\s|tienen|tienes|hay\s|hacen|env[ií]an|sirve|funciona|es\s+bueno|me\s+sirve|disponible|en\s+stock|me\s+lleg|llega[ns]?\s+a\s|viene\s+con|incluye|trae\s|es\s+original|son\s+originales|garant[ií]a|aceptan)\b/i;
 // ¿El primer mensaje trae algo que el saludo fijo va a IGNORAR? Dos casos, los dos medidos:
 //   · una PREGUNTA — «hola, ¿se puede usar en el embarazo?» recibía solo «¿desde dónde nos
 //     escribe?», con la pregunta de salud sin contestar;
@@ -10973,7 +10988,11 @@ async function maybePideReembolso(
 const RE_PIDE_DATOS =
   /\b(cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|(p[aá]same|pasame|m[aá]ndame|mandame|env[ií]ame|enviame|d[aá]me|dame|me pasas|me mandas|me env[ií]as|me das)[^.?!\n]{0,24}(yape|plin|n[uú]mero|nro|cuenta|datos)|a qu[eé] n[uú]mero|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|n[uú]mero de (yape|plin|cuenta)|d[oó]nde (te )?(pago|dep[oó]sito|transfiero)|para (yapear|plinear|depositar|transferir))\b/i;
 const RE_ANUNCIA_PAGO =
-  /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te yapeo|voy a (yapear|pagar|depositar|transferir)|ahorita (te )?(yapeo|pago)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|p[aá]same el (yape|n[uú]mero|plin)|n[uú]mero de (yape|plin|cuenta)|cu[eé]nta para|cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|d[oó]nde (te )?(dep[oó]sito|transfiero)|me pasas (el|tu) (yape|n[uú]mero))\b/i;
+  // Formas que faltaban y se escriben todo el tiempo: «mándame el número», «envíame el yape»,
+  // «te deposito ahorita», «paso a yapear». Y `(?<!no )` delante de «voy a pagar»: «NO voy a
+  // pagar tanto» es un regateo, no un anuncio de pago — con la versión anterior el motor le
+  // mandaba los datos del Yape a quien estaba diciendo que NO iba a pagar.
+  /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te (yapeo|deposito|transfiero)\b|(?<!no )voy a (yapear|pagar|depositar|transferir)|paso a (yapear|pagar|depositar)|ahorita (te )?(yapeo|pago|deposito)|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|(p[aá]same|m[aá]ndame|env[ií]ame|pasame) (el|tu) (yape|n[uú]mero|plin|cuenta)|n[uú]mero de (yape|plin|cuenta)|cu[eé]nta para|cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|d[oó]nde (te )?(dep[oó]sito|transfiero)|me pasas (el|tu) (yape|n[uú]mero))\b/i;
 // 💳 PREGUNTA POR UN MEDIO DE PAGO CONCRETO: «¿aceptan Plin?», «¿puedo pagar con
 // transferencia?», «¿solo yape?». Es un tercer caso que no cubría ninguna de las dos listas
 // de arriba —RE_PIDE_DATOS quiere el dato EN PANTALLA, RE_ANUNCIA_PAGO avisa que ya va a
