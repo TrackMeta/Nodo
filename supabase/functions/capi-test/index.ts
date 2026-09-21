@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
   const { data: member } = await db.from("app_users").select("id").eq("id", uid).eq("activo", true).maybeSingle();
   if (!member) return json({ error: "not_member" }, 403);
 
-  let body: { channel_id?: string; test_event_code?: string };
+  let body: { channel_id?: string; test_event_code?: string; event_name?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   if (!body.channel_id) return json({ error: "falta_channel" }, 400);
   if (!(await userOwnsChannel(db, uid, body.channel_id))) return json({ error: "forbidden_channel" }, 403);
@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
   // Evento de prueba: un Lead que imita a los reales (business_messaging), con
   // datos ficticios. No se guarda en capi_events; es solo para ver la conexión.
   const evt: Record<string, unknown> = {
-    event_name: "Lead",
+    event_name: String(body.event_name ?? "").trim() || "LeadSubmitted",
     event_time: Math.floor(Date.now() / 1000),
     action_source: "business_messaging",
     messaging_channel: "whatsapp",
@@ -87,6 +87,19 @@ Deno.serve(async (req) => {
     });
     const meta = await res.json();
     if (!res.ok || meta.error) {
+      // El ctwa_clid de la prueba es inventado y Meta lo valida. Que la queja sea ESA quiere
+      // decir que el Pixel y el token ya pasaron: Meta está revisando el contenido, no el
+      // permiso. Sin un clic real de un anuncio no hay forma de mandar uno bueno, así que en
+      // vez de un error críptico se dice qué quedó probado y qué no.
+      const detalle = String(meta.error?.error_user_title ?? "") + " " + String(meta.error?.error_user_msg ?? "");
+      if (/ctwa[_ ]?clid/i.test(detalle)) {
+        return json({
+          ok: true, credenciales: true,
+          aviso: "Tu Pixel ID y tu token CAPI funcionan: Meta los aceptó y llegó a revisar el contenido del evento. " +
+            "Lo único que rechazó es el clic de anuncio inventado que lleva la prueba — no se puede fabricar uno válido. " +
+            "El primer cliente que te escriba desde un anuncio traerá uno real y ahí el evento entra completo.",
+        }, 200);
+      }
       return json({ ok: false, error: meta.error?.message ?? "Meta rechazó el evento", meta }, 200);
     }
     // events_received >= 1 → Meta lo aceptó.

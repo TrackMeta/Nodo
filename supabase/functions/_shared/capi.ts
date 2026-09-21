@@ -55,6 +55,15 @@ async function hashPii(v: string | undefined | null): Promise<string | null> {
   return await sha256Hex(s);
 }
 
+// Nombres que Meta rechaza con `action_source: business_messaging`, y su equivalente válido.
+// La lista sale de medir contra un pixel real, no de la documentación (ver el comentario
+// largo en sendCapiEvent).
+const EVENTO_MENSAJERIA: Record<string, string> = {
+  Lead: "LeadSubmitted",
+  Contact: "LeadSubmitted",
+  CompleteRegistration: "LeadSubmitted",
+};
+
 export interface CapiResult {
   ok: boolean;
   deduped?: boolean;
@@ -157,8 +166,20 @@ export async function sendCapiEvent(
   if (opts.value != null) { customData.value = opts.value; customData.currency = opts.currency ?? "PEN"; }
   if (opts.orderId) customData.order_id = opts.orderId;
 
+  // 🔴 Meta NO acepta `Lead` cuando el origen es `business_messaging`: contesta «El tipo de
+  // evento de mensaje no es válido» y pide `LeadSubmitted`. Y el nodo del editor nace con
+  // `Lead`, o sea que TODOS los eventos de interés se estaban rechazando en silencio.
+  // Medido contra el pixel real (2026-09-21): pasan LeadSubmitted, InitiateCheckout,
+  // Purchase y AddToCart; rechaza Lead, Contact, Schedule, Subscribe, CompleteRegistration
+  // y StartTrial. Se traduce ACÁ, el único sitio por donde salen los eventos, para que los
+  // flujos ya guardados se arreglen solos sin que nadie los edite.
+  // Ojo: solo para mensajería. Con `website` (sin ctwa_clid) `Lead` SÍ es válido.
+  // Y lo que se guarda en `capi_events` sigue siendo el nombre configurado, porque es el
+  // que consultan el Dashboard y la ficha del pedido.
+  const nombreParaMeta = hasCtwa ? (EVENTO_MENSAJERIA[opts.eventName] ?? opts.eventName) : opts.eventName;
+
   const evt: Record<string, unknown> = {
-    event_name: opts.eventName,
+    event_name: nombreParaMeta,
     event_time: Math.floor(Date.now() / 1000),
     action_source: actionSource,
     event_id: eventId,

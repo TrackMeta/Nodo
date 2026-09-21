@@ -846,8 +846,12 @@ async function testPixel(btn){
   btn.disabled=true; const old=btn.textContent; btn.textContent="Enviando…";
   try{
     const r=await callFn("capi-test",{ channel_id:st.channelId, test_event_code:$("m_test_code").value||undefined });
-    if(r&&r.ok){
-      out.innerHTML=`<span style="color:var(--green)">Meta recibió el evento${r.received?` (${r.received})`:""}.</span> Míralo en <b>Events Manager → Probar eventos</b>. Si no pusiste código, aparece en el reporte general en unos minutos.`;
+    if(r&&r.ok&&r.aviso){
+      // Credenciales buenas, pero el clic de anuncio de la prueba es inventado: se dice qué
+      // quedó probado y qué no, en vez de pintar un verde que promete de más.
+      out.innerHTML=`<span style="color:var(--green)">${icon("check")} Conexión correcta.</span> ${esc(r.aviso)}`;
+    } else if(r&&r.ok){
+      out.innerHTML=`<span style="color:var(--green)">Meta recibió el evento${r.received?` (${r.received})`:""}.</span> Míralo en <b>Events Manager → Probar eventos</b>.`;
     } else {
       out.innerHTML=`<span style="color:var(--red)">No se pudo: ${esc((r&&r.error)||"error")}</span>`;
     }
