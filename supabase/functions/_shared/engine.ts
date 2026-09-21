@@ -21062,7 +21062,10 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   const valRaw = resolve(String(cfg.value ?? ""), ctx).trim();
   const value = valRaw ? Number(valRaw.replace(",", ".")) : undefined;
   const orderId = cfg.order_id ? resolve(String(cfg.order_id), ctx).trim() || undefined : undefined;
-  const currency = cfg.currency || "PEN";
+  // La moneda del NEGOCIO cuando el nodo no la fija. Antes era "PEN" a secas: en un canal en
+  // dólares, el Purchase le llegaba a Meta con la moneda equivocada y el ROAS salía falso. Es
+  // el mismo bug que ya se arregló para el pedido (buscar «Moneda del CANAL, no "PEN" fijo»).
+  const currency = cfg.currency || String((ctx as any)?.moneda || "") || "PEN";
 
   const res = await sendCapiEvent(db, run.channel_id, run.contact_id, {
     eventName, value: Number.isFinite(value as number) ? value : undefined,

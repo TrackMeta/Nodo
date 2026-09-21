@@ -526,8 +526,8 @@ function buildEvento(m, body){
   if(ev!=="Lead"){
     body.appendChild(mkLabel("Valor (monto — puede usar {{variable}})"));
     body.appendChild(mkInput(m.config.value, (v)=>m.config.value=v));
-    body.appendChild(mkLabel("Moneda"));
-    body.appendChild(mkInput(m.config.currency||"PEN", (v)=>m.config.currency=v));
+    body.appendChild(mkLabel("Moneda (vacío = la de tu negocio)"));
+    body.appendChild(mkInput(m.config.currency, (v)=>m.config.currency=v));
   }
   if(ev==="Purchase"){
     body.appendChild(mkLabel("ID de comprobante / orden (dedup — {{variable}})"));
@@ -812,7 +812,7 @@ function defaultConfig(tipo){
     case "condicion": return { rutas:[{ handle:"ruta:1", nombre:"Ruta 1", match:"todas", condiciones:[] }] };
     case "accion": return { acciones:[] };
     case "ia": return { operacion:"generar_texto", prompt:"", proveedor:"auto", modelo:"" };
-    case "evento_fb": return { event_name:"Lead", currency:"PEN", value:"", order_id:"" };
+    case "evento_fb": return { event_name:"Lead", currency:"", value:"", order_id:"" };
     case "plantilla": return { template_name:"", template_lang:"es", params:[] };
     case "google_sheets": return { accion:"append", hoja:"Ventas", columnas:[
       { col:"Fecha", valor:"{{fecha_compra}}" },
