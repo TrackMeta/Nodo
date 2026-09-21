@@ -527,7 +527,16 @@ Deno.serve(async (req) => {
       let _deWhatsapp = false;
       let token = tokenDado || secs?.ads_token;
       if (!token && secs?.access_token) { token = secs.access_token; _deWhatsapp = true; }
-      if (!token) return json({ error: "falta_token", detalle: "Pega primero el token de lectura (ads_read)." }, 400);
+      // El panel invita a tocar el botón con el campo VACÍO, así que este mensaje tiene que
+      // explicar por qué no hubo nada que probar — «pega primero el token» dejaba pensando
+      // que el botón estaba roto.
+      if (!token) {
+        return json({
+          error: "falta_token",
+          detalle: "Este bot todavía no tiene ningún token: ni uno de anuncios ni el de WhatsApp. " +
+            "Conecta WhatsApp primero (si ese token trae el permiso de anuncios, sirve el mismo y no tienes que generar otro), o pega acá uno con «ads_read».",
+        }, 400);
+      }
 
       // 1) ¿El token es válido y trae el permiso? `debug_token` lo dice sin gastar una
       //    llamada a anuncios, y distingue «token vencido» de «token sin ads_read».
