@@ -1976,7 +1976,7 @@ function pideReclamo(text: string): boolean {
 // escribe de muchas formas: «pago cuando llegue», «pago contra entrega», «se paga al
 // recoger», «tengo que pagar antes?», «hay que adelantar algo?».
 const RE_PAGA_AL_RECOGER =
-  /\b(contra\s?entrega)\b|\bpag\w*\s+(cuando|al|una vez|apenas|luego de|despu[eé]s de)\s+(llegue|llega|lo reciba|recibir|recoger|recojo|retirar|est[eé]\s+(ah[ií]|en la agencia))|\b(puedo|se puede|podr[ií]a|hay c[oó]mo)\s+pagar\s+(ah[ií]|all[aá]|en la agencia|al recoger|al recibir|cuando)|\b(tengo|hay)\s+que\s+(pagar|adelantar|abonar)\s+(algo\s+)?(antes|por adelantado|primero)|\bpago\s+(al|contra)\s+(recibir|recoger|entregar)|\bhay\s+que\s+adelantar\b|\bse\s+paga\s+al\s+(recoger|recibir)\b/i;
+  /\b(contra\s?entrega)\b|\bpag\w*\s+(cuando|al|una vez|apenas|luego de|despu[eé]s de)\s+(llegue|llega|lo reciba|recibir|recoger|recojo|retirar|est[eé]\s+(ah[ií]|en la agencia))|\b(puedo|se puede|podr[ií]a|hay c[oó]mo)\s+pagar\s+(ah[ií]|all[aá]|en la agencia|al recoger|al recibir|cuando)|\b(tengo|hay)\s+que\s+(pagar|adelantar|abonar)\s+(algo|alguito|antes|por adelantado|adelantado|primero)\b|\bpago\s+(al|contra)\s+(recibir|recoger|entregar)|\bhay\s+que\s+adelantar\b|\bse\s+paga\s+al\s+(recoger|recibir)\b/i;
 // 🗑️ Pide QUITAR el extra, sin lugar a dudas. Aparte de la lista general de rechazos
 // (que incluye "no" y "no gracias"): esas valen cuando el bot acaba de preguntarle la
 // talla del extra, pero fuera de esa pregunta un "no" puede estar contestando cualquier
@@ -1989,7 +1989,7 @@ const RE_QUITA_EXTRA =
 // 💳 Pregunta por el MEDIO de pago (no por el precio): tarjeta, POS, efectivo, Yape, o
 // directamente «¿cómo pago?». Es una pregunta que decide compras y no se puede esquivar.
 const RE_COMO_PAGA =
-  /\b(con\s+)?(tarjeta|visa|mastercard|pos|d[eé]bito|cr[eé]dito)\b|\bc[oó]mo\s+(se\s+)?(paga|pago|pagar[ií]a)\b|\bqu[eé]\s+(formas?|medios?|m[eé]todos?)\s+de\s+pago\b|\bacept(an|as)\s+(tarjeta|yape|plin|transferencia|efectivo)\b|\bse\s+puede\s+pagar\s+con\b|\bpago\s+en\s+efectivo\b/i;
+  /\b(con\s+)?(tarjeta|visa|mastercard|pos|d[eé]bito|cr[eé]dito)\b|\bc[oó]mo\s+(se\s+)?(paga|pago|pagar[ií]a)\b|\bqu[eé]\s+(formas?|medios?|m[eé]todos?)\s+de\s+pago\b|\bacept(an|as)\s+(tarjeta|yape|plin|transferencia|efectivo)\b|\bpag(?:an|as|o|ar|ue)\s+con\s+(yape|plin|tarjeta|transferencia|efectivo|visa)\b|\bse\s+puede\s+pagar\s+con\b|\bpag(?:o|ar)\s+en\s+efectivo\b/i;
 // 🙋 Condiciones concretas por las que un cliente pregunta «¿sirve para…?». No es una lista
 // de lo que el producto hace: es la palabra que hay que ir a buscar EN LA FICHA antes de
 // afirmar o negar nada sobre ella.
