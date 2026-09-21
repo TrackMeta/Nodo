@@ -84,6 +84,10 @@ export interface CapiResult {
   ok: boolean;
   deduped?: boolean;
   error?: string;
+  // No se mandó a Meta porque no aplicaba (hoy: sin ctwa_clid). NO es un fallo — por eso
+  // viaja con ok:true: quien llama tiene que seguir con lo suyo (el nodo del flujo registra
+  // el pedido en el Dashboard justo con ese ok).
+  omitido?: string;
 }
 
 // Despacha un evento de conversión. Idempotente: si el event_id (o el
@@ -112,6 +116,18 @@ export async function sendCapiEvent(
   const ctwa = opts.ctwaClid || contact?.ctwa_clid || null;
   const hasCtwa = !!ctwa;
   const actionSource = hasCtwa ? "business_messaging" : "website";
+
+  // 🔴 Sin `ctwa_clid` no hay anuncio al que atribuir nada, así que NO se manda.
+  // `maybePurchase` ya se negaba («sumar Purchases genéricos ensucia el pixel»), pero el
+  // NODO de conversión de los flujos sí los mandaba, marcados como `website` — y acá no hay
+  // ningún sitio web. El mismo negocio le entregaba a Meta unas compras orgánicas sí y otras
+  // no, según por dónde hubiera pasado la venta: datos mezclados de las dos formas.
+  // Decisión de Rodrigo (2026-09-21): que no se manden.
+  // Sale con ok:true a propósito — no es un fallo, es que no aplica — para no romper lo que
+  // el que llama hace después (el nodo registra el pedido en el Dashboard con ese ok).
+  // Tampoco se escribe en `capi_events`: ese KPI se llama «Leads · eventos a Meta», así que
+  // contar ahí algo que nunca salió sería mentira.
+  if (!hasCtwa) return { ok: true, omitido: "no vino de un anuncio: no hay clic que atribuir" };
 
   // event_id estable: por comprobante (compra) o por contacto+evento.
   const eventId = opts.eventId

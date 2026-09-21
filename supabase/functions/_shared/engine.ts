@@ -21077,6 +21077,9 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     eventId: orderId ? undefined : `${eventName}:${run.contact_id}:${node.id}`,
   });
   if (!res.ok) { run.vars._capi_error = res.error; await logEvent(db, run.channel_id, run.contact_id, "error", "Error al enviar evento a Meta", String(res.error ?? "")); }
+  // Omitido ≠ fallado. Se deja dicho en la bitácora igual: si no, el dueño ve el nodo pasar
+  // y nunca entiende por qué ese evento no aparece en Meta. Es una nota, no un error.
+  else if (res.omitido) await logEvent(db, run.channel_id, run.contact_id, "nota", "Evento no enviado a Meta", String(res.omitido));
 
   // En una compra confirmada, registrar la orden (métricas de producto del
   // Dashboard) y un evento de compra en el Timeline.
