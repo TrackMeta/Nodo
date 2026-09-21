@@ -2040,11 +2040,17 @@ const RE_YA_PAGO =
 // 📅 Pide que se lo separen/guarden para cuando cobre. Es un cliente decidido, no uno que
 // duda: lo único que dice es que su plata entra otro día.
 const RE_PIDE_SEPARAR =
-  /\b(me lo (separas?|guardas?|reservas?|apartas?)|se(pa|par)rame\w*|ap[aá]rtame\w*|gu[aá]rdame\w*|hacer(me)? una reserva|reservar\w*|separar\w*|apartar\w*)\b/i;
+  // + «resérvamelo» y «sepáralo / apártalo / guárdalo» (el enclítico otra vez).
+  /\b(me lo (separas?|guardas?|reservas?|apartas?)|se(pa|par)rame\w*|ap[aá]rtame\w*|gu[aá]rdame\w*|res[eé]rvam\w*|(sep[aá]ral[oa]|ap[aá]rtal[oa]|gu[aá]rdal[oa]|res[eé]rval[oa])\w*|hacer(me)? una reserva|reservar\w*|separar\w*|apartar\w*)\b/i;
 // 📄 Pide la guía / rastrear, o avisa que su pedido no llega. Solo aplica con el paquete
 // ya despachado (lo comprueba el caller): antes de eso, "¿cuándo llega?" es venta.
 const RE_PIDE_GUIA =
-  /\b(gu[ií]a|tracking|rastre\w+|seguimiento|n[uú]mero de (env[ií]o|seguimiento)|c[oó]digo de (env[ií]o|rastreo))\b|\b(no me (ha\s+)?lleg\w+|todav[ií]a no (me )?(ha\s+)?lleg\w+|sigue sin llegar|a[uú]n no (me )?lleg\w+)\b|\bya pasaron \d+ d[ií]as\b/i;
+  // 🔴 Faltaba «¿dónde está mi pedido?» — LA pregunta post-venta en Perú— y con ella «¿ya
+  // llegó a la agencia?», «hace 5 días no llega» y «mi paquete no aparece». Medido el
+  // 2026-09-20: 4 de 9 formas comunes no entraban, así que a quien preguntaba por su envío no
+  // se le daba su guía. Probado que no se cuelan las de ANTES de comprar («¿cuánto demora en
+  // llegar?», «¿cuándo llega a Lima?», «¿me llega a Huancayo?»), que son venta, no rastreo.
+  /\b(gu[ií]a|tracking|rastre\w+|seguimiento|n[uú]mero de (env[ií]o|seguimiento)|c[oó]digo de (env[ií]o|rastreo))\b|\b(no me (ha\s+)?lleg\w+|todav[ií]a no (me )?(ha\s+)?lleg\w+|sigue sin llegar|a[uú]n no (me )?lleg\w+)\b|\bya pasaron \d+ d[ií]as\b|\bd[oó]nde\s+(est[aá]|anda|va)\s+(mi|el)\s+(pedido|paquete|env[ií]o|producto|compra|encomienda)\b|\b(lleg[oó]|ha llegado)\s+(ya\s+)?a\s+la\s+agencia\b|\bhace\s+\d+\s+d[ií]as?\b[^.!?]{0,40}\bno\s+(me\s+)?(ha\s+)?lleg\w*|\b(mi|el)\s+(paquete|pedido|env[ií]o)\s+no\s+(aparece|figura|sale|se ve)\b/i;
 function pideGuia(text?: string | null): boolean {
   const t = String(text ?? "");
   if (!t.trim() || t.length > 240) return false;
@@ -2066,7 +2072,7 @@ function pideReprogramar(text?: string | null): boolean {
 // disparaba nada —la lista solo tenía recoger/retirar— y el pedido salió a nombre del
 // comprador sin que nadie preguntara cómo se llama la hermana.
 const RE_RECOGE_OTRO =
-  /\b(lo|la)\s+(va\s+a\s+)?(recoge|recoger|retira|retirar|recibe|recibir)\b|\b(recoge|recogerlo|recogerá|retira|recibe|recibir[aá]?|recepciona|va a ir|ir[aá]|est[aá] en casa|queda en casa)\s+(mi|el|la|su)\s+(esposo|esposa|mam[aá]|pap[aá]|madre|padre|hermano|hermana|hijo|hija|t[ií]o|t[ií]a|sobrin|primo|prima|amig|vecin|cu[ñn]ad|suegr|yerno|nuera|se[ñn]ora|casero|pareja|enamorad)\w*|\byo no (puedo|voy a) (ir|estar|recoger|recibir|acercarme)\b|\b(a nombre de mi)\b/i;
+  /\b(lo|la)\s+(va\s+a\s+)?(recoge|recoger|retira|retirar|recibe|recibir)\b|\b(recoge|recogerlo|recogerá|retira|recibe|recibir[aá]?|recepciona|va a ir|ir[aá]|est[aá] en casa|queda en casa)\s+(mi|el|la|su)\s+(esposo|esposa|mam[aá]|pap[aá]|madre|padre|hermano|hermana|hijo|hija|t[ií]o|t[ií]a|sobrin|primo|prima|amig|vecin|cu[ñn]ad|suegr|yerno|nuera|se[ñn]ora|casero|pareja|enamorad)\w*|\b(mi|el|la|su)\s+(esposo|esposa|mam[aá]|pap[aá]|madre|padre|hermano|hermana|hijo|hija|t[ií]o|t[ií]a|sobrin|primo|prima|amig|vecin|cu[ñn]ad|suegr|yerno|nuera|se[ñn]ora|casero|pareja|enamorad)\w*\s+(?:\w+\s+){0,2}(recoge|recoger\w*|retira|retirar\w*|recibe|recibir\w*|va a ir)\b|\byo no (puedo|voy a) (ir|estar|recoger|recibir|acercarme)\b|\b(a nombre de mi)\b/i;
 // Regateo, comparación con otro vendedor y "está caro": afirmaciones, sin signo de
 // pregunta, que el saludo fijo se lleva por delante.
 const RE_TRAE_OBJECION =
@@ -2223,7 +2229,9 @@ const RE_CANCELE_PASADO = /\b(ya\s+)?(cancele|cancelé|cancelado|cancelamos|canc
 // S/59: [Yape] mándame la captura». Le pedimos MÁS plata a quien pedía que le devolvieran
 // la suya. Este veto va primero: la devolución manda sobre cualquier palabra de pago.
 const RE_PIDE_DEVOLUCION =
-  /\b(devu[eé]lv\w+|devolucion\w*|devoluci[oó]n|reembols\w+|me\s+devuelv\w+|regr[eé]s\w+me|que\s+me\s+devuelvan|recuperar\s+mi\s+(plata|dinero))\b|\bya\s+no\s+(lo|la)\s+(quiero|necesito)\b/i;
+  // Faltaban tres formas de lo mismo: «quiero mi plata de vuelta», «¿me regresan mi plata?» y
+  // «quiero devolverlo» (el enclítico). Medido el 2026-09-20.
+  /\b(devu[eé]lv\w+|devolucion\w*|devoluci[oó]n|reembols\w+|me\s+devuelv\w+|regr[eé]s\w+me|que\s+me\s+devuelvan|recuperar\s+mi\s+(plata|dinero)|quiero\s+mi\s+(plata|dinero)|me\s+regres\w+\s+(mi|la)\s+(plata|dinero)|devolverl[oa]|devolv[eé]rtelo)\b|\bya\s+no\s+(lo|la)\s+(quiero|necesito)\b/i;
 function cancelarSignificaPagar(text: string): boolean {
   const t = limpiaOpt(text);
   if (!t) return false;
