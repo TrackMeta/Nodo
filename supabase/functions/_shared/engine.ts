@@ -9107,12 +9107,28 @@ const SALDO_SCHEMA = {
 function pruebaDeTexto(parsed: any, monto: number): boolean {
   const t = parsed?.texto_visible;
   if (t == null) return true;                       // el modelo no lo devolvió → como antes
-  const plano = String(t).toLowerCase().replace(/[\s,]/g, "");
-  if (plano.replace(/[^a-z0-9]/g, "").length < 10) return false;   // imagen sin texto real
+  const crudo = String(t).toLowerCase();
+  if (crudo.replace(/[^a-z0-9]/g, "").length < 10) return false;   // imagen sin texto real
   if (!Number.isFinite(monto)) return false;
-  // El monto puede verse como "20", "20.00" o "20.0": basta con que su parte entera esté.
-  const entero = String(Math.trunc(monto));
-  return plano.includes(entero);
+  // 🔴 Antes se borraban los espacios y se buscaba la parte entera como SUBCADENA. Eso no
+  // probaba casi nada: «2026» contiene «20», así que CUALQUIER comprobante de este año
+  // validaba un monto de S/20 inventado; y con montos de una o dos cifras el número salía
+  // del número de operación. Medido sobre un Yape realista: de 6 montos inventados, los 6
+  // pasaban. Ahora el monto tiene que aparecer como NÚMERO COMPLETO — ni pegado a otro
+  // dígito por delante ni por detrás — en alguna de sus formas de escritura habituales.
+  const sinEspacios = crudo.replace(/\s/g, "");
+  const ent = Math.trunc(monto);
+  const cent = String(Math.round(Math.abs(monto - ent) * 100)).padStart(2, "0");
+  const conMiles = String(ent).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const cands = new Set<string>();
+  for (const e of [String(ent), conMiles, conMiles.replace(/,/g, ".")]) {
+    cands.add(e); cands.add(e + "." + cent); cands.add(e + "," + cent);
+  }
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // El límite excluye también «.» y «,»: si no, los separadores de miles y el decimal crean
+  // frontera y colaban FRAGMENTOS — con «1,234.50» pasaban montos de 234 o de 50.
+  const limite = "[\\d.,]";
+  return [...cands].some((c) => new RegExp("(?<!" + limite + ")" + esc(c) + "(?!" + limite + ")").test(sinEspacios));
 }
 
 // Con qué app/banco pagó, tal como se ve en el comprobante. Se guarda para el
