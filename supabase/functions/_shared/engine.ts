@@ -9096,17 +9096,25 @@ const SALDO_SCHEMA = {
         "ni completarlo. Si la imagen no tiene texto, devuelve cadena vacía. NUNCA inventes texto que no esté.",
     },
   },
-  required: ["es_pago", "valido", "motivo"],
+  // 🔒 `texto_visible` va en `required`: es la prueba de que el modelo miró la imagen, y si
+  // fuera opcional la defensa entera dependería de que se acordara de mandarla. Al pedirla
+  // en el esquema, el proveedor la devuelve siempre; si algún día no llega, es una anomalía
+  // real y el pago baja a revisión manual (no se rechaza al cliente).
+  required: ["es_pago", "valido", "motivo", "texto_visible"],
   additionalProperties: false,
 } as const;
 
 // ¿Lo que el modelo dice haber leído está de verdad en la imagen? Se comprueba que el
-// MONTO aparezca en la transcripción. Si el campo no viene (proveedor que ignora el
-// esquema), se devuelve `true` a propósito: mejor seguir como siempre que frenar todos
-// los pagos legítimos de un negocio por un cambio de formato.
+// MONTO aparezca en la transcripción, como número completo.
 function pruebaDeTexto(parsed: any, monto: number): boolean {
   const t = parsed?.texto_visible;
-  if (t == null) return true;                       // el modelo no lo devolvió → como antes
+  // 🔒 Sin transcripción NO hay prueba, así que no se auto-aprueba. Antes devolvía `true`
+  // «por compatibilidad», y eso dejaba la defensa entera a merced del modelo: bastaba con que
+  // omitiera el campo —por un error suyo o porque el prompt cambie mañana— para que una foto
+  // cualquiera se auto-validara. El prompt lo pide siempre; si no llega, algo va mal.
+  // Cuesta poco equivocarse por acá: fallar NO rechaza al cliente ni le pide otra captura,
+  // manda el pago a «Pagos por validar» para que lo mire un humano.
+  if (t == null) return false;
   const crudo = String(t).toLowerCase();
   if (crudo.replace(/[^a-z0-9]/g, "").length < 10) return false;   // imagen sin texto real
   if (!Number.isFinite(monto)) return false;
@@ -10437,7 +10445,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     if (ai?.api_key) {
       const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency, true, (ch as any)?.timezone)
         ?? ocrSystemMinimo((ch as any)?.timezone)) +
-        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo. `valido` juzga SOLO que el comprobante sea LEGÍTIMO (destinatario correcto, sin montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo. " +
+        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo y texto_visible. `valido` juzga SOLO que el comprobante sea LEGÍTIMO (destinatario correcto, sin montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo. " +
         "Y en `texto_visible` TRANSCRIBE LITERALMENTE el texto que se ve en la imagen —tal cual, sin interpretarlo " +
         "ni completarlo, y cadena vacía si no tiene texto—: es la prueba de que estás mirando la imagen y no " +
         "suponiendo lo que debería decir.";
@@ -10542,7 +10550,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   const _hayPrueba = pruebaDeTexto(parsed, monto);
   if (!_hayPrueba) {
     await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual",
-      "El monto que dice leer no aparece en el texto de la imagen — puede no ser un comprobante").catch(() => {});
+      "El monto que dice leer no aparece como número completo en el texto de la imagen, o el modelo no transcribió el texto. Puede no ser un comprobante.").catch(() => {});
   }
   // 🔒 Operación de MENOS de 4 caracteres («07», «12»): el candado anti-reúso ni la registra
   // ni la compara (ver operacionYaUsada/reclamarOperacion), así que «oper» truthy pasaba el
@@ -10823,7 +10831,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const _pruebaSaldo = pruebaDeTexto(parsed, monto);
   if (!_pruebaSaldo) {
     await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante del saldo a revisión manual",
-      "El monto que dice leer no aparece en el texto de la imagen").catch(() => {});
+      "El monto que dice leer no aparece como número completo en el texto de la imagen, o el modelo no transcribió el texto.").catch(() => {});
   }
   // Ídem adelanto: operación de menos de 4 caracteres = sin candado posible → manual.
   const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper && oper.length >= 4 && _pruebaSaldo;
