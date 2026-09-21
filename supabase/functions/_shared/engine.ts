@@ -18833,7 +18833,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // parafrasea de mil formas («tú y tu socio», «con quien quieras»), así que la regla
         // tiene que estar en el prompt, no solo en el recorte.
         if (faltan.includes("si lo puedes compartir o es de un solo uso")) {
-          parts.push("## 🔐 Te pregunta si puede COMPARTIR lo que compra\n" +
+          // ⚠️ en el título A PROPÓSITO: el prompt DIGITAL se arma filtrando bloques por su
+          // encabezado (RE_BLOQUE_DE_DATOS), y un «## 🔐 …» no pasa el filtro — o sea que este
+          // bloque, que es justo para productos digitales, NO le llegaba al modelo en la venta
+          // digital. Con ⚠️ sí pasa. (Los de mayoreo/agencia/salud se quedan como están: son de
+          // venta física, donde el filtro es al revés y sí los deja pasar.)
+          parts.push("## ⚠️ Te pregunta si puede COMPARTIR lo que compra\n" +
             "Nadie escribió si es para una sola persona o si puede pasárselo a alguien más, así que ⛔ NO le " +
             "digas que sí («claro, úsalo con tu socio», «pueden usarla los dos») ni que no. Decir que sí es " +
             "regalar la venta siguiente: el socio ya no te compra, y encima nadie decidió eso.\n" +
