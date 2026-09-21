@@ -77,15 +77,47 @@ Deno.serve(async (req) => {
       ...(channel.waba_id ? { whatsapp_business_account_id: String(channel.waba_id) } : {}),
     },
   };
-  const payload: Record<string, unknown> = { data: [evt], access_token: capiToken, test_event_code: code };
-
-  try {
+  // 🔴 Un evento RECHAZADO no aparece en «Probar eventos»: Meta lo descarta entero. Y el
+  // ctwa_clid de la prueba es inventado, así que la variante de mensajería SIEMPRE se cae
+  // mientras nadie haya entrado por un anuncio — o sea que el botón no le mostraba nada al
+  // dueño en Meta, que es justo lo que venía a hacer. Por eso se intenta en cascada y se
+  // dice cuál entró: primero la que imita al evento real, y si Meta la rechaza por el clic
+  // falso, una que sí pueda aceptar para que el dueño lo vea llegar.
+  const enviar = async (e: Record<string, unknown>) => {
     const res = await fetchConTimeout(`https://graph.facebook.com/${GRAPH_VERSION}/${channel.pixel_id}/events`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ data: [e], access_token: capiToken, test_event_code: code }),
     });
-    const meta = await res.json();
+    return { res, body: await res.json() };
+  };
+  const esQuejaDeClid = (m: any) =>
+    /ctwa[_ ]?clid/i.test(String(m?.error?.error_user_title ?? "") + " " + String(m?.error?.error_user_msg ?? ""));
+
+  try {
+    let { res, body: meta } = await enviar(evt);
+
+    if ((!res.ok || meta.error) && esQuejaDeClid(meta)) {
+      // Sin el clic falso: mismo pixel, mismo token, evento de web. No prueba la parte de
+      // mensajería, pero SÍ que la tubería funciona — y aparece en «Probar eventos».
+      const alt: Record<string, unknown> = {
+        event_name: "Lead",
+        event_time: Math.floor(Date.now() / 1000),
+        action_source: "website",
+        event_id: "nodo-test-" + crypto.randomUUID(),
+        user_data: { ph: [await sha256Hex("51900000000")] },
+      };
+      const r2 = await enviar(alt);
+      if (r2.res.ok && !r2.body.error) {
+        return json({
+          ok: true, received: r2.body.events_received ?? 0, variante: "web",
+          aviso: "Tu Pixel ID y tu token CAPI funcionan: este evento de prueba ya está en Events Manager → Probar eventos. " +
+            "Lo que no se puede probar desde acá es la parte de WhatsApp: ese evento lleva el clic del anuncio que trajo al cliente, " +
+            "Meta lo valida y no hay forma de inventar uno. El primero real lo trae el primer cliente que entre por un anuncio.",
+        }, 200);
+      }
+      res = r2.res; meta = r2.body;
+    }
     if (!res.ok || meta.error) {
       // El ctwa_clid de la prueba es inventado y Meta lo valida. Que la queja sea ESA quiere
       // decir que el Pixel y el token ya pasaron: Meta está revisando el contenido, no el
