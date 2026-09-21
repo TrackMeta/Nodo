@@ -9168,16 +9168,27 @@ function evaluarAbono(
   // de nuevo y dos reenvíos de un pago real de S/15 "cubrían" S/30 → auto-aprobaba /
   // entregaba contra un único pago (agujero de dinero). Erra hacia NO doble-acreditar.
   // Con nº de operación: reenvío EXACTO del mismo pago → duplicado seguro (no suma).
-  const dupOp = op ? prev.some((a: any) => a.op && String(a.op) === String(op)) : false;
+  // 🔒 Un nº de operación CORTO («07», «12») no identifica nada: es lo que devuelve el modelo
+  // cuando la captura está borrosa. Usarlo para deduplicar hacía que dos pagos DISTINTOS
+  // leídos los dos como «07» se tomaran por el mismo → el segundo se descartaba EN SILENCIO
+  // y el cliente quedaba sub-acreditado. Por debajo de 4 se trata como «sin operación», que
+  // no descarta nada: cae en la rama `ambiguo` y lo decide un humano con el comprobante
+  // delante. Es el mismo umbral que ya exige la auto-aprobación.
+  const opFiable = op && String(op).trim().length >= 4 ? String(op).trim() : null;
+  const dupOp = opFiable ? prev.some((a: any) => a.op && String(a.op) === opFiable) : false;
   // SIN operación (captura borrosa) + ya hay un abono del MISMO monto: AMBIGUO. No se
   // puede saber si es un reenvío del mismo pago (no acreditar) o un 2º pago legítimo
   // igual (acreditar). Antes se asumía reenvío y se DESCARTABA en silencio → si era un
   // 2º pago real, el cliente quedaba sub-acreditado y el pedido trabado ("faltan S/X").
   // No lo decide el bot: no se acumula (evita doble-crédito) pero se señala `ambiguo`
   // para que el caller lo mande a REVISIÓN MANUAL con el comprobante, sin auto-aprobar.
-  const ambiguo = !op && prev.some((a: any) => !a.op && Number(a.monto) === Number(monto));
+  // `opFiable`, no `op`: un número corto tiene que comportarse EXACTAMENTE igual que no tener
+  // número — si no, se saltaba este control de ambigüedad y se acreditaba sin más.
+  const ambiguo = !opFiable && prev.some((a: any) => !a.op && Number(a.monto) === Number(monto));
   const dup = dupOp || ambiguo;
-  const abonos = dup ? prev : [...prev, { op: op ?? null, monto, at: new Date().toISOString() }];
+  // Se guarda el fiable (o null): archivar un «07» dejaría en el pedido un número que no
+  // identifica nada y que mañana parecería un dato bueno.
+  const abonos = dup ? prev : [...prev, { op: opFiable, monto, at: new Date().toISOString() }];
   const total = abonos.reduce((s: number, a: any) => s + (Number(a.monto) || 0), 0);
   const r2 = (n: number) => Math.round(n * 100) / 100;
   // Ambiguo nunca auto-cubre: la decisión queda para el humano.
