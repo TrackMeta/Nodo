@@ -533,8 +533,7 @@ Deno.serve(async (req) => {
       if (!token) {
         return json({
           error: "falta_token",
-          detalle: "Este bot todavía no tiene ningún token: ni uno de anuncios ni el de WhatsApp. " +
-            "Conecta WhatsApp primero (si ese token trae el permiso de anuncios, sirve el mismo y no tienes que generar otro), o pega acá uno con «ads_read».",
+          detalle: "Este bot no tiene ningún token todavía. Conecta WhatsApp primero (si ese token trae «ads_read», sirve el mismo) o pega uno acá.",
         }, 400);
       }
 
@@ -561,11 +560,10 @@ Deno.serve(async (req) => {
           // WhatsApp no trae la Marketing API. Por eso el paso 1 va acá dentro: sin él, el
           // mensaje manda a alguien a una pantalla donde no encuentra lo que le pedimos.
           detalle: (_deWhatsapp
-            ? "Tu token de WhatsApp no sirve para anuncios: los permisos quedan grabados al generar el token, y ese se generó solo con los de WhatsApp. Hay que hacer uno nuevo (el nuevo sí puede servir para las dos cosas). "
-            : "Ese token no tiene el permiso «ads_read». ") +
-            "En Meta, en este orden: 1) en tu app → Agregar producto → «Marketing API» (sin eso, «ads_read» ni siquiera aparece en la lista de permisos); " +
-            "2) Generar nuevo token marcando los cuatro permisos: los dos de WhatsApp, «ads_read» y «business_management». Pégalo acá. " +
-            "Con «business_management» Nodo se asigna solo tus cuentas publicitarias y no tienes que ir a «Agregar activos»; si prefieres no dárselo, marca los tres primeros y asígnaselas tú ahí.",
+            ? "Tu token de WhatsApp no sirve para anuncios: los permisos se graban al crear el token. "
+            : "Ese token no tiene «ads_read». ") +
+            "Haz uno nuevo con los cuatro permisos (los dos de WhatsApp, «ads_read» y «business_management») y pégalo acá. " +
+            "Si «ads_read» no sale en la lista, agrégale a tu app el producto «Marketing API».",
         }, 400);
       }
       // 2) Qué cuentas ve. Si el usuario de sistema no tiene cuentas ASIGNADAS, Meta
@@ -596,16 +594,14 @@ Deno.serve(async (req) => {
         if (auto.detalle) {
           return json({
             ok: true, cuentas: [],
-            motivo: "El token tiene permiso para leer anuncios y para administrar el negocio, pero no pude asignarte las cuentas solo: " +
-              auto.detalle + " Hazlo a mano en Meta → Configuración del portafolio → Usuarios del sistema → Agregar activos.",
+            motivo: "No pude asignarte las cuentas solo: " + auto.detalle + " Hazlo en Meta → Usuarios del sistema → Agregar activos.",
           });
         }
       }
       if (!cuentas.length) {
         return json({
           ok: true, cuentas: [],
-          motivo: "El token es válido y tiene el permiso, pero no ve ninguna cuenta publicitaria. " +
-            "En Meta → Business Settings → Usuarios del sistema, asígnale tus cuentas de anuncios con acceso de «ver rendimiento».",
+          motivo: "El token sirve, pero no ve ninguna cuenta. Asígnaselas en Meta → Usuarios del sistema → Agregar activos.",
         });
       }
       return json({ ok: true, cuentas, de_whatsapp: _deWhatsapp });

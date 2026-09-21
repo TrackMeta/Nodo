@@ -55,8 +55,7 @@ Deno.serve(async (req) => {
   if (!code) {
     return json({
       ok: false,
-      error: "Falta el código de prueba. En Meta: Events Manager → tu pixel → pestaña «Probar eventos» → copia el código que empieza con TEST y pégalo acá. " +
-        "Es obligatorio porque sin él este evento entraría como una conversión REAL en tu pixel, y Meta la contaría para optimizar tus campañas.",
+      error: "Falta el código de prueba (Events Manager → tu pixel → Probar eventos). Es obligatorio: sin él, el evento entra como una conversión REAL en tu pixel.",
     }, 200);
   }
 
@@ -111,9 +110,7 @@ Deno.serve(async (req) => {
       if (r2.res.ok && !r2.body.error) {
         return json({
           ok: true, received: r2.body.events_received ?? 0, variante: "web",
-          aviso: "Tu Pixel ID y tu token CAPI funcionan: este evento de prueba ya está en Events Manager → Probar eventos. " +
-            "Lo que no se puede probar desde acá es la parte de WhatsApp: ese evento lleva el clic del anuncio que trajo al cliente, " +
-            "Meta lo valida y no hay forma de inventar uno. El primero real lo trae el primer cliente que entre por un anuncio.",
+          aviso: "El evento ya está en Events Manager → Probar eventos. La vía de WhatsApp necesita el clic real de un anuncio: eso lo prueba tu primer cliente.",
         }, 200);
       }
       res = r2.res; meta = r2.body;
@@ -127,9 +124,7 @@ Deno.serve(async (req) => {
       if (/ctwa[_ ]?clid/i.test(detalle)) {
         return json({
           ok: true, credenciales: true,
-          aviso: "Tu Pixel ID y tu token CAPI funcionan: Meta los aceptó y llegó a revisar el contenido del evento. " +
-            "Lo único que rechazó es el clic de anuncio inventado que lleva la prueba — no se puede fabricar uno válido. " +
-            "El primer cliente que te escriba desde un anuncio traerá uno real y ahí el evento entra completo.",
+          aviso: "Tu Pixel y tu token funcionan. Meta solo rechazó el clic de anuncio de la prueba, que es inventado: uno real lo trae tu primer cliente que entre por un anuncio.",
         }, 200);
       }
       return json({ ok: false, error: meta.error?.message ?? "Meta rechazó el evento", meta }, 200);
