@@ -3087,6 +3087,33 @@ const TEMAS_FICHA_DIGITAL: Array<[string, RegExp, RegExp, "producto" | "negocio"
   ["por dónde es el grupo o el soporte",
     /\b(el grupo es|grupo (de|por|en) (whatsapp|telegram|discord|facebook)|(whatsapp|telegram|discord|facebook)[^.?!]{0,25}(grupo|comunidad|soporte)|(grupo|comunidad|soporte)[^.?!]{0,25}(whatsapp|telegram|discord|facebook)|\bcomunidad\b[^.?!]{0,30}\?|\b(whatsapp|telegram|discord)\b[^.?!]{0,20}\?)/,
     /\b(whatsapp|telegram|discord|facebook|comunidad)\b/, "producto"],
+  // 🔴 Las tres que faltaban, medidas contra el bot el 2026-09-21 con la ficha de la
+  // Plantilla —que no dice NADA de esto— y las tres se contestaron igual, inventadas:
+  //  · «¿el acceso es de por vida?» → «Sí, el acceso es de por vida 🙌 … sin límites ni
+  //    caducidad». Nadie escribió eso, y es una promesa que después hay que sostener.
+  //  · «¿la puedo compartir con mi socio?» → «Claro… puedes usarlo tú y compartirlo con tu
+  //    socio». Esa es la peor: autoriza a repartir un producto DIGITAL, o sea regala la
+  //    venta siguiente. Con el hueco registrado, el bot dice que no tiene el dato y el dueño
+  //    lo ve en la ficha del contacto para escribir su política de una vez.
+  //  · «¿son videos o PDF?» / «¿cuántas clases son?»: el formato y la extensión de lo que
+  //    compra. Si la ficha lo dice (excel, pdf, videos, módulos), queda cubierto y contesta.
+  ["por cuánto tiempo tienes el acceso",
+    /\b(de por vida|para siempre|caduca|vence el acceso|expira|acceso (permanente|ilimitado|indefinido)|por cu[aá]nto tiempo|cu[aá]nto tiempo (lo |la |me )?(tengo|dura|puedo usar)|hasta cu[aá]ndo (lo|la|me) (puedo|dura))/,
+    /\b(de por vida|para siempre|caduc|vence|expira|acceso permanente|ilimitado|\d+\s*(d[ií]as|meses|a[ñn]os)\s+de\s+acceso)/, "producto"],
+  ["si lo puedes compartir o es de un solo uso",
+    // ⚠️ La MISMA regex mira la pregunta del cliente Y la frase de la IA, así que tiene que
+    // cubrir las dos personas: él escribe «con MI socio» y el bot contesta «con TU socio».
+    // Medido: con solo «mi» el hueco se registraba pero la frase inventada salía igual.
+    // Y las PARÁFRASIS con las que el bot lo concede, que son las que hay que poder recortar:
+    // «tú y tu socio», «pueden usarla», «los dos». Medido: con el bloque del prompt puesto, el
+    // modelo igual contestó «pueden usar la plantilla tú y tu socio» — el prompt no alcanza,
+    // el recorte tiene que poder agarrar la frase. Acota el riesgo que el tema sea un hueco
+    // ACTIVO de este turno: solo se recorta si el cliente acaba de preguntar justo eso.
+    /\b(compartirl[oa]|compartir (?:el|la|lo|con)|lo comparto|la comparto|con (?:mi|tu|su|un|una|otro|otra) (?:socio|socia|amigo|amiga|colega|compa[ñn]er[oa]|hermano|hermana|esposo|esposa|persona)|con otra persona|pas[aá]rsel[oa]|pasarl[oa] a|pasar a (?:un|una|mi|otro|otra)|para (?:dos|varias) personas|varias personas|revender|licencia|t[uú] y (?:tu|su) \w+|(?:pueden|puedan) (?:usar|utilizar|abrir|compartir|verl)\w*|los dos|ambos)\b/,
+    /\b(compartir|licencia|uso personal|intransferible|un solo usuario|revender)\b/, "producto"],
+  ["en qué formato viene",
+    /\b(son videos?|es un pdf|en pdf|qu[eé] formato|videos? o (?:pdf|excel)|cu[aá]ntas clases|cu[aá]ntos m[oó]dulos|duraci[oó]n del curso)\b/,
+    /\b(pdf|videos?|excel|word|m[oó]dulos|clases|formato)\b/, "producto"],
 ];
 
 // RECEPCIÓN con IA: cuando el ruteo NO encontró producto (un "hola", un anuncio
@@ -18798,6 +18825,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "avisas y que conviene recogerlo lo antes que pueda porque la agencia lo guarda unos días, " +
             "que si se le complica te escriba y lo vemos, y que el día exacto se lo confirmas cuando " +
             "el paquete esté allá. Y sigue con la venta, sin dramatizar.");
+        }
+        // 🔐 «¿Lo puedo compartir con mi socio?». Sin bloque propio, el bot contestaba que SÍ
+        // —medido 3 de 3: «claro, úsalo con tu socio», «pueden usarla tú y tu socio»— y eso en
+        // un producto DIGITAL regala la venta siguiente: el socio ya no compra. Nadie escribió
+        // esa política. Y perseguir la frase con el guard de salida no alcanza: el modelo la
+        // parafrasea de mil formas («tú y tu socio», «con quien quieras»), así que la regla
+        // tiene que estar en el prompt, no solo en el recorte.
+        if (faltan.includes("si lo puedes compartir o es de un solo uso")) {
+          parts.push("## 🔐 Te pregunta si puede COMPARTIR lo que compra\n" +
+            "Nadie escribió si es para una sola persona o si puede pasárselo a alguien más, así que ⛔ NO le " +
+            "digas que sí («claro, úsalo con tu socio», «pueden usarla los dos») ni que no. Decir que sí es " +
+            "regalar la venta siguiente: el socio ya no te compra, y encima nadie decidió eso.\n" +
+            "Contéstale lo que SÍ es cierto: que su acceso es suyo y le queda, y que lo de usarlo con otra " +
+            "persona lo confirma el equipo por acá. Y sigue con la venta, sin frenarla ni dramatizarlo.");
         }
         const _esSalud = faltan.some((t) => /embarazo|lactancia|contraindicaciones|niños|menores/i.test(t));
         if (_esSalud) {
