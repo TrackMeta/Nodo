@@ -89,7 +89,13 @@ Deno.serve(async (req) => {
       });
       const b = await r.json().catch(() => ({}));
       if (!r.ok) return json({ error: "ads_sync", detalle: String((b as any)?.error ?? r.status) }, 400);
-      return json({ ok: true, resultado: b });
+      // 🔴 NO se devuelve el resumen de ads-sync: el cron es GLOBAL y su respuesta trae el
+      // `channelId` y el `act_…` de TODOS los negocios de la plataforma. Devolverlo tal cual
+      // le entregaba a cualquier miembro de cualquier cuenta la lista de canales y cuentas
+      // publicitarias ajenas. Solo sale lo que el que apretó el botón necesita: si corrió.
+      // Queda dicho: esto dispara trabajo para todos los tenants, así que si algún día hay
+      // muchas cuentas conviene limitarlo (una corrida manual cada X minutos).
+      return json({ ok: true });
     } catch (e) {
       return json({ error: "ads_sync", detalle: String((e as any)?.message ?? e) }, 400);
     }

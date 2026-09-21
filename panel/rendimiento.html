@@ -403,10 +403,10 @@ async function sincronizarAhora(btn){
       let d=""; try{ d=(await error?.context?.json?.())?.detalle||""; }catch{}
       toast(d||j?.detalle||j?.error||error?.message||"No se pudo actualizar",true); return;
     }
-    // Cuántas filas trajo: 0 no es un fallo (puede que no haya gasto en el periodo), pero
-    // decirlo evita que alguien crea que se rompió algo al no ver cambios.
-    const filas=(j.resultado?.resumen||[]).reduce((a,x)=>a+(+x.filas||0),0);
-    toast(filas?`Listo · ${filas} día(s) de gasto actualizados`:"Listo · Meta no reporta gasto en estos días");
+    // El backend NO devuelve el detalle de la corrida a propósito (el cron es global y su
+    // resumen nombra canales de otros negocios). Así que el resultado se mide acá: se
+    // recarga y la pantalla muestra lo que haya.
+    toast("Listo · gasto actualizado");
     await loadAccount();
   }catch(e){ toast(e.message||"error",true); }
   finally{ btn.disabled=false; btn.innerHTML=old; }
