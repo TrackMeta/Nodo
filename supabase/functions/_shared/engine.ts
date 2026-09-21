@@ -2602,6 +2602,17 @@ const OPT_OUT = [
   "no me escriban mas", "no me escriba mas", "saquenme de la lista", "sacame de la lista",
   "retirenme de la lista", "quiero darme de baja", "darme de baja de los mensajes",
   "no quiero recibir mas mensajes", "no quiero recibir mensajes", "no me manden nada",
+  // 🔴 Medidas el 2026-09-20 mandándoselas al bot: las tres se quedaban SIN registrar y el
+  // remarketing seguía escribiéndoles. El enclítico otra vez («no vuelvan a escribirME» no es
+  // «no me vuelvan a escribir»), el «bórrame» —que solo estaba como «bórrenme»— y el «basta».
+  // Esto no es solo incomodidad: es lo que hace que Meta te baje la calidad del número.
+  "no vuelvan a escribirme", "no vuelvas a escribirme", "no vuelva a escribirme",
+  "no me vuelvan a contactar", "no vuelvan a contactarme", "no me vuelvan a llamar",
+  // «bórrame» SOLO con el complemento: a secas puede ser «bórrame ese pedido».
+  "borrame de la lista", "borrame de su lista", "borrame de sus contactos",
+  "borrame de tu lista", "borrenme de la lista", "elimina mi numero", "eliminen mi contacto",
+  "basta de mensajes", "basta de publicidad", "basta de promociones",
+  "me desuscribo", "desuscribirme", "quiero desuscribirme", "dar de baja mi numero",
 ];
 // Reusa normalize() (el helper que ya tiene el motor: minúsculas + sin tildes)
 // y además saca la puntuación, para que "¡No, gracias!" == "no gracias".
