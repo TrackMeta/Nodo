@@ -12959,6 +12959,10 @@ function matchZona(zonas: Zona[], texto: string): Zona | null {
   for (const c of cands) {
     if (!c.s || !t.includes(" " + c.s + " ")) continue;
     if (c.s.length <= 3) {
+      // …y también vale si el alias es TODO el mensaje: a «¿de qué distrito eres?» se
+      // contesta «VES» a secas, y eso sí es la respuesta. Sin esto el guard se comía la
+      // forma más normal de contestar la pregunta que el propio bot acaba de hacer.
+      if (t.trim() === c.s) return c.z;
       const comoUbicacion = new RegExp("(?:^| )(?:a|al|de|del|en|por|desde|hacia|para|zona|distrito) " + esc(c.s) + "(?: |$)").test(t);
       const enMayusculas = new RegExp("(?:^|[^\\p{L}])" + esc(c.s.toUpperCase()) + "(?:[^\\p{L}]|$)", "u").test(String(texto ?? ""));
       if (!comoUbicacion && !enMayusculas) continue;
