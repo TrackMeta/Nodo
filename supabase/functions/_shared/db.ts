@@ -87,3 +87,19 @@ export async function getChannelSecrets(db: SupabaseClient, channelId: string) {
     ads_token: string | null;
   } | null;
 }
+
+// 📊 El token con el que se LEEN los anuncios. Puede ser el suyo (`ads_token`) o el de
+// WhatsApp, cuando el dueño generó UNO solo con `ads_read` incluido — que es lo que la guía
+// pide desde el 2026-09-21.
+// 🔴 Vive acá, en UN solo sitio, porque el descubrimiento (channel-config → ads_descubrir) y
+// el cron (ads-sync) tienen que elegir el MISMO. Cuando no fue así, el panel mostraba «1
+// cuenta conectada» y el cron se saltaba el canal con «sin_token»: el gasto no bajaba nunca
+// y no había ni un error a la vista. Medido en Maestría Digital el 2026-09-21.
+export async function getAdsToken(
+  db: SupabaseClient, channelId: string,
+): Promise<{ token: string | null; deWhatsapp: boolean }> {
+  const s = await getChannelSecrets(db, channelId);
+  if (s?.ads_token) return { token: s.ads_token, deWhatsapp: false };
+  if (s?.access_token) return { token: s.access_token, deWhatsapp: true };
+  return { token: null, deWhatsapp: false };
+}

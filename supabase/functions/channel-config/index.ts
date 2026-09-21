@@ -6,7 +6,7 @@
 //   Acciones: status | save | whatsapp_test | whatsapp_disconnect | …
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, userClient, getChannelSecrets, userOwnsChannel, userIsChannelAdmin, accountOfChannel } from "../_shared/db.ts";
+import { serviceClient, userClient, getChannelSecrets, getAdsToken, userOwnsChannel, userIsChannelAdmin, accountOfChannel } from "../_shared/db.ts";
 import { setWebhook, deleteWebhook } from "../_shared/telegram.ts";
 import { AVISOS } from "../_shared/avisos.ts";
 import { matchSegment, BATCH } from "../_shared/campaigns.ts";
@@ -535,11 +535,12 @@ Deno.serve(async (req) => {
       // para un negocio solo—, el mismo token sirve para las dos cosas y no hay que generar
       // nada. Si no lo marcó, el chequeo de abajo lo dice con todas las letras en vez de
       // dejarlo adivinando. `_deWhatsapp` viaja en la respuesta para que el panel lo explique.
+      // 🔑 El mismo resolutor que usa el cron (getAdsToken): si acá se aceptara el token de
+      // WhatsApp y allá no, el panel diría «conectado» y el gasto no bajaría nunca.
       const tokenDado = String(body.token ?? "").trim();
-      const secs = await getChannelSecrets(db, channel_id);
-      let _deWhatsapp = false;
-      let token = tokenDado || secs?.ads_token;
-      if (!token && secs?.access_token) { token = secs.access_token; _deWhatsapp = true; }
+      const guardado = await getAdsToken(db, channel_id);
+      const _deWhatsapp = !tokenDado && guardado.deWhatsapp;
+      const token = tokenDado || guardado.token;
       // El panel invita a tocar el botón con el campo VACÍO, así que este mensaje tiene que
       // explicar por qué no hubo nada que probar — «pega primero el token» dejaba pensando
       // que el botón estaba roto.

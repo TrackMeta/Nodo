@@ -71,5 +71,29 @@ Deno.serve(async (req) => {
     return json({ ok: true, freq });
   }
 
+  // ▶️ Forzar una corrida AHORA. El panel prometía este botón («puedes forzarlo desde
+  // Rendimiento») y no existía: el dueño que acababa de conectar su cuenta tenía que esperar
+  // a la próxima corrida del cron para saber si había quedado bien — y si estaba mal, se
+  // enteraba una hora tarde. Esta función ya tiene el SCHEDULER_SECRET en su env, así que es
+  // el único sitio desde donde se puede disparar sin exponerlo al navegador.
+  // No lo limitamos a platform_admin (a diferencia de `set`): esto no cambia nada global,
+  // solo adelanta trabajo que el cron iba a hacer igual.
+  if (action === "run") {
+    const secret = Deno.env.get("SCHEDULER_SECRET") ?? "";
+    if (!secret) return json({ error: "sin_scheduler_secret" }, 500);
+    try {
+      const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/ads-sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-scheduler-secret": secret },
+        body: "{}",
+      });
+      const b = await r.json().catch(() => ({}));
+      if (!r.ok) return json({ error: "ads_sync", detalle: String((b as any)?.error ?? r.status) }, 400);
+      return json({ ok: true, resultado: b });
+    } catch (e) {
+      return json({ error: "ads_sync", detalle: String((e as any)?.message ?? e) }, 400);
+    }
+  }
+
   return json({ error: "accion_desconocida" }, 400);
 });

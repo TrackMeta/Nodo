@@ -377,12 +377,39 @@ function renderStatus(){
     $("noticeSlot").innerHTML="";
     return;
   }
+  // El botón de forzar la bajada: Ajustes → Meta lo prometía («puedes forzarlo desde
+  // Rendimiento») y no existía. Sin él, el que acaba de conectar su cuenta tiene que esperar
+  // a la próxima corrida del cron para saber si quedó bien — y si quedó mal, se entera una
+  // hora tarde. Solo aparece cuando hay una cuenta conectada: sin eso no hay nada que bajar.
   $("statusSlot").innerHTML = n
-    ? `<span class="okpill">${icon("megaphone")} ${n} cuenta${n>1?'s':''} conectada${n>1?'s':''}</span>`
+    ? `<span class="okpill">${icon("megaphone")} ${n} cuenta${n>1?'s':''} conectada${n>1?'s':''}</span>
+       <button class="btn" id="syncAds" title="Baja de Meta el gasto de ahora mismo, sin esperar a la próxima corrida" style="margin-left:8px">${icon("refresh")} Actualizar</button>`
     : `<span class="demopill" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)"><span class="d" style="background:var(--faint)"></span>SIN CONECTAR</span>`;
+  const bs=$("syncAds"); if(bs) bs.onclick=()=>sincronizarAhora(bs);
   $("noticeSlot").innerHTML = st.syncError
     ? `<div class="notice" style="background:var(--red-bg);border-color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(st.syncError)} Reconéctalo en <a href="config.html">Ajustes → Meta</a>.</div></div>`
     : "";
+}
+// Fuerza una corrida de ads-sync. No llama a ads-sync directo (está protegida con el secreto
+// del scheduler, que no puede vivir en el navegador): se lo pide a ads-schedule, que sí lo
+// tiene en su entorno. Después recarga, porque el gasto recién bajado no se pinta solo.
+async function sincronizarAhora(btn){
+  btn.disabled=true; const old=btn.innerHTML; btn.textContent="Actualizando…";
+  try{
+    // `invoke` en vez de un fetch a mano: así no hay que importar la URL ni la anon key
+    // (un import nuevo en un módulo compartido ya dejó el panel en blanco una vez por caché).
+    const { data:j, error }=await supa.functions.invoke("ads-schedule",{ body:{ action:"run" } });
+    if(error||j?.error){
+      let d=""; try{ d=(await error?.context?.json?.())?.detalle||""; }catch{}
+      toast(d||j?.detalle||j?.error||error?.message||"No se pudo actualizar",true); return;
+    }
+    // Cuántas filas trajo: 0 no es un fallo (puede que no haya gasto en el periodo), pero
+    // decirlo evita que alguien crea que se rompió algo al no ver cambios.
+    const filas=(j.resultado?.resumen||[]).reduce((a,x)=>a+(+x.filas||0),0);
+    toast(filas?`Listo · ${filas} día(s) de gasto actualizados`:"Listo · Meta no reporta gasto en estos días");
+    await loadAccount();
+  }catch(e){ toast(e.message||"error",true); }
+  finally{ btn.disabled=false; btn.innerHTML=old; }
 }
 function emptyStateHtml(){
   const n=st.adAccounts.length;

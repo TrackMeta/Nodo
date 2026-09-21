@@ -14,7 +14,7 @@
 //   scheduler). Sin token/cuentas de un canal → lo salta sin fallar.
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
+import { serviceClient, getAdsToken } from "../_shared/db.ts";
 import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
     // try → un hipo al desencriptar el secreto de UN canal tiraba 500 y los canales restantes
     // del loop NO se sincronizaban ese ciclo. Se acota: se salta ese canal, no se mata la corrida.
     let token: string | null = null;
-    try { token = (await getChannelSecrets(db, channelId))?.ads_token ?? null; }
+    try { token = (await getAdsToken(db, channelId)).token; }
     catch (e) { resumen.push({ channelId, error: "secreto: " + String((e as any)?.message ?? e) }); continue; }
     if (!token) {
       // Sin token (nunca conectó, o se lo quitaron): limpiar un ads_sync_error RANCIO para que el
