@@ -95,6 +95,16 @@ export async function soloAnunciosBloquea(
   // abajo, que lo contaba como «vino por anuncio»—, y eso escondía que son dos cosas
   // distintas: uno está exento por ser prueba, no por venir de un anuncio.
   if ((c as any).wa_id === "webchat-test" || (c as any).source === "sim") return false;
+  // 🔴 Una conversación YA EN MARCHA no se abandona a la mitad. Si este contacto tiene un
+  // flujo vivo es porque alguien lo metió ahí a propósito (el botón «enviar flujo», que
+  // además le reactiva el bot) o porque venía atendido de antes de encender la perilla.
+  // Sin esto pasaba lo peor de los dos mundos: el operador manda el flujo, el cliente
+  // contesta, y el bot se apaga en ese mismo turno — flujo muerto y venta perdida. La
+  // perilla es para no EMPEZAR a pagar por un orgánico, no para soltar al que ya está
+  // comprando.
+  const { data: vivo } = await db.from("flow_runs").select("id")
+    .eq("contact_id", contactId).in("estado", ["activo", "esperando"]).limit(1);
+  if (vivo && vivo.length) return false;
   // `source` solo se escribe cuando el webhook ve un referral CTWA (`ref.source_type ?? "ctwa"`),
   // así que acá ya significa «vino por anuncio».
   const deAnuncio = Boolean((c as any).ad_id || (c as any).ctwa_clid || (c as any).source);
