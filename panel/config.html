@@ -721,16 +721,18 @@ async function guardarYDescubrirAds(btn){
   const out=$("adsDescubre"); out.innerHTML="";
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
   try{
-    // El guardado va por su propio camino (saveChannel exige un botón y recarga toda la
-    // pantalla, lo que borraría la lista que estamos por pintar).
-    if(tok){
-      try{ await callFn("channel-config",{ action:"save", channel_id:st.channelId, ads_token:tok }); toast("Token guardado"); }
-      catch(err){ toast(err.message||"No se pudo guardar el token",true); return; }
-    }
-    btn.textContent="Buscando cuentas…";
+    // 🔑 PRIMERO se comprueba, DESPUÉS se guarda. Al revés (que fue mi primera versión) un
+    // token malo quedaba igual en el Vault: la pantalla mostraba el error pero el cron lo
+    // seguía usando cada 3 horas y escribía `ads_sync_error` sin que nadie lo hubiera
+    // conectado de verdad. Probado pegando un token inventado.
+    btn.textContent="Comprobando…";
     let r=null;
     try{ r=await callFn("channel-config",{ action:"ads_descubrir", channel_id:st.channelId, ...(tok?{token:tok}:{}) }); }
     catch(err){ r={ error:"red", detalle:String(err&&err.message||err) }; }
+    if(r&&!r.error&&tok){
+      try{ await callFn("channel-config",{ action:"save", channel_id:st.channelId, ads_token:tok }); toast("Token guardado"); }
+      catch(err){ toast(err.message||"No se pudo guardar el token",true); return; }
+    }
     if(!r||r.error){
       out.innerHTML=`<div style="border:1px solid var(--amber);background:rgba(240,169,43,.08);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--amber)">${icon("alert")} ${esc(r&&(r.detalle||r.error)||"No se pudo comprobar el token.")}</div>`;
       return;
