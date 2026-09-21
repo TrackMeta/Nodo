@@ -836,6 +836,19 @@ async function addAdAccount(){
   if(!v){ toast("Escribe el ID de la cuenta (act_…)",true); return; }
   if(!/^act_/.test(v)) v="act_"+v.replace(/^act_/,"");   // acepta con o sin "act_"
   const nombre=$("m_ad_acc_name").value.trim()||null;
+  // ⚠️ La MISMA cuenta en dos bots hace que CADA UNO muestre el gasto entero (todo el gasto
+  // se lee por canal), o sea uno de los dos con un ROAS y una ganancia inflados. El enganche
+  // automático ya no lo hace solo; acá, a mano, no se prohíbe —puede haber un motivo— pero
+  // no puede pasar en silencio: se pregunta.
+  const { data:enOtro }=await supa.from("ad_accounts").select("channel_id").eq("account_id",v).neq("channel_id",st.channelId).limit(1);
+  if(enOtro&&enOtro.length){
+    const ok=await confirmDialog({
+      title:"Esa cuenta ya está en otro bot",
+      message:`${v} ya está conectada en otro de tus bots. Si la pones también acá, los dos van a mostrar el gasto COMPLETO de esa cuenta: uno de los dos tendrá una ganancia y un ROAS inflados. ¿La agrego igual?`,
+      confirmText:"Agregar igual", danger:true,
+    });
+    if(!ok) return;
+  }
   const { error }=await supa.from("ad_accounts").upsert({ channel_id:st.channelId, account_id:v, nombre },{ onConflict:"channel_id,account_id" });
   if(error){ toast(error.message,true); return; }
   $("m_ad_acc_new").value=""; $("m_ad_acc_name").value=""; toast("Cuenta agregada"); loadAdAccounts();
