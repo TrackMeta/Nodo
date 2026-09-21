@@ -1982,7 +1982,10 @@ const RE_PAGA_AL_RECOGER =
 // talla del extra, pero fuera de esa pregunta un "no" puede estar contestando cualquier
 // otra cosa y no puede borrar un producto del pedido.
 const RE_QUITA_EXTRA =
-  /\b(qu[ií]t(a|amelo|alo|ame|enlo)|s[aá]c(alo|amelo|ame)|mejor no( lo)? (quiero|lo llevo)?|mejor sin (eso|el|la)|sin (eso|el protector)|ya no (lo )?quiero|cancela(me)? (eso|el extra)|elim[ií]nalo|b[oó]rralo|d[eé]jalo sin eso|no me lo pongas|mejor no)\b/i;
+  // + «saca el protector», «bórramelo», «cancélame ESE extra». El `(?!cuenta)` es a propósito:
+  // «saca la cuenta de 3» es pedir el total, no quitar nada — y quitarle un extra que sí quería
+  // es peor que no hacer nada. Probado que ese caso no se cuela.
+  /\b(qu[ií]t(a|amelo|alo|ame|enlo)|s[aá]ca(?:lo|la|melo|mela|me)\b|s[aá]ca\s+(?:el|la|los|las)\s+(?!cuenta)|b[oó]rr(alo|amelo|ame)|mejor no( lo)? (quiero|lo llevo)?|mejor sin (eso|el|la)|sin (eso|el protector)|ya no (lo )?quiero|cancela(me)? (eso|ese|el|la)|elim[ií]nalo|d[eé]jalo sin eso|no me lo pongas|mejor no)\b/i;
 // 💳 Pregunta por el MEDIO de pago (no por el precio): tarjeta, POS, efectivo, Yape, o
 // directamente «¿cómo pago?». Es una pregunta que decide compras y no se puede esquivar.
 const RE_COMO_PAGA =
@@ -2059,7 +2062,7 @@ function pideGuia(text?: string | null): boolean {
 // 📅 Pide que la entrega sea OTRO día. Pide una señal de fecha/ausencia junto al verbo:
 // "¿cuándo llega?" es una pregunta y la contesta la IA; esto es un cambio de plan.
 const RE_REPROGRAMAR =
-  /\b(no\s+(voy\s+a\s+)?(estar|estare|estaré)|no\s+me\s+(van\s+a\s+)?(encontrar|hallar)|nadie\s+(va\s+a\s+)?(estar|haber)|no\s+hay\s+nadie)\b|\b(reprogram\w+|repro\b)|\b(tra[ée]r?(lo|melo)?|entr[eé]g\w+|d[eé]jal[oa]|mandal[oa]|env[ií]al[oa])\s+(mejor\s+)?(el|para\s+el|pasado)\s+(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|ma[ñn]ana|fin\s+de\s+semana)\b|\b(otro\s+d[ií]a|cambiar\s+(la\s+fecha|el\s+d[ií]a)|para\s+la\s+(pr[oó]xima\s+)?semana)\b/i;
+  /\b(no\s+(voy\s+a\s+)?(estar|estare|estaré)|no\s+me\s+(van\s+a\s+)?(encontrar|hallar)|nadie\s+(va\s+a\s+)?(estar|haber)|no\s+hay\s+nadie)\b|\b(reprogram\w+|repro\b)|\b(tra[ée]r?(lo|melo)?|entr[eé]g\w+|d[eé]jal[oa]|mandal[oa]|env[ií]al[oa]|c[aá]mbial[oa])\s+(mejor\s+)?(el|para\s+el|para\s+la|pasado)\s+(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|ma[ñn]ana|fin\s+de\s+semana|pr[oó]xima)\b|\b(otro\s+d[ií]a|cambiar\s+(la\s+fecha|el\s+d[ií]a)|para\s+la\s+(pr[oó]xima\s+)?semana)\b/i;
 function pideReprogramar(text?: string | null): boolean {
   const t = String(text ?? "");
   if (!t.trim() || t.length > 240) return false;
@@ -2076,7 +2079,10 @@ const RE_RECOGE_OTRO =
 // Regateo, comparación con otro vendedor y "está caro": afirmaciones, sin signo de
 // pregunta, que el saludo fijo se lleva por delante.
 const RE_TRAE_OBJECION =
-  /\b(descuento|rebaja|rebajas|m[aá]s barato|otro lado|otra tienda|la competencia|[uú]ltimo precio|precio final|me lo dejas|me lo deja|te lo compro|lo compro all[aá]|est[aá] caro|muy caro|carazo|no me alcanza|promoci[oó]n|oferta especial)\b/i;
+  // + el regateo peruano que faltaba: «déjamelo en 60», «bájamelo un poco», «hazme un
+  // descuentito», «no tienes algo más económico», «está muy elevado el precio». Una objeción
+  // de precio sin contestar es una venta perdida, y 5 de 7 formas no entraban (2026-09-20).
+  /\b(descuento|descuentito|rebaja|rebajas|m[aá]s barato|m[aá]s econ[oó]mico|otro lado|otra tienda|la competencia|[uú]ltimo precio|precio final|me lo dejas|me lo deja|d[eé]jamelo|dejamelo|b[aá]jamelo|bajamelo|te lo compro|lo compro all[aá]|est[aá] caro|muy caro|carazo|elevado el precio|precio elevado|no me alcanza|promoci[oó]n|oferta especial)\b/i;
 const RE_TRAE_PREGUNTA =
   // 📝 En WhatsApp se pregunta SIN signo: «es original», «viene con garantía», «me llega a
   // Huancayo», «está disponible», «me pueden enviar hoy». Ninguna de esas entraba, y de esto
@@ -4139,7 +4145,8 @@ const RE_FALSO_CIERRE =
 const RE_YA_PIDE = /\b(dime|dime\s|av[ií]same|cu[eé]ntame|p[aá]same|m[aá]ndame|env[ií]ame|ind[ií]came|escribe|elige|escoge|confirma|comp[aá]rteme)\b/i;
 // "Lo voy a pensar" / se despide: no es un no, pero tampoco es momento de empujar.
 const RE_LO_PIENSA =
-  /\b(lo (voy a |vo a )?pienso|lo voy a pensar|lo pensar[eé]|déjame pensarlo|dejame pensarlo|lo consulto|lo veo (con|y)|luego te (escribo|aviso|digo)|despu[eé]s te (escribo|aviso|digo)|te (escribo|aviso) (luego|despu[eé]s|m[aá]s tarde)|ahorita no|por ahora no|mas adelante|m[aá]s adelante|gracias por la info)\b/i;
+  // + «déjame verlo» y «te confirmo mañana», que es como se dice «lo voy a pensar».
+  /\b(lo (voy a |vo a )?pienso|lo voy a pensar|lo pensar[eé]|d[eé]jame (pensarlo|verlo|ver)|lo consulto|lo veo (con|y)|luego te (escribo|aviso|digo|confirmo)|despu[eé]s te (escribo|aviso|digo|confirmo)|te (escribo|aviso|confirmo) (luego|despu[eé]s|m[aá]s tarde|ma[ñn]ana)|ahorita no|por ahora no|mas adelante|m[aá]s adelante|gracias por la info)\b/i;
 function conPeticionFinal(texto: string, peticion: string, dato?: string): string {
   const t = String(texto ?? "").trimEnd();
   if (!t || !peticion) return texto;
@@ -11089,7 +11096,11 @@ const RE_QUIERE_COMPRAR =
   // «0» no existe. O sea que el que compra MÁS (10, 24, 500: el que revende) no contaba como
   // comprador. Medido 5 de 5 el 2026-09-20: «quiero 500 unidades para revender en mi
   // ferretería» como primer mensaje recibía SOLO el saludo y su pedido moría ahí.
-  /\b((?:lo|la|los) quier[oa]|me lo llevo|me llevo|(?:quiero|kiero|kero|qiero) comprar|(?:quiero|kiero|kero|qiero) (?:el |la |uno|una|dos|tres|cuatro|cinco|\d+)|d[ae]me (?:uno|una|dos|tres|\d+)|voy a (?:comprar|llevar|pedir)|hazme el pedido|ap[aá]rtame|sep[aá]rame|s[ií] quiero|comprarlo|comprarla|me inscribo|inscribirme|apuntarme|dale pues|ya dale|de una|lo compro|env[ií]amelo|m[aá]ndamelo|ll[eé]vame)\b/i;
+  // 🇵🇪 Y como se decide de verdad, con el pronombre PEGADO al verbo: «dámelo nomás»,
+  // «mándamelo», «me lo mandas», «quiero llevarlo», «quiero pedirlo». Medido el 2026-09-20:
+  // 5 de 10 formas comunes no contaban como comprador, y sin eso su primer mensaje no se
+  // atiende. Sigue fuera el CURIOSO: «quiero saber», «quiero preguntar», «quiero ver si».
+  /\b((?:lo|la|los) quier[oa]|me lo llevo|me llevo|(?:quiero|kiero|kero|qiero) (?:comprar|llevar|pedir|encargar)l?[oa]?|(?:quiero|kiero|kero|qiero) (?:el |la |uno|una|dos|tres|cuatro|cinco|\d+)|d[ae]me (?:uno|una|dos|tres|\d+)|d[aá]melo|d[aá]mela|voy a (?:comprar|llevar|pedir)|hazme el pedido|ap[aá]rtame|sep[aá]rame|s[ií] quiero|comprarlo|comprarla|me inscribo|inscribirme|apuntarme|dale pues|ya dale|de una|lo compro|env[ií]amelo|enviamelo|m[aá]ndamelo|mandamelo|me lo mandas|me lo env[ií]as|ll[eé]vame|mandame (?:uno|una|dos|tres|\d+))\b/i;
 // ¿Ya mostró intención de COMPRAR (no solo de preguntar)? Mira su último mensaje y los
 // anteriores: la señal puede haber quedado un par de turnos atrás.
 // 🔑 Las palabras clave del canal («QUIERO LA PLANTILLA», «QUIERO EL CURSO DE CORTES»). El
