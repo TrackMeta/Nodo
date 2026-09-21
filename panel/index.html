@@ -701,6 +701,10 @@ async function boot() {
   loadAgents();                  // perfiles (nombre/foto) para las burbujas humanas
   const shell = await mountShell({ active: "inbox" });
   state.channelId = shell.channelId;
+  // 📢 ¿Este bot está en modo «solo anuncios»? Hace falta acá porque cambia lo que la Bandeja
+  // debe MOSTRAR: a un contacto orgánico el bot no le va a contestar nunca, y decirle
+  // «Bot activo» hace que el operador crea que alguien se está encargando.
+  try{ const _ch = await getChannel(state.channelId); state.soloAnuncios = !!(_ch?.ia_router?.solo_anuncios); }catch(_){}
   document.querySelector("#chatEmpty .emptyIc").innerHTML = icon("message");
   // Al entrar a la Bandeja el sidebar se colapsa; al salir (SPA) se limpia todo.
   shell.onLeave?.(() => {
@@ -1328,7 +1332,10 @@ function renderConversations(){
     // 200. La promesa de "sin costo" se hace donde se decide gastar y sí está verificada: la
     // barra del chat abierto y el modal de aviso al despachar. Acá solo se marca el origen.
     const fepViva = cv.window_type === "fep_72h" && cv.expira_at && new Date(cv.expira_at) > new Date();
-    const dots = `${bot?'<span class="idot bot">● Bot activo</span>':'<span class="idot human">● Humano</span>'}`
+    // «Bot activo» era verdad (nadie lo pausó) pero mentía sobre lo que iba a pasar: con el
+    // modo «solo anuncios» puesto, a este contacto el bot NO le va a contestar. El operador
+    // leía «activo», asumía que estaba atendido, y el lead se quedaba esperando.
+    const dots = `${bot?(botNoAtiende(c)?'<span class="idot paused" title="Este bot solo responde a quien llega por un anuncio, y este contacto no vino por uno. Nadie le va a contestar si no lo haces tú.">● No atiende · orgánico</span>':'<span class="idot bot">● Bot activo</span>'):'<span class="idot human">● Humano</span>'}`
       + (fepViva?`<span class="idot fep">${icon("megaphone")} Anuncio · 72h</span>`:(c.source?`<span class="idot ad">${icon("megaphone")} Anuncio</span>`:''))
       + (cv.requiere_humano?`<span class="idot paused">${icon("clock")} Seguimiento</span>`:'')
       + (bought?`<span class="idot bought">${icon("star")} Compró</span>`:'')
@@ -1474,7 +1481,9 @@ function renderContactPanel(){
   const subsA = subs.filter(s=>s.estado==="activa");
   const nodos = events.filter(e=>e.tipo==="nodo");
   const errs  = events.filter(e=>e.tipo==="error");
-  const botTxt = (contact.bot_activo!==false ? '<span style="color:var(--green)">● Bot activo</span>' : '<span style="color:var(--amber)">● Bot en pausa</span>')
+  const botTxt = (contact.bot_activo===false ? '<span style="color:var(--amber)">● Bot en pausa</span>'
+      : botNoAtiende(contact) ? '<span style="color:var(--amber)" title="El bot está activo, pero este canal solo responde a quien llega por un anuncio.">● Bot activo, pero no atiende a este contacto (no vino por un anuncio)</span>'
+      : '<span style="color:var(--green)">● Bot activo</span>')
     // 🔕 Pidió que no le escriban más: la marca existía (Contactos, Directo) pero acá no se veía
     // y el operador podía meterlo en un seguimiento o mandarle una promoción.
     + (contact.no_remarketing ? ' <span style="color:var(--amber)" title="Pidió que no le manden promociones ni remarketing. El bot lo respeta; tú también.">'+icon("bell")+' Sin remarketing (pidió no recibir promociones)</span>' : '');
@@ -1734,6 +1743,15 @@ $("actionsBtn").addEventListener("click",(e)=>{ e.stopPropagation(); if(!state.c
 function onDocClickActions(e){ if(!e.target.closest("#actionsBtn") && !e.target.closest("#actionsMenu")) $("actionsMenu")?.classList.add("hidden"); }
 document.addEventListener("click",onDocClickActions);
 
+// ¿El bot va a ignorar a este contacto por el modo «solo anuncios»? Misma regla que el motor
+// (soloAnunciosBloquea en engine.ts): vino por anuncio si tiene ad_id, ctwa_clid o source —
+// el webhook escribe `source` solo cuando ve un referral CTWA. Los contactos de prueba quedan
+// fuera. En la LISTA solo viaja `source`, y alcanza: los otros dos nunca llegan sin él.
+function botNoAtiende(c){
+  if(!state.soloAnuncios || !c) return false;
+  if(c.wa_id==="webchat-test" || c.source==="sim") return false;
+  return !(c.source || c.ad_id || c.ctwa_clid);
+}
 function setBotPill(on){ const b=$("chBot"); if(!b) return; b.className="botbtn "+(on?"on":"off"); b.innerHTML=icon("robot")+(on?" Bot activo":" Bot en pausa"); b.title=on?"El bot está atendiendo — toca para pausarlo y atender tú":"Bot en pausa — toca para reactivarlo"; }
 // Un solo botón para activar/desactivar el bot en este chat (header, al centro).
 async function toggleBot(){
