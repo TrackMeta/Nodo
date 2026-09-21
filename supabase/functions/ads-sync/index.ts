@@ -100,12 +100,17 @@ Deno.serve(async (req) => {
 // Baja los insights por anuncio y día de UNA cuenta y los upserta.
 async function syncCuenta(channelId: string, acct: string, token: string, since: string, until: string): Promise<number> {
   const acctId = acct.startsWith("act_") ? acct : `act_${acct}`;
+  // 🔒 El token va en la CABECERA, no en la URL. Antes viajaba como `?access_token=…` en cada
+  // request (y en los `next` de paginación), o sea que quedaba escrito en los logs de cada
+  // llamada. Pesa más desde hoy: ese token puede traer `business_management`, que es la llave
+  // del negocio entero en Meta. Las demás funciones ya lo mandaban así.
+  const authH = { Authorization: `Bearer ${token}` };
   // Moneda de facturación de la cuenta: `spend` viene en ESTA moneda (casi siempre USD para
   // un anunciante peruano). Se guarda para que Rendimiento avise si no coincide con la moneda
   // del negocio (los números no están convertidos). Best-effort: si falla, queda null.
   let accountCurrency: string | null = null;
   try {
-    const cr = await fetchConTimeout(`${GRAPH}/${acctId}?fields=currency&access_token=${encodeURIComponent(token)}`);
+    const cr = await fetchConTimeout(`${GRAPH}/${acctId}?fields=currency`, { headers: authH });
     const cj = await cr.json();
     if (cr.ok && cj?.currency) accountCurrency = String(cj.currency);
   } catch (_) { /* sin moneda → null */ }
@@ -118,7 +123,7 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
   let url =
     `${GRAPH}/${acctId}/insights?level=ad&time_increment=1` +
     `&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}` +
-    `&fields=${fields}&limit=500&access_token=${encodeURIComponent(token)}`;
+    `&fields=${fields}&limit=500`;
 
   const metaRows: any[] = [];
   const insightRows: any[] = [];
@@ -126,7 +131,7 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
   let guard = 0;
 
   while (url && guard++ < 50) {
-    const res = await fetchConTimeout(url, {}, 30_000);
+    const res = await fetchConTimeout(url, { headers: authH }, 30_000);
     const body = await res.json();
     if (!res.ok || body.error) {
       const e = body?.error ?? {};
@@ -164,7 +169,9 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
         updated_at: new Date().toISOString(),
       });
     }
-    url = body.paging?.next ?? "";
+    // 🔑 El `next` de Meta trae el access_token DENTRO. Se le quita: el token ya va en la
+    // cabecera, y dejarlo en la URL lo mete en los logs de cada request paginado.
+    url = String(body.paging?.next ?? "").replace(/([?&])access_token=[^&]*&?/g, "$1").replace(/[?&]$/, "");
   }
   // El tope de páginas es una red contra bucles, no un límite de negocio: si Meta todavía
   // tenía más, la sincronización quedó INCOMPLETA y hay que decirlo (ads_sync_error), no marcar
