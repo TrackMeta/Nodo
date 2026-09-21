@@ -669,6 +669,7 @@ function renderPixel(box){
         <b style="color:var(--muted)">Cómo conectarlo:</b><br>
         1. <b>ID de cuenta:</b> en <b>Meta Ads Manager</b>, arriba a la izquierda, está el selector de cuenta — el <span style="font-family:monospace">act_…</span> es tu ID. Agrégalo arriba.<br>
         2. <b>Token de lectura:</b> en <b>Business Settings → Usuarios del sistema</b>, crea uno, asígnale tus cuentas de anuncios con acceso, y genera un token con el permiso <span style="font-family:monospace">ads_read</span>. Pégalo aquí.<br>
+        <span style="color:var(--muted)">Si <span style="font-family:monospace">ads_read</span> no aparece en la lista de permisos, tu app no tiene la Marketing API: <b>tu app → Agregar producto → Marketing API</b> y vuelve a generarlo. Es un clic y no dispara ninguna revisión — leer tus propias cuentas no necesita aprobación de Meta.</span><br>
         <span style="color:var(--muted)">Un mismo token de usuario de sistema puede leer <b>varias cuentas</b>: lo conectas una vez y agregas arriba todas las que quieras seguir.</span>
       </div>
     </div>`;

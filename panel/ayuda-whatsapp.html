@@ -172,6 +172,7 @@
         <div class="ojo">
           <span class="t">Ojo</span>
           <p>Si eliges un caso de uso de más, Meta te va a pedir permisos y revisiones que no necesitas, y la app se queda trabada esperando una aprobación que nunca hacía falta.</p>
+          <p>Eso vale para los <em>casos de uso</em> de esta pantalla. Agregar después el <strong>producto</strong> «Marketing API» (paso 3, para ver el gasto de tus anuncios) es otra cosa y no traba nada.</p>
         </div>
       </div>
     </div>
@@ -199,10 +200,15 @@
         <p>La tarjeta conviene cargarla ya, no al final: en varias cuentas Meta no deja registrar el número hasta que hay un método de pago.</p>
         <p>Para el token, crea un <strong>usuario del sistema</strong> con rol <strong>Admin</strong> (ponle un nombre que reconozcas en un año, como «Nodo WhatsApp»). Después, <strong>en este orden</strong>:</p>
         <ul>
-          <li><strong>Agregar activos</strong> &#8594; tu <em>app</em> y tu <em>cuenta de WhatsApp (WABA)</em>, las dos con control total.</li>
-          <li><strong>Generar nuevo token</strong> &#8594; tu app &#8594; caducidad <strong>Nunca</strong> &#8594; permisos <code>whatsapp_business_messaging</code> y <code>whatsapp_business_management</code>.</li>
-          <li>Cópialo en ese momento: Meta lo muestra <strong>una sola vez</strong>.</li>
+          <li><strong>Agregar activos</strong> &#8594; tu <em>app</em> y tu <em>cuenta de WhatsApp (WABA)</em>, las dos con control total. Si vas a pagar anuncios, agrega tambi&#233;n tu <em>cuenta publicitaria</em>.</li>
+          <li><strong>Generar nuevo token</strong> &#8594; tu app &#8594; caducidad <strong>Nunca</strong> &#8594; permisos <code>whatsapp_business_messaging</code> y <code>whatsapp_business_management</code> &#8212; y, si haces anuncios, marca tambi&#233;n <code>ads_read</code>.</li>
+          <li>C&#243;pialo en ese momento: Meta lo muestra <strong>una sola vez</strong>.</li>
         </ul>
+        <div class="ojo">
+          <span class="t">Marca <code>ads_read</code> ahora y no vuelves ac&#225; nunca m&#225;s</span>
+          <p>Los permisos de un token quedan <strong>grabados al generarlo</strong>: no se le agregan despu&#233;s. Si lo creas solo con los de WhatsApp, el d&#237;a que quieras ver el gasto de tus anuncios en la secci&#243;n <strong>Rendimiento</strong> tienes que volver a esta pantalla y hacer otro. Marc&#225;ndolo ahora, <strong>un solo token sirve para las dos cosas</strong> y Nodo conecta tus anuncios solo al guardar.</p>
+          <p>Si <code>ads_read</code> no te aparece en la lista, no es culpa tuya: los permisos salen de los productos que tiene la app, y la tuya naci&#243; solo con WhatsApp. Anda a <strong>tu app &#8594; Agregar producto &#8594; Marketing API</strong>, y vuelve a generar el token. Es un clic y <strong>no dispara ninguna revisi&#243;n</strong>: leer tus <em>propias</em> cuentas de anuncios no necesita aprobaci&#243;n de Meta.</p>
+        </div>
         <div class="ojo">
           <span class="t">Dos trampas seguidas</span>
           <p>El token que Meta te muestra en la pantalla de la API <strong>caduca en 24 horas</strong>. Si usas ese, el bot deja de responder al día siguiente sin motivo aparente. El permanente es el del usuario del sistema.</p>
@@ -223,6 +229,7 @@
         </ul>
         <p>Con el token pegado, dale a <strong>Buscar mis datos</strong>: Nodo le pregunta a Meta de qué cuenta es ese token y rellena solo el <strong>Phone Number ID</strong> y el <strong>WABA ID</strong>. Si el token alcanza varios números, te deja elegir cuál atiende en este canal. Esos dos no son secretos, son etiquetas: no hace falta que los escribas.</p>
         <p>Después dale a <strong>Guardar y conectar</strong>. <strong>Ahí se termina la conexión</strong>: Nodo configura el webhook en Meta, lo suscribe a los mensajes y registra el número. Al final te dice qué hizo, y si tuvo que registrar te muestra el <strong>PIN</strong> que le puso.</p>
+        <p>Si en el paso 3 marcaste <code>ads_read</code>, en ese mismo momento Nodo <strong>también conecta tus anuncios</strong> — encuentra solo tu cuenta publicitaria y empieza a traer el gasto para la sección <strong>Rendimiento</strong>. No hay que volver a Meta ni pegar un segundo token.</p>
         <div class="ojo">
           <span class="t">Anota ese PIN</span>
           <p>Es la verificación en dos pasos de tu número. No lo usas para nada del día a día, pero Meta te lo va a pedir si algún día migras el número a otra plataforma — y Nodo no lo guarda. Si ese número ya tenía uno, Nodo no puede adivinarlo y te lo pide.</p>

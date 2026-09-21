@@ -712,14 +712,40 @@ async function terminarWA(pin){
     toast(`Guardado, pero Meta rechazó ${falló.map(f=>NOMBRE[f.que]||f.que).join(" y ")}: ${falló[0].motivo}`,true);
     return;
   }
-  if(!hizo.length){ toast("Guardado · la conexión ya estaba completa"); return; }
+  // El token ya quedó guardado: se aprovecha el MISMO viaje para ver si además lee anuncios.
+  const ads=await adsDelMismoToken();
+  if(!hizo.length){ toast("Guardado · la conexión ya estaba completa"+(ads?` · ${ads}`:"")); return; }
   if(r.pin){
     await askText({ title:"Listo, el número quedó conectado",
       messageHtml:`Guardé los datos y ${hizo.join(" y ")}. Para registrarlo, Meta pide una verificación en dos pasos: Nodo le puso este PIN. <b>Anótalo</b> — te lo van a pedir si algún día migras el número, y Nodo no lo guarda.`,
       label:"PIN de 6 dígitos", value:r.pin, confirmText:"Ya lo anoté" });
+    if(ads) toast(ads);   // el diálogo no es un toast: este no pisa ningún aviso
     return;
   }
-  toast(`Guardado · ${hizo.join(" y ")}`);
+  toast(`Guardado · ${hizo.join(" y ")}`+(ads?` · ${ads}`:""));
+}
+// 📊 UN solo viaje a developers.facebook.com. Un token de usuario de sistema puede nacer con
+// `ads_read` además de los dos permisos de WhatsApp (la guía ya lo pide así), y los permisos
+// quedan GRABADOS al generarlo: o los trae, o hay que generar otro. Si los trae, acá el gasto
+// de anuncios queda conectado sin que el dueño vuelva a Meta — que era el segundo viaje que
+// nadie quiere hacer. Si no los trae: silencio. No haberlo marcado no es un fallo de la
+// conexión de WhatsApp, y un aviso rojo acá solo asustaría.
+async function adsDelMismoToken(){
+  try{
+    // Si ya eligió cuentas, no se toca nada: esto resuelve el arranque, no manda después.
+    const { data:ya }=await supa.from("ad_accounts").select("account_id").eq("channel_id",st.channelId).limit(1);
+    if(ya&&ya.length) return "";
+    const r=await callFn("channel-config",{ action:"ads_descubrir", channel_id:st.channelId });
+    const cuentas=(r&&r.cuentas)||[];
+    if(!cuentas.length) return "";
+    // Con UNA cuenta no hay nada que elegir y se conecta sola. Con VARIAS no se elige por el
+    // dueño: se le avisa que están ahí y él marca cuáles seguir.
+    if(cuentas.length>1) return `tu token también lee anuncios (${cuentas.length} cuentas): elige cuáles seguir en Ajustes → Meta`;
+    const a=cuentas[0];
+    const { error }=await supa.from("ad_accounts").upsert({ channel_id:st.channelId, account_id:a.account_id, nombre:a.nombre||null },{ onConflict:"channel_id,account_id" });
+    if(error) return "";
+    return `y conecté tus anuncios (${a.nombre||a.account_id}): el gasto ya sale en Rendimiento`;
+  }catch(_){ return ""; }
 }
 // Ejecuta en Meta el trámite que falta. Si el número ya tenía verificación en dos pasos,
 // Meta pide SU pin y Nodo no puede inventarlo: se lo pedimos al dueño y reintentamos.

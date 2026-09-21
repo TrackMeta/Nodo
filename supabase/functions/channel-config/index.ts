@@ -489,10 +489,17 @@ Deno.serve(async (req) => {
       if (!scopes.includes("ads_read")) {
         return json({
           error: "sin_permiso",
-          detalle: _deWhatsapp
-            ? "Tu token de WhatsApp no sirve para anuncios: se generó solo con los permisos de WhatsApp y «ads_read» no se le puede agregar después. " +
-              "Genera un token nuevo del mismo usuario de sistema marcando también «ads_read» (ese nuevo sí puede servir para las dos cosas) y pégalo acá."
-            : "Ese token no tiene el permiso «ads_read». Al generarlo en Meta hay que marcar ese permiso.",
+          // ⚠️ El tropiezo que sigue a este aviso: el dueño va a generar el token nuevo y
+          // «ads_read» NO va a estar en la lista de permisos. No es un error suyo — la lista
+          // sale de los productos que tiene la app, y una app creada con el caso de uso de
+          // WhatsApp no trae la Marketing API. Por eso el paso 1 va acá dentro: sin él, el
+          // mensaje manda a alguien a una pantalla donde no encuentra lo que le pedimos.
+          detalle: (_deWhatsapp
+            ? "Tu token de WhatsApp no sirve para anuncios: los permisos quedan grabados al generar el token, y ese se generó solo con los de WhatsApp. Hay que hacer uno nuevo (el nuevo sí puede servir para las dos cosas). "
+            : "Ese token no tiene el permiso «ads_read». ") +
+            "En Meta, en este orden: 1) en tu app → Agregar producto → «Marketing API» (sin eso, «ads_read» ni siquiera aparece en la lista de permisos); " +
+            "2) en Usuarios del sistema, asígnale tu cuenta publicitaria; " +
+            "3) Generar nuevo token marcando «ads_read» junto con los dos de WhatsApp. Pégalo acá.",
         }, 400);
       }
       // 2) Qué cuentas ve. Si el usuario de sistema no tiene cuentas ASIGNADAS, Meta
