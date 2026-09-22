@@ -20852,6 +20852,71 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
         } catch { /* sin producto legible → sin mención */ }
       }
+      // 💡 EL AHORRO QUE NADIE VEÍA. El cliente que dice «quiero 1» de pasada sella su opción
+      // por texto libre, así que el bloque que pregunta la cantidad —el que enseña la lista
+      // con los precios— NO llega a correr nunca: compra 1 sin enterarse de que 2 le salían
+      // mucho más baratas cada una. Lo notó Rodrigo mirando una prueba.
+      // Reglas que se respetan acá:
+      //  · NO se le repregunta lo que ya dijo (sería hacer como que no lo oímos): se le
+      //    CONFIRMA su elección y se le enseña el ahorro concreto.
+      //  · Solo si de verdad hay algo mejor que ofrecer. Al que ya pidió la opción tope no se
+      //    le molesta con un turno de más — y desde octubre cada burbuja se paga.
+      //  · Una sola vez por contacto. Insistir es vender mal.
+      if (op === "generar_texto" && !esDigital(ctx)
+          && String(ctx.opcion_id ?? "").trim()
+          && !(run.vars as any)?._cant_preguntada
+          && !(run.vars as any)?._upsell_cant
+          // 🔴 La marca de arriba solo se pone cuando la cantidad la pregunta el MOTOR, y
+          // medido: la IA la repregunta por su cuenta aunque la opción ya esté sellada. Salía
+          // «¿para cuántas unidades quieres?» y debajo «Anotado: 1 unidad» — el bot
+          // discutiendo consigo mismo. La guardia se ata al texto que de verdad sale.
+          && !/\bcu[aá]nt[ao]s?\b/i.test(salida)
+          && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
+        try {
+          const _ops = (await loadOpciones(db, run, String(ctx._product_id ?? "")))
+            .filter((o) => o.precio != null && Number(o.precio) > 0 && Number(o.cantidad) > 0);
+          const _suya = _ops.find((o) => String(o.id) === String(ctx.opcion_id));
+          if (_suya) {
+            const _unit = (o: Opcion) => Number(o.precio) / Number(o.cantidad);
+            // La SIGUIENTE hacia arriba, no la más grande de todas. Saltar de 1 a 3 suena a
+            // empujón y convierte peor; el paso corto se acepta mucho más. Si después quiere
+            // más, ya lo dirá él.
+            const _mejor = _ops
+              .filter((o) => Number(o.cantidad) > Number(_suya.cantidad) && _unit(o) < _unit(_suya))
+              .sort((a, b) => Number(a.cantidad) - Number(b.cantidad))[0];
+            // Si el mensaje ya trae la lista con ese precio, el ahorro ya está a la vista:
+            // repetirlo es una burbuja pagada para decir lo mismo.
+            if (_mejor && !salida.includes(String(_mejor.precio))) {
+              const sym = simboloMoneda(ctx.moneda as string);
+              // Plata: el entero va pelado (69), el partido con sus dos cifras (54.50).
+              const r2 = (n: number) => {
+                const v = Math.round(n * 100) / 100;
+                return Number.isInteger(v) ? String(v) : v.toFixed(2);
+              };
+              // El ahorro se cuenta contra lo que le costaría comprar esas mismas unidades
+              // de una en una a su precio actual: es la cifra que de verdad se lleva.
+              const _ahorro = _unit(_suya) * Number(_mejor.cantidad) - Number(_mejor.precio);
+              salida = salida.trimEnd() +
+                `\n\nAnotado: *${_suya.nombre}* — ${sym} ${r2(Number(_suya.precio))}. ` +
+                // «llevando X son Y» evita la concordancia: «*3 unidades* te SALE» quedaba mal,
+                // y el nombre de la opción lo pone el dueño (puede ser singular o plural).
+                `Ojo que llevando *${_mejor.nombre}* son ${sym} ${r2(Number(_mejor.precio))}, o sea ` +
+                `*${sym} ${r2(_unit(_mejor))} cada una*` +
+                (_ahorro > 0 ? ` — te ahorras ${sym} ${r2(_ahorro)}` : "") +
+                // ❓ Dos preguntas en una burbuja = contesta una sola, y la que se come es la
+                // del motor (medido en Trujillo: sede + cantidad + distritos en un mensaje).
+                // Si el turno ya le preguntó algo suyo, el ahorro va como dato, sin pregunta:
+                // la venta la cierra él cuando quiera y el hilo no se rompe.
+                (/\?/.test(salida)
+                  ? `. Si quieres aprovechar, avísame 🔧`
+                  : `. ¿Te quedas con ${_suya.cantidad === 1 ? "una" : _suya.cantidad} o aprovechas? 🔧`);
+              (run.vars as any)._upsell_cant = 1;
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "💡 Se le mostró el ahorro por llevar más",
+                `Eligió ${_suya.nombre} sin ver la lista; se le ofreció ${_mejor.nombre}`).catch(() => {});
+            }
+          }
+        } catch (e) { console.error("[upsellCantidad]", (e as any)?.message ?? e); }
+      }
       // 🗺️ La confirmación del distrito repetido, pegada al mensaje en que le pide la
       // dirección. Se lo pedí por prompt y no lo hizo —el patrón de siempre—, así que lo
       // pone el motor: es UNA línea y evita mandar un motorizado a 1000 km. Se pega una
