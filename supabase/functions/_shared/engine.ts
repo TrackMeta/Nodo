@@ -15894,6 +15894,12 @@ export function fechaLeidaNoEsFutura(fecha: unknown, tz?: string | null): boolea
   else if (dmy) { d = +dmy[1]; m = +dmy[2]; a = +dmy[3]; }
   else if (txt) { d = +txt[1]; m = _MESES_ES[txt[2]] ?? 0; a = +txt[3]; }
   if (!a || !m || !d) return null;
+  // 🔴 Y que sean una fecha POSIBLE. Sin esto, un comprobante en formato americano
+  // («09/20/2026») daba mes 20, se armaba la cadena «2026-20-09» y la comparación de texto
+  // la ponía DESPUÉS de hoy: esta función contestaba «es futura» justo cuando existe para
+  // DESMENTIR un rechazo por fecha futura. Ante una fecha que no se entiende, no se opina
+  // (null) — que es lo que hace el resto de la función cuando no reconoce el formato.
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
   try {
     const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: tz || "America/Lima", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
     const leida = `${a}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
