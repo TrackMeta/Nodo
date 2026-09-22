@@ -5659,8 +5659,25 @@ const RE_PROMETE_PRECIOS =
 // Así te doy el precio exacto» — ninguna de las dos disparó (no está «te doy» ni «para
 // cuántas»), y el cliente se quedó eligiendo cantidad sin ver un solo precio. Es el mismo
 // agujero que tenía «¿cómo te llamas?» en RE_PIDE_SUS_DATOS.
+// 🎚️ ¿EL MENSAJE YA LE ESTÁ PONIENDO A ELEGIR? Se mira por los DATOS, no por cómo lo diga.
+// Perseguirlo por la redacción fue inútil: en cuatro tandas seguidas (F9, 2026-09-22) salió
+// «¿cuál prefieres?», «¿cuál te interesa?», «¿quieres la presentación Estandar o la Completo?»
+// y «¿Estandar por S/89 o Completo por S/149?» — cada vez una forma nueva que la regex no
+// tenía, y el motor pegaba SU pregunta debajo: la misma cosa preguntada dos veces.
+// Si el texto nombra DOS de sus presentaciones (o dos de sus precios) y pregunta, ya ofreció
+// elegir y no hay nada que agregar. Es la lección de siempre con las regex sobre lo que
+// escribe el modelo: atarse a lo que es, no a cómo lo dice.
+function yaOfreceElegir(texto: string, ops: Opcion[]): boolean {
+  const raw = String(texto ?? "");
+  if (!raw.includes("?")) return false;
+  const t = normalize(raw);
+  const nombres = [...new Set(ops.map((o) => normalize(String(o.nombre ?? ""))).filter((n) => n.length >= 3))];
+  if (nombres.filter((n) => t.includes(n)).length >= 2) return true;
+  const precios = [...new Set(ops.map((o) => String(o.precio ?? "")).filter((p) => /^\d+$/.test(p)))];
+  return precios.filter((p) => new RegExp(`(^|[^\\d])${p}([^\\d]|$)`).test(t)).length >= 2;
+}
 const RE_PIDE_ELEGIR_CANTIDAD =
-  /\b(cu[aá]nt[oa]s\s+(unidades|frascos?|packs?|cajas?|piezas?|kits?)\b|cu[aá]nt[oa]s\b[^?!.\n]{0,80}\b(quieres|deseas|llevas|te\s+llevo|te\s+llevas|te\s+mando|te\s+preparo|vas\s+a\s+llevar|necesitas|est[aá]s\s+interesad[oa]|te\s+interesan|prefieres)\b|qu[eé]\s+(opci[oó]n|presentaci[oó]n|pack|oferta)\s+(quieres|prefieres|te\s+llevo|te\s+preparo)|\b1\s*,?\s*2\s+o\s+3\s*(frascos?|unidades?|packs?)?)/i;
+  /\b(cu[aá]nt[oa]s\s+(unidades|frascos?|packs?|cajas?|piezas?|kits?)\b|cu[aá]nt[oa]s\b[^?!.\n]{0,80}\b(quieres|deseas|llevas|te\s+llevo|te\s+llevas|te\s+mando|te\s+preparo|vas\s+a\s+llevar|necesitas|est[aá]s\s+interesad[oa]|te\s+interesan|prefieres)\b|qu[eé]\s+(opci[oó]n|presentaci[oó]n|pack|oferta)\s+(quieres|prefieres|te\s+llevo|te\s+preparo)|cu[aá]l\b[^?!.\n]{0,70}\b(opci[oó]n(es)?|presentaci[oó]n(es)?|versi[oó]n(es)?|packs?|ofertas?|las\s+dos|los\s+dos)\b|cu[aá]l\s+(de\s+(las|los)\s+(dos|tres)\s+)?te\s+(preparo|llevo|mando|dejo)\b|\b1\s*,?\s*2\s+o\s+3\s*(frascos?|unidades?|packs?)?)/i;
 
 
 // 💰 El CLIENTE preguntó el precio. Medido: «hola, ¿cuánto cuesta el dermachem?» y el bot
@@ -6119,7 +6136,14 @@ function preguntaCuantos(ops: Opcion[], ctx: any, negritas = true, yaListadas = 
   // Si el mensaje YA trae las presentaciones —la IA casi siempre las escribe— se pega solo la
   // pregunta. Volcarlas otra vez deja la misma lista de precios dos veces en una burbuja;
   // medido en Tarapoto. La pregunta es la misma en los dos casos, escrita en un solo sitio.
-  const _cierre = esDigital(ctx)
+  // 🎚️ …y «¿cuántas unidades?» tampoco cuando las versiones de un FÍSICO no son escalones de
+  // cantidad. Medido (batería F9, 2026-09-22) con un kit de dos presentaciones de una unidad
+  // —Estandar S/89 y Completo S/149—: el motor pegaba «¿Cuántas unidades o qué oferta te
+  // preparo?» debajo de la pregunta correcta de la IA («¿la Estandar o la Completo?»), así que
+  // el cliente leía dos preguntas distintas y ninguna era la que había que contestar.
+  // `porCantidad` ya distingue las dos formas: 1u/2u/3u son cantidades distintas; dos
+  // presentaciones de UNA unidad, no. La pregunta sigue a esa distinción, no al tipo de producto.
+  const _cierre = (esDigital(ctx) || !porCantidad)
     ? (lista.length === 2 ? "¿Cuál de las dos te preparo?" : "¿Cuál te preparo?")
     : "¿Cuántas unidades o qué oferta te preparo?";
   if (yaListadas) return _cierre;
@@ -17045,6 +17069,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // Se le pregunta en el turno en que se resuelve su ubicación, que es cuando ya se le
     // puede decir cómo le llega, y NO se vuelve a tocar. Antes salía de cuatro sitios
     // distintos y el cliente la leía en cada mensaje.
+    // 🎚️ ¿Las versiones de este producto son PRESENTACIONES o escalones de CANTIDAD? Se resuelve
+    // una sola vez por turno y lo usan los tres sitios que hablan de la cantidad: la instrucción
+    // del prompt, la pregunta que pega el motor cuando la IA no la hace, y `preguntaCuantos`.
+    // Medido (batería F9, 2026-09-22) con un físico de dos presentaciones de UNA unidad
+    // —Estandar S/89 y Completo S/149—: los tres preguntaban «¿cuántas unidades?» a alguien que
+    // lo que tenía que decir era CUÁL. Uno de los tres llegó a pegar las dos preguntas seguidas.
+    if (op === "generar_texto" && ctx._product_id && (run as any)._esPresentaciones === undefined) {
+      try {
+        const _opsP = (await loadOpciones(db, run, String(ctx._product_id))).filter((o) => Number(o.precio) > 0);
+        (run as any)._esPresentaciones = _opsP.length >= 2 && _opsP.every((o) => Number(o.cantidad ?? 1) <= 1);
+      } catch (_) { (run as any)._esPresentaciones = false; }
+    }
+    // …y con presentaciones, «cuántas unidades» no se dice NUNCA, haya elegido o no. El bloque
+    // de más abajo solo corre mientras le falta elegir, así que en cuanto elegía se quedaba sin
+    // freno: medido, dijo «la más completa» y le contestaron «¿cuántas unidades quieres?».
+    if (op === "generar_texto" && !esDigital(ctx) && (run as any)._esPresentaciones) {
+      parts.push("## Acá no hay unidades que contar\n" +
+        "Las versiones de este producto son PRESENTACIONES distintas (cada una trae una unidad), no packs " +
+        "de cantidad. ⛔ Nunca le preguntes «¿cuántas unidades?» ni le hables de llevar varias: lo que tiene " +
+        "que decidir es CUÁL quiere. Si él pide varias, se lo tomas y sigues, pero la pregunta nunca es esa.");
+    }
     // 💻 EN UNA VENTA DIGITAL NO HAY ENVÍO — y esto vale en TODOS los turnos, no solo mientras
     // le falte elegir. Vivía dentro del bloque de abajo, que se apaga en cuanto el cliente
     // elige… o sea que el freno desaparecía justo en el turno donde el modelo empieza a pensar
@@ -17109,6 +17154,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // señal del turno se guarda en el `run`, que no se persiste.
       (run as any)._zonaRecienTurno = _tocaPreguntarCant || !!(run.vars as any)?._zona_recien;
       (run as any)._tocaCantidad = _tocaPreguntarCant;
+      // 🎚️ VERSIONES QUE NO SON PACKS. Medido (batería F9, 2026-09-22) con un físico de dos
+      // presentaciones —Estandar S/89 y Completo S/149, las dos de UNA unidad—: a alguien que
+      // acababa de decir «la más completa» el bot le contestaba «¿cuántas unidades quieres?».
+      // La pregunta de la cantidad solo tiene sentido cuando las versiones SON escalones de
+      // cantidad (1u/2u/3u). Si todas traen una unidad, son presentaciones distintas del mismo
+      // producto —como Básica/Premium en digital— y lo que falta saber es CUÁL quiere.
+      const _esPresentaciones = !!(run as any)._esPresentaciones;
+      const _preguntaCant = _esPresentaciones
+        ? "  2️⃣ Y pregúntale CUÁL de las presentaciones quiere. Una línea. ⛔ NO le preguntes " +
+          "«cuántas unidades»: acá las versiones no son packs de cantidad, cada una trae una y " +
+          "lo que falta es que elija cuál.\n"
+        : "  2️⃣ Y pregúntale cuántas unidades quiere. Una línea también.\n";
       parts.push(_tocaPreguntarCant
         ? "## Este mensaje lleva DOS cosas, y solo dos\nAcaba de decirte de dónde escribe, así que:\n" +
           // 🔴 SIN el adelanto. Rodrigo, dos veces seguidas: «ataca muy fuerte lo del adelanto
@@ -17120,12 +17177,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "Lima: que paga al recibirlo. ⛔ NO menciones el adelanto ni su monto en este mensaje: " +
           "todavía no eligió nada y hablarle de plata por adelantado suena a cobro, no a venta. " +
           "El adelanto se le pide después, en su propio mensaje, cuando ya está cerrando.\n" +
-          "  2️⃣ Y pregúntale cuántas unidades quiere. Una línea también.\n" +
+          _preguntaCant +
           "La lista con los precios se pega sola debajo; tú NO la escribas. Nada más en este mensaje."
-        : "## NO le preguntes la cantidad en este mensaje\nTodavía no eligió cuántas unidades, y está bien: " +
-          "no es un peaje. ⛔ No se lo preguntes ahora ni cierres con «¿cuántas unidades?» — ya se le " +
-          "preguntó o se le va a preguntar en el momento que toca. Sigue con lo que estabas: contestarle, " +
-          "pedirle lo que falte, avanzar. Si él dice una cantidad por su cuenta, la tomas y listo.");
+        : (_esPresentaciones
+          ? "## NO le preguntes cuál presentación en este mensaje\nTodavía no eligió cuál, y está bien: no " +
+            "es un peaje. ⛔ No se lo preguntes ahora. Y NUNCA le hables de «cuántas unidades»: acá las " +
+            "versiones son presentaciones distintas, no packs de cantidad. Sigue con lo que estabas: " +
+            "contestarle, pedirle lo que falte, avanzar. Si él dice cuál quiere por su cuenta, la tomas y listo."
+          : "## NO le preguntes la cantidad en este mensaje\nTodavía no eligió cuántas unidades, y está bien: " +
+            "no es un peaje. ⛔ No se lo preguntes ahora ni cierres con «¿cuántas unidades?» — ya se le " +
+            "preguntó o se le va a preguntar en el momento que toca. Sigue con lo que estabas: contestarle, " +
+            "pedirle lo que falte, avanzar. Si él dice una cantidad por su cuenta, la tomas y listo."));
     }
     // 🔗 UN SOLO bloque de largo. Antes eran dos —«Escribe CORTO» (384 tok) y «Largo del
     // mensaje» (157 tok)— y los dos salían SIEMPRE, uno a noventa bloques del otro. No solo
@@ -20212,9 +20274,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && (run as any)?._tocaCantidad
           && !String(ctx.opcion_id ?? "").trim()
           && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))   // al que lo va a pensar no se le pregunta nada
-          && !RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(salida))) {
-        salida = salida.trimEnd() + (esDigital(ctx) ? "\n\n¿Cuál de las opciones quieres?" : "\n\n¿Cuántas unidades quieres?");
-        await logEvent(db, run.channel_id, run.contact_id, "campo", "🔢 La cantidad la preguntó el motor",
+          && !RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(salida))
+          // …y tampoco si ya le puso las dos presentaciones delante (ver `yaOfreceElegir`).
+          && !yaOfreceElegir(sinFormato(salida), await loadOpciones(db, run, String(ctx._product_id ?? "")))) {
+        // 🎚️ Con presentaciones (ver `_esPresentaciones`) la pregunta es CUÁL, no cuántas.
+        const _presQ = esDigital(ctx) || !!(run as any)?._esPresentaciones;
+        salida = salida.trimEnd() + (_presQ ? "\n\n¿Cuál de las opciones quieres?" : "\n\n¿Cuántas unidades quieres?");
+        await logEvent(db, run.channel_id, run.contact_id, "campo",
+          _presQ ? "🎚️ La presentación la preguntó el motor" : "🔢 La cantidad la preguntó el motor",
           "Era el turno de preguntarla y la IA no lo hizo").catch(() => {});
       }
       const _pidioPrecio = RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""));
@@ -20675,8 +20742,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // ⚠️ Sin exigir el signo: el modelo lo pide en imperativo («dime cuántas llevas»),
               // que es la forma coloquial y la que más se le escapa a las regex escritas
               // redactando. Ver la regla de la forma coloquial.
+              // 🎚️ …y también cuenta como «ya preguntó» la forma con CUÁL, que es como se
+              // pregunta cuando las versiones son presentaciones. Medido (F9, 2026-09-22): el
+              // motor pegó «¿Cuál de las opciones quieres?» y este bloque, que no la reconocía,
+              // añadió debajo «¿Cuál de las dos te preparo?» — la misma pregunta dos veces.
               const _yaPregunta = /\bcu[aá]nt[ao]s?\b|qu[eé]\s+(oferta|presentaci[oó]n|opci[oó]n)\b/i
-                .test(sinFormato(_resto));
+                .test(sinFormato(_resto)) || RE_PIDE_ELEGIR_CANTIDAD.test(sinFormato(_resto))
+                || yaOfreceElegir(sinFormato(_resto), opsPend);
               // `_negOn`: la perilla de negritas del dueño, ya leída arriba de este mismo
               // nodo. Volver a sacarla de `cfg` sería una segunda fuente para lo mismo, que
               // es como las negritas dejaron de salir la vez pasada (form vs compilado).
