@@ -10577,7 +10577,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // pedidos. Corta = ilegible = manual.
   // 🔒 Sin destinatarios cargados el modelo no sabe a quién debía ir el dinero (ver
   // validadorSinDestinatarios): no se auto-aprueba, va a revisión manual.
-  const _sinDest = validadorSinDestinatarios(ch);
+  const _sinDest = validadorSinDestinatarios((ch as any)?.ocr_config);
   if (_sinDest && cfg.validacion === "auto") {
     await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual",
       "La validación está en automático pero el negocio no tiene métodos de pago cargados (Negocio → Pagos): sin ellos no se puede comprobar a quién se pagó.").catch(() => {});
@@ -10861,7 +10861,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   }
   // Ídem adelanto: operación de menos de 4 caracteres = sin candado posible → manual.
   // Mismo cerrojo que el adelanto: sin métodos de pago cargados no se auto-aprueba.
-  const _sinDestS = validadorSinDestinatarios(ch);
+  const _sinDestS = validadorSinDestinatarios((ch as any)?.ocr_config);
   if (_sinDestS && log.modo === "auto") {
     await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual",
       "La validación está en automático pero el negocio no tiene métodos de pago cargados (Negocio → Pagos): sin ellos no se puede comprobar a quién se pagó.").catch(() => {});
@@ -15919,8 +15919,8 @@ function ocrSystemMinimo(tz?: string | null): string {
 // Los dos validadores (adelanto y saldo) lo consultan antes de auto-aprobar: si no hay
 // destinatarios, el pago baja a revisión manual — que es lo único honesto que se puede
 // hacer sin saber a quién se pagó.
-function validadorSinDestinatarios(ch: any): boolean {
-  const ocr = (ch as any)?.ocr_config;
+function validadorSinDestinatarios(ocrCfg: any): boolean {
+  const ocr = ocrCfg;
   if (!ocr || ocr.activo === false) return true;
   const m = Array.isArray(ocr.metodos)
     ? ocr.metodos.filter((x: any) => x && (x.app || x.titular || x.numero))
@@ -19169,7 +19169,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const _tzOcr = await tzDe(db, run);
     const vt = buildOcrSystem(info.ocr, montoIA, ctx.moneda ?? null, montoIA == null, _tzOcr)
       ?? anclaDeFechaOcr(_tzOcr);
-    system = system ? (vt + "\n\n" + system) : vt;
+    // 🔒 La prueba anti-alucinación que ya tienen los validadores de adelanto y saldo. Este
+    // camino —el de la venta DIGITAL— no la tenía, y es el que más duele: entrega el producto
+    // al instante y no se puede deshacer. Acá no hay esquema JSON que obligue al modelo, así
+    // que se le pide en el texto y el código la usa SI llega (ver pruebaDeTexto): sin esto,
+    // un modelo que alucine un comprobante sobre una foto cualquiera entregaba el producto.
+    const vtx = vt + "\n\nIncluye SIEMPRE en el JSON un campo `texto_visible` con la " +
+      "TRANSCRIPCIÓN LITERAL de todo el texto que se ve en la imagen —tal cual, sin interpretarlo " +
+      "ni completarlo, y cadena vacía si no tiene texto—: es la prueba de que estás mirando la " +
+      "imagen y no suponiendo lo que debería decir.";
+    system = system ? (vtx + "\n\n" + system) : vtx;
   }
 
   try {
@@ -19321,6 +19330,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // nodo solo guardaba el texto crudo ("PAGO_OK"). Si el comprobante trae un
     // JSON, se rescatan a campos propios para que el aviso y Google Sheets
     // puedan decir CON QUÉ pagó, que es justo lo que Rodrigo quiere registrar.
+    // Se declara FUERA del bloque de «analizar_imagen»: lo que el OCR leyó se vuelve a
+    // mirar más abajo, al decidir si la venta DIGITAL se entrega sola o va a revisión.
+    let _ocrLeyo: any = null;
     if (op === "analizar_imagen") {
       // Anti-reúso JUSTO: se borra la operación del comprobante ANTERIOR antes de
       // leer este, para comparar la operación de ESTE pago y no una vieja.
@@ -19336,7 +19348,6 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       run.vars.pago_monto = ""; ctx.pago_monto = "";
       run.vars.pago_metodo = ""; ctx.pago_metodo = "";
       run.vars.pago_titular = ""; ctx.pago_titular = "";
-      let _ocrLeyo: any = null;
       try {
         const m = /\{[\s\S]*\}/.exec(String(result ?? ""));
         if (m) {
@@ -19557,11 +19568,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // va a validación MANUAL (seguridad del dinero > conveniencia). Aplica al principal
           // Y al extra: un comprobante legible sí trae la operación y sigue en auto.
           const sinOpVerificable = !opNum || String(opNum).length < 4;   // corta (<4) = sin candado posible = manual
+          // 🔒 Las dos defensas que ya tenían adelanto y saldo, y que a este camino —el que
+          // ENTREGA el producto al instante— le faltaban:
+          //  · que el monto que dice leer esté de verdad en la transcripción (anti-alucinación).
+          //    Acá no hay esquema JSON que obligue el campo, así que `pruebaDeTexto` solo opina
+          //    si llegó: no se puede frenar una venta legítima porque el modelo se lo saltara.
+          //  · que el negocio tenga métodos de pago cargados; sin ellos el modelo no sabe a
+          //    quién debía ir el dinero y un pago a un tercero se ve igual de legítimo.
+          const _montoDig = parseMonto(run.vars.pago_monto, ctx) ?? NaN;
+          const sinPruebaDig = Number.isFinite(_montoDig) && !pruebaDeTexto(_ocrLeyo, _montoDig);
+          const sinDestinatariosDig = validadorSinDestinatarios(info?.ocr);
           // Va a validación manual si el canal/producto lo pide (modo.manual), si el
           // freno detectó un sobrepago sospechoso (Capa 1), si no se sabe QUÉ compró
           // (precioSinResolver), o si es un extra sin operación verificable — aunque
           // esté en automático.
-          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable || montoIlegible || precioSinResolver || extraMontoDudoso)) {
+          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable || montoIlegible || precioSinResolver || extraMontoDudoso || sinPruebaDig || sinDestinatariosDig)) {
             const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
             const { data: cc } = await db.from("contacts").select("product_id, nombre, wa_id").eq("id", run.contact_id).maybeSingle();
             const quien = (cc as any)?.nombre || (cc as any)?.wa_id || "Un cliente";
