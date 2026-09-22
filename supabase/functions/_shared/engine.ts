@@ -14579,6 +14579,16 @@ function datoDudoso(clave: string, valor: string, ctx?: any): string | null {
     const _n = s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zñ\s]/g, " ").replace(/\s+/g, " ").trim();
     const _SALUDO = /^(hola+|holis|hello|hi|hey|alo|buenas|buenos dias|buenas tardes|buenas noches|buen dia|info|informacion|si|ok|okey|dale|ya|gracias|quiero|hola buenas|hola que tal|disculpe|disculpa|amigo|amiga|senor|senora|joven|caballero|jefe|jefa|bro|pe|ps)$/;
     if (!_n || _SALUDO.test(_n) || _n.length < 3) return "eso es un saludo o una muletilla, no su nombre — pídeselo de nuevo";
+    // 🛣️ …y una CALLE tampoco es una persona. Al pedirle al extractor que saque el nombre de
+    // un mensaje dictado de corrido (ver la regla del prompt), el riesgo nuevo es que devuelva
+    // el jirón, que va pegado al nombre. Un pedido a nombre de «Jr Zorritos» es tan malo como
+    // uno a nombre de «Hola»: el motorizado llama y no hay nadie que responda por él.
+    if (/^(av|avenida|jr|jiron|calle|ca|psje|pasaje|mz|manzana|lote|lt|urb|urbanizacion|km|carretera|block|dpto|departamento|interior|piso)\b/.test(_n)) {
+      return "eso es una dirección, no su nombre — pídeselo de nuevo";
+    }
+    const _dir = String((ctx as any)?.direccion ?? "").toLowerCase().normalize("NFD")
+      .replace(/[̀-ͯ]/g, "").replace(/[^a-zñ\s]/g, " ").replace(/\s+/g, " ").trim();
+    if (_dir && _n.length >= 5 && _dir.includes(_n)) return "eso es parte de la dirección, no su nombre — pídeselo de nuevo";
   }
   if (clave === "nombre_completo" && String(ctx?.zona_entrega ?? "") === "provincia") {
     if (s.split(/\s+/).filter(Boolean).length < 2) return "falta el apellido (la agencia lo exige igual al DNI)";
@@ -14807,6 +14817,15 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
               "- El cliente suele responder con más cosas de las pedidas (la sede junto con su ciudad, " +
               "el nombre junto con el DNI). Quédate con la parte que corresponde a cada dato y guárdala igual: " +
               "nunca descartes un dato entero porque venga mezclado con otra información.\n" +
+              // 🗣️ El dictado de corrido. Medido (F9, 2026-09-22): «el completo para Lima,
+              // Breña, Jr Zorritos 1200, Pedro Salas 987654321» → sacó el teléfono y la
+              // dirección y se dejó el NOMBRE, que estaba ahí con todas sus letras. El bot le
+              // pidió «tu nombre completo» a alguien que acababa de dárselo (y encima le
+              // contestó «Perfecto, Pedro»). Mucha gente pide así, de una sola tirada.
+              "- MENSAJE DICTADO DE CORRIDO: mucha gente manda todo junto y sin etiquetas " +
+              "(«el completo para Lima, Breña, Jr Zorritos 1200, Pedro Salas 987654321»). Ahí el NOMBRE de la " +
+              "persona suele ir AL FINAL, pegado al celular, y es la parte que no es ni un lugar, ni una calle, " +
+              "ni un número: sácalo igual. No lo omitas por venir mezclado ni por no tener etiqueta.\n" +
               "- Te pasamos los últimos mensajes del cliente, del más viejo al más nuevo. Si se corrigió, " +
               "vale SIEMPRE lo más reciente (si dijo una dirección y después otra, quédate con la última).\n" +
               "- También te pasamos la última pregunta del vendedor. Úsala SOLO para entender respuestas " +
@@ -15633,6 +15652,20 @@ function mencionaFuerte(texto: string, op: Opcion, todas: Opcion[]): boolean {
   return false;
 }
 
+// ¿Son la misma palabra con UN dedazo (una letra cambiada, de más o de menos)? Se exige 5+
+// letras: con palabras cortas la distancia 1 confunde cosas distintas («pack» y «pico»).
+function casiIgual(a: string, b: string): boolean {
+  if (a === b) return true;
+  const la = a.length, lb = b.length;
+  if (Math.abs(la - lb) > 1 || Math.min(la, lb) < 5) return false;
+  let i = 0, j = 0, dif = 0;
+  while (i < la && j < lb) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++dif > 1) return false;
+    if (la > lb) i++; else if (lb > la) j++; else { i++; j++; }
+  }
+  return dif + (la - i) + (lb - j) <= 1;
+}
 function mencionaLaOpcion(texto: string, op: Opcion, todas: Opcion[]): boolean {
   const t = sinTildes(texto);
   if (!t.trim()) return false;
@@ -15647,6 +15680,17 @@ function mencionaLaOpcion(texto: string, op: Opcion, todas: Opcion[]): boolean {
   const suelta = (w: string) =>
     new RegExp("(^|[^a-z0-9])" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^a-z0-9]|$)").test(t);
   if (tokens(op.nombre).some((w) => !ajenas.has(w) && suelta(w))) return true;
+  // 1b) El mismo nombre CON UN DEDAZO. Medido (F9, 2026-09-22): «quiero el conpleto» —una sola
+  // letra cambiada— no sellaba nada, y el motor le pegaba la lista de opciones debajo de una
+  // respuesta que ya decía cuál quería y cuánto costaba. Se escribe rápido y en el celular.
+  // Solo palabras largas (5+), una sola diferencia, y NUNCA si el dedazo se parece también a
+  // una palabra de otra presentación: ante dos candidatas no se elige por él.
+  {
+    const _largas = [...ajenas].filter((w) => w.length >= 5);
+    const _txt = t.split(/[^a-z0-9]+/).filter((w) => w.length >= 5);
+    const _propias = tokens(op.nombre).filter((w) => !ajenas.has(w) && w.length >= 5);
+    if (_propias.some((w) => _txt.some((x) => casiIgual(x, w) && !_largas.some((a) => casiIgual(x, a))))) return true;
+  }
   // 2) Las unidades que trae, en número o en palabra ("llevo 2", "quiero dos").
   //    ⚠️ Pero el número tiene que estar hablando del PRODUCTO. Medido: una clienta
   //    escribió «tengo paño en las mejillas hace como DOS AÑOS» y ese "dos" contó como
