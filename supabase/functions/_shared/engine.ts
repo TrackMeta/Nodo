@@ -16021,6 +16021,11 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
   const cons: string[] = [
     "Las billeteras y transferencias suelen ser INTEROPERABLES: una billetera puede recibir dinero de otra distinta, y las transferencias cruzan entre bancos. NO invalides un pago solo porque la app/banco de ORIGEN sea distinta a la del destinatario; lo que importa es que el dinero llegue a una de las cuentas/números válidos de arriba.",
     "El nombre del destinatario suele salir PARCIAL o enmascarado (ej. «PER FLO», «P*** F****», «J. PÉREZ N.», solo iniciales o apellidos). Considéralo válido si coincide RAZONABLEMENTE con el titular esperado (mismas iniciales/apellidos/patrón); no exijas el nombre completo exacto.",
+    // 🔤 Medido con 22 comprobantes reales (2026-09-22): un voucher de Caja Arequipa que decía
+    // «PERCY RODRIGO FLORES NUNEZ» se rechazó «porque el titular no coincide» con «Percy
+    // Rodrigo Flores Nuñez». Es el MISMO nombre: los bancos escriben sin tildes ni ñ y en
+    // mayúsculas. Un rechazo así es un pago bueno devuelto al cliente.
+    "Al comparar nombres, IGNORA tildes, la eñe, las mayúsculas y los espacios de más: «NUNEZ» es «Nuñez», «PEREZ» es «Pérez», «MARIA» es «María». Los bancos y las cajas casi siempre escriben en MAYÚSCULAS y sin acentos.",
     "Distingue una CONSTANCIA de pago ya realizado de un «pago programado» o «en proceso» aún no ejecutado: estos últimos NO son válidos.",
     // Muchos clientes NO pagan desde la app: van a un agente o al banco. Esos
     // comprobantes son igual de válidos y hay que saber leerlos.
