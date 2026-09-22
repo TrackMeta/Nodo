@@ -6658,7 +6658,18 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       // fantasma: promesa incumplida que el cliente SÍ ve, y encima se queda esperando.
       // Con archivo cargado se manda igual (que es lo que el cliente pidió); sin archivo,
       // lo toma una persona, que sí puede mandárselo.
-      if (RE_PROMETE_ARCHIVO.test(result)) {
+      // 🔴 …pero NO cuando lo que promete es LA ENTREGA del producto digital. Medido en la
+      // batería de versiones (2026-09-22): a un cliente del curso le dijo «apenas me mandes la
+      // captura, te envío el acceso por link para que empieces ya con los videos» —que es
+      // exactamente como se entrega ese producto— y el guard pescó la palabra «videos», lo
+      // tomó por una foto prometida, escaló a un humano y APAGÓ EL BOT en plena venta. El
+      // cliente siguió solo: eligió la Premium, yapeó S/79 y nadie le contestó ni le entregó
+      // nada, porque el chat ya estaba mudo. Un falso positivo acá cuesta la venta entera.
+      // Se mira el TROZO que hizo match, no el mensaje completo: si ahí mismo habla del
+      // acceso/link/plataforma, está describiendo la entrega, no ofreciendo un adjunto.
+      const _mProm = RE_PROMETE_ARCHIVO.exec(result);
+      const _esLaEntrega = !!_mProm && /\b(acceso|link|enlace|plataforma|aula|curso)\b/i.test(_mProm[0]);
+      if (_mProm && !_esLaEntrega) {
         if (catalog.length && catalog[0]?.media_url) {
           const a = catalog[0];
           await emit(db, run, { media_kind: a.media_kind, media_url: a.media_url, mime: a.mime, filename: a.filename, caption: "" }, ctx);
@@ -11921,7 +11932,7 @@ async function reengancharExtra(
 async function maybePostventa(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
   // 1) ¿Es comprador? Su último pedido está en un estado de compra concretada.
   const { data: order } = await db.from("orders")
-    .select("id, estado, product_id, version_id, order_bumps, product:product_id(nombre)")
+    .select("id, estado, product_id, version_id, order_bumps, amount, product:product_id(nombre)")
     .eq("channel_id", channelId).eq("contact_id", contactId)
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!order || !COMPRADO_STATES.has(String((order as any).estado))) return false;
@@ -11986,16 +11997,53 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
           const { data: _fv } = await db.from("flows").select("id").eq("channel_id", channelId)
             .eq("product_id", _pidU).eq("role", "venta").eq("estado", "activo").limit(1).maybeSingle();
           if ((_fv as any)?.id) {
+            // 💳 UPGRADE: SOLO LA DIFERENCIA (decisión de Rodrigo, 2026-09-22). Lo que ya
+            // pagó por su versión anterior se le acredita. Medido antes del cambio: el bot
+            // le prometía «así solo pagas la diferencia», el cliente yapeaba los S/40 y el
+            // motor le contestaba «van S/40 de S/79, faltan S/39» — le cobraba el curso
+            // entero otra vez y le cobraba dos veces el contenido básico.
+            // Solo hacia ARRIBA: pasarse a una versión más barata no genera vuelto (eso lo
+            // decide una persona). El crédito viaja en el `flow_run` nuevo y muere con él,
+            // así que no se cuela en una compra posterior.
+            const _pagado = Number((order as any).amount) || 0;
+            const _nuevo = Number(_otra.precio) || 0;
+            const _credito = (_nuevo > _pagado && _pagado > 0) ? _pagado : 0;
+            const _aPagar = _credito > 0 ? +(_nuevo - _credito).toFixed(2) : _nuevo;
+            const _ant = _opsU.find((o) => String(o.id) === String((order as any).version_id ?? ""));
+            // ⬇️ …y hacia ABAJO no se le cobra NADA. Medido (2026-09-22): quien compró la
+            // Premium por S/79 y dijo «mejor quiero la básica» recibía los datos para pagar
+            // otros S/39 por contenido que YA tiene dentro de lo que compró. Cobrar dos veces
+            // lo mismo es peor que un turno de más. Tampoco se «degrada» su pedido solo: si
+            // de verdad quiere cambiarse (o que le devuelvan algo), eso lo decide una persona.
+            if (_pagado > 0 && _nuevo <= _pagado) {
+              await deliverMessage(db, channelId, contactId,
+                `Tranquilo, ya no tienes que pagar nada más: ${_ant?.nombre ? `tu *${_ant.nombre}*` : "lo que compraste"} ` +
+                `ya te da acceso 🙌 Si igual quieres que te lo cambiemos, lo veo con el equipo y te escriben por acá.`)
+                .catch(() => {});
+              await pasarAHumano(db, channelId, contactId,
+                `🔻 Compró ${_ant?.nombre ?? "su versión"} y ahora pide *${_otra.nombre}* (más barata o igual). No se le cobró de nuevo: mira si hay que cambiársela o devolverle algo.`,
+                { aviso: true });
+              await logEvent(db, channelId, contactId, "nota", "🔻 Pidió una versión más barata",
+                `Tenía ${_ant?.nombre ?? "?"} y pidió ${_otra.nombre} — no se le cobró de nuevo`).catch(() => {});
+              return true;
+            }
+            // Los candados se limpian recién acá: si el cliente se estaba BAJANDO de versión
+            // (rama de arriba) no hay venta que relanzar, y borrarle los campos del producto
+            // antes de saberlo lo dejaba sin su opción sellada para nada.
             await limpiarCandadosVenta(db, contactId);
             await resetItemFields(db, channelId, contactId, _pidU);
-            const ok = await startFlowRun(db, channelId, contactId, String((_fv as any).id), { force: true, vars: { opcion_id: _otra.id } });
+            const ok = await startFlowRun(db, channelId, contactId, String((_fv as any).id),
+              { force: true, vars: { opcion_id: _otra.id, ...(_credito > 0 ? { _credito_upgrade: _credito } : {}) } });
             if (ok) {
               await setField(db, channelId, contactId, "opcion_id", String(_otra.id));
               await setField(db, channelId, contactId, "opcion_elegida", String(_otra.nombre ?? ""));
               const { data: _chM } = await db.from("channels").select("moneda").eq("id", channelId).maybeSingle();
               const _sym = simboloMoneda((_chM as any)?.moneda);
-              await deliverMessage(db, channelId, contactId, `¡De una! La *${_otra.nombre}* cuesta *${_sym} ${_otra.precio}* 🙌`).catch(() => {});
-              await maybeDatosPago(db, channelId, contactId, _txtU, "", true, undefined, { monto: Number(_otra.precio), sym: _sym, unico: false });
+              await deliverMessage(db, channelId, contactId, _credito > 0
+                ? `¡De una! Como ya pagaste ${_ant?.nombre ? `la *${_ant.nombre}*` : "tu versión anterior"}, ` +
+                  `solo pones la diferencia: *${_sym} ${_aPagar}* 🙌`
+                : `¡De una! La *${_otra.nombre}* cuesta *${_sym} ${_otra.precio}* 🙌`).catch(() => {});
+              await maybeDatosPago(db, channelId, contactId, _txtU, "", true, undefined, { monto: _aPagar, sym: _sym, unico: false });
               await logEvent(db, channelId, contactId, "nota", "🛎️ Soporte post-venta → otra presentación",
                 `${_otra.nombre}: “${_txtU.slice(0, 80)}”`).catch(() => {});
               return true;
@@ -13026,14 +13074,22 @@ async function precioEsperado(
 ): Promise<{ monto: number | null; opcion: Opcion | null; oferta: any | null }> {
   const opcion = await opcionElegida(db, run, ctx);
   const oferta = await ofertaActiva(db, run);
+  // 💳 Crédito por UPGRADE: lo que el cliente ya pagó por la versión anterior de este mismo
+  // producto. Se descuenta acá, en el único sitio que calcula «cuánto tiene que pagar», para
+  // que TODO lo que mira ese número hable de la diferencia y no del precio de lista: el
+  // mensaje con los datos de pago, el {{precio}} con el que redacta la IA, el monto contra el
+  // que se valida el comprobante y el importe del pedido. Lo pone el upgrade de maybePostventa
+  // y vive en ESE flow_run, así que no se cuela en una compra posterior.
+  const _cred = Number((run.vars as any)?._credito_upgrade) || 0;
+  const _menos = (m: number) => (_cred > 0 && m > _cred ? +(m - _cred).toFixed(2) : m);
   if (oferta && opcion && oferta.opcion_id === opcion.id && Number.isFinite(Number(oferta.precio))) {
-    return { monto: Number(oferta.precio), opcion, oferta };
+    return { monto: _menos(Number(oferta.precio)), opcion, oferta };
   }
   if (opcion?.precio != null && Number.isFinite(Number(opcion.precio))) {
-    return { monto: Number(opcion.precio), opcion, oferta };
+    return { monto: _menos(Number(opcion.precio)), opcion, oferta };
   }
   const legacy = Number(ctx.precio); // productos viejos: precio suelto en config
-  return { monto: Number.isFinite(legacy) ? legacy : null, opcion, oferta };
+  return { monto: Number.isFinite(legacy) ? _menos(legacy) : null, opcion, oferta };
 }
 
 // ═══════════════════════════════════════════════════════════════════
