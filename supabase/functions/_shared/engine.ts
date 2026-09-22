@@ -9291,7 +9291,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
       const raw = await runAI({ db, channelId: channelId, origen: "ocr",
         provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
         content: [await bloqueDeComprobante(url), { type: "text", text: "¿Es un comprobante de pago? Extrae el monto pagado y el nº de operación." }],
-        maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
+        maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>, jsonStrict: true,
       });
       parsed = JSON.parse(raw);
     }
@@ -10471,7 +10471,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
       const raw = await runAI({ db, channelId: channelId, origen: "ocr",
         provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: sys,
         content: [await bloqueDeComprobante(url), { type: "text", text: `Es el comprobante del ADELANTO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
-        maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
+        maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>, jsonStrict: true,
       });
       parsed = JSON.parse(raw);
     }
@@ -10775,7 +10775,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
       provider: ai.provider, apiKey: ai.api_key, model: ai.model,
       system,
       content: [await bloqueDeComprobante(url), { type: "text", text: `Es el comprobante del SALDO de un pedido. Extrae el monto pagado y el nº de operación, y di si es un comprobante legítimo (no juzgues si el monto alcanza).` }],
-      maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>,
+      maxTokens: 500, jsonSchema: SALDO_SCHEMA as unknown as Record<string, unknown>, jsonStrict: true,
     });
     parsed = JSON.parse(raw);
   } catch (_) { parsed = null; }
@@ -15998,7 +15998,22 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
   // Ya no hace falta el año: la fecha de hoy va en el bloque de arriba con todas sus letras.
   if (r.verificar_fecha) reglas.push(`Respecto a la fecha de HOY indicada arriba, la fecha/hora del comprobante no debe superar las ${Number(r.fecha_max_horas ?? 48)} horas de antigüedad. Solo márcalo sospechoso si es realmente ANTERIOR a esa ventana; un comprobante fechado hoy o en las últimas horas es VÁLIDO aunque su año te parezca lejano.`);
   if (r.operacion_unica) reglas.push("Extrae el número de operación/constancia. Es la clave anti-reuso: si falta o es ilegible, desconfía.");
-  if (r.rechazar_editados) reglas.push("Detecta señales de edición/montaje (tipografías inconsistentes, recortes, píxeles alterados, datos que no cuadran). Ante duda razonable, INVÁLIDO.");
+  // 🔎 Las señales concretas salen de un montaje REAL que este validador aprobó como bueno
+  // (2026-09-22, prueba con un Yape editado de verdad): tenía recuadros de color plano
+  // tapando el nombre, la fecha y la hora, tipografías distintas entre datos, y el nombre
+  // del destinatario COMPLETO — que es justo lo que Yape nunca muestra. Con la instrucción
+  // genérica («tipografías inconsistentes, píxeles alterados») no lo vio. Nombrar la señal
+  // sirve mucho más que pedir «detecta ediciones».
+  if (r.rechazar_editados) {
+    reglas.push(
+      "Detecta señales de edición/montaje y, ante duda razonable, marca INVÁLIDO. Mira en concreto:\n" +
+      "  · RECUADROS o rectángulos de color plano detrás de un dato (nombre, monto, fecha, hora, número de operación): es la marca de haber tapado el original para escribir encima.\n" +
+      "  · Un dato con TIPOGRAFÍA, tamaño, grosor, color o alineación distintos del resto de la captura.\n" +
+      "  · Texto con bordes recortados, sombras que no siguen, o que no está alineado con la línea base de su fila.\n" +
+      "  · En YAPE y PLIN el nombre del destinatario SIEMPRE sale abreviado o enmascarado («Percy Flo*», «P*** F****»). Un nombre COMPLETO y sin asteriscos en una captura de Yape/Plin es una señal fuerte de edición. (En transferencias BANCARIAS sí aparece completo: ahí esto no aplica.)\n" +
+      "  · Fechas u horas escritas de forma distinta a como las escribe esa app.",
+    );
+  }
   const nivel = r.exigencia === "alta" ? "ALTA (rechaza ante cualquier duda)" : r.exigencia === "baja" ? "BAJA (aprueba si lo esencial coincide)" : "MEDIA (equilibrio entre seguridad y fluidez)";
   reglas.push(`Nivel de exigencia: ${nivel}.`);
   p.push("## Reglas de validación\n" + reglas.map((x) => "- " + x).join("\n"));

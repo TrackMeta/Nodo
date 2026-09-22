@@ -43,6 +43,15 @@ export interface AiCall {
   content: string | ContentBlock[];
   maxTokens?: number;
   jsonSchema?: Record<string, unknown>; // salida estructurada (modo "extraer")
+  // 🔒 Exigir el esquema DE VERDAD, no pedirlo por favor. Con `json_object` a secas OpenAI
+  // devuelve «un JSON», no NUESTRO JSON: un campo obligatorio puede no venir, y si ese campo
+  // es una defensa (la transcripción del comprobante), la defensa se cae sola de vez en
+  // cuando. Medido con dos Yapes reales el 2026-09-22: el mismo validador la trajo en uno y
+  // no en el otro, así que un pago legítimo se fue a revisión manual sin motivo.
+  // Se activa SOLO donde el esquema está preparado para el modo estricto (todo objeto con
+  // additionalProperties:false), porque ahí OpenAI exige además que TODAS las propiedades
+  // estén en `required` — se completa acá para no tener que duplicarlo en cada esquema.
+  jsonStrict?: boolean;
   // 📊 Para registrar el consumo (ver `registraUso`). Opcionales a propósito: sin ellos
   // la llamada funciona igual y simplemente no se contabiliza, así que ningún call site
   // se rompe por no pasarlos.
@@ -252,7 +261,16 @@ async function callOpenAI(call: AiCall): Promise<string> {
     messages,
   };
   // OpenAI: para "extraer" forzamos objeto JSON.
-  if (call.jsonSchema) {
+  if (call.jsonSchema && call.jsonStrict) {
+    // Modo estricto: OpenAI obliga el esquema. Pide que TODAS las propiedades estén en
+    // `required` (las que puedan faltar se declaran nullable con type:["x","null"], que es
+    // como ya están las nuestras), así que se completa acá en vez de repetirlo por esquema.
+    const props = (call.jsonSchema as any).properties ?? {};
+    body.response_format = {
+      type: "json_schema",
+      json_schema: { name: "resultado", strict: true, schema: { ...call.jsonSchema, required: Object.keys(props) } },
+    };
+  } else if (call.jsonSchema) {
     body.response_format = { type: "json_object" };
     // OpenAI responde 400 si NINGÚN mensaje contiene literalmente la palabra "json" con
     // json_object. Los callers internos la incluyen, pero un nodo "extraer" con prompt de
