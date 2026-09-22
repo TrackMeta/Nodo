@@ -11933,6 +11933,41 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   const estado = String((order as any).estado);
   const esperandoSaldo = SALDO_PENDIENTE.has(estado);
 
+  // 📸 UN COMPROBANTE DESPUÉS DE COMPRAR no lo puede contestar la IA a ojo. Medido en la
+  // batería D8 (2026-09-22): el cliente mandó una segunda captura y el soporte le contestó
+  // «Gracias por enviar la captura. Ya verifico y te aviso en un momento»… y nadie verificó
+  // nada, nadie se enteró y el bot no volvió a escribir nunca. El patrón de siempre: el motor
+  // calla y la IA promete (ver [[patron-motor-calla-ia-promete]]).
+  // Solo hay dos lecturas y las dos acaban en una persona:
+  //   · es el MISMO pago reenviado porque cree que no entró → se le reenvía su acceso y se
+  //     queda tranquilo (es el caso normal y se resuelve solo);
+  //   · o pagó DOS VECES → hay plata que devolver, y eso no lo decide un bot.
+  // El saldo pendiente NO entra acá: esa captura es su pago y la atiende su validador.
+  if (!esperandoSaldo && event.type === "message" && event.msgType === "image") {
+    let _links: string[] = [];
+    try {
+      const _vid = (order as any).version_id;
+      if (_vid) {
+        const { data: _v } = await db.from("product_versions").select("entrega").eq("id", _vid).maybeSingle();
+        _links = (((_v as any)?.entrega ?? []) as any[])
+          .map((e) => String(e?.url ?? "").trim()).filter((u) => /^https?:\/\//.test(u));
+      }
+    } catch (_) { /* sin entrega legible → igual se le contesta y se escala */ }
+    await deliverMessage(db, channelId, contactId,
+      _links.length
+        ? "¡Gracias! 🙌 Tu compra ya está registrada y tu acceso ya salió por acá — te lo dejo de nuevo:\n" +
+          _links.join("\n") + "\n\nSi este es OTRO pago, lo reviso con el equipo y te escriben para devolvértelo."
+        : "¡Gracias! 🙌 Tu pago ya está registrado, así que no tienes que volver a pagar. " +
+          "Si este es otro pago o ves algo raro, lo reviso con el equipo y te escriben por acá.")
+      .catch(() => {});
+    await pasarAHumano(db, channelId, contactId,
+      `📸 Mandó un comprobante DESPUÉS de comprar (pedido ${estado}). Puede ser el mismo pago reenviado o uno de más: míralo y, si pagó dos veces, hay que devolvérselo.`,
+      { aviso: true });
+    await logEvent(db, channelId, contactId, "nota", "📸 Comprobante después de la compra",
+      `Pedido ${estado} — se le reenvió el acceso${_links.length ? "" : " (sin links configurados)"} y pasa a una persona`).catch(() => {});
+    return true;
+  }
+
   // 🔁 OTRA PRESENTACIÓN DEL MISMO PRODUCTO (digital): «ya compré la básica, ahora quiero la
   // premium». Iba a soporte y contestaba el precio sin mandar el número (medido 4 de 4). Se
   // sella la presentación nueva, se relanza el flujo de venta con ella puesta —así la captura
