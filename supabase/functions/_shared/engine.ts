@@ -19471,6 +19471,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       }
       if (refsOk.length || refsBad.length) blocks.push({ type: "text", text: "— Ahora analiza el SIGUIENTE comprobante enviado por el cliente:" });
       blocks.push(imageBlock(src), { type: "text", text: prompt });
+      // 🔒 Y LO ÚLTIMO QUE LEE, que es lo que de verdad obedece. Medido en la batería D8
+      // (2026-09-22): pedir estas claves en el `system` —antes o después del prompt del nodo—
+      // no sirvió de nada, el modelo devolvió su «{banco, operacion, monto, titular}» de
+      // siempre las dos veces. El prompt del nodo es el último bloque de usuario y manda; así
+      // que esto va PEGADO detrás de él. Sin estas claves, la venta digital —la que entrega
+      // al instante y no se puede deshacer— se queda sin los frenos que el código sí sabe
+      // comprobar: un comprobante de hace cinco días y uno pagado a otro número se
+      // ENTREGARON solos en esa tanda.
+      if (cfg.usar_validador !== false) {
+        blocks.push({ type: "text", text:
+          "IMPORTANTE — sobre ESE MISMO JSON que acabas de armar, agrégale estas cuatro claves (no cambies nada más):\n" +
+          "· \"fecha\": la fecha y hora del comprobante, tal cual se ven.\n" +
+          "· \"destinatario\": el nombre de QUIEN RECIBE el dinero, con su máscara si la trae.\n" +
+          "· \"destino\": el número de celular o cuenta AL QUE se envió el dinero.\n" +
+          "· \"texto_visible\": la transcripción literal de todo el texto de la imagen.\n" +
+          "Si alguno no se lee, ponlo en null. Responde solo el JSON con el formato que te pidieron, ya con estas claves dentro.",
+        });
+      }
       content = blocks;
     }
 
