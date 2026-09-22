@@ -7270,11 +7270,23 @@ function parseMonto(raw: unknown, ctx: any): number | undefined {
   // "1,200" (coma de miles SIN decimales) valía 1.2: en Perú la coma es separador de
   // miles, así que una coma seguida de EXACTAMENTE 3 dígitos (o varias comas) es
   // miles, no decimal → se quita. Solo coma + 1-2 dígitos ("129,5"/"129,50") es decimal.
-  if (s.includes(",") && s.includes(".")) s = s.replace(/,/g, "");
-  else if (s.includes(",")) {
-    const parts = s.split(",");
-    if (parts.length > 2 || /^\d{3}$/.test(parts[parts.length - 1])) s = s.replace(/,/g, "");
-    else s = s.replace(",", ".");
+  // 🔴 Regla general: con DOS separadores distintos, el que va ÚLTIMO es el decimal y el
+  // otro es de miles. Antes se asumía siempre el formato peruano («1,234.50») y se quitaban
+  // las comas a secas, así que «1.234,50» —Colombia, Argentina, y algún banco de acá—
+  // quedaba en «1.23450» y se leía como **S/ 1.23**: un pago de mil doscientos leído como
+  // un sol con veintitrés, sin error y sin revisión manual. Y «1.234.567,89» daba NaN.
+  const iC = s.lastIndexOf(","), iP = s.lastIndexOf(".");
+  if (iC >= 0 && iP >= 0) {
+    if (iC > iP) s = s.replace(/\./g, "").replace(",", ".");   // 1.234,50
+    else s = s.replace(/,/g, "");                               // 1,234.50
+  } else if (iC >= 0 || iP >= 0) {
+    // Un solo tipo de separador: si aparece varias veces, o lleva EXACTAMENTE 3 dígitos
+    // detrás, es de miles. Vale igual para la coma que para el punto — antes el punto no
+    // se miraba y «1.234» se leía 1.234 en vez de 1234.
+    const sep = iC >= 0 ? "," : ".";
+    const parts = s.split(sep);
+    if (parts.length > 2 || /^\d{3}$/.test(parts[parts.length - 1])) s = parts.join("");
+    else if (sep === ",") s = s.replace(",", ".");
   }
   const n = Number(s);
   return Number.isFinite(n) ? n : undefined;
