@@ -5667,6 +5667,35 @@ const RE_PROMETE_PRECIOS =
 // Si el texto nombra DOS de sus presentaciones (o dos de sus precios) y pregunta, ya ofreció
 // elegir y no hay nada que agregar. Es la lección de siempre con las regex sobre lo que
 // escribe el modelo: atarse a lo que es, no a cómo lo dice.
+// 🔢 CUÁNTAS pidió cuando las versiones son PRESENTACIONES. En el modelo de packs el número
+// vive dentro de la versión («2 unidades»); acá cada presentación trae una, así que el «2» del
+// cliente no tenía dónde guardarse y se perdía: «quiero 2 completos» creaba un pedido de UNO
+// (S/149 en vez de S/298), cobrando de menos en silencio. Decisión de Rodrigo (2026-09-22):
+// se multiplica.
+// Se lee anclado a SUS datos —el número pegado al nombre de la presentación— y, si no, a un
+// verbo de compra. Nunca un número suelto: las direcciones y los celulares están llenos.
+const _NUM_PAL: Record<string, number> = { un: 1, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10 };
+function cantidadPedidaDe(texto: string, ops: Opcion[]): number {
+  const t = normalize(String(texto ?? ""));
+  if (!t) return 0;
+  const aNum = (s: string) => (/^\d+$/.test(s) ? Number(s) : (_NUM_PAL[s] ?? 0));
+  const NUM = "(\\d{1,2}|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez)";
+  // 1) «2 completos», «dos kits estandar» — el número pegado al nombre de su presentación.
+  for (const o of ops) {
+    const n = normalize(String(o.nombre ?? "")).trim();
+    if (n.length < 3) continue;
+    const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m = new RegExp(`${NUM}\\s+(?:\\w+\\s+){0,2}${esc}(?:es|s)?\\b`, "i").exec(t);
+    if (m) { const v = aNum(m[1]); if (v >= 1 && v <= 20) return v; }
+  }
+  // 2) «quiero 2», «dame tres», «llevo 2 unidades» — con verbo de compra delante.
+  const m2 = new RegExp(
+    `\\b(?:quiero|dame|damelo|llevo|llevame|me llevo|mandame|envia(?:me)?|necesito|ponme|separame|agregame|serian|son)\\s+${NUM}\\b`, "i").exec(t);
+  if (m2) { const v = aNum(m2[1]); if (v >= 1 && v <= 20) return v; }
+  const m3 = new RegExp(`\\b${NUM}\\s+(?:unidades?|piezas?|kits?|juegos?|packs?)\\b`, "i").exec(t);
+  if (m3) { const v = aNum(m3[1]); if (v >= 1 && v <= 20) return v; }
+  return 0;
+}
 function yaOfreceElegir(texto: string, ops: Opcion[]): boolean {
   const raw = String(texto ?? "");
   if (!raw.includes("?")) return false;
@@ -7946,6 +7975,14 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       } catch (_) { /* best-effort */ }
     }
 
+    // 🔢 Varias de la misma PRESENTACIÓN: el número lo guardó el turno que lo oyó (ver
+    // `cantidadPedidaDe`) y acá manda sobre el `cantidad` de la versión, que en presentaciones
+    // vale 1 siempre. Sin esto el precio se multiplicaba (lo hace `precioEsperado`) pero el
+    // costo y el stock seguían contando UNA: margen inflado y una unidad de más en el almacén.
+    {
+      const _nP = Number((run.vars as any)?._cant_pres) || 0;
+      if (_nP > 1) { ctx.cantidad = _nP; if (!ship.cantidad) ship.cantidad = _nP; }
+    }
     // Congela el costo de la mercadería EN el pedido, para que cambiar el costo
     // del producto después no altere los márgenes ya cerrados (snapshot).
     // Prioridad: costo de la OPCIÓN elegida (por unidad — para variantes/packs con
@@ -13105,7 +13142,15 @@ async function precioEsperado(
   // que se valida el comprobante y el importe del pedido. Lo pone el upgrade de maybePostventa
   // y vive en ESE flow_run, así que no se cuela en una compra posterior.
   const _cred = Number((run.vars as any)?._credito_upgrade) || 0;
-  const _menos = (m: number) => (_cred > 0 && m > _cred ? +(m - _cred).toFixed(2) : m);
+  // 🔢 …y por CUÁNTAS pidió, cuando las versiones son presentaciones y el número no vive dentro
+  // de la versión (ver `cantidadPedidaDe`). Va acá, en el único sitio que calcula cuánto tiene
+  // que pagar, para que el mensaje con los datos de pago, el {{precio}} de la IA, la validación
+  // del comprobante y el importe del pedido digan los tres lo mismo.
+  const _nPres = Math.max(1, Number((run.vars as any)?._cant_pres) || 1);
+  const _menos = (m: number) => {
+    const _x = _nPres > 1 ? +(m * _nPres).toFixed(2) : m;
+    return _cred > 0 && _x > _cred ? +(_x - _cred).toFixed(2) : _x;
+  };
   if (oferta && opcion && oferta.opcion_id === opcion.id && Number.isFinite(Number(oferta.precio))) {
     return { monto: _menos(Number(oferta.precio)), opcion, oferta };
   }
@@ -17081,6 +17126,30 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         (run as any)._esPresentaciones = _opsP.length >= 2 && _opsP.every((o) => Number(o.cantidad ?? 1) <= 1);
       } catch (_) { (run as any)._esPresentaciones = false; }
     }
+    // 🔢 …y CUÁNTAS pidió. Se mira su último mensaje y los anteriores —el número casi nunca
+    // viene en el mismo turno que el resto (ver `regla-last-input-vs-historial`)— y se guarda
+    // en el run para que sobreviva a los turnos que siguen. Solo ≥2: «quiero 1» es el default.
+    if ((run as any)._esPresentaciones && !esDigital(ctx) && !(run.vars as any)?._cant_pres) {
+      try {
+        const _opsC = await loadOpciones(db, run, String(ctx._product_id ?? ""));
+        const _txts: string[] = [String(ctx.last_input ?? "")];
+        const { data: _ins } = await db.from("messages").select("content")
+          .eq("contact_id", run.contact_id).eq("direction", "in")
+          .order("ts", { ascending: false }).limit(4);
+        for (const m of _ins ?? []) _txts.push(String((m as any).content?.text ?? (m as any).content?.caption ?? ""));
+        for (const t of _txts) {
+          const n = cantidadPedidaDe(t, _opsC);
+          if (n >= 2) {
+            (run.vars as any)._cant_pres = n;
+            ctx.cantidad = n;
+            await logEvent(db, run.channel_id, run.contact_id, "campo", "🔢 Pidió varias de la misma presentación",
+              `${n} unidades — el precio se multiplica por ${n}`).catch(() => {});
+            break;
+          }
+        }
+      } catch (_) { /* sin historial legible → una unidad, como siempre */ }
+    }
+    if ((run.vars as any)?._cant_pres) ctx.cantidad = Number((run.vars as any)._cant_pres);
     // …y con presentaciones, «cuántas unidades» no se dice NUNCA, haya elegido o no. El bloque
     // de más abajo solo corre mientras le falta elegir, así que en cuanto elegía se quedaba sin
     // freno: medido, dijo «la más completa» y le contestaron «¿cuántas unidades quieres?».
