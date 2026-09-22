@@ -10575,7 +10575,14 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // ni la compara (ver operacionYaUsada/reclamarOperacion), así que «oper» truthy pasaba el
   // freno y se auto-aprobaba SIN candado — dos comprobantes leídos como «07» acreditaban dos
   // pedidos. Corta = ilegible = manual.
-  const puedeAuto = cfg.validacion === "auto" && cubre && !sobrepagoAdel && !!oper && oper.length >= 4 && _hayPrueba;
+  // 🔒 Sin destinatarios cargados el modelo no sabe a quién debía ir el dinero (ver
+  // validadorSinDestinatarios): no se auto-aprueba, va a revisión manual.
+  const _sinDest = validadorSinDestinatarios(ch);
+  if (_sinDest && cfg.validacion === "auto") {
+    await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual",
+      "La validación está en automático pero el negocio no tiene métodos de pago cargados (Negocio → Pagos): sin ellos no se puede comprobar a quién se pagó.").catch(() => {});
+  }
+  const puedeAuto = cfg.validacion === "auto" && !_sinDest && cubre && !sobrepagoAdel && !!oper && oper.length >= 4 && _hayPrueba;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU del pre-chequeo
   // `reuse`): si esta operación ya fue reclamada por otra ruta o un reintento del MISMO Yape,
   // no la ganamos → se degrada a manual (para que un solo comprobante no acredite dos pedidos).
@@ -10853,7 +10860,13 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
       "El monto que dice leer no aparece como número completo en el texto de la imagen, o el modelo no transcribió el texto.").catch(() => {});
   }
   // Ídem adelanto: operación de menos de 4 caracteres = sin candado posible → manual.
-  const puedeAuto = log.modo === "auto" && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper && oper.length >= 4 && _pruebaSaldo;
+  // Mismo cerrojo que el adelanto: sin métodos de pago cargados no se auto-aprueba.
+  const _sinDestS = validadorSinDestinatarios(ch);
+  if (_sinDestS && log.modo === "auto") {
+    await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual",
+      "La validación está en automático pero el negocio no tiene métodos de pago cargados (Negocio → Pagos): sin ellos no se puede comprobar a quién se pagó.").catch(() => {});
+  }
+  const puedeAuto = log.modo === "auto" && !_sinDestS && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper && oper.length >= 4 && _pruebaSaldo;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU): si esta
   // operación ya fue reclamada por otra ruta/reintento del mismo Yape, no ganamos → manual.
   if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "saldo", contactId))) reuse = true;
@@ -15892,6 +15905,21 @@ export function fechaLeidaNoEsFutura(fecha: unknown, tz?: string | null): boolea
 // Lleva el ancla de fecha sí o sí: es lo único sin lo cual el OCR se equivoca solo.
 function ocrSystemMinimo(tz?: string | null): string {
   return "Eres un validador experto de comprobantes de pago.\n\n" + anclaDeFechaOcr(tz);
+}
+// 🔒 ¿El validador tiene contra QUÉ comparar? Sin métodos de pago cargados, el prompt que se
+// le manda al modelo es el mínimo: no lleva a quién debía ir el dinero, así que un
+// comprobante pagado a un TERCERO se ve exactamente igual de legítimo que uno bueno.
+// Con la validación en «auto», eso despacharía pedidos contra pagos que nunca recibiste.
+// Los dos validadores (adelanto y saldo) lo consultan antes de auto-aprobar: si no hay
+// destinatarios, el pago baja a revisión manual — que es lo único honesto que se puede
+// hacer sin saber a quién se pagó.
+function validadorSinDestinatarios(ch: any): boolean {
+  const ocr = (ch as any)?.ocr_config;
+  if (!ocr || ocr.activo === false) return true;
+  const m = Array.isArray(ocr.metodos)
+    ? ocr.metodos.filter((x: any) => x && (x.app || x.titular || x.numero))
+    : [];
+  return m.length === 0;
 }
 function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string | null, noJuzgarMonto?: boolean, tz?: string | null): string | null {
   if (!ocr || ocr.activo === false) return null;
