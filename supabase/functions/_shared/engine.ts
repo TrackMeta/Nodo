@@ -15691,6 +15691,32 @@ const RE_ARRANCA_COMO_PREGUNTA =
 function palabrasDeAtributo(s: string): string[] {
   return normalize(String(s ?? "")).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 5);
 }
+// 🥇 «LA MÁS BARATA» / «LA MÁS COMPLETA». Es una forma normal de elegir y no la agarraba nadie:
+// medido (F9, 2026-09-22), a «la más barata, soy de Surco» el bot contestaba «¿cuál de las
+// opciones quieres?» — le preguntaba lo que acababa de decir. No hace falta que nombre la
+// versión: con dos precios distintos, «la más barata» señala una sola.
+// Solo con superlativo explícito («la más X», «la más económica»), nunca con el adjetivo suelto:
+// «quiero algo barato» no es elegir. Y con precios empatados no se decide por él.
+const RE_SUPER_BARATA = /\b(?:la|el|lo)?\s*m[aá]s\s+(?:barat[oa]|econ[oó]mic[oa]|simple|b[aá]sic[oa]|sencill[oa])\b|\bla\s+barata\b|\bel\s+barato\b/i;
+const RE_SUPER_CARA = /\b(?:la|el|lo)?\s*m[aá]s\s+(?:complet[oa]|car[oa]|grande|top|premium|full)\b|\bel\s+combo\s+completo\b/i;
+function eligePorSuperlativo(texto: string, list: Opcion[]): Opcion | null {
+  const t = String(texto ?? "");
+  if (!t.trim() || RE_ARRANCA_COMO_PREGUNTA.test(t)) return null;
+  const conP = list.filter((o) => o.precio != null && Number(o.precio) > 0);
+  if (conP.length < 2) return null;
+  const precios = conP.map((o) => Number(o.precio));
+  const min = Math.min(...precios), max = Math.max(...precios);
+  if (min === max) return null;                       // empate → que elija él
+  if (RE_SUPER_BARATA.test(t)) {
+    const baratas = conP.filter((o) => Number(o.precio) === min);
+    return baratas.length === 1 ? baratas[0] : null;
+  }
+  if (RE_SUPER_CARA.test(t)) {
+    const caras = conP.filter((o) => Number(o.precio) === max);
+    return caras.length === 1 ? caras[0] : null;
+  }
+  return null;
+}
 function eligePorAtributo(texto: string, list: Opcion[]): Opcion | null {
   const t = String(texto ?? "");
   if (!t.trim() || /[?¿]/.test(t) || RE_ARRANCA_COMO_PREGUNTA.test(t) || !RE_ELIGE_POR_ATRIBUTO.test(t)) return null;
@@ -15921,7 +15947,7 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   // y el motor le mandó los datos de pago de S/79 a alguien que pedía su plata.
   const _niegaAtr = /\b(no|ni|tampoco|nunca|jam[aá]s|devoluci[oó]n|devolver|reembolso|reclamo|estafa)\b/i.test(String(texto ?? ""));
   if (!String(ctx.opcion_id ?? "").trim() && !_niegaAtr) {
-    const op3 = eligePorAtributo(texto, list);
+    const op3 = eligePorAtributo(texto, list) ?? eligePorSuperlativo(texto, list);
     if (op3) {
       run.vars.opcion_id = op3.id;
       ctx.opcion_id = op3.id;
