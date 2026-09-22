@@ -545,6 +545,24 @@ async function runEngineInner(
     // Sin pedido vivo no hay nada que cancelar → sigue la conversación normal.
   }
 
+  // 🔴 SE ARREPIENTE ANTES DE QUE EL PEDIDO EXISTA. Medido en la batería L7 (2026-09-22):
+  // el cliente ya había dado nombre, celular y dirección, el bot le pidió confirmar la
+  // calle y contestó «sabes qué, déjalo, ya no lo quiero». La IA respondió bien («entiendo,
+  // acá estoy») y el flujo, en el MISMO turno, le creó el pedido y le mandó «✅ Tu pedido
+  // quedó confirmado» — con motorizado y aviso al dueño. La rama de cancelar no lo agarra
+  // por dos motivos: «ya no lo quiero» está fuera del banco a propósito (con un extra
+  // ofrecido significa «no quiero el protector») y, sobre todo, todavía NO hay pedido que
+  // cancelar. Acá no hay esa ambigüedad: los extras se enganchan a un pedido YA creado, y
+  // este camino solo corre cuando no existe ninguno.
+  if (event.type === "message" && !(await tienePedidoVivo(db, contactId)) && seArrepiente(event.text)) {
+    await deliverMessage(db, channelId, contactId,
+      "Entiendo 🙌 Lo dejamos ahí entonces, no queda nada pendiente. " +
+      "Si más adelante lo quieres, me escribes y lo vemos 👍").catch(() => {});
+    await logEvent(db, channelId, contactId, "nota", "🚪 Se arrepintió antes del pedido",
+      `No se creó el pedido: “${String(event.text ?? "").slice(0, 120)}”`).catch(() => {});
+    return;
+  }
+
   // 📅 «Mañana no voy a estar, ¿lo pueden traer el lunes?». En Lima el pedido sale al día
   // siguiente, así que esto hay que atenderlo ANTES de que salga: si no, el motorizado va,
   // no hay nadie, y se pierden el flete y la venta. Medido: el bot contestó «claro, podemos
@@ -2256,6 +2274,31 @@ const PIDE_CANCELAR = [
   // ⛔ A propósito NO se añade "ya no lo quiero" a secas: con la oferta de un extra sobre
   // la mesa esa frase significa "no quiero el protector", y cancelaría la venta entera.
 ];
+// 🚪 «Ya no lo quiero» cuando TODAVÍA no hay pedido. Lista corta y a propósito: cada frase
+// tiene que ser un adiós a la compra entera y nada más. Fuera quedaron «déjalo» a secas
+// («déjalo con el portero») y «mejor no» a secas («mejor no la talla M»), que muerden a
+// clientes que sí están comprando. Ver [[no-elegir-por-el-cliente]]: ante la duda, no se
+// decide por él — pero un «ya no lo quiero» no tiene dos lecturas.
+const SE_ARREPIENTE = [
+  "ya no lo quiero", "ya no la quiero", "ya no los quiero", "ya no las quiero",
+  "ya no lo necesito", "ya no me interesa", "ya no quiero nada", "ya no quiero comprar",
+  "ya no voy a comprar", "ya no voy a comprarlo", "mejor no lo quiero", "mejor lo dejo",
+  "mejor lo dejamos", "al final no lo quiero", "olvidalo", "olvidate del pedido",
+  "me arrepenti", "cambie de opinion", "dejalo sin efecto", "dejalo nomas", "dejalo asi nomas",
+];
+function seArrepiente(text: string): boolean {
+  const t = limpiaOpt(text);
+  if (!t || t.length > 90) return false;
+  // Si en la misma frase habla de una variante o de un detalle del envío, el «ya no» es
+  // sobre ESO, no sobre la compra: «ya no lo quiero rojo, mejor azul» sigue siendo una venta.
+  if (/\b(talla|color|modelo|rojo|azul|negro|blanco|verde|direccion|agencia|sede|envio|adelanto)\b/.test(t)) return false;
+  return SE_ARREPIENTE.some((f) => {
+    const n = limpiaOpt(f);
+    if (!n) return false;
+    const esc = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|\\s)${esc}(\\s|$)`).test(t);
+  });
+}
 function pideCancelar(text: string): boolean {
   const t = limpiaOpt(text);
   if (!t || t.length > 200) return false;
@@ -9102,6 +9145,28 @@ const SALDO_SCHEMA = {
     // y esta venta se pagó por BCP, no tiene sentido marcarla como sospechosa
     // por no aparecer ahí.
     metodo: { type: ["string", "null"], description: "app o banco del pago tal como se ve en el comprobante (Yape, Plin, BCP, Interbank, BBVA…), o null" },
+    // 🔒 Estos dos NO son para que el modelo opine: son para que el CÓDIGO compruebe.
+    // Medido en la batería L7 (2026-09-22): con `verificar_fecha` y `verificar_titular`
+    // encendidos, el modelo auto-aprobó un comprobante de hace 5 días, uno pagado a un
+    // número que no es el nuestro y uno a nombre de un tercero. Las reglas estaban en el
+    // prompt; el modelo sencillamente no las aplicó — y entre las consideraciones hay
+    // varias que lo empujan a aceptar. Lo que se puede comparar con una cuenta y un
+    // calendario no puede quedar en manos de un juicio del modelo.
+    fecha: {
+      type: ["string", "null"],
+      description: "fecha (y hora si aparece) del comprobante, TAL CUAL se ve, sin reinterpretarla " +
+        "(ej. «21 sep. 2026 - 03:14 pm», «21/09/2026 15:14»). Null si no se lee.",
+    },
+    destinatario: {
+      type: ["string", "null"],
+      description: "El nombre de QUIEN RECIBE el dinero, tal cual figura en el comprobante y con su " +
+        "máscara si la trae («Percy Flo*», «P*** F****»). No lo completes ni lo corrijas. Null si no aparece.",
+    },
+    destino: {
+      type: ["string", "null"],
+      description: "El número de celular, cuenta o tarjeta A LA QUE se envió el dinero, tal cual figura " +
+        "(el del DESTINATARIO, no el del que paga). Si viene enmascarado, cópialo con su máscara. Null si no aparece.",
+    },
     motivo: { type: "string", description: "explicación breve" },
     // 🔒 Transcripción LITERAL. No es para leerla nadie: es la prueba de que el modelo
     // está mirando la imagen y no inventándola. Medido: se le mandó una foto de una cara
@@ -9296,7 +9361,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
       const { data: ch } = await db.from("channels").select("ocr_config, moneda, timezone").eq("id", channelId).maybeSingle();
       const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (ch as any)?.moneda ?? null, false, (ch as any)?.timezone)
         ?? ocrSystemMinimo((ch as any)?.timezone)) +
-        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo y texto_visible. " +
+        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, fecha, destinatario, destino, motivo y texto_visible. " +
         "En `texto_visible` TRANSCRIBE LITERALMENTE el texto que se ve en la imagen —tal cual, sin " +
         "interpretarlo ni completarlo, y cadena vacía si la imagen no tiene texto—: es la prueba de que " +
         "estás mirando la imagen y no suponiendo lo que debería decir.";
@@ -10000,7 +10065,13 @@ const ESTADOS_DESPACHADO = new Set(["despachado", "en_reparto", "en_agencia", "e
 // que sigue), así que el mensaje nunca llegó al interceptor, el bot le contestó "ya lo
 // quito del pedido" y le cobramos el extra igual.
 const QUITAR_KW = /\b(quita(me)?(lo|la|los|las)?|quitar|q[uú]ita(me)?(lo|la|los|las)?|saca(me)?(lo|la|los|las)?|sacar|s[aá]ca(me)?(lo|la|los|las)?|elimina(lo|la|los|las)?|eliminar|remueve(lo|la)?|remover|b[oó]rra(me)?(lo|la|los|las)?|ya no (lo|la|los|las)? ?(quiero|va|necesito|deseo)|sin (el|la|los|las)|no (lo|la|los|las) ?(quiero|deseo)|no quiero (el|la|los|las|ese|esa|esos|esas))\b/i;
-const CANT_VERBO = /\b(mejor|quiero|quisiera|m[aá]nda|manda|env[ií]a|env[ií]ame|que sean|aumenta|agrega|s[uú]be|s[uú]beme|baja|cambia|hazlo|p[oó]n(me|los|las)?|ll[eé]vame|ser[ií]an|ll[eé]vate)\b/i;
+// 🔴 Otra vez el ENCLÍTICO (ver QUITAR_KW acá arriba): «mánda*me* 2» moría en el \b que
+// sigue a `manda`, así que un cliente que sube la cantidad después de crear el pedido no
+// abría esta puerta. Medido en la batería L7 (2026-09-22): «oye al final mándame 2» →
+// la IA le contestó «cambio a 2 unidades, el total sería S/109» y el pedido se quedó en
+// S/69. La IA prometió lo que el motor no hizo. Van con (me|nos) todos los que se dicen
+// con el pronombre pegado, que en Perú son casi todos.
+const CANT_VERBO = /\b(mejor|quiero|quisiera|m[aá]nda(me|nos)?|env[ií]a(me|nos)?|que sean|aumenta(me)?|agr[eé]ga(me|nos)?|s[uú]be(me)?|b[aá]ja(me)?|c[aá]mbia(me)?|hazlo|p[oó]n(me|los|las)?|ll[eé]va(me|te)?|ser[ií]an)\b/i;
 const CANT_TOKEN = /(\b\d+\b|\bun\b|\buno\b|\buna\b|\bdos\b|\btres\b|\bcuatro\b|\bcinco\b|\bseis\b|\bpar\b|\bpares\b|\bunidad|\bdocena)/i;
 
 // El cliente quiere MODIFICAR un pedido YA CREADO (no despachado): QUITAR un item
@@ -10476,7 +10547,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     if (ai?.api_key) {
       const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency, true, (ch as any)?.timezone)
         ?? ocrSystemMinimo((ch as any)?.timezone)) +
-        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, motivo y texto_visible. `valido` juzga SOLO que el comprobante sea LEGÍTIMO (destinatario correcto, sin montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo. " +
+        "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, fecha, destinatario, destino, motivo y texto_visible. `valido` juzga SOLO que el comprobante sea LEGÍTIMO (destinatario correcto, sin montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo. " +
         "Y en `texto_visible` TRANSCRIBE LITERALMENTE el texto que se ve en la imagen —tal cual, sin interpretarlo " +
         "ni completarlo, y cadena vacía si no tiene texto—: es la prueba de que estás mirando la imagen y no " +
         "suponiendo lo que debería decir.";
@@ -10594,7 +10665,12 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual",
       "La validación está en automático pero el negocio no tiene métodos de pago cargados (Negocio → Pagos): sin ellos no se puede comprobar a quién se pagó.").catch(() => {});
   }
-  const puedeAuto = cfg.validacion === "auto" && !_sinDest && cubre && !sobrepagoAdel && !!oper && oper.length >= 4 && _hayPrueba;
+  // 🔒 Fecha vencida o pagado a un número que no es tuyo: lo comprueba el código, no el modelo.
+  const _frenoAdel = frenoDeComprobante(parsed, ch);
+  if (_frenoAdel) {
+    await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual", _frenoAdel).catch(() => {});
+  }
+  const puedeAuto = cfg.validacion === "auto" && !_sinDest && !_frenoAdel && cubre && !sobrepagoAdel && !!oper && oper.length >= 4 && _hayPrueba;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU del pre-chequeo
   // `reuse`): si esta operación ya fue reclamada por otra ruta o un reintento del MISMO Yape,
   // no la ganamos → se degrada a manual (para que un solo comprobante no acredite dos pedidos).
@@ -10878,7 +10954,12 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual",
       "La validación está en automático pero el negocio no tiene métodos de pago cargados (Negocio → Pagos): sin ellos no se puede comprobar a quién se pagó.").catch(() => {});
   }
-  const puedeAuto = log.modo === "auto" && !_sinDestS && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper && oper.length >= 4 && _pruebaSaldo;
+  // 🔒 Los mismos dos frenos deterministas del adelanto (fecha vencida / destino ajeno).
+  const _frenoSaldo = frenoDeComprobante(parsed, ch);
+  if (_frenoSaldo) {
+    await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante del saldo a revisión manual", _frenoSaldo).catch(() => {});
+  }
+  const puedeAuto = log.modo === "auto" && !_sinDestS && !_frenoSaldo && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper && oper.length >= 4 && _pruebaSaldo;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU): si esta
   // operación ya fue reclamada por otra ruta/reintento del mismo Yape, no ganamos → manual.
   if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "saldo", contactId))) reuse = true;
@@ -13598,7 +13679,15 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
       try {
         const _fueraL = provinciasDeDistrito(z.nombre).filter((p) => limpiaZona(p.dep) !== "lima");
         const _dichoL = _fueraL.length ? lugarQueDesambigua(z.nombre, texto) : null;
-        if (_dichoL && limpiaZona(_dichoL) !== "lima" && !/\blima\b/i.test(limpiaZona(texto))) {
+        // 🛑 …salvo que ese «otro departamento» también sea SUYO. El CALLAO es un departamento
+        // del padrón, así que «Callao, Bellavista, quiero 1» —una dirección de Lima metropolitana
+        // de lo más normal— caía justo acá: se sellaba provincia, el bot le mandaba a recoger a
+        // la agencia Shalom de Bellavista y le pedía DNI, teniendo BELLAVISTA, CALLAO, LA PERLA y
+        // VENTANILLA marcados como cubiertos en su lista. Medido en la batería L7 (2026-09-22).
+        // Su cobertura declarada manda, igual que en el bloque de la oficina de más arriba.
+        const _zDicho = _dichoL ? matchZona(zonas, _dichoL) : null;
+        const _esSuya = !!_zDicho && _zDicho.cubro !== false;
+        if (_dichoL && !_esSuya && limpiaZona(_dichoL) !== "lima" && !/\blima\b/i.test(limpiaZona(texto))) {
           await set("zona_ambigua", "");
           await set("zona_entrega", "provincia");
           await set("zona_nombre", z.nombre);
@@ -15895,7 +15984,9 @@ const _MESES_ES: Record<string, number> = {
   ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8,
   sep: 9, set: 9, oct: 10, nov: 11, dic: 12,
 };
-export function fechaLeidaNoEsFutura(fecha: unknown, tz?: string | null): boolean | null {
+// El parseo, aparte: lo usan la comprobación de «fecha futura» y la de antigüedad
+// (`comprobanteVencido`). Devuelve null cuando no reconoce el formato — no se inventa nada.
+function fechaLeidaYMD(fecha: unknown): { a: number; m: number; d: number } | null {
   const s = String(fecha ?? "").toLowerCase().trim();
   if (!s) return null;
   let a = 0, m = 0, d = 0;
@@ -15908,13 +15999,17 @@ export function fechaLeidaNoEsFutura(fecha: unknown, tz?: string | null): boolea
   if (!a || !m || !d) return null;
   // 🔴 Y que sean una fecha POSIBLE. Sin esto, un comprobante en formato americano
   // («09/20/2026») daba mes 20, se armaba la cadena «2026-20-09» y la comparación de texto
-  // la ponía DESPUÉS de hoy: esta función contestaba «es futura» justo cuando existe para
-  // DESMENTIR un rechazo por fecha futura. Ante una fecha que no se entiende, no se opina
-  // (null) — que es lo que hace el resto de la función cuando no reconoce el formato.
+  // la ponía DESPUÉS de hoy: la función de abajo contestaba «es futura» justo cuando existe
+  // para DESMENTIR un rechazo por fecha futura. Ante una fecha que no se entiende, no se opina.
   if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return { a, m, d };
+}
+export function fechaLeidaNoEsFutura(fecha: unknown, tz?: string | null): boolean | null {
+  const ymd = fechaLeidaYMD(fecha);
+  if (!ymd) return null;
   try {
     const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: tz || "America/Lima", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-    const leida = `${a}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const leida = `${ymd.a}-${String(ymd.m).padStart(2, "0")}-${String(ymd.d).padStart(2, "0")}`;
     return leida <= hoy;
   } catch (_) { return null; }
 }
@@ -15931,6 +16026,76 @@ function ocrSystemMinimo(tz?: string | null): string {
 // Los dos validadores (adelanto y saldo) lo consultan antes de auto-aprobar: si no hay
 // destinatarios, el pago baja a revisión manual — que es lo único honesto que se puede
 // hacer sin saber a quién se pagó.
+// 🔒 LOS DOS FRENOS QUE NO DEPENDEN DEL MODELO. Un comprobante viejo y uno pagado a otro
+// número son las dos formas más baratas de cobrar dos veces o de no cobrar nada, y las dos
+// se comprueban con una resta y una comparación de cadenas. Medido (batería L7, 2026-09-22):
+// el modelo aprobó los dos teniendo la regla escrita en su prompt.
+// Ninguno RECHAZA al cliente: bajan el pago a revisión manual, que es lo que corresponde
+// cuando hay una señal objetiva de que algo no calza pero puede haber una explicación.
+function comprobanteVencido(fecha: unknown, horas: number, tz?: string | null): boolean {
+  const ymd = fechaLeidaYMD(fecha);
+  if (!ymd) return false;                        // no se entiende la fecha → no se opina
+  const h = Number.isFinite(horas) && horas > 0 ? horas : 48;
+  try {
+    const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: tz || "America/Lima", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const [ha, hm, hd] = hoy.split("-").map(Number);
+    const dias = Math.round((Date.UTC(ha, hm - 1, hd) - Date.UTC(ymd.a, ymd.m - 1, ymd.d)) / 86400000);
+    // Se compara por DÍAS enteros y con el margen hacia arriba: la hora del comprobante se
+    // lee mal muy seguido, y trabar un pago bueno por unas horas es peor que revisarlo.
+    return dias > Math.ceil(h / 24);
+  } catch (_) { return false; }
+}
+// El NÚMERO al que fue el dinero: exacto y comparable, a diferencia del nombre del titular
+// (que Yape y Plin siempre enmascaran y por eso lo juzga el modelo con manga ancha).
+function destinoNoCoincide(ocrCfg: any, destino: unknown): boolean {
+  const d = String(destino ?? "").replace(/\D/g, "");
+  if (d.length < 6) return false;                // no se lee, o viene enmascarado → no se opina
+  const nums: string[] = (Array.isArray(ocrCfg?.metodos) ? ocrCfg.metodos : [])
+    .map((m: any) => String(m?.numero ?? "").replace(/\D/g, ""))
+    .filter((n: string) => n.length >= 6);
+  if (!nums.length) return false;                // sin números cargados no hay contra qué comparar
+  // `endsWith` en los dos sentidos: las cuentas se muestran recortadas («…7011») y un CCI
+  // lleva la cuenta dentro. Basta que una sea el final de la otra para darla por buena.
+  return !nums.some((n) => n === d || n.endsWith(d) || d.endsWith(n));
+}
+// El NOMBRE del que recibe. Acá hay que hilar fino: Yape y Plin lo mandan enmascarado casi
+// siempre («Percy Flo*»), y rechazar por un nombre recortado es devolverle un pago bueno a un
+// cliente. Así que esto NO intenta validar nombres —de eso sigue encargándose el modelo, con
+// manga ancha—: solo agarra el caso descarado, que es el que se coló en la batería L7 (un
+// comprobante a nombre de «Juan Carlos Mendoza», sin una sola palabra en común con el titular).
+// Con máscara, con una sola palabra, o sin titulares cargados: no se opina.
+function titularNoCoincide(ocrCfg: any, quien: unknown): boolean {
+  const s = String(quien ?? "").trim();
+  if (!s || /[*·]|\.{2,}/.test(s)) return false;          // enmascarado → lo juzga el modelo
+  const norm = (x: string) => x.normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
+  // Palabras de 3+ letras: fuera las partículas («de», «la», «del») que casan con cualquiera.
+  const toks = (x: string) => new Set(norm(x).split(" ").filter((w) => w.length >= 3));
+  const suyos: string[] = (Array.isArray(ocrCfg?.metodos) ? ocrCfg.metodos : [])
+    .map((m: any) => String(m?.titular ?? "").trim()).filter(Boolean);
+  if (!suyos.length) return false;
+  const t = toks(s);
+  if (t.size < 2) return false;                           // un nombre suelto no alcanza para acusar
+  // Basta UNA palabra en común con ALGUNO de los titulares (un apellido, el nombre) para
+  // darlo por bueno. Cero coincidencias con todos = el dinero fue a otra persona.
+  return !suyos.some((x) => { const a = toks(x); for (const w of t) if (a.has(w)) return true; return false; });
+}
+// Devuelve POR QUÉ este comprobante no puede auto-aprobarse, o null si no hay freno.
+function frenoDeComprobante(parsed: any, ch: any): string | null {
+  const ocr = (ch as any)?.ocr_config;
+  const r = ocr?.reglas ?? {};
+  const horas = Number(r.fecha_max_horas ?? 48);
+  if (r.verificar_fecha && comprobanteVencido(parsed?.fecha, horas, (ch as any)?.timezone)) {
+    return `la fecha del comprobante (${String(parsed?.fecha ?? "")}) pasa las ${horas} h de antigüedad que pediste`;
+  }
+  if (r.verificar_titular !== false && destinoNoCoincide(ocr, parsed?.destino)) {
+    return `el pago fue al ${String(parsed?.destino ?? "")}, que no es ninguno de los números que tienes cargados`;
+  }
+  if (r.verificar_titular !== false && titularNoCoincide(ocr, parsed?.destinatario)) {
+    return `el comprobante dice que el dinero fue a «${String(parsed?.destinatario ?? "")}», que no coincide con ninguno de tus titulares`;
+  }
+  return null;
+}
 function validadorSinDestinatarios(ocrCfg: any): boolean {
   const ocr = ocrCfg;
   if (!ocr || ocr.activo === false) return true;
@@ -19610,11 +19775,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _montoDig = parseMonto(run.vars.pago_monto, ctx) ?? NaN;
           const sinPruebaDig = Number.isFinite(_montoDig) && !pruebaDeTexto(_ocrLeyo, _montoDig);
           const sinDestinatariosDig = validadorSinDestinatarios(info?.ocr);
+          //  · y los dos frenos deterministas (fecha vencida / pagado a un número ajeno). Acá
+          //    el OCR no va con esquema JSON, así que estos campos pueden no llegar: si no
+          //    llegan, `frenoDeComprobante` no opina y la venta sigue su camino.
+          const _frenoDig = frenoDeComprobante(_ocrLeyo, { ocr_config: info?.ocr, timezone: await tzDe(db, run) });
           // Va a validación manual si el canal/producto lo pide (modo.manual), si el
           // freno detectó un sobrepago sospechoso (Capa 1), si no se sabe QUÉ compró
           // (precioSinResolver), o si es un extra sin operación verificable — aunque
           // esté en automático.
-          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable || montoIlegible || precioSinResolver || extraMontoDudoso || sinPruebaDig || sinDestinatariosDig)) {
+          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable || montoIlegible || precioSinResolver || extraMontoDudoso || sinPruebaDig || sinDestinatariosDig || !!_frenoDig)) {
             const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
             const { data: cc } = await db.from("contacts").select("product_id, nombre, wa_id").eq("id", run.contact_id).maybeSingle();
             const quien = (cc as any)?.nombre || (cc as any)?.wa_id || "Un cliente";
