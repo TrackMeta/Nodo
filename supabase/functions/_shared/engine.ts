@@ -9077,7 +9077,15 @@ const SALDO_SCHEMA = {
     es_pago: { type: "boolean", description: "true si la imagen es un comprobante de pago" },
     valido: { type: "boolean", description: "true si el pago es legítimo según las reglas del negocio" },
     monto: { type: ["number", "null"], description: "monto pagado (número), o null si no se lee" },
-    operacion: { type: ["string", "null"], description: "número de operación/constancia, o null" },
+    // 🔒 SOLO el código, sin etiquetas: es la llave del candado anti-reúso, que compara
+    // cadenas. Si un día vuelve «N° 123456» y otro «123456», no se cruzan y el MISMO
+    // comprobante paga dos pedidos. La normalización quita puntuación, pero no puede
+    // adivinar si una letra inicial es una etiqueta («N») o parte del código («YP»).
+    operacion: {
+      type: ["string", "null"],
+      description: "SOLO el número de operación/constancia, tal cual, sin etiquetas ni prefijos " +
+        "como «N°», «Nro», «op.» o «código:». Si el código en sí empieza con letras (ej. «YP0606…»), esas sí van. Null si no se lee.",
+    },
     // Con qué app/banco pagó. Lo usa el conciliador: si subes el reporte de Yape
     // y esta venta se pagó por BCP, no tiene sentido marcarla como sospechosa
     // por no aparecer ahí.
@@ -16048,7 +16056,14 @@ function enTitulo(txt: string): string {
 }
 
 function normOperacion(op: string): string {
-  return String(op ?? "").toUpperCase().replace(/\s+/g, "").trim();
+  // 🔒 Se quita TODO lo que no sea letra o dígito, no solo los espacios. El candado
+  // anti-reúso compara cadenas EXACTAS, así que la misma operación leída una vez como
+  // «YP-060625582J» y otra como «YP060625582J» —o «N° 123456» y «123456»— no se cruzaba, y
+  // ese mismo comprobante podía pagar DOS pedidos: justo lo que esta tabla existe para
+  // impedir. La puntuación nunca distingue dos operaciones de verdad.
+  // ⚠️ Los CEROS de la izquierda se conservan a propósito: «0123456» y «123456» pueden ser
+  // operaciones distintas, y confundirlas bloquearía un pago legítimo.
+  return String(op ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 // 💸 Los bots HERMANOS que cobran al MISMO número. El candado vive en (channel_id, operacion),
 // así que la misma captura de Yape servía UNA VEZ EN CADA BOT: la cuenta de Rodrigo tiene dos
