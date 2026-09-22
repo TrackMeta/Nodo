@@ -19371,11 +19371,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // al instante y no se puede deshacer. Acá no hay esquema JSON que obligue al modelo, así
     // que se le pide en el texto y el código la usa SI llega (ver pruebaDeTexto): sin esto,
     // un modelo que alucine un comprobante sobre una foto cualquiera entregaba el producto.
-    const vtx = vt + "\n\nIncluye SIEMPRE en el JSON un campo `texto_visible` con la " +
-      "TRANSCRIPCIÓN LITERAL de todo el texto que se ve en la imagen —tal cual, sin interpretarlo " +
-      "ni completarlo, y cadena vacía si no tiene texto—: es la prueba de que estás mirando la " +
-      "imagen y no suponiendo lo que debería decir.";
-    system = system ? (vtx + "\n\n" + system) : vtx;
+    system = system ? (vt + "\n\n" + system) : vt;
+    // 🔴 Y esta parte va AL FINAL, después del prompt del nodo. Antes iba delante y el prompt
+    // del dueño —que dicta el formato de salida— la pisaba: medido en la batería D8, el modelo
+    // devolvía su «{banco, operacion, monto, titular}» de siempre y `texto_visible` no llegaba
+    // NUNCA. Una defensa que el modelo no obedece no es una defensa. Se pide sobre el MISMO
+    // JSON que ya arma, nombrando las claves, y se piden también las dos que comprueba el
+    // código (ver frenoDeComprobante) para que la venta digital tenga los mismos frenos.
+    system += "\n\n## Campos que SIEMPRE van en ese mismo JSON (además de los que te pidieron arriba)\n" +
+      "- `texto_visible`: la TRANSCRIPCIÓN LITERAL de todo el texto que se ve en la imagen, tal cual, " +
+      "sin interpretarlo ni completarlo (cadena vacía si no tiene texto). Es la prueba de que estás " +
+      "mirando la imagen y no suponiendo lo que debería decir.\n" +
+      "- `fecha`: la fecha (y hora si aparece) del comprobante, tal cual se ve.\n" +
+      "- `destinatario`: el nombre de QUIEN RECIBE el dinero, con su máscara si la trae.\n" +
+      "- `destino`: el número de celular o cuenta AL QUE se envió el dinero.\n" +
+      "No cambies el resto del formato que te pidieron: solo agrega estas claves.";
   }
 
   try {
@@ -19773,7 +19783,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           //  · que el negocio tenga métodos de pago cargados; sin ellos el modelo no sabe a
           //    quién debía ir el dinero y un pago a un tercero se ve igual de legítimo.
           const _montoDig = parseMonto(run.vars.pago_monto, ctx) ?? NaN;
-          const sinPruebaDig = Number.isFinite(_montoDig) && !pruebaDeTexto(_ocrLeyo, _montoDig);
+          // 🔴 …y «si llega» hay que decirlo con todas las letras. `pruebaDeTexto` devuelve
+          // false cuando NO hay transcripción (en adelanto/saldo el esquema JSON la obliga,
+          // así que su ausencia es una anomalía y bajar a manual es lo correcto). Acá NO hay
+          // esquema: el prompt del nodo manda el formato y el modelo devuelve su JSON de
+          // siempre —«{banco, operacion, monto, titular}»— sin `texto_visible`. Resultado
+          // medido en la batería D8 (2026-09-22): TODA venta digital caía a revisión manual y
+          // la entrega instantánea dejó de existir, en silencio y con cara de «validación
+          // manual». La prueba anti-alucinación solo puede frenar lo que de verdad puede mirar.
+          const _hayTranscripcion = _ocrLeyo != null && _ocrLeyo.texto_visible != null;
+          const sinPruebaDig = Number.isFinite(_montoDig) && _hayTranscripcion && !pruebaDeTexto(_ocrLeyo, _montoDig);
           const sinDestinatariosDig = validadorSinDestinatarios(info?.ocr);
           //  · y los dos frenos deterministas (fecha vencida / pagado a un número ajeno). Acá
           //    el OCR no va con esquema JSON, así que estos campos pueden no llegar: si no
