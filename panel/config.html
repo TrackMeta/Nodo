@@ -580,9 +580,9 @@ function renderGsOauth(box, g){
   };
   // Crear la hoja desde acá: conectar Google daba solo el PERMISO y había que crear la hoja en
   // Drive y pegar el enlace. La vieja no se borra: solo dejan de llegarle ventas.
-  const crearNueva=async(btn)=>{
+  const crearNueva=async(btn, sinPreguntar)=>{
     const tiene=!!g.spreadsheet_id;
-    if(tiene && !await confirmDialog({ title:"Crear una hoja nueva",
+    if(tiene && !sinPreguntar && !await confirmDialog({ title:"Crear una hoja nueva",
       message:"Se crea una hoja nueva con las pestañas Digital, Lima y Provincia en orden, y las ventas empiezan a ir ahí. La hoja actual no se borra: se queda en tu Drive con lo que ya tiene.",
       confirmText:"Crear hoja" })) return;
     const out=$("gsoOut"); const old=btn?btn.innerHTML:""; if(btn){ btn.disabled=true; btn.textContent="Creando…"; }
@@ -601,7 +601,7 @@ function renderGsOauth(box, g){
   // se perdía; el botón «Abrir» llevaba a «el archivo fue eliminado».
   const est=$("gsoEstado");
   if(est){
-    const aviso=(txt)=>{ est.innerHTML=`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--red-bg,#2c1615);border:1px solid var(--red);border-radius:11px;padding:11px 13px;margin-top:12px;font-size:12.5px;line-height:1.5;color:var(--text)"><span style="color:var(--red);flex:none">${icon("alert")}</span><div style="flex:1;min-width:200px">${txt}</div><button class="btn primary" id="gsoNew2" style="flex:none">${icon("plus")} Crear una hoja nueva</button></div>`; $("gsoNew2").onclick=(e)=>crearNueva(e.currentTarget); };
+    const aviso=(txt)=>{ est.innerHTML=`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--red-bg,#2c1615);border:1px solid var(--red);border-radius:11px;padding:11px 13px;margin-top:12px;font-size:12.5px;line-height:1.5;color:var(--text)"><span style="color:var(--red);flex:none">${icon("alert")}</span><div style="flex:1;min-width:200px">${txt}</div><button class="btn primary" id="gsoNew2" style="flex:none">${icon("plus")} Crear una hoja nueva</button></div>`; $("gsoNew2").onclick=(e)=>crearNueva(e.currentTarget, true); };  // la vieja ya no sirve: nada que confirmar
     if(!g.spreadsheet_id) aviso("<b>Todavía no hay una hoja donde escribir.</b> Crea una con un clic, o pega abajo el enlace de una tuya.");
     else callFn("gsheets-test",{ estado:true, channel_id:st.channelId, spreadsheet_id:g.spreadsheet_id }).then(r=>{
       if(!r||!r.ok) return;

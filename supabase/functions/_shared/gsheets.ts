@@ -160,7 +160,8 @@ export async function sheetsEstado(token: string, id: string): Promise<"ok" | "n
 // Crea una hoja nueva con las 3 pestañas ya preparadas (encabezados en orden, colores, fila fija).
 export async function sheetsCrear(token: string, titulo: string, timeZone = "America/Lima"): Promise<{ id: string; url: string }> {
   const d = await api(token, SHEETS, "POST", {
-    properties: { title: titulo, locale: "es_PE", timeZone },
+    // Sin `locale`: Google rechaza «es_PE» (400 Unsupported locale) y sin él usa el de la cuenta.
+    properties: { title: titulo, timeZone },
     sheets: Object.keys(HOJAS).map((title) => ({ properties: { title } })),
   });
   const id = String(d.spreadsheetId ?? "");
