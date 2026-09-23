@@ -70,6 +70,15 @@ export const HOJAS: Record<string, string[]> = {
     "Cantidad", "Valor total", "Extra", "Guía", "Comprobante adelanto", "Comprobante saldo"],
 };
 
+// Ancho (px) de cada columna de Nodo, por encabezado normalizado.
+const ANCHOS: Record<string, number> = {
+  "id": 110, "ad id": 170, "cliente": 160, "cel": 125, "fecha y hora": 170, "valor": 80,
+  "producto": 240, "opción": 110, "cantidad": 80, "orderbump": 95, "extra": 260,
+  "comprobante": 210, "comprobante extra": 210, "distrito": 130, "dirección": 260,
+  "valor cobrado": 115, "dni": 100, "agencia": 220, "valor total": 105, "guía": 130,
+  "comprobante adelanto": 210, "comprobante saldo": 210,
+};
+
 // Nombre viejo (normalizado) → nombre nuevo, por pestaña. «Imagen» pasó a «Comprobante» el
 // 2026-09-23 (pedido de Rodrigo): en Provincia la de adelanto y la de saldo.
 const RENOMBRADAS: Record<string, Record<string, string>> = {
@@ -143,8 +152,25 @@ export async function sheetsBootstrap(token: string, id: string): Promise<{ crea
     requests.push({ repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: nCols }, cell: { userEnteredFormat: { backgroundColor: t.head, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, verticalAlignment: "MIDDLE", horizontalAlignment: "CENTER" } }, fields: "userEnteredFormat(backgroundColor,textFormat,verticalAlignment,horizontalAlignment)" } });
     // Fila de encabezado un poco más alta (respira mejor).
     requests.push({ updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 0, endIndex: 1 }, properties: { pixelSize: 34 }, fields: "pixelSize" } });
-    // Ajustar el ancho de las columnas al contenido.
-    requests.push({ autoResizeDimensions: { dimensions: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: cols.length } } });
+    // Ancho de cada columna de Nodo según lo que va a llevar. Antes era «ajustar al contenido»,
+    // pero se corre al PREPARAR, con la hoja vacía: el ancho quedaba el del encabezado y el
+    // celular («Cel», 3 letras) salía cortado. Las columnas propias del dueño no se tocan.
+    heads.forEach((h, ci) => {
+      const px = ANCHOS[norm(h)];
+      if (px) requests.push({ updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: ci, endIndex: ci + 1 }, properties: { pixelSize: px }, fields: "pixelSize" } });
+    });
+    // Reparación: una versión anterior agregaba filas con INSERT_ROWS y las filas de datos
+    // heredaban el formato del ENCABEZADO (todo morado). Si la fila 2 tiene EXACTAMENTE el fondo
+    // del encabezado, se les quita ese formato a los datos (vuelve la banda). Un color que el
+    // dueño haya puesto a mano no coincide con este y no se toca.
+    try {
+      const f2 = await api(token, `${SHEETS}/${id}?ranges=${q(real + "!A2")}&fields=sheets.data.rowData.values.userEnteredFormat.backgroundColor`);
+      const bg = f2?.sheets?.[0]?.data?.[0]?.rowData?.[0]?.values?.[0]?.userEnteredFormat?.backgroundColor;
+      const igual = (a?: number, b?: number) => Math.abs((a ?? 0) - (b ?? 0)) < 0.01;
+      if (bg && igual(bg.red, t.head.red) && igual(bg.green, t.head.green) && igual(bg.blue, t.head.blue)) {
+        requests.push({ repeatCell: { range: { sheetId, startRowIndex: 1 }, cell: {}, fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)" } });
+      }
+    } catch (_) { /* la reparación es un extra: nunca tumba el preparar */ }
   }
   if (requests.length) await api(token, `${SHEETS}/${id}:batchUpdate`, "POST", { requests });
   return { creadas, hojas: Object.keys(HOJAS) };
@@ -289,12 +315,17 @@ function alinear(headers: string[], fila: Record<string, string>): string[] {
 const idxDe = (headers: string[], k: string) => headers.findIndex((h) => norm(h) === norm(k));
 
 // Agrega una fila nueva alineada a los encabezados.
+// 🎨 `insertDataOption=OVERWRITE`, NO `INSERT_ROWS`: insertar una fila hace que Google le COPIE
+// el formato de la de arriba. En una hoja recién preparada la de arriba es el ENCABEZADO (fondo
+// morado, blanco, negrita) → cada venta salía pintada como encabezado y tapaba las franjas
+// alternadas (Rodrigo: «¿por qué lo pinta todo del mismo color?»). OVERWRITE escribe en la
+// siguiente fila VACÍA de la grilla, que ya tiene la banda; si la grilla se acaba, la agranda.
 export async function sheetsAppend(token: string, id: string, tab: string | undefined, fila: Record<string, string>) {
   const t = tab || await firstTab(token, id);
   if (tab) await ensureTab(token, id, t);
   const headers = await ensureHeaders(token, id, t, Object.keys(fila));
   const row = alinear(headers, fila);
-  await api(token, `${SHEETS}/${id}/values/${q(t)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, "POST", { values: [row] });
+  await api(token, `${SHEETS}/${id}/values/${q(t)}:append?valueInputOption=USER_ENTERED&insertDataOption=OVERWRITE`, "POST", { values: [row] });
 }
 
 // Varias filas en UNA llamada (el append de a una lee los encabezados cada vez).
@@ -303,7 +334,7 @@ export async function sheetsAppendMany(token: string, id: string, tab: string, f
   await ensureTab(token, id, tab);
   const keys = [...new Set(filas.flatMap((f) => Object.keys(f)))];
   const headers = await ensureHeaders(token, id, tab, keys);
-  await api(token, `${SHEETS}/${id}/values/${q(tab)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, "POST",
+  await api(token, `${SHEETS}/${id}/values/${q(tab)}:append?valueInputOption=USER_ENTERED&insertDataOption=OVERWRITE`, "POST",
     { values: filas.map((f) => alinear(headers, f)) });
 }
 
