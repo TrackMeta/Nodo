@@ -229,6 +229,19 @@ Deno.serve(async (req) => {
       const secrets = await getChannelSecrets(db, channel_id);
       const token = secrets?.telegram_bot_token;
       if (!token) return json({ error: "sin_token", detalle: "Carga primero el bot token del canal." }, 400);
+      // El MISMO bot de Telegram en dos bots de Nodo: Telegram acepta un solo webhook por bot, así que
+      // este registro le robaba el del otro — sus botones llegaban acá y decían «no encontré ese
+      // pedido», y sus códigos de vinculación se validaban contra el canal equivocado.
+      {
+        const { data: cMe } = await db.from("channels").select("account_id").eq("id", channel_id).maybeSingle();
+        const { data: otros } = await db.from("channels").select("id, nombre").eq("account_id", (cMe as any)?.account_id ?? "").neq("id", channel_id);
+        for (const o of (otros ?? []) as any[]) {
+          const s2 = await getChannelSecrets(db, o.id).catch(() => null);
+          if (s2?.telegram_bot_token && s2.telegram_bot_token === token) {
+            return json({ error: "bot_repetido", detalle: `Ese bot de Telegram ya está conectado al bot «${o.nombre}». Crea otro bot en @BotFather para este (uno por cada bot de Nodo).` }, 400);
+          }
+        }
+      }
       const secret = crypto.randomUUID().replace(/-/g, "");
       const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/telegram-webhook?ch=${channel_id}`;
       const r = await setWebhook(token, url, secret);

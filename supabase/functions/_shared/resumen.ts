@@ -182,12 +182,29 @@ export async function construirResumen(
     timeZone: tz, weekday: "long", day: "numeric", month: "long",
   }).format(new Date(from.getTime() + 12 * 3600 * 1000));
 
+  // 💵 Lo que se COBRÓ ese día aunque el pedido sea de otro día: el resumen mide pedidos CREADOS
+  // ese día, así que la plata de contraentrega (se crea el lunes, se cobra el martes) no aparecía
+  // en NINGÚN resumen. Se cuenta aparte por la fecha en que la venta se cerró (confirmed_at).
+  let cobradoDia = 0, cobradosN = 0;
+  try {
+    const { data: cerr } = await pageAll((f, t) => db.from("orders")
+      .select("amount, order_bumps, estado, created_at, contact:contact_id(wa_id, source)")
+      .eq("channel_id", chId).in("estado", ["entregado_cobrado", "recogido", "saldo_pagado"])
+      .gte("confirmed_at", fromISO).lt("confirmed_at", toISO).order("id").range(f, t));
+    for (const o of (cerr ?? []) as any[]) {
+      if (o.contact?.wa_id === "webchat-test" || o.contact?.source === "sim") continue;
+      if (o.created_at && o.created_at >= fromISO && o.created_at < toISO) continue;   // ya está en «Ingresos»
+      cobradoDia += (Number(o.amount) || 0) + ((o.order_bumps ?? []) as any[]).reduce((a: number, b: any) => a + (Number(b?.precio) || 0), 0);
+      cobradosN++;
+    }
+  } catch (_) { /* sin dato → el resumen sale como antes */ }
   const prefix = ch?.nombre ? `<b>[${escaparHtml(String(ch.nombre))}]</b>\n` : "";
   const L: string[] = [];
   L.push(`${TITULO[cual]} · <i>${fechaLbl}</i>`);
   L.push("");
   L.push(`💰 Ventas cerradas: <b>${dg.ventas}</b>`);
   L.push(`💵 Ingresos: <b>${money(dg.ingresos, sym)}</b>`);
+  if (cobradosN > 0) L.push(`🛵 Cobrado de pedidos anteriores: <b>${money(cobradoDia, sym)}</b> <i>(${cobradosN} entregado${cobradosN > 1 ? "s" : ""} o con saldo pagado ese día)</i>`);
   if (dg.ventas > 0) L.push(`🎟 Ticket promedio: ${money(dg.ticket, sym)}`);
   if (dg.porCobrar > 0) L.push(`⏳ Por cobrar: ${money(dg.porCobrar, sym)}`);
   L.push("");

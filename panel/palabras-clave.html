@@ -399,6 +399,18 @@ function collisions(){
     if(unicos.length>1){ for(const id of unicos){ (conf[id]=conf[id]||[]).push(w); } }
     else if(ids.length>1){ (dups[unicos[0]]=dups[unicos[0]]||[]).push(w); }
   }
+  // Una palabra CONTENIDA en otra de otro flujo («adaptador» dentro de «kit adaptador pro») también
+  // choca: el motor elige la más larga y el otro producto se queda con los mensajes que no le tocan.
+  const palabras=Object.keys(map);
+  for(const a of palabras){ for(const b of palabras){
+    if(a===b || !b.includes(a)) continue;
+    const idsA=[...new Set(map[a])], idsB=[...new Set(map[b])];
+    if(idsA.some(x=>!idsB.includes(x))){ for(const id of new Set([...idsA,...idsB])){ (conf[id]=conf[id]||[]).push(`${a} ⊂ ${b}`); } }
+  } }
+  // Palabras de SALUDO o genéricas: casi todos los mensajes las traen (incluido el texto que deja
+  // un anuncio), así que se llevan leads de otros productos.
+  const COMUNES=new Set(["hola","buenas","buenos dias","buenas tardes","info","informacion","precio","precios","quiero","me interesa","mas informacion","puedo obtener mas informacion"]);
+  for(const [w,ids] of Object.entries(map)){ if(COMUNES.has(w)){ for(const id of new Set(ids)){ (conf[id]=conf[id]||[]).push(`«${w}» es demasiado común`); } } }
   return { conf, dups };
 }
 

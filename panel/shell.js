@@ -492,7 +492,14 @@ async function loadMe(nav) {
     if (!session) return;
     let me = null;
     try { ({ data: me } = await supa.from("app_users").select("nombre,role,avatar_url").eq("id", session.user.id).maybeSingle()); } catch {}
-    const rl = (me?.role || "").toString();
+    // El rol REAL es el de la cuenta (account_members), no app_users.role (campo viejo que por
+    // defecto dice «operador»: el dueño nuevo aparecía como Operador en el menú). Si es admin en
+    // alguna de sus cuentas, se muestra Admin; Perfil ya lo lee así.
+    let rl = (me?.role || "").toString();
+    try {
+      const { data: ms } = await supa.from("account_members").select("role").eq("user_id", session.user.id).eq("activo", true);
+      if ((ms || []).length) rl = (ms || []).some((m) => m.role === "admin") ? "admin" : "operador";
+    } catch {}
     const info = {
       name: (me?.nombre && me.nombre.trim()) || (session.user.email || "").split("@")[0] || "Perfil",
       role: ROLE_ES[rl.toLowerCase()] || rl || "Mi cuenta",
@@ -1258,7 +1265,21 @@ export async function mountShell({ active } = {}) {
   // vacías, tarjetas en cero y ni una palabra que explique qué pasa. El único camino para
   // arrancar estaba escondido dentro del selector de bots, arriba a la izquierda. Se le
   // dice, una sola vez y sobre cualquier pantalla, qué tiene que hacer.
-  if (!S.channels.length) mostrarPrimerBot();
+  // ¿Puede CREAR bots? Solo un admin de alguna cuenta. A un operador se le ofrecía «Crear nuevo bot»
+  // y fallaba con un error de RLS en inglés; y a quien ya no pertenece a ninguna cuenta (lo quitaron
+  // del equipo) se le decía «crea tu primer bot» en vez de lo que pasa de verdad.
+  S.puedeCrear = true; let _sinCuenta = false;
+  try {
+    const { data: { session: _s } } = await supa.auth.getSession();
+    const { data: _ms } = await supa.from("account_members").select("role").eq("user_id", _s?.user?.id ?? "").eq("activo", true);
+    _sinCuenta = !(_ms || []).length;
+    S.puedeCrear = (_ms || []).some((m) => m.role === "admin");
+  } catch (_) { /* sin dato → como antes */ }
+  if (!S.channels.length) {
+    if (_sinCuenta) toast("Ya no perteneces a ningún equipo de Nodo. Si te invitaron de nuevo, pega tu código en Perfil → «Unirme a un equipo».", true);
+    else if (!S.puedeCrear) toast("Todavía no tienes ningún bot asignado. Pídele al administrador de tu equipo que te dé acceso.", true);
+    else mostrarPrimerBot();
+  }
 
   // Selector de bot personalizado (con logos + "Crear nuevo bot")
   const escBot = (s) => (s ?? "").toString().replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -1266,7 +1287,7 @@ export async function mountShell({ active } = {}) {
   const renderBotPop = () => {
     if (!botPop) return;
     botPop.innerHTML = S.channels.map((c) => `<button class="nb-item${c.id === S.channelId ? " on" : ""}" type="button" data-id="${c.id}"><img src="${escBot(c.logo_url || FALLBACK_LOGO)}" alt="" /><span>${escBot(c.nombre)}</span>${c.id === S.channelId ? svg("check") : ""}</button>`).join("")
-      + `<button class="nb-create" type="button">${svg("plus")}<span>Crear nuevo bot</span></button>`;
+      + (S.puedeCrear !== false ? `<button class="nb-create" type="button">${svg("plus")}<span>Crear nuevo bot</span></button>` : "");
     botPop.querySelectorAll(".nb-item").forEach((b) => { b.onclick = async () => { if (b.dataset.id !== S.channelId && !(await _dirtyGate())) return; S.api.setChannel(b.dataset.id); closeBotPop(); }; });
     const cr = botPop.querySelector(".nb-create"); if (cr) cr.onclick = () => { closeBotPop(); openCreateBot(); };
   };

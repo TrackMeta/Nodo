@@ -228,7 +228,9 @@ async function save(){
   // error crudo ("duplicate"); acá se detecta antes y se DICE cuál, en vez del genérico.
   const vistas=new Set();
   for(const f of editables){ const k=f.key.trim().toLowerCase(); if(vistas.has(k)){ toast(`La clave "${f.key.trim()}" está repetida — cada campo necesita una clave única`,true); return; } vistas.add(k); }
-  if(st.deleted.length){ const { error }=await supa.from("custom_fields").delete().in("id",st.deleted); if(error){ toast(error.message,true); return; } st.deleted=[]; }
+  // Un DELETE que la RLS no deja (operador: solo el admin cambia los campos, 0107) afecta 0 filas SIN
+  // error: se comprueba lo borrado y se dice la verdad en vez de «Guardado».
+  if(st.deleted.length){ const { data:_bor, error }=await supa.from("custom_fields").delete().in("id",st.deleted).select("id"); if(error){ toast(error.message,true); return; } if((_bor||[]).length<st.deleted.length){ toast("Solo un administrador puede cambiar los campos del bot",true); return; } st.deleted=[]; }
   // `datos_pago` se muestra solo de lectura acá (lo arma Negocio → Pagos): NO se reescribe. Si se
   // incluía, una pestaña de Campos abierta desde antes devolvía el número VIEJO al guardar cualquier
   // otra cosa, y el bot dictaba un Yape que el validador ya no acepta.
@@ -246,7 +248,7 @@ async function save(){
     }
     if(error){
       if(/valor|descripcion|column/.test(error.message)){ $("warn").innerHTML=`<div class="warn">Falta aplicar la migración <b>0013</b> (columnas <code>valor</code>/<code>descripcion</code>). Ejecútala en el SQL Editor.</div>`; }
-      else toast(error.message.includes("duplicate")?"Hay claves repetidas":error.message,true);
+      else toast(error.message.includes("duplicate")?"Hay claves repetidas":/row-level security/i.test(error.message)?"Solo un administrador puede cambiar los campos del bot":error.message,true);
       return;
     }
   }

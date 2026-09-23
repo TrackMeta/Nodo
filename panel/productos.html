@@ -248,7 +248,7 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
 // 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se pregunta a shell.js, pero SIN
 // importarlo estático: si el navegador tiene cacheado un shell.js viejo (sin ese export),
@@ -351,7 +351,7 @@ async function loadAngHub(){
     angs=(data||[]).map(a=>({...a, ad_ids:Array.isArray(a.ad_ids)?a.ad_ids.map(String):[]}));
   }catch(_){ angOk=false; }
   try{
-    const { data }=await supa.from("ads_meta").select("ad_id,ad_name,campaign_name").eq("channel_id",st.channelId).order("campaign_name");
+    const { data }=await pageAll((f,t)=>supa.from("ads_meta").select("ad_id,ad_name,campaign_name").eq("channel_id",st.channelId).order("campaign_name").order("ad_id").range(f,t));   // paginado: pasado 1000 faltaban anuncios
     adsMeta=(data||[]).map(m=>({...m, ad_id:String(m.ad_id)}));
   }catch(_){ adsMeta=[]; }
   if(gen!==st.hubGen) return;
@@ -434,7 +434,10 @@ function renderAngHub(){
         <button class="iconbtn hub-adx" title="Quitar del banco">${icon("trash")}</button>
       </div>`;
     });
-    const metaLibres=adsMeta.filter(m=>!bk.includes(m.ad_id));
+    // Libres = que no estén en ESTE banco NI en el de otro producto: el mismo anuncio en dos bancos
+    // hacía ganar a uno en silencio (el de menor id) y el otro nunca recibía esos leads.
+    const _enOtro=new Set(Object.entries(st.hub.bank||{}).filter(([k])=>String(k)!==String(p.id)).flatMap(([,v])=>(v||[]).map(String)));
+    const metaLibres=adsMeta.filter(m=>!bk.includes(m.ad_id) && !_enOtro.has(String(m.ad_id)));
     const sugeridos=metaLibres.filter(m=>hubMatchAd(m,p.nombre));
     const otros=metaLibres.filter(m=>!sugeridos.includes(m));
     if(sugeridos.length){
@@ -697,6 +700,7 @@ async function openProduct(id){
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
   if(gen!==st.openGen) return; // otra apertura más nueva ya ganó
   st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="inicio";
+  st._verOrig=Object.fromEntries((vs||[]).map(v=>[v.id,{ precio:v.precio, costo:v.costo }]));   // foto de precios al abrir
   // Snapshot del config al ABRIR: al guardar se mezcla por delta contra el config FRESCO
   // (otra pestaña —palabras clave, adelanto, secuencias— pudo escribir una clave mientras
   // esta ficha estaba abierta; escribir el config completo desde la copia vieja la pisaba).
@@ -1606,6 +1610,7 @@ async function renderRemarketing(host){
   const c=st.prod.config=st.prod.config||{};
   const seq=list.find(s=>s.id===c.remarketing_seq_id)||null;
   const rm=(ch?.remarketing && typeof ch.remarketing==="object") ? {...ch.remarketing} : {};
+  const rm0=JSON.parse(JSON.stringify(rm));   // foto al abrir: al guardar solo se escribe lo que cambió ACÁ
   const opciones=(st.versions||[]).filter(v=>v.precio!=null&&v.precio!=="");
 
   b.innerHTML=`
@@ -1665,9 +1670,17 @@ async function renderRemarketing(host){
     rm.desde=$("hrDesde")?.value||rm.desde; rm.hasta=$("hrHasta")?.value||rm.hasta;
     if(rm.activo && rm.desde && rm.hasta && rm.hasta<=rm.desde){ toast("La hora final debe ser mayor a la inicial",true); return; }
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-    const { error }=await updateChannel(st.channelId, { remarketing:rm });
+    // Sobre el remarketing FRESCO (la copia de getChannel es de caché): otra pestaña pudo cambiar el
+    // horario o el anti-spam y guardar la copia vieja entera los revertía. Solo lo tocado acá.
+    let _rmW=rm;
+    try{ const { data:_fr }=await supa.from("channels").select("remarketing").eq("id",st.channelId).maybeSingle();
+      const base=(_fr&&_fr.remarketing&&typeof _fr.remarketing==="object")?{..._fr.remarketing}:{};
+      for(const k of Object.keys(rm)){ if(JSON.stringify(rm[k])!==JSON.stringify(rm0[k])) base[k]=rm[k]; }
+      _rmW=base; }catch(_){}
+    const { error }=await updateChannel(st.channelId, { remarketing:_rmW });
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/remarketing|column/.test(error.message)?"Falta aplicar la migración 0031":error.message,true); return; }
+    Object.assign(rm0, JSON.parse(JSON.stringify(rm)));   // lo guardado pasa a ser la nueva foto
     toast("Horario guardado");
   };
 
@@ -3889,7 +3902,7 @@ async function renderActivacion(host){
     st.act.angulosOrig=(angs||[]).map(a=>a.id);
   } catch(_){ st.act.angulosOk=false; }
   try {
-    const { data:adsm } = await supa.from("ads_meta").select("ad_id,ad_name,campaign_name").eq("channel_id",st.channelId).order("campaign_name");
+    const { data:adsm } = await pageAll((f,t)=>supa.from("ads_meta").select("ad_id,ad_name,campaign_name").eq("channel_id",st.channelId).order("campaign_name").order("ad_id").range(f,t));   // paginado: pasado 1000 faltaban anuncios
     st.act.adsMeta=adsm||[];
   } catch(_){ st.act.adsMeta=[]; }
   renderComposer();
@@ -4531,8 +4544,18 @@ async function _saveProduct(){
       const dbStock=(fresh&&fresh.config&&fresh.config.stock&&typeof fresh.config.stock==="object"&&!Array.isArray(fresh.config.stock)) ? fresh.config.stock : null;
       if(dbStock){ // solo si se pudo leer fresco (si no, se deja el snapshot, como antes)
         const orig=st._stockOrig||{}; const merged={ ...dbStock };
+        // RENOMBRAR una variante («negro» → «negro mate») con el mismo número: es la MISMA variante.
+        // Antes la nueva nacía con el número de la foto (10) y se perdían las ventas del rato (quedaban
+        // 8 en la base): sobreventa. Se empareja la nueva con la borrada que tenía ese mismo valor.
+        const nuevas=Object.keys(cfg.stock).filter(k=>!(k in orig));
+        const borradas=Object.keys(orig).filter(k=>!(k in cfg.stock));
+        const deDonde={};
+        for(const k of nuevas){ const r=borradas.find(b=>!Object.values(deDonde).includes(b) && Number(orig[b])===Number(cfg.stock[k])); if(r) deDonde[k]=r; }
         for(const k of Object.keys(cfg.stock)){ // aplica el delta del panel sobre lo fresco
-          merged[k]=Math.max(0,(Number(dbStock[k])||0)+((Number(cfg.stock[k])||0)-(Number(orig[k])||0)));
+          const src=deDonde[k];
+          merged[k]= src
+            ? Math.max(0,(Number(dbStock[src])||0)+((Number(cfg.stock[k])||0)-(Number(orig[src])||0)))
+            : Math.max(0,(Number(dbStock[k])||0)+((Number(cfg.stock[k])||0)-(Number(orig[k])||0)));
         }
         for(const k of Object.keys(orig)){ if(!(k in cfg.stock)) delete merged[k]; } // respeta lo que el panel borró
         cfg.stock=merged;
@@ -4594,6 +4617,14 @@ async function _saveProduct(){
     // no tiene contra qué medir. Se avisa (no se bloquea: puede ser a propósito).
     if((st.versions||[]).length && (st.versions||[]).every(v=>v.activo===false)) toast("Ojo: todas las presentaciones están desactivadas; el bot no podrá vender este producto hasta que actives una.",true);
   }
+  // Precio/costo cambiados en OTRA pantalla (el Dashboard aplica cambios de precio) desde que se abrió
+  // esta ficha y que acá NO se tocaron: se respetan. Antes el guardado los volvía al valor viejo.
+  let _frVer={};
+  try{ const { data:fv }=await supa.from("product_versions").select("id,precio,costo").eq("product_id",st.prod.id); _frVer=Object.fromEntries((fv||[]).map(x=>[x.id,x])); }catch(_){}
+  const _igual=(a,b)=>String(a??"")===String(b??"");
+  for(const v of st.versions){ const o=(st._verOrig||{})[v.id], f=_frVer[v.id]; if(!o||!f) continue;
+    if(_igual(v.precio,o.precio) && !_igual(f.precio,o.precio)) v.precio=f.precio;
+    if(_igual(v.costo,o.costo) && !_igual(f.costo,o.costo)) v.costo=f.costo; }
   st.delVersions=[];
   for(let i=0;i<st.versions.length;i++){
     const v=st.versions[i]; v.orden=i; v.product_id=st.prod.id;
@@ -4632,6 +4663,7 @@ async function _saveProduct(){
     const actBody=document.querySelector('.acc[data-t="activacion"] .acc-body');
     if(actBody && actBody.dataset.rendered==="1" && st.act && st.act.node){ await saveActivacion({silent:true}); }
   }catch(_){ /* si algo falló, saveActivacion ya avisó con su propio toast */ }
+  st._verOrig=Object.fromEntries((st.versions||[]).filter(v=>v.id).map(v=>[v.id,{ precio:v.precio, costo:v.costo }]));   // nueva foto
   markClean(); toast("Guardado"); loadProducts();
   // 💲 Un EXTRA: su precio vive COPIADO en el flujo de cada principal que lo ofrece (el generador
   // lo fija ahí) y en lo que el bot le dice al cliente. Cambiarlo acá no toca esos flujos: se

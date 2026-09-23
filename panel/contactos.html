@@ -213,6 +213,7 @@
 
 <script type="module">
 import { supa, mountShell, toast, confirmDialog, askChoice, norm, pageAll, enTrozos, recargaConFreno, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import { getTZ } from "./date-range.js";
 import { EMBUDO_STAGES, origenLabel, money } from "./contact-extras.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
@@ -722,7 +723,7 @@ function exportCsv(list){
   (list||st.contacts).forEach(c=>{
     const tags=(c.contact_tags||[]).map(ct=>st.tags.find(t=>t.id===ct.tag_id)?.nombre).filter(Boolean).join("|");
     const lv=ltvOf(c.id);
-    rows.push([c.nombre||"", c.wa_id, (STAGE[c.stage||"nuevo"]||{}).label||"", tags, origenLabel(c.source), lv.count, lv.paid, new Date(c.created_at).toISOString(), c.bloqueado?"Bloqueado":(c.bot_activo?"Activo":"Pausado")]);
+    rows.push([c.nombre||"", c.wa_id, (STAGE[c.stage||"nuevo"]||{}).label||"", tags, origenLabel(c.source), lv.count, lv.paid, new Intl.DateTimeFormat("sv-SE",{ timeZone:(typeof getTZ==="function"&&getTZ())||"America/Lima", year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" }).format(new Date(c.created_at)), c.bloqueado?"Bloqueado":(c.bot_activo?"Activo":"Pausado")]);
   });
   // Anti-fórmula: el nombre de perfil lo escribe el CLIENTE; «=HYPERLINK(…)» o «+…» se ejecutaba
   // al abrir el CSV en Excel. Se antepone ' como hace safeCell en la hoja de ventas.

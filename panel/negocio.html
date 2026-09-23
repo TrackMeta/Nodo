@@ -108,7 +108,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, guardUnsaved, markClean, markDirty, confirmDialog, confirmDescartar, updateChannel } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, guardUnsaved, markClean, markDirty, isDirty, confirmDialog, confirmDescartar, updateChannel } from "./shell.js";
 import { cargarListas } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
 const IC={ book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>' };
@@ -125,7 +125,9 @@ async function boot(){
   st.channelId=shell.channelId;
   guardUnsaved(".nodo-page"); // avisa si sales con el formulario a medio editar
   shell.onChannel(id=>{ st.channelId=id; load(); });
-  cargarListas().then(l=>{ st.listas=l; if(st.tab==="entrega") render(); });
+  // Si ya estabas editando Entregas cuando llega la lista, NO se redibuja (se perdía lo editado):
+  // la lista queda guardada y se usa en el próximo redibujo.
+  cargarListas().then(l=>{ st.listas=l; if(st.tab==="entrega" && !isDirty()) render(); });
   if(st.channelId) await load();
 }
 async function load(){
@@ -827,6 +829,10 @@ async function guardarEntregas(){
   // días sin destino, no dice nada y el motor tendría que adivinar a qué se refieren).
   if(E.provincia_demora){
     const d=E.provincia_demora;
+    // Solo el MÁXIMO lleno («a 5 días»): se toma como plazo fijo en vez de descartarlo en silencio
+    // (sin plazo guardado el bot no puede contestar «¿cuándo llega?»). Igual en cada excepción.
+    if(!d.min && d.max) d.min=d.max;
+    (d.excepciones||[]).forEach(x=>{ if(x && !x.min && x.max) x.min=x.max; });
     d.excepciones=(d.excepciones||[]).filter(x=>x&&String(x.destinos||"").trim()&&x.min);
     if(!d.excepciones.length) delete d.excepciones;
     if(d.max && d.min && d.max<d.min) d.max=d.min;      // "de 5 a 2 días" no existe

@@ -142,8 +142,8 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, guardUnsaved, markClean, confirmDescartar, updateChannel } from "./shell.js";
-import { mountDateRange, computePreset, ymd as ymdDia } from "./date-range.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, guardUnsaved, markClean, confirmDescartar, updateChannel, pageAll } from "./shell.js";
+import { mountDateRange, computePreset, ymd as ymdDia, startOfDayTZ, endOfDayTZ } from "./date-range.js";
 const $ = (id) => document.getElementById(id);
 // ── Catálogo de modelos (nombre bonito → ID exacto y FUNCIONAL) ─────
 // Claude: IDs vigentes de la Messages API (el backend no manda temperature
@@ -496,10 +496,10 @@ function paintCampos(){
 async function saveCampos(e){
   const btn=e.target; for(const f of st.campos.fields){ if(!f.nombre.trim()||!f.key.trim()){ toast("Cada campo necesita nombre y clave",true); return; } }
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-  if(st.campos.deleted.length){ const { error }=await supa.from("custom_fields").delete().in("id",st.campos.deleted); if(error){ btn.disabled=false; btn.textContent=old; toast(error.message,true); return; } st.campos.deleted=[]; }
+  if(st.campos.deleted.length){ const { data:_bor, error }=await supa.from("custom_fields").delete().in("id",st.campos.deleted).select("id"); if(error){ btn.disabled=false; btn.textContent=old; toast(error.message,true); return; } if((_bor||[]).length<st.campos.deleted.length){ btn.disabled=false; btn.textContent=old; toast("Solo un administrador puede cambiar los campos del bot",true); return; } st.campos.deleted=[]; }
   const rows=st.campos.fields.map(f=>{ const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo||"text", modo:"fijo", valor:f.valor||null, descripcion:f.descripcion||null }; if(f.id) r.id=f.id; return r; });
   if(rows.length){ const { error }=await supa.from("custom_fields").upsert(rows);
-    if(error){ btn.disabled=false; btn.textContent=old; toast(/valor|descripcion|column/.test(error.message)?"Falta aplicar la migración 0013 (valor/descripcion)":error.message.includes("duplicate")?"Hay claves repetidas":error.message,true); return; } }
+    if(error){ btn.disabled=false; btn.textContent=old; toast(/valor|descripcion|column/.test(error.message)?"Falta aplicar la migración 0013 (valor/descripcion)":/row-level security/i.test(error.message)?"Solo un administrador puede cambiar los campos del bot":error.message.includes("duplicate")?"Hay claves repetidas":error.message,true); return; } }
   btn.disabled=false; btn.textContent=old; st.campos.loaded=false; markClean(); toast("Campos guardados"); renderCampos($("body"));
 }
 
@@ -1025,9 +1025,11 @@ async function renderGastoIa(){
   }
   if(!gastoIaHay){ box.innerHTML=""; return; }
   const desde=ymdDia(gastoRango.from), hasta=ymdDia(gastoRango.to);
-  const { data, error }=await supa.from("ai_usage")
+  // PAGINADO: son ~20 filas por día; con «Máximo» pasaba de 1000 y el gasto salía corto (y distinto
+  // del Dashboard, que sí pagina).
+  const { data, error }=await pageAll((f,t)=>supa.from("ai_usage")
     .select("dia,origen,model,llamadas,tokens_in,tokens_out,costo_usd")
-    .eq("channel_id", st.channelId).gte("dia", desde).lte("dia", hasta).order("dia",{ascending:false});
+    .eq("channel_id", st.channelId).gte("dia", desde).lte("dia", hasta).order("dia",{ascending:false}).order("origen").order("model").range(f,t));
   if(error || !Array.isArray(data)){ box.innerHTML=""; return; }
   const sum=(rows,campo)=>rows.reduce((a,r)=>a+Number(r[campo]||0),0);
   const mes=data;
@@ -1057,7 +1059,10 @@ async function renderGastoIa(){
   let porChat="";
   try{
     const { count }=await supa.from("contacts").select("id",{count:"exact",head:true})
-      .eq("channel_id", st.channelId).gte("created_at", desde).lte("created_at", hasta+"T23:59:59.999Z");
+      // Corte del día en la zona del NEGOCIO (antes UTC: a las 22:00 de Lima «Hoy» perdía los chats
+      // de las 19:00 en adelante y sumaba los de anoche) y sin contactos de prueba.
+      .eq("channel_id", st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim")
+      .gte("created_at", startOfDayTZ(gastoRango.from).toISOString()).lte("created_at", endOfDayTZ(gastoRango.to).toISOString());
     if(count>0) porChat=usd(totalMes/count)+` <span style="font-weight:600;color:var(--muted)">por conversación</span>`;
   }catch(_){ /* sin el dato, la tarjeta va igual */ }
   box.innerHTML=`

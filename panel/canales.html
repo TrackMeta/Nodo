@@ -168,7 +168,7 @@ async function load(){
   // un miembro podría usar para forjar el webhook y aprobar pagos — migración 0073 lo
   // revoca). El booleano "Copiloto activo" viene del endpoint status (st.secrets.copiloto).
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,phone_number_id,waba_id,verify_token,telegram_chat_ids,ia_router").eq("id",forChannel).maybeSingle();
+    .select("nombre,phone_number_id,waba_id,verify_token,telegram_chat_ids,telegram_vinculos,ia_router").eq("id",forChannel).maybeSingle();
   if(chErr){ ({ data:ch } = await supa.from("channels")
     .select("nombre,phone_number_id,waba_id,verify_token,ia_router").eq("id",forChannel).maybeSingle()); }
   if(gen!==st.loadGen) return; // cambiaste de bot mientras cargaba
@@ -819,6 +819,7 @@ function renderTG(){
         <button class="btn" id="tgPair" ${copiloto?'':'disabled'}>${icon("sparkles")} Detectar mi chat ID</button>
       </div>
       <div id="pairBox"></div>
+      ${(()=>{ const v=c.telegram_vinculos||{}; const ids=(c.telegram_chat_ids||[]).map(String); if(!ids.length) return ""; return `<div class="desc" style="margin:0 0 10px">${ids.map(id=>`<b>${esc((v[id]&&v[id].nombre)||"sin nombre")}</b> <span class="mono" style="color:var(--muted)">${esc(id)}</span>`).join(" · ")}</div>`; })()}
       <div class="acts"><button class="btn" id="saveChats">Guardar chats</button></div>
 
       <div style="border-top:1px solid var(--border);margin:16px 0 12px"></div>

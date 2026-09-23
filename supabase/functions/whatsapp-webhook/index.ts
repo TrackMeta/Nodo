@@ -680,8 +680,18 @@ async function runEngineTask(
     // El operador pudo TOMAR el chat DURANTE la espera del buffer (hasta 20s). El chequeo de
     // bot_activo del ingest ocurrió ANTES de esperar → se revalida acá para no responder ENCIMA
     // del operador. (La ruta de aprobación/entrega no pasa por acá, así que no la bloquea.)
-    { const { data: ct } = await db.from("contacts").select("bot_activo").eq("id", contactId).maybeSingle();
-      if ((ct as any)?.bot_activo === false) return; }
+    { const { data: ct } = await db.from("contacts").select("bot_activo, ad_id, fep_hasta").eq("id", contactId).maybeSingle();
+      if ((ct as any)?.bot_activo === false) return;
+      // El ANUNCIO venía en el PRIMER mensaje de la ráfaga, pero el turno lo corre el último (sin
+      // referral): al plegarlos se perdía, y el comprador de A que tocó el anuncio de B caía en la
+      // post-venta de A. Si el clic en el anuncio fue hace segundos (fep_hasta recién abierto), se
+      // le devuelve al evento.
+      if (event.type === "message" && !(event as any).adId && (ct as any)?.ad_id && (ct as any)?.fep_hasta) {
+        const abierto = Date.parse((ct as any).fep_hasta) - 72 * 3600_000;
+        if (Number.isFinite(abierto) && Date.now() - abierto < (bufferSeg + 20) * 1000) {
+          event = { ...event, adId: String((ct as any).ad_id) } as EngineEvent;
+        }
+      } }
     await runEngine(db, channelId, contactId, event);
   } catch (e) {
     // El mensaje ya quedó guardado; un error del motor no debe hacer que

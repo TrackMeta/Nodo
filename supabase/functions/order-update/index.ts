@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
   const { data: order } = await db.from("orders")
     // products(nombre): lo usa el resumen del pedido que va en el aviso de estado — sin él
     // decía «📦 *3 frascos*» sin decir de qué producto.
-    .select("id, channel_id, contact_id, estado, shipping, amount, currency, product_id, order_bumps, products(nombre)")
+    .select("id, channel_id, contact_id, estado, shipping, amount, currency, product_id, order_bumps, confirmed_at, products(nombre)")
     .eq("id", body.order_id).maybeSingle();
   if (!order) return json({ error: "no_existe" }, 404);
   // Multi-tenant: si entra un humano (no el service-role interno del Copiloto),
@@ -211,7 +211,11 @@ Deno.serve(async (req) => {
   }
   if (newEstado) {
     patch.estado = newEstado;
-    if (CONFIRM_STATES.includes(newEstado)) patch.confirmed_at = new Date().toISOString();
+    // La fecha de la VENTA se fija UNA vez (la primera vez que se cierra): antes se reescribía en cada
+    // paso (saldo pagado → recogido) y en Compras la venta «se mudaba» de septiembre a octubre.
+    // (Si la fecha vino de un paso que NO cierra —el adelanto validado también la sella—, se reescribe
+    // al cerrar de verdad.)
+    if (CONFIRM_STATES.includes(newEstado) && (!(order as any).confirmed_at || !CONFIRM_STATES.includes(String((order as any).estado)))) patch.confirmed_at = new Date().toISOString();
   }
 
   // 🔒 Anti-reúso en la APROBACIÓN MANUAL: si el nº de operación de este pago YA se

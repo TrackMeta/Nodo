@@ -145,7 +145,10 @@ async function boot(){
 }
 
 // Estado efectivo de un aviso: lo guardado, o el default del catálogo.
-const encendido=(a)=> st.cfg.items[a.clave]?.on!==false;
+// Los CRÍTICOS salen siempre (el motor no los deja apagar): el panel los muestra encendidos y fijos,
+// en vez de «apagados» mientras se siguen enviando.
+const CRITICOS=new Set(["pide_humano","envio_fallido","entrega_fallida","adelanto_validar","saldo_validar","pago_digital_validar","pago_extra_validar","prepago_lima_validar"]);
+const encendido=(a)=> CRITICOS.has(a.clave) || st.cfg.items[a.clave]?.on!==false;
 const textoDe=(a)=> (st.cfg.items[a.clave]?.texto ?? a.texto);
 const editado=(a)=> typeof st.cfg.items[a.clave]?.texto==="string" && st.cfg.items[a.clave].texto!==a.texto;
 const conFoto=(a)=> st.cfg.items[a.clave]?.foto===true;
@@ -201,6 +204,7 @@ function render(){
   b.querySelectorAll("[data-sw]").forEach(el=> el.onclick=(ev)=>{
     ev.stopPropagation();
     const a=st.catalogo.find(x=>x.clave===el.dataset.sw);
+    if(CRITICOS.has(a.clave)){ toast("Este aviso no se puede apagar: si no te llega, un cliente se queda esperando sin que nadie lo sepa.",true); return; }
     const it=st.cfg.items[a.clave]||(st.cfg.items[a.clave]={});
     it.on=!encendido(a);
     render();

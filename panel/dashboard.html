@@ -923,6 +923,16 @@ async function load(){
   (ordR.error?[]:(ordR.data||[])).forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(!a) return; (adCnt[a]||(adCnt[a]={fisico:0,digital:0}))[O.esFisico(o)?"fisico":"digital"]++; });
   const adTipo={};
   Object.keys(adCnt).forEach(a=>{ adTipo[a]=adCnt[a].fisico>=adCnt[a].digital?"fisico":"digital"; });
+  // Un anuncio SIN ventas en el rango no tenía tipo → su gasto no caía ni en Físico ni en Digital
+  // (Físico + Digital ≠ Todo) y el ROAS de cada vista salía inflado justo por el anuncio que habría
+  // que apagar. Se toma el tipo del producto al que está vinculado (ángulos del banco de anuncios).
+  if(tipo!=="todo"){
+    try{
+      const { data:angs }=await supa.from("angulos").select("ad_ids, product:product_id(tipo)").eq("channel_id",cid);
+      (angs||[]).forEach(g=>{ const t=g.product&&g.product.tipo==="fisico"?"fisico":(g.product?"digital":null); if(!t) return;
+        (g.ad_ids||[]).forEach(a=>{ if(!adTipo[String(a)]) adTipo[String(a)]=t; }); });
+    }catch(_){ /* sin ángulos → como antes */ }
+  }
   // ⚠ Moneda: el gasto de Meta viene en la moneda de la CUENTA de ads, que puede no ser
   // la del negocio. Sin convertir, neta/ROAS/%ads salen inflados (~3.75× con USD/PEN).
   // Ahora se convierte cuando se puede y se sigue avisando cuando no (ver factorAds).
@@ -970,6 +980,10 @@ async function load(){
       if(O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1)==null) sinCogs++; else sinFlete++;
     } else { bruta+=m; cogsBruta+=O.cobrado(o)-m; conMargen++; }
   });
+  // El FLETE de los perdidos (rechazado / no recogido): el paquete fue y volvió, ese envío se pagó
+  // igual. No se restaba en ningún lado y la ganancia salía de más (el digest ya lo resta igual).
+  const fletePerdidos=orders.filter(O.esPerdido).reduce((a,o)=>a+(O.flete(o)||0),0);
+  if(fletePerdidos>0){ bruta-=fletePerdidos; cogsBruta+=fletePerdidos; }
   // Ninguna venta pudo calcular su ganancia → el número no existe, no es cero.
   const brutaDesconocida = conMargen===0 && sinCostoF>0;
   // Texto compartido por el KPI y la banda: dice qué falta exactamente.
@@ -1524,14 +1538,21 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd){
   // Agregar por producto y versión.
   const pmap={};
   prods.forEach(p=>{ pmap[p.id]={ id:p.id, nombre:p.nombre, units:0, ing:0, versions:{} };
-    (p.product_versions||[]).forEach(v=> pmap[p.id].versions[v.id]={ nombre:v.nombre, units:0, ing:0 }); });
+    (p.product_versions||[]).forEach(v=> pmap[p.id].versions[v.id]={ nombre:v.nombre, units:0, ing:0, cant:Number(v.cantidad)||1 }); });
   let sinProd={ units:0, ing:0 };
   orders.forEach(o=>{
-    let v=Number(o.amount||0); (o.order_bumps||[]).forEach(b=>v+=Number(b.precio||0));
+    // UNIDADES de verdad (un Pack ×3 son 3, «2 del Estándar» son 2), no pedidos. Un upgrade no suma
+    // unidades (ya las tenía). Y cada venta extra se le suma a SU producto, no al principal.
+    const s=o.shipping||{};
+    let v=Number(o.amount||0);
+    (o.order_bumps||[]).forEach(b=>{ const bp=b&&b.product_id&&pmap[b.product_id];
+      if(bp && b.product_id!==o.product_id){ bp.ing+=Number(b.precio||0); if(Number(b.precio)>0) bp.units++; } else v+=Number(b.precio||0); });
     const p=o.product_id&&pmap[o.product_id];
-    if(!p){ sinProd.units++; sinProd.ing+=v; return; }
-    p.units++; p.ing+=v;
-    if(o.version_id&&p.versions[o.version_id]){ p.versions[o.version_id].units++; p.versions[o.version_id].ing+=v; }
+    const ver=p&&o.version_id&&p.versions[o.version_id];
+    const uds=s.upgrade?0:(ver?ver.cant:1)*(Number(s.cantidad)>1?Number(s.cantidad):1);
+    if(!p){ sinProd.units+=uds||1; sinProd.ing+=v; return; }
+    p.units+=uds; p.ing+=v;
+    if(ver){ ver.units+=uds; ver.ing+=v; }
   });
   const list=Object.values(pmap).filter(p=>p.units>0);
   if(sinProd.units) list.push({ id:"_none", nombre:"Sin producto asignado", units:sinProd.units, ing:sinProd.ing, versions:{} });

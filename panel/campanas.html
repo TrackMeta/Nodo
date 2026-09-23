@@ -214,6 +214,7 @@ function renderGrid(){
       <div class="cstat" style="margin-top:8px">${c.programada_at?`${icon("clock")} Programada: <b>${fmt.format(new Date(c.programada_at))}</b>`:icon("sparkles")+" Envío inmediato al activar"}</div>
       ${c.estado!=="borrador"?`<div class="cprog"><div class="bars" style="flex:1;margin:0"><span class="sent" style="width:${total?sent/total*100:0}%"></span><span class="fail" style="width:${total?fail/total*100:0}%"></span></div><span class="pct">${pct}%</span></div>
         <div class="cstat">Enviados <b>${sent}</b> · Fallidos <b>${fail}</b> · Total <b>${total}</b></div>`:""}
+      ${c.motivo?`<div class="cstat" style="margin-top:6px;color:var(--red)">${icon("alert")} Se detuvo: ${esc(c.motivo)}</div>`:""}
       <div class="cacts">
         <span data-cardfolder></span>
         ${c.estado==="borrador"?`<button class="btn primary" data-a="activate">${icon("play")} Activar</button><button class="btn" data-a="edit">Editar</button>`:""}

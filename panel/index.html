@@ -787,10 +787,13 @@ const esRecompra = (c)=> !!c && c.stage==="comprado" && !!state.recompraSet && s
 async function loadConversations() {
   const gen=(state.loadGen=(state.loadGen||0)+1); // anti-carrera al cambiar de bot
   const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,window_type,requiere_humano,archivada,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage,source${p?",product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado":""})`;
+  // 1000 y no 200: los filtros («Requiere humano», fechas, archivados) y sus contadores trabajan sobre
+  // lo cargado, y con más de 200 chats los que esperaban desde hace días simplemente no aparecían
+  // (el Dashboard, que cuenta en la base, decía 37 y el filtro 12). Lo que sigue va por trozos.
   let { data, error } = await supa.from("conversations").select(sel(true))
-    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(200);
+    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(1000);
   if (error) { ({ data } = await supa.from("conversations").select(sel(false))
-    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(200)); }
+    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(1000)); }
   if (gen!==state.loadGen) return; // cambiaste de bot mientras cargaba → no pintes la bandeja del anterior
   // Los archivados se conservan en state.convs (para contarlos y para el filtro
   // "Archivados"); applyFilters los oculta salvo que ese filtro esté activo.

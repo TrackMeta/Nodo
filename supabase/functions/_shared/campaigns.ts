@@ -143,7 +143,7 @@ export async function matchSegment(db: SupabaseClient, channelId: string, seg: a
   const base = (f: number, t: number) => {
     // Sin el contacto de prueba NI los simulados (`source = "sim"`, tmp-sim): una simulación
     // dejaba contactos en «caliente» que entraban a la audiencia de una campaña real.
-    let q = db.from("contacts").select("id, stage").eq("channel_id", channelId).neq("wa_id", "webchat-test")
+    let q = db.from("contacts").select("id, stage, wa_id, user_id, telefono").eq("channel_id", channelId).neq("wa_id", "webchat-test")
       .or("source.is.null,source.neq.sim");
     // Con «cualquiera» y varios filtros la etapa NO puede recortar acá: quien no está en la
     // etapa todavía puede entrar por su etiqueta o su pedido.
@@ -173,8 +173,11 @@ export async function matchSegment(db: SupabaseClient, channelId: string, seg: a
   // Un error que NO sea de columna (red, permisos) NO puede leerse como "audiencia vacía":
   // la campaña se marcaría enviando/completada sin destinatarios. Se deja para el próximo tick.
   if (res.error) throw new Error("matchSegment: " + (res.error.message ?? res.error));
-  const { data } = res;
-  let ids = (data ?? []).map((r: any) => r.id);
+  // Sin NÚMERO de verdad (llegó por usuario de WhatsApp: wa_id = BSUID y sin teléfono): Meta no le
+  // puede mandar una plantilla. Contarlo inflaba «Le llega a N» y cada envío fallaba (o, si Meta lo
+  // aceptara, la misma persona con otra fila de número recibía dos).
+  const data = ((res.data ?? []) as any[]).filter((r) => !(r.user_id && r.wa_id === r.user_id && !String(r.telefono ?? "").trim()));
+  let ids = data.map((r: any) => r.id);
   const todos = ids;   // los candidatos, antes de que ningún filtro recorte
   const stageDe = new Map<string, string>((data ?? []).map((r: any) => [r.id, r.stage]));
 
@@ -275,7 +278,7 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
     // Plantilla borrada (FK on delete set null): antes se marcaba «completada» dejando las filas
     // pendientes huérfanas para siempre («Enviados 0 · Fallidos 0 · Total N · Completada»).
     await db.from("campaign_sends").update({ estado: "fallido", error: { message: "La plantilla de la campaña ya no existe" } }).eq("campaign_id", c.id).eq("estado", "pendiente");
-    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando");
+    await cerrarCampana(db, c, "La plantilla de la campaña ya no existe");
     return;
   }
   // Defensa en profundidad: si Meta pausó/rechazó la plantilla DESPUÉS de crear la
@@ -284,7 +287,7 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
   // (La UI ya filtra por estado_meta al elegir; esto cubre el cambio posterior.)
   if ((tpl as any).estado_meta && (tpl as any).estado_meta !== "aprobada") {
     await db.from("campaign_sends").update({ estado: "fallido", error: { message: "La plantilla ya no está aprobada por Meta" } }).eq("campaign_id", c.id).eq("estado", "pendiente");
-    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando");
+    await cerrarCampana(db, c, "La plantilla ya no está aprobada por Meta");
     return;
   }
   // El nº de parámetros mapeados debe COINCIDIR con las variables {{N}} del cuerpo
@@ -295,20 +298,20 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
   // cuerpo → Meta rechazaría el lote (132000). La marca la sincronización (0074).
   if ((tpl as any).soporta_envio === false) {
     await db.from("campaign_sends").update({ estado: "fallido", error: { message: "La plantilla usa variables en el encabezado o en un botón, que Nodo aún no puede llenar. Usa una plantilla con variables solo en el cuerpo." } }).eq("campaign_id", c.id).eq("estado", "pendiente");
-    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando");
+    await cerrarCampana(db, c, "La plantilla usa variables en el encabezado o en un botón, que Nodo aún no puede llenar. Usa una plantilla con variables solo en el cuerpo.");
     return;
   }
   // Desmarcar «Plantilla activa» en el panel no frenaba lo que ya estaba en cola.
   if ((tpl as any).activa === false) {
     await db.from("campaign_sends").update({ estado: "fallido", error: { message: "La plantilla está desactivada en Plantillas" } }).eq("campaign_id", c.id).eq("estado", "pendiente");
-    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando");
+    await cerrarCampana(db, c, "La plantilla está desactivada en Plantillas");
     return;
   }
   const nVars = new Set(String((tpl as any).body_preview ?? "").match(/\{\{\s*\d+\s*\}\}/g) ?? []).size;
   const nParams = ((tpl as any).params ?? []).length;
   if (nVars !== nParams) {
     await db.from("campaign_sends").update({ estado: "fallido", error: { message: `La plantilla tiene ${nVars} variable(s) {{N}} pero ${nParams} parámetro(s) mapeado(s). Mapea los huecos en Plantillas antes de enviar.` } }).eq("campaign_id", c.id).eq("estado", "pendiente");
-    await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando");
+    await cerrarCampana(db, c, `La plantilla tiene ${nVars} variable(s) {{N}} pero ${nParams} parámetro(s) mapeado(s). Mapea los huecos en Plantillas antes de enviar.`);
     return;
   }
 
@@ -356,7 +359,7 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
   // un hipo de red — a mitad del envío, con el resto de la audiencia sin recibir nada y sin
   // forma de retomarla. Ahora un error deja la campaña 'enviando' y el próximo tick sigue.
   if (errPend) { console.error(`[campañas] leer pendientes de "${c.nombre ?? c.id}": ${errPend.message} — se reintenta`); return; }
-  if (!pend?.length) { await db.from("campaigns").update({ estado: "completada" }).eq("id", c.id).eq("estado", "enviando"); return; }
+  if (!pend?.length) { await cerrarCampana(db, c, null); return; }
 
   let ok = 0, fail = 0;
   let first = true;
@@ -702,4 +705,21 @@ export function textoPlantilla(body: unknown, params: unknown[]): string {
     const v = (params ?? [])[Number(n) - 1];
     return v == null || String(v).trim() === "" ? "-" : String(v);
   });
+}
+
+// Cierra una campaña con los números REALES (recontados desde campaign_sends) y, si se detuvo,
+// el MOTIVO. Antes quedaba «Completada · Enviados 0 · Fallidos 0» sin decir por qué, y los fallos
+// que Meta avisa tarde (por webhook) nunca se veían en la tarjeta.
+async function cerrarCampana(db: SupabaseClient, c: any, motivo: string | null) {
+  const cnt = async (estado: string) => {
+    const { count } = await db.from("campaign_sends").select("id", { count: "exact", head: true }).eq("campaign_id", c.id).eq("estado", estado);
+    return count ?? 0;
+  };
+  const patch: Record<string, unknown> = { estado: "completada", enviados: await cnt("enviado"), fallidos: await cnt("fallido") };
+  if (motivo) patch.motivo = String(motivo).slice(0, 300);
+  const { error } = await db.from("campaigns").update(patch).eq("id", c.id).eq("estado", "enviando");
+  if (error && /motivo/.test(error.message)) {   // sin la 0112: al menos los números
+    delete patch.motivo;
+    await db.from("campaigns").update(patch).eq("id", c.id).eq("estado", "enviando");
+  }
 }

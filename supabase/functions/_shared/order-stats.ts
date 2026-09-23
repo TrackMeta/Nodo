@@ -189,7 +189,13 @@ export function resumirPedidos(orders: Order[]): Digest {
         }
       }
     }
-    if (esPerdido(o)) perdidos++;
+    if (esPerdido(o)) {
+      perdidos++;
+      // El FLETE de un rechazado / no recogido sí se perdió (el paquete fue y volvió): antes no se
+      // restaba en ningún lado y la ganancia salía de más. Mismo criterio que el Dashboard.
+      const fP = Number((o?.shipping as any)?.flete);
+      if (Number.isFinite(fP) && fP > 0) { envio += fP; ganancia -= fP; }
+    }
   }
   return {
     ventas, ingresos, porCobrar: pc,
