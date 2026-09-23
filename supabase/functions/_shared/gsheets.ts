@@ -58,11 +58,16 @@ export const HOJAS: Record<string, string[]> = {
   // La hoja SOLO guarda ventas CERRADAS (dinero cobrado). Por eso: Lima usa "Valor
   // cobrado" (ya no "a cobrar") y no lleva Estado (siempre sería "entregado"); Provincia
   // no lleva Adelanto/Saldo (ya se pagaron ambos = el total) ni Estado.
-  "Digital": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "Valor", "Producto", "Opción", "Orderbump", "Imagen"],
+  // ⚠️ Este orden tiene que seguir al de `syncPedidoSheet` (engine.ts): son las MISMAS
+  // columnas. Si acá falta una, la hoja recién preparada sale incompleta y la columna
+  // aparece sola —al final de todo— recién con la primera venta. Se agregaron Cantidad,
+  // Extra e «Imagen saldo» el 2026-09-22 y esta lista se había quedado atrás.
+  "Digital": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "Valor", "Producto", "Opción",
+    "Cantidad", "Orderbump", "Extra", "Imagen"],
   "Lima": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "Distrito", "Dirección",
-    "Producto", "Opción", "Valor cobrado"],
+    "Producto", "Opción", "Cantidad", "Valor cobrado", "Extra"],
   "Provincia": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "DNI", "Agencia", "Producto", "Opción",
-    "Valor total", "Guía", "Imagen"],
+    "Cantidad", "Valor total", "Extra", "Guía", "Imagen", "Imagen saldo"],
 };
 
 // Deja la hoja LISTA al conectarla: crea las 3 pestañas, escribe los
