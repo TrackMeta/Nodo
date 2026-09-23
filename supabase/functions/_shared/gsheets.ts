@@ -135,6 +135,54 @@ export async function sheetsBootstrap(token: string, id: string): Promise<{ crea
   return { creadas, hojas: Object.keys(HOJAS) };
 }
 
+// ── Crear la hoja desde Nodo ──────────────────────────────────────────
+// Conectar Google daba SOLO el permiso: la hoja había que crearla en Drive y pegar el enlace.
+// Y si esa hoja se borraba, el canal seguía apuntando a un archivo muerto sin decir nada
+// (le pasó a Rodrigo el 2026-09-23: borró la hoja para empezar con el orden limpio, reconectó
+// Google, y «Abrir» llevaba a «el archivo fue eliminado»). Ahora Nodo la crea con el permiso
+// `spreadsheets` que ya pide — no hace falta ningún permiso de Drive.
+
+// ¿La hoja guardada sigue ahí? 404 = la borraron; 403 = la cuenta conectada ya no la ve.
+// ⚠️ Una hoja en la PAPELERA de Drive todavía responde 200 por la Sheets API (sin permiso de
+// Drive no se puede saber): se sigue escribiendo en ella hasta que la vacíen.
+export async function sheetsEstado(token: string, id: string): Promise<"ok" | "no_existe" | "sin_acceso"> {
+  try {
+    await api(token, `${SHEETS}/${id}?fields=spreadsheetId`);
+    return "ok";
+  } catch (e) {
+    const m = String((e as any)?.message ?? e);
+    if (/Sheets API 404/.test(m)) return "no_existe";
+    if (/Sheets API 403/.test(m)) return "sin_acceso";
+    throw e;
+  }
+}
+
+// Crea una hoja nueva con las 3 pestañas ya preparadas (encabezados en orden, colores, fila fija).
+export async function sheetsCrear(token: string, titulo: string, timeZone = "America/Lima"): Promise<{ id: string; url: string }> {
+  const d = await api(token, SHEETS, "POST", {
+    properties: { title: titulo, locale: "es_PE", timeZone },
+    sheets: Object.keys(HOJAS).map((title) => ({ properties: { title } })),
+  });
+  const id = String(d.spreadsheetId ?? "");
+  if (!id) throw new Error("Google no devolvió la hoja creada");
+  await sheetsBootstrap(token, id);
+  return { id, url: String(d.spreadsheetUrl ?? `https://docs.google.com/spreadsheets/d/${id}/edit`) };
+}
+
+// Crea la hoja del canal y la deja CONECTADA (channels.gsheets). Lo usan el regreso de Google
+// (cuando no hay hoja o la guardada ya no existe) y el botón «Crear una hoja nueva» de Ajustes.
+export async function crearHojaDelCanal(db: any, channelId: string, token: string): Promise<{ id: string; url: string; titulo: string }> {
+  const { data: ch } = await db.from("channels").select("nombre, timezone, gsheets").eq("id", channelId).maybeSingle();
+  const titulo = `Ventas Nodo · ${String((ch as any)?.nombre ?? "").trim() || "mi negocio"}`;
+  const r = await sheetsCrear(token, titulo, (ch as any)?.timezone || "America/Lima");
+  const g = { ...(((ch as any)?.gsheets ?? {}) as Record<string, unknown>) };
+  g.spreadsheet_id = r.id; g.spreadsheet_url = r.url;
+  delete g.last_error; delete g.last_error_at;   // el cartel de «no llegó» era de la hoja vieja
+  const { error } = await db.from("channels").update({ gsheets: g }).eq("id", channelId);
+  if (error) throw new Error("La hoja se creó pero no se pudo guardar en Nodo: " + error.message);
+  return { ...r, titulo };
+}
+
 // Crea la pestaña si no existe. Sin esto, escribir en una pestaña inexistente
 // falla con "Unable to parse range" y —como el error se traga para no romper la
 // venta— no se escribía nada y nadie se enteraba.

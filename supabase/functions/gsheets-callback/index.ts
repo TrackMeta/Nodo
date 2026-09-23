@@ -6,6 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { serviceClient } from "../_shared/db.ts";
 import { fetchConTimeout } from "../_shared/http.ts";
+import { sheetsEstado, crearHojaDelCanal } from "../_shared/gsheets.ts";
 
 const db = serviceClient();
 const CLIENT_ID = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID") ?? "";
@@ -73,6 +74,20 @@ Deno.serve(async (req) => {
     const g = ((ch as any)?.gsheets ?? {}) as Record<string, unknown>;
     g.connected = true; g.mode = "oauth"; g.google_email = email;
     await db.from("channels").update({ gsheets: g }).eq("id", (st as any).channel_id);
+    // 📗 Conectar deja la hoja LISTA: si no había, o la guardada ya no existe (la borraron) o
+    // esta cuenta de Google no la ve, se crea una nueva. Una hoja que sigue viva NO se toca:
+    // reconectar para renovar el permiso no puede cambiarle la hoja a nadie.
+    try {
+      const sid = String(g.spreadsheet_id ?? "");
+      const estado = sid ? await sheetsEstado(tok.access_token, sid) : "no_existe";
+      if (estado !== "ok") {
+        await crearHojaDelCanal(db, (st as any).channel_id, tok.access_token);
+        return back(sid ? "recreada" : "creada");
+      }
+    } catch (e) {
+      // El permiso ya quedó guardado: sin hoja, Ajustes ofrece crearla o pegar una.
+      console.error("[gsheets-callback] crear hoja:", (e as any)?.message ?? e);
+    }
     return back("ok");
   } catch (e) {
     console.error("[gsheets-callback]", e);

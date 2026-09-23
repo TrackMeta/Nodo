@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
-import { getAccessToken, sheetsAppend, sheetsBootstrap } from "../_shared/gsheets.ts";
+import { getAccessToken, sheetsAppend, sheetsBootstrap, sheetsEstado, crearHojaDelCanal } from "../_shared/gsheets.ts";
 import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
@@ -21,16 +21,44 @@ Deno.serve(async (req) => {
   const { data: member } = await db.from("app_users").select("id").eq("id", uid).eq("activo", true).maybeSingle();
   if (!member) return json({ error: "not_member" }, 403);
 
-  let body: { webhook_url?: string; tab?: string; oauth?: boolean; preparar?: boolean; channel_id?: string; spreadsheet_id?: string };
+  let body: { webhook_url?: string; tab?: string; oauth?: boolean; preparar?: boolean; crear?: boolean; estado?: boolean; channel_id?: string; spreadsheet_id?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   // Multi-tenant: cualquier acción sobre un canal exige ser de su cuenta.
   if (body.channel_id && !(await userOwnsChannel(db, uid, body.channel_id))) return json({ error: "forbidden_channel" }, 403);
   // 🔒 `preparar` (crear/reescribir las pestañas de la hoja) es config de la integración →
   // solo ADMIN. Una fila de prueba suelta queda abierta al operador (como el `test` de channel-config).
-  if (body.preparar && body.channel_id && !(await userIsChannelAdmin(db, uid, body.channel_id))) {
+  if ((body.preparar || body.crear) && body.channel_id && !(await userIsChannelAdmin(db, uid, body.channel_id))) {
     return json({ error: "forbidden", detalle: "Solo un administrador puede preparar la hoja de Google Sheets." }, 403);
   }
   const fecha = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", dateStyle: "short", timeStyle: "short" }).format(new Date());
+
+  // ── Crear una hoja NUEVA y dejarla conectada (botón de Ajustes) ─────
+  if (body.crear) {
+    if (!body.channel_id) return json({ error: "faltan_datos" }, 400);
+    const { data: refresh } = await db.rpc("get_gsheets_token", { p_channel_id: body.channel_id });
+    if (!refresh) return json({ ok: false, detalle: "El canal no está conectado con Google (reconecta)" });
+    try {
+      const token = await getAccessToken(String(refresh));
+      const r = await crearHojaDelCanal(db, body.channel_id, token);
+      return json({ ok: true, spreadsheet_id: r.id, spreadsheet_url: r.url, titulo: r.titulo });
+    } catch (e) {
+      return json({ ok: false, detalle: String((e as any)?.message ?? e) });
+    }
+  }
+
+  // ── ¿La hoja guardada sigue existiendo? (Ajustes lo mira al abrir) ──
+  // Sin esto, una hoja borrada seguía saliendo como «Conectada» y cada venta se perdía.
+  if (body.estado) {
+    if (!body.channel_id || !body.spreadsheet_id) return json({ error: "faltan_datos" }, 400);
+    const { data: refresh } = await db.rpc("get_gsheets_token", { p_channel_id: body.channel_id });
+    if (!refresh) return json({ ok: true, estado: "sin_token" });
+    try {
+      const token = await getAccessToken(String(refresh));
+      return json({ ok: true, estado: await sheetsEstado(token, body.spreadsheet_id) });
+    } catch (e) {
+      return json({ ok: false, detalle: String((e as any)?.message ?? e) });
+    }
+  }
 
   // ── Preparar la hoja: crea las 3 pestañas con sus encabezados ──────
   // Corre al guardar la hoja, para que conectar sea una sola cosa: el usuario
