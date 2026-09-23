@@ -69,6 +69,30 @@
   .btn.primary:hover{background:var(--brand-2)}
   .btn.ghost{color:var(--muted)} .btn.danger{color:var(--red);border-color:transparent}
   /* Google Sheets — pasos guiados */
+  /* ── Marca del bot ── dos columnas: lo que editas y cómo queda ── */
+  .brand-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(260px,.85fr);gap:16px;align-items:start}
+  @media(max-width:900px){.brand-grid{grid-template-columns:1fr}}
+  .brand-grid .card{margin-bottom:0}
+  .fhelp{font-size:11.5px;color:var(--faint);margin:6px 0 0;line-height:1.5}
+  /* Zona de logo: se puede soltar el archivo encima o hacer clic */
+  .drop{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:14px;border-radius:14px;
+        border:1px dashed var(--border);background:var(--surface-2);cursor:pointer;transition:border-color .15s,background .15s}
+  .drop:hover{border-color:var(--brand);background:var(--surface)}
+  .drop.over{border-color:var(--brand);background:var(--brand-bg)}
+  .drop .thumb{width:60px;height:60px;border-radius:15px;object-fit:cover;background:var(--surface);border:1px solid var(--border);flex:none}
+  .drop .dt{font-size:13.5px;font-weight:650;color:var(--text)}
+  .drop .ds{font-size:11.5px;color:var(--faint);margin-top:3px;line-height:1.5}
+  .linkish{background:none;border:none;padding:0;color:var(--brand);font-size:12.5px;font-weight:600;cursor:pointer}
+  .linkish:hover{text-decoration:underline}
+  /* Vista previa: el sidebar y el selector, en pequeño */
+  .pv{background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:14px;display:grid;gap:12px}
+  .pv-row{display:flex;align-items:center;gap:11px;min-width:0}
+  .pv-row img{width:36px;height:36px;border-radius:10px;object-fit:cover;background:var(--surface);border:1px solid var(--border);flex:none}
+  .pv-nm{font-weight:700;font-size:14px;letter-spacing:-.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pv-cap{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700}
+  .pv-sel{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 11px;min-width:0}
+  .pv-sel img{width:22px;height:22px;border-radius:6px;object-fit:cover;flex:none}
+  .pv-sel span{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .steps{counter-reset:s;margin:4px 0 8px}
   .step{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--border)}
   .step:last-child{border-bottom:none}
@@ -583,26 +607,76 @@ async function saveGsheets(btn, gs){
 function renderBranding(b){
   if(!b) return;   // ya cambiaste de sección mientras esto cargaba: no hay dónde pintar
   const c=st.channel||{}; const logo=c.logo_url||"../assets/logo-128.png";
+  const propio=!!(c.logo_url||"").trim();      // ¿tiene logo propio o está usando el de Nodo?
+  const urlVal=(c.logo_url||"").startsWith("data:")?"":(c.logo_url||"");
   b.innerHTML=`
     <h2>Marca del Bot</h2><p class="sub">Nombre y logo que se muestran en el panel para este bot. Si no defines un logo, se usa el de Nodo.</p>
-    <div class="card">
-      <div class="row" style="align-items:center;gap:16px">
-        <img id="brandPrev" src="${esc(logo)}" alt="" style="width:56px;height:56px;border-radius:13px;object-fit:cover;background:var(--surface-2);border:1px solid var(--border)"/>
-        <div class="f"><label>Nombre del bot</label><input class="in" id="b_nombre" value="${esc(c.nombre||'')}"/></div>
-      </div>
-      <label>Logo del bot</label>
-      <div class="acts" style="margin-top:0">
-        <button class="btn" id="uploadBtn">${icon("upload")} Subir desde la PC</button>
+    <div class="brand-grid">
+      <div class="card">
+        <div class="chd"><div class="ico">${icon("edit")}</div><div class="nm">Identidad</div></div>
+        <div class="f" style="margin-top:14px">
+          <label>Nombre del bot</label>
+          <input class="in" id="b_nombre" value="${esc(c.nombre||'')}" maxlength="40" autocomplete="off"/>
+          <p class="fhelp">Es el nombre con el que lo distingues cuando manejas varios bots.</p>
+        </div>
+        <label style="display:block;margin-top:16px">Logo del bot</label>
+        <button type="button" class="drop" id="drop">
+          <img id="brandPrev" class="thumb" src="${esc(logo)}" alt=""/>
+          <div style="min-width:0">
+            <div class="dt">Arrastra una imagen o haz clic para elegirla</div>
+            <div class="ds">PNG, JPG o WEBP · se recorta a un cuadrado de 96px</div>
+          </div>
+        </button>
         <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp" hidden/>
-        <span class="desc" style="margin:0">o pega una URL abajo</span>
+        <div class="acts" style="margin-top:10px;gap:14px">
+          <button type="button" class="linkish" id="urlToggle">${urlVal?"Ocultar la URL":"o pegar una URL"}</button>
+          <button type="button" class="linkish" id="rmLogo" style="color:var(--muted);${propio?"":"display:none"}">Quitar y usar el de Nodo</button>
+        </div>
+        <input class="in" id="b_logo" value="${esc(urlVal)}" placeholder="https://.../logo.png"
+               style="margin-top:10px;${urlVal?"":"display:none"}"/>
+        <div class="acts"><button class="btn primary" id="saveBrand" disabled>Guardar marca</button></div>
       </div>
-      <input class="in" id="b_logo" value="${esc((c.logo_url||'').startsWith('data:')?'':(c.logo_url||''))}" placeholder="https://.../logo.png" style="margin-top:8px"/>
-      <div class="acts"><button class="btn primary" id="saveBrand">Guardar marca</button></div>
+
+      <div class="card">
+        <div class="chd"><div class="ico">${icon("eye")}</div><div class="nm">Cómo se ve</div></div>
+        <p class="desc" style="margin:10px 0 12px">Así aparece este bot en el panel.</p>
+        <div class="pv">
+          <div>
+            <div class="pv-cap" style="margin-bottom:8px">Barra lateral</div>
+            <div class="pv-row"><img id="pvLogo1" src="${esc(logo)}" alt=""/><div class="pv-nm" id="pvNm1">${esc(c.nombre||"Sin nombre")}</div></div>
+          </div>
+          <div>
+            <div class="pv-cap" style="margin-bottom:8px">Selector de bot</div>
+            <div class="pv-sel"><img id="pvLogo2" src="${esc(logo)}" alt=""/><span id="pvNm2">${esc(c.nombre||"Sin nombre")}</span></div>
+          </div>
+        </div>
+      </div>
     </div>`;
-  $("b_logo").oninput=(e)=>{ st.pendingLogo=null; $("brandPrev").src=e.target.value.trim()||"../assets/logo-128.png"; };
-  $("uploadBtn").onclick=()=>$("logoFile").click();
-  $("logoFile").onchange=(e)=>handleLogoFile(e.target.files[0]);
-  $("saveBrand").onclick=(e)=>saveBrand(e.target);
+
+  // El botón nace apagado y se enciende solo cuando algo cambió de verdad: así se ve de un
+  // vistazo si queda algo sin guardar, en vez de un primario siempre encendido que no dice nada.
+  const ini={ nombre:c.nombre||"", logo:String(c.logo_url||"") };
+  const save=$("saveBrand");
+  const pinta=(src)=>{ for(const id of ["brandPrev","pvLogo1","pvLogo2"]) $(id).src=src||"../assets/logo-128.png"; };
+  const logoAhora=()=> st.pendingLogo || (st.removeLogo ? "" : ($("b_logo").value.trim() || (ini.logo.startsWith("data:")?ini.logo:"")));
+  const revisa=()=>{
+    const n=$("b_nombre").value.trim();
+    save.disabled = !n || (n===ini.nombre && logoAhora()===ini.logo);
+    $("rmLogo").style.display = logoAhora() ? "" : "none";
+  };
+  $("b_nombre").oninput=()=>{ const v=$("b_nombre").value.trim(); $("pvNm1").textContent=v||"Sin nombre"; $("pvNm2").textContent=v||"Sin nombre"; revisa(); };
+  $("b_logo").oninput=()=>{ st.pendingLogo=null; st.removeLogo=false; pinta($("b_logo").value.trim()); revisa(); };
+  $("urlToggle").onclick=()=>{ const i=$("b_logo"); const ver=i.style.display==="none"; i.style.display=ver?"":"none"; $("urlToggle").textContent=ver?"Ocultar la URL":"o pegar una URL"; if(ver) i.focus(); };
+  $("rmLogo").onclick=()=>{ st.pendingLogo=null; st.removeLogo=true; $("b_logo").value=""; pinta(""); revisa(); };
+  $("drop").onclick=()=>$("logoFile").click();
+  $("logoFile").onchange=(e)=>handleLogoFile(e.target.files[0],revisa);
+  // Arrastrar y soltar: es como se mueve un logo de verdad, sin pasar por el explorador.
+  const dz=$("drop");
+  ["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,(e)=>{ e.preventDefault(); dz.classList.add("over"); }));
+  ["dragleave","drop"].forEach(ev=>dz.addEventListener(ev,(e)=>{ e.preventDefault(); dz.classList.remove("over"); }));
+  dz.addEventListener("drop",(e)=>{ const f=e.dataTransfer?.files?.[0]; if(f) handleLogoFile(f,revisa); });
+  save.onclick=(e)=>saveBrand(e.target);
+  revisa();
 }
 function downscaleImage(file, size=96){
   return new Promise((res,rej)=>{ const img=new Image(); const url=URL.createObjectURL(file);
@@ -611,17 +685,30 @@ function downscaleImage(file, size=96){
       ctx.drawImage(img,(size-w)/2,(size-h)/2,w,h); URL.revokeObjectURL(url); res(c.toDataURL("image/png")); };
     img.onerror=()=>{ URL.revokeObjectURL(url); rej(new Error("no se pudo leer la imagen")); }; img.src=url; });
 }
-async function handleLogoFile(file){
-  if(!file) return; if(file.size>4*1024*1024){ toast("Imagen muy grande (máx 4MB)",true); return; }
-  try{ const d=await downscaleImage(file,96); st.pendingLogo=d; $("brandPrev").src=d; toast("Imagen cargada — pulsa Guardar marca"); }
+async function handleLogoFile(file, luego){
+  if(!file) return;
+  if(!/^image\//.test(file.type||"")){ toast("Eso no es una imagen",true); return; }
+  if(file.size>4*1024*1024){ toast("Imagen muy grande (máx 4MB)",true); return; }
+  try{
+    const d=await downscaleImage(file,96); st.pendingLogo=d; st.removeLogo=false;
+    // La previa son tres sitios (el recuadro y las dos maquetas): se pintan juntos o el
+    // dueño ve el logo nuevo en uno y el viejo en los otros, que es peor que no verlo.
+    for(const id of ["brandPrev","pvLogo1","pvLogo2"]){ const el=document.getElementById(id); if(el) el.src=d; }
+    toast("Imagen cargada — pulsa Guardar marca");
+  }
   catch(e){ toast(e.message||"error",true); }
+  if(typeof luego==="function") luego();
 }
 async function saveBrand(btn){
   const nombre=$("b_nombre").value.trim();
   // El campo de URL va VACÍO cuando el logo actual es una imagen subida (data-URI): si solo
   // cambias el nombre y guardas, se mandaba logo_url:null y el logo se borraba. Se conserva.
   const logoActual=String(st.channel?.logo_url||"");
-  const logo_url = st.pendingLogo || ($("b_logo").value.trim() || (logoActual.startsWith("data:") ? logoActual : null));
+  // «Quitar y usar el de Nodo» tiene que poder mandar null a propósito: antes no había forma
+  // de volver al logo de Nodo si el actual era una imagen subida (el campo de URL va vacío en
+  // ese caso, y el guardado conservaba la imagen justo para no borrarla sin querer).
+  const logo_url = st.removeLogo ? null
+    : (st.pendingLogo || ($("b_logo").value.trim() || (logoActual.startsWith("data:") ? logoActual : null)));
   if(!nombre){ toast("El nombre no puede estar vacío",true); return; }
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
   const { error }=await updCanal({ nombre, logo_url });
@@ -631,7 +718,8 @@ async function saveBrand(btn){
   const nl=document.getElementById("nodoLogo"); if(nl) nl.src=logo_url||"../assets/logo-128.png";
   const bn=document.getElementById("nodoBrandName"); if(bn) bn.textContent=nombre;
   const opt=document.querySelector(`#nodoBot option[value="${st.channelId}"]`); if(opt) opt.textContent=nombre;
-  st.channel.nombre=nombre; st.channel.logo_url=logo_url; st.pendingLogo=null;
+  st.channel.nombre=nombre; st.channel.logo_url=logo_url; st.pendingLogo=null; st.removeLogo=false;
+  if(st.tab==="marca") renderBranding($("body"));   // el botón vuelve a apagarse: ya no hay nada sin guardar
 }
 
 // ── Pixel de Meta (CAPI) ────────────────────────────────────────────
