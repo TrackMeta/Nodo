@@ -718,6 +718,15 @@ export function guardUnsaved(selector) {
   const mark = (e) => { const t = e.target; if (_guardSel && t && t.closest && t.closest(_guardSel) && !t.closest("[data-noguard]")) _dirty = true; };
   document.addEventListener("input", mark, true);
   document.addEventListener("change", mark, true);
+  // …y los controles que se activan con CLIC (interruptores, días, filas con switch, borrar un
+  // ejemplo): no disparan input/change, así que «Entrego domingos» o «Se suma al total» se perdían
+  // al cambiar de pestaña o salir sin preguntar. Los botones de guardar/pestañas no cuentan.
+  document.addEventListener("click", (e) => {
+    const t = e.target;
+    if (!t || !t.closest) return;
+    if (!t.closest('[data-sw], .erow, .dbtn, .hudia, [data-dia], [data-row], [id$="Sw"], [id$="Row"], [id$="Row2"], .ejdel, .ejtipo, .sw, [role="switch"]')) return;
+    mark(e);
+  }, true);
   window.addEventListener("beforeunload", (e) => { if (_dirty) { e.preventDefault(); e.returnValue = ""; } });
 }
 export function markClean() { _dirty = false; }

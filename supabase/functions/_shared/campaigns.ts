@@ -434,7 +434,7 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
       // marca, el rescate de huérfanas (arriba) encuentra este registro y NO reenvía.
       await db.from("messages").insert({
         channel_id: c.channel_id, contact_id: s.contact_id, direction: "out",
-        type: "template", content: { template: (tpl as any).name, params: bodyParams, campaign_id: c.id }, wamid: wamid || null, status: "sent",
+        type: "template", content: { template: (tpl as any).name, params: bodyParams, campaign_id: c.id, text: textoPlantilla((tpl as any).body_preview, bodyParams) || undefined }, wamid: wamid || null, status: "sent",
         sent_by: "bot", ventana: await ventanaDeCobro(db, s.contact_id),
       });
       await db.from("campaign_sends").update({ estado: "enviado", wamid: wamid || null, sent_at: new Date().toISOString() }).eq("id", s.id);
@@ -592,7 +592,7 @@ export async function sendTemplateToContact(
   if (esPrueba) {
     await db.from("messages").insert({
       channel_id: channelId, contact_id: contactId, direction: "out",
-      type: "template", content: { template: tpl.name, params: bodyParams }, wamid: null, status: "sent",
+      type: "template", content: { template: tpl.name, params: bodyParams, text: textoPlantilla((tplRow as any)?.body_preview, bodyParams) || undefined }, wamid: null, status: "sent",
       sent_by: sender?.sentBy ?? "bot", sent_by_user: sender?.sentByUser ?? null, ventana: null,
     });
     return "simulado";
@@ -607,7 +607,7 @@ export async function sendTemplateToContact(
   const status = esWhats && !wamid ? "failed" : "sent";
   await db.from("messages").insert({
     channel_id: channelId, contact_id: contactId, direction: "out",
-    type: "template", content: { template: tpl.name, params: bodyParams }, wamid: wamid || null, status,
+    type: "template", content: { template: tpl.name, params: bodyParams, text: textoPlantilla((tplRow as any)?.body_preview, bodyParams) || undefined }, wamid: wamid || null, status,
     sent_by: sender?.sentBy ?? "bot", sent_by_user: sender?.sentByUser ?? null,
     // Un envío que NO salió no lo cobra Meta: sin ventana, para que el reporte «Mensajes
     // que Meta cobra» no sume 400 avisos fallidos por un token vencido.
@@ -618,7 +618,7 @@ export async function sendTemplateToContact(
 
 // ── Contexto del contacto para resolver variables ─────────────────
 async function contactCtx(db: SupabaseClient, contactId: string, orderId?: string | null): Promise<any> {
-  const { data: c } = await db.from("contacts").select("nombre, wa_id, stage, telefono, user_id, source").eq("id", contactId).maybeSingle();
+  const { data: c } = await db.from("contacts").select("nombre, wa_id, stage, telefono, user_id, source, channel_id").eq("id", contactId).maybeSingle();
   const { data: fields } = await db.from("contact_field_values")
     .select("value, custom_fields!inner(key)").eq("contact_id", contactId);
   // {{telefono}}: la columna REAL primero; cae a wa_id SOLO si no es un BSUID (un lead que
@@ -630,6 +630,19 @@ async function contactCtx(db: SupabaseClient, contactId: string, orderId?: strin
   const _telefono = _telReal || (_wa && _wa === (c as any)?.user_id ? "" : _wa);
   const ctx: any = { nombre: (c as any)?.nombre ?? "", wa_id: _wa, telefono: _telefono, stage: (c as any)?.stage ?? "", source: (c as any)?.source ?? null };
   for (const f of fields ?? []) ctx[(f as any).custom_fields.key] = (f as any).value;
+  // Campos FIJOS del negocio ({{nombre_negocio}}, {{horario}}, {{datos_pago}}…): el motor los
+  // resuelve y Campos promete que «se usan con {{clave}}», pero acá solo se leían los del cliente.
+  // En una campaña, TODOS caían en «falta el dato del parámetro» y no salía a nadie; en avisos y
+  // secuencias la plantilla (cobrada) salía con «-» donde iba el dato. El del cliente manda.
+  try {
+    if ((c as any)?.channel_id) {
+      const { data: fijos } = await db.from("custom_fields").select("key, valor")
+        .eq("channel_id", (c as any).channel_id).eq("modo", "fijo");
+      for (const f of (fijos ?? []) as any[]) {
+        if (String(ctx[f.key] ?? "").trim() === "" && String(f.valor ?? "").trim() !== "") ctx[f.key] = f.valor;
+      }
+    }
+  } catch (_) { /* sin campos fijos → como antes */ }
   // Datos del último pedido, con los mismos nombres que usan los flujos
   // ({{pedido_guia}}, {{pedido_sede}}, {{pedido_saldo}}…). Sin esto una
   // plantilla de "tu pedido va en camino" no podía decir el número de guía:
@@ -656,4 +669,15 @@ function resolveP(text: string, ctx: any): string {
   // Un cliente que escribió su dirección en varias líneas rompía el aviso ENTERO.
   return (text ?? "").replace(/\{\{\s*([\w\-.]+)\s*\}\}/g, (_: string, k: string) =>
     (ctx[k] ?? "").toString().replace(/\s+/g, " ").trim());
+}
+
+// Texto legible de una plantilla enviada: su cuerpo con las variables ya puestas. Se guarda en el
+// mensaje para que la Bandeja (y el exporte del chat) muestre QUÉ le llegó al cliente, no «[template]».
+export function textoPlantilla(body: unknown, params: unknown[]): string {
+  const b = String(body ?? "").trim();
+  if (!b) return "";
+  return b.replace(/\{\{\s*(\d+)\s*\}\}/g, (_m, n) => {
+    const v = (params ?? [])[Number(n) - 1];
+    return v == null || String(v).trim() === "" ? "-" : String(v);
+  });
 }

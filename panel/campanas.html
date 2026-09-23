@@ -242,8 +242,11 @@ async function action(a, c){
     const cuando=c.programada_at?(new Date(c.programada_at)<new Date()?"<b>la fecha programada ya pasó</b>: sale apenas actives":`programada para ${esc(fmtTZ(c.programada_at))}`):"sale de inmediato";
     const okA=await confirmDialog({title:"Activar campaña",messageHtml:`«${esc(c.nombre||"Campaña")}» le llegará a ${n==null?"":`<b>${n}</b> `}${sinSeg?"<b>TODA tu base de contactos</b> (no tiene segmento)":"los contactos del segmento"} y ${cuando}. Cada mensaje cuesta plantilla de Meta. ¿Activar?`,confirmText:"Activar",danger:sinSeg});
     if(!okA) return;
-    const { error }=await supa.from("campaigns").update({ estado:"programada" }).eq("id",c.id);
+    // Solo si SIGUE en borrador: desde una pestaña vieja (u otro operador) se revivía una campaña
+    // cancelada —sus pendientes salían en el siguiente minuto— o se re-expandía una completada.
+    const { data:act, error }=await supa.from("campaigns").update({ estado:"programada" }).eq("id",c.id).eq("estado","borrador").select("id");
     if(error){ toast(error.message,true); return; }
+    if(!(act||[]).length){ toast("Esta campaña ya no está en borrador (alguien la cambió): recarga la página",true); return load(); }
     toast("Campaña activada — el envío empieza pronto"); return load();
   }
 }
@@ -366,7 +369,10 @@ async function _saveCampaign(){
   const row={ channel_id:st.channelId, nombre, folder:(st.editing?st.editing.folder:((Fbar&&Fbar.current!=="__all"&&Fbar.current!=="__none")?Fbar.current:null))||null, template_id:$("m_tpl").value||null,
     segmento, programada_at:$("m_prog").value?(progAInstante($("m_prog").value)||new Date($("m_prog").value)).toISOString():null };
   let error;
-  if(st.editing){ ({ error }=await supa.from("campaigns").update(row).eq("id",st.editing.id)); }
+  // Editar SOLO en borrador o programada: una campaña ya enviando cambiaba de plantilla a mitad
+  // (medio público recibía la A y el otro medio la B).
+  if(st.editing){ let upd; ({ data:upd, error }=await supa.from("campaigns").update(row).eq("id",st.editing.id).in("estado",["borrador","programada"]).select("id"));
+    if(!error && !(upd||[]).length){ toast("Esta campaña ya empezó a enviarse o terminó: ya no se puede editar",true); return; } }
   else { ({ error }=await supa.from("campaigns").insert(row)); }
   if(error && /folder|column/.test(error.message)){ delete row.folder; if(st.editing){({ error }=await supa.from("campaigns").update(row).eq("id",st.editing.id));} else {({ error }=await supa.from("campaigns").insert(row));} if(!error) toast("Guardado (aplica 0015 para carpetas)"); }
   if(error){ toast(error.message,true); return; }

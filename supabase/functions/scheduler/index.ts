@@ -371,14 +371,23 @@ async function processResumenes(tickInicio: number): Promise<number> {
         // RECLAMAR antes de enviar (update condicional): dos ticks solapados (el cron corre
         // cada minuto y con muchos canales un tick pasa del minuto) leían el mismo estado y
         // mandaban el resumen DOS veces. Solo el que logra escribir la marca envía.
+        const _previo = estado[tipo] ?? null;
         estado[tipo] = hoy; dirty = true;
         const { data: gano } = await db.from("channels").update({ resumen_estado: estado }).eq("id", (ch as any).id)
           .or(`resumen_estado->>${tipo}.is.null,resumen_estado->>${tipo}.neq.${hoy}`).select("id");
         if (!gano?.length) continue; // otro tick ya lo tomó
-        const texto = await construirResumen(db, ch, diaYmd, cual);
-        const secrets = await getChannelSecrets(db, (ch as any).id);
-        const token = secrets?.telegram_bot_token;
-        if (token) { await sendTelegram(token, chatIds, texto); sent++; }
+        // Si armarlo o mandarlo FALLA, se suelta la marca: antes quedaba «enviado hoy» y ese día
+        // no salía (construirResumen lanza a propósito cuando no puede leer los pedidos). Dentro
+        // de la ventana de 60 min lo reintenta el tick siguiente.
+        let llego = 0, sinToken = false;
+        try {
+          const texto = await construirResumen(db, ch, diaYmd, cual);
+          const secrets = await getChannelSecrets(db, (ch as any).id);
+          const token = secrets?.telegram_bot_token;
+          if (token) llego = await sendTelegram(token, chatIds, texto); else sinToken = true;
+        } catch (e) { console.error("[processResumenes] armar/enviar:", (e as any)?.message ?? e); }
+        if (llego > 0) sent++;
+        else if (!sinToken) { estado[tipo] = _previo; }   // sin bot de Telegram no hay nada que reintentar
       }
       if (dirty) await db.from("channels").update({ resumen_estado: estado }).eq("id", (ch as any).id);
     } catch (e) { console.error("[processResumenes]", (e as any)?.message ?? e); }

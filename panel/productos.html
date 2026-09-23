@@ -4570,7 +4570,13 @@ async function _saveProduct(){
   // Primero las eliminadas: antes se marcaba v._delete pero nunca se borraban
   // de la base, así que "eliminar" no eliminaba nada al recargar.
   for(const id of (st.delVersions||[])){
-    const { error } = await supa.from("product_versions").delete().eq("id",id);
+    // Con pedidos ya vendidos NO se borra: se APAGA. Borrarla dejaba esos pedidos sin presentación
+    // (version_id → null) y el «no me llegó» ya no encontraba qué link reenviar — pese a que el
+    // aviso decía «los pedidos ya hechos con ella no se tocan». Apagada, deja de ofrecerse igual.
+    const { count:conPedidos } = await supa.from("orders").select("id",{ count:"exact", head:true }).eq("version_id",id);
+    const { error } = conPedidos
+      ? await supa.from("product_versions").update({ activo:false }).eq("id",id)
+      : await supa.from("product_versions").delete().eq("id",id);
     if(error){ toast(error.message,true); return; }
   }
   // Precio/costo NEGATIVO: los inputs llevan min="0", pero eso solo marca el campo como

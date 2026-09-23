@@ -229,7 +229,10 @@ async function save(){
   const vistas=new Set();
   for(const f of editables){ const k=f.key.trim().toLowerCase(); if(vistas.has(k)){ toast(`La clave "${f.key.trim()}" está repetida — cada campo necesita una clave única`,true); return; } vistas.add(k); }
   if(st.deleted.length){ const { error }=await supa.from("custom_fields").delete().in("id",st.deleted); if(error){ toast(error.message,true); return; } st.deleted=[]; }
-  const rows=editables.map(f=>{
+  // `datos_pago` se muestra solo de lectura acá (lo arma Negocio → Pagos): NO se reescribe. Si se
+  // incluía, una pestaña de Campos abierta desde antes devolvía el número VIEJO al guardar cualquier
+  // otra cosa, y el bot dictaba un Yape que el validador ya no acepta.
+  const rows=editables.filter(f=>String(f.key||"").trim()!=="datos_pago").map(f=>{
     const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo, modo:f.modo||"dinamico", folder:f.folder||null };
     if((f.modo||"dinamico")==="fijo"){ r.valor=f.valor||null; r.descripcion=f.descripcion||null; }
     if(f.id) r.id=f.id; return r;

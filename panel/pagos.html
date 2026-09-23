@@ -62,7 +62,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, updateChannel } from "./shell.js";
+import { supa, mountShell, toast, icon, updateChannel, guardUnsaved, markClean } from "./shell.js";
 import { attachVarPicker } from "./var-picker.js";
 // 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se pregunta a shell.js, pero SIN
 // importarlo estático: si el navegador tiene cacheado un shell.js viejo (sin ese export),
@@ -115,6 +115,7 @@ function defaultPedidos(){
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"pedidos" });
+  guardUnsaved(".nodo-page");   // avisos y recordatorio a medio escribir: preguntar antes de salir
   AV = await avPermitido();
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; load(); });
@@ -493,7 +494,7 @@ function render(b){
     const { error }=await updateChannel(st.channelId, { pedidos_config:p });
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/pedidos_config|column/.test(error.message)?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
-    st.channel.pedidos_config=p; toast("Pagos y avisos guardado");
+    st.channel.pedidos_config=p; markClean(); toast("Pagos y avisos guardado");
   };
 }
 

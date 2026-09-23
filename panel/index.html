@@ -1973,7 +1973,8 @@ function renderEvent(e){
 // cuelga la URL del audio/foto unos segundos más tarde, y el motor la transcripción.
 function msgInner(m){
   const mh = contactCardHtml(m) || mediaHtml(m);
-  const txt = m.content?.text || m.content?.caption || m.content?.title || `[${m.type}]`;
+  // Plantillas viejas (sin el texto guardado): al menos su NOMBRE, no «[template]».
+  const txt = m.content?.text || m.content?.caption || m.content?.title || (m.type==="template" && m.content?.template ? `Plantilla «${m.content.template}»` : `[${m.type}]`);
   // Transcripción de nota de voz (STT): el bot la escribe bajo el audio.
   const tr = m.content?.transcription
     ? `<div class="transcript" title="Transcripción automática del audio">${icon("mic")} ${esc(m.content.transcription)}</div>` : "";

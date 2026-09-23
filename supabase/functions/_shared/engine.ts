@@ -665,6 +665,30 @@ async function runEngineInner(
   }
 
   let run = await getActiveRun(db, contactId);
+  // 📣 Tocó un anuncio de OTRO producto con una conversación vieja viva: manda el anuncio. Antes
+  // el referral solo se miraba sin run, y un lead que habló de A hace semanas tocaba el anuncio
+  // de B y la IA de A le seguía vendiendo A. Si el pedido de A ya existe y sigue vivo, se respeta
+  // (está a mitad de esa compra); si no, se cierra ese run y se rutea de cero hacia B.
+  if (run && event.type === "message" && event.adId) {
+    try {
+      const _fa = await flowPorAnuncio(db, channelId, event.adId);
+      if (_fa && String(_fa.id) !== String(run.flow_id)) {
+        const { data: _pp } = await db.from("flows").select("id, product_id").in("id", [String(_fa.id), String(run.flow_id)]);
+        const _pNuevo = ((_pp ?? []) as any[]).find((f) => String(f.id) === String(_fa.id))?.product_id ?? null;
+        const _pViejo = ((_pp ?? []) as any[]).find((f) => String(f.id) === String(run!.flow_id))?.product_id ?? null;
+        const _orderVivo = !!(run.vars as any)?._order_id && await (async () => {
+          const { data: _o } = await db.from("orders").select("estado").eq("id", String((run!.vars as any)._order_id)).maybeSingle();
+          return !!_o && !["confirmada", "entregado_cobrado", "recogido", "saldo_pagado", "cancelado", "anulada", "rechazado"].includes(String((_o as any).estado));
+        })();
+        if (_pNuevo && _pNuevo !== _pViejo && !_orderVivo) {
+          await db.from("flow_runs").update({ estado: "cancelado" }).eq("id", run.id);
+          await logEvent(db, channelId, contactId, "nota", "📣 Llegó por otro anuncio",
+            "Se cerró la conversación anterior y se abre la del producto de este anuncio").catch(() => {});
+          run = null;
+        }
+      }
+    } catch (e) { console.error("[anuncioSobreRun]", (e as any)?.message ?? e); }
+  }
 
   if (run) {
     // 💸 «Devuélveme mi plata» ANTES que nada: es la única frase donde seguir vendiendo (o
@@ -1031,6 +1055,32 @@ async function runEngineInner(
           _sinKw ? `Queda lo suyo: "${_sinKw.slice(0, 90)}"` : "No escribió nada más").catch(() => {});
       }
     }
+    // 🧹 VENTA NUEVA sobre un contacto que ya compró (o cuyo pedido se cayó): se limpian los
+    // candados y los datos de ítem de la compra anterior. Sin esto, quien compró A y toca el
+    // anuncio de B arrastraba `pedido_creado = si` —el flujo solo crea el pedido si está vacío—:
+    // daba todos sus datos y el pedido de B NO nacía nunca; y se llevaba la opción, la talla, la
+    // oferta y la bolsa de pagos de A. Solo se respeta si su último pedido está VIVO y es de este
+    // mismo producto (está a mitad de esa compra).
+    try {
+      const { data: _fl } = await db.from("flows").select("product_id, role").eq("id", flow.id).maybeSingle();
+      const _pidN = (_fl as any)?.product_id ? String((_fl as any).product_id) : "";
+      if (_pidN && String((_fl as any)?.role ?? "venta") === "venta") {
+        const { data: _pc } = await db.from("contact_field_values").select("value, custom_fields!inner(key)")
+          .eq("contact_id", contactId).eq("custom_fields.key", "pedido_creado").maybeSingle();
+        if (String((_pc as any)?.value ?? "").trim() === "si") {
+          const { data: _uo } = await db.from("orders").select("estado, product_id").eq("contact_id", contactId)
+            .order("created_at", { ascending: false }).limit(1).maybeSingle();
+          const _cerr = new Set(["confirmada", "entregado_cobrado", "recogido", "saldo_pagado", "cancelado", "anulada", "rechazado", "no_recogido", "devuelto"]);
+          const _vivoMismo = !!_uo && String((_uo as any).product_id ?? "") === _pidN && !_cerr.has(String((_uo as any).estado));
+          if (!_vivoMismo) {
+            await limpiarCandadosVenta(db, contactId);
+            await resetItemFields(db, channelId, contactId, _pidN);
+            await logEvent(db, channelId, contactId, "nota", "🧹 Venta nueva",
+              "Se limpiaron los datos de la compra anterior para que esta pueda crear su propio pedido").catch(() => {});
+          }
+        }
+      }
+    } catch (_) { /* sin datos → como antes */ }
     run = await startRun(db, channelId, contactId, flow);
     if (!run) {
       // Perdió la carrera del lock (dos webhooks casi simultáneos): otro run
@@ -3111,10 +3161,17 @@ const REGLA_NO_DAR_POR_HECHO =
 
 export async function routeDecision(db: SupabaseClient, channelId: string, text: string, adId?: string): Promise<RouteResult> {
   const det = await matchTrigger(db, channelId, text, adId);
-  if (det.flow) return det;
   // Vino de un anuncio (aunque no escriba la keyword) → al flujo del producto de ese
   // anuncio, por su ángulo. Determinístico; gana sobre el IA Router (que adivina).
   const porAnuncio = await flowPorAnuncio(db, channelId, adId);
+  // …y también sobre una PALABRA CLAVE de otro producto. El anuncio es la prueba de qué vio el
+  // cliente; la palabra clave, una coincidencia de texto: con la frase que Meta deja escrita
+  // («¿Puedo obtener más información…?») o una clave contenida en otra («adaptador pro» dentro de
+  // «kit adaptador pro»), TODOS los anuncios de B iban al producto A. Si coinciden, da igual.
+  if (porAnuncio && det.flow && det.tier === "keyword" && String(det.flow.id) !== String(porAnuncio.id)) {
+    return { tier: "anuncio", flow: porAnuncio, reason: `El anuncio manda sobre la palabra clave «${det.keyword ?? ""}» de otro producto` } as RouteResult;
+  }
+  if (det.flow) return det;
   if (porAnuncio) return { tier: "anuncio", flow: porAnuncio };
   const ia = await aiRoute(db, channelId, text);
   if (ia) return ia;
@@ -5804,10 +5861,14 @@ function cantidadPedidaDe(texto: string, ops: Opcion[]): number {
   }
   // 2) «quiero 2», «dame tres», «llevo 2 unidades» — con verbo de compra delante.
   const m2 = new RegExp(
-    `\\b(?:quiero|dame|damelo|llevo|llevame|me llevo|mandame|envia(?:me)?|necesito|ponme|separame|agregame|serian|son)\\s+${NUM}\\b`, "i").exec(t);
+    // Sin «son»: «son 2 cuadras del mercado» duplicaba el precio.
+    `\\b(?:quiero|dame|damelo|llevo|llevame|me llevo|mandame|envia(?:me)?|necesito|ponme|separame|agregame|serian)\\s+${NUM}\\b`, "i").exec(t);
   if (m2) { const v = aNum(m2[1]); if (v >= 1 && v <= 20) return v; }
   const m3 = new RegExp(`\\b${NUM}\\s+(?:unidades?|piezas?|kits?|juegos?|packs?)\\b`, "i").exec(t);
   if (m3) { const v = aNum(m3[1]); if (v >= 1 && v <= 20) return v; }
+  // 4) «mejor solo 1», «uno nomás»: BAJAR la cantidad también es pedirla.
+  const m4 = new RegExp(`\\b(?:solo|nomas|mejor)\\s+${NUM}\\b|\\b${NUM}\\s+(?:nomas|nada\\s+mas)\\b`, "i").exec(t);
+  if (m4) { const v = aNum(m4[1] ?? m4[2]); if (v >= 1 && v <= 20) return v; }
   return 0;
 }
 function yaOfreceElegir(texto: string, ops: Opcion[]): boolean {
@@ -10140,7 +10201,9 @@ const DIRECCION_KW = /\b(av|avenida|calle|jr|jiron|pasaje|psje|mz|manzana|urb|di
 // destino aunque no diga ni «agencia» ni «sede». Sirve solo como SEÑAL barata para mirar el
 // mensaje; quién decide después es el clasificador y el padrón de agencias.
 const RE_CAMBIA_DESTINO =
-  /\b(mejor|en vez|en lugar|c[aá]mbi(a|ala|alo|elo|ela)|prefiero|puedes? mandarl[oa]|m[aá]ndamel[oa]|env[ií]amel[oa]|recojo en|voy a recoger)\b/i;
+  // + «envíalo», «mándalo», «es para Arequipa», «lo necesito en…», «lo recoge mi hermano…»:
+  // «soy de San Miguel» → «mejor envíalo a Arequipa» no se oía y el pedido nacía contraentrega en Lima.
+  /\b(mejor|en vez|en lugar|c[aá]mbi(a|ala|alo|elo|ela)|prefiero|puedes? mandarl[oa]|m[aá]ndamel[oa]|env[ií]amel[oa]|m[aá]ndal[oa]|env[ií]al[oa]|es para|lo necesito en|lo recoge|lo va a recoger|recojo en|voy a recoger)\b/i;
 // Señal barata de "cambio de destinatario" (nombre de quien recoge/recibe) y de
 // "cambio de teléfono de contacto". Ambos son datos de despacho que el cliente
 // corrige por chat DESPUÉS de crear el pedido; sin esto se perdían igual que la sede.
@@ -11040,7 +11103,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     // operación ENTRE tipos de pago (digital ↔ adelanto ↔ saldo), no solo dentro
     // del adelanto. Sin esto, un mismo Yape auto-aprobaba un pago digital Y un
     // adelanto porque cada tipo miraba un registro distinto.
-    reuse = !!dup || await operacionYaUsada(db, channelId, oper);
+    reuse = !!dup || await operacionUsadaEnOtroPedido(db, channelId, oper, String((order as any).id));
   }
   // Guarda NaN: una tolerancia inválida (Number("abc")=NaN) hacía `total >= esperado - NaN`
   // siempre false → TODAS las aprobaciones caían a manual en silencio. Cae al default.
@@ -11077,6 +11140,9 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // Abono legítimo que TODAVÍA no cubre → acumula, avisa cuánto falta y sigue
   // esperando. No es "monto no coincide": es un pago en cuotas.
   if (ab && !ab.cubre) {
+    // 🔒 El abono parcial RESERVA su operación ya: antes recién se registraba al aprobar el total,
+    // y mientras tanto la misma captura servía de pago en otro pedido (o de un digital).
+    if (oper && oper.length >= 4) await registrarOperacion(db, channelId, oper, String((order as any).id), String(ab.key ?? "abono").replace(/_abonos$/, "")).catch(() => {});
     await db.from("orders").update({
       updated_at: new Date().toISOString(),
       shipping: { ...(await shipFresco()), [ab.key]: ab.abonos, adelanto_abonado: ab.total, adelanto_parcial: true,
@@ -11131,7 +11197,16 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // texto) miran SOLO el último comprobante. Un Yape viejo o a otro número de S/18 entraba como
   // abono sin freno y un S/1 real lo «completaba» → validado solo. Varias partes = lo ve un humano.
   const _enPartes = !!(ab && ab.abonos.length > 1);
-  const puedeAuto = cfg.validacion === "auto" && !_sinDest && !_frenoAdel && cubre && !sobrepagoAdel && !!oper && oper.length >= 4 && _hayPrueba && !_enPartes;
+  // 🔒 Pagó (o dice haber pagado) MÁS que el adelanto: en automático bajaba el saldo solo, y con
+  // una captura editada o un monto mal leído (S/20 leído S/119) quedaba «pagado total» y en la
+  // agencia no se cobraban los S/99. Pagar todo de una es legítimo, pero raro: lo mira una persona.
+  const _pagadoAdel = ab ? Number(ab.total) : Number(monto);
+  const _masQueAdel = Number(ship.adelanto) > 0 && _pagadoAdel > Number(ship.adelanto) + Math.max(2, Number(ship.adelanto) * 0.05);
+  if (_masQueAdel && cfg.validacion === "auto") {
+    await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual",
+      `Pagó ${_pagadoAdel} y el adelanto es ${ship.adelanto}: lo de más baja el saldo, así que lo confirma una persona.`).catch(() => {});
+  }
+  const puedeAuto = cfg.validacion === "auto" && !_sinDest && !_frenoAdel && cubre && !sobrepagoAdel && !_masQueAdel && !!oper && oper.length >= 4 && _hayPrueba && !_enPartes;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU del pre-chequeo
   // `reuse`): si esta operación ya fue reclamada por otra ruta o un reintento del MISMO Yape,
   // no la ganamos → se degrada a manual (para que un solo comprobante no acredite dos pedidos).
@@ -11250,6 +11325,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     : !_hayPrueba ? "no se ve el texto de un comprobante: revisa la imagen"
     : _enPartes ? `pagado en ${ab!.abonos.length} partes — revisa CADA comprobante (el bot solo revisó a fondo el último)`
     : _sinOp ? "sin nº de operación legible: confírmalo en tu Yape/banco"
+    : _masQueAdel ? `pagó ${_pagadoAdel} y el adelanto es ${ship.adelanto}: lo de más baja el saldo — confirma el monto en tu Yape`
     : "listo para tu aprobación"; // legítimo y ya cubre, pero estás en modo manual
   await db.from("orders").update({
     updated_at: new Date().toISOString(),
@@ -11365,7 +11441,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
       .eq("channel_id", channelId).eq("shipping->>saldo_operacion", oper).limit(1).maybeSingle();
     // Ledger UNIFICADO anti-reúso (payment_operations): ver maybeAdelanto. Cierra
     // el reúso de una misma operación entre digital ↔ adelanto ↔ saldo.
-    reuse = !!dup || await operacionYaUsada(db, channelId, oper);
+    reuse = !!dup || await operacionUsadaEnOtroPedido(db, channelId, oper, String((order as any).id));
   }
   const legit = parsed?.es_pago !== false && !!parsed?.valido && !reuse && Number.isFinite(monto) && monto > 0;
   const ab = legit ? evaluarAbono(ship, "saldo", saldo, monto, oper, tol) : null;
@@ -11391,6 +11467,9 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   }
   // Abono parcial legítimo que aún no cubre el saldo → acumula, avisa y espera.
   if (ab && !ab.cubre) {
+    // 🔒 El abono parcial RESERVA su operación ya: antes recién se registraba al aprobar el total,
+    // y mientras tanto la misma captura servía de pago en otro pedido (o de un digital).
+    if (oper && oper.length >= 4) await registrarOperacion(db, channelId, oper, String((order as any).id), String(ab.key ?? "abono").replace(/_abonos$/, "")).catch(() => {});
     await db.from("orders").update({
       updated_at: new Date().toISOString(),
       shipping: { ...(await shipFresco()), [ab.key]: ab.abonos, saldo_abonado: ab.total, saldo_parcial: true,
@@ -12450,6 +12529,43 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
     await logEvent(db, channelId, contactId, "nota", "📸 Comprobante después de la compra",
       `Pedido ${estado} — se le reenvió el acceso${_links.length ? "" : " (sin links configurados)"} y pasa a una persona`).catch(() => {});
     return true;
+  }
+
+  // 🔁 «NO ME LLEGÓ» un DIGITAL ya pagado: el motor lo REENVÍA, no la IA. Antes quedaba en manos
+  // de la IA con un solo link (el primero, y solo si no era archivo): con un PDF o un video la IA
+  // escribía «te lo reenvío» y no salía nada; con varios links iba uno; los extras nunca.
+  if (event.type === "message" && String((order as any).estado) === "confirmada"
+    && /(no me (lleg|lleg[oó]|ha llegado|aparece|abre)|no (lo|la|los|las) (veo|recib|encuentro|tengo)|no tengo (el|mi|ning[uú]n) (acceso|link|enlace|archivo)|reenv[ií]a|vu[eé]lve(me)? a (mandar|enviar|pasar)|p[aá]same (de nuevo|otra vez|el link|el enlace)|perd[ií] (el|mi) (link|enlace|acceso|archivo)|no (me )?abre|no funciona el (link|enlace))/i.test(String(event.text ?? ""))) {
+    try {
+      const { data: _pt } = await db.from("products").select("tipo").eq("id", (order as any).product_id).maybeSingle();
+      if (String((_pt as any)?.tipo ?? "digital") === "digital") {
+        const _ids = [String((order as any).version_id ?? ""),
+          ...(((order as any).order_bumps ?? []) as any[]).filter((b) => b?.digital && b?.version_id).map((b) => String(b.version_id))]
+          .filter(Boolean);
+        const _lineas: string[] = [];
+        if (_ids.length) {
+          const { data: _vs } = await db.from("product_versions").select("id, nombre, entrega").in("id", _ids);
+          for (const v of (_vs ?? []) as any[]) {
+            for (const it of (Array.isArray(v.entrega) ? v.entrega : []) as any[]) {
+              const u = String(it?.url ?? "").trim();
+              if (!/^https?:\/\//.test(u)) continue;
+              const etq = String(it?.mensaje ?? it?.nombre ?? "").trim();
+              _lineas.push(`${etq ? `*${etq}*\n` : (_ids.length > 1 ? `*${v.nombre}*\n` : "")}${u}`);
+            }
+          }
+        }
+        if (_lineas.length) {
+          await deliverMessage(db, channelId, contactId,
+            `¡Claro! Te lo dejo de nuevo por acá 🙌\n\n${_lineas.join("\n\n")}\n\nSi igual no te abre, dime qué te sale y lo vemos.`).catch(() => {});
+          await logEvent(db, channelId, contactId, "nota", "🔁 Acceso reenviado", `Pidió que se lo reenvíen — ${_lineas.length} enlace(s)`).catch(() => {});
+          return true;
+        }
+        await pasarAHumano(db, channelId, contactId,
+          "Dice que no le llegó su compra digital y el producto no tiene links/archivos configurados para reenviar. Mándaselo a mano.",
+          { aviso: true });
+        return true;
+      }
+    } catch (e) { console.error("[postventa/reenvio]", (e as any)?.message ?? e); }
   }
 
   // 🔁 OTRA PRESENTACIÓN DEL MISMO PRODUCTO (digital): «ya compré la básica, ahora quiero la
@@ -16717,7 +16833,15 @@ function comprobanteVencido(fecha: unknown, horas: number, tz?: string | null): 
 // (que Yape y Plin siempre enmascaran y por eso lo juzga el modelo con manga ancha).
 function destinoNoCoincide(ocrCfg: any, destino: unknown): boolean {
   const d = String(destino ?? "").replace(/\D/g, "");
-  if (d.length < 6) return false;                // no se lee, o viene enmascarado → no se opina
+  // ENMASCARADO («*** *** 999»): Yape y Plin muestran solo los ÚLTIMOS dígitos. Antes con menos de
+  // 6 no se opinaba y un Yape a otro número pasaba si el modelo se descuidaba. Con 3 a 5 visibles
+  // se exige que ALGUNO de tus números termine así (si no, va a revisión: no se rechaza).
+  if (d.length >= 3 && d.length < 6 && /[*•xX·]/.test(String(destino ?? ""))) {
+    const cortos: string[] = (Array.isArray(ocrCfg?.metodos) ? ocrCfg.metodos : [])
+      .map((m: any) => String(m?.numero ?? "").replace(/\D/g, "")).filter((n: string) => n.length >= 6);
+    return cortos.length > 0 && !cortos.some((n) => n.endsWith(d));
+  }
+  if (d.length < 6) return false;                // no se lee → no se opina
   const nums: string[] = (Array.isArray(ocrCfg?.metodos) ? ocrCfg.metodos : [])
     .map((m: any) => String(m?.numero ?? "").replace(/\D/g, ""))
     .filter((n: string) => n.length >= 6);
@@ -16768,7 +16892,10 @@ function validadorSinDestinatarios(ocrCfg: any): boolean {
   const ocr = ocrCfg;
   if (!ocr || ocr.activo === false) return true;
   const m = Array.isArray(ocr.metodos)
-    ? ocr.metodos.filter((x: any) => x && (x.app || x.titular || x.numero))
+    // Solo cuenta como destinatario un método con NÚMERO o TITULAR: un chip «Yape» vacío no dice a
+    // quién hay que pagarle, y con él el cerrojo creía que había contra qué comparar → en digital
+    // (automático) un Yape a CUALQUIER persona se aprobaba y entregaba.
+    ? ocr.metodos.filter((x: any) => x && (String(x.titular ?? "").trim() || String(x.numero ?? "").trim()))
     : [];
   return m.length === 0;
 }
@@ -16991,6 +17118,15 @@ export async function canalesQueCobranIgual(db: SupabaseClient, channelId: strin
   } catch (_) { /* ante la duda, solo este canal (nunca menos candado del que había) */ }
   _hermanosCache.set(channelId, { ids, at: Date.now() });
   return ids;
+}
+// ¿La usó OTRO pedido? Como operacionYaUsada, pero la reserva de ESTE mismo pedido no cuenta: un
+// abono parcial ya reserva su operación, y el cliente que reenvía esa misma captura no es un fraude.
+async function operacionUsadaEnOtroPedido(db: SupabaseClient, channelId: string, op: string, orderId: string): Promise<boolean> {
+  const n = normOperacion(op);
+  if (n.length < 4) return false;
+  const { data } = await db.from("payment_operations").select("order_id")
+    .in("channel_id", await canalesQueCobranIgual(db, channelId)).eq("operacion", n).limit(5);
+  return ((data ?? []) as any[]).some((r) => String(r.order_id ?? "") !== String(orderId));
 }
 async function operacionYaUsada(db: SupabaseClient, channelId: string, op: string): Promise<boolean> {
   const n = normOperacion(op);
@@ -17656,6 +17792,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
         }
       } catch (_) { /* sin historial legible → una unidad, como siempre */ }
+    }
+    // …y si YA la tenía y ahora CAMBIA («quiero 2» → «mejor solo 1»), manda la última. Antes solo
+    // subía: el pedido salía a 2 × S/149 con dos unidades de stock. Solo antes de crear el pedido
+    // (después lo cambia maybeModificarPedido, que también toca el pedido).
+    else if ((run as any)._esPresentaciones && !esDigital(ctx) && String(ctx.pedido_creado ?? "") !== "si") {
+      try {
+        const _nNow = cantidadPedidaDe(String(ctx.last_input ?? ""), await loadOpciones(db, run, String(ctx._product_id ?? "")));
+        const _nAnt = Number((run.vars as any)._cant_pres) || 0;
+        if (_nNow >= 1 && _nNow !== _nAnt) {
+          if (_nNow >= 2) (run.vars as any)._cant_pres = _nNow; else delete (run.vars as any)._cant_pres;
+          ctx.cantidad = _nNow;
+          await logEvent(db, run.channel_id, run.contact_id, "campo", "🔢 Cambió la cantidad", `${_nAnt} → ${_nNow}`).catch(() => {});
+        }
+      } catch (_) { /* se queda la que tenía */ }
     }
     if ((run.vars as any)?._cant_pres) ctx.cantidad = Number((run.vars as any)._cant_pres);
     // …y con presentaciones, «cuántas unidades» no se dice NUNCA, haya elegido o no. El bloque
@@ -20321,6 +20471,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           await guarda("pago_titular", p.titular);
         }
       } catch (_) { /* no trajo JSON: el flujo sigue igual con el texto crudo */ }
+      // 🔒 El VEREDICTO no puede salir del texto transcrito. «PAGO_OK» se buscaba en TODA la
+      // respuesta, y ahí también va `texto_visible` (lo que dice la imagen): un comprobante con
+      // «PAGO_OK» escrito en el concepto aprobaba solo; y «no puedo darlo como PAGO_OK… PAGO_NO»
+      // también. Se vacía la transcripción del campo guardado (la condición del flujo lo lee con
+      // «contiene») y, si quedan los dos veredictos, gana el NO.
+      {
+        const _raw = String(result ?? "");
+        let _limpio = _raw.replace(/"texto_visible"\s*:\s*"(?:[^"\\]|\\.)*"/g, '"texto_visible":"(omitido)"');
+        if (/PAGO_OK/i.test(_limpio) && /PAGO_NO/i.test(_limpio)) {
+          _limpio = "PAGO_NO No pude confirmar tu comprobante con seguridad. Déjame revisarlo y te aviso por acá.";
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🔒 Veredicto ambiguo del validador",
+            "La respuesta traía PAGO_OK y PAGO_NO a la vez: se toma como NO").catch(() => {});
+        }
+        if (_limpio !== _raw) {
+          result = _limpio;
+          if (cfg.guardar_en) {
+            run.vars[cfg.guardar_en] = result;
+            await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, result);
+          }
+        }
+      }
       // 🗓️❌ EL MOTIVO INVENTADO. Medido el 2026-09-20: un Yape de S/100 sobre un producto de
       // S/19, con la fecha de HOY hace 20 minutos, se rechazó con «el comprobante tiene fecha
       // futura respecto a hoy». Tres comprobantes idénticos por el monto justo salieron

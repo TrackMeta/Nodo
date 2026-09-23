@@ -137,7 +137,7 @@ async function load(){
     .select("nombre,negocio,negocio_form,buffer_default_seg,entregas").eq("id",st.channelId).maybeSingle();
   if(error){ ({ data:ch }=await supa.from("channels").select("nombre,negocio,negocio_form,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
   if(gen!==st.gen) return;
-  st.channel=ch||{};
+  st.channel=ch||{}; st.snapPreBorrador=null;   // otro bot o recarga: el borrador de la IA no aplicado se descarta
   markClean();
   render();
 }
@@ -154,7 +154,11 @@ async function mezclarConFresco(form, retraso){
     if(fr){
       const merged={...fr};
       for(const k of new Set([...Object.keys(form),...Object.keys(snap)])){
-        if(J(form[k])!==J(snap[k])){ if(form[k]===undefined) delete merged[k]; else merged[k]=form[k]; }
+        // Conflicto: OTRA pestaña cambió este dato desde que abrimos (fresco ≠ foto) y acá solo hay
+        // un valor VACÍO de relleno (faq:[], multimedia:[] que se ponen por defecto): gana el fresco.
+        // Sin esto, abrir IA en una cuenta nueva y guardar borraba las FAQ y archivos de Negocio.
+        const _vacio=(v)=>v===undefined||v===null||v===""||(Array.isArray(v)&&!v.length);
+        if(J(form[k])!==J(snap[k])){ if(J(fr[k])!==J(snap[k]) && _vacio(form[k]) && !_vacio(fr[k])) continue; if(form[k]===undefined) delete merged[k]; else merged[k]=form[k]; }
       }
       form=merged;
     }
@@ -236,7 +240,7 @@ function pickNegMedia(kind, onDone){
       const base=String((file.name||"archivo").replace(/\.[^.]+$/,"")).replace(/[^\w-]/g,"").toLowerCase().slice(0,20)||"archivo";
       let tag=base, n=2; while(arr.some(x=>x.tag===tag)) tag=base+"_"+n++;
       arr.push({ tag, media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, descripcion:"" });
-      toast("Archivo agregado — describe cuándo usarlo y guarda"); if(onDone) onDone();
+      toast("Archivo agregado — describe cuándo usarlo y guarda"); markDirty(); if(onDone) onDone();
     }catch(e){ toast("Error al subir",true); }
   };
   inp.click();
@@ -270,7 +274,10 @@ function seedForm(){
   // snapshot: lo editado «sobrevivía» a un cambio de pestaña por accidente y el diff contra
   // el snapshot no veía el cambio). El snapshot se guarda aparte para mezclarConFresco.
   const base=c.negocio_form && typeof c.negocio_form==="object" ? c.negocio_form : {};
-  st.snap=JSON.parse(JSON.stringify(base));
+  // Tras «Armar con IA», la foto es la de ANTES del borrador (st.snapPreBorrador): si no, lo que
+  // trajo la IA era igual a la foto, mezclarConFresco lo descartaba y salía «Conocimiento guardado»
+  // con la base intacta.
+  st.snap=st.snapPreBorrador ? JSON.parse(JSON.stringify(st.snapPreBorrador)) : JSON.parse(JSON.stringify(base));
   st.snapRetraso=c.buffer_default_seg ?? 4;
   let form=JSON.parse(JSON.stringify(base));
   if(!c.negocio_form && c.negocio) form.extra=c.negocio;
@@ -302,7 +309,7 @@ async function saveForm(btn){
   if(cid!==st.channelId) return true; // cambió de bot mientras guardaba: no pintar lo de A en B
   st.form=form; st.retraso=retraso;
   st.channel.negocio=negocio; st.channel.negocio_form=form; st.channel.buffer_default_seg=retraso;
-  st.snap=JSON.parse(JSON.stringify(form)); st.snapRetraso=retraso;
+  st.snap=JSON.parse(JSON.stringify(form)); st.snapRetraso=retraso; st.snapPreBorrador=null;   // ya guardado: la foto vuelve a ser la base
   markClean();
   return true;
 }
@@ -903,6 +910,7 @@ function armRenderDraft(){
 async function armAplicar(d){
   if(!d) return;
   const hadForm = st.channel.negocio_form && typeof st.channel.negocio_form==="object";
+  if(!st.snapPreBorrador) st.snapPreBorrador=JSON.parse(JSON.stringify(hadForm ? st.channel.negocio_form : {}));
   const f = st.channel.negocio_form = hadForm ? st.channel.negocio_form : {};
   // Preserva el conocimiento legado en texto libre (channels.negocio): si aún NO había
   // negocio_form, seedForm lo habría migrado a form.extra; como aquí creamos negocio_form,

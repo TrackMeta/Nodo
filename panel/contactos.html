@@ -589,7 +589,7 @@ async function borrarArchivosDe(ids, ch){
     for(let i=0;i<ids.length;i+=500){
       const r=await fetch(`${SUPABASE_URL}/functions/v1/channel-config`,{ method:"POST",
         headers:{ "Content-Type":"application/json", apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${session?.access_token||SUPABASE_ANON_KEY}` },
-        body:JSON.stringify({ action:"contact_files_delete", channel_id:ch, contact_ids:ids.slice(i,i+500), modo:"todo" }) });
+        body:JSON.stringify({ action:"contact_files_delete", channel_id:ch, contact_ids:ids.slice(i,i+500), modo:"chat" }) });
       const o=await r.json().catch(()=>null);
       if(!r.ok||!o||!o.ok) return " · sus archivos no se pudieron borrar";
       borrados+=Number(o.borrados)||0;
@@ -615,13 +615,17 @@ async function borrarPedidosDePrueba(cs){
 async function removeContact(c){
   if(!await confirmDialog({title:"Eliminar contacto",message:`¿Eliminar a ${c.nombre||c.wa_id}? Se borra su conversación, historial y archivos.`,confirmText:"Eliminar",danger:true})) return;
   await borrarPedidosDePrueba([c]);
+  // Los archivos ANTES que el contacto y en modo «chat» (revisa qué sigue en uso): en modo «todo»
+  // y después del DELETE se iban también los Yapes de sus pedidos REALES —el pedido sobrevive con
+  // contact_id nulo y ya no había cómo saber que ese archivo era suyo—.
+  const _extraArch=await borrarArchivosDe([c.id], c.channel_id||st.channelId);
   // 🔴 Un DELETE que la RLS no deja pasar NO da error: afecta 0 filas en silencio. Borrar
   // contactos es solo-admin, así que a un operador le salía «Contacto eliminado» y el contacto
   // seguía ahí al recargar. Se pide de vuelta lo borrado y se dice la verdad si no se borró.
   const { data:borrado, error }=await supa.from("contacts").delete().eq("id",c.id).select("id");
   if(error){ toast(error.message,true); return; }
   if(!(borrado||[]).length){ toast("No se pudo eliminar: borrar contactos es solo para administradores.",true); return; }
-  st.sel.delete(c.id); toast("Contacto eliminado"+await borrarArchivosDe([c.id], c.channel_id||st.channelId)); await load();
+  st.sel.delete(c.id); toast("Contacto eliminado"+_extraArch); await load();
 }
 
 // ── Acciones en lote ──
@@ -697,12 +701,12 @@ async function bulk(act){
     if(!await confirmDialog({title:`Eliminar ${ids.length} contacto(s)`,message:"Se borran sus conversaciones, historial y archivos. No se puede deshacer.",confirmText:"Eliminar",danger:true})) return;
     let error=null, n=0;
     await borrarPedidosDePrueba(st.contacts.filter(c=>st.sel.has(c.id)));
+    const extra=await borrarArchivosDe(ids, ch);   // antes del DELETE: ver removeContact
     // Igual que en removeContact: la RLS no devuelve error, devuelve 0 filas. Se cuenta lo
     // que SÍ se borró y se informa eso, no lo que se pidió borrar.
     for(const trozo of enTrozos(ids)){ const r=await supa.from("contacts").delete().eq("channel_id",ch).in("id",trozo).select("id"); if(r.error){ error=r.error; break; } n+=(r.data||[]).length; }
     if(error){ toast(error.message,true); return; }
     if(!n){ toast("No se pudo eliminar: borrar contactos es solo para administradores.",true); return; }
-    const extra=await borrarArchivosDe(ids, ch);
     st.sel.clear(); toast(`${n} eliminado(s)${n<ids.length?` · ${ids.length-n} no se pudieron (solo un administrador puede)`:""}${extra}`); await load(); return;
   }
 }
@@ -742,7 +746,11 @@ function parseCsvLine(line, delim){
   return out.map(s=>s.trim());
 }
 async function importCsv(file){
-  const text=await file.text();
+  // Excel en español guarda «CSV (delimitado por comas)» en Windows-1252, no en UTF-8: leído como
+  // UTF-8, «Muñoz» y «José» quedaban «Mu�oz» para siempre (y salían así en las plantillas).
+  const _buf=await file.arrayBuffer();
+  let text=new TextDecoder("utf-8").decode(_buf);
+  if(text.includes("�")) text=new TextDecoder("windows-1252").decode(_buf);
   const lines=text.split(/\r?\n/).filter(l=>l.trim());
   if(!lines.length) return;
   const delim=(lines[0].split(";").length > lines[0].split(",").length) ? ";" : ",";
@@ -776,6 +784,13 @@ async function importCsv(file){
     rows.push({ channel_id:st.channelId, wa_id:wa, nombre:(cols[ci.nombre]||"")||null });
   }
   if(!rows.length){ toast("No se encontraron teléfonos válidos",true); return; }
+  // Celulares de Perú escritos SIN el 51 (9 dígitos que empiezan con 9): se ofrece completarlos.
+  // Así como venían, cada campaña les fallaba y, cuando la persona escribía, nacía un duplicado.
+  const peru9=rows.filter(r=>/^9\d{8}$/.test(r.wa_id));
+  if(peru9.length && await confirmDialog({title:"¿Son celulares de Perú?",message:`${peru9.length} número(s) tienen 9 dígitos y empiezan con 9, como un celular peruano sin el código de país. ¿Les agrego el 51 delante?`,confirmText:"Sí, agregar 51"})){
+    for(const r of peru9) r.wa_id="51"+r.wa_id;
+    sinCP=Math.max(0,sinCP-peru9.length);
+  }
   // Mismo guard que el alta manual: un número corto casi seguro omite el código de país → no
   // casará con WhatsApp y creará un duplicado huérfano cuando esa persona escriba.
   if(sinCP && !await confirmDialog({title:"¿Faltan códigos de país?",message:`${sinCP} número(s) tienen menos de 10 dígitos — quizá les falta el código de país (ej. 51 en Perú). Así no casarán con WhatsApp y crearán duplicados cuando escriban. ¿Importar igual?`,confirmText:"Importar igual",danger:true})) return;

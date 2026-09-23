@@ -293,7 +293,11 @@ async function mezclarConFresco(form, retraso){
     if(fr){
       const merged={...fr};
       for(const k of new Set([...Object.keys(form),...Object.keys(snap)])){
-        if(J(form[k])!==J(snap[k])){ if(form[k]===undefined) delete merged[k]; else merged[k]=form[k]; }
+        // Conflicto: OTRA pestaña cambió este dato desde que abrimos (fresco ≠ foto) y acá solo hay
+        // un valor VACÍO de relleno (faq:[], multimedia:[] que se ponen por defecto): gana el fresco.
+        // Sin esto, abrir IA en una cuenta nueva y guardar borraba las FAQ y archivos de Negocio.
+        const _vacio=(v)=>v===undefined||v===null||v===""||(Array.isArray(v)&&!v.length);
+        if(J(form[k])!==J(snap[k])){ if(J(fr[k])!==J(snap[k]) && _vacio(form[k]) && !_vacio(fr[k])) continue; if(form[k]===undefined) delete merged[k]; else merged[k]=form[k]; }
       }
       form=merged;
     }
