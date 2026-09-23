@@ -7424,14 +7424,24 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
   let _chId: string | null = null, _ctId: string | null = null;
   try {
     const { data: o } = await db.from("orders")
-      .select("id, channel_id, contact_id, estado, amount, currency, shipping, order_bumps, created_at, product:product_id(nombre, tipo)")
+      .select("id, channel_id, contact_id, estado, amount, currency, shipping, order_bumps, created_at, version_id, product:product_id(nombre, tipo)")
       .eq("id", orderId).maybeSingle();
     if (!o) return;
     const ord = o as any;
     _chId = ord.channel_id; _ctId = ord.contact_id;
     const { data: ch } = await db.from("channels").select("gsheets, timezone").eq("id", ord.channel_id).maybeSingle();
     const g = (ch as any)?.gsheets ?? {};
-    if (!g.spreadsheet_id || g.connected === false) return; // sin hoja conectada, no hay nada que hacer
+    // 🔴 EL PANEL Y EL MOTOR NO SE PONÍAN DE ACUERDO EN QUÉ ES «CONECTADA». Ajustes la pinta
+    // «Conectada» con `mode === "oauth" && google_email`; acá el motor se plantaba con
+    // `connected === false`, una marca que solo escribe el botón de desconectar. Medido
+    // (2026-09-22) en el canal de Rodrigo: `connected:false` con `mode:"oauth"`, su correo
+    // puesto y el permiso de Google VIVO — o sea, Ajustes decía «Conectada», él lo daba por
+    // hecho, y NINGUNA venta llegaba a la hoja. Sin error, sin cartel, sin forma de notarlo.
+    // La condición pasa a ser la misma que ve él: hay hoja y hay con qué escribir. Un
+    // desconectar de verdad borra el token y pone `mode:null`, así que sigue frenando.
+    const _hojaLista = !!g.spreadsheet_id &&
+      (g.mode === "oauth" ? !!g.google_email : !!g.webhook_url);
+    if (!_hojaLista) return; // sin hoja conectada, no hay nada que hacer
     // A la hoja SOLO van las ventas CERRADAS (dinero cobrado): digital pagado, Lima
     // entregado y cobrado, provincia recogido / saldo pagado. Los pedidos en proceso
     // o caídos NO se escriben — la hoja es un registro limpio de ventas reales.
@@ -7456,6 +7466,28 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
       hour: "2-digit", minute: "2-digit",
     }).format(new Date(ord.created_at));
     const extra = (ord.order_bumps ?? []).reduce((a: number, b: any) => a + Number(b.precio ?? 0), 0);
+    // 🔢 CUÁNTAS unidades lleva. Sale de dos sitios porque hay dos formas de vender: en los
+    // packs el número vive DENTRO de la versión («2 unidades»), y en las presentaciones
+    // (Estandar/Completo, las dos de una unidad) lo dijo el cliente y se guardó en el pedido.
+    // Sin esta columna una fila de S/298 se lee igual que una de S/149 si no miras el total.
+    let cant = Number(s.cantidad) || 0;
+    if (!cant && ord.version_id) {
+      const { data: _v } = await db.from("product_versions").select("cantidad").eq("id", ord.version_id).maybeSingle();
+      cant = Number((_v as any)?.cantidad) || 0;
+    }
+    if (!cant) cant = 1;
+    // 🎁 QUÉ extra se vendió, no solo cuánto sumó. En Lima y Provincia los extras se sumaban al
+    // total en silencio: veías S/188 y no sabías que S/39 eran un protector. Los regalos van
+    // marcados para que no parezcan una venta que no fue.
+    const _sym = simboloMoneda(ord.currency);
+    const extrasTxt = ((ord.order_bumps ?? []) as any[])
+      .map((b) => {
+        const n = String(b?.nombre ?? "").trim();
+        if (!n) return "";
+        const p = Number(b?.precio ?? 0);
+        return b?.regalo || p <= 0 ? `${n} (regalo)` : `${n} ${_sym}${Number.isInteger(p) ? p : p.toFixed(2)}`;
+      })
+      .filter(Boolean).join(" + ");
 
     let hoja: string; let fila: Record<string, string>;
     if (!fisico) {
@@ -7471,7 +7503,9 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
         "Valor": String(ord.amount ?? ""),
         "Producto": ord.product?.nombre ?? "",
         "Opción": s.opcion ?? "",
+        "Cantidad": String(cant),
         "Orderbump": extra ? String(extra) : "",
+        "Extra": extrasTxt,
         "Imagen": s.comprobante ?? s.adelanto_comprobante ?? "",
       };
     } else if (zona === "lima") {
@@ -7486,8 +7520,10 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
         "Dirección": s.direccion ?? "",
         "Producto": ord.product?.nombre ?? "",
         "Opción": s.opcion ?? "",
+        "Cantidad": String(cant),
         // Total cobrado = precio del pedido + ventas extra (lo que de verdad recibiste).
         "Valor cobrado": String(+(Number(ord.amount || 0) + extra).toFixed(2)),
+        "Extra": extrasTxt,
       };
     } else {
       hoja = "Provincia";
@@ -7501,7 +7537,9 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
         "Agencia": [s.ciudad, s.sede].filter(Boolean).join(" · "),
         "Producto": ord.product?.nombre ?? "",
         "Opción": s.opcion ?? "",
+        "Cantidad": String(cant),
         "Valor total": String(+(Number(ord.amount || 0) + extra).toFixed(2)),
+        "Extra": extrasTxt,
         "Guía": s.guia ?? "",
         // 📷 Dos pagos, dos columnas. Antes había UNA «Imagen» con el adelanto y, si no
         // había, el saldo: justo en el pedido que interesa —el que ya pagó los dos— solo se
