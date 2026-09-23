@@ -63,7 +63,7 @@ export const HOJAS: Record<string, string[]> = {
   // aparece sola —al final de todo— recién con la primera venta. Se agregaron Cantidad,
   // Extra e «Imagen saldo» el 2026-09-22 y esta lista se había quedado atrás.
   "Digital": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "Valor", "Producto", "Opción",
-    "Cantidad", "Orderbump", "Extra", "Comprobante"],
+    "Cantidad", "Orderbump", "Extra", "Comprobante", "Comprobante extra"],
   "Lima": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "Distrito", "Dirección",
     "Producto", "Opción", "Cantidad", "Valor cobrado", "Extra"],
   "Provincia": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "DNI", "Agencia", "Producto", "Opción",

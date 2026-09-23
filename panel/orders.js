@@ -196,7 +196,7 @@ export function partesDePago(o){
       comprobante:s.comprobante||s.digital_comprobante||(pre > 0.005 ? s.pago_adelantado_comprobante : "")||"", txt:"la compra", extremo:"primera" });
   }
   extras.forEach((b,i)=>partes.push({ clave:"extra"+i, monto:+Number(b.precio).toFixed(2),
-    metodo:s.extra_metodo||s.digital_metodo||"", comprobante:s.extra_comprobante||"",
+    metodo:s.extra_metodo||s.digital_metodo||"", comprobante:b.comprobante||s.extra_comprobante||"",
     txt:`venta extra${extras.length>1?" "+(i+1):""}`, extremo:"ultima" }));
   return partes.length > 1 ? partes : null;   // un solo cobro → sin split
 }

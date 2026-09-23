@@ -7506,7 +7506,19 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
         "Cantidad": String(cant),
         "Orderbump": extra ? String(extra) : "",
         "Extra": extrasTxt,
-        "Comprobante": s.comprobante ?? s.adelanto_comprobante ?? "",
+        // `||` y no `??`: el flujo guarda `comprobante:"{{ultima_imagen}}"`, que puede quedar "".
+        // `digital_comprobante` es donde queda la captura cuando el pago lo aprobó un HUMANO
+        // (el flujo auto-aprobado usa `comprobante`): sin él, esas ventas salían sin captura.
+        "Comprobante": s.comprobante || s.digital_comprobante || s.adelanto_comprobante || "",
+        // Las capturas de los extras que se pagaron APARTE, una por línea y en el orden de
+        // «Extra». Las de antes de este cambio solo tienen la última aprobada a mano.
+        "Comprobante extra": (() => {
+          const cs = ((ord.order_bumps ?? []) as any[])
+            .filter((b) => !b?.regalo && Number(b?.precio) > 0 && b?.comprobante)
+            .map((b) => String(b.comprobante));
+          if (!cs.length && s.extra_comprobante && extra > 0) cs.push(String(s.extra_comprobante));
+          return [...new Set(cs)].join("\n");
+        })(),
       };
     } else if (zona === "lima") {
       hoja = "Lima";
@@ -8402,6 +8414,14 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         const nuevo: Record<string, unknown> = { nombre, precio };
         if (vid) nuevo.version_id = vid;
         if (a.bump.digital) { nuevo.digital = true; nuevo.entregado = false; }
+        // 🧾 La captura del pago de ESTE extra. Un extra que se cobra aparte (no el que sube el
+        // saldo del físico) no la guardaba en ningún lado si el bot lo aprobaba solo —solo iba
+        // en el aviso de Telegram—, y a mano quedaba UNA en shipping.extra_comprobante que el
+        // segundo extra pisaba. Sin ella, la hoja no tenía cómo mostrar con qué se pagó.
+        if (precio > 0 && !a.bump.sube_saldo) {
+          const _comp = String(run.vars._last_image ?? ctx.ultima_imagen ?? ((cur as any)?.shipping ?? {}).extra_comprobante ?? "");
+          if (/^https?:\/\//.test(_comp)) nuevo.comprobante = _comp;
+        }
         // 💰 COSTO del extra → COGS. `costoExtras()` (panel/orders.js) ya lo resta del
         // margen, pero NADIE lo guardaba: la función leía un dato que no existía. Una
         // media de S/19 que cuesta S/4 se contaba como S/19 de ganancia limpia, así que
