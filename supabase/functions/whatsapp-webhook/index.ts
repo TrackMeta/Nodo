@@ -7,6 +7,7 @@ import { serviceClient, getChannelSecrets, accountOfChannel } from "../_shared/d
 import { fetchMediaBytes } from "../_shared/meta.ts";
 import { transcribeAudio } from "../_shared/ai.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
+import { CAMPOS_SALUD, veredictoWebhook, aplicarVeredicto } from "../_shared/salud-wa.ts";
 import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, type EngineEvent } from "../_shared/engine.ts";
 
 // Runtime de Supabase Edge: permite terminar trabajo DESPUÉS de responder
@@ -71,8 +72,9 @@ Deno.serve(async (req) => {
   // phone_number_id: sin incluirla acá caía al «eventos sin mensajes» y se devolvía 200 antes
   // de llegar a su handler → la plantilla seguía como UTILITY en el panel, con la tarifa y el
   // opt-out de MARKETING sin aplicar.
+  // Los avisos de SALUD del número (ban, restricción, calidad, seguridad) también vienen por WABA.
   const esPlantilla = ((payload?.entry ?? []) as any[]).some((en) => (en?.changes ?? []).some((ch: any) =>
-    ch?.field === "message_template_status_update" || ch?.field === "template_category_update"));
+    ch?.field === "message_template_status_update" || ch?.field === "template_category_update" || CAMPOS_SALUD.has(String(ch?.field))));
   const wabaId = payload?.entry?.[0]?.id as string | undefined;
   let channel: { id: string; buffer_default_seg?: number; account_id?: string | null } | null = null;
   if (phoneNumberId) {
@@ -167,6 +169,11 @@ async function processPayload(fallback: { id: string; buffer_default_seg?: numbe
           const ids = await canalesDeLaWaba(entry.id);
           await db.from("wa_templates").update({ categoria: cat }).in("channel_id", ids).eq("name", name).eq("language", language);
         }
+        continue;
+      }
+      // 🚨 Salud del número: ban, restricción, calidad baja, seguridad. Antes se descartaban.
+      if (CAMPOS_SALUD.has(String(change.field))) {
+        await aplicarVeredicto(db, await canalesDeLaWaba(entry.id), veredictoWebhook(String(change.field), change.value ?? {}));
         continue;
       }
       const value = change.value ?? {};

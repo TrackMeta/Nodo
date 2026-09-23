@@ -189,7 +189,7 @@ export const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 const CH_COLS = "id,nombre,channel_type,phone_number_id,waba_id,pixel_id,page_id,vertical," +
   "telegram_chat_ids,buffer_default_seg,activo,ia_provider,timezone,gsheets,negocio,ia_perfiles," +
   "ia_router,negocio_form,ocr_config,pedidos_config,remarketing,entregas,telegram_avisos," +
-  "account_id,ad_account_id,ads_sync_error,ads_sync_at,moneda,resumenes,resumen_estado";
+  "account_id,ad_account_id,ads_sync_error,ads_sync_at,moneda,resumenes,resumen_estado,wa_alerta";
 
 let _ch = { id: null, fila: null, vuelo: null };
 
@@ -735,6 +735,41 @@ export async function confirmDescartar() {
 // Escribe en `channels` y COMPRUEBA que tocó la fila: la tabla es solo-admin por RLS, así
 // que a un OPERADOR el UPDATE le afecta 0 filas SIN error y la pantalla decía «guardado»
 // sin guardar (Negocio, IA → Vendedor/Atención/Perfiles/Validador). Devuelve { error }.
+// 🚨 Salud del número de WhatsApp: si Meta baneó, restringió o marcó la calidad (lo guardan el
+// webhook y el sondeo del scheduler en `wa_alerta`), una tarjeta fija abajo a la derecha en
+// TODAS las pantallas. «Entendido» la oculta en esta sesión; el admin además la apaga para todos.
+async function pintarAlertaWA() {
+  let a = null;
+  try { a = (await getChannel())?.wa_alerta || null; } catch (_) { a = null; }
+  let el = document.getElementById("nodo-wa-alerta");
+  const clave = a ? "nodo.waAlertaVista." + (a.at || a.texto) : "";
+  let vista = false;
+  try { vista = !!(clave && sessionStorage.getItem(clave)); } catch (_) {}
+  if (!a || !a.texto || vista) { if (el) el.remove(); return; }
+  const rojo = a.nivel !== "amarillo";
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "nodo-wa-alerta";
+    el.setAttribute("role", "alert");
+    document.body.appendChild(el);
+  }
+  el.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:99990;max-width:min(400px,calc(100vw - 32px));" +
+    "display:flex;gap:11px;align-items:flex-start;padding:13px 15px;border-radius:13px;font-size:13px;line-height:1.45;" +
+    "color:var(--text);background:var(--surface);box-shadow:0 10px 30px rgba(0,0,0,.3);" +
+    `border:1px solid var(${rojo ? "--red" : "--amber"});border-left-width:4px`;
+  el.innerHTML =
+    `<span style="flex:none;display:flex;color:var(${rojo ? "--red" : "--amber"})">${icon("alert")}</span>` +
+    `<div style="flex:1;min-width:0"><b>${rojo ? "WhatsApp con problemas" : "Atención con tu WhatsApp"}</b><br>${escHtml(a.texto)}` +
+    `<div style="margin-top:8px"><button type="button" id="nodo-wa-alerta-ok" style="cursor:pointer;font:inherit;font-weight:600;` +
+    `padding:4px 12px;border-radius:8px;border:1px solid var(--border,rgba(128,128,128,.35));background:transparent;color:var(--text)">Entendido</button></div></div>`;
+  el.querySelector("#nodo-wa-alerta-ok").onclick = async () => {
+    try { sessionStorage.setItem(clave, "1"); } catch (_) {}
+    el.remove();
+    // El admin la apaga para todos; a un operador la RLS no lo deja y solo se le oculta a él.
+    try { if (S.channelId) { await updateChannel(S.channelId, { wa_alerta: null }); olvidaChannel(); } } catch (_) {}
+  };
+}
+
 export async function updateChannel(channelId, patch) {
   const { data, error } = await supa.from("channels").update(patch).eq("id", channelId).select("id");
   if (!error && !(data && data.length)) return { error: { message: "No se guardó: solo un administrador puede cambiar esto", soloAdmin: true } };
@@ -1072,6 +1107,7 @@ export async function mountShell({ active } = {}) {
     S.subs = []; S.leaves = [];      // limpia suscripciones/cleanups de la página anterior
     updateActive(active);
     applyInboxCollapse(active);
+    pintarAlertaWA();
     return S.api;
   }
 
@@ -1281,6 +1317,7 @@ export async function mountShell({ active } = {}) {
       // pantallas (`S.subs`), que es cuando recargan sus datos con el rango recalculado.
       setTZ(S.channels.find((c) => c.id === id)?.timezone);
       paintBrand();
+      pintarAlertaWA();
       if (!silent) S.subs.forEach((cb) => { try { cb(id); } catch (e) { console.error(e); } });
     },
     // Comprime/expande el sidebar SIN persistir la preferencia del usuario
@@ -1322,6 +1359,7 @@ export async function mountShell({ active } = {}) {
 
   applyInboxCollapse(active); // Bandeja arranca colapsada
   setupRouter(); // activa la navegación SPA
+  pintarAlertaWA();
   return S.api;
 }
 

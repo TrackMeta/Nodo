@@ -14,6 +14,7 @@ import { esRechazoTemporal } from "../_shared/meta.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
 import { construirResumen, localParts, localDayStartUTC, ymd } from "../_shared/resumen.ts";
 import { enParalelo, repartoJusto } from "../_shared/concurrencia.ts";
+import { sondearNumero, aplicarVeredicto } from "../_shared/salud-wa.ts";
 
 const db = serviceClient();
 
@@ -279,6 +280,12 @@ Deno.serve(async (req) => {
   let resumenes = 0;
   try { resumenes = await processResumenes(now); }
   catch (e) { console.error("[scheduler] resumenes:", (e as any)?.message ?? e); }
+
+  // ── 7) Salud del número de WhatsApp (cada 3 h por canal) ──────────
+  // Respaldo del webhook: el token vencido o un número baneado/desconectado se detectan acá
+  // aunque Meta no mande (o no llegue) el aviso. Pocos por tick para no comerse el minuto.
+  try { await processSaludWA(now); }
+  catch (e) { console.error("[scheduler] salud-wa:", (e as any)?.message ?? e); }
 
   // ── Cuánto tardó el tick ──────────────────────────────────────────
   // El cron dispara cada 60 s sin esperar respuesta, así que un tick que se pase del minuto
@@ -1155,4 +1162,18 @@ async function processSub(s: any, now: number): Promise<boolean> {
     proximo_at: new Date(Date.now() + Math.max(60_000, esperaSig * 1000)).toISOString(),
   }).eq("id", s.id);
   return true;
+}
+
+async function processSaludWA(now: number) {
+  const corte = new Date(now - 3 * 3600_000).toISOString();
+  const { data: chans } = await db.from("channels").select("id, phone_number_id")
+    .eq("activo", true).not("phone_number_id", "is", null)
+    .or(`wa_salud_at.is.null,wa_salud_at.lt.${corte}`)
+    .order("wa_salud_at", { ascending: true, nullsFirst: true }).limit(5);
+  for (const c of (chans ?? []) as any[]) {
+    // Se sella ANTES de preguntar: si Meta tarda o falla, no se reintenta en cada tick.
+    await db.from("channels").update({ wa_salud_at: new Date().toISOString() }).eq("id", c.id);
+    try { await aplicarVeredicto(db, [c.id], await sondearNumero(db, c.id, String(c.phone_number_id))); }
+    catch (e) { console.error("[scheduler] sondeo", c.id, (e as any)?.message ?? e); }
+  }
 }
