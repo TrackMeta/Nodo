@@ -78,19 +78,59 @@ Deno.serve(async (req) => {
     }
 
     // ── Listar las invitaciones que creé (vigentes primero) ───────────
+    // …y las de EQUIPO de las cuentas donde soy admin, aunque las haya creado otro admin: antes
+    // solo las veía (y revocaba) quien las creó, y si a ese admin lo quitaban, sus códigos
+    // seguían vigentes sin que nadie más pudiera anularlos.
     if (action === "list") {
-      const { data } = await db.from("invitations")
-        .select("id, token, kind, account_id, role, nombre_sugerido, expires_at, used_at, created_at")
-        .eq("created_by", uid).order("created_at", { ascending: false }).limit(100);
+      const { data: mias } = await db.from("account_members").select("account_id")
+        .eq("user_id", uid).eq("role", "admin").eq("activo", true);
+      const cuentas = ((mias ?? []) as any[]).map((m) => m.account_id);
+      let q = db.from("invitations")
+        .select("id, token, kind, account_id, role, nombre_sugerido, expires_at, used_at, created_at, created_by");
+      q = cuentas.length ? q.or(`created_by.eq.${uid},account_id.in.(${cuentas.join(",")})`) : q.eq("created_by", uid);
+      const { data } = await q.order("created_at", { ascending: false }).limit(100);
       return json({ ok: true, invites: data ?? [] });
     }
 
     // ── Revocar (solo el que la creó) ─────────────────────────────────
     if (action === "revoke") {
       if (!body.id) return json({ error: "falta_id" }, 400);
-      const { error } = await db.from("invitations").delete().eq("id", body.id).eq("created_by", uid);
+      const { data: inv } = await db.from("invitations").select("id, created_by, account_id").eq("id", body.id).maybeSingle();
+      if (!inv) return json({ ok: true });
+      let puede = (inv as any).created_by === uid;
+      if (!puede && (inv as any).account_id) {
+        const { data: adm } = await db.from("account_members").select("role").eq("account_id", (inv as any).account_id)
+          .eq("user_id", uid).eq("activo", true).maybeSingle();
+        puede = (adm as any)?.role === "admin";
+      }
+      if (!puede) return json({ error: "forbidden", detalle: "Solo un admin de esa cuenta puede anular este código." }, 403);
+      const { error } = await db.from("invitations").delete().eq("id", body.id);
       if (error) return json({ error: "revocar", detalle: error.message }, 400);
       return json({ ok: true });
+    }
+
+    // ── Limpiar a un miembro QUITADO del equipo ─────────────────────
+    // Borrarlo de account_members no alcanzaba: sus códigos de invitación seguían vigentes (podía
+    // volver a entrar con otro correo) y su Telegram seguía recibiendo avisos y APROBANDO pagos.
+    if (action === "limpiar_miembro") {
+      const accountId = body.account_id, quitado = body.user_id;
+      if (!accountId || !quitado) return json({ error: "faltan_datos" }, 400);
+      const { data: adm } = await db.from("account_members").select("role").eq("account_id", accountId)
+        .eq("user_id", uid).eq("activo", true).maybeSingle();
+      if ((adm as any)?.role !== "admin") return json({ error: "forbidden" }, 403);
+      await db.from("invitations").delete().eq("account_id", accountId).eq("created_by", quitado).is("used_at", null);
+      const { data: chs } = await db.from("channels").select("id, telegram_chat_ids, telegram_vinculos").eq("account_id", accountId);
+      let cortados = 0;
+      for (const c of (chs ?? []) as any[]) {
+        const vinc = { ...(c.telegram_vinculos ?? {}) } as Record<string, any>;
+        const suyos = Object.keys(vinc).filter((k) => vinc[k]?.uid === quitado);
+        if (!suyos.length) continue;
+        for (const k of suyos) delete vinc[k];
+        const ids = ((c.telegram_chat_ids ?? []) as any[]).map(String).filter((x) => !suyos.includes(x));
+        await db.from("channels").update({ telegram_chat_ids: ids, telegram_vinculos: vinc }).eq("id", c.id);
+        cortados += suyos.length;
+      }
+      return json({ ok: true, telegram_cortados: cortados });
     }
 
     // ── Canjear siendo un usuario YA logueado (caso agencia, D1) ──────

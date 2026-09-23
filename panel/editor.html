@@ -697,7 +697,10 @@ async function openFlow(flowId){
   if(st.view==="contenido") renderContent();
 }
 
-function setStateBadge(estado){ const b=$("fstate"); b.textContent=estado; b.className="badge"+(estado==="activo"?" on":""); }
+// El botón dice lo que VA a hacer: en un flujo activo «Publicar» lo pasaba a borrador (era un
+// interruptor con el texto fijo) y el producto dejaba de vender justo al «publicar» una corrección.
+function setStateBadge(estado){ const b=$("fstate"); b.textContent=estado; b.className="badge"+(estado==="activo"?" on":"");
+  const p=$("pubBtn"); if(p){ p.textContent = estado==="activo" ? "Pasar a borrador" : "Publicar"; p.classList.toggle("primary", estado!=="activo"); } }
 async function paintProductChip(flow){
   const fp=$("fprod");
   if(flow.product_id){
@@ -1019,7 +1022,10 @@ function buildMensajeCfg(m, body){
   };
   paintBubs(); body.appendChild(bubs);
   // Los botones se anclan a la última burbuja de TEXTO (los media no llevan botones).
-  let last=null; for(let i=c.bubbles.length-1;i>=0;i--){ if(!c.bubbles[i].media_url){ last=c.bubbles[i]; break; } }
+  // …pero si alguna burbuja YA tiene botones, esa manda: las salidas del nodo salen de ella, y al
+  // agregar otra burbuja al final los botones quedaban escondidos y los nuevos no creaban rama.
+  let last=c.bubbles.find(b=>!b.media_url && Array.isArray(b.buttons) && b.buttons.length)||null;
+  if(!last) for(let i=c.bubbles.length-1;i>=0;i--){ if(!c.bubbles[i].media_url){ last=c.bubbles[i]; break; } }
   if(!last){ last={text:""}; c.bubbles.push(last); paintBubs(); }
   last.buttons=last.buttons||[];
   body.appendChild(mkLabel("Botones de respuesta (cada uno crea una rama)"));
@@ -1028,7 +1034,7 @@ function buildMensajeCfg(m, body){
     box.innerHTML="";
     last.buttons.forEach((btn,i)=>{
       const row=document.createElement("div"); row.className="frow"; row.style.marginBottom="6px";
-      const t=document.createElement("input"); t.className="in"; t.value=btn.title||""; t.placeholder="Texto del botón";
+      const t=document.createElement("input"); t.className="in"; t.value=btn.title||""; t.placeholder="Texto del botón (máx. 20)"; t.maxLength=20;   // WhatsApp corta en 20: salía mutilado
       t.oninput=()=>{ btn.title=t.value; updateNodeDom(m); };
       const x=document.createElement("button"); x.className="xbtn"; x.innerHTML=XSVG;
       x.onclick=()=>{ last.buttons.splice(i,1); syncMensajeHandles(m); paint(); };
@@ -1574,6 +1580,17 @@ async function save(){
       if(rep.size) dup.push((m.nombre||m.tipo)+" ("+[...rep].join(", ")+")");
     }
     if(dup.length){ toast("Salidas repetidas en → "+dup.join(" · ")+". Renómbralas para evitar rutas ambiguas.",true); return false; }
+    // Pasos SIN SALIDA donde el cliente espera algo: una Pregunta sin «continuar» (responde y el bot
+    // se calla), un Esperar/Rotador/Iniciar flujo sin nada después. No se bloquea (a veces es a
+    // propósito), pero se pregunta: antes se guardaba en silencio y se notaba con un cliente real.
+    try{
+      const _exp=editor.export().drawflow.Home.data; const _conSalida=new Set();
+      for(const dfId in _exp){ const outs=_exp[dfId].outputs||{}; if(Object.values(outs).some(o=>(o.connections||[]).length)) _conSalida.add(st.dfToUuid[dfId]); }
+      const _sinSalida=nodos.filter(m=>["pregunta","esperar","rotador","iniciar_flujo"].includes(m.tipo) && !_conSalida.has(m.uuid));
+      if(_sinSalida.length && !await confirmDialog({ title:"Pasos que no llevan a ningún lado",
+        message:`${_sinSalida.map(m=>`«${m.nombre||m.tipo}»`).join(", ")} no tiene${_sinSalida.length>1?"n":""} salida. Si un cliente llega ahí, el bot se queda callado. ¿Guardar igual?`,
+        confirmText:"Guardar igual", cancelText:"Conectarlos" })) return false;
+    }catch(_){ /* si no se puede leer el lienzo, se guarda como antes */ }
   }
   // Optimistic lock (DOS PESTAÑAS): si otra pestaña/persona guardó este flujo desde que lo abrí,
   // el borrado de nodos de abajo pisaría sus nodos (last-write destructivo). Se compara updated_at
@@ -1652,6 +1669,7 @@ async function publish(){
   // flujo que no arranca quedaba "activo"). Ahora se corta si el guardado no pasó.
   if(!(await save())) return;
   const nuevo = st.flow.estado==="activo" ? "borrador" : "activo";
+  if(nuevo==="borrador" && !await confirmDialog({ title:"Pasar a borrador", message:"Tus cambios ya se guardaron y están en vivo. Si lo pasas a borrador, el bot DEJA de usar este flujo (sus palabras clave y anuncios dejan de llevar a él). ¿Seguro?", confirmText:"Pasar a borrador", danger:true })) return;
   // Publicar un flujo SIN PASOS activa algo que no puede responder: el motor busca su nodo
   // inicial, no encuentra ninguno y el cliente se queda sin contestación. La validación de
   // "falta el nodo inicial" que hay en save() vive dentro de un `if(nodos.length)`, así que

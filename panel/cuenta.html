@@ -62,7 +62,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog, askChoice } from "./shell.js";
 const $ = (id) => document.getElementById(id);
 const st = { uid:null, me:null, accounts:[] };
 const esc = (s) => (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -114,7 +114,7 @@ function render(){
         <div class="av">${esc(ini(nm))}</div>
         <div style="flex:1;min-width:0"><div class="nm">${esc(nm)}${yo?' <span class="muted">· tú</span>':''}</div></div>
         <span class="badge ${m.role==='admin'?'admin':''}">${m.role==='admin'?'Admin':'Operador'}</span>
-        ${(soyAdmin && !yo) ? `<button class="btn danger sm" data-rm="${esc(m.user_id)}" data-acc="${esc(a.id)}">Quitar</button>` : ''}
+        ${(soyAdmin && !yo) ? `<button class="btn sm" data-rol="${esc(m.user_id)}" data-acc="${esc(a.id)}" data-actual="${esc(m.role)}">${m.role==='admin'?'Pasar a operador':'Hacer admin'}</button><button class="btn danger sm" data-rm="${esc(m.user_id)}" data-acc="${esc(a.id)}">Quitar</button>` : ''}
       </div>`;
     }).join("");
     return `<div class="card" data-acc="${esc(a.id)}">
@@ -134,6 +134,7 @@ function render(){
   document.querySelectorAll("[data-rename]").forEach(b=> b.onclick=()=>renameAccount(b.getAttribute("data-rename")));
   document.querySelectorAll("[data-team]").forEach(b=> b.onclick=()=>mkTeamCode(b.getAttribute("data-team")));
   document.querySelectorAll("[data-rm]").forEach(b=> b.onclick=()=>removeMember(b.getAttribute("data-acc"), b.getAttribute("data-rm")));
+  document.querySelectorAll("[data-rol]").forEach(b=> b.onclick=()=>cambiarRol(b.getAttribute("data-acc"), b.getAttribute("data-rol"), b.getAttribute("data-actual")));
 }
 
 async function mkAccountLink(){
@@ -144,10 +145,16 @@ async function mkAccountLink(){
   wireCopy($("acctLinkBox"), r.link);
 }
 async function mkTeamCode(accId){
-  const r = await callFn({ action:"create_team_invite", account_id:accId, role:"operador" });
+  // Antes siempre «operador»: no había forma de sumar un segundo admin (y el aviso de «quitar al
+  // único admin» decía «primero suma otro admin»).
+  const role = await askChoice({ title:"¿Cómo lo sumas?", options:[
+    { value:"operador", label:"Operador", desc:"Atiende chats y pedidos, aprueba pagos. No cambia la configuración." },
+    { value:"admin", label:"Admin", desc:"Todo lo del operador + configuración, equipo y conexiones." } ], value:"operador" });
+  if(!role) return;
+  const r = await callFn({ action:"create_team_invite", account_id:accId, role });
   if(!r) return;
   const box = $("teamBox-"+accId);
-  box.innerHTML = codeBox("Código de equipo", r.code, "Un código por persona (se usa una sola vez). Genera otro para cada quien que sumes como operador. También sirve el link de abajo. Vence en 14 días.") +
+  box.innerHTML = codeBox("Código de equipo", r.code, "Un código por persona (se usa una sola vez). Genera otro para cada persona que sumes. También sirve el link de abajo. Vence en 14 días.") +
     `<div style="margin-top:8px" class="muted" data-link>${esc(r.link)}</div>`;
   wireCopy(box, r.code);
 }
@@ -172,7 +179,19 @@ async function removeMember(accId, userId){
   if(!ok) return;
   const { error } = await supa.from("account_members").delete().eq("account_id",accId).eq("user_id",userId);
   if(error){ toast(error.message,true); return; }
-  toast("Miembro quitado"); load();
+  // …y se le cortan sus códigos pendientes y su Telegram (seguía aprobando pagos).
+  const r = await callFn({ action:"limpiar_miembro", account_id:accId, user_id:userId }, true);
+  toast("Miembro quitado"+(r&&r.telegram_cortados?` · se le cortó Telegram en ${r.telegram_cortados} bot(s)`:"")+". Si vinculó su Telegram antes de hoy, quítalo también en Canales → Telegram."); load();
+}
+async function cambiarRol(accId, userId, actual){
+  const nuevo = actual==="admin" ? "operador" : "admin";
+  const acc = st.accounts.find(a=>a.id===accId);
+  if(nuevo==="operador" && (acc?.members||[]).filter(m=>m.role==="admin").length<=1){ toast("Es el único admin: suma otro admin antes de quitarle el rol.",true); return; }
+  if(!await confirmDialog({ title: nuevo==="admin"?"Hacer admin":"Pasar a operador", message: nuevo==="admin"?"Podrá cambiar la configuración, el equipo y las conexiones.":"Dejará de poder cambiar la configuración y el equipo.", confirmText:"Cambiar" })) return;
+  const { data, error } = await supa.from("account_members").update({ role:nuevo }).eq("account_id",accId).eq("user_id",userId).select("user_id");
+  if(error){ toast(error.message,true); return; }
+  if(!(data||[]).length){ toast("No se pudo cambiar el rol",true); return; }
+  toast("Rol cambiado"); load();
 }
 
 async function loadInvites(){
@@ -181,11 +200,11 @@ async function loadInvites(){
   // (o peor: es de OTRA pantalla). Las lecturas por `supa` las corta shell.js al salir,
   // pero las llamadas a Edge Functions no se pueden cancelar a ciegas: muchas escriben.
   const card = $("invCard"); if (!card) return;
-  const invs = (r?.invites||[]).filter(i=>!i.used_at);
+  const invs = (r?.invites||[]).filter(i=>!i.used_at && (!i.expires_at || new Date(i.expires_at)>new Date()));   // vencidos fuera
   card.innerHTML = invs.length ? `
     <div class="card">
       <h2>${icon("mail")} Invitaciones activas</h2>
-      <p class="desc">Links y códigos que generaste y aún no se usan.</p>
+      <p class="desc">Links y códigos de tu equipo que aún no se usan.</p>
       ${invs.map(i=>`<div class="inv">
         <span class="badge">${i.kind==='new_account'?'Cuenta':'Equipo'}</span>
         <span class="t">${esc(i.token)}</span>

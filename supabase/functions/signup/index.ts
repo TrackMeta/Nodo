@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
   if (cErr || !created?.user) {
     const msg = cErr?.message || "";
     if (/already|exists|registered/i.test(msg)) {
-      return json({ error: "email_existe", detalle: "Ese correo ya tiene una cuenta. Inicia sesión y canjea el código desde el panel." }, 400);
+      return json({ error: "email_existe", detalle: "Ese correo ya tiene una cuenta. Inicia sesión y pégalo en Perfil → «Unirme a un equipo»." }, 400);
     }
     return json({ error: "crear_usuario", detalle: msg || "No se pudo crear el usuario." }, 400);
   }

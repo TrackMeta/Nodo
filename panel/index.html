@@ -550,6 +550,7 @@
     </div>
     <button class="btn" id="loginBtn" type="submit">Ingresar</button>
     <div class="err" id="loginErr"></div>
+    <button type="button" id="forgotBtn" style="margin-top:10px;background:none;border:none;color:var(--muted);font:inherit;font-size:12.5px;cursor:pointer;text-decoration:underline">¿Olvidaste tu contraseña?</button>
   </form>
 </div>
 
@@ -685,6 +686,25 @@ function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s
 function tagHex(c){ const N={blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8"}; if(!c) return "#2b7fff"; return /^#[0-9a-f]{3,8}$/i.test(c)?c:(N[c]||"#2b7fff"); }
 
 // ── Auth ──
+// 🔑 Recuperar la contraseña: antes no había cómo (el dueño que la olvidaba dependía de que alguien
+// se la cambiara a mano en Supabase). Llega un correo con un enlace que vuelve acá y pide la nueva.
+$("forgotBtn").onclick = async () => {
+  const email = $("email").value.trim();
+  if (!email) { $("loginErr").textContent = "Escribe tu correo arriba y vuelve a tocar «¿Olvidaste tu contraseña?»"; return; }
+  const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  $("loginErr").textContent = error ? ("No se pudo enviar: " + error.message) : "Listo: si ese correo tiene cuenta, te llegó un enlace para crear una contraseña nueva (revisa también spam).";
+};
+supa.auth.onAuthStateChange(async (ev) => {
+  if (ev !== "PASSWORD_RECOVERY") return;
+  for (let i = 0; i < 3; i++) {
+    const pw = await askText({ title: "Crea tu nueva contraseña", placeholder: "Mínimo 8 caracteres", confirmText: "Guardar", password: true });
+    if (pw == null) return;
+    if (String(pw).length < 8) { toast("Mínimo 8 caracteres", true); continue; }
+    const { error } = await supa.auth.updateUser({ password: String(pw) });
+    if (error) { toast("No se pudo cambiar: " + error.message, true); continue; }
+    toast("Contraseña cambiada"); boot(); return;
+  }
+});
 $("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("loginErr").textContent = ""; $("loginBtn").disabled = true;
@@ -1163,10 +1183,14 @@ async function sendBubblesInOrder(bubs){
   const cid=state.contactId;
   for(const b of (bubs||[])){
     if(state.contactId!==cid){ toast("Cambiaste de chat: dejé de enviar el resto de la respuesta rápida",true); return false; }
+    // Las que YA salieron no se repiten: reintentar tras una falla parcial le reenviaba al cliente
+    // la 1 (y la 3) duplicadas. Y ante una falla se para ahí, para no mandar la 3 antes que la 2.
+    if(b._enviada) continue;
     let ok;
     if(b.media_url){ ok=await sendStoredMedia({ media_kind:b.media_kind, media_url:b.media_url, mime:b.mime, filename:b.filename, caption:b.caption||"" }); }
     else { const t=(b.text||"").trim(); ok=t?await sendTextMsg(t):true; }
-    if(ok===false) allOk=false;
+    if(ok===false){ allOk=false; toast("Una burbuja no salió. Las anteriores sí: «Enviar» de nuevo sigue desde esa",true); break; }
+    b._enviada=true;
   }
   return allOk;
 }
@@ -2476,6 +2500,9 @@ async function sendMsg() {
     if (adjunto.error) { toast(adjunto.error, true); return; }
     if (adjunto.subiendo) { toast("El archivo todavía se está subiendo…"); return; }
     // La ventana pudo cerrarse mientras escribías el pie de foto: mismo aviso que el texto.
+    // WhatsApp corta el pie de foto en 1024 caracteres: el cliente recibía el texto cortado (y si
+    // los datos de pago iban al final, no le llegaban). Se avisa ANTES, con el texto intacto.
+    if (text.length > 1024) { toast(`El pie de foto tiene ${text.length} caracteres y WhatsApp acepta 1024: acórtalo o mándalo como mensaje aparte`, true); return; }
     if (state.winLocked && !state.isTest) { toast("La ventana está cerrada — usa una plantilla", true); return; }
     sending = true; $("sendBtn").disabled = true;
     try {
@@ -2488,6 +2515,7 @@ async function sendMsg() {
     return;
   }
   if (!text || !state.contactId || sending) return;
+  if (text.length > 4096) { toast(`El mensaje tiene ${text.length} caracteres y WhatsApp acepta 4096: pártelo en dos`, true); return; }
   if (state.winLocked && !state.isTest) { toast("La ventana está cerrada — usa una plantilla", true); return; }
   sending = true; $("sendBtn").disabled = true;
   try {

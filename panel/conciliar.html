@@ -246,7 +246,9 @@ async function conciliar(){
   // que oculta un pago falso). Se cargan las conciliadas de los días previos SOLO para
   // el ledger (no se muestran ni se re-concilian). Solo se usa su `_yaConciliado.mov`,
   // que sale del sello guardado (shipping.conciliacion), independiente de las imágenes.
-  const LEDGER_LOOKBACK_DIAS=3;
+  // 30 días, no 3: el saldo de provincia llega días después del pedido, y su depósito ya conciliado
+  // quedaba fuera del registro y libre para cuadrar OTRA venta del mismo monto.
+  const LEDGER_LOOKBACK_DIAS=30;
   const { data:prevOrds }=await pageAll((f,t)=>supa.from("orders")
     .select("id,amount,order_bumps,estado,shipping,contact_id,confirmed_at,updated_at,created_at,product:product_id(nombre)")
     .eq("channel_id",st.channelId)
@@ -256,7 +258,13 @@ async function conciliar(){
     .flatMap(entradasDe).filter(v=>v._yaConciliado);
 
   // Los ya conciliados en una corrida anterior no se vuelven a tocar.
-  const pendientes=st.ventas.filter(v=>!v._yaConciliado);
+  // Las ventas en EFECTIVO (Lima contraentrega sin prepago) NO entran al emparejamiento: esa plata
+  // nunca pasa por el banco, y podían «cuadrar» contra el Yape de otro cliente del mismo monto.
+  // Se siguen mostrando (neutrales) en «sin pago», como antes.
+  const _esEfe=(v)=>{ const s=(v._o&&v._o.shipping)||{}; const pre=v._parte==="prepago"||(!v._parte&&(Number(s.prepago_lima_abonado)||0)>0.005);
+    return /efectiv|contado|\bmano\b|\bcash\b/i.test(v.metodo||metodoDe(v._o)) || (v._o && O.zonaDe(v._o)==="lima" && !pre); };
+  const pendientes=st.ventas.filter(v=>!v._yaConciliado && !_esEfe(v));
+  const _efectivo=st.ventas.filter(v=>!v._yaConciliado && _esEfe(v));
   const desdeMov=new Date(desde.getTime()-MARGEN_HORAS*3600000);
   // Ledger de movimientos YA usados: cada conciliación previa dejó la huella del
   // depósito (sello.mov = {quien, monto, fecha}). Se excluyen del pool para que un
@@ -281,6 +289,7 @@ async function conciliar(){
     && !usadosMov.has(fpMov(m.quien,m.monto,m.fecha))
     && !usadosLegacy.has(fpLegacy(m.monto,m.fecha)));
   st.res=emparejar(pendientes,movs,{modo:"prudente"});
+  for(const v of _efectivo) st.res.sinPago.push({ venta:v });
   st.res.yaConciliadas=st.ventas.filter(v=>v._yaConciliado);
   // Señales para el ruido: los comprobantes que sí entraron por WhatsApp, con
   // nombre para poder decir de quién podría ser cada pago huérfano.

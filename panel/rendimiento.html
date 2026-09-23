@@ -276,7 +276,7 @@ async function loadData(){
       // (si lo tiene); físico = margen real. Si al físico le falta costo o flete, NO
       // se afirma margen (antes usaba el total = costo cero → inflaba la ganancia).
       const contrib = !O.esFisico(o) ? O.cobrado(o)-(O.costoProducto(o,o.product,1)||0) : mg;
-      if(contrib!=null) row._margen+=contrib;
+      if(contrib!=null) row._margen+=contrib; else row._sinMargen=(row._sinMargen||0)+1;
     }
     // Un anuncio vende UN producto, y ese producto o es digital o es fisico -> etiqueta sin ambiguedad.
     // (La zona no sirve: un mismo anuncio fisico vende a Lima y a provincia.) Zona solo como respaldo si el pedido no trae producto.
@@ -286,7 +286,10 @@ async function loadData(){
     if(!row.tag){ const c=_adCnt[adId]; const t=o.product&&o.product.tipo; row.tag = c ? (c.fisico>=c.digital?"fisico":"digital") : (t==="fisico"?"fisico" : t==="digital"?"digital" : (O.zonaDe(o)==="digital"?"digital":"fisico")); }
     if(!row.prod && o.product){ row.prod=(o.product.emoji?o.product.emoji+" ":"")+(o.product.nombre||""); row.prodTag=o.product.tipo==="fisico"?"fisico":"digital"; }
   });
-  Object.values(byAd).forEach(row=>{ row.neta=row._margen-row.gasto; });   // ganancia neta = margen − gasto de ads
+  // ganancia neta = margen − gasto de ads. Si alguna venta física no tiene margen (falta costo o
+  // flete), la neta NO se afirma («—»): sumarla como 0 mostraba «−S/300» junto a «ROAS 4×» en un
+  // anuncio que sí gana plata. El Dashboard ya lo trata así («falta el flete»).
+  Object.values(byAd).forEach(row=>{ row.neta=row._sinMargen ? null : row._margen-row.gasto; });
   if(gen!==st.loadGen) return; // otra carga (otro bot/cuenta) la reemplazó
   st.rows=Object.values(byAd); st.loaded=true;
   // Si el gasto SÍ se pudo convertir, no hay desajuste que avisar: las cifras ya están
@@ -322,7 +325,7 @@ function metrics(a){
   };
 }
 const oDash=(v,f)=> v==null||!Number.isFinite(Number(v)) ? "—" : f(v);
-const sumAds=(arr)=>{ const k=["gasto","impr","alcance","clics","clicsWA","conf","ventas","ingresos","neta"]; const o={}; k.forEach(x=>o[x]=0); arr.forEach(a=>k.forEach(x=>o[x]+=a[x])); return o; };
+const sumAds=(arr)=>{ const k=["gasto","impr","alcance","clics","clicsWA","conf","ventas","ingresos","neta"]; const o={}; k.forEach(x=>o[x]=0); arr.forEach(a=>k.forEach(x=>{ if(o[x]===null) return; if(a[x]==null){ if(x==="neta") o[x]=null; return; } o[x]+=a[x]; })); return o; };
 
 // Catálogo de columnas: key, label, grupo, cómo se pinta, y si es fija.
 const COLS=[
@@ -340,7 +343,7 @@ const COLS=[
   {k:"ventas", l:"Ventas reales", g:"Ventas",    fix:true,  cell:m=>`<td class="num">${m.ventas}</td>`},
   {k:"cpaReal",l:"CPA real",      g:"Ventas",    fix:true,  cell:m=>`<td class="num">${oDash(m.cpaReal,money)}</td>`},
   {k:"ingresos",l:"Ingresos",     g:"Dinero",    cell:m=>`<td class="num money">${money0(m.ingresos)}</td>`},
-  {k:"neta",   l:"Ganancia neta", g:"Dinero",    fix:true,  cell:m=>`<td class="num money ${m.neta<0?'neg':'pos'}">${money(m.neta)}</td>`},
+  {k:"neta",   l:"Ganancia neta", g:"Dinero",    fix:true,  cell:m=>m.neta==null?`<td class="num money" title="Hay ventas físicas sin costo o flete registrado: sin eso no se puede afirmar la ganancia">—</td>`:`<td class="num money ${m.neta<0?'neg':'pos'}">${money(m.neta)}</td>`},
   {k:"roas",   l:"ROAS",          g:"Dinero",    fix:true,  cell:m=>{ if(m.roas==null) return `<td class="num">—</td>`; const c=m.roas>=2?'g':m.roas>=1?'a':'r'; return `<td class="num"><span class="roas ${c}"><span class="rd"></span>${nf(m.roas,2)}×</span></td>`; }},
 ];
 const DEFAULT_ON=new Set(["gasto","conf","cpaConf","ventas","cpaReal","neta","roas"]);
@@ -539,7 +542,7 @@ function renderKpis(){
     ["Gasto en anuncios",money0(m.gasto),"var(--brand)",m.ventas+" ventas reales"],
     ["Ventas reales",String(m.ventas),"var(--green)","cobradas de verdad"],
     ["CPA real",oDash(m.cpaReal,money),"var(--amber)","costo por venta cobrada"],
-    ["Ganancia neta",money(m.neta),m.neta<0?"var(--red)":"var(--green)","margen − gasto de ads"],
+    ["Ganancia neta",m.neta==null?"—":money(m.neta),m.neta==null?"var(--muted)":m.neta<0?"var(--red)":"var(--green)",m.neta==null?"falta costo o flete en alguna venta física":"margen − gasto de ads"],
     ["ROAS",oDash(m.roas,v=>nf(v,2)+"×"),"var(--green)",money0(m.ingresos)+" por "+money0(m.gasto)],
   ];
   $("kpis").innerHTML=K.map(([k,v,c,s])=>`<div class="kpi"><div class="k"><span class="kd" style="background:${c}"></span>${k}</div><div class="v num" style="color:${c}">${v}</div><div class="s">${s}</div></div>`).join("");
@@ -910,7 +913,7 @@ function renderDetail(){
       ${kpiMini("Gasto",money0(m.gasto),"var(--brand)")}
       ${kpiMini("Ventas reales",m.ventas,"var(--green)")}
       ${kpiMini("CPA real",oDash(m.cpaReal,money),"var(--amber)")}
-      ${kpiMini("Ganancia neta",money(m.neta),m.neta<0?"var(--red)":"var(--green)")}
+      ${kpiMini("Ganancia neta",m.neta==null?"—":money(m.neta),m.neta==null?"var(--muted)":m.neta<0?"var(--red)":"var(--green)")}
       ${kpiMini("ROAS",oDash(m.roas,v=>nf(v,2)+"×"),"var(--green)")}
     </div>
     <div class="dgrid">
@@ -922,7 +925,8 @@ function renderDetail(){
     </tr></thead><tbody>${S.map(d=>{
       const roas=d.gasto?d.ingresos/d.gasto:0, rc=roas>=2?'g':roas>=1?'a':'r';
       const cpaCell = d.ventas ? money(d.gasto/d.ventas) : '<span style="color:var(--faint)">—</span>';
-      const roasCell = d.ventas ? `<span class="roas ${rc}"><span class="rd"></span>${nf(roas,2)}×</span>` : '<span style="color:var(--faint)">—</span>';
+      // Sin gasto ese día no hay ROAS (no es «0.00×» en rojo: vendió gratis).
+      const roasCell = (d.ventas && d.gasto) ? `<span class="roas ${rc}"><span class="rd"></span>${nf(roas,2)}×</span>` : '<span style="color:var(--faint)">—</span>';
       return `<tr><td>${d.fecha.toLocaleDateString("es-PE",{day:"2-digit",month:"short"})}</td><td class="num">${money(d.gasto)}</td><td class="num">${nf(d.impr)}</td><td class="num">${nf(d.clics)}</td><td class="num">${d.conf}</td><td class="num">${d.ventas}</td><td class="num">${cpaCell}</td><td class="num">${money(d.ingresos)}</td><td class="num">${roasCell}</td></tr>`;
     }).join("")}</tbody></table></div></div>`;
   $("back").onclick=()=>{ st.sel=null; render(); };

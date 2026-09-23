@@ -383,6 +383,12 @@ async function saveSeq(){
   // "{{precio}}" en S/0 (producto GRATIS) a TODO el segmento y que el OCR valide un pago de S/0.
   const malOferta=(st.seq.pasos||[]).findIndex(p=> p && p.oferta && p.oferta.version_id && !(Number(p.oferta.precio)>0));
   if(malOferta>=0){ toast(`El toque ${malOferta+1} tiene un descuento sin precio válido (mayor a 0). Corrígelo o apágalo antes de guardar.`,true); return; }
+  // Toque VACÍO (modo flujo sin flujo, plantilla sin plantilla, o sin texto en ninguna versión): el
+  // scheduler lo saltaba en silencio, para todos los suscritos. Se dice acá, antes de guardar.
+  const _conBurb=(arr)=>Array.isArray(arr)&&arr.some(b=>b&&(String(b.text||"").trim()||b.media_url));
+  const vacio=(st.seq.pasos||[]).findIndex(p=> p && !(p.flow_id || p.template_name || String(p.mensaje||"").trim() || _conBurb(p.bubbles)
+    || (Array.isArray(p.variantes)&&p.variantes.some(v=>v&&v.activo!==false&&_conBurb(v.bubbles)))));
+  if(vacio>=0){ toast(`El toque ${vacio+1} está vacío: elige su flujo o su plantilla, o escríbele el mensaje, antes de guardar.`,true); return; }
   // Optimistic lock (DOS PESTAÑAS): sequences no tiene updated_at, así que se compara el contenido
   // de `pasos` fresco contra el que se cargó. Si otra pestaña lo cambió, se aborta pidiendo recargar
   // en vez de pisar sus pasos (last-write destructivo).
@@ -394,6 +400,10 @@ async function saveSeq(){
   if(error && /segmento|column/.test(error.message)){ delete row.segmento; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0057 para segmentos)"); }
   if(error && /folder|column/.test(error.message)){ delete row.folder; ({ error }=await supa.from("sequences").update(row).eq("id",st.seq.id)); if(!error) toast("Guardado (aplica 0016 para carpetas)"); }
   if(error){ toast(error.message,true); return; }
+  // Los que YA estaban en cola quedaban con la espera vieja agendada (bajar de 3 días a 1 no les
+  // cambiaba nada). Se les pide al reloj que los vuelva a mirar ya: recalcula su espera con los
+  // pasos nuevos y los re-agenda solo (no envía nada antes de tiempo).
+  await supa.from("sequence_subscriptions").update({ proximo_at:new Date().toISOString() }).eq("sequence_id",st.seq.id).eq("estado","activa").then(()=>{},()=>{});
   let linkErr=null;
   try{ await syncSeqLink(st.seq.id); }catch(e){ linkErr=e; console.warn("[seqlink]",e); }
   st.dirty=false; st._loadedPasos=JSON.stringify(st.seq.pasos||[]); // guardado OK → nuevo baseline

@@ -8,7 +8,7 @@ import { fetchMediaBytes } from "../_shared/meta.ts";
 import { transcribeAudio } from "../_shared/ai.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
 import { CAMPOS_SALUD, veredictoWebhook, aplicarVeredicto } from "../_shared/salud-wa.ts";
-import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, type EngineEvent } from "../_shared/engine.ts";
+import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, avisarEscribioEnPausa, type EngineEvent } from "../_shared/engine.ts";
 
 // Runtime de Supabase Edge: permite terminar trabajo DESPUÉS de responder
 // (Meta exige un 200 rápido; el motor puede tardar por el LLM).
@@ -504,6 +504,26 @@ async function processInbound(
     // Con catch: si fallaba, el 500 hacía que Meta reintentara y el filtro de duplicados lo
     // descartaba → la baja no se aplicaba nunca. Mejor loguear y seguir.
     if (type === "text" && text && esOptOut(text)) await aplicarOptOut(db, channelId, contact.id).catch((e) => console.error("[webhook] opt-out en pausa:", (e as any)?.message ?? e));
+    // 💬 Nadie lo está atendiendo de verdad: se marca «requiere humano» (sale en Seguimiento y en
+    // el Dashboard) y, si ningún operador le escribió en 20 min, UN aviso por Telegram por pausa.
+    if (type !== "system" && type !== "sticker" && !(type === "text" && text && esOptOut(text))) {
+      try {
+        await db.from("conversations").update({ requiere_humano: true }).eq("contact_id", contact.id);
+        const { data: ultH } = await db.from("messages").select("ts").eq("contact_id", contact.id)
+          .eq("direction", "out").eq("sent_by", "human").order("ts", { ascending: false }).limit(1).maybeSingle();
+        const tH = (ultH as any)?.ts ? Date.parse((ultH as any).ts) : 0;
+        if (Date.now() - tH > 20 * 60_000) {
+          const desde = tH ? new Date(tH).toISOString() : new Date(Date.now() - 7 * 864e5).toISOString();
+          const { data: ya } = await db.from("contact_events").select("id").eq("contact_id", contact.id)
+            .eq("titulo", "💬 Escribió con el bot en pausa").gte("created_at", desde).limit(1).maybeSingle();
+          if (!ya) {
+            await db.from("contact_events").insert({ channel_id: channelId, contact_id: contact.id, tipo: "nota",
+              titulo: "💬 Escribió con el bot en pausa", detalle: String(text ?? "").slice(0, 200) }).then(() => {}, () => {});
+            await avisarEscribioEnPausa(db, channelId, contact.id, String(text ?? `[${type}]`));
+          }
+        }
+      } catch (e) { console.error("[webhook] aviso en pausa:", (e as any)?.message ?? e); }
+    }
     return;
   }
 

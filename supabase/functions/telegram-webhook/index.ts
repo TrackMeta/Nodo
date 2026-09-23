@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
   if (!channelId) return json({ error: "falta_canal" }, 400);
 
   const { data: ch } = await db.from("channels")
-    .select("id, nombre, timezone, moneda, telegram_chat_ids, telegram_webhook_secret, telegram_pair").eq("id", channelId).maybeSingle();
+    .select("id, nombre, timezone, moneda, telegram_chat_ids, telegram_webhook_secret, telegram_pair, activo").eq("id", channelId).maybeSingle();
   if (!ch) return json({ error: "canal_desconocido" }, 404);
 
   // 1) ¿Viene de Telegram?
@@ -94,7 +94,12 @@ Deno.serve(async (req) => {
     if (vigente && texto.replace(/\D/g, "") === String(pair.codigo) && quienEs) {
       const ids = ((ch as any).telegram_chat_ids ?? []).map(String);
       if (!ids.includes(quienEs)) ids.push(quienEs);
-      await db.from("channels").update({ telegram_chat_ids: ids, telegram_pair: null }).eq("id", channelId);
+      // De QUIÉN es este chat (el que pidió el código en el panel) y cómo se llama en Telegram:
+      // para cortarle el acceso al sacarlo del equipo y para mostrar nombres en Canales.
+      const { data: _vc } = await db.from("channels").select("telegram_vinculos").eq("id", channelId).maybeSingle();
+      const vinc = { ...(((_vc as any)?.telegram_vinculos ?? {}) as Record<string, unknown>) };
+      vinc[quienEs] = { uid: pair?.uid ?? null, nombre: [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(" ").slice(0, 60) || null, at: new Date().toISOString() };
+      await db.from("channels").update({ telegram_chat_ids: ids, telegram_pair: null, telegram_vinculos: vinc }).eq("id", channelId);
       await sendTelegram(token, [quienEs],
         "✅ <b>Listo, quedaste vinculado.</b>\nDesde aquí vas a poder aprobar los pagos con un toque.");
     } else if (vigente && quienEs && /^\d{4,8}$/.test(texto.replace(/\D/g, "")) && texto.replace(/\D/g, "") !== String(pair.codigo)) {
@@ -166,6 +171,8 @@ Deno.serve(async (req) => {
 
   // Telegram reintenta si no le contestamos 200: siempre devolvemos ok.
   if (!cb) return json({ ok: true });
+  // Bot ARCHIVADO: sus botones ya no aprueban nada (se archivó para que dejara de operar).
+  if ((ch as any).activo === false) { await answerCallback(token, cb.id, "Este bot está archivado: sus botones ya no hacen nada.", true); return json({ ok: true }); }
 
   // 2) ¿Quién tocó el botón es admin de ESTE canal?
   const permitidos = ((ch as any).telegram_chat_ids ?? []).map(String);

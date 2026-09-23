@@ -605,7 +605,7 @@ export function askText(opts = {}) {
     let settled = false;
     const field = o.multiline
       ? `<textarea id="nmInput" rows="4" placeholder="${escAttr(o.placeholder || "")}">${escHtml(o.value || "")}</textarea>`
-      : `<input id="nmInput" type="text" placeholder="${escAttr(o.placeholder || "")}" value="${escAttr(o.value || "")}" autocomplete="off" />`;
+      : `<input id="nmInput" type="${o.password ? "password" : "text"}" placeholder="${escAttr(o.placeholder || "")}" value="${escAttr(o.value || "")}" autocomplete="${o.password ? "new-password" : "off"}" />`;
     const { back, close } = mountModal(`
       <div class="nodo-modal" role="dialog" aria-modal="true">
         <h3>${escHtml(o.title || "")}</h3>

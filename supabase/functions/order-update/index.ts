@@ -370,7 +370,15 @@ Deno.serve(async (req) => {
     // 📦 Stock: si la venta se CAE (cancelada/rechazada/no recogida/anulada),
     // devuelve al inventario las unidades que se reservaron al crear el pedido.
     // Idempotente: la bandera stock_devuelto evita devolver dos veces.
-    if (st === "perdido") {
+    // …salvo que el producto YA SE ENTREGÓ (Lima entregado y cobrado, provincia recogido): anular
+    // esa venta (pago falso, devolución de plata) no trae el paquete de vuelta al almacén, y sumar
+    // la unidad inventaba stock que no existe. Si de verdad vuelve, se ajusta a mano.
+    const _yaEntregado = ["entregado_cobrado", "recogido"].includes(String((order as any).estado ?? ""));
+    if (st === "perdido" && _yaEntregado) {
+      await db.from("contact_events").insert({ channel_id: (order as any).channel_id, contact_id: (order as any).contact_id, tipo: "nota",
+        titulo: "📦 Stock no devuelto", detalle: `El pedido ya estaba «${(order as any).estado}» (el producto salió). Si te lo devolvieron, súmalo a mano en el producto.` }).then(() => {}, () => {});
+    }
+    if (st === "perdido" && !_yaEntregado) {
       const ship = ((order as any).shipping || {}) as any;
       if (ship.stock_descontado && !ship.stock_devuelto && Array.isArray(ship.stock_mov)) {
         try {

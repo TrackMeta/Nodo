@@ -248,7 +248,9 @@ Deno.serve(async (req) => {
       }
       const codigo = String(Math.floor(100000 + Math.random() * 900000));
       const vence = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-      const { error } = await db.from("channels").update({ telegram_pair: { codigo, vence } }).eq("id", channel_id);
+      // `uid`: QUIÉN pidió el código. El webhook lo guarda junto al chat que se vincula, y así al
+      // quitar a esa persona del equipo se le corta también Telegram (antes seguía aprobando pagos).
+      const { error } = await db.from("channels").update({ telegram_pair: { codigo, vence, uid } }).eq("id", channel_id);
       if (error) return json({ error: "guardar_codigo", detalle: error.message }, 400);
       return json({ ok: true, codigo, vence });
     }
@@ -1098,11 +1100,18 @@ Deno.serve(async (req) => {
         const v = upd[idk];
         if (v == null) continue; // no se está cambiando (o se está limpiando)
         if (!/^\d{5,}$/.test(String(v))) return json({ error: "id_invalido", detalle: `El ${idk} debe ser numérico.` }, 400);
-        let dq = db.from("channels").select("id, account_id").eq(idk, v as string).neq("id", channel_id);
+        let dq = db.from("channels").select("id, account_id, activo, nombre").eq(idk, v as string).neq("id", channel_id);
         // waba_id: solo choca si pertenece a OTRA cuenta (permite el 2do número del mismo negocio).
         if (idk === "waba_id" && myAcc) dq = dq.neq("account_id", myAcc);
         const { data: dup } = await dq.limit(1).maybeSingle();
-        if (dup) return json({ error: "id_en_uso", detalle: `Ese ${idk} ya está en uso por otro canal.` }, 400);
+        // El que lo tiene es un bot ARCHIVADO de tu MISMA cuenta: se le suelta el número y sigue.
+        // Antes el número quedaba amarrado al archivado (que ni sale en el selector) y reconectarlo
+        // en el bot nuevo decía «ya está en uso por otro canal» sin decir cuál.
+        if (dup && idk === "phone_number_id" && (dup as any).activo === false && myAcc && (dup as any).account_id === myAcc) {
+          await db.from("channels").update({ phone_number_id: null }).eq("id", (dup as any).id);
+        } else if (dup) {
+          return json({ error: "id_en_uso", detalle: `Ese ${idk} ya está en uso por otro bot${(dup as any).account_id === myAcc && (dup as any).nombre ? ` («${(dup as any).nombre}»)` : ""}.` }, 400);
+        }
       }
       if (Object.keys(upd).length) {
         const { error } = await db.from("channels").update(upd).eq("id", channel_id);

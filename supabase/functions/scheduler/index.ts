@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
-import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, soloAnunciosBloquea, pasarAHumano, esOptOut } from "../_shared/engine.ts";
+import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, soloAnunciosBloquea, pasarAHumano, esOptOut, canalActivo } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 import { esRechazoTemporal } from "../_shared/meta.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
@@ -327,7 +327,7 @@ async function processResumenes(tickInicio: number): Promise<number> {
   for (let desde = 0; desde < 100000; desde += 1000) {
     const { data, error } = await db.from("channels")
       .select("id, nombre, timezone, moneda, resumenes, resumen_estado, telegram_chat_ids")
-      .not("resumenes", "is", null).order("id", { ascending: true }).range(desde, desde + 999);
+      .eq("activo", true).not("resumenes", "is", null).order("id", { ascending: true }).range(desde, desde + 999);
     if (error) break;
     const filas = data ?? [];
     chans.push(...filas);
@@ -412,7 +412,7 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
   // así que subir el número tampoco habría bastado.)
   const chans: any[] = [];
   for (let desde = 0; desde < 100000; desde += 1000) {
-    const { data, error } = await db.from("channels").select("id, pedidos_config")
+    const { data, error } = await db.from("channels").select("id, pedidos_config").eq("activo", true)   // archivados: nada
       .order("id", { ascending: true }).range(desde, desde + 999);
     if (error) break;
     const filas = data ?? [];
@@ -578,6 +578,7 @@ async function processOrderReminders(now: number): Promise<number> {
     // en un estado, así que atrasarse un minuto no cambia nada; encimar los ticks sí.
     if (Date.now() - now > PRESUPUESTO_MS + 16_000) break;
     if ((t as any).flows?.estado !== "activo") continue;
+    if (!(await canalActivo(db, (t as any).channel_id))) continue;   // bot archivado
     const estado = (t as any).config?.estado;
     const horas = Number((t as any).config?.horas ?? 24);
     if (!estado || !(horas > 0)) continue;
@@ -624,8 +625,21 @@ async function processOrderReminders(now: number): Promise<number> {
         // alcanzar, se POSTERGA sin marcar (no se pierde: se reintenta cuando
         // reabra la ventana, o el pedido cambia de estado y deja de aplicar).
         if (!await ventana24hAbierta(db, (o as any).contact_id)) continue;
+        // La conversación de venta de provincia queda «esperando» hasta el saldo (es un bucle sin
+        // Fin), así que sin `interrumpe` el recordatorio NO salía nunca: justo «recoge tu paquete,
+        // mañana la agencia lo devuelve» al cliente callado. Si ese run lleva más de 1 h quieto,
+        // se reemplaza (el saldo lo sigue atendiendo su validador, no el run).
+        let _optsRec: any = { force: !!(t as any).interrumpe };
+        if (!_optsRec.force) {
+          const { data: _act } = await db.from("flow_runs").select("estado, updated_at, vars")
+            .eq("contact_id", (o as any).contact_id).in("estado", ["activo", "esperando"]).maybeSingle();
+          if (_act && (_act as any).estado === "esperando" && now - Date.parse((_act as any).updated_at) > 60 * 60_000
+            && (_act as any).vars?._await?.type !== "aprobacion_digital") {   // un pago esperando tu OK no se toca
+            _optsRec = { reemplazarEsperando: true };
+          }
+        }
         const ok = await startFlowRun(db, (t as any).channel_id, (o as any).contact_id,
-          (t as any).flow_id, { force: !!(t as any).interrumpe });
+          (t as any).flow_id, _optsRec);
         if (ok) {
           // Patch estrecho, por lo mismo que el recordatorio de adelanto: `ship` se leyó antes
           // de arrancar el flujo y reescribirlo entero pisa lo que se haya guardado mientras.
@@ -827,6 +841,8 @@ async function posponer(subId: string, ms: number) {
 }
 
 async function processSub(s: any, now: number): Promise<boolean> {
+  // Bot ARCHIVADO: su remarketing no sale (se re-mira en un día por si lo reactivas).
+  if (!(await canalActivo(db, s.channel_id))) { await posponer(s.id, 24 * 3600_000); return false; }
   const { data: seq, error: errSeq } = await leerSecuencia(s.sequence_id);
   // Distinguir "la secuencia ya no existe" de "no pude leerla". Sin esto, un error transitorio
   // dejaba `seq` en null y caía en el branch de abajo, que marca la suscripción COMPLETADA:
@@ -1128,6 +1144,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
         // recibiera nada. Solo cuenta si hay wamid (o "simulado" en un contacto de prueba).
         const wamidSeq = await sendTemplateToContact(db, s.channel_id, s.contact_id, {
           name: paso.template_name, language: paso.template_lang, params: paso.template_params,
+          preferirTexto: true,   // con la ventana abierta sale como texto (gratis), no como plantilla cobrada
         });
         toco = !!wamidSeq;
         if (!toco) {
@@ -1267,6 +1284,7 @@ async function processSinRespuesta(now: number) {
     if (Date.now() - now > PRESUPUESTO_MS + 16_000) break;
     if (c.bot_activo === false || c.bloqueado === true) continue;          // ya lo atiende una persona / bloqueado
     if (c.source === "sim" || c.wa_id === "webchat-test") continue;        // pruebas
+    if (!(await canalActivo(db, c.channel_id))) continue;                  // bot archivado
     // Último mensaje REAL del cliente (un 👍 o un sticker no piden respuesta).
     const { data: ult } = await db.from("messages").select("ts, type, content")
       .eq("contact_id", c.id).eq("direction", "in").not("type", "in", "(system,sticker)")

@@ -541,6 +541,13 @@ function renderPreview(){
 }
 async function saveTpl(){
   if(!st.tpl) return;
+  // El TEXTO de una plantilla ya enviada a Meta tampoco se toca: Meta envía SU versión, y un
+  // {{3}} agregado acá hacía que cada envío fallara (132000) — la campaña no le llegaba a nadie.
+  // Para cambiar el texto se crea una plantilla nueva. Las variables (qué va en cada hueco) sí.
+  if(String(st.tpl.estado_meta||"borrador")!=="borrador" && $("f_body").value!==String(st.tpl.body_preview||"")){
+    $("f_body").value=String(st.tpl.body_preview||"");
+    toast("El texto de una plantilla ya enviada lo fija Meta: para cambiarlo, crea una plantilla nueva. Solo se guardaron las variables.",true);
+  }
   readSlots();
   // params es POSICIONAL: params[0]→{{1}}, params[1]→{{2}}… Guardamos exactamente N entradas
   // (una por hueco del cuerpo) para que las posiciones nunca se desalineen.

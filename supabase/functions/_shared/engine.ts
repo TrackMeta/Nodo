@@ -139,6 +139,7 @@ async function resolverAnguloContacto(db: SupabaseClient, channelId: string, con
 export async function runEngine(
   db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
 ) {
+  if (!(await canalActivo(db, channelId))) return;   // bot archivado: no conversa
   const holder = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   let locked = false;
   // ⏳ Hasta ~30s. Eran ~5s, y un turno con llamada a la IA tarda 8-12s: dos mensajes
@@ -6944,12 +6945,15 @@ export async function startFlowRun(
   db: SupabaseClient, channelId: string, contactId: string, flowId: string,
   opts?: { force?: boolean; vars?: Record<string, unknown>; reemplazarEsperando?: boolean },
 ): Promise<boolean> {
+  if (!(await canalActivo(db, channelId))) return false;   // bot archivado: no arranca flujos (secuencias, recordatorios)
   // La secuencia ya decidió que ese run «esperando» está RANCIO (el cliente se fue hace rato):
   // se cierra solo ESE para que el toque de remarketing pueda arrancar. Sin esto el paso en modo
   // Flujo se quedaba clavado para siempre (startFlowRun decía que no, tick tras tick). Un run
   // «activo» (corriendo ahora) nunca se toca.
   if (opts?.reemplazarEsperando && !opts?.force) {
-    await db.from("flow_runs").update({ estado: "cancelado" }).eq("contact_id", contactId).eq("estado", "esperando");
+    await db.from("flow_runs").update({ estado: "cancelado" }).eq("contact_id", contactId).eq("estado", "esperando")
+      // …salvo un pago que espera TU aprobación: cortarlo dejaría al cliente pagado y sin entrega.
+      .or("vars->_await->>type.is.null,vars->_await->>type.neq.aprobacion_digital");
   }
   if (opts?.force) {
     // Modo prueba: cancela cualquier run y arranca el flujo aunque esté en borrador.
@@ -7658,8 +7662,11 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
     }
     if (!["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"].includes(String(ord.estado))) return;
     const { data: c } = await db.from("contacts")
-      .select("nombre, wa_id, ad_id").eq("id", ord.contact_id).maybeSingle();
+      .select("nombre, wa_id, ad_id, source").eq("id", ord.contact_id).maybeSingle();
     const ct = (c as any) ?? {};
+    // Ventas de PRUEBA (Probar flujos / simulador) no van a tu hoja real: quedaban filas con Cel
+    // «webchat-test» mezcladas con las ventas de verdad, y «Reiniciar» no las borraba.
+    if (ct.wa_id === "webchat-test" || ct.source === "sim") return;
     const s = ord.shipping ?? {};
     let zona = String(s.zona ?? "").toLowerCase();
     // Fallback por ESTADO cuando zona viene en blanco (un flujo cuyo crear_pedido no seteó
@@ -22342,6 +22349,14 @@ async function runGoogleSheets(db: SupabaseClient, run: Run, node: Node, ctx: an
     }
   }
   try {
+    // Probar flujos / simulador: no se escribe en la hoja REAL del negocio (se sigue el camino de éxito).
+    {
+      const { data: _ctS } = await db.from("contacts").select("wa_id, source").eq("id", run.contact_id).maybeSingle();
+      if ((_ctS as any)?.wa_id === "webchat-test" || (_ctS as any)?.source === "sim") {
+        run.current_node_id = (await nextNode(db, run.flow_id, node.id, "exito")) ?? (await nextNode(db, run.flow_id, node.id, "continuar"));
+        return;
+      }
+    }
     const { data: ch } = await db.from("channels").select("gsheets").eq("id", run.channel_id).maybeSingle();
     const g = (ch as any)?.gsheets ?? {};
     const accion = cfg.accion === "update" ? "update" : "append";
@@ -23549,4 +23564,34 @@ function pickWeighted<T extends { peso?: number }>(items: T[]): T {
   let r = Math.random() * total;
   for (let i = 0; i < items.length; i++) { r -= weights[i]; if (r < 0) return items[i]; }
   return items[items.length - 1];
+}
+
+// 💬 Escribió con el bot EN PAUSA y nadie lo está atendiendo: un solo aviso («te necesitan»),
+// usando el aviso no silenciable de siempre. Antes un solo mensaje del operador dejaba el bot en
+// pausa para siempre y lo que el cliente escribía de noche no lo veía nadie.
+export async function avisarEscribioEnPausa(db: SupabaseClient, channelId: string, contactId: string, texto: string) {
+  try {
+    const { data: c } = await db.from("contacts").select("nombre, wa_id").eq("id", contactId).maybeSingle();
+    const quien = (c as any)?.nombre || (c as any)?.wa_id || "Un cliente";
+    await avisar(db, channelId, contactId, "pide_humano", {
+      cliente: quien,
+      motivo: `Te escribió y el bot está en pausa (lo atiendes tú): «${String(texto ?? "").slice(0, 160)}»`,
+      horario: "",
+    });
+  } catch (e) { console.error("[avisarEscribioEnPausa]", (e as any)?.message ?? e); }
+}
+
+// 🗄️ ¿El bot está ACTIVO? Archivar un bot solo ponía activo=false y el webhook dejaba de leer lo
+// que el cliente contestaba, pero el scheduler seguía mandando secuencias, recordatorios y
+// campañas: le escribía a gente cuyas respuestas ya nadie veía. Caché corta por isolate.
+const _canalAct = new Map<string, { v: boolean; t: number }>();
+export async function canalActivo(db: SupabaseClient, channelId: string): Promise<boolean> {
+  const c = _canalAct.get(channelId);
+  if (c && Date.now() - c.t < 60_000) return c.v;
+  try {
+    const { data } = await db.from("channels").select("activo").eq("id", channelId).maybeSingle();
+    const v = !!data && (data as any).activo !== false;
+    _canalAct.set(channelId, { v, t: Date.now() });
+    return v;
+  } catch (_) { return true; }   // sin dato no se apaga nada por error
 }

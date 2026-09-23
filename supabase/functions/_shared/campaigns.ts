@@ -6,7 +6,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getChannelSecrets } from "./db.ts";
-import { sendTemplate, esRechazoTemporal } from "./meta.ts";
+import { sendTemplate, sendText, esRechazoTemporal } from "./meta.ts";
 import { enParalelo } from "./concurrencia.ts";
 import { pageAll } from "./paginar.ts";
 import { sendTelegram } from "./telegram.ts";
@@ -267,6 +267,9 @@ async function avisarCanalRoto(db: SupabaseClient, c: any, meta: any) {
 }
 
 async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
+  // Bot ARCHIVADO: su campaña no manda (queda pendiente por si lo reactivas).
+  { const { data: _chA } = await db.from("channels").select("activo").eq("id", c.channel_id).maybeSingle();
+    if ((_chA as any)?.activo === false) return; }
   const { data: tpl } = await db.from("wa_templates").select("*").eq("id", c.template_id).maybeSingle();
   if (!tpl) {
     // Plantilla borrada (FK on delete set null): antes se marcaba «completada» dejando las filas
@@ -513,11 +516,14 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
 // Envío de plantilla a un contacto (secuencias fuera de 24h).
 export async function sendTemplateToContact(
   db: SupabaseClient, channelId: string, contactId: string,
-  tpl: { name: string; language?: string; params?: string[] },
+  // `preferirTexto`: con la ventana de 24 h ABIERTA, mandar el MISMO contenido como texto normal
+  // (gratis) en vez de la plantilla (que Meta cobra desde el 1-oct-2026). Lo usan las secuencias.
+  tpl: { name: string; language?: string; params?: string[]; preferirTexto?: boolean },
   sender?: { sentBy?: string; sentByUser?: string | null },
   orderId?: string | null,   // fija el pedido para {{pedido_*}} (aviso al mover un pedido)
 ): Promise<string> {
-  const { data: ch } = await db.from("channels").select("phone_number_id, channel_type").eq("id", channelId).maybeSingle();
+  const { data: ch } = await db.from("channels").select("phone_number_id, channel_type, activo").eq("id", channelId).maybeSingle();
+  if ((ch as any)?.activo === false) return "";   // bot archivado: no se le escribe a nadie en su nombre
   const secrets = await getChannelSecrets(db, channelId);
   const token = secrets?.access_token;
   const ctx = await contactCtx(db, contactId, orderId);
@@ -531,7 +537,7 @@ export async function sendTemplateToContact(
   // aprobada por Meta y (b) caer a sus params guardados si el caller no los pasó.
   // El filtro por idioma evita que un canal con la MISMA plantilla en dos idiomas
   // reviente maybeSingle (múltiples filas) → params vacíos → mismatch 132000.
-  let tq = db.from("wa_templates").select("estado_meta, params, body_preview, soporta_envio, language, categoria").eq("channel_id", channelId).eq("name", tpl.name);
+  let tq = db.from("wa_templates").select("estado_meta, params, body_preview, soporta_envio, language, categoria, header_text").eq("channel_id", channelId).eq("name", tpl.name);
   if (tpl.language) tq = tq.eq("language", tpl.language);
   let { data: tplRow } = await tq.maybeSingle();
   // Sin fila para (canal, nombre, idioma): antes de darla por perdida, se reintenta SIN el
@@ -539,7 +545,7 @@ export async function sendTemplateToContact(
   // exactamente una con ese nombre, esa es.
   if (!tplRow && tpl.language) {
     const { data: solaPorNombre } = await db.from("wa_templates")
-      .select("estado_meta, params, body_preview, soporta_envio, language, categoria")
+      .select("estado_meta, params, body_preview, soporta_envio, language, categoria, header_text")
       .eq("channel_id", channelId).eq("name", tpl.name);
     if ((solaPorNombre ?? []).length === 1) tplRow = solaPorNombre![0] as any;
   }
@@ -596,6 +602,22 @@ export async function sendTemplateToContact(
       sent_by: sender?.sentBy ?? "bot", sent_by_user: sender?.sentByUser ?? null, ventana: null,
     });
     return "simulado";
+  }
+  // 💸 Ventana de 24 h abierta + el caller lo permite → el mismo contenido como TEXTO (gratis).
+  if (tpl.preferirTexto && esWhats && (ch as any).phone_number_id && token && ctx.wa_id && (tplRow as any)?.body_preview) {
+    const { data: _cv } = await db.from("contacts").select("ultimo_mensaje_cliente_at").eq("id", contactId).maybeSingle();
+    const _t = (_cv as any)?.ultimo_mensaje_cliente_at ? Date.parse((_cv as any).ultimo_mensaje_cliente_at) : 0;
+    if (_t > 0 && Date.now() - _t < 23.5 * 3600_000) {   // margen: no rozar el cierre de la ventana
+      const _cab = String((tplRow as any)?.header_text ?? "").trim();
+      const _txt = [_cab ? `*${_cab}*` : "", textoPlantilla((tplRow as any).body_preview, bodyParams)].filter(Boolean).join("\n\n");
+      const _w = await sendText((ch as any).phone_number_id, token, ctx.wa_id, _txt);
+      await db.from("messages").insert({
+        channel_id: channelId, contact_id: contactId, direction: "out",
+        type: "text", content: { text: _txt, template_como_texto: tpl.name }, wamid: _w || null, status: _w ? "sent" : "failed",
+        sent_by: sender?.sentBy ?? "bot", sent_by_user: sender?.sentByUser ?? null,
+      });
+      return _w;
+    }
   }
   if (esWhats && (ch as any).phone_number_id && token && ctx.wa_id) {
     wamid = await sendTemplate((ch as any).phone_number_id, token, ctx.wa_id, tpl.name, lang, bodyParams);

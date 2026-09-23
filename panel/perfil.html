@@ -82,6 +82,11 @@
     </div>
 
     <div class="card">
+      <h3>Unirme a un equipo</h3><p class="cs">¿Te pasaron un código de equipo y ya tienes usuario? Pégalo acá para entrar a esa cuenta.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><input class="in" id="joinCode" placeholder="Código de equipo" style="flex:1;min-width:180px;text-transform:uppercase"/><button class="btn primary" id="joinBtn">Unirme</button></div>
+    </div>
+
+    <div class="card">
       <h3>Sesión</h3><p class="cs">Cierra tu sesión en este dispositivo.</p>
       <div class="acts"><button class="btn" id="logoutBtn" style="color:var(--red);border-color:transparent">Cerrar sesión</button></div>
     </div>
@@ -124,6 +129,15 @@ async function boot(){
   $("avatarFile").onchange=(e)=>handleAvatar(e.target.files[0]);
   $("saveProfile").onclick=saveProfile;
   $("savePw").onclick=changePassword;
+  // Canjear un código de equipo siendo un usuario YA registrado: el registro le decía «canjea el
+  // código desde el panel» y ese lugar no existía (quedaba trabado sin forma de entrar).
+  $("joinBtn").onclick=async()=>{
+    const tok=$("joinCode").value.trim().toUpperCase(); if(!tok){ toast("Pega el código",true); return; }
+    const { data, error }=await supa.functions.invoke("invites",{ body:{ action:"redeem", token:tok } });
+    let det=""; if(error){ try{ const j=await error.context?.json?.(); det=j?.detalle||j?.error||""; }catch(_){} }
+    if(error||!data||data.error){ toast(det||data?.detalle||"No se pudo usar ese código (¿vencido o ya usado?)",true); return; }
+    toast("Listo, ya eres parte de ese equipo"); setTimeout(()=>location.reload(),900);
+  };
   $("logoutBtn").onclick=async()=>{ try{ localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.channelId"); }catch{} await supa.auth.signOut(); location.href="index.html"; };
 }
 function paintAvatar(url){

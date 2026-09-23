@@ -943,7 +943,7 @@ async function load(){
   // pedidos sin costo, la ganancia no es CERO: es DESCONOCIDA, y mostrar "S/ 0.00" es
   // afirmar algo falso ("tu negocio físico no gana nada") cuando lo cierto es que
   // falta un dato. Mismo criterio que ya se aplicó a "Rendimiento por producto".
-  let bruta=0, sinCostoF=0, sinFlete=0, sinCogs=0, cogsBruta=0, conMargen=0;
+  let bruta=0, sinCostoF=0, sinFlete=0, sinCogs=0, cogsBruta=0, conMargen=0, porCobrarN=0;
   // Ganancia sobre ventasOk (SIN perdidos): un rechazado/no_recogido resta su COGS
   // como si la mercadería se hubiera perdido, pero el paquete VUELVE (solo se pierde
   // el flete). El digest (order-stats.ts:131) ya excluye perdidos de la ganancia; el
@@ -956,6 +956,9 @@ async function load(){
       const cd=O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
       bruta+=O.cobrado(o)-(cd||0); cogsBruta+=(cd||0); conMargen++; return;
     }
+    // Todavía NO se cobró todo (Lima confirmado, provincia con solo el adelanto): su ganancia no
+    // existe aún. Antes caía como «falta el flete» y mandaba a registrar un flete que ya estaba.
+    if(O.cobrado(o) < O.total(o) - 0.009){ porCobrarN++; return; }
     const m=O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
     // cobrado − margen = todo lo que costó ese pedido (mercadería + flete + empaque),
     // sin volver a sumarlo pieza por pieza.
@@ -970,10 +973,13 @@ async function load(){
   // Ninguna venta pudo calcular su ganancia → el número no existe, no es cero.
   const brutaDesconocida = conMargen===0 && sinCostoF>0;
   // Texto compartido por el KPI y la banda: dice qué falta exactamente.
-  const faltaTxt = !sinCostoF ? ""
+  const _faltaCostos = !sinCostoF ? ""
     : sinFlete && !sinCogs ? `falta el flete de ${sinFlete} pedido${sinFlete>1?"s":""}`
     : sinCogs && !sinFlete ? `falta el costo de mercadería de ${sinCogs} pedido${sinCogs>1?"s":""}`
     : `faltan costos en ${sinCostoF} pedidos`;
+  // Los que faltan COBRAR: el gasto de anuncios ya se restó entero, así que la neta sale más baja
+  // de lo que será. Se dice, en vez de dejar un «−S/250» sin explicación.
+  const faltaTxt = [_faltaCostos, porCobrarN ? `${porCobrarN} pedido${porCobrarN>1?"s":""} aún por cobrar (su ganancia entra al cobrarse)` : ""].filter(Boolean).join(" · ");
   // Gastos extra (operativos, registrados a mano). Son overhead del negocio,
   // así que solo se restan en la vista general ("Todo"), no por segmento.
   const expenses = expR.error ? [] : (expR.data||[]);

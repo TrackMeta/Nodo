@@ -223,8 +223,15 @@ async function postMessage(phoneNumberId: string, accessToken: string, payload: 
         body: JSON.stringify(payload),
       }, META_TIMEOUT_MS);
     } catch (e) {
-      // Timeout o caída de red: transitorio por definición → que lo agarre el reintento.
-      lastErr = new MetaApiError({ message: `red o timeout hablando con Meta: ${String((e as any)?.message ?? e)}`, transitorio: true });
+      // ⏱️ TIMEOUT: Meta recibió el POST pero tardó en contestar → lo más probable es que el
+      // mensaje SÍ haya salido. Reintentarlo le mandaba al cliente el mismo mensaje dos veces (y
+      // una plantilla, cobrada dos veces). Ya no se reintenta: se reporta como incierto.
+      const _msg = String((e as any)?.message ?? e);
+      if ((e as any)?.name === "AbortError" || /abort/i.test(_msg)) {
+        throw new MetaApiError({ message: "Meta no respondió a tiempo: puede que el mensaje SÍ haya salido. Revisa el chat antes de reenviarlo.", transitorio: false } as any);
+      }
+      // Caída de red ANTES de llegar a Meta: ahí sí es seguro reintentar.
+      lastErr = new MetaApiError({ message: `red hablando con Meta: ${_msg}`, transitorio: true });
       continue;
     }
     let data: any = {};
