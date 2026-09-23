@@ -109,12 +109,13 @@ export async function sheetsBootstrap(token: string, id: string): Promise<{ crea
   // 2) Encabezados + formato, ya con los ids reales de cada pestaña.
   // Trae también bandedRanges: addBanding falla si la pestaña ya tiene banda, así
   // que solo la agregamos donde no exista (mantiene idempotente el "preparar de nuevo").
-  const meta2 = await api(token, `${SHEETS}/${id}?fields=sheets(properties(sheetId,title,gridProperties.columnCount),bandedRanges(bandedRangeId))`);
+  const meta2 = await api(token, `${SHEETS}/${id}?fields=sheets(properties(sheetId,title,gridProperties.columnCount),bandedRanges(bandedRangeId,range))`);
   const mapa = new Map<string, number>();
   const conBanda = new Set<number>();
+  const bandaDe = new Map<number, any>();   // la banda existente de cada pestaña, para estirarla
   for (const s of (meta2.sheets ?? [])) {
     mapa.set(norm(s.properties.title), s.properties.sheetId);
-    if (Array.isArray(s.bandedRanges) && s.bandedRanges.length) conBanda.add(s.properties.sheetId);
+    if (Array.isArray(s.bandedRanges) && s.bandedRanges.length) { conBanda.add(s.properties.sheetId); bandaDe.set(s.properties.sheetId, s.bandedRanges[0]); }
   }
 
   // Un color por operación: encabezado, color de banda (fila alterna) y color de la
@@ -139,7 +140,14 @@ export async function sheetsBootstrap(token: string, id: string): Promise<{ crea
     requests.push({ updateSheetProperties: { properties: { sheetId, tabColor: t.tab }, fields: "tabColor" } });
     // Filas alternadas para leer fácil (solo si aún no tiene banda).
     if (!conBanda.has(sheetId)) {
-      requests.push({ addBanding: { bandedRange: { range: { sheetId, startRowIndex: 0, startColumnIndex: 0, endColumnIndex: cols.length }, rowProperties: { headerColor: t.head, firstBandColor: { red: 1, green: 1, blue: 1 }, secondBandColor: t.band } } } });
+      requests.push({ addBanding: { bandedRange: { range: { sheetId, startRowIndex: 0, startColumnIndex: 0, endColumnIndex: nCols }, rowProperties: { headerColor: t.head, firstBandColor: { red: 1, green: 1, blue: 1 }, secondBandColor: t.band } } } });
+    } else {
+      // La banda se crea con las columnas de ESE momento: una columna que se agregó después
+      // (Comprobante extra, 2026-09-23) quedaba fuera de las franjas. Se estira hasta la última.
+      const bd = bandaDe.get(sheetId);
+      if (bd?.bandedRangeId != null && Number(bd?.range?.endColumnIndex ?? 0) < nCols) {
+        requests.push({ updateBanding: { bandedRange: { bandedRangeId: bd.bandedRangeId, range: { sheetId, startRowIndex: 0, startColumnIndex: 0, endColumnIndex: nCols } }, fields: "range" } });
+      }
     }
     // Encabezado: color de la operación, texto blanco en negrita, centrado.
     // SOLO las columnas con título: sin `endColumnIndex` pintaba la fila 1 ENTERA, hasta la
@@ -168,7 +176,9 @@ export async function sheetsBootstrap(token: string, id: string): Promise<{ crea
       const bg = f2?.sheets?.[0]?.data?.[0]?.rowData?.[0]?.values?.[0]?.userEnteredFormat?.backgroundColor;
       const igual = (a?: number, b?: number) => Math.abs((a ?? 0) - (b ?? 0)) < 0.01;
       if (bg && igual(bg.red, t.head.red) && igual(bg.green, t.head.green) && igual(bg.blue, t.head.blue)) {
-        requests.push({ repeatCell: { range: { sheetId, startRowIndex: 1 }, cell: {}, fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)" } });
+        // Solo lo que puso el encabezado. NO `textFormat` entero: ahí vive el ENLACE de la celda,
+        // y limpiarlo dejaba el Comprobante sin poder abrirse (pasó con esta misma reparación).
+        requests.push({ repeatCell: { range: { sheetId, startRowIndex: 1 }, cell: {}, fields: "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat.bold,textFormat.foregroundColor)" } });
       }
     } catch (_) { /* la reparación es un extra: nunca tumba el preparar */ }
   }
@@ -325,7 +335,8 @@ export async function sheetsAppend(token: string, id: string, tab: string | unde
   if (tab) await ensureTab(token, id, t);
   const headers = await ensureHeaders(token, id, t, Object.keys(fila));
   const row = alinear(headers, fila);
-  await api(token, `${SHEETS}/${id}/values/${q(t)}:append?valueInputOption=USER_ENTERED&insertDataOption=OVERWRITE`, "POST", { values: [row] });
+  const r = await api(token, `${SHEETS}/${id}/values/${q(t)}:append?valueInputOption=USER_ENTERED&insertDataOption=OVERWRITE`, "POST", { values: [row] });
+  await enlazarVarios(token, id, t, filaInicial(r), [row]);
 }
 
 // Varias filas en UNA llamada (el append de a una lee los encabezados cada vez).
@@ -334,8 +345,44 @@ export async function sheetsAppendMany(token: string, id: string, tab: string, f
   await ensureTab(token, id, tab);
   const keys = [...new Set(filas.flatMap((f) => Object.keys(f)))];
   const headers = await ensureHeaders(token, id, tab, keys);
-  await api(token, `${SHEETS}/${id}/values/${q(tab)}:append?valueInputOption=USER_ENTERED&insertDataOption=OVERWRITE`, "POST",
-    { values: filas.map((f) => alinear(headers, f)) });
+  const rows = filas.map((f) => alinear(headers, f));
+  const r = await api(token, `${SHEETS}/${id}/values/${q(tab)}:append?valueInputOption=USER_ENTERED&insertDataOption=OVERWRITE`, "POST",
+    { values: rows });
+  await enlazarVarios(token, id, tab, filaInicial(r), rows);
+}
+
+// Fila (0-based) donde cayó un append, sacada de `updates.updatedRange` («Digital!A5:M7» → 4).
+function filaInicial(r: any): number {
+  const m = String(r?.updates?.updatedRange ?? "").match(/![A-Z]+(\d+)/);
+  return m ? Number(m[1]) - 1 : -1;
+}
+
+// 🔗 Una celda con UN enlace, Sheets la vuelve clicable sola. Con DOS o más («Comprobante extra»
+// de una venta con dos extras, uno por línea) no: queda texto muerto. A esas se les pone cada
+// enlace a mano (textFormatRuns). Las demás celdas no se tocan. Best-effort: nunca tumba la venta.
+async function enlazarVarios(token: string, id: string, tab: string, fila0: number, rows: string[][]) {
+  try {
+    if (fila0 < 0) return;
+    const celdas: { r: number; c: number; txt: string }[] = [];
+    rows.forEach((row, i) => row.forEach((v, c) => { if ((String(v).match(/https?:\/\/\S+/g) ?? []).length >= 2) celdas.push({ r: fila0 + i, c, txt: String(v) }); }));
+    if (!celdas.length) return;
+    const meta = await api(token, `${SHEETS}/${id}?fields=sheets.properties(sheetId,title)`);
+    const sheetId = (meta.sheets ?? []).find((s: any) => norm(s.properties.title) === norm(tab))?.properties?.sheetId;
+    if (sheetId === undefined) return;
+    const requests = celdas.map(({ r, c, txt }) => {
+      const runs: any[] = [];
+      for (const m of txt.matchAll(/https?:\/\/\S+/g)) {
+        runs.push({ startIndex: m.index!, format: { link: { uri: m[0] } } });
+        runs.push({ startIndex: m.index! + m[0].length, format: {} });
+      }
+      // Un run que empieza justo al final del texto no es válido para Sheets.
+      const validos = runs.filter((x) => x.startIndex < txt.length);
+      return { updateCells: { start: { sheetId, rowIndex: r, columnIndex: c },
+        rows: [{ values: [{ userEnteredValue: { stringValue: txt }, textFormatRuns: validos }] }],
+        fields: "userEnteredValue,textFormatRuns" } };
+    });
+    await api(token, `${SHEETS}/${id}:batchUpdate`, "POST", { requests });
+  } catch (e) { console.error("[sheets] enlazarVarios:", (e as any)?.message ?? e); }
 }
 
 // Borra las filas cuyo ID empieza con `prefijo` (datos de EJEMPLO, p. ej. «PRUEBA-»). De abajo
@@ -380,6 +427,9 @@ export async function sheetsUpdate(token: string, id: string, tab: string | unde
     .filter((x) => x.ci >= 0)
     .map((x) => ({ range: `${t}!${colA1(x.ci)}${foundRow}`, values: [[x.v]] }));
   if (data.length) await api(token, `${SHEETS}/${id}/values:batchUpdate`, "POST", { valueInputOption: "USER_ENTERED", data });
+  // Mismo cuidado que el append: una celda que ahora tiene varios enlaces los recibe clicables.
+  const filaAlineada = headers.map((h) => { const k = Object.keys(fila).find((x) => norm(x) === norm(h)); return k ? safeCell(fila[k]) : ""; });
+  await enlazarVarios(token, id, t, foundRow - 1, [filaAlineada]);
 }
 // Ventas digitales de EJEMPLO, con la misma forma que escribe syncPedidoSheet (engine.ts) en la
 // pestaña Digital. Variadas a propósito: con y sin anuncio, con 0/1/2 extras, fechas repartidas
