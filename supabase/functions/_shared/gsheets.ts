@@ -93,7 +93,7 @@ export async function sheetsBootstrap(token: string, id: string): Promise<{ crea
   // 2) Encabezados + formato, ya con los ids reales de cada pestaña.
   // Trae también bandedRanges: addBanding falla si la pestaña ya tiene banda, así
   // que solo la agregamos donde no exista (mantiene idempotente el "preparar de nuevo").
-  const meta2 = await api(token, `${SHEETS}/${id}?fields=sheets(properties(sheetId,title),bandedRanges(bandedRangeId))`);
+  const meta2 = await api(token, `${SHEETS}/${id}?fields=sheets(properties(sheetId,title,gridProperties.columnCount),bandedRanges(bandedRangeId))`);
   const mapa = new Map<string, number>();
   const conBanda = new Set<number>();
   for (const s of (meta2.sheets ?? [])) {
@@ -112,7 +112,8 @@ export async function sheetsBootstrap(token: string, id: string): Promise<{ crea
   const requests: any[] = [];
   for (const [tab, cols] of Object.entries(HOJAS)) {
     const real = (meta2.sheets ?? []).find((s: any) => norm(s.properties.title) === norm(tab))?.properties?.title ?? tab;
-    await ensureHeaders(token, id, real, cols);
+    const heads = await ensureHeaders(token, id, real, cols);
+    const nCols = Math.max(heads.length, cols.length);   // incluye las columnas propias del dueño
     const sheetId = mapa.get(norm(tab));
     if (sheetId === undefined) continue;
     const t = TEMA[tab] ?? TEMA["Lima"];
@@ -125,7 +126,14 @@ export async function sheetsBootstrap(token: string, id: string): Promise<{ crea
       requests.push({ addBanding: { bandedRange: { range: { sheetId, startRowIndex: 0, startColumnIndex: 0, endColumnIndex: cols.length }, rowProperties: { headerColor: t.head, firstBandColor: { red: 1, green: 1, blue: 1 }, secondBandColor: t.band } } } });
     }
     // Encabezado: color de la operación, texto blanco en negrita, centrado.
-    requests.push({ repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1 }, cell: { userEnteredFormat: { backgroundColor: t.head, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, verticalAlignment: "MIDDLE", horizontalAlignment: "CENTER" } }, fields: "userEnteredFormat(backgroundColor,textFormat,verticalAlignment,horizontalAlignment)" } });
+    // SOLO las columnas con título: sin `endColumnIndex` pintaba la fila 1 ENTERA, hasta la
+    // última columna de la hoja (Rodrigo: «¿por qué se pinta todo el encabezado?»). Y lo que
+    // quedó pintado de más por esa versión se despinta, así «Revisar las pestañas» lo arregla.
+    const totalCols = Number((meta2.sheets ?? []).find((s: any) => s.properties.sheetId === sheetId)?.properties?.gridProperties?.columnCount) || 0;
+    if (totalCols > nCols) {   // si no sobra ninguna, el rango caería fuera de la hoja
+      requests.push({ repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: nCols, endColumnIndex: totalCols }, cell: {}, fields: "userEnteredFormat" } });
+    }
+    requests.push({ repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: nCols }, cell: { userEnteredFormat: { backgroundColor: t.head, textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } }, verticalAlignment: "MIDDLE", horizontalAlignment: "CENTER" } }, fields: "userEnteredFormat(backgroundColor,textFormat,verticalAlignment,horizontalAlignment)" } });
     // Fila de encabezado un poco más alta (respira mejor).
     requests.push({ updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 0, endIndex: 1 }, properties: { pixelSize: 34 }, fields: "pixelSize" } });
     // Ajustar el ancho de las columnas al contenido.
