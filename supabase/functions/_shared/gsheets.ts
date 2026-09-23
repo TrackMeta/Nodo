@@ -63,11 +63,18 @@ export const HOJAS: Record<string, string[]> = {
   // aparece sola —al final de todo— recién con la primera venta. Se agregaron Cantidad,
   // Extra e «Imagen saldo» el 2026-09-22 y esta lista se había quedado atrás.
   "Digital": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "Valor", "Producto", "Opción",
-    "Cantidad", "Orderbump", "Extra", "Imagen"],
+    "Cantidad", "Orderbump", "Extra", "Comprobante"],
   "Lima": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "Distrito", "Dirección",
     "Producto", "Opción", "Cantidad", "Valor cobrado", "Extra"],
   "Provincia": ["ID", "Ad ID", "Cliente", "Cel", "Fecha y hora", "DNI", "Agencia", "Producto", "Opción",
-    "Cantidad", "Valor total", "Extra", "Guía", "Imagen", "Imagen saldo"],
+    "Cantidad", "Valor total", "Extra", "Guía", "Comprobante adelanto", "Comprobante saldo"],
+};
+
+// Nombre viejo (normalizado) → nombre nuevo, por pestaña. «Imagen» pasó a «Comprobante» el
+// 2026-09-23 (pedido de Rodrigo): en Provincia la de adelanto y la de saldo.
+const RENOMBRADAS: Record<string, Record<string, string>> = {
+  "digital": { "imagen": "Comprobante" },
+  "provincia": { "imagen": "Comprobante adelanto", "imagen saldo": "Comprobante saldo" },
 };
 
 // Deja la hoja LISTA al conectarla: crea las 3 pestañas, escribe los
@@ -217,6 +224,15 @@ async function ensureHeaders(token: string, id: string, tab: string, keys: strin
   let changed = false;
   if (headers.length === 0) { headers = keys.slice(); changed = keys.length > 0; }
   else {
+    // Columnas RENOMBRADAS: se les cambia el título en su lugar. Si no, la hoja que ya tenía
+    // «Imagen» ganaba una «Comprobante» vacía al final y la vieja se quedaba huérfana.
+    const ren = RENOMBRADAS[norm(tab)] ?? {};
+    const yaNuevas = new Set(headers.map(norm));
+    headers = headers.map((h) => {
+      const nuevo = ren[norm(h)];
+      if (nuevo && keys.some((k) => norm(k) === norm(nuevo)) && !yaNuevas.has(norm(nuevo))) { changed = true; yaNuevas.add(norm(nuevo)); return nuevo; }
+      return h;
+    });
     const yaEstan = new Set(headers.map(norm));
     for (const k of keys) if (!yaEstan.has(norm(k))) { headers.push(k); yaEstan.add(norm(k)); changed = true; }
   }
