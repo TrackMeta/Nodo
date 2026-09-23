@@ -81,7 +81,10 @@ export function cobrado(o){
   if (!m) return 0; // estado desconocido → no inventamos plata
   if (m.cobro === "todo") return total(o);
   if (m.cobro === "adelanto") return Math.min(adelantoDe(o), total(o));
-  return 0;
+  // Lima contraentrega que pagó ANTES de recibir y se lo aprobaron (resolverPrepagoLima):
+  // esa plata ya entró. Sin esto el pedido seguía «por cobrar» entero → el Excel del courier
+  // y el rótulo le hacían cobrar al motorizado lo que el cliente ya había pagado.
+  return Math.min(Number(o?.shipping?.prepago_lima_abonado) || 0, total(o));
 }
 
 // Plata comprometida que falta entrar. Un pedido perdido ya no se va a cobrar,
@@ -166,6 +169,16 @@ export function partesDePago(o){
       { clave:"saldo",    monto:+(tot-adel).toFixed(2),  metodo:s.saldo_metodo||"",    comprobante:s.saldo_comprobante||"",    txt:"saldo",    extremo:"ultima" },
     ];
   }
+  // 1b) Lima que pagó una parte ANTES de recibir (resolverPrepagoLima): ese Yape y lo que
+  //     cobró el motorizado entran en momentos distintos. Si el Yape cubrió todo, es un solo
+  //     cobro y lo resuelve el caso de abajo (con su comprobante).
+  const pre = Math.min(Number(s.prepago_lima_abonado) || 0, tot);
+  if (zonaDe(o) === "lima" && pre > 0.005 && (tot - pre) > 0.005) {
+    return [
+      { clave:"prepago", monto:+pre.toFixed(2),       metodo:"", comprobante:s.pago_adelantado_comprobante||"", txt:"pago adelantado", extremo:"primera" },
+      { clave:"puerta",  monto:+(tot-pre).toFixed(2), metodo:"", comprobante:s.comprobante||"",  txt:"cobro al entregar", extremo:"ultima" },
+    ];
+  }
   const partes = [];
   // 2) Los bumps PAGADOS de un digital son cobros aparte (en físico no: van al saldo).
   const extras = zonaDe(o) === "digital"
@@ -180,7 +193,7 @@ export function partesDePago(o){
       metodo:s.digital_metodo||"", comprobante:"", at:x.at||null, txt:`abono ${i+1} de ${abonos.length}` }));
   } else if (principal > 0.005) {
     partes.push({ clave:"principal", monto:principal, metodo:s.digital_metodo||s.adelanto_metodo||s.saldo_metodo||"",
-      comprobante:s.comprobante||s.digital_comprobante||"", txt:"la compra", extremo:"primera" });
+      comprobante:s.comprobante||s.digital_comprobante||(pre > 0.005 ? s.pago_adelantado_comprobante : "")||"", txt:"la compra", extremo:"primera" });
   }
   extras.forEach((b,i)=>partes.push({ clave:"extra"+i, monto:+Number(b.precio).toFixed(2),
     metodo:s.extra_metodo||s.digital_metodo||"", comprobante:s.extra_comprobante||"",

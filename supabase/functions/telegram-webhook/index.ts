@@ -36,6 +36,11 @@ const ACCIONES: Record<string, { estado?: string; desde: string[]; ok: string; e
   saldo_ok:   { estado: "saldo_pagado",      desde: ["en_agencia"],         ok: "Saldo aprobado ✅ · el bot manda la clave" },
   llego:      { estado: "en_agencia",        desde: ["despachado"],         ok: "Avisado ✅" },
   digital_ok: { estado: "confirmada",        desde: ["pendiente"],          ok: "Pago aprobado ✅ · el bot entrega el producto" },
+  // Pago adelantado de un pedido de Lima (contraentrega): no mueve el estado, baja lo que
+  // cobra el motorizado y le confirma al cliente. Ver resolverPrepagoLima (engine.ts).
+  lima_ok:    { desde: ["confirmado", "en_reparto", "reprogramado"],
+                ok: "Pago aprobado ✅ · el motorizado cobra lo que falta",
+                extra: () => ({ prepago_lima: "aprobar" }) },
   extra_ok:   { desde: ["confirmada", "confirmado", "adelanto_validado", "despachado", "en_agencia", "saldo_pagado", "recogido", "entregado_cobrado"],
                 ok: "Extra aprobado ✅ · el bot lo entrega",
                 // `extra_aprobado_at` lo escribe también el Copiloto del panel:
@@ -195,6 +200,12 @@ Deno.serve(async (req) => {
   // lo protege de un 2º toque (los otros chats conservan sus botones). Se cierra por DATO:
   // si ya no hay un extra pendiente, ya se aprobó → no re-ejecutar (sin esto, un cambio
   // futuro en resumeAfterApproval podría reintroducir doble entrega del extra).
+  // lima_ok tampoco cambia el estado: se cierra por el mismo dato que usa el candado del motor.
+  if (accion === "lima_ok" && ((order as any).shipping || {}).pago_adelantado_por_validar !== true) {
+    await answerCallback(token, cb.id, "Ese pago ya fue resuelto", true);
+    if (cb.message) await editButtons(token, cb.message.chat.id, cb.message.message_id);
+    return json({ ok: true });
+  }
   if (accion === "extra_ok" && !(((order as any).shipping || {}).extra_pendiente)) {
     await answerCallback(token, cb.id, "Ese extra ya fue resuelto", true);
     if (cb.message) await editButtons(token, cb.message.chat.id, cb.message.message_id);
@@ -237,7 +248,7 @@ Deno.serve(async (req) => {
   }).then((r) => r.json()).catch((e) => ({ error: String(e?.message ?? e) }));
 
   if (res?.error) {
-    await answerCallback(token, cb.id, "No se pudo: " + res.error, true);
+    await answerCallback(token, cb.id, "No se pudo: " + (res.detalle || res.error), true);
     return json({ ok: true });
   }
 

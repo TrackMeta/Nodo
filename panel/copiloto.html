@@ -35,6 +35,7 @@
   .pill.saldo{background:var(--brand-bg);color:var(--brand)}
   .pill.dig{background:var(--violet-bg,#1e1633);color:var(--violet,#8b5cf6)}
   .pill.ext{background:var(--green-bg);color:var(--green)}
+  .pill.lima{background:color-mix(in srgb,#14b8a6 16%,transparent);color:#0f9e8f}
   .acard{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;display:flex;gap:16px;align-items:flex-start;margin-bottom:12px}
   .thumb{width:120px;height:120px;border-radius:12px;object-fit:cover;flex:none;background:var(--surface-2);border:1px solid var(--border);cursor:zoom-in}
   .thumb.none{display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:11px;text-align:center;padding:6px;cursor:default}
@@ -80,13 +81,13 @@
 <div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, confirmDialog, askChoice, enTrozos, pageAll, updateChannel } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, confirmDialog, askChoice, askText, enTrozos, pageAll, updateChannel } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], imgs:{}, dudas:{}, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const sym=(o)=>o.currency==="USD"?"$":"S/";
 // Acento al costado de cada tarjeta según el tipo de pago (mismo color que el pill).
-const TYPE_COLOR={ digital:"#8b5cf6", extra:"#22c079", adelanto:"#f0a92b", saldo:"#2b7fff" };
+const TYPE_COLOR={ digital:"#8b5cf6", extra:"#22c079", adelanto:"#f0a92b", saldo:"#2b7fff", lima:"#14b8a6" };
 function agoTxt(t){ const s=(Date.now()-t)/1000; if(s<90) return "recién"; if(s<3600) return "hace "+Math.round(s/60)+" min"; if(s<86400) return "hace "+Math.round(s/3600)+" h"; return "hace "+Math.round(s/86400)+" d"; }
 
 async function boot(){
@@ -139,6 +140,10 @@ const ETAPAS=[
     sub:"El cliente pagó el adelanto. La IA ya lo leyó; falta tu visto bueno." },
   { id:"saldo", estados:["en_agencia"], titulo:"Saldo por validar",
     sub:"Pagaron el saldo en la agencia. Al aprobar, el bot suelta la clave de recojo." },
+  // Lima es contraentrega, pero hay quien paga antes de recibir. Hasta que lo apruebes, el
+  // motorizado le cobra el TOTAL (Excel del courier, rótulo, mensaje de reparto).
+  { id:"lima", estados:[], titulo:"Pago adelantado de Lima",
+    sub:"Un cliente de Lima pagó antes de recibir su pedido. Al aprobar, baja lo que cobra el motorizado y el bot le confirma." },
 ];
 const TODOS=[...new Set(ETAPAS.flatMap(e=>e.estados))];
 
@@ -165,6 +170,13 @@ async function load(){
       .eq("channel_id",st.channelId).eq("shipping->>extra_pendiente","true")
       .order("created_at",{ascending:true}).order("id",{ascending:true}).range(f,t));
     if(ex&&ex.length){ const ids=new Set(st.list.map(o=>o.id)); ex.forEach(o=>{ if(!ids.has(o.id)) st.list.push(o); }); }
+  }catch(_){ /* sin la marca aún */ }
+  // Pago adelantado de Lima: el pedido sigue «confirmado»/«en reparto» (fuera de TODOS).
+  try{
+    const { data:lm }=await pageAll((f,t)=>supa.from("orders").select(sel)
+      .eq("channel_id",st.channelId).eq("shipping->>pago_adelantado_por_validar","true")
+      .order("created_at",{ascending:true}).order("id",{ascending:true}).range(f,t));
+    if(lm&&lm.length){ const ids=new Set(st.list.map(o=>o.id)); lm.forEach(o=>{ const c=o.contact||{}; if(!ids.has(o.id) && c.wa_id!=="webchat-test" && c.source!=="sim") st.list.push(o); }); }
   }catch(_){ /* sin la marca aún */ }
 
   const ids=[...new Set(st.list.map(o=>o.contact_id).filter(Boolean))];
@@ -220,6 +232,7 @@ function render(){
     // (lo dejó el motor al parquear el pago). Otros 'pendiente' no se muestran.
     if(et.id==="digital") items=items.filter(o=>(o.shipping||{}).digital_pendiente);
     if(et.id==="extra")   items=st.list.filter(o=>(o.shipping||{}).extra_pendiente);
+    if(et.id==="lima")    items=st.list.filter(o=>(o.shipping||{}).pago_adelantado_por_validar===true);
     // "Saldo por validar" SOLO si el cliente YA pagó el saldo (llegó su
     // comprobante). Un pedido en agencia SIN pago de saldo está "esperando que
     // paguen", no "por validar": no debe pedir aprobar+dar clave ni mostrar el
@@ -272,7 +285,8 @@ function renderStats(groups){
     et.id==="adelanto" ? s.adelanto :
     et.id==="saldo"    ? s.saldo :
     et.id==="digital"  ? (s.digital_monto_leido ?? o.amount) :
-    et.id==="extra"    ? (s.extra_monto_leido ?? 0) : o.amount)||0; };
+    et.id==="extra"    ? (s.extra_monto_leido ?? 0) :
+    et.id==="lima"     ? (s.pago_adelantado_monto ?? 0) : o.amount)||0; };
   const cur=all[0].o.currency||"PEN";
   const money2=(v)=>{ try{ return new Intl.NumberFormat("es-PE",{style:"currency",currency:cur}).format(v); }catch{ return "S/ "+Number(v).toFixed(2); } };
   const totalMoney=all.reduce((a,x)=>a+montoDe(x.o,x.et),0);
@@ -315,10 +329,12 @@ function card(o,et){
 
             : et.id==="digital"  ? (s.digital_comprobante  || st.imgs[o.contact_id])
             : et.id==="extra"    ? (s.extra_comprobante    || st.imgs[o.contact_id])
+            : et.id==="lima"     ? s.pago_adelantado_comprobante
             : null;
   const monto = et.id==="adelanto" ? s.adelanto : et.id==="saldo" ? s.saldo
               : et.id==="digital" ? (s.digital_monto_leido ?? o.amount)
-              : et.id==="extra" ? (s.extra_monto_leido ?? "") : o.amount;
+              : et.id==="extra" ? (s.extra_monto_leido ?? "")
+              : et.id==="lima" ? (s.pago_adelantado_monto ?? "") : o.amount;
 
   // Veredicto del OCR: es lo que te ahorra abrir la foto y hacer cuentas.
   let iaBox="";
@@ -341,6 +357,12 @@ function card(o,et){
       s.adelanto_monto_leido!=null?` · leyó <b>${sym(o)} ${esc(s.adelanto_monto_leido)}</b>`:""}${
       s.adelanto_operacion_leida?` · op <b>${esc(s.adelanto_operacion_leida)}</b>`:""}${
       s.adelanto_revisar?`<br>${esc(s.adelanto_revisar)}`:""}</div></div>`;
+  }
+  if(et.id==="lima"){
+    const leyo=s.pago_adelantado_monto!==""&&s.pago_adelantado_monto!=null;
+    iaBox=`<div class="ia ${leyo?'ok':'duda'}">${icon("robot")}<div>${
+      leyo?`La IA leyó <b>${sym(o)} ${esc(s.pago_adelantado_monto)}</b>`:"La IA no pudo leer el monto: míralo en la foto"}${
+      s.pago_adelantado_operacion?` · op <b>${esc(s.pago_adelantado_operacion)}</b>`:""}<br>Hasta que lo apruebes, el motorizado le cobra <b>${sym(o)} ${esc(porCobrarLima(o))}</b>.</div></div>`;
   }
   if(et.id==="saldo" && s.saldo_revisar){
     // Nota CONGELADA: si el único motivo era "no tiene clave" y ya la cargaste,
@@ -370,16 +392,17 @@ function card(o,et){
 
   el.innerHTML=`
     ${img?`<img class="thumb" src="${esc(img)}" data-full="${esc(img)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><div class="thumb none" style="display:none">${icon("alert")} No cargó el comprobante</div>`
-        :(et.id==="adelanto"||et.id==="saldo")?`<div class="thumb none">Sin comprobante todavía</div>`:""}
+        :(et.id==="adelanto"||et.id==="saldo"||et.id==="lima")?`<div class="thumb none">Sin comprobante todavía</div>`:""}
     <div style="flex:1;min-width:0">
       <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
-        <span class="pill ${et.id==="digital"?"dig":et.id==="extra"?"ext":et.id==="adelanto"?"adel":"saldo"}">${esc(et.titulo)}</span>
+        <span class="pill ${et.id==="digital"?"dig":et.id==="extra"?"ext":et.id==="adelanto"?"adel":et.id==="lima"?"lima":"saldo"}">${esc(et.titulo)}</span>
         <span style="font-weight:700;font-size:15px">${p.emoji?esc(p.emoji)+" ":""}${esc(c.nombre||"Cliente")}</span>
         <span style="font-size:12px;color:var(--faint)">${esc(c.wa_id||"")}</span>
       </div>
       <div style="display:flex;gap:22px;margin-top:11px;flex-wrap:wrap">
-        <div><div class="klbl">${et.id==="adelanto"?"Adelanto":et.id==="saldo"?"Saldo a cobrar":et.id==="extra"?esc(s.extra_label||"Venta extra"):"Total"}</div>
+        <div><div class="klbl">${et.id==="adelanto"?"Adelanto":et.id==="lima"?"Pagó":et.id==="saldo"?"Saldo a cobrar":et.id==="extra"?esc(s.extra_label||"Venta extra"):"Total"}</div>
           <div class="amt">${monto!=null&&monto!==""?`${sym(o)} ${esc(monto)}`:'<span style="color:var(--faint);font-size:14px;font-weight:600">—</span>'}</div></div>
+        ${et.id==="lima"?`<div><div class="klbl">Por cobrar hoy</div><div class="amt" style="font-weight:700;color:var(--muted)">${sym(o)} ${esc(porCobrarLima(o))}</div></div>`:""}
         ${et.id!=="digital"&&o.amount!=null?`<div><div class="klbl">Total del pedido</div><div class="amt" style="font-weight:700;color:var(--muted)">${sym(o)} ${esc(o.amount)}</div></div>`:""}
         ${s.guia?`<div><div class="klbl">Guía</div><div style="font-weight:700;padding-top:4px">${esc(s.guia)}</div></div>`:""}
         ${s.clave_recojo?`<div><div class="klbl">Clave de recojo</div><div style="font-weight:800;padding-top:4px;color:var(--green)">${esc(s.clave_recojo)}</div></div>`:""}
@@ -445,7 +468,52 @@ function botones(o,et){
       };
       el.querySelector('[data-a="no"]').onclick=()=>rechazar(o,"saldo");
     }};
+  if(et.id==="lima") return {
+    html:`<button class="btn main" data-a="ok">${icon("check")} Aprobar y avisarle</button>
+          <button class="btn danger" data-a="no">Rechazar</button>
+          <a class="btn" href="${chat}">Abrir el chat</a>`,
+    wire:(el,o)=>{
+      el.querySelector('[data-a="ok"]').onclick=()=>aprobarLima(o);
+      el.querySelector('[data-a="no"]').onclick=()=>rechazarLima(o);
+    }};
   return { html:"", wire:()=>{} };
+}
+
+// Lo que el motorizado cobra HOY en la puerta: el saldo del pedido (nace = total a cobrar y
+// lo mueven los extras) y, si no hay, el total. Mismo criterio que resolverPrepagoLima.
+function porCobrarLima(o){
+  const s=o.shipping||{};
+  if(s.saldo!=null && String(s.saldo).trim()!=="" && Number.isFinite(Number(s.saldo))) return Number(s.saldo);
+  let v=Number(o.amount)||0; (o.order_bumps||[]).forEach(b=>{ v+=Number(b?.precio)||0; });
+  return Math.max(0, v-(Number(s.prepago_lima_abonado)||0));
+}
+async function aprobarLima(...a){ return enVuelo(()=>_aprobarLima(...a)); }
+async function rechazarLima(...a){ return enVuelo(()=>_rechazarLima(...a)); }
+// El monto se CONFIRMA: una captura se lee mal, y lo que apruebes es lo que el motorizado deja
+// de cobrar. Viene puesto lo que leyó la IA.
+async function _aprobarLima(o){
+  const c=o.contact||{}, s=o.shipping||{};
+  const leido=String(s.pago_adelantado_monto??"").trim();
+  const v=await askText({ title:"Aprobar el pago adelantado",
+    message:`${c.nombre||"Cliente"} — ¿cuánto pagó? Revisa el monto en la foto: es lo que el motorizado deja de cobrar (hoy cobraría ${sym(o)} ${porCobrarLima(o)}).`,
+    label:"Monto pagado", value:leido, placeholder:"Ej. 119", confirmText:"Aprobar" });
+  if(v==null) return;
+  const monto=Number(String(v).replace(",",".").replace(/[^\d.]/g,""));
+  if(!(monto>0)){ toast("Escribe el monto en números",true); return; }
+  const r=await updateOrder({ order_id:o.id, prepago_lima:"aprobar", monto });
+  if(!r) return;
+  const resto=Number(r.saldo);
+  if(r.aviso_error) toast(`Aprobado, pero ${r.aviso_error}. Escríbele tú.`,true);
+  else toast(resto>0.009?`Listo · el motorizado cobra ${sym(o)} ${resto}`:"Listo · el motorizado ya no cobra nada");
+  await load();
+}
+async function _rechazarLima(o){
+  const c=o.contact||{};
+  if(!await confirmDialog({ title:"Rechazar el pago adelantado",
+    message:`${c.nombre||"Cliente"} — se marca como no válido y el pedido sigue igual: el motorizado cobra todo al entregar. El bot no le escribe; explícale tú por el chat.`,
+    confirmText:"Rechazar", danger:true })) return;
+  const r=await updateOrder({ order_id:o.id, prepago_lima:"rechazar", motivo:"Lo rechazaste tú" });
+  if(r){ toast("Rechazado · el pedido se cobra completo al entregar"); await load(); await ofrecerGuardarFraude(o,"lima"); }
 }
 
 async function updateOrder(body){
@@ -530,7 +598,8 @@ async function ofrecerGuardarFraude(o,tipo){
     const img = tipo==="adelanto" ? (s.adelanto_comprobante||st.imgs[o.contact_id])
               : tipo==="saldo"    ? s.saldo_comprobante
               : tipo==="digital"  ? (s.digital_comprobante||st.imgs[o.contact_id])
-              : tipo==="extra"    ? (s.extra_comprobante||st.imgs[o.contact_id]) : null;
+              : tipo==="extra"    ? (s.extra_comprobante||st.imgs[o.contact_id])
+              : tipo==="lima"     ? s.pago_adelantado_comprobante : null;
     if(!img || !/^https?:/.test(img)) return; // sin URL utilizable (o wa-media crudo) → no se puede guardar como ejemplo
     if(!await confirmDialog({ title:"¿Era un comprobante falso?", message:"Si este comprobante era FALSO o editado (un montaje), guárdalo como ejemplo para que el validador reconozca fraudes parecidos. Si solo era un monto equivocado o el destinatario, no hace falta.", confirmText:"Sí, guardar como fraude", cancelText:"No" })) return;
     const ch = await getChannel(st.channelId);

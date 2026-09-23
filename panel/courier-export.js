@@ -89,6 +89,10 @@ async function revisarEva(orders) {
     else if (/^https?:\/\//i.test(String(s.direccion).trim()))
       p.push(`${q}: solo compartió su ubicación (un enlace de mapa), no una dirección escrita — el courier no puede usarla.`);
     if (!s.distrito) p.push(`${q}: falta distrito.`);
+    // Pagó por adelantado y nadie lo validó: el IMPORTE A COBRAR sale con el total y el
+    // motorizado le cobraría otra vez lo que ya pagó. Se valida en Pagos por validar.
+    if (s.pago_adelantado_por_validar === true)
+      p.push(`${q}: mandó un pago adelantado que todavía no validaste — el Excel le cobraría el total. Valídalo primero en Pagos por validar.`);
     if (!telCliente(c, s)) p.push(`${q}: falta un teléfono válido — el courier no podrá coordinar la entrega.`);
     // El distrito va al Excel tal cual; si no coincide con la lista oficial de
     // Eva (mal escrito o distrito raro) avisamos para que lo corrijan en Editar.

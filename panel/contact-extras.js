@@ -431,7 +431,9 @@ export function printRotulo(o, remitente) {
       row("Referencia", s.referencia || "") +
       row("Pedido", pedido) +
       row("Detalle", atrLine, true) +
-      row("A COBRAR", money(O.total(o), o.currency) + "  ·  CONTRAENTREGA", true);
+      // porCobrar, no total: si pagó una parte por adelantado, el motorizado cobra solo lo
+      // que falta (mismo criterio que el rótulo de pedidos.html).
+      row("A COBRAR", money(O.porCobrar(o), o.currency) + "  ·  CONTRAENTREGA", true);
   }
   const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"/>
     <title>Rótulo ${esc(nro)}</title>
@@ -546,6 +548,7 @@ export const EXTRAS_CSS = `
   .cpanel .cx-cop2-pill.desp{background:var(--green-bg,rgba(16,185,129,.13));color:var(--green)}
   .cpanel .cx-cop2-pill.camino{background:var(--surface);color:var(--muted)}
   .cpanel .cx-cop2-pill.saldo{background:var(--brand-bg);color:var(--brand)}
+  .cpanel .cx-cop2-pill.lima{background:rgba(20,184,166,.15);color:#0f9e8f}
   .cpanel .cx-cop2-img{width:100%;max-height:190px;object-fit:cover;border-radius:10px;border:1px solid var(--border);cursor:zoom-in;background:var(--surface)}
   .cpanel .cx-cop2-noimg{width:100%;height:74px;border:1px dashed var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:12px}
   .cpanel .cx-cop2-amt{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
@@ -2328,6 +2331,8 @@ export function copilotoEtapa(o) {
   const s = o.shipping || {};
   if (o.estado === "pendiente" && s.digital_pendiente) return { id: "digital", titulo: "Pago digital por validar", pill: "dig" };
   if (s.extra_pendiente) return { id: "extra", titulo: "Venta extra por validar", pill: "ext" };
+  // Lima (contraentrega) que pagó antes de recibir: hasta aprobarlo, el motorizado cobra todo.
+  if (s.pago_adelantado_por_validar === true) return { id: "lima", titulo: "Pago adelantado de Lima", pill: "lima" };
   // Igual que el saldo (abajo): "Adelanto por validar" SOLO si el cliente YA mandó su
   // comprobante. `esperando_adelanto` es "le pedí el adelanto", no "ya me pagó" — sin
   // esta condición la tarjeta salía en todo lead al que se le pidió un adelanto, y como
@@ -2352,6 +2357,10 @@ function ocrVerdictHtml(o, et, sym) {
   const line = (ok, monto, op, extra) => `<div class="cx-cop2-ia ${ok ? "ok" : "duda"}">${ROBOT}<span>${ok ? "La IA lo leyó y cuadra" : "La IA no lo dio por bueno"}${monto != null && monto !== "" ? ` · leyó <b>${sym} ${esc(monto)}</b>` : ""}${op ? ` · op <b>${esc(op)}</b>` : ""}${extra ? `<br>${esc(extra)}` : ""}</span></div>`;
   if (et.id === "digital" && (s.digital_ok_ia != null || s.digital_monto_leido != null)) return line(s.digital_ok_ia === true, s.digital_monto_leido, s.digital_operacion, s.digital_revisar);
   if (et.id === "extra" && (s.extra_ok_ia != null || s.extra_monto_leido != null)) return line(s.extra_ok_ia === true, s.extra_monto_leido, s.extra_operacion, null);
+  if (et.id === "lima") {
+    const leyo = s.pago_adelantado_monto != null && s.pago_adelantado_monto !== "";
+    return `<div class="cx-cop2-ia ${leyo ? "ok" : "duda"}">${ROBOT}<span>${leyo ? `La IA leyó <b>${sym} ${esc(s.pago_adelantado_monto)}</b>` : "La IA no pudo leer el monto: míralo en la foto"}${s.pago_adelantado_operacion ? ` · op <b>${esc(s.pago_adelantado_operacion)}</b>` : ""}<br>Hasta que lo apruebes, el motorizado cobra <b>${sym} ${esc(O.porCobrar(o))}</b>.</span></div>`;
+  }
   if (et.id === "adelanto" && (s.adelanto_revisar || s.adelanto_monto_leido != null)) return line(s.adelanto_ok_ia === true, s.adelanto_monto_leido, s.adelanto_operacion_leida, s.adelanto_revisar);
   if (et.id === "saldo" && s.saldo_revisar) {
     // La nota queda CONGELADA desde que se leyó el comprobante. Si el único motivo
@@ -2369,7 +2378,7 @@ function copilotoBtns(et) {
   const B = (a, txt, cls) => `<button class="cx-cop2-btn ${cls || "main"}" data-a="${a}">${txt}</button>`;
   if (et.id === "digital") return B("ok", `${icon("check","cxi")} Aprobar y entregar`) + B("no", "Rechazar", "danger");
   if (et.id === "extra") return B("ok", `${icon("check","cxi")} Aprobar y entregar`) + B("no", "Rechazar", "danger");
-  if (et.id === "adelanto") return B("ok", `${icon("check","cxi")} Aprobar y avisar`) + B("no", "Rechazar", "danger");
+  if (et.id === "adelanto" || et.id === "lima") return B("ok", `${icon("check","cxi")} Aprobar y avisar`) + B("no", "Rechazar", "danger");
   if (et.id === "saldo") return B("ok", `${icon("check","cxi")} Aprobar y dar clave`, "main blue") + B("no", "Rechazar", "danger");
   if (et.id === "despachar") return B("desp", `${icon("box","cxi")} Ya lo envié`, "main amber");
   return B("lleg", "Avisar que llegó a agencia");
@@ -2384,11 +2393,13 @@ export function copilotoCardHtml(o, et, fallbackImg) {
   const img = et.id === "adelanto" ? (s.adelanto_comprobante || fallbackImg)
     : et.id === "saldo" ? s.saldo_comprobante
     : et.id === "digital" ? (s.digital_comprobante || fallbackImg)
-    : et.id === "extra" ? (s.extra_comprobante || fallbackImg) : null;
+    : et.id === "extra" ? (s.extra_comprobante || fallbackImg)
+    : et.id === "lima" ? s.pago_adelantado_comprobante : null;
   const monto = et.id === "adelanto" ? s.adelanto : et.id === "saldo" ? s.saldo
     : et.id === "digital" ? (s.digital_monto_leido ?? o.amount)
-    : et.id === "extra" ? (s.extra_monto_leido ?? "") : o.amount;
-  const montoLbl = et.id === "adelanto" ? "Adelanto" : et.id === "saldo" ? "Saldo a cobrar"
+    : et.id === "extra" ? (s.extra_monto_leido ?? "")
+    : et.id === "lima" ? (s.pago_adelantado_monto ?? "") : o.amount;
+  const montoLbl = et.id === "adelanto" ? "Adelanto" : et.id === "lima" ? "Pagó" : et.id === "saldo" ? "Saldo a cobrar"
     : et.id === "extra" ? (s.extra_label || "Venta extra") : "Total";
   const needClave = et.id === "saldo" && !s.clave_recojo;
   return `<div class="cx-copiloto" data-order="${esc(o.id)}">
@@ -2396,7 +2407,7 @@ export function copilotoCardHtml(o, et, fallbackImg) {
     ${img ? (/\.pdf(\?|#|$)/i.test(String(img).split("?")[0] + (String(img).includes("?") ? "?" : ""))
         ? `<a class="cx-cop2-pdf" href="${esc(img)}" target="_blank" rel="noopener" style="display:flex;gap:8px;align-items:center;padding:10px 12px;border:1px dashed var(--border);border-radius:8px;text-decoration:none;color:var(--brand);font-weight:600;font-size:13px">${icon("file","cxi")} Ver el comprobante (PDF)</a>`
         : `<img class="cx-cop2-img" src="${esc(img)}" data-full="${esc(img)}" alt="Comprobante" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><div class="cx-cop2-noimg" style="display:none">${icon("alert","cxi")} No se pudo cargar el comprobante. Ábrelo en la Bandeja para verlo.</div>`)
-      : (et.id === "adelanto" || et.id === "saldo" || et.id === "digital") ? `<div class="cx-cop2-noimg">Sin comprobante todavía</div>` : ""}
+      : (et.id === "adelanto" || et.id === "saldo" || et.id === "digital" || et.id === "lima") ? `<div class="cx-cop2-noimg">Sin comprobante todavía</div>` : ""}
     <div class="cx-cop2-amt"><span class="cx-cop2-lbl">${esc(montoLbl)}</span><span class="cx-cop2-val">${monto != null && monto !== "" ? sym + " " + esc(monto) : "—"}</span></div>
     ${s.clave_recojo ? `<div class="cx-cop2-amt"><span class="cx-cop2-lbl">Clave de recojo</span><span class="cx-cop2-val" style="font-size:15px;color:var(--green)">${esc(s.clave_recojo)}</span></div>` : ""}
     ${ocrVerdictHtml(o, et, sym)}
@@ -2409,7 +2420,7 @@ export function copilotoCardHtml(o, et, fallbackImg) {
 // askChoice, reload } (los provee cada página: la Bandeja y Probar).
 export function wireCopiloto(root, o, et, deps) {
   const el = root.querySelector(".cx-copiloto"); if (!el) return;
-  const { supa, toast, confirmDialog, askChoice, reload, channelId } = deps;
+  const { supa, toast, confirmDialog, askChoice, askText, reload, channelId } = deps;
   const c = o.contact || {};
   const img = el.querySelector(".cx-cop2-img[data-full]");
   if (img) img.onclick = () => window.open(img.dataset.full, "_blank");
@@ -2487,6 +2498,33 @@ export function wireCopiloto(root, o, et, deps) {
       aprobar("saldo_pagado", "Aprobar el saldo", "El bot le envía la clave de recojo al cliente.", extraShip);
     };
     b("no").onclick = () => rechazar("saldo");
+  }
+  else if (et.id === "lima") {
+    // Mismo camino que la sección Pagos por validar: el monto se confirma (es lo que el
+    // motorizado deja de cobrar) y order-update → resolverPrepagoLima hace el resto.
+    const sym = o.currency === "USD" ? "$" : "S/";
+    b("ok").onclick = async () => {
+      const leido = String((o.shipping || {}).pago_adelantado_monto ?? "").trim();
+      const v = askText ? await askText({ title: "Aprobar el pago adelantado",
+        message: `${c.nombre || "Cliente"} — ¿cuánto pagó? Revisa el monto en la foto: es lo que el motorizado deja de cobrar (hoy cobraría ${sym} ${O.porCobrar(o)}).`,
+        label: "Monto pagado", value: leido, placeholder: "Ej. 119", confirmText: "Aprobar" }) : leido;
+      if (v == null || v === "") return;
+      const monto = Number(String(v).replace(",", ".").replace(/[^\d.]/g, ""));
+      if (!(monto > 0)) { toast("Escribe el monto en números", true); return; }
+      const r = await update({ order_id: o.id, prepago_lima: "aprobar", monto });
+      if (!r) return;
+      const resto = Number(r.saldo);
+      if (r.aviso_error) toast(`Aprobado, pero ${r.aviso_error}. Escríbele tú.`, true);
+      else toast(resto > 0.009 ? `Listo · el motorizado cobra ${sym} ${resto}` : "Listo · el motorizado ya no cobra nada");
+      reload && reload();
+    };
+    b("no").onclick = async () => {
+      if (!await confirmDialog({ title: "Rechazar el pago adelantado",
+        message: `${c.nombre || "Cliente"} — se marca como no válido y el pedido sigue igual: el motorizado cobra todo al entregar. El bot no le escribe; explícale tú.`,
+        confirmText: "Rechazar", danger: true })) return;
+      const r = await update({ order_id: o.id, prepago_lima: "rechazar", motivo: "Lo rechazaste tú" });
+      if (r) { toast("Rechazado · se cobra completo al entregar"); reload && reload(); }
+    };
   }
   else if (et.id === "despachar") { b("desp").onclick = despachar; }
   else { b("lleg").onclick = avisarLlegada; }

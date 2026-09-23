@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, canalesQueCobranIgual, enviarClaveRecojo, mensajeEstadoDefault, demoraProvincia, saldoTrasAdelanto, avisarPagadoTotal, ventana24hAbierta, avisarEnvioFallido } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, canalesQueCobranIgual, enviarClaveRecojo, mensajeEstadoDefault, demoraProvincia, saldoTrasAdelanto, avisarPagadoTotal, ventana24hAbierta, avisarEnvioFallido, resolverPrepagoLima } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 import { EST } from "../_shared/order-stats.ts";
@@ -55,6 +55,9 @@ Deno.serve(async (req) => {
     aviso?: { modo?: string; template?: { name?: string; language?: string; params?: string[] } };
     // Solo mirar: devuelve el mensaje que le llegaría al cliente, sin mover nada.
     preview?: boolean;
+    // Pago adelantado de un pedido de Lima: aprobarlo (con el monto que confirmó el humano)
+    // o rechazarlo. Ver resolverPrepagoLima en engine.ts.
+    prepago_lima?: "aprobar" | "rechazar"; monto?: number; motivo?: string; via?: string;
   };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   if (!body.order_id) return json({ error: "falta_order_id" }, 400);
@@ -69,6 +72,16 @@ Deno.serve(async (req) => {
   // su cuenta debe ser dueña del canal del pedido.
   if (!interno && !(await userOwnsChannel(db, uid, (order as any).channel_id))) {
     return json({ error: "forbidden_channel" }, 403);
+  }
+
+  // 🛵 Pago adelantado de Lima: no mueve el estado (el pedido sigue «confirmado»), así que va
+  // por su propio camino — con su candado, que el CAS por estado de abajo no daría.
+  if (body.prepago_lima === "aprobar" || body.prepago_lima === "rechazar") {
+    const r = await resolverPrepagoLima(db, order.id, body.prepago_lima, {
+      monto: body.monto, motivo: body.motivo, por: interno ? (body.via || "interno") : uid,
+    });
+    if (r.error) return json({ error: r.error, detalle: r.detalle }, r.error === "no_existe" ? 404 : 400);
+    return json(r);
   }
 
   // 👁️ VISTA PREVIA: qué mensaje le llegaría al cliente si mueves el pedido a `estado`.

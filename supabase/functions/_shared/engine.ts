@@ -9212,6 +9212,103 @@ export async function avisarPagadoTotal(
   ).catch(() => {});
 }
 
+// 🛵 PAGO ADELANTADO DE UN PEDIDO DE LIMA (contraentrega): aprobarlo o rechazarlo.
+// El interceptor de comprobantes lo deja en `shipping.pago_adelantado_por_validar` y hasta
+// acá NADIE lo leía: ni una tarjeta en Pagos por validar, ni un botón en Telegram. El pedido
+// seguía «por cobrar» entero, así que el Excel del courier, el rótulo, el «ten listo S/ X» del
+// reparto y el Dashboard le cobraban OTRA VEZ al cliente que se adelantó a pagar.
+// UN solo camino para el panel (order-update) y Telegram (que llama a order-update).
+// Al aprobar baja `saldo` —lo que leen el mensaje de reparto y el resto del motor— y suma
+// `prepago_lima_abonado`, que es lo que cuentan como COBRADO orders.js y order-stats.ts.
+// Rechazar no le escribe al cliente (decisión de Rodrigo, 2026-09-23): un rechazo pide
+// conversar, y el pedido sigue como estaba (se cobra todo al recibir).
+export async function resolverPrepagoLima(
+  db: SupabaseClient, orderId: string, accion: "aprobar" | "rechazar",
+  opts: { monto?: number; motivo?: string; por?: string } = {},
+): Promise<{ ok?: true; error?: string; detalle?: string; saldo?: number; aviso_error?: string }> {
+  const { data: o } = await db.from("orders")
+    .select("id, channel_id, contact_id, estado, amount, currency, order_bumps, shipping")
+    .eq("id", orderId).maybeSingle();
+  if (!o) return { error: "no_existe" };
+  const ord = o as any;
+  const sh0 = (ord.shipping ?? {}) as any;
+  if (String(sh0.zona ?? "") !== "lima") return { error: "no_es_lima", detalle: "Ese pedido no es de Lima." };
+  if (sh0.pago_adelantado_por_validar !== true) {
+    return { error: "ya_resuelto", detalle: "Ese pago ya fue aprobado o rechazado." };
+  }
+  const ahora = new Date().toISOString();
+  const por = String(opts.por ?? "").slice(0, 80) || null;
+
+  if (accion === "rechazar") {
+    const { data: gano, error } = await db.rpc("order_claim_shipping_flag", {
+      p_order_id: orderId, p_flag: "pago_adelantado_por_validar",
+      p_patch: { pago_adelantado_por_validar: false, pago_adelantado_rechazado_at: ahora,
+        pago_adelantado_rechazo_motivo: String(opts.motivo ?? "").slice(0, 300), pago_adelantado_resuelto_por: por },
+    });
+    if (error) return { error: "no_se_pudo", detalle: error.message };
+    if (!gano) return { error: "ya_resuelto", detalle: "Ese pago ya fue aprobado o rechazado." };
+    if (ord.contact_id) {
+      await logEvent(db, ord.channel_id, ord.contact_id, "nota", "❌ Pago adelantado de Lima rechazado",
+        `${opts.motivo ? opts.motivo + ". " : ""}El pedido sigue igual: se cobra todo al recibir.`).catch(() => {});
+    }
+    return { ok: true };
+  }
+
+  // Monto: el que corrigió el operador manda sobre el que leyó el OCR (una captura se lee mal).
+  const montoOp = Number(opts.monto);
+  const monto = Number.isFinite(montoOp) && montoOp > 0 ? montoOp : parseMonto(sh0.pago_adelantado_monto, {});
+  if (!(Number(monto) > 0)) return { error: "falta_monto", detalle: "Escribe cuánto pagó el cliente." };
+
+  // Candado: solo UNA aprobación gana (panel + Telegram, o dos toques en Telegram).
+  const { data: sh, error: eClaim } = await db.rpc("order_claim_shipping_flag", {
+    p_order_id: orderId, p_flag: "pago_adelantado_por_validar",
+    p_patch: { pago_adelantado_por_validar: false, pago_adelantado_aprobado_at: ahora, pago_adelantado_resuelto_por: por },
+  });
+  if (eClaim) return { error: "no_se_pudo", detalle: eClaim.message };
+  if (!sh) return { error: "ya_resuelto", detalle: "Ese pago ya fue aprobado o rechazado." };
+  const s = sh as any;
+
+  const bumps = ((ord.order_bumps ?? []) as any[]).reduce((a, b) => a + (Number(b?.precio) || 0), 0);
+  const total = (Number(ord.amount) || 0) + bumps;
+  const previo = Number(s.prepago_lima_abonado) || 0;
+  // `saldo` es lo que falta cobrar en la puerta (nace = total_cobrar y lo suben/bajan los
+  // extras). Un "0" es un saldo válido: no puede caer al total por ser falsy.
+  const sv = Number(s.saldo);
+  const antes = s.saldo != null && String(s.saldo).trim() !== "" && Number.isFinite(sv)
+    ? sv : Math.max(0, total - previo);
+  const credito = Math.min(Number(monto), antes);
+  const saldoNuevo = Math.max(0, Math.round((antes - Number(monto)) * 100) / 100);
+  const { error: ePatch } = await db.rpc("order_patch_shipping", {
+    p_order_id: orderId,
+    p_patch: { saldo: String(saldoNuevo), prepago_lima_abonado: Math.round((previo + credito) * 100) / 100,
+      pago_adelantado_monto_aprobado: Number(monto) },
+  });
+  if (ePatch) {
+    // El candado ya se tomó: sin esto la tarjeta desaparecería con el pago SIN acreditar.
+    await db.rpc("order_patch_shipping", { p_order_id: orderId, p_patch: { pago_adelantado_por_validar: true } }).then(() => {}, () => {});
+    return { error: "no_se_pudo", detalle: ePatch.message };
+  }
+
+  const op = String(s.pago_adelantado_operacion ?? "").trim();
+  if (op) await registrarOperacion(db, ord.channel_id, op, orderId, "prepago_lima").catch(() => {});
+  const sym = simboloMoneda(ord.currency);
+  if (ord.contact_id) {
+    await logEvent(db, ord.channel_id, ord.contact_id, "nota", "✅ Pago adelantado de Lima aprobado",
+      `Pagó ${sym} ${monto}. Por cobrar en la puerta: ${sym} ${antes} → ${sym} ${saldoNuevo}.` +
+      (Number(monto) > antes + 1 ? ` ⚠️ Pagó ${sym} ${Math.round((Number(monto) - antes) * 100) / 100} de MÁS: revisa si hay que devolverle.` : ""),
+    ).catch(() => {});
+  }
+  let aviso_error: string | undefined;
+  if (ord.contact_id) {
+    const txt = saldoNuevo <= 0.009
+      ? `✅ ¡Listo! Confirmé tu pago de *${sym} ${monto}*. Cuando llegue el motorizado *ya no pagas nada*. 🙌`
+      : `✅ ¡Listo! Confirmé tu pago de *${sym} ${monto}*. Al recibir tu pedido solo pagas *${sym} ${saldoNuevo}*. 😊`;
+    const salio = await deliverMessage(db, ord.channel_id, ord.contact_id, txt).catch(() => false);
+    if (!salio) aviso_error = "el mensaje al cliente no salió (¿pasaron más de 24 h desde su último mensaje?)";
+  }
+  return { ok: true, saldo: saldoNuevo, ...(aviso_error ? { aviso_error } : {}) };
+}
+
 // Manda la clave de recojo por defecto (envoltorio del anterior, usado por el
 // camino AUTOMÁTICO del saldo). Devuelve true si la mandó.
 export async function enviarClaveRecojo(
@@ -9576,6 +9673,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
       const _patch = {
         pago_adelantado_comprobante: url, pago_adelantado_monto: _monto ?? "",
         pago_adelantado_operacion: _oper, pago_adelantado_por_validar: true,
+        pago_adelantado_recibido_at: new Date().toISOString(),
       };
       await patchShipping(db, (ordLima as any).id, _patch, { ship: _shL });
       await logEvent(db, channelId, contactId, "nota", "💸 Pagó por adelantado un pedido de Lima",
@@ -9597,10 +9695,12 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
           ? `En cuanto quede confirmado, cuando llegue el motorizado ya no pagas nada. 😊`
           : `Con eso te quedan *${_sym2} ${_falta}* por pagar al recibirlo. 😊`),
       ).catch(() => {});
-      await pasarAHumano(db, channelId, contactId,
-        `💸 Pagó POR ADELANTADO un pedido de Lima (contraentrega)${_monto != null ? `: ${_monto}` : ""}` +
-        `${_oper ? ` · op ${_oper}` : ""}. Por cobrar en la puerta: ${_porCobrar}. ` +
-        `Valida el comprobante y avísale al motorizado que NO cobre.`, { aviso: false, foto: url }).catch(() => {});
+      // Se valida como cualquier otro pago: tarjeta en Pagos por validar + aviso a Telegram con
+      // la foto y el botón. Antes pasaba el chat a humano (bot en pausa) y la única pista era
+      // ese aviso: nada en el panel lo mostraba ni descontaba lo pagado. Ver resolverPrepagoLima.
+      await avisar(db, channelId, contactId, "prepago_lima_validar", {
+        monto_leido: _monto ?? "", por_cobrar: _porCobrar, operacion: _oper,
+      }, { foto: url, botones: [[{ text: "✅ Aprobar el pago", data: `lima_ok:${(ordLima as any).id}` }]] }).catch(() => {});
       return true;
     }
   }

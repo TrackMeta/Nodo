@@ -107,6 +107,21 @@ export const AVISOS: AvisoDef[] = [
       "⚠️ {{motivo}}",
   },
   {
+    clave: "prepago_lima_validar", grupo: "pagos",
+    titulo: "Pago adelantado de Lima por validar",
+    desc: "Un cliente de Lima (contraentrega) pagó antes de recibir. Al aprobarlo baja lo que cobra el motorizado. Trae el botón para aprobar desde acá.",
+    comprobante: true,
+    vars: ["cliente", "telefono", "monto_leido", "por_cobrar", "operacion"],
+    texto:
+      "🛵 *PAGO ADELANTADO · LIMA*\n" +
+      "\n" +
+      "👤 {{cliente}}\n" +
+      "📱 {{telefono}}\n" +
+      "💵 Mandó: *{{moneda}} {{monto_leido}}* · por cobrar: {{moneda}} {{por_cobrar}}\n" +
+      "🧾 Operación: {{operacion}}\n" +
+      "⚠️ Hasta que lo apruebes, el motorizado cobra el total.",
+  },
+  {
     clave: "adelanto_auto", grupo: "pagos",
     titulo: "Adelanto aprobado solo",
     desc: "El bot validó el adelanto sin consultarte. Es solo para que estés al tanto — apágalo si te llena el chat.",

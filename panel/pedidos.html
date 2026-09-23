@@ -260,8 +260,11 @@ const TURNO_STATES=new Set(["esperando_adelanto","en_agencia"]);
 // pidió un adelanto aunque no hubiera mandado nada — abrías Pagos por validar y no
 // había ningún pago. (En `en_agencia` esto ya se había corregido; faltaba el gemelo.)
 function hayPagoPorValidar(o){
-  if(!TURNO_STATES.has(o.estado)) return false;
   const s=o.shipping||{};
+  // Lima que pagó antes de recibir: el pedido sigue «confirmado», pero hasta validarlo el
+  // Excel del courier y el rótulo le cobran TODO. Validarlo va ANTES de mandarlo a reparto.
+  if(s.pago_adelantado_por_validar===true) return true;
+  if(!TURNO_STATES.has(o.estado)) return false;
   return o.estado==="en_agencia"
     ? !!(s.saldo_comprobante||s.saldo_recibido_at)
     : !!(s.adelanto_comprobante||s.adelanto_recibido_at);

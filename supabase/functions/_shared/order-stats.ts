@@ -64,7 +64,8 @@ export function cobrado(o: Order): number {
   if (!m) return 0;
   if (m.cobro === "todo") return total(o);
   if (m.cobro === "adelanto") return Math.min(adelantoDe(o), total(o));
-  return 0;
+  // Espejo de orders.js: el pago adelantado de Lima aprobado ya es plata cobrada.
+  return Math.min(Number((o?.shipping as any)?.prepago_lima_abonado) || 0, total(o));
 }
 
 export function porCobrar(o: Order): number {
