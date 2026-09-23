@@ -2520,10 +2520,10 @@ export function wireCopiloto(root, o, et, deps) {
     };
     b("no").onclick = async () => {
       if (!await confirmDialog({ title: "Rechazar el pago adelantado",
-        message: `${c.nombre || "Cliente"} — se marca como no válido y el pedido sigue igual: el motorizado cobra todo al entregar. El bot no le escribe; explícale tú.`,
+        message: `${c.nombre || "Cliente"} — se marca como no válido y el pedido sigue igual: el motorizado cobra ${sym} ${O.porCobrar(o)} al entregar. El bot no le escribe; explícale tú.`,
         confirmText: "Rechazar", danger: true })) return;
       const r = await update({ order_id: o.id, prepago_lima: "rechazar", motivo: "Lo rechazaste tú" });
-      if (r) { toast("Rechazado · se cobra completo al entregar"); reload && reload(); }
+      if (r) { toast(`Rechazado · el motorizado cobra ${sym} ${O.porCobrar(o)} al entregar`); reload && reload(); }
     };
   }
   else if (et.id === "despachar") { b("desp").onclick = despachar; }

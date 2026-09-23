@@ -510,10 +510,10 @@ async function _aprobarLima(o){
 async function _rechazarLima(o){
   const c=o.contact||{};
   if(!await confirmDialog({ title:"Rechazar el pago adelantado",
-    message:`${c.nombre||"Cliente"} — se marca como no válido y el pedido sigue igual: el motorizado cobra todo al entregar. El bot no le escribe; explícale tú por el chat.`,
+    message:`${c.nombre||"Cliente"} — se marca como no válido y el pedido sigue igual: el motorizado cobra ${sym(o)} ${porCobrarLima(o)} al entregar. El bot no le escribe; explícale tú por el chat.`,
     confirmText:"Rechazar", danger:true })) return;
   const r=await updateOrder({ order_id:o.id, prepago_lima:"rechazar", motivo:"Lo rechazaste tú" });
-  if(r){ toast("Rechazado · el pedido se cobra completo al entregar"); await load(); await ofrecerGuardarFraude(o,"lima"); }
+  if(r){ toast(`Rechazado · el motorizado cobra ${sym(o)} ${porCobrarLima(o)} al entregar`); await load(); await ofrecerGuardarFraude(o,"lima"); }
 }
 
 async function updateOrder(body){

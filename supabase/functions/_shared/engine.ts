@@ -9249,7 +9249,7 @@ export async function resolverPrepagoLima(
     if (!gano) return { error: "ya_resuelto", detalle: "Ese pago ya fue aprobado o rechazado." };
     if (ord.contact_id) {
       await logEvent(db, ord.channel_id, ord.contact_id, "nota", "❌ Pago adelantado de Lima rechazado",
-        `${opts.motivo ? opts.motivo + ". " : ""}El pedido sigue igual: se cobra todo al recibir.`).catch(() => {});
+        `${opts.motivo ? opts.motivo + ". " : ""}El pedido sigue igual: el motorizado cobra lo que falta (${simboloMoneda(ord.currency)} ${sh0.saldo ?? ord.amount}).`).catch(() => {});
     }
     return { ok: true };
   }
