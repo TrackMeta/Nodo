@@ -447,6 +447,13 @@
   async function run(opts = {}) {
     if (!CH) throw new Error("No encontré el channelId. Abre el panel logueado.");
     if (!token()) throw new Error("Sin sesión. Recarga el panel logueado.");
+    // 🔴 FRENO: clean() BORRA TODO el canal (productos, flujos, contactos, pagos) y Supabase no
+    // tiene backups. El 2026-09-23 se llevó el «Adaptador PRO» real de Prime Digital. Solo corre
+    // en un canal cuyos productos sean TODOS de prueba («REG …») o esté vacío.
+    const reales = (await sel("products", `select=nombre&channel_id=eq.${CH}`)).filter((p) => !/^REG /.test(p.nombre || ""));
+    if (reales.length && opts.borrarTodoElCanal !== true) {
+      throw new Error(`Este canal tiene productos REALES (${reales.map((p) => p.nombre).join(", ")}) y la regresión BORRA TODO el canal. Córrela en un canal sandbox vacío.`);
+    }
     log("Limpiando canal…"); await clean();
     log("Construyendo catálogo…"); const ids = await build();
     log("Generando flujos con el generador real…"); await genFlows(ids);
