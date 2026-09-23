@@ -676,7 +676,12 @@ function renderGsScript(box, g){
     await saveGsheets(e.target, { ...(st.channel.gsheets||{}), connected:true, mode:"apps_script", webhook_url:url, tab:$("gs_tab").value.trim()||null, last_error:null });
   };
   $("testGs").onclick=testGsheets;
-  const disc=$("discGs"); if(disc) disc.onclick=(e)=>saveGsheets(e.target,{ ...(st.channel.gsheets||{}), connected:false });
+  // Desconectar de VERDAD: `connected:false` ya no lo mira nadie (la insignia sale de mode +
+  // webhook_url y el motor de lo mismo), así que seguía «Conectada» y mandando ventas.
+  const disc=$("discGs"); if(disc) disc.onclick=async(e)=>{
+    if(!await confirmDialog({ title:"Desconectar Apps Script", message:"Las ventas dejan de escribirse en esa hoja. Lo que ya está en ella no se borra.", confirmText:"Desconectar", danger:true })) return;
+    saveGsheets(e.target,{ ...(st.channel.gsheets||{}), connected:false, mode:null, webhook_url:null });
+  };
 }
 // Prueba REAL: el backend hace POST de una fila de prueba a tu app web
 // (no se puede desde el navegador por CORS de Google).
@@ -820,6 +825,10 @@ async function saveBrand(btn){
   toast("Marca guardada");
   const nl=document.getElementById("nodoLogo"); if(nl) nl.src=logo_url||"../assets/logo-128.png";
   const bn=document.getElementById("nodoBrandName"); if(bn) bn.textContent=nombre;
+  // El selector de bot del sidebar usa estos ids: sin tocarlos, «Marca guardada» y arriba seguía
+  // el nombre y el logo viejos hasta recargar.
+  const bl=document.getElementById("nodoBotLogo"); if(bl) bl.src=logo_url||"../assets/logo-128.png";
+  const bnm=document.getElementById("nodoBotName"); if(bnm) bnm.textContent=nombre;
   const opt=document.querySelector(`#nodoBot option[value="${st.channelId}"]`); if(opt) opt.textContent=nombre;
   st.channel.nombre=nombre; st.channel.logo_url=logo_url; st.pendingLogo=null; st.removeLogo=false;
   if(st.tab==="marca") renderBranding($("body"));   // el botón vuelve a apagarse: ya no hay nada sin guardar

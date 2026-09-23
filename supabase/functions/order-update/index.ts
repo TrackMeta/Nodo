@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, canalesQueCobranIgual, enviarClaveRecojo, mensajeEstadoDefault, demoraProvincia, saldoTrasAdelanto, avisarPagadoTotal, ventana24hAbierta, avisarEnvioFallido, resolverPrepagoLima } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, canalesQueCobranIgual, enviarClaveRecojo, mensajeEstadoDefault, demoraProvincia, saldoTrasAdelanto, avisarPagadoTotal, ventana24hAbierta, avisarEnvioFallido, resolverPrepagoLima, normOperacion } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 import { EST } from "../_shared/order-stats.ts";
@@ -122,7 +122,13 @@ Deno.serve(async (req) => {
   if (body.shipping && typeof body.shipping === "object") {
     patch.shipping = { ...((order as any).shipping ?? {}), ...body.shipping };
   }
-  if (typeof body.amount === "number" && Number.isFinite(body.amount) && body.amount >= 0) patch.amount = body.amount;
+  if (typeof body.amount === "number" && Number.isFinite(body.amount) && body.amount >= 0) {
+    patch.amount = body.amount;
+    // Si un humano CAMBIÓ el monto, queda marcado: el motor no lo recalcula al aprobar (crearPedido).
+    if (Math.abs(body.amount - (Number((order as any).amount) || 0)) > 0.009) {
+      patch.shipping = { ...((patch.shipping as any) ?? (order as any).shipping ?? {}), monto_manual: true };
+    }
+  }
   // Editar los order_bumps a mano desde "Editar pedido" (quitar un extra puesto
   // por error, corregir un precio). OJO: no reconcilia stock ni el saldo — eso lo
   // ajusta el operador aparte.
@@ -188,7 +194,10 @@ Deno.serve(async (req) => {
     else if (newEstado === "saldo_pagado") opChk = String(sh.saldo_operacion || sh.saldo_operacion_leida || "");
     else if (newEstado === "confirmada") opChk = String(((patch.shipping as any) ?? sh).digital_operacion || ((patch.shipping as any) ?? sh).digital_operacion_leida || "");
     else if (aprobandoExtra) opChk = String(((patch.shipping as any) ?? sh).extra_operacion || ((patch.shipping as any) ?? sh).extra_operacion_leida || "");
-    const opN = opChk.toUpperCase().replace(/\s+/g, "").trim();
+    // LA MISMA normalización con la que se REGISTRA (normOperacion: solo letras y dígitos). Acá
+    // solo se quitaban espacios, así que «YP-060625582J» o «N° 123456» nunca calzaban con lo
+    // guardado y el mismo Yape se aprobaba a mano en dos pedidos.
+    const opN = normOperacion(opChk);
     // ⚠️ Aprobar un pago SIN nº de operación (el OCR no lo leyó, o «Aprobar» a ojo) salta el
     // candado anti-reúso y no deja rastro: el pedido avanza, se entrega, y ninguna operación
     // queda registrada. Se permite (es decisión del operador) pero queda anotado en la Actividad.
@@ -366,6 +375,17 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error("[order-update] resume:", (e as any)?.message ?? e);
     }
+  }
+  // 🔴 Aprobado pero SIN reanudar = la venta cuenta, Meta recibió el Purchase… y el cliente no
+  // recibe nada (la conversación que esperaba el visto bueno ya no estaba: se reinició, entró
+  // por otro anuncio). Antes el panel decía «Listo» igual. Se deja escrito y se avisa.
+  const entregaPendiente = wantResume && !resumed && !!(order as any).contact_id;
+  if (entregaPendiente) {
+    await db.from("contact_events").insert({
+      channel_id: (order as any).channel_id, contact_id: (order as any).contact_id, tipo: "error",
+      titulo: "⚠️ Pago aprobado, pero el producto NO se entregó solo",
+      detalle: "La conversación ya no estaba esperando esta aprobación. Entrégale el acceso a mano desde el chat.",
+    }).then(() => {}, () => {});
   }
 
   // Comprobante RECHAZADO en el Copiloto: el run quedaba parqueado y el bot le
@@ -750,6 +770,6 @@ Deno.serve(async (req) => {
     } catch (e) { console.error("[order-update] reconciliar stock:", (e as any)?.message ?? e); }
   }
 
-  return json({ ok: true, estado: newEstado ?? (order as any).estado, flow_started: flowStarted, resumed, rejected,
+  return json({ ok: true, estado: newEstado ?? (order as any).estado, flow_started: flowStarted, resumed, rejected, entrega_pendiente: entregaPendiente,
     aviso_enviado: avisoEnviado, aviso_error: avisoError, stock_alerts: stockAlerts });
 });

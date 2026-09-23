@@ -150,7 +150,10 @@ Deno.serve(async (req) => {
         for (const o of candidatos) if (txt.includes(o.nombre)) usados.add(o.nombre);
       }
       if ((data?.length ?? 0) < PAGINA) break;
-      if (desde > 500_000) break;   // tope de seguridad, no deberia llegar
+      // Tope de seguridad. Cortar con `break` dejaba sin revisar lo que viene después y esos
+      // archivos se BORRABAN como basura estando en uso. No haber podido mirar todo es motivo
+      // para no borrar nada, igual que el error de arriba.
+      if (desde > 500_000) return json({ error: "no_pude_verificar", detalle: `${tabla}.${col}: pasó el tope de filas revisables` }, 500);
     }
   }
 

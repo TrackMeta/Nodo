@@ -404,16 +404,31 @@ export function printRotulo(o, remitente) {
     ? `<tr><td class="k">${esc(k)}</td><td class="v ${big ? "big" : ""}">${esc(val)}</td></tr>`
     : `<tr><td class="k">${esc(k)}</td><td class="v ${big ? "big" : ""}" style="color:#c00;font-weight:800">FALTA</td></tr>`;
   const atrLine = Object.entries(s.atributos || {}).map(([k, val]) => `${k}: ${val}`).join("   ·   ");
+  // Extras y regalos que van en la MISMA caja — espejo del rótulo de pedidos.html, que esta
+  // copia no tenía: impreso desde el chat, el paquete salía sin las medias ya cobradas ni el
+  // regalo prometido. Los digitales no viajan (se entregan por link).
+  const bumpsTxt = (o.order_bumps || []).filter((b) => b && b.digital !== true).map((b) => {
+    const va = (b.stock_key && b.stock_key !== "_")
+      ? b.stock_key.split("|").map((kv) => { const [k, val] = kv.split("="); return `${k} ${cap(val || "")}`; }).join(", ")
+      : "";
+    let nom = String(b.nombre || "").replace(/\s*—\s*S\/\s*[\d.,]+\s*$/i, "").trim();
+    if (va) nom = nom.replace(/\s*·\s*[Uu]nica\s*$/, "").trim();
+    const esRegalo = b.regalo === true || Number(b.precio || 0) === 0;
+    return `${esRegalo ? "regalo · " : "+ "}${nom || "Extra"}${va ? ` (${va})` : ""}`;
+  }).join("   ·   ");
   let filas = "";
   if (zona === "provincia") {
     filas =
       rowReq("Destinatario", s.cliente || c.nombre || "", true) +
       rowReq("DNI", s.dni || "", true) +
       row("Teléfono", tel) +
-      rowReq("Agencia", [s.ciudad && ("Shalom " + cap(s.ciudad)), s.sede].filter(Boolean).join(" · ") || (s.agencia ? cap(s.agencia) : ""), true) +
+      // `destino` (la agencia que confirmó el operador en Editar pedido) manda sobre la `sede`
+      // cruda que escribió el cliente, igual que en pedidos.html.
+      rowReq("Agencia", [s.ciudad && ("Shalom " + cap(s.ciudad)), s.destino || s.sede].filter(Boolean).join(" · ") || (s.agencia ? cap(s.agencia) : ""), true) +
       row("Envío", s.aereo ? "AÉREO — enviar por avión" : "", true) +
       row("Pedido", pedido) +
       row("Detalle", atrLine, true) +
+      row("Incluye", bumpsTxt, true) +
       row("N° pedido", nro);
   } else {
     filas =
@@ -431,6 +446,7 @@ export function printRotulo(o, remitente) {
       row("Referencia", s.referencia || "") +
       row("Pedido", pedido) +
       row("Detalle", atrLine, true) +
+      row("Incluye", bumpsTxt, true) +
       // porCobrar, no total: si pagó una parte por adelantado, el motorizado cobra solo lo
       // que falta (mismo criterio que el rótulo de pedidos.html).
       row("A COBRAR", money(O.porCobrar(o), o.currency) + "  ·  CONTRAENTREGA", true);
@@ -1798,7 +1814,13 @@ export async function openEditarPedido(o, deps) {
           <input id="eAmountD" type="number" step="0.1" value="${esc(o.amount ?? "")}"/>
           <label style="margin-top:10px">Estado de la venta</label>
           <select id="eEstadoD">
-            <option value="confirmada"${(o.estado || "confirmada") !== "anulada" ? " selected" : ""}>Pagado / entregado (cuenta en tus números)</option>
+            ${/* 🔴 Un pedido que AÚN NO ES VENTA (pendiente de validar, carrito) abría con «Pagado»
+                 marcado: corregir el monto y guardar lo aprobaba — entrega del producto + Purchase
+                 a Meta sin que nadie validara el pago. Se muestra su estado real y solo cambia
+                 si el operador lo elige. Aprobar un pago se hace en Pagos por validar. */
+              (o.estado && !["confirmada", "anulada"].includes(o.estado))
+                ? `<option value="${esc(o.estado)}" selected>Sin cambiar: ${esc(O.label(o.estado))} (el pago se aprueba en Pagos por validar)</option>` : ""}
+            <option value="confirmada"${o.estado === "confirmada" || !o.estado ? " selected" : ""}>Pagado / entregado (cuenta en tus números)</option>
             <option value="anulada"${o.estado === "anulada" ? " selected" : ""}>Anular la venta (deja de contar)</option>
           </select>
           <div class="hint">Corrige el monto y el Dashboard/KPIs se ajustan al instante. Si ya se envió a Meta con el monto viejo, después toca <b>“reintentar”</b> en el chip de Meta del chat.</div>
@@ -1891,10 +1913,14 @@ export async function openEditarPedido(o, deps) {
 
     // Cambiar de producto: al elegir otro producto, repueblo las presentaciones;
     // al cambiar la presentación, sugiero su precio en el importe editable (Lima).
+    // `amount` = precio + ENVÍO cobrado (crearPedido). La presentación trae solo el precio: sin
+    // sumar el envío, pasar de 1 a 2 unidades dejaba S/10 de flete sin cobrar.
+    const envioC = zona === "digital" ? 0 : (Number(s.envio_cobrado) || 0);
     const sugerirImporte = () => {
       const pid = g("#eProd") ? g("#eProd").value : "";
       const vid = g("#eVer") ? g("#eVer").value : "";
-      const pr = precioVer(pid, vid);
+      const pr0 = precioVer(pid, vid);
+      const pr = pr0 != null ? +(pr0 + envioC).toFixed(2) : null;
       const inp = g("#eAmountL") || g("#eAmountD"); // Lima (importe) o digital (monto)
       if (pr != null && inp) inp.value = pr;
       // Provincia: el saldo sigue al precio base nuevo.
@@ -1983,7 +2009,7 @@ export async function openEditarPedido(o, deps) {
         if (pid && (String(pid) !== String(o.product_id) || String(vid || "") !== String(versionId || ""))) {
           body.product_id = pid;
           body.version_id = vid || null;
-          if (zona === "provincia") { const pr = precioVer(pid, vid); if (pr != null) amount = pr; }
+          if (zona === "provincia") { const pr = precioVer(pid, vid); if (pr != null) amount = +(pr + envioC).toFixed(2); }
           // Cambió lo que se despacha → el aviso de "variante agotada" ya se atendió.
           // Igual que con la sede y el distrito: la marca la pone el motor y la levanta
           // quien la resuelve, o se queda pegada para siempre en un pedido ya corregido.
@@ -2050,6 +2076,36 @@ export async function openEditarPedido(o, deps) {
           if (agregados.length) { kept.push(...agregados.map((b) => ({ ...b }))); toast(`Se conservaron ${agregados.length} extra(s) que se sumaron mientras editabas`); }
         } catch (_) { /* si no se puede releer, se guarda como antes */ }
         body.order_bumps = kept;
+      }
+      // 🔒 El SALDO también se mueve por debajo: un extra que el cliente aceptó con el modal
+      // abierto lo sube (S/100 → 119) y guardar el valor del formulario lo devolvía a 100 — en la
+      // agencia se cobraban S/19 de menos. Se aplica el CAMBIO que hizo el operador sobre el
+      // saldo de ahora, no el número que vio al abrir.
+      // Lima: lo que cobra el motorizado es UNA cuenta —total (importe + extras) menos lo que ya
+      // pagó por adelantado—, la misma de orders.js porCobrar (Excel de Eva, rótulo). El saldo se
+      // movía solo con los extras: bajar el importe a mano dejaba el Excel en 100 y el mensaje de
+      // reparto («ten listo S/ X», que lee el saldo) en 120.
+      if (zona === "lima" && s.saldo != null && String(s.saldo).trim() !== "") {
+        // Todo FRESCO: los extras (el motor pudo sumar uno con el modal abierto) y lo que ya pagó
+        // por adelantado (si se aprobó mientras editabas, el valor de al abrir lo desconocía y el
+        // motorizado volvía a cobrar el total).
+        let bs = Array.isArray(body.order_bumps) ? body.order_bumps : null, pre = Number(s.prepago_lima_abonado) || 0;
+        try {
+          const { data: fb } = await supa.from("orders").select("order_bumps, shipping").eq("id", o.id).maybeSingle();
+          if (!bs) bs = (fb && fb.order_bumps) || [];
+          pre = Number(fb && fb.shipping && fb.shipping.prepago_lima_abonado) || 0;
+        } catch (_) { if (!bs) bs = o.order_bumps || []; }
+        const tot = (amount !== undefined ? Number(amount) : Number(o.amount) || 0)
+          + bs.filter((b) => !b?.regalo).reduce((a, b) => a + (Number(b?.precio) || 0), 0);
+        ship.saldo = String(Math.max(0, +(tot - pre).toFixed(2)));
+      } else if (ship.saldo != null && saldoBase > 0) {
+        try {
+          const { data: fs } = await supa.from("orders").select("shipping").eq("id", o.id).maybeSingle();
+          const ahora = Number(fs && fs.shipping && fs.shipping.saldo);
+          if (Number.isFinite(ahora) && Math.abs(ahora - saldoBase) > 0.009) {
+            ship.saldo = +(ahora + (Number(ship.saldo) - saldoBase)).toFixed(2);
+          }
+        } catch (_) { /* sin relectura, se guarda lo del formulario */ }
       }
       const btn = g(".save"); btn.disabled = true; btn.textContent = "Guardando…";
       const { data, error } = await supa.functions.invoke("order-update", { body });
@@ -2338,14 +2394,18 @@ export function copilotoEtapa(o) {
   // esta condición la tarjeta salía en todo lead al que se le pidió un adelanto, y como
   // la imagen cae a `fallbackImg` (la última del chat) le pegaba una foto cualquiera
   // como si fuera el comprobante.
+  // Rechazado y sin comprobante NUEVO → no hay nada que aprobar (regla `rechVigente` de Pagos
+  // por validar). Sin esto la ficha volvía a ofrecer «Aprobar» sobre el comprobante que ya se
+  // rechazó, y otro operador podía aprobarlo.
+  const rechazado = (t) => { const rej = s[t + "_rechazado_at"], rec = s[t + "_recibido_at"]; return !!rej && (!rec || new Date(rej) >= new Date(rec)); };
   if (o.estado === "esperando_adelanto") {
-    return (s.adelanto_comprobante || s.adelanto_recibido_at)
+    return ((s.adelanto_comprobante || s.adelanto_recibido_at) && !rechazado("adelanto"))
       ? { id: "adelanto", titulo: "Adelanto por validar", pill: "adel" } : null;
   }
   // en_agencia es "Saldo por validar" SOLO si el cliente ya pagó el saldo (llegó
   // su comprobante). En agencia sin pago = esperando que paguen: no hay nada que
   // aprobar y NO se muestra el comprobante del ADELANTO como si fuera el del saldo.
-  if (o.estado === "en_agencia") return (s.saldo_comprobante || s.saldo_recibido_at) ? { id: "saldo", titulo: "Saldo por validar", pill: "saldo" } : null;
+  if (o.estado === "en_agencia") return ((s.saldo_comprobante || s.saldo_recibido_at) && !rechazado("saldo")) ? { id: "saldo", titulo: "Saldo por validar", pill: "saldo" } : null;
   if (o.estado === "adelanto_validado" || o.estado === "por_despachar") return { id: "despachar", titulo: "Listo para despachar", pill: "desp" };
   if (o.estado === "despachado") return { id: "camino", titulo: "En camino a la agencia", pill: "camino" };
   return null;
@@ -2431,17 +2491,19 @@ export function wireCopiloto(root, o, et, deps) {
       toast(det || error.message || "No se pudo actualizar", true); return null;
     }
     if (data && data.error) { toast(data.detalle || data.error, true); return null; }
+    // Igual que en Pagos por validar: si otro ya lo aprobó (o fue un doble clic), no decir «Listo».
+    if (data && data.deduped) { toast("Ese pago ya lo aprobó alguien más (o fue un doble clic) — no se cambió nada", true); reload && reload(); return null; }
     return data;
   };
   const aprobar = async (nuevo, titulo, detalle, extraShip) => {
     if (!await confirmDialog({ title: titulo, message: `${c.nombre || "Cliente"} — ${detalle}`, confirmText: "Confirmar" })) return;
     const r = await update({ order_id: o.id, estado: nuevo, ...(extraShip ? { shipping: extraShip } : {}) });
-    if (r) { toast(r.flow_started ? "Listo — el bot le está escribiendo" : "Listo"); reload && reload(); }
+    if (r) { if (r.entrega_pendiente) toast("Aprobado, pero el producto NO se entregó solo: entrégale el acceso a mano desde el chat", true); else toast(r.flow_started ? "Listo — el bot le está escribiendo" : "Listo"); reload && reload(); }
   };
   const aprobarExtra = async () => {
     if (!await confirmDialog({ title: "Aprobar la venta extra", message: `${c.nombre || "Cliente"} — el bot le entrega el extra y continúa.`, confirmText: "Confirmar" })) return;
     const r = await update({ order_id: o.id, resume: true, shipping: { extra_pendiente: false, extra_aprobado_at: new Date().toISOString() } });
-    if (r) { toast(r.resumed ? "Extra entregado" : "Aprobado"); reload && reload(); }
+    if (r) { if (r.entrega_pendiente) toast("Aprobado, pero el extra NO se entregó solo: entrégaselo a mano desde el chat", true); else toast(r.resumed ? "Extra entregado" : "Aprobado"); reload && reload(); }
   };
   const rechazar = async (tipo) => {
     const parqueado = tipo === "digital" || tipo === "extra";
@@ -2459,8 +2521,16 @@ export function wireCopiloto(root, o, et, deps) {
       : { digital_rechazado_at: new Date().toISOString(), digital_revisar: "Lo rechazaste tú", digital_pendiente: false };
     const r = await update({ order_id: o.id, shipping: patch, ...(parqueado ? { reject: quien, reject_motivo: "No pude validar ese comprobante. ¿Me lo reenvías, por favor?" } : {}) });
     const pausa = parqueado && quien === "humano";
-    if (r && pausa) { try { await supa.from("contacts").update({ bot_activo: false }).eq("id", o.contact_id); } catch (_) { /* */ } }
-    if (r) { toast(pausa ? "Rechazado · el bot quedó en pausa" : (r.rejected ? "Rechazado · el bot le pide otro comprobante" : "Marcado como rechazado")); reload && reload(); }
+    // supabase-js NO lanza: el try/catch que había acá no veía nada y el toast decía «el bot quedó
+    // en pausa» aunque no se hubiera pausado (el operador escribía a mano con el bot contestando
+    // encima). Se mira el error Y que la fila se haya tocado (RLS puede dejarla en 0 sin error).
+    let pausaOk = pausa;
+    if (r && pausa) {
+      const { data: pz, error: ePz } = await supa.from("contacts").update({ bot_activo: false }).eq("id", o.contact_id).select("id");
+      if (ePz || !(pz && pz.length)) { pausaOk = false; toast("Rechazado, pero NO pude pausar el bot" + (ePz ? ": " + ePz.message : "") + ". Páusalo desde la Bandeja.", true); }
+    }
+    if (r && !(pausa && !pausaOk)) { toast(pausa ? "Rechazado · el bot quedó en pausa" : (r.rejected ? "Rechazado · el bot le pide otro comprobante" : "Marcado como rechazado")); }
+    if (r) reload && reload();
   };
   // El despacho NO se rehace acá: abre el formulario compartido, el mismo que
   // usa el tablero de Pedidos, para que guarde exactamente los mismos campos.

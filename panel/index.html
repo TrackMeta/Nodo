@@ -1121,7 +1121,8 @@ function openQrSend(r){
       <button class="qrs-send" style="height:40px;padding:0 18px;border-radius:11px;border:none;background:var(--brand);color:#fff;font-weight:700;cursor:pointer">Enviar respuesta rápida</button>
     </div>`;
   ov.appendChild(card); document.body.appendChild(ov);
-  const close=()=>ov.remove();
+  let enviando=false;
+  const close=()=>{ if(enviando){ toast("Espera a que termine de enviarse"); return; } ov.remove(); };
   const prevBox=card.querySelector(".qrs-prev");
   const paint=()=>{ if(prevBox) prevBox.innerHTML=waScreenHtml({ title:_qrBrand?.nombre, logoUrl:_qrBrand?.logo_url, bubblesHtml:waBubbles(qrPrevBubbles(bubs)), empty:"Sin contenido" }); };
   const sync=()=>{ card.querySelectorAll(".qrs-txt").forEach(t=>{ bubs[+t.dataset.i].text=t.value; }); card.querySelectorAll(".qrs-cap").forEach(c=>{ bubs[+c.dataset.i].caption=c.value; }); };
@@ -1134,7 +1135,8 @@ function openQrSend(r){
   card.querySelector(".qrs-send").onclick=async()=>{
     sync();
     const btn=card.querySelector(".qrs-send"); btn.disabled=true; btn.textContent="Enviando…";
-    const ok=await sendBubblesInOrder(bubs);
+    enviando=true;
+    let ok=false; try{ ok=await sendBubblesInOrder(bubs); } finally { enviando=false; }
     if(ok) close(); else { btn.disabled=false; btn.textContent="Enviar respuesta rápida"; }
   };
 }
@@ -1150,7 +1152,12 @@ async function sendBubblesInOrder(bubs){
   let allOk=true;
   // Una respuesta rápida sin contenido «se enviaba» en verde sin mandar nada.
   if(!(bubs||[]).some(b=>b.media_url||(b.text||"").trim())){ toast("Esta respuesta no tiene nada que enviar",true); return false; }
+  // 🔴 El destinatario se FIJA al empezar. sendTextMsg/sendStoredMedia leen state.contactId en
+  // cada burbuja: cerrar el modal y abrir otro chat a mitad de envío mandaba las burbujas que
+  // faltaban (con los datos de pago de Juan) al chat de Pedro. Si cambió, se corta ahí.
+  const cid=state.contactId;
   for(const b of (bubs||[])){
+    if(state.contactId!==cid){ toast("Cambiaste de chat: dejé de enviar el resto de la respuesta rápida",true); return false; }
     let ok;
     if(b.media_url){ ok=await sendStoredMedia({ media_kind:b.media_kind, media_url:b.media_url, mime:b.mime, filename:b.filename, caption:b.caption||"" }); }
     else { const t=(b.text||"").trim(); ok=t?await sendTextMsg(t):true; }
@@ -1958,7 +1965,7 @@ function msgInner(m){
   // 131047 (mandar plantilla) y un 131026 (número sin WhatsApp) piden acciones distintas.
   // Cita (el cliente respondió a un mensaje concreto) y reenviado, como en WhatsApp.
   const qd = m.content?.quoted;
-  const quote = qd ? `<div class="quote" data-qw="${esc(qd.wamid||"")}" title="Toca para ir al mensaje citado"><span class="qwho">${qd.direction==="out"?"Tú":(qd.direction==="in"?esc(state.contactName||"Cliente"):"Mensaje")}</span>${qd.media_url?`<img src="${safeUrl(qd.media_url)}" alt=""/>`:""}<span class="qtxt">${esc(qd.text||"Mensaje")}</span></div>` : "";
+  const quote = qd ? `<div class="quote" data-qw="${esc(qd.wamid||"")}" title="Toca para ir al mensaje citado"><span class="qwho">${qd.direction==="out"?"Tú":(qd.direction==="in"?esc(state.contactName||"Cliente"):"Mensaje")}</span>${qd.media_url?`<img src="${esc(safeUrl(qd.media_url))}" alt=""/>`:""}<span class="qtxt">${esc(qd.text||"Mensaje")}</span></div>` : "";
   const fwd = m.content?.forwarded ? `<div class="fwd">${icon("refresh")} Reenviado</div>` : "";
   const fail = (m.direction==="out" && m.status==="failed")
     ? `<div class="mfail">${icon("alert")} ${esc(motivoFallo(m.error))}</div>` : "";
@@ -2375,10 +2382,10 @@ async function openTplPicker() {
     return;
   }
   const { data, error } = await supa.from("wa_templates")
-    .select("id,name,language,categoria,body_preview,estado_meta,activa")
+    .select("id,name,language,categoria,body_preview,estado_meta,activa,soporta_envio")
     .eq("channel_id", state.channelId).order("name");
   if (error) { toast(error.message, true); return; }
-  const listas = (data||[]).filter(t => t.activa !== false && (t.estado_meta ?? "aprobada") === "aprobada");
+  const listas = (data||[]).filter(t => t.activa !== false && (t.estado_meta ?? "aprobada") === "aprobada" && t.soporta_envio !== false);  // las de variable en encabezado/botón Meta las rechaza (igual que Campañas)
   if (!listas.length) { toast("No tienes plantillas aprobadas y activas. Créalas en la sección Plantillas.", true); return; }
   const id = await askChoice({
     title: "Enviar plantilla",

@@ -720,7 +720,10 @@ function exportCsv(list){
     const lv=ltvOf(c.id);
     rows.push([c.nombre||"", c.wa_id, (STAGE[c.stage||"nuevo"]||{}).label||"", tags, origenLabel(c.source), lv.count, lv.paid, new Date(c.created_at).toISOString(), c.bloqueado?"Bloqueado":(c.bot_activo?"Activo":"Pausado")]);
   });
-  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n");
+  // Anti-fórmula: el nombre de perfil lo escribe el CLIENTE; «=HYPERLINK(…)» o «+…» se ejecutaba
+  // al abrir el CSV en Excel. Se antepone ' como hace safeCell en la hoja de ventas.
+  const celda=(v)=>{ const s=String(v); return /^[=+\-@\t\r]/.test(s)?"'"+s:s; };
+  const csv=rows.map(r=>r.map(v=>`"${celda(v).replace(/"/g,'""')}"`).join(",")).join("\n");
   const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"}); const a=document.createElement("a");
   a.href=URL.createObjectURL(blob); a.download="contactos.csv"; a.click(); URL.revokeObjectURL(a.href);
 }

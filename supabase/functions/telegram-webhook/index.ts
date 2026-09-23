@@ -245,7 +245,12 @@ Deno.serve(async (req) => {
       ...(def.estado ? { estado: def.estado } : {}),
       ...(def.extra ? def.extra() : {}),
     }),
-  }).then((r) => r.json()).catch((e) => ({ error: String(e?.message ?? e) }));
+  // 50 s y no los 15 por defecto: aprobar un digital o un extra ENTREGA en el mismo llamado
+  // (IA + Meta) y puede pasar los 15 s — el admin leía «No se pudo: aborted» con el pago ya
+  // aprobado. Si igual se corta, se dice que puede haber entrado, no que falló.
+  }, 50_000).then((r) => r.json()).catch((e) => ({
+    error: /abort/i.test(String(e?.message ?? e)) ? "tardó demasiado en responder — puede que SÍ se haya aprobado: míralo en el panel antes de reintentar" : String(e?.message ?? e),
+  }));
 
   if (res?.error) {
     await answerCallback(token, cb.id, "No se pudo: " + (res.detalle || res.error), true);

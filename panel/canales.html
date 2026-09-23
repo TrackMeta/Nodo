@@ -142,7 +142,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, askChoice, SUPABASE_URL, updateChannel } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, askChoice, confirmDialog, SUPABASE_URL, updateChannel } from "./shell.js";
 const WEBHOOK_URL = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`;
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channel:{}, secrets:{} };
@@ -153,7 +153,7 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"canales" });
   st.channelId=shell.channelId;
-  shell.onChannel(id=>{ st.channelId=id; load(); });
+  shell.onChannel(id=>{ clearInterval(st.pairTimer); st.channelId=id; load(); });  // el sondeo de vinculación es del bot ANTERIOR: sin cortarlo, daba «Telegram vinculado» en el nuevo
   // Al salir por SPA, el sondeo de vinculación de Telegram no queda colgado (seguía llamando a
   // channel-config cada 2 s y pintando una página que ya no existe).
   shell.onLeave?.(()=>clearInterval(st.pairTimer));

@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
   // hasta el tick siguiente — y si el grande seguía llenando la cola, nunca. Es el mismo
   // reparto que ya tenían las campañas; despertar conversaciones se había quedado sin él.
   const { data: pool } = await db.from("flow_runs")
-    .select("channel_id, contact_id")
+    .select("id, channel_id, contact_id, wake_at")
     .eq("estado", "esperando").not("wake_at", "is", null)
     .lte("wake_at", new Date().toISOString())
     .order("wake_at", { ascending: true })   // los más vencidos primero: sin ORDER BY, con más de 100 pendientes Postgres podía devolver siempre el mismo subconjunto y matar de hambre al resto
@@ -151,7 +151,15 @@ Deno.serve(async (req) => {
       // ENCIMA del operador (el guard de bot_activo del webhook no cubre este camino). Igual que ya
       // hacen las inyecciones de remarketing de este archivo.
       const { data: ct } = await db.from("contacts").select("bot_activo").eq("id", r.contact_id).maybeSingle();
-      if ((ct as any)?.bot_activo === false) return;
+      if ((ct as any)?.bot_activo === false) {
+        // 🔴 Saltarlo NO basta: con su wake_at vencido quedaba PRIMERO en la cola para siempre
+        // (el pool va ordenado por wake_at). Con 900 chats en pausa y un «Esperar» pendiente, el
+        // pool entero eran ellos y NINGÚN bot de la plataforma volvía a despertar a nadie. Se le
+        // corre la hora: se vuelve a mirar en 15 min (si reactivan el bot, retoma sola).
+        await db.from("flow_runs").update({ wake_at: new Date(Date.now() + 15 * 60_000).toISOString() })
+          .eq("id", r.id).eq("estado", "esperando").eq("wake_at", r.wake_at).then(() => {}, () => {});
+        return;
+      }
       await runEngine(db, r.channel_id, r.contact_id, { type: "resume" }); woke++;
     } catch (e) { console.error("[scheduler] wake:", (e as any)?.message ?? e); }
   });
@@ -438,10 +446,15 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
     const nudge = cfg.nudge ?? {};
     if (nudge.activo && Number(nudge.horas) > 0 && String(nudge.mensaje ?? "").trim()) {
       const cutoff = new Date(now - Number(nudge.horas) * 3600 * 1000).toISOString();
+      // 🔴 Los YA recordados se filtran EN la consulta: antes venían en el lote y se saltaban
+      // abajo, así que con 50 pedidos recordados (y sin vencimiento activo) el lote eran siempre
+      // ellos y a ningún pedido nuevo le llegaba el recordatorio. Orden fijo: sin ORDER BY
+      // Postgres puede devolver siempre el mismo subconjunto.
       const { data: pend } = await db.from("orders")
         .select("id, contact_id, shipping")
         .eq("channel_id", chId).eq("estado", "esperando_adelanto")
-        .lte("created_at", cutoff).limit(50);
+        .is("shipping->>_nudge_adelanto", null)
+        .lte("created_at", cutoff).order("created_at", { ascending: true }).order("id").limit(100);
       for (const o of pend ?? []) {
         const ship = (o as any).shipping ?? {};
         if (ship._nudge_adelanto) continue; // ya se le recordó
@@ -476,8 +489,9 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
             // (el que espera adelanto). Sin el orderId, buildContext caía al pedido más
             // reciente del contacto → un cliente con un pedido nuevo recibía el recordatorio
             // con el saldo/sede del pedido equivocado.
-            await deliverStep(db, chId, (o as any).contact_id, { mensaje: nudge.mensaje }, (o as any).id);
-            enviado = true;
+            // deliverStep da false si Meta lo rechazó: sellar igual `_nudge_adelanto` dejaba ese
+            // pedido sin recordatorio para siempre (y sin el cobro del adelanto).
+            enviado = await deliverStep(db, chId, (o as any).contact_id, { mensaje: nudge.mensaje }, (o as any).id);
           } else if (nudge.template_name) {
             // Solo cuenta si SALIÓ (wamid): si no, `_nudge_adelanto` se sellaba y ese pedido
             // no se recordaba nunca más aunque el cliente jamás recibió el recordatorio.
@@ -533,10 +547,14 @@ async function processOrderReminders(now: number): Promise<number> {
     const horas = Number((t as any).config?.horas ?? 24);
     if (!estado || !(horas > 0)) continue;
     const cutoff = new Date(now - horas * 3600 * 1000).toISOString();
+    // Los ya avisados por ESTE disparador fuera de la consulta (misma trampa que el recordatorio
+    // de adelanto: los saltados abajo se quedaban en el lote de 25 y el 26° no recibía nunca el
+    // «recoge tu paquete»), y orden fijo.
     const { data: ords } = await db.from("orders")
       .select("id, contact_id, shipping")
       .eq("channel_id", (t as any).channel_id).eq("estado", estado)
-      .lte("updated_at", cutoff).limit(25);
+      .is(`shipping->>_nudge_${estado}_t${(t as any).id}`, null)
+      .lte("updated_at", cutoff).order("updated_at", { ascending: true }).order("id").limit(100);
     for (const o of ords ?? []) {
       if (!(o as any).contact_id) continue;
       // Si un HUMANO tomó la conversación (bot_activo=false), NO inyectar un flujo

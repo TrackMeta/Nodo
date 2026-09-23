@@ -535,7 +535,7 @@ async function _aprobar(o,nuevo,titulo,detalle,extraShip){
   const c=o.contact||{};
   if(!await confirmDialog({ title:titulo, message:`${c.nombre||"Cliente"} — ${detalle}`, confirmText:"Confirmar" })) return;
   const r=await updateOrder({ order_id:o.id, estado:nuevo, ...(extraShip?{shipping:extraShip}:{}) });
-  if(r){ toast(r.flow_started?"Listo — el bot le está escribiendo":"Listo"); await load(); }
+  if(r){ if(r.entrega_pendiente) toast("Aprobado, pero el producto NO se entregó solo (la conversación ya no lo esperaba): entrégale el acceso a mano desde el chat",true); else toast(r.flow_started?"Listo — el bot le está escribiendo":"Listo"); await load(); }
 }
 
 // Aprobar la venta extra: el pedido ya está confirmado, no cambia de estado.
@@ -547,7 +547,7 @@ async function _aprobarExtra(o){
     message:`${c.nombre||"Cliente"} — el bot le entrega el extra al instante y continúa.`, confirmText:"Confirmar" })) return;
   const r=await updateOrder({ order_id:o.id, resume:true,
     shipping:{ extra_pendiente:false, extra_aprobado_at:new Date().toISOString() } });
-  if(r){ toast(r.resumed?"Extra entregado · el bot le está escribiendo":"Aprobado"); await load(); }
+  if(r){ if(r.entrega_pendiente) toast("Aprobado, pero el extra NO se entregó solo: entrégaselo a mano desde el chat",true); else toast(r.resumed?"Extra entregado · el bot le está escribiendo":"Aprobado"); await load(); }
 }
 
 async function _rechazar(o,tipo){
@@ -602,8 +602,12 @@ async function ofrecerGuardarFraude(o,tipo){
               : tipo==="lima"     ? s.pago_adelantado_comprobante : null;
     if(!img || !/^https?:/.test(img)) return; // sin URL utilizable (o wa-media crudo) → no se puede guardar como ejemplo
     if(!await confirmDialog({ title:"¿Era un comprobante falso?", message:"Si este comprobante era FALSO o editado (un montaje), guárdalo como ejemplo para que el validador reconozca fraudes parecidos. Si solo era un monto equivocado o el destinatario, no hace falta.", confirmText:"Sí, guardar como fraude", cancelText:"No" })) return;
-    const ch = await getChannel(st.channelId);
-    const ocr = (ch&&ch.ocr_config&&typeof ch.ocr_config==="object") ? ch.ocr_config : {};
+    // FRESCO de la base, no la ficha cacheada de la sesión (getChannel): `ocr_config` también
+    // lleva los MÉTODOS de cobro contra los que valida el OCR, y escribir sobre una copia de la
+    // mañana devolvía el Yape viejo. Si no se puede leer, no se escribe (un {} los borraba todos).
+    const { data:chF, error:eF } = await supa.from("channels").select("ocr_config").eq("id",st.channelId).maybeSingle();
+    if(eF || !chF){ toast("No se pudo leer la configuración del validador; no guardé el ejemplo",true); return; }
+    const ocr = (chF.ocr_config&&typeof chF.ocr_config==="object") ? chF.ocr_config : {};
     const ej = Array.isArray(ocr.ejemplos) ? ocr.ejemplos : [];
     if(ej.some(e=>e&&e.url===img)){ toast("Ese comprobante ya estaba guardado"); return; }
     let nuevos = ej;

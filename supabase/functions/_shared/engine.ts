@@ -182,7 +182,11 @@ export async function runEngine(
     // este mensaje a la vista (content.cubre_hasta ≥ msgTs), no hay nada que contestar.
     // Solo se salta cuando hay PRUEBA de que se vio (el sello lo pone historial()): un turno
     // determinista sin sello, o un prompt armado antes del mensaje, sigue contestando.
-    if (event.type === "message" && event.msgTs && await yaCubiertoPorTurnoAnterior(db, contactId, event.msgTs)) {
+    // 🔴 SOLO para TEXTO. La IA del turno anterior vio una imagen/audio como «[image]»/«[audio]»:
+    // ni la foto ni la transcripción. Saltarla descartaba la CAPTURA del pago que llegó mientras
+    // el bot contestaba «ya te yapeé» — nunca pasaba por el OCR ni llegaba a Pagos por validar.
+    const _soloTexto = !event.mediaRef && (!event.msgType || event.msgType === "text");
+    if (event.type === "message" && event.msgTs && _soloTexto && await yaCubiertoPorTurnoAnterior(db, contactId, event.msgTs)) {
       await logEvent(db, channelId, contactId, "nota", "🔁 Ya contestado por el turno anterior", String(event.text ?? "").slice(0, 80)).catch(() => {});
       return;
     }
@@ -554,10 +558,18 @@ async function runEngineInner(
   // ofrecido significa «no quiero el protector») y, sobre todo, todavía NO hay pedido que
   // cancelar. Acá no hay esa ambigüedad: los extras se enganchan a un pedido YA creado, y
   // este camino solo corre cuando no existe ninguno.
-  if (event.type === "message" && !(await tienePedidoVivo(db, contactId)) && seArrepiente(event.text)) {
+  // Una venta digital YA PAGADA (`confirmada`) no es un pedido en curso que el cliente pueda estar
+  // abandonando: sin esta excepción, a quien alguna vez compró un digital esta rama no le
+  // corría nunca.
+  const _vivoArr = event.type === "message" ? await tienePedidoVivo(db, contactId) : null;
+  if (event.type === "message" && (!_vivoArr || _vivoArr.estado === "confirmada") && seArrepiente(event.text)) {
     await deliverMessage(db, channelId, contactId,
       "Entiendo 🙌 Lo dejamos ahí entonces, no queda nada pendiente. " +
       "Si más adelante lo quieres, me escribes y lo vemos 👍").catch(() => {});
+    // Y se CIERRA la venta en curso: solo contestar dejaba el run parqueado con todos sus datos
+    // y el siguiente «ok gracias» lo reanudaba → creaba el pedido y le pedía el adelanto (el
+    // mismo bug de L7, un turno después).
+    await cerrarConversacionVenta(db, contactId);
     await logEvent(db, channelId, contactId, "nota", "🚪 Se arrepintió antes del pedido",
       `No se creó el pedido: “${String(event.text ?? "").slice(0, 120)}”`).catch(() => {});
     return;
@@ -933,7 +945,7 @@ async function runEngineInner(
       // («¿tienen garantía?», «¿si no me gusta lo puedo devolver?»), que sí van a la venta:
       // esas las contesta mejor la ficha, y mandarlas a la Recepción sería volver al turno
       // perdido que este atajo vino a quitar.
-      const _suenaAProblema = /\b(problema|reclamo|queja|inconveniente|no me (ha )?lleg|no (me )?lleg[oó]|nunca me lleg|lleg[oó] (roto|mal|incompleto|da[ñn]ad)|no (me )?funciona|no sirve|me estafaron|(?:es|fue|era) una estafa|son unos? estafador|reembols|quiero (devolver|mi (plata|dinero)|un cambio)|pedido (anterior|pasado)|ya (lo )?compr[eé]|compr[eé] (hace|el|la|ayer))\b/i
+      const _suenaAProblema = /(?<![\p{L}\p{N}])(problema|reclamo|queja|inconveniente|no me (ha )?lleg|no (me )?lleg[oó]|nunca me lleg|lleg[oó] (roto|mal|incompleto|da[ñn]ad)|no (me )?funciona|no sirve|me estafaron|(?:es|fue|era) una estafa|son unos? estafador|reembols|quiero (devolver|mi (plata|dinero)|un cambio)|pedido (anterior|pasado)|ya (lo )?compr[eé]|compr[eé] (hace|el|la|ayer))(?![\p{L}\p{N}])/iu   // \b es ASCII: «ya lo compré» al final no calzaba
         .test(String((event as any).text ?? ""));
       let recFlowId: string | undefined;
       let _unico = false;
@@ -1052,6 +1064,21 @@ async function runEngineInner(
         if (listo) { run = vivo; run.vars._saludo_recien = _saludoRecien; } else return;
       } else return;
     }
+  }
+  // 🧾 El TIPO del mensaje de ESTE turno. Las condiciones del flujo («¿Mandó comprobante?» =
+  // last_input_type == image) lo leían de contacts, que el webhook pisa con cada mensaje: con
+  // la captura y un «ahí está» 1-2 s después, el turno de la imagen corría tarde (lock, subida)
+  // y leía "text" → se iba por «no mandó comprobante» y el pago digital nunca pasaba por el OCR.
+  // buildContext prefiere este valor mientras sea de este turno (vale 3 min: un «Esperar» que
+  // despierta después ya no es este turno y vuelve a mirar contacts).
+  if (event.type === "message") {
+    run.vars._tipo_turno = (event.mediaRef && (event.msgType === "image" || !event.msgType)) ? "image" : String(event.msgType || "text");
+    run.vars._tipo_turno_at = Date.now();
+    // Y el TEXTO del turno: el webhook junta la ráfaga («¿cuánto cuesta?» + «¿llega a Trujillo?»)
+    // en event.text, pero ctx.last_input salía de contacts = solo la ÚLTIMA burbuja. detectarOpcion,
+    // la zona y las correcciones de datos se perdían lo dicho en las anteriores («quiero 2» +
+    // «para Arequipa» no sellaba la presentación).
+    run.vars._texto_turno = String(event.text ?? "");
   }
   // Imagen entrante (ej. comprobante): se sube a almacenamiento propio para
   // tener un LINK PÚBLICO reutilizable → {{ultima_imagen}} (Sheets, Telegram)
@@ -2021,7 +2048,10 @@ function dudaNoReclamo(text: string): boolean {
 // uno nuevo o una solución rápida»… y nadie se enteró nunca. Una reposición prometida por
 // el bot que el negocio no sabe que debe.
 const RE_PRODUCTO_DANADO =
-  /\b(lleg[oó]\w*|vino|recib[ií])\b[^.!?]{0,50}\b(roto|rota|abiert[oa]|derramad\w+|da[ñn]ad\w+|malogrado|malograda|incompleto|incompleta|vac[ií]o|vac[ií]a|golpead\w+|manchad\w+|vencid\w+|otro producto|otra cosa)\b|\b(est[aá]|vino)\s+(todo\s+)?(roto|rota|abiert[oa]|derramad\w+|da[ñn]ad\w+|malogrado|vac[ií]o)\b|\bno\s+me\s+lleg[oó]\s+(completo|todo|el\s+regalo)\b/i;
+  // `\b` es ASCII: tras «llegó»/«recibí» (termina en tilde) NUNCA hay límite, así que «me llegó
+  // roto» o «recibí el frasco dañado» no calzaban y el bot podía prometer reposición sin avisar.
+  // Límites Unicode con lookarounds (bandera `u`).
+  /(?<![\p{L}\p{N}])(lleg[oó]\w*|vino|recib[ií])(?![\p{L}\p{N}])[^.!?]{0,50}(?<![\p{L}\p{N}])(roto|rota|abiert[oa]|derramad\w+|da[ñn]ad\w+|malogrado|malograda|incompleto|incompleta|vac[ií]o|vac[ií]a|golpead\w+|manchad\w+|vencid\w+|otro producto|otra cosa)(?![\p{L}\p{N}])|(?<![\p{L}\p{N}])(est[aá]|vino)\s+(todo\s+)?(roto|rota|abiert[oa]|derramad\w+|da[ñn]ad\w+|malogrado|vac[ií]o)(?![\p{L}\p{N}])|(?<![\p{L}\p{N}])no\s+me\s+lleg[oó]\s+(completo|todo|el\s+regalo)(?![\p{L}\p{N}])/iu;
 function pideReclamo(text: string): boolean {
   const t = limpiaOpt(text);
   if (!t || t.length > 240) return false; // los reclamos suelen ser largos (rants)
@@ -2644,7 +2674,7 @@ function horarioAtencion(hcfg: any, tz: string): { dentro: boolean; proxima: str
 //   "fuera" → solo si estamos FUERA de horario (para escaladas donde la IA ya
 //             escribió su propio mensaje, que sirve dentro de horario).
 //   false/omitido → no manda nada (el caller ya avisó por su cuenta).
-async function pasarAHumano(
+export async function pasarAHumano(
   db: SupabaseClient, channelId: string, contactId: string, motivo: string,
   // `foto`: la captura que motivó la escalada (un comprobante de pago). Va adjunta al aviso
   // para poder validarlo desde el propio Telegram, sin abrir el chat.
@@ -3452,7 +3482,15 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   let result = "";
   try {
     result = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 350 });
-  } catch (e) { console.error("[recepcion/ai]", (e as any)?.message ?? e); return { hecho: false }; }
+  } catch (e) {
+    console.error("[recepcion/ai]", (e as any)?.message ?? e);
+    // Era el ÚNICO camino que se quedaba callado ante una caída de la IA: el nodo IA del flujo
+    // escala con aviso, la Recepción devolvía `hecho:false` y el cliente NUEVO —el primer
+    // contacto, el que vino del anuncio— no recibía nada. Pasa a una persona, que le avisa.
+    await pasarAHumano(db, run.channel_id, run.contact_id,
+      `La IA no respondió al primer mensaje (${String((e as any)?.message ?? e).slice(0, 120)}).`, { aviso: true }).catch(() => {});
+    return { hecho: true };
+  }
   // 🎯 ENTREGA A LA VENTA. La etiqueta [[ir:N]] jamás debe llegar al cliente, así que se
   // saca del texto pase lo que pase. Si N es válido, este turno NO lo contesta Recepción:
   // arranca el flujo de venta de ese producto (que saluda y pregunta lo suyo) — mandar
@@ -3549,6 +3587,16 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     return false;
   }
   run.estado = "activo";
+
+  // Un paso que se FRENÓ (iba a cobrar sin datos de pago o con el monto vacío) y pasó a
+  // humano: con el próximo mensaje —ya con el bot reactivado— se vuelve a correr ESE paso.
+  // Si el dato sigue faltando, el mismo guard vuelve a frenar; si ya se cargó, sigue la venta.
+  if (event.type === "message" && aw?.type === "reintentar_nodo" && aw.node_id) {
+    run.current_node_id = aw.node_id;
+    delete run.vars._await;
+    run.wake_at = null;
+    return true;
+  }
 
   // Aprobación de un pago digital manual: order-update reanuda el run parqueado
   // en el nodo OCR. Se sale por la MISMA puerta que usaría el nodo si hubiera
@@ -3700,7 +3748,7 @@ async function execute(db: SupabaseClient, run: Run) {
           await pasarAHumano(db, run.channel_id, run.contact_id,
             "El bot iba a cobrarle el adelanto pero el negocio NO tiene datos de pago cargados.",
             { aviso: false }).catch(() => {});
-          run.estado = "esperando";
+          run.estado = "esperando"; run.vars._await = { type: "reintentar_nodo", node_id: node.id };   // sin _await, resumeRun descartaba TODO mensaje para siempre (aun con el bot reactivado): así reintenta este paso
           await saveRun(db, run);
           return;
         }
@@ -3730,7 +3778,7 @@ async function execute(db: SupabaseClient, run: Run) {
           await pasarAHumano(db, run.channel_id, run.contact_id,
             `El bot iba a pedirle plata con el monto VACÍO (${_huecoPlata} sin valor). Revisa qué opción eligió el cliente.`,
             { aviso: false }).catch(() => {});
-          run.estado = "esperando";
+          run.estado = "esperando"; run.vars._await = { type: "reintentar_nodo", node_id: node.id };   // sin _await, resumeRun descartaba TODO mensaje para siempre (aun con el bot reactivado): así reintenta este paso
           await saveRun(db, run);
           return;
         }
@@ -4274,7 +4322,8 @@ const RE_YA_PIDE = /\b(dime|dime\s|av[ií]same|cu[eé]ntame|p[aá]same|m[aá]nda
 // "Lo voy a pensar" / se despide: no es un no, pero tampoco es momento de empujar.
 const RE_LO_PIENSA =
   // + «déjame verlo» y «te confirmo mañana», que es como se dice «lo voy a pensar».
-  /\b(lo (voy a |vo a )?pienso|lo voy a pensar|lo pensar[eé]|d[eé]jame (pensarlo|verlo|ver)|lo consulto|lo veo (con|y)|luego te (escribo|aviso|digo|confirmo)|despu[eé]s te (escribo|aviso|digo|confirmo)|te (escribo|aviso|confirmo) (luego|despu[eé]s|m[aá]s tarde|ma[ñn]ana)|ahorita no|por ahora no|mas adelante|m[aá]s adelante|gracias por la info)\b/i;
+  // Límites Unicode (bandera `u`): con \b, «lo pensaré» (termina en tilde) no calzaba.
+  /(?<![\p{L}\p{N}])(lo (voy a |vo a )?pienso|lo voy a pensar|lo pensar[eé]|d[eé]jame (pensarlo|verlo|ver)|lo consulto|lo veo (con|y)|luego te (escribo|aviso|digo|confirmo)|despu[eé]s te (escribo|aviso|digo|confirmo)|te (escribo|aviso|confirmo) (luego|despu[eé]s|m[aá]s tarde|ma[ñn]ana)|ahorita no|por ahora no|mas adelante|m[aá]s adelante|gracias por la info)(?![\p{L}\p{N}])/iu;
 function conPeticionFinal(texto: string, peticion: string, dato?: string): string {
   const t = String(texto ?? "").trimEnd();
   if (!t || !peticion) return texto;
@@ -7439,8 +7488,11 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
     // hecho, y NINGUNA venta llegaba a la hoja. Sin error, sin cartel, sin forma de notarlo.
     // La condición pasa a ser la misma que ve él: hay hoja y hay con qué escribir. Un
     // desconectar de verdad borra el token y pone `mode:null`, así que sigue frenando.
-    const _hojaLista = !!g.spreadsheet_id &&
-      (g.mode === "oauth" ? !!g.google_email : !!g.webhook_url);
+    // Apps Script NO usa spreadsheet_id (escribe su propia hoja vía la app web): exigirlo dejaba
+    // a quien conectó SOLO por Apps Script sin una venta en la hoja y sin ningún cartel.
+    const _hojaLista = g.mode === "oauth"
+      ? (!!g.spreadsheet_id && !!g.google_email)
+      : !!g.webhook_url;
     if (!_hojaLista) return; // sin hoja conectada, no hay nada que hacer
     // A la hoja SOLO van las ventas CERRADAS (dinero cobrado): digital pagado, Lima
     // entregado y cobrado, provincia recogido / saldo pagado. Los pedidos en proceso
@@ -7958,8 +8010,12 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       // Registra lo REALMENTE pagado + el vuelto (excedente) si pagó MUCHO de más.
       const _infoM = await channelIaInfo(db, run).catch(() => null);
       const pr = pagoRealYVuelto(run, base, margenSobrepago(base, (_infoM as any)?.pedidos?.digital));
-      if (base) patch.amount = pr.amount;
-      if (pr.vuelto > 0) merged.vuelto = pr.vuelto;
+      // El monto que CORRIGIÓ un humano en «Editar pedido» (pagó menos, otra presentación) manda:
+      // recalcularlo acá con el {{precio}} lo devolvía al precio de lista y contaba como cobrado
+      // dinero que no entró (y el Purchase a Meta ya había salido con el corregido).
+      const _montoManual = ((cur as any)?.shipping ?? {}).monto_manual === true;
+      if (base && !_montoManual) patch.amount = pr.amount;
+      if (pr.vuelto > 0 && !_montoManual) merged.vuelto = pr.vuelto;
       if (["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"].includes(patch.estado as string)) {
         patch.confirmed_at = new Date().toISOString();
       }
@@ -8135,9 +8191,13 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // del mismo producto es justo lo esperable y no un duplicado.
     if (!(run.vars as any)?._recompra) {
       const _desde = new Date(Date.now() - 120_000).toISOString();
-      const { data: dup } = await db.from("orders").select("id, estado, created_at")
-        .eq("channel_id", run.channel_id).eq("contact_id", run.contact_id)
-        .eq("product_id", (c as any)?.product_id ?? null)
+      // Sin producto, `.eq(product_id, null)` es `= NULL` (nunca calza) y el guard se apagaba:
+      // dos «sí confirmo» seguidos creaban dos pedidos. Con null va `.is`.
+      const _pidDup = (c as any)?.product_id ?? null;
+      let _qDup = db.from("orders").select("id, estado, created_at")
+        .eq("channel_id", run.channel_id).eq("contact_id", run.contact_id);
+      _qDup = _pidDup ? _qDup.eq("product_id", _pidDup) : _qDup.is("product_id", null);
+      const { data: dup } = await _qDup
         .gte("created_at", _desde)
         // Un pedido cuyo ciclo YA TERMINÓ no es "el mismo que se está creando": es otra
         // compra. Antes solo se excluían cancelado/rechazado, así que un pedido ENTREGADO
@@ -8302,6 +8362,12 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     }
   } catch (err) {
     await logEvent(db, run.channel_id, run.contact_id, "error", "Error al crear pedido", String((err as any)?.message ?? err));
+    // 🔴 Se RE-LANZA. Tragárselo dejaba seguir la acción del flujo: marcaba pedido_creado=si,
+    // avisaba «pedido nuevo» por Telegram y al cliente le llegaba «✅ Tu pedido quedó
+    // confirmado» — sin pedido. Nadie despachaba y en provincia se le cobraba el adelanto de
+    // un pedido que no existe. El rescate de `execute` corta el flujo y lo pasa a una persona,
+    // que le avisa al cliente (nunca dead air).
+    throw err;
   }
 }
 
@@ -8482,7 +8548,7 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
             // saldoTrasAdelanto, quitar bump). Acá salía NÚMERO, así que un mismo campo
             // era texto o número según si el pedido tuvo o no una venta extra — y las
             // comparaciones de saldo se vuelven una lotería (ya hubo bugs de NaN por esto).
-            patch.shipping = { ...((cur as any)?.shipping ?? {}), saldo: String(+(sActual + precio).toFixed(2)) };
+            patch.shipping = { ...((cur as any)?.shipping ?? {}), saldo: String(+(sActual + precio).toFixed(2)), ...(precio > 0 ? { pagado_total: false } : {}) };   // si había pagado todo, el extra deja saldo: la marca ya no es verdad
           }
         }
       }
@@ -9188,8 +9254,12 @@ export function mensajeEstadoDefault(
     // nada. Antes el bot mandaba "paga el saldo de S/ 0" y pedía un comprobante que
     // no existe. Ahora avisa que ya está pagado y le pasa la clave si la hay.
     const _saldoNum = Number(s.saldo);
-    const yaPagado = s.pagado_total === true ||
-      (s.saldo != null && s.saldo !== "" && Number.isFinite(_saldoNum) && _saldoNum <= 0);
+    // El SALDO manda sobre la marca: `pagado_total` se prende cuando el adelanto cubrió todo, pero
+    // si después aceptó un extra (sube_saldo) o alguien corrigió el saldo, queda algo por cobrar y
+    // decirle «ya está todo pagado» le regalaba el extra que viaja en la caja.
+    const _haySaldo = s.saldo != null && s.saldo !== "" && Number.isFinite(_saldoNum) && _saldoNum > 0.009;
+    const yaPagado = !_haySaldo && (s.pagado_total === true ||
+      (s.saldo != null && s.saldo !== "" && Number.isFinite(_saldoNum) && _saldoNum <= 0));
     if (yaPagado) {
       const clave = String(s.clave_recojo || "").trim();
       return `📦 ¡Tu pedido ya llegó a la agencia Shalom${sede ? ` de ${sede}` : ""}! ` +
@@ -9280,6 +9350,21 @@ export async function resolverPrepagoLima(
   const montoOp = Number(opts.monto);
   const monto = Number.isFinite(montoOp) && montoOp > 0 ? montoOp : parseMonto(sh0.pago_adelantado_monto, {});
   if (!(Number(monto) > 0)) return { error: "falta_monto", detalle: "Escribe cuánto pagó el cliente." };
+
+  // 🔒 Anti-reúso, igual que order-update con el adelanto/saldo/digital: registrarOperacion
+  // se CALLA el duplicado (23505), así que sin este chequeo el mismo Yape que ya pagó otro
+  // pedido (de este bot o de un hermano que cobra al mismo número) acreditaba este también.
+  {
+    const opPre = normOperacion(String(sh0.pago_adelantado_operacion ?? ""));
+    if (opPre.length >= 4) {
+      const { data: prev } = await db.from("payment_operations").select("order_id, contact_id")
+        .in("channel_id", await canalesQueCobranIgual(db, ord.channel_id)).eq("operacion", opPre).limit(1).maybeSingle();
+      const pOrd = (prev as any)?.order_id ?? null, pCt = (prev as any)?.contact_id ?? null;
+      if (prev && (pOrd ? pOrd !== orderId : (!!pCt && pCt !== ord.contact_id))) {
+        return { error: "operacion_reusada", detalle: `Esa operación (${opPre}) ya se acreditó en otro pedido. Revísalo antes de aprobar.` };
+      }
+    }
+  }
 
   // Candado: solo UNA aprobación gana (panel + Telegram, o dos toques en Telegram).
   const { data: sh, error: eClaim } = await db.rpc("order_claim_shipping_flag", {
@@ -9685,8 +9770,12 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
     if (ordLima && String(_shL.zona ?? "") === "lima") {
       const _monto = parseMonto(parsed?.monto, {});
       const _oper = parsed?.operacion ? String(parsed.operacion).trim() : "";
-      const _porCobrar = Number(_shL.saldo) || (Number((ordLima as any).amount) || 0) +
-        (((ordLima as any).order_bumps ?? []) as any[]).reduce((a, b) => a + (Number(b?.precio) || 0), 0);
+      // Un saldo "0" (ya pagó todo) es un saldo VÁLIDO: con `||` caía al total y al que ya no
+      // debía nada se le decía «te quedan S/ X por pagar al recibirlo».
+      const _svL = Number(_shL.saldo);
+      const _porCobrar = (_shL.saldo != null && String(_shL.saldo).trim() !== "" && Number.isFinite(_svL)) ? _svL
+        : (Number((ordLima as any).amount) || 0) +
+          (((ordLima as any).order_bumps ?? []) as any[]).reduce((a, b) => a + (Number(b?.precio) || 0), 0);
       // Write ESTRECHO del shipping (0068): el operador puede estar editando la dirección
       // en el panel al mismo tiempo, y un update con el snapshot viejo se la pisaría.
       // ⚠️ try/catch, NO `.catch()`: `db.rpc()` devuelve un builder que no es una Promise
@@ -9875,14 +9964,20 @@ async function engancharPrepagoAdelanto(db: SupabaseClient, run: Run, orderId: s
     }
   } catch (e) { console.error("[prepago auto]", (e as any)?.message ?? e); }
 
-  await db.from("orders").update({
-    shipping: {
-      ...ship, adelanto_comprobante: url, adelanto_recibido_at: new Date().toISOString(),
-      adelanto_revisar: "pagó el adelanto antes de dar sus datos — revísalo",
-      adelanto_monto_leido: Number.isFinite(monto) ? monto : null,
-      adelanto_operacion_leida: oper, adelanto_ok_ia: cuadra,
-    },
-  }).eq("id", orderId);
+  // Patch ESTRECHO y MIRADO: era un write del shipping entero sin revisar el error, y justo
+  // después se borran los _prepago_adel_* del contacto — si la escritura fallaba, el comprobante
+  // y el monto desaparecían (solo quedaba la foto en Telegram). Si no se guardó, no se borra nada.
+  const _okEng = await patchShipping(db, orderId, {
+    adelanto_comprobante: url, adelanto_recibido_at: new Date().toISOString(),
+    adelanto_revisar: "pagó el adelanto antes de dar sus datos — revísalo",
+    adelanto_monto_leido: Number.isFinite(monto) ? monto : null,
+    adelanto_operacion_leida: oper, adelanto_ok_ia: cuadra,
+  }, { ship });
+  if (!_okEng) {
+    await logEvent(db, run.channel_id, run.contact_id, "error", "⚠️ No se pudo enganchar el adelanto pagado antes de los datos",
+      `Comprobante: ${url}. Revísalo a mano en el pedido.`).catch(() => {});
+    return;
+  }
   await logEvent(db, run.channel_id, run.contact_id, "nota", "Adelanto (pagado antes de los datos) enganchado — a validar");
   // Marca para que el flujo NO le pida pagar de nuevo: la condición
   // "¿Ya pagó el adelanto?" (generarFlujoFisico) rutea a "verificando" en vez de
@@ -16681,7 +16776,7 @@ function enTitulo(txt: string): string {
   }).join(" ");
 }
 
-function normOperacion(op: string): string {
+export function normOperacion(op: string): string {
   // 🔒 Se quita TODO lo que no sea letra o dígito, no solo los espacios. El candado
   // anti-reúso compara cadenas EXACTAS, así que la misma operación leída una vez como
   // «YP-060625582J» y otra como «YP060625582J» —o «N° 123456» y «123456»— no se cruzaba, y
@@ -22072,8 +22167,12 @@ async function buildContext(db: SupabaseClient, run: Run) {
     // pediría. Vacío ⇒ el flujo lo pide (sin_numero=si); lleno ⇒ se salta.
     nombre: c?.nombre ?? "", telefono: c?.telefono ?? "", wa_id: c?.wa_id ?? "",
     username: (c as any)?.username ?? "",
-    stage: c?.stage ?? "", last_input: c?.last_input ?? "",
-    last_input_type: (c as any)?.last_input_type ?? "",
+    stage: c?.stage ?? "",
+    last_input: (run?.vars?._texto_turno && Date.now() - Number(run.vars._tipo_turno_at || 0) < 180_000)
+      ? String(run.vars._texto_turno) : (c?.last_input ?? ""),
+    // El del TURNO manda sobre el de contacts (el webhook lo pisa con el mensaje siguiente).
+    last_input_type: (run?.vars?._tipo_turno && Date.now() - Number(run.vars._tipo_turno_at || 0) < 180_000)
+      ? String(run.vars._tipo_turno) : ((c as any)?.last_input_type ?? ""),
     // Atribución del anuncio (Click-to-WhatsApp) capturada en el primer mensaje.
     ad_id: (c as any)?.ad_id ?? "", ctwa_clid: (c as any)?.ctwa_clid ?? "", origen: (c as any)?.source ?? "",
     // Fecha/hora de AHORA (para sellar {{fecha}} de compra con un set_field).

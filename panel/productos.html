@@ -3340,7 +3340,10 @@ async function generarFlujoVenta(skipConfirm){
       // la salida SIN mensaje y el bot quedaba mudo (dead-air) justo después de que
       // el cliente escribió. Un acuse breve cierra con calidez (el cliente ya tiene
       // su acceso) y no vuelve a ofrecer.
-      const nCierreX=await N("mensaje","Cierre sin extra",{ bubbles:[{ text:"¡Perfecto! 🙌 Ya tienes todo tu acceso. Cualquier cosa me avisas." }] },false,1500,520+extras.length*420);
+      // Con los extras «antes», el cierre va ANTES de la entrega (salida = nEntregar): decir «ya
+      // tienes todo tu acceso» ahí era afirmar algo que todavía no pasó (y si la entrega fallaba,
+      // era falso).
+      const nCierreX=await N("mensaje","Cierre sin extra",{ bubbles:[{ text: antes ? "¡Perfecto! 🙌 Te paso tu acceso." : "¡Perfecto! 🙌 Ya tienes todo tu acceso. Cualquier cosa me avisas." }] },false,1500,520+extras.length*420);
       await E(nCierreX,"continuar",salida);
       // Rechazo de cada extra: con la perilla ON va al SIGUIENTE ofrecimiento; el
       // último (o con la perilla OFF) cierra la cadena con el acuse `nCierreX`.

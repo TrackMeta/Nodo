@@ -162,6 +162,10 @@ async function fetchVigilado(input, init) {
     // la copia en memoria ya no vale. Va acá y no en cada pantalla que guarda, para que
     // ninguna se olvide — incluidas las que todavía no existen.
     if (area === "rest" && metodo !== "GET" && /\/channels\b/.test(url)) olvidaChannel();
+    // …y las Edge Functions que escriben la fila del bot por el servidor (conectar WhatsApp o
+    // Telegram, la hoja de Google): sin esto, recién conectado el número, la Bandeja seguía
+    // diciendo «Aún no conectaste tu número» hasta recargar.
+    else if (/\/functions\/v1\/(channel-config|gsheets-)/.test(url)) olvidaChannel();
   }
   return r;
 }
@@ -551,7 +555,8 @@ function openCreateBot() {
   const create = async () => {
     const nombre = input.value.trim();
     if (!nombre) { input.focus(); return; }
-    const btn = back.querySelector("#nbCreate"); btn.disabled = true; btn.textContent = "Creando…";
+    const btn = back.querySelector("#nbCreate"); if (btn.disabled) return;   // doble Enter = dos bots: el keydown no miraba el botón
+    btn.disabled = true; btn.textContent = "Creando…";
     const { data, error } = await supa.from("channels").insert({ nombre }).select("id,nombre").single();
     if (error) { btn.disabled = false; btn.textContent = "Crear bot"; toast(error.message || "No se pudo crear el bot", true); return; }
     S.channels.push({ id: data.id, nombre: data.nombre, logo_url: null });

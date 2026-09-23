@@ -7,7 +7,7 @@ import { serviceClient, getChannelSecrets, accountOfChannel } from "../_shared/d
 import { fetchMediaBytes } from "../_shared/meta.ts";
 import { transcribeAudio } from "../_shared/ai.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
-import { runEngine, avisarEnvioFallido, esAlucinacionSTT, esOptOut, aplicarOptOut, type EngineEvent } from "../_shared/engine.ts";
+import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, type EngineEvent } from "../_shared/engine.ts";
 
 // Runtime de Supabase Edge: permite terminar trabajo DESPUÉS de responder
 // (Meta exige un 200 rápido; el motor puede tardar por el LLM).
@@ -98,7 +98,9 @@ Deno.serve(async (req) => {
   }
   const sig = req.headers.get("x-hub-signature-256");
   const ok = await verifyMetaSignature(raw, sig, secrets.app_secret);
-  if (!ok) return new Response("Unauthorized", { status: 401 });
+  // Firma inválida = App Secret mal pegado o rotado: TODOS los mensajes rebotan. Al menos que
+  // quede en el log con el canal (antes era un 401 mudo).
+  if (!ok) { console.error(`[webhook] firma inválida para el canal ${channel.id}: revisa el App Secret en Canales`); return new Response("Unauthorized", { status: 401 }); }
 
   // Procesar (idempotente por wamid). Si falla, devolvemos 500 y Meta reintenta.
   try {
@@ -245,7 +247,7 @@ async function processInbound(
     const quoted: Record<string, unknown> = { wamid: String(msg.context.id) };
     try {
       const { data: q } = await db.from("messages").select("direction, type, content")
-        .eq("wamid", String(msg.context.id)).maybeSingle();
+        .eq("wamid", String(msg.context.id)).eq("channel_id", channelId).maybeSingle();   // solo de ESTE bot: citar un wamid ajeno copiaba su texto/comprobante
       if (q) {
         const qc = (q as any).content ?? {};
         const qt = String(qc.text ?? qc.caption ?? "").trim() || ((q as any).type && (q as any).type !== "text" ? `[${(q as any).type}]` : "");
@@ -371,6 +373,20 @@ async function processInbound(
     patch.fep_hasta = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
   }
 
+  // ⏪ Un mensaje que llega TARDE (Meta lo reintenta tras un 500, o lo entrega desordenado) no
+  // puede atrasar el estado del contacto: pisaba `ultimo_mensaje_cliente_at` con una hora más
+  // vieja —la ventana de 24 h quedaba cerrada para el panel y el motor aunque el cliente acababa
+  // de escribir— y `last_input` con un texto que ya no es lo último que dijo.
+  let _prevClienteMs = 0;
+  try {
+    const { data: prevC } = await db.from("contacts").select("ultimo_mensaje_cliente_at")
+      .eq("channel_id", channelId).eq("wa_id", waId).maybeSingle();
+    _prevClienteMs = (prevC as any)?.ultimo_mensaje_cliente_at ? new Date((prevC as any).ultimo_mensaje_cliente_at).getTime() : 0;
+  } catch { /* sin lectura: se sigue como antes */ }
+  if (_prevClienteMs > new Date(tsCliente).getTime()) {
+    delete patch.ultimo_mensaje_cliente_at; delete patch.last_input; delete patch.last_input_type;
+  }
+
   let { data: contact, error: upErr } = await db
     .from("contacts")
     .upsert(patch, { onConflict: "channel_id,wa_id" })
@@ -398,7 +414,7 @@ async function processInbound(
   // de escritura es la MAYOR entre la de servicio (últ. msg + 24h) y la
   // Free Entry Point del contacto, si sigue viva.
   const ahora = Date.now();
-  const svc = new Date(tsCliente).getTime() + 24 * 60 * 60 * 1000;
+  const svc = Math.max(new Date(tsCliente).getTime(), _prevClienteMs) + 24 * 60 * 60 * 1000;   // un mensaje tardío no achica la ventana
   const fepMs = contact.fep_hasta ? new Date(contact.fep_hasta as string).getTime() : 0;
   const convRow: Record<string, unknown> = {
     channel_id: channelId,
@@ -619,8 +635,15 @@ async function runEngineTask(
     await runEngine(db, channelId, contactId, event);
   } catch (e) {
     // El mensaje ya quedó guardado; un error del motor no debe hacer que
-    // Meta reintente el webhook. Solo se registra.
+    // Meta reintente el webhook.
     console.error("[webhook] engine:", (e as any)?.message ?? e);
+    // 🔴 Pero «solo se registra» = el cliente escribió y nadie le contesta, y el dueño no se
+    // entera (el log no lo lee nadie). Regla de oro: nunca dead air. Pasa a una persona: el
+    // cliente recibe el «en un momento te atiende un asesor» y al dueño le llega el aviso de
+    // Telegram con el motivo. Si el error se repite en todos los chats, se nota al instante.
+    await pasarAHumano(db, channelId, contactId,
+      `El bot tuvo un error al responder y quedó en pausa en este chat: ${String((e as any)?.message ?? e).slice(0, 160)}`,
+      { aviso: true }).catch(() => {});
   }
 }
 

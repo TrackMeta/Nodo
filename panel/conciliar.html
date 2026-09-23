@@ -303,7 +303,12 @@ function renderResultado(){
   // motorizado, esa plata NUNCA entra al Yape/banco del reporte. Antes metodoDe(Lima)="" y
   // efectivoRe.test("")=false → TODA venta de Lima se marcaba "sin respaldo" en rojo (alarma
   // sistemáticamente inflada, y una venta de Lima podía auto-cuadrar contra un depósito ajeno).
-  const esEfectivoVenta=(v)=> efectivoRe.test(v.metodo||metodoDe(v._o)) || (v._o && O.zonaDe(v._o)==="lima");
+  // …salvo el PAGO ADELANTADO de Lima: ese sí es un Yape y tiene que estar en el banco. Como
+  // «efectivo» nunca salía «sin respaldo»: un comprobante falso aprobado por error (que ya le
+  // bajó al motorizado lo que cobra) quedaba invisible. Va aparte (_parte "prepago") o, si
+  // cubrió todo, es la única parte del pedido.
+  const esPrepagoLima=(v)=>{ const s=(v._o&&v._o.shipping)||{}; return v._parte==="prepago" || (!v._parte && (Number(s.prepago_lima_abonado)||0)>0.005); };
+  const esEfectivoVenta=(v)=> efectivoRe.test(v.metodo||metodoDe(v._o)) || (v._o && O.zonaDe(v._o)==="lima" && !esPrepagoLima(v));
   // Se usa el método de la PARTE (s.venta.metodo: adelanto_metodo o saldo_metodo), NO el del
   // pedido: metodoDe() cascadea adelanto_metodo ANTES que saldo_metodo, así que un pedido con
   // adelanto en EFECTIVO y saldo por YAPE pintaba el saldo Yape faltante como "efectivo" y lo
