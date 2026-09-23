@@ -22,6 +22,10 @@
   .chd{display:flex;align-items:center;gap:14px;margin-bottom:4px}
   .chd .ico{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:var(--surface-2);border:1px solid var(--border);flex:none}
   .chd .ico img{width:100%;height:100%;object-fit:cover}
+  /* El icono NO es la cápsula. `icon()` de shell.js le pone al <svg> la misma clase `ico`,
+     así que la regla de arriba se lo aplicaba también y el triángulo salía a 52px: llenaba
+     el recuadro de borde a borde. Va dentro, a la misma proporción que en Ajustes. */
+  .chd .ico svg{width:24px;height:24px}
   .chd .nm{font-weight:700;font-size:17px;letter-spacing:-.2px}
   .chd .sub2{font-size:12.5px;color:var(--muted);margin-top:2px}
   .chd .st{margin-left:auto;font-size:11px;padding:5px 12px;border-radius:20px;font-weight:700;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
