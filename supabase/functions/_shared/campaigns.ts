@@ -131,12 +131,23 @@ const enTrozos = <T,>(arr: T[], n: number): T[][] => {
 // cuando más lo mira.
 export async function matchSegment(db: SupabaseClient, channelId: string, seg: any): Promise<string[]> {
   const stages: string[] = seg.stage ?? seg.stages ?? [];
+  const tags: string[] = seg.tags ?? [];
+  const orderStates: string[] = seg.order_estados ?? [];
+  // 🔀 «Cualquiera» = cumple AL MENOS UN filtro, que es lo que dice el selector del panel.
+  // Antes el «cualquiera» solo operaba ENTRE etiquetas: etapa y estado del pedido se exigían
+  // siempre, así que «etiqueta VIP o etapa Caliente» mandaba solo a los VIP que además estaban
+  // calientes — una audiencia más chica que la prometida y el numerito del panel lo repetía.
+  const modo = seg.modo === "todas" ? "todas" : "cualquiera";
+  const grupos = [stages, tags, orderStates].filter((g) => g.length).length;
+  const unir = modo === "cualquiera" && grupos > 1;
   const base = (f: number, t: number) => {
     // Sin el contacto de prueba NI los simulados (`source = "sim"`, tmp-sim): una simulación
     // dejaba contactos en «caliente» que entraban a la audiencia de una campaña real.
-    let q = db.from("contacts").select("id").eq("channel_id", channelId).neq("wa_id", "webchat-test")
+    let q = db.from("contacts").select("id, stage").eq("channel_id", channelId).neq("wa_id", "webchat-test")
       .or("source.is.null,source.neq.sim");
-    if (stages.length) q = q.in("stage", stages);
+    // Con «cualquiera» y varios filtros la etapa NO puede recortar acá: quien no está en la
+    // etapa todavía puede entrar por su etiqueta o su pedido.
+    if (stages.length && !unir) q = q.in("stage", stages);
     return q.order("id", { ascending: true }).range(f, t);
   };
   // Intenta filtrar bloqueados; si la columna no existe (0021 sin aplicar), reintenta sin ese filtro.
@@ -164,8 +175,9 @@ export async function matchSegment(db: SupabaseClient, channelId: string, seg: a
   if (res.error) throw new Error("matchSegment: " + (res.error.message ?? res.error));
   const { data } = res;
   let ids = (data ?? []).map((r: any) => r.id);
+  const todos = ids;   // los candidatos, antes de que ningún filtro recorte
+  const stageDe = new Map<string, string>((data ?? []).map((r: any) => [r.id, r.stage]));
 
-  const tags: string[] = seg.tags ?? [];
   if (tags.length && ids.length) {
     // Por trozos de ids Y paginando: un contacto puede tener varias etiquetas, así que
     // 1000 contactos ya pasan de 1000 filas. Truncado, el filtro descartaba gente que SÍ
@@ -183,7 +195,6 @@ export async function matchSegment(db: SupabaseClient, channelId: string, seg: a
         .order("contact_id", { ascending: true }).order("tag_id", { ascending: true }).range(f, t));
       ct.push(...(data ?? []));
     }
-    const modo = seg.modo ?? "cualquiera";
     const byContact: Record<string, Set<string>> = {};
     (ct ?? []).forEach((r: any) => { (byContact[r.contact_id] ??= new Set()).add(r.tags.nombre); });
     ids = ids.filter((id) => {
@@ -192,8 +203,13 @@ export async function matchSegment(db: SupabaseClient, channelId: string, seg: a
     });
   }
 
+  // Con «cualquiera» cada filtro se evalúa sobre TODOS los candidatos y se unen; si no, cada
+  // uno recorta lo que dejó el anterior (todas = intersección).
+  // (Sin etiquetas elegidas `ids` son TODOS: no puede contar como «entró por etiqueta».)
+  const porEtiqueta = unir && tags.length ? new Set(ids) : null;
+  if (unir) ids = todos;
+
   // Segmento por estado del ÚLTIMO pedido (embudo de logística = Kanban de Pedidos).
-  const orderStates: string[] = seg.order_estados ?? [];
   if (orderStates.length && ids.length) {
     // Ídem: por trozos y paginando. Cada contacto entra ENTERO en un trozo, así que el
     // "último pedido de cada uno" sigue siendo correcto. Truncado, el estado del último
@@ -209,6 +225,13 @@ export async function matchSegment(db: SupabaseClient, channelId: string, seg: a
     const latest: Record<string, string> = {};
     (ords ?? []).forEach((o: any) => { if (o.contact_id && !(o.contact_id in latest)) latest[o.contact_id] = o.estado; });
     ids = ids.filter((id) => orderStates.includes(latest[id]));
+  }
+  if (unir) {
+    const porPedido = orderStates.length ? new Set(ids) : null;
+    return todos.filter((id) =>
+      (stages.length > 0 && stages.includes(stageDe.get(id) ?? "")) ||
+      (porEtiqueta?.has(id) ?? false) ||
+      (porPedido?.has(id) ?? false));
   }
   return ids;
 }

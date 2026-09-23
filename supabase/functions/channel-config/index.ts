@@ -1071,6 +1071,17 @@ Deno.serve(async (req) => {
           ? body.telegram_chat_ids
           : String(body.telegram_chat_ids || "").split(/[\s,]+/);
         upd.telegram_chat_ids = arr.map((x: string) => x.trim()).filter(Boolean);
+        // Un chat de Telegram es un número (negativo si es un grupo). Con «@rodrigo» o un
+        // nombre, los avisos no le llegan a nadie y nada lo dice: el guardado decía «Guardado».
+        const malo = (upd.telegram_chat_ids as string[]).find((x) => !/^-?\d{3,}$/.test(x));
+        if (malo) return json({ error: "id_invalido", detalle: `«${malo}» no es un chat de Telegram: tiene que ser un número (el que te da el bot al vincularte).` }, 400);
+      }
+      // Pixel y página: números. El autofill de Chrome ya metió «Square» en un campo de Meta
+      // (ver phone_number_id abajo), y un Pixel ID que no es número hace que CAPI falle en
+      // cada venta sin que el panel lo muestre al guardar.
+      for (const [idk, nombre] of [["pixel_id", "Pixel ID"], ["page_id", "ID de la página"]] as const) {
+        const v = upd[idk];
+        if (v != null && !/^\d{5,}$/.test(String(v))) return json({ error: "id_invalido", detalle: `El ${nombre} tiene que ser solo números.` }, 400);
       }
       // Validar formato (numérico) y PERTENENCIA de los IDs de Meta en el BACKEND (el front ya
       // valida, pero un cliente puede llamar la función directo). Sin esto un admin podía
