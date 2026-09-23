@@ -189,6 +189,10 @@ Deno.serve(async (req) => {
 
   // Forzar el arranque de un flujo concreto (selector "Flujo a probar").
   if (flow_id && !text && !buttonId && !mediaKind) {
+    // 🔒 El flujo tiene que ser de ESTE bot: con el id de un flujo de otra cuenta se corría
+    // (y se veía) su contenido en el banco de pruebas propio.
+    const { data: okFlow } = await db.from("flows").select("id").eq("id", flow_id).eq("channel_id", channel_id).maybeSingle();
+    if (!okFlow) return json({ error: "flujo_ajeno" }, 400);
     try {
       const ok = await startFlowRun(db, channel_id, contactId, flow_id, { force: true });
       if (!ok) return json({ error: "no_se_pudo_iniciar", detalle: "El flujo no tiene nodo inicial" }, 400);

@@ -683,6 +683,15 @@ async function processStatus(channelId: string, st: any) {
   // llegó (justo con una clave de recojo o una entrega digital eso es grave). Se avisa igual.
   const avisarSiFallo = async (upd: any[] | null) => {
     if (!esFallo) return;
+    // Un mensaje de CAMPAÑA que Meta rechaza después (131049 tope de marketing, 131026…): se
+    // cuenta en la campaña y NO dispara el aviso crítico «escríbele tú» — en una campaña eran
+    // decenas de avisos no silenciables que tapaban uno de verdad (un pago por validar), y el
+    // reporte de la campaña seguía diciendo «enviado» a quien no le llegó.
+    try {
+      const { data: cs } = await db.from("campaign_sends").update({ estado: "fallido", error: patch.error ?? null })
+        .eq("wamid", wamid).select("id");
+      if (cs && cs.length) return;
+    } catch (_) { /* si no se pudo mirar, se avisa como siempre */ }
     const cid = (upd && upd[0] && (upd[0] as any).contact_id) || null;
     if (cid) { try { await avisarEnvioFallido(db, channelId, cid, patch.error); } catch (_) { /* no encadenar fallos */ } }
   };

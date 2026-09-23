@@ -119,6 +119,14 @@ Deno.serve(async (req) => {
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   let notaSinOperacion = false; // se anota tras el CAS (ver más abajo)
+  // Registra en el anti-reúso la operación de CADA abono de un pago en partes (idempotente).
+  const registrarAbonos = async (abonos: unknown, ctxOp: string) => {
+    if (!Array.isArray(abonos)) return;
+    for (const a of abonos as any[]) {
+      const op = String(a?.op ?? "").trim();
+      if (op) await registrarOperacion(db, (order as any).channel_id, op, order.id, ctxOp).catch(() => {});
+    }
+  };
   if (body.shipping && typeof body.shipping === "object") {
     patch.shipping = { ...((order as any).shipping ?? {}), ...body.shipping };
   }
@@ -132,7 +140,22 @@ Deno.serve(async (req) => {
   // Editar los order_bumps a mano desde "Editar pedido" (quitar un extra puesto
   // por error, corregir un precio). OJO: no reconcilia stock ni el saldo — eso lo
   // ajusta el operador aparte.
-  if (Array.isArray(body.order_bumps)) patch.order_bumps = body.order_bumps;
+  // 🔒 Cada extra con presentación tiene que ser de un producto de ESTE canal (igual que
+  // venta-manual): un version_id de otra cuenta hacía que entregarExtrasDigitales le mandara
+  // a este cliente el contenido digital pagado de otro negocio.
+  if (Array.isArray(body.order_bumps)) {
+    // Los que el pedido YA tenía no se revisan: si su producto se borró después, editar el
+    // pedido (p. ej. corregir un precio) no debe fallar por un extra viejo.
+    const yaEstaban = new Set((((order as any).order_bumps ?? []) as any[]).map((b) => String(b?.version_id ?? "")));
+    for (const b of body.order_bumps as any[]) {
+      const vid = b?.version_id;
+      if (!vid || yaEstaban.has(String(vid))) continue;
+      const { data: okV } = await db.from("product_versions").select("id, products!inner(channel_id)")
+        .eq("id", String(vid)).eq("products.channel_id", (order as any).channel_id).maybeSingle();
+      if (!okV) return json({ error: "extra_invalido", detalle: "Uno de los extras no es de este bot." }, 400);
+    }
+    patch.order_bumps = body.order_bumps;
+  }
   // Cambiar el producto del pedido desde "Editar pedido". Se valida que el nuevo
   // producto pertenezca al MISMO canal del pedido (no colar uno ajeno). El stock se
   // reconcilia abajo (reconciliarStockManual); el saldo/amount los ajusta el operador.
@@ -142,6 +165,11 @@ Deno.serve(async (req) => {
     if (!prod) return json({ error: "producto_ajeno" }, 400);
     patch.product_id = body.product_id;
     patch.version_id = (typeof body.version_id === "string" && body.version_id) ? body.version_id : null;
+    if (patch.version_id) {
+      const { data: okV } = await db.from("product_versions").select("id")
+        .eq("id", patch.version_id as string).eq("product_id", body.product_id).maybeSingle();
+      if (!okV) return json({ error: "version_invalida", detalle: "Esa presentación no es de ese producto." }, 400);
+    }
   }
   const newEstado = body.estado && body.estado !== (order as any).estado ? body.estado : null;
   // 🚦 El estado tiene que ser uno de los que el sistema conoce (EST, la misma tabla que usan
@@ -426,6 +454,9 @@ Deno.serve(async (req) => {
     const shipA = ((order as any).shipping || {}) as any;
     const opA = String(shipA.adelanto_operacion || shipA.adelanto_operacion_leida || "").trim();
     if (opA) await registrarOperacion(db, (order as any).channel_id, opA, order.id, "adelanto").catch((e) => console.error("[order-update] registrar op adelanto:", (e as any)?.message ?? e));
+    // Y CADA parte si se pagó en abonos: solo se registraba la última, así que la primera parte
+    // (un Yape de S/15) se podía reenviar después como pago del saldo o de otro pedido.
+    await registrarAbonos(shipA.adelanto_abonos, "adelanto");
     // 📦 Provincia solo aparta stock cuando el adelanto queda validado (acá, a
     // mano). Descuenta el plan guardado al crear el pedido. Idempotente.
     try {
@@ -511,6 +542,7 @@ Deno.serve(async (req) => {
     const shipS = ((order as any).shipping || {}) as any;
     const opS = String(shipS.saldo_operacion || shipS.saldo_operacion_leida || "").trim();
     if (opS) await registrarOperacion(db, (order as any).channel_id, opS, order.id, "saldo").catch((e) => console.error("[order-update] registrar op saldo:", (e as any)?.message ?? e));
+    await registrarAbonos(shipS.saldo_abonos, "saldo");
   }
 
   // 🔒 Anti-reúso DIGITAL: cuando un pago digital que fue a validación MANUAL se
@@ -524,6 +556,7 @@ Deno.serve(async (req) => {
     const shipD = ((patch.shipping as any) ?? (order as any).shipping ?? {}) as any;
     const opD = String(shipD.digital_operacion || shipD.digital_operacion_leida || "").trim();
     if (opD) await registrarOperacion(db, (order as any).channel_id, opD, order.id, "digital").catch((e) => console.error("[order-update] registrar op digital:", (e as any)?.message ?? e));
+    await registrarAbonos(shipD.digital_abonos, "digital");
   }
 
   // 🔒 Anti-reúso EXTRA: mismo hueco que el digital, pero para el pago de una venta

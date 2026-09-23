@@ -1221,7 +1221,9 @@ export async function entregarExtrasDigitales(db: SupabaseClient, channelId: str
     for (const b of bumps) {
       if (!(b?.digital && !b?.entregado)) continue;   // TODOS los digitales sin entregar (aunque no tengan version_id)
       const { data: v } = b?.version_id
-        ? await db.from("product_versions").select("nombre, entrega").eq("id", b.version_id).maybeSingle()
+        // Atado al canal: una presentación de otra cuenta no se entrega nunca (defensa en fondo).
+        ? await db.from("product_versions").select("nombre, entrega, products!inner(channel_id)")
+            .eq("id", b.version_id).eq("products.channel_id", channelId).maybeSingle()
         : { data: null };
       const items = (Array.isArray((v as any)?.entrega) ? (v as any).entrega : []).filter((it: any) => it && it.url);
       const nombre = b.nombre || (v as any)?.nombre || "extra digital";
@@ -1349,10 +1351,21 @@ export async function crearVentaManual(
   const { data: prod } = await db.from("products").select("tipo, config").eq("id", productId).maybeSingle();
   const tipo = String((prod as any)?.tipo || "digital");
   const esFisico = tipo === "fisico";
-  const { data: ver } = await db.from("product_versions").select("id, entrega").eq("id", versionId).maybeSingle();
+  const { data: ver } = await db.from("product_versions").select("id, entrega, cantidad").eq("id", versionId).maybeSingle();
   const { data: ct } = await db.from("contacts").select("ctwa_clid, ad_id").eq("id", contactId).maybeSingle();
 
   const ship: Record<string, unknown> = { manual: true };
+  // 💰 El COSTO congelado, igual que crearPedido (costo por unidad × unidades de la presentación)
+  // + el empaque del físico. Sin esto la misma venta a mano daba tres ganancias: Telegram sin
+  // costo, el Dashboard con el costo de HOY y Rendimiento con la cantidad fija en 1.
+  {
+    const cu = Number((prod as any)?.config?.costo);
+    if (Number.isFinite(cu) && cu >= 0 && (prod as any)?.config?.costo !== "" && (prod as any)?.config?.costo != null) {
+      ship.costo_producto = +(cu * (Number((ver as any)?.cantidad) || 1)).toFixed(2);
+    }
+    const emp = Number((prod as any)?.config?.empaque);
+    if (esFisico && Number.isFinite(emp) && emp > 0) ship.empaque = emp;
+  }
   if (esFisico) {
     // Datos de entrega (Lima contraentrega o Provincia agencia). Vienen del modal
     // pre-llenados con lo ya capturado del cliente → el pedido nace COMPLETO
@@ -2587,7 +2600,7 @@ async function manejarVuelto(db: SupabaseClient, channelId: string, contactId: s
   let vuelto = 0;
   try {
     const { data: ords } = await db.from("orders").select("shipping")
-      .eq("contact_id", contactId).order("created_at", { ascending: false }).limit(10);
+      .eq("channel_id", channelId).eq("contact_id", contactId).order("created_at", { ascending: false }).limit(10);
     for (const o of ords ?? []) { const v = Number(((o as any).shipping ?? {}).vuelto); if (Number.isFinite(v) && v > 0) { vuelto = v; break; } }
   } catch (_) { /* best-effort */ }
   const { data: c } = await db.from("contacts").select("nombre, wa_id").eq("id", contactId).maybeSingle();
@@ -2603,7 +2616,11 @@ async function manejarVuelto(db: SupabaseClient, channelId: string, contactId: s
   }
 
   // modo "tranquilizar" (default): responde, avisa y SIGUE atendiendo.
-  const def = "¡No te preocupes! 🙌 Registramos que pagaste de más. Un administrador está gestionando la devolución de tu vuelto{{monto}} y te enviaremos la constancia por aquí en un momentito. Seguimos con tu pedido con normalidad. 🙂";
+  // …pero SOLO si de verdad hay un vuelto registrado. «Que traiga el vuelto, pago con 100» (Lima
+  // contraentrega) caía acá y el bot afirmaba «Registramos que pagaste de más… gestionando la
+  // devolución» a alguien que no pagó nada todavía. Sin saldo a favor, lo contesta la IA normal.
+  if (!(vuelto > 0)) return false;
+  const def ="¡No te preocupes! 🙌 Registramos que pagaste de más. Un administrador está gestionando la devolución de tu vuelto{{monto}} y te enviaremos la constancia por aquí en un momentito. Seguimos con tu pedido con normalidad. 🙂";
   let msg = (cfg?.mensaje && String(cfg.mensaje).trim()) ? String(cfg.mensaje) : def;
   msg = msg.replace(/\{\{\s*vuelto\s*\}\}/g, vuelto > 0 ? `${sym} ${vuelto}` : "")
            .replace(/\{\{\s*monto\s*\}\}/g, vuelto > 0 ? ` (${sym} ${vuelto})` : "");
@@ -7041,6 +7058,21 @@ function urlDescargaSegura(raw: string): URL | null {
   return u;
 }
 
+// Descarga siguiendo las redirecciones A MANO y revisando CADA salto con el mismo guard:
+// `fetch` las sigue solo, así que una URL pública que redirige a 169.254.169.254 pasaba.
+async function fetchSeguro(u: URL, ms: number): Promise<Response> {
+  let actual: URL = u;
+  for (let salto = 0; salto < 4; salto++) {
+    const r = await fetchConTimeout(actual, { redirect: "manual" }, ms);
+    if (r.status < 300 || r.status >= 400) return r;
+    const loc = r.headers.get("location");
+    const sig = loc ? urlDescargaSegura(new URL(loc, actual).toString()) : null;
+    if (!sig) throw new Error("redirección no permitida");
+    actual = sig;
+  }
+  throw new Error("demasiadas redirecciones");
+}
+
 // ── STT: descarga el audio entrante y lo transcribe (OpenAI Whisper) ─
 // mediaRef = "wa-media:<id>" (WhatsApp, se baja por Graph con el token del
 // canal) o una URL pública (webchat de pruebas).
@@ -7057,7 +7089,7 @@ async function transcribeIncoming(db: SupabaseClient, channelId: string, mediaRe
   } else {
     const su = urlDescargaSegura(mediaRef);
     if (!su) { console.warn("[STT] URL de media no permitida (SSRF guard)"); return null; }
-    const r = await fetchConTimeout(su, {}, 45_000);
+    const r = await fetchSeguro(su, 45_000);
     if (!r.ok) return null;
     mime = r.headers.get("content-type") || "audio/ogg";
     bytes = new Uint8Array(await r.arrayBuffer());
@@ -7146,7 +7178,7 @@ async function bloqueDeComprobante(url: string): Promise<ContentBlock> {
 async function urlToDataUri(url: string): Promise<string> {
   const su = urlDescargaSegura(url);
   if (!su) throw new Error("URL de imagen no permitida");
-  const r = await fetchConTimeout(su, {}, 45_000);
+  const r = await fetchSeguro(su, 45_000);
   if (!r.ok) throw new Error(`no se pudo descargar la imagen (${r.status})`);
   const mime = r.headers.get("content-type") || "image/jpeg";
   const buf = new Uint8Array(await r.arrayBuffer());
@@ -8997,7 +9029,10 @@ async function avisar(
     // Nombre del canal escapado: «Tienda R&M» rompía el HTML de CADA aviso de ese canal y todos
     // caían al fallback en texto plano (llegaban, pero sin formato, y sin que nadie lo notara).
     const prefix = (channel as any)?.nombre ? `<b>[${escaparHtml(String((channel as any).nombre))}]</b>\n` : "";
-    await sendTelegram(token, chatIds, prefix + texto, foto, botones.length ? botones : undefined);
+    const _llego = await sendTelegram(token, chatIds, prefix + texto, foto, botones.length ? botones : undefined);
+    // Telegram lo RECHAZÓ en todos los chats (bot sacado del grupo, chat inexistente, 429
+    // persistente): antes se perdía sin rastro; ahora queda en la Actividad como los otros motivos.
+    if (_llego === 0) await _noSale("Telegram rechazó el envío (¿sacaron al bot del chat o se borró el chat?)");
   } catch (e) {
     console.error("[avisar]", (e as any)?.message ?? e);
   }
@@ -9578,8 +9613,11 @@ function evaluarAbono(
   // y el cliente quedaba sub-acreditado. Por debajo de 4 se trata como «sin operación», que
   // no descarta nada: cae en la rama `ambiguo` y lo decide un humano con el comprobante
   // delante. Es el mismo umbral que ya exige la auto-aprobación.
-  const opFiable = op && String(op).trim().length >= 4 ? String(op).trim() : null;
-  const dupOp = opFiable ? prev.some((a: any) => a.op && String(a.op) === opFiable) : false;
+  // NORMALIZADA (normOperacion: letras y dígitos): la misma captura leída una vez como
+  // «YP-0606-2558» y otra como «YP06062558» se tomaba por DOS pagos y sumaba dos veces.
+  const _opN = op ? normOperacion(String(op)) : "";
+  const opFiable = _opN.length >= 4 ? _opN : null;
+  const dupOp = opFiable ? prev.some((a: any) => a.op && normOperacion(String(a.op)) === opFiable) : false;
   // SIN operación (captura borrosa) + ya hay un abono del MISMO monto: AMBIGUO. No se
   // puede saber si es un reenvío del mismo pago (no acreditar) o un 2º pago legítimo
   // igual (acreditar). Antes se asumía reenvío y se DESCARTABA en silencio → si era un
@@ -11002,7 +11040,11 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   if (_frenoAdel) {
     await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual", _frenoAdel).catch(() => {});
   }
-  const puedeAuto = cfg.validacion === "auto" && !_sinDest && !_frenoAdel && cubre && !sobrepagoAdel && !!oper && oper.length >= 4 && _hayPrueba;
+  // 🔒 Pagado en VARIAS partes: los frenos de arriba (fecha, destinatario, operación, prueba de
+  // texto) miran SOLO el último comprobante. Un Yape viejo o a otro número de S/18 entraba como
+  // abono sin freno y un S/1 real lo «completaba» → validado solo. Varias partes = lo ve un humano.
+  const _enPartes = !!(ab && ab.abonos.length > 1);
+  const puedeAuto = cfg.validacion === "auto" && !_sinDest && !_frenoAdel && cubre && !sobrepagoAdel && !!oper && oper.length >= 4 && _hayPrueba && !_enPartes;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU del pre-chequeo
   // `reuse`): si esta operación ya fue reclamada por otra ruta o un reintento del MISMO Yape,
   // no la ganamos → se degrada a manual (para que un solo comprobante no acredite dos pedidos).
@@ -11109,9 +11151,18 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // Manual (o auto con dudas) → queda esperándote en el Copiloto, con la
   // opinión del OCR ya escrita. NO se aprueba nada a tus espaldas.
   const montoLeido = ab ? ab.total : (Number.isFinite(monto) ? monto : null);
+  // El MOTIVO real de que esté acá. Lo que el código ya detectó (fecha vieja / número ajeno,
+  // sin texto de comprobante, sin nº de operación, pagado en partes) solo quedaba en el log y la
+  // tarjeta decía en verde «La IA lo leyó y cuadra · listo para tu aprobación» — justo la
+  // pantalla donde el operador decide sobre plata.
+  const _sinOp = !oper || oper.length < 4;
   const motivo = reuse ? "operación ya usada"
     : !parsed?.valido ? (parsed?.motivo || "comprobante a revisar")
     : sobrepagoAdel ? `monto leído (${montoLeido}) muy por encima del total del pedido (${totalOwedAdel}) — posible mala lectura, revisar`
+    : _frenoAdel ? _frenoAdel
+    : !_hayPrueba ? "no se ve el texto de un comprobante: revisa la imagen"
+    : _enPartes ? `pagado en ${ab!.abonos.length} partes — revisa CADA comprobante (el bot solo revisó a fondo el último)`
+    : _sinOp ? "sin nº de operación legible: confírmalo en tu Yape/banco"
     : "listo para tu aprobación"; // legítimo y ya cubre, pero estás en modo manual
   await db.from("orders").update({
     updated_at: new Date().toISOString(),
@@ -11119,7 +11170,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
       ...(await shipFresco()), adelanto_comprobante: url, adelanto_recibido_at: new Date().toISOString(),
       adelanto_revisar: motivo, adelanto_monto_leido: montoLeido,
       adelanto_operacion_leida: oper, adelanto_metodo: metodo,
-      adelanto_ok_ia: !!parsed?.valido && cubre && !reuse,
+      adelanto_ok_ia: !!parsed?.valido && cubre && !reuse && !_frenoAdel && _hayPrueba && !_enPartes && !_sinOp,
       ...(ab && ab.abonos.length > 1 ? { adelanto_abonos: ab.abonos, adelanto_abonado: ab.total } : {}),
     },
   }).eq("id", (order as any).id);
@@ -11186,8 +11237,12 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const ocrSys = buildOcrSystem((ch as any)?.ocr_config, null, (order as any).currency, true, (ch as any)?.timezone)
     ?? ocrSystemMinimo((ch as any)?.timezone);
   const system = ocrSys +
-    "\n\nDevuelve SOLO un JSON con los campos: es_pago, valido, monto, operacion, motivo. " +
-    "`valido` juzga SOLO que el pago sea legítimo (destinatario correcto, sin fraude/montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo.";
+    // fecha / destinatario / destino / texto_visible, IGUAL que el adelanto: sin pedirlos el
+    // modelo los omitía y `frenoDeComprobante` (fecha vieja, número ajeno) no tenía qué mirar —
+    // un Yape viejo o a otro número podía soltar la clave de recojo en automático.
+    "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, operacion, fecha, destinatario, destino, motivo y texto_visible. " +
+    "`valido` juzga SOLO que el pago sea legítimo (destinatario correcto, sin fraude/montaje); NO juzgues si el monto alcanza — de la matemática del monto me encargo yo. " +
+    "En `texto_visible` TRANSCRIBE LITERALMENTE el texto que se ve en la imagen, tal cual, sin interpretarlo.";
 
   let parsed: any = null;
   try {
@@ -11291,7 +11346,9 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   if (_frenoSaldo) {
     await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante del saldo a revisión manual", _frenoSaldo).catch(() => {});
   }
-  const puedeAuto = log.modo === "auto" && !_sinDestS && !_frenoSaldo && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper && oper.length >= 4 && _pruebaSaldo;
+  // Varias partes → humano (ver adelanto: los frenos solo miran el último comprobante).
+  const _enPartesS = !!(ab && ab.abonos.length > 1);
+  const puedeAuto = log.modo === "auto" && !_sinDestS && !_frenoSaldo && cubre && !reuse && !!clave && !sobrepagoSaldo && !!oper && oper.length >= 4 && _pruebaSaldo && !_enPartesS;
   // 🔒 Claim atómico del anti-reúso ANTES de auto-aprobar (cierra el TOCTOU): si esta
   // operación ya fue reclamada por otra ruta/reintento del mismo Yape, no ganamos → manual.
   if (puedeAuto && oper && !(await reclamarOperacion(db, channelId, oper, (order as any).id, "saldo", contactId))) reuse = true;
@@ -11353,8 +11410,14 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
 
   // ⚠️ Ante cualquier duda → al Copiloto + aviso por Telegram.
   const montoLeido = ab ? ab.total : (Number.isFinite(monto) ? monto : null);
+  // El motivo REAL (lo que el código detectó no llegaba a la tarjeta; ver el adelanto).
   const motivo = reuse ? "operación ya usada"
     : !parsed?.valido ? (parsed?.motivo || "comprobante a revisar")
+    : sobrepagoSaldo ? `monto leído (${montoLeido}) muy por encima del saldo — posible mala lectura, revisar`
+    : _frenoSaldo ? _frenoSaldo
+    : !_pruebaSaldo ? "no se ve el texto de un comprobante: revisa la imagen"
+    : _enPartesS ? `pagado en ${ab!.abonos.length} partes — revisa CADA comprobante (el bot solo revisó a fondo el último)`
+    : (!oper || oper.length < 4) ? "sin nº de operación legible: confírmalo en tu Yape/banco"
     : !clave ? "el pedido no tiene clave de recojo cargada"
     : "listo para tu aprobación";
   await db.from("orders").update({
@@ -20372,7 +20435,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // freno detectó un sobrepago sospechoso (Capa 1), si no se sabe QUÉ compró
           // (precioSinResolver), o si es un extra sin operación verificable — aunque
           // esté en automático.
-          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable || montoIlegible || precioSinResolver || extraMontoDudoso || sinPruebaDig || sinDestinatariosDig || !!_frenoDig)) {
+          // 🔒 Pagado en VARIAS partes: los frenos de arriba miran solo el ÚLTIMO comprobante (un
+          // abono viejo o a otro número entraba sin freno y uno chico real lo completaba → se
+          // entregaba el producto al instante). Varias partes = lo ve un humano.
+          const enPartesDig = Array.isArray(run.vars._pago_abonos) && (run.vars._pago_abonos as any[]).length > 1;
+          if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable || montoIlegible || precioSinResolver || extraMontoDudoso || sinPruebaDig || sinDestinatariosDig || !!_frenoDig || enPartesDig)) {
             const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
             const { data: cc } = await db.from("contacts").select("product_id, nombre, wa_id").eq("id", run.contact_id).maybeSingle();
             const quien = (cc as any)?.nombre || (cc as any)?.wa_id || "Un cliente";
@@ -20421,7 +20488,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // seguidas que se contradicen, en la pantalla donde se decide sobre plata.
                 // Verde solo cuando la única razón de venir a manual es que TÚ lo pediste
                 // (modo manual) o que faltó el nº de operación; si el monto es dudoso, no.
-                digital_ok_ia: !(sobrepagoSospechoso || montoIlegible || precioSinResolver),
+                digital_ok_ia: !(sobrepagoSospechoso || montoIlegible || precioSinResolver || !!_frenoDig || sinPruebaDig || sinDestinatariosDig || enPartesDig),
+                // Lo que detectó el CÓDIGO también se dice (solo quedaba en el log y la tarjeta
+                // salía sin motivo). Van primero: los motivos de abajo, más específicos, mandan.
+                ...(_frenoDig ? { digital_revisar: _frenoDig }
+                  : sinPruebaDig ? { digital_revisar: "No se ve el texto de un comprobante con ese monto: revisa la imagen antes de aprobar." }
+                  : enPartesDig ? { digital_revisar: `Pagado en ${(run.vars._pago_abonos as any[]).length} partes: revisa CADA comprobante (el bot solo revisó a fondo el último).` }
+                  : sinDestinatariosDig ? { digital_revisar: "No tienes métodos de pago cargados (Negocio → Pagos): confirma que el pago llegó a tu cuenta." }
+                  : {}),
                 // Freno (Capa 1): nota para que el humano revise el sobrepago sospechoso.
                 ...(sobrepagoSospechoso ? { digital_revisar: `El bot leyó ${simboloMoneda(ctx.moneda as string)}${run.vars.pago_monto} para un precio de ${simboloMoneda(ctx.moneda as string)}${amount}. Revisa el comprobante antes de aprobar.` } : {}),
                 // No se supo qué presentación compró (ni por la charla ni por el monto):

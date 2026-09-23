@@ -85,12 +85,16 @@ Deno.serve(async (req) => {
     }
   }
 
-  const ext = ((filename?.split(".").pop() || guessExt(content_type) || "bin")).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
+  // La extensión sale del tipo YA validado cuando se conoce; la del nombre solo si no es
+  // algo que un navegador ejecute (un «x.html» declarado text/plain quedaba como .html).
+  let ext = (guessExt(ct) || (filename?.split(".").pop() ?? "") || "bin").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 8);
+  if (/^(html?|xhtml|svg|svgz|js|mjs|xml|xsl|php|htaccess)$/.test(ext) || !ext) ext = "bin";
   // Multi-tenant: agrupar por cuenta (acct/{account_id}/chat/{channel_id}/…).
   const acc = channel_id ? await accountOfChannel(db, channel_id) : null;
   const path = `acct/${acc || "misc"}/chat/${channel_id || "misc"}/${crypto.randomUUID()}.${ext}`;
   const { error } = await db.storage.from(BUCKET).upload(path, bytes, {
-    contentType: content_type || "application/octet-stream", upsert: false,
+    // El tipo NORMALIZADO y validado (`ct`), no el crudo del cuerpo.
+    contentType: ct || "application/octet-stream", upsert: false,
   });
   if (error) return json({ error: "upload_error", detalle: error.message }, 500);
 

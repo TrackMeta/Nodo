@@ -761,6 +761,10 @@ async function importCsv(file){
     const cols=parseCsvLine(lines[i], delim);
     // «0051 999…» (prefijo internacional 00) → se quita; y un número fuera de 8-15 dígitos no es
     // un wa_id posible (entraba igual: contacto huérfano y envíos fallidos que pesan en la calidad).
+    // Notación científica («5.19999E+11»: Excel guardó el número como número y lo redondeó).
+    // Quitándole lo que no es dígito quedaba «51999911», que pasaba como un número real e
+    // inventado. Esos dígitos ya se perdieron: la fila se descarta y se cuenta como sin teléfono.
+    if(/\d[.,]?\d*e[+-]?\d+/i.test(String(cols[ci.tel]||"").trim())){ sinTel++; continue; }
     let wa=(cols[ci.tel]||"").replace(/[^0-9]/g,"").replace(/^00/,"");
     if(wa && !/^\d{8,15}$/.test(wa)){ sinTel++; continue; }
     // Las filas sin número se saltaban EN SILENCIO. Si la columna del teléfono no era la que

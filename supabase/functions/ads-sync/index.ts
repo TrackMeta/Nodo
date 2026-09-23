@@ -18,7 +18,9 @@ import { serviceClient, getAdsToken } from "../_shared/db.ts";
 import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
-const GRAPH = "https://graph.facebook.com/v21.0";
+// v25.0 como el resto de Nodo (_shared/meta.ts, channel-config): la v21 (oct-2024) está al borde
+// de su fin de soporte y, al vencer, el gasto dejaría de bajar.
+const GRAPH = "https://graph.facebook.com/v25.0";
 const WINDOW_DAYS = 30;
 
 Deno.serve(async (req) => {
@@ -53,8 +55,11 @@ Deno.serve(async (req) => {
     porCanal.set((a as any).channel_id, arr);
   }
 
-  const since = new Date(Date.now() - WINDOW_DAYS * 864e5).toISOString().slice(0, 10);
-  const until = new Date().toISOString().slice(0, 10);
+  // Fechas en hora de LIMA, no UTC: entre las 7 p. m. y medianoche de Lima el «hoy» de UTC ya
+  // es mañana, y se le pedía a Meta un día que para la cuenta todavía no existe.
+  const diaLima = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+  const since = diaLima(Date.now() - WINDOW_DAYS * 864e5);
+  const until = diaLima(Date.now());
   const resumen: Record<string, unknown>[] = [];
 
   for (const [channelId, cuentas] of porCanal) {

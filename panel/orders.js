@@ -84,6 +84,8 @@ export function cobrado(o){
   // Lima contraentrega que pagó ANTES de recibir y se lo aprobaron (resolverPrepagoLima):
   // esa plata ya entró. Sin esto el pedido seguía «por cobrar» entero → el Excel del courier
   // y el rótulo le hacían cobrar al motorizado lo que el cliente ya había pagado.
+  // Solo mientras el pedido siga siendo VENTA: anulado/cancelado (un prepago falso) ya no cuenta.
+  if (!m.venta) return 0;
   return Math.min(Number(o?.shipping?.prepago_lima_abonado) || 0, total(o));
 }
 
@@ -241,12 +243,20 @@ export function margen(o, prod, cantidad = 1){
   const cp = costoProducto(o, prod, cantidad);
   const f  = flete(o);
   if (cp == null) return null;
+  // Sin el costo del PRODUCTO (ni congelado ni en la ficha) el margen no se conoce, aunque el
+  // regalo/extra sí traigan el suyo: costoProducto devolvía solo ese y una faja de S/129 sin
+  // costo cargado salía «ganancia S/114 (88 %)» mientras el resumen la contaba sin costo.
+  const _snapCP = o?.shipping?.costo_producto, _fichaCP = prod?.config?.costo;
+  if ((_snapCP == null || _snapCP === "") && (_fichaCP == null || _fichaCP === "")) return null;
   if (esFisico(o) && f == null) return null; // físico sin flete registrado
   // Caja para el ingreso y devengo para el costo daban ganancia NEGATIVA a todo pedido
   // contraentrega recién confirmado (cobrado 0 − costo − flete): la banda del Dashboard, la
   // Bitácora de ayer y el resumen de las 8 a. m. decían «🔻 −S/600» con 10 ventas del día.
   // Mientras no entró nada de plata no hay ganancia que medir: null = pendiente de cobro.
-  if (cobrado(o) <= 0) return null;
+  // …y lo mismo con un cobro PARCIAL (provincia con solo el adelanto, Lima con un pago
+  // adelantado): el ingreso era la parte cobrada y el costo el completo → 10 pedidos de S/120
+  // con S/20 de adelanto daban «ganancia −S/320». Hasta cobrar todo, la ganancia es pendiente.
+  if (cobrado(o) < total(o) - 0.009) return null;
   // El empaque es un costo FÍSICO (caja/bolsa/etiqueta del despacho): en digital NO se
   // resta (el Dashboard y el digest definen la ganancia digital = cobrado − COGS). Sin este
   // gate, Rendimiento/CPA restaba el empaque a un digital y daba una ganancia distinta al Dashboard.

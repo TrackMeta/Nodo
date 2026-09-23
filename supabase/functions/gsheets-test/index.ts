@@ -70,6 +70,16 @@ Deno.serve(async (req) => {
     }
   }
 
+  // 🔒 Solo sobre la hoja CONECTADA del bot. El permiso de Google alcanza a TODAS las hojas de
+  // esa cuenta: con un spreadsheet_id cualquiera en el cuerpo, un operador podía escribir filas
+  // o sondear hojas del dueño que no tienen nada que ver con Nodo.
+  if ((body.leer_fila || body.borrar_fila || body.estado || body.preparar || body.oauth) && body.channel_id && body.spreadsheet_id) {
+    const { data: chG } = await db.from("channels").select("gsheets").eq("id", body.channel_id).maybeSingle();
+    if (String((chG as any)?.gsheets?.spreadsheet_id ?? "") !== String(body.spreadsheet_id)) {
+      return json({ ok: false, detalle: "Esa no es la hoja conectada a este bot. Guárdala primero." });
+    }
+  }
+
   // ── Leer (o borrar) la fila de UN pedido: comprobar qué llegó a la hoja ──
   if (body.leer_fila || body.borrar_fila) {
     if (!body.channel_id || !body.spreadsheet_id || !body.order_id || !body.tab) return json({ error: "faltan_datos" }, 400);

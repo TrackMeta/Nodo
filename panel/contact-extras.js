@@ -353,7 +353,7 @@ export function pedidoResumenHtml(o) {
     // seleccionarlo, copiarlo y pegarlo en el navegador — en cada pedido que llega con pin.
     cliLines.push(mkLine("Dirección", !s.direccion ? ""
       : esUbicacionCompartida(s.direccion)
-        ? `<a href="${esc(s.direccion.match(/^\S+/)[0])}" target="_blank" rel="noopener noreferrer">📍 Abrir la ubicación que compartió</a>`
+        ? `<a href="${esc((String(s.direccion).trim().match(/^\S+/) || [""])[0])}" target="_blank" rel="noopener noreferrer">📍 Abrir la ubicación que compartió</a>`
         : esc(s.direccion)));
     cliLines.push(mkLine("Distrito", distReal ? esc(cap(distReal)) : ""));
     cliLines.push(mkLine("Provincia", esc(s.provincia || "Lima")));

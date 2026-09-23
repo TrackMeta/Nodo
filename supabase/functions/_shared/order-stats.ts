@@ -65,6 +65,8 @@ export function cobrado(o: Order): number {
   if (m.cobro === "todo") return total(o);
   if (m.cobro === "adelanto") return Math.min(adelantoDe(o), total(o));
   // Espejo de orders.js: el pago adelantado de Lima aprobado ya es plata cobrada.
+  // Solo mientras el pedido siga siendo VENTA: anulado/cancelado (un prepago falso) ya no cuenta.
+  if (!m.venta) return 0;
   return Math.min(Number((o?.shipping as any)?.prepago_lima_abonado) || 0, total(o));
 }
 
@@ -174,7 +176,7 @@ export function resumirPedidos(orders: Order[]): Digest {
         // cambio exige los dos: un margen a medias es peor que ninguno.
         if (cpN != null) costoProd += cpN;
         if (fN != null) envio += fN;
-        if (cobrado(o) <= 0) {
+        if (cobrado(o) < total(o) - 0.009) {   // sin cobrar o cobrado a MEDIAS (solo el adelanto): pendiente, igual que orders.js margen
           // Contraentrega aún sin cobrar: no hay ganancia que medir todavía (antes entraba
           // como 0 − costo − flete y el resumen de las 8 a. m. decía «🔻 −S/600» con 10 ventas).
         } else if (cpN == null || fN == null) {

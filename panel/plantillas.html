@@ -555,7 +555,15 @@ async function saveTpl(){
   }
   const patch={ name: enBorrador ? $("f_name").value.trim() : st.tpl.name, language: enBorrador ? ($("f_lang").value.trim()||"es") : (st.tpl.language||"es"),
     categoria:$("f_cat").value, body_preview:$("f_body").value, params, activa:$("f_activa").checked };
-  const estado=enBorrador ? $("f_estado").value : (st.tpl.estado_meta||"borrador"), folder=st.tpl.folder||null;
+  let estado=enBorrador ? $("f_estado").value : (st.tpl.estado_meta||"borrador");
+  const folder=st.tpl.folder||null;
+  // Un borrador NO se puede marcar «aprobada» a mano: nunca fue a Meta, Campañas la ofrecería
+  // y Meta rechazaría cada envío (132001) con toda la audiencia. «Aprobada» la pone Meta, vía
+  // «Enviar a Meta» + su respuesta, o «Sincronizar» si la creaste en el WhatsApp Manager.
+  if(enBorrador && estado==="aprobada" && !st.tpl.meta_id){
+    estado="borrador";
+    toast("«Aprobada» lo decide Meta: envíala con «Enviar a Meta» (o, si ya la creaste en el WhatsApp Manager, usa «Sincronizar»)",true);
+  }
   let { error }=await supa.from("wa_templates").update({ ...patch, estado_meta:estado, folder }).eq("id",st.tpl.id);
   if(error && /estado_meta|folder|column/.test(error.message)){ ({ error }=await supa.from("wa_templates").update(patch).eq("id",st.tpl.id)); if(!error) toast("Guardado (aplica 0015/0018 para estado y carpetas)"); }
   if(error){ toast(error.message,true); return; }

@@ -237,7 +237,10 @@ export async function matchSegment(db: SupabaseClient, channelId: string, seg: a
 }
 
 // Códigos que significan «el canal no puede enviar NADA»: no es culpa del destinatario.
-const META_CANAL_ROTO = new Set([190, 131030, 133010, 133005, 133006]);
+// + 131042 (problema con el MEDIO DE PAGO de la WABA: desde el 1-oct-2026 Meta cobra cada mensaje),
+// 131031 (cuenta bloqueada) y 368 (bloqueo temporal por políticas): son del CANAL, no del
+// contacto. Tratarlos como fallo del destinatario quemaba la audiencia entera, sin aviso.
+const META_CANAL_ROTO = new Set([190, 131030, 133010, 133005, 133006, 131042, 131031, 368]);
 const _avisoCanalRoto = new Map<string, number>();
 async function avisarCanalRoto(db: SupabaseClient, c: any, meta: any) {
   try {
@@ -254,6 +257,9 @@ async function avisarCanalRoto(db: SupabaseClient, c: any, meta: any) {
     const que = code === 190 ? "el token de WhatsApp venció o fue revocado: reconecta el número en Canales"
       : code === 131030 ? "la app de Meta está en modo desarrollo y el destinatario no está en su lista de prueba"
       : code === 133010 ? "el número del negocio no está registrado en la API (Canales → Probar conexión)"
+      : code === 131042 ? "hay un problema con el medio de pago de tu cuenta de WhatsApp en Meta (revisa la tarjeta en el Business Manager → Facturación)"
+      : code === 131031 ? "Meta bloqueó la cuenta de WhatsApp Business (revisa el Business Manager)"
+      : code === 368 ? "Meta bloqueó temporalmente el número por sus políticas"
       : `Meta ${code}: ${String(meta?.message ?? "")}`;
     const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     await sendTelegram(token, chatIds, `⚠️ <b>Campaña «${esc(String(c.nombre ?? c.id))}» detenida</b>\nWhatsApp no puede enviar: ${esc(que)}.\nLos envíos quedan en cola y se retoman solos cuando el canal vuelva a funcionar.`);

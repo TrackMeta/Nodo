@@ -22,7 +22,10 @@ export async function sendTelegram(
   text: string,
   photoUrl?: string,
   buttons?: TgButton[][],
-): Promise<void> {
+): Promise<number> {   // cuántos chats lo RECIBIERON (0 = no le llegó a nadie)
+  let enviados = 0;
+  // El token va en la URL de la API: un error de red puede traerla en el mensaje. Nunca al log.
+  const limpio = (s: unknown) => String(s ?? "").split(botToken).join("<token>");
   const usePhoto = !!photoUrl && /^https?:\/\//.test(photoUrl);
   const url = `https://api.telegram.org/bot${botToken}/${usePhoto ? "sendPhoto" : "sendMessage"}`;
   const markup = buttons?.length
@@ -69,11 +72,21 @@ export async function sendTelegram(
           }),
         });
       }
-      if (!res.ok) console.error("[telegram] fallo:", await res.text());
+      // 429 = Telegram pide esperar (muchos avisos seguidos). Se reintenta UNA vez tras el tiempo
+      // que indica (tope 5 s): antes se perdía el aviso, a veces uno con botón de aprobar.
+      if (res.status === 429) {
+        const j = await res.clone().json().catch(() => ({}));
+        const seg = Math.min(Number((j as any)?.parameters?.retry_after) || 2, 5);
+        await new Promise((r) => setTimeout(r, seg * 1000));
+        res = await fetchConTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      }
+      if (!res.ok) console.error("[telegram] fallo:", limpio(await res.text()));
+      else enviados++;
     } catch (e) {
-      console.error("[telegram] error:", (e as any)?.message ?? e);
+      console.error("[telegram] error:", limpio((e as any)?.message ?? e));
     }
   }
+  return enviados;
 }
 
 // Responde el toque del botón: Telegram deja el botón "cargando" hasta que le

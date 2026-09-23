@@ -1348,7 +1348,7 @@ function renderConversations(){
       + (recomprando?`<span class="idot recompra">${icon("refresh")} Recompra</span>`:'');
     const pEmoji = c.product && c.product.emoji ? `<span class="av-emoji">${esc(c.product.emoji)}</span>` : "";
     el.innerHTML = `
-      <div class="avwrap"><div class="av">${initials(c.nombre, c.wa_id)}</div>${pEmoji}</div>
+      <div class="avwrap"><div class="av">${esc(initials(c.nombre, c.wa_id))}</div>${pEmoji}</div>
       <div class="body">
         <div class="r1"><span class="nm">${esc(c.nombre||c.wa_id)}</span><span class="tm">${rel(cv.updated_at)}</span></div>
         <div class="r1"><span class="pv">${previewText(c)}</span>${cv.no_leidos>0?`<span class="badge">${cv.no_leidos}</span>`:""}</div>
@@ -1434,7 +1434,7 @@ async function loadContactPanel(c){
   const isT = c.wa_id === "webchat-test";
   p.innerHTML = `
     <div class="chd">
-      <div class="bigav">${initials(c.nombre, c.wa_id)}</div>
+      <div class="bigav">${esc(initials(c.nombre, c.wa_id))}</div>
       <div class="cnm">${esc(c.nombre || c.wa_id || "")}</div>
       <div class="cph">${isT ? "Contacto de prueba (Web Chat)" : "+"+esc(c.wa_id||"")}</div>
     </div>
@@ -1551,7 +1551,7 @@ function renderContactPanel(){
   p.innerHTML = `
     <div class="chd">
       <div style="position:relative">
-        <div class="bigav">${initials(contact.nombre, contact.wa_id)}</div>
+        <div class="bigav">${esc(initials(contact.nombre, contact.wa_id))}</div>
         ${emoji?`<span style="position:absolute;right:-4px;bottom:-2px;font-size:19px">${emoji}</span>`:""}
       </div>
       <div class="cnm">${esc(contact.nombre || contact.wa_id)}</div>

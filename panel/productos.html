@@ -248,7 +248,7 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
 // 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se pregunta a shell.js, pero SIN
 // importarlo estático: si el navegador tiene cacheado un shell.js viejo (sin ese export),
@@ -509,12 +509,13 @@ async function hubSaveProduct(pid){
     const vivos=new Set(angs.map(a=>a.id).filter(Boolean));
     for(const id of (st.hub.orig[pid]||[])){ if(!vivos.has(id)) await supa.from("angulos").delete().eq("id",id); }
     // Guardar el BANCO en el config del producto (fuente de ruteo por ID).
+    // Solo `ad_bank`, sobre el config FRESCO: escribir la copia de cuando se abrió la página
+    // revertía el STOCK a esa hora (las ventas del día volvían a estar disponibles = sobreventa)
+    // y pisaba cualquier otra clave cambiada desde entonces.
     const prod=(st.hub.prods||[]).find(p=>p.id===pid);
-    const cfg=(prod&&prod.config&&typeof prod.config==="object")?{...prod.config}:{};
-    cfg.ad_bank=st.hub.bank[pid]||[];
-    const { error:eCfg }=await supa.from("products").update({ config:cfg }).eq("id",pid);
-    if(eCfg) throw eCfg;
-    if(prod) prod.config=cfg;
+    const rCfg=await patchProductConfig(pid,(cfg)=>{ cfg.ad_bank=st.hub.bank[pid]||[]; });
+    if(!rCfg.ok) throw (rCfg.error||new Error("No se pudo guardar"));
+    if(prod) prod.config=rCfg.config;
     st.hub.byProd[pid]=angs; st.hub.orig[pid]=angs.map(a=>a.id);
     toast("Guardado"); renderAngHub();
   }catch(e){ toast(e.message||"No se pudo guardar",true); }
@@ -2606,7 +2607,7 @@ function renderSalud(ready){
   if(!fisico){
     // Cuenta solo los items con URL: una fila de entrega vacía no entrega nada.
     const sinEntrega=conPrecio.filter(v=>!(Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim())));
-    if(sinEntrega.length) errs.push(`Con precio pero sin entrega: ${sinEntrega.map(v=>`"${v.nombre||"—"}"`).join(", ")}. El cliente pagaría y no recibiría nada.`);
+    if(sinEntrega.length) errs.push(`Con precio pero sin entrega: ${sinEntrega.map(v=>`"${esc(v.nombre||"—")}"`).join(", ")}. El cliente pagaría y no recibiría nada.`);
   }
   // 🛡️ Extras DIGITALES enlazados sin link de entrega (aplica a principal físico o
   // digital: un extra digital puede colgar de cualquiera). Sin su link, el cliente
@@ -2986,8 +2987,12 @@ async function hashNodos(flowId){
 async function sellarFlujo(flowId){
   try{
     const sello = { sello: selloEstructura(), nodos: await hashNodos(flowId), at: new Date().toISOString() };
+    // Solo el sello, sobre el config FRESCO. Escribir `st.prod.config` entero grababa lo que el
+    // dueño aún no guardó y el STOCK de cuando abrió la ficha: regenerar un flujo (segundos de
+    // inserts) revertía las ventas de ese rato.
+    const r = await patchProductConfig(st.prod.id, (cfg) => { cfg._flujo_sello = sello; });
     st.prod.config = { ...(st.prod.config||{}), _flujo_sello: sello };
-    await supa.from("products").update({ config: st.prod.config }).eq("id", st.prod.id);
+    if (r.ok) { st._cfgOrig = { ...(st._cfgOrig||{}), _flujo_sello: sello }; }
   }catch(_){ /* el sello es una ayuda, no puede tumbar el guardado */ }
 }
 // Corre DESPUÉS de guardar el producto. Silencioso salvo que haya algo que decidir.
@@ -4413,13 +4418,25 @@ async function saveTrigger(tipo, key, config){
   const existing=st.act[key];
   if(config){
     if(existing) return (await supa.from("flow_triggers").update({config}).eq("id",existing.id)).error;
-    return (await supa.from("flow_triggers").insert({ channel_id:st.channelId, flow_id:st.act.flow.id, tipo, config, activo:true })).error;
+    // El nuevo se RECUERDA: sin guardar su id en st.act, el siguiente guardado (con la sección
+    // cerrada no se redibuja) no lo veía e insertaba OTRO disparador igual — y al borrar las
+    // palabras clave solo se iba uno, el otro seguía enganchando clientes.
+    const { data:insT, error:eIns }=await supa.from("flow_triggers").insert({ channel_id:st.channelId, flow_id:st.act.flow.id, tipo, config, activo:true }).select("id,config,tipo").single();
+    if(!eIns && insT) st.act[key]=insT;
+    return eIns;
   }
-  if(existing) return (await supa.from("flow_triggers").delete().eq("id",existing.id)).error;
+  if(existing){ const eDel=(await supa.from("flow_triggers").delete().eq("id",existing.id)).error; if(!eDel) st.act[key]=null; return eDel; }
   return null;
 }
 
+// Un guardado a la vez: con doble clic, `v.id` recién se llena al volver el upsert y una presentación
+// nueva se insertaba DOS veces (y corrían dos sincronizarFlujo intercalando nodos).
 async function saveProduct(){
+  if(st._guardando){ toast("Espera: se está guardando"); return; }
+  st._guardando=true;
+  try{ return await _saveProduct(); } finally{ st._guardando=false; }
+}
+async function _saveProduct(){
   if(!st.prod){ return; }
   // Aviso al cambiar digital↔físico: el flujo de venta YA GENERADO sigue vendiendo como el
   // tipo ANTERIOR (entrega un link vs pide dirección) hasta que lo REGENERES. st.tipoGuardado
@@ -4544,6 +4561,11 @@ async function saveProduct(){
   if(e1 && /tipo|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null }).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0022 para el tipo físico)"); }
   if(e1 && /folder|emoji|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update(base).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0018 para carpeta/emoji)"); }
   if(e1){ toast(e1.message,true); return; }
+  // 🔴 Lo recién guardado pasa a ser el nuevo «original». Sin esto el delta del stock se volvía a
+  // aplicar en CADA guardado: abrir con 10, poner 20 y guardar dos veces dejaba 30 (y las ventas
+  // del rato se restaban dos veces). Lo mismo con el resto del config.
+  st._stockOrig=(st.prod.config&&st.prod.config.stock&&typeof st.prod.config.stock==="object"&&!Array.isArray(st.prod.config.stock)) ? JSON.parse(JSON.stringify(st.prod.config.stock)) : {};
+  st._cfgOrig=JSON.parse(JSON.stringify(st.prod.config||{}));
   // ── Opciones de compra (migración 0029) ──
   // Primero las eliminadas: antes se marcaba v._delete pero nunca se borraban
   // de la base, así que "eliminar" no eliminaba nada al recargar.
@@ -4605,6 +4627,17 @@ async function saveProduct(){
     if(actBody && actBody.dataset.rendered==="1" && st.act && st.act.node){ await saveActivacion({silent:true}); }
   }catch(_){ /* si algo falló, saveActivacion ya avisó con su propio toast */ }
   markClean(); toast("Guardado"); loadProducts();
+  // 💲 Un EXTRA: su precio vive COPIADO en el flujo de cada principal que lo ofrece (el generador
+  // lo fija ahí) y en lo que el bot le dice al cliente. Cambiarlo acá no toca esos flujos: se
+  // avisa cuáles hay que volver a guardar para que ofrezcan y cobren el precio nuevo.
+  try{
+    if(st.prod.clase==="extra"){
+      const vids=new Set((st.versions||[]).map(v=>v.id).filter(Boolean));
+      const { data:ps }=await supa.from("products").select("id,nombre,config").eq("channel_id",st.channelId).neq("id",st.prod.id);
+      const usan=(ps||[]).filter(p=>Array.isArray(p.config?.extras) && p.config.extras.some(x=>x && vids.has(x.version_id))).map(p=>p.nombre);
+      if(usan.length) toast(`Este extra lo ofrecen: ${usan.join(", ")}. Si cambiaste su precio, abre cada uno y pulsa Guardar para que su flujo lo ofrezca y cobre al precio nuevo.`, true);
+    }
+  }catch(_){ /* aviso de ayuda: nunca tumba el guardado */ }
   // Y el flujo se pone al día solo si hacía falta (ver sincronizarFlujo). Va al FINAL y
   // sin `await` que bloquee lo de arriba: guardar ya terminó y no puede fallar por esto.
   sincronizarFlujo().catch(()=>{});

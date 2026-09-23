@@ -115,15 +115,26 @@ export async function construirResumen(
   let orders = (ordR.data ?? []) as Order[];
   let leads = typeof leadR.count === "number" ? leadR.count : 0;
   try {
-    const { data: tcs } = await db.from("contacts").select("id").eq("channel_id", chId).or("wa_id.eq.webchat-test,source.eq.sim");
+    // PAGINADO: con más de 1000 contactos simulados (una tanda de pruebas los deja) PostgREST
+    // cortaba la lista en 1000 arbitrarios y los pedidos de los que quedaban afuera se contaban
+    // como ventas reales en el resumen — distinto del Dashboard, que sí pagina.
+    const { data: tcs } = await pageAll((f, t) => db.from("contacts").select("id").eq("channel_id", chId)
+      .or("wa_id.eq.webchat-test,source.eq.sim").order("id").range(f, t));
     const pruebaIds = new Set(((tcs ?? []) as any[]).map((c) => c.id));
     if (pruebaIds.size) {
       orders = orders.filter((o: any) => !pruebaIds.has(o.contact_id));
       if (leads > 0) {
-        const { count: cPrueba } = await db.from("capi_events").select("id", { count: "exact", head: true })
-          .eq("channel_id", chId).eq("event_name", "Lead").gte("created_at", fromISO).lt("created_at", toISO)
-          .in("contact_id", [...pruebaIds]);
-        if (typeof cPrueba === "number") leads = Math.max(0, leads - cPrueba);
+        // Por trozos: con cientos de ids el `.in()` pasa el largo de URL y el servidor da 400.
+        const ids = [...pruebaIds];
+        let cPrueba = 0, completo = true;
+        for (let i = 0; i < ids.length; i += 300) {
+          const { count, error } = await db.from("capi_events").select("id", { count: "exact", head: true })
+            .eq("channel_id", chId).eq("event_name", "Lead").gte("created_at", fromISO).lt("created_at", toISO)
+            .in("contact_id", ids.slice(i, i + 300));
+          if (error || typeof count !== "number") { completo = false; break; }
+          cPrueba += count;
+        }
+        if (completo) leads = Math.max(0, leads - cPrueba);
       }
     }
   } catch (_) { /* si no se puede saber, se deja como está */ }
