@@ -70,7 +70,10 @@
   .btn.ghost{color:var(--muted)} .btn.danger{color:var(--red);border-color:transparent}
   /* Google Sheets — pasos guiados */
   /* ── Marca del bot ── dos columnas: lo que editas y cómo queda ── */
-  .brand-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(260px,.85fr);gap:16px;align-items:start}
+  /* El contenedor de Ajustes son 740px fijos (.nodo-wrap max 820): las proporciones están
+     medidas para ESE ancho, no para el del navegador. La izquierda manda porque es donde se
+     edita; la previa solo tiene que caber. */
+  .brand-grid{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(238px,.68fr);gap:16px;align-items:start}
   @media(max-width:900px){.brand-grid{grid-template-columns:1fr}}
   .brand-grid .card{margin-bottom:0}
   .fhelp{font-size:11.5px;color:var(--faint);margin:6px 0 0;line-height:1.5}
@@ -623,8 +626,8 @@ function renderBranding(b){
         <button type="button" class="drop" id="drop">
           <img id="brandPrev" class="thumb" src="${esc(logo)}" alt=""/>
           <div style="min-width:0">
-            <div class="dt">Arrastra una imagen o haz clic para elegirla</div>
-            <div class="ds">PNG, JPG o WEBP · se recorta a un cuadrado de 96px</div>
+            <div class="dt">Arrastra una imagen o haz clic</div>
+            <div class="ds">PNG, JPG o WEBP · se recorta a 96×96</div>
           </div>
         </button>
         <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp" hidden/>
