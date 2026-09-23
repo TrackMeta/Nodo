@@ -1038,7 +1038,12 @@ function insertAtCursor(text){
   inp.value = inp.value.slice(0,s) + text + inp.value.slice(e); autoGrow();
   const pos = s + text.length; inp.focus(); try{ inp.setSelectionRange(pos,pos); }catch(_){}
 }
-function applyVars(text){ return (text||"").replace(/\{\{\s*nombre\s*\}\}/gi, state.contactName||""); }
+// Solo el NOMBRE de verdad (primer nombre): si el contacto no tiene, contactName es su número o su
+// BSUID y le llegaba «Hola 51987654321 👋». Sin nombre, la variable se quita con su espacio.
+function applyVars(text){
+  const nom = String(state.contactNombreReal||"").trim().split(/\s+/)[0] || "";
+  return (text||"").replace(/[ \t]*\{\{\s*nombre\s*\}\}/gi, nom ? " "+nom : "").replace(/^ /gm, "");
+}
 function toggleQrPop(){
   const pop=$("qrPop"); const willOpen=pop.classList.contains("hidden");
   $("emojiPop").classList.add("hidden");
@@ -1382,6 +1387,7 @@ async function openChat(c) {
   }
   state.contactId = c.id;
   state.contactName = c.nombre || c.wa_id;
+  state.contactNombreReal = c.nombre || "";
   state.isTest = (c.wa_id === "webchat-test");
   $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden");
   $("chAv").textContent = initials(c.nombre, c.wa_id);
@@ -2438,8 +2444,16 @@ async function sendMsg() {
   // de responder —con la IA de por medio, 20 s largos— y el mensaje seguía escrito
   // como si no se hubiera enviado. Si el envío falla, el texto vuelve tal cual y el
   // borrador se rearma: no se pierde lo escrito.
-  const limpiar = () => { input.value = ""; autoGrow(); delete state.drafts[state.contactId]; };
-  const devolver = () => { if (!input.value.trim()) { input.value = text; autoGrow(); if (text) state.drafts[state.contactId] = text; } };
+  // El chat DUEÑO de este texto se fija ahora: el envío puede tardar (Meta reintenta) y el
+  // operador ya pudo abrir otro chat. Devolverlo al compositor de ESE otro chat le ponía a Pedro
+  // el mensaje de Juan, listo para salir con un Enter.
+  const cid = state.contactId;
+  const limpiar = () => { input.value = ""; autoGrow(); delete state.drafts[cid]; };
+  const devolver = () => {
+    if (!text) return;
+    if (state.contactId !== cid) { state.drafts[cid] = text; toast("No se envió tu mensaje al chat anterior: quedó guardado como borrador en ese chat", true); return; }
+    if (!input.value.trim()) { input.value = text; autoGrow(); state.drafts[cid] = text; }
+  };
   // Guarda de re-entrada: el handler de Enter (msgInput keydown) NO mira el botón
   // deshabilitado. Con el campo limpiándose de una, el segundo Enter ya no encuentra
   // texto — pero `sending` se queda igual, que es el candado de verdad.

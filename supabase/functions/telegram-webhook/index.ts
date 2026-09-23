@@ -41,7 +41,10 @@ const ACCIONES: Record<string, { estado?: string; desde: string[]; ok: string; e
   lima_ok:    { desde: ["confirmado", "en_reparto", "reprogramado"],
                 ok: "Pago aprobado ✅ · el motorizado cobra lo que falta",
                 extra: () => ({ prepago_lima: "aprobar" }) },
-  extra_ok:   { desde: ["confirmada", "confirmado", "adelanto_validado", "despachado", "en_agencia", "saldo_pagado", "recogido", "entregado_cobrado"],
+  // Todos los estados VIVOS de un pedido pagado o comprometido: el motor ofrece el extra sobre el
+  // pedido del run sin mirar su estado, y un «por_despachar» o «en_reparto» respondía «ya fue
+  // resuelto» con el extra PAGADO y sin entregar.
+  extra_ok:   { desde: ["confirmada", "confirmado", "adelanto_validado", "por_despachar", "despachado", "en_agencia", "en_reparto", "reprogramado", "saldo_pagado", "recogido", "entregado_cobrado"],
                 ok: "Extra aprobado ✅ · el bot lo entrega",
                 // `extra_aprobado_at` lo escribe también el Copiloto del panel:
                 // el rastro tiene que ser el mismo se apruebe desde donde se apruebe.
@@ -229,6 +232,19 @@ Deno.serve(async (req) => {
       if (cb.message) await editButtons(token, cb.message.chat.id, cb.message.message_id);
       return json({ ok: true });
     }
+    // Botón VIEJO sobre un comprobante NUEVO: se rechazó el primero, el cliente mandó otro y este
+    // aviso (con la foto vieja) aprobaba el nuevo sin que nadie lo viera. Se compara la hora del
+    // mensaje de Telegram con la del último comprobante: si el comprobante es posterior, este
+    // botón no es el suyo — el aviso nuevo trae sus propios botones.
+    const clave = accion === "digital_ok" ? "digital_recibido_at" : accion === "adel_ok" ? "adelanto_recibido_at"
+      : accion === "saldo_ok" ? "saldo_recibido_at" : accion === "lima_ok" ? "pago_adelantado_recibido_at" : "";
+    const msgMs = Number(cb.message?.date) * 1000;
+    const recMs = clave && shT[clave] ? Date.parse(String(shT[clave])) : NaN;
+    if (Number.isFinite(msgMs) && Number.isFinite(recMs) && recMs > msgMs + 60_000) {
+      await answerCallback(token, cb.id, "Este aviso es de un comprobante ANTERIOR. Llegó uno nuevo después: apruébalo desde su aviso (o desde el panel).", true);
+      if (cb.message) await editButtons(token, cb.message.chat.id, cb.message.message_id);
+      return json({ ok: true });
+    }
   }
 
   // Se reusa order-update para que el camino sea EXACTAMENTE el mismo que el
@@ -260,8 +276,18 @@ Deno.serve(async (req) => {
   // order-update devuelve el fallo del AVISO en `aviso_error`, no en `error`: «Avisado ✅» y
   // «el bot manda la clave» salían aunque el cliente no recibiera nada (ventana de 24 h
   // cerrada, sin clave, Meta rechazó). Se dice claro y con alerta.
-  if (res?.aviso_error) await answerCallback(token, cb.id, `⚠️ ${def.ok} — pero el aviso al cliente NO salió: ${String(res.aviso_error).slice(0, 150)}`, true);
-  else await answerCallback(token, cb.id, def.ok);
+  // 🔴 `entrega_pendiente`: se aprobó, pero la conversación ya no esperaba el visto bueno (el
+  // cliente volvió a escribir o reinició) y el producto NO salió solo. Antes decía «el bot entrega
+  // el producto» y el cliente se quedaba pagado y sin nada. El panel ya lo avisaba; Telegram no.
+  let resultado = def.ok;
+  if (res?.entrega_pendiente) resultado = "⚠️ Pago aprobado, pero el producto NO se entregó solo (la conversación ya no lo esperaba). Entrégale el acceso a mano desde el chat.";
+  else if (res?.aviso_error) resultado = `⚠️ ${def.ok} — pero el aviso al cliente NO salió: ${String(res.aviso_error).slice(0, 150)}`;
+  await answerCallback(token, cb.id, resultado.slice(0, 200), resultado !== def.ok);
+  // Y queda ESCRITO en el chat (el popup es efímero y se pierde si Telegram ya venció el toque).
+  if (cb.message && resultado !== def.ok) {
+    const quien = String(cb.from?.first_name ?? "").replace(/[<>&]/g, "");
+    await sendTelegram(token, [String(cb.message.chat.id)], `${resultado.replace(/[<>&]/g, "")}${quien ? `\n— ${quien}` : ""}`).catch(() => 0);
+  }
   // Quita los botones y deja el resultado escrito: no se puede tocar dos veces.
   if (cb.message) await editButtons(token, cb.message.chat.id, cb.message.message_id);
   return json({ ok: true });

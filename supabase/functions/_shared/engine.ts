@@ -288,7 +288,11 @@ async function runEngineInner(
       console.error("[STT]", (e as any)?.message ?? e); return null;
     });
     if (texto) {
-      event = { ...event, text: texto };
+      // Los textos que el webhook le ANTEPUSO al audio («quiero 2 talla M» + nota de voz) se
+      // conservan: reemplazar todo por la transcripción los borraba de las detecciones del turno.
+      const _previo = String(event.text ?? "").split("\n").map((l) => l.trim())
+        .filter((l) => l && !/^\[(audio|voice)\]$/i.test(l)).join("\n");
+      event = { ...event, text: _previo ? `${_previo}\n${texto}` : texto };
       await db.from("contacts").update({ last_input: texto }).eq("id", contactId);
       const _audMediaId = String(event.mediaRef ?? "").startsWith("wa-media:") ? String(event.mediaRef).slice("wa-media:".length) : undefined;
       await annotateAudioTranscript(db, contactId, texto, _audMediaId);
@@ -3580,6 +3584,10 @@ async function startRun(db: SupabaseClient, channelId: string, contactId: string
 
 // ── Reanudar un run que esperaba input/botón/tiempo ────────────────
 async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Promise<boolean> {
+  // Este turno RESPONDE A UN MENSAJE DEL CLIENTE: solo en estos turnos el bot se calla si un
+  // operador escribió (ver `ritmo`). Una entrega que aprobó una persona, o el aviso de un pedido
+  // que movió, NO pasan por acá y nunca se cortan por eso.
+  (run as any)._porCliente = event.type === "message" || event.type === "button";
   const aw = run.vars._await;
   // ¿El paso donde este cliente quedó esperando TODAVÍA existe? Si se editó el flujo y se
   // borró ese paso, las aristas se fueron con él: `nextNode` devuelve null, el run se cierra
@@ -3703,6 +3711,17 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
   // modo "verificando" y el run SIGUE parqueado hasta que apruebes.
   if (aw.type === "aprobacion_digital" && event.type === "message") {
     await responderVerificando(db, run, event);
+    // 🔴 Mientras la IA armaba el «sigo verificando» (varios segundos), una persona pudo APROBAR:
+    // resumeAfterApproval entregó, ofreció el extra y dejó el run en otro paso. Guardar esta copia
+    // vieja lo devolvía a «esperando aprobación»: desde ahí todo mensaje recibía «sigo verificando»
+    // y, con extras en modo «antes», el principal no salía NUNCA. Se relee y, si ya no espera la
+    // aprobación, NO se pisa.
+    {
+      const { data: fresco } = await db.from("flow_runs").select("estado, vars, current_node_id").eq("id", run.id).maybeSingle();
+      const sigueEsperando = !!fresco && (fresco as any).vars?._await?.type === "aprobacion_digital"
+        && (fresco as any).current_node_id === run.current_node_id;
+      if (!sigueEsperando) return false;
+    }
     run.estado = "esperando"; // permanece parqueado esperando tu aprobación
     await saveRun(db, run);
     return false;
@@ -4122,19 +4141,32 @@ async function clienteEscribio(db: SupabaseClient, contactId: string, desde: num
 // Y pasado el tope no se deja de esperar: se baja al mínimo. El tope existe para que la
 // ráfaga no se eternice, no para que dos mensajes caigan en el mismo instante.
 async function ritmo(db: SupabaseClient, run: any, bubble: any): Promise<boolean> {
-  const r = (run._ritmo ??= { ms: 0, t0: Date.now(), primera: true });
-  if (r.primera) { r.primera = false; return false; }   // la primera del turno sale al toque
+  // tH: desde cuándo mirar si ESCRIBIÓ UN OPERADOR. Arranca 30 s antes de la primera burbuja
+  // porque el operador suele entrar mientras la IA piensa (5–13 s): ese mensaje es anterior a t0
+  // y la primera burbuja salía igual, con el precio y los datos de pago encima de «te atiendo yo».
+  const r = (run._ritmo ??= { ms: 0, t0: Date.now(), tH: Date.now() - 30_000, primera: true });
+  if (r.primera) {
+    r.primera = false;
+    if (!(run as any)._porCliente) return false;
+    try {
+      const { data: h0 } = await db.from("messages").select("ts").eq("contact_id", run.contact_id)
+        .eq("direction", "out").eq("sent_by", "human").gt("ts", new Date(r.tH).toISOString()).limit(1).maybeSingle();
+      if (h0) return true;
+    } catch (_) { /* sin dato → sale */ }
+    return false;   // la primera del turno sale al toque
+  }
   const libre = Math.max(0, RITMO_TOPE_TURNO_MS - r.ms);
   const p = libre > 0 ? Math.min(pausaDe(bubble), libre) : RITMO_MIN_MS;
   r.ms += p;
   await new Promise((res) => setTimeout(res, p));
   if (await clienteEscribio(db, run.contact_id, r.t0)) return true;
+  if (!(run as any)._porCliente) return false;
   // Un OPERADOR le escribió en medio de la ráfaga: el bot se calla (antes seguía soltando precio
   // y datos de pago encima de lo que la persona estaba diciendo). Se mira el mensaje humano y no
   // `bot_activo`, porque pasarAHumano pausa el bot y todavía tiene que salir su «te atiende…».
   try {
     const { data: h } = await db.from("messages").select("ts").eq("contact_id", run.contact_id)
-      .eq("direction", "out").eq("sent_by", "human").gt("ts", new Date(r.t0).toISOString()).limit(1).maybeSingle();
+      .eq("direction", "out").eq("sent_by", "human").gt("ts", new Date(r.tH ?? r.t0).toISOString()).limit(1).maybeSingle();
     if (h) return true;
   } catch (_) { /* sin dato → seguir */ }
   return false;
@@ -7808,8 +7840,11 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
     }
     // Compat (principal): opción sin items pero con link suelto en config.
     if (ctx.link_entrega) await emit(db, run, { text: header ? `${header}\n${String(ctx.link_entrega)}` : String(ctx.link_entrega) }, ctx);
-    // Opción RESUELTA cuya entrega es solo un mensaje (sin link): legítimo, va el header.
-    else if (opcion && header) await emit(db, run, { text: header }, ctx);
+    // Opción RESUELTA cuya entrega es solo un mensaje (sin link): legítimo, va el header…
+    // pero SOLO si ese mensaje es el PROPIO de la opción. El genérico del nodo («¡Pago
+    // confirmado! Acá tienes tu acceso:») sin nada debajo le prometía un acceso que no llegaba,
+    // sin avisar a nadie: una presentación sin entregables cae al aviso de abajo.
+    else if (opcion && optMsg && String(optMsg).trim()) await emit(db, run, { text: header }, ctx);
     else {
       // 🛡️ NO hay opción concreta resuelta (típico: digital multi-versión donde la
       // detección de opción no fijó el plan con confianza). Si mandáramos el header
@@ -7817,7 +7852,7 @@ async function entregarOpcion(db: SupabaseClient, run: Run, a: any, ctx: any) {
       // pagó y recibiría la PROMESA de un acceso que no llega (entrega en falso).
       // Se le avisa que llega en breve y se notifica para resolverlo a mano.
       await emit(db, run, { text: "¡Recibí tu pago! 🎉 En un momento te confirmo y te envío tu acceso." }, ctx);
-      await notifyAdmin(db, run, "⚠️ Venta digital sin plan/entrega resuelta: el cliente pagó pero no se determinó qué versión entregar. Revísalo y envíaselo a mano.").catch(() => {});
+      await notifyAdmin(db, run, `⚠️ Venta digital SIN ENTREGA: el cliente pagó${opcion?.nombre ? ` «${opcion.nombre}»` : ""} pero esa presentación no tiene link/archivo configurado (o no se supo cuál compró). Envíaselo a mano.`).catch(() => {});
       await logEvent(db, run.channel_id, run.contact_id, "error", "Entrega digital sin opción resuelta",
         `No se resolvió la versión a entregar (${opcion?.nombre ?? "—"}) — el cliente pagó, enviar a mano`).catch(() => {});
     }
@@ -9416,7 +9451,19 @@ export async function resolverPrepagoLima(
   // Monto: el que corrigió el operador manda sobre el que leyó el OCR (una captura se lee mal).
   const montoOp = Number(opts.monto);
   const monto = Number.isFinite(montoOp) && montoOp > 0 ? montoOp : parseMonto(sh0.pago_adelantado_monto, {});
-  if (!(Number(monto) > 0)) return { error: "falta_monto", detalle: "Escribe cuánto pagó el cliente." };
+  if (!(Number(monto) > 0)) return { error: "falta_monto", detalle: "Escribe cuánto pagó el cliente (desde el panel: Pagos por validar)." };
+  // Monto del OCR SIN confirmar (Telegram no tiene dónde escribirlo) que supera lo que se debe:
+  // un Yape de S/19 leído como S/119 dejaba el saldo en 0 y el motorizado no cobraba nada. Si no
+  // lo confirmó una persona y no calza, se frena y se pide confirmarlo en el panel.
+  if (!(Number.isFinite(montoOp) && montoOp > 0)) {
+    const _b0 = ((ord.order_bumps ?? []) as any[]).reduce((a, b) => a + (Number(b?.precio) || 0), 0);
+    const _sv0 = Number(sh0.saldo);
+    const _debe = sh0.saldo != null && String(sh0.saldo).trim() !== "" && Number.isFinite(_sv0)
+      ? _sv0 : Math.max(0, (Number(ord.amount) || 0) + _b0 - (Number(sh0.prepago_lima_abonado) || 0));
+    if (Number(monto) > _debe + 0.5) {
+      return { error: "monto_dudoso", detalle: `El comprobante dice ${simboloMoneda(ord.currency)} ${monto} y el pedido debe ${simboloMoneda(ord.currency)} ${_debe}. Confírmalo desde el panel (Pagos por validar) con el monto correcto.` };
+    }
+  }
 
   // 🔒 Anti-reúso, igual que order-update con el adelanto/saldo/digital: registrarOperacion
   // se CALLA el duplicado (23505), así que sin este chequeo el mismo Yape que ya pagó otro
@@ -11538,7 +11585,9 @@ async function resetItemFields(db: SupabaseClient, channelId: string, contactId:
     // `oferta_activa` (descuento de remarketing) TAMBIÉN se limpia en la recompra: si no,
     // un descuento aplicado en la compra anterior (o que quedó activo sin caducidad) se
     // heredaba a la compra nueva → el validador aceptaba el precio rebajado de nuevo.
-    const claves = [...attrs.map((a) => a.clave), "opcion_id", "opcion", "opcion_elegida", "datos_completos", "pedido_creado", "_bolsa_pago", "oferta_activa"];
+    // `confirmo` también: en una recompra de Lima el pedido nuevo nacía confirmado apenas elegía
+    // presentación, con el «sí» de la compra ANTERIOR.
+    const claves = [...attrs.map((a) => a.clave), "opcion_id", "opcion", "opcion_elegida", "datos_completos", "pedido_creado", "_bolsa_pago", "oferta_activa", "confirmo"];
     for (const k of claves) await setField(db, channelId, contactId, k, null);
   } catch (e) { console.error("[resetItemFields]", (e as any)?.message ?? e); }
 }
@@ -14989,6 +15038,12 @@ function valorLibreEnMensaje(val: string, fuente: string): boolean {
 // cliente de verdad menciona una talla/color/DNI (no en "sí confirmo" / "no gracias" /
 // la dirección) — sin esto, re-extraer cada turno agrega latencia a TODA venta.
 function mensajeTieneValorDe(c: any, texto: string, ctx?: any): boolean {
+  if (c.clave === "nombre_completo" || c.clave === "cliente") {
+    return /(recog(e|er[aá]|erlo|erla)|lo recibe|a nombre de|el nombre es|se llama|me llamo|mi nombre (es|completo)|corrij|perd[oó]n|me equivoqu[eé]|en realidad)/i.test(texto);
+  }
+  if (c.clave === "direccion" || c.clave === "referencia") {
+    return /(perd[oó]n|corrij|correcci[oó]n|me equivoqu[eé]|en realidad|la direcci[oó]n (es|correcta)|mi direcci[oó]n (es|correcta)|cambi[aoe]r? (la|de) direcci[oó]n|mejor (env[ií]a|m[aá]nda|a la|en la|al)|no es .{1,40} es )/i.test(texto);
+  }
   if (c.validar === "dni") return /\b\d{7,9}\b/.test(texto);
   // Teléfono: lo corrige mandando otro número, y suele escribirlo con espacios o guiones.
   if (c.validar === "telefono") return /\d{6,15}/.test(String(texto).replace(/[\s()+-]/g, ""));
@@ -15133,7 +15188,12 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // mejor la 40" / "mi DNI es otro"): antes `faltan` los excluía para siempre y el bot
   // acataba el cambio en la charla pero el pedido/stock salían con el valor viejo. El
   // guard (valorEnMensaje) evita pisar el valor bueno cuando el mensaje no trae uno.
-  const corrigible = (c: any) => String(c.valores ?? "").trim() || c.validar === "dni" || c.validar === "sede" || c.validar === "telefono";
+  // + nombre y dirección: «recoge mi esposa, Ana Torres» o «perdón, es 354 no 345» ANTES de crear el
+  // pedido se aceptaban en la charla pero el pedido salía con el dato viejo (y en provincia, con el
+  // nombre de uno y el DNI de otro, la agencia no entrega). Solo con una CORRECCIÓN explícita en el
+  // mensaje (ver mensajeTieneValorDe): así no se re-lee cada turno ni se pisa un dato bueno.
+  const corrigible = (c: any) => String(c.valores ?? "").trim() || c.validar === "dni" || c.validar === "sede" || c.validar === "telefono"
+    || ["nombre_completo", "cliente", "direccion", "referencia"].includes(String(c.clave));
   const correcciones = campos.filter((c) => !c.solo_ultimo && corrigible(c) && String(ctx[c.clave] ?? "").trim()
     && mensajeTieneValorDe(c, texto, ctx));   // solo si el último msg realmente trae un valor de ESTE campo
   const desdeUltimo = [...soloUlt, ...correcciones];
@@ -15699,7 +15759,12 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
       // preguntando; si es un dictado de datos, se cierra.
       const _ult = String(ctx.last_input ?? "");
       const _pregunta = /\?|\b(tienen|tendr[aá]n|hay stock|me puedes decir|quisiera saber|es cierto que|ser[aá]n?)\b/i.test(_ult);
-      if (await intencionDeCompra(db, run.contact_id, _ult) || (!_pregunta && _ult.trim().length >= 12)) {
+      // …y si DUDA no es un dictado: «déjame consultarlo con mi esposa» o «está caro, lo voy a
+      // pensar» tienen 12+ letras y ningún «?», y creaban el pedido confirmado con el motorizado
+      // en camino. Con duda se le pregunta, como antes.
+      const _duda = RE_LO_PIENSA.test(_ult) ||
+        /(?<![\p{L}\p{N}])(consult(o|arlo|ar)|lo converso|caro|car[ií]simo|no s[eé]|todav[ií]a no|a[uú]n no|no estoy segur[oa]|tal vez|quiz[aá]s?|mejor no|no gracias|espera|esp[eé]rame|me lo pienso|ver[eé])(?![\p{L}\p{N}])/iu.test(_ult);
+      if (!_duda && (await intencionDeCompra(db, run.contact_id, _ult) || (!_pregunta && _ult.trim().length >= 12))) {
         pendientes.splice(0, 1);
         ctx.confirmo = "si"; run.vars.confirmo = "si";
         await setField(db, run.channel_id, run.contact_id, "confirmo", "si").catch(() => {});
@@ -20514,7 +20579,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // Number() una venta de "1,299.00" aterrizaba como pedido digital en S/0.
               const amount = (parseMonto(ctx.precio_esperado, ctx) ?? 0) || (parseMonto(run.vars.pago_monto, ctx) ?? 0) || 0;
               const ship: Record<string, unknown> = {
-                digital_pendiente: true, digital_comprobante: url,
+                digital_pendiente: true, digital_comprobante: url, digital_recibido_at: new Date().toISOString(),
                 digital_monto_leido: run.vars.pago_monto ?? null,
                 digital_operacion: run.vars.pago_operacion ?? null,
                 // Con qué app pagó → lo usa el conciliador para no marcar como
@@ -20561,7 +20626,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 if (previo) {
                   const { data: cur } = await db.from("orders").select("shipping, estado").eq("id", previo).maybeSingle();
                   if ((cur as any)?.estado === "pendiente") {
-                    const cs = ((cur as any).shipping ?? {}) as Record<string, unknown>;
+                    const cs = { ...(((cur as any).shipping ?? {}) as Record<string, unknown>) };
+                    // Lo del comprobante ANTERIOR (rechazado) no se hereda: la tarjeta del nuevo intento salía
+                    // con «Lo rechazaste tú» (empujaba a rechazar un pago bueno) y, si se aprobaba solo, el
+                    // pedido quedaba con la captura y el monto del comprobante rechazado.
+                    for (const k of ["digital_revisar", "digital_rechazado_at", "digital_comprobante", "digital_monto_leido", "digital_operacion", "digital_operacion_leida",
+                      "extra_revisar", "extra_rechazado_at"]) delete cs[k];
                     const merged = { ...cs, ...ship };
                     // Atribución CONGELADA: preservar el ad_id/ctwa_clid del pedido ORIGINAL. Si
                     // el cliente hizo clic en otro anuncio entre el rechazo y el reenvío,

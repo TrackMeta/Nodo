@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
-import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, soloAnunciosBloquea } from "../_shared/engine.ts";
+import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, soloAnunciosBloquea, pasarAHumano, esOptOut } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 import { esRechazoTemporal } from "../_shared/meta.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
@@ -286,6 +286,10 @@ Deno.serve(async (req) => {
   // aunque Meta no mande (o no llegue) el aviso. Pocos por tick para no comerse el minuto.
   try { await processSaludWA(now); }
   catch (e) { console.error("[scheduler] salud-wa:", (e as any)?.message ?? e); }
+
+  // ── 8) Vigilante: cliente que escribió y nadie le contestó ─────────
+  try { await processSinRespuesta(now); }
+  catch (e) { console.error("[scheduler] sin-respuesta:", (e as any)?.message ?? e); }
 
   // ── Cuánto tardó el tick ──────────────────────────────────────────
   // El cron dispara cada 60 s sin esperar respuesta, así que un tick que se pase del minuto
@@ -1025,6 +1029,28 @@ async function processSub(s: any, now: number): Promise<boolean> {
       await db.from("contacts").update({
         oferta_activa: { opcion_id: paso.oferta.version_id, precio: Number(paso.oferta.precio), vence, origen: "remarketing" },
       }).eq("id", s.contact_id).then(() => {}, () => {}); // best-effort (columna 0030)
+      // 🔴 Y si ya tiene un pedido de provincia ESPERANDO ADELANTO de esa misma presentación, se
+      // rebaja también el PEDIDO: la oferta solo bajaba el {{precio}} del mensaje, el pedido seguía
+      // con el total y el saldo viejos, y en la agencia le cobraban S/79 al que le dijimos S/59.
+      try {
+        const { data: oAd } = await db.from("orders").select("id, amount, shipping")
+          .eq("contact_id", s.contact_id).eq("estado", "esperando_adelanto").eq("version_id", paso.oferta.version_id)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        const shA = ((oAd as any)?.shipping ?? {}) as any;
+        if (oAd && !shA.monto_manual) {
+          const mult = Number(shA.cantidad) > 1 ? Number(shA.cantidad) : 1;
+          const nuevo = Math.round((Number(paso.oferta.precio) * mult + (Number(shA.envio_cobrado) || 0)) * 100) / 100;
+          const delta = Math.round(((Number((oAd as any).amount) || 0) - nuevo) * 100) / 100;
+          if (delta > 0.009) {
+            await db.from("orders").update({ amount: nuevo }).eq("id", (oAd as any).id).eq("estado", "esperando_adelanto");
+            const sv = Number(shA.saldo);
+            await patchShipping(db, (oAd as any).id, {
+              ...(Number.isFinite(sv) ? { saldo: String(Math.max(0, Math.round((sv - delta) * 100) / 100)) } : {}),
+              oferta_aplicada: { antes: Number((oAd as any).amount) || 0, despues: nuevo, at: new Date().toISOString() },
+            }, { sinReloj: true });
+          }
+        }
+      } catch (e) { console.error("[secuencia] rebajar pedido con la oferta:", (e as any)?.message ?? e); }
     }
 
     // Disparar el paso: flujo, plantilla HSM (fuera de 24h) o mensaje/burbujas.
@@ -1213,5 +1239,60 @@ async function processSaludWA(now: number) {
     await db.from("channels").update({ wa_salud_at: new Date().toISOString() }).eq("id", c.id);
     try { await aplicarVeredicto(db, [c.id], await sondearNumero(db, c.id, String(c.phone_number_id))); }
     catch (e) { console.error("[scheduler] sondeo", c.id, (e as any)?.message ?? e); }
+  }
+}
+
+// 🚨 Nunca dead air. El motor corre DESPUÉS del 200 a Meta: si la función muere a mitad de
+// turno (tiempo, memoria, un PDF enorme), ningún catch se entera — el cliente queda hablando
+// solo, Meta no reintenta (ya recibió el 200) y el dueño no sabe nada. Este vigilante mira
+// quién escribió hace 5–30 min y no tiene NINGUNA respuesta después (ni del bot ni de una
+// persona), y hace lo mismo que el catch del webhook: pasa a una persona y avisa.
+const SIN_RESP_MIN_MS = 5 * 60_000, SIN_RESP_MAX_MS = 30 * 60_000;
+async function processSinRespuesta(now: number) {
+  const { data: cands } = await db.from("contacts")
+    .select("id, channel_id, wa_id, source, bot_activo, bloqueado, ultimo_mensaje_cliente_at")
+    .gte("ultimo_mensaje_cliente_at", new Date(now - SIN_RESP_MAX_MS).toISOString())
+    .lte("ultimo_mensaje_cliente_at", new Date(now - SIN_RESP_MIN_MS).toISOString())
+    .order("ultimo_mensaje_cliente_at", { ascending: true }).limit(50);
+  for (const c of (cands ?? []) as any[]) {
+    if (Date.now() - now > PRESUPUESTO_MS + 16_000) break;
+    if (c.bot_activo === false || c.bloqueado === true) continue;          // ya lo atiende una persona / bloqueado
+    if (c.source === "sim" || c.wa_id === "webchat-test") continue;        // pruebas
+    // Último mensaje REAL del cliente (un 👍 o un sticker no piden respuesta).
+    const { data: ult } = await db.from("messages").select("ts, type, content")
+      .eq("contact_id", c.id).eq("direction", "in").not("type", "in", "(system,sticker)")
+      .order("ts", { ascending: false }).limit(1).maybeSingle();
+    if (!ult) continue;
+    const tsIn = new Date((ult as any).ts).getTime();
+    if (!(now - tsIn >= SIN_RESP_MIN_MS && now - tsIn <= SIN_RESP_MAX_MS)) continue;
+    // ¿Alguien le contestó después? (bot o persona)
+    const { data: resp } = await db.from("messages").select("id").eq("contact_id", c.id)
+      .eq("direction", "out").gte("ts", (ult as any).ts).limit(1).maybeSingle();
+    if (resp) continue;
+    // El bot sigue trabajando en este chat (un turno largo: OCR + IA) → todavía no.
+    const { data: vivo } = await db.from("flow_runs").select("updated_at").eq("contact_id", c.id).eq("estado", "activo").maybeSingle();
+    if (vivo && now - new Date((vivo as any).updated_at).getTime() < SIN_RESP_MIN_MS) continue;
+    // Un «Esperar» del flujo que todavía no vence: el silencio es parte del guion.
+    const { data: espera } = await db.from("flow_runs").select("id").eq("contact_id", c.id).eq("estado", "esperando")
+      .gt("wake_at", new Date(now - 60_000).toISOString()).lt("wake_at", new Date(now + 30 * 60_000).toISOString())
+      .limit(1).maybeSingle();
+    // (Solo esperas CORTAS: una pregunta con timeout de horas también deja wake_at en el futuro,
+    // y ese run es justo el que se queda mudo si el turno murió al contestar.)
+    if (espera) continue;
+    // Silencios A PROPÓSITO: modo «solo anuncios» (tiene su propio aviso) y el que pidió que no le escriban.
+    if (await soloAnunciosBloquea(db, c.channel_id, c.id).catch(() => false)) continue;
+    const txt = String((ult as any).content?.text ?? "");
+    if ((ult as any).type === "text" && txt && esOptOut(txt)) continue;
+    // Una sola vez por mensaje: si ya se escaló después de ese mensaje, no se repite.
+    const { data: ya } = await db.from("contact_events").select("id").eq("contact_id", c.id)
+      .eq("titulo", "⏰ El bot no respondió").gte("created_at", (ult as any).ts).limit(1).maybeSingle();
+    if (ya) continue;
+    await db.from("contact_events").insert({
+      channel_id: c.channel_id, contact_id: c.id, tipo: "error", titulo: "⏰ El bot no respondió",
+      detalle: `El cliente escribió hace ${Math.round((now - tsIn) / 60_000)} min y no recibió respuesta. Se pasó a una persona.`,
+    }).then(() => {}, () => {});
+    await pasarAHumano(db, c.channel_id, c.id,
+      `El cliente escribió hace ${Math.round((now - tsIn) / 60_000)} min y el bot NO le respondió (se cortó a mitad de turno). Escríbele tú.`,
+      { aviso: true }).catch(() => {});
   }
 }

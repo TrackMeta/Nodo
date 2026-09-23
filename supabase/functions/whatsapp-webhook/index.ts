@@ -600,7 +600,7 @@ async function runEngineTask(
     if (bufferSeg > 0 && event.type === "message") {
       await new Promise((r) => setTimeout(r, bufferSeg * 1000));
       const { data: msgsRaw, error: qErr } = await db.from("messages")
-        .select("wamid, ts, type, content")
+        .select("wamid, ts, type, content, created_at")
         .eq("contact_id", contactId).eq("direction", "in")
         // `ts` viene de Meta con granularidad de SEGUNDOS: dos mensajes del MISMO segundo
         // empatan. Sin un desempate, dos `runEngineTask` concurrentes podían ver un `msgs[0]`
@@ -620,8 +620,18 @@ async function runEngineTask(
       const msgs = qErr ? null : (msgsRaw ?? []).filter((m: any) => m.type === "text" || m.type === "image" || m.type === "audio");
       if (msgs) {
         if (!msgs.length) return;
-        // ¿Sigue siendo el último mensaje del cliente? Si no, cede el turno.
-        if ((msgs[0] as any).wamid !== wamid) return;
+        // ¿Sigue siendo el último mensaje del cliente? Si no, cede el turno…
+        // …SALVO que este haya llegado TARDE (Meta lo reintentó tras un 500): el más nuevo ya se
+        // guardó y su turno ya consultó el buffer ANTES de que este existiera, así que no lo
+        // plegó. Ceder acá era perderlo para siempre. Se contesta solo, sin armar cadena.
+        let tardio = false;
+        if ((msgs[0] as any).wamid !== wamid) {
+          const yo: any = msgs.find((m: any) => m.wamid === wamid);
+          const yoCre = Date.parse(yo?.created_at ?? ""), topCre = Date.parse((msgs[0] as any).created_at ?? "");
+          tardio = !!yo && Number.isFinite(yoCre) && Number.isFinite(topCre) && topCre + bufferSeg * 1000 + 1500 < yoCre;
+          if (!tardio) return;
+        }
+        if (!tardio) {
         // Una IMAGEN/AUDIO corre de inmediato (bufferSeg=0) y ABSORBE los textos previos
         // dentro de su ventana de plegado. No entra en el protocolo de `msgs[0]` (el
         // desempate por wamid solo cubre texto-vs-texto), así que en el MISMO segundo con
@@ -644,6 +654,7 @@ async function runEngineTask(
           chain.unshift(m.content?.text ?? "");
         }
         if (chain.length > 1) event = { ...event, text: chain.join("\n") };
+        }
       }
     }
     // El operador pudo TOMAR el chat DURANTE la espera del buffer (hasta 20s). El chequeo de

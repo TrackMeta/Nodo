@@ -223,7 +223,9 @@ Deno.serve(async (req) => {
   // sigue más abajo; acá solo se BLOQUEA el reúso CRUZADO. Mismo pedido = OK (idempotente).
   {
     const sh = ((order as any).shipping ?? {}) as any;
-    const aprobandoExtra = body.resume === true || (body.shipping && (body.shipping as any).extra_pendiente === false);
+    // Un RECHAZO del extra también manda extra_pendiente:false: sin excluirlo se trataba como
+    // aprobación (nota falsa «aprobado sin operación», 409 por reúso, operación registrada).
+    const aprobandoExtra = body.resume === true || (body.shipping && (body.shipping as any).extra_pendiente === false && !(body.shipping as any).extra_rechazado_at);
     let opChk = "";
     if (newEstado === "adelanto_validado") opChk = String(sh.adelanto_operacion || sh.adelanto_operacion_leida || "");
     else if (newEstado === "saldo_pagado") opChk = String(sh.saldo_operacion || sh.saldo_operacion_leida || "");
@@ -284,6 +286,26 @@ Deno.serve(async (req) => {
       shp[`${pre}_abonos`] = abonos;
       if (abonos.length) shp[`${pre}_abonado`] = total;
       else { delete shp[`${pre}_abonos`]; delete shp[`${pre}_abonado`]; delete shp[`${pre}_parcial`]; }
+    }
+  }
+
+  // 🔓 Comprobante RECHAZADO: su nº de operación se LIBERA del anti-reúso (solo la reserva de ESTE
+  // pedido). El motor la reserva al leerlo, antes de decidir si va a revisión; rechazado, quedaba
+  // quemado y cuando el cliente reenviaba la misma captura —justo lo que el bot le pide— recibía
+  // «este comprobante ya se usó». Un rechazo es «no lo acredito», no «es un fraude probado».
+  if (body.shipping) {
+    const shp: any = (patch.shipping as any) ?? {};
+    for (const pre of ["adelanto", "saldo", "digital", "extra"]) {
+      if (!(body.shipping as any)?.[`${pre}_rechazado_at`]) continue;
+      const opR = normOperacion(String(shp[`${pre}_operacion_leida`] ?? shp[`${pre}_operacion`] ?? ""));
+      if (opR.length < 4) continue;
+      await db.from("payment_operations").delete()
+        .eq("channel_id", (order as any).channel_id).eq("operacion", opR).eq("order_id", (order as any).id)
+        .then(() => {}, () => {});
+      // La reserva de un digital puede haber nacido SIN pedido (se reserva antes de crearlo): va por contacto.
+      if ((order as any).contact_id) await db.from("payment_operations").delete()
+        .eq("channel_id", (order as any).channel_id).eq("operacion", opR).is("order_id", null).eq("contact_id", (order as any).contact_id)
+        .then(() => {}, () => {});
     }
   }
 
@@ -427,7 +449,7 @@ Deno.serve(async (req) => {
   // respondía "estoy verificando tu pago" para siempre. Se reanuda por la rama
   // de pago inválido para que pida un comprobante nuevo. Solo si el operador
   // eligió que el bot siga (si prefiere atenderlo él, manda `reject:"humano"` y
-  // el chat queda pausado con el run parqueado, que es inofensivo).
+  // el chat queda pausado y ese run parqueado se cierra: ver la rama «humano» de abajo).
   let rejected = false;
   if (body.reject === "bot" && (order as any).contact_id) {
     try {
@@ -437,6 +459,15 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error("[order-update] reject:", (e as any)?.message ?? e);
     }
+  } else if (body.reject === "humano" && (order as any).contact_id) {
+    // «Lo atiendo yo»: el run parqueado NO era inofensivo. Al reactivar el bot, cada mensaje —
+    // incluido un comprobante nuevo— recibía «sigo verificando» sin pasar por el OCR, y aprobar
+    // después moviendo a «confirmada» no entregaba (ya no había aprobación pendiente). Se cierra
+    // ese run: el próximo comprobante vuelve a entrar por la venta normal.
+    await db.from("flow_runs").update({ estado: "cancelado", updated_at: new Date().toISOString() })
+      .eq("contact_id", (order as any).contact_id).in("estado", ["esperando", "activo"])
+      .eq("vars->_await->>type", "aprobacion_digital")
+      .then(() => {}, () => {});
   }
 
   // Pedido físico pagado del todo → entregar las ventas extra digitales que
@@ -575,7 +606,9 @@ Deno.serve(async (req) => {
   if ((order as any).contact_id) {
     const shipE = ((patch.shipping as any) ?? (order as any).shipping ?? {}) as any;
     const opE = String(shipE.extra_operacion || shipE.extra_operacion_leida || "").trim();
-    const aprobandoExtra = body.resume === true || (body.shipping && (body.shipping as any).extra_pendiente === false);
+    // Un RECHAZO del extra también manda extra_pendiente:false: sin excluirlo se trataba como
+    // aprobación (nota falsa «aprobado sin operación», 409 por reúso, operación registrada).
+    const aprobandoExtra = body.resume === true || (body.shipping && (body.shipping as any).extra_pendiente === false && !(body.shipping as any).extra_rechazado_at);
     if (opE && aprobandoExtra) await registrarOperacion(db, (order as any).channel_id, opE, order.id, "extra").catch((e) => console.error("[order-update] registrar op extra:", (e as any)?.message ?? e));
   }
 
