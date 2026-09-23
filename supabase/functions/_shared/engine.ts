@@ -8419,7 +8419,9 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         // en el aviso de Telegram—, y a mano quedaba UNA en shipping.extra_comprobante que el
         // segundo extra pisaba. Sin ella, la hoja no tenía cómo mostrar con qué se pagó.
         if (precio > 0 && !a.bump.sube_saldo) {
-          const _comp = String(run.vars._last_image ?? ctx.ultima_imagen ?? ((cur as any)?.shipping ?? {}).extra_comprobante ?? "");
+          // `||`: `_last_image` queda "" cuando la subida de la imagen falló, y con `??` ese
+          // vacío tapaba a las demás.
+          const _comp = String(run.vars._last_image || ctx.ultima_imagen || ((cur as any)?.shipping ?? {}).extra_comprobante || "");
           if (/^https?:\/\//.test(_comp)) nuevo.comprobante = _comp;
         }
         // 💰 COSTO del extra → COGS. `costoExtras()` (panel/orders.js) ya lo resta del

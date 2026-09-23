@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
-import { getAccessToken, sheetsAppend, sheetsBootstrap, sheetsEstado, crearHojaDelCanal } from "../_shared/gsheets.ts";
+import { getAccessToken, sheetsAppend, sheetsBootstrap, sheetsEstado, crearHojaDelCanal, sheetsLeerFila, sheetsBorrarFila } from "../_shared/gsheets.ts";
 import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
   const { data: member } = await db.from("app_users").select("id").eq("id", uid).eq("activo", true).maybeSingle();
   if (!member) return json({ error: "not_member" }, 403);
 
-  let body: { webhook_url?: string; tab?: string; oauth?: boolean; preparar?: boolean; crear?: boolean; estado?: boolean; channel_id?: string; spreadsheet_id?: string };
+  let body: { webhook_url?: string; tab?: string; oauth?: boolean; preparar?: boolean; crear?: boolean; estado?: boolean; leer_fila?: boolean; borrar_fila?: boolean; order_id?: string; channel_id?: string; spreadsheet_id?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   // Multi-tenant: cualquier acción sobre un canal exige ser de su cuenta.
   if (body.channel_id && !(await userOwnsChannel(db, uid, body.channel_id))) return json({ error: "forbidden_channel" }, 403);
@@ -41,6 +41,24 @@ Deno.serve(async (req) => {
       const token = await getAccessToken(String(refresh));
       const r = await crearHojaDelCanal(db, body.channel_id, token);
       return json({ ok: true, spreadsheet_id: r.id, spreadsheet_url: r.url, titulo: r.titulo });
+    } catch (e) {
+      return json({ ok: false, detalle: String((e as any)?.message ?? e) });
+    }
+  }
+
+  // ── Leer (o borrar) la fila de UN pedido: comprobar qué llegó a la hoja ──
+  if (body.leer_fila || body.borrar_fila) {
+    if (!body.channel_id || !body.spreadsheet_id || !body.order_id || !body.tab) return json({ error: "faltan_datos" }, 400);
+    if (!(await userIsChannelAdmin(db, uid, body.channel_id))) return json({ error: "forbidden" }, 403);
+    // Solo pedidos de ESTE canal: no se lee ni borra una fila que no le toca.
+    const { data: ord } = await db.from("orders").select("id").eq("id", body.order_id).eq("channel_id", body.channel_id).maybeSingle();
+    if (!ord) return json({ ok: false, detalle: "Ese pedido no es de este canal" });
+    const { data: refresh } = await db.rpc("get_gsheets_token", { p_channel_id: body.channel_id });
+    if (!refresh) return json({ ok: false, detalle: "El canal no está conectado con Google (reconecta)" });
+    try {
+      const token = await getAccessToken(String(refresh));
+      if (body.borrar_fila) return json({ ok: true, borrada: await sheetsBorrarFila(token, body.spreadsheet_id, body.tab, body.order_id) });
+      return json({ ok: true, ...(await sheetsLeerFila(token, body.spreadsheet_id, body.tab, body.order_id)) });
     } catch (e) {
       return json({ ok: false, detalle: String((e as any)?.message ?? e) });
     }

@@ -150,6 +150,32 @@ export async function sheetsBootstrap(token: string, id: string): Promise<{ crea
   return { creadas, hojas: Object.keys(HOJAS) };
 }
 
+// ── Leer / borrar UNA fila por su ID (diagnóstico desde Ajustes) ──────────
+// Nodo escribía en la hoja pero no podía leerla: para comprobar qué llegó había que abrirla
+// con la cuenta dueña. Lee los encabezados y la fila cuyo «ID» es `orderId`.
+export async function sheetsLeerFila(token: string, id: string, tab: string, orderId: string): Promise<{ encabezados: string[]; fila: Record<string, string> | null; n: number | null }> {
+  const d = await api(token, `${SHEETS}/${id}/values/${q(tab)}`);
+  const vals: string[][] = d.values ?? [];
+  const encabezados = vals[0] ?? [];
+  const ci = encabezados.findIndex((h) => norm(h) === "id");
+  const i = ci < 0 ? -1 : vals.findIndex((r, k) => k > 0 && String(r[ci] ?? "") === orderId);
+  if (i < 0) return { encabezados, fila: null, n: null };
+  const fila: Record<string, string> = {};
+  encabezados.forEach((h, k) => { fila[h] = vals[i][k] ?? ""; });
+  return { encabezados, fila, n: i + 1 };
+}
+export async function sheetsBorrarFila(token: string, id: string, tab: string, orderId: string): Promise<boolean> {
+  const { n } = await sheetsLeerFila(token, id, tab, orderId);
+  if (!n) return false;
+  const meta = await api(token, `${SHEETS}/${id}?fields=sheets.properties(sheetId,title)`);
+  const sheetId = (meta.sheets ?? []).find((s: any) => norm(s.properties.title) === norm(tab))?.properties?.sheetId;
+  if (sheetId === undefined) return false;
+  await api(token, `${SHEETS}/${id}:batchUpdate`, "POST", {
+    requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: n - 1, endIndex: n } } }],
+  });
+  return true;
+}
+
 // ── Crear la hoja desde Nodo ──────────────────────────────────────────
 // Conectar Google daba SOLO el permiso: la hoja había que crearla en Drive y pegar el enlace.
 // Y si esa hoja se borraba, el canal seguía apuntando a un archivo muerto sin decir nada
