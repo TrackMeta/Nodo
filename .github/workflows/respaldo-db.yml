@@ -26,6 +26,9 @@ on:
   schedule:
     - cron: "0 8 * * *"   # 08:00 UTC = 3:00 a. m. en Lima
   workflow_dispatch:       # botón «Run workflow» para correrlo a mano (y probarlo)
+  push:                    # y cada vez que se cambie ESTE archivo: así un cambio se prueba solo
+    branches: [main]
+    paths: [".github/workflows/respaldo-db.yml"]
 
 permissions:
   contents: read
