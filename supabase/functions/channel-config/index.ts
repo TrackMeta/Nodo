@@ -1193,7 +1193,11 @@ Deno.serve(async (req) => {
           const trozo = ids.slice(i, i + 200);
           for (const [tabla, col] of [["orders", "shipping"], ["contact_field_values", "value"]] as const) {
             for (let desde = 0; ; desde += 1000) {
-              const { data, error } = await db.from(tabla).select(col).in("contact_id", trozo).range(desde, desde + 999);
+              // Orden FIJO al paginar: sin él Postgres puede devolver las páginas en otro orden, se
+              // saltan filas y un comprobante que un pedido usa quedaba como «no referenciado» y se borraba.
+              const q0 = db.from(tabla).select(col).in("contact_id", trozo);
+              const { data, error } = await (tabla === "orders" ? q0.order("id", { ascending: true })
+                : q0.order("contact_id", { ascending: true }).order("field_id", { ascending: true })).range(desde, desde + 999);
               // No poder comprobar una referencia es exactamente cuando NO se debe borrar.
               if (error) return json({ error: "verificar", detalle: `${tabla}: ${error.message}` }, 500);
               for (const f of (data ?? []) as Array<Record<string, unknown>>) textos.push(JSON.stringify(f[col] ?? ""));

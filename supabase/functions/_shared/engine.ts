@@ -10,7 +10,7 @@ import { sendCapiEvent, maybePurchase, maybePurchaseUpsell } from "./capi.ts";
 import { sendTelegram, type TgButton } from "./telegram.ts";
 import { renderAviso, avisoActivo, avisoConFoto, textoDeAviso, escaparHtml, type AvisosConfig } from "./avisos.ts";
 import { sendTemplateToContact } from "./campaigns.ts";
-import { getAccessToken, sheetsAppend, sheetsUpdate } from "./gsheets.ts";
+import { getAccessToken, sheetsAppend, sheetsUpdate, sheetsBorrarFila, HOJAS } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendMedia, sendText } from "./meta.ts";
 import {
@@ -1547,12 +1547,13 @@ export async function crearVentaManual(
 // Devuelve true si quedó escrito.
 export async function patchShipping(
   db: SupabaseClient, orderId: string, patch: Record<string, unknown>,
-  opts?: { ship?: Record<string, unknown> | null; remove?: string[] },
+  // `sinReloj`: anotar una marca SIN mover updated_at (el reloj de «cuánto lleva en este estado»).
+  opts?: { ship?: Record<string, unknown> | null; remove?: string[]; sinReloj?: boolean },
 ): Promise<boolean> {
   const remove = opts?.remove ?? [];
   try {
     const { error } = await db.rpc("order_patch_shipping",
-      { p_order_id: orderId, p_patch: patch, ...(remove.length ? { p_remove: remove } : {}) });
+      { p_order_id: orderId, p_patch: patch, ...(remove.length ? { p_remove: remove } : {}), ...(opts?.sinReloj ? { p_touch: false } : {}) });
     if (!error) return true;
     console.error("[shipping] order_patch_shipping:", error.message);
   } catch (e) {
@@ -1563,7 +1564,7 @@ export async function patchShipping(
   const merged: Record<string, unknown> = { ...ship, ...patch };
   for (const k of remove) delete merged[k];
   const { error } = await db.from("orders")
-    .update({ shipping: merged, updated_at: new Date().toISOString() })
+    .update({ shipping: merged, ...(opts?.sinReloj ? {} : { updated_at: new Date().toISOString() }) })
     .eq("id", orderId);
   if (error) { console.error("[shipping] respaldo del patch:", error.message); return false; }
   return true;
@@ -4103,6 +4104,10 @@ async function clienteEscribio(db: SupabaseClient, contactId: string, desde: num
   try {
     const { data } = await db.from("messages").select("ts")
       .eq("contact_id", contactId).eq("direction", "in")
+      // Una reacción (👍), un sticker o una tarjeta de contacto NO abren turno nuevo (el webhook
+      // no corre el motor por ellos), así que tampoco pueden cortar este: un 👍 a la primera
+      // burbuja dejaba sin salir los datos del Yape y los botones que faltaban, y nadie respondía.
+      .not("type", "in", "(system,sticker)")
       .order("ts", { ascending: false }).limit(1).maybeSingle();
     const t = (data as any)?.ts ? new Date((data as any).ts).getTime() : 0;
     return t > desde;
@@ -4123,7 +4128,16 @@ async function ritmo(db: SupabaseClient, run: any, bubble: any): Promise<boolean
   const p = libre > 0 ? Math.min(pausaDe(bubble), libre) : RITMO_MIN_MS;
   r.ms += p;
   await new Promise((res) => setTimeout(res, p));
-  return await clienteEscribio(db, run.contact_id, r.t0);
+  if (await clienteEscribio(db, run.contact_id, r.t0)) return true;
+  // Un OPERADOR le escribió en medio de la ráfaga: el bot se calla (antes seguía soltando precio
+  // y datos de pago encima de lo que la persona estaba diciendo). Se mira el mensaje humano y no
+  // `bot_activo`, porque pasarAHumano pausa el bot y todavía tiene que salir su «te atiende…».
+  try {
+    const { data: h } = await db.from("messages").select("ts").eq("contact_id", run.contact_id)
+      .eq("direction", "out").eq("sent_by", "human").gt("ts", new Date(r.t0).toISOString()).limit(1).maybeSingle();
+    if (h) return true;
+  } catch (_) { /* sin dato → seguir */ }
+  return false;
 }
 
 async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promise<boolean> {
@@ -6833,8 +6847,15 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
 // remarketing). No interrumpe una conversación activa.
 export async function startFlowRun(
   db: SupabaseClient, channelId: string, contactId: string, flowId: string,
-  opts?: { force?: boolean; vars?: Record<string, unknown> },
+  opts?: { force?: boolean; vars?: Record<string, unknown>; reemplazarEsperando?: boolean },
 ): Promise<boolean> {
+  // La secuencia ya decidió que ese run «esperando» está RANCIO (el cliente se fue hace rato):
+  // se cierra solo ESE para que el toque de remarketing pueda arrancar. Sin esto el paso en modo
+  // Flujo se quedaba clavado para siempre (startFlowRun decía que no, tick tras tick). Un run
+  // «activo» (corriendo ahora) nunca se toca.
+  if (opts?.reemplazarEsperando && !opts?.force) {
+    await db.from("flow_runs").update({ estado: "cancelado" }).eq("contact_id", contactId).eq("estado", "esperando");
+  }
   if (opts?.force) {
     // Modo prueba: cancela cualquier run y arranca el flujo aunque esté en borrador.
     await db.from("flow_runs").update({ estado: "cancelado" })
@@ -7505,7 +7526,7 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
   let _chId: string | null = null, _ctId: string | null = null;
   try {
     const { data: o } = await db.from("orders")
-      .select("id, channel_id, contact_id, estado, amount, currency, shipping, order_bumps, created_at, version_id, product:product_id(nombre, tipo)")
+      .select("id, channel_id, contact_id, estado, amount, currency, shipping, order_bumps, created_at, version_id, confirmed_at, product:product_id(nombre, tipo)")
       .eq("id", orderId).maybeSingle();
     if (!o) return;
     const ord = o as any;
@@ -7529,6 +7550,17 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
     // A la hoja SOLO van las ventas CERRADAS (dinero cobrado): digital pagado, Lima
     // entregado y cobrado, provincia recogido / saldo pagado. Los pedidos en proceso
     // o caídos NO se escriben — la hoja es un registro limpio de ventas reales.
+    // Venta ANULADA (pago falso aprobado, devolución): se BORRA su fila. Antes la hoja la seguía
+    // mostrando como venta real. Solo con OAuth (la app web de Apps Script no sabe borrar).
+    if (["anulada", "cancelado", "rechazado", "devuelto"].includes(String(ord.estado)) && g.mode === "oauth" && ord.confirmed_at) {   // solo si llegó a ser venta (y pudo estar en la hoja)
+      const { data: tkB } = await db.rpc("get_gsheets_token", { p_channel_id: ord.channel_id });
+      const refreshB = Array.isArray(tkB) ? tkB[0]?.refresh_token : (tkB as any)?.refresh_token ?? tkB;
+      if (refreshB) {
+        const tokenB = await getAccessToken(String(refreshB));
+        for (const tab of Object.keys(HOJAS)) await sheetsBorrarFila(tokenB, String(g.spreadsheet_id), tab, ord.id).catch(() => false);
+      }
+      return;
+    }
     if (!["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"].includes(String(ord.estado))) return;
     const { data: c } = await db.from("contacts")
       .select("nombre, wa_id, ad_id").eq("id", ord.contact_id).maybeSingle();
@@ -10614,7 +10646,13 @@ async function maybeModificarPedido(db: SupabaseClient, channelId: string, conta
         if (Number.isFinite(Number(ship.saldo))) ship.saldo = String(Math.max(0, +(Number(ship.saldo) + delta).toFixed(2)));
         // Stock del principal: ajustar las unidades de su movimiento (plan o aplicado).
         await ajustarStockPrincipal(db, ship, String((order as any).product_id), cantNew).catch((e) => console.error("[maybeModificarPedido/stockCant]", e));
-        await db.from("orders").update({ amount: amountNew, shipping: ship, updated_at: new Date().toISOString() }).eq("id", (order as any).id);
+        // La presentación NUEVA también en `version_id`: sin esto el rótulo, el Excel del courier y
+        // «Editar pedido» seguían diciendo la vieja («1 frasco» con el precio del Pack 3). Y el
+        // multiplicador `cantidad` («2 del Estándar») era de la presentación anterior: se quita.
+        delete ship.cantidad;
+        const _updCant: Record<string, unknown> = { amount: amountNew, shipping: ship, updated_at: new Date().toISOString() };
+        if (pend.presentacion_id) _updCant.version_id = pend.presentacion_id;
+        await db.from("orders").update(_updCant).eq("id", (order as any).id);
         await syncPedidoSheet(db, (order as any).id).catch(() => {});
         await logEvent(db, channelId, contactId, "nota", "🔢 Cantidad del pedido actualizada", `${pend.presentacion_nombre} · ${sym}${amountNew}`).catch(() => {});
         await deliverMessage(db, channelId, contactId, `¡Listo! Te lo dejo como *${pend.presentacion_nombre}*. Tu pedido queda en *${sym}${valorOrden(amountNew, bumps)}*. 😊`).catch(() => {});

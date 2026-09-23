@@ -552,7 +552,7 @@ function renderTable(){
   $("tfoot").innerHTML=`<tr><td>Total</td>${cells(metrics(sumAds(rows)))}</tr>`;
 }
 function nameCell(name,tag,emoji,drill){
-  return `<div class="nm">${emoji?`<span class="em">${emoji}</span>`:""}<span class="t1">${esc(name)}</span>${tag?`<span class="tag ${tag}">${TAGLBL[tag]}</span>`:""}${drill?`<span class="drill">${icon("chevronRight")||'›'}</span>`:""}</div>`;
+  return `<div class="nm">${emoji?`<span class="em">${esc(emoji)}</span>`:""}<span class="t1">${esc(name)}</span>${tag?`<span class="tag ${tag}">${TAGLBL[tag]}</span>`:""}${drill?`<span class="drill">${icon("chevronRight")||'›'}</span>`:""}</div>`;
 }
 function renderAnuncio(){
   const rows=visibleRows();

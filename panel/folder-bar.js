@@ -29,7 +29,7 @@ let _offPick = null;   // listener de «clic afuera» del picker de carpeta (uno
 const PALETTE = ["#ef4444","#f97316","#f59e0b","#eab308","#84cc16","#22c55e","#10b981","#14b8a6","#0ea5e9","#3b82f6","#6366f1","#8b5cf6","#a855f7","#ec4899","#64748b"];
 const EMOJIS  = ["📁","👟","💊","🎁","🔥","⭐","🛒","📦","💎","🎯","🏷️","✨","📚","🧴","👕","🍫"];
 const PIPETTE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 0 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></svg>';
-const isCustomColor = (c)=> !!c && /^#/.test(c) && !PALETTE.some(p=>p.toLowerCase()===String(c).toLowerCase());
+const isCustomColor = (c)=> !!c && /^#[0-9a-f]{3,8}$/i.test(c) && !PALETTE.some(p=>p.toLowerCase()===String(c).toLowerCase());
 
 let styled = false;
 function ensureStyle(){
@@ -324,7 +324,7 @@ export async function mountFolders(opts){
     const paintBtn = (name)=>{
       const m = name ? S.metas.find(x=>x.nombre===name) : null;
       let h="";
-      if (name){ if(m&&m.color) h+=`<span class="fdot" style="background:${esc(m.color)}"></span>`; else h+=icon("folder"); if(m&&m.emoji) h+=`<span class="femo">${esc(m.emoji)}</span>`; h+=esc(name); }
+      if (name){ if(m&&m.color) h+=`<span class="fdot" style="background:${/^#[0-9a-f]{3,8}$/i.test(m.color)?m.color:"var(--muted)"}"></span>`; else h+=icon("folder"); if(m&&m.emoji) h+=`<span class="femo">${esc(m.emoji)}</span>`; h+=esc(name); }
       else { h = `${icon("folder")}<span style="color:var(--muted)">Sin carpeta</span>`; }
       btn.innerHTML = h + `<span style="color:var(--muted)">${icon("chevron")}</span>`;
     };
@@ -333,7 +333,7 @@ export async function mountFolders(opts){
       document.querySelectorAll(".fpick").forEach(x=>x.remove());
       const pop = document.createElement("div"); pop.className="fpick";
       const opt = (name)=>{ const m=name?S.metas.find(x=>x.nombre===name):null;
-        return `<button data-n="${name?esc(name):''}">${name?(m&&m.color?`<span class="fdot" style="background:${esc(m.color)}"></span>`:icon("folder")):`${icon("folder")}`}${m&&m.emoji?`<span class="femo">${esc(m.emoji)}</span>`:""}${name?esc(name):"<span style='color:var(--muted)'>Sin carpeta</span>"}</button>`; };
+        return `<button data-n="${name?esc(name):''}">${name?(m&&m.color?`<span class="fdot" style="background:${/^#[0-9a-f]{3,8}$/i.test(m.color)?m.color:"var(--muted)"}"></span>`:icon("folder")):`${icon("folder")}`}${m&&m.emoji?`<span class="femo">${esc(m.emoji)}</span>`:""}${name?esc(name):"<span style='color:var(--muted)'>Sin carpeta</span>"}</button>`; };
       pop.innerHTML = opt(null) + S.metas.map(m=>opt(m.nombre)).join("")
         + `<button data-new style="color:var(--brand)">${icon("plus")} Nueva carpeta</button>`;
       document.body.appendChild(pop);

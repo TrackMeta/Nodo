@@ -201,6 +201,13 @@ Deno.serve(async (req) => {
     if (_CERRADOS.includes(_origen) && _INICIALES.includes(newEstado)) {
       return json({ error: "transicion_invalida", detalle: `Un pedido «${_origen}» ya está cerrado; no puede volver a «${newEstado}».` }, 400);
     }
+    // De una venta cerrada a un estado INTERMEDIO (en agencia, en reparto, despachado…): puede ser
+    // corregir un clic equivocado, pero al cliente le llega «paga tu saldo» o «tu pedido salió»
+    // y la venta sale del Dashboard. Solo con confirmación explícita (el panel la pide).
+    const _SALIDAS_OK = ["anulada", "cancelado", "devuelto", "rechazado", "no_recogido", ..._CERRADOS];
+    if (_CERRADOS.includes(_origen) && !_SALIDAS_OK.includes(newEstado) && (body as any).forzar !== true) {
+      return json({ error: "cerrado_confirmar", detalle: `Este pedido ya está «${_origen}» (venta cerrada). Si lo pasas a «${newEstado}», al cliente le puede llegar el aviso de ese estado y la venta deja de contar en el Dashboard.` }, 409);
+    }
   }
   if (newEstado) {
     patch.estado = newEstado;
@@ -790,13 +797,20 @@ Deno.serve(async (req) => {
       // de arriba ya cambió stock_devuelto/stock_descontado por RPC, y con la copia vieja
       // reconciliarStockManual veía «stock_devuelto: true» y no tocaba nada — un pedido revivido
       // y cambiado de producto en el mismo guardado se quedaba con el stock del producto viejo.
-      let shipBase = (order as any).shipping;
+      // 🔴 Y SOLO el fresco: `patch.shipping` es una copia COMPLETA armada al inicio de la llamada
+      // ({...order.shipping, ...body.shipping}). Ya se guardó arriba, así que el fresco lo trae; volver
+      // a ponerlo encima pisaba lo que cambió DESPUÉS en esta misma llamada: el saldo corregido al
+      // validar el adelanto (volvía al viejo), las marcas de stock del bloque «revivir» y el
+      // `entregado` de los extras digitales (el regalo se le mandaba dos veces al cliente).
+      let shipFinal: any = patch.shipping ? { ...((order as any).shipping ?? {}), ...(patch.shipping as any) } : (order as any).shipping;
+      let bumpsFinal: any[] = Array.isArray(body.order_bumps) ? body.order_bumps : ((order as any).order_bumps ?? []);
       try {
-        const { data: fresco } = await db.from("orders").select("shipping").eq("id", (order as any).id).maybeSingle();
-        if ((fresco as any)?.shipping) shipBase = (fresco as any).shipping;
+        const { data: fresco, error: eFresco } = await db.from("orders").select("shipping, order_bumps").eq("id", (order as any).id).maybeSingle();
+        if (!eFresco && fresco) {
+          shipFinal = (fresco as any).shipping ?? {};
+          bumpsFinal = Array.isArray((fresco as any).order_bumps) ? (fresco as any).order_bumps : [];
+        }
       } catch (_) { /* se sigue con el snapshot */ }
-      const shipFinal = patch.shipping ? { ...(shipBase ?? {}), ...(patch.shipping as any) } : shipBase;
-      const bumpsFinal = Array.isArray(body.order_bumps) ? body.order_bumps : ((order as any).order_bumps ?? []);
       const prodFinal = (patch.product_id as string) ?? (order as any).product_id ?? null;
       const estadoFinal = String(newEstado ?? (order as any).estado);
       stockAlerts = await reconciliarStockManual(db, order.id, estadoFinal, shipFinal, bumpsFinal, prodFinal);

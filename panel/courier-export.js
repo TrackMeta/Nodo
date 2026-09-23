@@ -33,7 +33,10 @@ const bumpsDesc = (o) => (o.order_bumps || []).filter((b) => b && b.digital !== 
 }).filter(Boolean);
 const productoDesc = (o) => {
   const p = o.product || {}, v = o.version || {}, atr = atrTexto(o.shipping);
-  const base = [p.nombre, v.nombre, atr && `(${atr})`].filter(Boolean).join(" ");
+  // «2 × Estándar»: varias de una presentación de 1 unidad (shipping.cantidad). Sin esto la caja
+  // salía con UNA y el motorizado cobraba el precio de dos.
+  const n = Number((o.shipping || {}).cantidad) > 1 ? Number(o.shipping.cantidad) : 0;
+  const base = [n ? `${n} ×` : "", p.nombre, v.nombre, atr && `(${atr})`].filter(Boolean).join(" ");
   const mas = bumpsDesc(o);
   // Tope defensivo: la celda del Excel del courier no es un campo libre infinito.
   return [base, ...mas].filter(Boolean).join(" + ").slice(0, 250);
@@ -70,7 +73,7 @@ function filasEva(orders) {
     f[7] = "EFECTIVO";                          // H MÉTODO DE COBRANZA
     f[8] = N(O.porCobrar(o));                   // I IMPORTE A COBRAR (contraentrega): lo que FALTA, no el total (si hubo adelanto, no cobrar de nuevo)
     f[10] = productoDesc(o);                    // K DESCRIPCIÓN DEL PRODUCTO
-    f[11] = N(1);                               // L CANTIDAD
+    f[11] = N(Number(s.cantidad) > 1 ? Number(s.cantidad) : 1); // L CANTIDAD (varias de la misma presentación)
     return f;
   });
 }

@@ -44,7 +44,9 @@ async function sellarShipping(orderId: string, extra: Record<string, unknown>) {
   // Patch ATÓMICO (RPC de la 0068), no leer-mezclar-escribir: el rastreo corre en bucle y el
   // operador puede estar corrigiendo la sede o la clave en «Editar pedido» en ese mismo
   // segundo; el read-modify-write se lo pisaba (paquete a la agencia equivocada).
-  const { error } = await db.rpc("order_patch_shipping", { p_order_id: orderId, p_patch: extra });
+  // p_touch=false: anotar «se miró» NO reinicia el reloj del pedido (updated_at), que es lo que
+  // miden «pedido parado» y los recordatorios por estado (0109).
+  const { error } = await db.rpc("order_patch_shipping", { p_order_id: orderId, p_patch: extra, p_touch: false });
   if (error) {
     // Solo se cae al merge si la RPC NO EXISTE (base sin la 0068). Ante cualquier otro error
     // (timeout, permiso) el fallback reintroducía justo la carrera que la RPC evita: leer,
@@ -95,7 +97,13 @@ Deno.serve(async (req) => {
       const { data: ords } = await db.from("orders")
         .select("id, estado, shipping, updated_at")
         .in("channel_id", canales).in("estado", RASTREABLES)
-        .order("updated_at", { ascending: true }).limit(500);
+        // Filtrado EN la consulta y en rueda por el último intento: antes eran los 500 más viejos
+        // por updated_at y RECIÉN después se descartaban los que no son Shalom o no tienen guía;
+        // esos nunca se sellaban, así que 500 de ellos dejaban la extensión ciega para siempre.
+        // Y updated_at ya no sirve de rueda: el rastreo lo sella sin tocarlo (0109).
+        .ilike("shipping->>agencia", "shalom")
+        .not("shipping->>guia", "is", null).not("shipping->>codigo_envio", "is", null)
+        .order("shipping->>rastreo_intento_at", { ascending: true, nullsFirst: true }).limit(500);
 
       const guias = (ords ?? []).flatMap((o: any) => {
         const s = o.shipping ?? {};

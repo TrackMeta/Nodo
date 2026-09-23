@@ -501,7 +501,9 @@ async function processInbound(
   if ((contact as any).bot_activo === false) {
     // «Ya no me escriban» con un humano atendiendo (bot en pausa): la detección de baja vive
     // en el motor y acá no se corría → nadie marcaba no_remarketing y las secuencias seguían.
-    if (type === "text" && text && esOptOut(text)) await aplicarOptOut(db, channelId, contact.id);
+    // Con catch: si fallaba, el 500 hacía que Meta reintentara y el filtro de duplicados lo
+    // descartaba → la baja no se aplicaba nunca. Mejor loguear y seguir.
+    if (type === "text" && text && esOptOut(text)) await aplicarOptOut(db, channelId, contact.id).catch((e) => console.error("[webhook] opt-out en pausa:", (e as any)?.message ?? e));
     return;
   }
 
@@ -539,6 +541,16 @@ async function processInbound(
     // Reacción (👍) o tipo NO soportado (extractContent → type:"system"): el mensaje ya quedó
     // guardado, pero NO se dispara el bot de ventas. Responder a "[reaction]" es ruido y podría
     // reabrir el buffer/relanzar la conversación. Una reacción no es un mensaje que atender.
+    // …PERO lo que WhatsApp no deja leer (foto de «ver una vez», encuesta, carrito del catálogo)
+    // SÍ es alguien esperando respuesta: si era su Yape, cree que pagó. No se queda en silencio:
+    // pasa a una persona (le llega el «te atiende un asesor» y a ti el aviso).
+    const _rt = String((content as any)?.raw_type ?? "");
+    if (_rt === "unsupported" || _rt === "order") {
+      await pasarAHumano(db, channelId, contact.id,
+        _rt === "order" ? "El cliente mandó un pedido desde el catálogo de WhatsApp: revísalo en el chat."
+          : "El cliente mandó algo que WhatsApp no deja ver (foto de «ver una vez», encuesta…). Pídele que lo reenvíe normal.",
+        { aviso: true }).catch(() => {});
+    }
     return;
   } else {
     // video/document/location → el flujo decide por last_input_type.

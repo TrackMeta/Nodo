@@ -825,7 +825,9 @@ function rotuloInner(o){
   const _uid=String(c.user_id||""), _wa=String(c.wa_id||"");
   const telNum=s.tel||c.telefono||(_wa && _wa!=="webchat-test" && _wa!==_uid ? _wa : "");
   const tel=telNum?"+"+telNum:"—";
-  const pedido=[p.emoji,p.nombre,v.nombre?"· "+v.nombre:""].filter(Boolean).join(" ");
+  // «2 ×» cuando pidió varias de la misma presentación (shipping.cantidad): quien empaca lo tiene que ver.
+  const _cantR=Number(s.cantidad)>1?Number(s.cantidad):0;
+  const pedido=[_cantR?_cantR+" ×":"",p.emoji,p.nombre,v.nombre?"· "+v.nombre:""].filter(Boolean).join(" ");
   const nro=(o.order_id||o.id||"").toString().slice(0,8).toUpperCase();
   const row=(k,val,big)=> val?`<tr><td class="k">${esc(k)}</td><td class="v ${big?'big':''}">${esc(val)}</td></tr>`:"";
   const atrLine=Object.entries(s.atributos||{}).map(([k,v])=>`${k}: ${v}`).join("   ·   ");
@@ -1009,7 +1011,13 @@ async function updateOrder(body){
   if(error){
     // El detalle útil viene en el cuerpo del 4xx (transición inválida, operación reusada…):
     // supabase-js lo esconde tras «non-2xx status code». Se lee como hacen las otras pantallas.
-    let det=""; try{ const j=await error.context?.json?.(); det=(j&&(j.detalle||j.error))||""; }catch(_){}
+    let det="", cod=""; try{ const j=await error.context?.json?.(); det=(j&&(j.detalle||j.error))||""; cod=(j&&j.error)||""; }catch(_){}
+    // Venta YA CERRADA que se quiere mover hacia atrás: puede ser corregir un clic equivocado,
+    // pero al cliente le llegaría «paga tu saldo» o «tu pedido salió». Se confirma a propósito.
+    if(cod==="cerrado_confirmar" && !body.forzar){
+      const ok=await confirmDialog({title:"Esta venta ya estaba cerrada",message:det+" ¿Moverla igual?",confirmText:"Moverla igual",danger:true});
+      return ok ? updateOrder({ ...body, forzar:true }) : null;
+    }
     toast(det||error.message||"No se pudo actualizar el pedido",true); return null;
   }
   if(data&&data.error){ toast(data.detalle||data.error,true); return null; }

@@ -421,7 +421,11 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
       const { data: viejos } = await db.from("orders")
         .select("id, contact_id")
         .eq("channel_id", chId).eq("estado", "esperando_adelanto")
-        .lte("created_at", cutoff).limit(50);
+        // 🔴 Ya MANDÓ comprobante (en revisión manual o pagando en partes): el pedido sigue en
+        // esperando_adelanto hasta que alguien lo apruebe, y el reloj lo cancelaba con la plata
+        // adentro. Eso lo decide una persona, no el vencimiento.
+        .is("shipping->>adelanto_comprobante", null)
+        .lte("created_at", cutoff).order("created_at", { ascending: true }).limit(50);
       for (const o of viejos ?? []) {
         // 🔴 Solo se cancela si SIGUE esperando adelanto. Entre el select de arriba y este
         // update pasan segundos, y en esos segundos el cliente puede estar pagando: el motor
@@ -441,6 +445,12 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
         // aunque su pedido ya venció → el embudo lo mostraba como lead vivo y ofrecía
         // "Reactivar" un pedido muerto. Baja a "perdido" si no le queda otra compra viva.
         await recomputeStageOnLoss(db, chId, (o as any).contact_id).catch(() => {});
+        // Y la secuencia «provincia sin adelanto» de ESE pedido se corta (como al cancelar el
+        // cliente): le seguía llegando «tu pedido sigue reservado» sobre un pedido ya vencido.
+        await db.from("sequence_subscriptions")
+          .update({ estado: "cancelada", updated_at: new Date().toISOString() })
+          .eq("contact_id", (o as any).contact_id).eq("estado", "activa").eq("segmento", "provincia_sin_adelanto")
+          .then(() => {}, () => {});
         await db.from("contact_events").insert({
           channel_id: chId, contact_id: (o as any).contact_id, tipo: "nota",
           titulo: "Pedido vencido", detalle: `Sin adelanto tras ${venc.horas} h`,
@@ -461,8 +471,13 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
         .select("id, contact_id, shipping")
         .eq("channel_id", chId).eq("estado", "esperando_adelanto")
         .is("shipping->>_nudge_adelanto", null)
+        .is("shipping->>adelanto_comprobante", null)   // ya pagó (en revisión): no se le cobra de nuevo
+        // En rueda (igual que los recordatorios de pedido): los saltados no se marcan y 100 de ellos
+        // tapaban para siempre al pedido 101.
+        .or(`shipping->>_nudge_adel_visto.is.null,shipping->>_nudge_adel_visto.lt."${new Date(now - 30 * 60_000).toISOString()}"`)
         .lte("created_at", cutoff).order("created_at", { ascending: true }).order("id").limit(100);
       for (const o of pend ?? []) {
+        await patchShipping(db, (o as any).id, { _nudge_adel_visto: new Date().toISOString() }, { sinReloj: true });
         const ship = (o as any).shipping ?? {};
         if (ship._nudge_adelanto) continue; // ya se le recordó
         // Respeta al que pidió que no le escriban (mismo criterio que el
@@ -561,9 +576,14 @@ async function processOrderReminders(now: number): Promise<number> {
       .select("id, contact_id, shipping")
       .eq("channel_id", (t as any).channel_id).eq("estado", estado)
       .is(`shipping->>_nudge_${estado}_t${(t as any).id}`, null)
+      // En RUEDA: los que se saltan abajo (ventana cerrada, bot en pausa, horario) no se marcan, así
+      // que con 100 de ellos el lote era siempre el mismo y el pedido 101 nunca recibía su
+      // recordatorio. Cada pedido mirado se sella (sin mover su reloj) y no vuelve por 30 min.
+      .or(`shipping->>_rec_visto_t${(t as any).id}.is.null,shipping->>_rec_visto_t${(t as any).id}.lt."${new Date(now - 30 * 60_000).toISOString()}"`)
       .lte("updated_at", cutoff).order("updated_at", { ascending: true }).order("id").limit(100);
     for (const o of ords ?? []) {
       if (!(o as any).contact_id) continue;
+      await patchShipping(db, (o as any).id, { [`_rec_visto_t${(t as any).id}`]: new Date().toISOString() }, { sinReloj: true });
       // Si un HUMANO tomó la conversación (bot_activo=false), NO inyectar un flujo
       // automático encima del agente — mismo guard que processAdelantos/processSub.
       const { data: ct } = await db.from("contacts").select("bot_activo, bloqueado, ultimo_auto_msg_at, no_remarketing").eq("id", (o as any).contact_id).maybeSingle();
@@ -596,7 +616,9 @@ async function processOrderReminders(now: number): Promise<number> {
         if (ok) {
           // Patch estrecho, por lo mismo que el recordatorio de adelanto: `ship` se leyó antes
           // de arrancar el flujo y reescribirlo entero pisa lo que se haya guardado mientras.
-          await patchShipping(db, (o as any).id, { [mark]: new Date().toISOString() }, { ship });
+          // sinReloj: con el reloj reiniciado, el 2.º recordatorio (72 h, «mañana lo devuelven»)
+          // salía a las 96 h, después de la devolución.
+          await patchShipping(db, (o as any).id, { [mark]: new Date().toISOString() }, { ship, sinReloj: true });
           await marcarTocoMkt((o as any).contact_id); // cuenta para el anti-spam de los demás
           n++;
         }
@@ -623,7 +645,7 @@ const ESTADOS_FIRMES = [
   "confirmado", "en_reparto", "reprogramado", "adelanto_validado",     // comprometido
   "por_despachar", "despachado", "en_agencia",
 ];
-async function yaCompro(contactId: string, productId: string | null): Promise<boolean> {
+async function yaCompro(contactId: string, productId: string | string[] | null): Promise<boolean> {
   try {
     // Veto POR PRODUCTO (decisión de Rodrigo): un contacto SOLO sale del remarketing de ESTE
     // producto si ya lo compró/comprometió — NO de TODO por haber comprado otra cosa. En un
@@ -632,9 +654,21 @@ async function yaCompro(contactId: string, productId: string | null): Promise<bo
     // del contacto (es global, no por producto). Sin product_id (secuencia general/legacy) →
     // veto GLOBAL como antes (cualquier compra firme).
     let q = db.from("orders").select("id").eq("contact_id", contactId).in("estado", ESTADOS_FIRMES);
-    if (productId) q = q.eq("product_id", productId);
+    // Varios productos que comparten la secuencia (Guia Experta: los tres en la «general»):
+    // comprar CUALQUIERA de ellos saca del remarketing de esa secuencia. Antes se miraba solo el
+    // primero y quien compró el 2 o el 3 seguía recibiendo «¿sigues interesado?».
+    if (Array.isArray(productId)) { if (productId.length) q = q.in("product_id", productId); }
+    else if (productId) q = q.eq("product_id", productId);
     const { data } = await q.limit(1).maybeSingle();
-    return !!data;
+    if (data) return true;
+    // Digital que YA PAGÓ y espera tu aprobación (pendiente con comprobante): no se le manda
+    // «última oportunidad» ni se le graba la oferta rebajada mientras revisas su Yape.
+    let qp = db.from("orders").select("id").eq("contact_id", contactId).eq("estado", "pendiente")
+      .not("shipping->>digital_comprobante", "is", null);
+    if (Array.isArray(productId)) { if (productId.length) qp = qp.in("product_id", productId); }
+    else if (productId) qp = qp.eq("product_id", productId);
+    const { data: pend } = await qp.limit(1).maybeSingle();
+    return !!pend;
   } catch (_) { return false; }
 }
 
@@ -837,7 +871,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // Veto POR PRODUCTO: el producto es el DUEÑO de esta secuencia (derivado de su sequence_id),
   // NO contacts.product_id (last-write, lo pisa markProduct con el último producto tocado).
   const subProductId = await productoDeSecuencia(s.channel_id, s.sequence_id);
-  if (await yaCompro(s.contact_id, subProductId)) {
+  if (await yaCompro(s.contact_id, await productosDeSecuencia(s.channel_id, s.sequence_id))) {
     await db.from("sequence_subscriptions")
       .update({ estado: "completada", updated_at: new Date().toISOString() }).eq("id", s.id);
     return false;
@@ -1026,7 +1060,11 @@ async function processSub(s: any, now: number): Promise<boolean> {
             detalle: `Paso ${s.paso_actual}: el flujo ${fl ? `está en «${(fl as any).estado}»` : "ya no existe"}. Publícalo (o cámbiale el paso a la secuencia) — se saltó este toque.`,
           }).then(() => {}, () => {});
         } else {
-          const ok = await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id);
+          // Si llegó hasta acá con un run «esperando», el filtro de arriba ya lo dio por rancio.
+          const ok = await startFlowRun(db, s.channel_id, s.contact_id, paso.flow_id,
+            ((active as any)?.estado === "esperando"
+              && now - new Date((active as any).updated_at).getTime() >= Math.min(umbral * 1000, RUN_STALE_MS))
+              ? { reemplazarEsperando: true } : undefined);   // en Goteo, uno reciente NO se corta
           toco = !!ok;
           if (!ok) {
             // Ya hay un run activo/esperando: el cliente está a mitad de una conversación. NO se

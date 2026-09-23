@@ -785,7 +785,7 @@ function renderContactPanel(){
     <div class="kv"><span class="k">Usuario</span><span class="v">${esc(contact.nombre||"—")}</span></div>
     <div class="kv"><span class="k">Teléfono</span><span class="v">Web Chat · sin número</span></div>
     <div class="kv"><span class="k">Estado del bot</span><span class="v">${contact.bot_activo!==false?'<span style="color:var(--green)">● Activo</span>':'<span style="color:var(--amber)">● En pausa</span>'}</span></div>
-    <div class="kv"><span class="k">Producto</span><span class="v">${contact.product?`${contact.product.emoji?contact.product.emoji+" ":""}${esc(contact.product.nombre||"")}`:"—"}</span></div>
+    <div class="kv"><span class="k">Producto</span><span class="v">${contact.product?`${contact.product.emoji?esc(contact.product.emoji)+" ":""}${esc(contact.product.nombre||"")}`:"—"}</span></div>
     <div class="kv"><span class="k">Origen</span><span class="v">${esc(origenLabel(contact.source))}</span></div>
     ${contact.ad_id?`<div class="kv"><span class="k">Anuncio (Ad ID)</span><span class="v">${esc(contact.ad_id)}</span></div>`:""}
     <div class="kv"><span class="k">Hora local</span><span class="v">${fmtTime.format(new Date())}</span></div>
