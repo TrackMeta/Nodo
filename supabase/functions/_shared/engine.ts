@@ -7503,7 +7503,12 @@ export async function syncPedidoSheet(db: SupabaseClient, orderId: string) {
         "Opción": s.opcion ?? "",
         "Valor total": String(+(Number(ord.amount || 0) + extra).toFixed(2)),
         "Guía": s.guia ?? "",
-        "Imagen": s.adelanto_comprobante ?? s.saldo_comprobante ?? "",
+        // 📷 Dos pagos, dos columnas. Antes había UNA «Imagen» con el adelanto y, si no
+        // había, el saldo: justo en el pedido que interesa —el que ya pagó los dos— solo se
+        // veía el primero, y el comprobante del saldo (la plata grande, la que se paga antes
+        // de soltar la clave) no quedaba en la hoja. Pedido por Rodrigo (2026-09-22).
+        "Imagen": s.adelanto_comprobante ?? "",
+        "Imagen saldo": s.saldo_comprobante ?? "",
       };
     }
 
