@@ -5,7 +5,8 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
-import { getAccessToken, sheetsAppend, sheetsBootstrap, sheetsEstado, crearHojaDelCanal, sheetsLeerFila, sheetsBorrarFila } from "../_shared/gsheets.ts";
+import { getAccessToken, sheetsAppend, sheetsBootstrap, sheetsEstado, crearHojaDelCanal, sheetsLeerFila, sheetsBorrarFila, sheetsAppendMany, sheetsBorrarPorPrefijo, filasDemoDigital } from "../_shared/gsheets.ts";
+
 import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
@@ -21,7 +22,7 @@ Deno.serve(async (req) => {
   const { data: member } = await db.from("app_users").select("id").eq("id", uid).eq("activo", true).maybeSingle();
   if (!member) return json({ error: "not_member" }, 403);
 
-  let body: { webhook_url?: string; tab?: string; oauth?: boolean; preparar?: boolean; crear?: boolean; estado?: boolean; leer_fila?: boolean; borrar_fila?: boolean; order_id?: string; channel_id?: string; spreadsheet_id?: string };
+  let body: { webhook_url?: string; tab?: string; oauth?: boolean; preparar?: boolean; crear?: boolean; estado?: boolean; demo_digital?: number; borrar_demo?: boolean; leer_fila?: boolean; borrar_fila?: boolean; order_id?: string; channel_id?: string; spreadsheet_id?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   // Multi-tenant: cualquier acción sobre un canal exige ser de su cuenta.
   if (body.channel_id && !(await userOwnsChannel(db, uid, body.channel_id))) return json({ error: "forbidden_channel" }, 403);
@@ -41,6 +42,29 @@ Deno.serve(async (req) => {
       const token = await getAccessToken(String(refresh));
       const r = await crearHojaDelCanal(db, body.channel_id, token);
       return json({ ok: true, spreadsheet_id: r.id, spreadsheet_url: r.url, titulo: r.titulo });
+    } catch (e) {
+      return json({ ok: false, detalle: String((e as any)?.message ?? e) });
+    }
+  }
+
+  // ── Datos de EJEMPLO en la pestaña Digital (para ver cómo se ve la hoja) ──
+  // Filas con ID «PRUEBA-NN»: no crean pedidos en Nodo (no tocan Dashboard ni números) y
+  // `borrar_demo` las quita todas. Siempre en la hoja CONECTADA del canal, nunca en una que
+  // venga en el cuerpo.
+  if (body.demo_digital || body.borrar_demo) {
+    if (!body.channel_id) return json({ error: "faltan_datos" }, 400);
+    if (!(await userIsChannelAdmin(db, uid, body.channel_id))) return json({ error: "forbidden" }, 403);
+    const { data: chD } = await db.from("channels").select("gsheets, timezone").eq("id", body.channel_id).maybeSingle();
+    const sid = String((chD as any)?.gsheets?.spreadsheet_id ?? "");
+    if (!sid) return json({ ok: false, detalle: "Este bot no tiene hoja conectada" });
+    const { data: refresh } = await db.rpc("get_gsheets_token", { p_channel_id: body.channel_id });
+    if (!refresh) return json({ ok: false, detalle: "El canal no está conectado con Google (reconecta)" });
+    try {
+      const token = await getAccessToken(String(refresh));
+      if (body.borrar_demo) return json({ ok: true, borradas: await sheetsBorrarPorPrefijo(token, sid, "Digital", "PRUEBA-") });
+      const n = Math.min(Math.max(Number(body.demo_digital) || 10, 1), 200);
+      await sheetsAppendMany(token, sid, "Digital", filasDemoDigital(n, (chD as any)?.timezone || "America/Lima"));
+      return json({ ok: true, escritas: n });
     } catch (e) {
       return json({ ok: false, detalle: String((e as any)?.message ?? e) });
     }

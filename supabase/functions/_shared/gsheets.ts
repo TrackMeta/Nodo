@@ -297,6 +297,35 @@ export async function sheetsAppend(token: string, id: string, tab: string | unde
   await api(token, `${SHEETS}/${id}/values/${q(t)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, "POST", { values: [row] });
 }
 
+// Varias filas en UNA llamada (el append de a una lee los encabezados cada vez).
+export async function sheetsAppendMany(token: string, id: string, tab: string, filas: Record<string, string>[]) {
+  if (!filas.length) return;
+  await ensureTab(token, id, tab);
+  const keys = [...new Set(filas.flatMap((f) => Object.keys(f)))];
+  const headers = await ensureHeaders(token, id, tab, keys);
+  await api(token, `${SHEETS}/${id}/values/${q(tab)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, "POST",
+    { values: filas.map((f) => alinear(headers, f)) });
+}
+
+// Borra las filas cuyo ID empieza con `prefijo` (datos de EJEMPLO, p. ej. «PRUEBA-»). De abajo
+// hacia arriba para que los índices no se corran al borrar. Devuelve cuántas borró.
+export async function sheetsBorrarPorPrefijo(token: string, id: string, tab: string, prefijo: string): Promise<number> {
+  if (!prefijo || prefijo.length < 4) throw new Error("prefijo demasiado corto");
+  const d = await api(token, `${SHEETS}/${id}/values/${q(tab)}`);
+  const vals: string[][] = d.values ?? [];
+  const ci = (vals[0] ?? []).findIndex((h) => norm(h) === "id");
+  if (ci < 0) return 0;
+  const filas = vals.map((r, k) => ({ k, v: String(r[ci] ?? "") })).filter((x) => x.k > 0 && x.v.startsWith(prefijo)).map((x) => x.k);
+  if (!filas.length) return 0;
+  const meta = await api(token, `${SHEETS}/${id}?fields=sheets.properties(sheetId,title)`);
+  const sheetId = (meta.sheets ?? []).find((s: any) => norm(s.properties.title) === norm(tab))?.properties?.sheetId;
+  if (sheetId === undefined) return 0;
+  await api(token, `${SHEETS}/${id}:batchUpdate`, "POST", {
+    requests: filas.sort((a, b) => b - a).map((k) => ({ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: k, endIndex: k + 1 } } })),
+  });
+  return filas.length;
+}
+
 // Busca la fila que cumple `buscar` y actualiza las celdas de `fila`.
 // Si no la encuentra, agrega una fila con buscar+fila (como el Apps Script).
 export async function sheetsUpdate(token: string, id: string, tab: string | undefined, buscar: Record<string, string>, fila: Record<string, string>) {
@@ -320,4 +349,48 @@ export async function sheetsUpdate(token: string, id: string, tab: string | unde
     .filter((x) => x.ci >= 0)
     .map((x) => ({ range: `${t}!${colA1(x.ci)}${foundRow}`, values: [[x.v]] }));
   if (data.length) await api(token, `${SHEETS}/${id}/values:batchUpdate`, "POST", { valueInputOption: "USER_ENTERED", data });
+}
+// Ventas digitales de EJEMPLO, con la misma forma que escribe syncPedidoSheet (engine.ts) en la
+// pestaña Digital. Variadas a propósito: con y sin anuncio, con 0/1/2 extras, fechas repartidas
+// en las últimas 2 semanas. Deterministas (misma semilla → mismas filas).
+export function filasDemoDigital(n: number, tz: string): Record<string, string>[] {
+  let s = 20260923;
+  const r = () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
+  const pick = <T,>(a: T[]) => a[Math.floor(r() * a.length)];
+  const PROD = [
+    { nombre: "Plantilla de Presupuestos en Excel", ops: [{ o: "Única", p: 19 }] },
+    { nombre: "Curso de Cortes en Metal", ops: [{ o: "Básica", p: 49 }, { o: "Completa", p: 89 }] },
+    { nombre: "Protocolo Calistenia Militar", ops: [{ o: "Básico", p: 39 }, { o: "Premium", p: 79 }] },
+  ];
+  const EXTRAS = [{ n: "Pack de plantillas extra", p: 9 }, { n: "Guía PDF de ejercicios", p: 15 }, { n: "Asesoría por WhatsApp", p: 29 }];
+  const NOMBRES = ["María Quispe", "José Huamán", "Rosa Flores", "Luis Mendoza", "Carmen Torres", "Jorge Rojas", "Ana Vargas", "Pedro Castillo",
+    "Lucía Ramos", "Miguel Chávez", "Diana Salazar", "Carlos Gutiérrez", "Elena Paredes", "Raúl Ccori", "Sofía Aguilar", "Hugo Mamani"];
+  const fmt = new Intl.DateTimeFormat("es-PE", { timeZone: tz, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const ahora = Date.now();
+  const out: { t: number; f: Record<string, string> }[] = [];
+  for (let i = 0; i < n; i++) {
+    const pr = pick(PROD); const op = pick(pr.ops);
+    const nEx = r() < 0.55 ? 0 : (r() < 0.75 ? 1 : 2);
+    const ex = [...EXTRAS].sort(() => r() - 0.5).slice(0, nEx);
+    const extraTot = ex.reduce((a, b) => a + b.p, 0);
+    const conAnuncio = r() < 0.7;
+    const cuando = ahora - Math.floor(r() * 14 * 24 * 3600 * 1000);
+    out.push({ t: cuando, f: {
+      "ID": "",
+      "Ad ID": conAnuncio ? "'" + String(120200000000000000 + Math.floor(r() * 9e11)) : "",
+      "Cliente": pick(NOMBRES),
+      "Cel": "'519" + String(10000000 + Math.floor(r() * 89999999)),
+      "Fecha y hora": fmt.format(new Date(cuando)),
+      "Valor": String(op.p),
+      "Producto": pr.nombre,
+      "Opción": op.o,
+      "Cantidad": "1",
+      "Orderbump": extraTot ? String(extraTot) : "",
+      "Extra": ex.map((e) => `${e.n} S/${e.p}`).join(" + "),
+      "Comprobante": "https://trackmeta.github.io/Nodo/assets/logo-128.png",
+      "Comprobante extra": ex.map(() => "https://trackmeta.github.io/Nodo/assets/logo-128.png").join("\n"),
+    } });
+  }
+  // Por hora REAL (el texto «dd/mm/aaaa» no ordena por fecha) y numeradas en ese orden.
+  return out.sort((a, b) => a.t - b.t).map((x, i) => ({ ...x.f, "ID": `PRUEBA-${String(i + 1).padStart(2, "0")}` }));
 }
