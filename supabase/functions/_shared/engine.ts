@@ -4435,9 +4435,11 @@ const RE_PERMISO_PAGO =
 const _V_ENTREGA = "lleg|mand|env[ií]|despach|sal[ei]|entreg|recib";
 function sinPromesaDeHoy(texto: string, cuando: string): string {
   let t = String(texto ?? "");
-  if (!t || !/\bhoy\b|mismo d[ií]a/i.test(t)) return t;
+  // + «en el día» («el motorizado te llama en el día»): medido con el stock en 0, justo después
+  // de la confirmación que decía «te llega en cuanto repongamos».
+  if (!t || !/\bhoy\b|mismo d[ií]a|en el d[ií]a/i.test(t)) return t;
   const rep = String(cuando ?? "").trim() || "pronto";
-  t = t.replace(/\b(hoy\s+mismo|el\s+mismo\s+d[ií]a)\b/gi, rep);
+  t = t.replace(/\b(hoy\s+mismo|el\s+mismo\s+d[ií]a|en\s+el\s+d[ií]a)(?![\p{L}\p{N}])/giu, rep);
   t = t.replace(new RegExp(`\\bhoy\\b(?=[^.!?]{0,28}\\b(?:${_V_ENTREGA})\\w*)`, "gi"), rep);
   t = t.replace(new RegExp(`\\b((?:${_V_ENTREGA})\\w*(?:\\s+\\S+){0,3}?\\s+)hoy\\b`, "gi"), `$1${rep}`);
   return t;
