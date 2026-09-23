@@ -1777,6 +1777,17 @@ async function toggleBot(){
   logEvent(cid, on?"bot_pausa":"bot_reactiva", on?"Bot pausado":"Bot reactivado");
   toast(on?"Bot pausado — atiendes tú":"Bot reactivado");
   loadConversations();
+  // Al REACTIVAR, el bot contesta lo que el cliente escribió mientras estaba en pausa (si nadie le
+  // respondió después). Antes solo se prendía el flag y esos mensajes quedaban sin respuesta hasta
+  // que el cliente volviera a escribir. Va en segundo plano: el motor puede tardar unos segundos.
+  if(!on && !state.isTest){
+    supa.functions.invoke("flow-start",{ body:{ reanudar:true, channel_id:state.channelId, contact_id:cid } })
+      .then(({ data, error })=>{
+        if(error || !data) return;
+        if(data.ventana===false) toast(`Tiene ${data.pendientes} mensaje${data.pendientes>1?"s":""} sin responder, pero pasaron más de 24 h: escríbele con una plantilla`, true);
+        else if(data.respondido) toast("El bot está respondiendo lo que te escribió mientras estaba en pausa");
+      }).catch(()=>{});
+  }
 }
 function updateComposerMode(){
   if(!state.isTest){ $("msgInput").placeholder = "Escribe un mensaje…"; return; }

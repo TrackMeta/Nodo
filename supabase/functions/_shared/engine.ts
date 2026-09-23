@@ -12478,7 +12478,17 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
             // Solo hacia ARRIBA: pasarse a una versión más barata no genera vuelto (eso lo
             // decide una persona). El crédito viaja en el `flow_run` nuevo y muere con él,
             // así que no se cuela en una compra posterior.
-            const _pagado = Number((order as any).amount) || 0;
+            // Lo pagado es TODO lo que ya pagó por este producto, no el último pedido: el pedido de
+            // un upgrade guarda solo la DIFERENCIA, así que en cadena (Básica 39 → Premium, pagó 40
+            // → Pro 129) el crédito salía 40 en vez de 79 y le cobraba 89 en vez de 50. Y una
+            // versión intermedia (59) la cobraba, cuando ya la tiene dentro de la Premium.
+            let _pagado = Number((order as any).amount) || 0;
+            try {
+              const { data: _ps } = await db.from("orders").select("amount")
+                .eq("contact_id", contactId).eq("product_id", _pidU).eq("estado", "confirmada");
+              const _suma = +((_ps ?? []) as any[]).reduce((a, o) => a + (Number(o.amount) || 0), 0).toFixed(2);
+              if (_suma > _pagado) _pagado = _suma;
+            } catch (_) { /* sin dato → el último pedido, como antes */ }
             const _nuevo = Number(_otra.precio) || 0;
             const _credito = (_nuevo > _pagado && _pagado > 0) ? _pagado : 0;
             const _aPagar = _credito > 0 ? +(_nuevo - _credito).toFixed(2) : _nuevo;
@@ -22784,6 +22794,28 @@ async function buildContext(db: SupabaseClient, run: Run) {
     ctx.total_cobrar = +(Number(ctx.precio) + envioZona).toFixed(2);
     ctx.envio_cobrado = envioZona;
   }
+
+  // 6b) …pero si el PEDIDO de esta venta YA EXISTE, manda el pedido. Lo de arriba recalcula
+  // desde el precio en cada turno y no sabe de lo que pasó después: un extra agregado (sube el
+  // saldo), un cambio de cantidad, un adelanto pagado de más o una oferta aplicada. La IA y el
+  // mensaje fijo decían «los S/ 99 que faltan» mientras el pedido —y la agencia— cobraban S/ 119.
+  try {
+    const _oid = String((run.vars as any)?._order_id ?? "").trim();
+    if (_oid) {
+      const { data: _po } = await db.from("orders").select("estado, amount, order_bumps, shipping, contact_id")
+        .eq("id", _oid).maybeSingle();
+      const _vivo = ["esperando_adelanto", "adelanto_validado", "por_despachar", "despachado", "en_agencia",
+        "confirmado", "en_reparto", "reprogramado"];
+      if (_po && (_po as any).contact_id === run.contact_id && _vivo.includes(String((_po as any).estado))) {
+        const _sh = ((_po as any).shipping ?? {}) as any;
+        const _bumps = (((_po as any).order_bumps ?? []) as any[]).reduce((a, b) => a + (Number(b?.precio) || 0), 0);
+        const _tot = +((Number((_po as any).amount) || 0) + _bumps).toFixed(2);
+        if (_tot > 0) ctx.total_cobrar = _tot;
+        const _sv = Number(_sh.saldo);
+        if (_sh.saldo != null && String(_sh.saldo).trim() !== "" && Number.isFinite(_sv)) ctx.saldo = _sv;
+      }
+    }
+  } catch (_) { /* sin pedido legible → lo calculado arriba */ }
 
   // {{cliente}} — cómo llamarlo. Prefiere el nombre que DIO para el envío antes
   // que el del perfil de WhatsApp: si le pedimos el nombre completo para el
