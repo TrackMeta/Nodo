@@ -366,8 +366,10 @@ async function processInbound(
     // ctwa_clid del anuncio que sí trajo al cliente → si no, la venta se cierra sin ese id
     // y maybePurchase corta (`if(!ship.ctwa_clid) return null`): Meta nunca recibe el
     // Purchase y ese anuncio parece que no vendió.
-    if (ref.source_id) patch.ad_id = ref.source_id;
-    if (ref.ctwa_clid) patch.ctwa_clid = ref.ctwa_clid;
+    // ad_id y ctwa_clid van JUNTOS: una publicación orgánica trae source_id pero no ctwa, y pisar solo
+    // el ad_id dejaba el contacto con el anuncio de un lado y el clic de otro (Meta atribuía la venta a
+    // A y Rendimiento a la publicación). Sin ctwa_clid no se toca la atribución.
+    if (ref.ctwa_clid) { patch.ctwa_clid = ref.ctwa_clid; if (ref.source_id) patch.ad_id = ref.source_id; }
     patch.source = ref.source_type ?? "ctwa";
     // Free Entry Point: el mensaje que entra desde un anuncio abre 72h en las que Meta NO
     // cobra los mensajes. Ojo con qué significa eso: NO habilita texto libre —para eso hace
@@ -377,7 +379,7 @@ async function processInbound(
     // de las 24h, no por el solo hecho de que el cliente escriba. Acá se marca al recibir
     // porque con el bot activo la respuesta sale en segundos y siempre se cumple; si el bot
     // estuviera apagado y nadie contestara, el panel diría "plantilla gratis" y no lo sería.
-    patch.fep_hasta = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+    if (ref.ctwa_clid) patch.fep_hasta = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();   // solo un clic de ANUNCIO abre las 72 h (y fecha el clic para la atribución)
   }
 
   // ⏪ Un mensaje que llega TARDE (Meta lo reintenta tras un 500, o lo entrega desordenado) no

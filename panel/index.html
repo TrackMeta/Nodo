@@ -1490,7 +1490,7 @@ async function loadContactPanel(c){
   ]);
   if (state.contactId !== c.id) return; // cambió de chat mientras cargaba
   let capiEvt=null;
-  if(orderRes && orderRes.id){ try{ const { data }=await supa.from("capi_events").select("estado, value, currency, event_id, action_source, meta_response, created_at, updated_at").eq("order_id",orderRes.id).eq("event_name","Purchase").maybeSingle(); capiEvt=data; }catch(_){} }
+  if(orderRes && orderRes.id){ try{ const { data }=await supa.from("capi_events").select("estado, value, currency, event_id, action_source, meta_response, created_at").eq("order_id",orderRes.id).eq("event_name","Purchase").maybeSingle(); capiEvt=data; }catch(_){} }
   panelData = {
     contact: ctRes.data || c,
     order: orderRes || null,
@@ -2347,7 +2347,7 @@ async function callFn(name, body) {
   if (!session?.access_token) {
     toast("Tu sesión expiró. Vuelve a iniciar sesión.", true);
     try { await supa.auth.signOut(); } catch (_) {}
-    try { localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.channelId"); } catch (_) {}
+    try { localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.avanzado"); localStorage.removeItem("nodo.channelId"); } catch (_) {}
     location.href = "index.html";
     return new Response(JSON.stringify({ error: "no_auth" }), { status: 401, headers: { "Content-Type": "application/json" } });
   }

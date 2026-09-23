@@ -503,7 +503,8 @@ async function _aprobarLima(o){
   const r=await updateOrder({ order_id:o.id, prepago_lima:"aprobar", monto });
   if(!r) return;
   const resto=Number(r.saldo);
-  if(r.aviso_error) toast(`Aprobado, pero ${r.aviso_error}. Escríbele tú.`,true);
+  if(r.advertencia) toast(`Aprobado. ${r.advertencia}`,true);
+  else if(r.aviso_error) toast(`Aprobado, pero ${r.aviso_error}. Escríbele tú.`,true);
   else toast(resto>0.009?`Listo · el motorizado cobra ${sym(o)} ${resto}`:"Listo · el motorizado ya no cobra nada");
   await load();
 }

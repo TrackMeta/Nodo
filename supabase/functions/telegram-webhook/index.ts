@@ -288,6 +288,7 @@ Deno.serve(async (req) => {
   // el producto» y el cliente se quedaba pagado y sin nada. El panel ya lo avisaba; Telegram no.
   let resultado = def.ok;
   if (res?.entrega_pendiente) resultado = "⚠️ Pago aprobado, pero el producto NO se entregó solo (la conversación ya no lo esperaba). Entrégale el acceso a mano desde el chat.";
+  else if (res?.advertencia) resultado = `⚠️ ${def.ok} — ${String(res.advertencia).slice(0, 150)}`;
   else if (res?.aviso_error) resultado = `⚠️ ${def.ok} — pero el aviso al cliente NO salió: ${String(res.aviso_error).slice(0, 150)}`;
   await answerCallback(token, cb.id, resultado.slice(0, 200), resultado !== def.ok);
   // Y queda ESCRITO en el chat (el popup es efímero y se pierde si Telegram ya venció el toque).

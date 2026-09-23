@@ -1090,6 +1090,15 @@ Deno.serve(async (req) => {
         // nombre, los avisos no le llegan a nadie y nada lo dice: el guardado decía «Guardado».
         const malo = (upd.telegram_chat_ids as string[]).find((x) => !/^-?\d{3,}$/.test(x));
         if (malo) return json({ error: "id_invalido", detalle: `«${malo}» no es un chat de Telegram: tiene que ser un número (el que te da el bot al vincularte).` }, 400);
+        // Los chats que se quitan a mano salen también de telegram_vinculos (quién era cada uno).
+        try {
+          const { data: cv } = await db.from("channels").select("telegram_vinculos").eq("id", channel_id).maybeSingle();
+          const v = { ...(((cv as any)?.telegram_vinculos ?? {}) as Record<string, unknown>) };
+          const quedan = new Set(upd.telegram_chat_ids as string[]);
+          let cambio = false;
+          for (const k of Object.keys(v)) if (!quedan.has(k)) { delete v[k]; cambio = true; }
+          if (cambio) upd.telegram_vinculos = v;
+        } catch (_) { /* sin columna → como antes */ }
       }
       // Pixel y página: números. El autofill de Chrome ya metió «Square» en un campo de Meta
       // (ver phone_number_id abajo), y un Pixel ID que no es número hace que CAPI falle en
@@ -1152,7 +1161,7 @@ Deno.serve(async (req) => {
       const token = secrets?.telegram_bot_token;
       if (token) { try { await deleteWebhook(token); } catch { /* best-effort */ } }
       const { error: e1 } = await db.from("channels")
-        .update({ telegram_chat_ids: [], telegram_webhook_secret: null, telegram_pair: null }).eq("id", channel_id);
+        .update({ telegram_chat_ids: [], telegram_vinculos: {}, telegram_webhook_secret: null, telegram_pair: null }).eq("id", channel_id);
       if (e1) return json({ error: "desconectar_tg", detalle: e1.message }, 400);
       const { error: e2 } = await db.rpc("delete_channel_secret", { p_channel_id: channel_id, p_kind: "telegram_bot_token" });
       if (e2) return json({ error: "desconectar_tg_secreto", detalle: e2.message }, 400);
@@ -1281,6 +1290,12 @@ Deno.serve(async (req) => {
       // Si el borrado de un secreto FALLA de verdad (no «no había»: la función SQL ya es
       // idempotente), NO se borra el canal: quedarían tokens vivos y huérfanos en el Vault sin
       // ninguna fila que los referencie ni forma de verlos desde el panel.
+      // El webhook de Telegram se quita ANTES de borrar su token (después ya no hay con qué): si no,
+      // el bot de Telegram seguía apuntando a este canal borrado y cada toque de botón daba error.
+      try {
+        const sTg = await getChannelSecrets(db, channel_id);
+        if (sTg?.telegram_bot_token) await deleteWebhook(sTg.telegram_bot_token);
+      } catch (_) { /* best-effort */ }
       for (const kind of ["access_token", "app_secret", "capi_token", "telegram_bot_token", "ads_token"]) {
         const { error: eSec } = await db.rpc("delete_channel_secret", { p_channel_id: channel_id, p_kind: kind });
         if (eSec) return json({ error: "vault", detalle: `No se pudo borrar el secreto ${kind} del Vault (${eSec.message}). No se borró el bot.` }, 500);

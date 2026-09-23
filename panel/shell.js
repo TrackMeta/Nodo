@@ -1228,7 +1228,7 @@ export async function mountShell({ active } = {}) {
     // Limpia el caché LOCAL antes de salir: en una PC compartida, loadMe/paintBrand pintan
     // primero desde caché, así que sin esto el SIGUIENTE usuario veía el nombre/rol/logo/negocio
     // del anterior hasta que refrescara la red (fuga de identidad/negocio).
-    try { localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.channelId"); } catch {}
+    try { localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.avanzado"); localStorage.removeItem("nodo.channelId"); } catch {}
     await supa.auth.signOut(); location.href = "index.html";
   };
 
@@ -1382,7 +1382,7 @@ export async function mountShell({ active } = {}) {
     // veía el nombre/rol/avatar y el logo/negocio del anterior hasta que resolvieran las queries
     // (misma fuga que ya cierra el botón de salir; la expiración pasiva no lo hacía).
     try { supa.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") {
-      try { localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.channelId"); } catch (_) {}
+      try { localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.avanzado"); localStorage.removeItem("nodo.channelId"); } catch (_) {}
       location.href = "index.html";
     } }); } catch (_) {}
   }

@@ -150,7 +150,10 @@ export async function runEngine(
   // idénticas con la lista de precios; el segundo turno había leído las `vars` del run
   // ANTES de que el primero guardara la suya, así que la guarda de "esto ya se lo pregunté"
   // no existía todavía para él. Esperar es feo, contestar dos veces lo mismo es peor.
-  for (let i = 0; i < 120 && !locked; i++) {          // hasta ~30s de espera (120 × 250ms)
+  // Un mensaje espera hasta ~75 s (eran 30): un turno con audio + OCR + IA pasaba de 30 s y el
+  // segundo mensaje entraba SIN candado, contestando al paso viejo (doble respuesta).
+  const _intentos = event.type === "resume" ? 120 : 300;
+  for (let i = 0; i < _intentos && !locked; i++) {    // 250 ms por vuelta
     try {
       // ⏱️ El `error` se MIRA y corta el bucle: `db.rpc()` NO lanza (devuelve `{ error }`), así
       // que el `catch { break }` de abajo no cubre lo que decía cubrir. Si la RPC fallara —no
@@ -176,7 +179,14 @@ export async function runEngine(
   // cliente con riesgo de carrera antes que dejarlo sin respuesta (aguas abajo protegen el
   // índice único de runs vivos y los CAS de pedido/pago). Pero queda el rastro: si algún día
   // aparece una doble respuesta o un dato pisado, esta línea es la que lo explica.
-  if (!locked) console.warn(`[runEngine] sin lock tras ~30s (contacto ${contactId}) — se procede igual`);
+  // ⏰ El despertador del scheduler NO procede sin candado: si hay un turno corriendo es porque
+  // el cliente acaba de contestar, y disparar la rama «sin respuesta» encima entregaba el
+  // principal mientras el otro turno procesaba «sí quiero el extra». El próximo tick lo reintenta.
+  if (!locked && event.type === "resume") {
+    console.warn(`[runEngine] despertador sin lock (contacto ${contactId}) — lo reintenta el próximo tick`);
+    return;
+  }
+  if (!locked) console.warn(`[runEngine] sin lock tras ~75s (contacto ${contactId}) — se procede igual`);
   try {
     // 🔁 DOBLE RESPUESTA a dos mensajes seguidos (medido en vivo el 2026-09-17: «No gracias»
     // y «Como estas» con 12 s de diferencia → dos «Estoy bien…»). El turno 1 arma su prompt
@@ -597,6 +607,23 @@ async function runEngineInner(
       .not("estado", "in", `(${[...ORDER_FINAL, "carrito"].map((e) => `"${e}"`).join(",")})`)
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
     const _shR = ((ordR as any)?.shipping ?? {}) as any;
+    // 🛵 YA en reparto: es justo lo que el aviso de «salió a reparto» le invita a decir («¿No vas
+    // a estar? Avísame»), y antes se ignoraba por estar despachado → nadie se enteraba y el
+    // motorizado salía igual. Es URGENTE: aviso al equipo y el bot no promete nada que no controla.
+    const _estR = String((ordR as any)?.estado ?? "");
+    if (ordR && (_estR === "en_reparto" || _estR === "en_ruta")) {
+      const _txtR = String(event.text ?? "").slice(0, 160);
+      await patchShipping(db, (ordR as any).id,
+        { reprogramacion_pedida: _txtR, reprogramacion_at: new Date().toISOString() }, { ship: _shR });
+      await logEvent(db, channelId, contactId, "nota", "📅 Pide reprogramar con el pedido EN REPARTO", _txtR).catch(() => {});
+      await deliverMessage(db, channelId, contactId,
+        "¡Anotado! 🙌 Tu pedido ya salió con el motorizado, así que le aviso ahora mismo al equipo para " +
+        "coordinarlo. Te confirmamos por acá en un ratito. 😊").catch(() => {});
+      await pasarAHumano(db, channelId, contactId,
+        `🚨 Pide REPROGRAMAR y el pedido YA ESTÁ EN REPARTO: “${_txtR}”. Llama al motorizado antes de que vaya.`,
+        { aviso: true });
+      return;
+    }
     if (ordR && !ESTADOS_DESPACHADO.has(String((ordR as any).estado ?? ""))) {
       const _txtR = String(event.text ?? "").slice(0, 160);
       await patchShipping(db, (ordR as any).id,
@@ -618,18 +645,56 @@ async function runEngineInner(
   // un número que nunca iba a llegar. Es el pedido de provincia en su momento más frágil:
   // ya pagó el adelanto y no tiene el paquete. Si la guía está cargada se la da el MOTOR;
   // si no, se le dice la verdad y lo toma una persona, que sí puede conseguirla.
-  if (event.type === "message" && pideGuia(event.text)) {
+  if (event.type === "message" && (pideGuia(event.text) || pideClave(event.text))) {
     const { data: ordG } = await db.from("orders")
-      .select("id, estado, shipping")
+      .select("id, estado, shipping, amount, currency, order_bumps")
       .eq("channel_id", channelId).eq("contact_id", contactId)
       .not("estado", "in", `(${[...ORDER_FINAL, "carrito"].map((e) => `"${e}"`).join(",")})`)
       .order("created_at", { ascending: false }).limit(1).maybeSingle();
-    if (ordG && ESTADOS_DESPACHADO.has(String((ordG as any).estado ?? ""))) {
-      const _shG = ((ordG as any).shipping ?? {}) as any;
+    const _estG = String((ordG as any)?.estado ?? "");
+    const _shG0 = ((ordG as any)?.shipping ?? {}) as any;
+    // Cada estado tiene SU respuesta. Antes todo caía en «te paso la guía de Shalom»: al de Lima
+    // con el motorizado en camino le pausaba el bot buscándole una guía que no existe, al que ya
+    // tenía el paquete en la agencia le decía «te aviso cuando llegue», y el «no me llegó la
+    // clave» recibía la guía en vez de la clave.
+    const _totG = Number((ordG as any)?.amount ?? 0) +
+      (((ordG as any)?.order_bumps ?? []) as any[]).reduce((a, b) => a + (Number(b?.precio) || 0), 0);
+    const _msgEst = (e: string) => mensajeEstadoDefault(e, _shG0, _totG || null, (ordG as any)?.currency ?? null,
+      (ordG as any)?.order_bumps ?? []);
+    if (ordG && (_estG === "saldo_pagado" || _estG === "en_agencia")) {
+      const _txtE = _msgEst(_estG);
+      if (_txtE) {
+        await deliverMessage(db, channelId, contactId, _txtE).catch(() => {});
+        await logEvent(db, channelId, contactId, "nota", _estG === "saldo_pagado" ? "🔑 Le reenvió su clave de recojo" : "📦 Le recordó que ya está en la agencia").catch(() => {});
+        return;
+      }
+      // saldo pagado pero sin clave cargada: no se inventa, la consigue una persona.
+      await deliverMessage(db, channelId, contactId,
+        "Tu pago ya está confirmado ✅ Déjame pedirle tu *clave de recojo* al equipo y te la paso por acá en un momento. 🙌").catch(() => {});
+      await pasarAHumano(db, channelId, contactId,
+        `🔑 Pide su CLAVE de recojo (saldo pagado) y no hay ninguna cargada: “${String(event.text ?? "").slice(0, 120)}”. Cárgala en el pedido y pásasela.`,
+        { aviso: false });
+      return;
+    }
+    if (ordG && (_estG === "en_reparto" || _estG === "en_ruta")) {
+      // Lima con el motorizado en camino: no hay guía que buscar ni motivo para pausar el bot.
+      await deliverMessage(db, channelId, contactId,
+        "🛵 Tu pedido ya está en camino con el motorizado. Te va a llamar para coordinar la entrega — " +
+        "*mantente atento a su llamada o mensaje* 🙌").catch(() => {});
+      await logEvent(db, channelId, contactId, "nota", "🛵 Preguntó por su pedido (en reparto)").catch(() => {});
+      return;
+    }
+    if (ordG && (_estG === "en_preparacion" || _estG === "listo_despacho")) {
+      await deliverMessage(db, channelId, contactId,
+        "📦 Tu pedido se está preparando para salir. Apenas lo despachemos te aviso por acá. 🙌").catch(() => {});
+      return;
+    }
+    if (ordG && pideGuia(event.text) && ESTADOS_DESPACHADO.has(_estG)) {
+      const _shG = _shG0;
       const _guia = String(_shG.guia ?? _shG.codigo_envio ?? "").trim();
       if (_guia) {
         await deliverMessage(db, channelId, contactId,
-          `📄 Tu número de guía es *${_guia}* — con ese código puedes rastrearlo en Shalom. ` +
+          `📄 Tu número de guía es *${_guia}*${_shG.guia && String(_shG.codigo_envio ?? "").trim() ? ` y el código de orden *${String(_shG.codigo_envio).trim()}*` : ""} — con eso puedes rastrearlo en ${String(_shG.agencia ?? "").toLowerCase() === "olva" ? "Olva" : "Shalom"}. ` +
           `Igual te aviso apenas llegue a tu agencia. 🙌`).catch(() => {});
         await logEvent(db, channelId, contactId, "nota", "📄 Le pasó su número de guía", _guia).catch(() => {});
       } else {
@@ -1091,7 +1156,7 @@ async function runEngineInner(
     try {
       const { data: _fl } = await db.from("flows").select("product_id, role").eq("id", flow.id).maybeSingle();
       const _pidN = (_fl as any)?.product_id ? String((_fl as any).product_id) : "";
-      if (_pidN && String((_fl as any)?.role ?? "venta") === "venta") {
+      if (_pidN && String((_fl as any)?.role ?? "venta") !== "postventa") {   // también «mensajes iniciales»: anuncios y palabras clave entran por ahí y el rotador salta a la venta sin pasar por acá
         const { data: _pc } = await db.from("contact_field_values").select("value, custom_fields!inner(key)")
           .eq("contact_id", contactId).eq("custom_fields.key", "pedido_creado").maybeSingle();
         if (String((_pc as any)?.value ?? "").trim() === "si") {
@@ -1433,7 +1498,7 @@ export async function crearVentaManual(
   const tipo = String((prod as any)?.tipo || "digital");
   const esFisico = tipo === "fisico";
   const { data: ver } = await db.from("product_versions").select("id, entrega, cantidad").eq("id", versionId).maybeSingle();
-  const { data: ct } = await db.from("contacts").select("ctwa_clid, ad_id").eq("id", contactId).maybeSingle();
+  const { data: ct } = await db.from("contacts").select("ctwa_clid, ad_id, fep_hasta").eq("id", contactId).maybeSingle();
 
   const ship: Record<string, unknown> = { manual: true };
   // 💰 El COSTO congelado, igual que crearPedido (costo por unidad × unidades de la presentación)
@@ -1461,12 +1526,15 @@ export async function crearVentaManual(
     if (env.referencia) ship.referencia = env.referencia;
     if (env.ciudad) ship.ciudad = env.ciudad;
     if (env.destino) { ship.destino = env.destino; ship.sede = env.destino; } // agencia Shalom
+    // Provincia registrada ya COBRADA: nada por cobrar en la agencia (sin esto el aviso de
+    // llegada le pedía el total como saldo).
+    if (ship.zona === "provincia" && ["saldo_pagado", "recogido"].includes(String(estado))) { ship.saldo = "0"; ship.pagado_total = true; }
   }
   if (opts.atributos && Object.keys(opts.atributos).length) ship.atributos = opts.atributos;
   // Atribución CONGELADA: el ctwa_clid del contacto (si vino de un anuncio) queda
   // pegado a ESTA venta para que el Purchase se atribuya al anuncio correcto.
-  if ((ct as any)?.ctwa_clid) ship.ctwa_clid = (ct as any).ctwa_clid;
-  if ((ct as any)?.ad_id) ship.ad_id = (ct as any).ad_id;
+  if ((ct as any)?.ctwa_clid && clicVigente((ct as any)?.fep_hasta)) ship.ctwa_clid = (ct as any).ctwa_clid;   // clic de hace > 7 días: no se atribuye
+  if ((ct as any)?.ad_id && clicVigente((ct as any)?.fep_hasta)) ship.ad_id = (ct as any).ad_id;
 
   // Moneda del CANAL, no "PEN" fijo (todos los demás caminos usan ctx.moneda): en un canal en
   // USD el pedido nacía en soles, el Purchase a Meta iba con moneda equivocada y el resumen
@@ -2263,6 +2331,14 @@ function pideGuia(text?: string | null): boolean {
   if (!t.trim() || t.length > 240) return false;
   return RE_PIDE_GUIA.test(t);
 }
+// 🔑 «No me llegó la clave», «¿cuál es mi clave?», «pásame el código de recojo». Solo se mira
+// con un pedido en la agencia o con el saldo pagado (ver el bloque de la guía).
+const RE_PIDE_CLAVE = /\b(la|mi|tu|su|una|de|el)\s+clave\b|\bclave\s+(de\s+)?(recojo|recoger|retiro)\b|\bc[oó]digo\s+(de\s+)?(recojo|retiro)\b/i;
+function pideClave(text?: string | null): boolean {
+  const t = String(text ?? "");
+  if (!t.trim() || t.length > 240) return false;
+  return RE_PIDE_CLAVE.test(t);
+}
 // 📅 Pide que la entrega sea OTRO día. Pide una señal de fecha/ausencia junto al verbo:
 // "¿cuándo llega?" es una pregunta y la contesta la IA; esto es un cambio de plan.
 const RE_REPROGRAMAR =
@@ -2911,7 +2987,10 @@ async function saveRun(db: SupabaseClient, run: Run) {
     current_node_id: run.current_node_id, vars: run.vars,
     estado: run.estado, wake_at: run.wake_at, flow_id: run.flow_id,
     updated_at: new Date().toISOString(),
-  }).eq("id", run.id);
+  }).eq("id", run.id)
+    // Un run que alguien CANCELÓ mientras este turno corría (el operador tomó el chat, se cerró
+    // la venta, una prueba forzó otro flujo) no se resucita con la copia vieja de memoria.
+    .neq("estado", "cancelado");
 }
 
 // ── Ruteo de inicio de chat ────────────────────────────────────────
@@ -3812,7 +3891,7 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
     // aprobación, NO se pisa.
     {
       const { data: fresco } = await db.from("flow_runs").select("estado, vars, current_node_id").eq("id", run.id).maybeSingle();
-      const sigueEsperando = !!fresco && (fresco as any).vars?._await?.type === "aprobacion_digital"
+      const sigueEsperando = !!fresco && (fresco as any).estado === "esperando" && (fresco as any).vars?._await?.type === "aprobacion_digital"
         && (fresco as any).current_node_id === run.current_node_id;
       if (!sigueEsperando) return false;
     }
@@ -4058,6 +4137,16 @@ async function execute(db: SupabaseClient, run: Run) {
       }
       case "accion": {
         await runAcciones(db, run, node.config?.acciones ?? [], ctx);
+        // «Transferir a humano» o «Bloquear» cortan acá: los nodos siguientes le seguían hablando
+        // al cliente encima del asesor (o a un contacto bloqueado). Si la misma acción lo devolvió
+        // al bot (return_bot después), sigue normal.
+        if ((node.config?.acciones ?? []).some((a: any) => a?.tipo === "transfer_human" || a?.tipo === "bloquear")) {
+          const { data: _ctB } = await db.from("contacts").select("bot_activo").eq("id", run.contact_id).maybeSingle();
+          if ((_ctB as any)?.bot_activo === false) {
+            run.estado = "completado";
+            await saveRun(db, run); return;
+          }
+        }
         run.current_node_id = await nextNode(db, run.flow_id, node.id, "continuar");
         break;
       }
@@ -6988,6 +7077,15 @@ export async function startFlowRun(
   // se cierra solo ESE para que el toque de remarketing pueda arrancar. Sin esto el paso en modo
   // Flujo se quedaba clavado para siempre (startFlowRun decía que no, tick tras tick). Un run
   // «activo» (corriendo ahora) nunca se toca.
+  // Un turno corriendo AHORA (candado vivo): el run dice «esperando» en la base hasta que ese
+  // turno lo guarde, así que cortarlo o arrancar encima pisaba la respuesta al cliente con un
+  // remarketing. Se reintenta en otro tick. Solo para el scheduler (reemplazarEsperando): dentro
+  // de un turno el candado es del propio turno y esto frenaría sus avisos de pedido.
+  if (opts?.reemplazarEsperando && !opts?.force) {
+    const { data: _lk } = await db.from("contact_locks").select("contact_id").eq("contact_id", contactId)
+      .gt("locked_until", new Date().toISOString()).limit(1);
+    if ((_lk ?? []).length) return false;
+  }
   if (opts?.reemplazarEsperando && !opts?.force) {
     await db.from("flow_runs").update({ estado: "cancelado" }).eq("contact_id", contactId).eq("estado", "esperando")
       // …salvo un pago que espera TU aprobación: cortarlo dejaría al cliente pagado y sin entrega.
@@ -7408,13 +7506,15 @@ async function evalCondicion(db: SupabaseClient, run: Run, node: Node, ctx: any)
   }
   return "si_no_cumple";
 }
+const _normCond = (v: unknown) => String(v ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
 async function evalCond(db: SupabaseClient, run: Run, c: any, ctx: any): Promise<boolean> {
   switch (c.op) {
     case "tiene_tag":    return await hasTag(db, run.contact_id, c.valor);
     case "no_tiene_tag": return !(await hasTag(db, run.contact_id, c.valor));
-    case "campo_igual":     return String(ctx[c.campo] ?? "") === String(c.valor);
+    // «Sí» = «si», «Lima» = «lima», « 10» = «10»: el cliente no escribe como el que armó el flujo.
+    case "campo_igual":     return _normCond(ctx[c.campo]) === _normCond(c.valor);
     case "campo_contiene":  return String(ctx[c.campo] ?? "").toLowerCase().includes(String(c.valor).toLowerCase());
-    case "campo_existe":    return ctx[c.campo] != null && ctx[c.campo] !== "";
+    case "campo_existe":    return ctx[c.campo] != null && String(ctx[c.campo]).trim() !== "";
     default: return false;
   }
 }
@@ -7433,6 +7533,26 @@ async function yaSeHizo(db: SupabaseClient, run: Run, clave: string): Promise<bo
       .eq("contact_id", run.contact_id).eq("custom_fields.key", k).maybeSingle();
     if (data) return true;
   } catch (_) { return false; } // ante la duda, NO bloquear el aviso
+  // 🔒 Tomar el candado de forma ATÓMICA: leer y después escribir dejaba pasar a dos turnos a la
+  // vez (aprobación + mensaje del cliente) → doble aviso de venta, doble fila en Sheets. Se inserta
+  // sin pisar: solo el que INSERTÓ la fila hace la acción.
+  try {
+    let { data: f } = await db.from("custom_fields").select("id").eq("channel_id", run.channel_id).eq("key", k).limit(1).maybeSingle();
+    if (!f) {
+      await db.from("custom_fields").upsert(
+        { channel_id: run.channel_id, key: k, nombre: k, tipo: "text", modo: "dinamico" },
+        { onConflict: "channel_id,key", ignoreDuplicates: true },
+      );
+      ({ data: f } = await db.from("custom_fields").select("id").eq("channel_id", run.channel_id).eq("key", k).maybeSingle());
+    }
+    if (f) {
+      const { data: ins, error } = await db.from("contact_field_values").upsert(
+        { contact_id: run.contact_id, field_id: (f as any).id, value: new Date().toISOString(), updated_at: new Date().toISOString() },
+        { onConflict: "contact_id,field_id", ignoreDuplicates: true },
+      ).select("contact_id");
+      if (!error) return !(ins ?? []).length;   // no insertó nada = otro turno ya lo tomó
+    }
+  } catch (_) { /* cae al camino viejo */ }
   await setField(db, run.channel_id, run.contact_id, k, new Date().toISOString());
   return false;
 }
@@ -8669,7 +8789,8 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
       // ANTES del "te lo sumo al pedido". Acá no se suma: se le avisa al equipo para
       // que decida (mandarlo aparte o en la próxima compra) y `_extra_tarde` hace que
       // el flujo no le prometa al cliente que va en el mismo envío.
-      const _yaSalioPed = ESTADOS_DESPACHADO.has(String((cur as any)?.estado ?? ""));
+      // También los ya PAGADOS / recogidos / entregados: la caja ya está en la agencia o en su casa.
+      const _yaSalioPed = ESTADOS_DESPACHADO.has(String((cur as any)?.estado ?? "")) || ["saldo_pagado", "recogido", "entregado_cobrado"].includes(String((cur as any)?.estado ?? ""));
       if (_yaSalioPed) {
         const _nomEx = resolve(String(a.bump.nombre ?? ""), ctx);
         run.vars._extra_tarde = "1";
@@ -9402,6 +9523,9 @@ export function mensajeEstadoDefault(
   // gritarle el nombre de su agencia en medio de la frase se ve como un error.
   const sede = enTitulo(_sedeCruda.trim()
     .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, "").trim());
+  // El courier del pedido (el modal de despacho ofrece Olva): antes todos los avisos decían
+  // «Shalom» fijo y el de Olva iba a buscar su paquete a la agencia equivocada.
+  const courier = String(s.agencia ?? "").toLowerCase() === "olva" ? "Olva" : "Shalom";
   // Lo que falta cobrar cuando `shipping.saldo` no está escrito (pedido creado a mano,
   // venta manual, adelanto validado por un camino que no lo selló). El respaldo era el
   // TOTAL pelado, así que a quien ya había adelantado se le pedía otra vez la plata
@@ -9466,13 +9590,15 @@ export function mensajeEstadoDefault(
     const dirTxt = /^https?:\/\//i.test(dir) ? "" : dir;
     return `🛵 ¡Tu pedido ya salió! El motorizado lo tiene${dirTxt ? ` para llevarlo a ${dirTxt}` : ""} ` +
       `y te va a llamar para coordinar la hora. *Mantente atento a su llamada o mensaje* — si no te ubica, el pedido se regresa. ` +
-      `${cobra != null ? `\n\nTen listo *${sym} ${cobra}* para pagar al recibirlo. ` : ""}` +
+      // Cubierto del todo (prepago de Lima): «Ten listo S/ 0» se leía como un error.
+      `${cobra != null ? (Number(cobra) <= 0.009 ? `\n\nYa está *todo pagado* ✅ — no pagas nada al recibirlo. ` : `\n\nTen listo *${sym} ${cobra}* para pagar al recibirlo. `) : ""}` +
       `\n\n¿No vas a estar? Avísame y lo dejamos con alguien o lo reprogramamos, sin problema. 🙌`;
   }
   if (estado === "despachado") {
     const guia = String(s.guia || "").trim();
-    return `📦 ¡Tu pedido ya va en camino a la agencia Shalom${sede ? ` de ${sede}` : ""}! ` +
-      `${guia ? `Tu guía es *${guia}*. ` : ""}Te aviso apenas llegue para que puedas recogerlo. 🙌`;
+    return `📦 ¡Tu pedido ya va en camino a la agencia ${courier}${sede ? ` de ${sede}` : ""}! ` +
+      // El rastreo de Shalom pide N° de orden Y código: con uno solo el cliente no encuentra nada.
+      `${guia ? `Tu guía es *${guia}*${String(s.codigo_envio ?? "").trim() ? ` (código *${String(s.codigo_envio).trim()}*)` : ""}. ` : ""}Te aviso apenas llegue para que puedas recogerlo. 🙌`;
   }
   if (estado === "en_agencia") {
     // Provincia que pagó el TOTAL en el adelanto (saldo 0 / pagado_total): NO debe
@@ -9487,7 +9613,7 @@ export function mensajeEstadoDefault(
       (s.saldo != null && s.saldo !== "" && Number.isFinite(_saldoNum) && _saldoNum <= 0));
     if (yaPagado) {
       const clave = String(s.clave_recojo || "").trim();
-      return `📦 ¡Tu pedido ya llegó a la agencia Shalom${sede ? ` de ${sede}` : ""}! ` +
+      return `📦 ¡Tu pedido ya llegó a la agencia ${courier}${sede ? ` de ${sede}` : ""}! ` +
         (clave
           ? `Ya está *todo pagado* ✅ — tu *clave de recojo* es *${clave}*. Muéstrala en la agencia para recogerlo. ¡Gracias por tu compra! 🎉`
           : `Ya está *todo pagado* ✅, no debes nada. En breve te paso tu *clave de recojo* para que puedas recogerlo. 🙌`);
@@ -9500,7 +9626,7 @@ export function mensajeEstadoDefault(
     const _sGuardado = Number(s.saldo);
     const saldo = (s.saldo != null && s.saldo !== "" && Number.isFinite(_sGuardado))
       ? s.saldo : porCobrarDe(amount);
-    return `📦 ¡Tu pedido ya llegó a la agencia Shalom${sede ? ` de ${sede}` : ""}! ` +
+    return `📦 ¡Tu pedido ya llegó a la agencia ${courier}${sede ? ` de ${sede}` : ""}! ` +
       `${saldo != null ? `Para recogerlo, paga el saldo de *${sym} ${saldo}* ` : "Para recogerlo, paga el saldo "}` +
       `y mándame la captura — apenas lo verifique te paso tu clave de recojo. 🙌`;
   }
@@ -9508,7 +9634,7 @@ export function mensajeEstadoDefault(
     const clave = String(s.clave_recojo || "").trim();
     if (!clave) return null;
     return `¡Listo! ✅ Confirmé tu pago del saldo.\n\n🔑 Tu *clave de recojo* es *${clave}*.\n` +
-      `Muéstrala en la agencia Shalom${sede ? ` de ${sede}` : ""} para recoger tu pedido. ¡Gracias por tu compra! 🎉`;
+      `Muéstrala en la agencia ${courier}${sede ? ` de ${sede}` : ""} para recoger tu pedido. ¡Gracias por tu compra! 🎉`;
   }
   return null;
 }
@@ -9542,7 +9668,7 @@ export async function avisarPagadoTotal(
 export async function resolverPrepagoLima(
   db: SupabaseClient, orderId: string, accion: "aprobar" | "rechazar",
   opts: { monto?: number; motivo?: string; por?: string } = {},
-): Promise<{ ok?: true; error?: string; detalle?: string; saldo?: number; aviso_error?: string }> {
+): Promise<{ ok?: true; error?: string; detalle?: string; saldo?: number; aviso_error?: string; advertencia?: string }> {
   const { data: o } = await db.from("orders")
     .select("id, channel_id, contact_id, estado, amount, currency, order_bumps, shipping")
     .eq("id", orderId).maybeSingle();
@@ -9552,6 +9678,11 @@ export async function resolverPrepagoLima(
   if (String(sh0.zona ?? "") !== "lima") return { error: "no_es_lima", detalle: "Ese pedido no es de Lima." };
   if (sh0.pago_adelantado_por_validar !== true) {
     return { error: "ya_resuelto", detalle: "Ese pago ya fue aprobado o rechazado." };
+  }
+  // Pedido YA entregado y cobrado en la puerta (o caído): aprobar este pago sería cobrarle dos
+  // veces, y al cliente le llegaba «ya no pagas nada» de algo que ya pagó. Se frena.
+  if (accion === "aprobar" && ["entregado_cobrado", "rechazado", "anulada", "cancelado", "devuelto"].includes(String(ord.estado))) {
+    return { error: "ya_entregado", detalle: `El pedido está «${String(ord.estado).replace(/_/g, " ")}»: este pago no se puede acreditar al cobro en la puerta. Si pagó de más, devuélvele el dinero y rechaza este pago.` };
   }
   const ahora = new Date().toISOString();
   const por = String(opts.por ?? "").slice(0, 80) || null;
@@ -9650,7 +9781,15 @@ export async function resolverPrepagoLima(
     const salio = await deliverMessage(db, ord.channel_id, ord.contact_id, txt).catch(() => false);
     if (!salio) aviso_error = "el mensaje al cliente no salió (¿pasaron más de 24 h desde su último mensaje?)";
   }
-  return { ok: true, saldo: saldoNuevo, ...(aviso_error ? { aviso_error } : {}) };
+  // 🛵 Ya salió a reparto: el motorizado lleva el monto VIEJO (rótulo, Excel del courier y el aviso
+  // «ten listo S/ total»). Si nadie lo llama, cobra todo y el cliente paga dos veces.
+  const advertencia = ["en_reparto", "en_ruta"].includes(String(ord.estado))
+    ? `El pedido YA está en reparto: avísale al motorizado que ahora cobra ${sym} ${saldoNuevo} (no el monto del rótulo).`
+    : undefined;
+  if (advertencia && ord.contact_id) {
+    await logEvent(db, ord.channel_id, ord.contact_id, "nota", "🛵 Pago aprobado con el pedido en reparto", advertencia).catch(() => {});
+  }
+  return { ok: true, saldo: saldoNuevo, ...(aviso_error ? { aviso_error } : {}), ...(advertencia ? { advertencia } : {}) };
 }
 
 // Manda la clave de recojo por defecto (envoltorio del anterior, usado por el
@@ -11431,7 +11570,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
 async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent): Promise<boolean> {
   // 1) ¿Pedido en agencia esperando el saldo?
   const { data: order } = await db.from("orders")
-    .select("id, estado, amount, currency, shipping")
+    .select("id, estado, amount, currency, shipping, order_bumps")
     .eq("channel_id", channelId).eq("contact_id", contactId).eq("estado", "en_agencia")
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   if (!order) return false;
@@ -11464,7 +11603,14 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const url = await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
   if (!url) return false; // no se pudo leer → que lo maneje el flujo normal
 
-  const saldo = Number(ship.saldo);
+  // Sin saldo escrito (venta registrada a mano, pedido editado) se calcula como el aviso de llegada:
+  // total − lo adelantado. Antes quedaba NaN, se leía como «ya pagado» y al cliente que pagaba lo
+  // que el propio aviso le pidió se le contestaba «no tienes que pagar nada más».
+  const _svRaw = Number(ship.saldo);
+  const saldo = (ship.saldo != null && String(ship.saldo).trim() !== "" && Number.isFinite(_svRaw)) ? _svRaw
+    : Math.max(0, (Number((order as any).amount) || 0)
+      + (((order as any).order_bumps ?? []) as any[]).reduce((a: number, b: any) => a + (Number(b?.precio) || 0), 0)
+      - (Number(ship.adelanto_abonado ?? ship.pago_acreditado_adelanto ?? ship.adelanto) || 0));
   const clave = ship.clave_recojo;
   const _tolRawS = Number(log.tolerancia ?? 0); // guarda NaN (ver adelanto): tolerancia inválida no debe bloquear todo
   const tol = Number.isFinite(_tolRawS) ? Math.max(0, _tolRawS) : 0;
@@ -11614,7 +11760,8 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     // ✅ Todo cuadra → saldo_pagado (la operación ya la reclamó el claim de arriba) + entrega.
     const _patchSaldo = {
       estado: "saldo_pagado", confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-      shipping: { ...(await shipFresco()), saldo_operacion: oper, saldo_metodo: metodo, saldo_validado_auto: true, saldo_comprobante: url,
+      // saldo → 0 (ya no se debe nada; si se re-despacha, el aviso no vuelve a cobrarlo).
+      shipping: { ...(await shipFresco()), saldo: "0", saldo_cobrado: saldo, saldo_operacion: oper, saldo_metodo: metodo, saldo_validado_auto: true, saldo_comprobante: url,
         ...(ab && ab.abonos.length > 1 ? { saldo_abonos: ab.abonos, saldo_abonado: ab.total } : {}) },
     };
     // Igual que en el adelanto: la operación ya está reclamada, así que un fallo de escritura
@@ -12934,7 +13081,11 @@ export async function sugerirRespuestas(db: SupabaseClient, channelId: string, c
   if (ctx.contexto_producto) parts.push(`## Sobre el producto${prod ? ` (${prod})` : ""}\n` + resolve(String(ctx.contexto_producto), ctx));
   const pm = (info.ocr?.metodos ?? []).filter((m: any) => m && (m.app || m.numero || m.titular))
     .map((m: any) => "- " + [m.app, m.numero, m.titular ? `(${m.titular})` : ""].filter(Boolean).join(" "));
-  if (pm.length) parts.push("## Formas de pago aceptadas\n" + pm.join("\n"));
+  // Lima paga CONTRA ENTREGA: las sugerencias le pedían el Yape a quien paga al motorizado.
+  const _limaCod = String(ctx.zona_entrega ?? "") === "lima";
+  if (pm.length) parts.push(_limaCod
+    ? "## Formas de pago\nEste cliente es de LIMA y paga CONTRA ENTREGA, al recibir. NO le pidas Yape, adelanto ni comprobante. Solo si ÉL pide pagar antes, puede usar:\n" + pm.join("\n")
+    : "## Formas de pago aceptadas\n" + pm.join("\n"));
   if (ctx.pedido_estado) {
     let p = "## Estado del pedido del cliente\n" + (EST_HOJA[String(ctx.pedido_estado)] ?? String(ctx.pedido_estado));
     if (ctx.pedido_saldo) p += `\nSaldo pendiente: ${simboloMoneda(ctx.moneda as string)} ${ctx.pedido_saldo}`;
@@ -12966,7 +13117,9 @@ export async function sugerirRespuestas(db: SupabaseClient, channelId: string, c
     system, content, maxTokens: 700,
     jsonSchema: {
       type: "object",
-      properties: { sugerencias: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3 } },
+      // Sin minItems/maxItems: la salida estructurada de Claude no los admite (400) y el botón IA quedaba
+      // vacío con Claude. El tope de 3 lo pone el .slice de abajo.
+      properties: { sugerencias: { type: "array", items: { type: "string" } } },
       required: ["sugerencias"], additionalProperties: false,
     } as unknown as Record<string, unknown>,
   });
@@ -14156,7 +14309,36 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   if (_yaResuelta) {
     const _ultZ = String(ctx.last_input ?? "").toLowerCase();
     const _cambiaAntesDelPedido = !a?.texto && String(ctx.pedido_creado ?? "") !== "si" && RE_CAMBIA_DESTINO.test(_ultZ);
-    if (!_cambiaAntesDelPedido) return;
+    if (!_cambiaAntesDelPedido) {
+      // ⏰ La zona no se re-evalúa, pero «hoy / mañana» SÍ: se calculaba una sola vez al dar el
+      // distrito, y quien lo dio a las 10:00 y cerraba a las 19:00 (pasado el corte) seguía
+      // leyendo «te llega hoy»; el del viernes en la noche que cerraba el sábado, «mañana (Dom)».
+      // Se recalcula cada 10 min mientras el pedido no esté creado.
+      try {
+        const _tCalc = Date.parse(String((run.vars as any)._entrega_calc_at ?? ""));
+        if (String(ctx.zona_entrega ?? "") === "lima" && String(ctx.pedido_creado ?? "") !== "si"
+          && String(ctx.zona_nombre ?? "").trim() && !(Number.isFinite(_tCalc) && Date.now() - _tCalc < 10 * 60_000)) {
+          const cfgR = await loadEntregas(db, run);
+          const zR = matchZona((cfgR?.entregas?.zonas ?? []) as Zona[], String(ctx.zona_nombre));
+          if (zR && zR.cubro !== false) {
+            const { hoy, motivo } = entregaHoy(cfgR, zR);
+            const s = (ctx as any)?._stock;
+            const vals = s && typeof s === "object" ? Object.values(s).map(Number).filter((n) => Number.isFinite(n)) : [];
+            const sinNada = vals.length > 0 && vals.every((n) => n <= 0);
+            const cuando = sinNada ? "en cuanto repongamos" : (hoy ? "hoy" : proximaEntrega(cfgR, cfgR?.timezone || "America/Lima"));
+            const nuevoHoy = hoy && !sinNada ? "si" : "no";
+            (run.vars as any)._entrega_calc_at = new Date().toISOString();
+            for (const [k, v] of [["entrega_hoy", nuevoHoy], ["entrega_motivo", motivo], ["entrega_cuando", cuando]] as const) {
+              if (String((ctx as any)[k] ?? "") !== v) {
+                run.vars[k] = v; (ctx as any)[k] = v;
+                await setField(db, run.channel_id, run.contact_id, k, v);
+              }
+            }
+          }
+        }
+      } catch (_) { /* sin config → queda lo que había */ }
+      return;
+    }
     _soloUltimo = true;
   }
 
@@ -22576,7 +22758,7 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   // En una compra confirmada, registrar la orden (métricas de producto del
   // Dashboard) y un evento de compra en el Timeline.
   if (res.ok && eventName === "Purchase") {
-    const { data: c } = await db.from("contacts").select("product_id, ctwa_clid, ad_id").eq("id", run.contact_id).maybeSingle();
+    const { data: c } = await db.from("contacts").select("product_id, ctwa_clid, ad_id, fep_hasta").eq("id", run.contact_id).maybeSingle();
     // 🔴 Este pedido nacía SIN `shipping`, o sea sin el clic del anuncio congelado — el único
     // sitio de los cuatro que crean pedidos al que se le había escapado. Consecuencias: el
     // panel mide la salud de atribución con `shipping.ctwa_clid`, así que una venta de
@@ -22585,11 +22767,11 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // Se congela acá, como en los otros tres caminos: el del contacto puede cambiar mañana
     // si vuelve a tocar otro anuncio, y la venta tiene que quedar pegada al que la originó.
     const shipNodo: Record<string, unknown> = {};
-    if ((c as any)?.ctwa_clid) shipNodo.ctwa_clid = (c as any).ctwa_clid;
+    if ((c as any)?.ctwa_clid && clicVigente((c as any)?.fep_hasta)) shipNodo.ctwa_clid = (c as any).ctwa_clid;
     // …y el `ad_id`, que es por donde Rendimiento atribuye: su consulta filtra los pedidos
     // con `shipping->>ad_id not null`, así que sin él esta venta NI SIQUIERA APARECE en el
     // informe por anuncio. Congelar solo el ctwa_clid (mi primer arreglo) no alcanzaba.
-    if ((c as any)?.ad_id) shipNodo.ad_id = (c as any).ad_id;
+    if ((c as any)?.ad_id && clicVigente((c as any)?.fep_hasta)) shipNodo.ad_id = (c as any).ad_id;
     const insOrd = await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       product_id: (c as any)?.product_id ?? null, version_id: versionIdDe(ctx),
@@ -22664,7 +22846,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
   let c: any = null, hasNewCols = true;
   {
     const r = await db.from("contacts")
-      .select("nombre, wa_id, stage, last_input, last_input_type, product_id, ad_id, ctwa_clid, source, created_at, username, telefono, angulo")
+      .select("nombre, wa_id, stage, last_input, last_input_type, product_id, ad_id, ctwa_clid, source, created_at, username, telefono, angulo, fep_hasta")
       .eq("id", run.contact_id).maybeSingle();
     if (r.error && /username|telefono|column/i.test(r.error.message)) {
       hasNewCols = false;
@@ -22696,7 +22878,10 @@ async function buildContext(db: SupabaseClient, run: Run) {
     last_input_type: (run?.vars?._tipo_turno && Date.now() - Number(run.vars._tipo_turno_at || 0) < 180_000)
       ? String(run.vars._tipo_turno) : ((c as any)?.last_input_type ?? ""),
     // Atribución del anuncio (Click-to-WhatsApp) capturada en el primer mensaje.
-    ad_id: (c as any)?.ad_id ?? "", ctwa_clid: (c as any)?.ctwa_clid ?? "", origen: (c as any)?.source ?? "",
+    // …solo si el CLIC fue en los últimos 7 días: una compra de meses después (recompra, cliente que
+    // vuelve solo) se congelaba con el anuncio viejo — Purchase a Meta con un clic de hace medio año
+    // y la venta sumada a ese anuncio en Rendimiento.
+    ad_id: clicVigente((c as any)?.fep_hasta) ? ((c as any)?.ad_id ?? "") : "", ctwa_clid: clicVigente((c as any)?.fep_hasta) ? ((c as any)?.ctwa_clid ?? "") : "", origen: (c as any)?.source ?? "",
     // Fecha/hora de AHORA (para sellar {{fecha}} de compra con un set_field).
     fecha: fFecha, hora: fHora, fecha_hora: `${fFecha} ${fHora}`,
   };
@@ -22772,11 +22957,13 @@ async function buildContext(db: SupabaseClient, run: Run) {
     // flujo tiene producto, manda ese; los flujos sin producto (recepción, post-venta) siguen
     // con el del contacto.
     try {
-      let fp = (run as any)._flowProd;
+      // Cacheado POR flujo: si el rotador o iniciar_flujo saltan a otro producto en el mismo turno,
+      // el resto del turno cotizaba con el precio y la ficha del anterior.
+      let fp = (run as any)._flowProdDe === run.flow_id ? (run as any)._flowProd : undefined;
       if (fp === undefined) {
         const { data: fl } = await db.from("flows").select("product_id").eq("id", run.flow_id).maybeSingle();
         fp = (fl as any)?.product_id ?? null;
-        (run as any)._flowProd = fp;
+        (run as any)._flowProd = fp; (run as any)._flowProdDe = run.flow_id;
       }
       if (fp) prodId = fp;
     } catch (_) { /* sin flujo legible → el del contacto, como antes */ }
@@ -23331,7 +23518,12 @@ async function nextNode(db: SupabaseClient, flowId: string, nodeId: string, hand
   return (data as any)?.target_node ?? null;
 }
 async function resolveTargetFlow(db: SupabaseClient, channelId: string, config: any): Promise<string | null> {
-  if (config?.target_flow_id) return config.target_flow_id;
+  if (config?.target_flow_id) {
+    // Del MISMO bot y activo: un flujo desactivado (o de otro bot, tras duplicar) se escala en vez de correrse.
+    const { data } = await db.from("flows").select("id").eq("id", config.target_flow_id)
+      .eq("channel_id", channelId).eq("estado", "activo").maybeSingle();
+    return (data as any)?.id ?? null;
+  }
   if (config?.target_role) {
     const { data } = await db.from("flows").select("id")
       .eq("channel_id", channelId).eq("role", config.target_role).eq("estado", "activo")
@@ -23739,4 +23931,13 @@ export async function canalActivo(db: SupabaseClient, channelId: string): Promis
     _canalAct.set(channelId, { v, t: Date.now() });
     return v;
   } catch (_) { return true; }   // sin dato no se apaga nada por error
+}
+
+// ¿El clic en el anuncio sigue vigente para ATRIBUIR una venta? fep_hasta = clic + 72 h. Ventana de
+// 7 días desde el clic (la de Meta para mensajes). Sin fep_hasta (contactos de antes de guardarlo) no se
+// puede saber: se respeta, como siempre.
+export function clicVigente(fepHasta: unknown): boolean {
+  if (!fepHasta) return true;
+  const clic = Date.parse(String(fepHasta)) - 72 * 3600_000;
+  return !Number.isFinite(clic) || Date.now() - clic < 7 * 864e5;
 }

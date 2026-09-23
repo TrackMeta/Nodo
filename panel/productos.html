@@ -4579,6 +4579,21 @@ async function _saveProduct(){
   // Tags de la biblioteca: únicos y no vacíos (dos archivos con el mismo tag compartían el
   // marcador [[media:tag]] y el segundo nunca se podía enviar).
   { const mm=(st.prod.config||{}).ia_multimedia; if(Array.isArray(mm)){ const seen=new Set(); mm.forEach((m,i)=>{ if(!m) return; let t=String(m.tag||"").replace(/[^\w-]/g,"").toLowerCase()||("archivo"+(i+1)); const b=t; let n=2; while(seen.has(t)) t=b+(n++); seen.add(t); m.tag=t; }); } }
+  // Precio/costo NEGATIVO: los inputs llevan min="0", pero eso solo marca el campo como
+  // inválido — no impide escribirlo ni guardarlo. Un guion de más creaba una presentación a
+  // -50: cada venta suya RESTA de lo cobrado y deja la ganancia y el ticket promedio sin
+  // sentido, sin que nada avise. Se corta acá, que es donde se persiste.
+  {
+    const mal=(st.versions||[]).find(v=>(v.precio!==""&&v.precio!=null&&Number(v.precio)<0)||(v.costo!==""&&v.costo!=null&&Number(v.costo)<0));
+    if(mal){ toast(`"${mal.nombre||"Única"}": el precio y el costo no pueden ser negativos`,true); return; }
+    // Cantidad del pack: con un valor negativo el motor descartaba el movimiento de stock
+    // entero (ni resta ni suma) → sobreventa muda.
+    const malCant=(st.versions||[]).find(v=>v.cantidad!==""&&v.cantidad!=null&&!(Number(v.cantidad)>=1));
+    if(malCant){ toast(`"${malCant.nombre||"Única"}": la cantidad del pack debe ser 1 o más`,true); return; }
+    // Todas las presentaciones apagadas: el bot no tiene qué vender y el validador de pagos
+    // no tiene contra qué medir. Se avisa (no se bloquea: puede ser a propósito).
+    if((st.versions||[]).length && (st.versions||[]).every(v=>v.activo===false)) toast("Ojo: todas las presentaciones están desactivadas; el bot no podrá vender este producto hasta que actives una.",true);
+  }
   const base={ nombre:st.prod.nombre, config:st.prod.config||{}, updated_at:new Date().toISOString() };
   let { error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null, tipo:st.prod.tipo||"digital" }).eq("id",st.prod.id);
   if(e1 && /tipo|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null }).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0022 para el tipo físico)"); }
@@ -4601,21 +4616,6 @@ async function _saveProduct(){
       ? await supa.from("product_versions").update({ activo:false }).eq("id",id)
       : await supa.from("product_versions").delete().eq("id",id);
     if(error){ toast(error.message,true); return; }
-  }
-  // Precio/costo NEGATIVO: los inputs llevan min="0", pero eso solo marca el campo como
-  // inválido — no impide escribirlo ni guardarlo. Un guion de más creaba una presentación a
-  // -50: cada venta suya RESTA de lo cobrado y deja la ganancia y el ticket promedio sin
-  // sentido, sin que nada avise. Se corta acá, que es donde se persiste.
-  {
-    const mal=(st.versions||[]).find(v=>(v.precio!==""&&v.precio!=null&&Number(v.precio)<0)||(v.costo!==""&&v.costo!=null&&Number(v.costo)<0));
-    if(mal){ toast(`"${mal.nombre||"Única"}": el precio y el costo no pueden ser negativos`,true); return; }
-    // Cantidad del pack: con un valor negativo el motor descartaba el movimiento de stock
-    // entero (ni resta ni suma) → sobreventa muda.
-    const malCant=(st.versions||[]).find(v=>v.cantidad!==""&&v.cantidad!=null&&!(Number(v.cantidad)>=1));
-    if(malCant){ toast(`"${malCant.nombre||"Única"}": la cantidad del pack debe ser 1 o más`,true); return; }
-    // Todas las presentaciones apagadas: el bot no tiene qué vender y el validador de pagos
-    // no tiene contra qué medir. Se avisa (no se bloquea: puede ser a propósito).
-    if((st.versions||[]).length && (st.versions||[]).every(v=>v.activo===false)) toast("Ojo: todas las presentaciones están desactivadas; el bot no podrá vender este producto hasta que actives una.",true);
   }
   // Precio/costo cambiados en OTRA pantalla (el Dashboard aplica cambios de precio) desde que se abrió
   // esta ficha y que acá NO se tocaron: se respetan. Antes el guardado los volvía al valor viejo.
@@ -4846,7 +4846,21 @@ async function armAplicar(d){
     // 💰 El precio del borrador se respeta cuando VIENE (el asistente solo lo llena si el
     // dueño lo escribió en su brief; nunca lo inventa). Antes se forzaba a "" y había que
     // reescribir a mano un número que él acababa de dar — decisión de Rodrigo 2026-09-03.
-    st.versions=d.presentaciones.filter(x=>x&&x.nombre).map((x,i)=>({ nombre:String(x.nombre), precio:(Number(x.precio)>0?String(x.precio):""), cantidad:Number(x.cantidad)||1, descripcion:x.descripcion?String(x.descripcion):"", entrega:[], activo:true, orden:i }));
+    // 🔗 Lo que el borrador NO sabe se hereda de la presentación vieja (por nombre; si no, por
+    // posición): los links/archivos de entrega, su mensaje y el costo. Antes nacían vacíos y un
+    // producto digital que ya vendía quedaba sin nada que entregar tras «Reemplazar todo».
+    const _viejas=(st.versions||[]).slice(); const _usadas=new Set();
+    const _nomV=(s)=>String(s??"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+    st.versions=d.presentaciones.filter(x=>x&&x.nombre).map((x,i)=>{
+      let prev=_viejas.find((v,j)=>!_usadas.has(j)&&_nomV(v.nombre)===_nomV(x.nombre));
+      if(!prev && _viejas[i] && !_usadas.has(i)) prev=_viejas[i];
+      if(prev) _usadas.add(_viejas.indexOf(prev));
+      return { nombre:String(x.nombre), precio:(Number(x.precio)>0?String(x.precio):""), cantidad:Number(x.cantidad)||1, descripcion:x.descripcion?String(x.descripcion):"",
+        entrega:(prev&&Array.isArray(prev.entrega))?prev.entrega:[], entrega_mensaje:prev?prev.entrega_mensaje||null:null,
+        costo:prev&&prev.costo!=null?prev.costo:"", activo:true, orden:i };
+    });
+    const _perdidas=_viejas.filter((v,j)=>!_usadas.has(j)&&Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()));
+    if(_perdidas.length) toast(`Ojo: ${_perdidas.map(v=>v.nombre||"Única").join(", ")} tenía(n) links de entrega y ya no está(n) en el borrador. Revisa las entregas antes de guardar.`,true);
   }
   prodSync(); st.tab="inicio"; renderDetail(); armClose();
   // 🔴 Y queda marcado como CAMBIO SIN GUARDAR. El guard de shell.js vigila `input`/`change`,

@@ -86,7 +86,7 @@ export async function construirResumen(
     // 1000 hacía que el número se quedara corto en cuanto un día pasara de mil leads — que
     // con anuncios andando no es raro. Se cuenta en la base: exacto y sin traer una fila.
     db.from("capi_events").select("id", { count: "exact", head: true })
-      .eq("channel_id", chId).eq("event_name", "Lead")
+      .eq("channel_id", chId).eq("event_name", "Lead").eq("estado", "enviado")
       .gte("created_at", fromISO).lt("created_at", toISO),
     // PAGINADO también: más de 1000 filas de gasto en un día (muchos anuncios) cortaba el gasto
     // → ROAS y ganancia neta del digest salían MEJORES que en el Dashboard (que sí pagina).
@@ -129,7 +129,7 @@ export async function construirResumen(
         let cPrueba = 0, completo = true;
         for (let i = 0; i < ids.length; i += 300) {
           const { count, error } = await db.from("capi_events").select("id", { count: "exact", head: true })
-            .eq("channel_id", chId).eq("event_name", "Lead").gte("created_at", fromISO).lt("created_at", toISO)
+            .eq("channel_id", chId).eq("event_name", "Lead").eq("estado", "enviado").gte("created_at", fromISO).lt("created_at", toISO)
             .in("contact_id", ids.slice(i, i + 300));
           if (error || typeof count !== "number") { completo = false; break; }
           cPrueba += count;

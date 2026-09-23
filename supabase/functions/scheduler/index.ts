@@ -161,6 +161,13 @@ Deno.serve(async (req) => {
           .eq("id", r.id).eq("estado", "esperando").eq("wake_at", r.wake_at).then(() => {}, () => {});
         return;
       }
+      // Bot ARCHIVADO: runEngine no hace nada y el run quedaba primero en la cola para siempre
+      // (mismo hambreo que el de arriba). Se le corre la hora un día.
+      if (!(await canalActivo(db, r.channel_id))) {
+        await db.from("flow_runs").update({ wake_at: new Date(Date.now() + 24 * 3600_000).toISOString() })
+          .eq("id", r.id).eq("estado", "esperando").eq("wake_at", r.wake_at).then(() => {}, () => {});
+        return;
+      }
       await runEngine(db, r.channel_id, r.contact_id, { type: "resume" }); woke++;
     } catch (e) { console.error("[scheduler] wake:", (e as any)?.message ?? e); }
   });

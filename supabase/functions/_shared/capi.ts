@@ -104,7 +104,7 @@ export async function sendCapiEvent(
   // Defensivo por la col telefono (0062): número REAL para el match de Meta.
   let contact: any = null, hasTel = true;
   {
-    const r = await db.from("contacts").select("wa_id, ctwa_clid, nombre, telefono").eq("id", contactId).maybeSingle();
+    const r = await db.from("contacts").select("wa_id, ctwa_clid, nombre, telefono, fep_hasta").eq("id", contactId).maybeSingle();
     if (r.error && /telefono|column/i.test(r.error.message)) {
       hasTel = false;
       contact = (await db.from("contacts").select("wa_id, ctwa_clid, nombre").eq("id", contactId).maybeSingle()).data;
@@ -113,7 +113,10 @@ export async function sendCapiEvent(
   if (!channel?.pixel_id) return { ok: false, error: "canal sin pixel_id" };
 
   // ctwa CONGELADO del pedido primero; el del contacto solo como respaldo.
-  const ctwa = opts.ctwaClid || contact?.ctwa_clid || null;
+  // (El del contacto solo si el clic fue en los últimos 7 días: uno de hace meses no es de esta compra.)
+  const _clicC = contact?.fep_hasta ? Date.parse(String(contact.fep_hasta)) - 72 * 3600_000 : NaN;
+  const _ctwaC = contact?.ctwa_clid && (!Number.isFinite(_clicC) || Date.now() - _clicC < 7 * 864e5) ? contact.ctwa_clid : null;
+  const ctwa = opts.ctwaClid || _ctwaC || null;
   const hasCtwa = !!ctwa;
   const actionSource = hasCtwa ? "business_messaging" : "website";
 

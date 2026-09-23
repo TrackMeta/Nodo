@@ -1010,7 +1010,7 @@ export async function openDespachoModal(o, deps) {
       <div class="row2">
         <div><label>Agencia</label>
           <select data-d="agencia"><option value="shalom" ${s.agencia === "shalom" ? "selected" : ""}>Shalom</option><option value="olva" ${s.agencia === "olva" ? "selected" : ""}>Olva Courier</option><option value="otra" ${s.agencia && !["shalom", "olva"].includes(s.agencia) ? "selected" : ""}>Otra</option></select></div>
-        <div><label>Sede / destino</label><input data-d="sede" value="${esc(s.sede || "")}" placeholder="Ej. Shalom Huancayo Centro"/></div>
+        <div><label>Sede / destino</label><input data-d="sede" value="${esc(s.destino || s.sede || "")}" placeholder="Ej. Shalom Huancayo Centro"/></div>
       </div>
       <div class="row2">
         <div><label>N° de orden</label><input data-d="guia" value="${esc(s.guia || "")}" inputmode="numeric" placeholder="Ej. 96060938"/></div>
@@ -1078,12 +1078,15 @@ export async function openDespachoModal(o, deps) {
       const flete = q("flete").value;
       const aviso = avisoValor(ov);
       const r = await updateOrder({ order_id: o.id, estado: "despachado", aviso, shipping: {
-        agencia: q("agencia").value, sede: q("sede").value.trim(), guia, codigo_envio: codigo,
+        agencia: q("agencia").value, guia, codigo_envio: codigo,
         clave_recojo: q("clave").value.trim(),
         // El aviso ámbar «sede por confirmar» solo se quita si el operador ESCRIBIÓ una sede
         // distinta: registrar la guía sin tocar la sede lo borraba y el paquete podía salir a
         // la agencia que inventó el bot.
-        ...(q("sede").value.trim() && q("sede").value.trim() !== String((o.shipping || {}).sede || "").trim() ? { sede_por_confirmar: null } : {}),
+        // Lo que el operador escribe acá va a `destino`, que es lo que leen los avisos, el rótulo y la
+        // tarjeta: guardarlo solo en `sede` hacía que al cliente le llegara la agencia anterior.
+        ...(q("sede").value.trim() && q("sede").value.trim() !== String((o.shipping || {}).destino || (o.shipping || {}).sede || "").trim()
+          ? { destino: q("sede").value.trim(), sede_por_confirmar: null } : {}),
         guia_foto: foto || null, guia_foto_kind: foto ? fotoKind : null,
         ...(flete === "" || flete == null ? {} : { flete: Number(flete) || 0 }),
       } });
@@ -2209,7 +2212,7 @@ export async function openDespachoLoteModal(orders, deps) {
       const s = o.shipping || {}, c = o.contact || {};
       const dest = s.destino || s.sede || s.ciudad || "—";
       return `<tr data-id="${esc(o.id)}">
-        <td class="dl-cli">${esc(c.nombre || s.cliente || "—")}<br><span>${esc(dest)}</span></td>
+        <td class="dl-cli">${esc(c.nombre || s.cliente || "—")}<br><span>${esc(dest)}</span>${s.sede_por_confirmar && !s.destino ? `<br><span style="color:var(--amber);font-weight:700">${icon("alert","cxi")} sede por confirmar</span>` : ""}</td>
         <td><input data-k="guia" value="${esc(s.guia || "")}" placeholder="N° de guía"/></td>
         <td><input data-k="codigo" value="${esc(s.codigo_envio || "")}" placeholder="Código"/></td>
         <td><input data-k="clave" value="${esc(s.clave_recojo || "")}" placeholder="Clave"/></td>
@@ -2338,12 +2341,18 @@ export async function openDespachoLoteModal(orders, deps) {
           flete: tr.querySelector('[data-k="flete"]').value });
       });
       if (!listos.length) { toast("Ningún pedido tiene N° de guía y código de envío", true); return; }
+      const _porConf = listos.map((it) => orders.find((o) => String(o.id) === String(it.id))).filter((o) => o && (o.shipping || {}).sede_por_confirmar && !(o.shipping || {}).destino);
+      if (_porConf.length && !confirm(`${_porConf.length} pedido(s) tienen la SEDE POR CONFIRMAR (la capturó el bot): ${_porConf.slice(0, 5).map((o) => (o.contact || {}).nombre || (o.shipping || {}).cliente || "—").join(", ")}.
+
+El aviso al cliente dirá solo su ciudad hasta que la confirmes en «Editar pedido». ¿Registrar igual?`)) return;
       const btn = ov.querySelector(".m-foot .save"); btn.disabled = true;
       let ok = 0, fail = 0, sinAviso = 0; const sinAvisoNombres = [];
       for (const it of listos) {
         btn.textContent = `Registrando ${ok + fail + 1}/${listos.length}…`;
         const r = await updateOrder({ order_id: it.id, estado: "despachado", aviso, shipping: {
-          guia: it.g, codigo_envio: it.cod, clave_recojo: it.clave, sede_por_confirmar: null,
+          // La marca «sede por confirmar» NO se borra acá: el lote no deja revisar la sede, y borrarla
+          // hacía que el aviso de despacho nombrara la oficina que inventó el bot.
+          guia: it.g, codigo_envio: it.cod, clave_recojo: it.clave,
           ...(fotos[it.id] ? { guia_foto: fotos[it.id].url, guia_foto_kind: fotos[it.id].kind } : {}),
           ...(it.flete === "" || it.flete == null ? {} : { flete: Number(it.flete) || 0 }),
         } });
@@ -2584,7 +2593,8 @@ export function wireCopiloto(root, o, et, deps) {
       const r = await update({ order_id: o.id, prepago_lima: "aprobar", monto });
       if (!r) return;
       const resto = Number(r.saldo);
-      if (r.aviso_error) toast(`Aprobado, pero ${r.aviso_error}. Escríbele tú.`, true);
+      if (r.advertencia) toast(`Aprobado. ${r.advertencia}`, true);
+      else if (r.aviso_error) toast(`Aprobado, pero ${r.aviso_error}. Escríbele tú.`, true);
       else toast(resto > 0.009 ? `Listo · el motorizado cobra ${sym} ${resto}` : "Listo · el motorizado ya no cobra nada");
       reload && reload();
     };

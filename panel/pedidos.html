@@ -686,7 +686,8 @@ function kcard(o){
   if(s.guia) shipBits.push(`Guía <b>${esc(s.guia)}</b>`);
   if(s.clave_recojo) shipBits.push(`Clave <b>${esc(s.clave_recojo)}</b>`);
   if(s.distrito||s.direccion) shipBits.push(esc([s.distrito,s.direccion].filter(Boolean).join(" · ")));
-  const adel=Number(s.adelanto||0), saldo=Number(s.saldo||0);
+  // Saldo ya cobrado: el pedido lo guarda en `saldo_cobrado` y deja `saldo` en 0 (no se debe nada).
+  const adel=Number(s.adelanto||0), saldo=Number(s.saldo||0)||Number(s.saldo_cobrado||0);
   // Badge de extra/regalo: en la tarjeta de provincia (con adelanto/saldo) antes NO se veía
   // que había un order_bump agregado → el operador no sabía que debía empacar el extra.
   const _bumps=(o.order_bumps||[]); const _nX=_bumps.filter(b=>!b.regalo).length, _nR=_bumps.filter(b=>b.regalo).length;
@@ -1049,8 +1050,17 @@ async function confirmSet(o,estado,label){
   if(zonaDe(o)==="lima" && CIERRE_LIMA.includes(estado) && (o.shipping||{}).flete==null){
     return cerrarLima(o,estado,label);
   }
-  if(!await confirmDialog({title:label.replace(/^[^\wÁÉÍÓÚáéíóú]+\s*/,""),message:`${c.nombre||"cliente"} — cambiar a "${O.label(estado)}".`,confirmText:"Confirmar"})) return;
-  const r=await updateOrder({ order_id:o.id, estado });
+  // «Cobré el saldo → dar clave» sin clave cargada: el aviso por defecto no sale (no hay qué
+  // darle) y el cliente se quedaba pagado y sin poder recoger. Se pide acá, como en Pagos.
+  let extraShip=null;
+  if(estado==="saldo_pagado" && !String((o.shipping||{}).clave_recojo||"").trim()){
+    const clave=await askText({ title:"Clave de recojo", message:`${c.nombre||"cliente"} ya pagó el saldo. Escribe la clave que le va a pedir la agencia: el bot se la manda.`,
+      label:"Clave de recojo", placeholder:"Ej: 4821", confirmText:"Guardar y avisar" });
+    if(clave==null) return;
+    if(!String(clave).trim()){ toast("Sin la clave el cliente no puede recoger: escríbela",true); return; }
+    extraShip={ clave_recojo:String(clave).trim() };
+  } else if(!await confirmDialog({title:label.replace(/^[^\wÁÉÍÓÚáéíóú]+\s*/,""),message:`${c.nombre||"cliente"} — cambiar a "${O.label(estado)}".`,confirmText:"Confirmar"})) return;
+  const r=await updateOrder({ order_id:o.id, estado, ...(extraShip?{ shipping:extraShip }:{}) });
   if(r){ toast(toastEstado(r), !!r.aviso_error); await load(); }
 }
 // «Cobré el saldo → dar clave», «Salió a reparto», «Recogido»… decían «Estado actualizado» aunque

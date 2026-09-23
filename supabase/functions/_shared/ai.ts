@@ -15,7 +15,9 @@
 // El default es una red de seguridad: tiene que atajar barato.
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
-const ANTHROPIC_DEFAULT = "claude-sonnet-4";
+// "claude-sonnet-4" a secas no es un id válido de la API (rechazaba la llamada): se usa el
+// Sonnet vigente, misma tarifa de la familia.
+const ANTHROPIC_DEFAULT = "claude-sonnet-5";
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_DEFAULT = "gpt-4.1-mini";
@@ -79,16 +81,35 @@ const TARIFAS: Record<string, { in: number; out: number; cache?: number }> = {
   "claude-3-5-sonnet": { in: 3.00, out: 15.00, cache: 0.30 },
   "claude-sonnet-4": { in: 3.00, out: 15.00, cache: 0.30 },
   "claude-opus-4": { in: 15.00, out: 75.00, cache: 1.50 },
+  "claude-opus-4-1": { in: 15.00, out: 75.00, cache: 1.50 },
+  // Opus 4.5 en adelante bajó a 5/25. Van ANTES por prefijo más largo: "claude-opus-4" solo
+  // cobraba el triple a un Opus 4.5.
+  "claude-opus-4-5": { in: 5.00, out: 25.00, cache: 0.50 },
+  "claude-opus-4-6": { in: 5.00, out: 25.00, cache: 0.50 },
+  "claude-haiku-4-5": { in: 1.00, out: 5.00, cache: 0.10 },
+  "gpt-5": { in: 1.25, out: 10.00, cache: 0.125 },
+  "gpt-5-mini": { in: 0.25, out: 2.00, cache: 0.025 },
+  "gpt-5-nano": { in: 0.05, out: 0.40, cache: 0.005 },
 };
+// Modelo nuevo que la tabla todavía no conoce: se cobra por FAMILIA en vez de 0. Con 0 el gasto
+// de IA salía gratis y la ganancia del panel, inflada.
+function tarifaPorFamilia(m: string): { in: number; out: number; cache?: number } | null {
+  if (!m.includes("claude")) return null;
+  if (m.includes("opus")) return { in: 5.00, out: 25.00, cache: 0.50 };
+  if (m.includes("sonnet")) return { in: 3.00, out: 15.00, cache: 0.30 };
+  if (m.includes("haiku")) return { in: 1.00, out: 5.00, cache: 0.10 };
+  return null;
+}
 function tarifaDe(model: string): { in: number; out: number; cache?: number } | null {
   const m = String(model || "").toLowerCase();
   if (TARIFAS[m]) return TARIFAS[m];
+  if (/^claude-opus-4-[5-9]/.test(m)) return tarifaPorFamilia(m);   // 4.5+: no caer en la tarifa de "claude-opus-4"
   // Los modelos traen fecha pegada ("gpt-4.1-mini-2025-04-14"): vale el prefijo más largo.
   let mejor: { in: number; out: number; cache?: number } | null = null, largo = 0;
   for (const [k, v] of Object.entries(TARIFAS)) {
     if (m.startsWith(k) && k.length > largo) { mejor = v; largo = k.length; }
   }
-  return mejor;
+  return mejor ?? tarifaPorFamilia(m);
 }
 
 // Suma esta llamada al acumulado del día. Best-effort de verdad: si falla, se traga el
@@ -148,7 +169,13 @@ const AI_TIMEOUT_MS = 28_000;
 async function fetchAI(url: string, init: RequestInit, timeoutMs = AI_TIMEOUT_MS): Promise<Response> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try { return await fetch(url, { ...init, signal: ctrl.signal }); }
+  // El CUERPO se lee dentro del mismo plazo: el reloj se apagaba al llegar los encabezados y un
+  // proveedor que mandaba el 200 y se colgaba a mitad del cuerpo dejaba el turno esperando sin fin.
+  try {
+    const r = await fetch(url, { ...init, signal: ctrl.signal });
+    const txt = await r.text();
+    return new Response([204, 205, 304].includes(r.status) ? null : txt, { status: r.status, statusText: r.statusText, headers: r.headers });
+  }
   finally { clearTimeout(t); }
 }
 

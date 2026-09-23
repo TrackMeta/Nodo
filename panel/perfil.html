@@ -138,7 +138,7 @@ async function boot(){
     if(error||!data||data.error){ toast(det||data?.detalle||"No se pudo usar ese código (¿vencido o ya usado?)",true); return; }
     toast("Listo, ya eres parte de ese equipo"); setTimeout(()=>location.reload(),900);
   };
-  $("logoutBtn").onclick=async()=>{ try{ localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.channelId"); }catch{} await supa.auth.signOut(); location.href="index.html"; };
+  $("logoutBtn").onclick=async()=>{ try{ localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.avanzado"); localStorage.removeItem("nodo.channelId"); }catch{} await supa.auth.signOut(); location.href="index.html"; };
 }
 function paintAvatar(url){
   const a=$("avatar");

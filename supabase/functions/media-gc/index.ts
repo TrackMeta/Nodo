@@ -19,7 +19,8 @@
 //   arriba y todavía no referenciado mientras el operador escribe el pie de foto.
 //
 //   Uso:  POST { horas?: number, dry?: boolean, limite?: number }
-//     dry:true  → solo informa qué borraría (por defecto NO borra nada)
+//     dry:true  → solo informa qué movería. Sin `dry` (así lo llama el cron) MUEVE la basura a
+//                 `papelera/AAAAMMDD/` y borra de verdad lo que lleva más de 7 días ahí.
 //     horas     → gracia mínima antes de considerar un archivo abandonado (24 por defecto)
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
@@ -28,6 +29,8 @@ import { serviceClient, userClient } from "../_shared/db.ts";
 const db = serviceClient();
 const BUCKET = "media";
 const PAGINA = 1000;   // tope duro de PostgREST por pagina
+const PAPELERA = "papelera/";
+const DIAS_PAPELERA = 7;
 
 // Cada entrada: [tabla, columna]. La búsqueda es por TEXTO sobre la columna, así
 // que da igual cómo esté anidada la URL dentro del JSON.
@@ -96,7 +99,7 @@ Deno.serve(async (req) => {
 
   let body: { horas?: number; dry?: boolean; limite?: number } = {};
   try { body = await req.json(); } catch { /* sin body → valores por defecto */ }
-  const dry = body.dry === true;   // por defecto NO borra: hay que pedirlo
+  const dry = body.dry === true;   // dry: solo informa. Sin dry manda la basura a la papelera (ver abajo)
   // Piso de una hora para el borrado de verdad: un archivo recien subido puede estar
   // arriba y aun sin referencia mientras el operador escribe el pie de foto. En seco
   // se permite bajar de ahi, que es como se comprueba que lo referenciado se salva.
@@ -111,17 +114,33 @@ Deno.serve(async (req) => {
   //    0083), y por paginas porque PostgREST corta en 1000 filas: sin el offset se
   //    veria siempre el mismo primer millar y lo nuevo no se revisaria jamas.
   type Obj = { nombre: string; creado: string; bytes: number };
-  const candidatos: Obj[] = [];
-  while (candidatos.length < limite) {
+  const todos: Obj[] = [];
+  while (todos.length < limite) {
     const { data, error } = await db.rpc("nodo_media_objetos", {
-      p_bucket: BUCKET, p_antes: corte, p_limite: PAGINA, p_desde: candidatos.length,
+      p_bucket: BUCKET, p_antes: corte, p_limite: PAGINA, p_desde: todos.length,
     });
     if (error) return json({ error: "no_pude_listar", detalle: error.message }, 500);
     const pag = (data ?? []) as Obj[];
-    candidatos.push(...pag);
+    todos.push(...pag);
     if (pag.length < PAGINA) break;
   }
-  if (!candidatos.length) return json({ ok: true, revisados: 0, borrados: 0, liberado_kb: 0 });
+  // 🗑️ PAPELERA: lo que se da por basura NO se borra de una: se mueve a `papelera/AAAAMMDD/…` y
+  // se borra de verdad a los DIAS_PAPELERA días. Si la lista REFERENCIAS vuelve a olvidarse de
+  // una columna (ya pasó: se fueron las 552 fichas de agencias), hay una semana para devolverlo
+  // a su nombre original con un `move`, en vez de perderlo.
+  const papelera = todos.filter((o) => o.nombre.startsWith(PAPELERA));
+  const candidatos = todos.filter((o) => !o.nombre.startsWith(PAPELERA));
+  let purgados = 0;
+  if (!dry) {
+    const limiteP = new Date(Date.now() - DIAS_PAPELERA * 864e5).toISOString().slice(0, 10).replace(/-/g, "");
+    const viejos = papelera.filter((o) => { const m = /^papelera\/(\d{8})\//.exec(o.nombre); return !!m && m[1] < limiteP; }).map((o) => o.nombre);
+    for (let i = 0; i < viejos.length; i += 100) {
+      const lote = viejos.slice(i, i + 100);
+      const { error } = await db.storage.from(BUCKET).remove(lote);
+      if (!error) purgados += lote.length;
+    }
+  }
+  if (!candidatos.length) return json({ ok: true, revisados: 0, a_papelera: 0, purgados, liberado_kb: 0 });
 
   // 2) ¿Alguien lo referencia? Una consulta por tabla y por objeto es carísimo, así
   //    que se recorre UNA vez el texto de las columnas que pueden traer URLs, por
@@ -137,10 +156,18 @@ Deno.serve(async (req) => {
     // PostgREST corta en 1000 filas y .limit() NO lo sube: hay que paginar con
     // .range() hasta que la pagina venga corta. Sin esto solo se revisarian los
     // primeros 1000 mensajes y el recolector borraria comprobantes en uso.
+    // Con clave simple se pagina por CURSOR (id > último visto), no por offset: un mensaje que
+    // entra a mitad del barrido con un id "menor" corría todas las páginas una fila y esa fila
+    // no se revisaba — si nombraba un archivo viejo, se lo daba por basura.
+    let ultimo: unknown = null;
     for (let desde = 0; ; desde += PAGINA) {
       let q = db.from(tabla).select(`${ordenes.join(", ")}, ${col}`);
       for (const o of ordenes) q = q.order(o, { ascending: true });
-      const { data, error } = await q.range(desde, desde + PAGINA - 1);
+      if (ordenes.length === 1 && ultimo != null) q = q.gt(ordenes[0], ultimo as string);
+      const { data, error } = ordenes.length === 1
+        ? await q.limit(PAGINA)
+        : await q.range(desde, desde + PAGINA - 1);
+      if (ordenes.length === 1 && data?.length) ultimo = (data[data.length - 1] as Record<string, unknown>)[ordenes[0]];
       // supabase-js NO lanza ante un error de consulta: devuelve { data: null, error }.
       // Y no poder comprobar una fuente es exactamente cuando NO se debe borrar.
       if (error) return json({ error: "no_pude_verificar", detalle: `${tabla}.${col}: ${error.message}` }, 500);
@@ -169,16 +196,16 @@ Deno.serve(async (req) => {
     });
   }
 
-  // 3) Borrado por la API de Storage (no por SQL): borrar la fila de storage.objects
-  //    a mano deja el archivo físico colgado en el disco, ocupando igual.
-  let borrados = 0;
-  for (let i = 0; i < basura.length; i += 100) {
-    const lote = basura.slice(i, i + 100).map((o) => o.nombre);
-    const { error } = await db.storage.from(BUCKET).remove(lote);
-    if (!error) borrados += lote.length;
+  // 3) A la papelera por la API de Storage (no por SQL): tocar storage.objects a mano deja el
+  //    archivo físico colgado. El borrado de verdad lo hace el paso de purga, días después.
+  const hoy = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  let aPapelera = 0;
+  for (const o of basura) {
+    const { error } = await db.storage.from(BUCKET).move(o.nombre, `${PAPELERA}${hoy}/${o.nombre}`);
+    if (!error) aPapelera++;
   }
   return json({
     ok: true, revisados: candidatos.length, en_uso: usados.size,
-    borrados, liberado_kb: Math.round(bytes / 1024),
+    a_papelera: aPapelera, purgados, liberado_kb: Math.round(bytes / 1024),
   });
 });

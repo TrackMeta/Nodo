@@ -593,6 +593,12 @@ Deno.serve(async (req) => {
     const opS = String(shipS.saldo_operacion || shipS.saldo_operacion_leida || "").trim();
     if (opS) await registrarOperacion(db, (order as any).channel_id, opS, order.id, "saldo").catch((e) => console.error("[order-update] registrar op saldo:", (e as any)?.message ?? e));
     await registrarAbonos(shipS.saldo_abonos, "saldo");
+    // Saldo cobrado = ya no se debe nada. Quedaba el número viejo: si el paquete no se recogía y
+    // se volvía a despachar, el aviso de llegada le pedía «paga el saldo de S/X» otra vez.
+    const _svS = Number(shipS.saldo);
+    if (shipS.saldo != null && String(shipS.saldo).trim() !== "" && Number.isFinite(_svS) && _svS > 0) {
+      await db.rpc("order_patch_shipping", { p_order_id: order.id, p_patch: { saldo: "0", saldo_cobrado: _svS } }).then(() => {}, () => {});
+    }
   }
 
   // 🔒 Anti-reúso DIGITAL: cuando un pago digital que fue a validación MANUAL se
@@ -647,7 +653,17 @@ Deno.serve(async (req) => {
       const { data: chA } = await db.from("channels").select("pedidos_config")
         .eq("id", (order as any).channel_id).maybeSingle();
       const cfg = (chA as any)?.pedidos_config?.avisos?.[newEstado] ?? {};
-      const texto = String(cfg.texto ?? "").trim();
+      let texto = String(cfg.texto ?? "").trim();
+      // «Llegó a la agencia» con TODO pagado: el texto propio suele decir «paga el saldo» y no
+      // lleva la clave. Ese caso lo cubre el aviso por defecto (clave incluida), así que se cede.
+      if (texto && newEstado === "en_agencia") {
+        const { data: _frA } = await db.from("orders").select("shipping").eq("id", (order as any).id).maybeSingle();
+        const _sA = { ...((order as any).shipping ?? {}), ...(((_frA as any)?.shipping) ?? {}), ...((patch.shipping as any) ?? {}) } as any;
+        const _nA = Number(_sA.saldo);
+        const _conSaldo = _sA.saldo != null && String(_sA.saldo).trim() !== "" && Number.isFinite(_nA) && _nA > 0.009;
+        const _pagadoA = !_conSaldo && (_sA.pagado_total === true || (_sA.saldo != null && String(_sA.saldo).trim() !== "" && Number.isFinite(_nA) && _nA <= 0));
+        if (_pagadoA) texto = "";
+      }
       if (texto) {
         // El aviso configurado es TEXTO LIBRE (y quizá una imagen): Meta lo RECHAZA fuera
         // de la ventana de 24h (mover el pedido suele pasar días después del último mensaje

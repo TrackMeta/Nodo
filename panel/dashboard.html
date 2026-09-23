@@ -794,7 +794,7 @@ async function load(){
     // corta en 1000 y, sin .order(), esas 1000 son arbitrarias — el KPI no se quedaba
     // "corto pero estable", salía caprichoso (podía decir 300 con 900 reales). Se cuenta
     // en la base con head:true: exacto, sin tope y sin traer una sola fila.
-    supa.from("capi_events").select("id",{count:"exact",head:true}).eq("channel_id",channelId).eq("event_name","Lead").gte("created_at",fromISO).lt("created_at",toISO),
+    supa.from("capi_events").select("id",{count:"exact",head:true}).eq("channel_id",channelId).eq("event_name","Lead").eq("estado","enviado").gte("created_at",fromISO).lt("created_at",toISO),
     // PAGINADO, no una sola request: PostgREST corta en 1000 filas y no avisa. Un rango con
     // más de 1000 pedidos dejaba TODOS los KPIs cortos (ventas, ganancia, ROAS, ROI) sin que
     // nada lo dijera. `ads_insights` es peor todavía: es una fila por anuncio Y por día, así
@@ -849,7 +849,7 @@ async function load(){
       // 400 (sin mirar el error, se quedaba el conteo sin descontar los de prueba).
       const ids=[...pruebaIds]; let cPrueba=0, ok=true;
       for(let i=0;i<ids.length;i+=300){
-        const { count, error }=await supa.from("capi_events").select("id",{count:"exact",head:true}).eq("channel_id",channelId).eq("event_name","Lead").gte("created_at",fromISO).lt("created_at",toISO).in("contact_id",ids.slice(i,i+300));
+        const { count, error }=await supa.from("capi_events").select("id",{count:"exact",head:true}).eq("channel_id",channelId).eq("event_name","Lead").eq("estado","enviado").gte("created_at",fromISO).lt("created_at",toISO).in("contact_id",ids.slice(i,i+300));
         if(error||typeof count!=="number"){ ok=false; break; } cPrueba+=count;
       }
       if(ok) leadsCount=Math.max(0, leadsCount-cPrueba);
