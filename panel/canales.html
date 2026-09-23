@@ -26,6 +26,11 @@
      así que la regla de arriba se lo aplicaba también y el triángulo salía a 52px: llenaba
      el recuadro de borde a borde. Va dentro, a la misma proporción que en Ajustes. */
   .chd .ico svg{width:24px;height:24px}
+  /* …y el AVISO va sin cápsula. Las otras dos tarjetas llevan el logo de WhatsApp/Telegram,
+     que sí es una imagen dentro de su recuadro; un triángulo de advertencia metido en un
+     recuadro tintado se lee como dos formas, una dentro de otra. Solo el triángulo. */
+  .chd .ico.solo{width:auto;height:auto;background:transparent;border:none;border-radius:0}
+  .chd .ico.solo svg{width:30px;height:30px}
   .chd .nm{font-weight:700;font-size:17px;letter-spacing:-.2px}
   .chd .sub2{font-size:12.5px;color:var(--muted);margin-top:2px}
   .chd .st{margin-left:auto;font-size:11px;padding:5px 12px;border-radius:20px;font-weight:700;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
@@ -353,7 +358,7 @@ async function renderArchivo(){
   if(!$("archCard")) return;  // te fuiste de la pantalla mientras cargaba
   box.innerHTML=`
     <div class="card" style="border-color:rgba(240,71,71,.28)">
-      <div class="chd"><span class="ico" style="background:rgba(240,71,71,.1);color:#f04747">${icon("alert")}</span>
+      <div class="chd"><span class="ico solo" style="color:#f04747">${icon("alert")}</span>
         <div><div class="nm">Dar de baja este bot</div><div class="sub2">Se apaga, no se borra</div></div></div>
       <div class="desc">Archivar <b>${esc(st.channelNombre||"este bot")}</b> lo deja fuera de servicio: deja de responder,
         de gastar y de aparecer en el selector. <b>No se borra nada</b> — contactos, conversaciones, pedidos, productos y
