@@ -1,0 +1,90 @@
+name: Respaldo diario de la base de datos
+
+# Por qué existe: Supabase en plan gratis NO guarda copias de la base. El 2026-09-23 un script
+# de prueba borró un producto real y no hubo de dónde recuperarlo. Esto saca una copia completa
+# cada madrugada y la guarda 90 días.
+#
+# Qué respalda: los esquemas `public` (productos, pedidos, contactos, chats, configuración),
+# `auth` (usuarios del panel) y `storage` (la LISTA de archivos). NO los archivos en sí (fotos,
+# capturas de pago): esos viven en el almacenamiento de Supabase y van aparte.
+#
+# 🔒 El repositorio es PÚBLICO: la copia sale CIFRADA (AES-256, gpg) con una contraseña que solo
+# conoce el dueño. Sin esa contraseña el archivo es ilegible, aunque alguien lo descargue.
+#
+# Secrets que hay que cargar UNA vez (Settings → Secrets and variables → Actions):
+#   SUPABASE_DB_URL      → la cadena de conexión del «Session pooler» de Supabase (con la
+#                          contraseña de la base puesta). NO la «Direct connection»: esa es solo
+#                          IPv6 y los runners de GitHub no llegan.
+#   BACKUP_PASSPHRASE    → la contraseña para cifrar. Guárdala: sin ella no se abre ninguna copia.
+#
+# Restaurar: bajar el artefacto «respaldo-nodo-AAAA-MM-DD» de la corrida que quieras y
+#   gpg --decrypt respaldo.dump.gpg > respaldo.dump
+#   pg_restore --list respaldo.dump            (ver qué trae)
+#   pg_restore -d "$URL" -t products ...       (restaurar solo lo que se perdió)
+
+on:
+  schedule:
+    - cron: "0 8 * * *"   # 08:00 UTC = 3:00 a. m. en Lima
+  workflow_dispatch:       # botón «Run workflow» para correrlo a mano (y probarlo)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: respaldo-db
+  cancel-in-progress: false
+
+jobs:
+  respaldo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Revisar que estén los secretos
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          if [ -z "$DB_URL" ] || [ -z "$PASS" ]; then
+            echo "::error::Faltan los secretos SUPABASE_DB_URL y/o BACKUP_PASSPHRASE (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+      # pg_dump tiene que ser de la MISMA versión mayor que el servidor (17) o más nueva: el de
+      # Ubuntu viene más viejo y se niega a volcar una base 17.
+      - name: Instalar el cliente de PostgreSQL 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          /usr/lib/postgresql/17/bin/pg_dump --version
+
+      - name: Sacar la copia y cifrarla
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          mkdir -p salida
+          # Formato «custom» (-Fc): ya viene comprimido y permite restaurar UNA tabla sola.
+          /usr/lib/postgresql/17/bin/pg_dump "$DB_URL" -Fc --no-owner --no-privileges \
+            -n public -n auth -n storage -f salida/respaldo.dump
+          # Que la copia no esté vacía ni rota: se lista su contenido y se cuentan las tablas.
+          TABLAS=$(/usr/lib/postgresql/17/bin/pg_restore --list salida/respaldo.dump | grep -c " TABLE DATA " || true)
+          echo "Tablas con datos en la copia: $TABLAS"
+          if [ "$TABLAS" -lt 20 ]; then echo "::error::La copia trae muy pocas tablas ($TABLAS): algo salió mal."; exit 1; fi
+          # Cifrado simétrico: la contraseña entra por stdin, nunca en la línea de comandos.
+          printf '%s' "$PASS" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 -o salida/respaldo.dump.gpg salida/respaldo.dump
+          rm -f salida/respaldo.dump   # lo que se sube es SOLO lo cifrado
+          ls -la salida
+          echo "FECHA=$(TZ=America/Lima date +%F)" >> "$GITHUB_ENV"
+
+      - name: Guardar la copia (90 días)
+        uses: actions/upload-artifact@v4
+        with:
+          name: respaldo-nodo-${{ env.FECHA }}
+          path: salida/respaldo.dump.gpg
+          retention-days: 90
+          if-no-files-found: error
