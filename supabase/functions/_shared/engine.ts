@@ -3633,8 +3633,26 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
       "afirmarlo es inventar. ⛔ No prometas precios, envíos ni tiempos.\n" +
       "Lo que haces: saluda, pregúntale con naturalidad QUÉ está buscando, y dile que lo va a ver " +
       "una persona del equipo y le responde por acá. Nada más.");
-    await logEvent(db, channelId, contactId, "error", "📭 El bot atendió sin catálogo",
-      "Este bot no tiene productos cargados: la Recepción solo puede tomar el dato y pasar a una persona. Carga tu producto en Productos para que empiece a vender.").catch(() => {});
+    // 🔑 «Sin catálogo» para la Recepción = ningún producto con palabra clave activa, que no es
+    // lo mismo que no tener productos. Medido (2026-09-24, Prime Digital): el Adaptador PRO
+    // existía con su flujo de venta, había perdido la palabra clave, y el aviso decía «no tiene
+    // productos cargados» — mandaba al dueño a cargar lo que ya estaba cargado. Se nombra la
+    // causa real y dónde se arregla.
+    let sinClave: string[] = [];
+    try {
+      const { data: ps } = await db.from("products").select("nombre, clase").eq("channel_id", channelId);
+      // Extras y regalos no llevan palabra clave: se venden dentro de otro producto.
+      sinClave = ((ps ?? []) as any[]).filter((p) => (p.clase ?? "principal") === "principal")
+        .map((p) => String(p.nombre || "").trim()).filter(Boolean);
+    } catch (_) { /* si no se puede leer, queda el aviso genérico */ }
+    if (sinClave.length) {
+      const lista = sinClave.slice(0, 3).map((n) => `«${n}»`).join(", ") + (sinClave.length > 3 ? ` y ${sinClave.length - 3} más` : "");
+      await logEvent(db, channelId, contactId, "error", "🔑 Ningún producto tiene palabra clave",
+        `Tienes ${sinClave.length === 1 ? "el producto" : "los productos"} ${lista}, pero ${sinClave.length === 1 ? "no tiene" : "ninguno tiene"} palabra clave activa, así que el bot no pudo llevar a este cliente a la venta y lo dejó para una persona. Ponle una en Productos → el producto → «Cómo llegan los clientes».`).catch(() => {});
+    } else {
+      await logEvent(db, channelId, contactId, "error", "📭 El bot atendió sin catálogo",
+        "Este bot no tiene productos cargados: la Recepción solo puede tomar el dato y pasar a una persona. Carga tu producto en Productos para que empiece a vender.").catch(() => {});
+    }
   }
   if (saludoEmitido) {
     parts.push("## Ojo: el saludo de apertura YA salió\nAcabas de enviarle esto:\n\"" + saludoEmitido.slice(0, 400) +

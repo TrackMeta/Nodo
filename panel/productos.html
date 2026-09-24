@@ -497,7 +497,7 @@ function hubHarvest(){
     const gn=row.querySelector(".hub-gancho"); if(gn) a.gancho_ia=gn.value.trim();
   });
 }
-// Persiste los ángulos de un producto (mismo upsert/delete que saveAngulos).
+// Persiste los ángulos de un producto (mismo upsert/delete que saveActivacion).
 async function hubSaveProduct(pid){
   hubHarvest();
   const angs=(st.hub.byProd[pid]||[]).filter(a=>a.nombre);
@@ -3920,52 +3920,6 @@ function ganchoIAHtml(value, cls){
 }
 // slug estable a partir del nombre del ángulo.
 function anguloSlug(nombre){ return String(nombre||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,40)||("ang"+Date.now()); }
-// Pinta las filas de ángulos (nombre + gancho IA + anuncios). Los anuncios se
-// eligen de ads_meta (por nombre) si Meta está conectado; si no, se pegan IDs.
-function renderAngList(){
-  const host=$("angList"); if(!host) return;
-  const angs=st.act.angulos||[]; const adsMeta=st.act.adsMeta||[];
-  if(!angs.length){ host.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:4px 0 10px">Aún no hay ángulos. Agrega el primero (ej. "Dolor / calambres").</div>`; return; }
-  host.innerHTML=angs.map((a,i)=>{
-    const adsHtml = adsMeta.length
-      ? `<div style="font-size:11px;color:var(--muted);margin:8px 0 5px">Anuncios de este ángulo</div><div style="max-height:150px;overflow:auto;display:flex;flex-direction:column;gap:4px;border:1px solid var(--border);border-radius:8px;padding:8px">${adsMeta.map(m=>`<label style="display:flex;gap:7px;align-items:center;font-size:12.5px;cursor:pointer"><input type="checkbox" class="ang-ad" value="${esc(m.ad_id)}"${(a.ad_ids||[]).map(String).includes(String(m.ad_id))?" checked":""}/> <span>${esc(m.ad_name||m.ad_id)}${m.campaign_name?` <span style="color:var(--faint)">· ${esc(m.campaign_name)}</span>`:''}</span></label>`).join("")}</div>`
-      : `<div style="font-size:11px;color:var(--muted);margin:8px 0 5px">Anuncios de este ángulo — pega el <b>ID</b> y presiona Enter. (Conecta Meta Ads en Ajustes para elegirlos por su nombre.)</div>
-         <div class="ang-chips" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--border);border-radius:8px;padding:7px;min-height:40px">
-           ${(a.ad_ids||[]).map(id=>`<span class="ad-chip" style="display:inline-flex;align-items:center;gap:6px;background:var(--brand-bg);border:1px solid var(--brand-border);border-radius:20px;padding:3px 6px 3px 11px;font-size:12px;color:var(--brand-2)"><span class="mono">${esc(id)}</span><button class="ad-chip-x" data-id="${esc(id)}" title="Quitar" style="border:0;background:transparent;color:var(--muted);cursor:pointer;line-height:1;padding:0">${icon("x")}</button></span>`).join("")}
-           <input class="ad-chip-in" style="border:0;outline:none;background:transparent;font-size:12.5px;flex:1;min-width:160px;color:var(--text);height:24px" placeholder="Pega un ID de anuncio y Enter"/>
-         </div>`;
-    return `<div class="ang-row" data-ai="${i}" style="border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px">
-      <div style="display:flex;gap:8px;align-items:center">
-        <input class="in ang-nombre" style="flex:1;font-weight:600" placeholder="Nombre del ángulo (ej. Dolor / calambres)" value="${esc(a.nombre||'')}"/>
-        <button class="iconbtn ang-del" title="Eliminar ángulo">${icon("trash")}</button>
-      </div>
-      ${ganchoIAHtml(a.gancho_ia, "ang-gancho")}
-      ${adsHtml}
-    </div>`;
-  }).join("");
-  host.querySelectorAll(".ang-del").forEach(btn=> btn.onclick=()=>{
-    harvest(); harvestAngulos();
-    const ai=+btn.closest(".ang-row").dataset.ai;
-    const elim=st.act.angulos[ai]; st.act.angulos.splice(ai,1);
-    // Limpia las variantes que apuntaban al ángulo borrado (si no, el selector
-    // "Responde al ángulo" seguía ofreciéndolo). renderComposer re-pinta los selects.
-    if(elim&&elim.slug) (st.act.node.config.variantes||[]).forEach(v=>{ if(v.angulo===elim.slug) v.angulo=""; });
-    renderComposer();
-  });
-  // Chips de anuncios (fallback sin Meta): agregar con Enter, quitar con ✕.
-  host.querySelectorAll(".ad-chip-in").forEach(inp=> inp.onkeydown=(e)=>{
-    if(e.key!=="Enter") return; e.preventDefault();
-    const ai=+inp.closest(".ang-row").dataset.ai, val=inp.value.trim(); if(!val) return;
-    harvestAngulos(); const a=st.act.angulos[ai]; a.ad_ids=a.ad_ids||[];
-    val.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean).forEach(id=>{ if(!a.ad_ids.includes(id)) a.ad_ids.push(id); });
-    renderAngList(); const ni=host.querySelectorAll(".ad-chip-in")[ai]; if(ni) ni.focus();
-  });
-  host.querySelectorAll(".ad-chip-x").forEach(btn=> btn.onclick=()=>{
-    const ai=+btn.closest(".ang-row").dataset.ai; harvestAngulos();
-    const a=st.act.angulos[ai]; a.ad_ids=(a.ad_ids||[]).filter(id=>String(id)!==String(btn.dataset.id));
-    renderAngList();
-  });
-}
 // Lee las filas de ángulos del DOM a st.act.angulos (preserva id/slug por índice).
 // Lee del DOM el ángulo ACTIVO (solo se renderiza uno a la vez en el rediseño por
 // pestañas) y lo actualiza EN SITIO en st.act.angulos (los demás viven en memoria).
@@ -3978,24 +3932,6 @@ function harvestAngulos(){
     const checks=row.querySelectorAll(".ang-ad");
     if(checks.length) a.ad_ids=[...checks].filter(c=>c.checked).map(c=>c.value);
   });
-}
-// Persiste los ángulos: upsert de los que tienen nombre, delete de los borrados.
-async function saveAngulos(){
-  harvestAngulos();
-  const angs=st.act.angulos.filter(a=>a.nombre);
-  const usados=new Set();
-  angs.forEach((a,i)=>{ let s=a.slug||anguloSlug(a.nombre); let base=s,n=2; while(usados.has(s)){ s=base+"-"+(n++); } usados.add(s); a.slug=s; a.orden=i; });
-  try{
-    for(const a of angs){
-      const payload={ channel_id:st.channelId, product_id:st.prod.id, nombre:a.nombre, slug:a.slug, ad_ids:a.ad_ids||[], gancho_ia:a.gancho_ia||null, orden:a.orden };
-      if(a.id){ const {error}=await supa.from("angulos").update(payload).eq("id",a.id); if(error) throw error; }
-      else { const {data:ins,error}=await supa.from("angulos").insert(payload).select("id").single(); if(error) throw error; if(ins) a.id=ins.id; }
-    }
-    const vivos=new Set(angs.map(a=>a.id).filter(Boolean));
-    for(const id of (st.act.angulosOrig||[])){ if(!vivos.has(id)) await supa.from("angulos").delete().eq("id",id); }
-    st.act.angulos=angs; st.act.angulosOrig=angs.map(a=>a.id);
-    toast("Ángulos guardados"); renderComposer();
-  }catch(e){ toast(e.message||"No se pudo guardar los ángulos",true); }
 }
 async function createWelcome(){
   const { data:flow, error } = await supa.from("flows").insert({
@@ -4040,7 +3976,6 @@ function renderComposer(){
   const root=$("actroot"); const cfg=st.act.node.config;
   const kws=st.act.kw?(st.act.kw.config?.keywords||[]).join(", "):"";
   const match=st.act.kw?.config?.match||"contiene";
-  const ads=st.act.ad?(st.act.ad.config?.ad_ids||[]).join(", "):"";
   const angs=(st.act.angulos||[]);
   angs.forEach(a=>{ if(a.nombre && !a.slug) a.slug=anguloSlug(a.nombre); });
   if(st.act.tab===undefined) st.act.tab="";
@@ -4091,13 +4026,14 @@ function renderComposer(){
       <div style="font-size:12.5px;color:var(--muted);line-height:1.55">Después del saludo, <b>el bot continúa solo a vender</b> con la IA de este producto. No tienes que configurar nada.</div>
     </div>
 
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px">
-      <button class="btn primary" id="saveAct">Guardar</button>
-      ${AV ? `<a class="linkbtn" href="editor.html?flow=${st.act.flow.id}">${icon("flujos")}Abrir en editor visual</a>` : ""}
-    </div>`;
+    <!-- Sin botón propio: esta sección se guarda con «Guardar cambios», arriba, junto con todo
+         el producto. Tenía su «Guardar» aparte y los dos convivían sin que se supiera cuál
+         guardaba qué. -->
+    ${AV ? `<div style="display:flex;gap:10px;align-items:center;margin-bottom:20px">
+      <a class="linkbtn" href="editor.html?flow=${st.act.flow.id}">${icon("flujos")}Abrir en editor visual</a>
+    </div>` : ""}`;
 
   $("actKw").oninput=avisarKeywords; const am=$("actMatch"); if(am) am.onchange=avisarKeywords; avisarKeywords();
-  $("saveAct").onclick=saveActivacion;
   root.querySelectorAll(".ang-tab[data-tab]").forEach(b=> b.onclick=()=>{ harvest(); harvestAngulos(); st.act.tab=b.dataset.tab; renderComposer(); });
   const addA=root.querySelector("[data-addang]"); if(addA) addA.onclick=async()=>{
     harvest(); harvestAngulos();
@@ -4162,9 +4098,29 @@ function renderComposer(){
     body.appendChild(addv);
   }
 }
-// Guardado ÚNICO de la sección: ángulos + nodo de mensajes iniciales + disparadores.
-async function saveActivacion(opts){
-  const silent=!!(opts&&opts.silent); // llamado desde el "Guardar cambios" de arriba
+// 🔑 Sin palabra clave el producto queda fuera de la puerta: el que la escribe no entra a la
+// venta, y la Recepción tampoco lo puede llevar (solo ofrece productos con palabra clave).
+// Pasó así (2026-09-24): el Adaptador PRO se quedó sin su clave sin que nadie lo notara y el
+// cliente del anuncio cayó en «este negocio todavía no tiene productos». Guardar con el campo
+// vacío borraba el disparador sin preguntar; ahora se confirma ANTES de escribir nada.
+// Devuelve true si se puede seguir guardando.
+async function confirmaQuitarPalabraClave(){
+  if(!st.act || !st.act.node || !st.act.kw || !$("actKw")) return true;
+  const quedan=(($("actKw").value)||"").split(",").map(s=>s.trim()).filter(Boolean);
+  if(quedan.length) return true;
+  const antes=(st.act.kw.config?.keywords||[]).filter(Boolean);
+  const enBanco=Array.isArray(st.prod?.config?.ad_bank) ? st.prod.config.ad_bank.length : 0;
+  const ok=await confirmDialog({ title:"¿Quitar la palabra clave?",
+    message:`${antes.length?`Vas a quitar «${antes.join("», «")}». `:""}Sin palabra clave, el cliente que la escriba ya no entra a la venta de este producto, y el bot tampoco lo puede ofrecer cuando alguien pregunta en general.`+
+      (enBanco?` Solo seguirán llegando los que vengan de tus ${enBanco} anuncio${enBanco>1?"s":""} del Banco de anuncios.`:" Y como no tiene anuncios en el Banco de anuncios, nadie va a poder llegar a él."),
+    confirmText:"Quitar", cancelText:"Dejarla como estaba", danger:true });
+  if(!ok){ $("actKw").value=antes.join(", "); avisarKeywords(); }
+  return ok;
+}
+// Guardado de la sección: ángulos + nodo de mensajes iniciales + disparadores. Lo llama
+// SOLO «Guardar cambios» (la sección ya no tiene botón propio). Devuelve el error como texto,
+// o null si todo quedó guardado: sin eso el botón de arriba cantaba «Guardado» encima.
+async function saveActivacion(){
   harvest(); harvestAngulos();
   if(st.act.angulosOk){
     try{
@@ -4177,9 +4133,9 @@ async function saveActivacion(opts){
         else { const {data:ins,error}=await supa.from("angulos").insert(payload).select("id").single(); if(error) throw error; if(ins) a.id=ins.id; }
       }
       const vivos=new Set(angs.map(a=>a.id).filter(Boolean));
-      for(const id of (st.act.angulosOrig||[])){ if(!vivos.has(id)) await supa.from("angulos").delete().eq("id",id); }
+      for(const id of (st.act.angulosOrig||[])){ if(!vivos.has(id)){ const {error}=await supa.from("angulos").delete().eq("id",id); if(error) throw error; } }
       st.act.angulos=angs; st.act.angulosOrig=angs.map(a=>a.id);
-    }catch(e){ toast(e.message||"No se pudieron guardar los ángulos",true); return; }
+    }catch(e){ return "los ángulos: "+(e.message||"error"); }
   }
   const cfg=st.act.node.config;
   cfg.variantes.forEach(v=>{ v.bubbles=limpiaBotones((v.bubbles||[]).filter(b=> b.media_url || (b.text&&b.text.trim()))); });
@@ -4192,133 +4148,17 @@ async function saveActivacion(opts){
   subeRevSiCambio([{ variantes:cfg.variantes }], st.act.fotoVars);
   st.act.fotoVars = fotoVariantes([{ variantes:cfg.variantes }]);   // nuevo baseline
   const { error:eN }=await supa.from("flow_nodes").update({ config:cfg }).eq("id",st.act.node.id);
-  if(eN){ toast(eN.message,true); return; }
+  if(eN) return "los mensajes iniciales: "+eN.message;
   const kwArr=(($("actKw")?.value)||"").split(",").map(s=>s.trim()).filter(Boolean);
   const matchV=($("actMatch")?.value)||"contiene";
   const eKw2=await saveTrigger("keyword","kw", kwArr.length?{keywords:kwArr,match:matchV}:null);
-  if(eKw2){ toast("No se pudieron guardar las palabras clave: "+eKw2.message,true); return; }
+  if(eKw2) return "las palabras clave: "+eKw2.message;
   // El ruteo por ID de anuncio se maneja ahora en el Banco de anuncios del
   // producto (products.config.ad_bank). Ya no se toca el disparador "referral"
   // desde aquí: lo que exista se queda intacto y no se crea uno nuevo.
-  if(!silent) toast("Guardado");
   accRerender("activacion"); refreshActivacionRow();
+  return null;
 }
-function _renderComposerOld(){
-  const root=$("actroot"); const cfg=st.act.node.config;
-  const kws=st.act.kw?(st.act.kw.config?.keywords||[]).join(", "):"";
-  const match=st.act.kw?.config?.match||"contiene";
-  const ads=st.act.ad?(st.act.ad.config?.ad_ids||[]).join(", "):"";
-  const des=cfg.despues||{modo:"nada"};
-  const activeVars=cfg.variantes.filter(v=>v.activo!==false);
-  const pesoTotal=activeVars.reduce((a,v)=>a+Math.max(0,Number(v.peso??1)),0)||1;
-  root.innerHTML=`
-    <div class="card">
-      <h4>${icon("activity")}Con qué arranca el chat</h4>
-      <div style="font-size:12px;color:var(--faint);margin:4px 0 12px">La <b>palabra o frase</b> que el cliente escribe para iniciar (o el <b>anuncio</b> de Meta del que llega). Cualquiera de las dos enciende este producto.</div>
-      <label style="font-size:11.5px;color:var(--muted);font-weight:600">Palabras / frases clave</label>
-      <div class="row" style="margin:6px 0 0">
-        <input class="in" id="actKw" style="flex:1;min-width:200px" placeholder="quiero info, precio, cuánto cuesta" value="${esc(kws)}"/>
-        <select class="sel" id="actMatch" style="flex:0 0 130px">
-          <option value="contiene"${match==="contiene"?" selected":""}>Contiene</option>
-          <option value="empieza"${match==="empieza"?" selected":""}>Empieza</option>
-          <option value="exacta"${match==="exacta"?" selected":""}>Exacta</option>
-        </select>
-      </div>
-      <div id="kwAviso"></div>
-      <label style="font-size:11.5px;color:var(--muted);font-weight:600;display:block;margin-top:12px">ID de anuncio (ad_id) — opcional</label>
-      <input class="in" id="actAds" style="margin-top:6px" placeholder="120210000..., 120210111... (separados por coma)" value="${esc(ads)}"/>
-    </div>
-
-    <div class="card">
-      <h4>${icon("compass")} Ángulos del creativo</h4>
-      <div style="font-size:12px;color:var(--faint);margin:4px 0 12px;line-height:1.55">Agrupa tus anuncios por gancho (Dolor, Energía, Oferta…). Abajo, en cada versión del mensaje inicial, eliges a qué ángulo responde: el bot muestra el saludo que <b>retoma el anuncio del que vino</b> el cliente. El gancho también lo usa la IA durante la venta.</div>
-      ${st.act.angulosOk?`<div id="angList"></div>
-      <button class="btn" id="addAngulo" style="margin-top:2px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Agregar ángulo</button>
-      <div style="margin-top:12px"><button class="btn primary" id="saveAngulos">Guardar ángulos</button></div>`
-      :`<div style="font-size:12.5px;color:var(--amber);line-height:1.5">Para usar los ángulos falta aplicar la migración <b>0063</b> en la base de datos.</div>`}
-    </div>
-
-    <div class="card">
-      <div style="display:flex;align-items:center;gap:10px">
-        <div style="flex:1"><h4 style="margin:0">${icon("message")}Mensajes iniciales</h4>
-          <div style="font-size:12px;color:var(--faint);margin-top:3px">El saludo con el que arranca el chat. ${cfg.variantes.length>1?"El bot rota entre versiones por peso.":"Puedes agregar otra versión para variar el copy (ayuda contra el baneo)."}</div></div>
-        ${cfg.variantes.length>1?`<div style="text-align:right"><div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:4px">Rotación</div>
-          <div class="sw ${cfg.activo!==false?'on':''}" id="rotSw" title="Activar/desactivar rotación"></div></div>`:``}
-      </div>
-      ${cfg.variantes.length>1&&cfg.activo===false?`<div style="font-size:11.5px;color:var(--amber);margin-top:10px">Rotación apagada: se envía siempre la primera versión activa.</div>`:``}
-      <div id="varList" style="margin-top:14px;display:flex;flex-direction:column;gap:14px"></div>
-      <button class="btn" id="addVar" style="margin-top:14px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Agregar otra versión</button>
-    </div>
-
-    <div class="card" style="display:flex;align-items:flex-start;gap:10px;background:var(--ia-bg,rgba(139,92,246,.08));border-color:var(--ia-brd,rgba(139,92,246,.3))">
-      <span style="color:var(--ia1,#8b5cf6);flex:0 0 auto;display:inline-flex;margin-top:1px">${icon("secuencias")}</span>
-      <div style="font-size:12.5px;color:var(--muted);line-height:1.55">Después del saludo, <b>el bot continúa solo a vender</b> con la IA de este producto. No tienes que configurar nada — se conecta automáticamente al flujo de venta.</div>
-    </div>
-
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px">
-      <button class="btn primary" id="saveWelcome">Guardar mensajes iniciales</button>
-      ${AV ? `<a class="linkbtn" href="editor.html?flow=${st.act.flow.id}">${icon("flujos")}Abrir en editor visual</a>` : ""}
-    </div>`;
-
-  // Rotación toggle
-  const rs=$("rotSw"); if(rs) rs.onclick=()=>{ harvest(); cfg.activo=cfg.activo===false?true:false; renderComposer(); };
-  $("addVar").onclick=()=>{ harvest(); cfg.variantes.push(newVariant(cfg.variantes.length)); renderComposer(); };
-  $("saveWelcome").onclick=saveWelcome;
-  $("actKw").oninput=avisarKeywords;
-  $("actMatch").onchange=avisarKeywords;
-  avisarKeywords();
-
-  // Ángulos
-  if($("angList")){
-    renderAngList();
-    $("addAngulo").onclick=()=>{ harvestAngulos(); st.act.angulos.push({nombre:"",gancho_ia:"",ad_ids:[]}); renderAngList(); };
-    $("saveAngulos").onclick=saveAngulos;
-  }
-
-  // Variantes
-  const vl=$("varList");
-  cfg.variantes.forEach((v,vi)=>{
-    const share=v.activo!==false?Math.round(Math.max(0,Number(v.peso??1))/pesoTotal*100):0;
-    const card=document.createElement("div"); card.dataset.vi=vi;
-    card.style.cssText="border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--surface-2,rgba(255,255,255,.02))";
-    card.innerHTML=`
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-        <input class="in vname" style="flex:1;font-weight:700;height:34px" value="${esc(v.nombre||('Variante '+String.fromCharCode(65+vi)))}"/>
-        <div style="display:flex;align-items:center;gap:5px"><span style="font-size:11px;color:var(--muted)">Peso</span>
-          <input class="in vpeso" type="number" min="0" step="1" style="width:58px;height:34px;text-align:center" value="${Number(v.peso??1)}"/>
-          <span style="font-size:11px;color:var(--brand);font-weight:700;min-width:34px">${v.activo!==false?share+'%':'—'}</span></div>
-        <div class="sw ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
-        <button class="iconbtn vdelVar" title="Eliminar versión">${icon("trash")}</button>
-      </div>
-      ${(st.act.angulos&&st.act.angulos.length)?`<div style="display:flex;align-items:center;gap:7px;margin:-2px 0 10px">
-        <span style="font-size:11px;color:var(--ia1,#8b5cf6);font-weight:600;white-space:nowrap">${icon("compass")} Responde al ángulo</span>
-        <select class="in vangulo" style="height:36px;padding:0 10px;flex:1;max-width:260px">
-          <option value="">General · cualquier cliente</option>
-          ${st.act.angulos.filter(a=>a.slug).map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>${esc(a.nombre||a.slug)}</option>`).join("")}
-        </select></div>`:``}
-      <div class="bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">
-        <button class="btn addb" data-k="text" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Texto</button>
-        <button class="btn addb" data-k="image" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Imagen</button>
-        <button class="btn addb" data-k="video" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Video</button>
-        <button class="btn addb" data-k="audio" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ Audio</button>
-      </div>`;
-    // Toggle / peso / delete variante
-    card.querySelector("[data-vact]").onclick=()=>{ harvest(); v.activo=v.activo===false?true:false; renderComposer(); };
-    card.querySelector(".vdelVar").onclick=async()=>{ if(cfg.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión del mensaje?",confirmText:"Eliminar",danger:true}))return; harvest(); cfg.variantes.splice(vi,1); renderComposer(); };
-    card.querySelector(".vpeso").oninput=(e)=>{ v.peso=Math.max(0,Number(e.target.value)||0); };
-    // Burbujas
-    const bb=card.querySelector(".bubbles");
-    (v.bubbles||[]).forEach((bub,bi)=> bb.appendChild(renderBubble(v,vi,bub,bi)));
-    card.querySelectorAll(".addb").forEach(btn=> btn.onclick=()=>{
-      harvest(); const k=btn.dataset.k;
-      if(k==="text"){ v.bubbles.push({text:""}); renderComposer(); }
-      else pickMedia(vi,k);
-    });
-    vl.appendChild(card);
-  });
-}
-
 function renderBubble(v,vi,bub,bi){
   const el=document.createElement("div"); el.dataset.bi=bi;
   el.style.cssText="border:1px solid var(--border);border-radius:9px;padding:9px 10px;background:var(--surface)";
@@ -4402,26 +4242,6 @@ function avisarKeywords(){
        </div>`
     : "";
 }
-
-async function saveWelcome(){
-  harvest();
-  const cfg=st.act.node.config;
-  // Limpia burbujas de texto vacías; descarta variantes sin burbujas.
-  cfg.variantes.forEach(v=>{ v.bubbles=limpiaBotones((v.bubbles||[]).filter(b=> b.media_url || (b.text&&b.text.trim()))); });
-  cfg.variantes=cfg.variantes.filter(v=> v.bubbles.length);
-  if(!cfg.variantes.length) cfg.variantes.push(newVariant(0));
-  const { error:eN }=await supa.from("flow_nodes").update({ config:cfg }).eq("id",st.act.node.id);
-  if(eN){ toast(eN.message,true); return; }
-  // Disparadores
-  const kwArr=($("actKw").value||"").split(",").map(s=>s.trim()).filter(Boolean);
-  const match=$("actMatch").value;
-  const eKw=await saveTrigger("keyword", "kw", kwArr.length?{keywords:kwArr,match}:null);
-  if(eKw){ toast("No se pudieron guardar las palabras clave: "+eKw.message,true); return; }
-  const adArr=($("actAds").value||"").split(",").map(s=>s.trim()).filter(Boolean);
-  const eAd=await saveTrigger("referral", "ad", adArr.length?{ad_ids:adArr}:null);
-  if(eAd){ toast("No se pudieron guardar los anuncios: "+eAd.message,true); return; }
-  toast("Guardado"); accRerender("activacion"); refreshActivacionRow();
-}
 // Devuelve el error (o null). El disparador es lo que hace que el producto se
 // VENDA: sin él, quien escribe la palabra clave no entra a ningún flujo. Se tragaba
 // el error y el caller cantaba "Guardado ✓" igual, así que un fallo dejaba el
@@ -4449,8 +4269,16 @@ async function saveProduct(){
   st._guardando=true;
   try{ return await _saveProduct(); } finally{ st._guardando=false; }
 }
+// ¿Está dibujada la sección «Cómo llegan los clientes»? Solo entonces hay algo de ella que guardar.
+function actRenderizada(){
+  const actBody=document.querySelector('.acc[data-t="activacion"] .acc-body');
+  return !!(actBody && actBody.dataset.rendered==="1" && st.act && st.act.node);
+}
 async function _saveProduct(){
   if(!st.prod){ return; }
+  // Antes de escribir NADA: si se va a quitar la palabra clave, que lo confirme. Cancelar deja
+  // todo sin guardar (no un guardado a medias).
+  if(actRenderizada() && !await confirmaQuitarPalabraClave()) return;
   // Aviso al cambiar digital↔físico: el flujo de venta YA GENERADO sigue vendiendo como el
   // tipo ANTERIOR (entrega un link vs pide dirección) hasta que lo REGENERES. st.tipoGuardado
   // guardaba el tipo original pero NUNCA se leía → el cambio pasaba sin advertencia y el
@@ -4654,17 +4482,16 @@ async function _saveProduct(){
     if(!v.id && data) v.id=data.id;
   }
   // Guardado INTEGRAL: la sección "Cómo llegan los clientes" (activación: keywords,
-  // mensajes iniciales y ángulos) tiene sus PROPIOS botones y NO se persiste con este
-  // update de products/product_versions. Antes el markClean() de abajo limpiaba el
-  // dirty-flag global → si editabas esa sección y guardabas desde este botón de arriba,
-  // sus cambios se perdían EN SILENCIO (sin aviso al salir). Si está renderizada, se
-  // vuelca acá para que "Guardar cambios" guarde de verdad TODO.
-  try{
-    const actBody=document.querySelector('.acc[data-t="activacion"] .acc-body');
-    if(actBody && actBody.dataset.rendered==="1" && st.act && st.act.node){ await saveActivacion({silent:true}); }
-  }catch(_){ /* si algo falló, saveActivacion ya avisó con su propio toast */ }
+  // mensajes iniciales y ángulos) NO vive en products/product_versions. Si está renderizada,
+  // se vuelca acá para que "Guardar cambios" —el único botón— guarde de verdad TODO.
+  // Si esa parte falla, NO se canta «Guardado» ni se limpia la marca de cambios: antes el toast
+  // del error quedaba tapado por el «Guardado» de abajo y al salir no se avisaba nada.
+  let eAct=null;
+  if(actRenderizada()){ try{ eAct=await saveActivacion(); }catch(e){ eAct=(e&&e.message)||"error inesperado"; } }
   st._verOrig=Object.fromEntries((st.versions||[]).filter(v=>v.id).map(v=>[v.id,{ precio:v.precio, costo:v.costo }]));   // nueva foto
-  markClean(); toast("Guardado"); loadProducts();
+  if(eAct) toast("Se guardó el producto, pero no «Cómo llegan los clientes» ("+eAct+"). Vuelve a pulsar Guardar cambios.",true);
+  else { markClean(); toast("Guardado"); }
+  loadProducts();
   // 💲 Un EXTRA: su precio vive COPIADO en el flujo de cada principal que lo ofrece (el generador
   // lo fija ahí) y en lo que el bot le dice al cliente. Cambiarlo acá no toca esos flujos: se
   // avisa cuáles hay que volver a guardar para que ofrezcan y cobren el precio nuevo.
