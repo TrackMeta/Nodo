@@ -199,8 +199,12 @@ export async function runAI(call: AiCall): Promise<string> {
     //     y no se encadenan dos esperas largas ante un cliente que está esperando respuesta.
     //   · Un 401/400/refusal no se reintenta: reintentar lo que ya falló por configuración
     //     solo gasta tiempo y tokens.
+    //   · 🔴 Y los 5xx del proveedor también son transitorios: OpenAI devolvió 503
+    //     «service_unavailable_error: Unable to verify model access right now. Please retry» y,
+    //     como no estaba en la lista, cuatro clientes en plena venta recibieron «te atiende un
+    //     asesor» y el bot se les apagó (D14b, 2026-09-25). El propio mensaje pide reintentar.
     const st = (e as AiError)?.info?.status;
-    if (st !== 429 && st !== 529) throw e;
+    if (st !== 429 && st !== 529 && !(st >= 500 && st <= 504)) throw e;
     await new Promise((r) => setTimeout(r, 1200));
     return await una();
   }
