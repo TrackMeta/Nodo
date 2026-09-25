@@ -390,7 +390,11 @@ async function runEngineInner(
     // "¿esto es una estafa, no?" sin pedido de por medio no es un reclamo: es LA objeción
     // más común antes de comprar, y el negocio ya tiene escrita la respuesta. Escalarla
     // dejaba al que estaba a punto de comprar esperando a un asesor. Con pedido, escala.
-    const dudaSinComprar = dudaNoReclamo(event.text) && !(await tienePedidoVivo(db, contactId));
+    // «Sin comprar» = sin un pedido PAGADO. Con el pedido esperando el adelanto todavía no compró:
+    // «no pago adelanto, ya me estafaron antes» es la objeción, no un reclamo.
+    const _ordRec = await tienePedidoVivo(db, contactId);
+    const _pagadoRec = !!_ordRec && COMPRADO_STATES.has(String(_ordRec.estado ?? ""));
+    const dudaSinComprar = (dudaNoReclamo(event.text) || RE_ESTAFA_AJENA.test(String(event.text ?? ""))) && !_pagadoRec;
     const { data: chR } = dudaSinComprar
       ? { data: null }
       : await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
@@ -453,6 +457,13 @@ async function runEngineInner(
     const ordP = await tienePedidoVivo(db, contactId);
     if (ordP && await responderComoPagar(db, channelId, contactId, ordP)) return;
     // Sin pedido o sin métodos configurados: sigue la conversación normal.
+  }
+  // 💵 «te pago el saldo de una vez», «pago todo ahora», «¿cómo pago el saldo?» con el adelanto
+  // ya puesto: la IA del flujo contestaba «puedes hacer el pago completo de S/69» —el total, no
+  // el saldo de S/49— (D12-psaldoantes, 2026-09-25). Lo que le toca pagar lo sabe el motor.
+  if (event.type === "message" && !_canceloYa && RE_PAGA_SALDO.test(String(event.text ?? ""))) {
+    const ordS = await tienePedidoVivo(db, contactId);
+    if (ordS && SALDO_PENDIENTE.has(String(ordS.estado ?? "")) && await responderComoPagar(db, channelId, contactId, ordS)) return;
   }
 
   // 🇵🇪 «YA CANCELÉ el adelanto» = YA PAGUÉ. En pasado no es ni una solicitud de baja ni
@@ -2258,6 +2269,13 @@ const RE_DUDA_NO_RECLAMO =
 function dudaNoReclamo(text: string): boolean {
   return RE_DUDA_NO_RECLAMO.test(String(text ?? ""));
 }
+// 💸 «te pago el saldo de una vez», «pago todo ahora», «¿cómo pago el saldo?», «¿cuánto me falta?»
+const RE_PAGA_SALDO =
+  /\b(?:te\s+)?pag(?:o|ar|ar[eé]|amos)\s+(?:el\s+|todo\s+el\s+)?(?:saldo|resto|restante|todo|completo|la\s+diferencia)\b|\bsaldo\s+de\s+una\s+vez\b|\btodo\s+de\s+una\s+vez\b|c[oó]mo\s+(?:te\s+)?pago\s+el\s+(?:saldo|resto)|cu[aá]nto\s+(?:me\s+)?falta\s+(?:pagar|por\s+pagar)|quiero\s+pagar\s+(?:el\s+)?(?:saldo|resto|todo)\b/i;
+// 🙅 «ya me estafaron antes», «una vez me estafaron»: habla de OTRA tienda. Es la objeción al
+// adelanto, no un reclamo contra nosotros (D12-pnoadelanto2, 2026-09-25): con el pedido todavía
+// esperando el adelanto se escalaba a una persona y el bot se apagaba en plena objeción.
+const RE_ESTAFA_AJENA = /\b(?:ya|antes|una\s+vez|otra\s+vez)\s+me\s+estafaron\b|\bme\s+estafaron\s+(?:antes|una\s+vez|otra\s+vez|en\s+otr[oa]|hace|con\s+otr[oa])\b/i;
 // 📦 El paquete llegó MAL. No trae ninguna de las palabras de enojo de la lista —el cliente
 // suele preguntarlo con toda educación—, pero es el reclamo más caro que existe: hay que
 // decidir si se repone, y eso lo decides tú. Medido: «me llegó el frasco pero está abierto
@@ -5129,6 +5147,34 @@ function sinPoliticaInventada(texto: string, huecos: Array<[string, RegExp, RegE
   return limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 12 ? limpio : texto;
 }
 
+// 🛡️ El PLAZO de garantía inventado. «Sobre la garantía, tiene *30 días* por defecto de fábrica ✅»
+// (D12-lgarantia, 2026-09-25) con una ficha que solo dice «no ofrece garantía de resultados». Se
+// quita la frase que da un plazo (N días/meses/años) que no está en la ficha y se cambia por la
+// forma honesta, una sola vez. Un plazo que SÍ esté en la ficha se respeta.
+const RE_GARANTIA_PLAZO =
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*(?:\bgarant[ií]a\b[^.!?…\n\p{Extended_Pictographic}]*?\b(\d+)\s*(d[ií]as?|meses?|mes|a[ñn]os?|semanas?)\b|\b(\d+)\s*(d[ií]as?|meses?|mes|a[ñn]os?|semanas?)\s+de\s+garant[ií]a\b)[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?(?:[ \t]*(?:\p{Extended_Pictographic}|️))*/giu;
+function sinGarantiaInventada(texto: string, ficha: string): string {
+  const t = String(texto ?? "");
+  if (!/garant/i.test(t)) return texto;
+  const f = normalize(String(ficha ?? "")).replace(/\s+/g, " ");
+  let cambiado = false, puesto = false;
+  RE_GARANTIA_PLAZO.lastIndex = 0;
+  const out = t.replace(RE_GARANTIA_PLAZO, (m, n1, u1, n2, u2) => {
+    const n = String(n1 ?? n2 ?? ""), u = normalize(String(u1 ?? u2 ?? ""));
+    if (!n) return m;
+    const uRe = u.startsWith("d") ? "dias?" : u.startsWith("m") ? "mes(?:es)?" : u.startsWith("a") ? "anos?" : "semanas?";
+    if (new RegExp(`\\b${n}\\s*${uRe}\\b`).test(f)) return m;          // la ficha sí lo dice
+    cambiado = true;
+    if (puesto) return " ";
+    puesto = true;
+    return " De la garantía no tengo el dato exacto acá 🤔 ";
+  });
+  if (!cambiado) return texto;
+  RE_GARANTIA_PLAZO.lastIndex = 0;
+  const limpio = sinRestosDeRecorte(out.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim());
+  return limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 12 ? limpio : texto;
+}
+
 // 🪞 EL ECO. «🔧⚙️ Vivo en Tarapoto, perfecto para provincia: tu pedido llega por agencia
 // Shalom…» — el bot abrió repitiendo, en primera persona, la frase que acababa de escribir el
 // cliente. Queda como si hablara de sí mismo. Se corta cuando la primera frase del mensaje
@@ -5412,12 +5458,20 @@ function sinPreguntarLaSede(texto: string, nombre = "", tieneDatos = false): str
   // ⚠️ Sin exigir signo de pregunta: el modelo lo pide en imperativo («Ahora dime cuál sede de
   // Shalom te queda más cerca»), sin «?», y así se colaba entero con su lista inventada
   // debajo. Lo que identifica la pregunta es nombrar la sede Y pedir que elija, no el signo.
-  if (!RE_HABLA_DE_SEDE.test(sinFormato(t))) return texto;
-  const partes = t.split(/(?<=[.!?…])\s+|\n+/).filter((p) => p.trim());
+  // 🗺️ …y el DISTRITO cuenta como la sede: «¿En cuál de estos distritos de Cusco estás?» en el
+  // turno que cierra el pedido es la misma pregunta huérfana (D12e-papellido2, 2026-09-25). Solo
+  // acá: `preguntaPorLaSede` mira el texto del CLIENTE y ahí «distrito» no es pedir la lista.
+  const RE_SEDE_O_DISTRITO = /\b(sede|oficina|agencia|distrito)s?\b/i;
+  if (!RE_SEDE_O_DISTRITO.test(sinFormato(t))) return texto;
+  // 🔴 El emoji también separa frases: «…no hacemos entrega a domicilio en esa ciudad 📦 ¿quieres
+  // que te confirme cuál oficina te queda más cerca?» era UNA parte, y al cortarla se fue la
+  // respuesta con la pregunta (D12-pdireccionprov, 2026-09-25): al que preguntó si le llevan a
+  // la casa le llegó «Listo ✅ Ya tengo tus datos».
+  const partes = t.split(/(?<=[.!?…])\s+|\n+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u).filter((p) => p.trim());
   // Desde dónde se corta: la primera parte que nombra la sede y suena a pedirle que elija.
   let i = partes.findIndex((p) => {
     const s = sinFormato(p);
-    return RE_HABLA_DE_SEDE.test(s) && RE_PIDE_ELEGIR_SEDE.test(s);
+    return RE_SEDE_O_DISTRITO.test(s) && RE_PIDE_ELEGIR_SEDE.test(s);
   });
   // Puede venir partida en dos frases («…tenemos varias sedes. ¿Cuál te queda más cerca?»):
   // se corta desde la que nombra la sede, pero SOLO si la siguiente es la que pide elegir.
@@ -5426,7 +5480,7 @@ function sinPreguntarLaSede(texto: string, nombre = "", tieneDatos = false): str
   // le borró la respuesta entera y le contestó con el acuse. Cortar por nombrar algo, sin
   // mirar si de verdad está preguntando, es cortar a ciegas.
   if (i < 0) {
-    i = partes.findIndex((p, k) => RE_HABLA_DE_SEDE.test(sinFormato(p)) &&
+    i = partes.findIndex((p, k) => RE_SEDE_O_DISTRITO.test(sinFormato(p)) &&
       k + 1 < partes.length && /[?¿]/.test(partes[k + 1]) &&
       RE_PIDE_ELEGIR_SEDE.test(sinFormato(partes[k + 1])));
   }
@@ -7220,6 +7274,26 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
     const re = /\[\[media:([\w-]+)\]\]/g;
     const catalog: any[] = Array.isArray(ctx?._ia_multimedia) ? ctx._ia_multimedia : [];
     if (!re.test(result)) {
+      // 📷 La promesa de foto SIN archivo cargado se quita ANTES de emitir y el bot sigue
+      // vendiendo. Antes se emitía la promesa, se escalaba a una persona y el bot se apagaba:
+      // «mándame una foto del producto» → «Aquí te paso una foto 👇📸» + «te atiende un asesor», y
+      // los dos mensajes siguientes del cliente («ya 1 para san luis», sus datos) se quedaron sin
+      // respuesta (D12-lfoto, 2026-09-25). Un cliente que pide una foto está comprando: se le dice
+      // la verdad y se sigue. El dueño se entera por el evento, para que suba fotos.
+      const _mProm0 = RE_PROMETE_ARCHIVO.exec(result);
+      const _esLaEntrega0 = !!_mProm0 && /\b(acceso|link|enlace|plataforma|aula|curso)\b/i.test(_mProm0[0]);
+      const _hayArchivo0 = catalog.length > 0 && !!catalog[0]?.media_url;
+      if (_mProm0 && !_esLaEntrega0 && !_hayArchivo0) {
+        const _i0 = _mProm0.index ?? 0;
+        const _cortes = [...result.slice(0, _i0).matchAll(/[.!?…\n]|\p{Extended_Pictographic}/gu)].map((m) => (m.index ?? 0) + m[0].length);
+        const _ini = _cortes.length ? _cortes[_cortes.length - 1] : 0;
+        const _reFin = /[.!?…\n]|\p{Extended_Pictographic}/gu; _reFin.lastIndex = _i0;
+        const _f = _reFin.exec(result);
+        const _fin = _f ? _f.index + _f[0].length : result.length;
+        const _sin = sinRestosDeRecorte((result.slice(0, _ini) + " " + result.slice(_fin)).replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim());
+        const _honesto = "Por acá no tengo una foto para mandarte ahora mismo 🙏 pero cualquier duda del producto te la respondo al toque.";
+        result = (_sin.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10 ? `${_honesto}\n\n${_sin}` : _honesto);
+      }
       if (result.trim()) await emit(db, run, { text: result, _noTpl: true }, ctx);
       // 📷 PROMETIÓ una foto y NO la mandó. Medido con el Dermachem: «Claro, te paso una
       // foto del *Dermachem* para que veas su presentación y tamaño» — y no salió ninguna.
@@ -7247,10 +7321,7 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
             "Se envió igual el archivo del producto.").catch(() => {});
         } else {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "📷 Prometió un archivo que no existe",
-            "El producto no tiene archivos cargados (Productos → Archivos que la IA puede enviar).").catch(() => {});
-          await pasarAHumano(db, run.channel_id, run.contact_id,
-            "Le prometió una foto/archivo al cliente y el producto no tiene ninguno cargado.", { aviso: false }).catch(() => {});
-          hizoHandoff = true;
+            "Se quitó la promesa y se le dijo que por acá no hay foto. El producto no tiene archivos cargados (Productos → Archivos que la IA puede enviar): súbele una y la manda sola.").catch(() => {});
         }
       }
       return hizoHandoff;
@@ -12491,7 +12562,7 @@ const RE_PROMETE_PAGO =
   /\b(te (paso|comparto|env[ií]o|mando|dejo) (los |el )?(datos|n[uú]mero|yape|m[eé]todos?)|los datos (de pago|para (el|tu) pago)|te (los|lo) (paso|comparto|env[ií]o))\b/i;
 async function maybeDatosPago(
   db: SupabaseClient, channelId: string, contactId: string, texto: string, respuestaIa = "",
-  yaEligio = false, fisico?: { zona?: string; adelanto?: number | null; sym?: string; total?: number | null },
+  yaEligio = false, fisico?: { zona?: string; adelanto?: number | null; sym?: string; total?: number | null; forzar?: boolean },
   digital?: { monto?: number | null; sym?: string; pedirElegir?: string; unico?: boolean },
 ): Promise<void> {
   try {
@@ -12574,14 +12645,16 @@ async function maybeDatosPago(
     // provincia, que es donde hay un adelanto real que cobrar. En Lima se paga al recibir.
     const _esDigital = String((p as any)?.tipo ?? "") === "digital";
     if (!_esDigital) {
-      if (!(loPide || metodoPreg || RE_ANUNCIA_PAGO.test(texto))) return;
+      // `forzar`: el que llama ya decidió que quiere pagar (post-venta de Lima, «te adelanto la
+      // mitad por yape»): no se le vuelve a exigir la forma exacta de pedirlo.
+      if (!fisico?.forzar && !(loPide || metodoPreg || RE_ANUNCIA_PAGO.test(texto))) return;
       // 🛵 LIMA paga al recibir… salvo que ÉL quiera pagar ANTES («¿puedo pagar antes por yape
       // para asegurar?»): el prepago de Lima existe (resolverPrepagoLima) y sin el número no
       // puede usarlo. Medido (D11-lprepago, 2026-09-25): «Claro que sí, aceptamos Yape 🙌 ¿Lo
       // hago?» y ningún número. Solo si lo pide él, y solo con el total ya sabido.
       if (String(fisico?.zona ?? "") !== "provincia") {
-        const _pagaAntes = /\b(antes|adelantad[oa]|por\s+adelantado|ahora|ahorita|ya\s+mismo|asegurar|reservar|separar|de\s+una\s+vez)\b/i.test(String(texto ?? ""));
-        if (!(_pagaAntes && Number(fisico?.total) > 0)) return;
+        const _pagaAntes = /\b(antes|adelant\w*|por\s+adelantado|anticipad[oa]|ahora|ahorita|ya\s+mismo|asegurar|reservar|separar|de\s+una\s+vez)\b/i.test(String(texto ?? ""));
+        if (!((_pagaAntes || fisico?.forzar) && Number(fisico?.total) > 0)) return;
       }
     }
     const { data: f } = await db.from("custom_fields").select("valor")
@@ -13087,8 +13160,12 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
     try {
       const _shL = (((order as any).shipping ?? {}) as Record<string, any>);
       const _txtL = String(event.text ?? "");
-      const _pagaAntes = /\b(antes|adelantad[oa]|por\s+adelantado|anticipad[oa]|ahora|ahorita|ya\s+mismo|asegurar|reservar|separar|de\s+una\s+vez)\b/i.test(_txtL);
-      const _quierePagar = RE_PIDE_DATOS.test(_txtL) || !!metodoQuePregunta(_txtL) || RE_ANUNCIA_PAGO.test(_txtL) || !!eligeMetodoDePago(_txtL);
+      // «te adelanto la mitad por yape» (D12-lyapemenor, 2026-09-25): el verbo «adelanto» y el
+      // medio nombrado sin pregunta no calzaban con ninguna forma de pedirlo, y el cliente que
+      // ya dijo que va a pagar se quedó sin número.
+      const _pagaAntes = /\b(antes|adelant\w*|por\s+adelantado|anticipad[oa]|ahora|ahorita|ya\s+mismo|asegurar|reservar|separar|de\s+una\s+vez)\b/i.test(_txtL);
+      const _quierePagar = RE_PIDE_DATOS.test(_txtL) || !!metodoQuePregunta(_txtL) || RE_ANUNCIA_PAGO.test(_txtL) || !!eligeMetodoDePago(_txtL)
+        || /\b(yape\w*|plin\w*|transferencia|dep[oó]sito|bcp|interbank|pagar|pagarte|pago)\b/i.test(_txtL);
       if (String(_shL.zona ?? "") === "lima" && _pagaAntes && _quierePagar
           && !["entregado_cobrado", "recogido", "rechazado", "anulada", "cancelado", "devuelto"].includes(estado)
           && _shL.pago_adelantado_por_validar !== true && !(Number(_shL.prepago_lima_abonado) > 0)) {
@@ -13099,7 +13176,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
           const _totalL = String(_shL.saldo ?? "") !== "" && Number.isFinite(Number(_shL.saldo))
             ? Number(_shL.saldo) : +((Number((order as any).amount) || 0) + _bumpsL).toFixed(2);
           if (_totalL > 0) {
-            await maybeDatosPago(db, channelId, contactId, _txtL, "", true, { zona: "lima", adelanto: null, sym: _symL, total: _totalL });
+            await maybeDatosPago(db, channelId, contactId, _txtL, "", true, { zona: "lima", adelanto: null, sym: _symL, total: _totalL, forzar: true });
             await logEvent(db, channelId, contactId, "nota", "💸 Pidió pagar antes (Lima)",
               `Pedido ${estado} · total ${_symL} ${_totalL} — se le mandó el número; si paga, el motorizado cobra lo que falte`).catch(() => {});
             return true;
@@ -16159,6 +16236,31 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             if (c.clave === "nombre_completo" || c.clave === "cliente") {
               try {
                 const _sn = (x: string) => String(x).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+                // 👤 «lo recoge mi hermano Luis Quispe dni 45612378»: el nombre que va al pedido es el
+                // de QUIEN RECOGE (en la agencia lo cotejan con el DNI que presenta), no el del que
+                // escribe. El extractor guardaba «Jorge Quispe» con el DNI del hermano
+                // (D12-precogeotro, 2026-09-25): nombre y DNI de dos personas distintas.
+                {
+                  const _mRec = /\b(?:lo|la|los|las)\s+(?:recoge|recoger[aá]|recoja|recibe|recibir[aá]|reciba|retira|retirar[aá])\s+(?:mi\s+|el\s+|la\s+|su\s+)?(?:(?:herman[oa]|prim[oa]|espos[oa]|mam[aá]|pap[aá]|hij[oa]|t[ií][oa]|sobrin[oa]|cu[ñn]ad[oa]|suegr[oa]|abuel[oa]|amig[oa]|vecin[oa]|pareja|se[ñn]ora?|novi[oa])\s+)?((?:[\p{L}]{2,}\s+){1,3}[\p{L}]{2,})/iu.exec(String(texto ?? ""));
+                  if (_mRec) {
+                    const _pal = String(_mRec[1]).split(/\s+/);
+                    const _corte = _pal.findIndex((w) => /^(dni|ce|celular|cel|con|su|mi|el|la|y|numero|n[uú]mero|tel[eé]fono|que|en|de|para)$/i.test(w));
+                    const _quien = (_corte < 0 ? _pal : _pal.slice(0, _corte)).join(" ").trim();
+                    if (_quien.split(/\s+/).length >= 2 && _sn(_quien) !== _sn(val)) {
+                      await logEvent(db, run.channel_id, run.contact_id, "campo", "👤 Recoge otra persona",
+                        `El pedido va a nombre de quien recoge: "${enTitulo(_quien)}" (escribe ${val})`).catch(() => {});
+                      val = _quien;
+                    }
+                  }
+                }
+                // 🪪 El APELLIDO que llega en un mensaje aparte («Luis» y después «Paredes»): se
+                // junta con el nombre que ya había, no lo pisa.
+                {
+                  const _prev = String(ctx[c.clave] ?? "").trim();
+                  if (_prev && !/\s/.test(_prev) && !/\s/.test(val) && _sn(val) !== _sn(_prev) && !_sn(String(texto ?? "")).includes(_sn(_prev))) {
+                    val = `${_prev} ${val}`;
+                  }
+                }
                 const _linea = String(texto).split("\n").find((l) => _sn(l).includes(_sn(val)));
                 if (_linea) {
                   const _resto = _linea.slice(_sn(_linea).indexOf(_sn(val)) + val.length);
@@ -16189,6 +16291,13 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
                 .replace(/\b(su|mi)\s+(celular|tel[eé]fono|n[uú]mero)\s+(es|:)?\s*/gi, " ")
                 .replace(/\s{2,}/g, " ").replace(/^[\s,.;:-]+|[\s,.;:-]+$/g, "").trim();
               if (!val) continue;
+              // 🗺️ «soy de ate», «estoy en comas» tampoco es una referencia: es la zona dicha con
+              // verbo. Salía en el rótulo como «(ref: soy de ate)» (D12-lcinco, 2026-09-25).
+              if (/^(?:soy|estoy|vivo|somos|estamos|escribo)\s+(?:de|en|desde)\b/i.test(val) || /^(?:de|en|desde)\s+[\p{L} ]{2,30}$/iu.test(val)) {
+                await logEvent(db, run.channel_id, run.contact_id, "campo", "Referencia descartada",
+                  `Era su zona dicha con verbo, no una referencia: "${String(val).slice(0, 60)}"`).catch(() => {});
+                continue;
+              }
               const _n = (x: string) => String(x ?? "").toLowerCase().normalize("NFD")
                 .replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
               const _ref = _n(val), _dir = _n(String(ctx.direccion ?? ""));
@@ -16415,6 +16524,29 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // Lo que sigue faltando, para que la IA sepa qué pedir (y el flujo sepa si ya
   // puede crear el pedido). Se recalcula DESPUÉS de extraer.
   const pendientes = campos.filter((c) => c.requerido !== false && !String(ctx[c.clave] ?? "").trim());
+  // 🪪 PROVINCIA con el nombre de UNA sola palabra («Luis»): se pide el apellido UNA vez antes de
+  // cerrar. La marca «falta el apellido» era solo un aviso y el pedido se cerraba igual: el bot
+  // decía «me falta tu apellido» y debajo mandaba el adelanto (D12-pnombrecorto, 2026-09-25). En
+  // la agencia entregan contra el DNI, así que el nombre tiene que calzar. Una sola vez: si él
+  // insiste con el nombre de pila, el pedido sigue y lo afina una persona.
+  {
+    const _nomC = campos.find((c) => c.clave === "nombre_completo" && c.requerido !== false);
+    const _nom = String(ctx.nombre_completo ?? "").trim();
+    if (_nomC && _nom && String(ctx.zona_entrega ?? "") === "provincia" && _nom.split(/\s+/).length < 2
+        && !(run.vars as any)._apellido_pedido && !pendientes.includes(_nomC)) {
+      (run.vars as any)._apellido_pedido = 1;
+      pendientes.push(_nomC);
+      run.vars["_error_nombre_completo"] = "falta el apellido (en la agencia lo cotejan con el DNI de quien recoge)";
+      ctx["_error_nombre_completo"] = run.vars["_error_nombre_completo"];
+      await logEvent(db, run.channel_id, run.contact_id, "campo", "🪪 Falta el apellido",
+        `"${_nom}" — se pide una vez antes de cerrar (la agencia lo coteja con el DNI)`).catch(() => {});
+    } else if ((run.vars as any)._apellido_pedido && ctx["_error_nombre_completo"]) {
+      // Ya se pidió una vez: el aviso se retira SIEMPRE, con o sin apellido. Si se quedaba, la IA
+      // seguía pidiendo «nombre y apellidos» en el mismo turno en que el flujo cerraba el pedido
+      // (D12c-papellido2, 2026-09-25): la contradicción que veníamos a quitar.
+      delete run.vars["_error_nombre_completo"]; delete ctx["_error_nombre_completo"];
+    }
+  }
   // Fallback SEDE: muchísimos clientes de provincia NO saben la oficina EXACTA de
   // Shalom ("la de Iquitos nomás", "no sé cuál"). El extractor devuelve vacío (ve
   // el "no sé" como sin dato) y la sede quedaba pendiente PARA SIEMPRE → el bot
@@ -16843,7 +16975,10 @@ const UNIDAD_AJENA =
 // ⚠️ El corte va acá, en un helper compartido: la comprobación vive en DOS sitios
 // (`numeroDelProducto` y `mencionaFuerte`) y arreglar uno solo es como se escapó la primera
 // vez — sellé por la red determinista y el bug volvió a entrar por el guard de los datos.
-const GENERICO_TRAS_ARTICULO = /^(producto|articulo|item|pedido|paquete|envio|encargo)s?\b/;
+// 📷 …ni «una foto», «una duda», «una consulta»: «mándame una foto del producto» sellaba 1 unidad
+// (D12-lfoto, 2026-09-25) y encima le pegaba «Anotado: 1 unidad» a quien solo quería ver el producto.
+const GENERICO_TRAS_ARTICULO =
+  /^(producto|articulo|item|pedido|paquete|envio|encargo|fotos?|imagen|imagenes|videos?|capturas?|dudas?|preguntas?|consultas?|muestras?|pruebas?|cotizacion|cotizaciones|catalogos?|referencias?|info|informacion|explicacion|idea|ayuda|hora|direccion|sedes?|agencias?|oficinas?|manos?|vez|momento|cosa|pregunta)s?\b/;
 const articuloVago = (pat: string, resto: string) =>
   (pat === "un" || pat === "una") && GENERICO_TRAS_ARTICULO.test(resto);
 
@@ -20711,7 +20846,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Corto A PROPÓSITO: es un dato, no una clase. Tres frases explicando el circuito
         // suenan a letra chica justo cuando le estás pidiendo plata por adelantado.
         "Dilo en UNA línea la primera vez que le pidas el adelanto, sin que te lo pregunte y sin explayarte: " +
-        "cuánto hoy, cuánto después y que el resto va por acá. Nada de párrafos.",
+        "cuánto hoy, cuánto después y que el resto va por acá. Nada de párrafos.\n" +
+        // «¿y si pago todo cuando llegue?» = quiere saltarse el adelanto, NO pagar todo antes. La IA lo
+        // leyó al revés («si prefieres pagar todo por adelantado también se puede») (D12c-pnoadelanto3).
+        "⚠️ Si pregunta «¿y si pago todo cuando llegue / al recoger / al recibir?» está pidiendo NO dar el adelanto: " +
+        `explícale que sin el adelanto de ${_sym} ${_adel} el pedido no sale (cubre el envío) y que lo que sí paga al llegar es el resto. ` +
+        "No lo interpretes como que quiere pagar todo por adelantado.",
       );
     }
     // 💾 Al PREFIJO FIJO igual que el negocio: las objeciones son del producto, no del turno,
@@ -21733,6 +21873,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         && !(ctx as any)._falta_variante && !(ctx as any)._falta_opcion)
         ? sinPreguntaFinal(String(result))
         : String(result);
+      // 🪪 Y en ese mismo turno de CIERRE, fuera la petición de datos que la IA repite por
+      // inercia («¿Me puedes pasar tu nombre completo?» + el bloque del adelanto debajo,
+      // D12d-papellido2, 2026-09-25): el pedido nace con lo que hay; pedir más es contradecirse.
+      // Es la pregunta en MEDIO del mensaje, que sinPreguntaFinal (solo la última) no ve.
+      if (op === "generar_texto" && ctx.datos_completos === "si"
+          && String(ctx.pedido_creado ?? "") !== "si"
+          && !(ctx as any)._falta_variante && !(ctx as any)._falta_opcion) {
+        const _sinDatos = sinPedirLosDatos(salida);
+        if (_sinDatos !== salida) {
+          const _nomCierre = String(ctx.nombre_completo ?? "").trim().split(/\s+/)[0] ?? "";
+          salida = _sinDatos.trim() || `Listo${_nomCierre ? `, ${enTitulo(_nomCierre)}` : ""} ✅ Ya tengo tus datos.`;
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Pedía datos en el turno que cierra",
+            "El pedido nace en este turno con lo que hay; la petición sobraba").catch(() => {});
+        }
+      }
       // ✂️ El recorte de la PRESENTACIÓN REPETIDA va acá, sobre el texto TAL CUAL lo escribió
       // el modelo — antes de que el motor le pegue la lista de precios, la de sedes o el
       // bloque de entrega. Puesto más abajo miraba «párrafos» que en realidad eran bloques
@@ -22192,6 +22347,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               await logEvent(db, run.channel_id, run.contact_id, "nota", "🧾 Inventó una política que la ficha no trae",
                 `Se cambió por «no tengo el dato»: «${_antesPol.slice(0, 160)}»`).catch(() => {});
             }
+          }
+        }
+        // 🛡️ Y la GARANTÍA con plazo que la ficha no trae («tiene 30 días por defecto de
+        // fábrica»): el hueco de la ficha no la pesca porque la palabra «garantía» SÍ está en
+        // la ficha («no ofrece garantía de resultados»), y el modelo le inventa un plazo.
+        {
+          const _antesGar = salida;
+          salida = sinGarantiaInventada(salida, [ctx.contexto_producto, (ctx as any).negocio, (ctx as any).contexto_negocio, (ctx as any).sobre_negocio].map((x) => String(x ?? "")).join(" "));
+          if (salida !== _antesGar) {
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🛡️ Inventó un plazo de garantía",
+              `Se cambió por «no tengo el dato exacto»: «${_antesGar.slice(0, 140)}»`).catch(() => {});
           }
         }
         // 🎈 Y la pregunta de relleno, que no pide nada y le quitaba el sitio a la que sí.
