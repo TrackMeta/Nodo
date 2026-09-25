@@ -4730,10 +4730,30 @@ function conMayusculaInicial(t: string): string {
 // listo.» → la regex del anuncio frena en el emoji y deja « cuando estés listo.» colgando
 // (M-mlinknopago-1). Si justo después de lo quitado sigue una minúscula, es la continuación de
 // esa misma frase: se va hasta el fin de la oración. `0001` marca dónde se quitó.
+// 🔴 …pero solo si es un RETAZO. «Perfecto, te paso los datos para el pago por Yape 👉 cuando
+// me mandes la captura te llega tu acceso al instante 💪» (Probar flujos, 2026-09-24): esa cola
+// es una oración entera y útil —dice qué pasa después de pagar— y se iba junto con el anuncio;
+// como no quedaba nada, al cliente le llegó «¿La quieres? 🙂» después de haber dicho «yape».
+// Una cola de seis palabras o más se sostiene sola: se queda (conMayusculaInicial la arranca
+// en mayúscula, y una «y» de enlace al frente sobra). Con menos, es retazo y se va.
 function sinColaDeLoQuitado(t: string): string {
   return String(t ?? "")
-    .replace(/0001(?:[ \t️]|\p{Extended_Pictographic})*\p{Ll}[^.!?…\n]*[.!?…]?/gu, " ")
+    .replace(/0001(?:[ \t️]|\p{Extended_Pictographic})*(\p{Ll}[^.!?…\n]*[.!?…]?)/gu, (_m, cola: string) =>
+      (cola.match(/[\p{L}\p{N}]+/gu) ?? []).length >= 6 ? ` ${cola.replace(/^(?:y|e)\s+/i, "")}` : " ")
     .replace(/0001/g, " ");
+}
+// ¿El mensaje es SOLO el anuncio de los datos («Perfecto, te paso los datos para el pago 👇»)?
+// Sin número largo ni link adentro (eso serían los datos de verdad) y sin otra frase que valga
+// la pena. Lo usa emitIaText cuando los datos sí vienen detrás: ahí el anuncio sobra entero.
+function soloAnunciaLosDatos(texto: string): boolean {
+  const t = String(texto ?? "");
+  if (!t.trim() || /\d{6,}|https?:/i.test(t)) return false;
+  RE_ANUNCIA_DATOS_QUE_SIGUEN.lastIndex = 0; RE_FRASE_PROMETE_DATOS.lastIndex = 0;
+  const anuncia = RE_ANUNCIA_DATOS_QUE_SIGUEN.test(t) || RE_FRASE_PROMETE_DATOS.test(t);
+  RE_ANUNCIA_DATOS_QUE_SIGUEN.lastIndex = 0; RE_FRASE_PROMETE_DATOS.lastIndex = 0;
+  if (!anuncia) return false;
+  const resto = sinColaDeLoQuitado(t.replace(RE_ANUNCIA_DATOS_QUE_SIGUEN, "0001").replace(RE_FRASE_PROMETE_DATOS, "0001"));
+  return resto.replace(/[\s\p{P}\p{S}]/gu, "").length < 10;
 }
 function sinAnuncioDePago(texto: string): string {
   const t = String(texto ?? "");
@@ -6616,8 +6636,16 @@ function sinDatoInventado(texto: string, cierre: string): string {
 // ⚠️ Los anclajes son estrechos a propósito: «12 clases en total» o «cada clase» son frases
 // legítimas de un curso. Solo cuenta lo que ata un NÚMERO DE UNIDADES o un PRECIO POR UNIDAD.
 // Lenguaje de unidades: en un digital sin packs SIEMPRE está mal, diga el precio que diga.
+// 🔴 2026-09-24 (Probar flujos, Calistenia): «¿cuánto dura?» → «…sesiones cortas e intensas
+// de ~30 minutos CADA UNA 💪 Además incluye el Nivel Avanzado…». «cada una» a secas casaba, y
+// como el modelo separa las frases con emojis y no con puntos, `[^.!?\n]*` se llevó el mensaje
+// ENTERO: al cliente le llegó solo «El acceso es uno solo…», que no contesta lo que preguntó.
+// Dos cortes: (1) «cada una» / «c/u» / «por unidad» solo cuentan PEGADOS A UN PRECIO («*S/ 49*
+// cada una», «cada una a S/ 49», «49 soles c/u»); las unidades con número («3 unidades») siguen
+// solas, que esa ES la cotización. (2) El emoji también cierra la frase, como en las demás
+// regex de salida: se corta la oración, no la burbuja.
 const RE_UNIDADES_DIGITAL =
-  /[^.!?\n]*(?:\b(?:[2-9]|\d{2,})\s*(?:unidades?|copias?|licencias?)\b|\bcada\s+un[ao]\b|\bc\s*\/\s*u\b)[^.!?\n]*[.!?]?/gi;
+  /[^.!?…\n\p{Extended_Pictographic}]*(?:\b(?:[2-9]|\d{2,})\s*(?:unidades?|copias?|licencias?)(?![\p{L}\p{N}])|\*?(?:S\/|US\$|\$|€)\s*[\d.,]+\*?\s*(?:soles\s*)?(?:cada\s+un[ao]|c\s*\/\s*u|por\s+unidad)(?![\p{L}\p{N}])|\b[\d.,]+\s*soles\s*(?:cada\s+un[ao]|c\s*\/\s*u|por\s+unidad)(?![\p{L}\p{N}])|\b(?:cada\s+un[ao]|c\s*\/\s*u|por\s+unidad)(?![\p{L}\p{N}])[^.!?…\n\p{Extended_Pictographic}]{0,16}?(?:\*?(?:S\/|US\$|\$|€)\s*[\d.,]+|\b[\d.,]+\s*soles\b))[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 // El TOTAL es distinto: «El total es S/ 79» está PERFECTO cuando 79 es el precio de una
 // presentación. Solo es invento cuando la cifra no existe en la ficha (el S/ 147 de
 // multiplicar por 3). Por eso este se juzga contra los precios reales y no por su forma:
@@ -6989,7 +7017,18 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
   // pasarlos no cambia nada (no queda nada que quitar).
   {
     const _antesD = result;
-    result = sinPedirPermisoPago(sinAnuncioDePago(sinPromesaDeDatosColgada(result, true)));
+    // 💳 Si el nodo de venta ya decidió que los datos SÍ salen en la burbuja siguiente
+    // (`_datosSiguen`), acá no hay «promesa colgada»: la promesa se cumple. Se le quita igual
+    // el anuncio (los datos hablan solos) y, si el mensaje era SOLO el anuncio, no queda
+    // burbuja — mejor ninguna que una pregunta de decisión. Medido en Probar flujos
+    // (2026-09-24, Calistenia): «yape» → «¿La quieres? 🙂» y debajo el Yape, porque este paso
+    // volvía a correr el freno que el nodo de venta había saltado a propósito.
+    if ((ctx as any)?._datosSiguen) {
+      result = sinPedirPermisoPago(sinAnuncioDePago(result));
+      if (soloAnunciaLosDatos(result)) result = "";
+    } else {
+      result = sinPedirPermisoPago(sinAnuncioDePago(sinPromesaDeDatosColgada(result, true)));
+    }
     if (result !== _antesD) {
       await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Anunciaba datos de pago que no manda ella",
         `Los datos los manda el motor (o no van). Antes: «${_antesD.slice(0, 140)}»`).catch(() => {});
@@ -21958,6 +21997,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               || /^\s*(yape|plin|transferencia|dep[oó]sito|bcp|bbva|interbank|scotiabank)\s*[.!]?\s*$/i.test(_li)
               || await intencionDeCompra(db, run.contact_id, _li)
               || await respondeSiALosDatos(db, run.contact_id, _li);
+            // Se lo cuenta a emitIaText: si los datos SÍ salen detrás, allá no hay promesa colgada
+            // que quitar ni pregunta de decisión que hacer. Sin esto, emitIaText volvía a correr
+            // el mismo freno que acá se saltó a propósito (medido: «yape» → «¿La quieres? 🙂»).
+            (ctx as any)._datosSiguen = _vanASalir;
             if (!_vanASalir) {
               const _antesPr = salida;
               salida = sinPromesaDeDatosColgada(salida, _ops.length <= 1);
