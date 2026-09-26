@@ -22948,7 +22948,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           _presQ ? "🎚️ La presentación la preguntó el motor" : "🔢 La cantidad la preguntó el motor",
           "Era el turno de preguntarla y la IA no lo hizo").catch(() => {});
       }
-      const _pidioPrecio = RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""));
+      // «¿Cuánto cuesta el ENVÍO?» no es pedir los precios del producto: le volvía a pegar la lista
+      // entera que ya había visto (F1-provincia, 2026-09-26).
+      const _pidioPrecio = RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? "")) &&
+        !/\b(env[ií]o|delivery|flete|despacho|shalom|agencia|traslado)\b/i.test(String(ctx.last_input ?? ""));
       // 💰 Preguntó cuánto cuesta: el precio va primero, sin el pitch encima (ver precioPrimero).
       if (op === "generar_texto" && _pidioPrecio && !esDigital(ctx)) {
         const _antesPP = salida;
@@ -23456,6 +23459,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // Sin los renglones que quedaron sin una sola letra («🔧📦» solo, arriba de la
               // pregunta — D11-lcancel, D11-lsindni, 2026-09-25).
               const _resto = sinPedirLosDatos(salida)
+                // …ni los renglones «📌 *dato*» de la petición que se quitó: quedaba colgando «📌 *De qué
+                // distrito o ciudad eres (para saber cómo te llega)*» encima de la lista (F1-calidad).
+                .replace(/^[ \t]*📌[^\n]*(?:\n|$)/gmu, "")
                 .replace(/^(?:[^\p{L}\p{N}\n]*\n)+/u, "").replace(/(?:\n[^\p{L}\p{N}\n]*)+$/u, "").trim();
               // ⛔ Si el mensaje YA le pregunta la cantidad, solo se le quita la petición de
               // datos y punto. Pegar la pregunta del motor encima la deja dos veces con su
@@ -24411,6 +24417,64 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "🚧 Contradecía los Límites de la ficha",
             `Se cambió por lo que dice la ficha: «${_antesLim.slice(0, 160)}»`).catch(() => {});
         }
+      }
+      // 📦 FÍSICO: una pregunta por mensaje y sin repetirla (Rodrigo, 2026-09-26, tras F1). El cierre
+      // en físico es el PASO QUE FALTA (de dónde eres → cuántas → datos), no «¿cómo pagas?» (en Lima
+      // se paga al recibir). Medido: «¿de qué distrito o ciudad nos escribes?» al final de TRES
+      // respuestas seguidas mientras el cliente preguntaba otra cosa, y «¿en qué distrito de Lima te
+      // lo envío? ¿Cuántas unidades quieres?» juntas.
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.pedido_creado ?? "") !== "si" && String(salida ?? "").trim()) {
+        try {
+          const _RE_Q_UBIC = /¿[^?¿]*\b(?:de\s+d[oó]nde|desde\s+d[oó]nde|qu[eé]\s+(?:distrito|ciudad|provincia|departamento)|en\s+qu[eé]\s+(?:distrito|ciudad|zona|provincia)|d[oó]nde\s+(?:vives|est[aá]s|te\s+lo\s+(?:env[ií]o|mando|enviamos)))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
+          // (+ «¿Cuál opción quieres, 1, 2 o 3 unidades?»: la misma pregunta dicha con CUÁL — F2-provincia)
+          const _RE_Q_CANT = /¿[^?¿]*\b(?:cu[aá]ntas?|cu[aá]ntos?|qu[eé]\s+oferta|cu[aá]l\s+(?:opci[oó]n|oferta|presentaci[oó]n))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
+          const _hay = (re: RegExp, t: string) => { re.lastIndex = 0; const r = re.test(t); re.lastIndex = 0; return r; };
+          const _zonaOk = !!String(ctx.zona_entrega ?? "").trim();
+          const _antesF = String(salida);
+          let _s = _antesF;
+          // 0) La lista de datos («📌 *Nombre* / 📌 *Celular*…») ANTES de saber de dónde es o cuántas
+          //    quiere: al que solo preguntó «¿es de buena calidad?» le llegó un formulario (F2-calidad).
+          //    Los datos van cuando ya hay zona y cantidad; antes, solo los renglones de la lista se van.
+          if ((!_zonaOk || !!(ctx as any)._falta_opcion) && /📌/.test(_s)) {
+            _s = _s.replace(/^[ \t]*📌[^\n]*(?:\n|$)/gmu, "").replace(/[ \t]*📌[^\n📌]*/gu, "")
+              .replace(/^[ \t]*\*[^*\n]{2,45}\*[ \t]*$/gmu, "")
+              .replace(/[ \t]*\*(?:celular|nombre|dni|direcci[oó]n|distrito|ciudad|referencia|tel[eé]fono|sede)[^*\n]{0,40}\*[ \t]*(?=\n|$)/giu, "")
+              .replace(/(?:Para dejarlo listo,?\s*)?p[aá]same (?:estos|tus|los siguientes) datos[^\n]*\n?/giu, "");
+          }
+          // 1) Con la zona ya sabida, «¿en qué distrito?» + «¿cuántas?» → queda solo la cantidad (el
+          //    distrito va con los datos, un paso después).
+          if (_zonaOk && _hay(_RE_Q_CANT, _s) && _hay(_RE_Q_UBIC, _s)) _s = _s.replace(_RE_Q_UBIC, " ");
+          // 2) La misma pregunta que en la burbuja anterior → la versión suave, una vez.
+          const { data: _oF } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
+            .eq("direction", "out").order("ts", { ascending: false }).limit(1);
+          const _ultF = String(((_oF ?? [])[0] as any)?.content?.text ?? "");
+          const _li = String(ctx.last_input ?? "");
+          if (!_zonaOk && _hay(_RE_Q_UBIC, _ultF) && _hay(_RE_Q_UBIC, _s) && !/cuando quieras me dices de d[oó]nde eres/i.test(_ultF)) {
+            _s = _s.replace(_RE_Q_UBIC, " ").trim() + " ¿Alguna otra duda? Cuando quieras me dices de dónde eres y te digo cómo te llega 🙂";
+          } else if (_zonaOk && _hay(_RE_Q_CANT, _ultF) && _hay(_RE_Q_CANT, _s) && !RE_CLIENTE_PIDE_PRECIO.test(_li) &&
+                     !/cuando quieras me dices cu[aá]ntas/i.test(_ultF)) {
+            // …y sin volver a pegar la lista de precios que ya vio.
+            _s = _s.replace(_RE_Q_CANT, " ").replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, "")
+              .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "").trim() +
+              " ¿Alguna otra duda? Cuando quieras me dices cuántas llevas 🙂";
+          }
+          // 3) Sin saber de dónde es, «¿cuántas?» espera: primero la ubicación (una sola pregunta). La
+          //    lista de precios puede quedar como info; la pregunta de cantidad no (F3-calidad).
+          if (!_zonaOk && _hay(_RE_Q_CANT, _s) && (_hay(_RE_Q_UBIC, _s) || /cuando quieras me dices de d[oó]nde eres/i.test(_s))) {
+            _s = _s.replace(_RE_Q_CANT, " ");
+          }
+          // La cola de la pregunta que se quitó («…¿de dónde eres? Así te cuento cómo te llega 📦») quedaba
+          // suelta delante de la suave, que ya dice lo mismo (F4-calidad).
+          if (/cuando quieras me dices de d[oó]nde eres/i.test(_s) && _s !== _antesF) {
+            _s = _s.replace(/[^.!?¿\n]*\bas[ií]\s+te\s+(?:cuento|digo|explico)\s+c[oó]mo\s+te\s+llega\b[^.!?¿\n]*?(?=[\s\p{Extended_Pictographic}️]*¿Alguna otra duda)/giu, " ");
+          }
+          _s = _s.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+          if (_s !== _antesF && _s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10) {
+            salida = _s;
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🔁 Pregunta repetida o doble (físico)",
+              `Se dejó una sola y sin repetir la anterior: «${_antesF.slice(0, 140)}»`).catch(() => {});
+          }
+        } catch (_) { /* sin historial → tal cual */ }
       }
       // 🔠 Una sola vez, al final: cualquiera de los veinte guards pudo quitar la frase con que
       // arrancaba el mensaje o la que iba tras un punto, y lo que queda empieza en minúscula.
