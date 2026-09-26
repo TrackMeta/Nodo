@@ -12261,6 +12261,19 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
 async function avisoPagoOtraCuenta(db: SupabaseClient, channelId: string, contactId: string, parsed: any, freno: string | null): Promise<boolean> {
   const otra = (!!freno && /n[uú]meros que tienes cargados|no coincide con ninguno de tus titulares/i.test(freno)) ||
     (!parsed?.valido && /(destinatari|titular|beneficiari)[^.]{0,60}\bno\s+(es|coincide|corresponde)|no\s+(es|coincide|corresponde)[^.]{0,40}(destinatari|titular)|otra cuenta|otro n[uú]mero/i.test(String(parsed?.motivo ?? "")));
+  // 📅 Comprobante VIEJO (pasa las horas de antigüedad del validador): igual que la otra cuenta, se le
+  // dice qué pasó en vez de «estoy verificando» (Rodrigo, 26-sep, tras F6-pviejo: Yape de hace 5 días).
+  // La fecha FUTURA (posible captura editada) no se le explica: esa la ve una persona sin más.
+  if (!otra && !!freno && /pasa las \d+\s*h de antig/i.test(freno)) {
+    const fecha = String(parsed?.fecha ?? "").split(/\s+-\s+|,\s*\d{1,2}:\d{2}/)[0].trim();
+    await deliverMessage(db, channelId, contactId,
+      `Revisé tu captura 🙏 Ese comprobante es ${fecha ? `del *${fecha}*` : "de otro día"}, no de este pago. ` +
+      "Si ya hiciste el pago de ahora, mándame esa captura. " +
+      "Si lo mandaste bien, tranquilo: una persona del equipo lo revisa y te confirma por acá.").catch(() => {});
+    await logEvent(db, channelId, contactId, "nota", "📅 Se le dijo que el comprobante es de otro día",
+      fecha ? `Fecha del comprobante: ${fecha}` : freno).catch(() => {});
+    return true;
+  }
   if (!otra) return false;
   const quien = String(parsed?.destinatario ?? "").trim();
   await deliverMessage(db, channelId, contactId,
