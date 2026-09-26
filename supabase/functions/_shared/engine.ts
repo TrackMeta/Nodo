@@ -12240,7 +12240,25 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     monto_esperado: Number.isFinite(esperado) ? esperado : "",
     operacion: oper ?? "", motivo,
   }, { foto: url, botones: [[{ text: "✅ Aprobar el adelanto", data: `adel_ok:${(order as any).id}` }]] });
+  if (!reuse && await avisoPagoOtraCuenta(db, channelId, contactId, parsed, _frenoAdel)) return true;
   await deliverMessage(db, channelId, contactId, "¡Gracias! Estoy verificando tu pago y en un momento te confirmo. 🙌").catch(() => {});
+  return true;
+}
+
+// 📵 Pagó a OTRA cuenta (adelanto o saldo físico): como en digital (D15), se le dice qué pasó en vez
+// de «estoy verificando» y silencio (F5-potronum, 2026-09-26: Yape a «Juana P. Rojas M.» → solo
+// «Estoy verificando»). Igual queda en Pagos por validar: si ese número SÍ es del negocio, se aprueba.
+async function avisoPagoOtraCuenta(db: SupabaseClient, channelId: string, contactId: string, parsed: any, freno: string | null): Promise<boolean> {
+  const otra = (!!freno && /n[uú]meros que tienes cargados|no coincide con ninguno de tus titulares/i.test(freno)) ||
+    (!parsed?.valido && /(destinatari|titular|beneficiari)[^.]{0,60}\bno\s+(es|coincide|corresponde)|no\s+(es|coincide|corresponde)[^.]{0,40}(destinatari|titular)|otra cuenta|otro n[uú]mero/i.test(String(parsed?.motivo ?? "")));
+  if (!otra) return false;
+  const quien = String(parsed?.destinatario ?? "").trim();
+  await deliverMessage(db, channelId, contactId,
+    `Revisé tu captura 🙏 Ese pago salió a otra cuenta${quien ? ` (a nombre de *${quien}*)` : ""}, no a la nuestra. ` +
+    "Fíjate que sea al número de los datos que te pasé y mándame la nueva captura. " +
+    "Si lo mandaste bien, tranquilo: una persona del equipo lo revisa y te confirma por acá.").catch(() => {});
+  await logEvent(db, channelId, contactId, "nota", "📵 Se le dijo que el pago fue a otra cuenta",
+    quien ? `A nombre de ${quien}` : "Destino que no es ninguno de tus números").catch(() => {});
   return true;
 }
 
@@ -12519,6 +12537,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
     foto: url,
     botones: clave ? [[{ text: "🔑 Aprobar y dar la clave", data: `saldo_ok:${(order as any).id}` }]] : undefined,
   });
+  if (!reuse && await avisoPagoOtraCuenta(db, channelId, contactId, parsed, _frenoSaldo)) return true;
   await deliverMessage(db, channelId, contactId, "¡Gracias! Estoy verificando tu pago del saldo y en breve te confirmo. 🙌").catch(() => {});
   return true;
 }
