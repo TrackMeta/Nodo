@@ -7145,6 +7145,11 @@ function conDatosDePago(texto: string, dp: string, nums: string[], titulares: st
 // solo cuando el bot está vendiendo (no al pedir un dato, no tras un reclamo, no cuando
 // acaba de entregar). Si no aplica, no se toca el mensaje.
 const RE_YA_PREGUNTA = /[?¿]/;
+// Las formas del cierre de pago digital (ver `_cierreDiferido`): para no repetirlas y para que el
+// «sí» a cualquiera cuente como decisión (RE_OFRECIO_DATOS).
+const RE_CIERRE_PAGO = /¿\s*(?:lo|la)\s+pagas|¿\s*con\s+qu[eé]\s+(?:lo|la|te)\s+\w*\s*pag|¿\s*te\s+lo\s+dejo\s+listo|¿\s*lo\s+aseguramos|¿\s*lo\s+quieres\s+hoy|¿\s*(?:con|por)\s+(?:yape|plin|cu[aá]l)|¿\s*yape|¿\s*cu[aá]l\s+prefieres|¿[^?¿]*\b(?:yape|plin|transferencia)\b[^?¿]*\?|\b(?:yape|plin|transferencia)\b[^.!¿?\n]*\?/i;
+// ↑ la última alternativa: la IA a veces escribe la pregunta SIN el «¿» («Lo pagas por Yape, Plin o transferencia?»).
+const RE_CIERRE_SUAVE = /¿\s*te\s+queda\s+alguna\s+duda\s+para\s+empezar|¿\s*algo\s+m[aá]s\s+que\s+quieras\s+saber/i;
 function conCierre(texto: string, cierre: string): string {
   const t = String(texto ?? "").trim();
   if (!t || RE_YA_PREGUNTA.test(t)) return texto;
@@ -7459,6 +7464,16 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
         /^\s*(?:¿La quieres\? 🙂|¿Cuál de las dos prefieres\?)\s*$/.test(result)) {
       (ctx as any)._preguntaDiferida = result.trim();
       result = "";
+    }
+    // 🔁 El cierre de pago de respaldo (ver `_cierreRespaldo` en el nodo de venta): la IA había
+    // cerrado con su pregunta y un freno se la quitó. Sin pregunta al final, entra el cierre.
+    {
+      const _resp = (ctx as any)?._cierreRespaldo;
+      delete (ctx as any)._cierreRespaldo;
+      if (_resp?.q && result.trim() && !RE_YA_PREGUNTA.test(result)) {
+        if (_resp.inline) result = `${result.trim()} ${_resp.q}`;
+        else (ctx as any)._cierreDiferido = _resp.q;
+      }
     }
     if (result !== _antesD) {
       await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Anunciaba datos de pago que no manda ella",
@@ -12848,7 +12863,7 @@ const RE_AFIRMA_CORTO =
 // Básica?»): el «sí» a esa pregunta es querer comprar, y si no contara, el que dice «sí» se
 // quedaba con la misma pregunta otra vez (medido: «¿La quieres?» → «sí» → «¿La quieres?»).
 const RE_OFRECIO_DATOS =
-  /te (paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|dejo) (los |el |las |la )?(datos|yape|n[uú]mero|cuenta|info)|quieres (los |el |que te pase los |que te mande los )?(datos|yape|n[uú]mero)|te (lo|la) dejo list|¿(la|lo|las|los) (quieres|llevas|compras|tomas)|¿te (la|lo|las|los) dejo|¿vamos con|¿listo para|¿te animas|¿(lo|la) cerramos|¿te (lo|la) preparo|(contin[uú]o|sigo|seguimos|avanzo|avanzamos|procedo|procedemos) con (los datos|el pago|la compra)|¿\s*(lo|la) pagas por/i;
+  /te (paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|dejo) (los |el |las |la )?(datos|yape|n[uú]mero|cuenta|info)|quieres (los |el |que te pase los |que te mande los )?(datos|yape|n[uú]mero)|te (lo|la) dejo list|¿(la|lo|las|los) (quieres|llevas|compras|tomas)|¿te (la|lo|las|los) dejo|¿vamos con|¿listo para|¿te animas|¿(lo|la) cerramos|¿te (lo|la) preparo|(contin[uú]o|sigo|seguimos|avanzo|avanzamos|procedo|procedemos) con (los datos|el pago|la compra)|¿\s*(lo|la) pagas por|¿\s*con qu[eé] (lo|la) pagas|¿\s*lo aseguramos/i;
 // ↑ «¿Continúo con los datos para el pago?» → «ok» se quedaba sin número (D16-pm2).
 // …y el «sí» después de un mensaje que dio el PRECIO también: «cuesta S/19» → «sí» no puede
 // querer decir otra cosa. Medido: sin esto, «sí» → «cuando me mandes la captura te dejo el
@@ -23769,13 +23784,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // chats). Ahora la pregunta va EN ESPERA (`_cierreDiferido`) y sale solo si los datos NO
           // salen este turno. Sin repetirla: si la anterior ya fue la de pago, una más suave.
           const _li = String(ctx.last_input ?? "");
-          if (_esDigital && !cierre && !_yaPago && !RE_YA_PREGUNTA.test(String(salida ?? "")) &&
+          if (_esDigital && !cierre && !_yaPago &&
               !dudaDeSalud(_li) && !RE_QUEJA_SUAVE.test(_li) && !RE_PIDE_DEVOLUCION.test(_li) &&
               !/\b(no me interesa|no gracias|no,? gracias|chau|adi[oó]s|hasta luego|nos vemos)\b/i.test(_li) &&
               !comboDe(run).some((i) => !i.version_id)) {
             const _ultOut = String((outsC ?? [])[0]?.content?.text ?? "");
-            const _yaPreguntoPago = /¿\s*(?:lo|la)\s+pagas|¿\s*(?:con|por)\s+(?:yape|plin|cu[aá]l)|¿cu[aá]l prefieres/i.test(_ultOut);
-            const _yaPreguntoSuave = /¿te queda alguna duda para empezar/i.test(_ultOut);
+            const _ult4 = (outsC ?? []).slice(0, 4).map((mm: any) => String(mm?.content?.text ?? "")).join("\n");
+            const _yaPreguntoPago = RE_CIERRE_PAGO.test(_ultOut);
+            const _yaPreguntoSuave = RE_CIERRE_SUAVE.test(_ultOut);
+            // 🔀 Rota las formas (Rodrigo, 2026-09-26: siempre la misma frase se nota automática): la
+            // que no haya salido en las últimas 4 burbujas, empezando por una distinta en cada chat.
+            const _rota = (vs: string[]) => {
+              const libres = vs.filter((v) => !_ult4.includes(v.replace(/\s*🙂$/, "").slice(0, 18)));
+              const pool = libres.length ? libres : vs;
+              return pool[((outsC ?? []).length + String(run.contact_id).charCodeAt(0)) % pool.length];
+            };
             let _cd = "";
             if (!_yaPreguntoPago) {
               const _opsC = ctx._product_id ? (await loadOpciones(db, run, String(ctx._product_id))).filter((o) => Number(o.precio) > 0) : [];
@@ -23791,14 +23814,48 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                   if (/\bplin\b/.test(_dp)) _med.push("Plin");
                   if (/\b(bcp|bbva|interbank|scotiabank|cuenta|cci|banco)\b/.test(_dp)) _med.push("transferencia");
                 } catch (_) { _med = []; }
-                _cd = _med.length
-                  ? `¿Lo pagas por ${_med.length > 1 ? _med.slice(0, -1).join(", ") + " o " + _med[_med.length - 1] : _med[0]}? 🙂`
-                  : "¿Te lo dejo listo? 🙂";
+                const _M = _med.length > 1 ? _med.slice(0, -1).join(", ") + " o " + _med[_med.length - 1] : (_med[0] ?? "");
+                _cd = _M
+                  ? _rota([
+                    `¿Lo pagas por ${_M}? 🙂`,
+                    `¿Con qué lo pagas, ${_M}? 🙂`,
+                    // (sin «te lo dejo listo»: el freno de cierres falsos se lo come — Q7-tresdudas-2)
+                    `¿Lo quieres hoy? Puedes pagarlo por ${_M} 🙂`,
+                    `¿Lo aseguramos hoy? Aceptamos ${_M} 🙂`,
+                  ])
+                  : "¿Lo quieres hoy? 🙂";
               }
             } else if (!_yaPreguntoSuave) {
-              _cd = "¿Te queda alguna duda para empezar hoy? 🙂";
+              _cd = _rota(["¿Te queda alguna duda para empezar hoy? 🙂", "¿Algo más que quieras saber antes de empezar? 🙂"]);
             }
-            if (_cd) (ctx as any)._cierreDiferido = _cd;
+            // 🦜 La IA también aprende la pregunta de pago del historial y la repite ELLA («¿Con qué lo
+            // pagas, Yape, Plin o transferencia?» en 3 mensajes seguidos, Q7-tresdudas-3). Si la
+            // anterior ya fue de pago y la IA vuelve a cerrar con otra de pago, se cambia por la suave.
+            // (con o sin «¿»: la última frase que termina en «?» y habla de pagar)
+            // Corta desde el «¿» o desde el último emoji/punto — nunca el mensaje entero.
+            const _RE_PAGO_FINAL = /(?:¿[^?¿]*?|[^.!?¿\n\p{Extended_Pictographic}]*)\b(?:yape|plin|transferencia|pagas|pagarlo|pagarla|pagar|pago)\b[^.!?¿\n]*\?[\s\p{Extended_Pictographic}️]*$|¿\s*(?:lo\s+aseguramos|lo\s+quieres)\s+hoy\?[^?¿]*$/iu;
+            if (_yaPreguntoPago && _RE_PAGO_FINAL.test(String(salida ?? "").trim())) {
+              const _suave = _yaPreguntoSuave ? "" : _rota(["¿Te queda alguna duda para empezar hoy? 🙂", "¿Algo más que quieras saber antes de empezar? 🙂"]);
+              salida = `${String(salida).trim().replace(_RE_PAGO_FINAL, "").trim()} ${_suave}`.trim();
+              _cd = "";
+            }
+            if (_cd) {
+              // 🧩 En el MISMO mensaje cuando ya se sabe que los datos no van a salir este turno: él
+              // solo preguntó algo, sin ninguna señal de compra. Si hay alguna, va en espera (burbuja
+              // aparte, y solo si al final los datos no salen). Rodrigo: «la burbuja sola se siente robótica».
+              const _puedenSalir = RE_QUIERE_COMPRAR.test(_li) || RE_ANUNCIA_PAGO.test(_li) || RE_PIDE_DATOS.test(_li) ||
+                eligeMetodoDePago(_li) || !!metodoQuePregunta(_li) || RE_AFIRMA_CORTO.test(_li) ||
+                !!(run as any)._comboCambio || !!(ctx as any)._datosSiguen || !!(run.vars as any)?._recompra ||
+                (!!String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim() &&
+                  (ctx._product_id ? (await loadOpciones(db, run, String(ctx._product_id))).length > 1 : false));
+              if (RE_YA_PREGUNTA.test(String(salida ?? ""))) {
+                // La IA ya cerró con SU pregunta… que a veces un freno de más abajo le quita («¿Listo
+                // para que te pase los datos?» sin datos detrás) y el mensaje quedaba seco (Q6-tresdudas).
+                // Queda de RESPALDO: emitIaText lo pone si al final no sobrevive ninguna pregunta.
+                (ctx as any)._cierreRespaldo = { q: _cd, inline: !_puedenSalir };
+              } else if (!_puedenSalir && String(salida ?? "").trim()) salida = `${String(salida).trim()} ${_cd}`;
+              else (ctx as any)._cierreDiferido = _cd;
+            }
           }
         } catch (_) { /* sin historial → se envía tal cual */ }
       }
