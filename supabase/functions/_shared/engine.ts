@@ -2518,7 +2518,7 @@ function pideDiaDeEntrega(text?: string | null): boolean {
 // disparaba nada —la lista solo tenía recoger/retirar— y el pedido salió a nombre del
 // comprador sin que nadie preguntara cómo se llama la hermana.
 const RE_RECOGE_OTRO =
-  /\b(lo|la)\s+(va\s+a\s+)?(recoge|recoger|retira|retirar|recibe|recibir)\b|\b(recoge|recogerlo|recogerá|retira|recibe|recibir[aá]?|recepciona|va a ir|ir[aá]|est[aá] en casa|queda en casa)\s+(mi|el|la|su)\s+(esposo|esposa|mam[aá]|pap[aá]|madre|padre|hermano|hermana|hijo|hija|t[ií]o|t[ií]a|sobrin|primo|prima|amig|vecin|cu[ñn]ad|suegr|yerno|nuera|se[ñn]ora|casero|pareja|enamorad)\w*|\b(mi|el|la|su)\s+(esposo|esposa|mam[aá]|pap[aá]|madre|padre|hermano|hermana|hijo|hija|t[ií]o|t[ií]a|sobrin|primo|prima|amig|vecin|cu[ñn]ad|suegr|yerno|nuera|se[ñn]ora|casero|pareja|enamorad)\w*\s+(?:\w+\s+){0,2}(recoge|recoger\w*|retira|retirar\w*|recibe|recibir\w*|va a ir)\b|\byo no (puedo|voy a) (ir|estar|recoger|recibir|acercarme)\b|\b(a nombre de mi)\b/i;
+  /\b(lo|la)\s+(va\s+a\s+)?(recoge|recoger|retira|retirar|recibe|recibir)\b|\b(recoge|recogerlo|recogerla|recogerá|retira|retirarlo|retirarla|recibe|recibirlo|recibirla|recibir[aá]?|recepciona|va a ir|ir[aá]|est[aá] en casa|queda en casa)\s+(mi|el|la|su)\s+(esposo|esposa|mam[aá]|pap[aá]|madre|padre|hermano|hermana|hijo|hija|t[ií]o|t[ií]a|sobrin|primo|prima|amig|vecin|cu[ñn]ad|suegr|yerno|nuera|se[ñn]ora|casero|pareja|enamorad)\w*|\b(mi|el|la|su)\s+(esposo|esposa|mam[aá]|pap[aá]|madre|padre|hermano|hermana|hijo|hija|t[ií]o|t[ií]a|sobrin|primo|prima|amig|vecin|cu[ñn]ad|suegr|yerno|nuera|se[ñn]ora|casero|pareja|enamorad)\w*\s+(?:\w+\s+){0,2}(recoge|recoger\w*|retira|retirar\w*|recibe|recibir\w*|va a ir)\b|\byo no (puedo|voy a) (ir|estar|recoger|recibir|acercarme)\b|\b(a nombre de mi)\b/i;
 // Regateo, comparación con otro vendedor y "está caro": afirmaciones, sin signo de
 // pregunta, que el saludo fijo se lleva por delante.
 const RE_TRAE_OBJECION =
@@ -3498,6 +3498,8 @@ async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ 
 // atienden preguntas: la venta (contra la ficha del producto) y la recepción (contra el
 // conocimiento del negocio) — antes solo la venta, así que una pregunta hecha en la puerta no
 // quedaba registrada en ningún lado.
+// Materiales y especificaciones que la gente pregunta y la ficha casi nunca nombra (ver `_material_sin_dato`).
+const MATERIALES_CORTE = "\\d+(?:[.,]\\d+)?\\s*v(?:oltios)?\\b|inal[aá]mbric[a-záéíóúñ]*|rotomartillo|percutor|mandril|bosch|dewalt|makita|truper|stanley|black\\s*(?:&|and|\\+)?\\s*decker|acero\\s+inox[a-záéíóúñ]*|inoxidable|\\binox\\b|aluminio|cobre|bronce|fierro|hierro|galvaniz[a-záéíóúñ]*|calamina|zinc|madera|melamina|pl[aá]stico|acr[ií]lico|vidrio|cer[aá]mic[a-záéíóúñ]*|drywall|policarbonato|pvc|lat[oó]n";
 const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   ["certificado", /certificad/, /certificad/, "producto"],
   // 🇵🇪 El permiso sanitario: lo pregunta quien va en serio (cosmético, suplemento,
@@ -4589,6 +4591,17 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   if (/estoy verificando tu (adelanto|pago)/i.test(text) &&
       String((ctx as any)?.pedido_estado ?? "") === "adelanto_validado") {
     return true;
+  }
+  // 🔁 «Perfecto, Rosa 🙌» (IA) y justo debajo «¡Perfecto! 🙌 Para mandarte el pedido…» (burbuja fija
+  // del flujo) — F5-potronum. Dos burbujas seguidas del MISMO turno no abren con la misma palabra.
+  {
+    const _RE_AP = /^\s*¡?\s*(perfecto|listo|genial|excelente|gracias|de acuerdo|claro)\b[^\n\p{L}]{0,6}/iu;
+    const _ap = (text.match(_RE_AP)?.[1] ?? "").toLowerCase();
+    if (_ap && !bubble._noTpl && run?._ultApertura === _ap) {
+      const _resto = text.replace(_RE_AP, "").trimStart();
+      if (_resto.length >= 10) text = conMayusculaInicial(_resto);
+    }
+    if (run) run._ultApertura = _ap || "";
   }
   if ((run?.vars as any)?._extra_tarde && /te lo sumo al pedido|te los sumo al pedido/i.test(text)) {
     text = "¡Gracias! 🙌 Justo tu pedido ya salió, así que eso no alcanza a ir en el mismo envío. " +
@@ -13933,6 +13946,18 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
         "⛔ No le ofrezcas «¿quieres que te avise?»: el aviso sale solo, dilo como un hecho.");
     }
   } catch (_) { /* sin horario configurado → nada que decir */ }
+  // 🧍 «si no estoy, ¿puede recibirlo mi vecina?» → «Claro, sin problema» (F5-lvecina, 2026-09-26):
+  // y el motorizado llega preguntando por Pedro, con el rótulo a su nombre. Que reciba otro se
+  // puede, pero el pedido tiene que saber a quién buscar y esa persona tiene que tener la plata.
+  if (RE_RECOGE_OTRO.test(String(event.text ?? "")) && !ESTADOS_DESPACHADO.has(String((order as any).estado ?? ""))
+      && String((((order as any).shipping ?? {}) as Record<string, unknown>).zona ?? "") === "lima") {
+    const _montoPv = Number((order as any).amount) || 0;
+    parts.push("## 🧍 Otra persona va a recibir su pedido\n" +
+      "Sí se puede, pero NO le digas «sin problema» y ya: el motorizado va a preguntar por el nombre que está en el pedido. " +
+      "Pídele el **nombre** y el **celular** de quien lo va a recibir" +
+      (_montoPv > 0 ? `, y recuérdale que esa persona tenga los *${simboloMoneda(ctx.moneda as string)} ${_montoPv}* para pagar al recibirlo` : "") + ". " +
+      "⛔ No digas que ya quedó cambiado: se cambia cuando te pase esos datos.");
+  }
   // Venta CERRADA → soporte post-venta (reenvía acceso, estado, uso, recompra).
   parts.push(
     "## Atención POST-VENTA (tu rol AHORA)\n" +
@@ -16895,6 +16920,15 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             // 🏠 «surquillo, 1» NO es una dirección: es el distrito y la cantidad (F5b-hsabado). Sin
             // calle ni nada más que el distrito y un número chico, no se guarda (el motorizado no
             // llega con eso y el pedido se daría por completo).
+            // 📍 Lo mismo en sede/ciudad/distrito: «trujillo 1» quedó como SEDE del pedido (F5b-potronum):
+            // el número suelto del final es la cantidad, no parte del lugar.
+            if (/^(sede|ciudad|distrito|provincia|departamento)/i.test(c.clave) && /^\s*\p{L}[\p{L}\s.'-]*?[\s,]+(?:[1-9]|1\d|20)\s*$/u.test(String(val))) {
+              const _sinN = String(val).replace(/[\s,]+(?:[1-9]|1\d|20)\s*$/u, "").trim();
+              await logEvent(db, run.channel_id, run.contact_id, "campo", "Número quitado del lugar",
+                `"${String(val).slice(0, 40)}" → "${_sinN}" (el número era la cantidad)`).catch(() => {});
+              val = _sinN;
+              if (!val) continue;
+            }
             if (/^direcci/i.test(c.clave)) {
               const _dz = sinTildes(String(val)).toLowerCase()
                 .replace(new RegExp("\\b(" + [ctx.distrito, ctx.ciudad, ctx.last_distrito, "lima"]
@@ -21826,6 +21860,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _reCond = new RegExp("\\b" + _cond.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
         if (!_reCond.test(fichaTxt)) huecos.push([`si sirve para ${_cond}`, _reCond, _reCond, "producto"]);
       }
+      // 🔩 «¿sirve para acero inoxidable?» → «Sí, sirve… como acero inoxidable de hasta 1.5 mm»
+      // (F5b-omaterial, 2026-09-26): la ficha del Adaptador dice «láminas metálicas delgadas» y sus
+      // Límites «no promete cortar materiales duros». Se compara ESE material contra la ficha (que
+      // nombre «aluminio» no cubre el inox).
+      const _mat = (String(ctx.last_input ?? "").toLowerCase().match(
+        new RegExp(`(?:sirve|corta|cortar[aá]?|funciona|puedo|se puede|aguanta|vale|para)[^.?!]{0,30}?(${MATERIALES_CORTE})`)) ?? [])[1];
+      if (_mat) {
+        // Sin tildes ni espacios: «12v» casa con «12 V», «inalámbrico» con «inalambrico».
+        const _nz = (s: string) => sinTildes(String(s)).toLowerCase().replace(/\s+/g, "");
+        const _raiz = _nz(_mat).replace(/^acero/, "").slice(0, 5);
+        if (!_nz(fichaTxt).includes(_raiz)) {
+          huecos.push([`si sirve para ${_mat}`, /$^/, /$^/, "producto"]);
+          (ctx as any)._material_sin_dato = _mat;
+        }
+      }
       // 🧮 «¿Calcula el IGV?», «¿tiene macros?», «¿trae plantillas de contrato?»: una FUNCIÓN o
       // un contenido concreto del producto. Si esa palabra no está en la ficha, la IA la
       // afirmaba («Sí, incluye el cálculo del IGV», D16-pigv): una promesa que termina en
@@ -23998,6 +24047,32 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && String(ctx.entrega_hoy ?? "") === "no") {
         salida = sinPromesaDeHoy(salida, String(ctx.entrega_cuando ?? ""));
       }
+      // 📅 «lima centro, me llega hoy?», «surquillo, 1, llega el sábado?» (F5): la IA vendía y no
+      // contestaba CUÁNDO, que es justo lo que preguntó. El motor ya lo calculó (entrega_cuando).
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "") === "lima"
+          && String(ctx.pedido_creado ?? "") !== "si") {
+        const _liW = String(ctx.last_input ?? "");
+        const _DIAS = "lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo";
+        const _preguntaCuando = new RegExp(
+          `(?:^|[^\\p{L}])(?:cu[aá]ndo\\s+(?:me\\s+)?(?:llega|lo\\s+(?:tengo|traen|entregan|mandan))|para\\s+cu[aá]ndo|` +
+          `(?:me\\s+)?llega(?:r[ií]a)?\\s+(?:hoy|ma[ñn]ana|el\\s+(?:${_DIAS})|este\\s+(?:${_DIAS}))|en\\s+cu[aá]nto\\s+tiempo|` +
+          `cu[aá]nto\\s+(?:tarda|demora)|(?:lo\\s+)?(?:traen|entregan|mandan)\\s+(?:hoy|ma[ñn]ana)|hoy\\s+mismo)(?![\\p{L}])`, "iu").test(_liW);
+        const _yaDice = new RegExp(`(?:^|[^\\p{L}])(?:hoy|ma[ñn]ana|repong\\p{L}*|agotad\\p{L}*|${_DIAS}|\\d+\\s*(?:d[ií]as|horas)|en\\s+el\\s+d[ií]a)(?![\\p{L}])`, "iu")
+          .test(sinFormato(salida));
+        if (_preguntaCuando && !_yaDice) {
+          const _cu = String(ctx.entrega_cuando ?? "").trim();
+          // «Lima centro» / «Lima» a secas: sin distrito no se sabe si alcanza hoy (entrega_cuando vacío).
+          const _linea = !_cu
+            // Sin pregunta: el freno físico de más abajo deja UNA (la cantidad) y le quitaba el distrito.
+            ? "Si te llega hoy depende de tu distrito: con tu dirección te confirmo el día 🛵"
+            : _cu === "hoy" ? "Sí, te llega *hoy mismo* 🛵"
+            : /repong/i.test(_cu) ? "Ahora mismo está agotado: te llega *en cuanto repongamos* 📦"
+            : `${/(?:^|[^\p{L}])hoy(?![\p{L}])/iu.test(_liW) ? "Hoy ya no alcanza: te" : "Te"} llega *${_cu}* 🛵`;
+          salida = `${_linea}\n\n${String(salida ?? "").trimStart()}`;
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "📅 Preguntó cuándo llega y la IA no lo dijo",
+            `Se le contestó por código: ${_cu}`).catch(() => {});
+        }
+      }
       // Anunciar el cierre cuando el motor NO va a cerrar nada: mientras los datos no estén
       // completos este turno NO crea pedido, así que un "queda confirmado" acá es falso.
       // Se recorta esa frase (ver sinFalsoCierre); el resto del mensaje sale igual.
@@ -24610,6 +24685,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       }
       // 🔠 Una sola vez, al final: cualquiera de los veinte guards pudo quitar la frase con que
       // arrancaba el mensaje o la que iba tras un punto, y lo que queda empieza en minúscula.
+      // 🏠 «📌 *Dirección* (puede ser sin calle o número, con referencia está bien)» (F5-o12v): nadie
+      // lo decidió y el motorizado no llega con una referencia. Y «Y dime si confirmas la compra»
+      // debajo de la lista de datos es un segundo pedido: mandar los datos YA es confirmar.
+      if (op === "generar_texto" && !esDigital(ctx)) {
+        const _antesDir = String(salida ?? "");
+        let _sd = _antesDir.replace(/[ \t]*\(?\s*(?:puede|pueden|basta|vale)\s+(?:ser\s+)?(?:sin|con\s+solo)\s+(?:la\s+)?(?:calle|n[uú]mero|numeraci[oó]n)[^)\n]*\)?/giu, "");
+        if (/📌/.test(_sd)) _sd = _sd.replace(/[ \t]*(?:^|(?<=[\s.!]))y\s+dime\s+si\s+confirmas\s+(?:la\s+compra|el\s+pedido)[^.\n]*[.!]?\s*(?:[\p{Extended_Pictographic}️]\s*)*/gimu, " ");
+        _sd = _sd.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+        if (_sd !== _antesDir.trim()) {
+          salida = _sd;
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🏠 Se quitó una regla de datos inventada",
+            `«${_antesDir.slice(0, 140)}»`).catch(() => {});
+        }
+      }
       // 👇 Encabezado huérfano: «Para avanzar, pásame estos datos 👇» y debajo la lista de SEDES, porque
       // un freno le quitó los renglones de datos (F5-potronum, 2026-09-26). Si lo que sigue no es un
       // dato para llenar, el encabezado se va.
@@ -24624,6 +24713,30 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           _out.push(_lns[i]);
         }
         salida = _out.join("\n").replace(/^\n+/, "");
+      }
+      // 🔩 Y si igual lo afirmó («sirve… como acero inoxidable de hasta 1.5 mm»), la frase se cambia
+      // por la verdad: ese material no está confirmado. Ver `_material_sin_dato`.
+      if (op === "generar_texto" && (ctx as any)._material_sin_dato) {
+        const _m = String((ctx as any)._material_sin_dato);
+        const _nzM = (s: string) => sinTildes(String(s)).toLowerCase().replace(/\s+/g, "");
+        const _raizM = _nzM(_m).replace(/^acero/, "").slice(0, 5);
+        const _reM = { test: (s: string) => _nzM(s).includes(_raizM) };
+        const _NEG = /(?:^|[^\p{L}])(no|ni|tampoco|sin\s+confirmar|no\s+te\s+(?:lo\s+)?(?:puedo\s+)?asegur\p{L}*|no\s+tengo|no\s+est[aá]\s+confirmad\p{L}*)(?![\p{L}])/iu;
+        let _cambio = false;
+        salida = String(salida ?? "").split("\n").map((ln) => !_reM.test(ln) ? ln
+          : ln.split(/(?<=[.!?🙌📦✅😊🙂🔧])\s+/u).map((f) => {
+              if (!_reM.test(f) || _NEG.test(f)) return f;
+              _cambio = true;
+              // Un material se nombra («acero inoxidable»); una especificación del taladro (12v,
+              // inalámbrico, marca) no, que sale cruda y sin tilde.
+              return /\d|inal|roto|percu|mandril|bosch|dewalt|makita|truper|stanley|black/i.test(_m)
+                ? "Con ese modelo de taladro en particular no te lo puedo asegurar, no lo tengo confirmado 🙏"
+                : `Con *${_m}* en particular no te lo puedo asegurar, no lo tengo confirmado 🙏`;
+            }).join(" ")).join("\n");
+        if (_cambio) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🔩 Afirmó un material que la ficha no nombra",
+            `«${_m}»: se cambió por «no te lo puedo asegurar»`).catch(() => {});
+        }
       }
       // 🗂️ «la ficha» es palabra NUESTRA: «la ficha no especifica el material exacto» (F5-omaterial,
       // 2026-09-26) le dice al cliente que lee de un formulario. Se dice como lo diría un vendedor.
