@@ -12848,7 +12848,7 @@ const RE_AFIRMA_CORTO =
 // Básica?»): el «sí» a esa pregunta es querer comprar, y si no contara, el que dice «sí» se
 // quedaba con la misma pregunta otra vez (medido: «¿La quieres?» → «sí» → «¿La quieres?»).
 const RE_OFRECIO_DATOS =
-  /te (paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|dejo) (los |el |las |la )?(datos|yape|n[uú]mero|cuenta|info)|quieres (los |el |que te pase los |que te mande los )?(datos|yape|n[uú]mero)|te (lo|la) dejo list|¿(la|lo|las|los) (quieres|llevas|compras|tomas)|¿te (la|lo|las|los) dejo|¿vamos con|¿listo para|¿te animas|¿(lo|la) cerramos|¿te (lo|la) preparo|(contin[uú]o|sigo|seguimos|avanzo|avanzamos|procedo|procedemos) con (los datos|el pago|la compra)/i;
+  /te (paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|dejo) (los |el |las |la )?(datos|yape|n[uú]mero|cuenta|info)|quieres (los |el |que te pase los |que te mande los )?(datos|yape|n[uú]mero)|te (lo|la) dejo list|¿(la|lo|las|los) (quieres|llevas|compras|tomas)|¿te (la|lo|las|los) dejo|¿vamos con|¿listo para|¿te animas|¿(lo|la) cerramos|¿te (lo|la) preparo|(contin[uú]o|sigo|seguimos|avanzo|avanzamos|procedo|procedemos) con (los datos|el pago|la compra)|¿\s*(lo|la) pagas por/i;
 // ↑ «¿Continúo con los datos para el pago?» → «ok» se quedaba sin número (D16-pm2).
 // …y el «sí» después de un mensaje que dio el PRECIO también: «cuesta S/19» → «sí» no puede
 // querer decir otra cosa. Medido: sin esto, «sí» → «cuando me mandes la captura te dejo el
@@ -13133,7 +13133,8 @@ async function maybeDatosPago(
         await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago NO enviados",
           "Todavía no hay presentación elegida: mandarle el número sin decirle cuánto es lo deja pagando a ciegas" +
           (_preg ? " — se le pidió elegir" : "")).catch(() => {});
-        return;
+        // Si se le pidió elegir, ESA es la pregunta del turno: el cierre en espera no sale.
+        return !!_preg;
       }
       _cab = `Son *${digital?.sym ?? "S/"} ${_m}* 👇\n\n`;
     }
@@ -23762,6 +23763,43 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               ? (PREGUNTAS_DESCUBRIR.find((q) => !dicho.includes(q.toLowerCase().slice(1, 20))) ?? "")
               : "¿Lo confirmo y te lo mando?");
           if (cierre) salida = conCierre(salida, cierre);
+          // 💳 DIGITAL: cerrar llevando al pago (Rodrigo, 2026-09-26: «siempre inducir o preguntar
+          // cómo quiere pagar»). Antes en digital no se cerraba porque «¿te paso los datos?» salía
+          // justo encima de los datos que el motor mandaba un segundo después (54 veces en 96
+          // chats). Ahora la pregunta va EN ESPERA (`_cierreDiferido`) y sale solo si los datos NO
+          // salen este turno. Sin repetirla: si la anterior ya fue la de pago, una más suave.
+          const _li = String(ctx.last_input ?? "");
+          if (_esDigital && !cierre && !_yaPago && !RE_YA_PREGUNTA.test(String(salida ?? "")) &&
+              !dudaDeSalud(_li) && !RE_QUEJA_SUAVE.test(_li) && !RE_PIDE_DEVOLUCION.test(_li) &&
+              !/\b(no me interesa|no gracias|no,? gracias|chau|adi[oó]s|hasta luego|nos vemos)\b/i.test(_li) &&
+              !comboDe(run).some((i) => !i.version_id)) {
+            const _ultOut = String((outsC ?? [])[0]?.content?.text ?? "");
+            const _yaPreguntoPago = /¿\s*(?:lo|la)\s+pagas|¿\s*(?:con|por)\s+(?:yape|plin|cu[aá]l)|¿cu[aá]l prefieres/i.test(_ultOut);
+            const _yaPreguntoSuave = /¿te queda alguna duda para empezar/i.test(_ultOut);
+            let _cd = "";
+            if (!_yaPreguntoPago) {
+              const _opsC = ctx._product_id ? (await loadOpciones(db, run, String(ctx._product_id))).filter((o) => Number(o.precio) > 0) : [];
+              if (_opsC.length > 1 && !String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim()) {
+                _cd = `¿Cuál prefieres, ${_opsC.map((o) => `la ${o.nombre}`).join(" o ")}? 🙂`;
+              } else {
+                let _med: string[] = [];
+                try {
+                  const { data: _fdp } = await db.from("custom_fields").select("valor")
+                    .eq("channel_id", run.channel_id).eq("key", "datos_pago").eq("modo", "fijo").maybeSingle();
+                  const _dp = normalize(String((_fdp as any)?.valor ?? ""));
+                  if (/\byape\b/.test(_dp)) _med.push("Yape");
+                  if (/\bplin\b/.test(_dp)) _med.push("Plin");
+                  if (/\b(bcp|bbva|interbank|scotiabank|cuenta|cci|banco)\b/.test(_dp)) _med.push("transferencia");
+                } catch (_) { _med = []; }
+                _cd = _med.length
+                  ? `¿Lo pagas por ${_med.length > 1 ? _med.slice(0, -1).join(", ") + " o " + _med[_med.length - 1] : _med[0]}? 🙂`
+                  : "¿Te lo dejo listo? 🙂";
+              }
+            } else if (!_yaPreguntoSuave) {
+              _cd = "¿Te queda alguna duda para empezar hoy? 🙂";
+            }
+            if (_cd) (ctx as any)._cierreDiferido = _cd;
+          }
         } catch (_) { /* sin historial → se envía tal cual */ }
       }
       // 🤫 Al que dijo que lo va a pensar no se le ofrece el número. La regla está en el
@@ -23799,6 +23837,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           salida = _sinCobro;
           await logEvent(db, run.channel_id, run.contact_id, "nota", "⚕️ Cobraba al que preguntó por su salud",
             `Se quitó el cierre de pago: «${_antesS.slice(0, 120)}»`).catch(() => {});
+        }
+        // …y que no quede cortado ni empujando: cierra con una pregunta SUAVE que mantiene viva la
+        // charla sin cobrarle (Rodrigo, 2026-09-26: «¿Quieres que te cuente más sobre el plan?»).
+        // Medido: 9 de 10 respuestas a «soy diabético» terminaban secas («Tu seguridad es lo
+        // primero 💪») y 1 con «¿Vamos con todo? 🪖» después de mandarlo al médico.
+        {
+          const _antesH = String(salida ?? "");
+          let _h = _antesH.replace(/[^.!?\n]*¿[^?¿]*(?:vamos con todo|listo para|te animas|la quieres|lo quieres|empezamos|arrancamos|lo pagas|la pagas|te paso|te lo dejo|te la dejo|lo tomas|la tomas)[^?¿]*\?[\s\p{Extended_Pictographic}️]*$/iu, "").trim();
+          if (!RE_YA_PREGUNTA.test(_h)) {
+            const _esPlan = /protocolo|plan|programa|rutina|entrenamiento|calistenia|curso/i.test(String(ctx.producto_nombre ?? ""));
+            _h = `${_h} ${_esPlan ? "¿Quieres que te cuente más sobre el plan? 🙂" : "¿Quieres que te cuente más sobre cómo funciona? 🙂"}`;
+          }
+          if (_h !== _antesH) salida = _h;
         }
       }
       // Promesa de entrega HOY cuando el motor ya sabe que en su zona no alcanza.
@@ -24475,8 +24526,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }));
       }
       // La pregunta en espera sale solo si NO salieron los datos (con los datos delante sobra).
-      if (_pregDiferida && !_datosSalieron && !handoff) {
-        await emit(db, run, { text: _pregDiferida, _noTpl: true }, ctx);
+      // Una sola: la de decisión que quedó al quitar la promesa, o si no, el cierre de pago.
+      const _cierreDif = String((ctx as any)._cierreDiferido ?? "");
+      delete (ctx as any)._cierreDiferido;
+      const _qFinal = _pregDiferida || _cierreDif;
+      if (_qFinal && !_datosSalieron && !handoff) {
+        await emit(db, run, { text: _qFinal, _noTpl: true }, ctx);
       }
       // La IA pidió pasar a un humano ([[humano]] → bot_activo=false). CORTA el flujo: seguir
       // avanzando emitiría burbujas automáticas de los nodos siguientes ENCIMA del handoff
