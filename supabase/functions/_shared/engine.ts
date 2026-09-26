@@ -3554,14 +3554,19 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   ["el material", /\b(material|de qu[eé] est[aá]n? hech|cuero|sint[eé]tic|tela)\b/, /\b(material|malla|cuero|sint[eé]tic|eva|tela|algod[oó]n|poli[eé]ster)/, "producto"],
   ["la marca o el origen", /\b(originales?|de qu[eé] pa[ií]s|de d[oó]nde vienen|importad|marca|chin|r[eé]plica)/, /\b(original|importad|marca|fabricad|hecho en|procedencia)/, "producto"],
   ["si hay tienda física", /\b(tienda f[ií]sica|local|showroom|probarme|prob[aá]rmelas|ir a ver|direcci[oó]n de la tienda)/, /\b(tienda|local|showroom|direcci[oó]n de la tienda)/, "negocio"],
-  ["para qué terreno o uso sirve", /\b(trail|cerro|monta[nñ]a|tierra|piedras|gimnasio|cancha|asfalto|pista|caminar todo el d[ií]a)/, /\b(trail|cerro|monta[nñ]a|terreno|asfalto|pista|gimnasio|cancha)/, "producto"],
+  // 🗺️ «arequipa cerro colorado 1» disparaba este hueco (F6-pcerro: «De para qué terreno o uso sirve no
+  // tengo el dato acá»): «cerro» y los demás tienen que ir como USO («para el cerro», «en tierra»), y
+  // los nombres de lugar (Cerro Colorado, Cerro de Pasco, Cerro Azul) no cuentan.
+  ["para qué terreno o uso sirve", /\b(?:trail|caminar todo el d[ií]a|(?:para|en|por)\s+(?:el\s+|la\s+|las\s+)?(?:cerro(?!\s+(?:colorado|de\s+pasco|azul|verde|alegre))|monta[nñ]a|tierra|piedras|gimnasio|cancha|asfalto|pista))/, /\b(trail|cerro|monta[nñ]a|terreno|asfalto|pista|gimnasio|cancha)/, "producto"],
   ["el formato o la duración", /\b(son videos|es en vivo|grabado|pdf|cu[aá]ntas horas|cu[aá]nto dura|duraci[oó]n)/, /\b(video|en vivo|grabad|pdf|horas|duraci[oó]n|m[oó]dulos?)/, "producto"],
   // Cuánto peso aguanta. OJO: NO es lo mismo que cuánto PESA el producto (eso suele
   // estar en la ficha, "240 g"), por eso la regex pide "si peso X", "aguantan",
   // "soportan" — no la palabra "peso" suelta. Medido: a "¿aguantan si peso 95 kilos?"
   // contestó "y claro, aguantan sin problema hasta 95 kilos, la suela está diseñada
   // para ese peso" — inventado, y de los que terminan en reclamo si se rompen.
-  ["cuánto peso aguanta", /\b(si peso \d|aguantan?|soportan?|resisten? (mi|el) peso|\d{2,3}\s*(kilos|kg)\b)/, /\b(soporta|aguanta|capacidad|peso corporal|hasta \d{2,3}\s*(kilos|kg))/, "producto"],
+  // «¿cuántos CORTES aguanta antes de gastarse?» no es peso (F6-ocortes: «Sobre cuánto peso aguanta no
+  // tengo ese dato»): aguanta/soporta solo cuentan con peso, kilos o una persona delante.
+  ["cuánto peso aguanta", /\b(si peso \d|(?:aguantan?|soportan?)\s+(?:(?:mi|el|un|hasta|cu[aá]nto)\s+)?(?:peso|kilos|kg|\d{2,3}\s*(?:kilos|kg)|una persona|a alguien)|cu[aá]nto peso|resisten? (mi|el) peso|\d{2,3}\s*(kilos|kg)\b)/, /\b(soporta|aguanta|capacidad|peso corporal|hasta \d{2,3}\s*(kilos|kg))/, "producto"],
   // 🩺 SALUD. Aparte de los demás porque acá inventar no cuesta una venta: cuesta un
   // daño. Medido — a "¿se puede usar en el embarazo?" (un sérum, y la ficha no dice
   // NADA del tema) el bot contestó "no está recomendado para usarse durante el
@@ -4595,10 +4600,13 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   // 🔁 «Perfecto, Rosa 🙌» (IA) y justo debajo «¡Perfecto! 🙌 Para mandarte el pedido…» (burbuja fija
   // del flujo) — F5-potronum. Dos burbujas seguidas del MISMO turno no abren con la misma palabra.
   {
-    const _RE_AP = /^\s*¡?\s*(perfecto|listo|genial|excelente|gracias|de acuerdo|claro)\b[^\n\p{L}]{0,6}/iu;
+    const _RE_AP = /^\s*¡?\s*(perfecto|listo|genial|excelente|gracias|de acuerdo|claro)\b/iu;
+    // Solo se quita si la palabra va SOLA («¡Perfecto! 🙌 Para…»). «¡Listo, Luis Paredes! ✅ Tu pedido…»
+    // quedaba «Luis Paredes! ✅» (F6-lsjm): con nombre detrás, no se toca.
+    const _RE_AP_SOLA = /^\s*¡?\s*(?:perfecto|listo|genial|excelente|gracias|de acuerdo|claro)\s*[!.]+\s*(?:[\p{Extended_Pictographic}️]\s*)*/iu;
     const _ap = (text.match(_RE_AP)?.[1] ?? "").toLowerCase();
-    if (_ap && !bubble._noTpl && run?._ultApertura === _ap) {
-      const _resto = text.replace(_RE_AP, "").trimStart();
+    if (_ap && !bubble._noTpl && run?._ultApertura === _ap && _RE_AP_SOLA.test(text)) {
+      const _resto = text.replace(_RE_AP_SOLA, "").trimStart();
       if (_resto.length >= 10) text = conMayusculaInicial(_resto);
     }
     if (run) run._ultApertura = _ap || "";
@@ -5332,7 +5340,7 @@ function sinPoliticaInventada(texto: string, huecos: Array<[string, RegExp, RegE
     if (usados.has(h[0])) return "";
     usados.add(h[0]);
     const tema = h[0];
-    const frase = /^el /.test(tema) ? `Del ${tema.slice(3)}` : /^si /.test(tema) ? `Sobre ${tema}` : `De ${tema}`;
+    const frase = /^el /.test(tema) ? `Del ${tema.slice(3)}` : /^(si|para|c[oó]mo|cu[aá]nto|qu[eé]) /.test(tema) ? `Sobre ${tema}` : `De ${tema}`;
     // Con espacio DELANTE: la parte anterior termina en emoji sin espacio (el separador se lo
     // llevó el split) y salía pegado — «👍De garantía no tengo el dato» (D9-pdospreg, 2026-09-24).
     return ` ${frase} no tengo el dato acá 🤔 `;
@@ -6196,7 +6204,9 @@ function sinPresentacionRepetida(texto: string, producto: string, ventaAhora = f
   // 2026-09-25). Si su mensaje pide algo y el arranque comparte una palabra de fondo con lo
   // que pidió —o es la forma honesta «no tengo el dato»—, se respeta.
   const _li = normalize(String(lastInput ?? ""));
-  const _pide = /[?¿]|\b(necesito|quiero saber|me interesa saber|tienen|hay|puedo|se puede|cuanto|como|que|factura|boleta|ruc|garantia)\b/.test(_li);
+  // (+ los pedidos en imperativo: «mándame el link para comprar en la web» — F6-hweb: se fue la
+  // respuesta «vendemos solo por WhatsApp» con la presentación y quedó solo «¿Alguna otra duda?»)
+  const _pide = /[?¿]|\b(necesito|quiero saber|me interesa saber|tienen|hay|puedo|se puede|cuanto|como|que|factura|boleta|ruc|garantia|mandame|enviame|pasame|dime|explicame|muestrame|ensename|link|enlace|web|pagina|video|foto)\b/.test(_li);
   const _respondeLoSuyo = (prefijo: string): boolean => {
     if (!_pide) return false;
     const _cab = normalize(prefijo);
@@ -11275,7 +11285,7 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
           "No había flujo abierto donde escribirla — revisar si la conversación sigue").catch(() => {});
       }
     } catch (_) { /* el campo y el pedido ya quedaron bien */ }
-    cambios.push("sede: " + nSede);
+    cambios.push("sede: " + (nSede === nSede.toUpperCase() ? bonito(nSede) : nSede));
   }
   // TELÉFONO de contacto (celular peruano: 9 dígitos que empiezan en 9). Se extrae
   // ANTES que el DNI para poder excluirlo del DNI (un celular NO es DNI).
@@ -12690,7 +12700,7 @@ async function otroProductoPorKeyword(db: SupabaseClient, channelId: string, tex
 // VENTA y recibieron el pitch con la lista de precios. Se admite el «no llega/llegó» cuando el
 // sujeto es su pedido/paquete/producto o ya dijo que pagó — nunca el «no llega» suelto de una
 // pregunta («¿y si no llega mañana?»).
-const RE_RECLAMO = /\b(no me (ha )?lleg(a|o|ó|ado)|nunca me lleg|todav[ií]a no (me )?lleg|mi (pedido|paquete|producto|compra|[a-záéíóúñ]+) (a[uú]n |todav[ií]a )?no (ha )?lleg(a|o|ó|ado)|no lleg(a|o|ó|ado) a la agencia|ya pagu[eé][^.!?]{0,50}\bno (me )?(ha )?lleg(a|o|ó|ado)|no me (entregan|entregaron|responden|contestan)|lleg[oó] (roto|mal|incompleto|fallado|otra cosa)|no (me )?funciona|no sirve|quiero (devolver|un cambio|mi dinero|un reembolso)|reembolso|me estafaron)\b/i;
+const RE_RECLAMO = /\b(no me (ha )?lleg(a|o|ó|ado)|nunca me lleg|todav[ií]a no (me )?lleg|mi (pedido|paquete|producto|compra|[a-záéíóúñ]+) (a[uú]n |todav[ií]a )?no (ha )?lleg(a|o|ó|ado)|no lleg(a|o|ó|ado) a la agencia|ya pagu[eé][^.!?]{0,50}\bno (me )?(ha )?lleg(a|o|ó|ado)|no me (entregan|entregaron|responden|contestan)|lleg[oó] (roto|mal|incompleto|fallado|otra cosa)|no (me )?funciona|no sirve|quiero (devolver|un cambio|mi dinero|un reembolso)|reembolso|me estafaron|(?:el )?motorizado no (?:llega|lleg[oó]|viene|vino|aparece|apareci[oó])|no (?:llega|lleg[oó]|viene|vino) el motorizado|nadie (?:vino|lleg[oó]) a (?:dejar|entregar))\b/i;
 // 🔑 «ya compré la premium la semana pasada y perdí el link, ¿me lo reenvías?» SIN pedido a su
 // nombre (D15-mfalsocliente): entró a la venta, la IA prometió «te transfiero al equipo» sin
 // hacerlo y el motor le mandó los datos de pago de S/79 «como ya pagaste». Aparte de RE_RECLAMO
@@ -13962,7 +13972,11 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
       parts.push("## Horario del reparto en Lima\n" +
         `El motorizado reparte entre las ${_desdePv} y las ${_hastaPv}. Si pregunta a qué hora llega, dile esa franja TAL CUAL ` +
         "(no la acortes ni inventes una hora exacta) y que por acá se le avisa cuando salga. " +
-        "⛔ No le ofrezcas «¿quieres que te avise?»: el aviso sale solo, dilo como un hecho.");
+        "⛔ No le ofrezcas «¿quieres que te avise?»: el aviso sale solo, dilo como un hecho.\n" +
+        // 💵 El vuelto también se lo preguntan DESPUÉS de comprar (F6b-lvuelto: «el motorizado lleva
+        // vuelto para pagos estándar»). No lo sabes.
+        "Si pregunta si el motorizado lleva VUELTO o sencillo: no lo sabes, ⛔ no se lo prometas; dile que es " +
+        "mejor que tenga el monto justo o sencillo a la mano para no tener problema en la entrega.");
     }
   } catch (_) { /* sin horario configurado → nada que decir */ }
   // 🧍 «si no estoy, ¿puede recibirlo mi vecina?» → «Claro, sin problema» (F5-lvecina, 2026-09-26):
@@ -15548,8 +15562,29 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     }
     return _extEnVuelo[i]!;
   };
+  const _saltarDos = new Set<string>();   // textos con «X o Y»: tampoco los mira la red del padrón
   for (let _i = 0; _i < textos.length; _i++) {
     const t = textos[_i];
+    // ⚖️ «chimbote o trujillo, donde llegue más rápido» (F6-pdos): dos lugares con «o» en medio. El
+    // motor sellaba el primero — elegía por él ([[no-elegir-por-el-cliente]]). Si los dos lados son
+    // lugares conocidos y distintos, ese mensaje no decide la zona: la IA le pregunta cuál.
+    // (+ «uno a mi casa en surco y otro a mi trabajo en san isidro» — F6b-ldosdir: sellaba San Isidro)
+    const _dosDir = /(?:^|[^\p{L}])(?:un[oa]?|1)\s+(?:para|pa|a|en)\s+[^,.;]{2,40}?\s+y\s+(?:(?:el|la)\s+)?(?:otr[oa]|1|un[oa])\s+(?:para|pa|a|en)(?![\p{L}])/iu.test(t);
+    if (/\s(?:o|u)\s/i.test(t) || _dosDir) {
+      const _conoceL = (s: string) => !!s && (!!matchZona(zonas, s) || provinciasDeDistrito(limpiaZona(s)).length > 0 || agenciasDeCiudad(s).length > 0);
+      const _lados = t.split(/[,;.?!]|\s+(?:o|u|y)\s+|\s+(?:en|a|para)\s+/i)
+        .map((s) => s.replace(/^\s*(?:soy\s+de|estoy\s+en|vivo\s+en|en|de|a|para|desde)\s+/i, "").trim())
+        .filter((s) => s.length >= 3 && s.split(/\s+/).length <= 4 && _conoceL(s));
+      const _dist = [...new Set(_lados.map((s) => limpiaZona(s)))];
+      if (_dist.length >= 2) {
+        (run.vars as any)._dos_lugares = _lados.slice(0, 2).map((s) => bonito(s.toUpperCase())).join(" o ");
+        (ctx as any)._dos_lugares = (run.vars as any)._dos_lugares;
+        _saltarDos.add(t);
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "⚖️ Nombró dos lugares",
+          `«${t.slice(0, 80)}» — no se elige por él; se le pregunta cuál`).catch(() => {});
+        continue;
+      }
+    }
     // 1) Match DETERMINISTA contra la lista de distritos del negocio (lo mejor:
     // gratis y sin ambigüedad). La mayoría nombra el distrito tal cual ("soy de SJL").
     z = matchZona(zonas, t);
@@ -15626,6 +15661,7 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // Lima siempre se salva, el de Jazán no. Si el padrón lo tiene, es un lugar y punto.
   if (!lugar) {
     for (const t of textos) {
+      if (_saltarDos.has(t)) continue;
       const _pad = ciudadEnTexto(t);
       if (_pad) {
         lugar = enTitulo(_pad); texto = t;
@@ -16404,6 +16440,12 @@ function validarDato(v: CampoDato, valor: string, ctx?: any): { ok: boolean; mot
   }
   if (v.validar === "dni") {
     const d = s.replace(/\D/g, "");
+    // 🪪 CARNET DE EXTRANJERÍA (9 dígitos, a veces con ceros delante hasta 12) o PTP: con él retira
+    // en Shalom igual que con DNI. Se rechazaba como «DNI de 9 dígitos» (F6-pce) y el extranjero no
+    // podía comprar.
+    const _esCE = /carn[eé]t?\s+de\s+extranjer|\bc\.?\s?e\.?\b|extranjer[ií]a|\bptp\b|permiso\s+temporal|pasaporte/i
+      .test(s + " " + String(ctx?.last_input ?? ""));
+    if (_esCE && d.length >= 9 && d.length <= 12 && !/^(\d)\1+$/.test(d)) return { ok: true };
     if (d.length !== 8) return { ok: false, motivo: `el DNI debe tener 8 dígitos (mandó ${d.length})` };
     // Relleno: al que no quiere dar su DNI le sale "12345678" o "00000000". Son 8 dígitos,
     // así que pasaban — y con un DNI falso la agencia NO le entrega el paquete: viaja,
@@ -16941,6 +16983,13 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             // llega con eso y el pedido se daría por completo).
             // 📍 Lo mismo en sede/ciudad/distrito: «trujillo 1» quedó como SEDE del pedido (F5b-potronum):
             // el número suelto del final es la cantidad, no parte del lugar.
+            // ⚖️ «chimbote o trujillo» como SEDE (F6b-pdos): son dos opciones, no una oficina.
+            if (/^(sede|ciudad|distrito|provincia|departamento)/i.test(c.clave) && /\S\s+(?:o|u)\s+\S/i.test(String(val))
+                && (run.vars as any)?._dos_lugares) {
+              await logEvent(db, run.channel_id, run.contact_id, "campo", "Lugar descartado",
+                `"${String(val).slice(0, 40)}" son dos lugares; se le pregunta cuál`).catch(() => {});
+              continue;
+            }
             if (/^(sede|ciudad|distrito|provincia|departamento)/i.test(c.clave) && /^\s*\p{L}[\p{L}\s.'-]*?[\s,]+(?:[1-9]|1\d|20)\s*$/u.test(String(val))) {
               const _sinN = String(val).replace(/[\s,]+(?:[1-9]|1\d|20)\s*$/u, "").trim();
               await logEvent(db, run.channel_id, run.contact_id, "campo", "Número quitado del lugar",
@@ -17679,6 +17728,15 @@ function mencionaFuerte(texto: string, op: Opcion, todas: Opcion[]): boolean {
   if (cant <= 20 && t.split(/[,;\n]+/).map((s) => s.trim().replace(/[.!?¡¿]+$/g, "").trim())
     .some((s) => pats.some((p) => new RegExp("^(?:solo\\s+)?" + p + "(?:\\s+(?:nomas|no\\s+mas|nada\\s+mas|solito))?$").test(s)))) {
     return true;
+  }
+  // 4) «ok 1 arequipa», «ya 2 para cusco» (F6-oinstruc): muletilla + número + su lugar, y nada más.
+  //    Se exige que lo de después NO sea parte de una dirección (av, jr, mz, lote, calle…).
+  if (cant <= 20) {
+    const tl = t.toLowerCase().trim();
+    for (const p of pats) {
+      const m = new RegExp("^(?:(?:ok|oka|okey|ya|listo|dale|si|bueno|entonces|va)[\\s,]+)+" + p + "\\s+(?:(?:para|pa|a|en)\\s+)?([a-z][a-z ]{2,30})$").exec(tl);
+      if (m && !/^(?:av|avenida|jr|jiron|calle|mz|manzana|lote|lt|psje|pasaje|de\s|y\s|o\s|mas|unidad|unidades)\b/.test(m[1])) return true;
+    }
   }
   return false;
 }
@@ -19272,7 +19330,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (String(ctx.zona_entrega ?? "") === "provincia" && String(ctx.last_input ?? "").trim()
         && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
       try {
-        const _dicho = limpiaZona(String(ctx.last_input ?? ""));
+        // 👤 Sin su NOMBRE: «Pedro Salas 987654321 dni…» selló la agencia de SALAS (Ica) por el
+        // apellido (F6-preuso). Las palabras de su nombre no cuentan como distrito.
+        const _nomW = new Set(limpiaZona(String(ctx.nombre_completo ?? ctx.cliente ?? "")).split(/\s+/).filter((w) => w.length >= 3));
+        const _dicho = limpiaZona(String(ctx.last_input ?? "")).split(/\s+/).filter((w) => !_nomW.has(w)).join(" ");
         const _dd = distritosConOficina(String(ctx.ciudad ?? ""));
         // El nombre completo del distrito dentro de lo que escribió, por palabras: "estoy en
         // la victoria" sí, pero "reque" no puede colarse dentro de otra palabra.
@@ -20750,6 +20811,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           } else {
             L.push("El pago es en EFECTIVO al recibir. Si pregunta por tarjeta, dile con naturalidad que por ahora solo efectivo contra entrega.");
           }
+          // 💵 «¿tienen vuelto de 100?» → «el motorizado lleva vuelto, incluso de billetes de 100»
+          // (F6-lvuelto): nadie lo escribió, y si no lleva, la entrega se cae en la puerta.
+          L.push("💵 Si pregunta si el motorizado lleva VUELTO o sencillo: no lo sabes, así que ⛔ no le prometas que " +
+            "lleva cambio de ningún billete. Dile que para no tener problema en la entrega es mejor que tenga el monto " +
+            "justo o sencillo a la mano.");
           // ⏰ «¿A QUÉ HORA LLEGA?» — la pregunta más común de la contraentrega en Lima, y
           // el bot no tenía con qué contestarla: sabía el DÍA (hoy/mañana) y nada de la hora.
           // El campo existía desde siempre en Negocio → Entrega y NADIE lo leía; salió en la
@@ -21410,6 +21476,57 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // UNA vez y PEGADO a lo que ya le estás pidiendo, nunca como pregunta suelta: para el
     // 99% que sí es de Lima, un paso extra es fricción pura; para el otro 1% evita mandar
     // un motorizado a un distrito que está a 1000 km.
+    // 💸 «en el anuncio decía 39» (F6-oanuncio): la IA le contestó «ese número no está relacionado con
+    // este producto» — negó un anuncio que quizá SÍ existe (una oferta vieja, un error del creativo). Ni
+    // negarlo ni aceptarlo: el precio de ahora + que lo revisa el equipo, y el dueño se entera.
+    {
+      const _liA = String(ctx.last_input ?? "");
+      const _mA = /(?:anuncio|publicidad|publicaci[oó]n|facebook|\bface\b|tiktok|instagram|promo\w*|oferta|el\s+video|la\s+foto)[^.?!\n]{0,40}?(?:s\/\s*)?(\d{2,4})|(?:dec[ií]a|sal[ií]a|estaba\s+a|lo\s+vi\s+a|vi\s+que\s+(?:estaba|era))\s+(?:a\s+)?(?:s\/\s*)?(\d{2,4})/i.exec(_liA);
+      const _nA = _mA ? Number(_mA[1] ?? _mA[2]) : NaN;
+      if (Number.isFinite(_nA) && _nA > 0 && !esDigital(ctx)) {
+        let _esDeLista = false;
+        try {
+          const _opsA = await loadOpciones(db, run, String(ctx._product_id ?? ""));
+          _esDeLista = _opsA.some((o) => Math.abs(Number(o.precio) - _nA) < 0.5);
+        } catch (_) { /* sin opciones → se trata como distinto */ }
+        if (!_esDeLista) {
+          parts.push(`## 💸 Dice que vio el producto a ${_nA} en un anuncio\n` +
+            "⛔ NO le digas que ese precio es falso, que no tiene relación con este producto ni que se equivocó: " +
+            "puede ser una oferta anterior o un anuncio mal hecho, y tú no lo sabes. Tampoco se lo aceptes. " +
+            "Dile con amabilidad cuál es el precio de AHORA (el de la lista) y que si tiene la captura o el link del " +
+            "anuncio te lo pase, que lo revisa el equipo y le confirman por acá. Y sigue con la venta normal.");
+          if (!(run.vars as any)?._aviso_precio_anuncio) {
+            (run.vars as any)._aviso_precio_anuncio = 1;
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "💸 Dice que vio otro precio en un anuncio",
+              `«${_liA.slice(0, 100)}» — revisa si hay un anuncio con ese precio`).catch(() => {});
+          }
+        }
+      }
+    }
+    // 📦📦 «quiero 2, uno a mi casa en surco y otro a mi trabajo en san isidro» (F6-ldosdir, F6-lparados):
+    // la IA lo aceptaba («perfecto para usar en ambos lugares») y el pedido nace con UNA dirección — al
+    // segundo lugar no llega nada. Un pedido es un envío: se le dice y se le pregunta a cuál.
+    if (!esDigital(ctx) && String(ctx.pedido_creado ?? "") !== "si") {
+      const _liD = String(ctx.last_input ?? "");
+      if (/(?:^|[^\p{L}])(?:un[oa]?|1)\s+(?:para|pa|a|en)\s+[^,.;]{2,40}?\s+y\s+(?:(?:el|la)\s+)?(?:otr[oa]|1|un[oa])\s+(?:para|pa|a|en)(?![\p{L}])|dos\s+direcciones|(?:diferentes|distintas|otra)\s+direcci[oó]n(?:es)?\s+(?:para|cada)/iu.test(_liD)) {
+        (run.vars as any)._dos_direcciones = 1;
+      }
+      if ((run.vars as any)?._dos_direcciones) {
+        parts.push("## 📦📦 Quiere mandar a DOS direcciones distintas\n" +
+          "Un pedido sale en UN envío a UNA dirección. ⛔ No le digas «perfecto, uno a cada lugar» ni pidas las dos " +
+          "direcciones como si fuera un solo pedido: el segundo lugar se quedaría sin nada. Díselo claro y amable, y " +
+          "pregúntale a cuál de las dos direcciones le mandamos el pedido. Si de verdad necesita dos envíos, dile que " +
+          "eso lo coordina una persona del equipo por acá y escribe `[[humano]]`.");
+      }
+    }
+    // ⚖️ Nombró DOS lugares («chimbote o trujillo, donde llegue más rápido»): ver `_dos_lugares`.
+    const _dosL = String((ctx as any)._dos_lugares ?? (run.vars as any)?._dos_lugares ?? "").trim();
+    if (_dosL && !String(ctx.zona_entrega ?? "").trim()) {
+      parts.push(`## ⚖️ Te nombró dos lugares: ${_dosL}\n` +
+        "⛔ NO elijas tú ni des por hecho uno de los dos. Si preguntó cuál llega más rápido, contéstale con lo " +
+        "que sabes de cada uno (si no sabes el plazo, dile que en los dos va por agencia y suele ser parecido). " +
+        "Y pregúntale en cuál de los dos lo va a recoger. Una sola pregunta.");
+    }
     if (String(ctx.distrito_ambiguo ?? "").trim() && String(ctx.zona_entrega ?? "") === "lima"
         && !/(?:^|[^\p{L}])lima(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))) {
       parts.push(
@@ -24066,30 +24183,61 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && String(ctx.entrega_hoy ?? "") === "no") {
         salida = sinPromesaDeHoy(salida, String(ctx.entrega_cuando ?? ""));
       }
+      // 🚚 «puente piedra, ¿cuánto cuesta el delivery?» (F6-lpuente): la IA vendía y no decía que el
+      // envío es gratis — justo lo que preguntó. Lo pone el motor con la configuración real.
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.pedido_creado ?? "") !== "si"
+          && /(?:^|[^\p{L}])(?:cu[aá]nto\s+(?:cuesta|cobran|sale|es|vale|me\s+cobran)\s+(?:el\s+|por\s+el\s+)?(?:delivery|env[ií]o|flete|despacho|traslado)|(?:el\s+)?(?:delivery|env[ií]o|flete)\s+(?:cuesta|cu[aá]nto|tiene\s+costo|es\s+gratis|se\s+paga|aparte|incluido)|cobran\s+(?:el\s+)?(?:delivery|env[ií]o|flete)|hay\s+que\s+pagar\s+(?:el\s+)?(?:delivery|env[ií]o|flete))(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
+          && !/gratis|sin\s+costo|incluid|no\s+(?:tiene|cuesta)|(?:env[ií]o|delivery|flete)[^.\n]{0,30}(?:S\/|\$)\s?\d|(?:S\/|\$)\s?\d+[^.\n]{0,20}(?:de\s+)?(?:env[ií]o|delivery|flete)|lo\s+pagas\s+en\s+la\s+agencia/i.test(sinFormato(salida))) {
+        const _zE = String(ctx.zona_entrega ?? "");
+        const _modoE = modoEnvio(ctx);
+        const _sE = simboloMoneda(ctx.moneda as string);
+        const _cE = _zE ? envioCobroDe(ctx, _zE) : 0;
+        const _lE = _modoE === "agencia" ? "El envío lo pagas en la agencia al recoger 📦"
+          : _cE > 0 ? `El envío ${_zE === "lima" ? "a tu distrito" : "a tu ciudad"} es de *${_sE} ${_cE}* 🛵`
+          : _modoE === "incluido" ? "El envío es *gratis* 🙌"
+          : "";
+        if (_lE) {
+          salida = `${_lE}\n\n${String(salida ?? "").trimStart()}`;
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🚚 Preguntó el costo del envío y la IA no lo dijo",
+            `Se le contestó por código: ${_lE}`).catch(() => {});
+        }
+      }
       // 📅 «lima centro, me llega hoy?», «surquillo, 1, llega el sábado?» (F5): la IA vendía y no
       // contestaba CUÁNDO, que es justo lo que preguntó. El motor ya lo calculó (entrega_cuando).
-      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "") === "lima"
+      if (op === "generar_texto" && !esDigital(ctx) && /^(lima|provincia)$/.test(String(ctx.zona_entrega ?? ""))
           && String(ctx.pedido_creado ?? "") !== "si") {
         const _liW = String(ctx.last_input ?? "");
         const _DIAS = "lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo";
         const _preguntaCuando = new RegExp(
           `(?:^|[^\\p{L}])(?:cu[aá]ndo\\s+(?:me\\s+)?(?:llega|lo\\s+(?:tengo|traen|entregan|mandan))|para\\s+cu[aá]ndo|` +
           `(?:me\\s+)?llega(?:r[ií]a)?\\s+(?:hoy|ma[ñn]ana|el\\s+(?:${_DIAS})|este\\s+(?:${_DIAS}))|en\\s+cu[aá]nto\\s+tiempo|` +
-          `cu[aá]nto\\s+(?:tarda|demora)|(?:lo\\s+)?(?:traen|entregan|mandan)\\s+(?:hoy|ma[ñn]ana)|hoy\\s+mismo)(?![\\p{L}])`, "iu").test(_liW);
+          `cu[aá]nto\\s+(?:tarda|demora)|cu[aá]ntos\\s+d[ií]as|llega\\s+r[aá]pido|demora\\s+mucho|(?:lo\\s+)?(?:traen|entregan|mandan)\\s+(?:hoy|ma[ñn]ana)|hoy\\s+mismo)(?![\\p{L}])`, "iu").test(_liW);
         const _yaDice = new RegExp(`(?:^|[^\\p{L}])(?:hoy|ma[ñn]ana|repong\\p{L}*|agotad\\p{L}*|${_DIAS}|\\d+\\s*(?:d[ií]as|horas)|en\\s+el\\s+d[ií]a)(?![\\p{L}])`, "iu")
           .test(sinFormato(salida));
         if (_preguntaCuando && !_yaDice) {
           const _cu = String(ctx.entrega_cuando ?? "").trim();
+          // 🚌 Provincia (F6-paereo: «iquitos 1, ¿llega rápido?» sin respuesta): el plazo configurado por destino.
+          const _prov = String(ctx.zona_entrega ?? "") === "provincia";
+          let _dem = String(ctx.demora_provincia ?? "").trim();
+          // La zona se resolvió en ESTE turno («iquitos 1, ¿llega rápido?», F6b-paereo): el plazo del
+          // contexto se calculó antes, sin ciudad. Se calcula acá.
+          if (_prov && !_dem && String(ctx.ciudad ?? "").trim()) {
+            try { const _entD = await loadEntregas(db, run); _dem = demoraProvincia((_entD as any)?.entregas, String(ctx.ciudad)); } catch (_) { /* sin config */ }
+          }
           // «Lima centro» / «Lima» a secas: sin distrito no se sabe si alcanza hoy (entrega_cuando vacío).
-          const _linea = !_cu
+          const _linea = _prov
+            ? (_dem ? `A *${bonito(String(ctx.ciudad ?? "tu ciudad"))}* suele estar listo para recoger en *${_dem}* 📦` : "")
+            : !_cu
             // Sin pregunta: el freno físico de más abajo deja UNA (la cantidad) y le quitaba el distrito.
             ? "Si te llega hoy depende de tu distrito: con tu dirección te confirmo el día 🛵"
             : _cu === "hoy" ? "Sí, te llega *hoy mismo* 🛵"
             : /repong/i.test(_cu) ? "Ahora mismo está agotado: te llega *en cuanto repongamos* 📦"
             : `${/(?:^|[^\p{L}])hoy(?![\p{L}])/iu.test(_liW) ? "Hoy ya no alcanza: te" : "Te"} llega *${_cu}* 🛵`;
-          salida = `${_linea}\n\n${String(salida ?? "").trimStart()}`;
-          await logEvent(db, run.channel_id, run.contact_id, "nota", "📅 Preguntó cuándo llega y la IA no lo dijo",
-            `Se le contestó por código: ${_cu}`).catch(() => {});
+          if (_linea) {
+            salida = `${_linea}\n\n${String(salida ?? "").trimStart()}`;
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "📅 Preguntó cuándo llega y la IA no lo dijo",
+              `Se le contestó por código: ${_prov ? _dem : _cu}`).catch(() => {});
+          }
         }
       }
       // Anunciar el cierre cuando el motor NO va a cerrar nada: mientras los datos no estén
@@ -24200,7 +24348,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // ⛔ Ni a quien acaba de decir que lo manda DESPUÉS («no tengo el DNI a la mano, mañana te
         // lo paso» → «Me falta un dato: DNI. ¿Me lo pasas? 🙂», D14-pfaltadni, 2026-09-25).
         const _loMandaLuego = RE_LO_MANDA_LUEGO.test(String(ctx.last_input ?? ""));
-        if (_hayQuePedir && !_leAdvirtio && !_esReclamoOEstado && !_loMandaLuego && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
+        // ⛔ Ni en FÍSICO sin saber de dónde es: el paso que falta es la zona, no la opción
+        // («quedo atento para cuando me digas desde dónde» + «Dime cuál prefieres y te lo dejo
+        // cerrado», F6-ocortes). Ver [[cierre-siempre-al-pago]] → FÍSICO.
+        const _fisicoSinZona = (!esDigital(ctx) && !String(ctx.zona_entrega ?? "").trim())
+          // …ni a «no gracias» (F6-hno: «Entiendo, acá estoy… Dime cuál prefieres y te lo dejo cerrado»).
+          || /^\s*(?:no(?:\s+gracias)?|nada|ya\s+no|no\s+me\s+interesa|gracias\s+no)[\s.!,🙂🙏]*$/iu.test(String(ctx.last_input ?? ""));
+        if (_hayQuePedir && !_fisicoSinZona && !_leAdvirtio && !_esReclamoOEstado && !_loMandaLuego && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
           salida = conPeticionFinal(salida, cierreHonesto, _lblTal);
         }
         // ⏰ …y «¿Quieres que te recuerde mañana?» es una promesa que el bot no cumple (no hay
@@ -24218,7 +24372,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // que su pedido estaba listo y el pedido no nacía. Si hay un dato inválido pendiente y el
         // mensaje no se lo corrige, se le dice por código, con el porqué.
         const _errFalta = _falta1?.clave ? String((ctx as any)["_error_" + _falta1.clave] ?? "").trim() : "";
-        if (_falta1 && _errFalta && !_loMandaLuego
+        // …salvo que la IA YA se lo esté pidiendo bien: «Esa referencia está clara. Solo dime la calle o
+        // avenida» + «Ojo con tu Dirección: no me cuadra» (F6-lrefe) se contradecían en el mismo mensaje.
+        const _yaLoPide = /(?:dime|d[ií]game|p[aá]same|m[aá]ndame|env[ií]ame|conf[ií]rmame|¿)[^.!?\n]{0,60}/i.test(sinFormato(salida)) && (
+          /direcci/i.test(String(_falta1?.clave ?? "") + " " + _lblTal)
+            ? /\b(calle|avenida|av\.?|jr\.?|jir[oó]n|direcci[oó]n|n[uú]mero de (?:casa|puerta)|manzana|lote)\b/i.test(sinFormato(salida))
+            : !!_lbl && sinFormato(salida).toLowerCase().includes(_lbl.split(/\s+/)[0] ?? "\u0000"));
+        if (_falta1 && _errFalta && !_loMandaLuego && !_yaLoPide
             && !/d[ií]gitos|no parece|de nuevo|otra vez|incompleto|completo\b/i.test(sinFormato(salida))) {
           const _nDig = /(\d+) d[ií]gitos/.exec(_errFalta)?.[1];
           const _val = String(_falta1.validar ?? "");
@@ -24226,7 +24386,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             ? `Ojo con tu celular: el que me pasaste tiene ${_nDig ?? "menos de 9"} dígitos y necesito los 9 completos 📱 ¿Me lo mandas de nuevo?`
             : _val === "dni"
             ? `Ojo con tu DNI: el que me pasaste ${_nDig ? `tiene ${_nDig} dígitos y son 8` : "no me cuadra"} 🪪 ¿Me lo confirmas?`
-            : `Ojo con tu ${_lblTal || String(_falta1.clave)}: lo que me pasaste no me cuadra 🙏 ¿Me lo mandas de nuevo?`;
+            : `Ojo con tu ${(_lblTal || String(_falta1.clave)).replace(/^\p{Lu}(?!\p{Lu})/u, (c) => c.toLowerCase())}: lo que me pasaste no me cuadra 🙏 ¿Me lo mandas de nuevo?`;
           salida = salida.trimEnd() + "\n\n" + _corr;
           await logEvent(db, run.channel_id, run.contact_id, "nota", "🪪 Repitió un dato inválido como si valiera",
             `${String(_falta1.clave)}: ${_errFalta.slice(0, 90)}`).catch(() => {});
@@ -24612,7 +24772,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // lo envío? ¿Cuántas unidades quieres?» juntas.
       if (op === "generar_texto" && !esDigital(ctx) && String(ctx.pedido_creado ?? "") !== "si" && String(salida ?? "").trim()) {
         try {
-          const _RE_Q_UBIC = /¿[^?¿]*\b(?:de\s+d[oó]nde|desde\s+d[oó]nde|qu[eé]\s+(?:distrito|ciudad|provincia|departamento)|en\s+qu[eé]\s+(?:distrito|ciudad|zona|provincia)|d[oó]nde\s+(?:vives|est[aá]s|te\s+lo\s+(?:env[ií]o|mando|enviamos)))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
+          // (+ «¿A qué dirección te lo envío?» junto a «¿Cuántas unidades?» — F6-lmanana)
+          const _RE_Q_UBIC = /¿[^?¿]*\b(?:(?:a\s+)?qu[eé]\s+direcci[oó]n|cu[aá]l\s+es\s+tu\s+direcci[oó]n|de\s+d[oó]nde|desde\s+d[oó]nde|qu[eé]\s+(?:distrito|ciudad|provincia|departamento)|en\s+qu[eé]\s+(?:distrito|ciudad|zona|provincia)|d[oó]nde\s+(?:vives|est[aá]s|te\s+lo\s+(?:env[ií]o|mando|enviamos)))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
           // (+ «¿Cuál opción quieres, 1, 2 o 3 unidades?»: la misma pregunta dicha con CUÁL — F2-provincia)
           const _RE_Q_CANT = /¿[^?¿]*\b(?:cu[aá]ntas?|cu[aá]ntos?|qu[eé]\s+oferta|cu[aá]l\s+(?:opci[oó]n|oferta|presentaci[oó]n))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
           const _hay = (re: RegExp, t: string) => { re.lastIndex = 0; const r = re.test(t); re.lastIndex = 0; return r; };
@@ -24626,11 +24787,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             _s = _s.replace(/^[ \t]*📌[^\n]*(?:\n|$)/gmu, "").replace(/[ \t]*📌[^\n📌]*/gu, "")
               .replace(/^[ \t]*\*[^*\n]{2,45}\*[ \t]*$/gmu, "")
               .replace(/[ \t]*\*(?:celular|nombre|dni|direcci[oó]n|distrito|ciudad|referencia|tel[eé]fono|sede)[^*\n]{0,40}\*[ \t]*(?=\n|$)/giu, "")
-              .replace(/(?:Para dejarlo listo,?\s*)?p[aá]same (?:estos|tus|los siguientes) datos[^\n]*\n?/giu, "");
+              .replace(/(?:Para dejarlo listo,?\s*)?p[aá]same (?:estos|tus|los siguientes) datos[^\n]*\n?/giu, "")
+              // «¿Me pasas esos datos para dejarlo listo?» sin la lista delante (F6-lparados): pide nada.
+              .replace(/¿?\s*me\s+(?:pasas|das|env[ií]as|mandas|compartes)\s+(?:esos|estos|tus|los)\s+datos[^?\n]*\??[\s\p{Extended_Pictographic}️]*/giu, " ");
+            // Sin zona y sin ninguna pregunta que quede: la que falta es de dónde es.
+            // La muletilla que anunciaba la lista quitada («…para completar tu pedido. Además,» — F6c-pdos).
+            _s = _s.replace(/[ \t]*\b(?:adem[aá]s|tambi[eé]n|y\s+para\s+(?:terminar|cerrar))\s*,?[ \t]*(?=\n|$)/gimu, "");
+            if (!_zonaOk && !/[?¿]/.test(_s) && !/cuando quieras me dices de d[oó]nde eres/i.test(_s)
+                && !(ctx as any)._dos_lugares && !(run.vars as any)?._dos_lugares
+                && !/conf[ií]rm\p{L}*|necesito que|dime (?:cu[aá]l|en cu[aá]l|d[oó]nde)|cu[aá]l de (?:las|los) dos/iu.test(_s)) {
+              _s = _s.trimEnd() + " ¿De qué distrito o ciudad nos escribes? Así te digo cómo te llega 📦";
+            }
           }
           // 1) Con la zona ya sabida, «¿en qué distrito?» + «¿cuántas?» → queda solo la cantidad (el
           //    distrito va con los datos, un paso después).
           if (_zonaOk && _hay(_RE_Q_CANT, _s) && _hay(_RE_Q_UBIC, _s)) _s = _s.replace(_RE_Q_UBIC, " ");
+          //    …y lo mismo dicho en IMPERATIVO: «Confírmame la dirección exacta y a qué nombre lo envío» +
+          //    «¿Cuántas unidades quieres?» (F6b-lmanana). La dirección va con los datos, después.
+          if (_zonaOk && _hay(_RE_Q_CANT, _s) && String(ctx.pedido_creado ?? "") !== "si" && !String(ctx.opcion_id ?? "").trim()) {
+            _s = _s.replace(/[^.!?¿\n]*\b(?:conf[ií]rmame|p[aá]same|dime|ind[ií]came|env[ií]ame)\s+(?:tu\s+|la\s+)?(?:direcci[oó]n|nombre|a\s+qu[eé]\s+nombre)[^.!?¿\n]*[.!]?/giu, " ");
+          }
           // 1b) La cantidad YA está sellada («quiero 2 para lima los olivos, Juan…», F5-htodojunto): la IA
           //    igual pegaba «Estas son las opciones… para que elijas cuántas unidades llevas» + la lista,
           //    y el pedido se confirmaba en la burbuja siguiente. Fuera la pregunta y la lista.
@@ -24674,6 +24850,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "");
             }
             _s = _s.trim() + " ¿De qué distrito o ciudad nos escribes? Así te digo cómo te llega 📦";
+          } else if (!_zonaOk && _hay(_RE_Q_CANT, _s) && !_hay(_RE_Q_UBIC, _s) && _hay(_RE_Q_UBIC, _ultF)
+                     && !RE_CLIENTE_PIDE_PRECIO.test(_li)) {
+            // Se le preguntó de dónde es, contestó «si» / «ok» sin decirlo, y el turno saltaba a
+            // «¿cuántas?» + la lista (F6-lsisi): la zona sigue faltando — va la versión suave.
+            _s = _s.replace(_RE_Q_CANT, " ").replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, "")
+              .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "").trim();
+            _s = (_s ? _s + " " : "") + "¿Alguna otra duda? Cuando quieras me dices de dónde eres y te digo cómo te llega 🙂";
           } else if (_zonaOk && _cantAntes && _hay(_RE_Q_CANT, _s) && !RE_CLIENTE_PIDE_PRECIO.test(_li) &&
                      !/cuando quieras me dices cu[aá]ntas/i.test(_ultF)) {
             // …y sin volver a pegar la lista de precios que ya vio.
@@ -24686,6 +24869,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (!_zonaOk && _hay(_RE_Q_CANT, _s) && (_hay(_RE_Q_UBIC, _s) || /cuando quieras me dices de d[oó]nde eres/i.test(_s))) {
             _s = _s.replace(_RE_Q_CANT, " ");
           }
+          // ⚖️ Nombró dos ciudades y todavía no eligió: si el mensaje no pregunta nada, se le pregunta cuál
+          // (F6d-pdos: tras «1» quedó «Anotado: 1 unidad…» y seco).
+          {
+            const _dosF = String((ctx as any)._dos_lugares ?? (run.vars as any)?._dos_lugares ?? "").trim();
+            if (!_zonaOk && _dosF && !/[?¿]/.test(_s)) _s = _s.trimEnd() + `\n\n¿En cuál lo recoges, ${_dosF}? 📦`;
+          }
           // La cola de la pregunta que se quitó («…¿de dónde eres? Así te cuento cómo te llega 📦») quedaba
           // suelta delante de la suave, que ya dice lo mismo (F4-calidad).
           if (/cuando quieras me dices de d[oó]nde eres/i.test(_s) && _s !== _antesF) {
@@ -24693,7 +24882,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
           // «…para un uso adecuado. Para seguir, ¿Alguna otra duda?» (F5b-orepuesto): la muletilla que
           // anunciaba la pregunta quitada queda colgando delante de la suave.
-          _s = _s.replace(/(?:^|(?<=[.!?\s]))(?:para\s+(?:seguir|avanzar|continuar)|y\s+para\s+(?:seguir|avanzar))\s*,?\s*(?=¿Alguna otra duda)/giu, "");
+          _s = _s.replace(/(?:^|(?<=[.!?\s]))(?:para\s+(?:seguir|avanzar|continuar)|y\s+para\s+(?:seguir|avanzar)|(?:y\s+)?ahora,?\s+cu[eé]ntame|cu[eé]ntame|dime|¿\s*me\s+lo\s+(?:pasas|dices|confirmas|env[ií]as)\s*\??)\s*,?\s*(?=¿Alguna otra duda)/giu, "");
           _s = _s.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
           if (_s !== _antesF && _s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10) {
             salida = _s;
@@ -24710,7 +24899,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && !esDigital(ctx)) {
         const _antesDir = String(salida ?? "");
         let _sd = _antesDir.replace(/[ \t]*\(?\s*(?:puede|pueden|basta|vale)\s+(?:ser\s+)?(?:sin|con\s+solo)\s+(?:la\s+)?(?:calle|n[uú]mero|numeraci[oó]n)[^)\n]*\)?/giu, "");
-        if (/📌/.test(_sd)) _sd = _sd.replace(/[ \t]*(?:^|(?<=[\s.!]))y\s+dime\s+si\s+confirmas\s+(?:la\s+compra|el\s+pedido)[^.\n]*[.!]?\s*(?:[\p{Extended_Pictographic}️]\s*)*/gimu, " ");
+        if (/📌/.test(_sd)) _sd = _sd.replace(/[ \t]*(?:^|(?<=[\s.!]))y\s+(?:dime\s+si\s+confirmas\s+(?:la\s+compra|el\s+pedido)|conf[ií]rmame\s+si\s+(?:te\s+lo\s+mando|lo\s+confirmo|seguimos|lo\s+dejo|avanzamos))[^.\n]*[.!]?\s*(?:[\p{Extended_Pictographic}️]\s*)*/gimu, " ");
         _sd = _sd.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
         if (_sd !== _antesDir.trim()) {
           salida = _sd;
@@ -24725,7 +24914,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _lns = String(salida).split("\n");
         const _out: string[] = [];
         for (let i = 0; i < _lns.length; i++) {
-          if (/^[^\n]*p[aá]same\s+(?:estos|tus|los\s+siguientes)\s+datos[^\n]{0,20}$/iu.test(_lns[i].trim())) {
+          // (hasta 45 detrás: «Pásame tus datos y te lo dejo listo 👇» — F6b-ldosdir)
+          if (/^[^\n]*p[aá]same\s+(?:estos|tus|los\s+siguientes)\s+datos[^\n]{0,45}$/iu.test(_lns[i].trim())) {
             const _sig = _lns.slice(i + 1).find((l) => l.trim()) ?? "";
             if (!/📌|nombre|celular|tel[eé]fono|dni|direcci[oó]n|referencia|^\s*[-•*]\s*\*?\p{L}/iu.test(_sig)) continue;
           }
