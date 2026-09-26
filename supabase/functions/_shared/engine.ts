@@ -3600,7 +3600,7 @@ const TEMAS_FICHA_DIGITAL: Array<[string, RegExp, RegExp, "producto" | "negocio"
     // accesos para mi gimnasio», D15-amayorista): «con uno lo pueden aplicar todos tus clientes…
     // te alcanza para todos» regalaba 49 ventas. «los dos» / «ambos» a secas ya no cuentan: «ya
     // los dos» es comprar dos productos, no compartir uno (D15-adosseguidos).
-    /\b(compartirl[oa]|compartir (?:el|la|lo|con)|lo comparto|la comparto|con (?:mi|tu|su|un|una|otro|otra) (?:socio|socia|amigo|amiga|colega|compa[ñn]er[oa]|hermano|hermana|esposo|esposa|persona)|con otra persona|pas[aá]rsel[oa]|pasarl[oa] a|pasar a (?:un|una|mi|otro|otra)|para (?:dos|varias) personas|varias personas|revender|(?:una|uno|otra|otro) para (?:mi|tu|su) (?:socio|socia|amigo|amiga|colega|compa[ñn]er[oa]|hermano|hermana|esposo|esposa|hijo|hija|pap[aá]|mam[aá]|primo|prima)|licencia|t[uú] y (?:tu|su) \w+|(?:pueden|puedan) (?:usar|utilizar|abrir|compartir|verl|aplicar)\w*|(?:los dos|ambos) (?:pueden|podr[aá]n|lo usan|la usan|lo ven)|(?:alcanza|sirve) para todos|todos tus (?:clientes|alumnos|trabajadores|amigos)|\d{2,} (?:accesos|licencias|cuentas|personas|alumnos|clientes)|para (?:mi|mis|todo mi|todos mis) (?:gimnasio|empresa|equipo|academia|colegio|alumnos|clientes|trabajadores))\b/,
+    /\b(compartirl[oa]|compartir (?:el|la|lo|con)|lo comparto|la comparto|con (?:mi|tu|su|un|una|otro|otra) (?:socio|socia|amigo|amiga|colega|compa[ñn]er[oa]|hermano|hermana|esposo|esposa|persona|hijo|hija|hijos|pap[aá]|mam[aá]|pareja|novio|novia|familia|primo|prima)|(?:un|el) solo acceso|(?:pueden|podr[aá]n) (?:entrenar|verlo|verla|hacerlo|usarlo|usarla) juntos|entrenar juntos|hacerlo juntos|con otra persona|pas[aá]rsel[oa]|pasarl[oa] a|pasar a (?:un|una|mi|otro|otra)|para (?:dos|varias) personas|varias personas|revender|(?:una|uno|otra|otro) para (?:mi|tu|su) (?:socio|socia|amigo|amiga|colega|compa[ñn]er[oa]|hermano|hermana|esposo|esposa|hijo|hija|pap[aá]|mam[aá]|primo|prima)|licencia|t[uú] y (?:tu|su) \w+|(?:pueden|puedan) (?:usar|utilizar|abrir|compartir|verl|aplicar)\w*|(?:los dos|ambos) (?:pueden|podr[aá]n|lo usan|la usan|lo ven)|(?:alcanza|sirve) para todos|todos tus (?:clientes|alumnos|trabajadores|amigos)|\d{2,} (?:accesos|licencias|cuentas|personas|alumnos|clientes)|para (?:mi|mis|todo mi|todos mis) (?:gimnasio|empresa|equipo|academia|colegio|alumnos|clientes|trabajadores))\b/,
     /\b(compartir|licencia|uso personal|intransferible|un solo usuario|revender)\b/, "producto"],
   ["en qué formato viene",
     /\b(son videos?|es un pdf|en pdf|qu[eé] formato|videos? o (?:pdf|excel)|cu[aá]ntas clases|cu[aá]ntos m[oó]dulos|duraci[oó]n del curso)\b/,
@@ -12839,7 +12839,8 @@ const RE_AFIRMA_CORTO =
 // Básica?»): el «sí» a esa pregunta es querer comprar, y si no contara, el que dice «sí» se
 // quedaba con la misma pregunta otra vez (medido: «¿La quieres?» → «sí» → «¿La quieres?»).
 const RE_OFRECIO_DATOS =
-  /te (paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|dejo) (los |el |las |la )?(datos|yape|n[uú]mero|cuenta|info)|quieres (los |el |que te pase los |que te mande los )?(datos|yape|n[uú]mero)|te (lo|la) dejo list|¿(la|lo|las|los) (quieres|llevas|compras|tomas)|¿te (la|lo|las|los) dejo|¿vamos con|¿listo para|¿te animas|¿(lo|la) cerramos|¿te (lo|la) preparo/i;
+  /te (paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|dejo) (los |el |las |la )?(datos|yape|n[uú]mero|cuenta|info)|quieres (los |el |que te pase los |que te mande los )?(datos|yape|n[uú]mero)|te (lo|la) dejo list|¿(la|lo|las|los) (quieres|llevas|compras|tomas)|¿te (la|lo|las|los) dejo|¿vamos con|¿listo para|¿te animas|¿(lo|la) cerramos|¿te (lo|la) preparo|(contin[uú]o|sigo|seguimos|avanzo|avanzamos|procedo|procedemos) con (los datos|el pago|la compra)/i;
+// ↑ «¿Continúo con los datos para el pago?» → «ok» se quedaba sin número (D16-pm2).
 // …y el «sí» después de un mensaje que dio el PRECIO también: «cuesta S/19» → «sí» no puede
 // querer decir otra cosa. Medido: sin esto, «sí» → «cuando me mandes la captura te dejo el
 // acceso» y ningún número al que pagar (la oferta ya no está, la quitó sinPromesaDeDatosColgada).
@@ -19890,6 +19891,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
       } catch (_) { /* sin catálogo legible → sin el bloque */ }
     }
+    // ⬆️ Pasar DESPUÉS a una versión superior: el motor cobra solo la diferencia (upgrade con
+    // `_credito_upgrade`). La IA, sin el dato, contestó «tendrías que pagar la Premium completa»
+    // (D16-cupgrade): falso, y además empuja a no comprar la Básica hoy.
+    if (op === "generar_texto" && esDigital(ctx) && ctx._product_id) {
+      try {
+        const _opsU = (await loadOpciones(db, run, String(ctx._product_id))).filter((o) => Number(o.precio) > 0)
+          .sort((a, b) => Number(a.precio) - Number(b.precio));
+        if (_opsU.length > 1) {
+          const _sym = simboloMoneda(ctx.moneda as string);
+          const _ej = `de ${_opsU[0].nombre} (${_sym} ${_opsU[0].precio}) a ${_opsU[_opsU.length - 1].nombre} (${_sym} ${_opsU[_opsU.length - 1].precio}) son ${_sym} ${+(Number(_opsU[_opsU.length - 1].precio) - Number(_opsU[0].precio)).toFixed(2)}`;
+          parts.push("## Opciones de compra: pasar a otra después\n" +
+            `Si compra una versión y más adelante quiere una superior, paga SOLO la diferencia (${_ej}). ` +
+            "Nunca digas que tendría que pagar la completa otra vez.");
+        }
+      } catch (_) { /* sin opciones → sin el dato */ }
+    }
     // 🛒 La compra de VARIOS en un solo pago, ya armada por el motor (detectarCombo). El total es
     // ESTE: la IA no suma por su cuenta, y si falta una versión la pregunta ella.
     if (op === "generar_texto" && comboDe(run).length) {
@@ -21697,6 +21714,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (_cond) {
         const _reCond = new RegExp("\\b" + _cond.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
         if (!_reCond.test(fichaTxt)) huecos.push([`si sirve para ${_cond}`, _reCond, _reCond, "producto"]);
+      }
+      // 🧮 «¿Calcula el IGV?», «¿tiene macros?», «¿trae plantillas de contrato?»: una FUNCIÓN o
+      // un contenido concreto del producto. Si esa palabra no está en la ficha, la IA la
+      // afirmaba («Sí, incluye el cálculo del IGV», D16-pigv): una promesa que termina en
+      // reclamo. Solo el mensaje de AHORA y solo verbos de «qué trae» (no «¿sirve para
+      // gasfitería?», que la IA infiere bien desde la ficha). Fuera las palabras que no son
+      // una función del producto (virus, precio, envío…): ahí la IA contesta mejor sola.
+      {
+        const _mFeat = /(?:^|[¿\s])(?:calcula|incluye|trae|tiene|viene\s+con|lleva|hace\s+el|hace\s+la|genera|saca)\s+(?:el|la|los|las|un|una|tambi[eé]n)?\s*([a-záéíóúñ0-9]{3,})/i
+          .exec(String(ctx.last_input ?? "").toLowerCase());
+        const _pal = _mFeat ? normalize(_mFeat[1]) : "";
+        const _NO_FUNC = /^(virus|precio|precios|costo|descuento|promo|promocion|oferta|stock|envio|delivery|tiempo|algo|eso|esto|todo|alguna|algun|fecha|link|acceso|garantia|certificado|devolucion|factura|boleta|cuotas|que|cuanto|como|mucho|muchos|varios|otra|otro|nada|problema|problemas|error|errores|sentido)$/;
+        if (_pal && _pal.length >= 3 && !_NO_FUNC.test(_pal) && !normalize(fichaTxt).includes(_pal.replace(/s$/, ""))) {
+          const _reF = new RegExp("\\b" + _pal.replace(/s$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+          huecos.push([`si trae ${_pal}`, _reF, _reF, "producto"]);
+        }
       }
       // 🧾 «¿Es una app? ¿También hace facturas?» NO es la pregunta por la factura del negocio.
       // La primera pregunta por lo que el PRODUCTO hace, y eso sí está escrito: los Límites de
@@ -24189,6 +24222,48 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           salida = salida.replace(/\s{2,}/g, " ").trim();
           await logEvent(db, run.channel_id, run.contact_id, "nota", "🏷️ Confirmaba una promoción que no existe",
             `Se cambió por la verdad: «${_antesPromo.slice(0, 140)}»`).catch(() => {});
+        }
+      }
+      // 🚧 LO QUE LA FICHA DICE QUE NO. Los «Límites» están escritos y la IA igual los pisaba
+      // (D16, 2026-09-25): «si te trabas te guío por aquí» con «No incluye asesoría ni
+      // acompañamiento»; «en 21 días notarás más fuerza» con «No hay … resultados prometidos».
+      // Una regla de prompt ya los decía: es el patrón de siempre, pasa a código.
+      if (op === "generar_texto" && String(salida ?? "").trim()) {
+        const _lim = normalize(String(ctx.contexto_producto ?? "") + " " + String((ctx as any)._limites ?? ""));
+        const _antesLim = String(salida);
+        let _s = _antesLim;
+        if (/asesori|acompanamiento|soporte personal|clase en vivo|no incluye ayuda/.test(_lim)) {
+          // Genérico (D16c: «puedo ayudarte por aquí mismo», «aquí en el chat te respondo todo»): la
+          // IA cambia el verbo cada vez. Frase con ESTE CHAT + ayudar/responder/explicar/guiar, que
+          // no hable de la compra (elegir, pagar, datos), promete la asesoría que la ficha excluye.
+          _s = _s.replace(/[^.!?\n]*[^.!?\n]*/g, (m) =>
+            /(?:^|[^\p{L}])(aqu[ií]|ac[aá]|en\s+el\s+chat|por\s+este\s+chat|por\s+whatsapp)(?![\p{L}])/iu.test(m) &&
+            /\b(ayud\w*|respond\w*|resuelv\w*|explic\w*|gu[ií][oaá]\w*|acompa\w*|asesor\w*|oriento)\b/i.test(m) &&
+            /\b(duda|dudas|trab\w*|ator\w*|claro|complic\w*|problema|usar|uses|usarla|usarlo|necesites|avances)\b/i.test(m) &&
+            !/\b(elegir|escoger|decidir|comprar|pag[oa]r?|pago|captura|datos|versi[oó]n|link|acceso)\b/i.test(m)
+              ? " La asesoría personalizada no viene incluida 🙏 " : m);
+          // «aquí te ayudo», «cualquier duda aquí te la resuelvo» (D16b-psoporte): el lugar va DELANTE.
+          _s = _s.replace(/[^.!?\n]*\b(?:aqu[ií]|ac[aá]|por\s+aqu[ií]|por\s+ac[aá]|yo)\s+(?:mismo\s+)?te\s+(?:ayudo|gu[ií]o|explico|acompa[ñn]o|asesoro|oriento|(?:la|lo|las|los)\s+resuelvo)\b[^.!?\n]*[.!?]?/gi,
+            (m) => /\b(elegir|escoger|decidir|comprar|pag[oa]r?|captura|datos|versi[oó]n)\b/i.test(m) ? m : " La asesoría personalizada no viene incluida 🙏 ");
+          _s = _s.replace(/[^.!?\n]*\b(?:te\s+(?:ayudo|gu[ií]o|explico|acompa[ñn]o|asesoro|oriento|resuelvo)|te\s+voy\s+a\s+(?:ayudar|guiar|explicar))\b[^.!?\n]*(?:por\s+aqu[ií]|por\s+ac[aá]|en\s+el\s+chat|por\s+este\s+chat|por\s+whatsapp|paso\s+a\s+paso|si\s+te\s+(?:trabas|atoras|complicas))[^.!?\n]*[.!?]?/gi,
+            // «te ayudo a elegir / con el pago» es vender, no asesorar el uso del producto.
+            (m) => /\b(elegir|escoger|decidir|comprar|pag[oa]r?|captura|datos|versi[oó]n)\b/i.test(m) ? m : " La asesoría personalizada no viene incluida 🙏 ");
+        }
+        if (/resultados prometidos|no (?:se )?promet|no hay garantias|sin garantias/.test(_lim)) {
+          // «empezarás a sentir mejora en semanas», «muchos notan mejoría a partir de la segunda
+          // semana» (D16b-kresultados): plazo sin número, u ordinal. Verbo de resultado + un plazo.
+          _s = _s.replace(/[^.!?\n]*\b(?:notar[aá]s|ver[aá]s|sentir[aá]s|empezar[aá]s\s+a\s+(?:notar|sentir|ver)|empiezan\s+a\s+(?:notar|sentir|ver)|notan|lograr[aá]s|te\s+vas\s+a\s+sentir|vas\s+a\s+(?:notar|ver|sentir|lograr))\b[^.!?\n]{0,80}\b(?:semanas?|d[ií]as|mes(?:es)?)\b[^.!?\n]*[.!?]?/gi,
+            " Cuánto avanzas depende de tu constancia: el plan te guía día a día 💪 ");
+          _s = _s.replace(/[^.!?\n]*\b(?:notar[aá]s|ver[aá]s|sentir[aá]s|lograr[aá]s|bajar[aá]s|ganar[aá]s|te\s+vas\s+a\s+sentir|vas\s+a\s+(?:notar|ver|sentir|lograr|bajar|ganar|tener))\b[^.!?\n]*\ben\s+(?:\d+|una|dos|tres|cuatro)\s+(?:d[ií]as|semanas|meses)\b[^.!?\n]*[.!?]?|[^.!?\n]*\ben\s+\d+\s+d[ií]as\b[^.!?\n]*\b(?:notar[aá]s|ver[aá]s|te\s+vas\s+a\s+sentir|sentir[aá]s|vas\s+a\s+(?:notar|ver|sentir))\b[^.!?\n]*[.!?]?/gi,
+            " Cuánto avanzas depende de tu constancia: el plan te guía día a día 💪 ");
+        }
+        if (_s !== _antesLim) {
+          salida = _s.replace(/(La asesoría personalizada no viene incluida 🙏\s*){2,}/g, "$1")
+            .replace(/(Cuánto avanzas depende de tu constancia: el plan te guía día a día 💪\s*){2,}/g, "$1")
+            .replace(/(🙏|💪)\s*[.,]/g, "$1")
+            .replace(/\s{2,}/g, " ").trim();
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🚧 Contradecía los Límites de la ficha",
+            `Se cambió por lo que dice la ficha: «${_antesLim.slice(0, 160)}»`).catch(() => {});
         }
       }
       // 🔠 Una sola vez, al final: cualquiera de los veinte guards pudo quitar la frase con que
