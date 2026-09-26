@@ -1514,7 +1514,9 @@ export async function entregarExtrasDigitales(db: SupabaseClient, channelId: str
         // URL de texto pelada; solo los tipo link van como texto. Antes se mandaba
         // `it.url` como texto SIEMPRE → el cliente que pagó el extra/regalo digital
         // recibía un link crudo de storage en vez del archivo. Espeja entregarOpcion.
-        const bubbles: any[] = [{ text: `🎁 Y de regalo, tu ${nombre}:` }];
+        // Un producto COMPRADO en el mismo pago (combo) no es un regalo: decirle «de regalo»
+        // a lo que pagó confunde (y hace pensar que el otro producto no llegó).
+        const bubbles: any[] = [{ text: b?.combo || (Number(b?.precio) > 0 && !b?.regalo) ? `Acá tienes tu *${nombre}* 👇` : `🎁 Y de regalo, tu ${nombre}:` }];
         for (const it of items) {
           if (it.tipo === "archivo") bubbles.push({ media_url: it.url, media_kind: it.media_kind, filename: it.filename, caption: it.mensaje || it.nombre || "" });
           else bubbles.push({ text: `${it.mensaje || it.nombre ? (it.mensaje || it.nombre) + ": " : ""}${it.url}` });
@@ -8835,7 +8837,8 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       // recalcularlo acá con el {{precio}} lo devolvía al precio de lista y contaba como cobrado
       // dinero que no entró (y el Purchase a Meta ya había salido con el corregido).
       const _montoManual = ((cur as any)?.shipping ?? {}).monto_manual === true;
-      if (base && !_montoManual) patch.amount = pr.amount;
+      if (base && !_montoManual) patch.amount = comboDe(run).length ? montoSinCombo(run, pr.amount) : pr.amount;
+      await adjuntarCombo(db, run, String(run.vars._order_id));   // idempotente: ya van desde el pendiente
       if (pr.vuelto > 0 && !_montoManual) merged.vuelto = pr.vuelto;
       if (["confirmada", "entregado_cobrado", "recogido", "saldo_pagado"].includes(patch.estado as string)) {
         patch.confirmed_at = new Date().toISOString();
@@ -8891,6 +8894,8 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       const pr = pagoRealYVuelto(run, esperado, margenSobrepago(esperado, (_infoM2 as any)?.pedidos?.digital));
       amount = pr.amount; vuelto = pr.vuelto; if (vuelto > 0) ship.vuelto = vuelto;
     }
+    // 🛒 Combo: el pedido vale lo del principal; el resto entra como extras cobrados (abajo).
+    if (comboDe(run).length) amount = montoSinCombo(run, amount);
 
     // Backstop anti-S/0: un pedido cuyo producto TIENE opciones con precio no debería
     // salir en 0 (señal de que la opción no se resolvió). La guardia de datos_completos
@@ -9128,6 +9133,8 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       await enrolarSegmento(db, run.channel_id, run.contact_id, "provincia_sin_adelanto").catch(() => {});
     }
     if (vuelto > 0) await avisarVuelto(db, run, amount, vuelto);
+    // 🛒 Los otros productos del mismo pago, ANTES de Sheets y del Purchase (que releen los bumps).
+    await adjuntarCombo(db, run, (ord as any).id);
     await syncPedidoSheet(db, (ord as any).id); // la fila nace con el pedido
     // Si el pedido NACE ya como venta real (digital confirmada al toque / OCR
     // automático), Purchase a Meta. Físico nace en esperando_adelanto/confirmada
@@ -13153,6 +13160,13 @@ async function maybeCambioProducto(
   if (!actual) return false; // sin producto en curso el ruteo normal ya lo atiende
   const otro = await otroProductoPorKeyword(db, channelId, event.text, actual);
   if (!otro) return false;
+  // 🛒 «también el protocolo», «los dos»: no cambia, SUMA. En digital eso lo arma detectarCombo
+  // dentro de la venta en curso (un solo pago); abrir la otra venta le soltaba la primera.
+  if (RE_COMBO_TAMBIEN.test(String(event.text)) || RE_COMBO_JUNTO.test(normalize(String(event.text)))) {
+    const { data: _pA } = await db.from("products").select("tipo").eq("id", actual).maybeSingle();
+    const { data: _pO } = await db.from("products").select("tipo").eq("id", otro).maybeSingle();
+    if (String((_pA as any)?.tipo) === "digital" && String((_pO as any)?.tipo) === "digital") return false;
+  }
   const { data: viv } = await db.from("orders").select("id")
     .eq("channel_id", channelId).eq("contact_id", contactId)
     .not("estado", "in", "(cancelado,rechazado,no_recogido)").limit(1);
@@ -14885,14 +14899,26 @@ async function precioEsperado(
     const _x = _nPres > 1 ? +(m * _nPres).toFixed(2) : m;
     return _cred > 0 && _x > _cred ? +(_x - _cred).toFixed(2) : _x;
   };
+  // 🛒 …y lo que se lleva ADEMÁS en el mismo pago (ver detectarCombo). Sin elegir la versión de
+  // alguno, no hay total: null, igual que el principal sin presentación elegida.
+  const _cSum = comboSuma(run);
+  const _conCombo = (m: number | null) => (m == null ? null : _cSum == null ? null : +(m + _cSum).toFixed(2));
   if (oferta && opcion && oferta.opcion_id === opcion.id && Number.isFinite(Number(oferta.precio))) {
-    return { monto: _menos(Number(oferta.precio)), opcion, oferta };
+    return { monto: _conCombo(_menos(Number(oferta.precio))), opcion, oferta };
   }
   if (opcion?.precio != null && Number.isFinite(Number(opcion.precio))) {
-    return { monto: _menos(Number(opcion.precio)), opcion, oferta };
+    return { monto: _conCombo(_menos(Number(opcion.precio))), opcion, oferta };
   }
-  const legacy = Number(ctx.precio); // productos viejos: precio suelto en config
+  // Productos viejos: precio suelto en config. `ctx.precio` ya puede traer el total del combo
+  // (lo pisa buildContext con este mismo cálculo), así que acá NO se le vuelve a sumar.
+  const legacy = Number(ctx.precio);
   return { monto: Number.isFinite(legacy) ? _menos(legacy) : null, opcion, oferta };
+}
+// Lo que vale SOLO el principal cuando el pago trae un combo: el pedido se registra con esto y
+// los otros productos van como extras cobrados (adjuntarCombo).
+function montoSinCombo(run: Run, total: number): number {
+  const s = comboSuma(run);
+  return s && s > 0 && total > s ? +(total - s).toFixed(2) : total;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -17658,6 +17684,188 @@ function eligePorAtributo(texto: string, list: Opcion[]): Opcion | null {
 // bloque «Dos destinos» del prompt).
 const RE_DOS_DESTINOS =
   /\b(?:otr[oa]|uno|una|el otro|la otra|el segundo|la segunda)\s+(?:es\s+|va\s+)?para\s+(?:mi|una?|la|el)\s+(?:herman[oa]|mam[aá]|madre|pap[aá]|padre|prim[oa]|t[ií][oa]|amig[oa]|espos[oa]|novi[oa]|hij[oa]|abuel[oa]|cu[ñn]ad[oa]|sobrin[oa]|soci[oa]|colega|compadre|comadre|vecin[oa]|suegr[oa]|pareja)\b[^.!?\n]{0,50}?\b(?:en|de|a|para)\s+[A-ZÁÉÍÓÚÑ][\p{L}]+/iu;
+// ═══════════════════════════════════════════════════════════════════
+// 🛒 VARIOS PRODUCTOS EN UN SOLO PAGO (decisión de Rodrigo, 2026-09-25)
+// «quiero la plantilla y el curso», «los 3, ¿cuánto es todo?», «ya los dos». Antes la IA decía
+// «el total es S/108, te entrego los tres accesos» y el motor cobraba UNO («Son S/19»): el pago
+// completo caía a revisión manual y el cliente se quedaba esperando (D15-ptres, D15-lmezcla).
+// Cómo funciona: el producto del flujo en curso es el PRINCIPAL; los demás viajan en
+// `run.vars._combo`. `precioEsperado` suma el combo (así el «Son S/X», la validación del
+// comprobante y el {{precio}} de la IA dicen el total), el pedido se crea con el monto del
+// principal y los otros entran como `order_bumps` cobrados (el mismo mecanismo de la venta
+// manual: cuentan en el total, van a Meta y `entregarExtrasDigitales` los entrega al pagar).
+// Solo DIGITAL: en físico cada producto tiene su envío, su stock y su adelanto.
+// ═══════════════════════════════════════════════════════════════════
+type ComboItem = {
+  product_id: string; producto: string; nombre: string;
+  version_id: string | null; precio: number | null;
+  versiones?: Array<{ id: string; nombre: string; precio: number }>;
+};
+function comboDe(run: Run): ComboItem[] {
+  const c = (run.vars as any)?._combo;
+  return Array.isArray(c) ? (c as ComboItem[]) : [];
+}
+// Suma de lo que se lleva ADEMÁS del principal. null = falta elegir la versión de alguno.
+function comboSuma(run: Run): number | null {
+  const c = comboDe(run);
+  if (!c.length) return 0;
+  if (c.some((i) => !(Number(i.precio) > 0))) return null;
+  return +c.reduce((s, i) => s + Number(i.precio), 0).toFixed(2);
+}
+// Sin «todo»/«todos» a secas: «¿qué incluye todo?» o «todos los videos» no es llevarse varios.
+const RE_COMBO_JUNTO = /\b(los dos|las dos|los 2|las 2|ambos|ambas|los tres|las tres|los 3|las 3|todo junto|todos juntos|los llevo todos|quiero todos|todos los productos)\b/i;
+const RE_COMBO_TAMBIEN = /\b(tambi[eé]n|adem[aá]s|junto con|m[aá]s el|m[aá]s la|y (?:el|la) otr[oa])\b/i;
+const RE_COMBO_SOLO = /\b(?:mejor\s+)?(?:solo|solamente|s[oó]lo|[uú]nicamente)\s+(?:quiero\s+)?(?:el|la)\b|\bya no (?:quiero )?(?:el|la|los|las)\b|\bsin (?:el|la)\b/i;
+const _STOP_NOMBRE = new Set(["para", "sobre", "desde", "entre", "contra", "hasta", "digital", "producto"]);
+function _palabrasDe(nombre: string): string[] {
+  return normalize(String(nombre ?? "")).replace(/[^a-z0-9\s]/g, " ").split(/\s+/)
+    .filter((w) => w.length >= 5 && !_STOP_NOMBRE.has(w));
+}
+async function catalogoDigital(db: SupabaseClient, run: Run): Promise<Array<{ id: string; nombre: string; palabras: string[]; versiones: Array<{ id: string; nombre: string; precio: number }> }>> {
+  if ((run as any)._catDig) return (run as any)._catDig;
+  let out: any[] = [];
+  try {
+    const { data: fl } = await db.from("flows")
+      .select("product_id, products!inner(id, nombre, tipo, clase)")
+      .eq("channel_id", run.channel_id).eq("role", "venta").eq("estado", "activo");
+    const vistos = new Set<string>();
+    const prods = ((fl ?? []) as any[]).map((f) => f.products)
+      .filter((p) => p && String(p.tipo) === "digital" && p.clase !== "extra" && p.clase !== "regalo" && !vistos.has(p.id) && vistos.add(p.id));
+    if (prods.length) {
+      const { data: vs } = await db.from("product_versions").select("id, product_id, nombre, precio")
+        .in("product_id", prods.map((p) => String(p.id))).eq("activo", true).order("orden");
+      out = prods.map((p) => ({
+        id: String(p.id), nombre: String(p.nombre), palabras: _palabrasDe(p.nombre),
+        versiones: ((vs ?? []) as any[]).filter((v) => String(v.product_id) === String(p.id) && Number(v.precio) > 0)
+          .map((v) => ({ id: String(v.id), nombre: String(v.nombre), precio: Number(v.precio) })),
+      })).filter((p) => p.versiones.length);
+    }
+  } catch (_) { out = []; }
+  (run as any)._catDig = out;
+  return out;
+}
+function productosNombrados(texto: string, cat: Array<{ id: string; palabras: string[] }>): string[] {
+  const t = " " + normalize(String(texto ?? "")).replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ") + " ";
+  return cat.filter((p) => p.palabras.some((w) => t.includes(" " + w + " ") || t.includes(" " + w + "s "))).map((p) => p.id);
+}
+function versionNombrada(texto: string, versiones: Array<{ id: string; nombre: string; precio: number }>): { id: string; nombre: string; precio: number } | null {
+  if (versiones.length === 1) return versiones[0];
+  const t = " " + normalize(String(texto ?? "")).replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ") + " ";
+  const hits = versiones.filter((v) => normalize(v.nombre).replace(/[^a-z0-9\s]/g, " ").split(/\s+/)
+    .filter((w) => w.length >= 4).some((w) => t.includes(" " + w + " ")));
+  return hits.length === 1 ? hits[0] : null;
+}
+async function detectarCombo(db: SupabaseClient, run: Run, ctx: any, texto: string): Promise<void> {
+  if (!esDigital(ctx) || !ctx._product_id) return;
+  if (String(ctx.pedido_creado ?? "") === "si" || String((run.vars as any)?._order_id ?? "").trim()) return;
+  const actual = String(ctx._product_id);
+  const cat = await catalogoDigital(db, run);
+  if (cat.length < 2 || !cat.some((p) => p.id === actual)) return;
+  const t = String(texto ?? "");
+  let combo = comboDe(run);
+  const nombradosAhora = productosNombrados(t, cat);
+  // «mejor solo la plantilla»: vuelve a uno solo.
+  if (combo.length && RE_COMBO_SOLO.test(t) && nombradosAhora.length <= 1) {
+    delete (run.vars as any)._combo;
+    await logEvent(db, run.channel_id, run.contact_id, "nota", "🛒 Vuelve a llevar uno solo", t.slice(0, 100)).catch(() => {});
+    return;
+  }
+  // Versión que faltaba elegir («la premium» después de «¿Básica o Premium del curso?»).
+  if (combo.some((i) => !i.version_id)) {
+    let cambio = false;
+    for (const i of combo) {
+      if (i.version_id || !i.versiones?.length) continue;
+      const v = versionNombrada(t, i.versiones);
+      if (v) { i.version_id = v.id; i.precio = v.precio; i.nombre = `${i.producto} (${v.nombre})`; cambio = true; }
+    }
+    if (cambio) {
+      (run.vars as any)._combo = combo;
+      (run as any)._comboCambio = true;   // el nodo de venta manda los datos con el total nuevo
+      await logEvent(db, run.channel_id, run.contact_id, "campo", "🛒 Eligió la versión del combo",
+        combo.map((i) => i.nombre).join(" + ")).catch(() => {});
+      const { monto: _mV } = await precioEsperado(db, run, ctx);
+      if (_mV != null) { ctx.precio = _mV; ctx.precio_esperado = _mV; }
+    }
+  }
+  // ¿Pide llevar varios AHORA?
+  let ids = nombradosAhora;
+  const tn = normalize(t);
+  const junto = RE_COMBO_JUNTO.test(tn);
+  let _txtVersion = t;
+  // «¿cuál es la diferencia entre los dos?» es comparar versiones, no llevarse dos productos.
+  const _preguntaSinCuanto = /[?¿]/.test(t) && !/cu[aá]nto/i.test(t);
+  if (ids.filter((x) => x !== actual).length === 0 && junto && !_preguntaSinCuanto) {
+    // «ya los dos», «todo junto»: los productos los nombró antes (él o la lista del bot).
+    try {
+      const { data: ins } = await db.from("messages").select("content")
+        .eq("contact_id", run.contact_id).eq("direction", "in").order("ts", { ascending: false }).limit(4);
+      const u = new Set<string>();
+      for (const m of (ins ?? []) as any[]) for (const id of productosNombrados(String(m.content?.text ?? ""), cat)) u.add(id);
+      // La versión también la pudo decir antes («el curso premium… cuánto es todo?» → «todo junto»).
+      _txtVersion = [t, ...((ins ?? []) as any[]).map((m) => String(m.content?.text ?? ""))].join(" \n ");
+      // La lista del BOT solo cuenta si él está decidiendo («ya, los dos»), no preguntando.
+      if (u.size < 2 && /\b(ya|dale|ok|okey|listo|quiero|dame|me llevo|de una)\b/i.test(t)) {
+        const { data: outs } = await db.from("messages").select("content")
+          .eq("contact_id", run.contact_id).eq("direction", "out").order("ts", { ascending: false }).limit(3);
+        for (const m of (outs ?? []) as any[]) for (const id of productosNombrados(String(m.content?.text ?? ""), cat)) u.add(id);
+      }
+      if (u.size >= 2) ids = [...u];
+    } catch (_) { /* sin historial → nada */ }
+  }
+  const otros = ids.filter((x) => x !== actual && !combo.some((i) => i.product_id === x));
+  if (!otros.length) return;
+  const intencion = junto || RE_QUIERE_COMPRAR.test(t) || RE_ANUNCIA_PAGO.test(t) ||
+    /\b(quiero|kiero|dame|me llevo|llevo|compro)\b/i.test(t) ||
+    /cu[aá]nto\s+(?:es|sale|ser[ií]a|seria|cuesta|cuestan|son)\s+(?:todo|en total|el total|por (?:los|las|todo)|los|las)/i.test(t);
+  // Nombró SOLO otro producto, sin «también» ni «los dos»: eso es cambiar de producto, no sumar.
+  if (!intencion || (!ids.includes(actual) && !RE_COMBO_TAMBIEN.test(t) && !junto)) return;
+  for (const pid of otros) {
+    const p = cat.find((x) => x.id === pid);
+    if (!p) continue;
+    const v = versionNombrada(_txtVersion, p.versiones);
+    combo.push({
+      product_id: p.id, producto: p.nombre,
+      nombre: v && p.versiones.length > 1 ? `${p.nombre} (${v.nombre})` : p.nombre,
+      version_id: v?.id ?? null, precio: v ? v.precio : null,
+      ...(p.versiones.length > 1 ? { versiones: p.versiones } : {}),
+    });
+  }
+  (run.vars as any)._combo = combo;
+  // Pidió llevarlos (se exigió intención arriba): el nodo de venta manda los datos con el total,
+  // aunque la frase no sea una de las de RE_QUIERE_COMPRAR («dame la plantilla y el protocolo»).
+  (run as any)._comboCambio = true;
+  await logEvent(db, run.channel_id, run.contact_id, "campo", "🛒 Compra de varios productos",
+    `Además del principal: ${combo.map((i) => i.nombre + (i.precio ? ` (${i.precio})` : " — falta la versión")).join(" + ")}`).catch(() => {});
+  // El {{precio}} de ESTE turno ya con el total (la IA redacta con él).
+  const { monto } = await precioEsperado(db, run, ctx);
+  if (monto != null) { ctx.precio = monto; ctx.precio_esperado = monto; }
+}
+// Suma los productos del combo al pedido como extras cobrados. Idempotente.
+async function adjuntarCombo(db: SupabaseClient, run: Run, orderId: string): Promise<void> {
+  const combo = comboDe(run).filter((i) => i.version_id && Number(i.precio) > 0);
+  if (!combo.length || !orderId) return;
+  try {
+    const { data: o } = await db.from("orders").select("order_bumps").eq("id", orderId).maybeSingle();
+    const bumps = (((o as any)?.order_bumps ?? []) as any[]).slice();
+    let cambio = false;
+    for (const i of combo) {
+      if (bumps.some((b) => b?.combo && b.version_id === i.version_id)) continue;
+      let costo = 0;
+      try {
+        const { data: v } = await db.from("product_versions").select("costo").eq("id", i.version_id!).maybeSingle();
+        const cv = Number((v as any)?.costo); if (Number.isFinite(cv)) costo = cv;
+      } catch (_) { /* sin costo → 0 */ }
+      bumps.push({ combo: true, nombre: i.nombre, precio: Number(i.precio), costo, digital: true,
+        version_id: i.version_id, product_id: i.product_id, stock_key: "_", entregado: false });
+      cambio = true;
+    }
+    if (cambio) {
+      await db.from("orders").update({ order_bumps: bumps }).eq("id", orderId);
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "🛒 Se sumaron al pedido",
+        combo.map((i) => `${i.nombre} (${i.precio})`).join(" + ")).catch(() => {});
+    }
+  } catch (e) { console.error("[adjuntarCombo]", (e as any)?.message ?? e); }
+}
 async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: string): Promise<Clasificacion | null> {
   const prodId = ctx._product_id;
   if (!prodId) return null;
@@ -18725,6 +18933,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         String((e as any)?.message ?? e).slice(0, 200)).catch(() => {});
       return null;
     });
+    // 🛒 ¿Se lleva también otros productos en el mismo pago? Ver detectarCombo.
+    await detectarCombo(db, run, ctx, String(ctx.last_input)).catch(async (e) => {
+      console.error("[detectarCombo]", (e as any)?.message ?? e);
+      await logEvent(db, run.channel_id, run.contact_id, "error", "🛒 No pude armar la compra de varios productos",
+        String((e as any)?.message ?? e).slice(0, 200)).catch(() => {});
+    });
     // 🔢 Se le preguntó la cantidad en el turno de su ubicación y no la contestó: se sella la
     // primera y se sigue. Regla de Rodrigo: si escribió, quiere el producto — por lo menos
     // uno—, así que la cantidad no puede quedar como una pregunta abierta que reaparece en
@@ -19663,9 +19877,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           parts.push(
             "## Otros productos del negocio\n" + _lin + "\n" +
             "⛔ NUNCA digas que «solo vendes» este producto. Si pregunta qué más vendes o por uno de estos, nómbralo " +
-            "en una línea con su nombre exacto y su precio (el de arriba: ese sí lo sabes). Si quiere los dos, dile " +
-            "cuánto es cada uno y que se compran por separado, uno después del otro; si lo quiere, que te lo pida " +
-            "por su nombre. No lo describas más allá de esa línea (no tienes su ficha).\n" +
+            "en una línea con su nombre exacto y su precio (el de arriba: ese sí lo sabes). Si quiere VARIOS, se pueden " +
+            "pagar JUNTOS en un solo pago: el sistema arma el total y le manda los datos con ese monto; al pagar le " +
+            "llegan los accesos de todos. Tú NO sumes ni confirmes un total por tu cuenta: si el bloque «Otros productos " +
+            "que se lleva» está abajo, el total es ESE; si no está, pregúntale cuáles quiere llevar. " +
+            "No lo describas más allá de esa línea (no tienes su ficha).\n" +
             // «quiero 5 para mi equipo» de la Plantilla → «¿Básica o Premium?» (las versiones del CURSO)
             // (D13-dempresa, 2026-09-25): mezcló las presentaciones de otro producto con este.
             "⛔ Las versiones o presentaciones de ESOS otros productos NO existen en este: no le ofrezcas «Básica o Premium» " +
@@ -19673,6 +19889,33 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           );
         }
       } catch (_) { /* sin catálogo legible → sin el bloque */ }
+    }
+    // 🛒 La compra de VARIOS en un solo pago, ya armada por el motor (detectarCombo). El total es
+    // ESTE: la IA no suma por su cuenta, y si falta una versión la pregunta ella.
+    if (op === "generar_texto" && comboDe(run).length) {
+      try {
+        const _sym = simboloMoneda(ctx.moneda as string);
+        const _cmb = comboDe(run);
+        const _opP = await opcionElegida(db, run, ctx);
+        const _opsP = ctx._product_id ? await loadOpciones(db, run, String(ctx._product_id)) : [];
+        const _precioP = _opP?.precio != null ? Number(_opP.precio) : null;
+        const _nomP = String(ctx.producto_nombre ?? "") + (_opP && _opsP.length > 1 ? ` (${_opP.nombre})` : "");
+        const _lineas = [
+          `- ${_nomP} — ${_precioP != null ? `${_sym} ${_precioP}` : `falta elegir: ${_opsP.map((o) => `${o.nombre} ${_sym} ${o.precio}`).join(" o ")}`}`,
+          ..._cmb.map((i) => `- ${i.nombre} — ${i.precio != null ? `${_sym} ${i.precio}` : `falta elegir: ${(i.versiones ?? []).map((v) => `${v.nombre} ${_sym} ${v.precio}`).join(" o ")}`}`),
+        ];
+        const _faltan = _precioP == null || _cmb.some((i) => i.precio == null);
+        const _total = _faltan ? null : +(_precioP! + _cmb.reduce((s, i) => s + Number(i.precio), 0)).toFixed(2);
+        parts.push(
+          "## Otros productos que se lleva (varios en un solo pago)\n" + _lineas.join("\n") + "\n" +
+          (_total != null
+            ? `TOTAL: *${_sym} ${_total}*. Confírmale en una línea lo que se lleva y el total. Los datos de pago con ese monto los manda el ` +
+              "sistema solo, y al pagar le llegan los accesos de TODOS por este chat. No le pidas pagarlos por separado."
+            : "Falta saber qué versión quiere de lo marcado «falta elegir»: pregúntaselo con esas opciones antes de cualquier otra cosa. " +
+              "No des un total todavía.") +
+          " Si dice que mejor solo uno, respétalo.",
+        );
+      } catch (_) { /* sin el bloque → la IA pregunta */ }
     }
     const extrasCtx = Array.isArray((ctx as any)._extras_nombres) ? (ctx as any)._extras_nombres : [];
     if (extrasCtx.length) {
@@ -22274,7 +22517,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             } else {
               // Ídem: si no hay precio_esperado se cae al monto leído por el OCR, y con
               // Number() una venta de "1,299.00" aterrizaba como pedido digital en S/0.
-              const amount = (parseMonto(ctx.precio_esperado, ctx) ?? 0) || (parseMonto(run.vars.pago_monto, ctx) ?? 0) || 0;
+              const _amountTotal = (parseMonto(ctx.precio_esperado, ctx) ?? 0) || (parseMonto(run.vars.pago_monto, ctx) ?? 0) || 0;
+              // 🛒 Con combo, el pedido vale lo del principal; el resto va como extras (adjuntarCombo).
+              const amount = comboDe(run).length ? montoSinCombo(run, _amountTotal) : _amountTotal;
               const ship: Record<string, unknown> = {
                 digital_pendiente: true, digital_comprobante: url, digital_recibido_at: new Date().toISOString(),
                 digital_monto_leido: run.vars.pago_monto ?? null,
@@ -22297,7 +22542,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                   : sinDestinatariosDig ? { digital_revisar: "No tienes métodos de pago cargados (Negocio → Pagos): confirma que el pago llegó a tu cuenta." }
                   : {}),
                 // Freno (Capa 1): nota para que el humano revise el sobrepago sospechoso.
-                ...(sobrepagoSospechoso ? { digital_revisar: `El bot leyó ${simboloMoneda(ctx.moneda as string)}${run.vars.pago_monto} para un precio de ${simboloMoneda(ctx.moneda as string)}${amount}. Revisa el comprobante antes de aprobar.` } : {}),
+                ...(sobrepagoSospechoso ? { digital_revisar: `El bot leyó ${simboloMoneda(ctx.moneda as string)}${run.vars.pago_monto} para un precio de ${simboloMoneda(ctx.moneda as string)}${_amountTotal}. Revisa el comprobante antes de aprobar.` } : {}),
                 // No se supo qué presentación compró (ni por la charla ni por el monto):
                 // el humano tiene que fijarla antes de aprobar, o la entrega saldría vacía.
                 ...(precioSinResolver ? { digital_revisar: `No se pudo identificar qué presentación compró: pagó ${simboloMoneda(ctx.moneda as string)}${run.vars.pago_monto ?? "?"} y el monto no calza con ninguna. Confirma la presentación (y el monto) antes de aprobar y entregar.` } : {}),
@@ -22365,11 +22610,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                   // Pago digital sin validar aún → sigue Interesado (no es Confirmado).
                   await moverEtapa(db, run.channel_id, run.contact_id, "interesado");
                 }
+                if (run.vars._order_id) await adjuntarCombo(db, run, String(run.vars._order_id));
               } catch (e) { console.error("[digital manual] crear pendiente:", (e as any)?.message ?? e); }
               run.vars._pago_manual_pendiente = true;
               await avisar(db, run.channel_id, run.contact_id, "pago_digital_validar", {
-                cliente: quien, producto: ctx.producto_nombre ?? "",
-                monto: amount || "", operacion: run.vars.pago_operacion ?? "",
+                cliente: quien, producto: String(ctx.producto_nombre ?? "") + (comboDe(run).length ? ` + ${comboDe(run).map((i) => i.nombre).join(" + ")}` : ""),
+                monto: _amountTotal || "", operacion: run.vars.pago_operacion ?? "",
               }, {
                 foto: url,
                 botones: run.vars._order_id
@@ -23233,7 +23479,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // versiones de OTRO producto del catálogo (D13-dempresa, 2026-09-25) y la regla del
         // prompt no lo frenó. Fuera la frase que ofrece elegir entre versiones ajenas — en
         // TODOS los turnos digitales, salgan o no los datos detrás (D13d: salían y se coló).
-        if (_opsDig.length <= 1) {
+        // 🛒 …salvo que esté armando un combo al que le falta la versión de OTRO producto: ahí
+        // «¿Básica o Premium del curso?» es justo la pregunta que toca (CB1-yversion).
+        if (_opsDig.length <= 1 && !comboDe(run).some((i) => !i.version_id)) {
           const _antesVA = salida;
           salida = sinVersionesAjenas(salida);
           if (salida !== _antesVA) {
@@ -23928,6 +24176,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `Se quitó «en ${String(ctx.nombre_completo)}»`).catch(() => {});
         }
       }
+      // 🏷️ «en el anuncio decía 9.90» → «Sí, hubo esa promoción, pero ahora está en S/19»
+      // (D15b-manuncio): confirmó una promo que nadie cargó. Sin oferta activa para este cliente,
+      // la frase que la da por cierta se cambia por la verdad.
+      if (op === "generar_texto" && !(ctx as any)._oferta &&
+          /\b(anuncio|publicidad|promo|oferta|dec[ií]a|estaba a|lo vi a)\b[^.?!]{0,40}\d/i.test(String(ctx.last_input ?? ""))) {
+        const _antesPromo = String(salida ?? "");
+        salida = _antesPromo.replace(
+          /[^.!?\n]*\b(?:hubo|hab[ií]a|ten[ií]amos|tuvimos|estuvo|fue|era)\s+(?:esa|una)\s+(?:promo|promoci[oó]n|oferta)\b[^.!?\n]*[.!?]?|[^.!?\n]*\besa\s+(?:promo|promoci[oó]n|oferta)\s+(?:ya\s+)?(?:termin|venci|acab|finaliz|fue)\w*[^.!?\n]*[.!?]?/gi,
+          ` Ese precio no lo tengo registrado 🙏${Number(ctx.precio) > 0 ? ` Hoy está a *${simboloMoneda(ctx.moneda as string)} ${Number(ctx.precio)}*.` : ""} `);
+        if (salida !== _antesPromo) {
+          salida = salida.replace(/\s{2,}/g, " ").trim();
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🏷️ Confirmaba una promoción que no existe",
+            `Se cambió por la verdad: «${_antesPromo.slice(0, 140)}»`).catch(() => {});
+        }
+      }
       // 🔠 Una sola vez, al final: cualquiera de los veinte guards pudo quitar la frase con que
       // arrancaba el mensaje o la que iba tras un punto, y lo que queda empieza en minúscula.
       if (op === "generar_texto" && String(salida ?? "").trim()) salida = conMayusculaInicial(String(salida));
@@ -24069,8 +24332,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             } catch (_) { /* sin historial → se pregunta */ }
           }
         }
+        // 🛒 El combo recién armado (o completado con la versión que faltaba) ES la decisión de compra.
+        const _comboListo = !!(run as any)._comboCambio && comboDe(run).length > 0 && comboSuma(run) != null;
         if (!_cubiertaConBolsa) await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
-          String(result), _digitalElegido || _recompraUnico,
+          String(result), _digitalElegido || _recompraUnico || _comboListo,
           // Lo que la versión física necesita: la zona (solo provincia tiene adelanto) y
           // cuánto es ese adelanto, para no mandarle un número sin monto.
           { zona: String(ctx.zona_entrega ?? ""), adelanto: Number(ctx.adelanto), sym: simboloMoneda(ctx.moneda as string),
@@ -24080,7 +24345,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             unico: _opsProd.length <= 1,
             // Si no hay monto resuelto, lo que le toca es elegir: esa pregunta va en vez del
             // número. Vacía si el propio mensaje ya se la hizo (no se repite en dos burbujas).
-            pedirElegir: (!(Number(_montoDig) > 0) && _opsProd.length > 1 && !_eligirYaDicho)
+            // (con un combo al que le falta la versión de OTRO producto, la pregunta la hace la IA con el
+            // bloque «Otros productos que se lleva»: la lista de acá sería la del principal)
+            pedirElegir: (!(Number(_montoDig) > 0) && _opsProd.length > 1 && !_eligirYaDicho && !comboDe(run).some((i) => !i.version_id))
               ? "Antes de pasarte el número, dime cuál quieres 👇\n\n" +
                 preguntaCuantos(_opsProd, ctx, _negOn, false).replace(/^Estas son las opciones 👇\n/, "")
               : "",
