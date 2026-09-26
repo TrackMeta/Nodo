@@ -7451,6 +7451,15 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       result = sinPedirPermisoPago(sinAnuncioDePago(sinPromesaDeDatosColgada(_base, true, RE_PRESENCIA.test(_liD), _liD)));
     }
     result = sinRestosDeRecorte(result);
+    // ⏸️ Si de la respuesta solo quedó la pregunta de decisión («¿La quieres? 🙂») y quien llama es
+    // el nodo de venta (que decide DESPUÉS si manda los datos), no se envía todavía: la manda él
+    // solo si los datos no salen. Medido: «¿La quieres? 🙂» y debajo «Son S/ 10 👇 + Yape» — dos
+    // decisiones distintas sobre lo mismo (Rodrigo, captura del 2026-09-26; D16-kdejado).
+    if ((ctx as any)?._diferirPregunta && (result !== _antesD || (ctx as any)?._promesaQuitada) &&
+        /^\s*(?:¿La quieres\? 🙂|¿Cuál de las dos prefieres\?)\s*$/.test(result)) {
+      (ctx as any)._preguntaDiferida = result.trim();
+      result = "";
+    }
     if (result !== _antesD) {
       await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Anunciaba datos de pago que no manda ella",
         `Los datos los manda el motor (o no van). Antes: «${_antesD.slice(0, 140)}»`).catch(() => {});
@@ -12863,9 +12872,13 @@ async function respondeSiALosDatos(db: SupabaseClient, contactId: string, texto:
     // maybeDatosPago (después). En la segunda, la respuesta recién emitida ya había desplazado
     // al mensaje con el precio, así que el mismo «ok» daba SÍ arriba y NO abajo: la IA salía
     // con «cuando me mandes la captura…» y el número nunca llegaba (D9-pdospreg, 2026-09-24).
-    const { data: _ins2 } = await db.from("messages").select("ts")
+    const { data: _ins2 } = await db.from("messages").select("ts, content")
       .eq("contact_id", contactId).eq("direction", "in").order("ts", { ascending: false }).limit(2);
     const _ultIn = (_ins2 ?? [])[0] as any, _penIn = (_ins2 ?? [])[1] as any;
+    // ⚕️ «ok» a la respuesta sobre su SALUD no es un sí al precio, aunque esa respuesta lo nombre
+    // (Q3-fmedico-1, 2026-09-26: «soy diabético e hipertenso» → «consulta a tu médico… S/10» → «ok» → Yape).
+    const _prevTxt = String(_penIn?.content?.text ?? "");
+    if (dudaDeSalud(_prevTxt) || RE_PIDE_DEVOLUCION.test(_prevTxt) || RE_QUEJA_SUAVE.test(_prevTxt)) return false;
     let _q = db.from("messages").select("content").eq("contact_id", contactId).eq("direction", "out");
     if (_ultIn?.ts) _q = _q.lt("ts", _ultIn.ts);
     // …y solo lo que el bot contestó a su mensaje ANTERIOR, no algo más viejo. «soy diabético e
@@ -12885,6 +12898,21 @@ async function respondeSiALosDatos(db: SupabaseClient, contactId: string, texto:
       return RE_OFRECIO_DATOS.test(t) || RE_DIJO_PRECIO.test(t);
     });
   } catch (_) { return false; }
+}
+// «ya» / «ok» / «dale» cuando la IA le está cerrando («te paso los datos», «mándame la captura»):
+// es un sí. Salvo que lo anterior suyo haya sido una duda de SALUD o un reclamo — «ok» a «consulta
+// con tu médico» no es comprar (D15-fmedico). Lo usan las DOS decisiones sobre los datos (el
+// nodo antes de emitir y maybeDatosPago después): si solo una lo sabía, salían «¿La quieres?» y
+// los datos juntos, o «mándame la captura» sin número (Q1/Q2, 2026-09-26).
+async function afirmaAlCierre(db: SupabaseClient, contactId: string, texto: string): Promise<boolean> {
+  if (!RE_AFIRMA_CORTO.test(String(texto ?? ""))) return false;
+  try {
+    const { data: ins } = await db.from("messages").select("content")
+      .eq("contact_id", contactId).eq("direction", "in").order("ts", { ascending: false }).limit(2);
+    const prev = String(((ins ?? [])[1] as any)?.content?.text ?? "");
+    if (dudaDeSalud(prev) || RE_PIDE_DEVOLUCION.test(prev) || RE_QUEJA_SUAVE.test(prev)) return false;
+  } catch (_) { return false; }
+  return true;
 }
 async function intencionDeCompra(db: SupabaseClient, contactId: string, lastInput: string): Promise<boolean> {
   const señal = (t: string) => RE_ANUNCIA_PAGO.test(t) || RE_QUIERE_COMPRAR.test(t);
@@ -12916,7 +12944,7 @@ async function maybeDatosPago(
   db: SupabaseClient, channelId: string, contactId: string, texto: string, respuestaIa = "",
   yaEligio = false, fisico?: { zona?: string; adelanto?: number | null; sym?: string; total?: number | null; forzar?: boolean },
   digital?: { monto?: number | null; sym?: string; pedirElegir?: string; unico?: boolean },
-): Promise<void> {
+): Promise<boolean | void> {   // true = mandó los datos (el nodo de venta decide con eso si manda la pregunta en espera)
   try {
     // Dispara si lo pidió en ESTE mensaje, si lo pidió antes (su primer mensaje lo atiende
     // el rotador y se perdía — mismo agujero que ya se tapó en detectarOpcion), o si la
@@ -12972,7 +13000,13 @@ async function maybeDatosPago(
       // 💻 Digital de PRECIO ÚNICO: «la quiero» ya es decidir (no hay nada más que elegir), y
       // no puede depender de que la IA haya prometido el número en su texto. Medido: sin
       // esto, «sí, la quiero» → «El precio es S/19.» y ningún número al que pagar.
-      || (!!digital?.unico && RE_QUIERE_COMPRAR.test(_textoSinKw));
+      || (!!digital?.unico && RE_QUIERE_COMPRAR.test(_textoSinKw))
+      // 📸 «ya» / «ok» y la IA ya le contesta «cuando me mandes la captura te llega el acceso»: la
+      // IA lo tomó como compra y le pide el comprobante de un pago para el que nunca tuvo el
+      // número (Q1-psoporte, Q1-kbarra, 2026-09-26). Si la conversación ya está en «mándame la
+      // captura», el número tiene que ir con ella.
+      || ((promesaIa || /(?:me\s+(?:mandes|env[ií]es|pases)|m[aá]ndame|env[ií]ame|p[aá]same)\s+(?:la\s+|el\s+)?(?:captura|foto\s+del\s+pago|comprobante)/i.test(String(respuestaIa ?? "")))
+          && await afirmaAlCierre(db, contactId, String(texto ?? "")));
     // Preguntar por un medio que SÍ tenemos ya es pedir dónde pagar: la respuesta completa a
     // «¿puedo pagar con Plin?» es «sí, a este número», y partirla en dos turnos no ayuda a
     // nadie. Primero lo até a `intencionDeCompra` y salió mal, medido: la IA contestó «pagas
@@ -13125,6 +13159,7 @@ async function maybeDatosPago(
       (_esDigital ? "" : "\n\nCuando lo hagas mándame la captura y lo verifico al toque. 😊"));
     await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago enviados",
       _montoCambio ? "Cambió de presentación: se reenvían con el monto nuevo" : "Dijo que iba a pagar y todavía no los tenía").catch(() => {});
+    return true;
   } catch (e) {
     // Antes esto moría en un console.error: los datos de pago no salían y en el panel no
     // quedaba ni rastro — se veía como "la IA prometió el número y no llegó". Un fallo justo
@@ -23533,7 +23568,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               || eligeMetodoDePago(_li)
               || (!!(run.vars as any)?._recompra && _ops.length <= 1)
               || await intencionDeCompra(db, run.contact_id, _li)
-              || await respondeSiALosDatos(db, run.contact_id, _li);
+              || await respondeSiALosDatos(db, run.contact_id, _li)
+              // La misma regla que maybeDatosPago: «ya» a la promesa de la IA es un sí.
+              || await afirmaAlCierre(db, run.contact_id, _li);
             // Se lo cuenta a emitIaText: si los datos SÍ salen detrás, allá no hay promesa colgada
             // que quitar ni pregunta de decisión que hacer. Sin esto, emitIaText volvía a correr
             // el mismo freno que acá se saltó a propósito (medido: «yape» → «¿La quieres? 🙂»).
@@ -23542,6 +23579,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const _antesPr = salida;
               salida = sinPromesaDeDatosColgada(salida, _ops.length <= 1, RE_PRESENCIA.test(_li), _li);
               if (salida !== _antesPr) {
+                (ctx as any)._promesaQuitada = true;   // ver `_preguntaDiferida` en emitIaText
                 await logEvent(db, run.channel_id, run.contact_id, "nota", "🫥 Prometía los datos y no iban a salir",
                   `Sin intención de compra todavía: «${_antesPr.slice(0, 120)}»`).catch(() => {});
               }
@@ -24301,7 +24339,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `«${_crudo.slice(0, 300)}»\n→ salió: ${_fin ? `«${_fin.slice(0, 200)}»` : "NADA (vacío)"}`).catch(() => {});
         }
       }
+      // ⏸️ Si de la respuesta solo queda «¿La quieres? 🙂», emitIaText la deja en espera
+      // (`_preguntaDiferida`) y se manda abajo SOLO si los datos de pago no salen en este turno.
+      (ctx as any)._diferirPregunta = op === "generar_texto";
       const handoff = (await emitIaText(db, run, salida, ctx)) || _cubiertaConBolsa;
+      (ctx as any)._diferirPregunta = false;
+      const _pregDiferida = String((ctx as any)._preguntaDiferida ?? "");
+      delete (ctx as any)._preguntaDiferida;
+      delete (ctx as any)._promesaQuitada;
+      let _datosSalieron = false;
       if (_cubiertaConBolsa) {
         const _symC = simboloMoneda(ctx.moneda as string);
         await pasarAHumano(db, run.channel_id, run.contact_id,
@@ -24409,7 +24455,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
         // 🛒 El combo recién armado (o completado con la versión que faltaba) ES la decisión de compra.
         const _comboListo = !!(run as any)._comboCambio && comboDe(run).length > 0 && comboSuma(run) != null;
-        if (!_cubiertaConBolsa) await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
+        if (!_cubiertaConBolsa) _datosSalieron = !!(await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
           String(result), _digitalElegido || _recompraUnico || _comboListo,
           // Lo que la versión física necesita: la zona (solo provincia tiene adelanto) y
           // cuánto es ese adelanto, para no mandarle un número sin monto.
@@ -24426,7 +24472,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               ? "Antes de pasarte el número, dime cuál quieres 👇\n\n" +
                 preguntaCuantos(_opsProd, ctx, _negOn, false).replace(/^Estas son las opciones 👇\n/, "")
               : "",
-          });
+          }));
+      }
+      // La pregunta en espera sale solo si NO salieron los datos (con los datos delante sobra).
+      if (_pregDiferida && !_datosSalieron && !handoff) {
+        await emit(db, run, { text: _pregDiferida, _noTpl: true }, ctx);
       }
       // La IA pidió pasar a un humano ([[humano]] → bot_activo=false). CORTA el flujo: seguir
       // avanzando emitiría burbujas automáticas de los nodos siguientes ENCIMA del handoff
