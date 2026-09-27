@@ -1280,11 +1280,38 @@ export function lugarQueDesambigua(ciudad: string, texto: string): string | null
   return nombradas.length === 1 ? nombradas[0] : null;
 }
 
+// 🏔️ Ni su distrito NI su provincia tienen oficina. Medido con Chaglla (Pachitea, Huánuco):
+// esto devolvía null y el bot, sin una sola oficina que nombrar, le preguntaba «¿a qué ciudad
+// sueles ir?» con las manos vacías — cuando Huánuco ciudad está a ~40 km y el padrón tiene las
+// coordenadas de los dos. Se buscan las oficinas de su MISMO departamento por distancia real y
+// se ofrecen las de la provincia más cercana (el encabezado nombra esa provincia, así que no
+// pueden venir de dos). Mismo departamento a propósito: el guard de sede (mismoDepartamentoQue)
+// no deja sellar una de otro, y cruzarlo es el daño que ya costó dos incidentes.
+// Solo con el nombre de UN solo sitio (si se repite, no se adivina) y a menos de 150 km en línea
+// recta: más lejos ya no es «la más cercana», es mandarlo de viaje, y ahí sí se le pregunta.
+const KM_MAX_OTRA_PROVINCIA = 150;
+function _cercanasFueraDeSuProvincia(
+  ciudad: string,
+): { prov: string; dep: string; agencias: Agencia[]; ordenadas: boolean; otraProvincia: true } | null {
+  const provs = _provsDe(ciudad);
+  if (provs.length !== 1) return null;
+  const { dep } = provs[0];
+  const p = _puntoDe(ciudad, provs[0].prov);
+  if (!p) return null;
+  const delDep = AGENCIAS.filter((a) => _n(a.d) === _n(dep) && _ofrecible(a) && a.y != null && a.x != null);
+  if (!delDep.length) return null;
+  const orden = porCercania(delDep, p.y, p.x);
+  if (kmEntre(p.y, p.x, orden[0].y!, orden[0].x!) > KM_MAX_OTRA_PROVINCIA) return null;
+  const prov = orden[0].p;
+  return { prov, dep, agencias: orden.filter((a) => _n(a.p) === _n(prov)), ordenadas: true, otraProvincia: true };
+}
+
 export function agenciasCercanasAlDistrito(
   ciudad: string,
-): { prov: string; dep: string; agencias: Agencia[]; ordenadas: boolean } | null {
+): { prov: string; dep: string; agencias: Agencia[]; ordenadas: boolean; otraProvincia?: true } | null {
   const conAgencia = _provsConAgencia(ciudad);
-  if (!conAgencia.length || conAgencia.length !== 1) return null;
+  if (!conAgencia.length) return _cercanasFueraDeSuProvincia(ciudad);
+  if (conAgencia.length !== 1) return null;
   // 📍 ORDENADAS POR CERCANÍA al distrito del cliente. Antes salían en el orden del volcado
   // (alfabético): a una clienta de Pucusana, la primera de "las de tu provincia" era Ancón,
   // a 88 km, teniendo Punta Hermosa a 17. Con el punto del distrito (distritos-geo) y el de

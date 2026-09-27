@@ -6849,6 +6849,14 @@ function sinAnuncioDeSedes(texto: string): string {
   RE_ANUNCIA_SEDES.lastIndex = 0;
   return t.replace(RE_ANUNCIA_SEDES, " ").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
 }
+// El renglón de la lista de datos que pide la sede («📌 *Sede de la agencia* (por ejemplo…)»).
+// Solo renglones de CAMPO (📌, viñeta o guion) y cortos: la lista del motor va con 📍 y no se
+// toca, y una frase que menciona la agencia no es un campo.
+function sinCampoDeSede(texto: string): string {
+  return String(texto ?? "").split("\n").filter((l) => !(
+    /^\s*(📌|•|[-–—])\s*\S/.test(l) && l.trim().length <= 90 && /\b(sede|agencia|oficina)s?\b/i.test(sinFormato(l))
+  )).join("\n");
+}
 function conAgencias(texto: string, lista: string, forzar = false): string {
   const t = String(texto ?? "");
   if (!lista || !(forzar || RE_PIDE_SEDE.test(t))) return t;
@@ -21389,9 +21397,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const _rz = (x: { l: string }) => /AEROPUERTO|TERMINAL/i.test(x.l) ? 1 : 0;
               const _lst = [..._cerca.agencias].sort((x, y) => _rz(x) - _rz(y)).slice(0, 6).map((x) =>
                 `*${bonito(x.l)}* (${bonito(x.t)})` + pistaAgencia(x)).join("\n");
-              L.push(`📍 En *${bonito(ctx.ciudad)}* NO hay oficina de la agencia. Las más cercanas están en su misma ` +
-                `provincia (${bonito(_cerca.prov)}), en otros pueblos — díselo así, sin hacerle creer que quedan en ` +
-                `su distrito:\n\n${_lst}\n\n` +
+              // Chaglla: ni su provincia tiene — las que hay son las de la provincia vecina.
+              const _donde = _cerca.otraProvincia
+                ? `Ni en su distrito ni en su provincia hay; las más cercanas están en *${bonito(_cerca.prov)}*`
+                : `Las más cercanas están en su misma provincia (${bonito(_cerca.prov)}), en otros pueblos`;
+              L.push(`📍 En *${bonito(ctx.ciudad)}* NO hay oficina de la agencia. ${_donde} — díselo así, sin ` +
+                `hacerle creer que quedan en su distrito:\n\n${_lst}\n\n` +
                 "Van ASÍ, cada una EN SU LÍNEA, nunca de corrido ni separadas por comas — de corrido no se leen. " +
                 "Después pregúntale cuál le queda mejor o a cuál puede llegar. ⛔ NO inventes ninguna otra y NO le " +
                 "digas que tiene una en su distrito. Sigue con el pedido igual: esto no lo detiene.");
@@ -23925,6 +23936,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             salida = conAgencias(salida, _bl.texto, _seguro || _sinIA.habia || _anuncioQuitado);
             if (salida !== _antes) {
               await logEvent(db, run.channel_id, run.contact_id, _bl.cat, _bl.ev, _bl.det).catch(() => {});
+              // 📌 La sede ya la pide la lista que se acaba de pegar (todas sus ramas cierran
+              // preguntando cuál o en qué distrito): el «📌 *Sede de la agencia*» de la lista de
+              // datos de la IA era pedirle lo mismo dos veces en la misma burbuja. Medido en
+              // F7c-hmayus: «📌 Sede de la agencia (por ejemplo, Av. Parra 379)» y debajo los 12
+              // distritos de Arequipa con «¿En cuál estás?».
+              const _conCampo = salida;
+              salida = sinCampoDeSede(salida);
+              // Si la sede era el ÚNICO dato de su lista, queda un «¿me pasas estos datos? 👇» sin
+              // datos debajo, apuntando a los distritos: fuera también la petición.
+              if (salida !== _conCampo && !/^\s*(📌|•|[-–—])\s*\S/m.test(salida)) salida = sinPedirLosDatos(salida);
+              if (salida !== _conCampo) {
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "📌 Se quitó «Sede» de sus datos",
+                  "La lista de oficinas del motor ya se la pregunta").catch(() => {});
+              }
             }
             // Las que él mismo escribió apiladas en una línea. Va DESPUÉS de conAgencias para
             // que la lista recién pegada —que ya viene una por línea— no se toque.
