@@ -229,7 +229,7 @@ function render(b){
         </div>
         <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Si se pasa <b>un poco</b>, el bot entrega solo. Si se pasa <b>mucho</b>, no entrega: te lo deja en <b>Pagos por validar</b> y al cliente le dice que lo está revisando. Sirve también por si el bot lee mal la captura (ve S/190 donde decía S/19). En productos baratos el bot es más estricto: revisa desde la mitad del precio. Ej. producto de S/19 → lo revisas tú si paga más de <b>S/28.50</b>. Ponlo en <b>0</b> para revisar cualquier pago de más.</span>
       </div>
-      <div class="snote" style="margin-top:12px"><span class="si">${IC.shield}</span><span>Si alguien paga de más, en tus ventas cuenta <b>solo el precio del producto</b>. Ej. te pagan S/25 por uno de S/19: la venta cuenta S/19 y los S/6 quedan anotados aparte como <b>vuelto</b>. Así tus números y lo que se reporta a Meta no salen inflados.</span></div>
+      <div class="snote" style="margin-top:12px"><span class="si">${IC.shield}</span><span>¿Cómo cuenta en tus ventas un pago de más? Si se pasa <b>un poco</b> (ej. S/25 por uno de S/19), la venta cuenta <b>lo que pagó</b> (S/25) y no queda vuelto pendiente. Si se pasa <b>mucho</b> y tú lo apruebas, cuenta <b>solo el precio</b> y lo demás queda anotado como <b>vuelto</b> para devolver. Así un error de lectura no infla tus números ni lo que se reporta a Meta.</span></div>
     </div>
 
     <div class="card ia">
