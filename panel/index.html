@@ -1471,7 +1471,10 @@ function mediaThumb(m){ const u=esc(safeUrl(m.content.media_url));
 async function loadContactPanel(c){
   const p = $("cpanel"); p.classList.remove("hidden");
   const isT = c.wa_id === "webchat-test";
-  p.innerHTML = `
+  // Repintado del MISMO contacto (llega un mensaje, cambia el pedido…): sin esqueleto, si no la
+  // ficha entera parpadea cada vez que el cliente escribe. El esqueleto es para abrir otro chat.
+  const mismo = p.dataset.cid === c.id && panelData.contact && panelData.contact.id === c.id;
+  if (!mismo) p.innerHTML = `
     <div class="chd">
       <div class="bigav">${esc(initials(c.nombre, c.wa_id))}</div>
       <div class="cnm">${esc(c.nombre || c.wa_id || "")}</div>
@@ -1518,6 +1521,10 @@ async function loadContactPanel(c){
 // toque (0 = ninguno enviado), así que «paso 1» era «ya salió el 1.º». La misma función está en
 // index.html y probar.html a propósito: no va en contact-extras.js para
 // que un contact-extras.js cacheado viejo no rompa el import de toda la página.
+// Qué secciones plegables de la ficha están abiertas, por título (sin el contador, que cambia).
+const secKey = (d) => { const s = d.querySelector(":scope > summary"); return s ? (s.querySelector(".cx-sec-t") || s).textContent.trim() : null; };
+function estadoSecciones(p){ const m = new Map(); p.querySelectorAll("details").forEach(d=>{ const k = secKey(d); if (k) m.set(k, d.open); }); return m; }
+function restaurarSecciones(p, m){ p.querySelectorAll("details").forEach(d=>{ const k = secKey(d); if (k && m.has(k)) d.open = m.get(k); }); }
 function pasoSubTxt(s){
   const n=s.paso_actual||0, t=Array.isArray(s.sequence?.pasos)?s.sequence.pasos.length:0;
   if(!t) return n===1?"1 toque enviado":`${n} toques enviados`;
@@ -1601,6 +1608,10 @@ function renderContactPanel(){
   // También `document`: el Yape mandado como archivo/PDF llega con ese tipo y el respaldo decía
   // «Sin comprobante todavía» aunque el cliente lo hubiera enviado.
   const compFallback = (media.find(m=>m.direction==="in" && (m.type==="image" || m.type==="document"))||{}).content?.media_url || null;
+  // Repintar el MISMO contacto conserva qué secciones tenías abiertas o cerradas y el scroll:
+  // la ficha se recarga sola con cada mensaje y «Avanzado» se te cerraba mientras lo mirabas.
+  const mismoCt = p.dataset.cid === contact.id;
+  const secsAntes = mismoCt ? estadoSecciones(p) : null, scrollAntes = mismoCt ? p.scrollTop : 0;
   p.innerHTML = `
     <div class="chd">
       <div style="position:relative">
@@ -1622,6 +1633,8 @@ function renderContactPanel(){
     ${sec("Etiquetas", tagsBody, {count:assigned.size})}
     ${sec("Medios y archivos", mediaBody, {count:media.length})}
     ${!isTest?sec("Avanzado", advBody, {open:false}):""}`;
+  p.dataset.cid = contact.id;
+  if (secsAntes) { restaurarSecciones(p, secsAntes); p.scrollTop = scrollAntes; }
   const remk=$("pRemk");
   if(remk) remk.onclick=async()=>{
     const val=!contact.no_remarketing, quien=contact.nombre||"Este contacto", n=subsA.length;
@@ -1642,10 +1655,7 @@ function renderContactPanel(){
     logEvent(contact.id,"nota",val?"Sacado del remarketing a mano":"Devuelto al remarketing a mano");
     if(r && r.error) toast(val?"Marcado sin remarketing, pero sus secuencias en curso no se pudieron cancelar: "+r.error.message:"Vuelve al remarketing, pero sus secuencias no se pudieron reanudar: "+r.error.message, true);
     else toast(val?"Sacado del remarketing":"Vuelve al remarketing");
-    // Al repintar, «Avanzado» y «Automatizaciones activas» vuelven cerrados: se reabren para
-    // que se vea el cambio donde se tocó.
-    await loadContactPanel(contact);
-    let d=$("pRemk"); while(d && (d=d.parentElement?.closest("details"))) d.open=true;
+    loadContactPanel(contact); // conserva «Avanzado» abierto (mismo contacto)
   };
   p.querySelectorAll("[data-stagepick]").forEach(b=> b.onclick=async()=>{ const k=b.dataset.stagepick; if(k===(contact.stage||"nuevo")) return;
     // Confirmar: un clic accidental pisaba la etapa que puso el motor (p. ej. «Comprado» tras una venta).
@@ -2753,6 +2763,25 @@ async function sendAttachment(file){
 // mensajes seguidos). Agrupamos las recargas de la lista para no re-consultar y
 // re-renderizar toda la bandeja en cada evento (evita picos de CPU con tráfico).
 let convReloadTimer = null, threadReloadTimer = null, panelReloadTimer = null;
+// Recarga la ficha del contacto abierto sin F5. Antes solo se enteraba del bot y del pedido: el
+// avance del remarketing, la etapa, la Memoria IA o los archivos nuevos quedaban viejos hasta
+// cambiar de chat. Con retraso (el bot manda varias burbujas seguidas y el scheduler avanza la
+// secuencia DESPUÉS de enviar el toque) y sin pisar lo que estés editando: si hay un modal, un
+// dato de la Memoria IA a medio escribir o el menú de etiquetas abierto, se reintenta luego.
+function refreshPanelSoon(cid, ms = 1500){
+  if (!cid || cid !== state.contactId) return;
+  clearTimeout(panelReloadTimer);
+  panelReloadTimer = setTimeout(() => {
+    if (cid !== state.contactId) return;
+    const p = $("cpanel"), ae = document.activeElement;
+    const editando = document.querySelector(".overlay, .nodo-modal-back")
+      || (p && ae && p.contains(ae) && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))
+      || (p && p.querySelector(".tagpop:not([hidden])"));
+    if (editando) { refreshPanelSoon(cid, 3000); return; }
+    const ct = (panelData && panelData.contact) || {};
+    loadContactPanel({ id: cid, nombre: ct.nombre || state.contactName, wa_id: ct.wa_id });
+  }, ms);
+}
 function loadConversationsSoon() {
   clearTimeout(convReloadTimer);
   convReloadTimer = setTimeout(() => loadConversations(), 400);
@@ -2786,6 +2815,8 @@ function subscribeRealtime() {
         // Pinta la burbuja SOLO si no existe ya (evita doble burbuja por la carrera
         // abrir-chat ↔ realtime: loadThread pudo traer el mismo mensaje).
         else if (!document.querySelector('.msg[data-id="' + ((window.CSS && CSS.escape) ? CSS.escape(m.id) : m.id) + '"]')) renderMsg(m, true);
+        // Entró o salió algo (cliente, bot, toque de remarketing) → la ficha se pone al día sola.
+        refreshPanelSoon(m.contact_id);
       }
       loadConversationsSoon();
     })
@@ -2822,6 +2853,13 @@ function subscribeRealtime() {
         if (!document.querySelector(".overlay, .nodo-modal-back")) renderContactPanel();
       }
       setBotPill(c.bot_activo !== false);
+      // Etapa, baja del remarketing o Memoria IA cambiaron por detrás → recargar la ficha. La
+      // memoria solo se compara si vino en el aviso (un jsonb grande sin cambios puede no venir,
+      // y compararlo contra «nada» recargaría con cada mensaje).
+      const pc = panelData.contact;
+      if (pc && pc.id === c.id && (pc.stage !== c.stage || pc.no_remarketing !== c.no_remarketing
+          || (c.memoria_ia !== undefined && JSON.stringify(pc.memoria_ia || null) !== JSON.stringify(c.memoria_ia || null))))
+        refreshPanelSoon(c.id);
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "conversations", filter: fCh }, () => loadConversationsSoon())
     // El pedido del contacto abierto cambió (el bot capturó/movió algo mientras
@@ -2829,13 +2867,7 @@ function subscribeRealtime() {
     // (estás editando) para no pisar lo que escribes.
     .on("postgres_changes", { event: "*", schema: "public", table: "orders", filter: fCh }, (p) => {
       const cid = (p.new && p.new.contact_id) || (p.old && p.old.contact_id);
-      if (!cid || cid !== state.contactId) return;
-      if (document.querySelector(".overlay, .nodo-modal-back")) return;
-      clearTimeout(panelReloadTimer);
-      panelReloadTimer = setTimeout(() => {
-        const ct = (panelData && panelData.contact) || {};
-        loadContactPanel({ id: cid, nombre: ct.nombre || state.contactName, wa_id: ct.wa_id });
-      }, 500);
+      refreshPanelSoon(cid, 500);
     })
     .subscribe((status) => {
       // Realtime NO reproduce los eventos PERDIDOS al re-unirse el canal tras una caída del
