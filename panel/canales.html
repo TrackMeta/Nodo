@@ -143,7 +143,9 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, askChoice, confirmDialog, SUPABASE_URL, updateChannel } from "./shell.js";
-const WEBHOOK_URL = `${SUPABASE_URL}/functions/v1/whatsapp-webhook`;
+// Con la región fija (São Paulo, junto a la base): sin ella el bot corría en EE. UU. y cada
+// respuesta tardaba ~12 s más. Ver WEBHOOK_CALLBACK en channel-config.
+const WEBHOOK_URL = `${SUPABASE_URL}/functions/v1/whatsapp-webhook?forceFunctionRegion=sa-east-1`;
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channel:{}, secrets:{} };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -622,6 +624,9 @@ function pintarWA(r){
     }else if(!(r.app_webhook.campos||[]).includes("messages")){
       filas.push(fila(false, "El webhook apunta a Nodo pero no está suscrito a «messages»",
         "Sin ese campo no llega ningún mensaje. Guarda los datos del número y Nodo lo agrega."));
+    }else if(r.app_webhook.region_fija===false){
+      filas.push(fila(false, "El webhook apunta a Nodo, pero el bot responde más lento de lo que puede",
+        "Corre lejos de la base de datos y cada respuesta tarda ~10 s de más. Guarda los datos del número y Nodo lo corrige."));
     }else{
       filas.push(fila(true, "El webhook de la app apunta a Nodo", `campos: ${esc((r.app_webhook.campos||[]).join(", "))}`));
     }

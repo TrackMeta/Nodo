@@ -14,6 +14,13 @@ import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
 const GRAPH_V = "v25.0";
+// 🌎 El webhook corre en SÃO PAULO, donde está la base de datos. Sin esto Supabase lo ejecuta en
+// la región más cercana a quien llama —los servidores de Meta, en EE. UU.— y cada una de las ~70
+// consultas que el motor hace EN FILA por mensaje cruzaba el continente: 230–620 ms cada una
+// contra ~60 ms del scheduler (que sí corre al lado de la base). Medido el 27-sep con los logs
+// de Supabase: de la palabra clave a la 1.ª burbuja, 22 s; ~12 s eran solo ese ida y vuelta.
+// Meta no deja poner cabeceras, por eso va en la URL (`forceFunctionRegion`).
+const WEBHOOK_CALLBACK = `${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp-webhook?forceFunctionRegion=sa-east-1`;
 // Dos ayudantes para hablar con Meta con el token del canal. Devuelven {status, body} y
 // nunca lanzan: un timeout o una caída de red se leen igual que un error de Meta.
 async function metaGet(token: string, path: string) {
@@ -444,7 +451,7 @@ Deno.serve(async (req) => {
       //    se veía, así que un webhook apuntando a otro sitio (o sin el campo `messages`)
       //    era invisible. El app_id sale de debug_token; el app access token, de juntarlo
       //    con el App Secret que el usuario ya pegó.
-      let appHook: { comprobado: boolean; apunta_aqui?: boolean; url?: string | null; campos?: string[]; error?: string } | null = null;
+      let appHook: { comprobado: boolean; apunta_aqui?: boolean; region_fija?: boolean; url?: string | null; campos?: string[]; error?: string } | null = null;
       // Vida del token. `debug_token` trae `expires_at` (0 = permanente, de System User) y se
       // descartaba: el token temporal de 24 h del Explorador de la API pasaba todas las
       // pruebas en verde y al día siguiente Meta contestaba 190 y el bot se quedaba mudo.
@@ -463,13 +470,16 @@ Deno.serve(async (req) => {
       if (secrets?.app_secret) {
         const appId = dbg.status === 200 ? String(dbg.body?.data?.app_id ?? "") : "";
         if (appId) {
-          const callback = `${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp-webhook`;
+          const callback = WEBHOOK_CALLBACK;
           const subs = await metaGet(`${appId}|${secrets.app_secret}`, `${appId}/subscriptions`);
           if (subs.status === 200 && Array.isArray(subs.body?.data)) {
             const wa = subs.body.data.find((s: any) => s?.object === "whatsapp_business_account");
             appHook = {
               comprobado: true,
-              apunta_aqui: wa?.callback_url === callback,
+              apunta_aqui: String(wa?.callback_url ?? "").split("?")[0] === callback.split("?")[0],
+              // Apunta acá pero sin fijar la región: funciona, solo que cada consulta del bot a la
+              // base cruza el continente. «Conectar» lo corrige solo.
+              region_fija: wa?.callback_url === callback,
               url: wa?.callback_url ?? null,
               campos: (wa?.fields ?? []).map((f: any) => f?.name ?? f),
             };
@@ -720,7 +730,7 @@ Deno.serve(async (req) => {
         const appId = dbg.status === 200 ? String(dbg.body?.data?.app_id ?? "") : "";
         if (appId) {
           const appToken = `${appId}|${appSecret}`;
-          const callback = `${Deno.env.get("SUPABASE_URL")}/functions/v1/whatsapp-webhook`;
+          const callback = WEBHOOK_CALLBACK;
           const subs = await metaGet(appToken, `${appId}/subscriptions`);
           const wa = (subs.body?.data ?? []).find((s: any) => s?.object === "whatsapp_business_account");
           const campos: string[] = (wa?.fields ?? []).map((f: any) => String(f?.name ?? f));
