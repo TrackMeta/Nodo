@@ -111,6 +111,14 @@ export async function soloAnunciosBloquea(
   const { data: vivo } = await db.from("flow_runs").select("id")
     .eq("contact_id", contactId).in("estado", ["activo", "esperando"]).limit(1);
   if (vivo && vivo.length) return false;
+  // 🔌 Si el operador le ENCENDIÓ el bot a mano después de que la perilla lo apagara, manda
+  // él: ya decidió atender a este orgánico con el bot. Antes el siguiente mensaje volvía a
+  // apagarlo sin decir nada (el aviso es uno cada 12 h) y parecía que el interruptor no
+  // servía — Rodrigo probando Maestría Digital, 27-sep: lo encendió dos veces y nada.
+  const { data: ult } = await db.from("contact_events").select("tipo")
+    .eq("contact_id", contactId).in("tipo", ["organico_sin_atender", "bot_reactiva", "bot_pausa"])
+    .order("created_at", { ascending: false }).limit(1);
+  if ((ult as any)?.[0]?.tipo === "bot_reactiva") return false;
   return true;   // orgánico, sin flujo vivo y sin exención → el bot no lo atiende
 }
 
