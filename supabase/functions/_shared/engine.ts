@@ -25520,7 +25520,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // (+ «¿A qué dirección te lo envío?» junto a «¿Cuántas unidades?» — F6-lmanana)
           const _RE_Q_UBIC = /¿[^?¿]*\b(?:(?:a\s+)?qu[eé]\s+direcci[oó]n|cu[aá]l\s+es\s+tu\s+direcci[oó]n|de\s+d[oó]nde|desde\s+d[oó]nde|qu[eé]\s+(?:distrito|ciudad|provincia|departamento)|en\s+qu[eé]\s+(?:distrito|ciudad|zona|provincia)|d[oó]nde\s+(?:vives|est[aá]s|te\s+lo\s+(?:env[ií]o|mando|enviamos)))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
           // (+ «¿Cuál opción quieres, 1, 2 o 3 unidades?»: la misma pregunta dicha con CUÁL — F2-provincia)
-          const _RE_Q_CANT = /¿[^?¿]*\b(?:cu[aá]ntas?|cu[aá]ntos?|qu[eé]\s+oferta|cu[aá]l\s+(?:opci[oó]n|oferta|presentaci[oó]n))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
+          // (+ «¿Qué cantidad te interesa?», «¿qué opción / pack?» — G15-precio: sin esto no contaba como la de la cantidad)
+          const _RE_Q_CANT = /¿[^?¿]*\b(?:cu[aá]ntas?|cu[aá]ntos?|qu[eé]\s+(?:oferta|cantidad|opci[oó]n(?!\s+de\s+(?:pago|env[ií]o|entrega))|pack)|cu[aá]l\s+(?:opci[oó]n(?!\s+de\s+(?:pago|env[ií]o|entrega))|oferta|presentaci[oó]n|cantidad|pack))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
           const _hay = (re: RegExp, t: string) => { re.lastIndex = 0; const r = re.test(t); re.lastIndex = 0; return r; };
           const _zonaOk = !!String(ctx.zona_entrega ?? "").trim();
           // La pregunta suave va en su propio renglón si lo último es un renglón de LISTA («3 unidades —
@@ -25629,8 +25630,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
           // 3) Sin saber de dónde es, «¿cuántas?» espera: primero la ubicación (una sola pregunta). La
           //    lista de precios puede quedar como info; la pregunta de cantidad no (F3-calidad).
-          if (!_zonaOk && _hay(_RE_Q_CANT, _s) && (_hay(_RE_Q_UBIC, _s) || /cuando quieras me dices de d[oó]nde eres/i.test(_s))) {
-            _s = _s.replace(_RE_Q_CANT, " ");
+          //    La ubicación también cuenta pedida en IMPERATIVO, sin signos: «¿Qué cantidad te interesa para
+          //    seguir? También dime en qué distrito o ciudad estás…» (G15-precio) — dos pedidos en una burbuja.
+          const _RE_PIDE_UBIC_IMP = /\b(?:dime|ind[ií]came|cu[eé]ntame|p[aá]same|conf[ií]rmame)\s+(?:(?:en|de|desde)\s+)?(?:qu[eé]|cu[aá]l)\s+(?:distrito|ciudad|zona|provincia)|\bde\s+d[oó]nde\s+(?:eres|me\s+escribes|nos\s+escribes)/iu;
+          if (!_zonaOk && _hay(_RE_Q_CANT, _s) && (_hay(_RE_Q_UBIC, _s) || _RE_PIDE_UBIC_IMP.test(_s) || /cuando quieras me dices de d[oó]nde eres/i.test(_s))) {
+            _s = _s.replace(_RE_Q_CANT, " ")
+              // Quitada la primera, el «También dime…» de la segunda queda sin nada delante: va solo.
+              .replace(/(^|[.!?…\n]\s*|\s{2,})(?:tambi[eé]n|adem[aá]s),?\s+(dime|ind[ií]came|cu[eé]ntame|p[aá]same|conf[ií]rmame)\b/giu,
+                (_m, a: string, v: string) => a + v[0].toUpperCase() + v.slice(1));
           }
           // ⚖️ Nombró dos ciudades y todavía no eligió: si el mensaje no pregunta nada, se le pregunta cuál
           // (F6d-pdos: tras «1» quedó «Anotado: 1 unidad…» y seco).
