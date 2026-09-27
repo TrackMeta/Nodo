@@ -5069,8 +5069,9 @@ const RE_ORACION_DE_ENTREGA =
 // mandes la captura, te llega el acceso» (medido N-kdirecto-1 y N-ke2e-1, 2026-09-18).
 function conMayusculaInicial(t: string): string {
   const s = String(t ?? "");
-  const i = s.search(/\p{L}/u);
-  const cab = i < 0 ? s : s.slice(0, i) + s[i].toUpperCase() + s.slice(i + 1);
+  // La primera letra O NÚMERO: si arranca con «1 unidad — S/ 69», saltarse el «1» salía «1 Unidad» (G13-compara).
+  const i = s.search(/[\p{L}\p{N}]/u);
+  const cab = i < 0 || /\p{N}/u.test(s[i]) ? s : s.slice(0, i) + s[i].toUpperCase() + s.slice(i + 1);
   // Y a mitad del mensaje, cuando la frase quitada iba después de un punto: «cuesta *S/39*.
   // Te paso los datos 👇 cuando me mandes la captura…» → «*S/39*. cuando me mandes» (N2-pmejorotro-1).
   // Entre el punto y la letra puede quedar la flecha «👇» que apuntaba a lo quitado (o un
@@ -6633,7 +6634,9 @@ const RE_PIDE_ELEGIR_CANTIDAD =
 // su caso está bien; NO decirle cuánto cuesta cuando lo pidió, no.
 const RE_CLIENTE_PIDE_PRECIO =
   // (con K: «kuanto es la premiun» — D17-hfaltas: no se le dijo el precio)
-  /\b([ck]u[aá]nto\s+(cuesta|kuesta|sale|vale|est[aá]|es)|qu[eé]\s+precio|a\s+c[oó]mo|precio[s]?\b|[ck]u[aá]nto\s+me\s+(sale|cuesta)|qu[eé]\s+cuesta)\b/i;
+  // (y en PLURAL: «¿cuánto cuestan 2?» no contaba — el `\b` tras «cuesta» no pasa con la «n» — y otro
+  // guard le borraba la lista de precios por «no la pidió»: quedó «Estos son los precios:» y nada, G12-sinciu)
+  /\b([ck]u[aá]nto\s+(cuestan?|kuestan?|salen?|valen?|est[aá]n?|es|son)|qu[eé]\s+precio|a\s+c[oó]mo|precio[s]?\b|[ck]u[aá]nto\s+me\s+(salen?|cuestan?)|qu[eé]\s+cuestan?)\b/i;
 
 // Pide la SEDE y no la lista. La regla del prompt falló DOS veces: en Chiclayo preguntó
 // «¿a qué sede prefieres?» sin mostrar ninguna, y en Piura «me falta un dato: Sede de la
@@ -18017,6 +18020,9 @@ function mencionaFuerte(texto: string, op: Opcion, todas: Opcion[]): boolean {
       const antes = t.slice(0, m.index).replace(/[^a-z0-9]+$/, "");
       const ultima = antes.split(/[^a-z0-9]+/).pop() ?? "";
       if (ultima && VERBO_COMPRA.test(ultima)) return true;
+      // …o detrás de la pregunta por SU precio: «¿cuánto cuestan 2 para arequipa?» (G6-areq2). Nombrar
+      // dos («cuánto cuestan 2 y 3») sigue siendo comparar: lo frena quien llama.
+      if (/cuanto\s+(?:me\s+)?(?:cuestan?|salen?|es|son|serian?|valen?|costarian?)(?:\s+(?:las?|los?))?$/.test(antes)) return true;
     }
   }
   // 3) El número SOLO entre comas, como un dato más de la lista que dicta: «surquillo, 1, llega el
@@ -18542,7 +18548,11 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   // «la básica y la plantilla, ¿cuánto sería todo?» (D17b-cbasicapl): preguntar el TOTAL de lo que nombró
   // es elegir — se le repreguntaba «Básica o Premium».
   const _cuantoTotal = /cu[aá]nto\s+(?:es|ser[ií]a|seria|sale|saldr[ií]a|cuesta|son|me\s+sale)\s+(?:todo|en\s+total|el\s+total|los\s+dos|las\s+dos|junto|todo\s+junto)/i.test(String(texto ?? ""));
-  const _preguntaSinElegir = /[?¿]/.test(String(texto ?? "")) && !RE_VERBO_ELIGE.test(String(texto ?? "")) && !_numSueltoEntreComas && !_cuantoTotal;
+  // …y lo mismo el precio de UNA cantidad: «¿cuánto cuestan 2 para arequipa?» se quedaba sin sellar y
+  // el bot le preguntaba «¿Cuántas unidades quieres?» — lo que acababa de decir (G6-areq2). Si nombra
+  // dos («¿cuánto cuestan 2 y 3?»), el freno de «comparando» de abajo no sella ninguna.
+  const _cuantoDeUna = /cu[aá]nto\s+(?:me\s+)?(?:cuestan?|salen?|es|son|ser[ií]an?|valen?|costar[ií]an?)\s+(?:(?:las?|los?)\s+)?(?:\d{1,2}|dos|tres|cuatro|cinco|seis)(?![\p{L}\d])/iu.test(String(texto ?? ""));
+  const _preguntaSinElegir = /[?¿]/.test(String(texto ?? "")) && !RE_VERBO_ELIGE.test(String(texto ?? "")) && !_numSueltoEntreComas && !_cuantoTotal && !_cuantoDeUna;
   if (_preguntaSinElegir && cls && cls.clave) {
     cls = { ...cls, intencion: "preguntando", clave: null };
     _noSellar = true;
@@ -23673,7 +23683,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // «QUIERO 3 PARA AREQUIPA, ¿CUÁNTO ES?» recibió los precios de 1 y 2 (F7b-hmayus).
       if (op === "generar_texto" && RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? "")) && !esDigital(ctx) && String(ctx.opcion ?? "").trim()
           && Number(ctx.precio) > 0 && !sinFormato(salida).includes(String(ctx.precio))) {
-        salida = `Las *${String(ctx.opcion)}* son *${simboloMoneda(ctx.moneda as string)} ${Number(ctx.precio)}* 🙌\n\n${String(salida).trimStart()}`;
+        salida = `Por *${String(ctx.opcion)}* son *${simboloMoneda(ctx.moneda as string)} ${Number(ctx.precio)}* 🙌\n\n${String(salida).trimStart()}`;
         await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Faltaba el precio de lo que eligió",
           `${ctx.opcion}: ${ctx.precio}`).catch(() => {});
       }
@@ -23912,6 +23922,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 _entrada = "¡Perfecto!";
                 _entradaForzada = true;
               }
+              // Y si la entrada es tan corta que no se cortaría («Los precios son:») pero su texto trae SU
+              // pregunta de la sede, se corta igual: quedaban «¿en qué sede de Shalom lo vas a recoger?» y
+              // debajo el «¿En cuál estás?» del motor (G15-areq). El precio, si lo preguntó, lo pone el rescate.
+              if (_entrada.replace(/[\s\p{P}\p{S}]/gu, "").length < 20 && /[?¿]/.test(salida)
+                  && RE_HABLA_DE_SEDE.test(sinFormato(salida.slice(salida.indexOf("\n") + 1)))) {
+                _entrada = _elPidioSede ? "¡Claro!" : "¡Perfecto!";
+                _entradaForzada = true;
+              }
               {
                 // …y dicho de otra forma: «tienes una sede cerca, ideal para recoger tu pedido» (G5-cusco).
                 const _RE_ELIGE = /(?:queda|quedan)\s+(?:m[aá]s\s+)?cerca|m[aá]s\s+cercana|ideal\s+para|tienes\s+(?:una|la)\s+(?:sede|oficina|agencia)|(?:sede|oficina|agencia)(?:\s+shalom)?\s+(?:m[aá]s\s+)?cerca|(?:justo\s+)?(?:frente|al\s+costado|al\s+lado|diagonal|a\s+(?:\d+|una|dos|tres|media)\s+(?:cuadras?|cdras?\.?|metros))\s+(?:a|al|de|del)\b/i;
@@ -23943,7 +23961,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 if (/cu[aá]nto|precio|costo|cuesta|vale/i.test(String(ctx.last_input ?? "")) && !/(?:S\/|\$)\s?\d/.test(salida)) {
                   // Si ya eligió cuántas («quiero 3»), SU precio; si no, lo que la IA había escrito con cifras.
                   if (String(ctx.opcion ?? "").trim() && Number(ctx.precio) > 0) {
-                    salida = `${salida.trimEnd()} Las *${String(ctx.opcion)}* son *${simboloMoneda(ctx.moneda as string)} ${Number(ctx.precio)}* 🙌`;
+                    // La lista de precios ya no va: fuera su anuncio huérfano («Tenemos estas opciones y
+                    // precios para ti en Cusco 📍» — G12-uno). Si no queda nada, un acuse.
+                    const _sinAnuncio = salida.split(/(?<=[.!?…:]|\p{Extended_Pictographic}️?)\s+/u)
+                      .filter((f) => !/\b(opciones|precios)\b/i.test(f) || /(?:S\/|\$)\s?\d/.test(f)).join(" ").trim();
+                    salida = _sinAnuncio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8 ? _sinAnuncio : "¡Claro!";
+                    // «Por *1 unidad* son…» en vez de «Las *1 unidad* son…»: el nombre lo pone el dueño y
+                    // puede ser singular o plural.
+                    salida = `${salida.trimEnd()} Por *${String(ctx.opcion)}* son *${simboloMoneda(ctx.moneda as string)} ${Number(ctx.precio)}* 🙌`;
                   } else {
                     const _conPrecio = _antesRec.split(/(?<=[.!?…])\s+|\n+/u).filter((f) => /(?:S\/|\$)\s?\d/.test(f) && !/📍/.test(f));
                     if (_conPrecio.length) salida = `${salida.trimEnd()} ${_conPrecio.slice(0, 3).join(" ").trim()}`;
@@ -25498,6 +25523,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _RE_Q_CANT = /¿[^?¿]*\b(?:cu[aá]ntas?|cu[aá]ntos?|qu[eé]\s+oferta|cu[aá]l\s+(?:opci[oó]n|oferta|presentaci[oó]n))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
           const _hay = (re: RegExp, t: string) => { re.lastIndex = 0; const r = re.test(t); re.lastIndex = 0; return r; };
           const _zonaOk = !!String(ctx.zona_entrega ?? "").trim();
+          // La pregunta suave va en su propio renglón si lo último es un renglón de LISTA («3 unidades —
+          // S/ 139 · …»): pegada con un espacio quedaba al final del precio (G14-precio).
+          const _pegaSuave = (s: string, q: string) => {
+            const ult = s.trimEnd().split("\n").pop() ?? "";
+            if (!s.trim()) return q;
+            return /—\s*\*?\s*(?:S\/|\$)|^\s*(?:[-•]|📌|📍)/u.test(ult) ? `${s.trimEnd()}\n\n${q}` : `${s} ${q}`;
+          };
           const _antesF = String(salida);
           let _s = _antesF;
           // 0) La lista de datos («📌 *Nombre* / 📌 *Celular*…») ANTES de saber de dónde es o cuántas
@@ -25534,12 +25566,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // 1b) La cantidad YA está sellada («quiero 2 para lima los olivos, Juan…», F5-htodojunto): la IA
           //    igual pegaba «Estas son las opciones… para que elijas cuántas unidades llevas» + la lista,
           //    y el pedido se confirmaba en la burbuja siguiente. Fuera la pregunta y la lista.
-          if (String(ctx.opcion_id ?? "").trim() && !(ctx as any)._falta_opcion && !RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""))
+          // Si preguntó el PRECIO la lista se queda (la está pidiendo), pero la pregunta de la cantidad se va
+          // igual: «¿cuánto cuestan 2?» → precios + «¿Cuántas unidades quieres?» (G13-sinciu).
+          const _pidioPrecio1b = RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""));
+          if (String(ctx.opcion_id ?? "").trim() && !(ctx as any)._falta_opcion
               && !/(?:^|[^\p{L}])(?:cu[aá]nt[ao]s|otra\s+(?:opci[oó]n|cantidad)|m[aá]s\s+unidades|cambi\p{L}*)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))) {
             const _antes1b = _s;
             _s = _s.replace(_RE_Q_CANT, " ")
               .replace(/[^.!?\n]*\b(?:para\s+que\s+elijas|elige|escoge|dime)\s+cu[aá]nt[ao]s[^.!?\n]*[.!?:]?/giu, " ");
-            if (_s !== _antes1b) {
+            // Sin la de la cantidad y sin saber de dónde es, la que queda es esa.
+            if (_s !== _antes1b && _pidioPrecio1b && !_zonaOk && !/[?¿]/.test(_s)) {
+              _s = _pegaSuave(_s.trimEnd(), "¿De qué distrito o ciudad nos escribes? Así te digo cómo te llega 📦");
+            }
+            if (_s !== _antes1b && !_pidioPrecio1b) {
               _s = _s.replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, "")
                 .replace(/[^.!?\n]*\b(?:Estas son las opciones|Las opciones son)[^\n]*$/gimu, "");
             }
@@ -25554,7 +25593,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _cantAntes = _hay(_RE_Q_CANT, _ultF) ||
             /(?:^|[^\p{L}])(?:dime|cu[eé]ntame|av[ií]same|me\s+dices)\s+(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l)(?![\p{L}])/iu.test(_ultF);
           if (!_zonaOk && _hay(_RE_Q_UBIC, _ultF) && _hay(_RE_Q_UBIC, _s) && !/cuando quieras me dices de d[oó]nde eres/i.test(_ultF)) {
-            _s = _s.replace(_RE_Q_UBIC, " ").trim() + " ¿Alguna otra duda? Cuando quieras me dices de dónde eres y te digo cómo te llega 🙂";
+            _s = _pegaSuave(_s.replace(_RE_Q_UBIC, " ").trim(), "¿Alguna otra duda? Cuando quieras me dices de dónde eres y te digo cómo te llega 🙂");
           } else if (!_zonaOk && _cantAntes && _hay(_RE_Q_CANT, _s) && !RE_CLIENTE_PIDE_PRECIO.test(_li)
                      && !/cuando quieras me dices de d[oó]nde eres/i.test(_ultF)) {
             // Sin zona y la cantidad ya se preguntó: a «ok» / «ok gracias» no se le repite «¿cuántas?»
@@ -25562,7 +25601,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             _s = _s.replace(_RE_Q_CANT, " ").replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, "")
               .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "")
               .replace(/^\s*(?:perfecto|listo|genial|de acuerdo|claro)[,!.]?\s*(?:vamos avanzando)?[\s\p{Extended_Pictographic}️.!]*$/gimu, "").trim();
-            _s = (_s ? _s + " " : "") + "¿Alguna otra duda? Cuando quieras me dices de dónde eres y te digo cómo te llega 🙂";
+            _s = _pegaSuave(_s, "¿Alguna otra duda? Cuando quieras me dices de dónde eres y te digo cómo te llega 🙂");
           } else if (!_zonaOk && _hay(_RE_Q_CANT, _s) && !_hay(_RE_Q_UBIC, _s)
                      && /cuando quieras me dices de d[oó]nde eres/i.test(_ultF)) {
             // Ya se le dijo «cuando quieras me dices de dónde eres» y contesta «ok»: el motor le cambiaba
@@ -25580,7 +25619,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // «¿cuántas?» + la lista (F6-lsisi): la zona sigue faltando — va la versión suave.
             _s = _s.replace(_RE_Q_CANT, " ").replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, "")
               .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "").trim();
-            _s = (_s ? _s + " " : "") + "¿Alguna otra duda? Cuando quieras me dices de dónde eres y te digo cómo te llega 🙂";
+            _s = _pegaSuave(_s, "¿Alguna otra duda? Cuando quieras me dices de dónde eres y te digo cómo te llega 🙂");
           } else if (_zonaOk && _cantAntes && _hay(_RE_Q_CANT, _s) && !RE_CLIENTE_PIDE_PRECIO.test(_li) &&
                      !/cuando quieras me dices cu[aá]ntas/i.test(_ultF)) {
             // …y sin volver a pegar la lista de precios que ya vio.
@@ -25602,12 +25641,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // La cola de la pregunta que se quitó («…¿de dónde eres? Así te cuento cómo te llega 📦») quedaba
           // suelta delante de la suave, que ya dice lo mismo (F4-calidad).
           if (/cuando quieras me dices de d[oó]nde eres/i.test(_s) && _s !== _antesF) {
-            _s = _s.replace(/[^.!?¿\n]*\bas[ií]\s+te\s+(?:cuento|digo|explico)\s+c[oó]mo\s+te\s+llega\b[^.!?¿\n]*?(?=[\s\p{Extended_Pictographic}️]*¿Alguna otra duda)/giu, " ");
+            // (+ «…cómo te llega y seguimos con tu pedido. ¿Alguna…», con su punto — G13-compara)
+            _s = _s.replace(/[^.!?¿\n]*\bas[ií]\s+te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)\s+c[oó]mo\s+te\s+llega\b[^.!?¿\n]*?[.!]?(?=[\s\p{Extended_Pictographic}️]*¿Alguna otra duda)/giu, " ");
           }
           // «…para un uso adecuado. Para seguir, ¿Alguna otra duda?» (F5b-orepuesto): la muletilla que
           // anunciaba la pregunta quitada queda colgando delante de la suave.
           // «Para seguir CON TU PEDIDO, ¿Alguna otra duda?» (G3-sinciu) se escapaba: solo casaba «para seguir» pelado.
-          _s = _s.replace(/(?:^|(?<=[.!?\s]))(?:(?:y\s+)?para\s+(?:seguir|avanzar|continuar)(?:\s+con\s+(?:tu|el|su)\s+(?:pedido|compra|orden))?|(?:y\s+)?ahora,?\s+cu[eé]ntame|(?:y\s+)?ahora(?=\s*,?\s*¿Alguna otra duda)|cu[eé]ntame|dime|¿\s*me\s+lo\s+(?:pasas|dices|confirmas|env[ií]as)\s*\??)\s*,?\s*(?=¿Alguna otra duda)/giu, "");
+          _s = _s.replace(/(?:^|(?<=[.!?\s]))(?:(?:y\s+)?para\s+(?:seguir|avanzar|continuar)(?:\s+con\s+(?:tu|el|su)\s+(?:pedido|compra|orden))?|(?:y\s+)?ahora,?\s+cu[eé]ntame|(?:y\s+)?ahora(?=\s*,?\s*¿Alguna otra duda)|cu[eé]ntame|cont[aá]me|dime|¿\s*me\s+lo\s+(?:pasas|dices|confirmas|env[ií]as)\s*\??)\s*,?\s*(?=¿Alguna otra duda)/giu, "");
           _s = _s.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
           if (_s !== _antesF && _s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10) {
             salida = _s;
