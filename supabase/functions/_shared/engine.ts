@@ -3284,6 +3284,23 @@ function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?
   })();
 }
 
+// ⚡ ¿Este mensaje arranca una venta por PALABRA CLAVE o por ANUNCIO, sin conversación en
+// curso? Entonces el webhook no le aplica «Espera antes de responder»: ya se sabe qué quiere
+// y lo que sale son los mensajes iniciales fijos. Decisión de Rodrigo (27-sep): esos 4 s eran
+// la mitad de lo que tardaba en salir la primera burbuja. Con una conversación viva sí se
+// espera (ahí la espera junta «sí» + «2 unidades» en una sola respuesta).
+export async function arranqueSinEspera(
+  db: SupabaseClient, channelId: string, contactId: string, text: string, adId?: string,
+): Promise<boolean> {
+  try {
+    const { data: vivo } = await db.from("flow_runs").select("id")
+      .eq("contact_id", contactId).in("estado", ["activo", "esperando"]).limit(1);
+    if (vivo && vivo.length) return false;
+    const r = await matchTrigger(db, channelId, String(text ?? ""), adId);
+    return r.tier === "keyword" || r.tier === "referral";
+  } catch (_) { return false; }   // ante la duda, se espera como siempre
+}
+
 // Nivel 3: IA Router. Cuando ningún trigger determinista matchea, la IA lee
 // el mensaje del cliente + la lista de productos activos (su Descripción/FAQ)
 // y elige el que mejor calza. Solo rutea si supera el umbral de confianza; si

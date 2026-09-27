@@ -8,7 +8,7 @@ import { fetchMediaBytes } from "../_shared/meta.ts";
 import { transcribeAudio } from "../_shared/ai.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
 import { CAMPOS_SALUD, veredictoWebhook, aplicarVeredicto } from "../_shared/salud-wa.ts";
-import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, avisarEscribioEnPausa, type EngineEvent } from "../_shared/engine.ts";
+import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, avisarEscribioEnPausa, arranqueSinEspera, type EngineEvent } from "../_shared/engine.ts";
 
 // Runtime de Supabase Edge: permite terminar trabajo DESPUÉS de responder
 // (Meta exige un 200 rápido; el motor puede tardar por el LLM).
@@ -580,7 +580,10 @@ async function processInbound(
   }
   if (!event) return;
 
-  const bufferSeg = Math.min(Math.max(Number(channel.buffer_default_seg ?? 4) || 0, 0), MAX_BUFFER_SEG);
+  let bufferSeg = Math.min(Math.max(Number(channel.buffer_default_seg ?? 4) || 0, 0), MAX_BUFFER_SEG);
+  // ⚡ Palabra clave / anuncio sin conversación en curso → los mensajes iniciales salen sin
+  // esperar (ver arranqueSinEspera). Un 2.º mensaje suyo sigue su camino normal con espera.
+  if (debounce && bufferSeg > 0 && await arranqueSinEspera(db, channelId, contact.id, String(text ?? ""), adId)) bufferSeg = 0;
   // 📎 TEXTO seguido de IMAGEN/AUDIO: el texto (con buffer) cede el turno a la imagen (más
   // nueva, sin buffer) y su intento SE PERDÍA (el motor solo veía la foto). Si justo antes
   // llegó texto del cliente dentro de la ventana del buffer, se ANTEPONE al evento de la
