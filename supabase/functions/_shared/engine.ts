@@ -2284,6 +2284,9 @@ const PIDE_HUMANO = [
   "con un humano", "no con un bot", "no quiero un bot", "no quiero hablar con un bot",
   "quiero hablar con un humano", "hablar con un humano", "atencion humana",
   "quiero hablar con un asesor", "hablar con un asesor",
+  // (+ «quiero hablar con el dueño» — D18-hdueno: «soy el asistente… ¿seguimos?»)
+  "hablar con el dueño", "hablar con el dueno", "hablar con el encargado", "hablar con el administrador",
+  "hablar con el gerente", "hablar con el jefe", "pasame con el dueño", "pasame con el dueno", "comunicame con el dueño",
   "quiero hablar con alguien", "hablar con alguien",
   "quiero un asesor", "un operador", "un agente humano", "hay alguien real",
   "me pueden llamar", "quiero que me llamen",
@@ -2455,6 +2458,10 @@ const RE_HABLA_DE_SI =
 function dudaDeSalud(text?: string | null): boolean {
   const t = String(text ?? "");
   if (!t.trim() || t.length > 400) return false;
+  // 👴 La EDAD también es una duda de salud cuando pasa los 60: «tengo 70 años, ¿puedo hacerlo?» → «¡Claro que sí!,
+  // se adapta sin importar la edad» (D18-o70) — una promesa sobre su cuerpo que nadie escribió.
+  const _mayor = /(?:tengo|con|a\s+mis?)\s+([6-9]\d)\s*a[ñn]os|tercera\s+edad|adulto\s+mayor|soy\s+(?:mayor|jubilad[oa])/i.exec(t);
+  if (_mayor && (t.includes("?") || RE_HABLA_DE_SI.test(t) || /puedo|sirve|me\s+va/i.test(t))) return true;
   return RE_COND_SALUD.test(t) && (t.includes("?") || RE_HABLA_DE_SI.test(t));
 }
 // 👤 «Mi mamá», «su esposa», «la señora»: un parentesco, no un nombre. Se cuela cuando el
@@ -3285,6 +3292,12 @@ async function aiRoute(db: SupabaseClient, channelId: string, text: string): Pro
   // «de todo», «info». El modelo elegía el Protocolo al 90 % y al que preguntaba qué había le
   // presentaba un solo producto; al de «precio… de todo» ni le dio precios (D15-ainfo, D15-aprecio).
   if (/^[¡!¿?.,\s]*(?:(?:y\s+)?qu[eé]\s+(?:m[aá]s\s+)?(?:venden|tienen|ofrecen|productos|cursos|hay)|(?:los\s+|el\s+)?precios?(?:\s+de\s+todo)?|de\s+todo|info(?:rmaci[oó]n)?|m[aá]s\s+info|cat[aá]logo)(?:\s+(?:por\s+favor|porfa|pls))?[\s?!.¡¿]*$/iu.test(clean)) return null;
+  // 🗂️ Nombra VARIOS productos («precio del curso, de la plantilla y del protocolo por separado» — D18-cpreciosep):
+  // se iba a la venta de la plantilla, le llegó su presentación y ningún precio. Eso lo contesta la Recepción,
+  // que tiene la lista con los precios de todos.
+  try {
+    if (productosNombrados(clean, await catalogoDigital(db, { channel_id: channelId } as any)).length >= 2) return null;
+  } catch (_) { /* sin catálogo → sigue el ruteo */ }
   try {
     const { data: ch } = await db.from("channels")
       .select("ia_router, ia_perfiles").eq("id", channelId).maybeSingle();
@@ -3560,6 +3573,9 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
     /(?:devolv|devoluci|devuelv|reembols|cambiar|cambio)[^.!?]{0,40}(?:no me gust|no le gust|no te gust|gusto personal|arrepent|no me convenc)|(?:no me gust|no le gust|no te gust|arrepent|no me convenc)[^.!?]{0,40}(?:devolv|devoluci|devuelv|reembols|cambiar)/,
     /\b(no te gusta|no le gusta|arrepent|retracto|satisfacci[oó]n|\d+\s*d[ií]as para (devolver|cambiar)|devoluci[oó]n sin|de ning[uú]n motivo|ninguna circunstancia)/, "negocio"],
   ["envío al extranjero", /\b(extranjero|internacional|fuera del pa[ií]s)/, /\b(extranjero|internacional)/, "negocio"],
+  // 👥 «¿cuántos alumnos tienen? ¿hay testimonios?» → «No compartimos datos de alumnos ni testimonios» (D18-oalumnos):
+  // una política inventada. Ni negar ni inventar prueba social: no tiene el dato.
+  ["testimonios o cuántos lo compraron", /\b(testimoni\w*|rese[ñn]as?|opiniones de|cu[aá]ntos (?:alumnos|clientes|compradores)|cu[aá]nta gente|cu[aá]ntas personas lo (?:compraron|tienen))/, /\b(testimoni\w*|rese[ñn]as?|alumnos satisfechos|\d+\s*(?:alumnos|clientes|compradores))/, "negocio"],
   ["pago en cuotas", /\b(cuotas|financiamiento|en partes)/, /\b(cuotas|financiamiento)/, "negocio"],
   // ⏳ Cuánto tiempo le guarda el paquete la AGENCIA. Medido: «no puedo ir hasta el sábado,
   // ¿lo guardan?» → «sí, la agencia guarda tu paquete hasta que puedas pasar a recogerlo
@@ -3607,6 +3623,8 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   // afirmar que SÍ se puede sería peor. Cae acá para que el bot no responda de memoria
   // y le quede registrado al dueño como hueco de la ficha.
   ["si se puede en el embarazo o la lactancia", /\b(embaraz|gestaci[oó]n|gestante|lactancia|dando de lactar|amamant|dar de lactar)/, /\b(embaraz|gestaci[oó]n|lactancia)/, "producto"],
+  // 👴 «tengo 70 años, ¿puedo hacerlo?» → «¡Claro que sí!, sin importar la edad» (D18-o70). Con edad ≥60 es una duda de salud.
+  ["si es apto para su edad (60+)", /(?:tengo|con|a\s+mis?)\s+[6-9]\d\s*a[ñn]os|tercera edad|adulto mayor|soy jubilad/, /adulto mayor|tercera edad|[6-9]\d\s*a[ñn]os|cualquier edad/, "producto"],
   ["contraindicaciones, alergias o efectos", /\b(al[eé]rgic|alergia|contraindicaci|efectos? (secundarios?|adversos?)|me hace da[nñ]o|es peligros|piel sensible|dermatitis|rosace|diab[eé]tic|hipertens|tomo (pastillas|medicament)|estoy medicad)/, /\b(contraindicaci|al[eé]rgic|efectos? secundarios?|piel sensible|no usar si)/, "producto"],
   // «tengo 14 años, ¿puedo comprarlo?» (D15-fmenor) no casaba —solo «de 14 años»— y la IA
   // contestó «¡Claro que sí! … sin importar la edad».
@@ -3620,6 +3638,13 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
 // Excel. Va aparte de TEMAS_FICHA porque «celular» o «descargar» en una venta FÍSICA son otra
 // conversación («¿me lo mandan al celular?»), y ahí no hay hueco que registrar.
 const TEMAS_FICHA_DIGITAL: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
+  // 🎓 «¿el profe es ingeniero? ¿quién lo dicta?» → «El maestro es un experto en soldadura y corte con mucha
+  // experiencia» (D18-oprofe): credenciales inventadas.
+  ["quién dicta el curso", /\b(qui[eé]n (?:lo )?(?:dicta|ense[ñn]a|da el curso)|el profe\w*|profesor|instructor|maestro del curso|es ingeniero)\b/,
+    /\b(profesor|instructor|dictado por|ingenier\w*|maestro|a cargo de|lo dicta)\b/, "producto"],
+  // 🔄 «¿tiene actualizaciones gratis?» → «las irás recibiendo sin costo, te aviso por acá» (D18-eactualiza).
+  ["si tiene actualizaciones", /\b(actualizaci\w+|se actualiza|contenido nuevo|nuevas clases|nuevos videos|agregan (?:m[aá]s|nuevo))\b/,
+    /\b(actualiza\w*|contenido nuevo|nuevas clases)\b/, "producto"],
   ["si funciona en otro programa o equipo",
     /\b(google sheets|sheets|libreoffice|openoffice|numbers|celular|m[oó]vil|tablet|android|iphone|ipad|mac|windows|drive|wps)\b/,
     /\b(sheets|libreoffice|openoffice|numbers|celular|m[oó]vil|tablet|android|iphone|ipad|mac|windows|drive|wps|cualquier (dispositivo|equipo|compu))\b/, "producto"],
@@ -3665,7 +3690,9 @@ const TEMAS_FICHA_DIGITAL: Array<[string, RegExp, RegExp, "producto" | "negocio"
     // te alcanza para todos» regalaba 49 ventas. «los dos» / «ambos» a secas ya no cuentan: «ya
     // los dos» es comprar dos productos, no compartir uno (D15-adosseguidos).
     // (+ «lo podemos usar mi esposa y yo con una sola compra» — D17-hfamilia: «pueden verlo juntos sin problema»)
-    /\b((?:mi|tu|su) (?:esposa|esposo|pareja|novia|novio|hermano|hermana|hijo|hija|socio|socia|amigo|amiga|mam[aá]|pap[aá]|primo|prima) y yo|una sola compra|un solo pago|compartirl[oa]|compartir (?:el|la|lo|con)|lo comparto|la comparto|con (?:mi|tu|su|un|una|otro|otra) (?:socio|socia|amigo|amiga|colega|compa[ñn]er[oa]|hermano|hermana|esposo|esposa|persona|hijo|hija|hijos|pap[aá]|mam[aá]|pareja|novio|novia|familia|primo|prima)|(?:un|el) solo acceso|(?:pueden|podr[aá]n) (?:entrenar|verlo|verla|hacerlo|usarlo|usarla) juntos|entrenar juntos|hacerlo juntos|con otra persona|pas[aá]rsel[oa]|pasarl[oa] a|pasar a (?:un|una|mi|otro|otra)|para (?:dos|varias) personas|varias personas|revender|(?:una|uno|otra|otro) para (?:mi|tu|su) (?:socio|socia|amigo|amiga|colega|compa[ñn]er[oa]|hermano|hermana|esposo|esposa|hijo|hija|pap[aá]|mam[aá]|primo|prima)|licencia|t[uú] y (?:tu|su) \w+|(?:pueden|puedan) (?:usar|utilizar|abrir|compartir|verl|aplicar)\w*|(?:los dos|ambos) (?:pueden|podr[aá]n|lo usan|la usan|lo ven)|(?:alcanza|sirve) para todos|todos tus (?:clientes|alumnos|trabajadores|amigos)|\d{2,} (?:accesos|licencias|cuentas|personas|alumnos|clientes)|para (?:mi|mis|todo mi|todos mis) (?:gimnasio|empresa|equipo|academia|colegio|alumnos|clientes|trabajadores))\b/,
+    // (+ «el acceso era para otro número» y la política inventada «el acceso es personal, solo al número que compró» — D18-eotronum)
+    // (+ «para que todos en tu empresa lo usen» — D18-hempresa)
+    /\b((?:mi|tu|su) (?:esposa|esposo|pareja|novia|novio|hermano|hermana|hijo|hija|socio|socia|amigo|amiga|mam[aá]|pap[aá]|primo|prima) y yo|una sola compra|un solo pago|(?:para|a) otro (?:n[uú]mero|celular|tel[eé]fono)|el acceso es personal|solo se entrega al n[uú]mero|todos (?:en|de) (?:tu|su|mi) (?:empresa|equipo|oficina|familia|gimnasio|negocio|taller)|(?:todos|todo tu equipo|tus trabajadores) (?:lo|la) (?:usen|usan|pueden usar)|para mi empresa|compartirl[oa]|compartir (?:el|la|lo|con)|lo comparto|la comparto|con (?:mi|tu|su|un|una|otro|otra) (?:socio|socia|amigo|amiga|colega|compa[ñn]er[oa]|hermano|hermana|esposo|esposa|persona|hijo|hija|hijos|pap[aá]|mam[aá]|pareja|novio|novia|familia|primo|prima)|(?:un|el) solo acceso|(?:pueden|podr[aá]n) (?:entrenar|verlo|verla|hacerlo|usarlo|usarla) juntos|entrenar juntos|hacerlo juntos|con otra persona|pas[aá]rsel[oa]|pasarl[oa] a|pasar a (?:un|una|mi|otro|otra)|para (?:dos|varias) personas|varias personas|revender|(?:una|uno|otra|otro) para (?:mi|tu|su) (?:socio|socia|amigo|amiga|colega|compa[ñn]er[oa]|hermano|hermana|esposo|esposa|hijo|hija|pap[aá]|mam[aá]|primo|prima)|licencia|t[uú] y (?:tu|su) \w+|(?:pueden|puedan) (?:usar|utilizar|abrir|compartir|verl|aplicar)\w*|(?:los dos|ambos) (?:pueden|podr[aá]n|lo usan|la usan|lo ven)|(?:alcanza|sirve) para todos|todos tus (?:clientes|alumnos|trabajadores|amigos)|\d{2,} (?:accesos|licencias|cuentas|personas|alumnos|clientes)|para (?:mi|mis|todo mi|todos mis) (?:gimnasio|empresa|equipo|academia|colegio|alumnos|clientes|trabajadores))\b/,
     /\b(compartir|licencia|uso personal|intransferible|un solo usuario|revender)\b/, "producto"],
   ["en qué formato viene",
     /\b(son videos?|es un pdf|en pdf|qu[eé] formato|videos? o (?:pdf|excel)|cu[aá]ntas clases|cu[aá]ntos m[oó]dulos|duraci[oó]n del curso)\b/,
@@ -7562,6 +7589,15 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       result = sinPedirPermisoPago(sinAnuncioDePago(sinPromesaDeDatosColgada(_base, true, RE_PRESENCIA.test(_liD), _liD)));
     }
     result = sinRestosDeRecorte(result);
+    // 🕳️ Nunca VACÍO: la Recepción contestó «Claro, estos son los precios: Plantilla S/19, Curso S/39/79, Protocolo
+    // S/10…» y el recorte de anuncios de pago se llevó el mensaje entero — el cliente no recibió nada (D18b-cpreciosep).
+    // Si no quedó nada, vuelven las líneas que no son el anuncio de los datos.
+    if (!result.replace(/[\s\p{P}\p{S}]/gu, "").trim() && _antesD.replace(/[\s\p{P}\p{S}]/gu, "").length >= 15
+        && !(ctx as any)?._diferirPregunta) {
+      const _resc = _antesD.split(/\n+/).filter((l) => l.trim() &&
+        !/te\s+(?:paso|env[ií]o|mando|dejo)\s+(?:los\s+)?datos|datos\s+(?:de|para\s+el)\s+pago|¿\s*te\s+paso/i.test(l)).join("\n").trim();
+      if (_resc.replace(/[\s\p{P}\p{S}]/gu, "").length >= 15) result = _resc;
+    }
     // ⏸️ Si de la respuesta solo quedó la pregunta de decisión («¿La quieres? 🙂») y quien llama es
     // el nodo de venta (que decide DESPUÉS si manda los datos), no se envía todavía: la manda él
     // solo si los datos no salen. Medido: «¿La quieres? 🙂» y debajo «Son S/ 10 👇 + Yape» — dos
@@ -13736,6 +13772,17 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   const estado = String((order as any).estado);
   const esperandoSaldo = SALDO_PENDIENTE.has(estado);
 
+  // 🔒 «el Excel me pide contraseña» → la IA: «la plantilla no tiene contraseña, ábrela desde el link» (D18-epass).
+  // Nadie escribió si tiene o no; el prompt ya le prohíbe inventar contraseñas y lo afirmó igual. Lo resuelve
+  // una persona (que sí puede mandarle la clave o el archivo sin ella), con un solo aviso.
+  if (event.type === "message" && /(?:^|[^\p{L}])(?:contrase[ñn]a|password|clave\s+(?:de|para)\s+(?:abrir|entrar|acceder)|me\s+pide\s+(?:una\s+)?clave|usuario\s+y\s+clave)(?![\p{L}])/iu.test(String(event.text ?? ""))) {
+    await deliverMessage(db, channelId, contactId,
+      "Uy, eso no debería pasar 🙏 Ya le paso tu caso a una persona del equipo para que te dé el acceso correcto, y te escribe por acá en un ratito.").catch(() => {});
+    await pasarAHumano(db, channelId, contactId,
+      `🔒 Dice que al abrir su compra le pide CONTRASEÑA/usuario: “${String(event.text ?? "").slice(0, 120)}”. Mándale la clave o el archivo sin ella.`,
+      { aviso: "fuera" }).catch(() => {});
+    return true;
+  }
   // 📸 UN COMPROBANTE DESPUÉS DE COMPRAR no lo puede contestar la IA a ojo. Medido en la
   // batería D8 (2026-09-22): el cliente mandó una segunda captura y el soporte le contestó
   // «Gracias por enviar la captura. Ya verifico y te aviso en un momento»… y nadie verificó
@@ -13904,13 +13951,17 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
             // lo mismo es peor que un turno de más. Tampoco se «degrada» su pedido solo: si
             // de verdad quiere cambiarse (o que le devuelvan algo), eso lo decide una persona.
             if (_pagado > 0 && _nuevo <= _pagado) {
-              await deliverMessage(db, channelId, contactId,
-                `Tranquilo, ya no tienes que pagar nada más: ${_ant?.nombre ? `tu *${_ant.nombre}*` : "lo que compraste"} ` +
-                `ya te da acceso 🙌 Si igual quieres que te lo cambiemos, lo veo con el equipo y te escriben por acá.`)
+              // Si pide que le DEVUELVAN la diferencia, se le contesta eso (D18-cbajadev: «ya no tienes que pagar
+              // nada más» a quien pedía plata de vuelta), y un solo acuse: el de abajo ya no repite «te atiende…».
+              const _pideDevol = RE_PIDE_DEVOLUCION.test(_txtU) || /diferencia/i.test(_txtU);
+              await deliverMessage(db, channelId, contactId, _pideDevol
+                ? `Entiendo 🙏 Pasarte a la *${_otra.nombre}* y devolverte la diferencia lo ve una persona del equipo: ya le aviso y te escribe por acá. Mientras tanto tu *${_ant?.nombre ?? "acceso"}* sigue activo.`
+                : `Tranquilo, ya no tienes que pagar nada más: ${_ant?.nombre ? `tu *${_ant.nombre}*` : "lo que compraste"} ` +
+                  `ya te da acceso 🙌 Si igual quieres que te lo cambiemos, lo veo con el equipo y te escriben por acá.`)
                 .catch(() => {});
               await pasarAHumano(db, channelId, contactId,
-                `🔻 Compró ${_ant?.nombre ?? "su versión"} y ahora pide *${_otra.nombre}* (más barata o igual). No se le cobró de nuevo: mira si hay que cambiársela o devolverle algo.`,
-                { aviso: true });
+                `🔻 Compró ${_ant?.nombre ?? "su versión"} y ahora pide *${_otra.nombre}* (más barata o igual)${_pideDevol ? " y que le DEVUELVAN la diferencia" : ""}. No se le cobró de nuevo: mira si hay que cambiársela o devolverle algo.`,
+                { aviso: "fuera" });
               await logEvent(db, channelId, contactId, "nota", "🔻 Pidió una versión más barata",
                 `Tenía ${_ant?.nombre ?? "?"} y pidió ${_otra.nombre} — no se le cobró de nuevo`).catch(() => {});
               return true;
@@ -14085,6 +14136,9 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
       }).join("\n");
       _catalogoPv = "## Lo que vende el negocio (precios reales)\n" + _lin + "\n" +
         "Si pregunta qué más vendes, nómbralos con su precio; NUNCA digas que «solo» vendes lo que compró. " +
+        // «¿tienen curso de soldadura?» → «el Curso de Cortes te puede servir para la soldadura» (D18-esoldadura).
+        "Si pregunta por algo que NO está en esta lista (otro tema, otro curso), dile con naturalidad que por ahora no lo " +
+        "tenemos. ⛔ No le digas que uno de estos «le sirve para eso» si su descripción no lo dice. " +
         "Si quiere comprar OTRO de estos, dile que con gusto y escribe `[[recompra: NOMBRE EXACTO]]` (el cliente no lo ve).";
     }
   } catch (_) { /* sin catálogo legible → sin el bloque */ }
@@ -14160,6 +14214,10 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
     "NO le ofrezcas comprar lo mismo otra vez como si no te conociera, ni le repitas el pitch de venta.\n" +
     "PERO si el cliente QUIERE COMPRAR de nuevo, más unidades u otro producto, con gusto: dile con calidez que se lo preparas y escribe el marcador `[[recompra]]` (o `[[recompra: NOMBRE EXACTO]]` si es otro producto del catálogo de arriba; el cliente NO lo ve). No lo trates como desconocido.\n" +
     "Si te pide una contraseña, un usuario o un código de acceso que no está escrito en su producto o en su entrega, NO lo inventes: escribe `[[humano]]`." +
+    // «el acceso era para otro número» → «¿te lo reenvío al número 987…?» (D18b-eotronum): el bot no puede escribirle a
+    // otro número. Lo que sí puede: el link está acá y él se lo pasa.
+    "\n⛔ Tú solo escribes por ESTE chat: no ofrezcas mandarle nada a otro número ni a otro correo. Si el acceso es para " +
+    "otra persona, dile que el link está acá mismo y que se lo puede reenviar él." +
     (pv.instrucciones && String(pv.instrucciones).trim() ? "\n\nIndicaciones del negocio para la post-venta:\n" + String(pv.instrucciones).trim() : "")
   );
   const system = parts.join("\n\n");
@@ -14260,6 +14318,24 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
       `Pasa a una persona: “${String(event.text ?? "").slice(0, 90)}”`).catch(() => {});
   }
 
+  // 🧾 Lo que la ficha no dice tampoco se inventa DESPUÉS de comprar: «las actualizaciones las recibirás sin costo»,
+  // «el acceso solo se entrega al número que compró» (D18-eactualiza, D18-eotronum). El mismo recorte que la venta.
+  try {
+    const _txPv = String(event.text ?? "").toLowerCase();
+    const { data: _pPv } = await db.from("products").select("config").eq("id", (order as any).product_id).maybeSingle();
+    const { data: _chPv } = await db.from("channels").select("negocio").eq("id", channelId).maybeSingle();
+    const _cfgPv = ((_pPv as any)?.config ?? {}) as any;
+    const _fichaPv = [JSON.stringify(_cfgPv.ia ?? {}), String(_cfgPv.contexto_producto ?? ""), String((_chPv as any)?.negocio ?? "")].join(" ").toLowerCase();
+    const _huPv = [...TEMAS_FICHA, ...TEMAS_FICHA_DIGITAL].filter(([, enPreg, enFicha]) => enPreg.test(_txPv) && !enFicha.test(_fichaPv));
+    if (_huPv.length) {
+      const _antesPv = result;
+      result = sinPoliticaInventada(result, _huPv as any);
+      if (result !== _antesPv) {
+        await logEvent(db, channelId, contactId, "nota", "🧾 Inventó una política (post-venta)",
+          `Se cambió por «no tengo el dato»: «${String(_antesPv).slice(0, 160)}»`).catch(() => {});
+      }
+    }
+  } catch (_) { /* sin ficha legible → tal cual */ }
   // ¿Quiere recomprar? Se relanza la venta (pedido nuevo): la del MISMO producto, o la del que
   // nombró el marcador («[[recompra: Curso de Cortes en Metal]]»). Se limpian los candados
   // una_vez para que el pedido/aviso no se omitan.
@@ -18529,7 +18605,14 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   // (+ «dame el precio de MAYORISTA a 30 soles» — F7-hprompt: sellaba «3 unidades» porque su descripción habla de volumen)
   const _niegaAtr = /\b(no|ni|tampoco|nunca|jam[aá]s|devoluci[oó]n|devolver|reembolso|reclamo|estafa|mayor|mayorista|revend\w*|reventa|distribuid\w*|olvida|ignora)\b/i.test(String(texto ?? ""))
     || /\b(?:a|en)\s+\d+\s*(?:soles|lucas)\b/i.test(String(texto ?? ""));
-  if (!String(ctx.opcion_id ?? "").trim() && !_niegaAtr) {
+  // 🛒 …ni cuando lo que describe es OTRO PRODUCTO del catálogo: «quiero el curso y la plantilla» sellaba la
+  // Premium del curso porque su descripción trae «plantillas imprimibles» — eligió por él y salieron los
+  // datos por S/98 (D18-ccursopl). La plantilla es otro producto, no un atributo de esta versión.
+  let _nombraOtroProd = false;
+  if (esDigital(ctx)) {
+    try { _nombraOtroProd = productosNombrados(String(texto ?? ""), await catalogoDigital(db, run)).some((id) => id !== String(prodId)); } catch (_) { /* sin catálogo */ }
+  }
+  if (!String(ctx.opcion_id ?? "").trim() && !_niegaAtr && !_nombraOtroProd) {
     const op3 = eligePorAtributo(texto, list) ?? eligePorSuperlativo(texto, list) ?? eligePorOrdinal(texto, list);
     if (op3) {
       run.vars.opcion_id = op3.id;
@@ -22432,9 +22515,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "Contéstale lo que SÍ es cierto: que su acceso es suyo y le queda, y que lo de usarlo con otra " +
             "persona lo confirma el equipo por acá. Y sigue con la venta, sin frenarla ni dramatizarlo.");
         }
-        const _esSalud = faltan.some((t) => /embarazo|lactancia|contraindicaciones|niños|menores/i.test(t));
+        const _esSalud = faltan.some((t) => /embarazo|lactancia|contraindicaciones|niños|menores|su edad/i.test(t));
         if (_esSalud) {
-          parts.push("## 🩺 Te preguntó algo de SALUD y no está en la ficha\n" +
+          parts.push("## ⚠️ 🩺 Te preguntó algo de SALUD y no está en la ficha\n" +
             `Te preguntó por **${faltan.join(", ")}** y sobre eso no tienes NINGÚN dato. ` +
             "⛔ PROHIBIDO responder de memoria, en cualquiera de los dos sentidos: ni «no está recomendado» " +
             "ni «sí se puede, es suave». Las dos son afirmaciones sobre su salud que nadie escribió y tú no " +
@@ -22897,6 +22980,28 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             { aviso: true }).catch(() => {});
         }
       }
+      // 👤 Rechazó por el DESTINATARIO pero el número es TUYO y el nombre casa («Percy Flores» por «Percy Rodrigo
+      // Flores Nuñez», D18-ptitular): al cliente le llegó «ese pago salió a otra cuenta». Misma receta que la
+      // fecha futura inventada: no se aprueba solo (el dinero manda revisarlo), pero no se le acusa.
+      if (/PAGO_NO/i.test(String(result ?? "")) && /(destinatari|titular|beneficiari|otra\s+cuenta|otro\s+n[uú]mero|a\s+nombre\s+de)/i.test(String(result ?? ""))) {
+        const _ocrCfgT = (info as any)?.ocr;
+        const _destT = String(_ocrLeyo?.destino ?? "");
+        const _numOk = _destT.replace(/\D/g, "").length >= 6 && !destinoNoCoincide(_ocrCfgT, _destT);
+        const _titOk = !!String(_ocrLeyo?.destinatario ?? "").trim() && !titularNoCoincide(_ocrCfgT, _ocrLeyo?.destinatario);
+        if (_numOk && _titOk) {
+          const _antesT = String(result ?? "");
+          result = "PAGO_NO Déjame confirmarlo con calma 🙌 En un momento te aviso por acá.";
+          if (cfg.guardar_en) {
+            run.vars[cfg.guardar_en] = result;
+            await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, result);
+          }
+          await logEvent(db, run.channel_id, run.contact_id, "error", "👤 El OCR rechazó por el titular y el número es tuyo",
+            `Destino ${_destT.replace(/\d(?=\d{3})/g, "•")} = tu número y «${String(_ocrLeyo?.destinatario ?? "")}» casa con tu titular. Rechazo: «${_antesT.slice(0, 120)}». A revisión, sin acusar al cliente.`).catch(() => {});
+          await pasarAHumano(db, run.channel_id, run.contact_id,
+            `El validador rechazó un pago por el nombre del destinatario («${String(_ocrLeyo?.destinatario ?? "")}»), pero el número es tuyo. Revísalo tú.`,
+            { aviso: false }).catch(() => {});
+        }
+      }
     }
     // ── Anti-reúso determinista + validación manual (pagos digitales) ──
     // Cuando el OCR da el pago por VÁLIDO (PAGO_OK), dos cosas antes de entregar:
@@ -22954,7 +23059,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // abajo. Antes se leían `cfg.tolerancia_monto`/`info.ocr.tolerancia` (ambos
           // inexistentes) → tolB era SIEMPRE 0 y un pago de S/58.90 para S/59 (decimal mal
           // leído / redondeo) se trataba como abono parcial y trababa la venta digital.
-          const tolB = Number((info as any)?.pedidos?.digital?.tolerancia ?? cfg.tolerancia_monto ?? (info as any).ocr?.tolerancia ?? 0) || 0;
+          // Default 1, el MISMO que muestra el panel (Pagos y avisos → «Si paga de menos, perdonarle hasta S/ 1»). Con
+          // 0 un canal que nunca guardó esa pantalla trataba S/38 por S/39 como abono parcial (D18-p38).
+          const tolB = Number((info as any)?.pedidos?.digital?.tolerancia ?? cfg.tolerancia_monto ?? (info as any).ocr?.tolerancia ?? 1) || 0;
           // parseMonto, NO Number() crudo: el OCR devuelve el monto como TEXTO del Yape
           // ("1,050.00", "1,200") y Number("1,050")=NaN → el chequeo de suficiencia se
           // saltaba y, en auto + operación legible, ENTREGABA el digital sin verificar
@@ -24038,11 +24145,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const _antesQ = salida;
               // Sin los renglones que quedaron sin una sola letra («🔧📦» solo, arriba de la
               // pregunta — D11-lcancel, D11-lsindni, 2026-09-25).
-              const _resto = sinPedirLosDatos(salida)
+              let _resto = sinPedirLosDatos(salida)
                 // …ni los renglones «📌 *dato*» de la petición que se quitó: quedaba colgando «📌 *De qué
                 // distrito o ciudad eres (para saber cómo te llega)*» encima de la lista (F1-calidad).
                 .replace(/^[ \t]*📌[^\n]*(?:\n|$)/gmu, "")
                 .replace(/^(?:[^\p{L}\p{N}\n]*\n)+/u, "").replace(/(?:\n[^\p{L}\p{N}\n]*)+$/u, "").trim();
+              // 📺 Si el recorte se llevó TODO, se rescatan las frases que no hablan de pago: «¿puedo verlo en mi tv?»
+              // → «puedes abrir el link en tu TV… así ves los videos en grande. ¿Cuál versión te interesa para
+              // enviarte los datos?» quedó en «¿Cuál de las dos te preparo?» y la respuesta se perdió (D18-otv).
+              if (_resto.replace(/[\s\p{P}\p{S}]/gu, "").length < 15) {
+                const _resc = String(salida).split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])|\n+/u)
+                  .filter((f) => f.trim() && !/[?¿]/.test(f) && !/dato|pago|pagar|yape|plin|transfer|captura|n[uú]mero|cuenta/i.test(f));
+                if (_resc.join(" ").replace(/[\s\p{P}\p{S}]/gu, "").length >= 15) _resto = _resc.join(" ").trim();
+              }
               // ⛔ Si el mensaje YA le pregunta la cantidad, solo se le quita la petición de
               // datos y punto. Pegar la pregunta del motor encima la deja dos veces con su
               // lista de precios repetida — medido en Chiclayo: «¿Y cuántas unidades te
@@ -24295,7 +24410,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (!_listaProductos) {
             try { _listaProductos = productosNombrados(sinFormato(salida), await catalogoDigital(db, run)).length >= 2; } catch (_) { /* sin catálogo */ }
           }
-          if (!_listaProductos && !_opsDig.some((o) => Number(o.cantidad ?? 0) > 1)) {
+          // …ni cuando pide accesos para VARIAS PERSONAS («10 accesos para mi empresa» — D18-hempresa): «el acceso es uno
+          // solo, con una vez te alcanza» ahí se lee como «que lo usen todos» y regala las otras 9. Eso es el hueco de
+          // compartir, que lo contesta sin conceder.
+          const _variasPersonas = /para\s+(?:mi|nuestra|la|el)\s+(?:empresa|equipo|oficina|gimnasio|negocio|familia|colegio|academia|taller|personal|trabajadores|alumnos|clientes)|\d+\s+(?:accesos|personas|licencias|usuarios|cuentas)/i
+            .test(String(ctx.last_input ?? ""));
+          if (!_listaProductos && !_variasPersonas && !_opsDig.some((o) => Number(o.cantidad ?? 0) > 1)) {
             const _preciosDig = _opsDig.map((o) => Number(o.precio)).filter((n) => Number.isFinite(n) && n > 0);
             if (Number.isFinite(Number(ctx.precio))) _preciosDig.push(Number(ctx.precio));
             const _sc = sinCantidadEnDigital(salida, _preciosDig);
@@ -25148,8 +25268,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // …pero «cualquier duda que te surja, me avisas» a quien dice «lo voy a pensar» es sobre la COMPRA,
         // no asesoría de uso: salía «La asesoría personalizada no viene incluida 🙏» de despedida
         // (D17-olopienso). Sin palabras de USO del producto, la frase se respeta.
-        const _dudaDeCompra = (m: string) => /cualquier\s+(?:otra\s+)?(?:duda|consulta|pregunta)/i.test(m) &&
-          !/\b(us[ae]r?\w*|trab\w*|ator\w*|aplic\w*|ejercicio|rutina|video|clase|f[oó]rmula|paso\s+a\s+paso)\b/i.test(m);
+        const _usoProd = (m: string) => /\b(us[ae]r?\w*|trab\w*|ator\w*|aplic\w*|ejercicio|rutina|video|clase|f[oó]rmula|paso\s+a\s+paso)\b/i.test(m);
+        // (+ «te explico rápido» ANTES de comprar: es explicar el producto, no asesoría — D18-haudio: «explícame por audio»
+        // recibió «La asesoría personalizada no viene incluida 🙏»)
+        const _dudaDeCompra = (m: string) => (/cualquier\s+(?:otra\s+)?(?:duda|consulta|pregunta)/i.test(m) && !_usoProd(m))
+          || (String(ctx.pedido_creado ?? "") !== "si" && /te\s+(?:explico|cuento)\s+(?:r[aá]pido|ahora|ac[aá]|aqu[ií]|en\s+corto|f[aá]cil|por\s+(?:aqu[ií]|ac[aá]|escrito))/i.test(m) && !/\b(trab\w*|ator\w*|si\s+te\s+(?:trabas|atoras|complicas)|cuando\s+lo\s+(?:uses|tengas))\b/i.test(m));
         if (/asesori|acompanamiento|soporte personal|clase en vivo|no incluye ayuda/.test(_lim) && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
           // Genérico (D16c: «puedo ayudarte por aquí mismo», «aquí en el chat te respondo todo»): la
           // IA cambia el verbo cada vez. Frase con ESTE CHAT + ayudar/responder/explicar/guiar, que
