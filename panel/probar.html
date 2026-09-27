@@ -206,6 +206,7 @@
   .runrow .rdot{width:8px;height:8px;border-radius:50%;background:var(--green);flex:none} .runrow .rdot.wait{background:var(--amber)}
   .runrow .rt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .runrow .rs{font-size:10.5px;color:var(--faint)}
+  .runrow .rsub{display:block;font-size:10.5px;color:var(--faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis}
   .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--red-bg);color:var(--red);border:1px solid var(--red);padding:10px 18px;border-radius:12px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:100}
   .toast.show{opacity:1}
   @media(max-width:920px){ .cpanel{display:none} }
@@ -762,7 +763,7 @@ async function loadContactPanel(c){
     supa.from("contact_field_values").select("field_id,value").eq("contact_id",c.id),
     supa.from("messages").select("id,type,content,ts,direction").eq("contact_id",c.id).order("ts",{ascending:false}).limit(120),
     supa.from("flow_runs").select("id,estado,created_at,flow:flows(nombre)").eq("contact_id",c.id).order("created_at",{ascending:false}),
-    supa.from("sequence_subscriptions").select("id,estado,paso_actual,suscrito_at,sequence:sequences(nombre)").eq("contact_id",c.id).order("suscrito_at",{ascending:false}),
+    supa.from("sequence_subscriptions").select("id,estado,paso_actual,suscrito_at,sequence:sequences(nombre,pasos)").eq("contact_id",c.id).order("suscrito_at",{ascending:false}),
     supa.from("contact_events").select("*").eq("contact_id",c.id).order("created_at",{ascending:false}).limit(100),
     latestOrder(supa,c.id),
   ]);
@@ -770,6 +771,16 @@ async function loadContactPanel(c){
   panelData={ contact:ctRes.data||c, order:orderRes||null, allTags:tagsRes.data||[], assigned:new Set((ctagsRes.data||[]).map(r=>r.tag_id)), fields:fieldsRes.data||[], vals:Object.fromEntries((valsRes.data||[]).map(v=>[v.field_id,v.value])), media:(msgRes.data||[]).filter(m=>m.content&&m.content.media_url), runs:runsRes.error?[]:(runsRes.data||[]), subs:subsRes.error?[]:(subsRes.data||[]), events:evRes.error?[]:(evRes.data||[]) };
   setBotPill(panelData.contact.bot_activo!==false);
   renderContactPanel();
+}
+// Avance de una secuencia. Antes decía «paso N» y engañaba: paso_actual es el índice del PRÓXIMO
+// toque (0 = ninguno enviado), así que «paso 1» era «ya salió el 1.º». La misma función está en
+// index.html y probar.html a propósito: no va en contact-extras.js para
+// que un contact-extras.js cacheado viejo no rompa el import de toda la página.
+function pasoSubTxt(s){
+  const n=s.paso_actual||0, t=Array.isArray(s.sequence?.pasos)?s.sequence.pasos.length:0;
+  if(!t) return n===1?"1 toque enviado":`${n} toques enviados`;
+  if(n>=t) return `${t} de ${t} enviados`;
+  return `${n} de ${t} enviados · sigue el ${n+1}.º`;
 }
 function renderContactPanel(){
   const { contact,order,allTags,assigned,fields,vals,media,runs,subs,events }=panelData;
@@ -814,13 +825,13 @@ function renderContactPanel(){
     </div>`;
   const autoRows = [
     ...runsA.map(r=>`<div class="runrow"><span class="rdot ${r.estado==='esperando'?'wait':''}"></span><span class="rt">${esc(r.flow?.nombre||"Flujo")}</span><span class="rs">${esc((r.estado||"").replace(/^./,c=>c.toUpperCase()))}</span></div>`),
-    ...subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}</span><span class="rs">paso ${s.paso_actual||0}</span></div>`),
+    ...subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}<span class="rsub">${pasoSubTxt(s)}</span></span></div>`),
   ];
   const autoBody = autoRows.length ? autoRows.join("") : '<div class="cempty">Ninguna automatización activa</div>';
   const techBody = techFields.length ? techFields.map(f=>`<div class="cf-trow"><span class="k">${esc(f.key)}</span><span class="v">${esc(String(vals[f.id]).slice(0,60))}</span></div>`).join("") : '<div class="cempty">Sin candados internos</div>';
   const mediaBody = media.length?`<div class="media-grid">${media.slice(0,12).map(mediaThumb).join("")}</div>`:'<div class="cempty">Sin archivos</div>';
   const runsBody = runsA.length?runsA.map(r=>`<div class="runrow"><span class="rdot ${r.estado==='esperando'?'wait':''}"></span><span class="rt">${esc(r.flow?.nombre||"Flujo")}</span><span class="rs">${esc((r.estado||"").replace(/^./,c=>c.toUpperCase()))}</span></div>`).join(""):'<div class="cempty">Ningún flujo activo</div>';
-  const subsBody = subsA.length?subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}</span><span class="rs">paso ${s.paso_actual||0}</span></div>`).join(""):'<div class="cempty">Sin secuencias activas</div>';
+  const subsBody = subsA.length?subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}<span class="rsub">${pasoSubTxt(s)}</span></span></div>`).join(""):'<div class="cempty">Sin secuencias activas</div>';
   const nodosBody = nodos.length?nodos.slice(0,20).map(e=>`<div class="runrow"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join(""):'<div class="cempty">El motor registrará aquí los nodos</div>';
   const errsBody = errs.length?errs.slice(0,10).map(e=>`<div class="runrow" style="color:var(--red)"><span class="rt">${esc(e.titulo)}</span><span class="rs">${fmtTime.format(new Date(e.created_at))}</span></div>`).join(""):'<div class="cempty">Sin errores</div>';
   // diagBody/advBody DESPUÉS de nodosBody/errsBody (const: evita temporal dead zone)

@@ -527,6 +527,7 @@
   .runrow .rdot{width:8px;height:8px;border-radius:50%;background:var(--green);flex:none} .runrow .rdot.wait{background:var(--amber)}
   .runrow .rt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .runrow .rs{font-size:10.5px;color:var(--faint)}
+  .runrow .rsub{display:block;font-size:10.5px;color:var(--faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis}
   .cempty{font-size:12px;color:var(--faint);padding:6px 0}
 </style>
 </head>
@@ -1489,7 +1490,7 @@ async function loadContactPanel(c){
     // (y el Copiloto se quedaba sin la foto del comprobante) aunque estuvieran más atrás.
     supa.from("messages").select("id,type,content,ts,direction").eq("contact_id", c.id).not("content->>media_url","is",null).order("ts",{ascending:false}).limit(60),
     supa.from("flow_runs").select("id,estado,created_at,flow:flows(nombre)").eq("contact_id", c.id).order("created_at",{ascending:false}),
-    supa.from("sequence_subscriptions").select("id,estado,paso_actual,suscrito_at,sequence:sequences(nombre)").eq("contact_id", c.id).order("suscrito_at",{ascending:false}),
+    supa.from("sequence_subscriptions").select("id,estado,paso_actual,suscrito_at,sequence:sequences(nombre,pasos)").eq("contact_id", c.id).order("suscrito_at",{ascending:false}),
     supa.from("contact_events").select("*").eq("contact_id", c.id).order("created_at",{ascending:false}).limit(100),
     latestOrder(supa, c.id),
   ]);
@@ -1512,6 +1513,16 @@ async function loadContactPanel(c){
   // El pill del header se pintaba desde la lista (caché); acá ya está el bot_activo real.
   if (state.contactId===c.id && panelData.contact) setBotPill(panelData.contact.bot_activo!==false);
   renderContactPanel();
+}
+// Avance de una secuencia. Antes decía «paso N» y engañaba: paso_actual es el índice del PRÓXIMO
+// toque (0 = ninguno enviado), así que «paso 1» era «ya salió el 1.º». La misma función está en
+// index.html y probar.html a propósito: no va en contact-extras.js para
+// que un contact-extras.js cacheado viejo no rompa el import de toda la página.
+function pasoSubTxt(s){
+  const n=s.paso_actual||0, t=Array.isArray(s.sequence?.pasos)?s.sequence.pasos.length:0;
+  if(!t) return n===1?"1 toque enviado":`${n} toques enviados`;
+  if(n>=t) return `${t} de ${t} enviados`;
+  return `${n} de ${t} enviados · sigue el ${n+1}.º`;
 }
 function renderContactPanel(){
   const { contact, order, capiEvt, allTags, assigned, fields, vals, media, runs, subs, events } = panelData;
@@ -1576,7 +1587,7 @@ function renderContactPanel(){
   // Avanzado: cuerpos plegados (automatizaciones + diagnóstico del motor)
   const autoRows = [
     ...runsA.map(r=>`<div class="runrow"><span class="rdot ${r.estado==='esperando'?'wait':''}"></span><span class="rt">${esc(r.flow?.nombre||"Flujo")}</span><span class="rs">${esc((r.estado||"").replace(/^./,c=>c.toUpperCase()))}</span></div>`),
-    ...subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}</span><span class="rs">paso ${s.paso_actual||0}</span></div>`),
+    ...subsA.map(s=>`<div class="runrow"><span class="rdot"></span><span class="rt">${esc(s.sequence?.nombre||"Secuencia")}<span class="rsub">${pasoSubTxt(s)}</span></span></div>`),
   ];
   const autoBody = (autoRows.length ? autoRows.join("") : '<div class="cempty">Ninguna automatización activa</div>') + remkBtn;
   const techBody = techFields.length ? techFields.map(f=>`<div class="cf-trow"><span class="k">${esc(f.key)}</span><span class="v">${esc(String(vals[f.id]).slice(0,60))}</span></div>`).join("") : '<div class="cempty">Sin candados internos</div>';
