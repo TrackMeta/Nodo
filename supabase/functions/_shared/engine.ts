@@ -24527,6 +24527,33 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // "¿lo confirmo y te lo mando?" pegado a un pedido de datos es incoherente: todavía
       // no hay nada que confirmar. De ese turno se encarga el cierre honesto de más abajo,
       // que sí sabe QUÉ dato falta y lo pide por su nombre.
+      // 🔁 LA PREGUNTA QUE YA SE HIZO. «ya el curso» → el mensaje inicial preguntó «¿ya has cortado metal antes o
+      // empiezas de cero?» y la IA, justo debajo, cerró con la MISMA pregunta (D18e-okcurso). La IA copia lo que ve en
+      // el historial. Si la pregunta con que cierra ya salió en las últimas burbujas del bot, se quita; lo que falta
+      // pedir lo ponen después el cierre o la petición del motor.
+      if (op === "generar_texto" && /[?¿]/.test(String(salida ?? ""))) {
+        try {
+          const { data: _oQ } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
+            .eq("direction", "out").order("ts", { ascending: false }).limit(3);
+          const _pal = (s: string) => new Set(normalize(s).replace(/[^a-z0-9ñ\s]/g, " ").split(/\s+/).filter((w) => w.length >= 4));
+          const _prevQs = ((_oQ ?? []) as any[]).flatMap((mm) => String(mm?.content?.text ?? "").match(/¿[^?¿\n]{8,}(?:\?|$)/g) ?? []).map(_pal);
+          if (_prevQs.length) {
+            const _antesQR = String(salida);
+            // (con la muletilla que la presenta: «Cuéntame, ¿…?» dejaba «Cuéntame» colgando — D18f-okcurso)
+            const _sinRep = _antesQR.replace(/(?:(?:y\s+)?(?:cu[eé]ntame|dime|oye|por\s+cierto|ahora|entonces)\s*[,:]?\s*)?¿[^?¿\n]{8,}(?:\?|(?=\n|$))[\s\p{Extended_Pictographic}️]*/giu, (q) => {
+              const a = _pal(q);
+              if (a.size < 2) return q;
+              const rep = _prevQs.some((b) => { let c = 0; for (const w of a) if (b.has(w)) c++; return c / Math.min(a.size, b.size || 1) >= 0.7; });
+              return rep ? " " : q;
+            }).replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+            if (_sinRep !== _antesQR.trim() && _sinRep.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10) {
+              salida = _sinRep;
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "🔁 Repetía una pregunta que ya se hizo",
+                `Se quitó: «${_antesQR.slice(0, 140)}»`).catch(() => {});
+            }
+          }
+        } catch (_) { /* sin historial → tal cual */ }
+      }
       const _faltaAlgoConcreto = ctx.datos_completos !== "si" && String(ctx.pedido_creado ?? "") !== "si" &&
         !!((Array.isArray((ctx as any)._datos_faltan) ? (ctx as any)._datos_faltan[0] : null) ||
            (ctx as any)._falta_opcion || (ctx as any)._falta_variante || (ctx as any)._pack_mixto);
