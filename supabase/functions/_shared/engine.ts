@@ -3329,6 +3329,19 @@ async function aiRoute(db: SupabaseClient, channelId: string, text: string): Pro
       const intent = c.intencion || c.contexto_producto || c.faq || f.descripcion || "";
       return { flow_id: f.id, label: (p as any)?.nombre || f.nombre || "Flujo", intent: String(intent).slice(0, 500) };
     });
+    // 🎯 Nombró UN producto por su nombre («ya el curso» tras la lista de precios): se va a ese, sin preguntarle al
+    // modelo — que eligió el Protocolo al 60% (D18d-okcurso). El modelo queda para lo que no nombra ninguno.
+    try {
+      const _catR = await catalogoDigital(db, { channel_id: channelId } as any);
+      const _nom = productosNombrados(clean, _catR);
+      if (_nom.length === 1) {
+        const _f = [...flows.values()].find((f) => String(f.product_id ?? "") === _nom[0]);
+        if (_f) {
+          const _lbl = (prods.get(_f.product_id) as any)?.nombre || _f.nombre || "Flujo";
+          return { tier: "ia", flow: { id: _f.id, nombre: _lbl }, confidence: 1, reason: `Nombró «${_lbl}»` };
+        }
+      }
+    } catch (_) { /* sin catálogo → el modelo decide */ }
 
     // Resolver proveedor + key (perfil del router, o el default del canal).
     const perfiles = (ch as any)?.ia_perfiles ?? {};
@@ -13011,7 +13024,9 @@ const RE_QUIERE_COMPRAR =
   // 🤝 «ya me quedo con la plantilla» tras dar vueltas entre productos (D15-cproducto3): decidió.
   // 1️⃣ «ok 1 por ahora», «ya 1 nomás con boleta» después de preguntar por 50 accesos o 3 licencias
   // (D15-amayorista, D15-iempresa): baja a uno y lo compra; salía «mándame la captura» sin número.
-  /\b((?:ya|ok|okey|dale|bueno|listo)\s+(?:1|una|uno)\s+(?:por\s+ahora|nom[aá]s|nada\s+m[aá]s|solamente|solo|entonces)|(?:lo|la|los) quier[oa]|(?:lo|la|los) necesito(?!\s+(?:para\s+)?(?:saber|ver|preguntar|consultar))|me lo llevo|me llevo|me quedo con (?:el|la|los|las|esa|ese|esta|este|uno|una)\b|(?:quiero|kiero|kero|qiero) (?:comprar|llevar|pedir|encargar)l?[oa]?|(?:quiero|kiero|kero|qiero) (?:el |la |uno|una|dos|tres|cuatro|cinco|\d+)|d[ae]me (?:uno|una|dos|tres|\d+)(?!\s+(?:muestra|prueba|demo|ejemplo|foto|video|captura|cat[aá]logo|lista|imagen|idea|referencia))|d[aá]melo|d[aá]mela|voy a (?:comprar|llevar|pedir)|hazme el pedido|ap[aá]rtame|sep[aá]rame|s[ií] quiero|comprarlo|comprarla|me inscribo|inscribirme|apuntarme|dale pues|ya dale|de una|lo compro|env[ií]amelo|enviamelo|m[aá]ndamelo|mandamelo|me lo mandas|me lo env[ií]as|ll[eé]vame|mandame (?:uno|una|dos|tres|\d+)(?!\s+(?:muestra|prueba|demo|ejemplo|foto|video|captura|cat[aá]logo|lista|imagen|idea|referencia)))\b/i;
+  // ✅ «ok la plantilla», «ya el curso», «dale la premium» tras ver la lista (D18c-cpreciosep): eligió — salía
+  // «¿Lo pagas por Yape…?» y el número recién al turno siguiente. Corto, sin «?», y no «ok el precio / el link».
+  /\b(^\s*(?:ok|oka|okey|ya|dale|listo|bueno|va|perfecto)[\s,]+(?:la|el)\s+(?!precio|costo|link|enlace|dato|n[uú]mero|resto|env[ií]o|total|acceso)[a-záéíóúñ]{3,}(?:\s+[a-záéíóúñ]{3,})?\s*[.!]*\s*$|(?:ya|ok|okey|dale|bueno|listo)\s+(?:1|una|uno)\s+(?:por\s+ahora|nom[aá]s|nada\s+m[aá]s|solamente|solo|entonces)|(?:lo|la|los) quier[oa]|(?:lo|la|los) necesito(?!\s+(?:para\s+)?(?:saber|ver|preguntar|consultar))|me lo llevo|me llevo|me quedo con (?:el|la|los|las|esa|ese|esta|este|uno|una)\b|(?:quiero|kiero|kero|qiero) (?:comprar|llevar|pedir|encargar)l?[oa]?|(?:quiero|kiero|kero|qiero) (?:el |la |uno|una|dos|tres|cuatro|cinco|\d+)|d[ae]me (?:uno|una|dos|tres|\d+)(?!\s+(?:muestra|prueba|demo|ejemplo|foto|video|captura|cat[aá]logo|lista|imagen|idea|referencia))|d[aá]melo|d[aá]mela|voy a (?:comprar|llevar|pedir)|hazme el pedido|ap[aá]rtame|sep[aá]rame|s[ií] quiero|comprarlo|comprarla|me inscribo|inscribirme|apuntarme|dale pues|ya dale|de una|lo compro|env[ií]amelo|enviamelo|m[aá]ndamelo|mandamelo|me lo mandas|me lo env[ií]as|ll[eé]vame|mandame (?:uno|una|dos|tres|\d+)(?!\s+(?:muestra|prueba|demo|ejemplo|foto|video|captura|cat[aá]logo|lista|imagen|idea|referencia)))\b/i;
 // ¿Ya mostró intención de COMPRAR (no solo de preguntar)? Mira su último mensaje y los
 // anteriores: la señal puede haber quedado un par de turnos atrás.
 // 🔑 Las palabras clave del canal («QUIERO LA PLANTILLA», «QUIERO EL CURSO DE CORTES»). El
