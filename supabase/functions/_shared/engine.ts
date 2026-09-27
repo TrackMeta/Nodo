@@ -25153,26 +25153,51 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // El ahorro se cuenta contra lo que le costaría comprar esas mismas unidades
               // de una en una a su precio actual: es la cifra que de verdad se lleva.
               const _ahorro = _unit(_suya) * Number(_mejor.cantidad) - Number(_mejor.precio);
-              salida = salida.trimEnd() +
-                `\n\nAnotado: *${_suya.nombre}* — ${sym} ${r2(Number(_suya.precio))}. ` +
+              const _oferta = `Anotado: *${_suya.nombre}* — ${sym} ${r2(Number(_suya.precio))}. ` +
                 // «llevando X son Y» evita la concordancia: «*3 unidades* te SALE» quedaba mal,
                 // y el nombre de la opción lo pone el dueño (puede ser singular o plural).
                 `Ojo que llevando *${_mejor.nombre}* son ${sym} ${r2(Number(_mejor.precio))}, o sea ` +
                 `*${sym} ${r2(_unit(_mejor))} cada una*` +
-                (_ahorro > 0 ? ` — te ahorras ${sym} ${r2(_ahorro)}` : "") +
-                // ❓ Dos preguntas en una burbuja = contesta una sola, y la que se come es la
-                // del motor (medido en Trujillo: sede + cantidad + distritos en un mensaje).
-                // Si el turno ya le preguntó algo suyo, el ahorro va como dato, sin pregunta:
-                // la venta la cierra él cuando quiera y el hilo no se rompe.
-                // Lo mismo si el mensaje ya le PIDE algo sin signo de pregunta («pásame estos
-                // datos 👇 📌…», «confírmalo con el adelanto»): F5, salían datos + confírmalo +
-                // «¿te quedas con una o aprovechas?», tres pedidos en una burbuja.
-                (/\?|📌|p[aá]same|m[aá]ndame|env[ií]ame|conf[ií]rm|tus datos|estos datos/i.test(salida)
-                  ? `. Si quieres aprovechar, avísame 🔧`
-                  : `. ¿Te quedas con ${_suya.cantidad === 1 ? "una" : _suya.cantidad} o aprovechas? 🔧`);
-              (run.vars as any)._upsell_cant = 1;
-              await logEvent(db, run.channel_id, run.contact_id, "nota", "💡 Se le mostró el ahorro por llevar más",
-                `Eligió ${_suya.nombre} sin ver la lista; se le ofreció ${_mejor.nombre}`).catch(() => {});
+                (_ahorro > 0 ? ` — te ahorras ${sym} ${r2(_ahorro)}` : "");
+              // ❓ Dos preguntas en una burbuja = contesta una sola, y la que se come es la del
+              // motor (medido en Trujillo: sede + cantidad + distritos en un mensaje). Lo mismo si
+              // el mensaje ya le PIDE algo sin signo de pregunta («pásame estos datos 👇 📌…»,
+              // «confírmalo con el adelanto»): F5, salían datos + confírmalo + la oferta.
+              const _RE_PIDE = /\?|📌|p[aá]same|m[aá]ndame|env[ií]ame|conf[ií]rm|tus datos|estos datos/i;
+              const _pend = !!(run.vars as any)?._upsell_pend;
+              let _aplazado = false;
+              if (!_RE_PIDE.test(salida)) {
+                // El turno no le pide nada: la oferta cierra el mensaje, con su pregunta.
+                salida = salida.trimEnd() +
+                  `\n\n${_oferta}. ¿Te quedas con ${_suya.cantidad === 1 ? "una" : _suya.cantidad} o aprovechas? 🔧`;
+              } else if (!_pend) {
+                // ⏳ El turno ya le pregunta algo (el distrito, la sede, los datos): la oferta ESPERA
+                // al mensaje siguiente. Antes iba debajo como dato («Si quieres aprovechar, avísame»)
+                // y quedaba colgada después del «¿En cuál estás?» — Rodrigo, 27-sep: «que la oferta
+                // espere al siguiente mensaje». No se marca `_upsell_cant`: sigue pendiente.
+                (run.vars as any)._upsell_pend = 1;
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "💡 Ahorro por llevar más: aplazado",
+                  "El mensaje ya le pregunta algo; va en el siguiente").catch(() => {});
+                _aplazado = true;
+              } else {
+                // Ya esperó un turno y este también pregunta: va como DATO, sin pregunta, ANTES del
+                // párrafo que le pide algo — así la pregunta del turno sigue siendo lo último que lee.
+                // Esperar otra vez sería no ofrecérselo nunca (en provincia casi cada turno pide algo).
+                // Y antes de la LISTA a la que esa pregunta se refiere (📍 oficinas → «¿Cuál te queda
+                // mejor?»): metida entre las dos, la pregunta quedaba lejos de lo que pregunta
+                // (G3-truji, La Esperanza).
+                const _pars = salida.trimEnd().split(/\n{2,}/);
+                let _at = Math.max(0, _pars.findIndex((p) => _RE_PIDE.test(p)));
+                while (_at > 0 && /📍/.test(_pars[_at - 1])) _at--;
+                _pars.splice(_at, 0, `${_oferta}. Si quieres aprovechar, avísame 🔧`);
+                salida = _pars.join("\n\n");
+              }
+              if (!_aplazado) {
+                delete (run.vars as any)._upsell_pend;
+                (run.vars as any)._upsell_cant = 1;
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "💡 Se le mostró el ahorro por llevar más",
+                  `Eligió ${_suya.nombre} sin ver la lista; se le ofreció ${_mejor.nombre}`).catch(() => {});
+              }
             }
           }
         } catch (e) { console.error("[upsellCantidad]", (e as any)?.message ?? e); }
