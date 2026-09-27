@@ -449,6 +449,11 @@
   .cpanel .bigav{width:60px;height:60px;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px}
   .cpanel .cnm{font-weight:600;font-size:15px}
   .cpanel .cph{font-size:12px;color:var(--muted)}
+  .cpanel .cx-remk{display:inline-flex;align-items:center;gap:6px;margin-top:4px;height:28px;padding:0 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);font:600 11.5px/1 inherit;font-family:inherit;cursor:pointer;transition:border-color .15s,color .15s}
+  .cpanel .cx-remk:hover{border-color:var(--brand);color:var(--text)}
+  .cpanel .cx-remk.on{color:var(--amber);border-color:var(--amber)}
+  .cpanel .cx-remk:disabled{opacity:.5;cursor:not-allowed}
+  .cpanel .cx-remk svg{width:13px;height:13px}
   /* Esqueleto de carga de la ficha (evita el flash "incompleto") */
   .cx-skel{display:flex;flex-direction:column;gap:12px;padding-top:16px}
   .cx-skrow{height:52px;border-radius:12px;background:linear-gradient(100deg,var(--surface-2) 30%,var(--surface) 50%,var(--surface-2) 70%);background-size:200% 100%;animation:cxShimmer 1.2s linear infinite}
@@ -1521,9 +1526,13 @@ function renderContactPanel(){
   const nodos = events.filter(e=>e.tipo==="nodo");
   const errs  = events.filter(e=>e.tipo==="error");
   const botTxt = (contact.bot_activo!==false ? '<span style="color:var(--green)">● Bot activo</span>' : '<span style="color:var(--amber)">● Bot en pausa</span>')
-    // 🔕 Pidió que no le escriban más: la marca existía (Contactos, Directo) pero acá no se veía
-    // y el operador podía meterlo en un seguimiento o mandarle una promoción.
-    + (contact.no_remarketing ? ' <span style="color:var(--amber)" title="Pidió que no le manden promociones ni remarketing. El bot lo respeta; tú también.">'+icon("bell")+' Sin remarketing (pidió no recibir promociones)</span>' : '');
+    // 🔕 Fuera del remarketing: la marca existía (Contactos, Directo) pero acá no se veía
+    // y el operador podía meterlo en un seguimiento o mandarle una promoción. La pone el
+    // cliente al pedir baja o el operador a mano (botón de abajo), por eso no dice quién.
+    + (contact.no_remarketing ? ' <span style="color:var(--amber)" title="No recibe secuencias ni reenganche. El bot le sigue contestando si escribe.">'+icon("bell")+' Sin remarketing</span>' : '');
+  // Sacar/devolver al remarketing sin ir a Contactos. Pausar el bot solo lo FRENA (sigue en el
+  // paso donde iba); esto lo SACA: sus secuencias quedan canceladas.
+  const remkBtn = isTest ? "" : `<button type="button" class="cx-remk${contact.no_remarketing?" on":""}" id="pRemk" title="${contact.no_remarketing?"Vuelve a recibir sus secuencias, desde el primer paso":"No recibirá más toques de secuencias ni reenganche"}">${icon("bell")} ${contact.no_remarketing?"Volver al remarketing":"Sacar del remarketing"}</button>`;
   const sysRows = isTest ? "" : `
     <div class="kv"><span class="k">País</span><span class="v">${prefixLook(contact.wa_id, COUNTRY_BY_PREFIX, "—")}</span></div>
     <div class="kv"><span class="k">Hora local</span><span class="v">${localTime(contact.wa_id)}</span></div>
@@ -1590,6 +1599,7 @@ function renderContactPanel(){
       <div class="cnm">${esc(contact.nombre || contact.wa_id)}</div>
       <div class="cph">${isTest ? "Contacto de prueba (Web Chat)" : "+"+esc(contact.wa_id)}</div>
       ${isTest?"":`<div class="cph" style="margin-top:3px">${botTxt}</div>`}
+      ${remkBtn}
     </div>
     ${!isTest && order?`<div class="cx-actions"><button class="cx-btn" id="pEdit" title="Editar el pedido (corregir monto, producto, extras…)">${icon("edit")} Editar pedido</button>${O.zonaDe(order)!=="digital"?`<button class="cx-btn" id="pRotulo" title="Imprimir rótulo del pedido">${icon("printer")} Imprimir rótulo</button>`:""}</div>`:""}
     ${!isTest && order && !O.esPerdido(order) && !O.esCerrado(order)?`<details class="cx-fichahint"><summary>${icon("check")}<span>Venta registrada</span><span class="cx-fh-q">¿por qué cambió el botón?</span></summary><div class="cx-fh-body">Ya hay un pedido en curso, por eso «Registrar venta a mano» se cambió por <b>Editar pedido</b> ↑ (evita crear pedidos duplicados). Muévelo o corrígelo desde ahí. El botón vuelve como «Registrar otra venta» cuando este pedido se cierre o se pierda.</div></details>`:""}
@@ -1602,6 +1612,28 @@ function renderContactPanel(){
     ${sec("Etiquetas", tagsBody, {count:assigned.size})}
     ${sec("Medios y archivos", mediaBody, {count:media.length})}
     ${!isTest?sec("Avanzado", advBody, {open:false}):""}`;
+  const remk=$("pRemk");
+  if(remk) remk.onclick=async()=>{
+    const val=!contact.no_remarketing, quien=contact.nombre||"Este contacto", n=subsA.length;
+    if(!await confirmDialog(val
+      ? {title:"Sacar del remarketing", message:`${quien} no recibirá más toques de secuencias ni reenganche${n?` (tiene ${n===1?"1 secuencia":n+" secuencias"} en curso)`:""}. El bot le sigue contestando si escribe. Si lo vuelves a incluir, sus secuencias arrancan desde el primer paso.`, confirmText:"Sacar"}
+      : {title:"Volver al remarketing", message:`${quien} vuelve a recibir sus secuencias, desde el primer paso.`, confirmText:"Volver a incluir"})) return;
+    remk.disabled=true;
+    const { error }=await supa.from("contacts").update({ no_remarketing:val }).eq("id",contact.id);
+    if(error){ remk.disabled=false; toast("No se pudo cambiar: "+error.message,true); return; }
+    // Sacar: se cancelan YA (el scheduler lo haría en su próxima pasada, pero «Automatizaciones
+    // activas» las seguiría mostrando hasta entonces). Volver: se reactivan desde el paso 0,
+    // igual que en Contactos (el scheduler solo procesa `activa`).
+    const ahora=new Date().toISOString();
+    const r = val
+      ? await supa.from("sequence_subscriptions").update({ estado:"cancelada", updated_at:ahora }).eq("contact_id",contact.id).eq("estado","activa")
+      : await supa.from("sequence_subscriptions").update({ estado:"activa", paso_actual:0, proximo_at:null, updated_at:ahora }).eq("contact_id",contact.id).eq("estado","cancelada");
+    contact.no_remarketing=val;
+    logEvent(contact.id,"nota",val?"Sacado del remarketing a mano":"Devuelto al remarketing a mano");
+    if(r && r.error) toast(val?"Marcado sin remarketing, pero sus secuencias en curso no se pudieron cancelar: "+r.error.message:"Vuelve al remarketing, pero sus secuencias no se pudieron reanudar: "+r.error.message, true);
+    else toast(val?"Sacado del remarketing":"Vuelve al remarketing");
+    loadContactPanel(contact);
+  };
   p.querySelectorAll("[data-stagepick]").forEach(b=> b.onclick=async()=>{ const k=b.dataset.stagepick; if(k===(contact.stage||"nuevo")) return;
     // Confirmar: un clic accidental pisaba la etapa que puso el motor (p. ej. «Comprado» tras una venta).
     if(!await confirmDialog({title:"Cambiar etapa",message:`${contact.nombre||"Este contacto"} pasará a «${(b.textContent||k).trim()}». La etapa la mueve el motor solo; cambiarla a mano afecta el Embudo y los segmentos de remarketing.`,confirmText:"Cambiar"})) return;
