@@ -6453,6 +6453,9 @@ function sinMuletillaDeArranque(texto: string): string {
     // estaba: un renglón vacío en medio del mensaje se ve peor que la muletilla.
     if (!limpio.trim()) return l;
     if (RE_ARRANCA_CON_CONECTOR.test(limpio)) return l;
+    // …ni cuando arranca con un RELATIVO: «Veo que quieres 1 unidad, que cuesta S/ 69» — lo cortado
+    // era el sujeto de la frase y al cliente le llegó «Que cuesta *S/ 69*» (G3-sinciu).
+    if (/^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:que|lo\s+que|(?:el|la|lo|los|las)\s+cual(?:es)?|cuy[oa]s?|donde)(?![\p{L}])/iu.test(limpio)) return l;
     const i = limpio.search(/[\p{L}\p{N}]/u);
     return i < 0 ? limpio : limpio.slice(0, i) + limpio[i].toUpperCase() + limpio.slice(i + 1);
   }).join("\n");
@@ -6535,7 +6538,12 @@ function conCoberturaConfirmada(texto: string, depto: string, courier: string): 
   // Lo único que lo frena es que el propio mensaje ya lo diga, para no repetirlo.
   if (RE_YA_CONFIRMO_COBERTURA.test(sinFormato(t))) return texto;
   const quien = String(courier ?? "").trim();
-  return `Sí hacemos envíos a *${bonito(zona)}*${quien ? ` con la agencia *${quien}*` : ""} 📦\n` + t;
+  const linea = `Sí hacemos envíos a *${bonito(zona)}*${quien ? ` con la agencia *${quien}*` : ""} 📦`;
+  // Si el mensaje arranca con el acuse pelado que deja el recorte de la sede («¡Claro!» solo en su
+  // renglón), esta línea ocupa su lugar: encima quedaba «Sí hacemos envíos… 📦 / ¡Claro!» (G8-chaglla).
+  const _acuse = /^¡(?:Perfecto|Claro)!\s*(?:\n|$)/u;
+  if (_acuse.test(t)) return `${linea}\n` + t.replace(_acuse, "");
+  return `${linea}\n` + t;
 }
 // Promete decir los precios… y no dice ninguno. Medido: "¿Con cuántos frascos te
 // gustaría comenzar? Te cuento los precios." — y ahí terminaba el mensaje. El cliente
@@ -23890,8 +23898,44 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 }
                 if (_corte) _entrada = _corte;
               }
+              // 🎯 Y la frase de entrada no ELIGE por él ni lo UBICA con referencias. Medido (G4-cusco):
+              // «para Wanchaq la oficina que te queda cerca es la de Wanchaq, justo frente al Óvalo» y
+              // debajo la lista del motor con TRES oficinas de Wanchaq, ninguna frente a un óvalo; en La
+              // Esperanza, «tienes la agencia Shalom ideal para ti» encima de dos. La IA no tiene los
+              // nombres ni las referencias (a propósito): lo que no sabe, lo rellena. Se quita esa frase;
+              // si no queda nada, un acuse, porque encabezado, lista y pregunta los pone el motor.
+              let _entradaForzada = false;
+              // 💰 Un renglón de la LISTA DE PRECIOS no es una frase de entrada. Si otro recorte se llevó
+              // el párrafo de arriba, la primera línea es «1 unidad — S/ 69» y quedaba sola: al que pidió
+              // 3 le llegó el precio de 1 (G5-areq). Fuera, y el rescate de abajo pone el de SU cantidad.
+              if (/—\s*\*?\s*(?:S\/|\$|US\$)\s?\d/.test(_entrada)) {
+                _entrada = "¡Perfecto!";
+                _entradaForzada = true;
+              }
+              {
+                // …y dicho de otra forma: «tienes una sede cerca, ideal para recoger tu pedido» (G5-cusco).
+                const _RE_ELIGE = /(?:queda|quedan)\s+(?:m[aá]s\s+)?cerca|m[aá]s\s+cercana|ideal\s+para|tienes\s+(?:una|la)\s+(?:sede|oficina|agencia)|(?:sede|oficina|agencia)(?:\s+shalom)?\s+(?:m[aá]s\s+)?cerca|(?:justo\s+)?(?:frente|al\s+costado|al\s+lado|diagonal|a\s+(?:\d+|una|dos|tres|media)\s+(?:cuadras?|cdras?\.?|metros))\s+(?:a|al|de|del)\b/i;
+                // …ni la lista escrita DE CORRIDO en esa misma línea: «Aquí te listo algunas: AEROPUERTO
+                // CUSCO · TICA TICA · AV PACHACUTEC…» y debajo la lista del motor — dos listas (G6-cusco).
+                const _deCorrido = (f: string) => (f.match(/\s[·•|]\s/g) ?? []).length >= 2;
+                // 🔴 Y por TEMA, no por forma: cada tanda estrenaba otra manera de elegir («tienes una sede
+                // cerca», «te queda la agencia Shalom recomendada», «Wanchaq es buena opción» — G5–G7).
+                // Con la lista del motor debajo, una frase suya sobre la sede/oficina/agencia no tiene nada
+                // que aportar salvo el «te llega por agencia Shalom», que sí es dato suyo y se queda.
+                const _deLaSede = (f: string) => (/\b(?:sedes?|oficinas?|agencias?)\b/i.test(f) &&
+                  !/\bllega\b|\benv[ií]\p{L}*|\bmand\p{L}*/iu.test(f)) || /buena\s+opci[oó]n|recomendad[ao]/i.test(f);
+                const _sobra = (f: string) => _RE_ELIGE.test(sinFormato(f)) || _deCorrido(f) || _deLaSede(sinFormato(f));
+                if (_sobra(_entrada)) {
+                  const _q = _entrada.split(/(?<=[.!?…]|\p{Extended_Pictographic}️?)\s+/u)
+                    .filter((f) => !_sobra(f)).join(" ").trim();
+                  _entrada = _q.replace(/[\s\p{P}\p{S}]/gu, "").length >= 8 ? _q : (_elPidioSede ? "¡Claro!" : "¡Perfecto!");
+                  _entradaForzada = true;
+                  await logEvent(db, run.channel_id, run.contact_id, "nota", "🎯 Se quitó la oficina que elegía la IA",
+                    "Su frase de entrada nombraba o ubicaba una oficina; la lista y la pregunta van del motor").catch(() => {});
+                }
+              }
               if (_entrada && _entrada !== salida.trim() &&
-                  _entrada.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20) {
+                  (_entradaForzada || _entrada.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20)) {
                 // 💰 …sin perder el PRECIO si lo preguntó: «QUIERO 3 PARA AREQUIPA, ¿CUÁNTO ES CON ENVÍO?» se
                 // quedó con «En Arequipa te llega por Shalom» + la lista, y nadie le dijo cuánto (F7-hmayus).
                 const _antesRec = salida;
@@ -25153,12 +25197,29 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // El ahorro se cuenta contra lo que le costaría comprar esas mismas unidades
               // de una en una a su precio actual: es la cifra que de verdad se lleva.
               const _ahorro = _unit(_suya) * Number(_mejor.cantidad) - Number(_mejor.precio);
-              const _oferta = `Anotado: *${_suya.nombre}* — ${sym} ${r2(Number(_suya.precio))}. ` +
-                // «llevando X son Y» evita la concordancia: «*3 unidades* te SALE» quedaba mal,
-                // y el nombre de la opción lo pone el dueño (puede ser singular o plural).
-                `Ojo que llevando *${_mejor.nombre}* son ${sym} ${r2(Number(_mejor.precio))}, o sea ` +
+              // Dos piezas: la CONFIRMACIÓN de lo que pidió y la OFERTA. Van juntas salvo cuando la oferta
+              // se aplaza: ahí la confirmación sale igual en este turno — era lo único que le decía
+              // «anotado, 1 unidad a S/ 69», y sin ella a «quiero 1» le llegaba solo «¿alguna otra duda?»
+              // (G9-sinciu). La oferta del turno siguiente ya no repite el «Anotado».
+              const _anotado = `Anotado: *${_suya.nombre}* — ${sym} ${r2(Number(_suya.precio))}.`;
+              // «llevando X son Y» evita la concordancia: «*3 unidades* te SALE» quedaba mal,
+              // y el nombre de la opción lo pone el dueño (puede ser singular o plural).
+              const _ojo = `Ojo que llevando *${_mejor.nombre}* son ${sym} ${r2(Number(_mejor.precio))}, o sea ` +
                 `*${sym} ${r2(_unit(_mejor))} cada una*` +
                 (_ahorro > 0 ? ` — te ahorras ${sym} ${r2(_ahorro)}` : "");
+              const _oferta = (run.vars as any)?._upsell_anotado ? _ojo : `${_anotado} ${_ojo}`;
+              // Antes del bloque que le pide algo — y antes de la LISTA a la que esa pregunta se refiere
+              // (📍 oficinas → «¿Cuál te queda mejor?», con su encabezado «…tenemos estas 👇»): metida
+              // entre las dos, la pregunta quedaba lejos de lo que pregunta (G3-truji, La Esperanza).
+              // Renglones de LISTA (📍 *Nombre*), no cualquier 📍: la IA lo usa de adorno en su frase
+              // («…la agencia Shalom recomendada 📍») y el texto se subía encima de todo (G7-chiclayo).
+              const _antesDeLaPregunta = (txt: string, nuevo: string) => {
+                const _pars = txt.trimEnd().split(/\n{2,}/);
+                let _at = Math.max(0, _pars.findIndex((p) => _RE_PIDE.test(p)));
+                while (_at > 0 && (/^\s*📍\s*\*/m.test(_pars[_at - 1]) || /👇\s*$/u.test(_pars[_at - 1]))) _at--;
+                _pars.splice(_at, 0, nuevo);
+                return _pars.join("\n\n");
+              };
               // ❓ Dos preguntas en una burbuja = contesta una sola, y la que se come es la del
               // motor (medido en Trujillo: sede + cantidad + distritos en un mensaje). Lo mismo si
               // el mensaje ya le PIDE algo sin signo de pregunta («pásame estos datos 👇 📌…»,
@@ -25176,6 +25237,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // y quedaba colgada después del «¿En cuál estás?» — Rodrigo, 27-sep: «que la oferta
                 // espere al siguiente mensaje». No se marca `_upsell_cant`: sigue pendiente.
                 (run.vars as any)._upsell_pend = 1;
+                // La confirmación no espera (si el mensaje no trae ya su precio).
+                if (!salida.includes(String(_suya.precio))) {
+                  salida = _antesDeLaPregunta(salida, _anotado);
+                  (run.vars as any)._upsell_anotado = 1;
+                }
                 await logEvent(db, run.channel_id, run.contact_id, "nota", "💡 Ahorro por llevar más: aplazado",
                   "El mensaje ya le pregunta algo; va en el siguiente").catch(() => {});
                 _aplazado = true;
@@ -25183,17 +25249,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // Ya esperó un turno y este también pregunta: va como DATO, sin pregunta, ANTES del
                 // párrafo que le pide algo — así la pregunta del turno sigue siendo lo último que lee.
                 // Esperar otra vez sería no ofrecérselo nunca (en provincia casi cada turno pide algo).
-                // Y antes de la LISTA a la que esa pregunta se refiere (📍 oficinas → «¿Cuál te queda
-                // mejor?»): metida entre las dos, la pregunta quedaba lejos de lo que pregunta
-                // (G3-truji, La Esperanza).
-                const _pars = salida.trimEnd().split(/\n{2,}/);
-                let _at = Math.max(0, _pars.findIndex((p) => _RE_PIDE.test(p)));
-                while (_at > 0 && /📍/.test(_pars[_at - 1])) _at--;
-                _pars.splice(_at, 0, `${_oferta}. Si quieres aprovechar, avísame 🔧`);
-                salida = _pars.join("\n\n");
+                salida = _antesDeLaPregunta(salida, `${_oferta}. Si quieres aprovechar, avísame 🔧`);
               }
               if (!_aplazado) {
                 delete (run.vars as any)._upsell_pend;
+                delete (run.vars as any)._upsell_anotado;
                 (run.vars as any)._upsell_cant = 1;
                 await logEvent(db, run.channel_id, run.contact_id, "nota", "💡 Se le mostró el ahorro por llevar más",
                   `Eligió ${_suya.nombre} sin ver la lista; se le ofreció ${_mejor.nombre}`).catch(() => {});
@@ -25546,7 +25606,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
           // «…para un uso adecuado. Para seguir, ¿Alguna otra duda?» (F5b-orepuesto): la muletilla que
           // anunciaba la pregunta quitada queda colgando delante de la suave.
-          _s = _s.replace(/(?:^|(?<=[.!?\s]))(?:para\s+(?:seguir|avanzar|continuar)|y\s+para\s+(?:seguir|avanzar)|(?:y\s+)?ahora,?\s+cu[eé]ntame|cu[eé]ntame|dime|¿\s*me\s+lo\s+(?:pasas|dices|confirmas|env[ií]as)\s*\??)\s*,?\s*(?=¿Alguna otra duda)/giu, "");
+          // «Para seguir CON TU PEDIDO, ¿Alguna otra duda?» (G3-sinciu) se escapaba: solo casaba «para seguir» pelado.
+          _s = _s.replace(/(?:^|(?<=[.!?\s]))(?:(?:y\s+)?para\s+(?:seguir|avanzar|continuar)(?:\s+con\s+(?:tu|el|su)\s+(?:pedido|compra|orden))?|(?:y\s+)?ahora,?\s+cu[eé]ntame|(?:y\s+)?ahora(?=\s*,?\s*¿Alguna otra duda)|cu[eé]ntame|dime|¿\s*me\s+lo\s+(?:pasas|dices|confirmas|env[ií]as)\s*\??)\s*,?\s*(?=¿Alguna otra duda)/giu, "");
           _s = _s.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
           if (_s !== _antesF && _s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10) {
             salida = _s;
