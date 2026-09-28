@@ -728,6 +728,35 @@ async function runEngineInner(
     } catch (_) { /* sin historial legible → sigue el camino normal */ }
   }
 
+  // 🚪 «No voy a estar, ¿me lo pueden dejar con el PORTERO?» (F9-portero): no pide otro día, pide que lo
+  // reciba otra persona. Caía en reprogramar —«le aviso al equipo para que no salga cuando no estés»—, y el
+  // pedido se frenaba por nada. Se anota en la REFERENCIA del pedido (sale en el rótulo que lleva el
+  // motorizado) y, si es contraentrega, se le recuerda que alguien tiene que pagar al recibir.
+  if (event.type === "message" && !pideDiaDeEntrega(event.text)
+      && /\b(?:d[eé]j(?:a|e|en|ar|ármelo|armelo)(?:l[oa]|mel[oa])?|entr[eé]g(?:a|e|en|uen|ar)(?:l[oa]|sel[oa]|mel[oa])?|que\s+(?:lo|la)\s+reciba|lo\s+recibe|lo\s+puede\s+recibir)\s+(?:con\s+|a\s+)?(?:el\s+|la\s+|mi\s+)?(portero|conserje|recepci[oó]n|recepcionista|vigilante|guardi[aá]n|seguridad|mam[aá]|pap[aá]|herman[oa]|espos[oa]|vecin[oa]|hij[oa]|t[ií][oa]|abuel[oa])\b/i.test(String(event.text ?? ""))
+      && !/\b(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|pasado\s+ma[ñn]ana)\b/i.test(String(event.text ?? ""))) {
+    const { data: ordP } = await db.from("orders").select("id, estado, amount, currency, shipping")
+      .eq("channel_id", channelId).eq("contact_id", contactId)
+      .not("estado", "in", `(${[...ORDER_FINAL, "carrito"].map((e) => `"${e}"`).join(",")})`)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const _shP = ((ordP as any)?.shipping ?? {}) as any;
+    if (ordP && String(_shP.zona ?? "") === "lima" && !ESTADOS_DESPACHADO.has(String((ordP as any).estado ?? ""))) {
+      const _quien = (/\b(portero|conserje|recepci[oó]n|recepcionista|vigilante|guardi[aá]n|seguridad|mam[aá]|pap[aá]|herman[oa]|espos[oa]|vecin[oa]|hij[oa]|t[ií][oa]|abuel[oa])\b/i.exec(String(event.text ?? ""))?.[1] ?? "").toLowerCase();
+      const _nota = `Dejar con ${/^recepci/.test(_quien) ? "recepción" : "el/la " + _quien}`;
+      const _ref = String(_shP.referencia ?? "").trim();
+      if (!_ref.toLowerCase().includes(_nota.toLowerCase())) {
+        await patchShipping(db, (ordP as any).id, { referencia: _ref ? `${_ref} · ${_nota}` : _nota }, { ship: _shP });
+      }
+      const _saldoP = String(_shP.saldo ?? "") !== "" && Number.isFinite(Number(_shP.saldo)) ? Number(_shP.saldo) : Number((ordP as any).amount) || 0;
+      const _symP = simboloMoneda((ordP as any).currency);
+      await logEvent(db, channelId, contactId, "nota", "🚪 Que lo reciba otra persona", _nota).catch(() => {});
+      await deliverMessage(db, channelId, contactId,
+        `¡Anotado! 🙌 Le dejo la indicación al motorizado: *${_nota.toLowerCase()}*.` +
+        (_saldoP > 0 ? ` Como se paga al recibir, déjale los *${_symP} ${_saldoP}* a quien lo reciba (o, si prefieres pagarlo antes por Yape, avísame) 👌` : "")).catch(() => {});
+      return;
+    }
+  }
+
   // 📅 «Mañana no voy a estar, ¿lo pueden traer el lunes?». En Lima el pedido sale al día
   // siguiente, así que esto hay que atenderlo ANTES de que salga: si no, el motorizado va,
   // no hay nadie, y se pierden el flete y la venta. Medido: el bot contestó «claro, podemos
@@ -1136,7 +1165,10 @@ async function runEngineInner(
         (traePregunta(_txtSinClave) || RE_QUIERE_COMPRAR.test(_txtSinClave) ||
          RE_ANUNCIA_PAGO.test(_txtSinClave) ||
          RE_YA_PAGO.test(_txtSinClave) ||
-         RE_CONDICION.test(_txtSinClave))) {
+         RE_CONDICION.test(_txtSinClave) ||
+         // 🔗 Cuenta un PROBLEMA sin signo de pregunta: «me mandaron el link del curso pero no abre» recibió
+         // solo el saludo de venta (D20-linkroto) — a alguien que cree que ya compró.
+         /\b(?:no\s+(?:me\s+)?(?:abre|funciona|carga|descarga|deja\s+entrar)|no\s+puedo\s+(?:entrar|abrir|descargar|ingresar)|link\s+(?:roto|ca[ií]do|malo)|me\s+sale\s+error)\b/i.test(_txtSinClave))) {
       reinyectarTrasArranque = true;
     }
     // 📣 ESTÁ CONTESTANDO UN REMARKETING. El toque le habló de UN producto y él responde
@@ -2301,6 +2333,9 @@ const PIDE_HUMANO = [
   "quiero hablar con alguien", "hablar con alguien",
   "quiero un asesor", "un operador", "un agente humano", "hay alguien real",
   "me pueden llamar", "quiero que me llamen",
+  // (+ «mejor llámame, no me gusta escribir» — F9-llamada: solo recibió «¿Alguna otra duda?»)
+  "llamame", "llamenme", "mejor llamame", "mejor llamenme", "puedes llamarme", "pueden llamarme",
+  "prefiero una llamada", "prefiero por llamada", "por llamada mejor", "me puedes llamar",
   // Formas de USTED: acá mucha gente trata de usted, y "páseme" no calza con
   // "pásame". Sin esto, el cliente formal se queda sin humano.
   "pasame con alguien", "paseme con alguien",
@@ -2311,6 +2346,8 @@ const PIDE_HUMANO = [
 function pideHumano(text: string): boolean {
   const t = limpiaOpt(text);
   if (!t || t.length > 90) return false;
+  // «llámame CUANDO llegue / antes de venir»: es sobre el reparto, no pedir un asesor.
+  if (/\bllam/.test(t) && /\b(cuando|antes\s+de|al\s+llegar|apenas\s+llegue|si\s+no\s+me\s+encuentra|motorizado|delivery)\b/.test(t)) return false;
   return PIDE_HUMANO.some((f) => {
     const n = limpiaOpt(f);
     if (!n) return false;
@@ -2473,6 +2510,10 @@ function dudaDeSalud(text?: string | null): boolean {
   // se adapta sin importar la edad» (D18-o70) — una promesa sobre su cuerpo que nadie escribió.
   const _mayor = /(?:tengo|con|a\s+mis?)\s+([6-9]\d)\s*a[ñn]os|tercera\s+edad|adulto\s+mayor|soy\s+(?:mayor|jubilad[oa])/i.exec(t);
   if (_mayor && (t.includes("?") || RE_HABLA_DE_SI.test(t) || /puedo|sirve|me\s+va/i.test(t))) return true;
+  // 🧒 …y por debajo de 18: «tengo 16 años, ¿puedo hacer el protocolo?» → «¡Para nada es problema la edad!»
+  // (D20-menor). El hueco de «menores» ya se inyectaba y la IA igual lo afirmaba; como salud, no se promete.
+  const _menor = /(?:tengo|con|a\s+mis?)\s+(1[0-7]|[89])\s*a[ñn]os|soy\s+menor(?:\s+de\s+edad)?/i.exec(t);
+  if (_menor && (t.includes("?") || /puedo|sirve|me\s+va|hacer/i.test(t))) return true;
   return RE_COND_SALUD.test(t) && (t.includes("?") || RE_HABLA_DE_SI.test(t));
 }
 // 👤 «Mi mamá», «su esposa», «la señora»: un parentesco, no un nombre. Se cuela cuando el
@@ -2654,6 +2695,12 @@ function soloLaPalabraClave(text?: string | null, keyword?: string | null): bool
 const PIDE_CANCELAR = [
   // (+ «sabes que ya no, cancela porfa» — F7-lcancela: la IA ofreció «¿te transfiero con un agente?»)
   "cancela porfa", "cancela por favor", "cancela nomas", "cancela todo", "cancelalo porfa",
+  // (+ «sabes que cancela, ya lo compré en otro lado» — F9-yanoquiero: el pedido de Lima quedó CONFIRMADO y
+  // el motorizado iba a salir. «cancela» suelto no entra — en Perú también es pagar —, pero comprarlo en otro
+  // lado no tiene dos lecturas.)
+  "ya lo compre en otro lado", "ya lo compre en otra parte", "ya lo compre en otro sitio", "lo compre en otro lado",
+  "ya compre en otro lado", "ya lo consegui en otro lado", "ya lo encontre en otro lado",
+  // (NO «ya lo tengo» / «ya lo conseguí» sueltos: «ya lo tengo, te mando la captura» es pagar)
   "ya no lo quiero", "ya no la quiero", "ya no los quiero",
   "cancelalo", "cancelala", "cancelame el pedido", "cancela el pedido", "cancela mi pedido",
   "cancelar el pedido", "cancelar mi pedido", "quiero cancelar", "quiero cancelarlo",
@@ -2691,6 +2738,8 @@ const SE_ARREPIENTE = [
   "ya no voy a comprar", "ya no voy a comprarlo", "mejor no lo quiero", "mejor lo dejo",
   "mejor lo dejamos", "al final no lo quiero", "olvidalo", "olvidate del pedido",
   "me arrepenti", "cambie de opinion", "dejalo sin efecto", "dejalo nomas", "dejalo asi nomas",
+  "ya lo compre en otro lado", "ya lo compre en otra parte", "lo compre en otro lado", "ya compre en otro lado",
+  "ya lo consegui en otro lado",
 ];
 function seArrepiente(text: string): boolean {
   const t = limpiaOpt(text);
@@ -3617,7 +3666,8 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   // 👥 «¿cuántos alumnos tienen? ¿hay testimonios?» → «No compartimos datos de alumnos ni testimonios» (D18-oalumnos):
   // una política inventada. Ni negar ni inventar prueba social: no tiene el dato.
   ["testimonios o cuántos lo compraron", /\b(testimoni\w*|rese[ñn]as?|opiniones de|cu[aá]ntos (?:alumnos|clientes|compradores)|cu[aá]nta gente|cu[aá]ntas personas lo (?:compraron|tienen))/, /\b(testimoni\w*|rese[ñn]as?|alumnos satisfechos|\d+\s*(?:alumnos|clientes|compradores))/, "negocio"],
-  ["pago en cuotas", /\b(cuotas|financiamiento|en partes)/, /\b(cuotas|financiamiento)/, "negocio"],
+  // (+ «¿puedo pagarlo en 2 partes?» — D20-dospartes: «en partes» pedía la palabra pegada)
+  ["pago en cuotas", /\b(cuotas|financiamiento|en\s+(?:\d\s+|dos\s+|tres\s+)?partes|por\s+partes|la\s+mitad\s+(?:ahora|hoy)|de\s+a\s+poco)/, /\b(cuotas|financiamiento)/, "negocio"],
   // ⏳ Cuánto tiempo le guarda el paquete la AGENCIA. Medido: «no puedo ir hasta el sábado,
   // ¿lo guardan?» → «sí, la agencia guarda tu paquete hasta que puedas pasar a recogerlo
   // sin problema». Eso es política de Shalom, no nuestra, y no es cierta: pasados unos días
@@ -3950,6 +4000,9 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
       "paso después. Medido: a un cliente que pidió 2 pares se le aceptaron las tallas y se le pidió la dirección " +
       "completa — y su pedido NUNCA existió. Si él te da esos datos por su cuenta, no los repitas como confirmados: " +
       "dile con calidez que ya lo estás encaminando y pregúntale por el producto que quiere.\n" +
+      // ➕ «quiero los 3 productos, ¿cuánto sale todo junto?» → lista suelta sin total (D20-lostres).
+      "\nSi te pide el TOTAL de varios («todo junto», «los 3», «cuánto sería todo»), dale la SUMA con los precios " +
+      "de arriba, no solo la lista: si alguno tiene versiones, el total con la más barata y, en media línea, con la otra.\n" +
       "\nEn cualquier otro caso, guía al cliente hacia UNO de estos productos. Cuando el cliente deje claro cuál le interesa, el sistema lo llevará solo a la venta de ese producto (tú solo encamínalo, con naturalidad). NO inventes productos ni precios. Si pide algo que no vendemos, dilo con amabilidad. Si necesita un humano, escribe [[humano]].");
   } else {
     // 📭 SIN CATÁLOGO. La instrucción vieja («responde con amabilidad y ofrece tomar sus datos»)
@@ -4756,7 +4809,16 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   // pero 🤷‍♂️ son VARIOS códigos (🤷 + unión invisible + ♂ + variante). Se iba el 🤷 con su frase y al
   // cliente le llegaba «‍♂️» suelto (F8-discos, 2026-09-28). Unión sin emoji delante = resto de un corte.
   text = text.replace(/(?<![\p{Extended_Pictographic}\u{FE0F}\u{1F3FB}-\u{1F3FF}])‍\p{Extended_Pictographic}?\u{FE0F}?/gu, "")
-    .replace(/(^|[\s(])\u{FE0F}/gu, "$1");
+    // …y el ♂️/♀️ que queda SOLO (sin la unión delante: «…con comodidad. ♂️📍» — F9-seguro). Nadie escribe
+    // «♂️» suelto en una venta: es siempre la cola de 🤷‍♂️ / 🙋‍♀️ partida.
+    .replace(/(?<!‍)[♀♂]\u{FE0F}?/gu, "")
+    .replace(/(^|[\s(])\u{FE0F}/gu, "$1")
+    // 📍 huérfano delante del cierre suave: es el del «así te cuento cómo te llega 📍» que se recortó.
+    .replace(/[ \t]*📍[ \t]*(?=¿Alguna otra duda)/gu, " ")
+    // «…equipos nuevos y pesados 🔧. . ¿Alguna…» (F9-fotos): el punto de una frase recortada queda solo.
+    .replace(/([.!?])(?:[ \t]+\.)+(?=\s|$)/g, "$1")
+    // «Además, el envío corre por nuestra cuenta…» ABRIENDO el mensaje (F9-adelantoantes): se recortó lo de antes.
+    .replace(/^(\s*)(?:adem[aá]s|tambi[eé]n|por\s+otro\s+lado),\s+(\p{L})/iu, (_m, a: string, l: string) => a + l.toUpperCase());
   // El adicional llegó cuando el paquete ya había salido (`actualizarPedido` no lo sumó).
   // El flujo igual trae detrás su burbuja fija —"¡Genial! Te lo sumo al pedido, lo pagas
   // junto con el resto"— y eso sería mentirle dos veces: ni va en ese envío ni lo va a
@@ -18060,7 +18122,10 @@ function mencionaFuerte(texto: string, op: Opcion, todas: Opcion[]): boolean {
   const suelta = (w: string) =>
     new RegExp("(^|[^a-z0-9])" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^a-z0-9]|$)").test(t);
   // 1) Una palabra PROPIA de su nombre: "premium", "pack".
-  if (tokens(op.nombre).some((w) => !ajenas.has(w) && suelta(w))) return true;
+  // (…en los dos géneros: la versión se llama «Basica» y él pidió «el curso básico» — D20-pagamenos: no se
+  //  selló, y su Yape de S/30 cayó a revisión manual sin precio contra el que medirlo.)
+  const _genero = (w: string) => w.length >= 5 && /[ao]$/.test(w) ? [w, w.slice(0, -1) + (w.endsWith("a") ? "o" : "a")] : [w];
+  if (tokens(op.nombre).some((w) => !ajenas.has(w) && _genero(w).some(suelta))) return true;
   // 2) Su cantidad, pero pegada al producto o al verbo con que la pide.
   const cant = Number(op.cantidad ?? 0);
   if (!(cant > 0)) return false;
@@ -18867,6 +18932,21 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
           const _raw = String(_m[1]).toLowerCase();
           _n = /^\d/.test(_raw) ? Number(_raw) : (NUM_PALABRA[_raw] ?? null);
           _conLugar = _n != null;
+        }
+      }
+      // ➕ «2 para mí y 1 para mi primo, pero TODO a mi casa en Surco» (F9-dosyuno): se sellaba el primer
+      // número (2) y quería 3. Con un solo destino («todo», «a mi casa», «juntos») las partes se SUMAN; con
+      // destinos distintos no (eso es RE_DOS_DESTINOS: un pedido por destino).
+      {
+        const _sm = /(?:^|[\s,])(\d{1,2}|un[oa]?|dos|tres)\s+(?:unidad(?:es)?\s+)?para\s+[^,.;\n]{1,25}?\s+y\s+(?:otr[oa]s?\s+)?(\d{1,2}|un[oa]?|dos|tres)\s+(?:unidad(?:es)?\s+)?para\s/i.exec(sinTildes(String(texto ?? "")));
+        if (_sm && /\b(?:todo|todos|ambos|ambas|juntos?|juntas?|mism[oa]|a\s+(?:mi|la)\s+(?:casa|direcci[oó]n))\b/i.test(sinTildes(String(texto ?? "")))) {
+          const _v = (s: string) => /^\d/.test(s) ? Number(s) : (NUM_PALABRA[s.toLowerCase()] ?? (/^un[oa]?$/i.test(s) ? 1 : 0));
+          const _tot = _v(_sm[1]) + _v(_sm[2]);
+          if (_tot > 0 && _tot !== _n) {
+            await logEvent(db, run.channel_id, run.contact_id, "campo", "➕ Sumó las partes",
+              `«${String(texto ?? "").slice(0, 60)}» → ${_tot} unidades (un solo destino)`).catch(() => {});
+            _n = _tot; _conLugar = true;
+          }
         }
       }
       if (_n != null && _n > 0) {
@@ -24974,6 +25054,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           `cu[aá]nto\\s+(?:tarda|demora)|cu[aá]ntos\\s+d[ií]as|llega\\s+r[aá]pido|demora\\s+mucho|` +
           // (+ «lo necesito hoy urgente» — F7-lurgente)
           `(?:lo\\s+|la\\s+)?necesito\\s+(?:para\\s+)?(?:el\\s+|este\\s+)?(?:hoy|ma[ñn]ana|ya|${_DIAS})|(?:hoy|ya)\\s+urgente|urgente\\s+(?:para\\s+)?hoy|para\\s+hoy|` +
+          // (+ «lo QUIERO para mañana temprano, ¿se puede?» — F9-manana; con «quiero» sin «ya»: «quiero ya» es comprar)
+          `(?:lo\\s+|la\\s+)?(?:quiero|quisiera|requiero|lo\\s+ocupo)\\s+para\\s+(?:el\\s+|este\\s+)?(?:hoy|ma[ñn]ana|${_DIAS})|para\\s+ma[ñn]ana(?:\\s+temprano)?\\s*[,.]?\\s*(?:se\\s+puede|llega|alcanza)|` +
           `(?:lo\\s+)?(?:traen|entregan|mandan)\\s+(?:hoy|ma[ñn]ana)|hoy\\s+mismo)(?![\\p{L}])`, "iu").test(_liW);
         const _yaDice = new RegExp(`(?:^|[^\\p{L}])(?:hoy|ma[ñn]ana|repong\\p{L}*|agotad\\p{L}*|${_DIAS}|\\d+\\s*(?:d[ií]as|horas)|en\\s+el\\s+d[ií]a)(?![\\p{L}])`, "iu")
           .test(sinFormato(salida));
@@ -25771,7 +25853,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (/cuando quieras me dices de d[oó]nde eres/i.test(_s) && _s !== _antesF) {
             // (+ «…cómo te llega y seguimos con tu pedido. ¿Alguna…», con su punto — G13-compara)
             // (+ «Así te explico cómo te PUEDE LLEGAR el pedido» — F8-inalambrico: quedaba «Para seguir, Así te explico…»)
-            _s = _s.replace(/[^.!?¿\n]*\bas[ií]\s+te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)\s+c[oó]mo\s+(?:te\s+)?(?:llega|puede\s+llegar|podr[ií]a\s+llegar|llegar[ií]a|lo\s+recibes|te\s+lo\s+(?:env[ií]o|mando|hago\s+llegar))\b[^.!?¿\n]*?[.!]?(?=[\s\p{Extended_Pictographic}️]*¿Alguna otra duda)/giu, " ");
+            // (+ «…cómo te LO ENVIAMOS y cuánto demora» — F9-bolivia; y los emojis de la cola se van con ella:
+            //  quedaba «📍 ¿Alguna otra duda?» colgado — F9-tresprecios)
+            _s = _s.replace(/[^.!?¿\n]*\bas[ií]\s+te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)\s+c[oó]mo\s+(?:te\s+)?(?:lo\s+|la\s+)?(?:llega|puede\s+llegar|podr[ií]a\s+llegar|llegar[ií]a|recibes|env[ií]amos|mandamos|despachamos|te\s+lo\s+(?:env[ií]o|mando|hago\s+llegar))\b[^.!?¿\n]*?[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda)/giu, " ");
+            // Emoji suelto que quedó delante de la suave tras otros recortes («…volumen\n\n 📍 ¿Alguna otra duda?»).
+            _s = _s.replace(/(^|\n)[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)+(?=¿Alguna otra duda)/gu, "$1");
           }
           // «…para un uso adecuado. Para seguir, ¿Alguna otra duda?» (F5b-orepuesto): la muletilla que
           // anunciaba la pregunta quitada queda colgando delante de la suave.
