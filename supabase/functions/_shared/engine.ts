@@ -1409,7 +1409,9 @@ async function runEngineInner(
       // decir que sí. Se le entrega ese mismo mensaje al run recién parqueado, igual que en
       // la recompra.
       // ❓ Si abrió con una PREGUNTA, el rotador no cierra con la suya (ver case "rotador").
-      if (event.type === "message" && traePregunta(_txtSinClave)) (run.vars as any)._entradaConPregunta = true;
+      // (…o con cualquier cosa que haya que atender: la versión «básico», «el link no abre». La IA contesta y
+      //  pregunta ella; la del saludo quedaba en medio y la IA la repetía con otras palabras — D20c-pagamenos)
+      (run.vars as any)._entradaConPregunta = true;
       await execute(db, run);
       delete (run.vars as any)._entradaConPregunta;
       // 📣 Lo que el saludo ACABA de decirle, para que la IA no lo repita en el mismo turno.
@@ -7638,7 +7640,8 @@ const RE_PROMETE_ARCHIVO =
   // cliente que las pidió se queda mirando el chat. Para él es la misma promesa.
   // (+ en PASADO, y con el sustantivo delante: «tenemos imágenes actualizadas que te acabo de enviar» sin
   //  mandar nada — F9b-fotos. Decir que ya lo mandó es peor que prometerlo: el cliente lo busca y no está.)
-  /\b(te\s+(?:la\s+|lo\s+|los\s+|las\s+)?(?:paso|mando|env[íi]o|comparto|adjunto|dejo)|te\s+puedo\s+(?:pasar|mandar|enviar|compartir|adjuntar)|ac[áa]\s+te\s+(?:va|dejo|paso)|te\s+voy\s+a\s+(?:pasar|mandar|enviar)|te\s+(?:las?\s+|los?\s+)?acabo\s+de\s+(?:pasar|mandar|enviar|compartir)|te\s+(?:las?\s+|los?\s+)?(?:envi[eé]|mand[eé]|pas[eé]|compart[ií]))\b[^.!?\n]{0,60}\b(fotos?|im[áa]genes?|imagen|videos?|cat[áa]logo|archivos?)\b|\b(fotos?|im[áa]genes?|imagen|videos?)\b[^.!?\n]{0,60}\bte\s+(?:las?\s+|los?\s+)?(?:acabo\s+de\s+(?:pasar|mandar|enviar|compartir)|envi[eé]|mand[eé]|pas[eé])\b/i;
+  /\b(te\s+(?:la\s+|lo\s+|los\s+|las\s+)?(?:paso|mando|env[íi]o|comparto|adjunto|dejo)|te\s+puedo\s+(?:pasar|mandar|enviar|compartir|adjuntar)|ac[áa]\s+te\s+(?:va|dejo|paso)|te\s+voy\s+a\s+(?:pasar|mandar|enviar)|te\s+(?:las?\s+|los?\s+)?acabo\s+de\s+(?:pasar|mandar|enviar|compartir)|te\s+(?:las?\s+|los?\s+)?(?:envi[eé]|mand[eé]|pas[eé]|compart[ií]))\b[^.!?\n]{0,60}\b(fotos?|im[áa]genes?|imagen|videos?|cat[áa]logo|archivos?)\b|\b(fotos?|im[áa]genes?|imagen|videos?)\b[^.!?\n]{0,60}\bte\s+(?:las?\s+|los?\s+)?(?:acabo\s+de\s+(?:pasar|mandar|enviar|compartir)|envi[eé]|mand[eé]|pas[eé]|paso|mando|env[ií]o|comparto|voy\s+a\s+(?:pasar|mandar|enviar))\b/i;
+// (el presente con el sustantivo delante: «Sobre las fotos reales, ahora mismo te las paso» — F9c-fotos)
 
 const RE_LINK_FANTASMA =
   /[^.!?…¿¡\n\p{Extended_Pictographic}]*(\[[^\]\n]{0,60}(enlace|link|url|aqu[ií]|insertar|colocar|texto)[^\]\n]{0,60}\]|\((?:enlace|link|url)[^)\n]{0,40}\)|<(?:enlace|link|url)[^>\n]{0,40}>)[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
@@ -20170,6 +20173,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "otro envío; si es provincia, va por agencia con adelanto). Cierra primero el SUYO con SU cantidad " +
         "(NO sumes la de la otra persona) y dile, en una línea, que el de la otra persona lo arma un asesor " +
         "aparte apenas cierren este, con los datos de ella (nombre, ciudad y, si es provincia, DNI y agencia).";
+    }
+    // 🔗 DIGITAL sin compra en este chat que dice que «el link no abre» (D20c-linkroto): la IA le daba soporte
+    // técnico («¿probaste otro navegador?») o le vendía encima. Primero hay que saber si compró — y por dónde.
+    if (esDigital(ctx) && String(ctx.pedido_creado ?? "") !== "si"
+        && /\b(?:no\s+(?:me\s+)?(?:abre|funciona|carga|descarga|deja\s+entrar)|no\s+puedo\s+(?:entrar|abrir|descargar|ingresar)|link\s+(?:roto|ca[ií]do|malo)|me\s+sale\s+error)\b/i.test(String(ctx.last_input ?? ""))) {
+      _bloqueTurno += "\n\n## Dice que un link/acceso no le abre, y en ESTE chat no hay compra\n" +
+        "No le vendas ni le des soporte técnico todavía. Pregúntale en una línea si ya lo compró y, si es así, que te " +
+        "mande la captura del pago (o el número con el que compró) para ubicar su compra y reenviarle el acceso. " +
+        "Si no lo compró, ahí sí cuéntale cómo conseguirlo.";
     }
     // 💸 LIMA que pregunta A QUÉ NÚMERO YAPEA antes de tener pedido («¿a qué número yapeo? estoy en
     // Miraflores» → «pagas en efectivo cuando lo recibes», y su pregunta sin contestar — F8-numyape). El
