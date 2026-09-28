@@ -269,7 +269,13 @@ body.nodo-shelled{display:flex;height:100vh;overflow:hidden;margin:0;color:var(-
    contenido no se corra al cambiar entre páginas cortas y largas. */
 body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
 
+/* El sidebar NO depende de la página que lo monta: cada sección ponía por su cuenta
+   `*{box-sizing:border-box}` y `body{font-size:14px}`, y la que no (la Guía de WhatsApp) lo
+   dejaba en 273px con letra de 16 — más ancho, Bandeja pegada al borde y el pie apretado
+   (Rodrigo lo comparó con capturas, 2026-09-28). */
+.nodo-nav,.nodo-nav *,.nodo-nav *::before,.nodo-nav *::after{box-sizing:border-box}
 .nodo-nav{
+  font-size:14px;font-family:var(--font);line-height:normal;
   width:248px;flex:none;height:100vh;position:sticky;top:0;z-index:30;
   background:var(--glass-nav);border-right:1px solid var(--glass-brd);
   display:flex;flex-direction:column;padding:12px;
