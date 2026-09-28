@@ -742,7 +742,10 @@ async function runEngineInner(
     const _shP = ((ordP as any)?.shipping ?? {}) as any;
     if (ordP && String(_shP.zona ?? "") === "lima" && !ESTADOS_DESPACHADO.has(String((ordP as any).estado ?? ""))) {
       const _quien = (/\b(portero|conserje|recepci[oó]n|recepcionista|vigilante|guardi[aá]n|seguridad|mam[aá]|pap[aá]|herman[oa]|espos[oa]|vecin[oa]|hij[oa]|t[ií][oa]|abuel[oa])\b/i.exec(String(event.text ?? ""))?.[1] ?? "").toLowerCase();
-      const _nota = `Dejar con ${/^recepci/.test(_quien) ? "recepción" : "el/la " + _quien}`;
+      // «con el portero», «en recepción», «con su mamá» (antes «con el/la portero», F9b-portero).
+      const _nota = /^recepci/.test(_quien) ? "Dejar en recepción"
+        : /^(?:portero|conserje|vigilante|guardi[aá]n|seguridad)$/.test(_quien) ? `Dejar con el ${_quien === "seguridad" ? "de seguridad" : _quien}`
+        : `Dejar con su ${_quien}`;
       const _ref = String(_shP.referencia ?? "").trim();
       if (!_ref.toLowerCase().includes(_nota.toLowerCase())) {
         await patchShipping(db, (ordP as any).id, { referencia: _ref ? `${_ref} · ${_nota}` : _nota }, { ship: _shP });
@@ -751,7 +754,7 @@ async function runEngineInner(
       const _symP = simboloMoneda((ordP as any).currency);
       await logEvent(db, channelId, contactId, "nota", "🚪 Que lo reciba otra persona", _nota).catch(() => {});
       await deliverMessage(db, channelId, contactId,
-        `¡Anotado! 🙌 Le dejo la indicación al motorizado: *${_nota.toLowerCase()}*.` +
+        `¡Anotado! 🙌 Le dejo la indicación al motorizado: *${_nota.toLowerCase().replace(/\bsu\b/, "tu")}*.` +
         (_saldoP > 0 ? ` Como se paga al recibir, déjale los *${_symP} ${_saldoP}* a quien lo reciba (o, si prefieres pagarlo antes por Yape, avísame) 👌` : "")).catch(() => {});
       return;
     }
@@ -1170,6 +1173,25 @@ async function runEngineInner(
          // solo el saludo de venta (D20-linkroto) — a alguien que cree que ya compró.
          /\b(?:no\s+(?:me\s+)?(?:abre|funciona|carga|descarga|deja\s+entrar)|no\s+puedo\s+(?:entrar|abrir|descargar|ingresar)|link\s+(?:roto|ca[ií]do|malo)|me\s+sale\s+error)\b/i.test(_txtSinClave))) {
       reinyectarTrasArranque = true;
+    }
+    // 🎚️ Lo que sobra de la palabra clave NOMBRA UNA VERSIÓN: «quiero el curso de cortes BÁSICO» (la clave es
+    // «quiero el curso de cortes»). Sin pregunta ni «quiero» propio no se reinyectaba, la versión no se sellaba
+    // y el Yape que mandó después cayó a revisión manual sin precio (D20-pagamenos).
+    if (!reinyectarTrasArranque && event.type === "message" && decision.keyword && _txtSinClave.trim()
+        && _txtSinClave.trim().split(/\s+/).length <= 6) {
+      try {
+        const { data: _flV } = await db.from("flows").select("product_id").eq("id", flow.id).maybeSingle();
+        const _pidV = (_flV as any)?.product_id;
+        if (_pidV) {
+          const { data: _vs } = await db.from("product_versions").select("nombre").eq("product_id", _pidV);
+          const _sinT = (s: string) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+          const _dicho = _sinT(_txtSinClave);
+          const _nombraV = ((_vs ?? []) as any[]).some((v) => _sinT(v.nombre).split(/[^a-z0-9]+/).filter((w) => w.length >= 4)
+            .some((w) => [w, w.length >= 5 && /[ao]$/.test(w) ? w.slice(0, -1) + (w.endsWith("a") ? "o" : "a") : w]
+              .some((x) => new RegExp(`(^|[^a-z0-9])${x}([^a-z0-9]|$)`).test(_dicho))));
+          if (_nombraV && ((_vs ?? []) as any[]).length > 1) reinyectarTrasArranque = true;
+        }
+      } catch (_) { /* sin versiones legibles → como antes */ }
     }
     // 📣 ESTÁ CONTESTANDO UN REMARKETING. El toque le habló de UN producto y él responde
     // sin nombrarlo ("sí, apártamela, talla 39 negra" / "¿qué precio tenía?"), así que el
@@ -7614,7 +7636,9 @@ const RE_PROMETE_ARCHIVO =
   // "te puedo enviar" / "acá te puedo pasar": la promesa dicha con el verbo modal. Medido:
   // «aquí te puedo enviar algunas fotos para que veas el frasco» — no salió ninguna, y el
   // cliente que las pidió se queda mirando el chat. Para él es la misma promesa.
-  /\b(te\s+(?:la\s+|lo\s+|los\s+|las\s+)?(?:paso|mando|env[íi]o|comparto|adjunto|dejo)|te\s+puedo\s+(?:pasar|mandar|enviar|compartir|adjuntar)|ac[áa]\s+te\s+(?:va|dejo|paso)|te\s+voy\s+a\s+(?:pasar|mandar|enviar))\b[^.!?\n]{0,60}\b(fotos?|im[áa]genes?|imagen|videos?|cat[áa]logo|archivos?)\b/i;
+  // (+ en PASADO, y con el sustantivo delante: «tenemos imágenes actualizadas que te acabo de enviar» sin
+  //  mandar nada — F9b-fotos. Decir que ya lo mandó es peor que prometerlo: el cliente lo busca y no está.)
+  /\b(te\s+(?:la\s+|lo\s+|los\s+|las\s+)?(?:paso|mando|env[íi]o|comparto|adjunto|dejo)|te\s+puedo\s+(?:pasar|mandar|enviar|compartir|adjuntar)|ac[áa]\s+te\s+(?:va|dejo|paso)|te\s+voy\s+a\s+(?:pasar|mandar|enviar)|te\s+(?:las?\s+|los?\s+)?acabo\s+de\s+(?:pasar|mandar|enviar|compartir)|te\s+(?:las?\s+|los?\s+)?(?:envi[eé]|mand[eé]|pas[eé]|compart[ií]))\b[^.!?\n]{0,60}\b(fotos?|im[áa]genes?|imagen|videos?|cat[áa]logo|archivos?)\b|\b(fotos?|im[áa]genes?|imagen|videos?)\b[^.!?\n]{0,60}\bte\s+(?:las?\s+|los?\s+)?(?:acabo\s+de\s+(?:pasar|mandar|enviar|compartir)|envi[eé]|mand[eé]|pas[eé])\b/i;
 
 const RE_LINK_FANTASMA =
   /[^.!?…¿¡\n\p{Extended_Pictographic}]*(\[[^\]\n]{0,60}(enlace|link|url|aqu[ií]|insertar|colocar|texto)[^\]\n]{0,60}\]|\((?:enlace|link|url)[^)\n]{0,40}\)|<(?:enlace|link|url)[^>\n]{0,40}>)[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
@@ -21265,8 +21289,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // guard de `dudaDeSalud`); esto es para que el mensaje que sí sale conteste lo que él
     // preguntó, en vez de una frase general que sirve para cualquiera.
     if (dudaDeSalud(String(ctx.last_input ?? ""))) {
+      // 🧒 Menor de edad (D20b-menor: «tengo 16 años» → «¡Claro que sí!», aun con este bloque puesto).
+      const _esMenor = /(?:tengo|con|a\s+mis?)\s+(1[0-7]|[89])\s*a[ñn]os|soy\s+menor/i.test(String(ctx.last_input ?? ""));
       parts.push("## ⚕️ Te está preguntando si puede usarlo con su condición\n" +
         "Dijo: \"" + String(ctx.last_input ?? "").slice(0, 200) + "\"\n" +
+        (_esMenor ? "🧒 Es MENOR DE EDAD. ⛔ No le digas «¡claro que sí!» ni «la edad no importa». Dile que, siendo menor, " +
+          "lo haga con el permiso y el acompañamiento de un adulto (y consultando a un médico si tiene alguna duda), y " +
+          "cuéntale lo que el plan sí hace. Si va a pagar, que lo haga un adulto.\n" : "") +
         "1. Contéstale ESO primero y con lo que dice la ficha del producto. Es lo único que le importa ahora mismo. " +
         "Si su condición no tiene NADA que ver con lo que vendes (una herramienta, un accesorio), dilo en una línea " +
         "tranquila y sigue la venta con normalidad: no le hagas un interrogatorio médico por una hipertensión que no " +
@@ -24998,6 +25027,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && dudaDeSalud(String(ctx.last_input ?? "")) &&
           String(ctx.pedido_creado ?? "") !== "si" &&
           !RE_QUIERE_COMPRAR.test(String(ctx.last_input ?? ""))) {
+        // 🧒 Menor: la frase que le da permiso se cambia por la de verdad (D20b-menor).
+        if (/(?:tengo|con|a\s+mis?)\s+(1[0-7]|[89])\s*a[ñn]os|soy\s+menor/i.test(String(ctx.last_input ?? ""))) {
+          const _antesM = String(salida ?? "");
+          const _m = _antesM.replace(/[^.!?\n]*(?:¡?\s*claro\s+que\s+s[ií]|la\s+edad\s+no\s+(?:es\s+(?:un\s+)?problema|importa)|sin\s+importar\s+(?:la|tu)\s+edad|para\s+nada\s+es\s+problema|no\s+hay\s+problema\s+con\s+(?:la|tu)\s+edad|cualquier\s+edad)[^.!?\n]*[.!?]?[\s\p{Extended_Pictographic}️]*/giu, "").trim();
+          if (_m !== _antesM.trim()) {
+            salida = "Siendo menor de edad, lo ideal es que lo hagas con el permiso y acompañamiento de un adulto 🙏 " + _m;
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🧒 Le daba permiso a un menor",
+              `Se quitó: «${_antesM.slice(0, 120)}»`).catch(() => {});
+          }
+        }
         const _antesS = salida;
         const _sinCobro = sinPedirLosDatos(sinPedirPermisoPago(salida));
         if (_sinCobro !== salida && _sinCobro.replace(/[\s\p{P}\p{S}]/gu, "").length >= 25) {
@@ -25719,6 +25758,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // (+ «¿Qué cantidad te interesa?», «¿qué opción / pack?» — G15-precio: sin esto no contaba como la de la cantidad)
           const _RE_Q_CANT = /¿[^?¿]*\b(?:cu[aá]ntas?|cu[aá]ntos?|qu[eé]\s+(?:oferta|cantidad|opci[oó]n(?!\s+de\s+(?:pago|env[ií]o|entrega))|pack)|cu[aá]l\s+(?:opci[oó]n(?!\s+de\s+(?:pago|env[ií]o|entrega))|oferta|presentaci[oó]n|cantidad|pack))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
           const _hay = (re: RegExp, t: string) => { re.lastIndex = 0; const r = re.test(t); re.lastIndex = 0; return r; };
+          // Quitar «¿cuántas?» nunca se lleva una pregunta que PIDE LOS DATOS: «¿me pasas tu nombre, celular y
+          // dirección para dejarlo listo y enviártelo en cuanto…?» casaba por el «cuánt-» y salía «Me dices 1
+          // unidad;» sin pedir nada (F9b-yanoquiero).
+          const _quitaQCant = (q: string) => /\b(nombre|celular|direcci[oó]n|dni|tel[eé]fono|datos)\b/i.test(q) ? q : " ";
           const _zonaOk = !!String(ctx.zona_entrega ?? "").trim();
           // La pregunta suave va en su propio renglón si lo último es un renglón de LISTA («3 unidades —
           // S/ 139 · …»): pegada con un espacio quedaba al final del precio (G14-precio).
@@ -25769,7 +25812,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (String(ctx.opcion_id ?? "").trim() && !(ctx as any)._falta_opcion
               && !/(?:^|[^\p{L}])(?:cu[aá]nt[ao]s|otra\s+(?:opci[oó]n|cantidad)|m[aá]s\s+unidades|cambi\p{L}*)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))) {
             const _antes1b = _s;
-            _s = _s.replace(_RE_Q_CANT, " ")
+            _s = _s.replace(_RE_Q_CANT, _quitaQCant)
               .replace(/[^.!?\n]*\b(?:para\s+que\s+elijas|elige|escoge|dime)\s+cu[aá]nt[ao]s[^.!?\n]*[.!?:]?/giu, " ");
             // Sin la de la cantidad y sin saber de dónde es, la que queda es esa.
             if (_s !== _antes1b && _pidioPrecio1b && !_zonaOk && !/[?¿]/.test(_s)) {
@@ -25800,7 +25843,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                      && !/cuando quieras me dices de d[oó]nde eres/i.test(_ultF)) {
             // Sin zona y la cantidad ya se preguntó: a «ok» / «ok gracias» no se le repite «¿cuántas?»
             // (F5-orepuesto, F5-hprecio): se le pide el paso que falta, suave — de dónde es.
-            _s = _s.replace(_RE_Q_CANT, " ").replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, "")
+            _s = _s.replace(_RE_Q_CANT, _quitaQCant).replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, "")
               .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "")
               .replace(/^\s*(?:perfecto|listo|genial|de acuerdo|claro)[,!.]?\s*(?:vamos avanzando)?[\s\p{Extended_Pictographic}️.!]*$/gimu, "").trim();
             _s = _pegaSuave(_s, "¿Alguna otra duda? Cuando quieras me dices de dónde eres y te digo cómo te llega 🙂");
@@ -25809,7 +25852,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // Ya se le dijo «cuando quieras me dices de dónde eres» y contesta «ok»: el motor le cambiaba
             // el pedido de datos de la IA por «¿cuántas?» + la lista (F5b-orepuesto). Sin zona el paso
             // que falta sigue siendo de dónde es — ahora sí, preguntado directo.
-            _s = _s.replace(_RE_Q_CANT, " ");
+            _s = _s.replace(_RE_Q_CANT, _quitaQCant);
             if (!RE_CLIENTE_PIDE_PRECIO.test(_li)) {
               _s = _s.replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, "")
                 .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "");
@@ -25819,13 +25862,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                      && !RE_CLIENTE_PIDE_PRECIO.test(_li)) {
             // Se le preguntó de dónde es, contestó «si» / «ok» sin decirlo, y el turno saltaba a
             // «¿cuántas?» + la lista (F6-lsisi): la zona sigue faltando — va la versión suave.
-            _s = _s.replace(_RE_Q_CANT, " ").replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, "")
+            _s = _s.replace(_RE_Q_CANT, _quitaQCant).replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, "")
               .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "").trim();
             _s = _pegaSuave(_s, "¿Alguna otra duda? Cuando quieras me dices de dónde eres y te digo cómo te llega 🙂");
           } else if (_zonaOk && _cantAntes && _hay(_RE_Q_CANT, _s) && !RE_CLIENTE_PIDE_PRECIO.test(_li) &&
                      !/cuando quieras me dices cu[aá]ntas/i.test(_ultF)) {
             // …y sin volver a pegar la lista de precios que ya vio.
-            _s = _s.replace(_RE_Q_CANT, " ").replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, "")
+            _s = _s.replace(_RE_Q_CANT, _quitaQCant).replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, "")
               .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "").trim() +
               " ¿Alguna otra duda? Cuando quieras me dices cuántas llevas 🙂";
           }
@@ -25835,7 +25878,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           //    seguir? También dime en qué distrito o ciudad estás…» (G15-precio) — dos pedidos en una burbuja.
           const _RE_PIDE_UBIC_IMP = /\b(?:dime|ind[ií]came|cu[eé]ntame|p[aá]same|conf[ií]rmame)\s+(?:(?:en|de|desde)\s+)?(?:qu[eé]|cu[aá]l)\s+(?:distrito|ciudad|zona|provincia)|\bde\s+d[oó]nde\s+(?:eres|me\s+escribes|nos\s+escribes)/iu;
           if (!_zonaOk && _hay(_RE_Q_CANT, _s) && (_hay(_RE_Q_UBIC, _s) || _RE_PIDE_UBIC_IMP.test(_s) || /cuando quieras me dices de d[oó]nde eres/i.test(_s))) {
-            _s = _s.replace(_RE_Q_CANT, " ")
+            _s = _s.replace(_RE_Q_CANT, _quitaQCant)
               // Quitada la primera, el «También dime…» de la segunda queda sin nada delante: va solo.
               .replace(/(^|[.!?…\n]\s*|\s{2,})(?:tambi[eé]n|adem[aá]s),?\s+(dime|ind[ií]came|cu[eé]ntame|p[aá]same|conf[ií]rmame)\b/giu,
                 (_m, a: string, v: string) => a + v[0].toUpperCase() + v.slice(1));
