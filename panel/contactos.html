@@ -212,7 +212,7 @@
 </div></div>
 
 <script type="module">
-import { supa, mountShell, toast, confirmDialog, askChoice, norm, pageAll, enTrozos, recargaConFreno, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import { supa, mountShell, toast, confirmDialog, askChoice, norm, pageAll, enTrozos, recargaConFreno, SUPABASE_URL, SUPABASE_ANON_KEY, conRegion } from "./shell.js";
 import { getTZ } from "./date-range.js";
 import { EMBUDO_STAGES, origenLabel, money } from "./contact-extras.js";
 import * as O from "./orders.js";
@@ -588,7 +588,7 @@ async function borrarArchivosDe(ids, ch){
     // El backend corta a 500 ids por llamada (y no avisa): se manda por trozos y se suma.
     let borrados=0;
     for(let i=0;i<ids.length;i+=500){
-      const r=await fetch(`${SUPABASE_URL}/functions/v1/channel-config`,{ method:"POST",
+      const r=await fetch(conRegion(`${SUPABASE_URL}/functions/v1/channel-config`),{ method:"POST",
         headers:{ "Content-Type":"application/json", apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${session?.access_token||SUPABASE_ANON_KEY}` },
         body:JSON.stringify({ action:"contact_files_delete", channel_id:ch, contact_ids:ids.slice(i,i+500), modo:"chat" }) });
       const o=await r.json().catch(()=>null);

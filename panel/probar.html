@@ -294,7 +294,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, waFmt, SUPABASE_URL, SUPABASE_ANON_KEY } from "./shell.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, waFmt, SUPABASE_URL, SUPABASE_ANON_KEY, conRegion } from "./shell.js";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=13";
 import * as O from "./orders.js";
 import { getTZ } from "./date-range.js";
@@ -343,7 +343,7 @@ function mediaThumb(m){ const u=esc(safeUrl(m.content.media_url));
   if(m.type==="audio") return `<a href="${u}" target="_blank" title="Audio">${icon("mic")}</a>`;
   return `<a href="${u}" target="_blank" title="Archivo">${icon("file")}</a>`; }
 
-const FN=(n)=>`${SUPABASE_URL}/functions/v1/${n}`;
+const FN=(n)=>conRegion(`${SUPABASE_URL}/functions/v1/${n}`);
 async function callFn(name, body){
   const { data:{ session } }=await supa.auth.getSession();
   const token=session?.access_token||SUPABASE_ANON_KEY;

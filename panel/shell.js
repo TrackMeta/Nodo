@@ -123,7 +123,21 @@ function pintaAvisoConexion(msg) {
 let _corte = new AbortController();
 export function cancelaLecturas() { _corte.abort(); _corte = new AbortController(); }
 
+// Las Edge Functions corren, si no se dice nada, en la región más cercana a QUIEN LLAMA
+// (desde Perú: EE. UU.), y la base vive en São Paulo: cada consulta de la función cruza el
+// continente. Medido 2026-09-28 en Canales: `channel-config` status 3,1–3,5 s sin región y
+// 1,2 s con ella — la tarjeta de WhatsApp (y su «Guía paso a paso») esperaba eso para salir.
+// Mismo arreglo que el webhook (ver WEBHOOK_URL en canales.html). Va acá para que TODA
+// llamada del panel lo lleve, también las que se escriban mañana.
+export const FN_REGION = "sa-east-1";
+export function conRegion(url) {
+  const u = String(url || "");
+  if (!u.includes("/functions/v1/") || /[?&]forceFunctionRegion=/.test(u)) return u;
+  return u + (u.includes("?") ? "&" : "?") + "forceFunctionRegion=" + FN_REGION;
+}
+
 async function fetchVigilado(input, init) {
+  if (typeof input === "string" || input instanceof URL) input = conRegion(input);   // supabase-js manda la URL como texto
   const url = String((input && input.url) || input || "");
   const esAuth = url.includes("/auth/v1/");
   const area = areaDe(url);

@@ -671,7 +671,7 @@ import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=13";
 import { mountDateRange, computePreset, rangeLabel, ymd, ymdTZ as ymdLima, getTZ } from "./date-range.js";
 import * as O from "./orders.js";
 import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, openVentaManual, ventaChipsHtml, openMetaDetalle, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
-import { norm, pageAll, enTrozos } from "./shell.js";
+import { norm, pageAll, enTrozos, conRegion } from "./shell.js";
 injectExtrasCss();
 
 // La hora de cada mensaje, en la zona del NEGOCIO (Ajustes), no en Lima fija. Se resuelve al
@@ -2392,7 +2392,7 @@ function setComposerLock(locked) {
 }
 
 // ── Llamadas a Edge Functions (con auth) ──
-const FN = (n) => `${SUPABASE_URL}/functions/v1/${n}`;
+const FN = (n) => conRegion(`${SUPABASE_URL}/functions/v1/${n}`);
 async function callFn(name, body) {
   const { data: { session } } = await supa.auth.getSession();
   // Sin sesión (refresh token vencido tras dejar la pestaña abierta): antes caía a la anon
