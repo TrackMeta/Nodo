@@ -3964,7 +3964,8 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
     try {
       const _catR = cands.length > 1 ? await catalogoDigital(db, run) : [];
       const _symR = simboloMoneda(ctx.moneda as string);
-      for (const p of _catR) {
+      for (const p0 of _catR) {
+        const p = { ...p0, versiones: p0.versiones.filter((v) => !v.oculta).length ? p0.versiones.filter((v) => !v.oculta) : p0.versiones };   // 🙈
         _precioDe.set(normalize(p.nombre), p.versiones.length > 1
           ? p.versiones.map((v) => `${v.nombre} ${_symR} ${v.precio}`).join(" / ")
           : `${_symR} ${p.versiones[0].precio}`);
@@ -14325,8 +14326,9 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
     const _ps = (_fl ?? []).map((f: any) => f.products).filter((p: any) =>
       p && p.clase !== "extra" && p.clase !== "regalo" && !_vis.has(p.id) && _vis.add(p.id));
     if (_ps.length) {
-      const { data: _vers } = await db.from("product_versions").select("product_id, nombre, precio")
+      const { data: _vers0 } = await db.from("product_versions").select("product_id, nombre, precio, config")
         .in("product_id", _ps.map((p: any) => String(p.id)));
+        const _vers = ((_vers0 ?? []) as any[]).filter((v) => (v.config as any)?.oculta !== true);   // 🙈 sin ofertas ocultas
       const _symPv = simboloMoneda(ctx.moneda as string);
       const _lin = _ps.slice(0, 8).map((p: any) => {
         const vs = ((_vers ?? []) as any[]).filter((v) => String(v.product_id) === String(p.id));
@@ -15364,20 +15366,43 @@ type Opcion = {
   entrega: any[];
   descripcion: string | null;
   cantidad: number;
+  // 🙈 OFERTA OCULTA (decisión de Rodrigo, 2026-09-28 — ver [[ofertas-ocultas]]): existe y se vende, pero NO se
+  // muestra en la lista ni se ofrece sola. Aparece cuando el cliente pide más (`run.vars._ver_ocultas`) o nombra
+  // esa cantidad. Se guarda en product_versions.config.oculta.
+  oculta?: boolean;
 };
 
+// ⚠️ loadOpciones trae TODAS, también las ocultas: el cierre, el cobro, la validación del pago y el pedido tienen
+// que encontrar la oferta elegida aunque esté oculta (si no, un pedido de «5 unidades» no tendría precio esperado).
+// Lo que se MUESTRA al cliente o a la IA pasa por `opcionesVisibles`.
 async function loadOpciones(db: SupabaseClient, run: Run, productId: string): Promise<Opcion[]> {
   const cache = (run as any)._opciones;
   if (cache && cache._pid === productId) return cache.list;
   let list: Opcion[] = [];
   try {
     const { data } = await db.from("product_versions")
-      .select("id, nombre, precio, costo, entrega, descripcion, cantidad, entrega_mensaje")
+      .select("id, nombre, precio, costo, entrega, descripcion, cantidad, entrega_mensaje, config")
       .eq("product_id", productId).eq("activo", true).order("orden");
-    list = (data ?? []) as Opcion[];
+    list = ((data ?? []) as any[]).map((v) => {
+      const { config, ...rest } = v ?? {};
+      return { ...rest, oculta: (config as any)?.oculta === true } as Opcion;
+    });
   } catch (_) { /* columnas pendientes (0029) → sin opciones */ }
   (run as any)._opciones = { _pid: productId, list };
   return list;
+}
+
+// Las que se le pueden MOSTRAR: sin las ocultas, salvo que ya pidió más (`_ver_ocultas`). La que ya eligió se queda
+// siempre (si eligió la oculta de 5, se le sigue nombrando).
+function opcionesVisibles(list: Opcion[], run: Run): Opcion[] {
+  if ((run as any)?.vars?._ver_ocultas) return list;
+  const elegida = String((run as any)?.vars?.opcion_id ?? "");
+  return list.filter((o) => !o.oculta || (elegida && String(o.id) === elegida));
+}
+// El EMPUJE automático («llevando 2 te sale más barato») nunca usa las ocultas, aunque ya se hayan mostrado.
+function opcionesParaEmpujar(list: Opcion[], run: Run): Opcion[] {
+  const elegida = String((run as any)?.vars?.opcion_id ?? "");
+  return list.filter((o) => !o.oculta || (elegida && String(o.id) === elegida));
 }
 
 // La opción elegida es un valor VIVO: se sobrescribe cada vez que el cliente
@@ -18400,7 +18425,7 @@ function _palabrasDe(nombre: string): string[] {
   return normalize(String(nombre ?? "")).replace(/[^a-z0-9\s]/g, " ").split(/\s+/)
     .filter((w) => w.length >= 5 && !_STOP_NOMBRE.has(w));
 }
-async function catalogoDigital(db: SupabaseClient, run: Run): Promise<Array<{ id: string; nombre: string; palabras: string[]; versiones: Array<{ id: string; nombre: string; precio: number }> }>> {
+async function catalogoDigital(db: SupabaseClient, run: Run): Promise<Array<{ id: string; nombre: string; palabras: string[]; versiones: Array<{ id: string; nombre: string; precio: number; oculta?: boolean }> }>> {
   if ((run as any)._catDig) return (run as any)._catDig;
   let out: any[] = [];
   try {
@@ -18411,12 +18436,12 @@ async function catalogoDigital(db: SupabaseClient, run: Run): Promise<Array<{ id
     const prods = ((fl ?? []) as any[]).map((f) => f.products)
       .filter((p) => p && String(p.tipo) === "digital" && p.clase !== "extra" && p.clase !== "regalo" && !vistos.has(p.id) && vistos.add(p.id));
     if (prods.length) {
-      const { data: vs } = await db.from("product_versions").select("id, product_id, nombre, precio")
+      const { data: vs } = await db.from("product_versions").select("id, product_id, nombre, precio, config")
         .in("product_id", prods.map((p) => String(p.id))).eq("activo", true).order("orden");
       out = prods.map((p) => ({
         id: String(p.id), nombre: String(p.nombre), palabras: _palabrasDe(p.nombre),
         versiones: ((vs ?? []) as any[]).filter((v) => String(v.product_id) === String(p.id) && Number(v.precio) > 0)
-          .map((v) => ({ id: String(v.id), nombre: String(v.nombre), precio: Number(v.precio) })),
+          .map((v) => ({ id: String(v.id), nombre: String(v.nombre), precio: Number(v.precio), oculta: (v.config as any)?.oculta === true })),
       })).filter((p) => p.versiones.length);
     }
   } catch (_) { out = []; }
@@ -20124,6 +20149,71 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "no existe — justo en el mensaje donde va a soltar plata. Es «pagas un adelanto de…», «te paso los " +
       "datos», «te escribo apenas llegue».");
     let _bloqueTurno = "";
+    // 🙈 OFERTAS OCULTAS y CANTIDADES que no están en la lista (decisión de Rodrigo, 2026-09-28 — [[ofertas-ocultas]]).
+    // Nació de «quiero 5 para mi taller» con packs de 1/2/3 → «dime cuántas quieres» (F9-cinco).
+    //  · Pide MÁS («¿y si llevo más?», «por mayor», «para mi taller», o un número mayor que la visible más grande)
+    //    → desde ahora se le muestran también las ocultas (`_ver_ocultas`; la lista de la IA y la del motor la leen).
+    //  · Pide una cantidad que NO existe (4 con 1/2/3 + 5) → las dos más cercanas, y elige él ([[no-elegir-por-el-cliente]]).
+    //  · Pide MÁS que la oferta más grande (incluidas ocultas) → lo ve el dueño (aviso), y se le siguen ofreciendo las que hay.
+    // El cierre (sellar «5 unidades») no pasa por acá: detectarOpcion ya ve TODAS las ofertas.
+    if (op === "generar_texto" && ctx._product_id && String(ctx.pedido_creado ?? "") !== "si") {
+      try {
+        const _todasO = (await loadOpciones(db, run, String(ctx._product_id))).filter((o) => Number(o.precio) > 0);
+        const _liO = String(ctx.last_input ?? "");
+        const _modoPacks = !esDigital(ctx) && _todasO.length >= 2 && _todasO.some((o) => Number(o.cantidad ?? 1) >= 2);
+        const _visO = _todasO.filter((o) => !o.oculta);
+        const _maxVis = Math.max(0, ..._visO.map((o) => Number(o.cantidad) || 0));
+        const _maxTodas = Math.max(0, ..._todasO.map((o) => Number(o.cantidad) || 0));
+        // Cuántas pide: la de siempre (≤20) y, para las grandes, un número con verbo de compra o «unidades».
+        let _nPed = _modoPacks ? cantidadPedidaDe(_liO, _todasO) : 0;
+        if (_modoPacks && !_nPed) {
+          const _mG = /\b(?:quiero|necesito|dame|llevo|me\s+llevo|compro|comprar[ií]a|pido|ser[ií]an|cotiza(?:me)?|precio\s+(?:por|de|x)|cu[aá]nto\s+(?:ser[ií]a|sale|es|cuesta[n]?)\s+(?:por\s+|x\s+)?(?:las?\s+|los?\s+)?)\s*(\d{1,4})\b(?!\s*(?:soles|lucas|km|cuadras|d[ií]as|a[ñn]os|%))|\b(\d{1,4})\s+(?:unidades|unid|piezas|adaptadores|uds?)\b/i.exec(sinTildes(_liO));
+          if (_mG) _nPed = Number(_mG[1] ?? _mG[2]) || 0;
+        }
+        const _pideMas = /\b(?:y\s+si\s+(?:llevo|quiero|compro|pido)\s+m[aá]s|(?:llevo|quiero|necesito|compro)\s+(?:m[aá]s|varios|varias|bastantes|muchos|muchas)\b|m[aá]s\s+(?:cantidad|unidades)|(?:packs?|ofertas?|paquetes?)\s+(?:m[aá]s\s+grandes?|de\s+m[aá]s)|(?:hay|tienen|tiene[ns]?)\s+(?:m[aá]s\s+(?:ofertas|packs|cantidad)|ofertas?\s+(?:por|de)\s+(?:m[aá]s|cantidad|volumen))|por\s+(?:mayor|volumen|cantidad)|al\s+por\s+mayor|mayorista|docenas?|revender|(?:tengo|para)\s+(?:una?\s+|mi\s+)?(?:ferreter[ií]a|bodega|taller|tienda|negocio))\b/i.test(_liO)
+          || (_modoPacks && _nPed > _maxVis && _maxVis > 0);
+        if (_todasO.some((o) => o.oculta) && _pideMas && !(run.vars as any)._ver_ocultas) {
+          (run.vars as any)._ver_ocultas = true;
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🙈 Pidió más: se le muestran las ofertas ocultas",
+            `«${_liO.slice(0, 80)}» → ${_todasO.filter((o) => o.oculta).map((o) => o.nombre).join(", ")}`).catch(() => {});
+          _bloqueTurno += "\n\n## Pidió MÁS cantidad: ahora sí muéstrale también las ofertas grandes\n" +
+            "Además de las de siempre, hay estas ofertas por cantidad que solo se muestran a quien pide más: " +
+            _todasO.filter((o) => o.oculta).map((o) => `*${o.nombre}* — ${simboloMoneda(ctx.moneda as string)} ${o.precio}`).join(" · ") +
+            ". Muéstraselas EN LISTA junto con las demás, con sus precios exactos (no inventes otras).";
+        }
+        if (_modoPacks && _nPed >= 2 && !_todasO.some((o) => Number(o.cantidad) === _nPed)) {
+          const _sym = simboloMoneda(ctx.moneda as string);
+          if (_nPed > _maxTodas) {
+            // Más que la oferta más grande: es del dueño. Aviso una vez por conversación.
+            _bloqueTurno += `\n\n## Pide ${_nPed} unidades: más que la oferta más grande (${_maxTodas})\n` +
+              `⛔ No le inventes un precio para ${_nPed} ni le sumes packs. Dile que el precio para esa cantidad lo ve ` +
+              "el dueño directamente, que ya tiene su consulta y le responde por acá mismo (es cierto: se le acaba de avisar), " +
+              `y que mientras tanto puede llevarse cualquiera de estas: ${_todasO.map((o) => `*${o.nombre}* ${_sym} ${o.precio}`).join(" · ")}.`;
+            if (!(run.vars as any)._aviso_cant_grande) {
+              (run.vars as any)._aviso_cant_grande = _nPed;
+              await notifyAdmin(db, run,
+                `🏪 *PIDEN ${_nPed} UNIDADES* (tu oferta más grande es de ${_maxTodas})\n\n👤 ${String(ctx.nombre ?? "Un cliente")}\n` +
+                `💬 “${_liO.slice(0, 160)}”\n\nEl bot NO le puso precio: le dijo que lo ves tú. Sigue ofreciéndole las ofertas que hay.`).catch(() => {});
+              await logEvent(db, run.channel_id, run.contact_id, "nota", `🏪 Pide ${_nPed} unidades (más que la oferta más grande)`,
+                "Se le avisó al dueño; el bot no inventa precio").catch(() => {});
+            }
+          } else {
+            // Entre dos ofertas: la de abajo y la de arriba más cercanas (ocultas incluidas: pidió más de lo visible
+            // o una cantidad concreta). Elige él.
+            const _abajo = _todasO.filter((o) => Number(o.cantidad) < _nPed).sort((a, b) => Number(b.cantidad) - Number(a.cantidad))[0];
+            const _arriba = _todasO.filter((o) => Number(o.cantidad) > _nPed).sort((a, b) => Number(a.cantidad) - Number(b.cantidad))[0];
+            if (_abajo || _arriba) {
+              _bloqueTurno += `\n\n## Pide ${_nPed} unidades y NO hay oferta de ${_nPed}\n` +
+                `⛔ No le inventes un precio para ${_nPed}, no sumes packs ni hagas cuentas por unidad. Dile en una línea que de ` +
+                `${_nPed} no tienes oferta y ofrécele las dos más cercanas, con su precio exacto, para que elija ÉL: ` +
+                [_abajo, _arriba].filter(Boolean).map((o) => `*${o!.nombre}* — ${_sym} ${o!.precio}`).join(" o ") + ".";
+              await logEvent(db, run.channel_id, run.contact_id, "nota", `🔢 Pide ${_nPed} y no hay esa oferta`,
+                `Se le ofrecen las más cercanas: ${[_abajo, _arriba].filter(Boolean).map((o) => o!.nombre).join(" / ")}`).catch(() => {});
+            }
+          }
+        }
+      } catch (_) { /* sin ofertas legibles → como antes */ }
+    }
     // ✂️ CUÁNDO DESARROLLAR Y CUÁNDO NO. Rodrigo, cuatro veces: «explica mucho… muy largo».
     // Cuatro reglas de brevedad seguidas no lo movieron, y la razón estaba a la vista: el
     // prompt le pide las dos cosas a la vez. El del propio flujo dice «explica el valor»,
@@ -20660,8 +20750,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // (D9-pcombo, 2026-09-24). El precio no es inventar: está en la base.
           let _preciosOtros: Record<string, string> = {};
           try {
-            const { data: _vo } = await db.from("product_versions").select("product_id, nombre, precio")
+            const { data: _vo0 } = await db.from("product_versions").select("product_id, nombre, precio, config")
               .in("product_id", _otros.map((p: any) => String(p.id)));
+              const _vo = ((_vo0 ?? []) as any[]).filter((v) => (v.config as any)?.oculta !== true);   // 🙈 sin ofertas ocultas
             const _symO = simboloMoneda(ctx.moneda as string);
             for (const p of _otros) {
               const vs = ((_vo ?? []) as any[]).filter((v) => String(v.product_id) === String(p.id));
@@ -20698,7 +20789,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // (D16-cupgrade): falso, y además empuja a no comprar la Básica hoy.
     if (op === "generar_texto" && esDigital(ctx) && ctx._product_id) {
       try {
-        const _opsU = (await loadOpciones(db, run, String(ctx._product_id))).filter((o) => Number(o.precio) > 0)
+        const _opsU = opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id)), run).filter((o) => Number(o.precio) > 0)   // 🙈
           .sort((a, b) => Number(a.precio) - Number(b.precio));
         if (_opsU.length > 1) {
           const _sym = simboloMoneda(ctx.moneda as string);
@@ -20716,12 +20807,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _sym = simboloMoneda(ctx.moneda as string);
         const _cmb = comboDe(run);
         const _opP = await opcionElegida(db, run, ctx);
-        const _opsP = ctx._product_id ? await loadOpciones(db, run, String(ctx._product_id)) : [];
+        const _opsP = ctx._product_id ? opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id)), run) : [];   // 🙈
         const _precioP = _opP?.precio != null ? Number(_opP.precio) : null;
         const _nomP = String(ctx.producto_nombre ?? "") + (_opP && _opsP.length > 1 ? ` (${_opP.nombre})` : "");
         const _lineas = [
           `- ${_nomP} — ${_precioP != null ? `${_sym} ${_precioP}` : `falta elegir: ${_opsP.map((o) => `${o.nombre} ${_sym} ${o.precio}`).join(" o ")}`}`,
-          ..._cmb.map((i) => `- ${i.nombre} — ${i.precio != null ? `${_sym} ${i.precio}` : `falta elegir: ${(i.versiones ?? []).map((v) => `${v.nombre} ${_sym} ${v.precio}`).join(" o ")}`}`),
+          ..._cmb.map((i) => `- ${i.nombre} — ${i.precio != null ? `${_sym} ${i.precio}` : `falta elegir: ${(i.versiones ?? []).filter((v: any) => !v.oculta).map((v) => `${v.nombre} ${_sym} ${v.precio}`).join(" o ")}`}`),
         ];
         const _faltan = _precioP == null || _cmb.some((i) => i.precio == null);
         const _total = _faltan ? null : +(_precioP! + _cmb.reduce((s, i) => s + Number(i.precio), 0)).toFixed(2);
@@ -20858,7 +20949,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // el cliente pueda elegir ESCRIBIENDO. Le decimos explícitamente que no dé
     // por elegida ninguna hasta que el cliente decida (preguntar ≠ elegir).
     if (ctx._product_id) {
-      const ops = await loadOpciones(db, run, ctx._product_id);
+      const ops = opcionesVisibles(await loadOpciones(db, run, ctx._product_id), run);   // 🙈 sin las ocultas mientras no pida más
       if (ops.length > 1) {
         // Si el cliente trae una OFERTA activa (descuento de remarketing) para una
         // de estas opciones, la lista debe mostrar SU precio con descuento — no el
@@ -23909,7 +24000,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       let _opsPre: Opcion[] = [];
       if (op === "generar_texto" && ctx._product_id) {
         try {
-          _opsPre = (await loadOpciones(db, run, ctx._product_id))
+          _opsPre = opcionesVisibles(await loadOpciones(db, run, ctx._product_id), run)   // 🙈
             .filter((o) => o.precio != null && Number(o.precio) > 0);
         } catch (_) { /* sin opciones legibles → se cae al criterio de antes */ }
       }
@@ -24952,7 +25043,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             };
             let _cd = "";
             if (!_yaPreguntoPago) {
-              const _opsC = ctx._product_id ? (await loadOpciones(db, run, String(ctx._product_id))).filter((o) => Number(o.precio) > 0) : [];
+              const _opsC = ctx._product_id ? opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id)), run).filter((o) => Number(o.precio) > 0) : [];   // 🙈
               if (_opsC.length > 1 && !String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim()) {
                 _cd = `¿Cuál prefieres, ${_opsC.map((o) => `la ${o.nombre}`).join(" o ")}? 🙂`;
               } else {
@@ -25202,7 +25293,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Si falta elegir y las opciones no están en el mensaje, van con la pregunta de la cantidad.
         if ((ctx as any)._falta_opcion && !esDigital(ctx) && ctx._product_id && /dime cu[aá]l prefieres/i.test(salida)) {
           try {
-            const _opsFO = await loadOpciones(db, run, String(ctx._product_id));
+            const _opsFO = opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id)), run);   // 🙈
             const _salFO = sinFormato(salida);
             const _listadasFO = _opsFO.filter((o) => o.precio != null && _salFO.includes(String(o.precio))).length >= 2;
             if (_opsFO.length > 1 && !_listadasFO) {
@@ -25432,7 +25523,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           && !/\bcu[aá]nt[ao]s?\b/i.test(salida)
           && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
         try {
-          const _ops = (await loadOpciones(db, run, String(ctx._product_id ?? "")))
+          const _ops = opcionesParaEmpujar(await loadOpciones(db, run, String(ctx._product_id ?? "")), run)   // 🙈 el empuje nunca usa ocultas
             .filter((o) => o.precio != null && Number(o.precio) > 0 && Number(o.cantidad) > 0);
           const _suya = _ops.find((o) => String(o.id) === String(ctx.opcion_id));
           if (_suya) {
