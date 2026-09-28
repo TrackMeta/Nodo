@@ -18487,8 +18487,11 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
     const _mOrd = /^\s*(?:la|el|en\s+la|en\s+el)?\s*(\d{1,2}|primer[oa]?|segund[oa]|tercer[oa]?|cuart[oa]|quint[oa]|sext[oa])\s*(?:opci[oó]n|oficina|sede|agencia)?\s*[.!]?\s*$/i.exec(String(texto ?? ""));
     if (_mOrd) {
       try {
+        // Con la cantidad YA elegida se mira más atrás: lista de oficinas → dio sus datos sin elegir → salió el
+        // adelanto → «1» (F8e-provnormal: «Vendo solo en las presentaciones… ¿Quieres quedarse con 2 unidades?»).
+        // Ahí un número suelto ya no puede ser la cantidad; es la oficina que quedó sin contestar.
         const { data: _oS } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
-          .eq("direction", "out").order("ts", { ascending: false }).limit(2);
+          .eq("direction", "out").order("ts", { ascending: false }).limit(String(ctx.opcion_id ?? "").trim() ? 4 : 2);
         const _txS = ((_oS ?? []) as any[]).map((mm) => String(mm?.content?.text ?? "")).find((x) => (x.match(/📍/g) ?? []).length >= 2) ?? "";
         if (_txS) {
           const _nombres = [..._txS.matchAll(/📍\s*\*([^*\n]+)\*/g)].map((mm) => mm[1].trim());
