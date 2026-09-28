@@ -20167,7 +20167,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Cuántas pide: la de siempre (≤20) y, para las grandes, un número con verbo de compra o «unidades».
         let _nPed = _modoPacks ? cantidadPedidaDe(_liO, _todasO) : 0;
         if (_modoPacks && !_nPed) {
-          const _mG = /\b(?:quiero|necesito|dame|llevo|me\s+llevo|compro|comprar[ií]a|pido|ser[ií]an|cotiza(?:me)?|precio\s+(?:por|de|x)|cu[aá]nto\s+(?:ser[ií]a|sale|es|cuesta[n]?)\s+(?:por\s+|x\s+)?(?:las?\s+|los?\s+)?)\s*(\d{1,4})\b(?!\s*(?:soles|lucas|km|cuadras|d[ií]as|a[ñn]os|%))|\b(\d{1,4})\s+(?:unidades|unid|piezas|adaptadores|uds?)\b/i.exec(sinTildes(_liO));
+          const _mG = /\b(?:quiero|necesito|dame|llevo|me\s+llevo|compro|comprar[ií]a|pido|ser[ií]an|cotiza(?:me)?|precio\s+(?:por|de|x)|cu[aá]nto\s+(?:me\s+|te\s+|nos\s+)?(?:ser[ií]a|sale|saldr[ií]a|es|cuesta[n]?|costar[ií]a|valen?)\s+(?:por\s+|x\s+)?(?:las?\s+|los?\s+)?|(?:^|y\s+|,\s*)(?:por|x)\s+(?=\d{1,4}\s*(?:\?|$|unid)))\s*(\d{1,4})\b(?!\s*(?:soles|lucas|km|cuadras|d[ií]as|a[ñn]os|%))|\b(\d{1,4})\s+(?:unidades|unid|piezas|adaptadores|uds?)\b/i.exec(sinTildes(_liO));
+          // (+ «¿y cuánto me SALE por 4?» con el «me» en medio — OC2-cuatroprecio)
           if (_mG) _nPed = Number(_mG[1] ?? _mG[2]) || 0;
         }
         const _pideMas = /\b(?:y\s+si\s+(?:llevo|quiero|compro|pido)\s+m[aá]s|(?:llevo|quiero|necesito|compro)\s+(?:m[aá]s|varios|varias|bastantes|muchos|muchas)\b|m[aá]s\s+(?:cantidad|unidades)|(?:packs?|ofertas?|paquetes?)\s+(?:m[aá]s\s+grandes?|de\s+m[aá]s)|(?:hay|tienen|tiene[ns]?)\s+(?:m[aá]s\s+(?:ofertas|packs|cantidad)|ofertas?\s+(?:por|de)\s+(?:m[aá]s|cantidad|volumen))|por\s+(?:mayor|volumen|cantidad)|al\s+por\s+mayor|mayorista|docenas?|revender|(?:tengo|para)\s+(?:una?\s+|mi\s+)?(?:ferreter[ií]a|bodega|taller|tienda|negocio))\b/i.test(_liO)
@@ -20184,6 +20185,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         if (_modoPacks && _nPed >= 2 && !_todasO.some((o) => Number(o.cantidad) === _nPed)) {
           const _sym = simboloMoneda(ctx.moneda as string);
           if (_nPed > _maxTodas) {
+            (ctx as any)._cantGrande = { n: _nPed, max: _maxTodas };
             // Más que la oferta más grande: es del dueño. Aviso una vez por conversación.
             _bloqueTurno += `\n\n## Pide ${_nPed} unidades: más que la oferta más grande (${_maxTodas})\n` +
               `⛔ No le inventes un precio para ${_nPed} ni le sumes packs. Dile que el precio para esa cantidad lo ve ` +
@@ -20203,6 +20205,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const _abajo = _todasO.filter((o) => Number(o.cantidad) < _nPed).sort((a, b) => Number(b.cantidad) - Number(a.cantidad))[0];
             const _arriba = _todasO.filter((o) => Number(o.cantidad) > _nPed).sort((a, b) => Number(a.cantidad) - Number(b.cantidad))[0];
             if (_abajo || _arriba) {
+              (ctx as any)._cantFaltante = { n: _nPed, ops: [_abajo, _arriba].filter(Boolean) };
               _bloqueTurno += `\n\n## Pide ${_nPed} unidades y NO hay oferta de ${_nPed}\n` +
                 `⛔ No le inventes un precio para ${_nPed}, no sumes packs ni hagas cuentas por unidad. Dile en una línea que de ` +
                 `${_nPed} no tienes oferta y ofrécele las dos más cercanas, con su precio exacto, para que elija ÉL: ` +
@@ -26002,6 +26005,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // (+ «…cómo te LO ENVIAMOS y cuánto demora» — F9-bolivia; y los emojis de la cola se van con ella:
             //  quedaba «📍 ¿Alguna otra duda?» colgado — F9-tresprecios)
             _s = _s.replace(/[^.!?¿\n]*\bas[ií]\s+te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)\s+c[oó]mo\s+(?:te\s+)?(?:lo\s+|la\s+)?(?:llega|puede\s+llegar|podr[ií]a\s+llegar|llegar[ií]a|recibes|env[ií]amos|mandamos|despachamos|te\s+lo\s+(?:env[ií]o|mando|hago\s+llegar))\b[^.!?¿\n]*?[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda)/giu, " ");
+            // (+ «Para seguir, Esto es para indicarte cómo te llegará.» — OC6-cuatroprecio)
+            _s = _s.replace(/[^.!?¿\n]*\besto\s+es\s+para\s+(?:indicarte|decirte|saber|confirmarte)\s+c[oó]mo\s+te\s+lleg\p{L}*[^.!?¿\n]*[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda)/giu, " ");
             // Emoji suelto que quedó delante de la suave tras otros recortes («…volumen\n\n 📍 ¿Alguna otra duda?»).
             _s = _s.replace(/(^|\n)[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)+(?=¿Alguna otra duda)/gu, "$1");
           }
@@ -26016,6 +26021,58 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               `Se dejó una sola y sin repetir la anterior: «${_antesF.slice(0, 140)}»`).catch(() => {});
           }
         } catch (_) { /* sin historial → tal cual */ }
+      }
+      // 🙈 CANTIDAD QUE NO ESTÁ EN LA LISTA — lo cierra el MOTOR ([[ofertas-ocultas]]). El bloque del prompt no le
+      // ganó a «nómbralas TODAS y pregunta cuántas»: a «quiero 4» salió la lista entera + «dime cuántas unidades
+      // quieres», y a «necesito 20 unidades» → «¿Para cuántas unidades lo quieres?» (OC-cuatro / OC-veinte).
+      // Se le quita toda pregunta de cantidad y se le dice lo que pasa, con las ofertas reales.
+      if (op === "generar_texto" && !esDigital(ctx) && ((ctx as any)._cantFaltante || (ctx as any)._cantGrande)) {
+        try {
+          const _symQ = simboloMoneda(ctx.moneda as string);
+          const _fQ = (ctx as any)._cantFaltante, _gQ = (ctx as any)._cantGrande;
+          // ¿La IA YA le dijo que de N no hay y le nombró la alternativa? («no tenemos una opción de 4… puedes elegir 3 o ir
+          // por 5» — OC4-cuatroprecio). Entonces se respeta su explicación y solo se le quita la pregunta de la cantidad.
+          // Se mira la PROSA (no los renglones de la lista de precios): si ahí ya nombra el precio de las dos alternativas,
+          // ya se las ofreció (OC5: «Para 4 unidades tenemos que elegir entre 3 o 5… 3 cuestan S/ 139 y 5 S/ 199»).
+          const _prosaQ = sinFormato(String(salida ?? "")).split("\n")
+            .filter((l) => !/\d{1,3}\s+unidad(?:es)?\s+—/.test(l)).join("\n");
+          const _iaYaLoDijo = !!_fQ && !_gQ && Array.isArray(_fQ.ops) && _fQ.ops.length > 0
+            && _fQ.ops.every((o: any) => new RegExp("(?:^|[^0-9])" + String(o.precio).replace(".", "[.,]") + "(?![0-9])").test(_prosaQ));
+          let _sQ = String(salida ?? "")
+            // la pregunta de cantidad, en pregunta o en imperativo
+            // (la frase empieza tras un punto que NO sea decimal: «hasta 1.5 mm» no es un fin de frase — OC2-veinte)
+            .replace(/(?:[^.!?\n]|\.(?=\d))*¿[^?¿\n]*\b(?:cu[aá]nt[ao]s?|qu[eé]\s+(?:oferta|cantidad|opci[oó]n|pack)|cu[aá]l\s+(?:oferta|opci[oó]n|pack|presentaci[oó]n))\b[^?¿\n]*\?[\s\p{Extended_Pictographic}️]*/giu, " ")
+            .replace(/(?:[^.!?\n]|\.(?=\d))*\b(?:dime|cu[eé]ntame|ind[ií]came|av[ií]same)\s+(?:cu[aá]nt[ao]s|cu[aá]l|qu[eé]\s+(?:oferta|cantidad))[^.!?\n]*[.!?]?[\s\p{Extended_Pictographic}️👇]*/giu, " ")
+            // «para 4 unidades no hay presentación…» / «las opciones son solo 1, 2 o 3» que haya escrito ella: lo dice el motor abajo
+            .replace(_iaYaLoDijo ? /$^/ : /(?:[^.!?\n]|\.(?=\d))*\b(?:(?:para|de)\s+\d{1,4}\s+unidades\s+no\s+(?:hay|tengo|tenemos)|no\s+(?:hay|tenemos|tengo|manejamos)\s+(?:una\s+)?(?:presentaci[oó]n|oferta|pack)\s+(?:de|para)\s+\d{1,4}|las\s+opciones\s+son\s+solo|te\s+(?:la\s+|lo\s+)?puedo\s+dejar)[^.!?\n]*[.!?]?[\s\p{Extended_Pictographic}️👇]*/giu, " ")
+            .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim()
+            // el primer renglón de la lista en su propio renglón («…al recibir el pedido. 1 unidad — S/ 69»)
+            .replace(/([^\n])[ \t]+(?=\d{1,3}\s+unidad(?:es)?\s+—)/, "$1\n\n");
+          if (_gQ) {
+            _sQ = `Para *${_gQ.n} unidades* el precio lo ve directamente el dueño: ya le avisé y te responde por acá 🙌\n\n` + _sQ;
+            if (!/[?¿]/.test(_sQ)) _sQ = _sQ.trimEnd() + "\n\nMientras tanto, si quieres avanzar con alguna de estas ofertas, dime nomás 🙂";
+          } else if (_fQ && Array.isArray(_fQ.ops) && _fQ.ops.length) {
+            // La prosa de la IA sobre ESA cantidad se va entera y la cierra el motor: en 3 corridas escribió «puedes
+            // combinar 3 y 1» (el pedido guarda UNA oferta: no se puede), «para ti la de 5 es la más conveniente»
+            // (elegir por él) y su propio «¿cuál prefieres?» encima del del motor (OC6). La lista de precios se queda.
+            const _nQ = Number(_fQ.n);
+            _sQ = _sQ.split("\n").map((l) => /\d{1,3}\s+unidad(?:es)?\s+—/.test(l) ? l
+              : l.split(/(?<=[.!?…])\s+/).filter((o) => !(
+                  new RegExp("(?:^|[^0-9.,])" + _nQ + "(?![0-9])").test(o)
+                  || /combin|conveniente|te\s+conviene|recomiendo|[?¿]/i.test(o))).join(" ")
+            ).join("\n")
+              .replace(/^[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)+$/gmu, "")   // el 📍 que quedó solo en su renglón
+              .replace(/\n{3,}/g, "\n\n").trim();
+            const _ops = _fQ.ops.map((o: any) => `*${o.nombre}* a ${_symQ} ${o.precio}`);
+            _sQ = _sQ.trimEnd() + `\n\nDe *${_fQ.n} unidades* no tengo oferta 🙏 Te puedo dejar ${_ops.join(" o ")}` +
+              (_ops.length > 1 ? ", ¿cuál prefieres?" : ", ¿te la dejo?");
+          }
+          if (_sQ.trim() && _sQ !== salida) {
+            salida = _sQ;
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🙈 Cantidad fuera de la lista: lo cerró el motor",
+              _gQ ? `${_gQ.n} unidades → al dueño` : `${_fQ.n} unidades → ${(_fQ.ops ?? []).map((o: any) => o.nombre).join(" / ")}`).catch(() => {});
+          }
+        } catch (_) { /* se envía tal cual */ }
       }
       // 🔠 Una sola vez, al final: cualquiera de los veinte guards pudo quitar la frase con que
       // arrancaba el mensaje o la que iba tras un punto, y lo que queda empieza en minúscula.
