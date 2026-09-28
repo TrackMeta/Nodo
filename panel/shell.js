@@ -1433,13 +1433,33 @@ function updateActive(active) {
 // Canales, Etiquetas o Ajustes, el ítem activo quedaba escondido debajo y no se veía dónde
 // estabas. Se mueve SOLO la lista, y solo si hace falta (a mano, no scrollIntoView, que
 // también podría mover la página).
+// 🔁 Y se RECUERDA dónde lo dejaste (sessionStorage): Canales → «Guía paso a paso» recarga la
+// página entera, y el menú volvía a 0 y saltaba de nuevo hasta el activo. Rodrigo lo vio así en
+// la guía (2026-09-28): la lista quedaba a media altura con «Rendimiento» pegado bajo Bandeja,
+// sin su título, como cortada. Ahora abre donde estaba y solo se mueve lo justo si hace falta.
 function revelaActivo() {
   const cont = S.nav && S.nav.querySelector(".nodo-links");
-  const el = cont && cont.querySelector(".nodo-link.active");
-  if (!el) return;
-  const c = cont.getBoundingClientRect(), r = el.getBoundingClientRect(), m = 12;
-  if (r.bottom > c.bottom - m) cont.scrollTop += r.bottom - c.bottom + m + c.height / 3;
-  else if (r.top < c.top + m) cont.scrollTop -= c.top - r.top + m;
+  if (!cont) return;
+  if (!cont._scrollCableado) {
+    cont._scrollCableado = true;
+    try { const y = Number(sessionStorage.getItem("nodo.navScroll")); if (y > 0) cont.scrollTop = y; } catch (_) { /* sin storage */ }
+    const marca = () => {
+      cont.classList.toggle("fade-top", cont.scrollTop > 2);
+      cont.classList.toggle("fade-bot", cont.scrollTop + cont.clientHeight < cont.scrollHeight - 2);
+    };
+    cont.addEventListener("scroll", () => {
+      marca();
+      try { sessionStorage.setItem("nodo.navScroll", String(Math.round(cont.scrollTop))); } catch (_) { /* nada */ }
+    }, { passive: true });
+    cont._marcaFade = marca;
+  }
+  const el = cont.querySelector(".nodo-link.active");
+  if (el) {
+    const c = cont.getBoundingClientRect(), r = el.getBoundingClientRect(), m = 24;
+    if (r.bottom > c.bottom - m) cont.scrollTop += r.bottom - c.bottom + m;
+    else if (r.top < c.top + m) cont.scrollTop -= c.top - r.top + m;
+  }
+  cont._marcaFade && cont._marcaFade();
 }
 
 // ── Router client-side ──────────────────────────────────────────────

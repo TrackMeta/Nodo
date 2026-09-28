@@ -416,6 +416,11 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
 .nodo-links{scrollbar-width:thin;scrollbar-color:transparent transparent}
 .nodo-links:hover{scrollbar-color:var(--faint) transparent}
 .nodo-nav.collapsed .nodo-links{scrollbar-width:none}
+/* Difuminado en el borde por donde la lista sigue: sin él, un ítem a medio scroll se leía
+   como un menú cortado (Rendimiento pegado bajo Bandeja, sin su título de grupo). */
+.nodo-links.fade-top{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 22px);mask-image:linear-gradient(to bottom,transparent 0,#000 22px)}
+.nodo-links.fade-bot{-webkit-mask-image:linear-gradient(to top,transparent 0,#000 22px);mask-image:linear-gradient(to top,transparent 0,#000 22px)}
+.nodo-links.fade-top.fade-bot{-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 22px,#000 calc(100% - 22px),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,#000 22px,#000 calc(100% - 22px),transparent 100%)}
 .nodo-links::-webkit-scrollbar{width:8px}
 .nodo-links::-webkit-scrollbar-track{background:transparent;margin:6px 0}
 .nodo-links::-webkit-scrollbar-thumb{
