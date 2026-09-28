@@ -169,6 +169,9 @@ async function load(){
   // NOTA: el panel ya NO lee channels.telegram_webhook_secret (material del webhook, que
   // un miembro podría usar para forjar el webhook y aprobar pagos — migración 0073 lo
   // revoca). El booleano "Copiloto activo" viene del endpoint status (st.secrets.copiloto).
+  // El estado de los secretos (Edge Function, lo más lento) sale YA, en paralelo con la ficha:
+  // no depende de ella, y en fila la tarjeta esperaba las dos sumadas.
+  const statusP=callFn("channel-config",{ action:"status", channel_id:forChannel }).catch(()=>null);
   let { data:ch, error:chErr } = await supa.from("channels")
     .select("nombre,phone_number_id,waba_id,verify_token,telegram_chat_ids,telegram_vinculos,ia_router").eq("id",forChannel).maybeSingle();
   if(chErr){ ({ data:ch } = await supa.from("channels")
@@ -177,7 +180,7 @@ async function load(){
   st.channel=ch||{};
   st.channelNombre=st.channel.nombre||"";
   st.secrets={};
-  try{ const r=await callFn("channel-config",{ action:"status", channel_id:forChannel }); if(gen!==st.loadGen) return; st.secrets=r?.secrets||{}; }catch(_){}
+  { const r=await statusP; if(gen!==st.loadGen) return; st.secrets=r?.secrets||{}; }
   if(gen!==st.loadGen) return;
   // Una sola guarda para todo lo que pinta esta seccion, en vez de una por render:
   // entre el await de arriba y esta linea puedes haberte ido a otra pantalla. Las
