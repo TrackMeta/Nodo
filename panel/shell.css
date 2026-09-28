@@ -409,8 +409,13 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
    Usa tokens temáticos → se adapta a claro/oscuro. Casi invisible en
    reposo; se marca al pasar el cursor por el sidebar y toma el indigo
    de la marca al agarrar el thumb. Anula el scrollbar global (10px). */
-.nodo-links{scrollbar-width:thin;scrollbar-color:var(--border-strong) transparent}
+/* OJO: desde Chrome 121, si están scrollbar-width/scrollbar-color las reglas
+   ::-webkit-scrollbar de abajo NO se aplican (quedan para navegadores viejos). Por eso
+   el reposo va transparente ACÁ: con border-strong se veía una barra gris fija con
+   flechitas en medio del menú (visto 2026-09-28). */
+.nodo-links{scrollbar-width:thin;scrollbar-color:transparent transparent}
 .nodo-links:hover{scrollbar-color:var(--faint) transparent}
+.nodo-nav.collapsed .nodo-links{scrollbar-width:none}
 .nodo-links::-webkit-scrollbar{width:8px}
 .nodo-links::-webkit-scrollbar-track{background:transparent;margin:6px 0}
 .nodo-links::-webkit-scrollbar-thumb{

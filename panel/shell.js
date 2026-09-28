@@ -1184,6 +1184,7 @@ export async function mountShell({ active } = {}) {
   document.querySelectorAll(".nodo-nav").forEach((n) => n.remove()); // sin sidebars duplicados
   document.body.insertBefore(nav, document.body.firstChild);
   S.nav = nav;
+  revelaActivo();
 
   // Tema toggle
   const themeBtn = nav.querySelector("#nodoTheme");
@@ -1425,6 +1426,20 @@ function updateActive(active) {
     const grp = el.closest(".nodo-group");
     if (grp) grp.classList.remove("closed"); // abre el grupo que contiene el activo
   }
+  revelaActivo();
+}
+
+// La lista del menú scrollea sola (con la ventana a 1118 px sobran ~280 px de ítems): entrando a
+// Canales, Etiquetas o Ajustes, el ítem activo quedaba escondido debajo y no se veía dónde
+// estabas. Se mueve SOLO la lista, y solo si hace falta (a mano, no scrollIntoView, que
+// también podría mover la página).
+function revelaActivo() {
+  const cont = S.nav && S.nav.querySelector(".nodo-links");
+  const el = cont && cont.querySelector(".nodo-link.active");
+  if (!el) return;
+  const c = cont.getBoundingClientRect(), r = el.getBoundingClientRect(), m = 12;
+  if (r.bottom > c.bottom - m) cont.scrollTop += r.bottom - c.bottom + m + c.height / 3;
+  else if (r.top < c.top + m) cont.scrollTop -= c.top - r.top + m;
 }
 
 // ── Router client-side ──────────────────────────────────────────────
