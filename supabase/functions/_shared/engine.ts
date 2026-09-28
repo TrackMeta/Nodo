@@ -20070,7 +20070,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // "mensaje", detrás de «Pagas al recibirlo»). Acá se le dice eso, y queda anotado para cumplirlo.
     if (!esDigital(ctx) && String(ctx.zona_entrega ?? "") === "lima" && String(ctx.pedido_creado ?? "") !== "si") {
       const _liY = String(ctx.last_input ?? "");
-      const _pideNum = /(?:a\s+qu[eé]|cu[aá]l\s+es\s+(?:el|tu|su)|p[aá]s(?:a|e)me\s+(?:el|tu)|dame\s+(?:el|tu))\s+n[uú]mero|\b(?:a\s+)?d[oó]nde\s+(?:te\s+)?(?:yapeo|plineo|deposito|transfiero|pago)\b|\bpuedo\s+(?:yapear|plinear|pagar\s+(?:por|con)\s+(?:yape|plin|transferencia))\b|\b(?:yapeo|pago|pagar\w*|te\s+yapeo)\s+(?:antes|adelantado|por\s+adelantado|de\s+una\s+vez|ahora|ahorita)\b/i.test(_liY);
+      const _pideNum = /(?:a\s+qu[eé]|cu[aá]l\s+es\s+(?:el|tu|su)|p[aá]s(?:a|e)me\s+(?:el|tu)|dame\s+(?:el|tu))\s+n[uú]mero|\b(?:a\s+)?d[oó]nde\s+(?:te\s+)?(?:yapeo|plineo|deposito|transfiero|pago)\b|\bpuedo\s+(?:yapear\w*|plinear\w*|pagar\w*\s+(?:por|con)\s+(?:yape|plin|transferencia))|\b(?:yapeo|yapear\w*|plinear\w*|pago|pagar\w*|te\s+yapeo)\s+(?:antes|adelantado|por\s+adelantado|de\s+una\s+vez|ahora|ahorita)\b/i.test(_liY);
+      // (con enclítico: «¿puedo yapearTE antes?» — F8d-numyape2; ver [[enclitico-y-banco-de-frases]])
       if (_pideNum && /\b(yape\w*|plin\w*|transfer\w*|deposit\w*|n[uú]mero|pag\w*)\b/i.test(_liY)) {
         (run.vars as any)._lima_yapea_antes = true;
         (ctx as any)._yapeaAntesTurno = true;   // red de salida si la IA igual no lo contesta (ver «Quiere yapear antes»)
@@ -25609,10 +25610,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // 💸 Quiere YAPEAR ANTES (Lima, sin pedido) y la IA contestó solo «pagas al recibirlo» (F8b-numyape: el bloque
       // del turno no le ganó a «Lima paga contra entrega, no le pidas Yape»). Su pregunta va primero, y la promesa
       // es la que el motor cumple: el número sale con el total al crearse el pedido (case "mensaje").
+      // (Mira la RESPUESTA, no la palabra «Yape»: la IA escribió «Te paso el número para Yape apenas…» y ese anuncio
+      // lo quita después el guard de «te paso los datos» — F8c-numyape. Por eso también se quita acá, antes de sumar.)
       if (op === "generar_texto" && (ctx as any)._yapeaAntesTurno
-          && !/\b(yape\w*|plin\w*|antes|adelantad\w*|por\s+adelantado)\b/i.test(sinFormato(salida))) {
+          && !/\b(?:puedes\s+(?:yapear(?:lo)?|pagar(?:lo)?)\s+(?:antes|por\s+adelantado)|(?:yapear|pagar)(?:lo)?\s+antes)\b/i.test(sinFormato(salida))) {
+        const _sinAnuncio = String(salida).replace(/[^.!?\n]*\bte\s+(?:paso|pasar[eé]|mando|mandar[eé]|env[ií]o|enviar[eé])\s+(?:el\s+)?(?:n[uú]mero|yape|datos)[^.!?\n]*[.!?]?/giu, " ")
+          .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
         salida = "Sí, en Lima también puedes yapear antes si prefieres 👌 El número te llega con el total apenas quede tu pedido.\n\n" +
-          String(salida).trimStart();
+          (_sinAnuncio || String(salida)).trimStart();
         await logEvent(db, run.channel_id, run.contact_id, "nota", "💸 Contestó lo del Yape",
           "Preguntó a qué número yapea (Lima, sin pedido) y la IA no lo contestaba").catch(() => {});
       }
