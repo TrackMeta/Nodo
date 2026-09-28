@@ -1455,9 +1455,11 @@ function revelaActivo() {
   }
   const el = cont.querySelector(".nodo-link.active");
   if (el) {
-    const c = cont.getBoundingClientRect(), r = el.getBoundingClientRect(), m = 24;
-    if (r.bottom > c.bottom - m) cont.scrollTop += r.bottom - c.bottom + m;
-    else if (r.top < c.top + m) cont.scrollTop -= c.top - r.top + m;
+    // Se mueve solo si de verdad no se ve (bajo el difuminado); si ya se ve, ni un píxel:
+    // con el umbral = al margen, cada página nueva lo corría 9 px y el menú «temblaba».
+    const c = cont.getBoundingClientRect(), r = el.getBoundingClientRect(), m = 24, fade = 14;
+    if (r.bottom > c.bottom - fade) cont.scrollTop += r.bottom - c.bottom + m;
+    else if (r.top < c.top + fade) cont.scrollTop -= c.top - r.top + m;
   }
   cont._marcaFade && cont._marcaFade();
 }
