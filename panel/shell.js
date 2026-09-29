@@ -1305,7 +1305,11 @@ export async function mountShell({ active } = {}) {
   const closeBotPop = () => { if (botPop) { botPop.hidden = true; if (botBtn) botBtn.classList.remove("open"); } };
   const renderBotPop = () => {
     if (!botPop) return;
-    botPop.innerHTML = S.channels.map((c) => `<button class="nb-item${c.id === S.channelId ? " on" : ""}" type="button" data-id="${c.id}"><img src="${escBot(c.logo_url || FALLBACK_LOGO)}" alt="" /><span>${escBot(c.nombre)}</span>${c.id === S.channelId ? svg("check") : ""}</button>`).join("")
+    // 🔔 Cuánto espera en cada bot (lo cuenta la campanita, notif-center.js): se ve qué bot te
+    // necesita sin abrir el cajón.
+    const cnt = (id) => { const x = (S.notifPorBot || {})[id];
+      return x && x.pend ? `<b class="nb-cnt${x.urg ? " urg" : ""}" title="${x.pend} por atender">${x.pend > 99 ? "99+" : x.pend}</b>` : ""; };
+    botPop.innerHTML = S.channels.map((c) => `<button class="nb-item${c.id === S.channelId ? " on" : ""}" type="button" data-id="${c.id}"><img src="${escBot(c.logo_url || FALLBACK_LOGO)}" alt="" /><span>${escBot(c.nombre)}</span>${cnt(c.id)}${c.id === S.channelId ? svg("check") : ""}</button>`).join("")
       + (S.puedeCrear !== false ? `<button class="nb-create" type="button">${svg("plus")}<span>Crear nuevo bot</span></button>` : "");
     botPop.querySelectorAll(".nb-item").forEach((b) => { b.onclick = async () => { if (b.dataset.id !== S.channelId && !(await _dirtyGate())) return; S.api.setChannel(b.dataset.id); closeBotPop(); }; });
     const cr = botPop.querySelector(".nb-create"); if (cr) cr.onclick = () => { closeBotPop(); openCreateBot(); };

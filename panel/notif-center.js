@@ -288,6 +288,46 @@ function pintarCampana() {
   b.classList.toggle("urg", vis.some((n) => n.prioridad === "urgente" && pendiente(n)));
   N.bell.setAttribute("aria-label", k ? `Notificaciones: ${k} sin leer` : "Notificaciones");
   N.bell.title = k ? `Notificaciones · ${k} sin leer` : "Notificaciones";
+  // El selector de bots del menú lateral muestra cuánto espera en cada uno (lo lee al abrirse).
+  N.ctx.S.notifPorBot = conteoPorBot();
+}
+
+// Cuánto le falta a cada bot: lo por atender (y si algo es urgente) y lo sin leer.
+function conteoPorBot() {
+  const m = {};
+  for (const n of N.rows.values()) {
+    if (oculta(n)) continue;
+    const c = m[n.channel_id] || (m[n.channel_id] = { pend: 0, urg: false, noLeidas: 0 });
+    if (pendiente(n)) { c.pend++; if (n.prioridad === "urgente") c.urg = true; }
+    if (noLeida(n)) c.noLeidas++;
+  }
+  return m;
+}
+
+// Fila de bots del cajón: logo + nombre + su número (en «Por atender», lo pendiente —rojo si hay
+// algo urgente—; en «Todas», lo sin leer). Reemplaza al <select>, que no decía cuánto tenía cada bot.
+function filaBots(chs) {
+  const cnt = conteoPorBot();
+  const cero = { pend: 0, urg: false, noLeidas: 0 };
+  const num = (x) => (N.tab === "atender" ? x.pend : x.noLeidas);
+  const badge = (k, urg) => !k ? "" :
+    `<b class="nn-bc ${N.tab === "atender" ? (urg ? "urg" : "pend") : "soft"}">${k > 99 ? "99+" : k}</b>`;
+  const tot = chs.reduce((s, c) => s + num(cnt[c.id] || cero), 0);
+  // El que más te necesita, primero (urgente, luego cuántos); los que no tienen nada, al final en su
+  // orden de siempre. Con 4 bots entran ~2 a la vista: el que tenía lo urgente quedaba escondido.
+  const pos = new Map(chs.map((c, i) => [c.id, i]));
+  chs = [...chs].sort((a, b) => {
+    const x = cnt[a.id] || cero, y = cnt[b.id] || cero;
+    return (N.tab === "atender" ? Number(y.urg) - Number(x.urg) : 0) || num(y) - num(x) || pos.get(a.id) - pos.get(b.id);
+  });
+  return `<div class="nn-bots" role="tablist" aria-label="Filtrar por bot">
+    <button class="nn-bot todos${N.bot === "todos" ? " on" : ""}" data-bot="todos" role="tab">Todos${badge(tot, chs.some((c) => cnt[c.id]?.urg))}</button>
+    ${chs.map((c) => {
+      const x = cnt[c.id] || cero, k = num(x);
+      return `<button class="nn-bot${N.bot === c.id ? " on" : ""}${k ? "" : " cero"}" data-bot="${c.id}" role="tab" title="${esc(c.nombre)}${k ? ` · ${k} ${N.tab === "atender" ? "por atender" : "sin leer"}` : ""}">
+        <img src="${esc(c.logo_url || N.ctx.logoFallback)}" alt=""><span>${esc(c.nombre)}</span>${badge(k, x.urg)}</button>`;
+    }).join("")}
+  </div>`;
 }
 
 // ── Cajón ───────────────────────────────────────────────────────────
@@ -334,20 +374,21 @@ function pintar() {
   if (N.vista === "prefs") { pintarPrefs(d); return; }
   const chs = N.ctx.S.channels || [];
   const pend = [...N.rows.values()].filter((n) => pendiente(n) && !oculta(n) && (N.bot === "todos" || n.channel_id === N.bot));
-  const nNo = [...N.rows.values()].filter((n) => noLeida(n) && !oculta(n)).length;
+  const nNo = [...N.rows.values()].filter((n) => noLeida(n) && !oculta(n) && (N.bot === "todos" || n.channel_id === N.bot)).length;
+  const nNoTodo = [...N.rows.values()].filter((n) => noLeida(n) && !oculta(n)).length;
+  // Un bot que se archivó mientras estaba elegido: vuelve a «Todos».
+  if (N.bot !== "todos" && !chs.some((c) => c.id === N.bot)) N.bot = "todos";
+  const _xBots = d.querySelector(".nn-bots")?.scrollLeft || 0;   // la fila de bots no salta al redibujar
   d.innerHTML = `
     <header class="nn-head">
       <div class="nn-hl">
         <h2>Notificaciones</h2>
-        ${chs.length > 1 ? `<label class="nn-botsel">${I("robot")}<select data-f="bot">
-          <option value="todos"${N.bot === "todos" ? " selected" : ""}>Todos los bots</option>
-          ${chs.map((c) => `<option value="${c.id}"${N.bot === c.id ? " selected" : ""}>${esc(c.nombre)}</option>`).join("")}
-        </select>${I("chevron")}</label>` : ""}
       </div>
-      <button class="nn-ib" data-a="leer-todo" title="Marcar todo como leído"${nNo ? "" : " disabled"}>${I("checkAll")}</button>
+      <button class="nn-ib" data-a="leer-todo" title="Marcar todo como leído (todos los bots)"${nNoTodo ? "" : " disabled"}>${I("checkAll")}</button>
       <button class="nn-ib" data-a="prefs" title="Preferencias">${I("config")}</button>
       <button class="nn-ib" data-a="cerrar" title="Cerrar (Esc)">${I("x")}</button>
     </header>
+    ${chs.length > 1 ? filaBots(chs) : ""}
     <div class="nn-tabs" role="tablist">
       <button class="nn-tab${N.tab === "atender" ? " on" : ""}" data-tab="atender" role="tab">Por atender${pend.length ? `<b class="${pend.some((n) => n.prioridad === "urgente") ? "urg" : ""}">${pend.length}</b>` : ""}</button>
       <button class="nn-tab${N.tab === "todas" ? " on" : ""}" data-tab="todas" role="tab">Todas${nNo ? `<b class="soft">${nNo > 99 ? "99+" : nNo}</b>` : ""}</button>
@@ -355,6 +396,8 @@ function pintar() {
     <div class="nn-filt"></div>
     ${bannerNavegador()}
     <div class="nn-list"></div>`;
+  const _fila = d.querySelector(".nn-bots");
+  if (_fila) _fila.scrollLeft = _xBots;
   pintarLista();
 }
 
@@ -521,6 +564,13 @@ function onClickCajon(e) {
     else if (k === "banner-no") { try { localStorage.setItem("nodo.nn.bannerNo", "1"); } catch (_) {} pintar(); }
     return;
   }
+  const bot = e.target.closest("[data-bot]");
+  if (bot) {
+    N.bot = bot.dataset.bot; N.grupo = "todo";
+    pintar();
+    d.querySelector(".nn-list").scrollTop = 0;
+    return;
+  }
   const tab = e.target.closest("[data-tab]");
   if (tab) { N.tab = tab.dataset.tab; N.grupo = "todo"; pintar(); d.querySelector(".nn-list").scrollTop = 0; return; }
   const chip = e.target.closest("[data-g]");
@@ -539,7 +589,6 @@ function onClickCajon(e) {
 
 function onChangeCajon(e) {
   const el = e.target;
-  if (el.dataset.f === "bot") { N.bot = el.value; pintar(); return; }
   if (el.dataset.p) {
     const k = el.dataset.p;
     if (k === "sonido") N.prefs.sonido = el.checked;
