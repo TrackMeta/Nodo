@@ -99,9 +99,6 @@ export async function montar(ctx) {
     cerrar();
   });
   window.addEventListener("resize", () => { if (N.abierto) ubicar(); });
-  // El cajón va PEGADO al menú: si el menú se comprime o se expande con el cajón abierto (o
-  // mientras anima su ancho), lo sigue. Medir solo al abrir dejaba un hueco de 176 px (visto).
-  if (window.ResizeObserver && ctx.S.nav) new ResizeObserver(() => { if (N.abierto) ubicar(); }).observe(ctx.S.nav);
   // Red de seguridad: si Realtime se cayó sin avisar, cada 5 min (con la pestaña a la vista) se recarga.
   setInterval(() => { if (document.visibilityState === "visible") cargar(); }, 5 * 60_000);
   setInterval(() => { if (N.abierto && N.vista === "lista") pintarLista(); }, 60_000);   // «hace 3 min» al día
@@ -309,9 +306,11 @@ function cajon() {
 
 function ubicar() {
   const d = cajon(), nav = N.ctx.S.nav;
-  const r = nav ? nav.getBoundingClientRect() : { right: 0, top: 0 };
-  const angosto = window.innerWidth < 720;
-  d.style.left = (angosto ? 0 : Math.round(r.right)) + "px";
+  // El lado izquierdo lo pone el CSS según el menú esté comprimido o no (.nodo-nav.collapsed ~ .nn-drawer):
+  // medir el menú fallaba mientras animaba su ancho y dejaba un hueco de 176 px. Acá solo el alto
+  // (el cartel rojo de «sin conexión» empuja el menú hacia abajo).
+  const r = nav ? nav.getBoundingClientRect() : { top: 0 };
+  d.style.left = "";
   d.style.top = Math.max(0, Math.round(r.top)) + "px";
 }
 
