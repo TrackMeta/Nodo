@@ -4852,7 +4852,17 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     // «…equipos nuevos y pesados 🔧. . ¿Alguna…» (F9-fotos): el punto de una frase recortada queda solo.
     .replace(/([.!?])(?:[ \t]+\.)+(?=\s|$)/g, "$1")
     // «Además, el envío corre por nuestra cuenta…» ABRIENDO el mensaje (F9-adelantoantes): se recortó lo de antes.
-    .replace(/^(\s*)(?:adem[aá]s|tambi[eé]n|por\s+otro\s+lado),\s+(\p{L})/iu, (_m, a: string, l: string) => a + l.toUpperCase());
+    .replace(/^(\s*)(?:adem[aá]s|tambi[eé]n|por\s+otro\s+lado),\s+(\p{L})/iu, (_m, a: string, l: string) => a + l.toUpperCase())
+    // «…por agencia *Shalom* 📦 Y dime» al final del renglón: un recorte se llevó la pregunta que seguía
+    // («¿en qué distrito estás?») y dejó el arranque colgando (batería de la campanita, 2026-09-29).
+    // Solo con la «y» delante: «¡Listo! Avísame» a secas es una frase entera y se respeta.
+    .replace(/(?<=[.!?…]|\p{Extended_Pictographic}\u{FE0F}?)[ \t]+y[ \t]+(?:dime|cu[eé]ntame|av[ií]same|conf[ií]rmame)[ \t]*[,:]?[ \t]*(?=\n|$)/giu, "");
+  // «…revisas el producto antes. ¿Me los pasas? 📦» SIN ningún dato en el mensaje: se recortó la lista
+  // que ese «los» señalaba (misma batería). Pedir «los» sin decir cuáles confunde más que no pedir nada.
+  if (!/📌|•|\bdatos\b|\bnombre|direcci[oó]n|\bdni\b|celular|tel[eé]fono/iu.test(text)) {
+    text = text.replace(/(?:(?<=[.!?…]|\p{Extended_Pictographic}\u{FE0F}?)|^)[ \t]*[¡¿]?(?:me|nos)[ \t]+(?:los|las)[ \t]+[a-záéíóúñ]+[ \t]*[?!.…]*[ \t\p{Extended_Pictographic}\u{FE0F}]*(?=\n|$)/gimu, "")
+      .replace(/[ \t]+\n/g, "\n").trim();
+  }
   // El adicional llegó cuando el paquete ya había salido (`actualizarPedido` no lo sumó).
   // El flujo igual trae detrás su burbuja fija —"¡Genial! Te lo sumo al pedido, lo pagas
   // junto con el resto"— y eso sería mentirle dos veces: ni va en ese envío ni lo va a
@@ -5903,7 +5913,8 @@ function sinPedirLosDatos(texto: string): string {
   // preguntó si le cobran por rechazar el paquete le llegó «¿Me los pasas?» y debajo la lista
   // de precios. Es el mismo huérfano que ya se limpió en el bloque de oficinas.
   const _restoColgado = (l: string) =>
-    /^[¡¿\s]*(me|nos)\s+(los|las|lo|la)\s+[a-záéíóúñ]+\s*[?!.…]*$/i.test(sinFormato(l).trim());
+    // (con el emoji de cierre también: «¿Me los pasas? 📦» — batería de la campanita, 2026-09-29)
+    /^[¡¿\s]*(me|nos)\s+(los|las|lo|la)\s+[a-záéíóúñ]+\s*[?!.…]*[\s\p{Extended_Pictographic}\u{FE0F}]*$/iu.test(sinFormato(l).trim());
   const out: string[] = [];
   let cortando = false;
   for (const l of t.split("\n")) {
