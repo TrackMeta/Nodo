@@ -371,7 +371,9 @@ function pintarLista() {
   const base = filtradas();
   const cuenta = (g) => base.filter((n) => (n.grupo || tipoDe(n).g) === g).length;
   const f = d.querySelector(".nn-filt");
-  f.innerHTML = [`<button class="nn-chip${N.grupo === "todo" ? " on" : ""}" data-g="todo">Todo<i>${base.length}</i></button>`,
+  // Sin nada que filtrar, los chips en cero solo ensucian el «Todo al día».
+  f.hidden = !base.length;
+  f.innerHTML =[`<button class="nn-chip${N.grupo === "todo" ? " on" : ""}" data-g="todo">Todo<i>${base.length}</i></button>`,
     ...GRUPOS.map((g) => { const k = cuenta(g.k); return `<button class="nn-chip${N.grupo === g.k ? " on" : ""}" data-g="${g.k}"${k || N.grupo === g.k ? "" : " disabled"}>${g.lb}${k ? `<i>${k}</i>` : ""}</button>`; })].join("");
 
   let lista = base.filter((n) => N.grupo === "todo" || (n.grupo || tipoDe(n).g) === N.grupo);
