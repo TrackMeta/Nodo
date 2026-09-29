@@ -99,6 +99,9 @@ export async function montar(ctx) {
     cerrar();
   });
   window.addEventListener("resize", () => { if (N.abierto) ubicar(); });
+  // El cajón va PEGADO al menú: si el menú se comprime o se expande con el cajón abierto (o
+  // mientras anima su ancho), lo sigue. Medir solo al abrir dejaba un hueco de 176 px (visto).
+  if (window.ResizeObserver && ctx.S.nav) new ResizeObserver(() => { if (N.abierto) ubicar(); }).observe(ctx.S.nav);
   // Red de seguridad: si Realtime se cayó sin avisar, cada 5 min (con la pestaña a la vista) se recarga.
   setInterval(() => { if (document.visibilityState === "visible") cargar(); }, 5 * 60_000);
   setInterval(() => { if (N.abierto && N.vista === "lista") pintarLista(); }, 60_000);   // «hace 3 min» al día
