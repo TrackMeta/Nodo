@@ -255,9 +255,9 @@ function sonar() {
 // (todavía no pagó el adelanto: suena cuando el adelanto se aprueba solo).
 const VENTA = new Set(["venta_digital", "pedido_lima", "adelanto_auto", "venta_extra"]);
 const TONOS_VENTA = [
-  { k: "caja",    lb: "Caja registradora", desc: "El «cha-ching» de una venta", ic: "banknote" },
-  { k: "monedas", lb: "Monedas",           desc: "Unas monedas que caen",       ic: "dollar" },
-  { k: "campana", lb: "Campanita",         desc: "Cuatro notas alegres",        ic: "bell" },
+  { k: "caja",    lb: "Caja registradora", corto: "Caja",      desc: "el «cha-ching» de una venta", ic: "banknote" },
+  { k: "monedas", lb: "Monedas",           corto: "Monedas",   desc: "unas monedas que caen",       ic: "dollar" },
+  { k: "campana", lb: "Campanita",         corto: "Campanita", desc: "cuatro notas alegres",        ic: "bell" },
 ];
 const ventaPrefs = () => ({ sonido: true, tono: "caja", volumen: 70, ...(N.prefs.venta || {}) });
 
@@ -643,7 +643,7 @@ function onClickCajon(e) {
     else if (k === "prefs") { N.vista = "prefs"; pintar(); }
     else if (k === "volver") { N.vista = "lista"; pintar(); }
     else if (k === "probar-sonido") sonar();
-    else if (k === "probar-venta") sonarVenta(a.dataset.tono, ventaPrefs().volumen);
+    else if (k === "probar-venta") sonarVenta(a.dataset.tono || ventaPrefs().tono, ventaPrefs().volumen);
     else if (k === "permiso") pedirPermiso();
     else if (k === "banner-no") { try { localStorage.setItem("nodo.nn.bannerNo", "1"); } catch (_) {} pintar(); }
     return;
@@ -785,11 +785,9 @@ function seccionVenta(sw) {
       ${sw('data-p="venta-sonido"', v.sonido)}
     </div>
     <div class="nn-tonos" role="radiogroup" aria-label="Sonido de venta">
-      ${TONOS_VENTA.map((t) => `<div class="nn-tono${v.tono === t.k ? " on" : ""}">
-        <label><input type="radio" name="nnTonoVenta" value="${t.k}" data-p="venta-tono"${v.tono === t.k ? " checked" : ""}${off ? " disabled" : ""}>
-          <span class="nn-tono-ic">${I(t.ic)}</span><span class="nn-tono-tx"><b>${t.lb}</b><small>${t.desc}</small></span></label>
-        <button class="nn-ib" type="button" data-a="probar-venta" data-tono="${t.k}" title="Escuchar «${t.lb}»"${off ? " disabled" : ""}>${I("play")}</button>
-      </div>`).join("")}
+      ${TONOS_VENTA.map((t) => `<label class="nn-tono${v.tono === t.k ? " on" : ""}" title="${t.lb}: ${t.desc}">
+        <input type="radio" name="nnTonoVenta" value="${t.k}" data-p="venta-tono"${v.tono === t.k ? " checked" : ""}${off ? " disabled" : ""}>${I(t.ic)}<span>${t.corto}</span></label>`).join("")}
+      <button class="nn-ib nn-tono-play" type="button" data-a="probar-venta" title="Escuchar el sonido elegido"${off ? " disabled" : ""}>${I("play")}</button>
     </div>
     <div class="nn-vol">
       <span>Volumen</span>

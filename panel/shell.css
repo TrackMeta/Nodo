@@ -881,23 +881,20 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-sw input:focus-visible + i{box-shadow:0 0 0 3px var(--brand-bg)}
 .nn-sw.dis{opacity:.45;cursor:not-allowed}
 
-/* Sonido de venta: tres tarjetas para elegir cuál suena (con su «escuchar») y el volumen. */
-.nn-tonos{display:flex;flex-direction:column;gap:6px;margin:4px 0 12px}
-.nn-tono{position:relative;display:flex;align-items:center;gap:4px;padding:3px 4px 3px 3px;border-radius:11px;border:1px solid var(--border);
-  background:var(--surface);transition:border-color var(--t-fast),background var(--t-fast)}
-.nn-tono:hover{border-color:var(--border-strong)}
-.nn-tono.on{border-color:var(--brand);background:var(--brand-bg);box-shadow:0 0 0 1px var(--brand) inset}
-.nn-tono label{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:6px 7px;cursor:pointer}
+/* Sonido de venta: selector de 3 sonidos en UNA fila (mismo estilo que «Por atender / Todas») + un solo
+   «escuchar» para el elegido, y el volumen. Antes eran 3 tarjetas altas (Rodrigo: «ocupa mucho espacio»). */
+.nn-tonos{display:flex;align-items:center;gap:3px;margin:2px 0 10px;padding:3px;background:var(--surface-2);border-radius:10px}
+.nn-tono{position:relative;flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;height:30px;padding:0 6px;
+  border-radius:8px;cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:650;white-space:nowrap;
+  transition:background var(--t-fast),color var(--t-fast)}
+.nn-tono svg{width:14px;height:14px;flex:none}
+.nn-tono span{overflow:hidden;text-overflow:ellipsis}
+.nn-tono:hover{color:var(--text)}
+.nn-tono.on{background:var(--surface);color:var(--brand);box-shadow:var(--shadow-1),0 0 0 1px var(--border) inset}
 .nn-tono input{position:absolute;opacity:0;pointer-events:none}
-.nn-tono input:focus-visible ~ .nn-tono-ic{box-shadow:0 0 0 3px var(--brand-bg)}
-.nn-tono-ic{flex:none;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:var(--green-bg);color:var(--green)}
-.nn-tono-ic svg{width:16px;height:16px}
-.nn-tono-tx{min-width:0;display:flex;flex-direction:column;gap:1px}
-.nn-tono-tx b{font-size:13px;font-weight:650}
-.nn-tono-tx small{font-size:12px;color:var(--muted)}
-.nn-tono.on .nn-tono-tx b{color:var(--brand)}
-.nn-tono .nn-ib{width:32px;height:32px;color:var(--muted)}
-.nn-tono .nn-ib:hover:not(:disabled){color:var(--brand);background:var(--surface-2)}
+.nn-tono:has(input:focus-visible){box-shadow:0 0 0 2px var(--brand)}
+.nn-tonos .nn-tono-play{width:30px;height:30px;flex:none;color:var(--muted)}
+.nn-tonos .nn-tono-play:hover:not(:disabled){color:var(--brand);background:var(--surface)}
 .nn-vol{display:flex;align-items:center;gap:12px;font-size:12.5px;color:var(--muted)}
 .nn-vol input{flex:1;accent-color:var(--brand);cursor:pointer}
 .nn-vol output{min-width:38px;text-align:right;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
