@@ -881,23 +881,35 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-sw input:focus-visible + i{box-shadow:0 0 0 3px var(--brand-bg)}
 .nn-sw.dis{opacity:.45;cursor:not-allowed}
 
-/* Sonido de venta: selector de 3 sonidos en UNA fila (mismo estilo que «Por atender / Todas») + un solo
-   «escuchar» para el elegido, y el volumen. Antes eran 3 tarjetas altas (Rodrigo: «ocupa mucho espacio»). */
-.nn-tonos{display:flex;align-items:center;gap:3px;margin:2px 0 10px;padding:3px;background:var(--surface-2);border-radius:10px}
-.nn-tono{position:relative;flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;height:30px;padding:0 6px;
-  border-radius:8px;cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:650;white-space:nowrap;
-  transition:background var(--t-fast),color var(--t-fast)}
-.nn-tono svg{width:14px;height:14px;flex:none}
+/* Sonido de venta: los 3 sonidos en una barra (el elegido bien marcado) + «Escuchar» aparte, y el volumen.
+   Compacto (Rodrigo: las 3 tarjetas ocupaban mucho), pero sin apretar: la 1.ª versión en una fila se veía
+   como una segunda barra de pestañas con el ▶ aplastado al final. */
+.nn-tonos{margin:12px 0 10px}
+.nn-tonos-seg{flex:1;min-width:0;display:flex;gap:3px;padding:3px;border-radius:11px;background:var(--surface-2);border:1px solid var(--border)}
+.nn-tono{position:relative;flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 8px;
+  border-radius:8px;cursor:pointer;color:var(--muted);font-size:13px;font-weight:600;white-space:nowrap;
+  transition:background var(--t-fast),color var(--t-fast),box-shadow var(--t-fast)}
+.nn-tono svg{width:15px;height:15px;flex:none}
 .nn-tono span{overflow:hidden;text-overflow:ellipsis}
 .nn-tono:hover{color:var(--text)}
-.nn-tono.on{background:var(--surface);color:var(--brand);box-shadow:var(--shadow-1),0 0 0 1px var(--border) inset}
+.nn-tono.on{background:var(--surface);color:var(--brand);font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.10),0 0 0 1px var(--brand-border) inset}
 .nn-tono input{position:absolute;opacity:0;pointer-events:none}
 .nn-tono:has(input:focus-visible){box-shadow:0 0 0 2px var(--brand)}
-.nn-tonos .nn-tono-play{width:30px;height:30px;flex:none;color:var(--muted)}
-.nn-tonos .nn-tono-play:hover:not(:disabled){color:var(--brand);background:var(--surface)}
-.nn-vol{display:flex;align-items:center;gap:12px;font-size:12.5px;color:var(--muted)}
-.nn-vol input{flex:1;accent-color:var(--brand);cursor:pointer}
-.nn-vol output{min-width:38px;text-align:right;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+.nn-tono-play{flex:none;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-radius:9px;cursor:pointer;margin-right:4px;
+  border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font:inherit;font-size:13px;font-weight:600;
+  transition:border-color var(--t-fast),color var(--t-fast),background var(--t-fast)}
+.nn-tono-play svg{width:14px;height:14px}
+.nn-tono-play:hover:not(:disabled){border-color:var(--brand-border);color:var(--brand);background:var(--brand-bg)}
+.nn-tono-play:disabled{opacity:.5;cursor:default}
+/* Volumen: barra del panel (no la de Windows) — tramo lleno en azul según --p. */
+.nn-vol{display:flex;align-items:center;gap:12px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.nn-drawer .nn-vol input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:5px;margin:0;padding:0;border:none;border-radius:999px;cursor:pointer;
+  background:linear-gradient(var(--brand),var(--brand)) 0 / var(--p,66%) 100% no-repeat, var(--border-strong);box-shadow:none;outline:none}
+.nn-drawer .nn-vol input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;
+  background:#fff;border:2px solid var(--brand);box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.nn-drawer .nn-vol input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#fff;border:2px solid var(--brand);box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.nn-drawer .nn-vol input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var(--brand-bg)}
+.nn-vol output{min-width:40px;text-align:right;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
 .nn-venta.off .nn-tonos,.nn-venta.off .nn-vol{opacity:.45;pointer-events:none}
 
 /* Tarjetas en vivo (lo urgente que llega con el panel abierto) */

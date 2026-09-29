@@ -409,7 +409,10 @@ function cajon() {
   d.addEventListener("change", onChangeCajon);
   // El % del volumen se actualiza mientras arrastras (se guarda y suena al soltar, en «change»).
   d.addEventListener("input", (e) => {
-    if (e.target.dataset?.p === "venta-vol") { const o = e.target.parentElement.querySelector("output"); if (o) o.textContent = e.target.value + "%"; }
+    if (e.target.dataset?.p === "venta-vol") {
+      const o = e.target.parentElement.querySelector("output"); if (o) o.textContent = e.target.value + "%";
+      e.target.style.setProperty("--p", ((e.target.value - 10) / 90 * 100) + "%");   // el tramo lleno de la barra
+    }
   });
   return d;
 }
@@ -690,7 +693,7 @@ function onChangeCajon(e) {
       if (k === "venta-sonido") {
         v.sonido = el.checked;
         sec?.classList.toggle("off", !v.sonido);
-        sec?.querySelectorAll('.nn-tonos input, .nn-tonos button, input[data-p="venta-vol"]').forEach((x) => { x.disabled = !v.sonido; });
+        sec?.querySelectorAll('.nn-tonos input, .nn-tono-play, input[data-p="venta-vol"]').forEach((x) => { x.disabled = !v.sonido; });
         if (v.sonido) sonarVenta(v.tono, v.volumen);
       } else if (k === "venta-tono") {
         v.tono = el.value;
@@ -785,13 +788,15 @@ function seccionVenta(sw) {
       ${sw('data-p="venta-sonido"', v.sonido)}
     </div>
     <div class="nn-tonos" role="radiogroup" aria-label="Sonido de venta">
-      ${TONOS_VENTA.map((t) => `<label class="nn-tono${v.tono === t.k ? " on" : ""}" title="${t.lb}: ${t.desc}">
-        <input type="radio" name="nnTonoVenta" value="${t.k}" data-p="venta-tono"${v.tono === t.k ? " checked" : ""}${off ? " disabled" : ""}>${I(t.ic)}<span>${t.corto}</span></label>`).join("")}
-      <button class="nn-ib nn-tono-play" type="button" data-a="probar-venta" title="Escuchar el sonido elegido"${off ? " disabled" : ""}>${I("play")}</button>
+      <div class="nn-tonos-seg">
+        ${TONOS_VENTA.map((t) => `<label class="nn-tono${v.tono === t.k ? " on" : ""}" title="${t.lb}: ${t.desc}">
+          <input type="radio" name="nnTonoVenta" value="${t.k}" data-p="venta-tono"${v.tono === t.k ? " checked" : ""}${off ? " disabled" : ""}>${I(t.ic)}<span>${t.corto}</span></label>`).join("")}
+      </div>
     </div>
     <div class="nn-vol">
+      <button class="nn-tono-play" type="button" data-a="probar-venta" title="Escuchar el sonido elegido"${off ? " disabled" : ""}>${I("play")}Escuchar</button>
       <span>Volumen</span>
-      <input type="range" min="10" max="100" step="5" value="${v.volumen}" data-p="venta-vol" aria-label="Volumen del sonido de venta"${off ? " disabled" : ""}>
+      <input type="range" min="10" max="100" step="5" value="${v.volumen}" style="--p:${(v.volumen - 10) / 90 * 100}%" data-p="venta-vol" aria-label="Volumen del sonido de venta"${off ? " disabled" : ""}>
       <output>${v.volumen}%</output>
     </div>
   </section>`;
