@@ -16,6 +16,7 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getChannelSecrets } from "./db.ts";
 import { sendTelegram } from "./telegram.ts";
 import { fetchConTimeout } from "./http.ts";
+import { registrarNotificacion } from "./notificaciones.ts";
 
 export type Alerta = { nivel: "rojo" | "amarillo"; texto: string; origen: string };
 // `limpiar`: la buena noticia que apaga un aviso de ese origen (p. ej. volvió la calidad).
@@ -113,6 +114,18 @@ export async function aplicarVeredicto(db: SupabaseClient, channelIds: string[],
         if (ver.info) mensaje = `✅ <b>WhatsApp · ${esc(String((ch as any).nombre ?? ""))}</b>\n${esc(ver.info)}`;
       }
       if (nuevo !== undefined) await db.from("channels").update({ wa_alerta: nuevo }).eq("id", id);
+      // 🔔 Campanita: la alerta nueva entra (rojo = urgente, amarillo = importante); cuando Meta la limpia, se
+      // resuelve sola. Va aunque el canal no tenga Telegram — es justo el caso de Maestría Digital.
+      if (ver.alerta && mensaje) {
+        await registrarNotificacion(db, { channelId: id, tipo: "whatsapp_salud",
+          titulo: ver.alerta.nivel === "rojo" ? "Meta restringió tu número de WhatsApp" : "Atención con tu número de WhatsApp",
+          detalle: String(ver.alerta.texto ?? "").slice(0, 220),
+          prioridad: ver.alerta.nivel === "rojo" ? "urgente" : "importante",
+          dedupeKey: `${id}:whatsapp_salud:${ver.alerta.origen ?? ""}` }).catch(() => null);
+      } else if (nuevo === null) {
+        await db.from("notificaciones").update({ resuelta_at: new Date().toISOString(), resuelta_por: "Meta lo levantó", updated_at: new Date().toISOString() })
+          .eq("channel_id", id).eq("tipo", "whatsapp_salud").is("resuelta_at", null);
+      }
       if (mensaje) {
         const chatIds: string[] = Array.isArray((ch as any).telegram_chat_ids) ? (ch as any).telegram_chat_ids.map(String) : [];
         const secrets = chatIds.length ? await getChannelSecrets(db, id).catch(() => null) : null;

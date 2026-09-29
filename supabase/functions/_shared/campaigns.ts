@@ -10,6 +10,7 @@ import { sendTemplate, sendText, esRechazoTemporal } from "./meta.ts";
 import { enParalelo } from "./concurrencia.ts";
 import { pageAll } from "./paginar.ts";
 import { sendTelegram } from "./telegram.ts";
+import { registrarNotificacion } from "./notificaciones.ts";
 
 // Envíos por tick, por campaña. El cron corre cada minuto, así que ESTE número es el ritmo
 // real de una campaña. Se EXPORTA porque el panel lo muestra al programar ("salen de a N por
@@ -255,7 +256,6 @@ async function avisarCanalRoto(db: SupabaseClient, c: any, meta: any) {
     const secrets = await getChannelSecrets(db, c.channel_id);
     const chatIds: string[] = Array.isArray((ch as any)?.telegram_chat_ids) ? (ch as any).telegram_chat_ids.map(String) : [];
     const token = secrets?.telegram_bot_token;
-    if (!token || !chatIds.length) return;
     const code = Number(meta?.code);
     const que = code === 190 ? "el token de WhatsApp venció o fue revocado: reconecta el número en Canales"
       : code === 131030 ? "la app de Meta está en modo desarrollo y el destinatario no está en su lista de prueba"
@@ -264,6 +264,11 @@ async function avisarCanalRoto(db: SupabaseClient, c: any, meta: any) {
       : code === 131031 ? "Meta bloqueó la cuenta de WhatsApp Business (revisa el Business Manager)"
       : code === 368 ? "Meta bloqueó temporalmente el número por sus políticas"
       : `Meta ${code}: ${String(meta?.message ?? "")}`;
+    // 🔔 A la campanita aunque el canal no tenga Telegram (antes de la salida de abajo).
+    await registrarNotificacion(db, { channelId: c.channel_id, tipo: "campana_detenida",
+      titulo: `Campaña «${String(c.nombre ?? c.id)}» detenida`, detalle: `WhatsApp no puede enviar: ${que}`,
+      dedupeKey: `${c.channel_id}:campana_detenida:${c.id}` }).catch(() => null);
+    if (!token || !chatIds.length) return;
     const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     await sendTelegram(token, chatIds, `⚠️ <b>Campaña «${esc(String(c.nombre ?? c.id))}» detenida</b>\nWhatsApp no puede enviar: ${esc(que)}.\nLos envíos quedan en cola y se retoman solos cuando el canal vuelva a funcionar.`);
   } catch (_) { /* avisar de un fallo no puede provocar otro */ }

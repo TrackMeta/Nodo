@@ -9,6 +9,7 @@ import { imageBlock, runAI, transcribeAudio, type ContentBlock, type Provider } 
 import { sendCapiEvent, maybePurchase, maybePurchaseUpsell } from "./capi.ts";
 import { sendTelegram, type TgButton } from "./telegram.ts";
 import { renderAviso, avisoActivo, avisoConFoto, textoDeAviso, escaparHtml, type AvisosConfig } from "./avisos.ts";
+import { registrarNotificacion, clasificarTextoLibre } from "./notificaciones.ts";
 import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate, sheetsBorrarFila, HOJAS } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
@@ -1073,6 +1074,10 @@ async function runEngineInner(
             .eq("titulo", "📣 Anuncio sin producto asignado").eq("detalle", String(event.adId)).gte("created_at", desde).limit(1).maybeSingle();
           await logEvent(db, channelId, contactId, "nota", "📣 Anuncio sin producto asignado", String(event.adId)).catch(() => {});
           if (!ya) {
+            await registrarNotificacion(db, { channelId, contactId, tipo: "anuncio_sin_producto",
+              titulo: "Llegó un cliente por un anuncio sin producto asignado",
+              detalle: `Anuncio ${String(event.adId)} · asígnalo en Productos → Anuncios`,
+              dedupeKey: `${channelId}:anuncio_sin_producto:${String(event.adId)}` }).catch(() => null);
             const { data: chA } = await db.from("channels").select("telegram_chat_ids").eq("id", channelId).maybeSingle();
             const ids = ((chA as any)?.telegram_chat_ids ?? []).map(String);
             const sec = ids.length ? await getChannelSecrets(db, channelId).catch(() => null) : null;
@@ -10050,6 +10055,14 @@ async function enrolarSegmento(db: SupabaseClient, channelId: string, contactId:
 // telegram-webhook, que verifica que el que tocó sea admin de este canal.
 async function notifyAdmin(db: SupabaseClient, run: Run, text: string, photoUrl?: string, buttons?: TgButton[][]) {
   if (!text) return;
+  // 🔔 También a la campanita (texto libre → se clasifica por lo que dice). Stock: uno por producto.
+  {
+    const _c = clasificarTextoLibre(text);
+    await registrarNotificacion(db, { channelId: run.channel_id, contactId: run.contact_id ?? null,
+      orderId: (run.vars as any)?._order_id ?? null, tipo: _c.tipo, titulo: _c.titulo, detalle: _c.detalle,
+      dedupeKey: /^stock_/.test(_c.tipo) ? `${run.channel_id}:${_c.tipo}:${_c.titulo.toLowerCase()}` : undefined,
+    }).catch(() => null);
+  }
   const { data: channel } = await db.from("channels")
     .select("telegram_chat_ids, nombre").eq("id", run.channel_id).maybeSingle();
   const chatIds = (channel as any)?.telegram_chat_ids ?? [];
@@ -10142,6 +10155,10 @@ async function avisar(
     const { data: channel } = await db.from("channels")
       .select("telegram_chat_ids, nombre, telegram_avisos, timezone, moneda").eq("id", channelId).maybeSingle();
     const chatIds = (channel as any)?.telegram_chat_ids ?? [];
+    // 🔔 La campanita del panel lo guarda SIEMPRE, salga o no por Telegram (sin conectar, apagado, sin token):
+    // un bot sin Telegram no puede quedarse sin avisos. Ver _shared/notificaciones.ts.
+    await registrarNotificacion(db, { channelId, contactId, tipo: clave,
+      datos: { ...datos, moneda: datos.moneda ?? simboloMoneda((channel as any)?.moneda) } }).catch(() => null);
     // Símbolo de la moneda para las plantillas ({{moneda}}): los avisos que no pasan por
     // datosAviso (pagos, cancelación…) lo toman del canal.
     if (datos.moneda == null) datos.moneda = simboloMoneda((channel as any)?.moneda);
