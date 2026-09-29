@@ -25717,6 +25717,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             try {
               const _opsL = await loadOpciones(db, run, String(ctx._product_id ?? ""));
               const _suyaL = _opsL.find((o) => String(o.id) === String(ctx.opcion_id));
+              // 👉 Lo que SEÑALABA un renglón de la lista que ya no está: «esta última es la mejor opción»,
+              // «la primera te sirve», «la del medio» (a quien pidió 3 — Rodrigo, 2026-09-29: «pule lo de
+              // "esta última"»). Se cambia por la opción que eligió: «la de *3 unidades* es la mejor opción».
+              if (_suyaL?.nombre) {
+                salida = salida.replace(
+                  // Solo si detrás viene un signo o un verbo que la toma como sujeto/objeto («es», «te sirve»):
+                  // «la primera VEZ que lo uses» no es una opción.
+                  /(?<![\p{L}])(?:esta|[eé]sa|la)\s+(?:[uú]ltima|primera|segunda|tercera|cuarta|de\s+(?:en\s+)?medio|del\s+medio|m[aá]s\s+(?:grande|chica|barata|cara|completa))(?=\s*(?:[,.;:!?…)]|$)|\s+(?:es|era|ser[ií]a|te|le|me|queda|quedar[ií]a|sale|saldr[ií]a|conviene|va|est[aá]|tiene|trae|incluye|y|o|que)(?![\p{L}]))/giu,
+                  (m) => {
+                    const r = `la de *${_suyaL.nombre}*`;
+                    return /^[A-ZÁÉÍÓÚÑ]/.test(m) ? r.charAt(0).toUpperCase() + r.slice(1) : r;
+                  });
+              }
               if (_suyaL && _suyaL.precio != null && !salida.includes(String(_suyaL.precio))) {
                 const _symL = simboloMoneda(ctx.moneda as string);
                 const _vL = Math.round(Number(_suyaL.precio) * 100) / 100;   // 69 pelado, 54.50 con sus dos cifras
