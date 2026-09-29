@@ -910,7 +910,7 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-drawer .nn-vol input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#fff;border:2px solid var(--brand);box-shadow:0 1px 4px rgba(0,0,0,.25)}
 .nn-drawer .nn-vol input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px var(--brand-bg)}
 .nn-vol output{min-width:40px;text-align:right;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
-.nn-venta.off .nn-tonos,.nn-venta.off .nn-vol{opacity:.45;pointer-events:none}
+.nn-psec.off .nn-tonos,.nn-psec.off .nn-vol{opacity:.45;pointer-events:none}
 
 /* Tarjetas en vivo (lo urgente que llega con el panel abierto) */
 #nodoNotifToasts{position:fixed;right:24px;bottom:24px;z-index:99990;display:flex;flex-direction:column;gap:10px;

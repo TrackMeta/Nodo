@@ -218,8 +218,8 @@ function enVivo(n) {
   const avisar = () => {
     if (!reclamar()) return;
     // Venta: solo el sonido de venta (si está encendido). Sin tarjeta: no hay nada que hacer con ella.
-    if (esVenta) { const v = ventaPrefs(); if (v.sonido) sonarVenta(v.tono, v.volumen); return; }
-    if (N.prefs.sonido !== false) sonar();
+    if (esVenta) { const v = ventaPrefs(); if (v.sonido) tocar("venta", v.tono, v.volumen); return; }
+    if (N.prefs.sonido !== false) tocar("urgente", tonoUrgente());
     if (document.visibilityState === "visible") tarjeta(n);
     else avisoNavegador(n);
   };
@@ -234,20 +234,97 @@ function audio() {
   if (N.ac.state === "suspended") N.ac.resume().catch(() => {});
   return N.ac;
 }
-function sonar() {
+// ── Sin cruces de sonidos (pedido de Rodrigo 2026-09-28) ─────────────
+// Suena UNO a la vez: si llega otro mientras suena, espera su turno; lo urgente pasa delante de la
+// venta; y una ráfaga del mismo tipo (5 ventas que entran juntas) suena UNA vez, no cinco seguidas.
+// «Libre desde» se comparte entre pestañas (localStorage): dos pestañas abiertas no se pisan.
+// Cada sonido va por su propio «bus» para poder cortarlo al probar otro en Preferencias.
+const DURACION = { suave: 750, alerta: 500, timbre: 1300, caja: 1000, monedas: 550, campana: 850 };
+const PAUSA = 250;                 // aire entre un sonido y el siguiente
+const RAFAGA = 1500;               // el mismo tipo dentro de este rato = el mismo sonido
+N.cola = []; N.ultimo = {};
+const LIBRE_K = "nodo.nn.libre";
+const libreDesde = () => { let x = 0; try { x = Number(localStorage.getItem(LIBRE_K)) || 0; } catch (_) {} return Math.max(N.libreEn || 0, x); };
+function marcarOcupado(ms) {
+  N.libreEn = Date.now() + ms + PAUSA;
+  try { localStorage.setItem(LIBRE_K, String(N.libreEn)); } catch (_) {}
+}
+function nuevoBus(ac) {
+  const bus = ac.createGain();
+  bus.connect(ac.destination);
+  N.bus = bus;
+  return bus;
+}
+function cortarSonido() {
+  try { if (N.bus && N.ac) { N.bus.gain.cancelScheduledValues(0); N.bus.gain.setValueAtTime(0, N.ac.currentTime); N.bus.disconnect(); } } catch (_) {}
+  N.bus = null;
+}
+function sonarAhora(x, prueba = false) {
+  marcarOcupado(DURACION[x.tono] || 1000);
+  if (!prueba) N.ultimo[x.tipo] = Date.now();   // probar en Preferencias no cuenta como «ya sonó»
+  if (x.tipo === "urgente") sonar(x.tono); else sonarVenta(x.tono, x.vol);
+}
+// Un sonido de un aviso que llegó (no de una prueba): entra a la cola.
+function tocar(tipo, tono, vol) {
+  if (Date.now() - (N.ultimo[tipo] || 0) < RAFAGA) return;          // ráfaga: ya sonó este tipo
+  if (N.cola.some((x) => x.tipo === tipo)) return;                  // ya hay uno igual esperando
+  const x = { tipo, tono, vol };
+  if (Date.now() >= libreDesde() && !N.cola.length) { sonarAhora(x); return; }
+  tipo === "urgente" ? N.cola.unshift(x) : N.cola.push(x);
+  seguirCola();
+}
+function seguirCola() {
+  if (N.colaT || !N.cola.length) return;
+  N.colaT = setTimeout(() => {
+    N.colaT = null;
+    if (Date.now() < libreDesde()) { seguirCola(); return; }       // otra pestaña tomó el turno
+    const x = N.cola.shift();
+    if (x) sonarAhora(x);
+    seguirCola();
+  }, Math.max(30, libreDesde() - Date.now()));
+}
+// Probar un sonido en Preferencias: corta lo que suene y suena YA (no espera en la cola).
+function probarSonido(tipo, tono, vol) {
+  cortarSonido();
+  sonarAhora({ tipo, tono, vol }, true);
+}
+
+// Sonido de lo URGENTE: se elige en Preferencias (pedido de Rodrigo 2026-09-28). «Suave» es el de
+// siempre, así que a quien no toque nada no le cambia. Distintos de los de venta: que no se confundan.
+const TONOS_URGENTE = [
+  { k: "suave",  lb: "Suave",  corto: "Suave",  desc: "dos notas que suben",  ic: "bell" },
+  { k: "alerta", lb: "Alerta", corto: "Alerta", desc: "tres pitidos cortos",  ic: "alert" },
+  { k: "timbre", lb: "Timbre", corto: "Timbre", desc: "un «din-don»",         ic: "activity" },
+];
+const tonoUrgente = () => (TONOS_URGENTE.some((t) => t.k === N.prefs.tonoUrgente) ? N.prefs.tonoUrgente : "suave");
+
+function sonar(tono = tonoUrgente()) {
   try {
     const ac = audio(); if (!ac) return;
-    const t = ac.currentTime + 0.02;
-    [[784, 0], [1175, 0.13]].forEach(([f, d]) => {
-      const o = ac.createOscillator(), g = ac.createGain();
-      o.type = "sine"; o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, t + d);
-      g.gain.exponentialRampToValueAtTime(0.09, t + d + 0.025);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.55);
-      o.connect(g).connect(ac.destination);
-      o.start(t + d); o.stop(t + d + 0.6);
-    });
+    const t = ac.currentTime + 0.02, bus = nuevoBus(ac);
+    const nota = (f, d, dur, g, tipo = "sine") => {
+      const o = ac.createOscillator(), gn = ac.createGain();
+      o.type = tipo; o.frequency.value = f;
+      gn.gain.setValueAtTime(0.0001, t + d);
+      gn.gain.exponentialRampToValueAtTime(g, t + d + 0.02);
+      gn.gain.exponentialRampToValueAtTime(0.0001, t + d + dur);
+      o.connect(gn).connect(bus);
+      o.start(t + d); o.stop(t + d + dur + 0.05);
+    };
+    if (tono === "alerta") [0, 0.16, 0.32].forEach((d) => nota(988, d, 0.12, 0.08, "square"));
+    else if (tono === "timbre") { nota(659, 0, 0.7, 0.12, "triangle"); nota(523, 0.32, 0.9, 0.12, "triangle"); }
+    else { nota(784, 0, 0.55, 0.09); nota(1175, 0.13, 0.55, 0.09); }
   } catch (_) {}
+}
+
+// Barra de sonidos (la usan lo urgente y la venta): una opción por sonido, el elegido marcado.
+function barraTonos(lista, actual, dataP, off) {
+  return `<div class="nn-tonos" role="radiogroup">
+    <div class="nn-tonos-seg">
+      ${lista.map((t) => `<label class="nn-tono${actual === t.k ? " on" : ""}" title="${t.lb}: ${t.desc}">
+        <input type="radio" name="${dataP}" value="${t.k}" data-p="${dataP}"${actual === t.k ? " checked" : ""}${off ? " disabled" : ""}>${I(t.ic)}<span>${t.corto}</span></label>`).join("")}
+    </div>
+  </div>`;
 }
 
 // ── Sonido de VENTA (pedido de Rodrigo 2026-09-28): configurable y apagable ──
@@ -266,14 +343,14 @@ function sonarVenta(tono, volumen) {
     const ac = audio(); if (!ac) return;
     const v = Math.max(0, Math.min(1, Number(volumen) / 100)) * 0.24;
     if (v <= 0) return;
-    const t0 = ac.currentTime + 0.02;
+    const t0 = ac.currentTime + 0.02, bus = nuevoBus(ac);
     const nota = (f, t, dur, g, tipo = "sine") => {
       const o = ac.createOscillator(), gn = ac.createGain();
       o.type = tipo; o.frequency.value = f;
       gn.gain.setValueAtTime(0.0001, t);
       gn.gain.exponentialRampToValueAtTime(Math.max(g, 0.0002), t + 0.008);
       gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-      o.connect(gn).connect(ac.destination);
+      o.connect(gn).connect(bus);
       o.start(t); o.stop(t + dur + 0.05);
     };
     if (tono === "monedas") {
@@ -289,7 +366,7 @@ function sonarVenta(tono, volumen) {
       for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / n);
       const src = ac.createBufferSource(), hp = ac.createBiquadFilter(), g = ac.createGain();
       src.buffer = buf; hp.type = "highpass"; hp.frequency.value = 2500; g.gain.value = v * 0.9;
-      src.connect(hp).connect(g).connect(ac.destination); src.start(t0);
+      src.connect(hp).connect(g).connect(bus); src.start(t0);
       nota(2093, t0 + 0.06, 0.25, v * 0.7); nota(2093 * 2.76, t0 + 0.06, 0.18, v * 0.2);
       nota(2637, t0 + 0.2, 0.75, v); nota(2637 * 2.76, t0 + 0.2, 0.35, v * 0.25); nota(2637 * 5.4, t0 + 0.2, 0.2, v * 0.1);
     }
@@ -645,8 +722,8 @@ function onClickCajon(e) {
     else if (k === "leer-todo") leerTodo();
     else if (k === "prefs") { N.vista = "prefs"; pintar(); }
     else if (k === "volver") { N.vista = "lista"; pintar(); }
-    else if (k === "probar-sonido") sonar();
-    else if (k === "probar-venta") sonarVenta(a.dataset.tono || ventaPrefs().tono, ventaPrefs().volumen);
+    else if (k === "probar-sonido") probarSonido("urgente", tonoUrgente());
+    else if (k === "probar-venta") probarSonido("venta", a.dataset.tono || ventaPrefs().tono, ventaPrefs().volumen);
     else if (k === "permiso") pedirPermiso();
     else if (k === "banner-no") { try { localStorage.setItem("nodo.nn.bannerNo", "1"); } catch (_) {} pintar(); }
     return;
@@ -680,7 +757,18 @@ function onChangeCajon(e) {
   const el = e.target;
   if (el.dataset.p) {
     const k = el.dataset.p;
-    if (k === "sonido") N.prefs.sonido = el.checked;
+    if (k === "sonido") {
+      N.prefs.sonido = el.checked;
+      const sec = el.closest(".nn-urg");
+      sec?.classList.toggle("off", !el.checked);
+      sec?.querySelectorAll(".nn-tonos input, .nn-tono-play").forEach((x) => { x.disabled = !el.checked; });
+      if (el.checked) probarSonido("urgente", tonoUrgente());
+    }
+    else if (k === "urgente-tono") {
+      N.prefs.tonoUrgente = el.value;
+      el.closest(".nn-urg")?.querySelectorAll(".nn-tono").forEach((x) => x.classList.toggle("on", x.contains(el)));
+      probarSonido("urgente", el.value);   // al elegirlo, se escucha
+    }
     else if (k === "navegador") { N.prefs.navegador = el.checked; if (el.checked) pedirPermiso(); }
     else if (k === "tipo") {
       const set = new Set(N.prefs.ocultos || []);
@@ -694,14 +782,14 @@ function onChangeCajon(e) {
         v.sonido = el.checked;
         sec?.classList.toggle("off", !v.sonido);
         sec?.querySelectorAll('.nn-tonos input, .nn-tono-play, input[data-p="venta-vol"]').forEach((x) => { x.disabled = !v.sonido; });
-        if (v.sonido) sonarVenta(v.tono, v.volumen);
+        if (v.sonido) probarSonido("venta", v.tono, v.volumen);
       } else if (k === "venta-tono") {
         v.tono = el.value;
         sec?.querySelectorAll(".nn-tono").forEach((x) => x.classList.toggle("on", x.contains(el)));
-        sonarVenta(v.tono, v.volumen);   // al elegirlo, se escucha
+        probarSonido("venta", v.tono, v.volumen);   // al elegirlo, se escucha
       } else if (k === "venta-vol") {
         v.volumen = Number(el.value) || 70;
-        sonarVenta(v.tono, v.volumen);   // al soltar la barra, se escucha a ese volumen
+        probarSonido("venta", v.tono, v.volumen);   // al soltar la barra, se escucha a ese volumen
       }
       N.prefs.venta = v;
     }
@@ -756,12 +844,15 @@ function pintarPrefs(d) {
       <button class="nn-ib" data-a="cerrar" title="Cerrar (Esc)">${I("x")}</button>
     </header>
     <div class="nn-list nn-prefs">
-      <section class="nn-psec">
+      <section class="nn-psec nn-urg${N.prefs.sonido === false ? " off" : ""}">
         <div class="nn-prow big">
-          <span class="nn-pl"><b>Sonido para lo urgente</b><small>Un tono suave cuando llega un pago por validar o alguien pide una persona.</small></span>
+          <span class="nn-pl"><b>Sonido para lo urgente</b><small>Suena cuando llega un pago por validar o alguien pide una persona.</small></span>
           ${sw('data-p="sonido"', N.prefs.sonido !== false)}
         </div>
-        <button class="nn-btn ghost" data-a="probar-sonido">${I("play")}Escuchar el tono</button>
+        ${barraTonos(TONOS_URGENTE, tonoUrgente(), "urgente-tono", N.prefs.sonido === false)}
+        <div class="nn-vol">
+          <button class="nn-tono-play" type="button" data-a="probar-sonido" title="Escuchar el sonido elegido"${N.prefs.sonido === false ? " disabled" : ""}>${I("play")}Escuchar</button>
+        </div>
       </section>
       ${seccionVenta(sw)}
       <section class="nn-psec">
@@ -787,12 +878,7 @@ function seccionVenta(sw) {
       <span class="nn-pl"><b>Sonido de venta</b><small>Suena cuando entra plata: venta digital, pedido de Lima confirmado, adelanto de provincia aprobado o un extra vendido.</small></span>
       ${sw('data-p="venta-sonido"', v.sonido)}
     </div>
-    <div class="nn-tonos" role="radiogroup" aria-label="Sonido de venta">
-      <div class="nn-tonos-seg">
-        ${TONOS_VENTA.map((t) => `<label class="nn-tono${v.tono === t.k ? " on" : ""}" title="${t.lb}: ${t.desc}">
-          <input type="radio" name="nnTonoVenta" value="${t.k}" data-p="venta-tono"${v.tono === t.k ? " checked" : ""}${off ? " disabled" : ""}>${I(t.ic)}<span>${t.corto}</span></label>`).join("")}
-      </div>
-    </div>
+    ${barraTonos(TONOS_VENTA, v.tono, "venta-tono", off)}
     <div class="nn-vol">
       <button class="nn-tono-play" type="button" data-a="probar-venta" title="Escuchar el sonido elegido"${off ? " disabled" : ""}>${I("play")}Escuchar</button>
       <span>Volumen</span>
