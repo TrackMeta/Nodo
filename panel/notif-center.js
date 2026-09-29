@@ -187,16 +187,25 @@ function enVivo(n) {
   if (oculta(n)) return;
   N.bell.classList.remove("ring"); void N.bell.offsetWidth; N.bell.classList.add("ring");
   if (n.prioridad !== "urgente") return;
-  // Con dos pestañas de Nodo abiertas, suena y avisa UNA sola (la primera que lo ve).
-  try {
-    const k = "nodo.nn.visto", ya = JSON.parse(localStorage.getItem(k) || "[]");
-    const firma = n.id + "@" + n.created_at;
-    if (ya.includes(firma)) return;
-    localStorage.setItem(k, JSON.stringify([firma, ...ya].slice(0, 30)));
-  } catch (_) {}
-  if (N.prefs.sonido !== false) sonar();
-  if (document.visibilityState === "visible") tarjeta(n);
-  else avisoNavegador(n);
+  // Con dos pestañas de Nodo abiertas, suena y avisa UNA sola. Gana la que estás MIRANDO: una
+  // pestaña escondida espera un momento antes de reclamarlo (visto 2026-09-28: con dos pestañas,
+  // la escondida se adelantaba, y la tarjeta no salía en la que tenías delante).
+  const reclamar = () => {
+    try {
+      const k = "nodo.nn.visto", ya = JSON.parse(localStorage.getItem(k) || "[]");
+      const firma = n.id + "@" + n.created_at;
+      if (ya.includes(firma)) return false;
+      localStorage.setItem(k, JSON.stringify([firma, ...ya].slice(0, 30)));
+    } catch (_) {}
+    return true;
+  };
+  const avisar = () => {
+    if (!reclamar()) return;
+    if (N.prefs.sonido !== false) sonar();
+    if (document.visibilityState === "visible") tarjeta(n);
+    else avisoNavegador(n);
+  };
+  if (document.visibilityState === "visible") avisar(); else setTimeout(avisar, 1500);
 }
 
 // ── Sonido: dos notas suaves hechas con WebAudio (sin archivo que bajar) ──

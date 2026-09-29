@@ -22886,7 +22886,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // el precio por cantidad lo ve el dueño, y eso tiene que ser verdad. Va por
             // Telegram, una sola vez, y sin pausar el bot — que siga vendiéndole packs
             // mientras tanto. Es la única pregunta de esta lista que trae plata detrás.
-            if (nuevos.includes("precio por mayor")) {
+            // Si en este turno ya salió «PIDEN N UNIDADES» (más que la oferta más grande), es el MISMO
+            // pedido: medido 2026-09-28, «necesito 50 unidades… qué precio me dejas?» mandaba los dos.
+            if (nuevos.includes("precio por mayor") && !(run.vars as any)._aviso_cant_grande) {
               const _cita = String(citaDe(/\b(por mayor|al por mayor|mayorista|revender|reventa|distribuidor)\b/i) ||
                 ctx.last_input || "").slice(0, 180);
               await notifyAdmin(db, run,
