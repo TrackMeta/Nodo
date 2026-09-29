@@ -219,7 +219,7 @@ function enVivo(n) {
     if (!reclamar()) return;
     // Venta: solo el sonido de venta (si está encendido). Sin tarjeta: no hay nada que hacer con ella.
     if (esVenta) { const v = ventaPrefs(); if (v.sonido) tocar("venta", v.tono, v.volumen); return; }
-    if (N.prefs.sonido !== false) tocar("urgente", tonoUrgente());
+    if (N.prefs.sonido !== false) tocar("urgente", tonoUrgente(), volUrgente());
     if (document.visibilityState === "visible") tarjeta(n);
     else avisoNavegador(n);
   };
@@ -230,7 +230,17 @@ function enVivo(n) {
 function audio() {
   const C = window.AudioContext || window.webkitAudioContext;
   if (!C) return null;
-  N.ac = N.ac || new C();
+  if (!N.ac) {
+    N.ac = new C();
+    // Limitador a la salida: deja subir el volumen sin que se distorsione cuando varias notas suman
+    // (pedido de Rodrigo: «¿se puede aumentar más el volumen?»).
+    try {
+      const lim = N.ac.createDynamicsCompressor();
+      lim.threshold.value = -8; lim.knee.value = 6; lim.ratio.value = 6; lim.attack.value = 0.003; lim.release.value = 0.15;
+      lim.connect(N.ac.destination);
+      N.master = lim;
+    } catch (_) { N.master = null; }
+  }
   if (N.ac.state === "suspended") N.ac.resume().catch(() => {});
   return N.ac;
 }
@@ -251,7 +261,7 @@ function marcarOcupado(ms) {
 }
 function nuevoBus(ac) {
   const bus = ac.createGain();
-  bus.connect(ac.destination);
+  bus.connect(N.master || ac.destination);
   N.bus = bus;
   return bus;
 }
@@ -262,7 +272,7 @@ function cortarSonido() {
 function sonarAhora(x, prueba = false) {
   marcarOcupado(DURACION[x.tono] || 1000);
   if (!prueba) N.ultimo[x.tipo] = Date.now();   // probar en Preferencias no cuenta como «ya sonó»
-  if (x.tipo === "urgente") sonar(x.tono); else sonarVenta(x.tono, x.vol);
+  if (x.tipo === "urgente") sonar(x.tono, x.vol); else sonarVenta(x.tono, x.vol);
 }
 // Un sonido de un aviso que llegó (no de una prueba): entra a la cola.
 function tocar(tipo, tono, vol) {
@@ -297,8 +307,9 @@ const TONOS_URGENTE = [
   { k: "timbre", lb: "Timbre", corto: "Timbre", desc: "un «din-don»",         ic: "activity" },
 ];
 const tonoUrgente = () => (TONOS_URGENTE.some((t) => t.k === N.prefs.tonoUrgente) ? N.prefs.tonoUrgente : "suave");
+const volUrgente = () => { const v = Number(N.prefs.volUrgente); return v >= 10 && v <= 100 ? v : 80; };
 
-function sonar(tono = tonoUrgente()) {
+function sonar(tono = tonoUrgente(), vol = volUrgente()) {
   try {
     const ac = audio(); if (!ac) return;
     const t = ac.currentTime + 0.02, bus = nuevoBus(ac);
@@ -311,9 +322,11 @@ function sonar(tono = tonoUrgente()) {
       o.connect(gn).connect(bus);
       o.start(t + d); o.stop(t + d + dur + 0.05);
     };
-    if (tono === "alerta") [0, 0.16, 0.32].forEach((d) => nota(988, d, 0.12, 0.08, "square"));
-    else if (tono === "timbre") { nota(659, 0, 0.7, 0.12, "triangle"); nota(523, 0.32, 0.9, 0.12, "triangle"); }
-    else { nota(784, 0, 0.55, 0.09); nota(1175, 0.13, 0.55, 0.09); }
+    // k = volumen: 100% ≈ 4 veces lo que sonaba antes (el limitador evita que se reviente).
+    const k = Math.max(0.1, Math.min(1, vol / 100)) * 4;
+    if (tono === "alerta") [0, 0.16, 0.32].forEach((d) => nota(988, d, 0.12, 0.07 * k, "square"));
+    else if (tono === "timbre") { nota(659, 0, 0.7, 0.12 * k, "triangle"); nota(523, 0.32, 0.9, 0.12 * k, "triangle"); }
+    else { nota(784, 0, 0.55, 0.09 * k); nota(1175, 0.13, 0.55, 0.09 * k); }
   } catch (_) {}
 }
 
@@ -341,7 +354,7 @@ const ventaPrefs = () => ({ sonido: true, tono: "caja", volumen: 70, ...(N.prefs
 function sonarVenta(tono, volumen) {
   try {
     const ac = audio(); if (!ac) return;
-    const v = Math.max(0, Math.min(1, Number(volumen) / 100)) * 0.24;
+    const v = Math.max(0, Math.min(1, Number(volumen) / 100)) * 0.75;   // antes 0.24: sonaba bajo
     if (v <= 0) return;
     const t0 = ac.currentTime + 0.02, bus = nuevoBus(ac);
     const nota = (f, t, dur, g, tipo = "sine") => {
@@ -486,7 +499,7 @@ function cajon() {
   d.addEventListener("change", onChangeCajon);
   // El % del volumen se actualiza mientras arrastras (se guarda y suena al soltar, en «change»).
   d.addEventListener("input", (e) => {
-    if (e.target.dataset?.p === "venta-vol") {
+    if (/-vol$/.test(e.target.dataset?.p || "")) {
       const o = e.target.parentElement.querySelector("output"); if (o) o.textContent = e.target.value + "%";
       e.target.style.setProperty("--p", ((e.target.value - 10) / 90 * 100) + "%");   // el tramo lleno de la barra
     }
@@ -722,7 +735,7 @@ function onClickCajon(e) {
     else if (k === "leer-todo") leerTodo();
     else if (k === "prefs") { N.vista = "prefs"; pintar(); }
     else if (k === "volver") { N.vista = "lista"; pintar(); }
-    else if (k === "probar-sonido") probarSonido("urgente", tonoUrgente());
+    else if (k === "probar-sonido") probarSonido("urgente", tonoUrgente(), volUrgente());
     else if (k === "probar-venta") probarSonido("venta", a.dataset.tono || ventaPrefs().tono, ventaPrefs().volumen);
     else if (k === "permiso") pedirPermiso();
     else if (k === "banner-no") { try { localStorage.setItem("nodo.nn.bannerNo", "1"); } catch (_) {} pintar(); }
@@ -761,13 +774,17 @@ function onChangeCajon(e) {
       N.prefs.sonido = el.checked;
       const sec = el.closest(".nn-urg");
       sec?.classList.toggle("off", !el.checked);
-      sec?.querySelectorAll(".nn-tonos input, .nn-tono-play").forEach((x) => { x.disabled = !el.checked; });
-      if (el.checked) probarSonido("urgente", tonoUrgente());
+      sec?.querySelectorAll('.nn-tonos input, .nn-tono-play, input[data-p="urgente-vol"]').forEach((x) => { x.disabled = !el.checked; });
+      if (el.checked) probarSonido("urgente", tonoUrgente(), volUrgente());
     }
     else if (k === "urgente-tono") {
       N.prefs.tonoUrgente = el.value;
       el.closest(".nn-urg")?.querySelectorAll(".nn-tono").forEach((x) => x.classList.toggle("on", x.contains(el)));
-      probarSonido("urgente", el.value);   // al elegirlo, se escucha
+      probarSonido("urgente", el.value, volUrgente());   // al elegirlo, se escucha
+    }
+    else if (k === "urgente-vol") {
+      N.prefs.volUrgente = Number(el.value) || 80;
+      probarSonido("urgente", tonoUrgente(), N.prefs.volUrgente);   // al soltar la barra, se escucha a ese volumen
     }
     else if (k === "navegador") { N.prefs.navegador = el.checked; if (el.checked) pedirPermiso(); }
     else if (k === "tipo") {
@@ -852,6 +869,9 @@ function pintarPrefs(d) {
         ${barraTonos(TONOS_URGENTE, tonoUrgente(), "urgente-tono", N.prefs.sonido === false)}
         <div class="nn-vol">
           <button class="nn-tono-play" type="button" data-a="probar-sonido" title="Escuchar el sonido elegido"${N.prefs.sonido === false ? " disabled" : ""}>${I("play")}Escuchar</button>
+          <span>Volumen</span>
+          <input type="range" min="10" max="100" step="5" value="${volUrgente()}" style="--p:${(volUrgente() - 10) / 90 * 100}%" data-p="urgente-vol" aria-label="Volumen del sonido de lo urgente"${N.prefs.sonido === false ? " disabled" : ""}>
+          <output>${volUrgente()}%</output>
         </div>
       </section>
       ${seccionVenta(sw)}
