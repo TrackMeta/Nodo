@@ -142,7 +142,9 @@ async function fetchVigilado(input, init) {
   const esAuth = url.includes("/auth/v1/");
   const area = areaDe(url);
   const metodo = (init && init.method) || (input && input.method) || "GET";
-  if (area === "rest" && metodo === "GET") {
+  // La campanita vive en el sidebar, que NO se va al cambiar de sección: si sus lecturas se
+  // cancelaran con las de la página, el contador quedaba sin cargar al navegar rápido.
+  if (area === "rest" && metodo === "GET" && !/\/rest\/v1\/notificacion/.test(url)) {
     const propia = init && init.signal;
     // AbortSignal.any es reciente; si no está, manda la señal propia de quien llamó
     // (perder la cancelación es molesto, romper el panel entero no es una opción).
@@ -261,6 +263,7 @@ const P = {
   chevron:'<path d="m6 9 6 6 6-6"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
   check:'<path d="M20 6 9 17l-5-5"/>',
+  checkAll:'<path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/>',
   // ── Extra (iconos de interfaz, para reemplazar emojis) ──
   gift:'<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
   plane:'<path d="M17.8 19.2 16 11l3.5-3.5a2.1 2.1 0 0 0-3-3L13 8 4.8 6.2a.5.5 0 0 0-.5.8l3.3 4-2.1 2.1-1.9-.5a.5.5 0 0 0-.5.8l2 2 2 2a.5.5 0 0 0 .8-.5l-.5-1.9 2.1-2.1 4 3.3a.5.5 0 0 0 .8-.5Z"/>',
@@ -1167,6 +1170,7 @@ export async function mountShell({ active } = {}) {
         <span class="nb-name" id="nodoBotName">${escHtml(initName)}</span>
         <svg class="nb-cx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </button>
+      <button class="nodo-bell" id="nodoBell" type="button" title="Notificaciones" aria-label="Notificaciones">${svg("bell")}<span class="nn-badge" hidden></span></button>
       <button class="nodo-icnbtn" id="nodoCollapse" title="Comprimir menú"><span class="cl-shrink">${svg("panel")}</span><span class="cl-grow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></button>
     </div>
     <nav class="nodo-primary">${primaryHTML}</nav>
@@ -1405,6 +1409,18 @@ export async function mountShell({ active } = {}) {
   applyInboxCollapse(active); // Bandeja arranca colapsada
   setupRouter(); // activa la navegación SPA
   pintarAlertaWA();
+  // 🔔 Campanita: módulo aparte que baja en paralelo (el menú no la espera). Recibe lo que usa
+  // del shell por parámetro para no importar shell.js de vuelta.
+  if (S.channels.length) import("./notif-center.js").then((m) => m.montar({
+    supa, S, svg, toast, logoFallback: FALLBACK_LOGO,
+    // Ir a una sección desde un aviso. El chat y el pedido se buscan en el bot ACTIVO, así que
+    // si el aviso es de otro bot se cambia primero — después de preguntar por cambios sin guardar.
+    async ir(href, channelId) {
+      if (!(await _dirtyGate())) return;
+      if (channelId && channelId !== S.channelId) S.api.setChannel(channelId, { silent: true });
+      navigate(new URL(href, location.href).href);
+    },
+  })).catch((e) => console.error("[campanita]", e));
   return S.api;
 }
 
@@ -1516,7 +1532,8 @@ function pageHeadAssets(docLike) {
 // Reemplaza el contenido (todo el <body> salvo el sidebar y el toast).
 function removeContentNodes() {
   Array.from(document.body.children).forEach((el) => {
-    if (el === S.nav || el.id === "nodo-conex" || el.id === "nodo-toast" || el.id === "nodo-fx" || el.id === "nodoBotPop") return; // persisten
+    if (el === S.nav || el.id === "nodo-conex" || el.id === "nodo-toast" || el.id === "nodo-fx" || el.id === "nodoBotPop"
+      || el.id === "nodoNotif" || el.id === "nodoNotifToasts") return; // persisten (la campanita es del sidebar)
     el.remove();
   });
 }

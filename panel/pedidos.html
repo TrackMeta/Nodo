@@ -46,6 +46,7 @@
   .kcol .kbody::-webkit-scrollbar-thumb:hover{background:var(--muted)}
   .kb-empty{font-size:12px;color:var(--faint);text-align:center;padding:18px 8px;border:1px dashed var(--border);border-radius:11px}
   .kcard{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px;transition:border-color .12s,box-shadow .12s}
+  .kcard.kc-flash{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg),0 0 0 1px var(--brand) inset}
   .kcard:hover{border-color:var(--muted)}
   .kcard .kc-top{display:flex;align-items:center;gap:9px}
   .kcard .kc-ava{width:30px;height:30px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
@@ -304,6 +305,26 @@ async function boot(){
   cargarListas();  // precarga las listas de agencias/distritos para el editor
   await load();
   wireRealtime();
+  irAlPedidoDelLink();
+}
+
+// Deep-link: ?o=<order_id> (botón «Ver pedido» de la campanita). Abre el tablero de SU zona y
+// resalta la tarjeta, sin filtrar el resto: el dueño ve el pedido en su columna, con los demás.
+function irAlPedidoDelLink(){
+  try{
+    const oid=new URLSearchParams(location.search).get("o");
+    if(!oid) return;
+    history.replaceState(null,"",location.pathname);
+    const o=st.list.find(x=>x.id===oid);
+    if(!o){ toast("Ese pedido ya no está en el tablero (puede estar en Compras o ser de otro bot)",true); return; }
+    if(!isFisico(o)){ location.href="compras.html"; return; }
+    st.kbZona=zonaDe(o)==="provincia"?"provincia":"lima"; st.soloParados=false; render();
+    const card=document.querySelector(`.kcard[data-id="${oid}"]`);
+    if(!card) return;
+    card.scrollIntoView({behavior:"smooth",block:"center",inline:"center"});
+    card.classList.add("kc-flash");
+    setTimeout(()=>card.classList.remove("kc-flash"),2600);
+  }catch(_){ /* un link roto no puede tumbar el tablero */ }
 }
 
 // ── Exportar al Excel de carga masiva del courier ──────────────────
@@ -674,7 +695,7 @@ function primaryAction(o){
 function kcard(o){
   const c=o.contact||{}, p=o.product||{}, s=o.shipping||{};
   const zona=zonaDe(o);
-  const el=document.createElement("div"); el.className="kcard";
+  const el=document.createElement("div"); el.className="kcard"; el.dataset.id=o.id;
   const nm=c.nombre||s.cliente||"Sin nombre";
   const avaC=avaColor(nm);
   const initial=esc(String(nm).trim().charAt(0).toUpperCase()||"?");
