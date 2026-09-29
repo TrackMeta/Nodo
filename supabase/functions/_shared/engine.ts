@@ -23474,6 +23474,32 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (!(Number(ctx.precio_esperado) > 0)) {
             await deducirOpcionPorMonto(db, run, ctx).catch(() => false);
           }
+          // ⬆️ PAGÓ JUSTO EL PRECIO DE OTRA VERSIÓN MÁS CARA del mismo producto (pidió la Básica de S/39 y yapeó S/79 =
+          // la Premium — D21-pagopremium). Decisión de Rodrigo (2026-09-28): «si paga 79, dale el Premium». Se cambia la
+          // opción a esa versión ANTES de medir el pago, así cubre justo y se entrega la Premium. Solo sin combo (ahí lo
+          // que sobra puede ser otro producto) y solo si UNA versión calza con el monto.
+          try {
+            const _pagoUp = parseMonto(run.vars.pago_monto, ctx) ?? NaN;
+            const _espUp = Number(ctx.precio_esperado);
+            const _tolUp = Number((info as any)?.pedidos?.digital?.tolerancia ?? 1) || 0;
+            if (Number.isFinite(_pagoUp) && _espUp > 0 && _pagoUp > _espUp + _tolUp && !comboDe(run).length && ctx._product_id) {
+              const _opsUp = await loadOpciones(db, run, String(ctx._product_id));
+              const _calzan = _opsUp.filter((o) => Number(o.precio) > _espUp && Math.abs(Number(o.precio) - _pagoUp) <= Math.max(0.5, _tolUp));
+              if (_calzan.length === 1) {
+                const _up = _calzan[0], _antes = String(ctx.opcion ?? "");
+                run.vars.opcion_id = _up.id; ctx.opcion_id = _up.id;
+                await setField(db, run.channel_id, run.contact_id, "opcion_id", _up.id);
+                await setField(db, run.channel_id, run.contact_id, "opcion_elegida", _up.nombre);
+                ctx.opcion = _up.nombre; (ctx as any)._opcion = _up;
+                ctx.precio = Number(_up.precio); ctx.precio_esperado = Number(_up.precio);
+                const _symUp = simboloMoneda(ctx.moneda as string);
+                await deliverMessage(db, run.channel_id, run.contact_id,
+                  `Me llegó *${_symUp} ${_pagoUp}*, que es justo el precio de la *${_up.nombre}*, así que te la dejo en *${_up.nombre}* 🙌`).catch(() => {});
+                await logEvent(db, run.channel_id, run.contact_id, "campo", "⬆️ Pagó el precio de otra versión: se le da esa",
+                  `${_antes || "(sin elegir)"} → ${_up.nombre} (pagó ${_pagoUp})`).catch(() => {});
+              }
+            }
+          } catch (_) { /* sin opciones legibles → la regla de siempre (revisión) */ }
           const esperadoB = Number(ctx.precio_esperado);
           // La tolerancia digital que el operador configura vive en pedidos_config.digital
           // .tolerancia (Pagos → default S/1), igual que revisar_sobre_sol de la línea de
