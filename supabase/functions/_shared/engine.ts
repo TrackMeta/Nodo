@@ -12571,9 +12571,11 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   // pantalla donde el operador decide sobre plata.
   const _sinOp = !oper || oper.length < 4;
   const motivo = reuse ? "operación ya usada"
-    : !parsed?.valido ? (parsed?.motivo || "comprobante a revisar")
-    : sobrepagoAdel ? `monto leído (${montoLeido}) muy por encima del total del pedido (${totalOwedAdel}) — posible mala lectura, revisar`
+    // Lo que detectó el código va PRIMERO: está escrito para el dueño («el pago fue al 999…, que no es
+    // ninguno de tus números»). El de la IA le habla al cliente («…por favor envía la captura»).
     : _frenoAdel ? _frenoAdel
+    : !parsed?.valido ? motivoParaDueno(parsed?.motivo)
+    : sobrepagoAdel ? `monto leído (${montoLeido}) muy por encima del total del pedido (${totalOwedAdel}) — posible mala lectura, revisar`
     : !_hayPrueba ? "no se ve el texto de un comprobante: revisa la imagen"
     : _enPartes ? `pagado en ${ab!.abonos.length} partes — revisa CADA comprobante (el bot solo revisó a fondo el último)`
     : _sinOp ? "sin nº de operación legible: confírmalo en tu Yape/banco"
@@ -12883,10 +12885,10 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const montoLeido = ab ? ab.total : (Number.isFinite(monto) ? monto : null);
   // El motivo REAL (lo que el código detectó no llegaba a la tarjeta; ver el adelanto).
   const motivo = reuse ? "operación ya usada"
-    : !parsed?.valido ? (parsed?.motivo || "comprobante a revisar")
+    : _frenoSaldo ? _frenoSaldo   // el del código primero: está escrito para el dueño (ver el adelanto)
+    : !parsed?.valido ? motivoParaDueno(parsed?.motivo)
     : sobrepagoSaldo ? `monto leído (${montoLeido}) muy por encima del saldo — posible mala lectura, revisar`
     : _masQueSaldo ? `pagó ${_pagadoS} y el saldo es ${saldo}: hay ${Math.round((_pagadoS - saldo) * 100) / 100} de vuelto — confírmalo y avísale`
-    : _frenoSaldo ? _frenoSaldo
     : !_pruebaSaldo ? "no se ve el texto de un comprobante: revisa la imagen"
     : _enPartesS ? `pagado en ${ab!.abonos.length} partes — revisa CADA comprobante (el bot solo revisó a fondo el último)`
     : (!oper || oper.length < 4) ? "sin nº de operación legible: confírmalo en tu Yape/banco"
@@ -19408,6 +19410,21 @@ function titularNoCoincide(ocrCfg: any, quien: unknown): boolean {
   return !suyos.some((x) => { const a = toks(x); for (const w of t) if (a.has(w)) return true; return false; });
 }
 // Devuelve POR QUÉ este comprobante no puede auto-aprobarse, o null si no hay freno.
+// El motivo que escribe la IA del comprobante le habla al CLIENTE («El número destino no corresponde…,
+// por favor envia la captura del pago correcto»). Ese texto lo lee el DUEÑO (campanita, Telegram,
+// Pagos por validar): se le quitan las frases que le piden algo al cliente y queda el diagnóstico.
+// Pedido de Rodrigo 2026-09-28 (visto en la batería 2 de la campanita).
+function motivoParaDueno(m: unknown): string {
+  const frases = String(m ?? "").trim()
+    .split(/(?<=[.!?])\s+|,\s*(?=por\s+favor)/i).map((s) => s.trim()).filter(Boolean);
+  const utiles = frases.filter((f) =>
+    !/(^|\s)(por\s+favor|env[ií]a(me|nos|la|lo)?|m[aá]nda(me|nos|la|lo)?|vuelve\s+a|int[eé]nta(lo)?|reenv[ií]a|adjunta)(?![\p{L}\p{N}])/iu.test(f));
+  const t = utiles.join(" ").replace(/[.\s]+$/, "");
+  if (!t) return "la IA no pudo validar el comprobante: revísalo tú";
+  // En minúscula al empezar (va detrás de «Cliente · …»), salvo que sea una sigla («OCR…»).
+  return /^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t;
+}
+
 function frenoDeComprobante(parsed: any, ch: any): string | null {
   // MONEDA: un Yape de S/49 en un negocio que cobra en dólares se contaba como $49.
   {
