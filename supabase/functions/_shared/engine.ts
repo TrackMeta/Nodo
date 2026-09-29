@@ -6608,6 +6608,23 @@ const RE_MULETILLA_COLA =
 // primera mitad no era relleno: era la mitad de un «pero», y la frase se respeta entera.
 const RE_ARRANCA_CON_CONECTOR =
   /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:pero|aunque|sin\s+embargo|no\s+obstante|igual(?:mente)?|as[ií]\s+que|por\s+eso|entonces|es\s+decir|o\s+sea|y|e|o|ni)(?![\p{L}\p{N}])/iu;
+// 🧾 La frase que ANUNCIABA una lista que un guard acaba de quitar queda colgando de sus dos puntos:
+// «…o alguna otra de estas opciones:» / «Estos son los precios por presentación:» sin nada debajo
+// (batería 3 de la campanita, 2026-09-29). Renglón por renglón: solo la ÚLTIMA frase del renglón (la del
+// «:»), solo si no tiene nada debajo (fin del mensaje o renglón vacío), y nunca un renglón de datos
+// («📌 *Dirección*:» es un campo). Y el conector que quedó solo en su renglón («Y» de «Y ¿cuántas…?»).
+function sinAnuncioColgado(texto: string): string {
+  const L = String(texto ?? "").split("\n");
+  for (let i = 0; i < L.length; i++) {
+    const ln = L[i];
+    if (!/:[ \t]*$/.test(ln) || /^[ \t]*(?:📌|•|[-–—])/u.test(ln)) continue;
+    if (i + 1 < L.length && L[i + 1].trim()) continue;   // tiene su lista debajo
+    // El segmento no cruza un punto ni un emoji, que es como este modelo separa oraciones.
+    L[i] = ln.replace(/(^|[.!?…][ \t]+|\p{Extended_Pictographic}\u{FE0F}?[ \t]+)[^.!?…¿¡\n\p{Extended_Pictographic}]*:[ \t]*$/u, "$1").trimEnd();
+  }
+  return L.join("\n").replace(/^[ \t]*(?:y|o|e|pero|adem[aá]s)[ \t]*[,.]?[ \t]*$/gimu, "");
+}
+
 function sinMuletillaDeArranque(texto: string): string {
   return String(texto ?? "").split("\n").map((l) => {
     const sinFija = l.replace(RE_MULETILLA_FIJA, "");
@@ -25670,6 +25687,48 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
         } catch { /* sin producto legible → sin mención */ }
       }
+      // 📋 LA LISTA DE PRECIOS A QUIEN YA ELIGIÓ. «Lima, Surco, quiero 1» → la IA pegaba igual «1 unidad —
+      // S/ 69 · … / 2 unidades — S/ 109 · … / 3 unidades — S/ 139 · …» (5 de 16 chats de Lima, batería 3 de
+      // la campanita, 2026-09-29; Rodrigo: «arregla lo de repetir la lista de precios»). Ya eligió: se le
+      // confirma lo suyo y, si hay una más conveniente, el aviso del ahorro de abajo se la enseña (el
+      // «siguiente escalón», decisión de Rodrigo). Va ANTES de ese aviso a propósito: con la lista a la
+      // vista el aviso se salta («el ahorro ya está a la vista») y, quitada después, no quedaba ninguno.
+      // NO se toca si la pidió él («¿y cuánto cuestan 2?»), si duda de la cantidad, ni las ocultas que se
+      // le acaban de mostrar porque pidió más.
+      if (op === "generar_texto" && !esDigital(ctx)
+          && String(ctx.opcion_id ?? "").trim() && !(ctx as any)._falta_opcion
+          && String(ctx.pedido_creado ?? "") !== "si" && !(ctx as any)._ocultasRecien
+          && !RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""))
+          && !/(?:^|[^\p{L}])(?:cu[aá]nt[ao]s|otra\s+(?:opci[oó]n|cantidad)|m[aá]s\s+unidades|cambi\p{L}*|opciones|ofertas?|packs?)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))) {
+        // Renglones de la LISTA: «[emoji] N unidad(es) — *S/ 69* · …». No el «Anotado: *1 unidad* — S/ 69.».
+        const _RE_RENGLON_PRECIO = /^(?![ \t]*Anotado:)[^\n]*\d+\s*[\p{L}.]*[^\n]*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu;
+        const _renglones = (salida.match(_RE_RENGLON_PRECIO) ?? []).length;
+        if (_renglones >= 2) {
+          const _antesL = salida;
+          let _sL = salida.replace(_RE_RENGLON_PRECIO, "")
+            // La FRASE que la presentaba («Estas son las opciones 👇», «Te paso las opciones para que veas:»), sola:
+            // lo de antes en el mismo renglón («1 unidad te queda en *S/ 69* 🔥») se queda.
+            .replace(/(^|[.!?…][ \t]+|\p{Extended_Pictographic}\u{FE0F}?[ \t]+)[^.!?…\n\p{Extended_Pictographic}]*\b(?:estas\s+son\s+las\s+opciones|las\s+opciones(?:\s+y\s+precios)?\s+son|(?:te\s+)?(?:paso|doy|dejo|cuento|confirmo|muestro)\s+(?:las\s+opciones|los\s+precios)|(?:estos|aqu[ií])\s+(?:son\s+)?los\s+precios|tenemos\s+estas\s+opciones)[^.!?…\n\p{Extended_Pictographic}]*[.!:]?[ \t\p{Extended_Pictographic}\u{FE0F}👇]*$/gimu, "$1");
+          _sL = sinAnuncioColgado(_sL).replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+          // Solo si queda un mensaje de verdad (si la lista era TODO, se deja como estaba).
+          if (_sL.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20) {
+            salida = _sL;
+            // Que no se quede sin decirle lo que eligió y cuánto es: si ya no está su precio, va el «Anotado».
+            try {
+              const _opsL = await loadOpciones(db, run, String(ctx._product_id ?? ""));
+              const _suyaL = _opsL.find((o) => String(o.id) === String(ctx.opcion_id));
+              if (_suyaL && _suyaL.precio != null && !salida.includes(String(_suyaL.precio))) {
+                const _symL = simboloMoneda(ctx.moneda as string);
+                const _vL = Math.round(Number(_suyaL.precio) * 100) / 100;   // 69 pelado, 54.50 con sus dos cifras
+                salida = `Anotado: *${_suyaL.nombre}* — ${_symL} ${Number.isInteger(_vL) ? _vL : _vL.toFixed(2)}.\n\n${salida}`;
+                (run.vars as any)._upsell_anotado = 1;   // el aviso del ahorro no lo repite
+              }
+            } catch (_) { /* sin opciones → sin «Anotado» */ }
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 Sin la lista de precios: ya eligió",
+              `Dijo cuántas quiere; se quitaron ${_renglones} renglones de precios. Antes: «${_antesL.slice(0, 160)}»`).catch(() => {});
+          }
+        }
+      }
       // 💡 EL AHORRO QUE NADIE VEÍA. El cliente que dice «quiero 1» de pasada sella su opción
       // por texto libre, así que el bloque que pregunta la cantidad —el que enseña la lista
       // con los precios— NO llega a correr nunca: compra 1 sin enterarse de que 2 le salían
@@ -26188,25 +26247,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // «Para seguir CON TU PEDIDO, ¿Alguna otra duda?» (G3-sinciu) se escapaba: solo casaba «para seguir» pelado.
           _s = _s.replace(/(?:^|(?<=[.!?\s]))(?:(?:y\s+)?para\s+(?:seguir|avanzar|continuar)(?:\s+con\s+(?:tu|el|su)\s+(?:pedido|compra|orden))?|(?:y\s+)?ahora,?\s+cu[eé]ntame|(?:y\s+)?ahora(?=\s*,?\s*¿Alguna otra duda)|cu[eé]ntame|cont[aá]me|dime|¿\s*me\s+lo\s+(?:pasas|dices|confirmas|env[ií]as)\s*\??|sobre\s+(?:el\s+|la\s+|los\s+|las\s+|tu\s+)?\p{L}+(?:\s+\p{L}+)?|¿\s*(?=\s*¿Alguna))\s*,?\s*(?=¿Alguna otra duda)/giu, "");
           // (+ «Sobre stock, ¿Alguna…» — F10-stock; y el «¿ ¿Alguna…» que dejaba una pregunta vaciada — F10-regateo)
-          if (_s !== _antesF) {
-            // 🧾 La frase que ANUNCIABA la lista que se acaba de quitar queda colgando de sus dos puntos:
-            // «…o alguna otra de estas opciones:» / «Estos son los precios por presentación:» sin nada
-            // debajo (batería 3 de la campanita, 2026-09-29). Una frase que termina en «:» y no tiene
-            // nada detrás en su bloque ya no anuncia nada. Y el conector que quedó solo en su renglón
-            // («Y» — de «Y ¿cuántas unidades…?» sin la pregunta).
-            // Renglón por renglón: solo si NO tiene nada debajo (fin del mensaje o renglón vacío), y nunca un
-            // renglón de datos («📌 *Dirección*:» es un campo, no un anuncio).
-            const _lns = _s.split("\n");
-            for (let i = 0; i < _lns.length; i++) {
-              const ln = _lns[i];
-              if (!/:[ \t]*$/.test(ln) || /^[ \t]*(?:📌|•|[-–—])/u.test(ln)) continue;
-              if (i + 1 < _lns.length && _lns[i + 1].trim()) continue;   // tiene su lista debajo
-              // Solo la ÚLTIMA frase (la del «:»): el segmento no cruza un punto ni un emoji, que es como
-              // este modelo separa oraciones («En Surco te llega mañana 📦 Estos son los precios:»).
-              _lns[i] = ln.replace(/(^|[.!?…][ \t]+|\p{Extended_Pictographic}\u{FE0F}?[ \t]+)[^.!?…¿¡\n\p{Extended_Pictographic}]*:[ \t]*$/u, "$1").trimEnd();
-            }
-            _s = _lns.join("\n").replace(/^[ \t]*(?:y|o|e|pero|adem[aá]s)[ \t]*[,.]?[ \t]*$/gimu, "");
-          }
+          // La frase que anunciaba la lista que se acaba de quitar (ver sinAnuncioColgado).
+          if (_s !== _antesF) _s = sinAnuncioColgado(_s);
           _s = _s.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
           if (_s !== _antesF && _s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10) {
             salida = _s;
