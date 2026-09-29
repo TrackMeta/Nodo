@@ -4859,6 +4859,11 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     .replace(/(?<=[.!?…]|\p{Extended_Pictographic}\u{FE0F}?)[ \t]+y[ \t]+(?:dime|cu[eé]ntame|av[ií]same|conf[ií]rmame)[ \t]*[,:]?[ \t]*(?=\n|$)/giu, "")
     // …y solo en SU renglón, tras la lista de datos: «📌 *Dirección*\n\nY dime,» — se fue «¿cuántas unidades quieres?»
     // con la lista de precios de a quien ya eligió (F11R-callao, 2026-09-29).
+    // El PRIMER renglón de la lista de precios pegado a la frase de antes: preciosEnLineas lo baja, pero la lista la
+    // puede pegar un guard que corre DESPUÉS («…que en cualquier tienda física. 1 unidad — *S/ 69*» — F12R-tienda).
+    .replace(/([^\n])[ \t]+(?=(?:\p{Extended_Pictographic}\u{FE0F}?\s*)?\d{1,3}\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?)\s+—\s*\*?(?:S\/|US\$|\$)\s*\d[^\n]*\n[ \t]*(?:\p{Extended_Pictographic}\u{FE0F}?\s*)?\d{1,3}\s+(?:unidad|pack|par|frasco|caja))/gu, "$1\n\n")
+    // «…mejor precio que en tienda;» y debajo la lista: el «;» que encadenaba lo que se quitó cierra con punto (F12S-tienda).
+    .replace(/;[ \t]*(?=\n)/g, ".")
     // Solo al FINAL del mensaje: un «Y dime:» con su lista debajo es una frase entera.
     .replace(/(^|\n)[ \t]*y[ \t]+(?:dime|cu[eé]ntame|av[ií]same|conf[ií]rmame)[ \t]*[,:]?\s*$/iu, "$1")
     // «…para organizar tu pedido, ¿De qué distrito…?» — la pregunta pegada tras una coma viene con la mayúscula de
@@ -5291,7 +5296,9 @@ const RE_PRESENCIA =
 const RE_PREGUNTA_MEDIO_PAGO =
   // …y nombrando los medios: «¿vas a usar Yape, Plin o transferencia?», «¿Vas a pagar por Yape, Plin
   // o BCP?» (D13c-dcambioprod, D13c-dfacturapost, 2026-09-25) — la misma pregunta con otra forma.
-  /(?:[¿]?\s*(?:(?:con\s+)?(?:qu[eé]|cu[aá]l)\s+(?:forma|medio|m[eé]todo)(?:\s+de\s+pago)?\s+(?:prefieres|quieres|deseas|te\s+(?:conviene|acomoda|queda\s+mejor)|usar[aá]s|vas\s+a\s+(?:usar|pagar|hacer(?:lo)?)|pagar[aá]s|pagas|eliges|usas)|c[oó]mo\s+(?:prefieres|quieres|deseas|te\s+gustar[ií]a|vas\s+a)\s+pagar)[^?\n]*\?|[¿]?\s*(?:vas\s+a\s+(?:usar|pagar)|vas|pagas|pagar[aá]s|prefieres(?:\s+pagar)?|quieres\s+pagar)\s+(?:por\s+|con\s+)?\**(?:yape|plin|bcp|transferencia|interbank)\b[^?\n]*\?)/giu;
+  /(?:[¿]?\s*(?:(?:con\s+)?(?:qu[eé]|cu[aá]l)\s+(?:forma|medio|m[eé]todo)(?:\s+de\s+pago)?\s+(?:prefieres|quieres|deseas|te\s+(?:conviene|acomoda|queda\s+mejor)|usar[aá]s|vas\s+a\s+(?:usar|pagar|hacer(?:lo)?)|pagar[aá]s|pagas|eliges|usas)|c[oó]mo\s+(?:prefieres|quieres|deseas|te\s+gustar[ií]a|vas\s+a)\s+pagar)[^?¿.!\n]*\?|[¿]?\s*(?:vas\s+a\s+(?:usar|pagar)|vas|pagas|pagar[aá]s|prefieres(?:\s+pagar)?|quieres\s+pagar)\s+(?:por\s+|con\s+)?\**(?:yape|plin|bcp|transferencia|interbank)\b[^?¿.!\n]*\?)/giu;
+// ↑ La cola no cruza punto ni otro «¿»: «Si prefieres pagar por Yape antes, sí puedes hacerlo. ¿A qué dirección te lo
+//   llevo?» se iba entera y quedaba «Si 📍» (F12R-prepagolima, 2026-09-29).
 // ↑ «¿Vas con *Yape*, *Plin* o *Transferencia*?» (D15-preuso): «vas con» a secas y el medio en negrita.
 // ¿El mensaje es SOLO el anuncio de los datos («Perfecto, te paso los datos para el pago 👇»)?
 // Sin número largo ni link adentro (eso serían los datos de verdad) y sin otra frase que valga
@@ -5686,11 +5693,20 @@ const RE_PREGUNTA_VERSIONES =
 function sinVersionesAjenas(texto: string): string {
   const t = String(texto ?? "");
   if (!RE_DOS_VERSIONES.test(sinFormato(t)) && !RE_PREGUNTA_VERSIONES.test(sinFormato(t))) return texto;
-  const partes = t.split(/(?<=[.!?…])\s+|\n+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u);
-  const fuera = partes.filter((p) => !(RE_DOS_VERSIONES.test(sinFormato(p)) && /[?¿]|\b(prefieres|eliges|escoges|cu[aá]l|opci[oó]n|versi[oó]n)\b/i.test(sinFormato(p)))
-    && !RE_PREGUNTA_VERSIONES.test(sinFormato(p)));
-  if (fuera.length === partes.length) return texto;
-  const limpio = sinRestosDeRecorte(fuera.join(" ").replace(/[ \t]{2,}/g, " ").trim());
+  // Renglón por renglón: juntar todo con espacios aplanaba la lista de precios que venía debajo («…🤔 Plantilla
+  // — *S/ 19* · el archivo… ¿Lo quieres hoy?» en una sola línea — D23-sheets, 2026-09-29).
+  const _sirve = (p: string) => !(RE_DOS_VERSIONES.test(sinFormato(p)) && /[?¿]|\b(prefieres|eliges|escoges|cu[aá]l|opci[oó]n|versi[oó]n)\b/i.test(sinFormato(p)))
+    && !RE_PREGUNTA_VERSIONES.test(sinFormato(p));
+  let quitadas = 0;
+  const lineas = t.split("\n").map((l) => {
+    if (!l.trim()) return l;
+    const partes = l.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u);
+    const fuera = partes.filter(_sirve);
+    quitadas += partes.length - fuera.length;
+    return fuera.join(" ").replace(/[ \t]{2,}/g, " ").trim();
+  });
+  if (!quitadas) return texto;
+  const limpio = sinRestosDeRecorte(lineas.join("\n").replace(/\n{3,}/g, "\n\n").trim());
   return limpio.replace(/[\s\p{P}\p{S}]/gu, "").length >= 12 ? limpio : texto;
 }
 
@@ -5862,6 +5878,10 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   //    de 8 sedes creo». Tenía razón en lo que importa, aunque en la lista figuren 8.
   if (_ags.filter((a) => !_rezagadaAg(a)).length < 8) {
     if (_yaSeLasPase && !_pidio) return null;
+    // UNA sola oficina en su ciudad: no hay nada que elegir. La sede ya quedó deducida (y va su ficha); pegar
+    // «tenemos estas 👇 · ¿Cuál te queda más cerca?» con una sola le pedía elegir entre una, y se llevaba el
+    // pedido de datos que había escrito la IA (F12-pichanaqui, 2026-09-29).
+    if (_prop.length === 1 && !_pidio) return null;
     (run.vars as any)._sedes_mostradas = 1;
     return { texto: listaSedes(_cab, _ags, 99, "¿Cuál te queda más cerca?"), cat: "campo",
       ev: "📍 Se le pasaron todas", det: `${_ags.length} agencias en ${ciudad} — pocas, van todas con su referencia` };
@@ -6313,7 +6333,9 @@ const CAMBIOS_PAGO_PROVINCIA: Array<[RegExp, string]> = [
   [/\bcuando\s+(?:lo\s+|la\s+|te\s+)?(?:recibas|recibes|recojas|recoges|retires|retiras|llegue|tengas|tienes)(?!\s+(?:me\s+)?(?:lo|la|los|las)\s+(?:pasas|mandas|env[ií]as|env[ií]es|das|dices|escribes|confirmas|pases|mandes))(?![^.!?\n]{0,25}\b(?:dni|documento|celular|n[uú]mero|nombre|direcci[oó]n|datos?|correo|foto|captura|comprobante|voucher)\b)(?:\s+(?:el|tu|la)\s+(?:paquete|pedido|producto|encomienda))?(?:\s+(?:en\s+la\s+agencia|en\s+shalom|all[ií]|all[aá]|ah[ií]))?(?!\s+a\s+la\s+agencia)(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
   // ↑ el lugar que venía detrás se consume con la frase: «el resto cuando lo recibas en la agencia»
   // quedaba «cuando llegue a la agencia en la agencia» (F8-provce, 2026-09-28).
-  [/\bal\s+recibir(?:lo|la)?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
+  // (NO negado: «el resto cuando llegues a la agencia, no todo al recibirlo» ya dice lo correcto y quedaba «…no todo
+  //  cuando llegue a la agencia» — F12-cusco, 2026-09-29)
+  [/(?<!\bno\s+(?:todo\s+|pagas\s+todo\s+|se\s+paga\s+todo\s+|es\s+)?)\bal\s+recibir(?:lo|la)?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
   // «y el resto cuando recojas el paquete» — misma idea, otra forma. Se generaliza: cualquier
   // «cuando recojas…» en provincia habla del MOMENTO en que él va por el paquete, y el saldo
   // se paga antes de eso. La variante con lugar («recojas allá») ya estaba arriba.
@@ -6465,7 +6487,8 @@ function sinContestarseSolo(texto: string, ventaAhora: boolean): string {
 // usar, ideal para trabajos en casa o taller»): sin su sujeto se lee suelta. Solo si sigue a
 // una oración quitada, no trae cifra y no pregunta nada.
 const RE_CONECTOR_COLGADO =
-  /^[\s\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:as[ií]|adem[aá]s|por eso|y|e|tambi[eé]n|es decir|o sea|con [eé]l|con eso|eso|es|est[aá]|tiene|viene|incluye|sirve|permite|ideal|(?:perfect[oa]|excelente|genial)\s+para)(?![\p{L}\p{N}])/iu;
+  /^[\s\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:as[ií]|adem[aá]s|por eso|y|e|tambi[eé]n|es decir|o sea|con [eé]l|con eso|eso|es|est[aá]|tiene|viene|incluye|sirve|permite|ideal|(?:perfect[oa]|excelente|genial)\s+para|facilita|(?:te\s+)?ahorra|evita|(?:te\s+)?ayuda\s+a)(?![\p{L}\p{N}])/iu;
+// («Facilita tu trabajo sin tener que comprar equipos caros.» — el sujeto era el producto que se fue; F12-bot)
 // («Perfecto para trabajos rápidos y precisos.» sin coma = el remate del pitch, F11R-callao 2026-09-29; «Perfecto, para
 //  1 unidad…» con coma no entra)
 function sinPitchDelProducto(texto: string, producto: string): string {
@@ -6984,8 +7007,12 @@ function pinesConEtiquetaBuena(texto: string, etiquetas: string[]): string {
 // veces: medido, en un turno de corrido y en el siguiente en lista. Se desenrolla al salir,
 // igual que `sedesEnLineas` hace con las oficinas.
 function preciosEnLineas(texto: string, sym: string): string {
-  const t = String(texto ?? "");
+  let t = String(texto ?? "");
   const esc = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // El PRIMER renglón de la lista pegado a la frase de antes («…mejor valor que en tienda. 1 unidad — *S/ 69* · …»
+  // y debajo «2 unidades — …» — F12-tienda, 2026-09-29): baja a su renglón si el que sigue también es de la lista.
+  const _item = String.raw`(?:[\p{Extended_Pictographic}]️?\s*)?\d{1,3}\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?)\s+—`;
+  t = t.replace(new RegExp(String.raw`([^\n])[ \t]+(?=${_item}\s*\*?${esc}\s*\d[^\n]*\n[ \t]*${_item})`, "gu"), "$1\n\n");
   const rxPrecio = new RegExp(`\\*?${esc}\\s*\\d`, "g");
   return t.split("\n").map((linea) => {
     // Tres o más precios en UNA línea: eso ya no es una frase, es una lista mal escrita.
@@ -20474,7 +20501,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // "mensaje", detrás de «Pagas al recibirlo»). Acá se le dice eso, y queda anotado para cumplirlo.
     if (!esDigital(ctx) && String(ctx.zona_entrega ?? "") === "lima" && String(ctx.pedido_creado ?? "") !== "si") {
       const _liY = String(ctx.last_input ?? "");
-      const _pideNum = /(?:a\s+qu[eé]|cu[aá]l\s+es\s+(?:el|tu|su)|p[aá]s(?:a|e)me\s+(?:el|tu)|dame\s+(?:el|tu))\s+n[uú]mero|\b(?:a\s+)?d[oó]nde\s+(?:te\s+)?(?:yapeo|plineo|deposito|transfiero|pago)\b|\bpuedo\s+(?:yapear\w*|plinear\w*|pagar\w*\s+(?:por|con)\s+(?:yape|plin|transferencia))|\b(?:yapeo|yapear\w*|plinear\w*|pago|pagar\w*|te\s+yapeo)\s+(?:antes|adelantado|por\s+adelantado|de\s+una\s+vez|ahora|ahorita)\b/i.test(_liY);
+      const _pideNum = /(?:a\s+qu[eé]|cu[aá]l\s+es\s+(?:el|tu|su)|p[aá]s(?:a|e)me\s+(?:el|tu)|dame\s+(?:el|tu))\s+n[uú]mero|\b(?:a\s+)?d[oó]nde\s+(?:te\s+)?(?:yapeo|plineo|deposito|transfiero|pago)\b|\bpuedo\s+(?:yapear\w*|plinear\w*|pagar\w*\s+(?:por|con)\s+(?:yape|plin|transferencia))|\b(?:yapeo|yapear\w*|plinear\w*|pago|pagar\w*|te\s+yapeo)\s+(?:antes|adelantado|por\s+adelantado|de\s+una\s+vez|ahora|ahorita|ya)\b|\b(?:quiero|prefiero|quisiera)\s+(?:\S+\s+){0,4}?(?:pagar\w*|yapear\w*|plinear\w*)\s+(?:ya\s+)?(?:por|con)\s+(?:yape|plin|transferencia)/i.test(_liY);
+      // (+ «quiero 1 y pagar YA por yape» — F12-prepagolima, 2026-09-29: la IA le dijo «en Lima el Yape no está disponible»)
       // (con enclítico: «¿puedo yapearTE antes?» — F8d-numyape2; ver [[enclitico-y-banco-de-frases]])
       if (_pideNum && /\b(yape\w*|plin\w*|transfer\w*|deposit\w*|n[uú]mero|pag\w*)\b/i.test(_liY)) {
         (run.vars as any)._lima_yapea_antes = true;
@@ -24900,6 +24928,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             ? ln.split(/(?<=[.!?🙌📦✅😊🙂])\s+/u).filter((f) => !_RE_VERIF.test(f)).join(" ").trim()
             : ln)
           .join("\n").replace(/\n{3,}/g, "\n\n").trim();
+        // Sin pedido y sin saber de dónde es: lo que escribió la IA intentaba pedir los datos y los frenos de más
+        // abajo se lo recortaban distinto cada vez («pásame estos 👇», «necesito que me pases 👇» — F12T/F12U-yapague,
+        // 2026-09-29). Lo dice el motor entero: la captura y de dónde es, para ubicar su compra.
+        if (String(ctx.pedido_creado ?? "") !== "si" && !String(ctx.zona_entrega ?? "").trim()) {
+          salida = "Mándame la captura del pago para validarlo 📷 Y dime de qué distrito o ciudad eres, así ubico tu pedido 🙂";
+          (ctx as any)._yaPagoSinPedido = true;
+        } else
         // Si lo que queda es solo el «¡Gracias, Diana! 🙌», va primero y la captura detrás.
         salida = salida.length <= 40 && !/[?¿]/.test(salida)
           ? (salida ? salida + " " : "") + "Mándame la captura del pago para validarlo 📷"
@@ -25333,7 +25368,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // para que te pase los datos?» sin datos detrás) y el mensaje quedaba seco (Q6-tresdudas).
                 // Queda de RESPALDO: emitIaText lo pone si al final no sobrevive ninguna pregunta.
                 (ctx as any)._cierreRespaldo = { q: _cd, inline: !_puedenSalir };
-              } else if (!_puedenSalir && String(salida ?? "").trim()) salida = `${String(salida).trim()} ${_cd}`;
+              } else if (!_puedenSalir && String(salida ?? "").trim()) {
+                // Si el mensaje termina en la lista de precios, la pregunta va en su párrafo, no pegada al último precio.
+                const _finLista = /—\s*\*?[^\n]{0,6}\d[^\n]*$/.test(String(salida).trim());
+                salida = `${String(salida).trim()}${_finLista ? "\n\n" : " "}${_cd}`;
+              }
               else (ctx as any)._cierreDiferido = _cd;
             }
           }
@@ -26160,7 +26199,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // se paga al recibir). Medido: «¿de qué distrito o ciudad nos escribes?» al final de TRES
       // respuestas seguidas mientras el cliente preguntaba otra cosa, y «¿en qué distrito de Lima te
       // lo envío? ¿Cuántas unidades quieres?» juntas.
-      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.pedido_creado ?? "") !== "si" && String(salida ?? "").trim()) {
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.pedido_creado ?? "") !== "si" && String(salida ?? "").trim()
+          && !(ctx as any)._yaPagoSinPedido) {
         try {
           // (+ «¿A qué dirección te lo envío?» junto a «¿Cuántas unidades?» — F6-lmanana)
           const _RE_Q_UBIC = /¿[^?¿]*\b(?:(?:a\s+)?qu[eé]\s+direcci[oó]n|cu[aá]l\s+es\s+tu\s+direcci[oó]n|de\s+d[oó]nde|desde\s+d[oó]nde|qu[eé]\s+(?:distrito|ciudad|provincia|departamento)|en\s+qu[eé]\s+(?:distrito|ciudad|zona|provincia)|d[oó]nde\s+(?:vives|est[aá]s|te\s+lo\s+(?:env[ií]o|mando|enviamos)))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
@@ -26181,7 +26221,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _pegaSuave = (s: string, q: string) => {
             const ult = s.trimEnd().split("\n").pop() ?? "";
             if (!s.trim()) return q;
-            return /—\s*\*?\s*(?:S\/|\$)|^\s*(?:[-•]|📌|📍)/u.test(ult) ? `${s.trimEnd()}\n\n${q}` : `${s} ${q}`;
+            if (/—\s*\*?\s*(?:S\/|\$)|^\s*(?:[-•]|📌|📍)/u.test(ult)) return `${s.trimEnd()}\n\n${q}`;
+            // Lo de antes termina SIN puntuación ni emoji (quedó a medias tras quitarle la pregunta): «Así dejo
+            // todo listo para ti ¿Alguna otra duda?» — F12-yapague, 2026-09-29. Se le cierra con punto.
+            let _s2 = s.trimEnd();
+            // …y si termina ANUNCIANDO algo con «:» (la lista 📌 que anunciaba se fue): «Pásame por favor: ¿Alguna otra
+            // duda?» — F12R-yapague. Se va esa última frase; si no queda nada, va la suave sola.
+            if (/:\s*$/.test(_s2)) {
+              _s2 = _s2.replace(/(^|[.!?…\n]\s*|\p{Extended_Pictographic}\u{FE0F}?\s+)[^.!?…\n\p{Extended_Pictographic}]*:\s*$/u, "$1").trimEnd();
+              if (!_s2.replace(/[\s\p{P}\p{S}]/gu, "")) return q;
+            }
+            return /[\p{L}\p{N}*)]$/u.test(_s2) ? `${_s2}. ${q}` : `${_s2} ${q}`;
           };
           const _antesF = String(salida);
           let _s = _antesF;
@@ -26197,6 +26247,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               .replace(/^[ \t]*\*[^*\n]{2,45}\*[ \t]*$/gmu, "")
               .replace(/[ \t]*\*(?:celular|nombre|dni|direcci[oó]n|distrito|ciudad|referencia|tel[eé]fono|sede)[^*\n]{0,40}\*[ \t]*(?=\n|$)/giu, "")
               .replace(/(?:Para dejarlo listo,?\s*)?p[aá]same (?:estos|tus|los siguientes) datos[^\n]*\n?/giu, "")
+              // …y el anuncio SIN «datos» que cierra el renglón: «Para cerrar, pásame estos 👇», «Por favor, pásame
+              // estos», «Pásame por favor:» (F12T-yapague, 2026-09-29) — quedaba pidiendo nada.
+              .replace(/(?:^|(?<=[.!?…][ \t]|\p{Extended_Pictographic}\u{FE0F}?[ \t]))[^.!?¿\n\p{Extended_Pictographic}]*\bp[aá]same\b(?:[ \t]+(?:por[ \t]+favor|estos|esos|tus|los|siguientes|datos))*[ \t]*[,:]?[ \t👇\u{FE0F}]*(?=\n|$)/gimu, "")
               // «¿Me pasas esos datos para dejarlo listo?» sin la lista delante (F6-lparados): pide nada.
               .replace(/¿?\s*me\s+(?:pasas|das|env[ií]as|mandas|compartes)\s+(?:esos|estos|tus|los)\s+datos[^?\n]*\??[\s\p{Extended_Pictographic}️]*/giu, " ");
             // Sin zona y sin ninguna pregunta que quede: la que falta es de dónde es.
@@ -26314,7 +26367,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // (+ «Así SÉ cómo te llega y te pido unos datos…» — F10-cincoydiez)
             // (el arranque para en un EMOJI también: la IA separa con emoji y, quitada la pregunta de en medio, el
             //  retroceso llegaba al punto DECIMAL de «hasta 1.5 mm» → «hasta 1. ¿Alguna otra duda?» — F11R-cortito)
-            _s = _s.replace(/[^.!?¿\n\p{Extended_Pictographic}]*\bas[ií]\s+(?:te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)|s[eé]|sabr[eé]|veo|reviso)\s+c[oó]mo\s+(?:te\s+)?(?:lo\s+|la\s+)?(?:llega|puede\s+llegar|podr[ií]a\s+llegar|llegar[ií]a|recibes|env[ií]amos|mandamos|despachamos|te\s+lo\s+(?:env[ií]o|mando|hago\s+llegar))\b[^.!?¿\n]*?[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda)/giu, " ");
+            _s = _s.replace(/[^.!?¿\n\p{Extended_Pictographic}]*\bas[ií]\s+(?:te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)|s[eé]|sabr[eé]|veo|reviso)\s+c[oó]mo\s+(?:te\s+)?(?:lo\s+|la\s+)?(?:llega|puede\s+llegar|podr[ií]a\s+llegar|llegar[ií]a|recibes|env[ií]amos|mandamos|despachamos|te\s+lo\s+(?:env[ií]o|mando|hago\s+llegar)|sigue|seguimos|contin[uú]a|avanzamos|queda)\b[^.!?¿\n]*?[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda)/giu, " ");
+            // (+ «Así te digo cómo SIGUE todo» — F12S-yapague, 2026-09-29)
+            // …y la misma cola al final de SU renglón, con la lista de precios en medio y la suave más abajo:
+            // «Vendemos solo online… Así te cuento cómo queda el envío\n\n📦\n\n1 unidad — …» (F12T-tienda).
+            _s = _s.replace(/[ \t]*\bas[ií]\s+(?:te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)|s[eé]|sabr[eé]|veo|reviso)\s+c[oó]mo\s+[^.!?¿\n]*[.!]?[ \t\p{Extended_Pictographic}️]*(?=\n)/giu, "")
+              .replace(/^[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)+$/gmu, "").replace(/\n{3,}/g, "\n\n");
             // (+ «Para seguir, Esto es para indicarte cómo te llegará.» — OC6-cuatroprecio)
             _s = _s.replace(/[^.!?¿\n\p{Extended_Pictographic}]*\besto\s+es\s+para\s+(?:indicarte|decirte|saber|confirmarte)\s+c[oó]mo\s+te\s+lleg\p{L}*[^.!?¿\n]*[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda)/giu, " ");
             // Emoji suelto que quedó delante de la suave tras otros recortes («…volumen\n\n 📍 ¿Alguna otra duda?»).
