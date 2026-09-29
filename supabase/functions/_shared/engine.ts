@@ -11724,8 +11724,11 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
     const _guia = String(_real.guia ?? "").trim();
     await deliverMessage(db, channelId, contactId,
       `Tu pedido ya salió${_dest ? ` hacia *${_dest}*` : ""}${_guia ? ` con la guía *${_guia}*` : ""}, ` +
-      "así que ese cambio ya no lo puedo hacer yo desde acá. 🙏 Se lo paso al equipo para ver con la agencia " +
-      "si todavía se puede redirigir, y te confirman por acá.").catch(() => {});
+      "así que ese cambio ya no lo puedo hacer yo desde acá. 🙏 Se lo paso al equipo para ver " +
+      // En Lima reparte un motorizado, no una agencia (medido 2026-09-28: a un pedido de Lince le
+      // decía «ver con la agencia»).
+      (String(_real.zona ?? "").toLowerCase() === "lima" ? "con el motorizado" : "con la agencia") +
+      " si todavía se puede redirigir, y te confirman por acá.").catch(() => {});
     return true;   // mensaje TOMADO: que la IA no conteste encima prometiendo el cambio
   }
   // Cambió la DIRECCIÓN y el distrito guardado ya no aparece en ella → probablemente se
@@ -23820,6 +23823,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               await avisar(db, run.channel_id, run.contact_id, "pago_digital_validar", {
                 cliente: quien, producto: String(ctx.producto_nombre ?? "") + (comboDe(run).length ? ` + ${comboDe(run).map((i) => i.nombre).join(" + ")}` : ""),
                 monto: _amountTotal || "", operacion: run.vars.pago_operacion ?? "",
+                // Lo que PAGÓ (puede no ser el precio: S/150 por un curso de S/79). La campanita lo muestra.
+                monto_leido: run.vars.pago_monto ?? "",
               }, {
                 foto: url,
                 botones: run.vars._order_id

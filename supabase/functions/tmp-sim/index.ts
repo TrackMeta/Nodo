@@ -114,7 +114,10 @@ Deno.serve(async (req) => {
     if (mediaKind === "sticker") return json({ ok: true, contact_id: contactId, sin_motor: "sticker" });
     const kindEngine = esDocLeible ? "image" : mediaKind;
     const event = buttonId ? { type: "button" as const, buttonId, title: text ?? buttonId }
-      : { type: "message" as const, text: media?.caption ?? text ?? "", msgType: kindEngine ?? "text", msgTs, mediaRef: (kindEngine === "image" || kindEngine === "audio") ? media!.url : undefined };
+      : { type: "message" as const, text: media?.caption ?? text ?? "", msgType: kindEngine ?? "text", msgTs, mediaRef: (kindEngine === "image" || kindEngine === "audio") ? media!.url : undefined,
+          // Como el webhook con un referral de anuncio: el ad_id viaja EN el evento (no solo en el
+          // contacto). Sin esto no se podía probar el aviso «anuncio sin producto» (2026-09-28).
+          ...(ad_id ? { adId: String(ad_id) } : {}) };
     await runEngine(db, channel_id, contactId, event);
   } catch (e) { console.error("[tmp-sim] engine error:", e); return json({ error: "engine_error", detalle: String(e) }, 500); }
   return json({ ok: true, contact_id: contactId });

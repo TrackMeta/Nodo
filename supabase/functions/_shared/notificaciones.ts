@@ -85,7 +85,11 @@ const suave = (s: string) => s
   .replace(/(?<![\p{L}\p{N}])[A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,})+(?![\p{L}\p{N}])/gu,
     (w) => w.charAt(0) + w.slice(1).toLowerCase())
   // Palabra suelta en mayúsculas de 5+ letras (AGOTADO, UNIDADES, LINCE): no es sigla, se suaviza.
-  .replace(/(?<![\p{L}\p{N}])[A-ZÁÉÍÓÚÑ]{5,}(?![\p{L}\p{N}])/gu, (w) => w.charAt(0) + w.slice(1).toLowerCase())
+  // A mitad de frase va entera en minúscula («Pide REPROGRAMAR la entrega» → «Pide reprogramar…»);
+  // sola o tras un «·» es un nombre (LINCE → Lince).
+  .replace(/(?<![\p{L}\p{N}])[A-ZÁÉÍÓÚÑ]{5,}(?![\p{L}\p{N}])/gu, (w, i: number, todo: string) =>
+    /[a-záéíóúñ][^\p{L}·:.]*$/u.test(todo.slice(Math.max(0, i - 3), i)) && /\s$/.test(todo.slice(0, i))
+      ? w.toLowerCase() : w.charAt(0) + w.slice(1).toLowerCase())
   .trim();
 // Título en oración: «Stock Agotado: …» → «Stock agotado: …», «Piden 50 Unidades» → «Piden 50 unidades».
 const tituloSuave = (s: string) => {
@@ -96,13 +100,24 @@ const tituloSuave = (s: string) => {
 // Una línea de detalle legible con lo que haya: cliente · monto · producto · lugar.
 function detalleDe(datos: Record<string, unknown>): string {
   const mon = limpio(datos.moneda) || "S/";
+  // Algunos avisos ya mandan el monto formateado («S/ 69»): no se le antepone otra vez («S/ S/ 69»).
+  const din = (x: string) => (/^\d/.test(x) ? `${mon} ${x}` : x);
   const monto = limpio(datos.total_cobrar) || limpio(datos.monto);
+  // En los pagos por validar, lo que PAGÓ y contra qué: «pagó S/ 150» (por un curso de S/ 79),
+  // «pagó S/ 15 · esperado S/ 20», «pagó S/ 69 · por cobrar S/ 69». Sin esto el prepago de Lima
+  // decía solo el nombre del cliente (medido en la batería 2 de la campanita).
+  const leido = limpio(datos.monto_leido), esperado = limpio(datos.monto_esperado), porCobrar = limpio(datos.por_cobrar);
   const partes = [
     limpio(datos.cliente),
-    // Algunos avisos ya mandan el monto formateado («S/ 69»): no se le antepone otra vez («S/ S/ 69»).
-    monto ? (/^\d/.test(monto) ? `${mon} ${monto}` : monto) : "",
+    monto ? din(monto) : "",
+    leido && leido !== monto ? `pagó ${din(leido)}` : "",
+    esperado && esperado !== leido ? `esperado ${din(esperado)}` : "",
+    porCobrar ? `por cobrar ${din(porCobrar)}` : "",
     [limpio(datos.producto), limpio(datos.opcion)].filter(Boolean).join(" · "),
     limpio(datos.zona_nombre) || limpio(datos.ciudad) || limpio(datos.sede),
+    // Qué quiere cambiar («dirección: Av Brasil 1500…» con el pedido ya enviado). Sin esto el aviso
+    // decía solo el nombre del cliente (batería 2 de la campanita).
+    limpio(datos.cambios),
     limpio(datos.motivo),
   ].filter(Boolean);
   return suave(partes.join(" · ")).slice(0, 220);
