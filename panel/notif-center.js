@@ -156,7 +156,7 @@ async function cargar() {
       }
       N.ultimaCarga = Date.now();
       pintarCampana();
-      if (N.abierto) pintar();
+      if (N.abierto && N.vista === "lista") pintar();
     } catch (_) { /* sin red: la campanita se queda con lo último que supo */ }
   })().finally(() => { N.cargando = null; });
   return N.cargando;
@@ -194,13 +194,15 @@ async function completarContacto(fila) {
   } catch (_) {}
 }
 
-function refrescar() { pintarCampana(); if (N.abierto) pintar(); }
+// Preferencias no depende de los avisos: redibujarla con cada aviso la mandaba arriba a mitad de un cambio.
+function refrescar() { pintarCampana(); if (N.abierto && N.vista === "lista") pintar(); }
 
 // Llegó algo nuevo con el panel abierto.
 function enVivo(n) {
   if (oculta(n)) return;
   N.bell.classList.remove("ring"); void N.bell.offsetWidth; N.bell.classList.add("ring");
-  if (n.prioridad !== "urgente") return;
+  const esVenta = VENTA.has(n.tipo);
+  if (n.prioridad !== "urgente" && !esVenta) return;
   // Con dos pestañas de Nodo abiertas, suena y avisa UNA sola. Gana la que estás MIRANDO: una
   // pestaña escondida espera un momento antes de reclamarlo (visto 2026-09-28: con dos pestañas,
   // la escondida se adelantaba, y la tarjeta no salía en la que tenías delante).
@@ -215,6 +217,8 @@ function enVivo(n) {
   };
   const avisar = () => {
     if (!reclamar()) return;
+    // Venta: solo el sonido de venta (si está encendido). Sin tarjeta: no hay nada que hacer con ella.
+    if (esVenta) { const v = ventaPrefs(); if (v.sonido) sonarVenta(v.tono, v.volumen); return; }
     if (N.prefs.sonido !== false) sonar();
     if (document.visibilityState === "visible") tarjeta(n);
     else avisoNavegador(n);
@@ -243,6 +247,52 @@ function sonar() {
       o.connect(g).connect(ac.destination);
       o.start(t + d); o.stop(t + d + 0.6);
     });
+  } catch (_) {}
+}
+
+// ── Sonido de VENTA (pedido de Rodrigo 2026-09-28): configurable y apagable ──
+// Suena con plata que ya entró o una venta ya comprometida; NO con un pedido de provincia recién creado
+// (todavía no pagó el adelanto: suena cuando el adelanto se aprueba solo).
+const VENTA = new Set(["venta_digital", "pedido_lima", "adelanto_auto", "venta_extra"]);
+const TONOS_VENTA = [
+  { k: "caja",    lb: "Caja registradora", desc: "El «cha-ching» de una venta", ic: "banknote" },
+  { k: "monedas", lb: "Monedas",           desc: "Unas monedas que caen",       ic: "dollar" },
+  { k: "campana", lb: "Campanita",         desc: "Cuatro notas alegres",        ic: "bell" },
+];
+const ventaPrefs = () => ({ sonido: true, tono: "caja", volumen: 70, ...(N.prefs.venta || {}) });
+
+function sonarVenta(tono, volumen) {
+  try {
+    const ac = audio(); if (!ac) return;
+    const v = Math.max(0, Math.min(1, Number(volumen) / 100)) * 0.24;
+    if (v <= 0) return;
+    const t0 = ac.currentTime + 0.02;
+    const nota = (f, t, dur, g, tipo = "sine") => {
+      const o = ac.createOscillator(), gn = ac.createGain();
+      o.type = tipo; o.frequency.value = f;
+      gn.gain.setValueAtTime(0.0001, t);
+      gn.gain.exponentialRampToValueAtTime(Math.max(g, 0.0002), t + 0.008);
+      gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(gn).connect(ac.destination);
+      o.start(t); o.stop(t + dur + 0.05);
+    };
+    if (tono === "monedas") {
+      // Cinco «tines» agudos, desparejos, como monedas que rebotan.
+      [[3150, 0], [3700, 0.07], [3400, 0.15], [4200, 0.21], [3900, 0.3]].forEach(([f, d]) => {
+        nota(f, t0 + d, 0.2, v * 0.75); nota(f * 1.5, t0 + d, 0.12, v * 0.25);
+      });
+    } else if (tono === "campana") {
+      [[1047, 0], [1319, 0.1], [1568, 0.2], [2093, 0.3]].forEach(([f, d]) => nota(f, t0 + d, 0.5, v, "triangle"));
+    } else {
+      // Caja registradora: el golpe del cajón (ruido corto) y el «ching» metálico doble.
+      const n = Math.ceil(ac.sampleRate * 0.05), buf = ac.createBuffer(1, n, ac.sampleRate), ch = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / n);
+      const src = ac.createBufferSource(), hp = ac.createBiquadFilter(), g = ac.createGain();
+      src.buffer = buf; hp.type = "highpass"; hp.frequency.value = 2500; g.gain.value = v * 0.9;
+      src.connect(hp).connect(g).connect(ac.destination); src.start(t0);
+      nota(2093, t0 + 0.06, 0.25, v * 0.7); nota(2093 * 2.76, t0 + 0.06, 0.18, v * 0.2);
+      nota(2637, t0 + 0.2, 0.75, v); nota(2637 * 2.76, t0 + 0.2, 0.35, v * 0.25); nota(2637 * 5.4, t0 + 0.2, 0.2, v * 0.1);
+    }
   } catch (_) {}
 }
 
@@ -357,6 +407,10 @@ function cajon() {
   document.body.appendChild(d);
   d.addEventListener("click", onClickCajon);
   d.addEventListener("change", onChangeCajon);
+  // El % del volumen se actualiza mientras arrastras (se guarda y suena al soltar, en «change»).
+  d.addEventListener("input", (e) => {
+    if (e.target.dataset?.p === "venta-vol") { const o = e.target.parentElement.querySelector("output"); if (o) o.textContent = e.target.value + "%"; }
+  });
   return d;
 }
 
@@ -589,6 +643,7 @@ function onClickCajon(e) {
     else if (k === "prefs") { N.vista = "prefs"; pintar(); }
     else if (k === "volver") { N.vista = "lista"; pintar(); }
     else if (k === "probar-sonido") sonar();
+    else if (k === "probar-venta") sonarVenta(a.dataset.tono, ventaPrefs().volumen);
     else if (k === "permiso") pedirPermiso();
     else if (k === "banner-no") { try { localStorage.setItem("nodo.nn.bannerNo", "1"); } catch (_) {} pintar(); }
     return;
@@ -628,6 +683,24 @@ function onChangeCajon(e) {
       const set = new Set(N.prefs.ocultos || []);
       el.checked ? set.delete(el.value) : set.add(el.value);
       N.prefs.ocultos = [...set];
+    }
+    else if (k.startsWith("venta-")) {
+      // Sin redibujar la pantalla (saltaría arriba): se cambian solo las clases y los disabled.
+      const v = ventaPrefs(), sec = el.closest(".nn-venta");
+      if (k === "venta-sonido") {
+        v.sonido = el.checked;
+        sec?.classList.toggle("off", !v.sonido);
+        sec?.querySelectorAll('.nn-tonos input, .nn-tonos button, input[data-p="venta-vol"]').forEach((x) => { x.disabled = !v.sonido; });
+        if (v.sonido) sonarVenta(v.tono, v.volumen);
+      } else if (k === "venta-tono") {
+        v.tono = el.value;
+        sec?.querySelectorAll(".nn-tono").forEach((x) => x.classList.toggle("on", x.contains(el)));
+        sonarVenta(v.tono, v.volumen);   // al elegirlo, se escucha
+      } else if (k === "venta-vol") {
+        v.volumen = Number(el.value) || 70;
+        sonarVenta(v.tono, v.volumen);   // al soltar la barra, se escucha a ese volumen
+      }
+      N.prefs.venta = v;
     }
     guardarPrefs();
     pintarCampana();
@@ -687,6 +760,7 @@ function pintarPrefs(d) {
         </div>
         <button class="nn-btn ghost" data-a="probar-sonido">${I("play")}Escuchar el tono</button>
       </section>
+      ${seccionVenta(sw)}
       <section class="nn-psec">
         <div class="nn-prow big">
           <span class="nn-pl"><b>Avisos del navegador</b><small>Solo lo urgente, y solo cuando Nodo está en otra pestaña o minimizado.</small></span>
@@ -700,6 +774,29 @@ function pintarPrefs(d) {
         ${bloques}
       </section>
     </div>`;
+}
+
+// Preferencias del sonido de venta: encendido, cuál suena y a qué volumen.
+function seccionVenta(sw) {
+  const v = ventaPrefs(), off = !v.sonido;
+  return `<section class="nn-psec nn-venta${off ? " off" : ""}">
+    <div class="nn-prow big">
+      <span class="nn-pl"><b>Sonido de venta</b><small>Suena cuando entra plata: venta digital, pedido de Lima confirmado, adelanto de provincia aprobado o un extra vendido.</small></span>
+      ${sw('data-p="venta-sonido"', v.sonido)}
+    </div>
+    <div class="nn-tonos" role="radiogroup" aria-label="Sonido de venta">
+      ${TONOS_VENTA.map((t) => `<div class="nn-tono${v.tono === t.k ? " on" : ""}">
+        <label><input type="radio" name="nnTonoVenta" value="${t.k}" data-p="venta-tono"${v.tono === t.k ? " checked" : ""}${off ? " disabled" : ""}>
+          <span class="nn-tono-ic">${I(t.ic)}</span><span class="nn-tono-tx"><b>${t.lb}</b><small>${t.desc}</small></span></label>
+        <button class="nn-ib" type="button" data-a="probar-venta" data-tono="${t.k}" title="Escuchar «${t.lb}»"${off ? " disabled" : ""}>${I("play")}</button>
+      </div>`).join("")}
+    </div>
+    <div class="nn-vol">
+      <span>Volumen</span>
+      <input type="range" min="10" max="100" step="5" value="${v.volumen}" data-p="venta-vol" aria-label="Volumen del sonido de venta"${off ? " disabled" : ""}>
+      <output>${v.volumen}%</output>
+    </div>
+  </section>`;
 }
 
 // ── Fechas ──────────────────────────────────────────────────────────

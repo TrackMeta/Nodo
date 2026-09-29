@@ -881,6 +881,28 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-sw input:focus-visible + i{box-shadow:0 0 0 3px var(--brand-bg)}
 .nn-sw.dis{opacity:.45;cursor:not-allowed}
 
+/* Sonido de venta: tres tarjetas para elegir cuál suena (con su «escuchar») y el volumen. */
+.nn-tonos{display:flex;flex-direction:column;gap:6px;margin:4px 0 12px}
+.nn-tono{position:relative;display:flex;align-items:center;gap:4px;padding:3px 4px 3px 3px;border-radius:11px;border:1px solid var(--border);
+  background:var(--surface);transition:border-color var(--t-fast),background var(--t-fast)}
+.nn-tono:hover{border-color:var(--border-strong)}
+.nn-tono.on{border-color:var(--brand);background:var(--brand-bg);box-shadow:0 0 0 1px var(--brand) inset}
+.nn-tono label{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:6px 7px;cursor:pointer}
+.nn-tono input{position:absolute;opacity:0;pointer-events:none}
+.nn-tono input:focus-visible ~ .nn-tono-ic{box-shadow:0 0 0 3px var(--brand-bg)}
+.nn-tono-ic{flex:none;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:var(--green-bg);color:var(--green)}
+.nn-tono-ic svg{width:16px;height:16px}
+.nn-tono-tx{min-width:0;display:flex;flex-direction:column;gap:1px}
+.nn-tono-tx b{font-size:13px;font-weight:650}
+.nn-tono-tx small{font-size:12px;color:var(--muted)}
+.nn-tono.on .nn-tono-tx b{color:var(--brand)}
+.nn-tono .nn-ib{width:32px;height:32px;color:var(--muted)}
+.nn-tono .nn-ib:hover:not(:disabled){color:var(--brand);background:var(--surface-2)}
+.nn-vol{display:flex;align-items:center;gap:12px;font-size:12.5px;color:var(--muted)}
+.nn-vol input{flex:1;accent-color:var(--brand);cursor:pointer}
+.nn-vol output{min-width:38px;text-align:right;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+.nn-venta.off .nn-tonos,.nn-venta.off .nn-vol{opacity:.45;pointer-events:none}
+
 /* Tarjetas en vivo (lo urgente que llega con el panel abierto) */
 #nodoNotifToasts{position:fixed;right:24px;bottom:24px;z-index:99990;display:flex;flex-direction:column;gap:10px;
   width:min(380px,calc(100vw - 32px));pointer-events:none;font-family:var(--font)}
