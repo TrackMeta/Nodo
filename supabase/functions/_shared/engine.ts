@@ -6610,7 +6610,20 @@ const RE_ARRANCA_CON_CONECTOR =
   /^[\s>*_\p{Extended_Pictographic}\p{Default_Ignorable_Code_Point}]*(?:pero|aunque|sin\s+embargo|no\s+obstante|igual(?:mente)?|as[ií]\s+que|por\s+eso|entonces|es\s+decir|o\s+sea|y|e|o|ni)(?![\p{L}\p{N}])/iu;
 function sinMuletillaDeArranque(texto: string): string {
   return String(texto ?? "").split("\n").map((l) => {
-    const limpio = l.replace(RE_MULETILLA_FIJA, "").replace(RE_MULETILLA_COLA, "");
+    const sinFija = l.replace(RE_MULETILLA_FIJA, "");
+    let limpio = sinFija.replace(RE_MULETILLA_COLA, "");
+    // 📍 La cola libre corta en la PRIMERA coma, y un lugar lleva coma adentro: «Veo que quieres 1 unidad
+    // desde Surco, Lima. Para dejarlo listo…» → le llegaba «Lima. Para dejarlo listo…» (batería 3 de la
+    // campanita, 2026-09-29). Si tras el corte queda un trozo cortito que cierra con punto antes de la
+    // frase siguiente, era el resto de la muletilla: se va con ella.
+    if (limpio !== sinFija) {
+      // …y si el corte cae DENTRO de una negrita («Veo que eres de *Lima, Surco* y quieres 1 unidad» → quedaba
+      // «Surco* y quieres…»), no se corta nada: la muletilla molesta menos que una frase rota.
+      const _quitado = sinFija.slice(0, sinFija.length - limpio.length);
+      if ((_quitado.match(/\*/g) ?? []).length % 2 === 1) return l;
+      const _resto = limpio.match(/^[\s>*_]*[^.!?¿¡…\n\p{Extended_Pictographic}]{1,25}[.!…][ \t]+(?=\S)/u);
+      if (_resto && !/\d/.test(_resto[0])) limpio = limpio.slice(_resto[0].length);
+    }
     if (limpio === l) return l;
     // Lo que queda arranca en minúscula («¿cuántas unidades…»): se le devuelve la mayúscula,
     // saltando el signo de apertura. Y si al quitarla no queda nada, se deja la línea como
@@ -18865,6 +18878,12 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
     const _opAntes = String(run.vars.opcion_id ?? ctx.opcion_id ?? "").trim();
     run.vars.opcion_id = cls.clave;
     ctx.opcion_id = cls.clave;
+    // …y la marca «falta elegir la opción» se APAGA en el mismo turno. Se calcula al armar el
+    // contexto, ANTES de que esto selle nada, y quedaba prendida hasta el turno siguiente: el
+    // guard de salida la leía y borraba la lista de datos del mensaje («Lima, Surco, quiero 1» →
+    // «…revisas el producto antes. ¿Me los pasas? 📦» sin decir qué datos — batería 3 de la
+    // campanita, 2026-09-29). Solo si la opción es de ESTE producto (`op` hallado en su lista).
+    if (op) { (ctx as any)._falta_opcion = false; (run.vars as any)._falta_opcion = false; }
     await setField(db, run.channel_id, run.contact_id, "opcion_id", cls.clave);
     if (op) await setField(db, run.channel_id, run.contact_id, "opcion_elegida", op.nombre);
     // Refresca el contexto en el MISMO turno: si el cliente cambió de opinión,
@@ -24692,6 +24711,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               run.vars.opcion_id = oq.id;
               ctx.opcion_id = oq.id; ctx.opcion = oq.nombre;
               ctx.cantidad = oq.cantidad ?? 1; (ctx as any)._opcion = oq;
+              // Sellada: ya no «falta la opción» en este turno (ver detectarOpcion).
+              (ctx as any)._falta_opcion = false; (run.vars as any)._falta_opcion = false;
               await logEvent(db, run.channel_id, run.contact_id, "campo", "Presentación sellada por su mensaje",
                 oq.nombre + " (ya la había dicho: \"" + String(ctx.last_input ?? "").slice(0, 40) + "\")").catch(() => {});
             } else {
@@ -26167,6 +26188,25 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // «Para seguir CON TU PEDIDO, ¿Alguna otra duda?» (G3-sinciu) se escapaba: solo casaba «para seguir» pelado.
           _s = _s.replace(/(?:^|(?<=[.!?\s]))(?:(?:y\s+)?para\s+(?:seguir|avanzar|continuar)(?:\s+con\s+(?:tu|el|su)\s+(?:pedido|compra|orden))?|(?:y\s+)?ahora,?\s+cu[eé]ntame|(?:y\s+)?ahora(?=\s*,?\s*¿Alguna otra duda)|cu[eé]ntame|cont[aá]me|dime|¿\s*me\s+lo\s+(?:pasas|dices|confirmas|env[ií]as)\s*\??|sobre\s+(?:el\s+|la\s+|los\s+|las\s+|tu\s+)?\p{L}+(?:\s+\p{L}+)?|¿\s*(?=\s*¿Alguna))\s*,?\s*(?=¿Alguna otra duda)/giu, "");
           // (+ «Sobre stock, ¿Alguna…» — F10-stock; y el «¿ ¿Alguna…» que dejaba una pregunta vaciada — F10-regateo)
+          if (_s !== _antesF) {
+            // 🧾 La frase que ANUNCIABA la lista que se acaba de quitar queda colgando de sus dos puntos:
+            // «…o alguna otra de estas opciones:» / «Estos son los precios por presentación:» sin nada
+            // debajo (batería 3 de la campanita, 2026-09-29). Una frase que termina en «:» y no tiene
+            // nada detrás en su bloque ya no anuncia nada. Y el conector que quedó solo en su renglón
+            // («Y» — de «Y ¿cuántas unidades…?» sin la pregunta).
+            // Renglón por renglón: solo si NO tiene nada debajo (fin del mensaje o renglón vacío), y nunca un
+            // renglón de datos («📌 *Dirección*:» es un campo, no un anuncio).
+            const _lns = _s.split("\n");
+            for (let i = 0; i < _lns.length; i++) {
+              const ln = _lns[i];
+              if (!/:[ \t]*$/.test(ln) || /^[ \t]*(?:📌|•|[-–—])/u.test(ln)) continue;
+              if (i + 1 < _lns.length && _lns[i + 1].trim()) continue;   // tiene su lista debajo
+              // Solo la ÚLTIMA frase (la del «:»): el segmento no cruza un punto ni un emoji, que es como
+              // este modelo separa oraciones («En Surco te llega mañana 📦 Estos son los precios:»).
+              _lns[i] = ln.replace(/(^|[.!?…][ \t]+|\p{Extended_Pictographic}\u{FE0F}?[ \t]+)[^.!?…¿¡\n\p{Extended_Pictographic}]*:[ \t]*$/u, "$1").trimEnd();
+            }
+            _s = _lns.join("\n").replace(/^[ \t]*(?:y|o|e|pero|adem[aá]s)[ \t]*[,.]?[ \t]*$/gimu, "");
+          }
           _s = _s.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
           if (_s !== _antesF && _s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10) {
             salida = _s;
@@ -26370,7 +26410,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // igual que uno recortado a medias, y no había forma de saber cuál de los veinte fue.
           const _fin = String(salida ?? "").trim();
           await logEvent(db, run.channel_id, run.contact_id, "nota", "🔬 Lo que escribió la IA antes de los retoques",
-            `«${_crudo.slice(0, 300)}»\n→ salió: ${_fin ? `«${_fin.slice(0, 200)}»` : "NADA (vacío)"}`).catch(() => {});
+            // 1500/800: con 300/200 se cortaba justo antes de la lista (📌 datos, precios) y no se podía
+            // saber qué guard se la llevó (investigación de la lista de datos, 2026-09-29).
+            `«${_crudo.slice(0, 1500)}»\n→ salió: ${_fin ? `«${_fin.slice(0, 800)}»` : "NADA (vacío)"}`).catch(() => {});
         }
       }
       // ⏸️ Si de la respuesta solo queda «¿La quieres? 🙂», emitIaText la deja en espera
