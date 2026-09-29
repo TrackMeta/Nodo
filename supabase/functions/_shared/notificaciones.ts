@@ -77,6 +77,14 @@ export type Notif = {
 };
 
 const limpio = (s: unknown) => String(s ?? "").replace(/\s+/g, " ").trim();
+// Los datos traen el formato de Telegram («📞 PIDE QUE LO LLAMEN: …»). En el panel el emoji sobra
+// (lo pone el icono) y las MAYÚSCULAS gritan: se pasan a oración. Solo tramos de 2+ palabras en
+// mayúsculas, para no tocar siglas sueltas (DNI, S/, PRO).
+const suave = (s: string) => s
+  .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}]+\s*/gu, "")
+  .replace(/(?<![\p{L}\p{N}])[A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,})+(?![\p{L}\p{N}])/gu,
+    (w) => w.charAt(0) + w.slice(1).toLowerCase())
+  .trim();
 // Una línea de detalle legible con lo que haya: cliente · monto · producto · lugar.
 function detalleDe(datos: Record<string, unknown>): string {
   const mon = limpio(datos.moneda) || "S/";
@@ -88,7 +96,7 @@ function detalleDe(datos: Record<string, unknown>): string {
     limpio(datos.zona_nombre) || limpio(datos.ciudad) || limpio(datos.sede),
     limpio(datos.motivo),
   ].filter(Boolean);
-  return partes.join(" · ").slice(0, 220);
+  return suave(partes.join(" · ")).slice(0, 220);
 }
 
 export async function registrarNotificacion(db: SupabaseClient, n: Notif): Promise<string | null> {
@@ -104,8 +112,8 @@ export async function registrarNotificacion(db: SupabaseClient, n: Notif): Promi
     }
     const meta = META[n.tipo] ?? META.aviso;
     const def = AVISOS.find((a) => a.clave === n.tipo);
-    const titulo = limpio(n.titulo) || def?.titulo || "Aviso";
-    const detalle = limpio(n.detalle) || detalleDe(datos) || null;
+    const titulo = suave(limpio(n.titulo) || def?.titulo || "Aviso") || "Aviso";
+    const detalle = suave(limpio(n.detalle)) || detalleDe(datos) || null;
     const grupo: Grupo = n.grupo ?? (def?.grupo as Grupo | undefined) ?? meta.grupo;
     const prioridad: Prioridad = n.prioridad ?? meta.prioridad;
     const porAtender = n.porAtender ?? meta.porAtender;
