@@ -824,6 +824,16 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-tt{flex:1;min-width:0;font-size:13.5px;font-weight:600;line-height:1.32;letter-spacing:-.005em}
 .nn-item.unread .nn-tt{font-weight:750}
 .nn-top time{flex:none;font-size:11.5px;color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums}
+/* × para quitar de MI campanita: aparece al pasar el mouse (en celular, siempre). No sale en lo que
+   espera una acción. «sale» = la animación corta al quitarla. */
+.nn-x{flex:none;align-self:center;width:22px;height:22px;margin:-3px -4px -3px 0;padding:0;border:none;border-radius:6px;
+  background:transparent;color:var(--faint);display:grid;place-items:center;cursor:pointer;opacity:0;
+  transition:opacity var(--t-fast),background var(--t-fast),color var(--t-fast)}
+.nn-x svg{width:13px;height:13px;stroke-width:2.4}
+.nn-item:hover .nn-x,.nn-x:focus-visible{opacity:1}
+.nn-x:hover{background:var(--surface);color:var(--text)}
+@media (hover:none){.nn-x{opacity:.7}}
+.nn-item.sale{opacity:0;transform:translateX(-12px);transition:opacity .16s ease,transform .16s ease}
 .nn-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--brand);align-self:center}
 .nn-item.pr-urgente .nn-dot{background:var(--red)}
 .nn-dt{margin-top:3px;font-size:12.5px;color:var(--muted);line-height:1.42;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}

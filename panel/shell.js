@@ -1435,7 +1435,7 @@ export async function mountShell({ active } = {}) {
   // 🔔 Campanita: módulo aparte que baja en paralelo (el menú no la espera). Recibe lo que usa
   // del shell por parámetro para no importar shell.js de vuelta.
   if (S.channels.length) import("./notif-center.js").then((m) => m.montar({
-    supa, S, svg, toast, logoFallback: FALLBACK_LOGO,
+    supa, S, svg, toast, confirmDialog, logoFallback: FALLBACK_LOGO,
     onConteo: pintarPuntoBots,   // la campanita avisa cuando cambian los conteos por bot
     // Ir a una sección desde un aviso. El chat y el pedido se buscan en el bot ACTIVO, así que
     // si el aviso es de otro bot se cambia primero — después de preguntar por cambios sin guardar.

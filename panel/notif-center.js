@@ -62,7 +62,7 @@ const SEL = "id,channel_id,contact_id,order_id,tipo,grupo,prioridad,titulo,detal
 const TOAST_MS = 6000;
 
 const N = {
-  ctx: null, rows: new Map(), leidas: new Set(), hasta: 0, uid: null,
+  ctx: null, rows: new Map(), leidas: new Set(), quitadas: new Set(), hasta: 0, uid: null,
   prefs: { sonido: true, navegador: true, ocultos: [] },
   tab: "atender", grupo: "todo", bot: "todos", vista: "lista",
   abierto: false, cargando: null, rt: null, ac: null,
@@ -71,7 +71,12 @@ const N = {
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const tipoDe = (n) => TIPOS[n.tipo] || { g: n.grupo || "sistema", lb: n.titulo, ic: (GRUPOS.find((g) => g.k === n.grupo) || GRUPOS[3]).ic };
 const critico = (n) => !!TIPOS[n.tipo]?.crit || n.prioridad === "urgente";
-const oculta = (n) => !critico(n) && (N.prefs.ocultos || []).includes(n.tipo);
+// Quitada por mí (la ×, «Limpiar») o ya vieja: lo leído o resuelto se limpia solo a los 7 días (decisión de
+// Rodrigo 2026-09-28). Lo que espera una acción NO se va solo: se va al resolverse o con «Atendido».
+const LIMPIA_SOLA_MS = 7 * 864e5;
+const quitada = (n) => N.quitadas.has(n.id)
+  || (!pendiente(n) && !noLeida(n) && Date.now() - Date.parse(n.created_at) > LIMPIA_SOLA_MS);
+const oculta = (n) => quitada(n) || (!critico(n) && (N.prefs.ocultos || []).includes(n.tipo));
 // Lo ya resuelto no cuenta como «sin leer»: no queda nada que hacer con eso (se ve igual en «Todas»).
 const noLeida = (n) => !n.resuelta_at && new Date(n.created_at).getTime() > N.hasta && !N.leidas.has(n.id);
 const pendiente = (n) => n.por_atender && !n.resuelta_at;
@@ -136,7 +141,7 @@ async function cargar() {
           .order("created_at", { ascending: false }).limit(300),
         supa.from("notificaciones").select(SEL).in("channel_id", ids).gte("created_at", desde)
           .order("created_at", { ascending: false }).limit(250),
-        supa.from("notificacion_lecturas").select("notificacion_id").limit(1000),
+        supa.from("notificacion_lecturas").select("notificacion_id, quitada_at").limit(1000),
         supa.from("notificacion_usuario").select("leidas_hasta,prefs").maybeSingle(),
       ]);
       if (pend.error && todas.error) return;
@@ -144,6 +149,7 @@ async function cargar() {
       for (const r of [...(todas.data || []), ...(pend.data || [])]) m.set(r.id, r);
       N.rows = m;
       N.leidas = new Set((lect.data || []).map((r) => r.notificacion_id));
+      N.quitadas = new Set((lect.data || []).filter((r) => r.quitada_at).map((r) => r.notificacion_id));
       if (yo.data) {
         N.hasta = new Date(yo.data.leidas_hasta).getTime();
         N.prefs = { sonido: true, navegador: true, ocultos: [], ...(yo.data.prefs || {}) };
@@ -180,7 +186,7 @@ function alCambio(p) {
   N.rows.set(n.id, fila);
   // Un aviso repetido (×2) vuelve a subir con created_at nuevo: es una novedad para todos.
   const novedad = !prev || prev.created_at !== n.created_at;
-  if (novedad) N.leidas.delete(n.id);
+  if (novedad) { N.leidas.delete(n.id); N.quitadas.delete(n.id); }   // se repitió: vuelve a salir aunque la hubieras quitado
   if (!fila.contact && n.contact_id) completarContacto(fila);
   refrescar();
   if (novedad && !n.resuelta_at && Date.now() - Date.parse(n.created_at) < 5 * 60_000) enVivo(fila);
@@ -550,6 +556,7 @@ function pintar() {
         ${chs.length > 1 ? selectorBot(chs) : ""}
       </div>
       <button class="nn-ib" data-a="leer-todo" title="Marcar todo como leído (todos los bots)"${nNoTodo ? "" : " disabled"}>${I("checkAll")}</button>
+      <button class="nn-ib" data-a="limpiar" title="Limpiar: quitar de tu campanita lo ya leído y lo resuelto"${limpiables().length ? "" : " disabled"}>${I("eraser")}</button>
       <button class="nn-ib" data-a="prefs" title="Preferencias">${I("config")}</button>
       <button class="nn-ib" data-a="cerrar" title="Cerrar (Esc)">${I("x")}</button>
     </header>
@@ -611,7 +618,7 @@ function pintarLista() {
     if (k !== dia) { dia = k; html += `<div class="nn-day">${esc(k)}</div>`; }
     html += item(n, false);
   }
-  box.innerHTML = html + `<p class="nn-foot">Se guardan los últimos 60 días. El detalle de cada caso sigue en el chat y en Pedidos.</p>`;
+  box.innerHTML = html + `<p class="nn-foot">Lo leído y lo resuelto se limpia solo a los 7 días (o antes, con la × o «Limpiar»). Lo que espera una acción se queda hasta que se resuelva.</p>`;
 }
 
 function vacio() {
@@ -639,7 +646,7 @@ function item(n, conDia) {
   return `<article class="nn-item pr-${esc(n.prioridad)}${nl ? " unread" : ""}${res ? " done" : ""}" data-id="${n.id}">
     <span class="nn-ic">${I(t.ic)}</span>
     <div class="nn-body">
-      <div class="nn-top"><b class="nn-tt">${esc(n.titulo)}</b><time title="${esc(new Date(n.created_at).toLocaleString("es-PE"))}">${esc(cuando(n.created_at, conDia))}</time>${nl ? `<i class="nn-dot" title="Sin leer"></i>` : ""}</div>
+      <div class="nn-top"><b class="nn-tt">${esc(n.titulo)}</b><time title="${esc(new Date(n.created_at).toLocaleString("es-PE"))}">${esc(cuando(n.created_at, conDia))}</time>${nl ? `<i class="nn-dot" title="Sin leer"></i>` : ""}${!pendiente(n) ? `<button class="nn-x" type="button" data-act="quitar" title="Quitar de mi campanita (al resto del equipo no se le quita)">${I("x")}</button>` : ""}</div>
       ${n.detalle ? `<div class="nn-dt">${esc(n.detalle)}</div>` : ""}
       ${tags.length ? `<div class="nn-meta">${tags.join("")}</div>` : ""}
       ${acc.length ? `<div class="nn-acts">${acc.map((a, i) => `<button class="nn-btn${a.ghost ? " ghost" : i === 0 && !res ? " pri" : ""}" data-act="${a.k}"${a.href ? ` data-href="${a.href}"` : ""}${a.k === "resolver" ? ' title="Marcar como atendido: sale de «Por atender» para todo el equipo"' : ""}>${I(a.ic)}${esc(a.lb)}</button>`).join("")}</div>` : ""}
@@ -668,8 +675,47 @@ function acciones(n) {
   return A;
 }
 
+// Quitar de MI campanita (la × y «Limpiar»). Se va al toque; si el servidor falla, vuelve.
+async function quitar(ids) {
+  ids = [...new Set(ids.filter(Boolean))];
+  if (!ids.length) return false;
+  const d = document.getElementById("nodoNotif");
+  if (ids.length === 1) {
+    const el = d?.querySelector(`.nn-item[data-id="${ids[0]}"]`);
+    if (el) { el.classList.add("sale"); await new Promise((r) => setTimeout(r, 170)); }
+  }
+  ids.forEach((id) => N.quitadas.add(id));
+  refrescar();
+  const { error } = await N.ctx.supa.rpc("notif_quitar", { p_ids: ids });
+  if (error) {
+    ids.forEach((id) => N.quitadas.delete(id));
+    refrescar();
+    N.ctx.toast("No se pudo quitar. Prueba de nuevo.", true);
+    return false;
+  }
+  return true;
+}
+
+// Lo que «Limpiar» quitaría: lo que ya leíste o ya se resolvió, del bot que estás mirando. Nunca lo
+// que espera una acción (un pago por validar, un cliente esperando): eso se va al resolverse.
+const limpiables = () => [...N.rows.values()].filter((n) => !oculta(n) && !pendiente(n) && !noLeida(n)
+  && (N.bot === "todos" || n.channel_id === N.bot));
+
+async function limpiar() {
+  const lista = limpiables();
+  if (!lista.length) return;
+  const msg = `Se quitan de tu campanita ${lista.length} notificaci${lista.length === 1 ? "ón" : "ones"} ya leída${lista.length === 1 ? "" : "s"} o resuelta${lista.length === 1 ? "" : "s"}. ` +
+    "Lo que todavía espera una acción se queda. Al resto del equipo no se le quita nada.";
+  const ok = N.ctx.confirmDialog
+    ? await N.ctx.confirmDialog({ title: "Limpiar la campanita", message: msg, confirmText: "Limpiar", cancelText: "Cancelar" })
+    : window.confirm(msg);
+  if (!ok) return;
+  if (await quitar(lista.map((n) => n.id))) N.ctx.toast(`Listo: se quit${lista.length === 1 ? "ó 1 notificación" : `aron ${lista.length} notificaciones`}`);
+}
+
 async function ejecutar(n, a) {
   if (!a) return;
+  if (a.k === "quitar") return quitar([n.id]);
   if (a.k === "resolver") return resolver(n);
   if (a.k === "llamar") { location.href = "tel:+" + String(n.contact?.wa_id || "").replace(/\D/g, ""); return; }
   const dest = a.k === "chat" ? `index.html?c=${n.contact_id}`
@@ -734,6 +780,7 @@ function onClickCajon(e) {
     if (k === "bot-menu") menuBot(d, !menuBotAbierto());
     else if (k === "cerrar") cerrar();
     else if (k === "leer-todo") leerTodo();
+    else if (k === "limpiar") limpiar();
     else if (k === "prefs") { N.vista = "prefs"; pintar(); }
     else if (k === "volver") { N.vista = "lista"; pintar(); }
     else if (k === "probar-sonido") probarSonido("urgente", tonoUrgente(), volUrgente());
