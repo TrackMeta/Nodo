@@ -444,6 +444,7 @@ function pintarCampana() {
   N.bell.title = k ? `Notificaciones · ${k} sin leer` : "Notificaciones";
   // El selector de bots del menú lateral muestra cuánto espera en cada uno (lo lee al abrirse).
   N.ctx.S.notifPorBot = conteoPorBot();
+  try { N.ctx.onConteo?.(); } catch (_) {}   // el puntito rojo del selector de bot (otro bot te necesita)
 }
 
 // Cuánto le falta a cada bot: lo por atender (y si algo es urgente) y lo sin leer.

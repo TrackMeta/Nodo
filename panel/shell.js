@@ -1115,6 +1115,24 @@ function _bootAjeno(active) {
     return items.some((it) => fileOf(it.href) === cur);
   } catch (_) { return false; }
 }
+// 🔴 Puntito rojo en el selector de bot: OTRO bot (no el que tienes abierto) tiene avisos por atender.
+// Los conteos los hace la campanita (notif-center.js → S.notifPorBot). Pedido de Rodrigo 2026-09-28:
+// enterarse de que otro bot lo necesita sin abrir la lista.
+function pintarPuntoBots() {
+  const btn = S.botBtn, w = btn && btn.querySelector(".nb-logo-w");
+  if (!w) return;
+  const cnt = S.notifPorBot || {};
+  const otros = (S.channels || []).filter((c) => c.id !== S.channelId && cnt[c.id] && cnt[c.id].pend);
+  let dot = w.querySelector(".nb-dot");
+  if (!otros.length) {
+    if (dot) dot.remove();
+    btn.title = "Cambiar de bot";
+    return;
+  }
+  if (!dot) { dot = document.createElement("span"); dot.className = "nb-dot"; w.appendChild(dot); }
+  btn.title = "Cambiar de bot · " + otros.map((c) => `${c.nombre}: ${cnt[c.id].pend} por atender`).join(" · ");
+}
+
 export async function mountShell({ active } = {}) {
   _bootLlego(); // la navegación SPA en curso ya puede dar paso a la siguiente (ver navigate)
   // Branding inicial desde caché (mismo bot que la última página) → sin parpadeo.
@@ -1166,7 +1184,7 @@ export async function mountShell({ active } = {}) {
   nav.innerHTML = `
     <div class="nodo-brand">
       <button class="nodo-botsel" id="nodoBotBtn" type="button" title="Cambiar de bot">
-        <img class="nb-logo" id="nodoBotLogo" src="${escAttr(initLogo)}" alt="" />
+        <span class="nb-logo-w"><img class="nb-logo" id="nodoBotLogo" src="${escAttr(initLogo)}" alt="" /></span>
         <span class="nb-name" id="nodoBotName">${escHtml(initName)}</span>
         <svg class="nb-cx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </button>
@@ -1351,6 +1369,7 @@ export async function mountShell({ active } = {}) {
     if (S.botName) S.botName.textContent = name;
     setFavicon(src); // favicon = logo del bot activo
     if (c) writeBrandCache({ id: c.id, logo: c.logo_url || null, name }); // caché anti-parpadeo
+    pintarPuntoBots();   // al cambiar de bot cambia cuáles son «los otros»
   };
   S.paintBrand = paintBrand;
   paintBrand();
@@ -1417,6 +1436,7 @@ export async function mountShell({ active } = {}) {
   // del shell por parámetro para no importar shell.js de vuelta.
   if (S.channels.length) import("./notif-center.js").then((m) => m.montar({
     supa, S, svg, toast, logoFallback: FALLBACK_LOGO,
+    onConteo: pintarPuntoBots,   // la campanita avisa cuando cambian los conteos por bot
     // Ir a una sección desde un aviso. El chat y el pedido se buscan en el bot ACTIVO, así que
     // si el aviso es de otro bot se cambia primero — después de preguntar por cambios sin guardar.
     async ir(href, channelId) {
