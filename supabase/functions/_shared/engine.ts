@@ -4861,6 +4861,10 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     // con la lista de precios de a quien ya eligió (F11R-callao, 2026-09-29).
     // Solo al FINAL del mensaje: un «Y dime:» con su lista debajo es una frase entera.
     .replace(/(^|\n)[ \t]*y[ \t]+(?:dime|cu[eé]ntame|av[ií]same|conf[ií]rmame)[ \t]*[,:]?\s*$/iu, "$1")
+    // «…para organizar tu pedido, ¿De qué distrito…?» — la pregunta pegada tras una coma viene con la mayúscula de
+    // cuando iba sola (F11S-cortito2). Solo palabras de pregunta, nunca un nombre propio («, ¿Lima o Arequipa?»).
+    .replace(/,([ \t]*)¿(De|Desde|Alguna|Algo|Qu[eé]|Cu[aá]l(?:es)?|Cu[aá]nt[oa]s?|C[oó]mo|D[oó]nde|Te|Me|Quieres|Deseas|Prefieres)(?![\p{L}])/gu,
+      (_m, e: string, w: string) => `,${e}¿${w[0].toLowerCase()}${w.slice(1)}`)
     .replace(/\n{3,}/g, "\n\n").replace(/\s+$/, "");
   // «…revisas el producto antes. ¿Me los pasas? 📦» SIN ningún dato en el mensaje: se recortó la lista
   // que ese «los» señalaba (misma batería). Pedir «los» sin decir cuáles confunde más que no pedir nada.
@@ -6564,6 +6568,8 @@ function sinPresentacionRepetida(texto: string, producto: string, ventaAhora = f
     if (_sinCola.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length >= 10) resto = _sinCola;
   }
   if (resto.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length < 25) return t;
+  // El emoji con que la IA cerraba la presentación quedaba abriendo el mensaje («🔧 Sobre lo que mencionas…» — F11S-dosciud2).
+  resto = resto.replace(/^[\s\p{Extended_Pictographic}\u{FE0F}]+/u, "");
   const i = resto.search(/[\p{L}\p{N}]/u);
   return i < 0 ? resto : resto.slice(0, i) + resto[i].toUpperCase() + resto.slice(i + 1);
 }
@@ -26317,7 +26323,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // «…para un uso adecuado. Para seguir, ¿Alguna otra duda?» (F5b-orepuesto): la muletilla que
           // anunciaba la pregunta quitada queda colgando delante de la suave.
           // «Para seguir CON TU PEDIDO, ¿Alguna otra duda?» (G3-sinciu) se escapaba: solo casaba «para seguir» pelado.
-          _s = _s.replace(/(?:^|(?<=[.!?\s]))(?:(?:y\s+)?para\s+(?:seguir|avanzar|continuar)(?:\s+con\s+(?:tu|el|su)\s+(?:pedido|compra|orden))?|(?:y\s+)?ahora,?\s+cu[eé]ntame|(?:y\s+)?ahora(?=\s*,?\s*¿Alguna otra duda)|cu[eé]ntame|cont[aá]me|dime|¿\s*me\s+lo\s+(?:pasas|dices|confirmas|env[ií]as)\s*\??|sobre\s+(?:el\s+|la\s+|los\s+|las\s+|tu\s+)?\p{L}+(?:\s+\p{L}+)?|¿\s*(?=\s*¿Alguna)|(?:y\s+)?(?:tambi[eé]n|adem[aá]s))\s*,?\s*(?=¿Alguna otra duda)/giu, "");
+          // Hasta 3 pasadas: «Ahora, dime, ¿Alguna…» se lleva «dime,» en la primera y «Ahora,» en la segunda (F11S-cortito2).
+          for (let _k = 0; _k < 3; _k++) {
+            const _a = _s;
+            _s = _s.replace(/(?:^|(?<=[.!?\s]))(?:(?:y\s+)?para\s+(?:seguir|avanzar|continuar)(?:\s+con\s+(?:tu|el|su)\s+(?:pedido|compra|orden))?|(?:y\s+)?ahora,?\s+cu[eé]ntame|(?:y\s+)?ahora(?=\s*,?\s*¿Alguna otra duda)|cu[eé]ntame|cont[aá]me|dime|¿\s*me\s+lo\s+(?:pasas|dices|confirmas|env[ií]as)\s*\??|sobre\s+(?:el\s+|la\s+|los\s+|las\s+|tu\s+)?\p{L}+(?:\s+\p{L}+)?|¿\s*(?=\s*¿Alguna)|(?:y\s+)?(?:tambi[eé]n|adem[aá]s))\s*,?\s*(?=¿Alguna otra duda)/giu, "");
+            if (_s === _a) break;
+          }
+          // Si del mensaje solo quedó la suave, a un saludo no se le pregunta «¿Alguna otra duda?» — no preguntó
+          // nada (F11S-cortito: a «hola» se le fueron la presentación repetida y la pregunta repetida).
+          if (/^\s*¿Alguna otra duda\?\s*/.test(_s)) {
+            const _saludo = /^\s*(?:hola|holi|buenas|buen[oa]s?\s+(?:d[ií]as|tardes|noches)|hey|ola)\b/i.test(_li);
+            _s = _s.replace(/^\s*¿Alguna otra duda\?\s*/, _saludo ? "¡Hola! 👋 " : "");
+          }
           // (+ «También, ¿Alguna otra duda?» — la pregunta de la ubicación iba tras «También,» — F11R-cortito2)
           // (+ «Sobre stock, ¿Alguna…» — F10-stock; y el «¿ ¿Alguna…» que dejaba una pregunta vaciada — F10-regateo)
           // La frase que anunciaba la lista que se acaba de quitar (ver sinAnuncioColgado).
