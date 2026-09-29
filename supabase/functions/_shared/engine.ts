@@ -12309,7 +12309,8 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
     // no alcanzó: contestó «Gracias por la captura, la estoy validando» (F10-fotonopago) — nadie la valida, y el
     // cliente se queda esperando un pedido que no sale. Ahí contesta el MOTOR, con la verdad y el monto.
     const _capA = String((event as any).text ?? "").trim();
-    if (!_capA || /\b(ah[ií]\s+(?:est[aá]|va|te\s+va)|ya\s+(?:te\s+)?(?:pagu[eé]|yape[eé]|deposit[eé]|transfer[ií]|mand[eé]|envi[eé])|captura|comprobante|voucher|pago|yape|listo|hecho|adelanto)\b/i.test(_capA)) {
+    // (límite unicode al final, NO \b: tras «está»/«pagué» el \b de JS no ve frontera — [[regex-tildes-limites-y-emoji]])
+    if (!_capA || /(?:^|[^\p{L}\p{N}])(ah[ií]\s+(?:est[aá]|va|te\s+va)|ya\s+(?:te\s+)?(?:pagu[eé]|yape[eé]|deposit[eé]|transfer[ií]|mand[eé]|envi[eé])|captura|comprobante|voucher|pago|yape|listo|hecho|adelanto)(?![\p{L}\p{N}])/iu.test(_capA)) {
       const _symA = simboloMoneda((order as any).currency);
       await deliverMessage(db, channelId, contactId,
         `Recibí tu imagen 🙏 pero no veo un comprobante de pago ahí. ¿Me mandas la captura del Yape, Plin o la transferencia` +
@@ -18691,6 +18692,29 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   if (!String(ctx.opcion_id ?? "").trim() && RE_DOS_DESTINOS.test(String(texto ?? ""))) {
     await logEvent(db, run.channel_id, run.contact_id, "nota", "👥 Dos destinos en un mensaje",
       `«${String(texto ?? "").slice(0, 80)}» — no se sella la cantidad por el número: cada destino es un pedido aparte`).catch(() => {});
+    // …salvo la SUYA, dicha como tal: «2 para mí y 3 para mi hermano en Cusco» → su pedido es de 2 (F10b-dosdestcant:
+    // se le preguntó «¿cuántas quieres para ti?» después de decirlo). La del otro la arma una persona aparte.
+    try {
+      const _mMia = /(?:^|[^\p{L}\p{N}])(\d{1,2}|un[oa]?|dos|tres|cuatro|cinco)\s+(?:unidades?\s+)?para\s+m[ií](?![\p{L}\p{N}])/iu.exec(String(texto ?? ""));
+      if (_mMia) {
+        const _raw = _mMia[1].toLowerCase();
+        const _nMia = /^\d/.test(_raw) ? Number(_raw) : (NUM_PALABRA[_raw] ?? (/^un[oa]?$/.test(_raw) ? 1 : 0));
+        const _opsM = await loadOpciones(db, run, prodId);
+        const _opM = _opsM.filter((o) => Number(o.cantidad ?? 1) === _nMia);
+        if (_nMia > 0 && _opM.length === 1) {
+          const op3 = _opM[0];
+          run.vars.opcion_id = op3.id; ctx.opcion_id = op3.id;
+          await setField(db, run.channel_id, run.contact_id, "opcion_id", op3.id);
+          await setField(db, run.channel_id, run.contact_id, "opcion_elegida", op3.nombre);
+          ctx.opcion = op3.nombre; ctx.cantidad = op3.cantidad ?? 1; (ctx as any)._opcion = op3;
+          const { monto: _mM } = await precioEsperado(db, run, ctx);
+          if (_mM != null) { ctx.precio = _mM; ctx.precio_esperado = _mM; }
+          await logEvent(db, run.channel_id, run.contact_id, "campo", "Opción sellada: la suya",
+            `${op3.nombre} — «${_mMia[0].trim()}» (la del otro destino va aparte)`).catch(() => {});
+          return { clave: op3.id, confianza: 1, intencion: "eligiendo" } as Clasificacion;
+        }
+      }
+    } catch (_) { /* sin opciones legibles → como antes */ }
     return null;
   }
   // Lo que el cliente ya dijo ANTES, no solo su último mensaje — mismo problema que
