@@ -1170,7 +1170,6 @@ export async function mountShell({ active } = {}) {
         <span class="nb-name" id="nodoBotName">${escHtml(initName)}</span>
         <svg class="nb-cx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </button>
-      <button class="nodo-bell" id="nodoBell" type="button" title="Notificaciones" aria-label="Notificaciones">${svg("bell")}<span class="nn-badge" hidden></span></button>
       <button class="nodo-icnbtn" id="nodoCollapse" title="Comprimir menú"><span class="cl-shrink">${svg("panel")}</span><span class="cl-grow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></button>
     </div>
     <nav class="nodo-primary">${primaryHTML}</nav>
@@ -1181,6 +1180,7 @@ export async function mountShell({ active } = {}) {
           <span class="nu-av" id="nodoUserAv">?</span>
           <span class="nu-meta"><b id="nodoUserName">Perfil</b><small id="nodoUserRole">Mi cuenta</small></span>
         </a>
+        <button class="nodo-bell" id="nodoBell" type="button" title="Notificaciones" aria-label="Notificaciones">${svg("bell")}<span class="nn-badge" hidden></span></button>
         <button class="nodo-icnbtn" id="nodoTheme" title="Cambiar tema"></button>
       </div>
     </div>`;
