@@ -92,7 +92,21 @@ export async function montar(ctx) {
   const despertar = () => { try { audio(); } catch (_) {} };
   document.addEventListener("pointerdown", despertar, { once: true, capture: true });
 
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && N.abierto) cerrar(); });
+  document.addEventListener("keydown", (e) => {
+    if (!N.abierto) return;
+    const d = document.getElementById("nodoNotif");
+    // Con la lista de bots abierta: Esc cierra SOLO la lista, y las flechas se mueven por ella.
+    if (menuBotAbierto()) {
+      if (e.key === "Escape") { e.preventDefault(); menuBot(d, false); d.querySelector(".nn-bsel-btn")?.focus(); return; }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const its = [...d.querySelectorAll(".nn-bsel-it")], i = its.indexOf(document.activeElement);
+        its[(i + (e.key === "ArrowDown" ? 1 : -1) + its.length) % its.length]?.focus();
+        return;
+      }
+    }
+    if (e.key === "Escape") cerrar();
+  });
   document.addEventListener("pointerdown", (e) => {
     if (!N.abierto) return;
     if (e.target.closest("#nodoNotif") || e.target.closest("#nodoBell") || e.target.closest(".nodo-modal-back,.nodo-modal,[role=dialog]")) return;
@@ -304,29 +318,31 @@ function conteoPorBot() {
   return m;
 }
 
-// Fila de bots del cajón: logo + nombre + su número (en «Por atender», lo pendiente —rojo si hay
-// algo urgente—; en «Todas», lo sin leer). Reemplaza al <select>, que no decía cuánto tenía cada bot.
-function filaBots(chs) {
+// Selector de bot del cajón (desplegable propio, no el <select> nativo que se veía pobre y no decía
+// cuánto tenía cada bot). Botón con el logo y el nombre del elegido; la lista trae cada bot con su
+// número: en «Por atender», lo pendiente (rojo si hay algo urgente); en «Todas», lo sin leer.
+// Orden fijo (el de siempre): en un selector, que las cosas no cambien de sitio.
+function selectorBot(chs) {
   const cnt = conteoPorBot();
   const cero = { pend: 0, urg: false, noLeidas: 0 };
   const num = (x) => (N.tab === "atender" ? x.pend : x.noLeidas);
   const badge = (k, urg) => !k ? "" :
     `<b class="nn-bc ${N.tab === "atender" ? (urg ? "urg" : "pend") : "soft"}">${k > 99 ? "99+" : k}</b>`;
   const tot = chs.reduce((s, c) => s + num(cnt[c.id] || cero), 0);
-  // El que más te necesita, primero (urgente, luego cuántos); los que no tienen nada, al final en su
-  // orden de siempre. Con 4 bots entran ~2 a la vista: el que tenía lo urgente quedaba escondido.
-  const pos = new Map(chs.map((c, i) => [c.id, i]));
-  chs = [...chs].sort((a, b) => {
-    const x = cnt[a.id] || cero, y = cnt[b.id] || cero;
-    return (N.tab === "atender" ? Number(y.urg) - Number(x.urg) : 0) || num(y) - num(x) || pos.get(a.id) - pos.get(b.id);
-  });
-  return `<div class="nn-bots" role="tablist" aria-label="Filtrar por bot">
-    <button class="nn-bot todos${N.bot === "todos" ? " on" : ""}" data-bot="todos" role="tab">Todos${badge(tot, chs.some((c) => cnt[c.id]?.urg))}</button>
-    ${chs.map((c) => {
-      const x = cnt[c.id] || cero, k = num(x);
-      return `<button class="nn-bot${N.bot === c.id ? " on" : ""}${k ? "" : " cero"}" data-bot="${c.id}" role="tab" title="${esc(c.nombre)}${k ? ` · ${k} ${N.tab === "atender" ? "por atender" : "sin leer"}` : ""}">
-        <img src="${esc(c.logo_url || N.ctx.logoFallback)}" alt=""><span>${esc(c.nombre)}</span>${badge(k, x.urg)}</button>`;
-    }).join("")}
+  const elegido = chs.find((c) => c.id === N.bot);
+  const logo = (c) => `<img src="${esc(c.logo_url || N.ctx.logoFallback)}" alt="">`;
+  const todosIc = `<span class="nn-bsel-all">${I("robot")}</span>`;
+  const item = (id, ic, nombre, k, urg) => `<button class="nn-bsel-it${N.bot === id ? " on" : ""}" type="button" data-bot="${id}" role="option" aria-selected="${N.bot === id}">
+      ${ic}<span>${esc(nombre)}</span>${badge(k, urg)}${N.bot === id ? `<i class="nn-bsel-ok">${I("check")}</i>` : ""}</button>`;
+  return `<div class="nn-bsel">
+    <button class="nn-bsel-btn" type="button" data-a="bot-menu" aria-haspopup="listbox" aria-expanded="false" title="Ver los avisos de un bot">
+      ${elegido ? logo(elegido) : todosIc}<span>${esc(elegido ? elegido.nombre : "Todos los bots")}</span>${I("chevron")}
+    </button>
+    <div class="nn-bsel-pop" role="listbox" hidden>
+      ${item("todos", todosIc, "Todos los bots", tot, chs.some((c) => cnt[c.id]?.urg))}
+      <div class="nn-bsel-sep"></div>
+      ${chs.map((c) => { const x = cnt[c.id] || cero; return item(c.id, logo(c), c.nombre, num(x), x.urg); }).join("")}
+    </div>
   </div>`;
 }
 
@@ -378,17 +394,17 @@ function pintar() {
   const nNoTodo = [...N.rows.values()].filter((n) => noLeida(n) && !oculta(n)).length;
   // Un bot que se archivó mientras estaba elegido: vuelve a «Todos».
   if (N.bot !== "todos" && !chs.some((c) => c.id === N.bot)) N.bot = "todos";
-  const _xBots = d.querySelector(".nn-bots")?.scrollLeft || 0;   // la fila de bots no salta al redibujar
+  const _menuAbierto = menuBotAbierto();
   d.innerHTML = `
     <header class="nn-head">
       <div class="nn-hl">
         <h2>Notificaciones</h2>
+        ${chs.length > 1 ? selectorBot(chs) : ""}
       </div>
       <button class="nn-ib" data-a="leer-todo" title="Marcar todo como leído (todos los bots)"${nNoTodo ? "" : " disabled"}>${I("checkAll")}</button>
       <button class="nn-ib" data-a="prefs" title="Preferencias">${I("config")}</button>
       <button class="nn-ib" data-a="cerrar" title="Cerrar (Esc)">${I("x")}</button>
     </header>
-    ${chs.length > 1 ? filaBots(chs) : ""}
     <div class="nn-tabs" role="tablist">
       <button class="nn-tab${N.tab === "atender" ? " on" : ""}" data-tab="atender" role="tab">Por atender${pend.length ? `<b class="${pend.some((n) => n.prioridad === "urgente") ? "urg" : ""}">${pend.length}</b>` : ""}</button>
       <button class="nn-tab${N.tab === "todas" ? " on" : ""}" data-tab="todas" role="tab">Todas${nNo ? `<b class="soft">${nNo > 99 ? "99+" : nNo}</b>` : ""}</button>
@@ -396,8 +412,8 @@ function pintar() {
     <div class="nn-filt"></div>
     ${bannerNavegador()}
     <div class="nn-list"></div>`;
-  const _fila = d.querySelector(".nn-bots");
-  if (_fila) _fila.scrollLeft = _xBots;
+  // Llegó un aviso o se recargó con la lista de bots abierta: se redibuja todo, pero la lista sigue abierta.
+  if (_menuAbierto) menuBot(d, true, false);
   pintarLista();
 }
 
@@ -550,12 +566,25 @@ async function leerTodo() {
   N.leidas.clear();
 }
 
+// Lista del selector de bot: abrir/cerrar sin redibujar el cajón.
+function menuBot(d, abrirlo, enfocar = true) {
+  const pop = d.querySelector(".nn-bsel-pop"), btn = d.querySelector(".nn-bsel-btn");
+  if (!pop || !btn) return;
+  pop.hidden = !abrirlo;
+  btn.classList.toggle("open", abrirlo);
+  btn.setAttribute("aria-expanded", String(abrirlo));
+  if (abrirlo && enfocar) (pop.querySelector(".nn-bsel-it.on") || pop.querySelector(".nn-bsel-it"))?.focus();
+}
+const menuBotAbierto = () => { const p = document.querySelector("#nodoNotif .nn-bsel-pop"); return !!p && !p.hidden; };
+
 function onClickCajon(e) {
   const d = e.currentTarget;
+  if (!e.target.closest(".nn-bsel")) menuBot(d, false);   // un clic en cualquier otra parte la cierra
   const a = e.target.closest("[data-a]");
   if (a) {
     const k = a.dataset.a;
-    if (k === "cerrar") cerrar();
+    if (k === "bot-menu") menuBot(d, !menuBotAbierto());
+    else if (k === "cerrar") cerrar();
     else if (k === "leer-todo") leerTodo();
     else if (k === "prefs") { N.vista = "prefs"; pintar(); }
     else if (k === "volver") { N.vista = "lista"; pintar(); }
@@ -567,8 +596,10 @@ function onClickCajon(e) {
   const bot = e.target.closest("[data-bot]");
   if (bot) {
     N.bot = bot.dataset.bot; N.grupo = "todo";
+    menuBot(d, false);   // elegir cierra la lista (pintar() la dejaría abierta)
     pintar();
     d.querySelector(".nn-list").scrollTop = 0;
+    d.querySelector(".nn-bsel-btn")?.focus({ preventScroll: true });
     return;
   }
   const tab = e.target.closest("[data-tab]");
