@@ -218,13 +218,13 @@ function renderWA(){
 
       <div class="metabox">
         <div class="mt">Conectar el número</div>
-        <div class="mh">Solo dos datos, y son los dos que hay que ir a buscar porque son secretos: el <b>Access token</b> (business.facebook.com &rarr; Usuarios del sistema) y el <b>App Secret</b> (Configuración &rarr; Básica de la app). Los dos IDs los trae Nodo.</div>
+        <div class="mh">Solo dos datos, y son los dos que hay que ir a buscar porque son secretos: el <b>Access token</b> (business.facebook.com &rarr; Usuarios del sistema) y el <b>App Secret</b> (Configuración &rarr; Básica de la app). Los dos IDs los trae el botón <b>Buscar mis datos</b>; si Meta no se los da (pasa con usuarios del sistema <b>Admin</b>), cópialos de developers.facebook.com &rarr; tu app &rarr; WhatsApp &rarr; Configuración de la API.</div>
         <label>Access token ${badge(s.access_token)}</label>
         <input class="in" type="password" id="w_token" ${NOFILL_PWD} placeholder="${ph(s.access_token,'EAAG... (usa uno permanente, no el de 24 h)')}"/>
         <div class="pasoact"><button class="btn mini" id="waBuscar">Buscar mis datos</button></div>
         <div class="row" style="margin-top:8px">
-          <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="lo trae el botón de arriba"/></div>
-          <div class="f"><label>WABA ID</label><input class="in" id="w_waba" ${NOFILL} value="${esc(c.waba_id)}" placeholder="lo trae el botón de arriba"/></div>
+          <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="lo trae el botón de arriba, o pégalo de Meta"/></div>
+          <div class="f"><label>WABA ID</label><input class="in" id="w_waba" ${NOFILL} value="${esc(c.waba_id)}" placeholder="lo trae el botón de arriba, o pégalo de Meta"/></div>
         </div>
         <label>App Secret ${badge(s.app_secret)}</label>
         <input class="in" type="password" id="w_secret" ${NOFILL_PWD} placeholder="${ph(s.app_secret,'firma el webhook — Meta → Configuración → Básica')}"/>
