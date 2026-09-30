@@ -685,19 +685,20 @@ async function buscarDatosWA(btn){
     const opciones=(r.cuentas||[]).flatMap(cu=>(cu.numeros||[]).map(n=>({ ...n, waba_id:cu.waba_id, waba:cu.nombre })));
     $("waManual").innerHTML="";
     if(!opciones.length && r.manual){
-      // Token bueno, pero de un usuario del sistema Admin: Meta no dice a qué WABA apunta
-      // y ningún endpoint lo revela (medido 2026-09-30). Queda copiarlos — con el enlace
+      // Token bueno, pero Meta no dice a qué WABA apunta y ningún endpoint lo revela —
+      // medido 2026-09-30 con usuario del sistema Admin Y Employee. Queda copiarlos — con el enlace
       // a la pantalla exacta de ESTA app, no a «developers.facebook.com» a secas.
       if(r.diag) console.info("whatsapp_descubrir", r.diag);
       const url=r.app_id?`https://developers.facebook.com/apps/${encodeURIComponent(r.app_id)}/whatsapp-business/wa-dev-console/`:"https://developers.facebook.com/apps/";
       $("waManual").innerHTML=`<div class="wamanual">
-        <b>El token está bien, pero Meta no dice a qué número apunta</b> (pasa cuando el usuario del sistema es Admin). Cópialos de Meta, son dos números:
+        <b>El token está bien, pero Meta no le dice a Nodo a qué número apunta.</b> Cópialos de Meta una sola vez, son dos números:
         <ol>
           <li>En <b>Configuración de la API</b>, elige tu número en el selector <b>«De»</b>.</li>
           <li><b>Identificador del número de teléfono</b> &rarr; pégalo en <b>Phone Number ID</b>.</li>
           <li><b>Identificador de la cuenta de WhatsApp Business</b> &rarr; pégalo en <b>WABA ID</b>.</li>
         </ol>
         <a class="btn mini" href="${esc(url)}" target="_blank" rel="noopener">Abrir Configuración de la API &nearr;</a>
+        ${(r.diag||[]).length?`<div style="margin-top:8px;font-size:10.5px;color:var(--muted)">Detalle para soporte: ${esc(r.diag.join(" | "))}</div>`:""}
       </div>`;
       $("w_phone").focus();
     }else if(!opciones.length){

@@ -231,7 +231,7 @@
         <p>Con el token pegado, dale a <strong>Buscar mis datos</strong>: Nodo le pregunta a Meta de qué cuenta es ese token y rellena solo el <strong>Phone Number ID</strong> y el <strong>WABA ID</strong>. Si el token alcanza varios números, te deja elegir cuál atiende en este canal. Esos dos no son secretos, son etiquetas.</p>
         <div class="ojo">
           <span class="t">Si Nodo te pide copiar los dos IDs</span>
-          <p>Con un usuario del sistema <strong>Admin</strong>, Meta le da al token acceso «a todo» pero no dice a qué número apunta, así que Nodo no puede rellenarlos. No es un error del token: Nodo te muestra un botón que abre la pantalla exacta de tu app.</p>
+          <p>Con algunos tokens Meta da acceso pero no dice a qué número apunta (pasa tanto con usuarios del sistema Admin como Employee), así que Nodo no puede rellenarlos. No es un error del token ni se arregla regenerándolo: Nodo te muestra un botón que abre la pantalla exacta de tu app. Se hace <strong>una sola vez</strong> por número.</p>
           <p>Ahí, en <strong>WhatsApp &#8594; Configuración de la API</strong>, elige tu número en el selector <strong>«De»</strong> y copia dos números:</p>
           <ul>
             <li><strong>Identificador del número de teléfono</strong> &#8594; va en <strong>Phone Number ID</strong>.</li>
@@ -316,7 +316,7 @@
           </tr>
           <tr>
             <td>«Buscar mis datos» no rellena los IDs</td>
-            <td>El usuario del sistema es Admin: Meta no dice a qué número apunta el token</td>
+            <td>Meta no dice a qué número apunta el token (pasa con Admin y con Employee)</td>
             <td>Copia los dos IDs de <b>Configuración de la API</b> (Nodo te deja el botón); regenerar el token no cambia nada</td>
           </tr>
           <tr>
