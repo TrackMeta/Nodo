@@ -11096,6 +11096,14 @@ const SALDO_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+// Para el evento de «a revisión manual»: qué monto dijo leer y qué transcribió, así quien
+// lo revisa (y quien depura) ve de un vistazo si fue el OCR o una foto sin comprobante.
+function _loQueLeyo(parsed: any, monto: number): string {
+  const t = parsed?.texto_visible;
+  const tx = t == null ? "(no transcribió nada)" : "«" + String(t).replace(/\s+/g, " ").slice(0, 300) + "»";
+  return "\nLeyó el monto: " + (Number.isFinite(monto) ? monto : "—") + " · Texto: " + tx;
+}
+
 // ¿Lo que el modelo dice haber leído está de verdad en la imagen? Se comprueba que el
 // MONTO aparezca en la transcripción, como número completo.
 function pruebaDeTexto(parsed: any, monto: number): boolean {
@@ -12737,7 +12745,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   const _hayPrueba = pruebaDeTexto(parsed, monto);
   if (!_hayPrueba) {
     await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante a revisión manual",
-      "El monto que dice leer no aparece como número completo en el texto de la imagen, o el modelo no transcribió el texto. Puede no ser un comprobante.").catch(() => {});
+      "El monto que dice leer no aparece como número completo en el texto de la imagen, o el modelo no transcribió el texto. Puede no ser un comprobante." + _loQueLeyo(parsed, monto)).catch(() => {});
   }
   // 🔒 Operación de MENOS de 4 caracteres («07», «12»): el candado anti-reúso ni la registra
   // ni la compara (ver operacionYaUsada/reclamarOperacion), así que «oper» truthy pasaba el
@@ -13130,7 +13138,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
   const _pruebaSaldo = pruebaDeTexto(parsed, monto);
   if (!_pruebaSaldo) {
     await logEvent(db, channelId, contactId, "nota", "🔒 Comprobante del saldo a revisión manual",
-      "El monto que dice leer no aparece como número completo en el texto de la imagen, o el modelo no transcribió el texto.").catch(() => {});
+      "El monto que dice leer no aparece como número completo en el texto de la imagen, o el modelo no transcribió el texto." + _loQueLeyo(parsed, monto)).catch(() => {});
   }
   // Ídem adelanto: operación de menos de 4 caracteres = sin candado posible → manual.
   // Mismo cerrojo que el adelanto: sin métodos de pago cargados no se auto-aprueba.
