@@ -90,7 +90,7 @@ export async function construirResumen(
       .gte("created_at", fromISO).lt("created_at", toISO),
     // PAGINADO también: más de 1000 filas de gasto en un día (muchos anuncios) cortaba el gasto
     // → ROAS y ganancia neta del digest salían MEJORES que en el Dashboard (que sí pagina).
-    pageAll((f, t) => db.from("ads_insights").select("gasto").eq("channel_id", chId).eq("fecha", diaYmd).order("ad_id").range(f, t)),
+    pageAll((f, t) => db.from("ads_insights").select("ad_id,gasto").eq("channel_id", chId).eq("fecha", diaYmd).order("ad_id").range(f, t)),
     pageAll((f, t) => db.from("manual_expenses").select("monto").eq("channel_id", chId).eq("fecha", diaYmd).order("id").range(f, t)),
     db.from("ads_meta").select("account_currency").eq("channel_id", chId),
     // Cuánto vale un dólar en la moneda del negocio: sin esto el gasto de Meta que
@@ -164,7 +164,20 @@ export async function construirResumen(
     if (_monedas.every((m) => m === _cur)) _sinConvertir = false;
     else if (_monedas.length === 1 && _monedas[0] === "USD" && _cur !== "USD" && _tasa > 0) { _factor = _tasa; _sinConvertir = false; }
   }
-  const gastoAds = (adsR.data ?? []).reduce((a: number, r: any) => a + Number(r?.gasto || 0), 0) * _factor;
+  // Sin el gasto de cuentas publicitarias ya QUITADAS del bot (mismo criterio que el panel,
+  // adsDeCuentasQuitadas en shell.js): ads_insights no guarda la cuenta y su gasto seguía
+  // restando después de quitarla. Ante cualquier error de lectura se cuenta todo, como antes.
+  const _adsFuera = new Set<string>();
+  try {
+    const { data: acc, error: eAcc } = await db.from("ad_accounts").select("account_id").eq("channel_id", chId).eq("activo", true);
+    const { data: mt, error: eMt } = await pageAll((f, t) => db.from("ads_meta").select("ad_id,account_id").eq("channel_id", chId).order("ad_id").range(f, t));
+    if (!eAcc && !eMt) {
+      const act = new Set((acc ?? []).map((a: any) => String(a.account_id)));
+      for (const m of (mt ?? []) as any[]) if (m.account_id && !act.has(String(m.account_id))) _adsFuera.add(String(m.ad_id));
+    }
+  } catch (_) { /* se cuenta todo */ }
+  const gastoAds = (adsR.data ?? []).filter((r: any) => !_adsFuera.has(String(r?.ad_id)))
+    .reduce((a: number, r: any) => a + Number(r?.gasto || 0), 0) * _factor;
   const gastosExtra = (expR.data ?? []).reduce((a: number, r: any) => a + Number(r?.monto || 0), 0);
   // El costo de la IA, en la moneda del negocio. Se guarda en dólares (así lo factura el
   // proveedor) y solo entra si hay tipo de cambio: convertirlo con una tasa inventada

@@ -163,7 +163,7 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, icon, pageAll, factorAds, getUsdRate, toast, updateChannel } from "./shell.js";
+import { supa, getChannel, mountShell, icon, pageAll, factorAds, getUsdRate, toast, updateChannel, adsDeCuentasQuitadas } from "./shell.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, startOfDayTZ as startOfDayLima, endOfDayTZ as endOfDayLima, ymdTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -267,7 +267,8 @@ async function loadData(){
   // no se puede saber, se deja crudo y el banner de arriba lo dice.
   const _ads=factorAds(metaR.data||[], CUR, USD_RATE);
   const _f=_ads.factor;
-  (insR.data||[]).forEach(i=>{ const row=getRow(i.ad_id); row.gasto+=(+i.gasto||0)*_f; row.impr+=+i.impresiones||0; row.alcance+=+i.alcance||0; row.clics+=+i.clics||0; row.clicsWA+=+i.clics_wa||0; const d=day(row,i.fecha); d.gasto+=(+i.gasto||0)*_f; d.impr+=+i.impresiones||0; d.clics+=+i.clics||0; });
+  const _adsFuera=await adsDeCuentasQuitadas(cid);   // cuentas publicitarias ya quitadas de este bot
+  (insR.data||[]).filter(i=>!_adsFuera.has(String(i.ad_id))).forEach(i=>{ const row=getRow(i.ad_id); row.gasto+=(+i.gasto||0)*_f; row.impr+=+i.impresiones||0; row.alcance+=+i.alcance||0; row.clics+=+i.clics||0; row.clicsWA+=+i.clics_wa||0; const d=day(row,i.fecha); d.gasto+=(+i.gasto||0)*_f; d.impr+=+i.impresiones||0; d.clics+=+i.clics||0; });
   const _adCnt={};
   (ordR.data||[]).forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(!a) return; (_adCnt[a]||(_adCnt[a]={fisico:0,digital:0}))[O.esFisico(o)?"fisico":"digital"]++; });
   (ordR.data||[]).forEach(o=>{ const adId=o.shipping&&o.shipping.ad_id; if(!adId) return; const row=getRow(adId); const e=O.EST[o.estado]||{}; const esConf=!!e.venta && !e.perdido; const esVenta=e.cobro==="todo"; const tot=O.total(o); const cant=((o.product&&o.product.product_versions)||[]).find(v=>v.id===o.version_id)?.cantidad??1; const mg=O.margen(o,o.product,cant); const f=o.created_at?ymdLima(o.created_at):""; const d=day(row,f);

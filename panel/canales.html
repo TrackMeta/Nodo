@@ -910,15 +910,34 @@ function pintarDiag(r){
 // porque eso convertiría en admin a cualquier desconocido que encuentre el bot.
 async function vincularTelegram(){
   const box=$("pairBox");
+  // ¿De QUIÉN va a ser este Telegram? El vínculo queda a nombre de esa persona: así, al
+  // quitarla del equipo, se le corta también la aprobación de pagos. Antes quedaba siempre a
+  // nombre del admin que generaba el código, y un operador quitado seguía aprobando.
+  let para=null;
+  try{
+    const { data:chA }=await supa.from("channels").select("account_id").eq("id",st.channelId).maybeSingle();
+    const { data:ms }=chA?.account_id ? await supa.from("account_members").select("user_id,role,app_users(nombre)").eq("account_id",chA.account_id).eq("activo",true) : { data:[] };
+    const yo=(await supa.auth.getUser()).data.user?.id;
+    if((ms||[]).length>1){
+      const ROL={admin:"Administrador",operador:"Operador"};
+      const opts=[...ms].sort((a,b)=>(a.user_id===yo?-1:b.user_id===yo?1:0)).map(m=>({ value:m.user_id,
+        label:(m.app_users?.nombre||"Sin nombre")+(m.user_id===yo?" (tú)":""), desc:ROL[m.role]||m.role }));
+      para=await askChoice({ title:"¿De quién es este Telegram?",
+        message:"El código vincula el Telegram de UNA persona del equipo. Si después la quitas del equipo, pierde también la aprobación de pagos.",
+        options:opts });
+      if(!para) return;
+      if(para===yo) para=null;
+    }
+  }catch(_){ /* sin la lista del equipo: el código queda a tu nombre, como antes */ }
   box.innerHTML=`<div style="font-size:12.5px;color:var(--muted);padding:10px 0">Generando código…</div>`;
   let r;
-  try{ r=await callFn("channel-config",{ action:"telegram_pair_start", channel_id:st.channelId }); }
+  try{ r=await callFn("channel-config",{ action:"telegram_pair_start", channel_id:st.channelId, ...(para?{para_uid:para}:{}) }); }
   catch(e){ box.innerHTML=""; toast(e.message||"No se pudo generar el código",true); return; }
 
   const fin=new Date(r.vence).getTime();
   box.innerHTML=`
     <div style="border:1.5px solid var(--brand);background:var(--brand-bg,rgba(43,127,255,.08));border-radius:12px;padding:14px;margin-top:10px">
-      <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Abre tu bot en Telegram y <b>mándale este código</b>:</div>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.6">${para?"Pásale este código a esa persona: que lo mande <b>desde SU Telegram</b> al bot":"Abre tu bot en Telegram y <b>mándale este código</b>"}:</div>
       <div style="font-size:30px;font-weight:800;letter-spacing:5px;margin:10px 0;font-variant-numeric:tabular-nums">${esc(r.codigo)}</div>
       <div style="font-size:12px;color:var(--faint)" id="pairTime"></div>
       <div style="font-size:12px;color:var(--muted);margin-top:8px">Apenas lo mandes, tu chat queda vinculado solo — no tienes que copiar nada.</div>

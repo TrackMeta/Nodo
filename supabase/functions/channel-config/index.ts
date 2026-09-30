@@ -268,9 +268,20 @@ Deno.serve(async (req) => {
       }
       const codigo = pinNuevo();  // crypto, no Math.random: es la llave para volverse admin
       const vence = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-      // `uid`: QUIÉN pidió el código. El webhook lo guarda junto al chat que se vincula, y así al
-      // quitar a esa persona del equipo se le corta también Telegram (antes seguía aprobando pagos).
-      const { error } = await db.from("channels").update({ telegram_pair: { codigo, vence, uid } }).eq("id", channel_id);
+      // `uid`: DE QUIÉN va a ser ese Telegram. El webhook lo guarda junto al chat que se vincula,
+      // y así al quitar a esa persona del equipo se le corta también Telegram. 🔴 Antes era
+      // siempre el admin que pedía el código: si se lo generaba a un operador, el vínculo
+      // quedaba a nombre del admin y al quitar al operador no se cortaba nada (seguía
+      // aprobando pagos). Ahora el admin elige para quién es (`para_uid`, por defecto él).
+      let para = uid;
+      if (body.para_uid && String(body.para_uid) !== uid) {
+        const acc = await accountOfChannel(db, channel_id);
+        const { data: m } = await db.from("account_members").select("user_id")
+          .eq("account_id", acc ?? "").eq("user_id", String(body.para_uid)).eq("activo", true).maybeSingle();
+        if (!m) return json({ error: "no_es_miembro", detalle: "Esa persona no está en el equipo de esta cuenta." }, 400);
+        para = String(body.para_uid);
+      }
+      const { error } = await db.from("channels").update({ telegram_pair: { codigo, vence, uid: para } }).eq("id", channel_id);
       if (error) return json({ error: "guardar_codigo", detalle: error.message }, 400);
       return json({ ok: true, codigo, vence });
     }

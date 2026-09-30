@@ -59,8 +59,20 @@ Deno.serve(async (req) => {
   if (!channelId) return json({ error: "falta_canal" }, 400);
 
   const { data: ch } = await db.from("channels")
-    .select("id, nombre, timezone, moneda, telegram_chat_ids, telegram_webhook_secret, telegram_pair, activo").eq("id", channelId).maybeSingle();
+    .select("id, nombre, timezone, moneda, telegram_chat_ids, telegram_webhook_secret, telegram_pair, activo, account_id, telegram_vinculos").eq("id", channelId).maybeSingle();
   if (!ch) return json({ error: "canal_desconocido" }, 404);
+
+  // ¿Ese chat de Telegram sigue siendo de alguien del EQUIPO? Estar en telegram_chat_ids no
+  // alcanza: si a esa persona la sacaron de la cuenta y el vínculo no se cortó (vínculos viejos
+  // quedaban a nombre del admin que generó el código), seguía aprobando pagos. Si el vínculo
+  // tiene dueño, se exige que siga activo en la cuenta. Chats puestos a mano (sin dueño): como antes.
+  const sigueEnElEquipo = async (chatId: string): Promise<boolean> => {
+    const u = (((ch as any).telegram_vinculos ?? {}) as Record<string, any>)[chatId]?.uid;
+    if (!u || !(ch as any).account_id) return true;
+    const { data: m } = await db.from("account_members").select("user_id")
+      .eq("account_id", (ch as any).account_id).eq("user_id", u).eq("activo", true).maybeSingle();
+    return !!m;
+  };
 
   // 1) ¿Viene de Telegram?
   const secret = (ch as any).telegram_webhook_secret;
@@ -118,7 +130,7 @@ Deno.serve(async (req) => {
     } else if (/^\/(hoy|ayer|fecha|resumen|start|help|ayuda)\b/i.test(texto)) {
       // Comandos. Los de resumen exponen KPIs del negocio → solo admins del
       // canal (los que están en telegram_chat_ids), igual que aprobar un pago.
-      const esAdmin = ((ch as any).telegram_chat_ids ?? []).map(String).includes(quienEs);
+      const esAdmin = ((ch as any).telegram_chat_ids ?? []).map(String).includes(quienEs) && await sigueEnElEquipo(quienEs);
       const chatId = String(msg.chat?.id ?? quienEs);
       // /start y ayuda no exponen datos: se contestan a cualquiera.
       const cmd = texto.replace(/^\//, "").split(/[\s@]/)[0].toLowerCase();
@@ -183,7 +195,7 @@ Deno.serve(async (req) => {
   // rompe el flujo normal. Antes también aceptaba `cb.message.chat.id`: si el id de un
   // GRUPO llegaba a la lista (aviso al grupo del equipo), CUALQUIER integrante —no solo
   // los admins vinculados— podía aprobar/rechazar dinero. Escalada cerrada.
-  if (!permitidos.includes(quien)) {
+  if (!permitidos.includes(quien) || !(await sigueEnElEquipo(quien))) {
     await answerCallback(token, cb.id, "No tienes permiso para esta acción.", true);
     return json({ ok: true });
   }

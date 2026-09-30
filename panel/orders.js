@@ -184,8 +184,8 @@ export function partesDePago(o){
   const adel = Math.min(adelantoDe(o), tot);
   if (zonaDe(o) === "provincia" && adel > 0.005 && (tot - adel) > 0.005) {
     return [
-      { clave:"adelanto", monto:+adel.toFixed(2),          metodo:s.adelanto_metodo||"", comprobante:s.adelanto_comprobante||"", txt:"adelanto", extremo:"primera" },
-      { clave:"saldo",    monto:+(tot-adel).toFixed(2),  metodo:s.saldo_metodo||"",    comprobante:s.saldo_comprobante||"",    txt:"saldo",    extremo:"ultima" },
+      { clave:"adelanto", monto:+adel.toFixed(2),          metodo:s.adelanto_metodo||"", comprobante:s.adelanto_comprobante||"", at:s.adelanto_recibido_at||null, txt:"adelanto", extremo:"primera" },
+      { clave:"saldo",    monto:+(tot-adel).toFixed(2),  metodo:s.saldo_metodo||"",    comprobante:s.saldo_comprobante||"",    at:s.saldo_recibido_at||null, txt:"saldo",    extremo:"ultima" },
     ];
   }
   // 1b) Lima que pagó una parte ANTES de recibir (resolverPrepagoLima): ese Yape y lo que
@@ -194,7 +194,7 @@ export function partesDePago(o){
   const pre = Math.min(Number(s.prepago_lima_abonado) || 0, tot);
   if (zonaDe(o) === "lima" && pre > 0.005 && (tot - pre) > 0.005) {
     return [
-      { clave:"prepago", monto:+pre.toFixed(2),       metodo:"", comprobante:s.pago_adelantado_comprobante||"", txt:"pago adelantado", extremo:"primera" },
+      { clave:"prepago", monto:+pre.toFixed(2),       metodo:"", comprobante:s.pago_adelantado_comprobante||"", at:s.pago_adelantado_recibido_at||null, txt:"pago adelantado", extremo:"primera" },
       { clave:"puerta",  monto:+(tot-pre).toFixed(2), metodo:"", comprobante:s.comprobante||"",  txt:"cobro al entregar", extremo:"ultima" },
     ];
   }

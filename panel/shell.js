@@ -1864,6 +1864,25 @@ export function waFmt(s) {
 // Vive acá y no en cada pantalla a propósito: el Dashboard, su Bitácora y
 // Rendimiento tienen que dar el MISMO gasto para el mismo periodo. Dos copias
 // de esta regla es exactamente cómo empiezan a divergir.
+// 🔌 Anuncios de cuentas publicitarias que YA NO están conectadas a este bot. ads_insights no
+// guarda la cuenta, así que al «Quitar» una en Ajustes su gasto histórico seguía restando para
+// siempre (típico: la misma cuenta pegada por error a dos bots — al quitarla de uno, ese seguía
+// con el gasto del otro y su ganancia salía subestimada). Se FILTRA, no se borra: si la cuenta
+// vuelve, vuelve su historial. Un anuncio sin ads_meta (aún no sincronizado) se queda: no se
+// sabe de qué cuenta es y es mejor contarlo que esconder gasto real.
+export async function adsDeCuentasQuitadas(channelId) {
+  const fuera = new Set();
+  try {
+    const { data: acc, error: e1 } = await supa.from("ad_accounts").select("account_id").eq("channel_id", channelId).eq("activo", true);
+    if (e1) return fuera;
+    const activas = new Set((acc || []).map((a) => String(a.account_id)));
+    const { data: meta, error: e2 } = await pageAll((f, t) => supa.from("ads_meta").select("ad_id,account_id")
+      .eq("channel_id", channelId).order("ad_id").range(f, t));
+    if (e2) return fuera;
+    (meta || []).forEach((m) => { if (m.account_id && !activas.has(String(m.account_id))) fuera.add(String(m.ad_id)); });
+  } catch (_) { /* sin la lista: se cuenta todo, como antes */ }
+  return fuera;
+}
 export function factorAds(rows, cur, tasa) {
   const filas = rows || [];
   const monedas = [...new Set(filas.map((m) => String(m.account_currency || "").toUpperCase()).filter(Boolean))];
