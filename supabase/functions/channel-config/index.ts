@@ -694,14 +694,30 @@ Deno.serve(async (req) => {
           for (const x of ((b.body?.data ?? []) as any[])) negocios.add(String(x.id));
           diag.push("me/businesses:" + (b.body?.error?.message ?? ((b.body?.data ?? []).length + " filas")));
         }
-        // `me/businesses` viene vacío con usuario de sistema (ver asignarseCuentas): el
-        // portfolio dueño de la app sí lo dice Meta, y el app_id lo trae debug_token.
-        const appId = dbg.body?.data?.app_id;
-        if (!negocios.size && appId) {
-          const a = await metaGet(token, `${appId}?fields=owner_business`);
-          const dueno = (a.body as any)?.owner_business?.id;
-          if (dueno) negocios.add(String(dueno));
-          diag.push("app:" + (a.body?.error?.message ?? (dueno ? "dueño " + dueno : "sin owner_business")));
+        // `me/businesses` viene vacío con usuario de sistema (medido 2026-09-30 con un Admin
+        // de «Soluciones Practicas»), y la app no expone su portfolio (`owner_business` no
+        // existe: #100). El portfolio se deduce de lo que el token SÍ ve: sus cuentas
+        // publicitarias y páginas dicen de qué negocio son, y los WABAs de los otros bots
+        // de esta cuenta dicen quién los posee.
+        if (!negocios.size) {
+          for (const edge of ["adaccounts", "accounts"]) {
+            const r = await metaGet(token, `me/${edge}?fields=business&limit=50`);
+            for (const x of ((r.body?.data ?? []) as any[])) if (x?.business?.id) negocios.add(String(x.business.id));
+            diag.push(`me/${edge}:` + (r.body?.error?.message ?? (negocios.size ? "ok" : (r.body?.data ?? []).length + " sin negocio")));
+            if (negocios.size) break;
+          }
+        }
+        if (!negocios.size) {
+          const { data: cMe } = await db.from("channels").select("account_id").eq("id", channel_id).maybeSingle();
+          const { data: hermanos } = await db.from("channels").select("waba_id")
+            .eq("account_id", (cMe as any)?.account_id ?? "").not("waba_id", "is", null).limit(10);
+          for (const w of new Set(((hermanos ?? []) as any[]).map((h) => String(h.waba_id)))) {
+            const r = await metaGet(token, `${w}?fields=owner_business_info`);
+            const dueno = (r.body as any)?.owner_business_info?.id;
+            if (dueno) { negocios.add(String(dueno)); ids.add(w); }
+            diag.push("waba:" + (r.body?.error?.message ?? (dueno ? "ok" : "sin dueño")));
+            if (dueno) break;
+          }
         }
         for (const biz of negocios) {
           for (const edge of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
