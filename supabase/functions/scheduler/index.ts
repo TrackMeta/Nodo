@@ -1039,6 +1039,20 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // salió, el sello se queda: mejor atrasar un toque que repetírselo al cliente.
   let toco = false;
   let _ofertaEscrita = false;
+  let _rebajarPedido: null | (() => Promise<void>) = null;
+  // Quita la oferta que este paso grabó si al final el cliente no la vio. Todas las salidas
+  // sin envío pasan por acá: antes los `return` de «flujo no arrancó» y «Meta frenó, se
+  // pospone» salían sin limpiar y la oferta quedaba viva (y se renovaba en cada reintento).
+  const _retirarOferta = async () => {
+    try {
+      const { data: cOf } = await db.from("contacts").select("oferta_activa").eq("id", s.contact_id).maybeSingle();
+      const of = (cOf as any)?.oferta_activa;
+      if (of && of.origen === "remarketing" && String(of.opcion_id) === String(paso?.oferta?.version_id)) {
+        await db.from("contacts").update({ oferta_activa: null }).eq("id", s.contact_id);
+        console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: no salió nada → se retira la oferta grabada (evita el descuento fantasma)`);
+      }
+    } catch (_) { /* best-effort */ }
+  };
   let _reintentar = false;   // rechazo temporal de Meta en un paso de mensaje → se pospone sin avanzar
   try {
     // Oferta identificada: el paso puede pegar un DESCUENTO al contacto para una
@@ -1072,7 +1086,10 @@ async function processSub(s: any, now: number): Promise<boolean> {
       // 🔴 Y si ya tiene un pedido de provincia ESPERANDO ADELANTO de esa misma presentación, se
       // rebaja también el PEDIDO: la oferta solo bajaba el {{precio}} del mensaje, el pedido seguía
       // con el total y el saldo viejos, y en la agencia le cobraban S/79 al que le dijimos S/59.
-      try {
+      // ⏳ Pero RECIÉN cuando el toque salió (ver `_rebajarPedido` abajo): hacerlo acá, antes
+      // de enviar, dejaba el pedido rebajado aunque la plantilla fallara o se pospusiera —
+      // y la retirada de la oferta solo limpiaba el contacto, nunca el pedido.
+      _rebajarPedido = async () => { try {
         const { data: oAd } = await db.from("orders").select("id, amount, shipping")
           .eq("contact_id", s.contact_id).eq("estado", "esperando_adelanto").eq("version_id", paso.oferta.version_id)
           .order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -1090,7 +1107,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
             }, { sinReloj: true });
           }
         }
-      } catch (e) { console.error("[secuencia] rebajar pedido con la oferta:", (e as any)?.message ?? e); }
+      } catch (e) { console.error("[secuencia] rebajar pedido con la oferta:", (e as any)?.message ?? e); } };
     }
 
     // Disparar el paso: flujo, plantilla HSM (fuera de 24h) o mensaje/burbujas.
@@ -1138,6 +1155,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
             // libere. Antes se caía a avanzar `paso_actual` igual (el `return` faltaba) → el
             // paso de re-enganche se perdía en silencio sin enviar nada.
             console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: flujo NO arrancó (run activo/esperando) → se reintenta el próximo tick`);
+            if (_ofertaEscrita) await _retirarOferta();
             await _desclamar();
             return false;
           }
@@ -1177,6 +1195,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
         if (meta && esRechazoTemporal(meta)) {
           await db.from("sequence_subscriptions").update({ proximo_at: new Date(Date.now() + 15 * 60_000).toISOString() }).eq("id", s.id);
           console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta frenó la plantilla "${paso.template_name}" (code ${meta?.code}) → se pospone 15 min`);
+          if (_ofertaEscrita) await _retirarOferta();
           await _desclamar();
           return false;
         }
@@ -1258,20 +1277,12 @@ async function processSub(s: any, now: number): Promise<boolean> {
       }
     }
     if (toco) await marcarTocoMkt(s.contact_id);
+    if (toco && _rebajarPedido) await _rebajarPedido();   // el cliente SÍ vio la oferta: ahora el pedido baja
     // 🔴 Descuento fantasma por la puerta de la plantilla: la oferta se graba ANTES de enviar
     // (`vaAEnviar` da por hecho que la plantilla sale), pero Meta puede rechazarla en firme
     // (no aprobada, pausada, params) y el paso avanza igual → el cliente nunca vio «te dejo a
     // S/Y» y el validador aceptaba ese precio. Si no salió nada, la oferta recién grabada se quita.
-    if (_ofertaEscrita && !toco) {
-      try {
-        const { data: cOf } = await db.from("contacts").select("oferta_activa").eq("id", s.contact_id).maybeSingle();
-        const of = (cOf as any)?.oferta_activa;
-        if (of && of.origen === "remarketing" && String(of.opcion_id) === String(paso.oferta.version_id)) {
-          await db.from("contacts").update({ oferta_activa: null }).eq("id", s.contact_id);
-          console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: no salió nada → se retira la oferta grabada (evita el descuento fantasma)`);
-        }
-      } catch (_) { /* best-effort */ }
-    }
+    if (_ofertaEscrita && !toco) await _retirarOferta();
     // Rechazo temporal en un paso de mensaje: la oferta ya se retiró arriba (se vuelve a grabar
     // en el reintento), así que se aparta 15 min y se devuelve el ancla sin consumir el paso.
     if (_reintentar) {

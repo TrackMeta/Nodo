@@ -390,7 +390,17 @@ Deno.serve(async (req) => {
     // pedidos que quedan: así anular la única venta baja a "perdido", pero si le
     // queda otra compra real se mantiene "comprado".
     const st = stageDeEstado(newEstado);
-    if (st === "perdido") await recomputeStageOnLoss(db, (order as any).channel_id, (order as any).contact_id);
+    if (st === "perdido") {
+      await recomputeStageOnLoss(db, (order as any).channel_id, (order as any).contact_id);
+      // Y se corta la secuencia «provincia sin adelanto» de ese pedido, como ya hacen la
+      // cancelación del cliente (engine) y el vencimiento (scheduler): cancelado desde el
+      // panel, al cliente le seguía llegando «tu pedido sigue reservado, con el adelanto lo
+      // despacho hoy» sobre un pedido que ya no existe.
+      await db.from("sequence_subscriptions")
+        .update({ estado: "cancelada", updated_at: new Date().toISOString() })
+        .eq("contact_id", (order as any).contact_id).eq("estado", "activa").eq("segmento", "provincia_sin_adelanto")
+        .then(() => {}, () => {});
+    }
     else await moverEtapa(db, (order as any).channel_id, (order as any).contact_id, st);
     // 📦 Stock: si la venta se CAE (cancelada/rechazada/no recogida/anulada),
     // devuelve al inventario las unidades que se reservaron al crear el pedido.

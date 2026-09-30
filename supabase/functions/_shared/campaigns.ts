@@ -389,14 +389,25 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
     }
     if (huerf?.length) console.warn(`[campañas] "${c.nombre ?? c.id}": ${huerf.length} fila(s) 'enviando' huérfana(s) devueltas a la cola`);
   }
+  const ahoraIso = new Date().toISOString();
   const { data: pend, error: errPend } = await db.from("campaign_sends").select("id, contact_id, error")
-    .eq("campaign_id", c.id).eq("estado", "pendiente").order("id").limit(BATCH);
+    .eq("campaign_id", c.id).eq("estado", "pendiente")
+    .or(`error->>reintentar_desde.is.null,error->>reintentar_desde.lt.${ahoraIso}`)
+    .order("id").limit(BATCH);
   // Distinguir "no quedan pendientes" de "no pude leerlos". Antes el error no se recogía:
   // `data` venía undefined, `!pend?.length` daba true y la campaña se marcaba COMPLETADA por
   // un hipo de red — a mitad del envío, con el resto de la audiencia sin recibir nada y sin
   // forma de retomarla. Ahora un error deja la campaña 'enviando' y el próximo tick sigue.
   if (errPend) { console.error(`[campañas] leer pendientes de "${c.nombre ?? c.id}": ${errPend.message} — se reintenta`); return; }
-  if (!pend?.length) { await cerrarCampana(db, c, null); return; }
+  if (!pend?.length) {
+    // ¿Quedan filas esperando su reintento (131049) o a medio enviar? Entonces NO se cierra:
+    // «completada» con clientes que nunca recibieron nada y que ya nadie iba a rescatar
+    // (el rescate de huérfanas solo corre en campañas 'enviando').
+    const { count: esperan } = await db.from("campaign_sends").select("id", { count: "exact", head: true })
+      .eq("campaign_id", c.id).in("estado", ["pendiente", "enviando"]);
+    if ((esperan ?? 0) > 0) return;
+    await cerrarCampana(db, c, null); return;
+  }
 
   let ok = 0, fail = 0;
   let first = true;
@@ -508,6 +519,19 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
         console.error(`[campañas] "${c.nombre ?? c.id}": canal roto (Meta ${meta.code}: ${meta.message}) → lote cortado`);
         await pausarPorCanalRoto(db, c, meta);
         break;
+      }
+      // 131049 = tope de marketing de ESTA persona (dura días), no del número: cortar el lote
+      // por él frenaba a toda la audiencia 5 ticks por cada cliente topado, y reintentarlo al
+      // minuto siguiente lo quemaba en 5 min. Esa fila espera 24 h por su cuenta (se salta en
+      // la lectura de pendientes) y el lote SIGUE con los demás. A los 4 días, fallida.
+      if (meta && Number(meta.code) === 131049) {
+        const intentos = Number(((s as any).error ?? {}).intentos ?? 0) + 1;
+        await db.from("campaign_sends").update(intentos >= 4
+          ? { estado: "fallido", error: { message: "Meta limita cuánto marketing recibe esta persona y no se levantó en 4 días", code: 131049, intentos } }
+          : { estado: "pendiente", error: { message: "Meta limita cuánto marketing recibe esta persona — se reintenta mañana", code: 131049, intentos, reintentar_desde: new Date(Date.now() + 24 * 3600_000).toISOString() } },
+        ).eq("id", s.id);
+        if (intentos >= 4) fail++;
+        continue;
       }
       if (meta && esRechazoTemporal(meta)) {
         // Con tope de intentos: una fila que Meta frena SIEMPRE (131048 persistente con ese

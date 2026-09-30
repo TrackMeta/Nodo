@@ -266,7 +266,7 @@ Deno.serve(async (req) => {
       if (!(c as any)?.telegram_webhook_secret) {
         return json({ error: "sin_webhook", detalle: "Activa primero el Copiloto: sin eso el bot no puede recibir tu código." }, 400);
       }
-      const codigo = String(Math.floor(100000 + Math.random() * 900000));
+      const codigo = pinNuevo();  // crypto, no Math.random: es la llave para volverse admin
       const vence = new Date(Date.now() + 5 * 60 * 1000).toISOString();
       // `uid`: QUIÉN pidió el código. El webhook lo guarda junto al chat que se vincula, y así al
       // quitar a esa persona del equipo se le corta también Telegram (antes seguía aprobando pagos).
@@ -351,11 +351,14 @@ Deno.serve(async (req) => {
       const token = secrets?.telegram_bot_token;
       if (!token) return json({ ok: true, bot: null, webhook: null, enviados: 0, chats: 0, motivo: "sin_token" });
 
+      // Un fallo de red de Deno trae la URL entera en el mensaje — con el token adentro — y
+      // esta acción la puede correr un operador: se tacha antes de devolverlo.
+      const sinToken = (t: string) => t.split(token).join("•••");
       const tg = async (m: string) => {
         try {
           const r = await fetchConTimeout(`https://api.telegram.org/bot${token}/${m}`);
           return await r.json();
-        } catch (e) { return { ok: false, description: String((e as any)?.message ?? e) }; }
+        } catch (e) { return { ok: false, description: sinToken(String((e as any)?.message ?? e)) }; }
       };
       const me = await tg("getMe");
       const wh = await tg("getWebhookInfo");
@@ -378,7 +381,7 @@ Deno.serve(async (req) => {
           });
           const d = await r.json();
           detalle.push({ chat, ok: !!d?.ok, error: d?.ok ? undefined : (d?.description ?? "falló") });
-        } catch (e) { detalle.push({ chat, ok: false, error: String((e as any)?.message ?? e) }); }
+        } catch (e) { detalle.push({ chat, ok: false, error: sinToken(String((e as any)?.message ?? e)) }); }
       }
 
       const esperada = `${Deno.env.get("SUPABASE_URL")}/functions/v1/telegram-webhook?ch=${channel_id}`;
@@ -799,11 +802,18 @@ Deno.serve(async (req) => {
       //    pudo verificar» sin decir por qué. Acá el orden es imposible de invertir.
       //    Necesita un app access token (`{app_id}|{app_secret}`): el app_id lo devuelve
       //    debug_token —así que no hay que pedírselo al usuario— y el App Secret ya lo pegó.
+      // 🔴 Antes, sin App Secret (o si debug_token fallaba) esto se saltaba callado y el panel
+      // decía «conectado»: pero el webhook rechaza con 401 todo canal sin app_secret, o sea
+      // un bot sordo con cartel de listo. Cada paso que no se pudo hacer ahora va a `fallo`.
       const appSecret = secrets?.app_secret;
-      if (appSecret) {
+      if (!appSecret) {
+        fallo.push({ que: "webhook", motivo: "Falta el App Secret: sin él Nodo rechaza los mensajes que le manda Meta. Pégalo (Configuración → Básica de tu app) y guarda." });
+      } else {
         const dbg = await metaGet(token, `debug_token?input_token=${encodeURIComponent(token)}`);
         const appId = dbg.status === 200 ? String(dbg.body?.data?.app_id ?? "") : "";
-        if (appId) {
+        if (!appId) {
+          fallo.push({ que: "webhook", motivo: String(dbg.body?.error?.message ?? "Meta no dijo de qué app es el token; vuelve a intentar en un minuto.") });
+        } else {
           const appToken = `${appId}|${appSecret}`;
           const callback = WEBHOOK_CALLBACK;
           const subs = await metaGet(appToken, `${appId}/subscriptions`);
@@ -846,7 +856,9 @@ Deno.serve(async (req) => {
       }
 
       // 1) Suscribir la app a la cuenta (sin esto no ENTRA ningún mensaje).
-      if (wabaId) {
+      if (!wabaId) {
+        fallo.push({ que: "suscribir", motivo: "Falta el WABA ID: sin él no puedo conectar la entrada de mensajes." });
+      } else {
         const sub = await metaGet(token, `${wabaId}/subscribed_apps`);
         const yaEsta = sub.status === 200 && Array.isArray(sub.body?.data) && sub.body.data.length > 0;
         if (!yaEsta) {
@@ -858,7 +870,9 @@ Deno.serve(async (req) => {
 
       // 2) Registrar el número en la Cloud API (sin esto no SALE ninguno).
       const num = await metaGet(token, `${phoneId}?fields=platform_type`);
-      if (num.status === 200 && num.body?.platform_type !== "CLOUD_API") {
+      if (num.status !== 200) {
+        fallo.push({ que: "registrar", motivo: String(num.body?.error?.message ?? "Meta no respondió por el número; vuelve a intentar en un minuto.") });
+      } else if (num.body?.platform_type !== "CLOUD_API") {
         const dado = String(body.pin ?? "").trim();
         if (dado && !/^\d{6}$/.test(dado)) return json({ error: "pin_invalido", detalle: "El PIN son 6 dígitos." }, 400);
         const usar = dado || pinNuevo();

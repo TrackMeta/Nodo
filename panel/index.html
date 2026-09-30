@@ -1520,6 +1520,7 @@ async function loadContactPanel(c){
   if (state.contactId !== c.id) return; // cambió de chat mientras cargaba
   let capiEvt=null;
   if(orderRes && orderRes.id){ try{ const { data }=await supa.from("capi_events").select("estado, value, currency, event_id, action_source, meta_response, created_at").eq("order_id",orderRes.id).eq("event_name","Purchase").maybeSingle(); capiEvt=data; }catch(_){} }
+  if (state.contactId !== c.id) return; // ese await también es una ventana: sin esto la ficha de A se pintaba en el chat de B
   panelData = {
     contact: ctRes.data || c,
     order: orderRes || null,
@@ -2812,9 +2813,16 @@ function refreshPanelSoon(cid, ms = 1500){
     loadContactPanel({ id: cid, nombre: ct.nombre || state.contactName, wa_id: ct.wa_id });
   }, ms);
 }
+// Debounce CON espera máxima: con tráfico continuo (una campaña saliendo, varios chats con el
+// bot a la vez) cada evento reiniciaba los 400 ms y la lista no se repintaba nunca. Ahora, si
+// hay una recarga esperando desde hace 2,5 s, sale igual.
+let convReloadFirst = 0;
 function loadConversationsSoon() {
   clearTimeout(convReloadTimer);
-  convReloadTimer = setTimeout(() => loadConversations(), 400);
+  const ahora = Date.now();
+  if (!convReloadFirst) convReloadFirst = ahora;
+  const espera = Math.max(0, Math.min(400, convReloadFirst + 2500 - ahora));
+  convReloadTimer = setTimeout(() => { convReloadFirst = 0; loadConversations(); }, espera);
 }
 function subscribeRealtime() {
   if (state.rt) supa.removeChannel(state.rt);
@@ -2834,7 +2842,9 @@ function subscribeRealtime() {
         // El cliente escribe mientras miras SU chat → márcalo leído (con debounce): el trigger
         // de BD sube no_leidos +1 por cada entrante, así que sin esto el badge "sin responder"
         // revivía sobre la conversación que estás LEYENDO (solo se veía si leías sin contestar).
-        if (m.direction === "in") { const _cid = m.contact_id; clearTimeout(state.rtReadTimer); state.rtReadTimer = setTimeout(() => markRead(_cid), 800); } // captura el contacto: si cambias de chat antes de los 800ms, marca leído el correcto (no deja un no-leído fantasma en el que sí viste)
+        // …pero solo si de verdad lo estás viendo: con la pestaña oculta (te fuiste a otra, a
+        // almorzar) marcarlo leído borraba el contador y el mensaje quedaba sin que nadie lo viera.
+        if (m.direction === "in" && document.visibilityState === "visible") { const _cid = m.contact_id; clearTimeout(state.rtReadTimer); state.rtReadTimer = setTimeout(() => markRead(_cid), 800); } // captura el contacto: si cambias de chat antes de los 800ms, marca leído el correcto (no deja un no-leído fantasma en el que sí viste)
         // El cliente acaba de escribir → la ventana de 24 h se REABRIÓ. El candado solo se
         // recalculaba al abrir el chat y cada 60 s: hasta un minuto con "Solo plantillas" a la
         // vista, y el operador mandaba una plantilla (cuesta y pausa el bot) sin necesidad.
@@ -2926,6 +2936,9 @@ function subscribeRealtime() {
 function resyncRealtime() {
   try { loadConversationsSoon(); } catch (_) {}
   try { if (state.contactId) { clearTimeout(threadReloadTimer); threadReloadTimer = setTimeout(loadThread, 200); } } catch (_) {}
+  // Lo que entró con la pestaña oculta no se marcó leído (ver el INSERT de messages): al
+  // volver y tener el chat delante, ahora sí.
+  try { if (state.contactId && !document.hidden) markRead(state.contactId); } catch (_) {}
 }
 
 // ── util ──

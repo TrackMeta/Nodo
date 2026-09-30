@@ -723,25 +723,27 @@ async function terminarWA(pin){
       message:"Tiene la verificación en dos pasos activada desde antes. Escribe el PIN de 6 dígitos que le pusiste — Nodo no puede adivinarlo.",
       label:"PIN", placeholder:"123456" });
     if(p) return terminarWA(p.trim());
+    // Sin PIN el número NO quedó registrado: antes esto se filtraba y salía «listo».
   }
 
   const NOMBRE={ webhook:"configuré el webhook en Meta", suscribir:"conecté la entrada de mensajes", registrar:"registré el número" };
+  const NO_PUDE={ webhook:"configurar el webhook", suscribir:"conectar la entrada de mensajes", registrar:"registrar el número" };
   const hizo=(r.hecho||[]).map(h=>NOMBRE[h]||h);
-  const falló=(r.fallo||[]).filter(f=>!f.necesita_pin||pin);
+  const falló=r.fallo||[];
+  // 🔴 El PIN que inventó Nodo va PRIMERO: el registro ya se hizo con él aunque otro paso
+  // fallara, y Nodo no lo guarda — si el aviso de error cortaba antes, se perdía para siempre.
+  if(r.pin){
+    await askText({ title:falló.length?"Anota este PIN antes de seguir":"Listo, el número quedó conectado",
+      messageHtml:`Registré el número con una verificación en dos pasos y Nodo le puso este PIN. <b>Anótalo</b> — te lo van a pedir si algún día migras el número, y Nodo no lo guarda.`,
+      label:"PIN de 6 dígitos", value:r.pin, confirmText:"Ya lo anoté" });
+  }
   if(falló.length){
-    toast(`Guardado, pero Meta rechazó ${falló.map(f=>NOMBRE[f.que]||f.que).join(" y ")}: ${falló[0].motivo}`,true);
+    toast(`Guardado, pero no pude ${falló.map(f=>NO_PUDE[f.que]||f.que).join(" ni ")}: ${falló[0].motivo}`,true);
     return;
   }
   // El token ya quedó guardado: se aprovecha el MISMO viaje para ver si además lee anuncios.
   const ads=await adsDelMismoToken();
   if(!hizo.length){ toast("Guardado · la conexión ya estaba completa"+(ads?` · ${ads}`:"")); return; }
-  if(r.pin){
-    await askText({ title:"Listo, el número quedó conectado",
-      messageHtml:`Guardé los datos y ${hizo.join(" y ")}. Para registrarlo, Meta pide una verificación en dos pasos: Nodo le puso este PIN. <b>Anótalo</b> — te lo van a pedir si algún día migras el número, y Nodo no lo guarda.`,
-      label:"PIN de 6 dígitos", value:r.pin, confirmText:"Ya lo anoté" });
-    if(ads) toast(ads);   // el diálogo no es un toast: este no pisa ningún aviso
-    return;
-  }
   toast(`Guardado · ${hizo.join(" y ")}`+(ads?` · ${ads}`:""));
 }
 // 📊 UN solo viaje a developers.facebook.com. Un token de usuario de sistema puede nacer con
