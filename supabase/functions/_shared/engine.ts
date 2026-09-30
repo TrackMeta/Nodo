@@ -3464,7 +3464,9 @@ async function aiRoute(db: SupabaseClient, channelId: string, text: string): Pro
     const cands = [...flows.values()].map((f) => {
       const p = f.product_id ? prods.get(f.product_id) : null;
       const c = (p as any)?.config ?? {};
-      const intent = c.intencion || c.contexto_producto || c.faq || f.descripcion || "";
+      // `ia.detalle` (lo que ES el producto) antes que `contexto_producto`: en la Plantilla ese arranca con «## Objeciones
+    // frecuentes…», así que la Recepción no sabía para qué sirve y lo adivinó — «para organizar tus finanzas» (D24-info).
+    const intent = c.intencion || c.ia?.detalle || c.ia?.descripcion || c.contexto_producto || c.faq || f.descripcion || "";
       return { flow_id: f.id, label: (p as any)?.nombre || f.nombre || "Flujo", intent: String(intent).slice(0, 500) };
     });
     // 🎯 Nombró UN producto por su nombre («ya el curso» tras la lista de precios): se va a ese, sin preguntarle al
@@ -3683,7 +3685,9 @@ async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ 
   return [...flows.values()].map((f) => {
     const p = f.product_id ? prods.get(f.product_id) : null;
     const c = (p as any)?.config ?? {};
-    const intent = c.intencion || c.contexto_producto || c.faq || f.descripcion || "";
+    // `ia.detalle` (lo que ES el producto) antes que `contexto_producto`: en la Plantilla ese arranca con «## Objeciones
+    // frecuentes…», así que la Recepción no sabía para qué sirve y lo adivinó — «para organizar tus finanzas» (D24-info).
+    const intent = c.intencion || c.ia?.detalle || c.ia?.descripcion || c.contexto_producto || c.faq || f.descripcion || "";
     return { label: (p as any)?.nombre || f.nombre || "Producto", intent: String(intent).slice(0, 300), flow_id: String(f.id) };
   });
 }
@@ -3772,6 +3776,15 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   // «¿cuántos CORTES aguanta antes de gastarse?» no es peso (F6-ocortes: «Sobre cuánto peso aguanta no
   // tengo ese dato»): aguanta/soporta solo cuentan con peso, kilos o una persona delante.
   ["cuánto peso aguanta", /\b(si peso \d|(?:aguantan?|soportan?)\s+(?:(?:mi|el|un|hasta|cu[aá]nto)\s+)?(?:peso|kilos|kg|\d{2,3}\s*(?:kilos|kg)|una persona|a alguien)|cu[aá]nto peso|resisten? (mi|el) peso|\d{2,3}\s*(kilos|kg)\b)/, /\b(soporta|aguanta|capacidad|peso corporal|hasta \d{2,3}\s*(kilos|kg))/, "producto"],
+  // 🔧 Tres que la IA contestaba de memoria en la tanda F13 (2026-09-29): «¿cuántas rpm necesita el taladro?» → «no
+  // necesita una velocidad específica, lo ideal es moderarla»; «¿venden repuestos o cuchillas extra?» → «no contamos
+  // con accesorios separados»; «¿tienen amoladoras?» → «solo vendemos accesorios para taladros». Ninguna escrita.
+  ["la velocidad o las rpm que necesita", /\b(rpm|revoluciones|qu[eé] velocidad|cu[aá]nta velocidad|a qu[eé] velocidad)\b/, /\b(rpm|revoluciones|velocidad)\b/, "producto"],
+  ["si venden repuestos o accesorios", /\b(repuestos?|recambios?|cuchillas? (?:extra|de repuesto|adicional\w*)|accesorios? (?:extra|adicional\w*|aparte)|piezas? (?:extra|de repuesto))\b/,
+    /\b(repuestos?|recambio|cuchillas? de repuesto|accesorios? (?:extra|adicional))/, "negocio"],
+  // (la misma regex mira la frase de la IA: «solo VENDEMOS accesorios…, no taladros» — primera persona también)
+  ["si venden otros productos", /\b(?:tienen|venden|vendemos|tenemos|hay|manejan|manejamos|traen|traemos)\s+(?:tambi[eé]n\s+)?(?:otr[oa]s?\s+)?(?:accesorios|amoladoras?|taladros?|sierras?|brocas?|esmeriles?|discos? de corte|herramientas?|otros productos|m[aá]s productos)\b/,
+    /$^/, "negocio"],
   // 🩺 SALUD. Aparte de los demás porque acá inventar no cuesta una venta: cuesta un
   // daño. Medido — a "¿se puede usar en el embarazo?" (un sérum, y la ficha no dice
   // NADA del tema) el bot contestó "no está recomendado para usarse durante el
@@ -3802,6 +3815,14 @@ const TEMAS_FICHA_DIGITAL: Array<[string, RegExp, RegExp, "producto" | "negocio"
   // 🔄 «¿tiene actualizaciones gratis?» → «las irás recibiendo sin costo, te aviso por acá» (D18-eactualiza).
   ["si tiene actualizaciones", /\b(actualizaci\w+|se actualiza|contenido nuevo|nuevas clases|nuevos videos|agregan (?:m[aá]s|nuevo))\b/,
     /\b(actualiza\w*|contenido nuevo|nuevas clases)\b/, "producto"],
+  // 🌎 Comprar un DIGITAL desde otro país: «soy de México, ¿aceptan paypal?» → «solo vendemos para personas en Perú»
+  // (D24-mexico). Nadie lo escribió; lo que sí es cierto (Yape/Plin solo Perú) lo dice el bloque de pagos.
+  ["si se puede comprar desde otro país", /\b(desde|soy de|vivo en|estoy en)\s+(m[eé]xico|chile|colombia|argentina|bolivia|ecuador|venezuela|espa[ñn]a|estados unidos|usa|eeuu)\b|\bsolo\s+(?:vendemos|atendemos|trabajamos|es)\s+(?:para\s+|en\s+|a\s+)?(?:personas\s+(?:en|de)\s+)?(?:el\s+)?per[uú]\b/,
+    /\b(cualquier pa[ií]s|otros pa[ií]ses|internacional|extranjero|todo el mundo|latinoam[eé]rica)\b/, "negocio"],
+  // 🎨 «¿puedo poner mi logo en la plantilla?» → «la plantilla no incluye opción para poner tu logo» (D24-personaliza):
+  // un Excel se edita; negarlo fue inventado. Si la ficha dice que se edita, queda cubierto y contesta con eso.
+  ["si se puede personalizar (logo, colores)", /\b(logo|logotipo|personaliz\w*|mi marca|mis colores|poner mi nombre|con mi nombre)\b/,
+    /\b(logo|personaliz\w*|editable|se edita|modificar|a tu gusto)\b/, "producto"],
   ["si funciona en otro programa o equipo",
     /\b(google sheets|sheets|libreoffice|openoffice|numbers|celular|m[oó]vil|tablet|android|iphone|ipad|mac|windows|drive|wps)\b/,
     /\b(sheets|libreoffice|openoffice|numbers|celular|m[oó]vil|tablet|android|iphone|ipad|mac|windows|drive|wps|cualquier (dispositivo|equipo|compu))\b/, "producto"],
@@ -4043,10 +4064,11 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
       "\n⛔ NO INVENTES CONDICIONES DEL NEGOCIO. Solo puedes afirmar lo que está escrito aquí arriba. Si te " +
       "pregunta por algo que no figura —factura con RUC, boleta, garantía, devoluciones, envíos al extranjero, " +
       "pagos en cuotas, tarjeta—, NO contestes que sí ni que no: dile con calidez que eso lo ves apenas sepas qué " +
-      "producto quiere, y encamínalo. Si insiste porque de eso depende su compra, [[humano]]. Medido: a un cliente " +
+      "producto quiere, y encamínalo — pero que quede claro que ESE dato no lo tienes a la mano (si solo le dices " +
+      "«eso lo vemos», siente que le esquivas la pregunta). Si insiste porque de eso depende su compra, [[humano]]. Medido: a un cliente " +
       "que preguntó «¿me pueden dar factura con RUC?» se le respondió «claro que sí, sin problema» — nadie sabía si " +
       "este negocio factura, y esa promesa la termina pagando el dueño. Ojo: tampoco empieces con «claro que sí» " +
-      "ni «por supuesto» y luego lo matices — el cliente se queda con el sí. Así se dice: «Eso lo vemos apenas me " +
+      "ni «por supuesto» y luego lo matices — el cliente se queda con el sí. Así se dice: «Ese dato no lo tengo aquí 🙏 Lo vemos apenas me " +
       // 🔴 El EJEMPLO sale por la boca del bot. Acá decía «…¿Cuál de los dos te llama más?» y
       // eso fue exactamente lo que le contestó a un cliente de un negocio con UN SOLO producto
       // —dos veces seguidas, sin responderle nunca lo que preguntó—, pisando la instrucción de
@@ -4193,6 +4215,22 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
     return { hecho: true, flowId };
   }
   await logEvent(db, channelId, contactId, "nota", "👋 Recepción (IA)", (event.text ?? "").slice(0, 80)).catch(() => {});
+  // 🧾 La POLÍTICA INVENTADA también en la Recepción: la regla del prompt está («NO inventes condiciones del
+  // negocio») y aun así salió «no hay devoluciones» y «solo vendemos para personas en Perú» (tanda D24,
+  // 2026-09-29). Mismo recorte que en la venta: temas que él preguntó y que ni el negocio ni el catálogo cubren.
+  try {
+    const _pregR = normalize(String(event.text ?? ""));
+    const _cubreR = normalize(`${String(info.negocio ?? "")} ${cands.map((c) => `${c.label} ${c.intent ?? ""}`).join(" ")}`);
+    const _huR = [...TEMAS_FICHA, ...TEMAS_FICHA_DIGITAL].filter(([, enPreg, cubre]) => enPreg.test(_pregR) && !cubre.test(_cubreR));
+    if (_huR.length && result) {
+      const _antesR = result;
+      result = sinPoliticaInventada(result, _huR as any);
+      if (result !== _antesR) {
+        await logEvent(db, channelId, contactId, "nota", "🧾 Inventó una política que la ficha no trae",
+          `Recepción — se cambió por «no tengo el dato»: «${_antesR.slice(0, 160)}»`).catch(() => {});
+      }
+    }
+  } catch (_) { /* sin temas legibles → tal cual */ }
   // (Los tres retoques de dinero ya no van acá: viven dentro de emitIaText, así valen
   // también para el soporte post-venta y para cualquier otra salida de IA.)
   await emitIaText(db, run, result || "¡Hola! 👋 ¿Qué producto te interesa? Con gusto te ayudo a encontrar lo que buscas.", ctx);
@@ -4889,7 +4927,9 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     // con la lista de precios de a quien ya eligió (F11R-callao, 2026-09-29).
     // El PRIMER renglón de la lista de precios pegado a la frase de antes: preciosEnLineas lo baja, pero la lista la
     // puede pegar un guard que corre DESPUÉS («…que en cualquier tienda física. 1 unidad — *S/ 69*» — F12R-tienda).
-    .replace(/([^\n\p{Extended_Pictographic}\u{FE0F}])[ \t]+(?=(?:\p{Extended_Pictographic}\u{FE0F}?\s*)?\d{1,3}\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?)\s+—\s*\*?(?:S\/|US\$|\$)\s*\d[^\n]*\n[ \t]*(?:\p{Extended_Pictographic}\u{FE0F}?\s*)?\d{1,3}\s+(?:unidad|pack|par|frasco|caja))/gu, "$1\n\n")
+    .replace(/([^\n\p{Extended_Pictographic}\u{FE0F}])[ \t]+(?=(?:\p{Extended_Pictographic}\u{FE0F}?[ \t]*)?\d{1,3}\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?)\s+—\s*\*?(?:S\/|US\$|\$)\s*\d[^\n]*\n[ \t]*(?:\p{Extended_Pictographic}\u{FE0F}?[ \t]*)?\d{1,3}\s+(?:unidad|pack|par|frasco|caja))/gu, "$1\n\n")
+    // El MISMO emoji solo en el renglón de abajo del que ya lo cerraba: «…con la agencia *Shalom* 📦\n📦» (INV4F-ef1).
+    .replace(/(\p{Extended_Pictographic})\u{FE0F}?[ \t]*\n[ \t]*\1\u{FE0F}?[ \t]*(?=\n|$)/gu, "$1")
     // El espacio ANTES del punto o la coma que dejó un recorte: «Sobre la factura, no tengo dato .» (D24R-factura).
     .replace(/(\p{L})[ \t]+([.,;])(?=[ \t]|\n|$)/gu, "$1$2")
     // «…mejor precio que en tienda;» y debajo la lista: el «;» que encadenaba lo que se quitó cierra con punto (F12S-tienda).
@@ -4901,6 +4941,28 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     .replace(/,([ \t]*)¿(De|Desde|Alguna|Algo|Qu[eé]|Cu[aá]l(?:es)?|Cu[aá]nt[oa]s?|C[oó]mo|D[oó]nde|Te|Me|Quieres|Deseas|Prefieres)(?![\p{L}])/gu,
       (_m, e: string, w: string) => `,${e}¿${w[0].toLowerCase()}${w.slice(1)}`)
     .replace(/\n{3,}/g, "\n\n").replace(/\s+$/, "");
+  // 🇵🇪 Voseo rioplatense que se le escapa al MODELO: «Lo que ganás es rapidez…» (F13-ayacucho, 2026-09-29). Solo el
+  // texto de la IA (lo que escribe el dueño se respeta) y solo en canales en soles: un negocio argentino vosea a
+  // propósito. Diccionario cerrado — los cambios de raíz (tenés→tienes, podés→puedes) no salen de una regla.
+  if (bubble._noTpl && /^(PEN)?$/i.test(String(ctx?.moneda ?? "").trim())) {
+    const V: Record<string, string> = { "tenés": "tienes", "querés": "quieres", "podés": "puedes", "sabés": "sabes", "ganás": "ganas",
+      "hacés": "haces", "decís": "dices", "pedís": "pides", "pagás": "pagas", "comprás": "compras", "mirás": "miras",
+      "necesitás": "necesitas", "llevás": "llevas", "recibís": "recibes", "elegís": "eliges", "preferís": "prefieres",
+      "tomás": "tomas", "usás": "usas", "probás": "pruebas", "pensás": "piensas", "sentís": "sientes", "venís": "vienes",
+      "salís": "sales", "contame": "cuéntame", "decime": "dime", "fijate": "fíjate", "mirá": "mira", "avisame": "avísame",
+      "escribime": "escríbeme", "dejame": "déjame", "esperame": "espérame" };
+    text = text.replace(new RegExp(`(?<![\\p{L}])(${Object.keys(V).join("|")})(?![\\p{L}])`, "giu"), (m: string) => {
+      const r = V[m.toLowerCase()];
+      if (!r) return m;
+      return m[0] !== m[0].toLowerCase() ? r[0].toUpperCase() + r.slice(1) : r;
+    });
+  }
+  // 🗣️ «Por lo que me cuentas, te conviene…» a quien escribió «Los Olivos, quiero 3» o «1» (F13-losolivos3,
+  // F13-miraflores): suena a que no lo leyó. Con un mensaje corto (≤6 palabras) la muletilla se va y queda lo demás.
+  if (bubble._noTpl && String(ctx?.last_input ?? "").trim().split(/\s+/).filter(Boolean).length <= 6) {
+    text = text.replace(/(^|[.!?…\n]\s*|\p{Extended_Pictographic}\u{FE0F}?\s+)(?:por\s+lo\s+que\s+me\s+(?:cuentas|dices|comentas)|seg[uú]n\s+lo\s+que\s+me\s+(?:cuentas|dices|comentas)),?\s+(\p{L})/giu,
+      (_m, a: string, l: string) => a + l.toUpperCase());
+  }
   // «…revisas el producto antes. ¿Me los pasas? 📦» SIN ningún dato en el mensaje: se recortó la lista
   // que ese «los» señalaba (misma batería). Pedir «los» sin decir cuáles confunde más que no pedir nada.
   if (!/📌|•|\bdatos\b|\bnombre|direcci[oó]n|\bdni\b|celular|tel[eé]fono/iu.test(text)) {
@@ -5312,7 +5374,11 @@ function sinRestosDeRecorte(t: string): string {
     .replace(/[,;:]+\s*(?=(?:\s|\p{Extended_Pictographic}|️)*$)/gu, "")
     // La CONJUNCIÓN que quedó colgando al final del renglón, delante de los emojis: «¿Me cuentas de dónde nos
     // escribes para decirte cómo te llega y 📍» — se fue «te paso los datos que faltan?» (F11-cortito, 2026-09-29).
-    .replace(/[ \t]+(?:y|e|o|u|pero|adem[aá]s)[ \t]*(?=(?:[ \t]*[\p{Extended_Pictographic}\u{FE0F}])*[ \t]*(?:\n|$))/giu, "")
+    .replace(/[ \t]+(?:y|e|o|u|pero|adem[aá]s|ahora|entonces|tambi[eé]n)[ \t]*(?=(?:[ \t]*[\p{Extended_Pictographic}\u{FE0F}])*[ \t]*(?:\n|$))/giu, "")
+    // (+ «…y recoges 📦 Ahora» — se fue la frase que seguía: INV4F-ef4)
+    // …y la muletilla que anunciaba lo quitado, sola en su renglón: «Ahora, para seguir» (INV5F-ef4)
+    .replace(/^[ \t]*(?:(?:y\s+)?ahora|entonces|bueno)?[ \t]*,?[ \t]*(?:para\s+(?:seguir|avanzar|continuar)(?:\s+con\s+(?:tu|el)\s+pedido)?)?[ \t]*[,:.]?[ \t]*$/gimu, "")
+    .replace(/\n{3,}/g, "\n\n")
     // …y la pregunta que se quedó sin su «?» (se lo llevó el trozo quitado): se le devuelve antes de los emojis.
     .replace(/(¿[^?¿!.\n]{3,}?)([ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*)(?=\n|$)/gu, (m, q: string, emo: string) =>
       /\?\s*$/.test(q) ? m : `${q.trimEnd()}?${emo ? " " + emo.trim() : ""}`)
@@ -5676,6 +5742,9 @@ function sinPoliticaInventada(texto: string, huecos: Array<[string, RegExp, RegE
     const frase = /^el /.test(tema) ? `Del ${tema.slice(3)}` : /^(si|para|c[oó]mo|cu[aá]nto|qu[eé]) /.test(tema) ? `Sobre ${tema}` : `De ${tema}`;
     // Con espacio DELANTE: la parte anterior termina en emoji sin espacio (el separador se lo
     // llevó el split) y salía pegado — «👍De garantía no tengo el dato» (D9-pdospreg, 2026-09-24).
+    // Si el mensaje YA dice que no tiene el dato («Ese detalle puntual no lo tengo aquí 🙏»), solo se va la frase
+    // inventada: sumar otro «no tengo el dato» lo decía dos veces seguidas (INVF-repuesto1, INVD-celular).
+    if (honesta.test(t)) return " ";
     return ` ${frase} no tengo el dato acá 🤔 `;
   });
   if (!cambiado) return texto;
@@ -6339,6 +6408,14 @@ const RE_YA_DIJO_DIGITAL =
 // patrón no casa nunca. Medido: «el resto lo pagas cuando recojas allá» pasó intacto con la
 // regla puesta. Se cierra con un lookahead unicode y la bandera `u`.
 const CAMBIOS_PAGO_AGENCIA: Array<[RegExp, string]> = [
+  // 💵 «puedes pagar el resto del monto EN EFECTIVO EN LA AGENCIA cuando llegue a la agencia» (INVF-efectivo1,
+  // 2026-09-29): el efectivo en el mostrador no existe — va a la misma cuenta. Primero, para que los de abajo no lo
+  // conviertan a medias en «…en efectivo cuando llegue a la agencia».
+  [/\s+(?:en\s+)?efectivo\s+(?:en\s+la\s+agencia|al\s+recoger(?:lo|la)?|all[ií])(?:\s+cuando\s+llegue(?:\s+a\s+la\s+agencia)?)?(?![\p{L}\p{N}])/giu, " a la misma cuenta cuando llegue a la agencia"],
+  [/\b(pagar|abonar|cancelar)\s+en\s+la\s+agencia(?![\p{L}\p{N}])/giu, "$1 cuando llegue a la agencia"],
+  // «el pago se puede hacer contraentrega en la agencia, mostrando la clave y pagando el saldo ahí» (INV2F-efectivo1b)
+  [/\bcontra\s?entrega\s+en\s+la\s+agencia(?![\p{L}\p{N}])/giu, "con un adelanto y el resto a nuestra cuenta cuando llegue a la agencia"],
+  [/\b(pagando|pagas|pagar)\s+el\s+(saldo|resto)\s+(?:ah[ií]|all[ií]|all[aá]|en\s+la\s+agencia)(?![\p{L}\p{N}])/giu, "$1 el $2 a nuestra cuenta antes de recoger"],
   [/\bcuando\s+(?:lo\s+|la\s+)?recojas\s+(?:all[ií]|all[aá]|ah[ií]|en\s+la\s+agencia|en\s+shalom)(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
   [/\bal\s+recoger(?:lo|la)?\s+en\s+la\s+agencia(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
   [/\b(pagas|pagar[aá]s|abonas|cancelas)\s+en\s+la\s+agencia(?![\p{L}\p{N}])/giu, "$1 cuando llegue a la agencia"],
@@ -6377,6 +6454,9 @@ function sinPagarEnLaAgencia(texto: string, provincia = false): string {
   let t = String(texto ?? "");
   for (const [re, a] of CAMBIOS_PAGO_AGENCIA) t = t.replace(re, a);
   if (provincia) for (const [re, a] of CAMBIOS_PAGO_PROVINCIA) t = t.replace(re, a);
+  // Dos reescrituras seguidas dejan el momento repetido: «a la misma cuenta cuando llegue a la agencia cuando llegue
+  // a la agencia» (INV5F-ef1, 2026-09-29).
+  t = t.replace(/(cuando\s+llegue\s+a\s+la\s+agencia)(?:\s*,?\s*cuando\s+(?:llegue|lo\s+recojas|recojas|lo\s+recibas)(?:\s+(?:a|en)\s+la\s+agencia)?)+/giu, "$1");
   return t;
 }
 // 📦 «DESPACHAR» es jerga nuestra, no del cliente. Rodrigo: «no me gusta la palabra
@@ -7046,7 +7126,9 @@ function preciosEnLineas(texto: string, sym: string): string {
   const esc = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // El PRIMER renglón de la lista pegado a la frase de antes («…mejor valor que en tienda. 1 unidad — *S/ 69* · …»
   // y debajo «2 unidades — …» — F12-tienda, 2026-09-29): baja a su renglón si el que sigue también es de la lista.
-  const _item = String.raw`(?:[\p{Extended_Pictographic}]️?\s*)?\d{1,3}\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?)\s+—`;
+  // (el emoji del renglón va en la MISMA línea: con `\s*` el «👇» del anuncio de arriba contaba como emoji del primer
+  //  renglón y se le metía un salto delante — «Estas son las opciones\n\n👇\n1 unidad…», INVF-amoladora2)
+  const _item = String.raw`(?:[\p{Extended_Pictographic}]️?[ \t]*)?\d{1,3}\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?)\s+—`;
   // (nunca justo DESPUÉS de un emoji: ese emoji es el del renglón y bajaba solo — «¿Cuántas? 🔧\n\n1 unidad…», F13)
   t = t.replace(new RegExp(String.raw`([^\n\p{Extended_Pictographic}️])[ \t]+(?=${_item}\s*\*?${esc}\s*\d[^\n]*\n[ \t]*${_item})`, "gu"), "$1\n\n");
   const rxPrecio = new RegExp(`\\*?${esc}\\s*\\d`, "g");
@@ -22171,6 +22253,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "nada»: eso es de Lima. Acá va un adelanto para que salga el envío. Enterarse tarde es lo que le " +
             "tumba la venta.");
         }
+        {
+          // (fuera del «si ya hay adelanto»: en el PRIMER turno el adelanto todavía no está en el contexto y a «Trujillo,
+          //  ¿puedo pagar en efectivo en la agencia?» salió «contraentrega en la agencia, pagando el saldo ahí» — INV2F)
+          // 🧾 Las dos preguntas que la IA contestaba de memoria (tanda F13, 2026-09-29): «¿puedo pagar todo en efectivo
+          // en la agencia?» → «Puedes pagar todo en efectivo en la agencia, pero…» (falso), y «¿por qué tengo que pagar
+          // adelanto? no confío» → «el adelanto es para cubrir el envío» (falso: el envío es gratis y el adelanto es
+          // parte del precio). Van como RESPUESTA a su pregunta, no como aviso que se suelta sin que la haga.
+          L.push("❓ Si ÉL pregunta si puede pagar en la agencia, en efectivo o contraentrega: la respuesta es que el pago " +
+            "va a nuestra cuenta (Yape, Plin o transferencia) — un adelanto para mandarlo y el resto cuando ya esté en la " +
+            "agencia —; en la agencia solo recoge con su clave. Díselo así de simple, sin inventar otra forma.");
+          L.push("❓ Si pregunta POR QUÉ hay que dar adelanto (o dice que no confía): el adelanto es PARTE del precio, " +
+            "se descuenta del total; sirve para confirmar el pedido antes de mandarlo. ⛔ NO es el costo del envío " +
+            "ni un cargo aparte. Y a su desconfianza contéstale con lo que es verdad del proceso: apenas sale le " +
+            "mandas la foto de la guía de la agencia, y el resto lo paga recién cuando el paquete ya está allá.");
+        }
         // 💰 Y el caso contrario, que es el MEJOR cliente que te puede tocar: el que
         // ofrece pagar TODO por adelantado. Medido en Cajamarca — «prefiero pagarte todo
         // ahorita, no solo los 20» → «entiendo, pero requiere un adelanto de S/20 y el
@@ -23219,14 +23316,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // detalle y te aviso 👍". Eso es prometer un seguimiento que NO existe: nadie vuelve
           // después con esa respuesta, la conversación sigue y el cliente se queda esperando un
           // aviso que no llega. Peor que no contestar, porque además promete.
-          `1. Reconoce la duda en UNA línea, sin disculpas ni rodeos. ⛔ NUNCA le prometas que lo averiguas y le avisas ` +
+          // 🙊 «Reconoce la duda» se leía como «di "Buena pregunta 👍"» —lo que decía el ejemplo— y la IA pasaba directo
+          // a «Lo que sí te puedo asegurar…» SIN decir que ese dato no lo tiene: el cliente siente que lo esquivan
+          // (tanda F13/D24: mac, sheets, profesor, reembolso). Ahora el primer paso dice qué decir.
+          `1. Dile con honestidad, en UNA línea, que ese dato puntual no lo tienes a la mano (sin disculpas ni rodeos). ` +
+          `Tiene que quedar claro que no lo sabes: pasar directo al beneficio se siente como esquivarle la pregunta. ` +
+          `⛔ NUNCA le prometas que lo averiguas y le avisas ` +
           `("te confirmo y te aviso", "lo consulto y te digo", "déjame verificarlo"): nadie va a volver con ese dato ` +
           `y lo dejarías esperando. Si de verdad necesita esa respuesta para comprar, va a una persona con [[humano]].\n` +
           `2. Puentea a lo que la ficha SÍ dice y que juegue a favor de lo que a él le preocupa. ` +
           `Solo beneficios REALES de la ficha: nada inventado, ni insinuado, ni relleno tipo "materiales de alta calidad".\n` +
           `3. Cierra con el siguiente paso de la venta (la talla, el color, la dirección), para que la conversación avance.\n` +
-          `Ejemplo del tono, con lo que sí sabes: "Buena pregunta 👍 Lo que sí te puedo asegurar es que ` +
-          `[beneficio real de la ficha]. ¿En qué talla te las mando?"\n` +
+          `Ejemplo del tono, con lo que sí sabes: "Ese detalle puntual no lo tengo aquí 🙏 Lo que sí te puedo asegurar ` +
+          `es que [beneficio real de la ficha]. [siguiente paso de la venta]"\n` +
           `Si insiste, o ves que sin ese dato no compra, pásalo a una persona con [[humano]].`);
       }
     } catch (_) { /* sin ficha legible → queda la regla general */ }
@@ -24606,6 +24708,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                     if (_conPrecio.length) salida = `${salida.trimEnd()} ${_conPrecio.slice(0, 3).join(" ").trim()}`;
                   }
                 }
+                // 💳 …ni la de CÓMO SE PAGA: «Trujillo, ¿puedo pagar en efectivo en la agencia?» se quedaba con «A
+                // Trujillo te llega por Shalom» + la lista (o con un «¡Claro!» que sonaba a sí) y sin respuesta
+                // (INV3F, 2026-09-29). Si lo preguntó y lo que quedó no habla de pagar, lo dice el motor.
+                if (String(ctx.zona_entrega ?? "") === "provincia"
+                    && /(?:^|[^\p{L}])(?:pag\p{L}*|efectivo|contra\s?entrega|adelanto|al\s+recoger)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
+                    && !/(?:^|[^\p{L}])(?:adelanto|pag\p{L}*|resto)(?![\p{L}])/iu.test(salida)) {
+                  const _adP = Number(ctx.adelanto) > 0 ? `un adelanto de *${simboloMoneda(ctx.moneda as string)} ${Number(ctx.adelanto)}*` : "un adelanto";
+                  salida = salida.replace(/^\s*¡(?:Claro|Perfecto)!\s*/u, "").trim();
+                  salida = `El pago va a nuestra cuenta (Yape, Plin o transferencia): ${_adP} para mandártelo y el resto ` +
+                    `cuando ya esté en la agencia; allá solo lo recoges con tu clave 🙌${salida ? `\n\n${salida}` : ""}`;
+                }
                 await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Se recortó a su frase de entrada",
                   "El encabezado, la lista y la pregunta los pega el motor; lo de abajo lo escribía ella").catch(() => {});
               }
@@ -25134,7 +25247,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // si él preguntó cómo/cuándo le llega, esa es la respuesta: no se toca.
           const _explicaEntrega = (f: string) => /por\s+(?:este\s+|el\s+)?(?:chat|whatsapp|ac[aá]|aqu[ií]|correo)|apenas\s+(?:pagues|pagas|confirme|se\s+confirme)/i.test(f);
           const _preguntaEntrega = /c[oó]mo\s+(?:me\s+)?(?:llega|lo\s+recibo|recibo|me\s+lo\s+(?:mandan|env[ií]an))|cu[aá]ndo\s+(?:me\s+)?llega|por\s+d[oó]nde|correo|descarg/i.test(String(ctx.last_input ?? ""));
-          const _promete = (f: string) => !_preguntaEntrega && _hablaAcc(f) && !_condic.test(f) && !_explicaEntrega(f);
+          // La POLÍTICA de devoluciones habla del acceso sin prometerlo: «no hay devoluciones una vez enviado el acceso»
+          // (escrita por el dueño) se borraba entera y quedaba «¿Quieres la Básica o la Premium?» (INVD-reembolso2).
+          const _esPolitica = (f: string) => /devoluci|devolv|reembols|una\s+vez\s+(?:enviado|entregado|recibid)/i.test(f);
+          const _promete = (f: string) => !_preguntaEntrega && _hablaAcc(f) && !_condic.test(f) && !_explicaEntrega(f) && !_esPolitica(f);
           const _antesAcc = salida;
           salida = String(salida).split("\n").map((ln) => !_hablaAcc(ln) ? ln
             : ln.split(/(?<=[.!?🙌📲😊🙂✅])\s+/u).filter((f) => !_promete(f)).join(" ").trim()).join("\n")
@@ -26676,6 +26792,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             salida = `Con los *${_symC} ${_bolsaTotal}* que ya me mandaste queda cubierta la *${String(ctx.opcion ?? ctx.opcion_elegida ?? "esa versión")}* 🙌 No pagues nada más: te la dejo lista en un momento.`;
           }
         } catch (_) { /* sin bolsa legible → como siempre */ }
+      }
+      // 💳 RED FINAL de «¿cómo se paga?» en PROVINCIA, después de TODOS los recortes: «Trujillo, ¿puedo pagar en efectivo
+      // en la agencia?» / «Arequipa, ¿cómo es el pago?» salían con la lista de oficinas o de precios y ni una palabra del
+      // pago — la IA lo había escrito y un recorte se lo llevó, o no lo escribió (INV4F, 2026-09-29). Si preguntó por
+      // el pago y lo que va a salir no habla de pagar, el motor lo dice delante. Sin pedido todavía (después, el pago lo
+      // manejan los mensajes del flujo).
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "") === "provincia"
+          && String(ctx.pedido_creado ?? "") !== "si" && String(salida ?? "").trim()
+          && /(?:^|[^\p{L}])(?:pag(?:o|ar|as|a|ando|ue)|efectivo|contra\s?entrega|adelanto|al\s+recoger)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
+          && !/(?:^|[^\p{L}])(?:adelanto|pag\p{L}*|resto)(?![\p{L}])/iu.test(String(salida))) {
+        const _adF = Number(ctx.adelanto) > 0 ? `un adelanto de *${simboloMoneda(ctx.moneda as string)} ${Number(ctx.adelanto)}*` : "un adelanto";
+        salida = `El pago va a nuestra cuenta (Yape, Plin o transferencia): ${_adF} para mandártelo y el resto cuando ya ` +
+          `esté en la agencia; allá solo lo recoges con tu clave 🙌\n\n` + String(salida).replace(/^\s*¡(?:Claro|Perfecto)!\s*/u, "").trim();
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "💳 Preguntó cómo se paga y no quedó respuesta",
+          "Provincia: se antepuso la forma de pago").catch(() => {});
       }
       if (op === "generar_texto") {
         const _crudo = String(result ?? "").trim();
