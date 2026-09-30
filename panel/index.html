@@ -816,6 +816,22 @@ async function loadConversations() {
       (rh||[]).forEach(cv=>{ if(!have.has(cv.contact_id)){ data.push(cv); have.add(cv.contact_id); } });
     } catch (_) { /* sin el extra: queda el aviso */ }
   }
+  // Con la búsqueda escrita, se re-suman los chats que buscarEnServidor trajo de fuera de los
+  // 1000: esta recarga corre con cada mensaje que entra y reemplaza la lista entera, así que el
+  // chat encontrado desaparecía con la búsqueda aún puesta. Se piden de nuevo por id (≤30) y no
+  // se re-suma la copia guardada: si lo archivaste, bloqueaste o eliminaste, debe verse así.
+  // Solo los del MISMO bot; si ya vinieron en esta carga, no se duplican.
+  if (data && state.search && (state.convsExtra||[]).length && state.convsExtraCh===state.channelId) {
+    try {
+      const have = new Set(data.map(cv=>cv.contact_id));
+      const faltan = state.convsExtra.map(cv=>cv.contact_id).filter(id=>!have.has(id));
+      if (faltan.length) {
+        const { data: ex } = await supa.from("conversations").select(sel(true))
+          .eq("channel_id", state.channelId).in("contact_id", faltan);
+        (ex||[]).forEach(cv=>{ if(!have.has(cv.contact_id)){ data.push(cv); have.add(cv.contact_id); } });
+      }
+    } catch (_) { /* sin los encontrados: la búsqueda los vuelve a traer al teclear */ }
+  }
   if (gen!==state.loadGen) return; // cambiaste de bot mientras cargaba → no pintes la bandeja del anterior
   // Los archivados se conservan en state.convs (para contarlos y para el filtro
   // "Archivados"); applyFilters los oculta salvo que ese filtro esté activo.
@@ -828,6 +844,12 @@ async function loadConversations() {
   // empezaban a fallar en silencio. Acotado a lo visible el resultado es exacto, y de
   // paso la consulta es mucho más chica.
   const idsVis = [...new Set(state.convs.map(cv=>cv.contact?.id).filter(Boolean))];
+  // Los mapas se arman en variables LOCALES y se pasan al estado recién después del segundo
+  // control de generación (abajo): si cambiabas de bot a mitad de carga, la carga vieja
+  // asignaba state.recompraSet/entregaMap/metaPendSet/metaSalud del bot anterior antes de
+  // llegar al control, y el filtro «Falta enviar a Meta» o el dorado de recompra del bot
+  // nuevo quedaban mirando los pedidos del otro. null = esa consulta falló → se queda lo que había.
+  let nRecompra = null, nEntrega = null, nMetaPend = null, nMetaSalud = null;
   // Recompra en curso: solo importa en los que YA compraron (ver esRecompra).
   // En render, dorado + este set = recompra.
   try {
@@ -843,8 +865,8 @@ async function loadConversations() {
         .order("id").range(f,t));
       (ro||[]).forEach(o=>set.add(o.contact_id));
     }
-    state.recompraSet = set;
-  } catch(_){ state.recompraSet = state.recompraSet || new Set(); }
+    nRecompra = set;
+  } catch(_){ /* se queda el anterior (ver abajo) */ }
   // Embudo de entrega · Provincia: mapa contact_id → grupo del estado ACTUAL de su
   // pedido de provincia (el más reciente). Alimenta el filtro y sus contadores.
   try {
@@ -862,8 +884,8 @@ async function loadConversations() {
         if (!m.has(o.contact_id)) m.set(o.contact_id, ENTREGA_ESTADO_K[o.estado]); // el más reciente gana
       }
     }
-    state.entregaMap = m;
-  } catch(_){ state.entregaMap = state.entregaMap || new Map(); }
+    nEntrega = m;
+  } catch(_){ /* se queda el anterior (ver abajo) */ }
   // Salud de atribución: pedidos de ANUNCIO (ctwa_clid) YA cerrados vs los que
   // llegaron a Meta (capi_events enviado). Alimenta el filtro "Falta enviar a
   // Meta" y el número de salud de la cabecera de filtros.
@@ -899,13 +921,17 @@ async function loadConversations() {
     }
     const pend = new Set();
     for (const o of adOrders){ if(!sent.has(o.id)) pend.add(o.contact_id); }
-    state.metaPendSet = pend;
-    state.metaSalud = { total: adOrders.length, enviadas: sent.size };
-  } catch(_){ state.metaPendSet = state.metaPendSet || new Set(); state.metaSalud = state.metaSalud || { total:0, enviadas:0 }; }
+    nMetaPend = pend;
+    nMetaSalud = { total: adOrders.length, enviadas: sent.size };
+  } catch(_){ /* se queda el anterior (ver abajo) */ }
   // Segundo control de generación: los mapas de arriba son varios awaits y el primero
   // se hizo antes de ellos. Si cambiaste de bot en el medio, la carga VIEJA llegaba
   // acá y pisaba los mapas (y repintaba) sobre la bandeja del bot nuevo.
   if (gen!==state.loadGen) return;
+  state.recompraSet = nRecompra || state.recompraSet || new Set();
+  state.entregaMap = nEntrega || state.entregaMap || new Map();
+  state.metaPendSet = nMetaPend || state.metaPendSet || new Set();
+  state.metaSalud = nMetaSalud || state.metaSalud || { total:0, enviadas:0 };
   renderConversations();
 }
 
@@ -1479,7 +1505,7 @@ const TZ_BY_PREFIX={ "593":"America/Guayaquil","591":"America/La_Paz","502":"Ame
 const COUNTRY_BY_PREFIX={ "593":"🇪🇨 Ecuador","591":"🇧🇴 Bolivia","502":"🇬🇹 Guatemala","503":"🇸🇻 El Salvador","506":"🇨🇷 Costa Rica","507":"🇵🇦 Panamá","51":"🇵🇪 Perú","52":"🇲🇽 México","57":"🇨🇴 Colombia","56":"🇨🇱 Chile","54":"🇦🇷 Argentina","58":"🇻🇪 Venezuela","34":"🇪🇸 España","1":"🇺🇸 / 🇨🇦" };
 function prefixLook(wa, map, def){ const w=(wa||"").replace(/\D/g,""); for(const len of [3,2,1]){ const p=w.slice(0,len); if(map[p]) return map[p]; } return def; }
 function localTime(wa){ try{ return new Intl.DateTimeFormat("es",{timeZone:prefixLook(wa,TZ_BY_PREFIX,"America/Lima"),hour:"2-digit",minute:"2-digit"}).format(new Date()); }catch(_){ return "—"; } }
-function fmtDate(ts){ if(!ts) return "—"; try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",year:"numeric"}).format(new Date(ts)); }catch(_){ return "—"; } }
+function fmtDate(ts){ if(!ts) return "—"; try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",year:"numeric",timeZone:getTZ()}).format(new Date(ts)); }catch(_){ return "—"; } } // zona del negocio, como la hora de la burbuja
 function mediaThumb(m){ const u=esc(safeUrl(m.content.media_url));
   // Tooltip con qué es, nombre, tamaño y fecha: en la cuadrícula un icono solo no dice nada.
   const tt=esc([(MEDIA_LABEL[m.type]||[])[1]||m.type, m.content?.filename, fmtBytes(m.content?.size), fmtDate(m.ts), m.direction==="in"?"del cliente":"enviado"].filter(Boolean).join(" · "));
@@ -1768,7 +1794,8 @@ async function logEvent(contactId, tipo, titulo, detalle){
   try{ await supa.from("contact_events").insert({ channel_id:state.channelId, contact_id:contactId, tipo, titulo, detalle:detalle||null, meta:{ por:autorActual()||null } }); }catch(_){}
 }
 const ACT_ICON={ etiqueta_add:"etiquetas", etiqueta_del:"etiquetas", campo:"edit", flujo_inicio:"flujos", flujo_fin:"flag", secuencia_inicio:"secuencias", secuencia_cancel:"stop", compra:"dollar", humano:"user", bot_pausa:"pause", bot_reactiva:"play", nodo:"node", error:"alert", nota:"note" };
-function fmtFull(ts){ try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(ts)); }catch(_){ return ""; } }
+// En la zona del negocio, como fmtTime: si no, el «último mensaje» de la ficha decía otra hora que la burbuja.
+function fmtFull(ts){ try{ return new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",timeZone:getTZ()}).format(new Date(ts)); }catch(_){ return ""; } }
 
 // ── Menú de acciones del contacto ──
 function renderActionsMenu(){
@@ -1800,7 +1827,11 @@ async function actionHandler(a){
   const cid=state.contactId; if(!cid) return;
   const conv=()=>supa.from("conversations");
   if(a==="tag"){ const btn=$("pAddBtn"); if(btn){ const d=btn.closest("details"); if(d) d.open=true; btn.scrollIntoView({block:"center"}); setTimeout(()=>btn.click(),160); } else toast("Crea etiquetas en la sección Etiquetas para poder asignarlas",true); return; }
-  if(a==="follow"){ const cvc=(state.convs||[]).find(c=>c.contact_id===cid); const now=!cvc?.requiere_humano;
+  if(a==="follow"){ const cvc=(state.convs||[]).find(c=>c.contact_id===cid); let actual=cvc?.requiere_humano;
+    // Chat abierto por ?c= (o desde Contactos) que no está entre los 1000 cargados: sin cvc
+    // siempre «marcaba», y uno ya en seguimiento no se podía quitar. Se lee el valor de la base.
+    if(!cvc){ const { data:cr }=await conv().select("requiere_humano").eq("contact_id",cid).limit(1).maybeSingle(); actual=cr?.requiere_humano; }
+    const now=!actual;
     { const { error:eF }=await conv().update({ requiere_humano:now }).eq("contact_id",cid); if(eF){ toast("No se pudo guardar: "+eF.message,true); return; } } logEvent(cid,"nota",now?"Marcado para seguimiento":"Seguimiento quitado"); toast(now?"Marcado para seguimiento":"Seguimiento quitado"); loadConversations(); return; }
   if(a==="unread"){ { const { error:eU }=await conv().update({ no_leidos:1 }).eq("contact_id",cid); if(eU){ toast("No se pudo guardar: "+eU.message,true); return; } } toast("Marcado como no leído"); backToList(); loadConversations(); return; }
   if(a==="archive"){ { const { error:eA }=await conv().update({ archivada:true }).eq("contact_id",cid); if(eA){ toast("No se pudo archivar: "+eA.message,true); return; } } logEvent(cid,"nota","Conversación archivada"); toast("Archivado"); backToList(); loadConversations(); return; }
@@ -1833,6 +1864,10 @@ async function actionHandler(a){
     if((nMsgs||0)>0 && !(borrados||[]).length){ toast("No se pudo eliminar el chat: eliminar mensajes es solo para administradores.",true); return; }
     const { error:e2 }=await conv().delete().eq("contact_id",cid);
     if(e2){ toast("No se pudo eliminar el chat: "+e2.message,true); return; }
+    // Fuera también su caché del hilo: loadThread conserva lo cacheado que no vino del servidor
+    // (para no perder lo llegado por realtime), así que si el cliente volvía a escribir y
+    // abrías el chat en la misma sesión, reaparecían los mensajes que acababas de borrar.
+    delete state.threadCache[cid];
     // Sin mensajes ya no "envió imagen": el sello lo pone un trigger al insertar y nadie lo quitaba.
     await supa.from("contacts").update({ ultima_imagen_at:null }).eq("id",cid);
     // Sus archivos (fotos, audios, adjuntos) se van con el chat; se conserva el comprobante
@@ -1930,7 +1965,8 @@ async function buscarOperacion(q){
 // más chats decía «Ningún contacto coincide» aunque existiera. Con 3+ caracteres se
 // pregunta también al servidor y lo que falte se suma a la lista cargada.
 async function buscarEnServidor(raw){
-  const q=String(raw||"").trim(); if(q.length<3) return false;
+  const q=String(raw||"").trim(); if(q.length<3){ state.convsExtra=[]; return false; }
+  const ch=state.channelId;
   const qd=q.replace(/\D/g,"");
   const seguro=q.replace(/[,()*%]/g," ").trim();
   const ors=[`nombre.ilike.*${seguro}*`]; if(qd.length>=3) ors.push(`wa_id.ilike.*${qd}*`);
@@ -1941,9 +1977,15 @@ async function buscarEnServidor(raw){
   try{
     let { data, error }=await pedir(true);
     if(error){ ({ data }=await pedir(false)); }
+    if(state.channelId!==ch) return false; // cambiaste de bot mientras buscaba: no mezclar chats del otro
+    // Los encontrados se guardan TAMBIÉN aparte (state.convsExtra): loadConversations reemplaza
+    // state.convs entero con cada mensaje que entra, y el chat encontrado desaparecía de la lista
+    // con la búsqueda todavía escrita. Allá se vuelven a sumar mientras la búsqueda siga activa.
+    const validos=(data||[]).filter(cv=>cv.contact&&!cv.contact.bloqueado&&cv.contact.wa_id!=="webchat-test");
+    state.convsExtra=validos; state.convsExtraCh=ch;
     const have=new Set(state.convs.map(c=>c.contact_id)); let added=0;
-    for(const cv of (data||[])){
-      if(!cv.contact||cv.contact.bloqueado||cv.contact.wa_id==="webchat-test"||have.has(cv.contact_id)) continue;
+    for(const cv of validos){
+      if(have.has(cv.contact_id)) continue;
       state.convs.push(cv); have.add(cv.contact_id); added++;
     }
     return added>0;
@@ -1951,7 +1993,7 @@ async function buscarEnServidor(raw){
 }
 (()=>{ const inp=$("convSearch"), x=$("convSearchX"); if(!inp) return;
   let t=null;
-  const limpiar=()=>{ inp.value=""; state.search=""; state.searchOps=new Set(); x.hidden=true; renderConversations(); };
+  const limpiar=()=>{ inp.value=""; state.search=""; state.searchOps=new Set(); state.convsExtra=[]; x.hidden=true; renderConversations(); };
   inp.addEventListener("input", ()=>{
     state.search=norm(inp.value.trim()); x.hidden=!inp.value;
     renderConversations();
@@ -1991,19 +2033,26 @@ function senderInner(si){
 }
 let lastOutSender = null;   // remitente del último mensaje pintado (para agrupar cabeceras)
 // Etiqueta del separador de día: Hoy / Ayer / «lunes 15 de septiembre».
+// En la zona del NEGOCIO (ymdLima = ymdTZ), igual que la hora de cada burbuja (fmtTime): con
+// la del navegador, un asesor en España veía a las 01:00 suyas un mensaje de las 18:00 de Lima
+// bajo «Hoy» cuando para el negocio era «Ayer» — separador y hora decían días distintos.
 let lastDayKey = null;
 function dayLabel(ts){
   const d = new Date(ts); if (isNaN(d)) return null;
-  const hoy = new Date(); const ayer = new Date(); ayer.setDate(hoy.getDate()-1);
-  if (d.toDateString()===hoy.toDateString()) return "Hoy";
-  if (d.toDateString()===ayer.toDateString()) return "Ayer";
-  const opts = { weekday:"long", day:"numeric", month:"long" };
-  if (d.getFullYear()!==hoy.getFullYear()) opts.year = "numeric";
+  const k = ymdLima(d), hoy = ymdLima(Date.now());
+  // «Ayer» se saca restando un día al calendario (no 24 h al reloj): en zonas con horario de
+  // verano el día del cambio dura 23 o 25 h.
+  const [Y, M, D] = hoy.split("-").map(Number);
+  const ayer = new Date(Date.UTC(Y, M-1, D-1)).toISOString().slice(0,10);
+  if (k===hoy) return "Hoy";
+  if (k===ayer) return "Ayer";
+  const opts = { weekday:"long", day:"numeric", month:"long", timeZone:getTZ() };
+  if (k.slice(0,4)!==hoy.slice(0,4)) opts.year = "numeric";
   return d.toLocaleDateString("es-PE", opts);
 }
 function ensureDaySep(ts){
   const d = new Date(ts); if (isNaN(d)) return;
-  const k = d.toDateString(); if (k===lastDayKey) return;
+  const k = ymdLima(d); if (k===lastDayKey) return;
   lastDayKey = k;
   const s = document.createElement("div"); s.className = "daysep"; s.textContent = dayLabel(ts) || "";
   $("thread").appendChild(s);
@@ -2550,7 +2599,10 @@ async function openTplPicker() {
 // Devuelve false si el usuario cancela. Avisa una sola vez por chat.
 async function okManualEnvio() {
   if (state.isTest) return true;
-  const cet = copilotoEtapa(panelData && panelData.order);
+  // Solo si la ficha cargada es la de ESTE chat: si mandabas en B antes de que cargara su ficha,
+  // se evaluaba el pedido de A y avisaba (o no) con datos ajenos. Sin su ficha = sin datos.
+  const propia = panelData && panelData.contact && panelData.contact.id === state.contactId;
+  const cet = copilotoEtapa(propia ? panelData.order : null);
   if (!cet || !["adelanto","saldo","despachar","camino"].includes(cet.id)) return true;
   if (state.manualOk && state.manualOk.has(state.contactId)) return true;
   const ok = await confirmDialog({
@@ -2838,6 +2890,13 @@ function subscribeRealtime() {
       // reabrirlo siga siendo instantáneo y no pierda mensajes.
       const cache = state.threadCache[m.contact_id];
       if (cache && !cache.some(x=>x.id===m.id)) cache.push(m);
+      // Chat abierto por PRIMERA vez (sin caché): si el mensaje llegaba mientras loadThread aún
+      // esperaba su select —tomado ANTES del insert—, no quedaba guardado en ningún lado y
+      // renderThread(fresh) borraba la burbuja recién pintada. Con la entrada creada, la mezcla
+      // de loadThread lo conserva (lo cacheado que no vino del servidor se suma por id).
+      // Solo en vista chat: en «Actividad» el hilo se recarga entero (abajo) y una caché de un
+      // solo mensaje se pintaría sola, un instante, al volver a la vista chat.
+      else if (!cache && m.contact_id === state.contactId && state.chatView !== "timeline") state.threadCache[m.contact_id] = [m];
       if (m.contact_id === state.contactId) {
         // El cliente escribe mientras miras SU chat → márcalo leído (con debounce): el trigger
         // de BD sube no_leidos +1 por cada entrante, así que sin esto el badge "sin responder"

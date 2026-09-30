@@ -521,7 +521,9 @@ async function hubSaveProduct(pid){
       else { const {data:ins,error}=await supa.from("angulos").insert(payload).select("id").single(); if(error) throw error; if(ins) a.id=ins.id; }
     }
     const vivos=new Set(angs.map(a=>a.id).filter(Boolean));
-    for(const id of (st.hub.orig[pid]||[])){ if(!vivos.has(id)) await supa.from("angulos").delete().eq("id",id); }
+    // Sin revisar el error, un borrado rechazado cantaba «Guardado» y el ángulo reaparecía al
+    // recargar (seguía ruteando sus anuncios). Reintentar es seguro: borrar dos veces no daña.
+    for(const id of (st.hub.orig[pid]||[])){ if(!vivos.has(id)){ const { error:eDel }=await supa.from("angulos").delete().eq("id",id); if(eDel) throw eDel; } }
     // Guardar el BANCO en el config del producto (fuente de ruteo por ID).
     // Solo `ad_bank`, sobre el config FRESCO: escribir la copia de cuando se abrió la página
     // revertía el STOCK a esa hora (las ventas del día volvían a estar disponibles = sobreventa)
@@ -711,6 +713,10 @@ async function openProduct(id){
   const { data:p } = await supa.from("products").select("*").eq("id",id).maybeSingle();
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
   if(gen!==st.openGen) return; // otra apertura más nueva ya ganó
+  // Borrado desde otra pestaña (o la grilla estaba vieja): `p` llega null y el p.config de abajo
+  // reventaba dejando la pantalla a medias. Se avisa y se vuelve a la grilla ya al día.
+  if(!p){ toast("Ese producto ya no existe",true); st.prod=null; showGrid(); loadProducts(); return; }
+  st._avisoStock=null; // el aviso de stock podado es de ESTE producto, no del anterior
   st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="inicio";
   st._verOrig=Object.fromEntries((vs||[]).map(v=>[v.id,{ precio:v.precio, costo:v.costo }]));   // foto de precios al abrir
   // Snapshot del config al ABRIR: al guardar se mezcla por delta contra el config FRESCO
@@ -1529,12 +1535,17 @@ async function pintaHuecosFicha(){
   const host=$("iaHuecos"); if(!host||!st.prod) return;
   try{
     const { data:ev }=await supa.from("contact_events")
-      .select("titulo,detalle,created_at").eq("channel_id",st.channelId).eq("tipo","ficha_hueco")
+      .select("titulo,detalle,meta,created_at").eq("channel_id",st.channelId).eq("tipo","ficha_hueco")
       .order("created_at",{ascending:false}).limit(200);
     if(!ev||!ev.length) return;
+    // Solo los huecos de ESTE producto: el motor guarda de cuál vino en meta.product_id (antes
+    // no, y cada ficha mostraba los de todos). Los eventos viejos sin él se siguen mostrando:
+    // no hay forma de saber de qué producto eran.
+    const pid=String(st.prod.id);
+    const propios=ev.filter(e=>{ const p=e.meta&&e.meta.product_id; return !p || String(p)===pid; });
     // Agrupa por TEMA y guarda un ejemplo real de cómo lo preguntaron.
     const m=new Map();
-    for(const e of ev){
+    for(const e of propios){
       const tema=String(e.titulo||"").replace(/^(?:❓ )?Preguntó por\s*/,"").replace(/\s*y no está en la ficha$/,"").trim();
       for(const t of tema.split(",").map(s=>s.trim()).filter(Boolean)){
         const r=m.get(t)||{n:0,ej:""};
@@ -2104,11 +2115,11 @@ async function renderExtras(host){
   const b=host||$("tabBody");
   b.innerHTML=`<div class="empty">Cargando…</div>`;
   const cfg=st.prod.config=st.prod.config||{};
-  if(!Array.isArray(cfg.extras)) cfg.extras=[];
-  if(!Array.isArray(cfg.regalos)) cfg.regalos=[];
-  if(!cfg.extras_momento) cfg.extras_momento="antes";
-  if(cfg.extras_espera_min==null) cfg.extras_espera_min=15;
-  if(!cfg.extras_prov_momento) cfg.extras_prov_momento="post";
+  // Los valores por defecto se MUESTRAN, no se escriben: con solo abrir esta sección quedaban
+  // extras:[] y los tres momentos en el config, eso movía el sello estructural y el siguiente
+  // Guardar regeneraba el flujo (o preguntaba por las conversaciones a mitad) sin que el dueño
+  // cambiara nada. El generador ya lee los mismos defaults (||"antes", ||15, ||"post").
+  const exMom=cfg.extras_momento||"antes", exEspera=cfg.extras_espera_min??15, exProvMom=cfg.extras_prov_momento||"post";
 
   let cat=await cargarCatalogoExtras();
   const esFisico=(st.prod.tipo==="fisico");
@@ -2118,8 +2129,8 @@ async function renderExtras(host){
   // digitales, mismo criterio que el Regalo digital. (El generador además salta el físico.)
   if(!esFisico) cat=cat.filter(c=>c.tipo!=="fisico");
 
-  const mom=(v,t,d)=>`<div class="momopt" data-m="${v}" style="border:1.5px solid ${cfg.extras_momento===v?'var(--brand)':'var(--border)'};
-    background:${cfg.extras_momento===v?'var(--brand-bg,rgba(99,102,241,.07))':'transparent'};border-radius:12px;padding:12px 13px;cursor:pointer;flex:1">
+  const mom=(v,t,d)=>`<div class="momopt" data-m="${v}" style="border:1.5px solid ${exMom===v?'var(--brand)':'var(--border)'};
+    background:${exMom===v?'var(--brand-bg,rgba(99,102,241,.07))':'transparent'};border-radius:12px;padding:12px 13px;cursor:pointer;flex:1">
     <div style="font-weight:700;font-size:13px">${t}</div>
     <div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5">${d}</div></div>`;
 
@@ -2139,13 +2150,13 @@ async function renderExtras(host){
       <div style="font-size:12.5px;color:var(--muted);line-height:1.55">En <b>Lima</b> se ofrece apenas confirmas el pedido (es contraentrega). En <b>provincia</b> puedes elegir el momento:</div>
       <label style="margin-top:14px">En provincia, ofrecer el extra…</label>
       <select class="in" id="exProvMom" style="max-width:420px">
-        <option value="post" ${cfg.extras_prov_momento==="post"?"selected":""}>Después de validar el adelanto (recomendado)</option>
-        <option value="pre" ${cfg.extras_prov_momento==="pre"?"selected":""}>Antes, junto con la pedida del adelanto</option>
+        <option value="post" ${exProvMom==="post"?"selected":""}>Después de validar el adelanto (recomendado)</option>
+        <option value="pre" ${exProvMom==="pre"?"selected":""}>Antes, junto con la pedida del adelanto</option>
       </select>
       <div style="font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.5">Con “después”, el bot ofrece el extra recién cuando el cliente ya pagó el adelanto (mejor momento). Se suma al saldo que cobra la agencia; el adelanto no cambia.</div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
         <label style="margin:0;font-size:12.5px;font-weight:700">Si no responde, seguimos sin el extra a los</label>
-        <input class="in" id="exEsp" type="number" min="1" step="1" value="${esc(cfg.extras_espera_min)}" style="width:90px"/>
+        <input class="in" id="exEsp" type="number" min="1" step="1" value="${esc(exEspera)}" style="width:90px"/>
         <span style="font-size:12.5px;color:var(--muted)">minutos</span>
       </div>
     </div>
@@ -2158,7 +2169,7 @@ async function renderExtras(host){
       </div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
         <label style="margin:0;font-size:12.5px;font-weight:700">Si no responde, entregar igual a los</label>
-        <input class="in" id="exEsp" type="number" min="1" step="1" value="${esc(cfg.extras_espera_min)}" style="width:90px"/>
+        <input class="in" id="exEsp" type="number" min="1" step="1" value="${esc(exEspera)}" style="width:90px"/>
         <span style="font-size:12.5px;color:var(--muted)">minutos</span>
         <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:220px">
           Nunca se retiene lo que el cliente ya pagó por esperar una venta extra.</span>
@@ -2184,7 +2195,7 @@ async function renderExtras(host){
   $("exEsp").oninput=(e)=>{ cfg.extras_espera_min=Math.max(1,parseInt(e.target.value,10)||15); };
   const epm=$("exProvMom"); if(epm) epm.onchange=(e)=>{ cfg.extras_prov_momento=e.target.value; };
   const esg=$("exSeguir"); if(esg) esg.onchange=(e)=>{ cfg.extras_seguir=e.target.checked; };
-  $("exAdd").onclick=()=>{ cfg.extras.push({ version_id:cat[0]?.id||"", mensaje:"" }); paintExtras(); };
+  $("exAdd").onclick=()=>{ if(!Array.isArray(cfg.extras)) cfg.extras=[]; cfg.extras.push({ version_id:cat[0]?.id||"", mensaje:"" }); paintExtras(); };
   paintExtras();
 }
 // Sección propia "Regalo con la compra" (antes vivía dentro de Ventas extra).
@@ -2242,10 +2253,16 @@ function paintRegalos(){
 }
 
 function paintExtras(){
-  const cfg=st.prod.config; const cat=st.extraCat||[]; const box=$("exList"); if(!box) return;
+  const cfg=st.prod.config; const box=$("exList"); if(!box) return;
+  // Mismo filtro que renderExtras: un digital no despacha extras físicos. Pintar desde st.extraCat
+  // entero los volvía a ofrecer en el selector. Se deja el ya elegido (si lo hubiera de antes) para
+  // que el select no muestre otro distinto del guardado; el generador lo salta igual.
+  const esFisico=(st.prod.tipo==="fisico");
+  const catTodo=st.extraCat||[];
   box.innerHTML="";
-  if(!cfg.extras.length){ box.innerHTML=`<div class="nodo-empty" style="padding:20px">Sin ventas extra. El cliente paga y se le entrega directo.</div>`; return; }
+  if(!Array.isArray(cfg.extras)||!cfg.extras.length){ box.innerHTML=`<div class="nodo-empty" style="padding:20px">Sin ventas extra. El cliente paga y se le entrega directo.</div>`; return; }
   cfg.extras.forEach((x,i)=>{
+    const cat=esFisico ? catTodo : catTodo.filter(c=>c.tipo!=="fisico"||c.id===x.version_id);
     const el=document.createElement("div"); el.className="card";
     el.innerHTML=`
       <div class="row" style="align-items:flex-end;gap:10px">
@@ -2610,7 +2627,7 @@ async function renderInicio(){
     };
     const pv=$("pausarVenta");
     if(pv) pv.onclick=async(e)=>{
-      if(!await confirmDialog({title:"Pausar producto",message:`¿Pausar "${esc(st.prod.nombre)}"? El bot dejará de venderlo (sigue saludando). Lo reactivas cuando quieras.`,confirmText:"Pausar"})) return;
+      if(!await confirmDialog({title:"Pausar producto",message:`¿Pausar "${st.prod.nombre}"? El bot dejará de venderlo (sigue saludando). Lo reactivas cuando quieras.`,confirmText:"Pausar"})) return;
       e.target.disabled=true;
       const { error }=await supa.from("flows").update({ estado:"borrador" }).eq("id",st.receta.fVenta.id);
       if(error){ toast(error.message,true); e.target.disabled=false; return; }
@@ -2989,13 +3006,27 @@ const CONTENIDO_EN_VIVO = new Set([
   // (entrega_mensaje NO va acá: el generador lo COPIA al nodo «entregar» y el motor lee el del
   // nodo, así que cambiarlo tiene que regenerar el flujo — antes el cliente seguía recibiendo el viejo.)
   "costo","empaque","stock","atributos","remarketing_seqs","entrega",
+  // Adelanto del producto: el generador solo escribe {{adelanto}} y el motor resuelve
+  // adelanto_override/adelanto_minimo al contestar. (Acá decía «adelanto»/«adelanto_min»,
+  // claves que el producto nunca tuvo: tocar el adelanto regeneraba el flujo por nada.)
+  // stock_umbral lo lee el motor al descontar; ad_bank, el ruteo por anuncio. Ninguno va a un nodo.
+  "regalos","adelanto_override","adelanto_minimo","stock_umbral","ad_bank",
+  "memoria","intencion","reglas","limites","conocimiento",
+  "horario","demora","_flujo_sello",
+]);
+// La lista tal como estaba hasta el 30-sep: los sellos ya guardados se calcularon con ella. Sin
+// este puente, el primer Guardar de cada producto con banco de anuncios (o adelanto propio)
+// regeneraba el flujo —o preguntaba por las conversaciones a mitad— sin que nada cambiara.
+const EN_VIVO_HASTA_0930 = new Set([
+  "contexto_producto","ia","ia_multimedia","faq","faq_items","objeciones","objeciones_items",
+  "costo","empaque","stock","atributos","remarketing_seqs","entrega",
   "regalos","adelanto","adelanto_min","memoria","intencion","reglas","limites","conocimiento",
   "horario","demora","_flujo_sello",
 ]);
-function selloEstructura(){
+function selloEstructura(enVivo = CONTENIDO_EN_VIVO){
   const cfg = st.prod?.config || {};
   const est = {};
-  for (const k of Object.keys(cfg).sort()) if (!CONTENIDO_EN_VIVO.has(k)) est[k] = cfg[k];
+  for (const k of Object.keys(cfg).sort()) if (!enVivo.has(k)) est[k] = cfg[k];
   // Las presentaciones viven en product_versions (fuera de config): borrarlas, apagarlas o
   // cambiarles el precio no movía el sello y el flujo publicado seguía vendiendo lo que ya
   // no existía, sin aviso.
@@ -3031,6 +3062,17 @@ async function sincronizarFlujo(){
   // entrada el flujo de cada producto que ya vende, sin que nadie lo pida, sería peor.
   if(!guardado){ await sellarFlujo(fVenta.id); return; }
   if(guardado.sello === selloEstructura()) return;          // nada estructural cambió
+  if(guardado.sello === selloEstructura(EN_VIVO_HASTA_0930)){
+    // Sello de la lista vieja y nada cambió: se re-sella con la nueva SIN re-hashear los bloques
+    // (eso borraría la prueba de una edición a mano y el próximo cambio la pisaría sin avisar).
+    const nuevo = { ...guardado, sello: selloEstructura() };
+    try{
+      const r = await patchProductConfig(st.prod.id, (cfg) => { cfg._flujo_sello = nuevo; });
+      st.prod.config = { ...(st.prod.config||{}), _flujo_sello: nuevo };
+      if (r.ok) st._cfgOrig = { ...(st._cfgOrig||{}), _flujo_sello: nuevo };
+    }catch(_){ /* el sello es una ayuda: si no se pudo, se re-intenta en el próximo Guardar */ }
+    return;
+  }
   const [vivas, hoy] = await Promise.all([charlasVivas(fVenta.id), hashNodos(fVenta.id)]);
   const aMano = !!(guardado.nodos && guardado.nodos !== hoy);
   if(!vivas && !aMano){
@@ -4380,6 +4422,26 @@ async function _saveProduct(){
         if(!Array.isArray(a.media)) a.media=[];
       });
     }
+    // Stock HUÉRFANO: agregar el primer atributo con valores dejaba el número viejo en la clave
+    // "_" (la grilla ya no la muestra, el motor descuenta por "talla=…" y nunca la toca, pero el
+    // Inicio la seguía sumando); borrar un atributo o un valor dejaba igual sus claves colgadas.
+    // Se quitan las claves que no son ninguna variante actual (o "_" si no hay ejes) y, si tenían
+    // unidades, se avisa para que las reparta: adivinar a qué talla van sería elegir por él.
+    // El borrado viaja solo: la reconciliación de abajo respeta lo que el panel quitó.
+    if((st.prod.tipo||"digital")==="fisico" && c.stock && typeof c.stock==="object" && !Array.isArray(c.stock)){
+      const combos=variantCombos(c.atributos);
+      const validas=new Set(combos.length ? combos.map(cm=>stockKey(c.atributos,cm)) : ["_"]);
+      let sueltas=0; const cuales=[];
+      for(const k of Object.keys(c.stock)){
+        if(validas.has(k)) continue;
+        const n=Number(c.stock[k])||0;
+        if(n){ sueltas+=n; cuales.push(k==="_" ? "sin variante" : k.split("|").map(p=>p.replace("="," ")).join(" · ")); }
+        delete c.stock[k];
+      }
+      // Se canta al FINAL (el «Guardado» de abajo lo tapaba) y sobrevive a un guardado abortado:
+      // en el reintento ya no hay nada que podar y el aviso se habría perdido.
+      if(sueltas) st._avisoStock=`Quité ${sueltas} unidad(es) de stock que ya no son de ninguna variante (${cuales.join(", ")}): repártelas en Stock.`;
+    }
     // PODA de extras/regalos FANTASMA: un extra o regalo cuyo version_id ya no existe
     // (el producto se borró o su versión se desactivó) horneaba un bump en S/0 en el
     // flujo. Se contrasta contra el catálogo vivo y se descartan los muertos, avisando
@@ -4425,6 +4487,12 @@ async function _saveProduct(){
   // completo revertiría esos descuentos → sobreventa silenciosa. Se reconcilia por DELTA:
   // (valor del panel − valor original al abrir) se aplica sobre el stock FRESCO de la BD.
   // Así una edición manual del dueño se respeta y los descuentos por ventas NO se pierden.
+  // La relectura del config entero va PRIMERO: si falla no se guarda nada (antes se escribía la
+  // foto local completa y se cantaba «Guardado», revirtiendo lo que otra pantalla cambió). Y va
+  // antes de tocar el stock: abortar con cfg.stock ya mezclado hacía que el reintento midiera el
+  // delta contra lo mezclado y la edición del dueño se perdía.
+  const { data:fr2, error:errFr2 }=await supa.from("products").select("config").eq("id",st.prod.id).maybeSingle();
+  if(errFr2||!fr2){ toast("No pude leer el producto actual (¿conexión?). No guardé nada: vuelve a intentarlo.",true); return; }
   try{
     const cfg=st.prod.config||{};
     if(cfg.stock&&typeof cfg.stock==="object"&&!Array.isArray(cfg.stock)){
@@ -4459,7 +4527,6 @@ async function _saveProduct(){
   // 🔒 Mismo delta para el RESTO del config: lo que otra pantalla cambió en la base desde que
   // se abrió esta ficha (y que acá no se tocó) se conserva; lo que se editó acá manda.
   try{
-    const { data:fr2 }=await supa.from("products").select("config").eq("id",st.prod.id).maybeSingle();
     const dbCfg=(fr2&&fr2.config&&typeof fr2.config==="object")?fr2.config:null;
     if(dbCfg){
       const orig=st._cfgOrig||{}; const local=st.prod.config||{}; const J=(x)=>JSON.stringify(x===undefined?null:x);
@@ -4559,7 +4626,7 @@ async function _saveProduct(){
   if(actRenderizada()){ try{ eAct=await saveActivacion(); }catch(e){ eAct=(e&&e.message)||"error inesperado"; } }
   st._verOrig=Object.fromEntries((st.versions||[]).filter(v=>v.id).map(v=>[v.id,{ precio:v.precio, costo:v.costo }]));   // nueva foto
   if(eAct) toast("Se guardó el producto, pero no «Cómo llegan los clientes» ("+eAct+"). Vuelve a pulsar Guardar cambios.",true);
-  else { markClean(); toast("Guardado"); }
+  else { markClean(); const av=st._avisoStock; st._avisoStock=null; toast(av?"Guardado. "+av:"Guardado", !!av); }
   loadProducts();
   // 💲 Un EXTRA: su precio vive COPIADO en el flujo de cada principal que lo ofrece (el generador
   // lo fija ahí) y en lo que el bot le dice al cliente. Cambiarlo acá no toca esos flujos: se

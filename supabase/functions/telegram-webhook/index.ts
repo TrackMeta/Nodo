@@ -111,20 +111,45 @@ Deno.serve(async (req) => {
       const { data: _vc } = await db.from("channels").select("telegram_vinculos").eq("id", channelId).maybeSingle();
       const vinc = { ...(((_vc as any)?.telegram_vinculos ?? {}) as Record<string, unknown>) };
       vinc[quienEs] = { uid: pair?.uid ?? null, nombre: [msg.from?.first_name, msg.from?.last_name].filter(Boolean).join(" ").slice(0, 60) || null, at: new Date().toISOString() };
-      await db.from("channels").update({ telegram_chat_ids: ids, telegram_pair: null, telegram_vinculos: vinc }).eq("id", channelId);
+      // 🔒 El `pair` se leyó al entrar: entre esa lectura y esta escritura el código pudo quedar
+      // anulado (5 intentos fallidos en paralelo) o ya usado. Solo se vincula si el código que
+      // está guardado SIGUE siendo este — si no, una petición vieja vinculaba con un código muerto.
+      const { data: _vinculado } = await db.from("channels")
+        .update({ telegram_chat_ids: ids, telegram_pair: null, telegram_vinculos: vinc })
+        .eq("id", channelId).eq("telegram_pair->>codigo", String(pair.codigo)).select("id");
+      if (!_vinculado || !_vinculado.length) {
+        await sendTelegram(token, [quienEs], "⚠️ Ese código ya no vale. Genera uno nuevo en <b>Canales → Telegram</b>.");
+        return json({ ok: true });
+      }
       await sendTelegram(token, [quienEs],
         "✅ <b>Listo, quedaste vinculado.</b>\nDesde aquí vas a poder aprobar los pagos con un toque.");
     } else if (vigente && quienEs && /^\d{4,8}$/.test(texto.replace(/\D/g, "")) && texto.replace(/\D/g, "") !== String(pair.codigo)) {
       // Intento de código FALLIDO con un pairing activo: cuenta y, tras 5, ANULA el código
       // (obliga a regenerarlo en el panel). Cierra la fuerza bruta en la ventana de 5 min
       // (espacio 900k, pero mejor no depender solo del rate-limit de Telegram para aprobar pagos).
+      // 🔒 El contador se leyó al entrar (`pair`): con intentos en paralelo todos leían el mismo
+      // valor y escribían el mismo +1 (el tope de 5 no se cumplía), y una escritura vieja de
+      // `{ ...pair, intentos }` podía REVIVIR un código ya anulado o ya usado. Ahora cada escritura
+      // es condicional: mismo código Y mismo contador que se leyó (compare-and-set). Si otra
+      // petición lo movió entre medio, esto ya es fuerza bruta en paralelo → se anula el código.
+      const codigo = String(pair.codigo);
       const intentos = (Number(pair.intentos) || 0) + 1;
+      const anular = () => db.from("channels").update({ telegram_pair: null })
+        .eq("id", channelId).eq("telegram_pair->>codigo", codigo);
       if (intentos >= 5) {
-        await db.from("channels").update({ telegram_pair: null }).eq("id", channelId);
+        await anular();
         await sendTelegram(token, [quienEs], "⚠️ Demasiados intentos. Anulé el código; genera uno nuevo en <b>Canales → Telegram</b>.");
       } else {
-        await db.from("channels").update({ telegram_pair: { ...pair, intentos } }).eq("id", channelId);
-        await sendTelegram(token, [quienEs], "❌ Código incorrecto. Revísalo en el panel e inténtalo de nuevo.");
+        let q = db.from("channels").update({ telegram_pair: { ...pair, intentos } })
+          .eq("id", channelId).eq("telegram_pair->>codigo", codigo);
+        q = pair.intentos == null ? q.is("telegram_pair->>intentos", null) : q.eq("telegram_pair->>intentos", String(pair.intentos));
+        const { data: _contado } = await q.select("id");
+        if (!_contado || !_contado.length) {
+          await anular();
+          await sendTelegram(token, [quienEs], "⚠️ Demasiados intentos. Anulé el código; genera uno nuevo en <b>Canales → Telegram</b>.");
+        } else {
+          await sendTelegram(token, [quienEs], "❌ Código incorrecto. Revísalo en el panel e inténtalo de nuevo.");
+        }
       }
       return json({ ok: true });
     } else if (/^\/(hoy|ayer|fecha|resumen|start|help|ayuda)\b/i.test(texto)) {

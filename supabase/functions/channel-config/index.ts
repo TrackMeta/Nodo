@@ -1247,6 +1247,11 @@ Deno.serve(async (req) => {
           }
         }
       }
+      // Id del bot archivado al que hay que soltarle el número. Se suelta recién justo antes del
+      // update final: antes se soltaba en medio del bucle y, si después el waba_id daba
+      // «id_en_uso» o el update fallaba, se devolvía error pero el archivado ya había perdido
+      // su número para nada (y desarchivarlo lo dejaba sin WhatsApp).
+      let soltarDe: string | null = null;
       for (const idk of ["phone_number_id", "waba_id"]) {
         const v = upd[idk];
         if (v == null) continue; // no se está cambiando (o se está limpiando)
@@ -1259,14 +1264,26 @@ Deno.serve(async (req) => {
         // Antes el número quedaba amarrado al archivado (que ni sale en el selector) y reconectarlo
         // en el bot nuevo decía «ya está en uso por otro canal» sin decir cuál.
         if (dup && idk === "phone_number_id" && (dup as any).activo === false && myAcc && (dup as any).account_id === myAcc) {
-          await db.from("channels").update({ phone_number_id: null }).eq("id", (dup as any).id);
+          soltarDe = (dup as any).id;
         } else if (dup) {
           return json({ error: "id_en_uso", detalle: `Ese ${idk} ya está en uso por otro bot${(dup as any).account_id === myAcc && (dup as any).nombre ? ` («${(dup as any).nombre}»)` : ""}.` }, 400);
         }
       }
       if (Object.keys(upd).length) {
+        // phone_number_id es único: el archivado lo suelta ANTES del update (si no, choca con el índice).
+        if (soltarDe) {
+          const { error: eS } = await db.from("channels").update({ phone_number_id: null }).eq("id", soltarDe);
+          if (eS) return json({ error: "guardar_canal", detalle: eS.message }, 400);
+        }
         const { error } = await db.from("channels").update(upd).eq("id", channel_id);
-        if (error) return json({ error: "guardar_canal", detalle: error.message }, 400);
+        if (error) {
+          // Falló el guardado: el número vuelve al archivado, que no tenía por qué perderlo.
+          if (soltarDe) {
+            const { error: eR } = await db.from("channels").update({ phone_number_id: upd.phone_number_id }).eq("id", soltarDe);
+            if (eR) console.error("[save] no pude devolverle el número al bot archivado", soltarDe, eR.message);
+          }
+          return json({ error: "guardar_canal", detalle: error.message }, 400);
+        }
       }
 
       // ── Secretos → Vault (solo los que traen valor) ─────────────
@@ -1330,9 +1347,26 @@ Deno.serve(async (req) => {
     // Lo que envió el negocio (bucket `media`) no se toca: lo barre media-gc cuando ya nada
     // lo referencia (una respuesta rápida puede reusar el mismo archivo).
     if (action === "contact_files_delete") {
-      const ids: string[] = (Array.isArray(body.contact_ids) ? body.contact_ids : [])
+      const ids0: string[] = (Array.isArray(body.contact_ids) ? body.contact_ids : [])
         .map((x: unknown) => String(x)).filter((x: string) => /^[0-9a-f-]{36}$/i.test(x)).slice(0, 500);
       const modo = body.modo === "chat" ? "chat" : "todo";
+      // 🔒 La carpeta ya queda dentro de la cuenta, pero no del BOT: con el channel_id de un bot
+      // y los contact_ids de OTRO bot de la misma cuenta se le borraban las fotos y audios a un
+      // contacto vivo ajeno. Contactos cuenta el panel llama DESPUÉS de borrarlos, así que un id
+      // que ya no existe es válido (su carpeta quedó huérfana); el que existe tiene que ser de este
+      // bot. En modo «todo» (se borró el contacto) uno que sigue vivo no se toca.
+      const ids: string[] = [];
+      for (let i = 0; i < ids0.length; i += 200) {
+        const trozo = ids0.slice(i, i + 200);
+        const { data: vivos, error: eV } = await db.from("contacts").select("id, channel_id").in("id", trozo);
+        // No poder comprobar de quién es el contacto es exactamente cuando NO se debe borrar.
+        if (eV) return json({ error: "verificar", detalle: `contacts: ${eV.message}` }, 500);
+        const deQuien = new Map(((vivos ?? []) as Array<{ id: string; channel_id: string }>).map((c) => [c.id, c.channel_id]));
+        for (const id of trozo) {
+          if (!deQuien.has(id)) ids.push(id);
+          else if (deQuien.get(id) === channel_id && modo === "chat") ids.push(id);
+        }
+      }
       if (!ids.length) return json({ ok: true, borrados: 0, conservados: 0, fallidos: 0, bytes: 0 });
       const acc = (await accountOfChannel(db, channel_id)) || "misc";
       const nombres: string[] = []; let bytes = 0;
@@ -1419,15 +1453,29 @@ Deno.serve(async (req) => {
       // Si el borrado de un secreto FALLA de verdad (no «no había»: la función SQL ya es
       // idempotente), NO se borra el canal: quedarían tokens vivos y huérfanos en el Vault sin
       // ninguna fila que los referencie ni forma de verlos desde el panel.
-      // El webhook de Telegram se quita ANTES de borrar su token (después ya no hay con qué): si no,
-      // el bot de Telegram seguía apuntando a este canal borrado y cada toque de botón daba error.
-      try {
-        const sTg = await getChannelSecrets(db, channel_id);
-        if (sTg?.telegram_bot_token) await deleteWebhook(sTg.telegram_bot_token);
-      } catch (_) { /* best-effort */ }
-      for (const kind of ["access_token", "app_secret", "capi_token", "telegram_bot_token", "ads_token"]) {
+      // ⚠️ Por eso los secretos se borran ANTES del DELETE y no después: channel_secrets cuelga de
+      // channels con ON DELETE CASCADE, así que tras el DELETE la fila con los ids del Vault ya no
+      // existe y delete_channel_secret no encuentra nada que borrar → tokens vivos huérfanos.
+      // Lo que sí se arregla: si el DELETE falla (timeout en la cascada), el bot ya NO queda sin
+      // credenciales — se guarda una copia de los secretos acá y se le vuelven a poner.
+      let copia: Awaited<ReturnType<typeof getChannelSecrets>> = null;
+      try { copia = await getChannelSecrets(db, channel_id); }
+      catch (e) { return json({ error: "vault", detalle: `No se pudieron leer los secretos (${(e as any)?.message ?? e}). No se borró el bot.` }, 500); }
+      const KINDS = ["access_token", "app_secret", "capi_token", "telegram_bot_token", "ads_token"] as const;
+      const reponerSecretos = async () => {
+        for (const kind of KINDS) {
+          const val = copia?.[kind];
+          if (!val) continue;
+          const { error: eR } = await db.rpc("set_channel_secret", { p_channel_id: channel_id, p_kind: kind, p_value: val });
+          if (eR) console.error("[channel_delete] no pude reponer el secreto", kind, "del canal", channel_id, eR.message);
+        }
+      };
+      for (const kind of KINDS) {
         const { error: eSec } = await db.rpc("delete_channel_secret", { p_channel_id: channel_id, p_kind: kind });
-        if (eSec) return json({ error: "vault", detalle: `No se pudo borrar el secreto ${kind} del Vault (${eSec.message}). No se borró el bot.` }, 500);
+        if (eSec) {
+          await reponerSecretos();
+          return json({ error: "vault", detalle: `No se pudo borrar el secreto ${kind} del Vault (${eSec.message}). No se borró el bot.` }, 500);
+        }
       }
       // Los archivos se inventarían ANTES de borrar: el bucket de comprobantes se organiza por
       // contacto, y los contactos se van en la cascada. Se borran DESPUÉS de que el canal se
@@ -1436,7 +1484,18 @@ Deno.serve(async (req) => {
         console.error("[channel_delete] inventario de archivos:", (e as any)?.message ?? e); return null;
       });
       const { error } = await db.from("channels").delete().eq("id", channel_id);
-      if (error) return json({ error: "borrar", detalle: error.message }, 400);
+      if (error) {
+        await reponerSecretos();
+        return json({ error: "borrar", detalle: error.message }, 400);
+      }
+      // El webhook de Telegram se quita recién ahora, con el token de la copia: si se quitaba antes
+      // y el DELETE fallaba, el bot seguía vivo pero su Telegram ya no recibía nada. Y hay que
+      // quitarlo: si no, el bot de Telegram seguía apuntando a este canal borrado y cada toque de
+      // botón daba error.
+      if (copia?.telegram_bot_token) {
+        try { await deleteWebhook(copia.telegram_bot_token); }
+        catch (e) { console.error("[channel_delete] no pude quitar el webhook de Telegram:", (e as any)?.message ?? e); }
+      }
       // El recolector nocturno solo barre `media`; lo que mandaron los clientes (comprobantes,
       // fotos, audios) no lo barre nadie. Borrar el bot es borrar también lo suyo.
       let borrados = 0, fallidos = 0;

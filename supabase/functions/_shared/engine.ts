@@ -23405,10 +23405,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const delAmbito = huecos.filter(([n, , , a]) => nuevos.includes(n) && a === ambito);
               if (!delAmbito.length) continue;
               const cita = delAmbito.map(([, re]) => citaDe(re)).find(Boolean) ?? String(ctx.last_input ?? "");
-              await logEvent(db, run.channel_id, run.contact_id,
-                ambito === "negocio" ? "negocio_hueco" : "ficha_hueco",
-                `❓ Preguntó por ${delAmbito.map(([n]) => n).join(", ")} y no está en la ficha`,
-                String(cita).slice(0, 180)).catch(() => {});
+              // Mismo insert que logEvent, más el PRODUCTO en `meta` (logEvent no lo expone): sin él,
+              // la ficha de cada producto mostraba «Te preguntaron esto…» con los huecos de TODOS.
+              try {
+                await db.from("contact_events").insert({
+                  channel_id: run.channel_id, contact_id: run.contact_id,
+                  tipo: ambito === "negocio" ? "negocio_hueco" : "ficha_hueco",
+                  titulo: `❓ Preguntó por ${delAmbito.map(([n]) => n).join(", ")} y no está en la ficha`,
+                  detalle: String(cita).slice(0, 180),
+                  meta: ambito === "producto" && ctx._product_id ? { product_id: String(ctx._product_id) } : {},
+                });
+              } catch (_) { /* bitácora best-effort, igual que logEvent */ }
             }
             // 🏪 El mayorista NO puede quedarse solo en la bitácora: el bot le va a decir que
             // el precio por cantidad lo ve el dueño, y eso tiene que ser verdad. Va por

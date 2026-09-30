@@ -702,18 +702,25 @@ function pintarWA(r){
 // de la API. Si todavía faltan datos, no hay nada que terminar y se comporta como antes.
 async function guardarYTerminarWA(btn, body){
   btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+  // El bot se fija AL EMPEZAR: si mientras dice «Guardando…» cambias de bot en el selector
+  // (shell.onChannel pisa st.channelId), releerlo después de cada await mandaba el
+  // whatsapp_finish y el ads_descubrir al OTRO bot, con los datos que guardaste en este.
+  const cid=st.channelId;
   try{
-    await callFn("channel-config",{ action:"save", channel_id:st.channelId, ...body });
+    await callFn("channel-config",{ action:"save", channel_id:cid, ...body });
     btn.textContent="Terminando…";
-    await terminarWA();
-    await load();
+    await terminarWA(cid);
+    // Si ya estás en otro bot, su tarjeta la pinta el load() de onChannel: repintar acá
+    // no toca nada del bot que guardaste.
+    if(cid===st.channelId) await load();
   }catch(e){ toast(e.message||"error",true); }
   btn.disabled=false; btn.textContent=old;
 }
 // `pin` solo llega en el reintento, cuando el número ya tenía verificación en dos pasos.
-async function terminarWA(pin){
+// `cid` es el bot que se guardó (no st.channelId: puede haber cambiado en el camino).
+async function terminarWA(cid, pin){
   let r;
-  try{ r=await callFn("channel-config",{ action:"whatsapp_finish", channel_id:st.channelId, ...(pin?{pin}:{}) }); }
+  try{ r=await callFn("channel-config",{ action:"whatsapp_finish", channel_id:cid, ...(pin?{pin}:{}) }); }
   catch(e){ toast(`Guardado, pero no pude terminar la conexión: ${e.message||""}`,true); return; }
   if(!r.listo){ toast("Guardado"); return; }  // aún faltan datos: no hay nada que terminar
 
@@ -722,7 +729,7 @@ async function terminarWA(pin){
     const p=await askText({ title:"Ese número ya tiene un PIN",
       message:"Tiene la verificación en dos pasos activada desde antes. Escribe el PIN de 6 dígitos que le pusiste — Nodo no puede adivinarlo.",
       label:"PIN", placeholder:"123456" });
-    if(p) return terminarWA(p.trim());
+    if(p) return terminarWA(cid, p.trim());
     // Sin PIN el número NO quedó registrado: antes esto se filtraba y salía «listo».
   }
 
@@ -742,7 +749,7 @@ async function terminarWA(pin){
     return;
   }
   // El token ya quedó guardado: se aprovecha el MISMO viaje para ver si además lee anuncios.
-  const ads=await adsDelMismoToken();
+  const ads=await adsDelMismoToken(cid);
   if(!hizo.length){ toast("Guardado · la conexión ya estaba completa"+(ads?` · ${ads}`:"")); return; }
   toast(`Guardado · ${hizo.join(" y ")}`+(ads?` · ${ads}`:""));
 }
@@ -752,12 +759,12 @@ async function terminarWA(pin){
 // de anuncios queda conectado sin que el dueño vuelva a Meta — que era el segundo viaje que
 // nadie quiere hacer. Si no los trae: silencio. No haberlo marcado no es un fallo de la
 // conexión de WhatsApp, y un aviso rojo acá solo asustaría.
-async function adsDelMismoToken(){
+async function adsDelMismoToken(cid){
   try{
     // Si ya eligió cuentas, no se toca nada: esto resuelve el arranque, no manda después.
-    const { data:ya }=await supa.from("ad_accounts").select("account_id").eq("channel_id",st.channelId).limit(1);
+    const { data:ya }=await supa.from("ad_accounts").select("account_id").eq("channel_id",cid).limit(1);
     if(ya&&ya.length) return "";
-    const r=await callFn("channel-config",{ action:"ads_descubrir", channel_id:st.channelId });
+    const r=await callFn("channel-config",{ action:"ads_descubrir", channel_id:cid });
     const cuentas=(r&&r.cuentas)||[];
     if(!cuentas.length) return "";
     // Con UNA cuenta no hay nada que elegir y se conecta sola. Con VARIAS no se elige por el
@@ -770,7 +777,7 @@ async function adsDelMismoToken(){
     // elige por el dueño: se le avisa.
     const { data:enOtro }=await supa.from("ad_accounts").select("channel_id").eq("account_id",a.account_id).limit(1);
     if(enOtro&&enOtro.length) return `tu token también lee anuncios, pero esa cuenta ya está en otro bot: si también es de este, agrégala en Ajustes → Meta`;
-    const { error }=await supa.from("ad_accounts").upsert({ channel_id:st.channelId, account_id:a.account_id, nombre:a.nombre||null },{ onConflict:"channel_id,account_id" });
+    const { error }=await supa.from("ad_accounts").upsert({ channel_id:cid, account_id:a.account_id, nombre:a.nombre||null },{ onConflict:"channel_id,account_id" });
     if(error) return "";
     return `y conecté tus anuncios (${a.nombre||a.account_id}): el gasto ya sale en Rendimiento`;
   }catch(_){ return ""; }

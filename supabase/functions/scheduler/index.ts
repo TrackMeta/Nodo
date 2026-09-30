@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
-import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, soloAnunciosBloquea, pasarAHumano, esOptOut, canalActivo } from "../_shared/engine.ts";
+import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, aplicarStock, soloAnunciosBloquea, pasarAHumano, esOptOut, canalActivo } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 import { esRechazoTemporal } from "../_shared/meta.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
@@ -463,6 +463,21 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
           .eq("id", (o as any).id).eq("estado", "esperando_adelanto").select("id");
         if (_eCanc) { console.error(`[scheduler] vencer pedido ${(o as any).id}:`, _eCanc.message); continue; }
         if (!_canc || !_canc.length) continue;   // se movió mientras tanto (¿pagó?) → no se toca
+        // 📦 Y lo reservado vuelve al inventario, como en cualquier otra caída del pedido
+        // (order-update, cancelación del cliente, actualizarPedido): el stock se aparta al CREAR
+        // el pedido, así que cada pedido vencido sin adelanto dejaba sus unidades restadas para
+        // siempre (el producto se mostraba agotado con el almacén lleno). Idempotente por
+        // stock_devuelto, y solo se marca si el +1 aplicó de verdad (si el CAS agotó, no se da
+        // por devuelto). Se relee el shipping DESPUÉS del update: es el que vale.
+        try {
+          const { data: _oc } = await db.from("orders").select("shipping").eq("id", (o as any).id).maybeSingle();
+          const _sh = ((_oc as any)?.shipping ?? {}) as any;
+          if (_sh.stock_descontado && !_sh.stock_devuelto && Array.isArray(_sh.stock_mov)) {
+            const { ok } = await aplicarStock(db, _sh.stock_mov, 1);
+            if (ok) await patchShipping(db, (o as any).id, { stock_devuelto: true }, { ship: _sh });
+            else console.error(`[scheduler] vencer pedido ${(o as any).id}: devolver stock — CAS agotó reintentos, NO marcado`);
+          }
+        } catch (e) { console.error(`[scheduler] vencer pedido ${(o as any).id}: devolver stock:`, (e as any)?.message ?? e); }
         // Recalcular la ETAPA del embudo (igual que la cancelación manual en order-update):
         // sin esto el contacto se quedaba en "interesado" (mapeo de esperando_adelanto)
         // aunque su pedido ya venció → el embudo lo mostraba como lead vivo y ofrecía
@@ -850,7 +865,7 @@ async function posponer(subId: string, ms: number) {
     .eq("id", subId).then(() => {}, () => {});
 }
 
-// Intentos de un paso de mensaje ante un rechazo TEMPORAL de Meta (cada 15 min) antes de
+// Intentos de un paso (de mensaje o de plantilla) ante un rechazo TEMPORAL de Meta (cada 15 min) antes de
 // saltarlo. Tres cubren un rate limit o un bache de Graph sin trabar la secuencia horas.
 const SEQ_MAX_INTENTOS = 3;
 
@@ -1192,12 +1207,32 @@ async function processSub(s: any, now: number): Promise<boolean> {
         // del paso ni del contacto. Avanzar igual le quitaba el toque a 200 suscriptores por un
         // minuto malo de Graph. Se pospone 15 min sin consumir el paso.
         const meta = (e as any)?.meta;
-        if (meta && esRechazoTemporal(meta)) {
-          await db.from("sequence_subscriptions").update({ proximo_at: new Date(Date.now() + 15 * 60_000).toISOString() }).eq("id", s.id);
-          console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta frenó la plantilla "${paso.template_name}" (code ${meta?.code}) → se pospone 15 min`);
-          if (_ofertaEscrita) await _retirarOferta();
-          await _desclamar();
-          return false;
+        const _temporalTpl = !!(meta && esRechazoTemporal(meta));
+        if (_temporalTpl) {
+          // …pero con TOPE, igual que el paso de mensaje (abajo): sin él, un 131049 (Meta frena el
+          // marketing a ese usuario) que dura días dejaba al cliente clavado en este paso,
+          // reintentando cada 15 min para siempre y sin llegar nunca a los pasos siguientes.
+          // Mismo contador: notas con meta.seq_reintento desde el ancla del paso (sin columna nueva);
+          // si no se puede contar se da por agotado (mejor saltar un toque que reintentar sin fin).
+          let _intento = SEQ_MAX_INTENTOS;
+          const _clave = `${s.sequence_id}:${s.paso_actual}`;
+          const { count: _previos, error: _errCnt } = await db.from("contact_events")
+            .select("id", { count: "exact", head: true })
+            .eq("contact_id", s.contact_id).eq("meta->>seq_reintento", _clave)
+            .gte("created_at", new Date(s.updated_at ?? s.suscrito_at ?? 0).toISOString());
+          if (!_errCnt) _intento = (_previos ?? 0) + 1;
+          if (_intento < SEQ_MAX_INTENTOS) {
+            await db.from("sequence_subscriptions").update({ proximo_at: new Date(Date.now() + 15 * 60_000).toISOString() }).eq("id", s.id);
+            console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta frenó la plantilla "${paso.template_name}" (code ${meta?.code}) → se pospone 15 min (intento ${_intento} de ${SEQ_MAX_INTENTOS})`);
+            await db.from("contact_events").insert({ channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
+              titulo: "⏳ Un paso del remarketing se reintenta",
+              detalle: `Paso ${s.paso_actual + 1}: Meta frenó la plantilla «${paso.template_name}» un rato — se reintenta en 15 min (intento ${_intento} de ${SEQ_MAX_INTENTOS})`,
+              meta: { seq_reintento: _clave } }).then(() => {}, () => {});
+            if (_ofertaEscrita) await _retirarOferta();
+            await _desclamar();
+            return false;
+          }
+          // Agotados: sigue abajo como un fallo firme → nota en la Actividad y el paso avanza.
         }
         console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: plantilla "${paso.template_name}" falló (${String((e as any)?.message ?? e)}) → se salta este toque y avanza`);
         // Que quede en la Actividad del contacto: un fallo permanente (variables que no calzan,
@@ -1205,7 +1240,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
         await db.from("contact_events").insert({
           channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
           titulo: "🔕 Plantilla de la secuencia no salió",
-          detalle: `Paso ${s.paso_actual}: «${paso.template_name}» — ${String((e as any)?.message ?? e).slice(0, 160)}. Se saltó este toque.`,
+          detalle: `Paso ${s.paso_actual}: «${paso.template_name}» — ${String((e as any)?.message ?? e).slice(0, 160)}${_temporalTpl ? ` (${SEQ_MAX_INTENTOS} intentos)` : ""}. Se saltó este toque.`,
         }).then(() => {}, () => {});
       }
     }
