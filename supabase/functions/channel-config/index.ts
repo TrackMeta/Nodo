@@ -683,6 +683,7 @@ Deno.serve(async (req) => {
       }
       // Tiene el permiso pero sin target_ids («acceso a todo», típico de usuario de sistema
       // Admin): las cuentas se sacan del portfolio — las propias y las compartidas.
+      const diag: string[] = [];
       if (!ids.size) {
         const negocios = new Set<string>();
         for (const s of scopes) {
@@ -691,6 +692,7 @@ Deno.serve(async (req) => {
         if (!negocios.size) {
           const b = await metaGet(token, "me/businesses?fields=id&limit=50");
           for (const x of ((b.body?.data ?? []) as any[])) negocios.add(String(x.id));
+          diag.push("me/businesses:" + (b.body?.error?.message ?? ((b.body?.data ?? []).length + " filas")));
         }
         // `me/businesses` viene vacío con usuario de sistema (ver asignarseCuentas): el
         // portfolio dueño de la app sí lo dice Meta, y el app_id lo trae debug_token.
@@ -699,11 +701,13 @@ Deno.serve(async (req) => {
           const a = await metaGet(token, `${appId}?fields=owner_business`);
           const dueno = (a.body as any)?.owner_business?.id;
           if (dueno) negocios.add(String(dueno));
+          diag.push("app:" + (a.body?.error?.message ?? (dueno ? "dueño " + dueno : "sin owner_business")));
         }
         for (const biz of negocios) {
           for (const edge of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
             const r = await metaGet(token, `${biz}/${edge}?fields=id&limit=50`);
             for (const w of ((r.body?.data ?? []) as any[])) if (w?.id) ids.add(String(w.id));
+            diag.push(`${edge.split("_")[0]}:` + (r.body?.error?.message ?? ((r.body?.data ?? []).length + " filas")));
           }
         }
       }
@@ -716,7 +720,8 @@ Deno.serve(async (req) => {
         return json({
           ok: true, cuentas: [],
           motivo: "El token tiene los permisos de WhatsApp pero Meta no dice a qué cuenta. Pega a mano el Phone Number ID " +
-            "y el WABA ID (developers.facebook.com → tu app → WhatsApp → Configuración de la API) y dale a Guardar y conectar.",
+            "y el WABA ID (developers.facebook.com → tu app → WhatsApp → Configuración de la API) y dale a Guardar y conectar." +
+            (diag.length ? ` [${diag.join(" | ")}]` : ""),
         });
       }
 
