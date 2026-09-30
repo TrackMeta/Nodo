@@ -202,6 +202,12 @@ export function esRechazoTemporal(meta: any): boolean {
   return Number.isFinite(st) && st >= 500;
 }
 
+// BSUID = id del usuario acotado al negocio: prefijo de país, punto y alfanuméricos
+// ("US.13491208655302741918"). Un teléfono nunca lleva letras ni punto.
+export function esBsuid(id: string): boolean {
+  return /^[A-Z]{2}\.[A-Za-z0-9]+$/.test(String(id ?? "").trim());
+}
+
 // POST genérico a /messages. Devuelve el wamid o lanza MetaApiError.
 // Reintenta con backoff los errores TRANSITORIOS: antes, un rate-limit momentáneo se
 // trataba como fallo permanente → el mensaje se marcaba 'failed', el flujo AVANZABA y una
@@ -209,6 +215,14 @@ export function esRechazoTemporal(meta: any): boolean {
 // (número inválido, plantilla rechazada) sigue lanzando al toque, sin reintentar.
 async function postMessage(phoneNumberId: string, accessToken: string, payload: unknown): Promise<string> {
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`;
+  // Cliente con nombre de usuario (sin número): su llave es el BSUID ("PE.1723…"). Meta lo
+  // quiere en `recipient`, no en `to`; puesto en `to` lo toma como un teléfono inexistente y
+  // devuelve 131026 → al cliente no le llegaba NADA (ni el bot ni lo que escribía el asesor).
+  const p = payload as Record<string, unknown>;
+  if (typeof p?.to === "string" && esBsuid(p.to)) {
+    const { to, ...resto } = p;
+    payload = { ...resto, recipient: to };
+  }
   let lastErr: MetaApiError | null = null;
   for (let intento = 0; intento < 3; intento++) {
     if (intento) await new Promise((r) => setTimeout(r, intento === 1 ? 400 : 1100));
