@@ -128,7 +128,13 @@ Deno.serve(async (req) => {
     }
   };
   if (body.shipping && typeof body.shipping === "object") {
-    patch.shipping = { ...((order as any).shipping ?? {}), ...body.shipping };
+    // 🔒 Los campos INTERNOS no se aceptan del panel: con `stock_mov`/`stock_descontado` un operador movía el inventario
+    // de cualquier producto al cancelar/revivir un pedido propio, y los abonos/acreditaciones/marcas «por validar» los
+    // escribe solo el motor (auditoría 2026-09-30). Los valores guardados se conservan: el merge parte del pedido.
+    const _INTERNO = /^(?:stock_|pago_acreditado|prepago_lima_abonado$|adelanto_abonado$|adelanto_abonos$|saldo_abonos$|pagado_total$|.*_validado_auto$|.*_por_validar$|.*_revisar_dup$)/;
+    const _limpio: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(body.shipping as Record<string, unknown>)) if (!_INTERNO.test(k)) _limpio[k] = v;
+    patch.shipping = { ...((order as any).shipping ?? {}), ..._limpio };
   }
   if (typeof body.amount === "number" && Number.isFinite(body.amount) && body.amount >= 0) {
     patch.amount = body.amount;
@@ -279,10 +285,12 @@ Deno.serve(async (req) => {
       if (!(body.shipping as any)?.[`${pre}_rechazado_at`]) continue;
       const abonos = Array.isArray(shp[`${pre}_abonos`]) ? [...shp[`${pre}_abonos`]] : [];
       if (!abonos.length) continue;
-      const opL = String(shp[`${pre}_operacion_leida`] ?? "").toUpperCase().replace(/\s+/g, "").trim();
+      // Misma normalización que al GUARDAR el abono (normOperacion: sin guiones ni signos): con la de antes «YP-0606…»
+      // nunca coincidía y se borraba el ÚLTIMO abono, que podía ser uno legítimo (auditoría 2026-09-30).
+      const opL = normOperacion(String(shp[`${pre}_operacion_leida`] ?? ""));
       const mL = Number(shp[`${pre}_monto_leido`]);
       let idx = -1;
-      if (opL.length >= 4) idx = abonos.map((a: any) => String(a?.op ?? "").toUpperCase().replace(/\s+/g, "")).lastIndexOf(opL);
+      if (opL.length >= 4) idx = abonos.map((a: any) => normOperacion(String(a?.op ?? ""))).lastIndexOf(opL);
       if (idx < 0 && Number.isFinite(mL)) { for (let i = abonos.length - 1; i >= 0; i--) { if (!abonos[i]?.op && Number(abonos[i]?.monto) === mL) { idx = i; break; } } }
       if (idx < 0) idx = abonos.length - 1;
       abonos.splice(idx, 1);

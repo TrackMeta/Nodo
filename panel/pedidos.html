@@ -1223,7 +1223,7 @@ async function openDespacho(o){
 async function avisarLlegada(o){
   const aviso=await pedirAviso(o,{ supa, channelId:st.channelId, contactId:o.contact_id },"en_agencia",
     "Avisar que llegó",
-    `${esc((o.contact||{}).nombre||"cliente")} — el pedido pasa a "en agencia" y se le pide el saldo para darle la clave.`);
+    `${(o.contact||{}).nombre||"cliente"} — el pedido pasa a "en agencia" y se le pide el saldo para darle la clave.`);   // pedirAviso ya escapa (antes salía «José &amp; Ana»)
   if(!aviso) return;
   const r=await updateOrder({ order_id:o.id, estado:"en_agencia", aviso });
   if(r){ toast(avisoMsg(r,aviso,"Listo")); await load(); }

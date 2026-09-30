@@ -4420,7 +4420,10 @@ async function _saveProduct(){
   try{
     const cfg=st.prod.config||{};
     if(cfg.stock&&typeof cfg.stock==="object"&&!Array.isArray(cfg.stock)){
-      const { data:fresh } = await supa.from("products").select("config").eq("id",st.prod.id).maybeSingle();
+      const { data:fresh, error:errFresh } = await supa.from("products").select("config").eq("id",st.prod.id).maybeSingle();
+      // Sin la lectura fresca NO se guarda: escribir el stock de la foto vieja deshacía las ventas del rato →
+      // sobreventa sin aviso (auditoría 2026-09-30). Mejor que reintente.
+      if(errFresh||!fresh){ toast("No pude leer el stock actual (¿conexión?). No guardé nada: vuelve a intentarlo.",true); return; }
       const dbStock=(fresh&&fresh.config&&fresh.config.stock&&typeof fresh.config.stock==="object"&&!Array.isArray(fresh.config.stock)) ? fresh.config.stock : null;
       if(dbStock){ // solo si se pudo leer fresco (si no, se deja el snapshot, como antes)
         const orig=st._stockOrig||{}; const merged={ ...dbStock };
@@ -4491,8 +4494,9 @@ async function _saveProduct(){
     // Con pedidos ya vendidos NO se borra: se APAGA. Borrarla dejaba esos pedidos sin presentación
     // (version_id → null) y el «no me llegó» ya no encontraba qué link reenviar — pese a que el
     // aviso decía «los pedidos ya hechos con ella no se tocan». Apagada, deja de ofrecerse igual.
-    const { count:conPedidos } = await supa.from("orders").select("id",{ count:"exact", head:true }).eq("version_id",id);
-    const { error } = conPedidos
+    const { count:conPedidos, error:errCnt } = await supa.from("orders").select("id",{ count:"exact", head:true }).eq("version_id",id);
+    // Si el conteo falla, se APAGA (nunca se borra a ciegas: borrar dejaba sin presentación a pedidos vendidos).
+    const { error } = (conPedidos || errCnt || conPedidos == null)
       ? await supa.from("product_versions").update({ activo:false }).eq("id",id)
       : await supa.from("product_versions").delete().eq("id",id);
     if(error){ toast(error.message,true); return; }

@@ -215,9 +215,12 @@ async function processTemplateStatus(ids: string[], value: any) {
   const language = value?.message_template_language ?? "es";
   const event = String(value?.event || "").toUpperCase();
   if (!name || !ids.length) return;
-  const estado = event === "APPROVED" ? "aprobada"
-    : (event === "PENDING" || event === "IN_APPEAL" || event === "PENDING_DELETION") ? "pendiente"
-    : "rechazada"; // REJECTED, PAUSED, DISABLED, FLAGGED…
+  // REINSTATED = Meta la vuelve a activar tras una pausa; FLAGGED = aviso de calidad, pero SIGUE enviándose. PAUSED es
+  // temporal (horas/días por calidad): «pendiente», no «rechazada» — con «rechazada» la campaña que la usaba quemaba
+  // toda su audiencia como fallida y al reactivarse seguía marcada (auditoría 2026-09-30).
+  const estado = (event === "APPROVED" || event === "REINSTATED" || event === "FLAGGED") ? "aprobada"
+    : (event === "PENDING" || event === "IN_APPEAL" || event === "PENDING_DELETION" || event === "PAUSED") ? "pendiente"
+    : "rechazada"; // REJECTED, DISABLED…
   await db.from("wa_templates").update({ estado_meta: estado })
     .in("channel_id", ids).eq("name", name).eq("language", language);
 }
@@ -758,6 +761,18 @@ async function processStatus(channelId: string, st: any) {
       if (cs && cs.length) return;
     } catch (_) { /* si no se pudo mirar, se avisa como siempre */ }
     const cid = (upd && upd[0] && (upd[0] as any).contact_id) || null;
+    // 131049 (tope de marketing por usuario) y 131050 (el cliente dejó de aceptar marketing) son NORMALES en los toques de
+    // remarketing: no hay nada que «escribirle tú», y cada uno salía como aviso urgente (auditoría 2026-09-30). Quedan
+    // en la Actividad del contacto.
+    const _codF = Number((patch.error as any)?.code);
+    if (cid && (_codF === 131049 || _codF === 131050)) {
+      try {
+        await db.from("contact_events").insert({ channel_id: channelId, contact_id: cid, tipo: "nota",
+          titulo: "🔕 Meta no entregó un mensaje de marketing",
+          detalle: _codF === 131049 ? "Tope de mensajes de marketing de Meta para este cliente (131049)" : "El cliente dejó de aceptar mensajes de marketing (131050)" });
+      } catch (_) { /* solo registro */ }
+      return;
+    }
     if (cid) { try { await avisarEnvioFallido(db, channelId, cid, patch.error); } catch (_) { /* no encadenar fallos */ } }
   };
   const { data: upd } = await ejecutar();

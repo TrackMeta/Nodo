@@ -1197,9 +1197,18 @@ async function processSub(s: any, now: number): Promise<boolean> {
         // variante de copy reenganchó (ver variante_envios).
         if (await deliverStep(db, s.channel_id, s.contact_id, paso, null,
           { sequence_id: s.sequence_id, paso: s.paso_actual })) toco = true;
-        else console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta rechazó el envío → no cuenta como toque`);
+        else {
+          console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta rechazó el envío → no cuenta como toque`);
+          // …y queda en la Actividad del contacto: antes la secuencia terminaba «completada» sin haber mandado nada y
+          // sin rastro fuera de la consola (auditoría 2026-09-30).
+          await db.from("contact_events").insert({ channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
+            titulo: "🔕 Un paso del remarketing no salió", detalle: `Paso ${s.paso_actual + 1}: Meta rechazó el envío` }).then(() => {}, () => {});
+        }
       } else {
         console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: fuera de 24h y sin plantilla → no se envía (ponle plantilla al paso para alcanzarlo)`);
+        await db.from("contact_events").insert({ channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
+          titulo: "🔕 Un paso del remarketing no salió",
+          detalle: `Paso ${s.paso_actual + 1}: ya pasaron las 24 h de WhatsApp y el paso no tiene plantilla — ponle una para alcanzarlo` }).then(() => {}, () => {});
       }
     }
     if (toco) await marcarTocoMkt(s.contact_id);
@@ -1286,6 +1295,10 @@ async function processSinRespuesta(now: number) {
     .select("id, channel_id, wa_id, source, bot_activo, bloqueado, ultimo_mensaje_cliente_at")
     .gte("ultimo_mensaje_cliente_at", new Date(now - SIN_RESP_MAX_MS).toISOString())
     .lte("ultimo_mensaje_cliente_at", new Date(now - SIN_RESP_MIN_MS).toISOString())
+    // Los filtros van EN la consulta: filtrados después del límite, los 50 lugares se llenaban con chats que atiende
+    // una persona o de prueba, y el de verdad se revisaba a los ~30 min (o nunca) — auditoría 2026-09-30.
+    .or("bot_activo.is.null,bot_activo.eq.true").or("bloqueado.is.null,bloqueado.eq.false")
+    .or("source.is.null,source.neq.sim").neq("wa_id", "webchat-test")
     .order("ultimo_mensaje_cliente_at", { ascending: true }).limit(50);
   for (const c of (cands ?? []) as any[]) {
     if (Date.now() - now > PRESUPUESTO_MS + 16_000) break;

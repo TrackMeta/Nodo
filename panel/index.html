@@ -1780,14 +1780,14 @@ async function actionHandler(a){
   const conv=()=>supa.from("conversations");
   if(a==="tag"){ const btn=$("pAddBtn"); if(btn){ const d=btn.closest("details"); if(d) d.open=true; btn.scrollIntoView({block:"center"}); setTimeout(()=>btn.click(),160); } else toast("Crea etiquetas en la sección Etiquetas para poder asignarlas",true); return; }
   if(a==="follow"){ const cvc=(state.convs||[]).find(c=>c.contact_id===cid); const now=!cvc?.requiere_humano;
-    await conv().update({ requiere_humano:now }).eq("contact_id",cid); logEvent(cid,"nota",now?"Marcado para seguimiento":"Seguimiento quitado"); toast(now?"Marcado para seguimiento":"Seguimiento quitado"); loadConversations(); return; }
-  if(a==="unread"){ await conv().update({ no_leidos:1 }).eq("contact_id",cid); toast("Marcado como no leído"); backToList(); loadConversations(); return; }
-  if(a==="archive"){ await conv().update({ archivada:true }).eq("contact_id",cid); logEvent(cid,"nota","Conversación archivada"); toast("Archivado"); backToList(); loadConversations(); return; }
-  if(a==="unarchive"){ await conv().update({ archivada:false }).eq("contact_id",cid); logEvent(cid,"nota","Conversación desarchivada"); toast("Desarchivado"); await loadConversations(); renderActionsMenu(); return; }
+    { const { error:eF }=await conv().update({ requiere_humano:now }).eq("contact_id",cid); if(eF){ toast("No se pudo guardar: "+eF.message,true); return; } } logEvent(cid,"nota",now?"Marcado para seguimiento":"Seguimiento quitado"); toast(now?"Marcado para seguimiento":"Seguimiento quitado"); loadConversations(); return; }
+  if(a==="unread"){ { const { error:eU }=await conv().update({ no_leidos:1 }).eq("contact_id",cid); if(eU){ toast("No se pudo guardar: "+eU.message,true); return; } } toast("Marcado como no leído"); backToList(); loadConversations(); return; }
+  if(a==="archive"){ { const { error:eA }=await conv().update({ archivada:true }).eq("contact_id",cid); if(eA){ toast("No se pudo archivar: "+eA.message,true); return; } } logEvent(cid,"nota","Conversación archivada"); toast("Archivado"); backToList(); loadConversations(); return; }
+  if(a==="unarchive"){ { const { error:eD }=await conv().update({ archivada:false }).eq("contact_id",cid); if(eD){ toast("No se pudo desarchivar: "+eD.message,true); return; } } logEvent(cid,"nota","Conversación desarchivada"); toast("Desarchivado"); await loadConversations(); renderActionsMenu(); return; }
   if(a==="export"){ return exportMessages(); }
   if(a==="block"){ if(!await confirmDialog({title:"Bloquear contacto",message:"El bot dejará de responderle y saldrá de la bandeja.",confirmText:"Bloquear",danger:true})) return;
     let { error }=await supa.from("contacts").update({ bloqueado:true, bot_activo:false }).eq("id",cid);
-    if(error && /bloqueado|column/.test(error.message)){ toast("Aplica la migración 0021 para bloquear",true); return; }
+    if(error){ toast(/bloqueado|column/.test(error.message) ? "Aplica la migración 0021 para bloquear" : "No se pudo bloquear: "+error.message,true); return; }
     logEvent(cid,"nota","Contacto bloqueado"); toast("Contacto bloqueado"); backToList(); loadConversations(); return; }
   // Desbloquear reactiva el bot: bloquear lo pausa, y sin esto el contacto volvía a la Bandeja
   // con el bot en pausa sin que nada lo dijera.

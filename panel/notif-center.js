@@ -136,18 +136,26 @@ async function cargar() {
     try {
       if (!N.uid) { const { data: { session } } = await supa.auth.getSession(); N.uid = session?.user?.id || null; }
       const desde = new Date(Date.now() - 60 * 864e5).toISOString();
-      const [pend, todas, lect, yo] = await Promise.all([
+      const [pend, todas, yo] = await Promise.all([
         supa.from("notificaciones").select(SEL).in("channel_id", ids).eq("por_atender", true).is("resuelta_at", null)
           .order("created_at", { ascending: false }).limit(300),
         supa.from("notificaciones").select(SEL).in("channel_id", ids).gte("created_at", desde)
           .order("created_at", { ascending: false }).limit(250),
-        supa.from("notificacion_lecturas").select("notificacion_id, quitada_at").limit(1000),
         supa.from("notificacion_usuario").select("leidas_hasta,prefs").maybeSingle(),
       ]);
       if (pend.error && todas.error) return;
       const m = new Map();
       for (const r of [...(todas.data || []), ...(pend.data || [])]) m.set(r.id, r);
       N.rows = m;
+      // Las lecturas SOLO de los avisos cargados, en tandas: con `.limit(1000)` sobre todas las filas del usuario (las
+      // quitadas se conservan) se perdía un subconjunto al azar → avisos quitados que reaparecían y la insignia que
+      // subía y bajaba (auditoría 2026-09-30).
+      const _idsN = [...m.keys()];
+      const lect = { data: [] };
+      for (let i = 0; i < _idsN.length; i += 150) {
+        const r = await supa.from("notificacion_lecturas").select("notificacion_id, quitada_at").in("notificacion_id", _idsN.slice(i, i + 150));
+        if (!r.error && r.data) lect.data.push(...r.data);
+      }
       N.leidas = new Set((lect.data || []).map((r) => r.notificacion_id));
       N.quitadas = new Set((lect.data || []).filter((r) => r.quitada_at).map((r) => r.notificacion_id));
       if (yo.data) {

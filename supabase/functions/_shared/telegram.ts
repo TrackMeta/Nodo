@@ -97,7 +97,7 @@ export async function answerCallback(botToken: string, callbackId: string, text?
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ callback_query_id: callbackId, text: text?.slice(0, 200), show_alert: alerta }),
     });
-  } catch (e) { console.error("[telegram] answerCallback:", (e as any)?.message ?? e); }
+  } catch (e) { console.error("[telegram] answerCallback:", String((e as any)?.message ?? e).split(botToken).join("<token>")); }
 }
 
 // Reemplaza los botones del mensaje ya enviado (o los quita). Se usa después de
@@ -115,7 +115,7 @@ export async function editButtons(
           : { inline_keyboard: [] },
       }),
     });
-  } catch (e) { console.error("[telegram] editButtons:", (e as any)?.message ?? e); }
+  } catch (e) { console.error("[telegram] editButtons:", String((e as any)?.message ?? e).split(botToken).join("<token>")); }
 }
 
 // Registra el webhook del bot. `secret` viaja de vuelta en cada update dentro

@@ -290,6 +290,9 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
   // campaña (baja calidad, sin aviso en la UI), no quemar la audiencia entera contra
   // un rechazo 132001. Se detiene la campaña y se marcan los pendientes con motivo.
   // (La UI ya filtra por estado_meta al elegir; esto cubre el cambio posterior.)
+  // …salvo que esté «pendiente» (Meta la PAUSÓ unas horas, o está en revisión): ahí la campaña ESPERA con sus pendientes
+  // intactos y sigue sola cuando vuelva a estar aprobada — antes se cerraba para siempre (auditoría 2026-09-30).
+  if ((tpl as any).estado_meta === "pendiente") return;
   if ((tpl as any).estado_meta && (tpl as any).estado_meta !== "aprobada") {
     await db.from("campaign_sends").update({ estado: "fallido", error: { message: "La plantilla ya no está aprobada por Meta" } }).eq("campaign_id", c.id).eq("estado", "pendiente");
     await cerrarCampana(db, c, "La plantilla ya no está aprobada por Meta");

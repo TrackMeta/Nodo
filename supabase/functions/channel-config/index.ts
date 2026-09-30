@@ -900,7 +900,8 @@ Deno.serve(async (req) => {
       const mapEstado = (s: string) => {
         const u = String(s || "").toUpperCase();
         if (u === "APPROVED") return "aprobada";
-        if (u === "PENDING" || u === "IN_APPEAL" || u === "PENDING_DELETION") return "pendiente";
+        // PAUSED es temporal (Meta la reactiva sola): «pendiente», no «rechazada» (ver el webhook, auditoría 2026-09-30)
+        if (u === "PENDING" || u === "IN_APPEAL" || u === "PENDING_DELETION" || u === "PAUSED") return "pendiente";
         return "rechazada";
       };
       const bodyOf = (comps: any[]) => {
