@@ -1182,8 +1182,36 @@ async function runEngineInner(
     // 🎚️ Lo que sobra de la palabra clave NOMBRA UNA VERSIÓN: «quiero el curso de cortes BÁSICO» (la clave es
     // «quiero el curso de cortes»). Sin pregunta ni «quiero» propio no se reinyectaba, la versión no se sellaba
     // y el Yape que mandó después cayó a revisión manual sin precio (D20-pagamenos).
-    if (!reinyectarTrasArranque && event.type === "message" && decision.keyword && _txtSinClave.trim()
-        && _txtSinClave.trim().split(/\s+/).length <= 6) {
+    // 🧾 …o trae algo SUYO que atender aunque no sea pregunta ni «quiero» propio: «quiero la plantilla, PAGO CON
+    // PLIN», «NECESITO FACTURA para la plantilla», «les hago transferencia BCP» (el «quiero» era de la clave).
+    // Sin reinyectar salía solo el gancho del producto y silencio: ni precio ni número (D24-plin, D24-factura,
+    // D24-transferencia, 2026-09-29). Cuenta como «algo suyo» si quedan 2+ palabras con contenido que no son
+    // saludo, relleno ni el nombre del producto — «de calistenia» (resto de la clave de Calistenia) no cuenta.
+    if (!reinyectarTrasArranque && event.type === "message" && _txtSinClave.trim()
+        && !soloLaPalabraClave(event.text, decision.keyword)) {
+      try {
+        const _sinTx = (s: string) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        let _nomProd = "";
+        try {
+          const { data: _flN } = await db.from("flows").select("product_id").eq("id", flow.id).maybeSingle();
+          if ((_flN as any)?.product_id) {
+            const { data: _pN } = await db.from("products").select("nombre").eq("id", (_flN as any).product_id).maybeSingle();
+            _nomProd = _sinTx(String((_pN as any)?.nombre ?? ""));
+          }
+        } catch (_) { /* sin nombre → se cuenta todo */ }
+        const _RELLENO = /^(hola+|holi|buenas?|buenos|dias|tardes|noches|info|informacion|gracias|porfa|favor|para|por|con|del|las|los|una|uno|unos|unas|que|mas|muy|este|esta|ese|esa|eso|sobre|acerca|quiero|quisiera|deseo|saber|precio|ok|okey|ya|pues|pe|amigo|amiga|senor|senora)$/;
+        const _pal = _sinTx(_txtSinClave).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 3 && !_RELLENO.test(w) && !(_nomProd && _nomProd.includes(w)));
+        if (_pal.length >= 2 || eligeMetodoDePago(_txtSinClave)) {
+          reinyectarTrasArranque = true;
+          await logEvent(db, channelId, contactId, "nota", "🧾 Además de la clave dijo algo suyo",
+            `«${_txtSinClave.slice(0, 80)}» — sale el saludo y se le atiende`).catch(() => {});
+        }
+      } catch (_) { /* sin eso, como antes */ }
+    }
+    // (el chequeo de VERSIÓN mira lo que escribió aunque el ruteo no haya sido por palabra clave: «curso de cortes
+    //  básico» enrutado por la IA no sellaba la Básica y su Yape de S/30 cayó a revisión — D24-basicacorto)
+    if (!reinyectarTrasArranque && event.type === "message" && _txtSinClave.trim()
+        && _txtSinClave.trim().split(/\s+/).length <= 8) {
       try {
         const { data: _flV } = await db.from("flows").select("product_id").eq("id", flow.id).maybeSingle();
         const _pidV = (_flV as any)?.product_id;
@@ -4861,7 +4889,9 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     // con la lista de precios de a quien ya eligió (F11R-callao, 2026-09-29).
     // El PRIMER renglón de la lista de precios pegado a la frase de antes: preciosEnLineas lo baja, pero la lista la
     // puede pegar un guard que corre DESPUÉS («…que en cualquier tienda física. 1 unidad — *S/ 69*» — F12R-tienda).
-    .replace(/([^\n])[ \t]+(?=(?:\p{Extended_Pictographic}\u{FE0F}?\s*)?\d{1,3}\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?)\s+—\s*\*?(?:S\/|US\$|\$)\s*\d[^\n]*\n[ \t]*(?:\p{Extended_Pictographic}\u{FE0F}?\s*)?\d{1,3}\s+(?:unidad|pack|par|frasco|caja))/gu, "$1\n\n")
+    .replace(/([^\n\p{Extended_Pictographic}\u{FE0F}])[ \t]+(?=(?:\p{Extended_Pictographic}\u{FE0F}?\s*)?\d{1,3}\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?)\s+—\s*\*?(?:S\/|US\$|\$)\s*\d[^\n]*\n[ \t]*(?:\p{Extended_Pictographic}\u{FE0F}?\s*)?\d{1,3}\s+(?:unidad|pack|par|frasco|caja))/gu, "$1\n\n")
+    // El espacio ANTES del punto o la coma que dejó un recorte: «Sobre la factura, no tengo dato .» (D24R-factura).
+    .replace(/(\p{L})[ \t]+([.,;])(?=[ \t]|\n|$)/gu, "$1$2")
     // «…mejor precio que en tienda;» y debajo la lista: el «;» que encadenaba lo que se quitó cierra con punto (F12S-tienda).
     .replace(/;[ \t]*(?=\n)/g, ".")
     // Solo al FINAL del mensaje: un «Y dime:» con su lista debajo es una frase entera.
@@ -6539,6 +6569,11 @@ function sinPresentacionRepetida(texto: string, producto: string, ventaAhora = f
   // 2026-09-25). Si su mensaje pide algo y el arranque comparte una palabra de fondo con lo
   // que pidió —o es la forma honesta «no tengo el dato»—, se respeta.
   const _li = normalize(String(lastInput ?? ""));
+  // 📖 PIDIÓ la información del producto («quisiera información detallada del producto», «quiero saber del producto»)
+  // o expresó una DESCONFIANZA («he visto comentarios malos», «¿es estafa?»): lo que abre el mensaje es la respuesta,
+  // no una presentación repetida. Se la llevaba entera y quedaba «¡Hola! Cuando quieras me dices de dónde eres»
+  // (F13-formal, F13-audio, F13-quejas, 2026-09-29).
+  if (/\b(informacion|info|detall\w*|condiciones|saber\s+(?:del|de\s+la|de\s+el|sobre|mas)|conocer|de\s+que\s+se\s+trata|como\s+funciona|que\s+es\s+(?:el|la|esto|eso)|comentari\w*|opinion\w*|resen\w*|queja\w*|estaf\w*|confi\w*|fraude|enga\w*|malos?|malas?)\b/.test(_li)) return t;
   // (+ los pedidos en imperativo: «mándame el link para comprar en la web» — F6-hweb: se fue la
   // respuesta «vendemos solo por WhatsApp» con la presentación y quedó solo «¿Alguna otra duda?»)
   const _pide = /[?¿]|\b(necesito|quiero saber|me interesa saber|tienen|hay|puedo|se puede|cuanto|como|que|factura|boleta|ruc|garantia|mandame|enviame|pasame|dime|explicame|muestrame|ensename|link|enlace|web|pagina|video|foto)\b/.test(_li);
@@ -7012,7 +7047,8 @@ function preciosEnLineas(texto: string, sym: string): string {
   // El PRIMER renglón de la lista pegado a la frase de antes («…mejor valor que en tienda. 1 unidad — *S/ 69* · …»
   // y debajo «2 unidades — …» — F12-tienda, 2026-09-29): baja a su renglón si el que sigue también es de la lista.
   const _item = String.raw`(?:[\p{Extended_Pictographic}]️?\s*)?\d{1,3}\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?)\s+—`;
-  t = t.replace(new RegExp(String.raw`([^\n])[ \t]+(?=${_item}\s*\*?${esc}\s*\d[^\n]*\n[ \t]*${_item})`, "gu"), "$1\n\n");
+  // (nunca justo DESPUÉS de un emoji: ese emoji es el del renglón y bajaba solo — «¿Cuántas? 🔧\n\n1 unidad…», F13)
+  t = t.replace(new RegExp(String.raw`([^\n\p{Extended_Pictographic}️])[ \t]+(?=${_item}\s*\*?${esc}\s*\d[^\n]*\n[ \t]*${_item})`, "gu"), "$1\n\n");
   const rxPrecio = new RegExp(`\\*?${esc}\\s*\\d`, "g");
   return t.split("\n").map((linea) => {
     // Tres o más precios en UNA línea: eso ya no es una frase, es una lista mal escrita.
@@ -7501,7 +7537,9 @@ function sinDatoInventado(texto: string, cierre: string): string {
 // solas, que esa ES la cotización. (2) El emoji también cierra la frase, como en las demás
 // regex de salida: se corta la oración, no la burbuja.
 const RE_UNIDADES_DIGITAL =
-  /[^.!?…\n\p{Extended_Pictographic}]*(?:\b(?:[2-9]|\d{2,})\s*(?:unidades?|copias?|licencias?)(?![\p{L}\p{N}])|\*?(?:S\/|US\$|\$|€)\s*[\d.,]+\*?\s*(?:soles\s*)?(?:cada\s+un[ao]|c\s*\/\s*u|por\s+unidad)(?![\p{L}\p{N}])|\b[\d.,]+\s*soles\s*(?:cada\s+un[ao]|c\s*\/\s*u|por\s+unidad)(?![\p{L}\p{N}])|\b(?:cada\s+un[ao]|c\s*\/\s*u|por\s+unidad)(?![\p{L}\p{N}])[^.!?…\n\p{Extended_Pictographic}]{0,16}?(?:\*?(?:S\/|US\$|\$|€)\s*[\d.,]+|\b[\d.,]+\s*soles\b))[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
+  /[^.!?…\n\p{Extended_Pictographic}]*(?:\b(?:[2-9]|\d{2,})\s*(?:unidades?|copias?|licencias?)(?![\p{L}\p{N}])|\*?(?:S\/|US\$|\$|€)\s*\d+(?:[.,]\d+)*\*?\s*(?:soles\s*)?(?:cada\s+un[ao]|c\s*\/\s*u|por\s+unidad)(?![\p{L}\p{N}])|\b\d+(?:[.,]\d+)*\s*soles\s*(?:cada\s+un[ao]|c\s*\/\s*u|por\s+unidad)(?![\p{L}\p{N}])|\b(?:cada\s+un[ao]|c\s*\/\s*u|por\s+unidad)(?![\p{L}\p{N}])[^.!?…\n\p{Extended_Pictographic}]{0,16}?(?:\*?(?:S\/|US\$|\$|€)\s*\d|\b\d+(?:[.,]\d+)*\s*soles\b))[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
+// ↑ El número no se traga la COMA de detrás: «la Premium S/79, cada una con lo que te mencioné» casaba como «S/79
+//   cada una» y se llevaba la frase que contestaba «¿cuánto es?» (D24-mayus, 2026-09-29).
 // El TOTAL es distinto: «El total es S/ 79» está PERFECTO cuando 79 es el precio de una
 // presentación. Solo es invento cuando la cifra no existe en la ficha (el S/ 147 de
 // multiplicar por 3). Por eso este se juzga contra los precios reales y no por su forma:
@@ -11322,7 +11360,14 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
       String(v[k] ?? "").trim() || String(enCampos.get(k) ?? "").trim());
     if (!tiene("nombre_completo", "cliente")) _faltantes.push("tu *nombre completo*");
     if (!tiene("dni")) _faltantes.push("tu *DNI*");
-    if (!tiene("sede", "ciudad")) _faltantes.push("la *sede/oficina Shalom* donde lo recoges");
+    // La CIUDAD no es la oficina: «Tacna, quiero 1, [datos]» + la lista de distritos con oficina, y en vez de
+    // elegir mandó el Yape → «Ya tengo tus datos, en un momento te confirmo el envío», el pedido no nacía (le
+    // faltaba la sede) y nadie se la volvía a pedir (F13-tacna2, 2026-09-29).
+    if (!tiene("sede")) {
+      const _ciu = String(v.ciudad ?? enCampos.get("ciudad") ?? "").trim();
+      _faltantes.push(_ciu ? `en qué *distrito de ${bonito(_ciu)}* estás, para elegir la oficina Shalom donde lo recoges`
+        : "la *sede/oficina Shalom* donde lo recoges");
+    }
     // 🔢 …y la CANTIDAD, que es lo que más suele faltar cuando paga antes de tiempo. Medido (D11,
     // 2026-09-25): seis adelantos pagados con «ya tengo tus datos, en un momento te confirmo el
     // envío» y ningún pedido, porque nadie había sellado cuántas unidades quería.
@@ -12734,8 +12779,12 @@ async function avisoPagoOtraCuenta(db: SupabaseClient, channelId: string, contac
   }
   if (!otra) return false;
   const quien = String(parsed?.destinatario ?? "").trim();
+  // El NÚMERO manda sobre el nombre: con el nombre de nuestro titular y otro número salía «salió a otra cuenta (a
+  // nombre de *Percy Rodrigo Flores Nuñez*), no a la nuestra» — nuestro propio nombre (F13-yapeotro, 2026-09-29).
+  const _destN = String(parsed?.destino ?? "").replace(/\D/g, "");
+  const _aQuien = _destN.length >= 6 ? ` (al número que termina en *${_destN.slice(-3)}*)` : quien ? ` (a nombre de *${quien}*)` : "";
   await deliverMessage(db, channelId, contactId,
-    `Revisé tu captura 🙏 Ese pago salió a otra cuenta${quien ? ` (a nombre de *${quien}*)` : ""}, no a la nuestra. ` +
+    `Revisé tu captura 🙏 Ese pago salió a otra cuenta${_aQuien}, no a la nuestra. ` +
     "Fíjate que sea al número de los datos que te pasé y mándame la nueva captura. " +
     "Si lo mandaste bien, tranquilo: una persona del equipo lo revisa y te confirma por acá.").catch(() => {});
   await logEvent(db, channelId, contactId, "nota", "📵 Se le dijo que el pago fue a otra cuenta",
@@ -13268,7 +13317,9 @@ const RE_ANUNCIA_PAGO =
   // mandaba los datos del Yape a quien estaba diciendo que NO iba a pagar.
   // D15 (2026-09-25): «ya pues te pago ahorita», «ya ok pago 19» y «mi prima te yapea» (paga
   // otro) tampoco contaban, y al que se decidía le llegaba el precio sin el número.
-  /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te (yapeo|deposito|transfiero|yapea|deposita|transfiere|plinea)\b|(?<!no )voy a (yapear|pagar|depositar|transferir)|paso a (yapear|pagar|depositar)|ahorita (te )?(yapeo|pago|deposito)|(?<!no )te (pago|yapeo|plineo) (ahorita|ahora|ya|al toque|de una|enseguida|en un (rato|ratito|momento))|(?:^|[.!,]\s*)(?:(?:ya|ok|okey|bueno|listo|dale|pues)[\s,]+){1,3}(?:te )?pago(?:\s+(?:los\s+)?(?:s\/\s?)?\d+(?:[.,]\d+)?(?:\s*soles)?)?\s*[.!]*$|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|(p[aá]same|m[aá]ndame|env[ií]ame|pasame) (el|tu) (yape|n[uú]mero|plin|cuenta)|n[uú]mero de (yape|plin|cuenta)|cu[eé]nta para|cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|d[oó]nde (te )?(dep[oó]sito|transfiero)|me pasas (el|tu) (yape|n[uú]mero))\b/i;
+  /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te (yapeo|deposito|transfiero|yapea|deposita|transfiere|plinea)\b|(?<!no )voy a (yapear|pagar|depositar|transferir)|paso a (yapear|pagar|depositar)|ahorita (te )?(yapeo|pago|deposito)|(?<!no )te (pago|yapeo|plineo) (ahorita|ahora|ya|al toque|de una|enseguida|en un (rato|ratito|momento))|(?:^|[.!,]\s*)(?:(?:ya|ok|okey|bueno|listo|dale|pues)[\s,]+){1,3}(?:te )?pago(?:\s+(?:los\s+)?(?:s\/\s?)?\d+(?:[.,]\d+)?(?:\s*soles)?)?\s*[.!]*$|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|(p[aá]same|m[aá]ndame|env[ií]ame|pasame) (el|tu) (yape|n[uú]mero|plin|cuenta)|n[uú]mero de (yape|plin|cuenta)|cu[eé]nta para|cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|d[oó]nde (te )?(dep[oó]sito|transfiero)|me pasas (el|tu) (yape|n[uú]mero)|(?<!no )(?:les?|te)?\s*hago\s+(?:una\s+|la\s+|el\s+)?(?:transferencia|dep[oó]sito|yape|plin)|(?<!no )(?:les?|te)\s+(?:yapeo|plineo|deposito|transfiero))\b/i;
+// ↑ «les hago transferencia BCP» (D24-transferencia, 2026-09-29): el bot anunció «te paso los datos», el freno se lo
+//   quitó y el motor no mandó nada — quedó «¿La quieres? 🙂» a quien ya dijo cómo iba a pagar.
 // 💳 PREGUNTA POR UN MEDIO DE PAGO CONCRETO: «¿aceptan Plin?», «¿puedo pagar con
 // transferencia?», «¿solo yape?». Es un tercer caso que no cubría ninguna de las dos listas
 // de arriba —RE_PIDE_DATOS quiere el dato EN PANTALLA, RE_ANUNCIA_PAGO avisa que ya va a
@@ -14389,6 +14440,15 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
           const _prR = _pR.versiones[0].precio;
           await deliverMessage(db, channelId, contactId, `El *${_pR.nombre}* es *${_symR} ${_prR}* 🙌`).catch(() => {});
           await maybeDatosPago(db, channelId, contactId, String(event.text ?? ""), "", true, undefined, { monto: _prR, sym: _symR, unico: true });
+        } else {
+          // Con VARIAS versiones («ahora quiero también el curso BÁSICO»), su mensaje va al nodo de venta recién
+          // arrancado, como en la recompra con el run vivo: sin esto salía «¡Hola de nuevo! Con gusto te preparo tu
+          // nuevo pedido» y silencio (D24-recompra, 2026-09-29).
+          const runNuevo = await getActiveRun(db, contactId);
+          if (runNuevo && (runNuevo.vars as any)?._await) {
+            const listo = await resumeRun(db, runNuevo, event);
+            if (listo) await execute(db, runNuevo);
+          }
         }
       } catch (e) { console.error("[postventa/recompra datos]", (e as any)?.message ?? e); }
       return true;
@@ -18348,6 +18408,9 @@ function mencionaFuerte(texto: string, op: Opcion, todas: Opcion[]): boolean {
       // 🇪🇸 «un producto» es artículo, no cantidad — ver articuloVago. La rama del verbo de
       // compra sigue abajo: «quiero un producto» sí lo es, porque ahí lo está pidiendo.
       if (articuloVago(pat, resto)) continue;
+      // «una DOCENA», «un ciento», «un par de»: el número multiplica, no es la cantidad — «necesito una docena»
+      // sellaba «1 unidad» (F13-docena, 2026-09-29).
+      if (/^(?:docenas?|decenas?|cientos?|centenar|centenas?|millar|par(?:es)?\s+de|media\s+docena)(?![a-z])/.test(resto)) continue;
       if (UNIDAD_VENTA.test(resto)) return true;
       if (propias.some((w) => resto.startsWith(w))) return true;
       const antes = t.slice(0, m.index).replace(/[^a-z0-9]+$/, "");
@@ -18509,6 +18572,9 @@ function eligePorOrdinal(texto: string, list: Opcion[]): Opcion | null {
 function eligePorSuperlativo(texto: string, list: Opcion[]): Opcion | null {
   const t = String(texto ?? "");
   if (!t.trim() || RE_ARRANCA_COMO_PREGUNTA.test(t)) return null;
+  // Comparar con OTRA tienda o quejarse del precio no es elegir la más barata: «muy caro, en mercado libre está
+  // más barato» sellaba «1 unidad» (F13-caro2, 2026-09-29).
+  if (/(?:^|[^\p{L}])(?:mercado\s*libre|amazon|aliexpress|temu|falabella|sodimac|promart|en\s+otr[oa]s?\s+(?:lado|tienda|sitio|p[aá]gina|parte)|est[aá]\s+m[aá]s\s+barat\p{L}*|m[aá]s\s+barat\p{L}*\s+(?:en|que)|(?:muy|bien|demasiado|super)\s+car[oa]|est[aá]\s+car[oa])(?![\p{L}])/iu.test(t)) return null;
   const conP = list.filter((o) => o.precio != null && Number(o.precio) > 0);
   if (conP.length < 2) return null;
   const precios = conP.map((o) => Number(o.precio));
@@ -18928,7 +18994,10 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   // el bot le preguntaba «¿Cuántas unidades quieres?» — lo que acababa de decir (G6-areq2). Si nombra
   // dos («¿cuánto cuestan 2 y 3?»), el freno de «comparando» de abajo no sella ninguna.
   const _cuantoDeUna = /cu[aá]nto\s+(?:me\s+)?(?:cuestan?|salen?|es|son|ser[ií]an?|valen?|costar[ií]an?)\s+(?:(?:las?|los?)\s+)?(?:\d{1,2}|dos|tres|cuatro|cinco|seis)(?![\p{L}\d])/iu.test(String(texto ?? ""));
-  const _preguntaSinElegir = /[?¿]/.test(String(texto ?? "")) && !RE_VERBO_ELIGE.test(String(texto ?? "")) && !_numSueltoEntreComas && !_cuantoTotal && !_cuantoDeUna;
+  // …y preguntar CÓMO/DÓNDE PAGAR lo que nombró también es elegir: «¿a qué número yapeo para el curso básico?» no
+  // sellaba la Básica y el bot le contestaba «antes de pasarte el número, dime cuál quieres» (D24-numero).
+  const _comoPagaEso = /(?:a\s+qu[eé]\s+n[uú]mero|a\s+d[oó]nde|d[oó]nde|c[oó]mo)\s+(?:te\s+)?(?:yapeo|yapear|plineo|pago|pagar|deposito|transfiero)|p[aá]s(?:a|e)me\s+(?:el|tu)\s+n[uú]mero|datos\s+(?:de|para\s+el)\s+pago/i.test(String(texto ?? ""));
+  const _preguntaSinElegir = /[?¿]/.test(String(texto ?? "")) && !RE_VERBO_ELIGE.test(String(texto ?? "")) && !_numSueltoEntreComas && !_cuantoTotal && !_cuantoDeUna && !_comoPagaEso;
   if (_preguntaSinElegir && cls && cls.clave) {
     cls = { ...cls, intencion: "preguntando", clave: null };
     _noSellar = true;
@@ -20388,6 +20457,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _mG = /\b(?:quiero|necesito|dame|llevo|me\s+llevo|compro|comprar[ií]a|pido|ser[ií]an|cotiza(?:me)?|precio\s+(?:por|de|x)|cu[aá]nto\s+(?:me\s+|te\s+|nos\s+)?(?:ser[ií]a|sale|saldr[ií]a|es|cuesta[n]?|costar[ií]a|valen?)\s+(?:por\s+|x\s+)?(?:las?\s+|los?\s+)?|(?:^|y\s+|,\s*)(?:por|x)\s+(?=\d{1,4}\s*(?:\?|$|unid)))\s*(\d{1,4})\b(?!\s*(?:soles|lucas|km|cuadras|d[ií]as|a[ñn]os|%))|\b(\d{1,4})\s+(?:unidades|unid|piezas|adaptadores|uds?)\b/i.exec(sinTildes(_liO));
           // (+ «¿y cuánto me SALE por 4?» con el «me» en medio — OC2-cuatroprecio)
           if (_mG) _nPed = Number(_mG[1] ?? _mG[2]) || 0;
+        }
+        // «una DOCENA», «media docena», «dos docenas» (F13-docena, 2026-09-29): se leía como nada y se le preguntaba
+        // «¿cuántas unidades quieres?» a quien ya lo dijo.
+        // (manda sobre lo de arriba: cantidadPedidaDe leía el «una» de «una docena» como 1)
+        if (_modoPacks) {
+          const _mD = /(?:^|[^a-z])(media|una|un|dos|tres|cuatro|\d{1,2})?\s*docenas?(?![a-z])/i.exec(sinTildes(_liO));
+          if (_mD) {
+            const _k = String(_mD[1] ?? "una").toLowerCase();
+            _nPed = _k === "media" ? 6 : Math.round((/^\d+$/.test(_k) ? Number(_k) : (NUM_PALABRA[_k] ?? 1)) * 12);
+          }
         }
         const _pideMas = /\b(?:y\s+si\s+(?:llevo|quiero|compro|pido)\s+m[aá]s|(?:llevo|quiero|necesito|compro)\s+(?:m[aá]s|varios|varias|bastantes|muchos|muchas)\b|m[aá]s\s+(?:cantidad|unidades)|(?:packs?|ofertas?|paquetes?)\s+(?:m[aá]s\s+grandes?|de\s+m[aá]s)|(?:hay|tienen|tiene[ns]?)\s+(?:m[aá]s\s+(?:ofertas|packs|cantidad)|ofertas?\s+(?:por|de)\s+(?:m[aá]s|cantidad|volumen))|por\s+(?:mayor|volumen|cantidad)|al\s+por\s+mayor|mayorista|docenas?|revender|(?:tengo|para)\s+(?:una?\s+|mi\s+)?(?:ferreter[ií]a|bodega|taller|tienda|negocio))\b/i.test(_liO)
           || (_modoPacks && _nPed > _maxVis && _maxVis > 0);
@@ -26093,7 +26172,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // Solo si de verdad PREGUNTA si se acepta ese medio (metodoQuePregunta): «¿por qué el
           // Yape está a nombre de una persona?» traía «yape» y «?» y le anteponía «Sí, puedes
           // pagar con Yape» a una pregunta que no era esa (D10-ptitular, 2026-09-25).
-          const _metP = normalize(metodoQuePregunta(String(ctx.last_input ?? "")));
+          // (ni cuando el medio va dentro de una DESCONFIANZA: «¿cómo sé que no es estafa si pago por yape?» recibía
+          //  «Sí, puedes pagar con Yape 👍» delante — D24-estafa, 2026-09-29)
+          const _desconf = /\b(estaf\w*|confi\w*|fraude|enga[ñn]\w*|segur[oa]|real|verdad|robo|timo)\b/i.test(normalize(String(ctx.last_input ?? "")));
+          const _metP = _desconf ? "" : normalize(metodoQuePregunta(String(ctx.last_input ?? "")));
           const _pide = _metP ? [_metP, _metP] : null;
           if (_mets.length && _pide
               && !new RegExp("\\b" + _pide[1] + "\\b", "i").test(normalize(String(salida ?? "")))) {
@@ -27405,9 +27487,15 @@ async function buildContext(db: SupabaseClient, run: Run) {
     // Percy Rodrigo Flores Nuñez ni coincide razonablemente con su nombre») y al «ya te pagué» la
     // IA solo pedía la captura otra vez, sin que el cliente entendiera qué pasó (D15-potronumero).
     if (/(destinatari|titular|beneficiari)[^.]{0,60}\bno\s+(es|coincide|corresponde)|no\s+(es|coincide|corresponde)[^.]{0,40}(destinatari|titular)|otra cuenta|otro n[uú]mero/i.test(_mot)) {
-      let _quien = "";
-      try { const _j = JSON.parse(s.match(/\{[\s\S]*\}/)?.[0] ?? "{}"); _quien = String(_j?.titular ?? _j?.destinatario ?? "").trim(); } catch (_) { /* sin JSON */ }
-      ctx[k + "_motivo"] = `Ese pago salió a otra cuenta${_quien ? ` (a nombre de *${_quien}*)` : ""}, no a la nuestra 🙏 ` +
+      let _quien = "", _numD = "";
+      try {
+        const _j = JSON.parse(s.match(/\{[\s\S]*\}/)?.[0] ?? "{}");
+        _quien = String(_j?.titular ?? _j?.destinatario ?? "").trim();
+        _numD = String(_j?.destino ?? "").replace(/\D/g, "");
+      } catch (_) { /* sin JSON */ }
+      // (el número manda sobre el nombre — ver avisoPagoOtraCuenta, F13-yapeotro)
+      const _aQ = _numD.length >= 6 ? ` (al número que termina en *${_numD.slice(-3)}*)` : _quien ? ` (a nombre de *${_quien}*)` : "";
+      ctx[k + "_motivo"] = `Ese pago salió a otra cuenta${_aQ}, no a la nuestra 🙏 ` +
         "Fíjate que sea al número de los datos que te pasé y mándame la nueva captura.";
     }
     ctx[k + "_intro"] = /recib[ií]|abono|van s\/|faltan/i.test(_mot)
