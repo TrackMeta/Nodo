@@ -26,13 +26,20 @@ Deno.serve(async (req) => {
 
   // Pre-validar la invitación ANTES de crear el usuario (para no dejar huérfanos).
   const { data: inv } = await db.from("invitations")
-    .select("id, kind, used_at, expires_at").eq("token", token).maybeSingle();
+    .select("id, kind, used_at, expires_at, email").eq("token", token).maybeSingle();
   // Un solo mensaje para los tres casos: distinguir «no existe» de «usada» / «vencida» era un
   // oráculo anónimo para enumerar códigos. (El detalle exacto queda en el log del servidor.)
   const NO_SIRVE = json({ error: "invite_invalida", detalle: "La invitación no es válida, ya fue usada o venció. Pide una nueva." }, 400);
   if (!inv) { console.warn("[signup] invitación inexistente"); return NO_SIRVE; }
   if ((inv as any).used_at) { console.warn("[signup] invitación ya usada", (inv as any).id); return NO_SIRVE; }
   if (new Date((inv as any).expires_at) < new Date()) { console.warn("[signup] invitación vencida", (inv as any).id); return NO_SIRVE; }
+  // 0121: la invitación es para UN correo. Se mira ANTES de crear el usuario (apply_invitation
+  // lo vuelve a exigir, pero ahí ya habría que deshacer la cuenta). No dice cuál es el correo
+  // correcto: solo que éste no es.
+  const paraCorreo = String((inv as any).email ?? "").trim().toLowerCase();
+  if (paraCorreo && paraCorreo !== email) {
+    return json({ error: "otro_correo", detalle: "Esta invitación es para otro correo. Regístrate con el correo al que te invitaron, o pide una invitación nueva." }, 400);
+  }
 
   // Crear el usuario (admin API → no pasa por enable_signup, que sigue apagado).
   const { data: created, error: cErr } = await db.auth.admin.createUser({
@@ -63,7 +70,8 @@ Deno.serve(async (req) => {
     const m = aErr.message || "";
     const detalle = /invite_usado/.test(m) ? "Esta invitación ya fue usada."
       : /invite_vencido/.test(m) ? "La invitación venció."
-      : /invite_invalido/.test(m) ? "La invitación no existe." : m;
+      : /invite_invalido/.test(m) ? "La invitación no existe."
+      : /invite_otro_correo/.test(m) ? "Esta invitación es para otro correo." : m;
     return json({ error: "aplicar_invite", detalle }, 400);
   }
 

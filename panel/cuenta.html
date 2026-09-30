@@ -97,9 +97,11 @@ function render(){
       <h2>${icon("sparkles")} Crear una cuenta de cliente</h2>
       <p class="desc">Genera un link de invitación. Quien lo abra crea su propia cuenta de Nodo y queda como su administrador — aislada de las demás.</p>
       <div class="row">
+        <input class="in" id="bizEmail" type="email" placeholder="Correo del cliente" autocomplete="off" style="flex:1;min-width:200px"/>
         <input class="in" id="bizName" placeholder="Nombre del negocio (opcional)" style="flex:1;min-width:200px"/>
         <button class="btn primary" id="mkAccount">Generar link de cuenta</button>
       </div>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">El link solo va a servir con ese correo: así nadie se registra a nombre de otra persona.</p>
       <div id="acctLinkBox"></div>
     </div>` : "";
   if(st.me.platform_admin) $("mkAccount").onclick = mkAccountLink;
@@ -139,9 +141,11 @@ function render(){
 
 async function mkAccountLink(){
   const nombre = $("bizName").value.trim();
-  const r = await callFn({ action:"create_account_invite", nombre_sugerido:nombre });
+  const email = $("bizEmail").value.trim();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast("Escribe el correo de tu cliente: el link solo va a servir con ese correo.",true); $("bizEmail").focus(); return; }
+  const r = await callFn({ action:"create_account_invite", nombre_sugerido:nombre, email });
   if(!r) return;
-  $("acctLinkBox").innerHTML = codeBox("Link de invitación de cuenta", r.link, "Envíaselo a tu cliente. Vence en 14 días.");
+  $("acctLinkBox").innerHTML = codeBox("Link de invitación de cuenta", r.link, `Envíaselo a tu cliente. Solo sirve con ${esc(email)} y vence en 14 días.`);
   wireCopy($("acctLinkBox"), r.link);
 }
 async function mkTeamCode(accId){
@@ -151,10 +155,17 @@ async function mkTeamCode(accId){
     { value:"operador", label:"Operador", desc:"Atiende chats y pedidos, aprueba pagos. No cambia la configuración." },
     { value:"admin", label:"Admin", desc:"Todo lo del operador + configuración, equipo y conexiones." } ], value:"operador" });
   if(!role) return;
-  const r = await callFn({ action:"create_team_invite", account_id:accId, role });
+  // El código es para UN correo (0121): sin esto, con un código válido cualquiera se registraba
+  // con el correo de otra persona y aparecía en el equipo con su nombre.
+  let email = await askText({ title:"¿Cuál es su correo?", message:"El código solo va a servir con este correo: el que la persona use para entrar a Nodo.",
+    placeholder:"nombre@correo.com", confirmText:"Generar código" });
+  if(email==null) return;
+  email = email.trim();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast("Ese correo no parece válido.",true); return; }
+  const r = await callFn({ action:"create_team_invite", account_id:accId, role, email });
   if(!r) return;
   const box = $("teamBox-"+accId);
-  box.innerHTML = codeBox("Código de equipo", r.code, "Un código por persona (se usa una sola vez). Genera otro para cada persona que sumes. También sirve el link de abajo. Vence en 14 días.") +
+  box.innerHTML = codeBox("Código de equipo", r.code, `Para ${esc(email)}: solo sirve con ese correo y se usa una sola vez. Genera otro para cada persona que sumes. También sirve el link de abajo. Vence en 14 días.`) +
     `<div style="margin-top:8px" class="muted" data-link>${esc(r.link)}</div>`;
   wireCopy(box, r.code);
 }
@@ -207,7 +218,7 @@ async function loadInvites(){
       <p class="desc">Links y códigos de tu equipo que aún no se usan.</p>
       ${invs.map(i=>`<div class="inv">
         <span class="badge">${i.kind==='new_account'?'Cuenta':'Equipo'}</span>
-        <span class="t">${esc(i.token)}</span>
+        <span class="t">${esc(i.token)}${i.email?` <span class="muted" style="font-size:12px">· ${esc(i.email)}</span>`:""}</span>
         <button class="btn danger sm" data-rev="${esc(i.id)}">Revocar</button>
       </div>`).join("")}
     </div>` : "";

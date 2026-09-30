@@ -47,9 +47,11 @@ Deno.serve(async (req) => {
     // ── Crear link de CUENTA nueva (solo admin de plataforma) ─────────
     if (action === "create_account_invite") {
       if (!(me as any).platform_admin) return json({ error: "forbidden", detalle: "Solo el admin de plataforma crea cuentas." }, 403);
+      const email = correoInvitado(body.email);
+      if (!email) return json({ error: "falta_correo", detalle: "Escribe el correo de tu cliente: la invitación solo va a servir con ese correo." }, 400);
       const tok = linkToken();
       const { error } = await db.from("invitations").insert({
-        token: tok, kind: "new_account", usos_max: 1,   // link de cuenta = 1 solo uso
+        token: tok, kind: "new_account", usos_max: 1, email,   // link de cuenta = 1 solo uso, para ESE correo
         nombre_sugerido: (body.nombre_sugerido || "").toString().trim() || null,
         created_by: uid,
       });
@@ -64,9 +66,12 @@ Deno.serve(async (req) => {
       const { data: mem } = await db.from("account_members")
         .select("role").eq("account_id", accountId).eq("user_id", uid).eq("activo", true).maybeSingle();
       if (!mem || (mem as any).role !== "admin") return json({ error: "forbidden", detalle: "Debes ser admin de esta cuenta." }, 403);
+      const email = correoInvitado(body.email);
+      if (!email) return json({ error: "falta_correo", detalle: "Escribe el correo de la persona: el código solo va a servir con ese correo." }, 400);
       const code = teamCode();
       const role = body.role === "admin" ? "admin" : "operador";
       const { error } = await db.from("invitations").insert({
+        email,   // 0121: el código solo sirve con ESE correo (nadie se registra con el de otro)
         // usos_max: 1 → un código = una persona. Sin esto quedaba NULL = usos ILIMITADOS
         // durante 14 días → cualquiera que viera el link (screenshot, chat) podía sumar su
         // cuenta al tenant (como admin si el código era admin) las veces que quisiera. Si el
@@ -86,7 +91,7 @@ Deno.serve(async (req) => {
         .eq("user_id", uid).eq("role", "admin").eq("activo", true);
       const cuentas = ((mias ?? []) as any[]).map((m) => m.account_id);
       let q = db.from("invitations")
-        .select("id, token, kind, account_id, role, nombre_sugerido, expires_at, used_at, created_at, created_by");
+        .select("id, token, kind, account_id, role, nombre_sugerido, email, expires_at, used_at, created_at, created_by");
       q = cuentas.length ? q.or(`created_by.eq.${uid},account_id.in.(${cuentas.join(",")})`) : q.eq("created_by", uid);
       const { data } = await q.order("created_at", { ascending: false }).limit(100);
       return json({ ok: true, invites: data ?? [] });
@@ -156,5 +161,12 @@ function msgInvite(m: string): string {
   if (/invite_usado/.test(m)) return "Esta invitación ya fue usada.";
   if (/invite_vencido/.test(m)) return "La invitación venció.";
   if (/invite_invalido/.test(m)) return "El código no existe.";
+  if (/invite_otro_correo/.test(m)) return "Esta invitación es para otro correo. Pídele a quien te invitó una a nombre del correo con el que entras a Nodo.";
   return m;
+}
+// Correo de la persona invitada (0121): la invitación solo sirve con ESE correo. Obligatorio
+// en las nuevas; devuelve null si no es un correo válido.
+function correoInvitado(v: unknown): string | null {
+  const e = String(v ?? "").trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : null;
 }
