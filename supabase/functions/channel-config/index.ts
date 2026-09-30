@@ -684,6 +684,13 @@ Deno.serve(async (req) => {
       // Tiene el permiso pero sin target_ids («acceso a todo», típico de usuario de sistema
       // Admin): las cuentas se sacan del portfolio — las propias y las compartidas.
       const diag: string[] = [];
+      // Lo directo: las WABAs asignadas a ESTE usuario (edge del User en el SDK oficial de
+      // Meta; no sale en la doc de la Graph API, por eso se tardó en encontrar).
+      if (!ids.size) {
+        const r = await metaGet(token, "me/assigned_whatsapp_business_accounts?fields=id&limit=50");
+        for (const w of ((r.body?.data ?? []) as any[])) if (w?.id) ids.add(String(w.id));
+        diag.push("asignadas:" + (r.body?.error?.message ?? ((r.body?.data ?? []).length + " filas")));
+      }
       if (!ids.size) {
         const negocios = new Set<string>();
         for (const s of scopes) {
