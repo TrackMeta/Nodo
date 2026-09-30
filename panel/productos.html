@@ -2986,7 +2986,9 @@ async function generarFlujoFisico(flowId, N, E){
 // que es como se pierde plata sin que nadie se entere.
 const CONTENIDO_EN_VIVO = new Set([
   "contexto_producto","ia","ia_multimedia","faq","faq_items","objeciones","objeciones_items",
-  "costo","empaque","stock","atributos","remarketing_seqs","entrega","entrega_mensaje",
+  // (entrega_mensaje NO va acá: el generador lo COPIA al nodo «entregar» y el motor lee el del
+  // nodo, así que cambiarlo tiene que regenerar el flujo — antes el cliente seguía recibiendo el viejo.)
+  "costo","empaque","stock","atributos","remarketing_seqs","entrega",
   "regalos","adelanto","adelanto_min","memoria","intencion","reglas","limites","conocimiento",
   "horario","demora","_flujo_sello",
 ]);
@@ -4085,7 +4087,11 @@ function renderComposer(){
         ${ganchoIAHtml(angActivo.gancho_ia, "ang-gancho")}
         <div style="font-size:11px;color:var(--faint);margin-top:8px;line-height:1.5">${icon("megaphone")} ${nAds?`<b style="color:var(--muted)">${nAds}</b> anuncio${nAds>1?"s":""} asignado${nAds>1?"s":""} a este ángulo.`:"Sin anuncios asignados."} Los anuncios se manejan en el <b style="color:var(--muted)">Banco de anuncios</b> (pestaña <b style="color:var(--muted)">Ángulos</b> del catálogo).</div>`;
       body.appendChild(ang);
-      ang.querySelector(".ang-del").onclick=async()=>{ if(!await confirmDialog({title:"Eliminar ángulo",message:"¿Eliminar este ángulo y su saludo?",confirmText:"Eliminar",danger:true}))return; harvest(); harvestAngulos(); const slug=angActivo.slug; st.act.angulos.splice(angIdx,1); (cfg.variantes||[]).forEach(v=>{ if(v.angulo===slug) v.angulo=""; }); st.act.tab=""; renderComposer(); };
+      ang.querySelector(".ang-del").onclick=async()=>{ if(!await confirmDialog({title:"Eliminar ángulo",message:"¿Eliminar este ángulo y su saludo?",confirmText:"Eliminar",danger:true}))return; harvest(); harvestAngulos(); const slug=angActivo.slug; st.act.angulos.splice(angIdx,1);
+        // Se BORRAN sus saludos, como dice el diálogo. Antes quedaban con angulo="" y el motor
+        // trata esas como generales: «¿Sufres de calambres…?» pasaba a rotar para todo orgánico.
+        if(Array.isArray(cfg.variantes)) cfg.variantes=cfg.variantes.filter(v=>v.angulo!==slug);
+        st.act.tab=""; renderComposer(); };
     }
     const list=tabVars();
     // El peso "en cristiano" (Poco/Normal/Mucho) + % REAL dentro de la pestaña
