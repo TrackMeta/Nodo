@@ -71,7 +71,7 @@ function filasEva(orders) {
     f[4] = s.direccion || "";                   // E DIRECCIÓN
     f[5] = s.referencia || "";                  // F REFERENCIA
     f[7] = "EFECTIVO";                          // H MÉTODO DE COBRANZA
-    f[8] = N(O.porCobrar(o));                   // I IMPORTE A COBRAR (contraentrega): lo que FALTA, no el total (si hubo adelanto, no cobrar de nuevo)
+    f[8] = N(O.porCobrarPuerta(o));             // I IMPORTE A COBRAR (contraentrega): lo que FALTA, no el total (si hubo adelanto, no cobrar de nuevo)
     f[10] = productoDesc(o);                    // K DESCRIPCIÓN DEL PRODUCTO
     f[11] = N(Number(s.cantidad) > 1 ? Number(s.cantidad) : 1); // L CANTIDAD (varias de la misma presentación)
     return f;

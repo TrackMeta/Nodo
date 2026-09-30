@@ -203,6 +203,7 @@ async function boot(){
   st.channelId=shell.channelId;
   st.range=computePreset("max");
   shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } });
+  shell.onLeave?.(()=>recargarPronto.parar()); // sin recarga pendiente corriendo sobre la página nueva
   const onResize=()=>igualarAlto($("metPanel")); window.addEventListener("resize",onResize);
   shell.onLeave?.(()=>window.removeEventListener("resize",onResize));
   shell.onChannel(id=>{ st.channelId=id; subscribe(); load(); });

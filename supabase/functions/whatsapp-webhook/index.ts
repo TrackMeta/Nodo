@@ -7,6 +7,7 @@ import { serviceClient, getChannelSecrets, accountOfChannel } from "../_shared/d
 import { fetchMediaBytes } from "../_shared/meta.ts";
 import { transcribeAudio } from "../_shared/ai.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
+import { urlArchivo } from "../_shared/archivo.ts";
 import { CAMPOS_SALUD, veredictoWebhook, aplicarVeredicto } from "../_shared/salud-wa.ts";
 import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, avisarEscribioEnPausa, arranqueSinEspera, type EngineEvent } from "../_shared/engine.ts";
 
@@ -880,14 +881,12 @@ function extractContent(msg: any): { text: string; type: string; content: any } 
 // ── Archivo del media entrante ───────────────────────────────────────
 // Descarga el media de Meta con el token del canal, lo sube al bucket PRIVADO (el mismo de
 // los comprobantes: una foto del cliente puede ser un Yape, así que nada de bucket público)
-// y deja en `messages.content.media_url` una URL firmada de un año, que es lo que el panel
+// y deja en `messages.content.media_url` un enlace firmado propio (urlArchivo), que es lo que el panel
 // ya sabe pintar (imagen con visor, <audio>, <video>, enlace de archivo). Best-effort: si
 // falla, el mensaje queda como estaba y se registra el motivo. `media-gc` no barre este
 // bucket, y además `messages.content` está en su lista de referencias.
 const MEDIA_ARCHIVABLE = new Set(["image", "audio", "video", "document", "sticker"]);
 const MEDIA_BUCKET = "comprobantes";
-// 10 años (igual que el motor): la URL se guarda para siempre y nadie la renueva.
-const MEDIA_SIGNED_TTL = 60 * 60 * 24 * 365 * 10;
 const MEDIA_MAX_BYTES = 25 * 1024 * 1024; // un video largo no vale la pena guardarlo
 
 function extPorMime(mime: string, tipo: string): string {
@@ -955,7 +954,8 @@ async function archivarMediaEntrante(channelId: string, contactId: string, wamid
       up = await db.storage.from(MEDIA_BUCKET).upload(path, bytes, { contentType: mime, upsert: true });
     }
     if (up.error) { console.error("[webhook] archivar media upload:", up.error.message); await marcarErrorMedia(channelId, wamid, "No se pudo guardar el archivo"); return; }
-    const { data: signed } = await db.storage.from(MEDIA_BUCKET).createSignedUrl(path, MEDIA_SIGNED_TTL);
+    // Enlace propio firmado (no caduca y se puede anular): ver _shared/archivo.ts.
+    const signed = { signedUrl: await urlArchivo(path) };
     if (!signed?.signedUrl) { await marcarErrorMedia(channelId, wamid, "No se pudo generar el enlace del archivo"); return; }
     // Se lee la fila de nuevo: si el motor ya le colgó su propia URL (OCR) o una
     // transcripción mientras tanto, no se pisa nada, solo se agrega lo que falta.

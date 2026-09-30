@@ -447,9 +447,9 @@ export function printRotulo(o, remitente) {
       row("Pedido", pedido) +
       row("Detalle", atrLine, true) +
       row("Incluye", bumpsTxt, true) +
-      // porCobrar, no total: si pagó una parte por adelantado, el motorizado cobra solo lo
+      // porCobrarPuerta, no total: si pagó una parte por adelantado, el motorizado cobra solo lo
       // que falta (mismo criterio que el rótulo de pedidos.html).
-      row("A COBRAR", money(O.porCobrar(o), o.currency) + "  ·  CONTRAENTREGA", true);
+      row("A COBRAR", money(O.porCobrarPuerta(o), o.currency) + "  ·  CONTRAENTREGA", true);
   }
   const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"/>
     <title>Rótulo ${esc(nro)}</title>
@@ -1071,28 +1071,34 @@ export async function openDespachoModal(o, deps) {
       inp.click();
     };
 
-    ov.querySelector(".save").onclick = async () => {
+    const saveBtn = ov.querySelector(".save");
+    saveBtn.onclick = async () => {
       const guia = q("guia").value.trim();
       const codigo = q("codigo").value.trim();
       if (!guia || !codigo) { toast("Shalom necesita el N° de guía Y el código de envío", true); return; }
-      const flete = q("flete").value;
-      const aviso = avisoValor(ov);
-      const r = await updateOrder({ order_id: o.id, estado: "despachado", aviso, shipping: {
-        agencia: q("agencia").value, guia, codigo_envio: codigo,
-        clave_recojo: q("clave").value.trim(),
-        // El aviso ámbar «sede por confirmar» solo se quita si el operador ESCRIBIÓ una sede
-        // distinta: registrar la guía sin tocar la sede lo borraba y el paquete podía salir a
-        // la agencia que inventó el bot.
-        // Lo que el operador escribe acá va a `destino`, que es lo que leen los avisos, el rótulo y la
-        // tarjeta: guardarlo solo en `sede` hacía que al cliente le llegara la agencia anterior.
-        ...(q("sede").value.trim() && q("sede").value.trim() !== String((o.shipping || {}).destino || (o.shipping || {}).sede || "").trim()
-          ? { destino: q("sede").value.trim(), sede_por_confirmar: null } : {}),
-        guia_foto: foto || null, guia_foto_kind: foto ? fotoKind : null,
-        ...(flete === "" || flete == null ? {} : { flete: Number(flete) || 0 }),
-      } });
-      if (!r) return; // el toast de error lo pone updateOrder
-      toast(avisoMsg(r, aviso, "Envío registrado"));
-      cerrar(true);
+      // Un Guardar a la vez: el doble clic mandaba dos «despachado» → dos avisos al cliente.
+      if (saveBtn.disabled) return;
+      saveBtn.disabled = true;
+      try {
+        const flete = q("flete").value;
+        const aviso = avisoValor(ov);
+        const r = await updateOrder({ order_id: o.id, estado: "despachado", aviso, shipping: {
+          agencia: q("agencia").value, guia, codigo_envio: codigo,
+          clave_recojo: q("clave").value.trim(),
+          // El aviso ámbar «sede por confirmar» solo se quita si el operador ESCRIBIÓ una sede
+          // distinta: registrar la guía sin tocar la sede lo borraba y el paquete podía salir a
+          // la agencia que inventó el bot.
+          // Lo que el operador escribe acá va a `destino`, que es lo que leen los avisos, el rótulo y la
+          // tarjeta: guardarlo solo en `sede` hacía que al cliente le llegara la agencia anterior.
+          ...(q("sede").value.trim() && q("sede").value.trim() !== String((o.shipping || {}).destino || (o.shipping || {}).sede || "").trim()
+            ? { destino: q("sede").value.trim(), sede_por_confirmar: null } : {}),
+          guia_foto: foto || null, guia_foto_kind: foto ? fotoKind : null,
+          ...(flete === "" || flete == null ? {} : { flete: Number(flete) || 0 }),
+        } });
+        if (!r) return; // el toast de error lo pone updateOrder
+        toast(avisoMsg(r, aviso, "Envío registrado"));
+        cerrar(true);
+      } finally { saveBtn.disabled = false; }
     };
     document.body.appendChild(ov);
     wireAviso(ov);
@@ -2085,7 +2091,7 @@ export async function openEditarPedido(o, deps) {
       // agencia se cobraban S/19 de menos. Se aplica el CAMBIO que hizo el operador sobre el
       // saldo de ahora, no el número que vio al abrir.
       // Lima: lo que cobra el motorizado es UNA cuenta —total (importe + extras) menos lo que ya
-      // pagó por adelantado—, la misma de orders.js porCobrar (Excel de Eva, rótulo). El saldo se
+      // pagó por adelantado—, la misma de orders.js porCobrarPuerta (Excel de Eva, rótulo). El saldo se
       // movía solo con los extras: bajar el importe a mano dejaba el Excel en 100 y el mensaje de
       // reparto («ten listo S/ X», que lee el saldo) en 120.
       if (zona === "lima" && s.saldo != null && String(s.saldo).trim() !== "") {
@@ -2428,7 +2434,7 @@ function ocrVerdictHtml(o, et, sym) {
   if (et.id === "extra" && (s.extra_ok_ia != null || s.extra_monto_leido != null)) return line(s.extra_ok_ia === true, s.extra_monto_leido, s.extra_operacion, null);
   if (et.id === "lima") {
     const leyo = s.pago_adelantado_monto != null && s.pago_adelantado_monto !== "";
-    return `<div class="cx-cop2-ia ${leyo ? "ok" : "duda"}">${ROBOT}<span>${leyo ? `La IA leyó <b>${sym} ${esc(s.pago_adelantado_monto)}</b>` : "La IA no pudo leer el monto: míralo en la foto"}${s.pago_adelantado_operacion ? ` · op <b>${esc(s.pago_adelantado_operacion)}</b>` : ""}<br>Hasta que lo apruebes, el motorizado cobra <b>${sym} ${esc(O.porCobrar(o))}</b>.</span></div>`;
+    return `<div class="cx-cop2-ia ${leyo ? "ok" : "duda"}">${ROBOT}<span>${leyo ? `La IA leyó <b>${sym} ${esc(s.pago_adelantado_monto)}</b>` : "La IA no pudo leer el monto: míralo en la foto"}${s.pago_adelantado_operacion ? ` · op <b>${esc(s.pago_adelantado_operacion)}</b>` : ""}<br>Hasta que lo apruebes, el motorizado cobra <b>${sym} ${esc(O.porCobrarPuerta(o))}</b>.</span></div>`;
   }
   if (et.id === "adelanto" && (s.adelanto_revisar || s.adelanto_monto_leido != null)) return line(s.adelanto_ok_ia === true, s.adelanto_monto_leido, s.adelanto_operacion_leida, s.adelanto_revisar);
   if (et.id === "saldo" && s.saldo_revisar) {
@@ -2485,11 +2491,25 @@ export function copilotoCardHtml(o, et, fallbackImg) {
   </div>`;
 }
 
+// Una acción de plata a la vez POR PEDIDO, igual que `enVuelo` de Pagos por validar: doble
+// clic en Aprobar mandaba dos order-update → doble entrega/clave. Vive a nivel de módulo (no
+// del wire) porque el realtime repinta la tarjeta con la petición aún en curso.
+const _copilotoEnVuelo = new Set();
 // Engancha los botones de la tarjeta. deps = { supa, toast, confirmDialog,
 // askChoice, reload } (los provee cada página: la Bandeja y Probar).
 export function wireCopiloto(root, o, et, deps) {
   const el = root.querySelector(".cx-copiloto"); if (!el) return;
   const { supa, toast, confirmDialog, askChoice, askText, reload, channelId } = deps;
+  // Envuelve cada botón: si ya hay una acción de este pedido en curso, avisa y no hace nada;
+  // mientras corre, los botones de la tarjeta quedan deshabilitados.
+  const enVuelo = (fn) => async (...a) => {
+    if (_copilotoEnVuelo.has(o.id)) { toast("Espera: se está procesando la acción anterior"); return; }
+    _copilotoEnVuelo.add(o.id);
+    const btns = el.querySelectorAll(".cx-cop2-btn");
+    btns.forEach((x) => { x.disabled = true; });
+    try { return await fn(...a); }
+    finally { _copilotoEnVuelo.delete(o.id); btns.forEach((x) => { x.disabled = false; }); }
+  };
   const c = o.contact || {};
   const img = el.querySelector(".cx-cop2-img[data-full]");
   if (img) img.onclick = () => window.open(img.dataset.full, "_blank");
@@ -2574,7 +2594,7 @@ export function wireCopiloto(root, o, et, deps) {
         if (!v) { toast("Escribe la clave de recojo antes de aprobar", true); claveIn.focus(); return; }
         extraShip = { clave_recojo: v };
       }
-      aprobar("saldo_pagado", "Aprobar el saldo", "El bot le envía la clave de recojo al cliente.", extraShip);
+      return aprobar("saldo_pagado", "Aprobar el saldo", "El bot le envía la clave de recojo al cliente.", extraShip); // return: el candado espera a que termine
     };
     b("no").onclick = () => rechazar("saldo");
   }
@@ -2585,7 +2605,7 @@ export function wireCopiloto(root, o, et, deps) {
     b("ok").onclick = async () => {
       const leido = String((o.shipping || {}).pago_adelantado_monto ?? "").trim();
       const v = askText ? await askText({ title: "Aprobar el pago adelantado",
-        message: `${c.nombre || "Cliente"} — ¿cuánto pagó? Revisa el monto en la foto: es lo que el motorizado deja de cobrar (hoy cobraría ${sym} ${O.porCobrar(o)}).`,
+        message: `${c.nombre || "Cliente"} — ¿cuánto pagó? Revisa el monto en la foto: es lo que el motorizado deja de cobrar (hoy cobraría ${sym} ${O.porCobrarPuerta(o)}).`,
         label: "Monto pagado", value: leido, placeholder: "Ej. 119", confirmText: "Aprobar" }) : leido;
       if (v == null || v === "") return;
       const monto = Number(String(v).replace(",", ".").replace(/[^\d.]/g, ""));
@@ -2600,14 +2620,16 @@ export function wireCopiloto(root, o, et, deps) {
     };
     b("no").onclick = async () => {
       if (!await confirmDialog({ title: "Rechazar el pago adelantado",
-        message: `${c.nombre || "Cliente"} — se marca como no válido y el pedido sigue igual: el motorizado cobra ${sym} ${O.porCobrar(o)} al entregar. El bot no le escribe; explícale tú.`,
+        message: `${c.nombre || "Cliente"} — se marca como no válido y el pedido sigue igual: el motorizado cobra ${sym} ${O.porCobrarPuerta(o)} al entregar. El bot no le escribe; explícale tú.`,
         confirmText: "Rechazar", danger: true })) return;
       const r = await update({ order_id: o.id, prepago_lima: "rechazar", motivo: "Lo rechazaste tú" });
-      if (r) { toast(`Rechazado · el motorizado cobra ${sym} ${O.porCobrar(o)} al entregar`); reload && reload(); }
+      if (r) { toast(`Rechazado · el motorizado cobra ${sym} ${O.porCobrarPuerta(o)} al entregar`); reload && reload(); }
     };
   }
   else if (et.id === "despachar") { b("desp").onclick = despachar; }
   else { b("lleg").onclick = avisarLlegada; }
+  // Todos los botones de la tarjeta pasan por el candado (aprobar, rechazar, despachar, avisar).
+  el.querySelectorAll(".cx-cop2-btn").forEach((x) => { if (x.onclick) x.onclick = enVuelo(x.onclick); });
 }
 
 // El guard mira si el <style> SIGUE en el documento, no si alguna vez se inyectó.

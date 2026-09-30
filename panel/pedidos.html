@@ -296,12 +296,15 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"pedidos" });
   st.channelId=shell.channelId;
-  shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } }); // no dejar la suscripción realtime viva al navegar (SPA)
+  shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } clearTimeout(st.rtT); st.rtT=null; }); // no dejar la suscripción realtime (ni su recarga pendiente) viva al navegar (SPA)
   shell.onChannel(id=>{ st.channelId=id; load(); wireRealtime(); });
   $("q").oninput=(e)=>{ st.q=norm(e.target.value.trim()); render(); };
   $("exportBtn").onclick=(ev)=>{ ev.stopPropagation(); toggleExportMenu(); };
   $("rotBtn").onclick=()=>abrirImprimirRotulos();
-  document.addEventListener("click",(e)=>{ if(!e.target.closest(".expwrap")){ const m=$("exportMenu"); if(m) m.classList.remove("show"); } });
+  // Nombrado para quitarlo al salir: boot() corre en cada visita (SPA) y sumaba uno por vez.
+  const cierraExport=(e)=>{ if(!e.target.closest(".expwrap")){ const m=$("exportMenu"); if(m) m.classList.remove("show"); } };
+  document.addEventListener("click",cierraExport);
+  shell.onLeave?.(()=>document.removeEventListener("click",cierraExport));
   cargarListas();  // precarga las listas de agencias/distritos para el editor
   await load();
   wireRealtime();
@@ -522,8 +525,10 @@ function ocupado(){ return !!document.querySelector(".overlay, .nodo-modal-back,
 function wireRealtime(){
   if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; }
   if(!st.channelId) return;
-  let t=null;
-  const refrescar=()=>{ clearTimeout(t); t=setTimeout(()=>{ if(ocupado()){ refrescar(); return; } load(); }, 700); };
+  // El timer vive en `st` para que el onLeave lo corte: si no, el load() (o el reintento
+  // eterno de ocupado() con un modal de OTRA página) seguía corriendo al navegar (SPA).
+  clearTimeout(st.rtT);
+  const refrescar=()=>{ clearTimeout(st.rtT); st.rtT=setTimeout(()=>{ if(ocupado()){ refrescar(); return; } load(); }, 700); };
   st.rt=supa.channel("nodo-pedidos-"+st.channelId)
     .on("postgres_changes",{ event:"*", schema:"public", table:"orders", filter:"channel_id=eq."+st.channelId }, refrescar)
     .subscribe();
@@ -907,7 +912,7 @@ function rotuloInner(o){
       row("Incluye", bumpsTxt, true)+
       // Si el delivery lleva POS (Negocio → Entrega), el rótulo lo dice: quien entrega
       // sabe que puede cobrar con tarjeta y no discute en la puerta por el efectivo.
-      row("A COBRAR", money(O.porCobrar(o),o.currency)+"  ·  CONTRAENTREGA"
+      row("A COBRAR", money(O.porCobrarPuerta(o),o.currency)+"  ·  CONTRAENTREGA"
         +(st.entregas&&st.entregas.pos_tarjeta===true?"  ·  EFECTIVO O TARJETA (POS)":""), true);
   }
   return `<div class="lbl">
@@ -1183,7 +1188,9 @@ function modal(html,onSave){
   ov.innerHTML=`<div class="modal">${html}<div class="m-foot"><button class="cancel">Cancelar</button><button class="save">Guardar</button></div></div>`;
   ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
   ov.querySelector(".cancel").onclick=()=>ov.remove();
-  ov.querySelector(".save").onclick=async()=>{ const ok=await onSave(ov); if(ok!==false) ov.remove(); };
+  // Un Guardar a la vez: el doble clic mandaba dos order-update (y dos avisos al cliente).
+  const sv=ov.querySelector(".save");
+  sv.onclick=async()=>{ if(sv.disabled) return; sv.disabled=true; try{ const ok=await onSave(ov); if(ok!==false) ov.remove(); } finally{ sv.disabled=false; } };
   const b0=ov.querySelector("#mFlete0");
   if(b0) b0.onclick=()=>{ ov.querySelector("#mFlete").value="0"; };
   document.body.appendChild(ov);

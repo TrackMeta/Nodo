@@ -3,6 +3,7 @@
 // El bot token vive cifrado en Vault por canal; los chat ids en channels.
 // ═══════════════════════════════════════════════════════════════════
 import { fetchConTimeout } from "./http.ts";
+import { urlDirecta } from "./archivo.ts";
 
 // Botón inline. Dos formas, excluyentes:
 //  · `data` → viaja en el callback cuando lo tocan (máx 64 bytes, así que va
@@ -26,6 +27,9 @@ export async function sendTelegram(
   let enviados = 0;
   // El token va en la URL de la API: un error de red puede traerla en el mensaje. Nunca al log.
   const limpio = (s: unknown) => String(s ?? "").split(botToken).join("<token>");
+  // Telegram baja la foto por su cuenta: el comprobante va con su URL directa de Storage (corta), no con
+  // el enlace propio que redirige (ver _shared/archivo.ts).
+  if (photoUrl) photoUrl = await urlDirecta(photoUrl).catch(() => photoUrl as string);
   const usePhoto = !!photoUrl && /^https?:\/\//.test(photoUrl);
   const url = `https://api.telegram.org/bot${botToken}/${usePhoto ? "sendPhoto" : "sendMessage"}`;
   const markup = buttons?.length

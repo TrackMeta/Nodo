@@ -25,6 +25,7 @@ import {
 import { provinciasDeDistrito, distritoAmbiguoLima } from "./distritos-peru.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
 import { fetchConTimeout } from "./http.ts";
+import { urlArchivo, urlDirecta as urlStorageDirecta } from "./archivo.ts";
 
 export type EngineEvent =
   // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
@@ -1181,7 +1182,7 @@ async function runEngineInner(
     // «¿La quieres? 🙂» pelado. Medido 8 de 8 en la ronda C2- de Calistenia.
     const _txtSinClave = decision.keyword
       ? sinLaPalabraClave(event.text, decision.keyword) : String(event.text ?? "");
-    if (event.type === "message" && !soloLaPalabraClave(event.text, decision.keyword) &&
+    if (event.type === "message" && !soloTextoDeEntrada(event.text, decision) &&
         (traePregunta(_txtSinClave) || RE_QUIERE_COMPRAR.test(_txtSinClave) ||
          RE_ANUNCIA_PAGO.test(_txtSinClave) ||
          RE_YA_PAGO.test(_txtSinClave) ||
@@ -1200,7 +1201,7 @@ async function runEngineInner(
     // D24-transferencia, 2026-09-29). Cuenta como «algo suyo» si quedan 2+ palabras con contenido que no son
     // saludo, relleno ni el nombre del producto — «de calistenia» (resto de la clave de Calistenia) no cuenta.
     if (flow && !reinyectarTrasArranque && event.type === "message" && _txtSinClave.trim()
-        && !soloLaPalabraClave(event.text, decision.keyword)) {
+        && !soloTextoDeEntrada(event.text, decision)) {
       try {
         const _sinTx = (s: string) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
         let _nomProd = "";
@@ -1379,7 +1380,7 @@ async function runEngineInner(
     // se atiende, con lo que dijo ya capturado.
     // (…salvo que haya escrito SOLO la palabra clave: al quitarla queda "" y la IA improvisaba sobre nada detrás del
     //  saludo — cliente que vuelve y toca otra vez el anuncio; auditoría 2026-09-30)
-    if (!reinyectarTrasArranque && event.type === "message" && !soloLaPalabraClave(event.text, decision.keyword)) {
+    if (!reinyectarTrasArranque && event.type === "message" && !soloTextoDeEntrada(event.text, decision)) {
       try {
         const { count: _out } = await db.from("messages").select("id", { count: "exact", head: true })
           .eq("contact_id", contactId).eq("direction", "out");
@@ -2059,6 +2060,10 @@ export async function aplicarStock(
   // el caller NO debe marcar stock_descontado en ese caso (si no, marca vendido algo que
   // no bajó → sobreventa, y al cancelar `+1` infla el inventario de la nada).
   let allOk = true;
+  // Los productos que SÍ bajaron en esta llamada: si otro agota el CAS, se devuelven (todo o
+  // nada). Antes quedaban descontados con `ok=false` → el pedido no marcaba stock_descontado
+  // (esas unidades no volvían al cancelar) y el reintento los descontaba OTRA vez.
+  const hechos: typeof movimientos = [];
   const byProd = new Map<string, typeof movimientos>();
   for (const m of movimientos || []) {
     if (!m?.product_id || !m?.key || !(Number(m.unidades) > 0)) continue;
@@ -2110,11 +2115,18 @@ export async function aplicarStock(
         let q = db.from("products").update({ config: { ...cfg, stock: nuevoStock }, updated_at: new Date().toISOString() }).eq("id", pid);
         if (upd) q = q.eq("updated_at", upd); // CAS: solo si nadie escribió desde la lectura
         const { data: ok } = await q.select("id");
-        if (ok && ok.length) { alerts.push(...localAlerts); applied = true; }
+        if (ok && ok.length) { alerts.push(...localAlerts); applied = true; hechos.push(...movs); }
         else { await new Promise((r) => setTimeout(r, 15 + Math.floor(Math.random() * 60))); } // conflicto → backoff jitter y reintenta con lectura fresca
       } catch (e) { console.error("[aplicarStock]", (e as any)?.message ?? e); break; }
     }
     if (!applied) { allOk = false; console.error("[aplicarStock] CAS agotó reintentos para", pid); }
+  }
+  if (!allOk) {
+    if (hechos.length) {
+      const vuelta = await aplicarStock(db, hechos, signo === -1 ? 1 : -1);
+      if (!vuelta.ok) console.error("[aplicarStock] no se pudo deshacer el movimiento parcial", JSON.stringify(hechos));
+    }
+    return { alerts: [], ok: false };
   }
   return { alerts, ok: allOk };
 }
@@ -2752,6 +2764,25 @@ function sinLaPalabraClave(text?: string | null, keyword?: string | null): strin
     if (k === kw.length) { for (let z = i; z < j; z++) out[z] = ""; i = j - 1; }
   }
   return out.join("").replace(/\s{2,}/g, " ").trim();
+}
+
+// 📣 La frase que Meta deja escrita en un anuncio «Clic a WhatsApp» («Hola. ¿Puedo obtener más
+// información sobre esto?»). Cuando el ruteo fue por ANUNCIO no hay palabra clave que descontar, así
+// que soloLaPalabraClave daba false, el «?» contaba como pregunta y la IA soltaba una burbuja detrás
+// de los mensajes iniciales (auditoría 2026-09-30). Con un «sobre X» corto (el nombre de algo) sigue
+// siendo la frase de Meta; con dígitos o una cola larga ya es una pregunta del cliente.
+function esPrellenadoDeAnuncio(text?: string | null): boolean {
+  const t = normalize(text ?? "").replace(/[^\p{L}\p{N}\s]+/gu, " ").replace(/\s+/g, " ").trim();
+  const m = t.match(/^(?:(?:hola+|buenas?|buenos dias|buenas tardes|buenas noches) )?(?:puedo obtener|quiero|quisiera|deseo|me gustaria(?: obtener| recibir| tener)?) (?:mas )?informacion(?: (?:sobre|de|del|acerca de) (.*))?$/u);
+  if (!m) return false;
+  const cola = (m[1] ?? "").trim();
+  return !/\d/.test(cola) && (cola ? cola.split(" ").length : 0) <= 7;
+}
+
+// ¿Escribió solo lo que trae la entrada (su palabra clave, o la frase de Meta si vino de un anuncio)?
+function soloTextoDeEntrada(text: string | null | undefined, decision: { tier?: string; keyword?: string } | null | undefined): boolean {
+  if (soloLaPalabraClave(text, decision?.keyword)) return true;
+  return (decision?.tier === "anuncio" || decision?.tier === "referral") && esPrellenadoDeAnuncio(text);
 }
 
 function soloLaPalabraClave(text?: string | null, keyword?: string | null): boolean {
@@ -3403,7 +3434,9 @@ function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?
     // 🗣️ Lo que ESCRIBIÓ manda sobre el anuncio del que vino: hizo clic en el anuncio de A y su
     // primer mensaje dice «en realidad quiero el B» (palabra clave de B) → B. Antes el referral
     // fresco ganaba incondicionalmente (el parche de arriba solo cubría el ad_id GUARDADO).
-    if (refHit && kwHit && kwHit.id !== refHit.id) return { tier: "keyword", flow: kwHit, keyword: kwTexto };
+    // …salvo que lo «escrito» sea la frase que Meta deja en el anuncio (o que la clave de B sea ella misma
+    // una frase así): eso no lo eligió el cliente, lo trae el anuncio. Misma regla que routeDecision.
+    if (refHit && kwHit && kwHit.id !== refHit.id && !esPrellenadoDeAnuncio(text) && !esPrellenadoDeAnuncio(kwTexto)) return { tier: "keyword", flow: kwHit, keyword: kwTexto };
     if (refHit) return { tier: "referral", flow: refHit, keyword: kwHit?.id === refHit.id ? kwTexto : undefined };
     if (kwHit) return { tier: "keyword", flow: kwHit, keyword: kwTexto };
     if (entrada) return { tier: "entrada", flow: entrada };
@@ -3675,7 +3708,13 @@ export async function routeDecision(db: SupabaseClient, channelId: string, text:
   // cliente; la palabra clave, una coincidencia de texto: con la frase que Meta deja escrita
   // («¿Puedo obtener más información…?») o una clave contenida en otra («adaptador pro» dentro de
   // «kit adaptador pro»), TODOS los anuncios de B iban al producto A. Si coinciden, da igual.
-  if (porAnuncio && det.flow && det.tier === "keyword" && String(det.flow.id) !== String(porAnuncio.id)) {
+  // …pero SOLO con esas frases (auditoría 2026-09-30: esta regla deshacía la de matchTrigger, «lo que
+  // escribió manda», y el «en realidad quiero el B» terminaba en A). Si nombró a B con sus palabras y la
+  // clave de B no es una frase de anuncio, manda lo que escribió.
+  const _textoDelAnuncio = esPrellenadoDeAnuncio(text) || esPrellenadoDeAnuncio(det.keyword)
+    // …o una clave CONTENIDA en el nombre del producto del anuncio («adaptador pro» dentro de «Kit Adaptador Pro»).
+    || (!!porAnuncio?.nombre && !!det.keyword && normalize(porAnuncio.nombre).includes(normalize(det.keyword)));
+  if (porAnuncio && det.flow && det.tier === "keyword" && String(det.flow.id) !== String(porAnuncio.id) && _textoDelAnuncio) {
     return { tier: "anuncio", flow: porAnuncio, reason: `El anuncio manda sobre la palabra clave «${det.keyword ?? ""}» de otro producto` } as RouteResult;
   }
   if (det.flow) return det;
@@ -8392,7 +8431,9 @@ export async function ventana24hAbierta(db: SupabaseClient, contactId: string): 
     // caro costaron.
     const { data } = await db.from("contacts").select("ultimo_mensaje_cliente_at").eq("id", contactId).maybeSingle();
     const t = (data as any)?.ultimo_mensaje_cliente_at ? new Date((data as any).ultimo_mensaje_cliente_at).getTime() : 0;
-    return t > 0 && (Date.now() - t) < 24 * 3600 * 1000;
+    // 10 min de margen: con 24 h exactas un envío programado justo al borde salía cuando Meta ya
+    // había cerrado la ventana (131047) y el toque se perdía (auditoría 2026-09-30).
+    return t > 0 && (Date.now() - t) < 24 * 3600 * 1000 - 10 * 60 * 1000;
   } catch (_) { return false; }
 }
 
@@ -8472,11 +8513,37 @@ function urlDescargaSegura(raw: string): URL | null {
   return u;
 }
 
+// 🔒 El nombre del host no alcanza: «169.254.169.254.nip.io» o un dominio propio que apunte a una IP
+// interna pasaban urlDescargaSegura (solo mira IPs literales). Se resuelve el DNS y se rechaza si
+// ALGUNA dirección es privada (auditoría 2026-09-30). Si el entorno no deja resolver (sin permiso o
+// sin la API), se sigue como antes: el filtro por nombre y por cada redirección sigue en pie.
+function ipv6Privada(ip: string): boolean {
+  const h = ip.toLowerCase();
+  if (h === "::1" || h === "::") return true;
+  if (h.startsWith("fc") || h.startsWith("fd") || h.startsWith("fe80")) return true;
+  const m = h.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  return !!m && ipv4Privada(m[1]);
+}
+async function hostResuelvePublico(u: URL): Promise<boolean> {
+  const h = u.hostname.replace(/^\[|\]$/g, "");
+  if (/^[0-9.]+$/.test(h) || h.includes(":")) return true;   // IP literal: ya la revisó urlDescargaSegura
+  const resolver = (Deno as any)?.resolveDns;
+  if (typeof resolver !== "function") return true;
+  for (const tipo of ["A", "AAAA"]) {
+    let ips: string[] = [];
+    // Con tope de 3 s: un DNS lento no debe colgar la descarga (se sigue como si no se pudiera resolver).
+    try { ips = await Promise.race([resolver(h, tipo), new Promise<string[]>((r) => setTimeout(() => r([]), 3000))]); } catch (_) { continue; }
+    for (const ip of ips) if (tipo === "A" ? ipv4Privada(ip) : ipv6Privada(ip)) return false;
+  }
+  return true;
+}
+
 // Descarga siguiendo las redirecciones A MANO y revisando CADA salto con el mismo guard:
 // `fetch` las sigue solo, así que una URL pública que redirige a 169.254.169.254 pasaba.
 async function fetchSeguro(u: URL, ms: number): Promise<Response> {
   let actual: URL = u;
   for (let salto = 0; salto < 4; salto++) {
+    if (!(await hostResuelvePublico(actual))) throw new Error("host interno no permitido");
     const r = await fetchConTimeout(actual, { redirect: "manual" }, ms);
     if (r.status < 300 || r.status >= 400) return r;
     const loc = r.headers.get("location");
@@ -8530,11 +8597,10 @@ export function esAlucinacionSTT(texto?: string | null): boolean {
   return t.replace(/[^\p{L}\p{N}]/gu, "").length < 2;
 }
 
-// D4 · comprobantes en bucket PRIVADO + URL firmada larga (data financiera).
+// D4 · comprobantes en bucket PRIVADO (data financiera). El enlace que se guarda no caduca
+// (queda para siempre en messages, orders.shipping, ultima_imagen y Sheets, y nadie lo renueva:
+// con URLs de Storage de 1 año la Bandeja y Compras mostraban la foto rota) — ver urlArchivo.
 const COMPROBANTES_BUCKET = "comprobantes";
-// 10 años: la URL queda guardada para siempre en messages, orders.shipping, ultima_imagen y
-// Sheets, y NADIE la renueva. Con 1 año, al año la Bandeja y Compras mostraban la foto rota.
-const SIGNED_TTL = 60 * 60 * 24 * 365 * 10;
 
 // Sube una imagen entrante (comprobante) al bucket privado y devuelve una URL
 // FIRMADA de larga duración. El webchat manda URLs http públicas → tal cual.
@@ -8566,10 +8632,9 @@ async function ingestImage(db: SupabaseClient, channelId: string, contactId: str
     up = await db.storage.from(COMPROBANTES_BUCKET).upload(path, bytes, { contentType: mime || "image/jpeg", upsert: true });
   }
   if (up.error) { console.error("[ingestImage] upload:", up.error.message); return null; }
-  // URL firmada de larga duración: sirve en panel, Telegram y Sheets sin exponer
-  // el bucket (no público, no listable, revocable rotando el secreto del bucket).
-  const { data: signed } = await db.storage.from(COMPROBANTES_BUCKET).createSignedUrl(path, SIGNED_TTL);
-  return signed?.signedUrl ?? null;
+  // Enlace propio firmado (ver _shared/archivo.ts): sirve en panel, Telegram y Sheets, no caduca y
+  // se puede ANULAR cambiando ARCHIVO_SECRET. Antes era una URL de Storage de 10 años, irrevocable.
+  return await urlArchivo(path);
 }
 
 // 🧾 El bloque del COMPROBANTE para el modelo. Un PDF pasado por URL no lo lee NINGÚN
@@ -8580,6 +8645,9 @@ async function ingestImage(db: SupabaseClient, channelId: string, contactId: str
 // comprobante» — medido en G9-fppdf (2 de 2, 2026-09-19). El nodo de OCR del flujo no tenía
 // el problema porque ya bajaba la imagen a data-URI. Las fotos siguen yendo por URL.
 async function bloqueDeComprobante(url: string): Promise<ContentBlock> {
+  // El modelo baja la imagen por su cuenta: se le da la URL directa de Storage (corta), no el enlace
+  // propio que redirige — no todos los proveedores siguen redirecciones.
+  url = await urlStorageDirecta(url);
   const sinQuery = String(url ?? "").split("?")[0];
   if (/\.pdf$/i.test(sinQuery)) {
     try { return imageBlock(await urlToDataUri(url)); } catch (_) { /* si no se puede bajar, que lo intente por URL */ }
@@ -12695,7 +12763,11 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
       shipping: { ...(await shipFresco()), adelanto_parcial: true, adelanto_revisar_dup: true,
         adelanto_comprobante: url, adelanto_metodo: metodo, adelanto_recibido_at: new Date().toISOString(),
         adelanto_revisar: "2º comprobante del mismo monto sin nº de operación: ¿reenvío o 2º pago?",
-        adelanto_monto_leido: monto, adelanto_operacion_leida: null, adelanto_ok_ia: false },
+        adelanto_monto_leido: monto, adelanto_operacion_leida: null, adelanto_ok_ia: false,
+        // Para que APROBARLO a mano acredite este 2º pago: sin esto order-update tomaba
+        // `adelanto_abonado` (que esta rama no toca) y el saldo quedaba con S/monto de más.
+        // La base es lo abonado AHORA; si después entra otro abono, deja de coincidir y no se usa.
+        adelanto_ambiguo_monto: monto, adelanto_ambiguo_base: ab.total },
     }).eq("id", (order as any).id);
     await logEvent(db, channelId, contactId, "nota", "⚠️ 2º comprobante del mismo monto sin nº de operación",
       `${monto} — ¿reenvío o 2º pago? Revisar manualmente antes de validar el adelanto`).catch(() => {});
@@ -20144,15 +20216,22 @@ export async function reclamarOperacion(db: SupabaseClient, channelId: string, o
 // Rodrigo: override del producto (config.validacion_pago) > default del canal
 // (pedidos_config.digital.validacion) > "auto" (comportamiento histórico).
 // Devuelve también si el producto es digital, para no tocar el camino físico.
-async function digitalPagoModo(db: SupabaseClient, run: Run, info: any): Promise<{ manual: boolean; digital: boolean }> {
+async function digitalPagoModo(db: SupabaseClient, run: Run, info: any, prodDelFlujo?: unknown): Promise<{ manual: boolean; digital: boolean }> {
   const canal = info?.pedidos?.digital?.validacion === "manual" ? "manual" : "auto";
   let tipo: string | null = null;
   let override: string | null = null;
   try {
-    const { data: c } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
-    const pid = (c as any)?.product_id;
+    // Manda el producto del FLUJO que está cobrando (ctx._product_id), no el del contacto:
+    // si en medio de la venta digital el cliente preguntó por un físico, `contacts.product_id`
+    // ya apunta a ese físico → `digital` salía false y se saltaban TODOS los frenos del pago
+    // digital (manual, sin operación, sobrepago, partes…) con la entrega automática igual.
+    let pid: unknown = prodDelFlujo;
+    if (!pid) {
+      const { data: c } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
+      pid = (c as any)?.product_id;
+    }
     if (pid) {
-      const { data: p } = await db.from("products").select("tipo, config").eq("id", pid).maybeSingle();
+      const { data: p } = await db.from("products").select("tipo, config").eq("id", String(pid)).maybeSingle();
       tipo = (p as any)?.tipo ?? null;
       const v = (p as any)?.config?.validacion_pago;
       if (v === "auto" || v === "manual") override = v;
@@ -24101,7 +24180,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
         const yaParque = esExtra ? run.vars._extra_manual_pendiente : run.vars._pago_manual_pendiente;
         if (!esParcial && !yaParque) {
-          const modo = await digitalPagoModo(db, run, info);
+          const modo = await digitalPagoModo(db, run, info, ctx?._product_id);
           // Un pago SIN nº de operación legible NO se puede verificar contra el anti-reúso
           // (el ledger dedup por operación): un mismo comprobante ilegible podría pagar dos
           // productos digitales (el OCR a veces responde "PAGO_OK" sin el JSON de operación

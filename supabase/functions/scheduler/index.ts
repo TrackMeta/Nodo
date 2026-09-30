@@ -15,6 +15,7 @@ import { sendTelegram } from "../_shared/telegram.ts";
 import { construirResumen, localParts, localDayStartUTC, ymd } from "../_shared/resumen.ts";
 import { enParalelo, repartoJusto } from "../_shared/concurrencia.ts";
 import { sondearNumero, aplicarVeredicto } from "../_shared/salud-wa.ts";
+import { timingSafeEqual } from "../_shared/crypto.ts";
 
 const db = serviceClient();
 
@@ -95,7 +96,9 @@ Deno.serve(async (req) => {
     console.error("[scheduler] falta SCHEDULER_SECRET — no se atiende el tick");
     return json({ error: "sin_secreto" }, 503);
   }
-  if (req.headers.get("x-scheduler-secret") !== secret) {
+  // En tiempo constante: un `!==` corta en el primer carácter distinto, y midiendo cuánto tarda
+  // en decir que no se puede ir adivinando el secreto de a una letra.
+  if (!timingSafeEqual(req.headers.get("x-scheduler-secret") ?? "", secret)) {
     return json({ error: "forbidden" }, 403);
   }
 
@@ -847,6 +850,10 @@ async function posponer(subId: string, ms: number) {
     .eq("id", subId).then(() => {}, () => {});
 }
 
+// Intentos de un paso de mensaje ante un rechazo TEMPORAL de Meta (cada 15 min) antes de
+// saltarlo. Tres cubren un rate limit o un bache de Graph sin trabar la secuencia horas.
+const SEQ_MAX_INTENTOS = 3;
+
 async function processSub(s: any, now: number): Promise<boolean> {
   // Bot ARCHIVADO: su remarketing no sale (se re-mira en un día por si lo reactivas).
   if (!(await canalActivo(db, s.channel_id))) { await posponer(s.id, 24 * 3600_000); return false; }
@@ -1032,6 +1039,7 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // salió, el sello se queda: mejor atrasar un toque que repetírselo al cliente.
   let toco = false;
   let _ofertaEscrita = false;
+  let _reintentar = false;   // rechazo temporal de Meta en un paso de mensaje → se pospone sin avanzar
   try {
     // Oferta identificada: el paso puede pegar un DESCUENTO al contacto para una
     // opción concreta. El motor lo lee al validar el pago (precioEsperado), así un
@@ -1195,14 +1203,52 @@ async function processSub(s: any, now: number): Promise<boolean> {
         // remarketing sin haber recibido nada.
         // Se le pasa de qué secuencia y paso viene: es lo que permite medir después qué
         // variante de copy reenganchó (ver variante_envios).
+        // Desde cuándo mirar los mensajes de ESTE intento (2 s de margen por el reloj de la base).
+        const _intentoDesde = new Date(Date.now() - 2_000).toISOString();
         if (await deliverStep(db, s.channel_id, s.contact_id, paso, null,
           { sequence_id: s.sequence_id, paso: s.paso_actual })) toco = true;
         else {
-          console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta rechazó el envío → no cuenta como toque`);
-          // …y queda en la Actividad del contacto: antes la secuencia terminaba «completada» sin haber mandado nada y
-          // sin rastro fuera de la consola (auditoría 2026-09-30).
-          await db.from("contact_events").insert({ channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
-            titulo: "🔕 Un paso del remarketing no salió", detalle: `Paso ${s.paso_actual + 1}: Meta rechazó el envío` }).then(() => {}, () => {});
+          // ¿Fue un rechazo TEMPORAL de Meta (rate limit, 5xx, red) y no salió NADA? Entonces no
+          // se consume el paso: se pospone 15 min, igual que la rama de plantilla. Antes se
+          // avanzaba igual y un minuto malo de Graph le quitaba el toque al contacto para siempre.
+          // deliverStep solo dice sí/no, así que el motivo se lee de lo que emit dejó anotado en
+          // `messages` (status failed + error de Meta). Si alguna burbuja SÍ salió no se reintenta:
+          // se le repetiría al cliente lo que ya recibió.
+          let _temporal = false;
+          try {
+            const { data: outs } = await db.from("messages").select("status, error")
+              .eq("contact_id", s.contact_id).eq("direction", "out").gte("ts", _intentoDesde).limit(20);
+            const filas = (outs ?? []) as any[];
+            _temporal = filas.length > 0 && filas.every((m) => m.status === "failed")
+              && filas.some((m) => esRechazoTemporal(m.error));
+          } catch (_) { /* sin dato → como antes: se salta el toque */ }
+          // Tope de reintentos: el contador vive en la Actividad del contacto (contact_events.meta),
+          // contando los reintentos de ESTE paso desde el ancla del paso anterior — sin columna nueva.
+          // Si no se puede contar se da por agotado (mejor saltar un toque que reintentar sin fin).
+          let _intento = SEQ_MAX_INTENTOS;
+          const _clave = `${s.sequence_id}:${s.paso_actual}`;
+          if (_temporal) {
+            const { count: _previos, error: _errCnt } = await db.from("contact_events")
+              .select("id", { count: "exact", head: true })
+              .eq("contact_id", s.contact_id).eq("meta->>seq_reintento", _clave)
+              .gte("created_at", new Date(s.updated_at ?? s.suscrito_at ?? 0).toISOString());
+            if (!_errCnt) _intento = (_previos ?? 0) + 1;
+          }
+          if (_temporal && _intento < SEQ_MAX_INTENTOS) {
+            console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta frenó el envío (temporal) → se pospone 15 min (intento ${_intento} de ${SEQ_MAX_INTENTOS})`);
+            await db.from("contact_events").insert({ channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
+              titulo: "⏳ Un paso del remarketing se reintenta",
+              detalle: `Paso ${s.paso_actual + 1}: Meta frenó el envío un rato — se reintenta en 15 min (intento ${_intento} de ${SEQ_MAX_INTENTOS})`,
+              meta: { seq_reintento: _clave } }).then(() => {}, () => {});
+            _reintentar = true;
+          } else {
+            console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: Meta rechazó el envío → no cuenta como toque`);
+            // …y queda en la Actividad del contacto: antes la secuencia terminaba «completada» sin haber mandado nada y
+            // sin rastro fuera de la consola (auditoría 2026-09-30).
+            await db.from("contact_events").insert({ channel_id: s.channel_id, contact_id: s.contact_id, tipo: "nota",
+              titulo: "🔕 Un paso del remarketing no salió",
+              detalle: `Paso ${s.paso_actual + 1}: Meta rechazó el envío${_temporal ? ` (${SEQ_MAX_INTENTOS} intentos)` : ""} — se saltó este toque` }).then(() => {}, () => {});
+          }
         }
       } else {
         console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: fuera de 24h y sin plantilla → no se envía (ponle plantilla al paso para alcanzarlo)`);
@@ -1225,6 +1271,13 @@ async function processSub(s: any, now: number): Promise<boolean> {
           console.warn(`[secuencia] paso ${s.paso_actual} de ${s.contact_id}: no salió nada → se retira la oferta grabada (evita el descuento fantasma)`);
         }
       } catch (_) { /* best-effort */ }
+    }
+    // Rechazo temporal en un paso de mensaje: la oferta ya se retiró arriba (se vuelve a grabar
+    // en el reintento), así que se aparta 15 min y se devuelve el ancla sin consumir el paso.
+    if (_reintentar) {
+      await posponer(s.id, 15 * 60_000);
+      await _desclamar();
+      return false;
     }
     // 🎯 El toque habla de UN producto: se le deja sellado al contacto para que su RESPUESTA
     // entre a la venta de ese producto. Sin esto el cliente contestaba al reenganche y el bot

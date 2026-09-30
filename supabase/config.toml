@@ -118,3 +118,8 @@ verify_jwt = false
 # secreto compartido x-rastreo-secret, fail-closed.
 [functions.courier-sync]
 verify_jwt = false
+
+# archivo: abre un comprobante guardado (bucket privado) desde un <img>, Sheets o Telegram,
+# así que va sin JWT; lo protege la firma HMAC del enlace (ver _shared/archivo.ts).
+[functions.archivo]
+verify_jwt = false

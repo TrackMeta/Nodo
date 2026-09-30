@@ -75,6 +75,9 @@ export async function processCampaigns(db: SupabaseClient, hastaMs?: number) {
   const porCanal = new Map<string, number>();
   const sending: any[] = [];
   for (const c of enCurso ?? []) {
+    // En pausa por canal roto (ver pausarPorCanalRoto): no ocupa cupo, que lo usen las demás.
+    const _pausa = ((c as any).segmento ?? {})._canal_roto?.reintentar_despues;
+    if (_pausa && Date.parse(String(_pausa)) > Date.now()) continue;
     const usados = porCanal.get((c as any).channel_id) ?? 0;
     if (usados >= MAX_POR_CANAL) continue;
     porCanal.set((c as any).channel_id, usados + 1);
@@ -245,13 +248,36 @@ export async function matchSegment(db: SupabaseClient, channelId: string, seg: a
 // 131031 (cuenta bloqueada) y 368 (bloqueo temporal por políticas): son del CANAL, no del
 // contacto. Tratarlos como fallo del destinatario quemaba la audiencia entera, sin aviso.
 const META_CANAL_ROTO = new Set([190, 131030, 133010, 133005, 133006, 131042, 131031, 368]);
-const _avisoCanalRoto = new Map<string, number>();
+// Canal roto = la campaña se PAUSA sola con espera creciente (5 min, 10, 20… tope 3 h) y avisa
+// al empezar y luego cada 6 h mientras siga rota. El estado vive EN LA CAMPAÑA
+// (`segmento._canal_roto`, jsonb que ya existe y que solo se lee al expandir, o sea antes de
+// «enviando»): antes el freno del aviso era un Map en memoria que se perdía en cada arranque
+// en frío, y sin espera cada tick le pegaba a Meta otra vez → más de 6 Telegram por hora, sin
+// fin, con la tarjeta vencida o el token revocado. Los destinatarios NO se marcan fallidos: al
+// volver el canal, el primer envío que sale borra la pausa y la campaña sigue donde quedó.
+const CANAL_ROTO_BASE_MS = 5 * 60_000, CANAL_ROTO_TOPE_MS = 3 * 3600_000, CANAL_ROTO_AVISO_MS = 6 * 3600_000;
+async function pausarPorCanalRoto(db: SupabaseClient, c: any, meta: any) {
+  const seg = { ...((c.segmento ?? {}) as Record<string, unknown>) };
+  const prev = (seg._canal_roto ?? {}) as any;
+  const ahora = Date.now();
+  const intentos = Number(prev.intentos ?? 0) + 1;
+  const espera = Math.min(CANAL_ROTO_BASE_MS * 2 ** Math.min(intentos - 1, 10), CANAL_ROTO_TOPE_MS);
+  const avisar = !(ahora - Date.parse(String(prev.avisado_at ?? "")) < CANAL_ROTO_AVISO_MS);   // sin fecha válida → avisa
+  seg._canal_roto = {
+    code: Number(meta?.code) || null, desde: prev.desde ?? new Date(ahora).toISOString(), intentos,
+    reintentar_despues: new Date(ahora + espera).toISOString(),
+    avisado_at: avisar ? new Date(ahora).toISOString() : (prev.avisado_at ?? null),
+  };
+  await db.from("campaigns").update({ segmento: seg }).eq("id", c.id).then(() => {}, () => {});
+  c.segmento = seg;
+  // Que la tarjeta de la campaña diga por qué no avanza (columna 0112; sin ella, nada que hacer).
+  await db.from("campaigns").update({ motivo: `WhatsApp no puede enviar (Meta ${Number(meta?.code) || "?"}) — en pausa, se reintenta sola` })
+    .eq("id", c.id).eq("estado", "enviando").then(() => {}, () => {});
+  console.error(`[campañas] "${c.nombre ?? c.id}": canal roto (Meta ${meta?.code}), intento ${intentos} → pausa ${Math.round(espera / 60_000)} min`);
+  if (avisar) await avisarCanalRoto(db, c, meta);
+}
 async function avisarCanalRoto(db: SupabaseClient, c: any, meta: any) {
   try {
-    const k = String(c.id);
-    const ahora = Date.now();
-    if (ahora - (_avisoCanalRoto.get(k) ?? 0) < 10 * 60_000) return;
-    _avisoCanalRoto.set(k, ahora);
     const { data: ch } = await db.from("channels").select("nombre, telegram_chat_ids").eq("id", c.channel_id).maybeSingle();
     const secrets = await getChannelSecrets(db, c.channel_id);
     const chatIds: string[] = Array.isArray((ch as any)?.telegram_chat_ids) ? (ch as any).telegram_chat_ids.map(String) : [];
@@ -270,7 +296,7 @@ async function avisarCanalRoto(db: SupabaseClient, c: any, meta: any) {
       dedupeKey: `${c.channel_id}:campana_detenida:${c.id}` }).catch(() => null);
     if (!token || !chatIds.length) return;
     const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    await sendTelegram(token, chatIds, `⚠️ <b>Campaña «${esc(String(c.nombre ?? c.id))}» detenida</b>\nWhatsApp no puede enviar: ${esc(que)}.\nLos envíos quedan en cola y se retoman solos cuando el canal vuelva a funcionar.`);
+    await sendTelegram(token, chatIds, `⚠️ <b>Campaña «${esc(String(c.nombre ?? c.id))}» detenida</b>\nWhatsApp no puede enviar: ${esc(que)}.\nLos envíos quedan en cola y se retoman solos cuando el canal vuelva a funcionar (se vuelve a probar cada vez más espaciado, hasta cada 3 h).`);
   } catch (_) { /* avisar de un fallo no puede provocar otro */ }
 }
 
@@ -278,6 +304,9 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
   // Bot ARCHIVADO: su campaña no manda (queda pendiente por si lo reactivas).
   { const { data: _chA } = await db.from("channels").select("activo").eq("id", c.channel_id).maybeSingle();
     if ((_chA as any)?.activo === false) return; }
+  // Canal roto hace poco: la campaña espera su turno de reintento sin tocar a Meta (ver pausarPorCanalRoto).
+  const _roto = ((c.segmento ?? {}) as any)._canal_roto;
+  if (_roto?.reintentar_despues && Date.parse(String(_roto.reintentar_despues)) > Date.now()) return;
   const { data: tpl } = await db.from("wa_templates").select("*").eq("id", c.template_id).maybeSingle();
   if (!tpl) {
     // Plantilla borrada (FK on delete set null): antes se marcaba «completada» dejando las filas
@@ -371,6 +400,7 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
 
   let ok = 0, fail = 0;
   let first = true;
+  let huboCanalRoto = false;
   for (const s of pend) {
     // 🛑 ¿La cancelaron mientras se enviaba el lote? El panel escribe «cancelada» directo en
     // campaigns; este bucle solo cortaba por tiempo, así que hasta 25 plantillas del lote ya
@@ -470,12 +500,13 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
       // Error del CANAL, no del contacto: token vencido (190), app en modo desarrollo con un
       // número fuera de la lista (131030), número sin registrar (133010). Marcar «fallido» al
       // contacto quemaba 25 destinatarios por tick, indefinidamente y en silencio (campañas no
-      // pasaba por avisarEnvioFallido). Ahora: la fila vuelve a la cola, se corta el lote y se
-      // avisa por Telegram (una vez cada 10 min por campaña).
+      // pasaba por avisarEnvioFallido). Ahora: la fila vuelve a la cola, se corta el lote y la
+      // campaña se pausa con espera creciente (y avisa al empezar y cada 6 h, no cada tick).
       if (meta && META_CANAL_ROTO.has(Number(meta.code))) {
         await db.from("campaign_sends").update({ estado: "pendiente", error: { message: "El canal de WhatsApp no puede enviar (token/número) — se reintenta", code: meta.code } }).eq("id", s.id);
-        await avisarCanalRoto(db, c, meta);
+        huboCanalRoto = true;
         console.error(`[campañas] "${c.nombre ?? c.id}": canal roto (Meta ${meta.code}: ${meta.message}) → lote cortado`);
+        await pausarPorCanalRoto(db, c, meta);
         break;
       }
       if (meta && esRechazoTemporal(meta)) {
@@ -522,6 +553,14 @@ async function sendBatch(db: SupabaseClient, c: any, hastaMs?: number) {
     enviados: nOk ?? ((c.enviados || 0) + ok),
     fallidos: nFail ?? ((c.fallidos || 0) + fail),
   }).eq("id", c.id);
+  // El canal volvió (un envío llegó a Meta sin chocar con «canal roto»): se borra la pausa y el
+  // motivo, así la próxima caída arranca otra vez desde la espera corta y con aviso.
+  if (!huboCanalRoto && ok > 0 && ((c.segmento ?? {}) as any)._canal_roto) {
+    const seg = { ...((c.segmento ?? {}) as Record<string, unknown>) };
+    delete seg._canal_roto;
+    await db.from("campaigns").update({ segmento: seg }).eq("id", c.id).then(() => {}, () => {});
+    await db.from("campaigns").update({ motivo: null }).eq("id", c.id).eq("estado", "enviando").then(() => {}, () => {});
+  }
 }
 
 // Envío de plantilla a un contacto (secuencias fuera de 24h).

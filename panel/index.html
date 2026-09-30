@@ -700,7 +700,9 @@ $("forgotBtn").onclick = async () => {
   const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
   $("loginErr").textContent = error ? ("No se pudo enviar: " + error.message) : "Listo: si ese correo tiene cuenta, te llegó un enlace para crear una contraseña nueva (revisa también spam).";
 };
-supa.auth.onAuthStateChange(async (ev) => {
+// Guardada para darla de baja en onLeave: este módulo se re-ejecuta en cada entrada a la
+// Bandeja (SPA) y sumaba una suscripción más por visita (la recuperación preguntaba N veces).
+const { data: { subscription: _authSub } = {} } = supa.auth.onAuthStateChange(async (ev) => {
   if (ev !== "PASSWORD_RECOVERY") return;
   for (let i = 0; i < 3; i++) {
     const pw = await askText({ title: "Crea tu nueva contraseña", placeholder: "Mínimo 8 caracteres", confirmText: "Guardar", password: true });
@@ -737,6 +739,8 @@ async function boot() {
     document.removeEventListener("click", onDocClickActions);
     document.removeEventListener("click", onDocClickLightbox);
     document.removeEventListener("click", onDocClickContactCard);
+    document.removeEventListener("keydown", onKeyLightboxEsc);
+    try { _authSub?.unsubscribe(); } catch (_) { /* nada */ }
   });
   // Selector de bot propio de la Bandeja (el rail minimal no lo incluye).
   // El cambio de bot lo maneja el selector del sidebar (shell); aquí solo reaccionamos.
@@ -800,6 +804,18 @@ async function loadConversations() {
     .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(1000);
   if (error) { ({ data } = await supa.from("conversations").select(sel(false))
     .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(1000)); }
+  // Tope alcanzado: hay chats más viejos que no se cargaron. La lista lo avisa (renderConversations)
+  // y los que «Requieren humano» se piden aparte al servidor: son los que no pueden quedar
+  // escondidos por viejos, y así el filtro y su contador cuentan todos.
+  state.convsTope = (data||[]).length >= 1000;
+  if (state.convsTope && data) {
+    try {
+      const { data: rh } = await supa.from("conversations").select(sel(true))
+        .eq("channel_id", state.channelId).eq("requiere_humano", true).order("updated_at", { ascending: false }).limit(500);
+      const have = new Set(data.map(cv=>cv.contact_id));
+      (rh||[]).forEach(cv=>{ if(!have.has(cv.contact_id)){ data.push(cv); have.add(cv.contact_id); } });
+    } catch (_) { /* sin el extra: queda el aviso */ }
+  }
   if (gen!==state.loadGen) return; // cambiaste de bot mientras cargaba → no pintes la bandeja del anterior
   // Los archivados se conservan en state.convs (para contarlos y para el filtro
   // "Archivados"); applyFilters los oculta salvo que ese filtro esté activo.
@@ -1359,7 +1375,10 @@ function renderConversations(){
   const mt=$("modeToggle"); if(mt){ mt.querySelector('[data-mode="bot"]').innerHTML=icon("robot")+" Bot"; mt.querySelector('[data-mode="humano"]').innerHTML=icon("user")+" Humano"; }
   updateFilterCounts(); renderFilterChips(); updateFilterBadge();
   const anyFilter = state.filters.sinResponder||state.filters.seguimiento||state.filters.anuncio||state.filters.organico||state.filters.sinprod||state.filters.conimg||state.filters.range||state.filters.archivado||state.filters.recomprando||state.filters.producto||state.filters.tags.size||state.filters.stages.size||state.filters.entrega.size;
-  if(!list.length){ box.innerHTML=`<div class="empty" style="padding:40px 20px;font-size:13px">${state.search?`Ningún contacto coincide con “${esc(state.search)}”`:(anyFilter?"Ninguna conversación coincide con los filtros":(state.mode==="bot"?"Sin chats gestionados por el bot":"Sin chats atendidos por un humano"))}</div>`; return; }
+  // La lista trae los 1000 chats más recientes: si llegó al tope, se dice (los filtros y
+  // contadores trabajan sobre lo cargado; la búsqueda sí pregunta al servidor).
+  const avisoTope = state.convsTope ? `<div class="empty" style="padding:14px 16px 18px;font-size:12px;text-align:center">Mostrando los 1000 chats más recientes. Usa la búsqueda para encontrar chats más antiguos.</div>` : "";
+  if(!list.length){ box.innerHTML=`<div class="empty" style="padding:40px 20px;font-size:13px">${state.search?`Ningún contacto coincide con “${esc(state.search)}”`:(anyFilter?"Ninguna conversación coincide con los filtros":(state.mode==="bot"?"Sin chats gestionados por el bot":"Sin chats atendidos por un humano"))}</div>${avisoTope}`; return; }
   list.forEach(cv => {
     const c = cv.contact;
     const bot = c.bot_activo !== false;
@@ -1395,6 +1414,7 @@ function renderConversations(){
     el.onclick = () => openChat(c);
     box.appendChild(el);
   });
+  if (avisoTope) box.insertAdjacentHTML("beforeend", avisoTope);
 }
 
 // ── Chat ──
@@ -2228,7 +2248,8 @@ function openLightbox(url, kind){
     const hide=()=>{ ov.style.display="none"; ov.querySelector("#nodoLbBody").innerHTML=""; };
     ov.onclick=(e)=>{ if(e.target===ov) hide(); };
     ov.querySelector("#nodoLbClose").onclick=hide;
-    document.addEventListener("keydown",(e)=>{ if(e.key==="Escape" && ov.style.display==="flex") hide(); });
+    // El Esc lo atiende onKeyLightboxEsc (uno por módulo, removido en onLeave): acá se sumaba
+    // un listener cada vez que el visor se recreaba al volver a la Bandeja.
   }
   const u=esc(safe);
   ov.querySelector("#nodoLbBody").innerHTML = kind==="video"
@@ -2237,6 +2258,15 @@ function openLightbox(url, kind){
   ov.querySelector("#nodoLbOpen").href=u;
   ov.style.display="flex";
 }
+// Esc cierra el visor. Busca el visor por id (no lo captura): el que se crea en otra visita
+// a la Bandeja es un elemento nuevo.
+function onKeyLightboxEsc(e){
+  if(e.key!=="Escape") return;
+  const ov=document.getElementById("nodoLightbox");
+  if(!ov || ov.style.display!=="flex") return;
+  ov.style.display="none"; const b=ov.querySelector("#nodoLbBody"); if(b) b.innerHTML="";
+}
+document.addEventListener("keydown", onKeyLightboxEsc);
 // Delegación global: un clic en cualquier [data-light] abre el visor (no pestaña).
 // Nombrado para poder removerlo en onLeave: la Bandeja re-ejecuta este módulo en
 // cada re-entrada (SPA), y sin remover se acumulaba un listener por entrada.

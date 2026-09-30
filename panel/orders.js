@@ -97,6 +97,23 @@ export function porCobrar(o){
   return Math.max(0, total(o) - cobrado(o));
 }
 
+// Lo que el motorizado cobra en la PUERTA (Lima contraentrega): rótulo, Excel de Eva y la
+// tarjeta de «Pagos por validar». MISMA regla que el motor (resolverPrepagoLima y el aviso del
+// comprobante de Lima): manda `shipping.saldo` —nace = total a cobrar y lo mueven los extras
+// y el pago adelantado aprobado— y solo si no está, total − lo que ya pagó por adelantado.
+// Vivía en dos fórmulas: la tarjeta leía el saldo y el rótulo restaba el abonado, y cuando no
+// coincidían el operador aprobaba viendo un número y el motorizado cobraba otro.
+// Un "0" es un saldo VÁLIDO (ya pagó todo): no puede caer al total por ser falsy.
+export function porCobrarPuerta(o){
+  const m = EST[o?.estado];
+  if (m && (m.perdido || m.cobro === "todo")) return 0; // cobrado o caído: la puerta no cobra nada
+  const s = o?.shipping || {};
+  const sv = Number(s.saldo);
+  if (s.saldo != null && String(s.saldo).trim() !== "" && Number.isFinite(sv)) return Math.max(0, sv);
+  const tot = total(o);
+  return Math.max(0, tot - Math.min(Number(s.prepago_lima_abonado) || 0, tot));
+}
+
 export const esVenta   = (o) => !!EST[o?.estado]?.venta;
 export const esPerdido = (o) => !!EST[o?.estado]?.perdido;
 // Pedido CERRADO/COMPLETADO: se cobró TODO (digital pagado, Lima entregado y

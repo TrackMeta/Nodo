@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
     // 🔒 Los campos INTERNOS no se aceptan del panel: con `stock_mov`/`stock_descontado` un operador movía el inventario
     // de cualquier producto al cancelar/revivir un pedido propio, y los abonos/acreditaciones/marcas «por validar» los
     // escribe solo el motor (auditoría 2026-09-30). Los valores guardados se conservan: el merge parte del pedido.
-    const _INTERNO = /^(?:stock_|pago_acreditado|prepago_lima_abonado$|adelanto_abonado$|adelanto_abonos$|saldo_abonos$|pagado_total$|.*_validado_auto$|.*_por_validar$|.*_revisar_dup$)/;
+    const _INTERNO = /^(?:stock_|pago_acreditado|prepago_lima_abonado$|adelanto_abonado$|adelanto_abonos$|saldo_abonos$|pagado_total$|.*_validado_auto$|.*_por_validar$|.*_revisar_dup$|adelanto_ambiguo_(?:monto|base)$)/;
     const _limpio: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(body.shipping as Record<string, unknown>)) if (!_INTERNO.test(k)) _limpio[k] = v;
     patch.shipping = { ...((order as any).shipping ?? {}), ..._limpio };
@@ -332,6 +332,19 @@ Deno.serve(async (req) => {
   // doble fila en Sheets). Le damos su propio CAS por DATO: el UPDATE solo procede si el
   // extra SIGUE pendiente; el 2do toque afecta 0 filas y aborta las side-effects de abajo.
   const aprobandoExtraCas = !newEstado && !!(body.shipping && (body.shipping as any).extra_pendiente === false);
+  // 🔄 `patch.shipping` se armó sobre el pedido leído al INICIO de la llamada; entre medio (OCR,
+  // Meta, consultas) el bot pudo escribir un abono o un comprobante nuevo, y el write completo lo
+  // borraba sin rastro (auditoría 2026-09-30). Se relee el shipping justo antes de escribir y se
+  // le aplica SOLO lo que esta llamada cambió (claves nuevas/distintas y las que quitó).
+  if (patch.shipping) {
+    const base = ((order as any).shipping ?? {}) as Record<string, unknown>;
+    const mio = patch.shipping as Record<string, unknown>;
+    const { data: _fr } = await db.from("orders").select("shipping").eq("id", order.id).maybeSingle();
+    const fresco = { ...(((_fr as any)?.shipping ?? base) as Record<string, unknown>) };
+    for (const [k, v] of Object.entries(mio)) if (JSON.stringify(v) !== JSON.stringify(base[k])) fresco[k] = v;
+    for (const k of Object.keys(base)) if (!(k in mio)) delete fresco[k];
+    patch.shipping = fresco;
+  }
   let uq = db.from("orders").update(patch).eq("id", order.id);
   if (newEstado) uq = uq.eq("estado", (order as any).estado);
   else if (aprobandoExtraCas) uq = uq.eq("shipping->>extra_pendiente", "true");
@@ -530,6 +543,16 @@ Deno.serve(async (req) => {
       const { data: fresh } = await db.from("orders").select("shipping").eq("id", order.id).maybeSingle();
       const shipNow = (((fresh as any)?.shipping) || shipA) as any;
       let totalAdel = Number(shipNow.adelanto_abonado ?? shipNow.adelanto_monto_leido ?? shipNow.adelanto) || 0;
+      // Abono AMBIGUO (2º comprobante del mismo monto sin nº de operación) que el operador
+      // aprueba: decidió que es un 2º pago real, así que se suma. Antes se acreditaba solo
+      // `adelanto_abonado` (el 1º) y el saldo en la agencia quedaba con ese monto de más.
+      // Solo si desde entonces no entró otro abono (la base sigue igual).
+      let _ambiguoSumado = false;
+      const _ambM = Number(shipNow.adelanto_ambiguo_monto), _ambB = Number(shipNow.adelanto_ambiguo_base);
+      if (Number.isFinite(_ambM) && _ambM > 0 && Number.isFinite(_ambB) && Number(shipNow.adelanto_abonado) === _ambB) {
+        totalAdel = Math.round((_ambB + _ambM) * 100) / 100;
+        _ambiguoSumado = true;
+      }
       // 🚫 Freno de SOBREPAGO (espeja el camino AUTO en maybeAdelanto): si el monto que
       // leyó el OCR supera lo que el cliente PODRÍA deber (adelanto + saldo = total) por
       // más del margen, es casi seguro una mala lectura ("S/20" leído como "S/1200"). El
@@ -574,6 +597,13 @@ Deno.serve(async (req) => {
         // quedaba con el saldo VIEJO después de acreditarle el adelanto, o sea cobrándole de
         // más al cliente, sin una línea en ningún log.
         const { error: _ePatch } = await db.rpc("order_patch_shipping", { p_order_id: order.id, p_patch: { saldo: String(saldoNuevo), adelanto_abonado: totalAdel, pago_acreditado_adelanto: totalAdel, ...(pagadoTotal ? { pagado_total: true } : {}) } });
+        if (!_ePatch && _ambiguoSumado) {
+          await db.from("contact_events").insert({
+            channel_id: (order as any).channel_id, contact_id: (order as any).contact_id, tipo: "nota",
+            titulo: "💰 2º comprobante aprobado como pago aparte",
+            detalle: `Se sumó ${_ambM} a lo ya abonado (${_ambB}): el adelanto acreditado queda en ${totalAdel}.`,
+          }).then(() => {}, () => {});
+        }
         if (_ePatch) {
           console.error("[order-update] patch crédito adelanto:", _ePatch.message);
           await db.from("contact_events").insert({

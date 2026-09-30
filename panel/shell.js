@@ -841,16 +841,26 @@ export function enTrozos(arr, n = 300) {
 // respeta un mínimo entre cargas, y con la pestaña oculta no hace nada (deja la recarga
 // pendiente y la ejecuta al volver, así no te encuentras datos viejos).
 // `.marcar()` avisa de una carga hecha por otro camino (la inicial, o cambiar de bot).
+// `.parar()` va en el onLeave de la sección: la página se re-ejecuta en cada visita (SPA), y
+// sin esto quedaba un listener de visibilidad más por visita y el setTimeout (hasta 8 s)
+// corría el load() de la sección vieja ENCIMA de la página nueva.
 export function recargaConFreno(cargar, { minEntre = 8000, esperaMin = 1500 } = {}) {
-  let timer = null, ultima = 0, pendiente = false;
+  let timer = null, ultima = 0, pendiente = false, parado = false;
   const disparar = () => {
+    if (parado) return;
     if (document.hidden) { pendiente = true; return; }
     clearTimeout(timer);
     const espera = Math.max(esperaMin, minEntre - (Date.now() - ultima));
     timer = setTimeout(() => { ultima = Date.now(); pendiente = false; cargar(); }, espera);
   };
-  document.addEventListener("visibilitychange", () => { if (!document.hidden && pendiente) disparar(); });
+  const alVolver = () => { if (!document.hidden && pendiente) disparar(); };
+  document.addEventListener("visibilitychange", alVolver);
   disparar.marcar = () => { ultima = Date.now(); };
+  disparar.parar = () => {
+    parado = true; pendiente = false;
+    clearTimeout(timer); timer = null;
+    document.removeEventListener("visibilitychange", alVolver);
+  };
   return disparar;
 }
 // Se resetea al cambiar de página (teardown): la nueva vuelve a opt-in si toca.

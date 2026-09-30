@@ -18,13 +18,16 @@
 //   El período de gracia (horas) protege lo recién subido: un archivo puede estar
 //   arriba y todavía no referenciado mientras el operador escribe el pie de foto.
 //
-//   Uso:  POST { horas?: number, dry?: boolean, limite?: number }
+//   Uso:  POST { horas?: number, dry?: boolean, limite?: number, desde?: number }
+//     desde     → posición en el inventario desde la que mirar (por defecto, donde quedó la
+//                 corrida anterior: ver el cursor en el paso 1)
 //     dry:true  → solo informa qué movería. Sin `dry` (así lo llama el cron) MUEVE la basura a
 //                 `papelera/AAAAMMDD/` y borra de verdad lo que lleva más de 7 días ahí.
 //     horas     → gracia mínima antes de considerar un archivo abandonado (24 por defecto)
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient } from "../_shared/db.ts";
+import { timingSafeEqual } from "../_shared/crypto.ts";
 
 const db = serviceClient();
 const BUCKET = "media";
@@ -84,7 +87,7 @@ Deno.serve(async (req) => {
   // (x-scheduler-secret, igual que scheduler y ads-sync) y una persona con su JWT del panel.
   const auth = req.headers.get("Authorization") ?? "";
   const secret = Deno.env.get("SCHEDULER_SECRET") ?? "";
-  const esCron = !!secret && req.headers.get("x-scheduler-secret") === secret;
+  const esCron = !!secret && timingSafeEqual(req.headers.get("x-scheduler-secret") ?? "", secret);   // tiempo constante
   if (!esCron) {
     const { data: u } = await userClient(auth).auth.getUser();
     const uid = u?.user?.id;
@@ -97,7 +100,7 @@ Deno.serve(async (req) => {
     if ((member as any).platform_admin !== true) return json({ error: "forbidden", detalle: "Solo el administrador de la plataforma puede correr el recolector" }, 403);
   }
 
-  let body: { horas?: number; dry?: boolean; limite?: number } = {};
+  let body: { horas?: number; dry?: boolean; limite?: number; desde?: number } = {};
   try { body = await req.json(); } catch { /* sin body → valores por defecto */ }
   const dry = body.dry === true;   // dry: solo informa. Sin dry manda la basura a la papelera (ver abajo)
   // Piso de una hora para el borrado de verdad: un archivo recien subido puede estar
@@ -113,17 +116,39 @@ Deno.serve(async (req) => {
   //    Via RPC porque el esquema `storage` no esta expuesto por PostgREST (migracion
   //    0083), y por paginas porque PostgREST corta en 1000 filas: sin el offset se
   //    veria siempre el mismo primer millar y lo nuevo no se revisaria jamas.
+  //    📍 CON CURSOR: antes cada corrida miraba SIEMPRE los `limite` más viejos. Lo que está en
+  //    uso (las 552 fichas de agencias, las fotos de producto) nunca sale de esa lista, así que
+  //    al llenarse la ventana lo nuevo ya no se revisaba jamás y el bucket volvía a crecer. Ahora
+  //    se anota por dónde quedó (nodo_estado_sistema, 0118) y la corrida siguiente sigue desde
+  //    ahí; al llegar al final vuelve a empezar. El cursor SOLO decide qué se mira, no qué se
+  //    borra: la comprobación de uso de abajo es la misma de siempre. Sin la tabla, desde 0.
+  //    `desde` en el body lo fuerza (para una corrida en seco a mano).
   type Obj = { nombre: string; creado: string; bytes: number };
-  const todos: Obj[] = [];
-  while (todos.length < limite) {
-    const { data, error } = await db.rpc("nodo_media_objetos", {
-      p_bucket: BUCKET, p_antes: corte, p_limite: PAGINA, p_desde: todos.length,
-    });
-    if (error) return json({ error: "no_pude_listar", detalle: error.message }, 500);
-    const pag = (data ?? []) as Obj[];
-    todos.push(...pag);
-    if (pag.length < PAGINA) break;
+  let desde0 = 0;
+  if (Number.isFinite(Number(body.desde)) && body.desde != null) desde0 = Math.max(0, Math.floor(Number(body.desde)));
+  else {
+    const { data: est } = await db.from("nodo_estado_sistema").select("valor").eq("clave", "media_gc").maybeSingle();
+    desde0 = Math.max(0, Math.floor(Number((est as any)?.valor?.desde) || 0));
   }
+  const listar = async (inicio: number): Promise<{ objs: Obj[]; alFinal: boolean } | { error: string }> => {
+    const objs: Obj[] = [];
+    while (objs.length < limite) {
+      const { data, error } = await db.rpc("nodo_media_objetos", {
+        p_bucket: BUCKET, p_antes: corte, p_limite: PAGINA, p_desde: inicio + objs.length,
+      });
+      if (error) return { error: error.message };
+      const pag = (data ?? []) as Obj[];
+      objs.push(...pag);
+      if (pag.length < PAGINA) return { objs, alFinal: true };
+    }
+    return { objs, alFinal: false };
+  };
+  let lista = await listar(desde0);
+  // El bucket se achicó y el cursor quedó pasado del final: se vuelve a empezar en esta misma corrida.
+  if (!("error" in lista) && !lista.objs.length && desde0 > 0) { desde0 = 0; lista = await listar(0); }
+  if ("error" in lista) return json({ error: "no_pude_listar", detalle: lista.error }, 500);
+  const todos = lista.objs;
+  const alFinal = lista.alFinal;
   // 🗑️ PAPELERA: lo que se da por basura NO se borra de una: se mueve a `papelera/AAAAMMDD/…` y
   // se borra de verdad a los DIAS_PAPELERA días. Si la lista REFERENCIAS vuelve a olvidarse de
   // una columna (ya pasó: se fueron las 552 fichas de agencias), hay una semana para devolverlo
@@ -140,12 +165,38 @@ Deno.serve(async (req) => {
       if (!error) purgados += lote.length;
     }
   }
-  if (!candidatos.length) return json({ ok: true, revisados: 0, a_papelera: 0, purgados, liberado_kb: 0 });
+  // Por dónde sigue la próxima corrida. Lo purgado estaba DENTRO de esta ventana, así que todo lo
+  // de después se corrió esa cantidad de lugares hacia atrás: se descuenta para no saltárselo.
+  // Se guarda solo si la corrida terminó bien: si no pudo verificar, repite la misma ventana.
+  const proximoDesde = alFinal ? 0 : Math.max(0, desde0 + todos.length - purgados);
+  const guardarCursor = async () => {
+    if (dry) return;
+    await db.from("nodo_estado_sistema").upsert({
+      clave: "media_gc", valor: { desde: proximoDesde, vuelta_completa: alFinal }, updated_at: new Date().toISOString(),
+    }, { onConflict: "clave" }).then(() => {}, () => {});
+  };
+  if (!candidatos.length) {
+    await guardarCursor();
+    return json({ ok: true, revisados: 0, a_papelera: 0, purgados, liberado_kb: 0, desde: desde0, proximo_desde: proximoDesde });
+  }
 
   // 2) ¿Alguien lo referencia? Una consulta por tabla y por objeto es carísimo, así
   //    que se recorre UNA vez el texto de las columnas que pueden traer URLs, por
   //    paginas, y se busca en memoria contra la lista de candidatos.
   const usados = new Set<string>();
+  // Candidatos agrupados por CARPETA: la mayoría de las filas (mensajes de texto) no nombra
+  // ningún archivo, y antes cada una se comparaba contra los 3000 candidatos uno por uno — con
+  // cientos de miles de mensajes eso era la función entera. Si el texto no contiene la carpeta,
+  // no puede contener ningún archivo de adentro (la carpeta es un PREFIJO del nombre), así que
+  // se descarta el grupo entero sin mirar. Da exactamente el mismo resultado que antes, solo
+  // que más rápido: NO afloja la comprobación. Los nombres sin carpeta se miran siempre.
+  const porCarpeta = new Map<string, string[]>();
+  for (const o of candidatos) {
+    const i = o.nombre.lastIndexOf("/");
+    const k = i > 0 ? o.nombre.slice(0, i + 1) : "";
+    const g = porCarpeta.get(k);
+    if (g) g.push(o.nombre); else porCarpeta.set(k, [o.nombre]);
+  }
   for (const [tabla, col, clave] of REFERENCIAS) {
     // La columna por la que se ordena para paginar. Casi siempre `id`, pero no todas las
     // tablas la tienen: `sede_imagenes` se identifica por `slug` y con "id" la consulta
@@ -174,7 +225,10 @@ Deno.serve(async (req) => {
       for (const fila of (data ?? [])) {
         const txt = JSON.stringify((fila as Record<string, unknown>)[col] ?? "");
         if (txt.length < 8) continue;
-        for (const o of candidatos) if (txt.includes(o.nombre)) usados.add(o.nombre);
+        for (const [carpeta, nombres] of porCarpeta) {
+          if (carpeta && !txt.includes(carpeta)) continue;
+          for (const n of nombres) if (!usados.has(n) && txt.includes(n)) usados.add(n);
+        }
       }
       if ((data?.length ?? 0) < PAGINA) break;
       // Tope de seguridad. Cortar con `break` dejaba sin revisar lo que viene después y esos
@@ -189,10 +243,12 @@ Deno.serve(async (req) => {
   const bytes = basura.reduce((a, o) => a + (Number(o.bytes) || 0), 0);
 
   if (dry || !basura.length) {
+    await guardarCursor();   // en seco no guarda nada (ver guardarCursor)
     return json({
       ok: true, dry: true, revisados: candidatos.length, en_uso: usados.size,
       borrarian: basura.length, liberaria_kb: Math.round(bytes / 1024),
       ejemplos: basura.slice(0, 5).map((o) => o.nombre),
+      desde: desde0, proximo_desde: proximoDesde,
     });
   }
 
@@ -204,8 +260,10 @@ Deno.serve(async (req) => {
     const { error } = await db.storage.from(BUCKET).move(o.nombre, `${PAPELERA}${hoy}/${o.nombre}`);
     if (!error) aPapelera++;
   }
+  await guardarCursor();
   return json({
     ok: true, revisados: candidatos.length, en_uso: usados.size,
     a_papelera: aPapelera, purgados, liberado_kb: Math.round(bytes / 1024),
+    desde: desde0, proximo_desde: proximoDesde,
   });
 });

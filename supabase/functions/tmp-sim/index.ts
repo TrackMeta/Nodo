@@ -1,5 +1,8 @@
-// TEMPORAL — driver de simulación multi-contacto (igual que webchat pero con
-// wa_id/nombre parametrizables). Auth: miembro + userOwnsChannel. BORRAR después.
+// Driver de simulación multi-contacto (igual que webchat pero con wa_id/nombre parametrizables).
+// Se QUEDA: es con lo que se corren las tandas de simulaciones que prueban el motor antes de cada
+// cambio (decisión 2026-09-30; la auditoría sugería borrarla). Candados: JWT verificado a mano
+// (getUser), miembro activo, ADMIN del canal, y solo contactos que él mismo creó (source «sim»),
+// que nunca salen por WhatsApp.
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
 import { runEngine, aplicarStock } from "../_shared/engine.ts";

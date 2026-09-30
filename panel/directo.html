@@ -336,6 +336,7 @@ async function boot(){
   const shell=await mountShell({ active:"directo" });
   st.channelId=shell.channelId;
   shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } });
+  shell.onLeave?.(()=>recargarPronto.parar()); // sin recarga pendiente corriendo sobre la página nueva
   shell.onChannel(id=>{ st.channelId=id; loadTeam(); subscribe(); load(); });
   $("q").addEventListener("input", e=>{ f.q=norm(e.target.value.trim()); st.visible=80; render(); });
   $("fSort").addEventListener("change", e=>{ f.sort=e.target.value; render(); });

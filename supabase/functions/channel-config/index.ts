@@ -1127,8 +1127,26 @@ Deno.serve(async (req) => {
       // Cuenta dueña del canal: el waba_id SÍ puede repetirse entre canales de la MISMA
       // cuenta (un negocio con 2 números bajo una WABA — el webhook lo soporta), pero NO
       // entre cuentas distintas (eso sería squatting). El phone_number_id es único global.
-      const { data: myCh } = await db.from("channels").select("account_id").eq("id", channel_id).maybeSingle();
+      const { data: myCh } = await db.from("channels").select("account_id, phone_number_id, waba_id").eq("id", channel_id).maybeSingle();
       const myAcc = (myCh as any)?.account_id ?? null;
+      // 🔒 Un id NUEVO tiene que ser de verdad accesible con el token del canal: el formato y «que no esté
+      // usado» no bastaban, y un admin podía RESERVAR el número de un negocio que todavía no está en Nodo
+      // (cuando ese negocio conectaba recibía «id_en_uso»). Se le pregunta a Meta con el token que viene en
+      // este mismo guardado o, si no, con el que ya estaba guardado (auditoría 2026-09-30).
+      const _cambiaId = ["phone_number_id", "waba_id"].filter((k) => upd[k] != null && String(upd[k]) !== String((myCh as any)?.[k] ?? ""));
+      if (_cambiaId.length) {
+        const _tok = String(body.access_token ?? "").trim() || (await getChannelSecrets(db, channel_id))?.access_token || "";
+        if (!_tok) return json({ error: "falta_token", detalle: "Pega también el token de acceso de Meta: con él comprobamos que ese número es tuyo." }, 400);
+        for (const k of _cambiaId) {
+          const v = String(upd[k]);
+          if (!/^\d{5,}$/.test(v)) continue;   // el formato lo rechaza el bucle de abajo con su mensaje
+          const r = await metaGet(_tok, `${v}?fields=id`);
+          if (r.status === 0 || r.status >= 500) return json({ error: "meta_no_responde", detalle: "No pudimos comprobar el número con Meta. Prueba de nuevo en un momento." }, 400);
+          if (r.status !== 200 || String(r.body?.id ?? "") !== v) {
+            return json({ error: "id_ajeno", detalle: `El token de acceso no tiene permiso sobre ese ${k === "waba_id" ? "WhatsApp Business Account" : "número"} (${v}). Revisa que sea el de tu negocio.` }, 400);
+          }
+        }
+      }
       for (const idk of ["phone_number_id", "waba_id"]) {
         const v = upd[idk];
         if (v == null) continue; // no se está cambiando (o se está limpiando)

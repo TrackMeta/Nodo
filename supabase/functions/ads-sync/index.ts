@@ -16,6 +16,7 @@
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getAdsToken } from "../_shared/db.ts";
 import { fetchConTimeout } from "../_shared/http.ts";
+import { timingSafeEqual } from "../_shared/crypto.ts";
 
 const db = serviceClient();
 // v25.0 como el resto de Nodo (_shared/meta.ts, channel-config): la v21 (oct-2024) está al borde
@@ -27,7 +28,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   // Solo el cron (o una invocación interna) puede correr esto.
   const secret = Deno.env.get("SCHEDULER_SECRET") ?? "";
-  if (!secret || req.headers.get("x-scheduler-secret") !== secret) {
+  // En tiempo constante (un `!==` corta en el primer carácter distinto y el tiempo lo delata).
+  if (!secret || !timingSafeEqual(req.headers.get("x-scheduler-secret") ?? "", secret)) {
     return json({ error: "no_auth" }, 401);
   }
 

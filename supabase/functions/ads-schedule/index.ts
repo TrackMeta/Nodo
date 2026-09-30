@@ -90,6 +90,17 @@ Deno.serve(async (req) => {
       .order("ads_sync_at", { ascending: false }).limit(1).maybeSingle();
     const ultima = (reciente as any)?.ads_sync_at ? Date.parse((reciente as any).ads_sync_at) : 0;
     if (ultima && Date.now() - ultima < 60_000) return json({ ok: true, reciente: true });
+    // …pero `ads_sync_at` solo se sella cuando una cuenta SINCRONIZA BIEN: si todas fallan (token
+    // vencido, Meta caído) el freno de arriba nunca se activaba y cada clic volvía a lanzar la
+    // corrida global. Se anota también el INTENTO (nodo_estado_sistema, 0118) y se frena igual.
+    // Sin la tabla todavía, queda solo el freno de arriba, como antes.
+    {
+      const { data: intento } = await db.from("nodo_estado_sistema").select("updated_at").eq("clave", "ads_sync_manual").maybeSingle();
+      const ultimoIntento = (intento as any)?.updated_at ? Date.parse((intento as any).updated_at) : 0;
+      if (ultimoIntento && Date.now() - ultimoIntento < 60_000) return json({ ok: true, reciente: true });
+      await db.from("nodo_estado_sistema").upsert({ clave: "ads_sync_manual", valor: { por: uid }, updated_at: new Date().toISOString() }, { onConflict: "clave" })
+        .then(() => {}, () => {});
+    }
     try {
       const r = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/ads-sync`, {
         method: "POST",

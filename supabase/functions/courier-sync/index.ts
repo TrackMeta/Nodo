@@ -19,6 +19,7 @@
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient } from "../_shared/db.ts";
 import { fetchConTimeout } from "../_shared/http.ts";
+import { timingSafeEqual } from "../_shared/crypto.ts";
 
 const db = serviceClient();
 
@@ -70,7 +71,8 @@ Deno.serve(async (req) => {
   // variable de entorno.
   const secret = Deno.env.get("RASTREO_SECRET") ?? "";
   if (!secret) return json({ error: "sin_secreto" }, 503);
-  if (req.headers.get("x-rastreo-secret") !== secret) return json({ error: "no_auth" }, 401);
+  // En tiempo constante: con `!==` el tiempo de respuesta delataba cuántos caracteres acertaba.
+  if (!timingSafeEqual(req.headers.get("x-rastreo-secret") ?? "", secret)) return json({ error: "no_auth" }, 401);
 
   // Herramienta de un solo negocio: la cuenta se fija server-side en vez de
   // que la mande el cliente. Si algún día esto es una función para todos los
@@ -205,10 +207,23 @@ Deno.serve(async (req) => {
     // nota por el silencio — que es justo lo que un aviso hecho por la extensión
     // nunca podría contar, porque el que tendría que avisar es el que murió.
     if (action === "estado") {
-      const { data: ords } = await db.from("orders")
-        .select("shipping").in("channel_id", canales).in("estado", RASTREABLES).limit(500);
+      // Paginado por id (cursor) y con orden fijo: con un `.limit(500)` pelado, pasadas las 500
+      // guías en camino el conteo se quedaba corto y cuáles entraban lo decidía Postgres — el
+      // «último intento» podía salir de una muestra cualquiera. Tope de 20 páginas por si acaso.
+      const ords: any[] = [];
+      let ultimoId: string | null = null;
+      for (let pag = 0; pag < 20; pag++) {
+        let q = db.from("orders").select("id, shipping").in("channel_id", canales).in("estado", RASTREABLES)
+          .order("id", { ascending: true }).limit(1000);
+        if (ultimoId) q = q.gt("id", ultimoId);
+        const { data: lote, error: eLote } = await q;
+        if (eLote) return json({ error: "interno", detalle: eLote.message }, 500);
+        ords.push(...(lote ?? []));
+        if ((lote?.length ?? 0) < 1000) break;
+        ultimoId = String((lote as any[])[lote!.length - 1].id);
+      }
       let ultimo: string | null = null; let conError = 0; let vigiladas = 0;
-      for (const o of (ords ?? [])) {
+      for (const o of ords) {
         const s = (o as any).shipping ?? {};
         if (String(s.agencia ?? "").toLowerCase() !== "shalom") continue;
         if (!String(s.guia ?? "").trim() || !String(s.codigo_envio ?? "").trim()) continue;

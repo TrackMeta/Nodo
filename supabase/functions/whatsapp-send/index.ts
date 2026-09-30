@@ -7,6 +7,7 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, getChannelSecrets, userOwnsChannel } from "../_shared/db.ts";
 import { sendText, sendMedia, MetaApiError } from "../_shared/meta.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
+import { urlDirecta } from "../_shared/archivo.ts";
 
 const db = serviceClient();
 
@@ -130,7 +131,7 @@ Deno.serve(async (req) => {
 
   try {
     const wamid = mediaKind
-      ? await sendMedia(channel.phone_number_id, secrets.access_token, contact.wa_id, mediaKind as any, media!.url!, caption, media?.filename)
+      ? await sendMedia(channel.phone_number_id, secrets.access_token, contact.wa_id, mediaKind as any, await urlDirecta(media!.url!), caption, media?.filename)
       : await sendText(channel.phone_number_id, secrets.access_token, contact.wa_id, caption);
     // 💵 Sello de cobro (fep | servicio), igual que el motor y campañas: los mensajes que
     // escribe el OPERADOR también los cobra Meta desde el 01/10/2026 y quedaban con ventana

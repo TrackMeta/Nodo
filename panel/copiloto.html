@@ -82,6 +82,7 @@
 
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, confirmDialog, askChoice, askText, enTrozos, pageAll, updateChannel } from "./shell.js";
+import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], imgs:{}, dudas:{}, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -94,7 +95,7 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"copiloto" });
   st.channelId=shell.channelId;
-  shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } }); // no dejar la suscripción realtime viva al navegar (SPA)
+  shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } clearTimeout(st.rtT); st.rtT=null; }); // no dejar la suscripción realtime (ni su recarga pendiente) viva al navegar (SPA)
   shell.onChannel(id=>{ st.channelId=id; load(); wireRealtime(); });
   $("reloadBtn").onclick=async()=>{ const b=$("reloadBtn"); b.classList.add("spin"); try{ await load(); } finally{ setTimeout(()=>b.classList.remove("spin"),450); } };
   $("lightbox").onclick=()=>$("lightbox").classList.remove("show");
@@ -111,7 +112,7 @@ async function boot(){
 // reintenta hasta que cierre.
 // También si el operador está TIPEANDO la clave de recojo en una tarjeta: el repintado por
 // realtime (otro comprobante que entra) borraba lo tecleado sin aviso.
-function ocupado(){ return !!document.querySelector(".nodo-modal-back") || $("lightbox").classList.contains("show") || !!(document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("clave-in")); }
+function ocupado(){ return !!document.querySelector(".nodo-modal-back") || !!$("lightbox")?.classList.contains("show") || !!(document.activeElement && document.activeElement.classList && document.activeElement.classList.contains("clave-in")); }
 // Una acción de plata a la vez: doble clic (o dos operadores en la misma tarjeta con 1-2 s de
 // ventana antes de que realtime la quite) mandaba dos order-update → doble entrega/clave.
 let _enVuelo=false;
@@ -119,8 +120,10 @@ async function enVuelo(fn){ if(_enVuelo){ toast("Espera: se está procesando la 
 function wireRealtime(){
   if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; }
   if(!st.channelId) return;
-  let t=null;
-  const refrescar=()=>{ clearTimeout(t); t=setTimeout(()=>{ if(ocupado()){ refrescar(); return; } load(); }, 700); };
+  // El timer vive en `st` para que el onLeave lo corte: si no, al navegar (SPA) el
+  // reintento seguía corriendo sin la pantalla y ocupado() leía un #lightbox que ya no está.
+  clearTimeout(st.rtT);
+  const refrescar=()=>{ clearTimeout(st.rtT); st.rtT=setTimeout(()=>{ if(ocupado()){ refrescar(); return; } load(); }, 700); };
   st.rt=supa.channel("nodo-turno-"+st.channelId)
     .on("postgres_changes",{ event:"*", schema:"public", table:"orders", filter:"channel_id=eq."+st.channelId }, refrescar)
     .subscribe();
@@ -479,9 +482,12 @@ function botones(o,et){
   return { html:"", wire:()=>{} };
 }
 
-// Lo que el motorizado cobra HOY en la puerta: el saldo del pedido (nace = total a cobrar y
-// lo mueven los extras) y, si no hay, el total. Mismo criterio que resolverPrepagoLima.
+// Lo que el motorizado cobra HOY en la puerta. La regla vive en orders.js (porCobrarPuerta),
+// la MISMA del rótulo, el Excel de Eva y la ficha del contacto: mismo criterio que resolverPrepagoLima.
+// (Namespace + respaldo: con un orders.js viejo en la caché del navegador, un import por nombre
+// tumbaba la página entera hasta que se refrescara.)
 function porCobrarLima(o){
+  if(typeof O.porCobrarPuerta==="function") return O.porCobrarPuerta(o);
   const s=o.shipping||{};
   if(s.saldo!=null && String(s.saldo).trim()!=="" && Number.isFinite(Number(s.saldo))) return Number(s.saldo);
   let v=Number(o.amount)||0; (o.order_bumps||[]).forEach(b=>{ v+=Number(b?.precio)||0; });

@@ -52,7 +52,16 @@ Deno.serve(async (req) => {
   if (!CLIENT_ID) return json({ error: "sin_configurar", detalle: "Falta configurar GOOGLE_OAUTH_CLIENT_ID en el servidor" }, 400);
 
   const nonce = crypto.randomUUID() + crypto.randomUUID().replace(/-/g, "");
-  await db.from("gsheets_oauth_state").insert({ nonce, channel_id: body.channel_id });
+  // El nonce lleva QUIÉN lo pidió, no solo el canal: el callback comprueba que esa persona siga
+  // siendo admin del canal y deja anotado quién conectó (0118). Sin la columna todavía, se
+  // guarda como antes. Y el error se mira: si el insert fallaba, Google devolvía a un callback
+  // que no encontraba el nonce y el panel decía «expirado» sin motivo.
+  let { error: eIns } = await db.from("gsheets_oauth_state").insert({ nonce, channel_id: body.channel_id, user_id: uid });
+  if (eIns && /user_id/.test(eIns.message)) ({ error: eIns } = await db.from("gsheets_oauth_state").insert({ nonce, channel_id: body.channel_id }));
+  if (eIns) {
+    console.error("[gsheets-connect] guardar state:", eIns.message);
+    return json({ error: "no_iniciado", detalle: "No se pudo iniciar la conexión con Google. Reintenta." }, 500);
+  }
   await db.from("gsheets_oauth_state").delete().lt("created_at", new Date(Date.now() - 15 * 60 * 1000).toISOString());
 
   const p = new URLSearchParams({
