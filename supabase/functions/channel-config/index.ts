@@ -666,13 +666,58 @@ Deno.serve(async (req) => {
           for (const t of (s.target_ids ?? [])) ids.add(String(t));
         }
       }
-      // Sin granular_scopes (tokens viejos o con acceso a todo) queda el WABA ya guardado.
+      // Qué permisos trae de verdad: sin ellos el aviso manda a regenerar un token que va a
+      // salir igual (Rodrigo regeneró y le volvió a salir lo mismo, 2026-09-30).
+      const nombres = [...new Set([
+        ...((dbg.body?.data?.scopes ?? []) as any[]).map(String),
+        ...scopes.map((s) => String(s?.scope ?? "")),
+      ])].filter(Boolean);
+      const tieneWa = nombres.some((n) => n === "whatsapp_business_management" || n === "whatsapp_business_messaging");
+      if (!tieneWa) {
+        return json({
+          ok: true, cuentas: [],
+          motivo: `Al token le faltan los permisos de WhatsApp (trae: ${nombres.join(", ") || "ninguno"}). ` +
+            "Genera otro marcando whatsapp_business_management y whatsapp_business_messaging. Si esos dos no " +
+            "aparecen en la lista, a tu app le falta el producto WhatsApp: developers.facebook.com → tu app → Agregar producto → WhatsApp.",
+        });
+      }
+      // Tiene el permiso pero sin target_ids («acceso a todo», típico de usuario de sistema
+      // Admin): las cuentas se sacan del portfolio — las propias y las compartidas.
+      if (!ids.size) {
+        const negocios = new Set<string>();
+        for (const s of scopes) {
+          if (s?.scope === "business_management") for (const t of (s.target_ids ?? [])) negocios.add(String(t));
+        }
+        if (!negocios.size) {
+          const b = await metaGet(token, "me/businesses?fields=id&limit=50");
+          for (const x of ((b.body?.data ?? []) as any[])) negocios.add(String(x.id));
+        }
+        // `me/businesses` viene vacío con usuario de sistema (ver asignarseCuentas): el
+        // portfolio dueño de la app sí lo dice Meta, y el app_id lo trae debug_token.
+        const appId = dbg.body?.data?.app_id;
+        if (!negocios.size && appId) {
+          const a = await metaGet(token, `${appId}?fields=owner_business`);
+          const dueno = (a.body as any)?.owner_business?.id;
+          if (dueno) negocios.add(String(dueno));
+        }
+        for (const biz of negocios) {
+          for (const edge of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
+            const r = await metaGet(token, `${biz}/${edge}?fields=id&limit=50`);
+            for (const w of ((r.body?.data ?? []) as any[])) if (w?.id) ids.add(String(w.id));
+          }
+        }
+      }
+      // Último recurso: el WABA ya guardado en el canal.
       if (!ids.size) {
         const { data: c } = await db.from("channels").select("waba_id").eq("id", channel_id).maybeSingle();
         if ((c as any)?.waba_id) ids.add(String((c as any).waba_id));
       }
       if (!ids.size) {
-        return json({ ok: true, cuentas: [], motivo: "El token no declara ninguna cuenta de WhatsApp Business. Suele pasar cuando se generó ANTES de asignarle los activos al usuario del sistema." });
+        return json({
+          ok: true, cuentas: [],
+          motivo: "El token tiene los permisos de WhatsApp pero Meta no dice a qué cuenta. Pega a mano el Phone Number ID " +
+            "y el WABA ID (developers.facebook.com → tu app → WhatsApp → Configuración de la API) y dale a Guardar y conectar.",
+        });
       }
 
       const cuentas: any[] = [];
