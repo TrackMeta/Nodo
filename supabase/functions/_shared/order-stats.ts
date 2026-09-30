@@ -195,6 +195,12 @@ export function resumirPedidos(orders: Order[]): Digest {
       // restaba en ningún lado y la ganancia salía de más. Mismo criterio que el Dashboard.
       const fP = Number((o?.shipping as any)?.flete);
       if (Number.isFinite(fP) && fP > 0) { envio += fP; ganancia -= fP; }
+      // …y lo que SÍ se cobró de ese pedido se queda (el adelanto de un no_recogido es el
+      // seguro del flete, decisión de Rodrigo 30-sep): se restaba el flete pero el adelanto no
+      // sumaba → S/20 de adelanto y S/15 de flete bajaban la ganancia S/15 en vez de subirla S/5.
+      // Rechazado/cancelado cobran 0, así que para ellos no cambia nada.
+      const cP = cobrado(o);
+      if (cP > 0) ganancia += cP;
     }
   }
   return {

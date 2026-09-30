@@ -27337,6 +27337,11 @@ async function runEventoFb(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // con `shipping->>ad_id not null`, así que sin él esta venta NI SIQUIERA APARECE en el
     // informe por anuncio. Congelar solo el ctwa_clid (mi primer arreglo) no alcanzaba.
     if ((c as any)?.ad_id && clicVigente((c as any)?.fep_hasta)) shipNodo.ad_id = (c as any).ad_id;
+    // 🔴 Este Purchase YA salió a Meta con SU event_id (`Purchase:<comprobante>`). Si después
+    // alguien movía este pedido por un estado de venta (panel → order-update), maybePurchase
+    // mandaba OTRO con `Purchase:<id del pedido>` — event_id distinto, Meta no lo deduplica y
+    // contaba dos compras (ROAS inflado). Se deja marcado para que maybePurchase lo salte.
+    if (!res.omitido) shipNodo.capi_purchase_nodo = true;
     const insOrd = await db.from("orders").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       product_id: (c as any)?.product_id ?? null, version_id: versionIdDe(ctx),

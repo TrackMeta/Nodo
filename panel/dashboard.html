@@ -986,6 +986,12 @@ async function load(){
   // igual. No se restaba en ningún lado y la ganancia salía de más (el digest ya lo resta igual).
   const fletePerdidos=orders.filter(O.esPerdido).reduce((a,o)=>a+(O.flete(o)||0),0);
   if(fletePerdidos>0){ bruta-=fletePerdidos; cogsBruta+=fletePerdidos; }
+  // …y lo que SÍ se cobró de un perdido se queda: el adelanto de un no_recogido es el seguro del
+  // flete (decisión de Rodrigo 30-sep). Restar el flete sin sumar el adelanto bajaba la ganancia
+  // S/15 en vez de subirla S/5 (adelanto 20, flete 15). Rechazado y cancelado cobran 0. Mismo
+  // criterio que el resumen de Telegram (order-stats.ts).
+  const cobradoPerdidos=orders.filter(O.esPerdido).reduce((a,o)=>a+O.cobrado(o),0);
+  if(cobradoPerdidos>0) bruta+=cobradoPerdidos;
   // Ninguna venta pudo calcular su ganancia → el número no existe, no es cero.
   const brutaDesconocida = conMargen===0 && sinCostoF>0;
   // Texto compartido por el KPI y la banda: dice qué falta exactamente.
@@ -1045,6 +1051,7 @@ async function load(){
   // distintas en la misma pantalla (margen 1000, flete perdidos 30, ads 300, IA 20 → 650 vs 700).
   if(tipo==="todo" && USD_RATE>0) (iaR&&!iaR.error?(iaR.data||[]):[]).forEach(x=>{ dailyExpense[x.dia]=(dailyExpense[x.dia]||0)+Number(x.costo_usd||0)*USD_RATE; });
   orders.filter(O.esPerdido).forEach(o=>{ const fl=O.flete(o)||0; if(fl>0){ const k=ymdLima(o.created_at); dailyExpense[k]=(dailyExpense[k]||0)+fl; } });
+  orders.filter(O.esPerdido).forEach(o=>{ const c=O.cobrado(o); if(c>0){ const k=ymdLima(o.created_at); dailyMargin[k]=(dailyMargin[k]||0)+c; } });   // el adelanto que se quedó
 
   const K=[
     kpi("money","#22c079","Cobrado", money(cobrado), `plata que ya entró, de ${money(vendido)} vendidos`),
@@ -1476,7 +1483,7 @@ async function loadBitacora(monthStart){
   if(tipo==="todo" && USD_RATE>0) (iaR&&!iaR.error?(iaR.data||[]):[]).forEach(x=>{ D(x.dia).exp+=Number(x.costo_usd||0)*USD_RATE; });
   // El flete de los perdidos (fue y volvió, ese envío se pagó igual): la banda lo resta, y
   // sin esto el mes de la Bitácora no cuadraba con ella.
-  allOrd.filter(delTipo).filter(o=>O.esVenta(o)&&O.esPerdido(o)).forEach(o=>{ const fl=O.flete(o)||0; if(fl>0) D(ymdLima(o.created_at)).exp+=fl; });
+  allOrd.filter(delTipo).filter(o=>O.esVenta(o)&&O.esPerdido(o)).forEach(o=>{ const fl=O.flete(o)||0; if(fl>0) D(ymdLima(o.created_at)).exp+=fl; const c=O.cobrado(o); if(c>0) D(ymdLima(o.created_at)).margin+=c; });   // flete que se perdió y adelanto que se quedó
   return day;
 }
 async function renderBitacora(){

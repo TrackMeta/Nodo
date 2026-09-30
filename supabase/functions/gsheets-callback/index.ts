@@ -6,7 +6,6 @@
 // ═══════════════════════════════════════════════════════════════════
 import { serviceClient, userIsChannelAdmin } from "../_shared/db.ts";
 import { fetchConTimeout } from "../_shared/http.ts";
-import { sheetsEstado, crearHojaDelCanal } from "../_shared/gsheets.ts";
 
 const db = serviceClient();
 const CLIENT_ID = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID") ?? "";
@@ -76,35 +75,21 @@ Deno.serve(async (req) => {
       email = (await ui.json())?.email ?? null;
     } catch { /* opcional */ }
 
-    // El error se MIRA: `db.rpc()` no lanza. Sin esto, un fallo al guardar el refresh token en
-    // el Vault seguía de largo, marcaba `connected: true` y el panel decía «conectado» — con la
-    // sincronización muerta: cada pedido intentaba entrar por la rama OAuth y se caía sin token.
-    const { error: eTok } = await db.rpc("set_gsheets_token", { p_channel_id: (st as any).channel_id, p_refresh_token: tok.refresh_token, p_email: email });
-    if (eTok) { console.error("[gsheets-callback] set_gsheets_token:", eTok.message); return back("sin_guardar"); }
-    // Marcar el modo OAuth en channels.gsheets (conservando spreadsheet si ya existía).
-    const { data: ch } = await db.from("channels").select("gsheets").eq("id", (st as any).channel_id).maybeSingle();
-    const g = ((ch as any)?.gsheets ?? {}) as Record<string, unknown>;
-    g.connected = true; g.mode = "oauth"; g.google_email = email;
-    // Rastro de QUIÉN la conectó y cuándo (el panel ya muestra el correo de Google enlazado): el
-    // callback es una redirección del navegador sin el token del panel, así que esto es lo que
-    // permite auditar una conexión que nadie reconoce.
-    g.conectado_por = quien; g.conectado_at = new Date().toISOString();
-    await db.from("channels").update({ gsheets: g }).eq("id", (st as any).channel_id);
-    // 📗 Conectar deja la hoja LISTA: si no había, o la guardada ya no existe (la borraron) o
-    // esta cuenta de Google no la ve, se crea una nueva. Una hoja que sigue viva NO se toca:
-    // reconectar para renovar el permiso no puede cambiarle la hoja a nadie.
-    try {
-      const sid = String(g.spreadsheet_id ?? "");
-      const estado = sid ? await sheetsEstado(tok.access_token, sid) : "no_existe";
-      if (estado !== "ok") {
-        await crearHojaDelCanal(db, (st as any).channel_id, tok.access_token);
-        return back(sid ? "recreada" : "creada");
-      }
-    } catch (e) {
-      // El permiso ya quedó guardado: sin hoja, Ajustes ofrece crearla o pegar una.
-      console.error("[gsheets-callback] crear hoja:", (e as any)?.message ?? e);
-    }
-    return back("ok");
+    // 🔒 NO se conecta acá: el permiso queda PENDIENTE (0120) hasta que lo confirme, desde el
+    // panel, el MISMO usuario de Nodo que inició la conexión (gsheets-connect → `confirmar`).
+    // Sin este paso, un admin podía mandarle a un tercero el enlace de Google y, si aceptaba,
+    // el permiso sobre TODAS las hojas de ese tercero quedaba en el canal del admin. El código
+    // `gc` va SOLO en esta redirección, o sea al navegador que volvió de Google: el tercero lo
+    // tiene pero no la sesión del admin; el admin tiene la sesión pero no el código.
+    const gc = [...crypto.getRandomValues(new Uint8Array(24))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const hash = [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(gc)))]
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
+    const { error: ePend } = await db.from("gsheets_oauth_state").insert({
+      nonce: "pend:" + crypto.randomUUID(), channel_id: (st as any).channel_id, user_id: quien,
+      pendiente_refresh: tok.refresh_token, pendiente_email: email, confirm_hash: hash,
+    });
+    if (ePend) { console.error("[gsheets-callback] guardar pendiente:", ePend.message); return back("sin_guardar"); }
+    return new Response(null, { status: 302, headers: { Location: `${PANEL}?gs=confirmar&gc=${gc}` } });
   } catch (e) {
     console.error("[gsheets-callback]", e);
     return back("error");

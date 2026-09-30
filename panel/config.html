@@ -268,11 +268,23 @@ async function boot(){
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; loadCfg(); });
   // Retorno del login de Google (gsheets-callback redirige con ?gs=...).
-  const gsRet=new URLSearchParams(location.search).get("gs");
+  let gsRet=new URLSearchParams(location.search).get("gs");
   if(gsRet){
     st.tab="gsheets"; st.gsMethod="oauth";
     document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t==="gsheets"));
-    if(gsRet==="ok") toast("Google conectado");
+    // 🔒 Google ya dio el permiso, pero queda PENDIENTE hasta que lo confirme esta sesión (la
+    // del mismo usuario que inició la conexión): así un tercero al que le pasaron el enlace de
+    // Google no conecta su cuenta en un canal ajeno. Ver gsheets-connect → `confirmar`.
+    if(gsRet==="confirmar"){
+      const gc=new URLSearchParams(location.search).get("gc")||"";
+      history.replaceState(null,"",location.pathname);   // el código no se queda en la barra
+      try{
+        const r=await callFn("gsheets-connect",{ confirmar:gc, channel_id:st.channelId });
+        gsRet=r.hoja||"ok";
+      }catch(e){ gsRet=""; toast(e.message||"No se pudo terminar de conectar Google. Reintenta.",true); }
+    }
+    if(!gsRet){ /* ya se avisó arriba */ }
+    else if(gsRet==="ok") toast("Google conectado");
     else if(gsRet==="creada") toast("Google conectado — te creé la hoja «Ventas Nodo» con sus 3 pestañas");
     else if(gsRet==="recreada") toast("Tu hoja anterior ya no existía: te creé una nueva con sus 3 pestañas");
     else if(gsRet==="sin_refresh") toast("Google no devolvió permiso permanente. Reintenta y acepta todos los permisos.",true);

@@ -279,6 +279,10 @@ export async function maybePurchase(db: SupabaseClient, order: OrderLike): Promi
   // atribuir y sumar Purchases genéricos ensucia el pixel. Cuenta en los números
   // del sistema igual, pero Meta solo recibe conversiones de sus anuncios.
   if (!ship.ctwa_clid) return null;
+  // Pedido creado por el nodo «Evento Facebook» con Purchase: ese nodo ya mandó la compra a Meta
+  // con su propio event_id (por comprobante). Mandarla otra vez acá, con `Purchase:<id>`, eran
+  // dos compras en Meta por una sola venta.
+  if (ship.capi_purchase_nodo) return null;
   // Valor de la conversión = precio del producto + ventas extra (order_bumps).
   // `amount` es solo el precio base; sin sumar los bumps, Meta recibía un valor
   // por debajo del real y subestimaba el ROAS. Los bumps se traen por id (el
