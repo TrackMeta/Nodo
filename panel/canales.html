@@ -74,14 +74,19 @@
   .metabox .mh{color:var(--muted);font-size:11.5px;line-height:1.5;margin-bottom:10px}
   .metabox label{margin-top:12px}
   .metabox label:first-of-type{margin-top:0}
-  /* Cuando Meta no dice a qué número apunta el token (usuario del sistema Admin): no es
-     un error, es el paso siguiente — por eso va en la tarjeta y no en un aviso rojo. */
-  .wamanual{margin-top:10px;padding:12px 14px;background:var(--brand-bg);
-    border:1px solid var(--brand-border);border-radius:11px;font-size:12px;line-height:1.55}
-  .wamanual b{font-weight:700}
-  .wamanual ol{margin:6px 0 0;padding-left:18px}
-  .wamanual li{margin:3px 0}
-  .wamanual a.btn{margin-top:10px;display:inline-flex;text-decoration:none}
+  /* Conectar el número: los datos van agrupados por la pantalla de Meta donde se copian
+     (Meta no le dice a Nodo a qué número apunta un token — medido con Admin y Employee,
+     2026-09-30 — así que se piden a mano, una vez). Cada grupo: número + dónde + enlace. */
+  .wadonde{display:flex;align-items:center;gap:8px;margin:16px 0 8px;padding-top:12px;
+    border-top:1px dashed var(--border);font-size:12px;color:var(--text)}
+  .metabox .mh + .wadonde{border-top:0;padding-top:0;margin-top:4px}
+  .wadonde .n{flex:none;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;
+    font-size:11px;font-weight:700;background:var(--brand-bg);color:var(--brand-2);border:1px solid var(--brand-border)}
+  .wadonde .tx{flex:1;min-width:0}
+  .wadonde a{flex:none;color:var(--brand);font-weight:600;text-decoration:none;white-space:nowrap}
+  .wadonde a:hover{text-decoration:underline}
+  .wameta{font-size:11px;color:var(--muted);margin-top:4px}
+  .metabox .wadonde + label, .metabox .wadonde + .row label{margin-top:0}
   /* Fila del toggle "solo anuncios": icono + texto + switch (patrón .sw de ia.html) */
   .adsrow{display:flex;align-items:center;gap:12px;margin-top:10px;padding:12px 14px;
     background:var(--surface);border:1px solid var(--border);border-radius:12px}
@@ -226,18 +231,30 @@ function renderWA(){
 
       <div class="metabox">
         <div class="mt">Conectar el número</div>
-        <div class="mh">Pega el <b>Access token</b> (business.facebook.com &rarr; Usuarios del sistema) y dale a <b>Buscar mis datos</b>: Nodo rellena los dos IDs, o te lleva a la pantalla de Meta donde copiarlos. Después el <b>App Secret</b> (Configuración &rarr; Básica de la app) y <b>Guardar y conectar</b>.</div>
-        <label>Access token ${badge(s.access_token)}</label>
-        <input class="in" type="password" id="w_token" ${NOFILL_PWD} placeholder="${ph(s.access_token,'EAAG... (usa uno permanente, no el de 24 h)')}"/>
-        <div class="pasoact"><button class="btn mini" id="waBuscar">Buscar mis datos</button></div>
-        <div class="row" style="margin-top:8px">
-          <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="lo trae el botón de arriba"/></div>
-          <div class="f"><label>WABA ID</label><input class="in" id="w_waba" ${NOFILL} value="${esc(c.waba_id)}" placeholder="lo trae el botón de arriba"/></div>
+        <div class="mh">Cuatro datos que se copian de Meta <b>una sola vez</b>. Van agrupados por la pantalla donde está cada uno; el texto gris es el nombre exacto que usa Meta.</div>
+
+        <div class="wadonde"><span class="n">1</span><span class="tx">WhatsApp &rarr; <b>Configuración de la API</b> de tu app · elige tu número en «De»</span>
+          <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">Abrir &nearr;</a></div>
+        <div class="row">
+          <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="solo números"/>
+            <div class="wameta">«Identificador del número de teléfono»</div></div>
+          <div class="f"><label>WABA ID</label><input class="in" id="w_waba" ${NOFILL} value="${esc(c.waba_id)}" placeholder="solo números"/>
+            <div class="wameta">«Identificador de la cuenta de WhatsApp Business»</div></div>
         </div>
-        <div id="waManual"></div>
+
+        <div class="wadonde"><span class="n">2</span><span class="tx"><b>Configuración &rarr; Básica</b> de tu app</span>
+          <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">Abrir &nearr;</a></div>
         <label>App Secret ${badge(s.app_secret)}</label>
-        <input class="in" type="password" id="w_secret" ${NOFILL_PWD} placeholder="${ph(s.app_secret,'firma el webhook — Meta → Configuración → Básica')}"/>
-        <div class="mh" style="margin:10px 0 0">Al guardar, Nodo configura el webhook en Meta, lo suscribe a los mensajes y registra el número. No hay nada más que hacer allá.</div>
+        <input class="in" type="password" id="w_secret" ${NOFILL_PWD} placeholder="${ph(s.app_secret,'32 letras y números')}"/>
+        <div class="wameta">«Clave secreta de la app» &rarr; Mostrar</div>
+
+        <div class="wadonde"><span class="n">3</span><span class="tx">Meta Business &rarr; <b>Usuarios del sistema</b> &rarr; Generar identificador</span>
+          <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener">Abrir &nearr;</a></div>
+        <label>Access token ${badge(s.access_token)}</label>
+        <input class="in" type="password" id="w_token" ${NOFILL_PWD} placeholder="${ph(s.access_token,'EAA… (el permanente, no el de 24 h)')}"/>
+        <div class="wameta">Caducidad «Nunca» y todos los permisos marcados · Meta lo muestra una sola vez</div>
+
+        <div class="mh" style="margin:12px 0 0">Al guardar, Nodo configura el webhook en Meta, lo suscribe a los mensajes y registra el número. No hay nada más que hacer allá.</div>
       </div>
 
       <div class="metabox">
@@ -306,6 +323,13 @@ function renderWA(){
       const v=$(id).value.trim();
       if(v!==String(orig[k]).trim()) body[k]=v;
     }
+    // Los dos IDs ahora se pegan a mano: lo que más se cuela es el número de teléfono
+    // («+51 9…») o el nombre de la cuenta en vez del identificador.
+    for(const [k,nom] of [["phone_number_id","Phone Number ID"],["waba_id","WABA ID"]]){
+      if(body[k] && !/^\d{6,25}$/.test(body[k])){
+        toast(`El ${nom} son solo números (el «Identificador…» de Meta), no el teléfono ni el nombre.`,true); return;
+      }
+    }
     // El Phone Number ID y el WABA ID de Meta son numéricos. Es la red de
     // seguridad real: Chrome llegó a rellenar el Phone Number ID con el nombre
     // de una empresa guardada ("Square") y eso, guardado, rompe el canal sin
@@ -328,7 +352,6 @@ function renderWA(){
   });
   const vcopy=$("w_verify_copy");
   if(vcopy) vcopy.onclick=()=>{ const v=$("w_verify").value.trim(); v?copiar(v):toast("Escribe primero un verify token",true); };
-  $("waBuscar").onclick=(e)=>buscarDatosWA(e.target);
   $("waTest").onclick=(e)=>probarWA(e.target);
   const disc=$("waDisc"); if(disc) disc.onclick=()=>desconectarWA(disc);
   // Si el número está conectado, trae y muestra la tarjeta bonita apenas se abre.
@@ -671,53 +694,6 @@ function pintarWA(r){
   box.querySelectorAll("button[data-fix]").forEach(b=>{
     b.onclick=()=>arreglarWA(b.getAttribute("data-fix"), b);
   });
-}
-// El Phone Number ID y el WABA ID no son secretos: son etiquetas, y el token que acabas de
-// pegar ya dice a qué cuenta pertenece. Así que se los preguntamos a Meta en vez de pedirte
-// que los copies — que es de donde salen los errores más tontos (Chrome llegó a rellenar el
-// Phone Number ID con el nombre de una empresa guardada). Solo lee; no toca nada.
-async function buscarDatosWA(btn){
-  const tok=$("w_token").value.trim();  // vacío = usa el que ya está en Vault
-  btn.disabled=true; const old=btn.textContent; btn.textContent="Buscando…";
-  try{
-    const r=await callFn("channel-config",{ action:"whatsapp_descubrir", channel_id:st.channelId, ...(tok?{token:tok}:{}) });
-    // Aplanado: lo que el usuario elige es un NÚMERO, y el WABA viene de arrastre.
-    const opciones=(r.cuentas||[]).flatMap(cu=>(cu.numeros||[]).map(n=>({ ...n, waba_id:cu.waba_id, waba:cu.nombre })));
-    $("waManual").innerHTML="";
-    if(!opciones.length && r.manual){
-      // Token bueno, pero Meta no dice a qué WABA apunta y ningún endpoint lo revela —
-      // medido 2026-09-30 con usuario del sistema Admin Y Employee. Queda copiarlos — con el enlace
-      // a la pantalla exacta de ESTA app, no a «developers.facebook.com» a secas.
-      if(r.diag) console.info("whatsapp_descubrir", r.diag);
-      const url=r.app_id?`https://developers.facebook.com/apps/${encodeURIComponent(r.app_id)}/whatsapp-business/wa-dev-console/`:"https://developers.facebook.com/apps/";
-      $("waManual").innerHTML=`<div class="wamanual">
-        <b>El token está bien, pero Meta no le dice a Nodo a qué número apunta.</b> Cópialos de Meta una sola vez, son dos números:
-        <ol>
-          <li>En <b>Configuración de la API</b>, elige tu número en el selector <b>«De»</b>.</li>
-          <li><b>Identificador del número de teléfono</b> &rarr; pégalo en <b>Phone Number ID</b>.</li>
-          <li><b>Identificador de la cuenta de WhatsApp Business</b> &rarr; pégalo en <b>WABA ID</b>.</li>
-        </ol>
-        <a class="btn mini" href="${esc(url)}" target="_blank" rel="noopener">Abrir Configuración de la API &nearr;</a>
-        ${(r.diag||[]).length?`<div style="margin-top:8px;font-size:10.5px;color:var(--muted)">Detalle para soporte: ${esc(r.diag.join(" | "))}</div>`:""}
-      </div>`;
-      $("w_phone").focus();
-    }else if(!opciones.length){
-      toast(r.motivo || "El token no lleva ningún número de WhatsApp asociado.", true);
-    }else{
-      let el=opciones[0];
-      if(opciones.length>1){
-        const v=await askChoice({ title:"¿Cuál de tus números?",
-          message:"Este token da acceso a varios. Elige el que va a atender en este canal.",
-          options:opciones.map(o=>({ value:o.id, label:o.telefono||o.id, desc:`${o.nombre||"sin nombre"} · cuenta ${o.waba||o.waba_id}` })) });
-        if(!v){ btn.disabled=false; btn.textContent=old; return; }
-        el=opciones.find(o=>o.id===v);
-      }
-      $("w_phone").value=el.id;
-      $("w_waba").value=el.waba_id;
-      toast(`Encontrado: ${el.telefono||el.id}. Pon el App Secret y dale a Guardar y conectar.`);
-    }
-  }catch(e){ toast(e.message||"Meta no reconoció el token",true); }
-  btn.disabled=false; btn.textContent=old;
 }
 // Guardar los datos del número NO es "guardar un formulario": es terminar de conectar.
 // Así que después de guardar, Nodo hace los dos trámites que faltan en Meta (suscribir la
