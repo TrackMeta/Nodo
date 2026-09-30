@@ -740,11 +740,13 @@ Deno.serve(async (req) => {
         if ((c as any)?.waba_id) ids.add(String((c as any).waba_id));
       }
       if (!ids.size) {
+        // `manual`: el panel no lo muestra como error sino como el paso siguiente, con el
+        // enlace a la pantalla de ESTA app donde están los dos IDs. `diag` va a la consola.
         return json({
-          ok: true, cuentas: [],
-          motivo: "El token tiene los permisos de WhatsApp pero Meta no dice a qué cuenta. Pega a mano el Phone Number ID " +
-            "y el WABA ID (developers.facebook.com → tu app → WhatsApp → Configuración de la API) y dale a Guardar y conectar." +
-            (diag.length ? ` [${diag.join(" | ")}]` : ""),
+          ok: true, cuentas: [], manual: true,
+          app_id: dbg.body?.data?.app_id ? String(dbg.body.data.app_id) : null,
+          motivo: "El token está bien, pero Meta no dice a qué número apunta (pasa con usuarios del sistema Admin). Copia los dos IDs de Meta.",
+          diag,
         });
       }
 

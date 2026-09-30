@@ -74,6 +74,14 @@
   .metabox .mh{color:var(--muted);font-size:11.5px;line-height:1.5;margin-bottom:10px}
   .metabox label{margin-top:12px}
   .metabox label:first-of-type{margin-top:0}
+  /* Cuando Meta no dice a qué número apunta el token (usuario del sistema Admin): no es
+     un error, es el paso siguiente — por eso va en la tarjeta y no en un aviso rojo. */
+  .wamanual{margin-top:10px;padding:12px 14px;background:var(--brand-bg);
+    border:1px solid var(--brand-border);border-radius:11px;font-size:12px;line-height:1.55}
+  .wamanual b{font-weight:700}
+  .wamanual ol{margin:6px 0 0;padding-left:18px}
+  .wamanual li{margin:3px 0}
+  .wamanual a.btn{margin-top:10px;display:inline-flex;text-decoration:none}
   /* Fila del toggle "solo anuncios": icono + texto + switch (patrón .sw de ia.html) */
   .adsrow{display:flex;align-items:center;gap:12px;margin-top:10px;padding:12px 14px;
     background:var(--surface);border:1px solid var(--border);border-radius:12px}
@@ -218,14 +226,15 @@ function renderWA(){
 
       <div class="metabox">
         <div class="mt">Conectar el número</div>
-        <div class="mh">Solo dos datos, y son los dos que hay que ir a buscar porque son secretos: el <b>Access token</b> (business.facebook.com &rarr; Usuarios del sistema) y el <b>App Secret</b> (Configuración &rarr; Básica de la app). Los dos IDs los trae el botón <b>Buscar mis datos</b>; si Meta no se los da (pasa con usuarios del sistema <b>Admin</b>), cópialos de developers.facebook.com &rarr; tu app &rarr; WhatsApp &rarr; Configuración de la API.</div>
+        <div class="mh">Pega el <b>Access token</b> (business.facebook.com &rarr; Usuarios del sistema) y dale a <b>Buscar mis datos</b>: Nodo rellena los dos IDs, o te lleva a la pantalla de Meta donde copiarlos. Después el <b>App Secret</b> (Configuración &rarr; Básica de la app) y <b>Guardar y conectar</b>.</div>
         <label>Access token ${badge(s.access_token)}</label>
         <input class="in" type="password" id="w_token" ${NOFILL_PWD} placeholder="${ph(s.access_token,'EAAG... (usa uno permanente, no el de 24 h)')}"/>
         <div class="pasoact"><button class="btn mini" id="waBuscar">Buscar mis datos</button></div>
         <div class="row" style="margin-top:8px">
-          <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="lo trae el botón de arriba, o pégalo de Meta"/></div>
-          <div class="f"><label>WABA ID</label><input class="in" id="w_waba" ${NOFILL} value="${esc(c.waba_id)}" placeholder="lo trae el botón de arriba, o pégalo de Meta"/></div>
+          <div class="f"><label>Phone Number ID</label><input class="in" id="w_phone" ${NOFILL} value="${esc(c.phone_number_id)}" placeholder="lo trae el botón de arriba"/></div>
+          <div class="f"><label>WABA ID</label><input class="in" id="w_waba" ${NOFILL} value="${esc(c.waba_id)}" placeholder="lo trae el botón de arriba"/></div>
         </div>
+        <div id="waManual"></div>
         <label>App Secret ${badge(s.app_secret)}</label>
         <input class="in" type="password" id="w_secret" ${NOFILL_PWD} placeholder="${ph(s.app_secret,'firma el webhook — Meta → Configuración → Básica')}"/>
         <div class="mh" style="margin:10px 0 0">Al guardar, Nodo configura el webhook en Meta, lo suscribe a los mensajes y registra el número. No hay nada más que hacer allá.</div>
@@ -674,7 +683,24 @@ async function buscarDatosWA(btn){
     const r=await callFn("channel-config",{ action:"whatsapp_descubrir", channel_id:st.channelId, ...(tok?{token:tok}:{}) });
     // Aplanado: lo que el usuario elige es un NÚMERO, y el WABA viene de arrastre.
     const opciones=(r.cuentas||[]).flatMap(cu=>(cu.numeros||[]).map(n=>({ ...n, waba_id:cu.waba_id, waba:cu.nombre })));
-    if(!opciones.length){
+    $("waManual").innerHTML="";
+    if(!opciones.length && r.manual){
+      // Token bueno, pero de un usuario del sistema Admin: Meta no dice a qué WABA apunta
+      // y ningún endpoint lo revela (medido 2026-09-30). Queda copiarlos — con el enlace
+      // a la pantalla exacta de ESTA app, no a «developers.facebook.com» a secas.
+      if(r.diag) console.info("whatsapp_descubrir", r.diag);
+      const url=r.app_id?`https://developers.facebook.com/apps/${encodeURIComponent(r.app_id)}/whatsapp-business/wa-dev-console/`:"https://developers.facebook.com/apps/";
+      $("waManual").innerHTML=`<div class="wamanual">
+        <b>El token está bien, pero Meta no dice a qué número apunta</b> (pasa cuando el usuario del sistema es Admin). Cópialos de Meta, son dos números:
+        <ol>
+          <li>En <b>Configuración de la API</b>, elige tu número en el selector <b>«De»</b>.</li>
+          <li><b>Identificador del número de teléfono</b> &rarr; pégalo en <b>Phone Number ID</b>.</li>
+          <li><b>Identificador de la cuenta de WhatsApp Business</b> &rarr; pégalo en <b>WABA ID</b>.</li>
+        </ol>
+        <a class="btn mini" href="${esc(url)}" target="_blank" rel="noopener">Abrir Configuración de la API &nearr;</a>
+      </div>`;
+      $("w_phone").focus();
+    }else if(!opciones.length){
       toast(r.motivo || "El token no lleva ningún número de WhatsApp asociado.", true);
     }else{
       let el=opciones[0];
@@ -687,7 +713,7 @@ async function buscarDatosWA(btn){
       }
       $("w_phone").value=el.id;
       $("w_waba").value=el.waba_id;
-      toast(`Encontrado: ${el.telefono||el.id}. Dale a Guardar datos del número.`);
+      toast(`Encontrado: ${el.telefono||el.id}. Pon el App Secret y dale a Guardar y conectar.`);
     }
   }catch(e){ toast(e.message||"Meta no reconoció el token",true); }
   btn.disabled=false; btn.textContent=old;
