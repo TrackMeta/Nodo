@@ -407,7 +407,8 @@ async function runEngineInner(
     }
     await pasarAHumano(db, channelId, contactId,
       (_quiereLlamada ? "📞 PIDE QUE LO LLAMEN: “" : "Lo pidió explícitamente: “") +
-      String(event.text ?? "").slice(0, 120) + "”", { aviso: _quiereLlamada ? "fuera" : true, molesto: _grosero || _veniaMolesto });
+      String(event.text ?? "").slice(0, 120) + "”", { aviso: _quiereLlamada ? "fuera" : true, molesto: _grosero || _veniaMolesto,
+        texto: "¡Claro! 🙌 En un momento te atiende una persona del equipo por aquí. 🙂" });
     return;
   }
 
@@ -3239,7 +3240,9 @@ export async function pasarAHumano(
   db: SupabaseClient, channelId: string, contactId: string, motivo: string,
   // `foto`: la captura que motivó la escalada (un comprobante de pago). Va adjunta al aviso
   // para poder validarlo desde el propio Telegram, sin abrir el chat.
-  opts?: { aviso?: boolean | "fuera"; molesto?: boolean; foto?: string },
+  // `texto`: el aviso al cliente cuando el dueño no configuró uno (dentro de horario). «¡Gracias! En un momento te
+  // atiende un asesor» a quien pidió hablar con alguien sonaba a formulario (R1D-hablar, 2026-10-01).
+  opts?: { aviso?: boolean | "fuera"; molesto?: boolean; foto?: string; texto?: string },
 ) {
   try {
     await db.from("contacts").update({ bot_activo: false }).eq("id", contactId);
@@ -3278,7 +3281,7 @@ export async function pasarAHumano(
           avisoTxt = String(hcfg.aviso_fuera ?? "").trim() ||
             `¡Gracias por escribir! 🙌 Ahora mismo no hay un asesor en línea${proxima ? `, pero te responde ${proxima}` : ""}. Déjame tu consulta por aquí y la vemos apenas volvamos. 🙏`;
         } else {
-          avisoTxt = String(hcfg.aviso_dentro ?? "").trim() ||
+          avisoTxt = String(hcfg.aviso_dentro ?? "").trim() || String(opts?.texto ?? "").trim() ||
             "¡Gracias! 🙌 En un momento te atiende un asesor de nuestro equipo por aquí. 🙂";
         }
       }
@@ -17178,7 +17181,7 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     // entraba, y el 3c de abajo lo mandaba a PROVINCIA con seis agencias de Loreto, Ica y Ayacucho mezcladas
     // (R1L-sanjuan, 2026-10-01). Si él ya dijo Lima, con más razón hay que preguntarle cuál San Juan.
     const _zAct = String(ctx.zona_entrega ?? "").trim();
-    if (_amb.length >= 2 && (!_zAct || (_zAct === "lima" && !String(ctx.zona_nombre ?? "").trim()))) {
+    if (_amb.length >= 2 && (!_zAct || (_zAct === "lima" && String(ctx.zona_distrito_incierto ?? "") === "si"))) {
       await set("zona_ambigua", _amb.map((x) => enTitulo(x)).join(" · "));
       await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona sin resolver",
         `"${lugar}" puede ser ${_amb.length} distritos distintos (Lima y provincia) — se le pregunta cuál`);
@@ -19414,7 +19417,10 @@ async function detectarCombo(db: SupabaseClient, run: Run, ctx: any, texto: stri
     /\b(quiero|kiero|dame|me llevo|llevo|compro)\b/i.test(t) || /\b(quiero|kiero|dame|me llevo|llevo|compro)\b/i.test(_conClave) ||
     /cu[aá]nto\s+(?:es|sale|ser[ií]a|seria|cuesta|cuestan|son)\s+(?:todo|en total|el total|por (?:los|las|todo)|los|las)/i.test(t);
   // Nombró SOLO otro producto, sin «también» ni «los dos»: eso es cambiar de producto, no sumar.
-  if (!intencion || (!ids.includes(actual) && !RE_COMBO_TAMBIEN.test(t) && !junto)) return;
+  // (el producto ACTUAL también cuenta como nombrado si está en el mensaje ENTERO: «quiero el protocolo y la plantilla»
+  //  llega sin la clave —«y la plantilla»— y parecía un cambio de producto, no una suma — R1D-combo, 2026-10-01)
+  const _actualNombrado = ids.includes(actual) || productosNombrados(_conClave, cat).includes(actual);
+  if (!intencion || (!_actualNombrado && !RE_COMBO_TAMBIEN.test(t) && !junto)) return;
   for (const pid of otros) {
     const p = cat.find((x) => x.id === pid);
     if (!p) continue;
@@ -26354,7 +26360,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // 🚚 «puente piedra, ¿cuánto cuesta el delivery?» (F6-lpuente): la IA vendía y no decía que el
       // envío es gratis — justo lo que preguntó. Lo pone el motor con la configuración real.
       if (op === "generar_texto" && !esDigital(ctx) && String(ctx.pedido_creado ?? "") !== "si"
-          && /(?:^|[^\p{L}])(?:cu[aá]nto\s+(?:cuesta|cobran|sale|es|vale|me\s+cobran)\s+(?:el\s+|por\s+el\s+)?(?:delivery|env[ií]o|flete|despacho|traslado)|(?:el\s+)?(?:delivery|env[ií]o|flete)\s+(?:cuesta|cu[aá]nto|tiene\s+costo|es\s+gratis|se\s+paga|aparte|incluido)|cobran\s+(?:el\s+)?(?:delivery|env[ií]o|flete)|hay\s+que\s+pagar\s+(?:el\s+)?(?:delivery|env[ií]o|flete)|cu[aá]nto\s+(?:es|sale|ser[ií]a|seria|queda)\s+(?:todo\s+)?(?:con|incluido|incluyendo)\s+(?:el\s+)?(?:env[ií]o|delivery|flete))(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
+          // (+ «chiclayo. cuanto cuesta. y el envio» — el envío a secas, cerrando la frase — R1P-multi, 2026-10-01)
+          && /(?:^|[^\p{L}])(?:cu[aá]nto\s+(?:cuesta|cobran|sale|es|vale|me\s+cobran)\s+(?:el\s+|por\s+el\s+)?(?:delivery|env[ií]o|flete|despacho|traslado)|(?:el\s+)?(?:delivery|env[ií]o|flete)\s+(?:cuesta|cu[aá]nto|tiene\s+costo|es\s+gratis|se\s+paga|aparte|incluido)|cobran\s+(?:el\s+)?(?:delivery|env[ií]o|flete)|hay\s+que\s+pagar\s+(?:el\s+)?(?:delivery|env[ií]o|flete)|cu[aá]nto\s+(?:es|sale|ser[ií]a|seria|queda)\s+(?:todo\s+)?(?:con|incluido|incluyendo)\s+(?:el\s+)?(?:env[ií]o|delivery|flete)|(?:^|[.,;]\s*|\by\s+)(?:el\s+)?(?:env[ií]o|delivery|flete)\s*\?*\s*$)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
           && !/gratis|sin\s+costo|incluid|no\s+(?:tiene|cuesta)|(?:env[ií]o|delivery|flete)[^.\n]{0,30}(?:S\/|\$)\s?\d|(?:S\/|\$)\s?\d+[^.\n]{0,20}(?:de\s+)?(?:env[ií]o|delivery|flete)|lo\s+pagas\s+en\s+la\s+agencia/i.test(sinFormato(salida))) {
         const _zE = String(ctx.zona_entrega ?? "");
         const _modoE = modoEnvio(ctx);
@@ -27774,6 +27781,38 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "Provincia: se antepuso la forma de pago").catch(() => {});
         }
       }
+      // 🏠 «¿me lo mandas a la casa? no puedo ir a la agencia» (provincia) y la respuesta le tiró la lista de oficinas
+      // sin contestar (R1P-casa, 2026-10-01). En provincia no hay reparto a domicilio: se le dice de frente, delante.
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "") === "provincia"
+          && String(ctx.pedido_creado ?? "") !== "si" && String(salida ?? "").trim()
+          && /(?:^|[^\p{L}])(?:(?:a|hasta)\s+(?:mi\s+|la\s+)?(?:casa|domicilio|direcci[oó]n|puerta|chacra|trabajo|oficina)|delivery|motorizado|a\s+domicilio)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
+          && /[?¿]|no\s+puedo\s+(?:ir|recoger|acercarme)|me\s+lo\s+(?:mandan|traen|llevan|dejan)/iu.test(String(ctx.last_input ?? ""))
+          && !/domicilio|a\s+tu\s+casa|a\s+la\s+casa|a\s+tu\s+puerta/iu.test(sinFormato(salida))) {
+        salida = `A provincia no llegamos a domicilio: va por agencia y lo recoges ahí con tu clave 🙌\n\n${String(salida).trimStart()}`;
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🏠 Pidió entrega a domicilio en provincia",
+          "La IA no lo contestó: el motor lo dijo delante").catch(() => {});
+      }
+      // 💸 «lo cancelo mañana» con el pedido esperando el adelanto = PAGO mañana (Perú), no «ya no lo quiero». La IA
+      // lo leyó como abandono («Cuando estés listo para continuar, aquí estaré») y encima le pidió la captura ahora
+      // (R1P-cancelo, 2026-10-01). Si no pide devolución ni dice «ya no», el motor contesta como vendedor.
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.pedido_creado ?? "") === "si"
+          && /(?:^|[^\p{L}])(?:lo\s+|te\s+lo\s+|te\s+|le\s+)?(?:cancelo|pago|yapeo|deposito|transfiero|abono)\s+(?:ma[ñn]ana|hoy\s+(?:en\s+la\s+)?(?:tarde|noche)|m[aá]s\s+tarde|m[aá]s\s+tardecito|en\s+la\s+(?:tarde|noche)|en\s+un\s+rato|al\s+mediod[ií]a|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|la\s+(?:otra|pr[oó]xima)\s+semana|apenas\s+(?:pueda|cobre|me\s+paguen|salga)|cuando\s+(?:pueda|cobre|me\s+paguen))(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
+          && !RE_PIDE_DEVOLUCION.test(String(ctx.last_input ?? "")) && !seArrepiente(String(ctx.last_input ?? ""))
+          && !/ya\s+no\s+(?:lo\s+)?(?:quiero|necesito)|mejor\s+no|olv[ií]dalo|an[uú]lalo/iu.test(String(ctx.last_input ?? ""))) {
+        let _estC = "";
+        try {
+          if (run.vars._order_id) { const { data: _oC } = await db.from("orders").select("estado").eq("id", run.vars._order_id).maybeSingle(); _estC = String((_oC as any)?.estado ?? ""); }
+        } catch (_) { _estC = ""; }
+        const _cuandoC = (String(ctx.last_input ?? "").match(/ma[ñn]ana|hoy|m[aá]s\s+tarde|en\s+la\s+(?:tarde|noche)|en\s+un\s+rato|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)|la\s+(?:otra|pr[oó]xima)\s+semana/iu) ?? ["cuando puedas"])[0];
+        const _adC = Number(ctx.adelanto);
+        const _symCc = simboloMoneda(ctx.moneda as string);
+        const _nomC = String(ctx.nombre_completo ?? ctx.cliente ?? "").trim().split(/\s+/)[0];
+        salida = _estC === "esperando_adelanto" || !_estC
+          ? `¡Perfecto${_nomC ? `, ${_nomC}` : ""}! 🙌 Queda anotado. ${_cuandoC.charAt(0).toUpperCase() + _cuandoC.slice(1)} haces el adelanto${_adC > 0 ? ` de *${_symCc} ${_adC}*` : ""}, me mandas la captura y ese mismo día te lo mando 📦`
+          : `¡Perfecto${_nomC ? `, ${_nomC}` : ""}! 🙌 ${_cuandoC.charAt(0).toUpperCase() + _cuandoC.slice(1)} lo pagas y me mandas la captura por acá, y con eso te paso tu clave para recogerlo 📦`;
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "💸 «Cancelo mañana» = paga mañana",
+          `Pedido en «${_estC || "?"}»: se le contestó como pago pendiente, no como baja`).catch(() => {});
+      }
       if (op === "generar_texto") {
         const _crudo = String(result ?? "").trim();
         if (_crudo && String(salida ?? "").trim() !== _crudo && !String(salida ?? "").includes(_crudo)) {
@@ -27819,6 +27858,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && _emOn && String(salida ?? "").includes("—")) {
         salida = emojisEnListaDePrecios(String(salida), simboloMoneda(ctx.moneda as string), _emOn);
       }
+      // (y los renglones en blanco que dejó cualquier recorte: cuatro saltos seguidos entre la lista y el cierre — R1L-cuatro)
+      if (op === "generar_texto" && typeof salida === "string") salida = salida.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n");
       const handoff = _acuseDiferido ? _cubiertaConBolsa : ((await emitIaText(db, run, salida, ctx)) || _cubiertaConBolsa);
       (ctx as any)._diferirPregunta = false;
       const _pregDiferida = String((ctx as any)._preguntaDiferida ?? "");
