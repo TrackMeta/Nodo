@@ -14149,9 +14149,22 @@ async function maybeDatosPago(
     // la lista real de medios en el prompt (ver el bloque «Te preguntó si aceptas…»).
     if (soloPorMetodo && aceptaMetodo(dp, metodoPreg) !== true) return;
     const nums = dp.match(/\d{6,}/g) ?? [];
-    const { data: outs } = await db.from("messages").select("content")
+    const { data: outs } = await db.from("messages").select("content, ts")
       .eq("contact_id", contactId).eq("direction", "out").order("ts", { ascending: false }).limit(15);
     const dicho = (outs ?? []).map((m: any) => String(m.content?.text ?? "")).join(" ");
+    // 🔁 RECIÉN salieron (en los últimos 3 mensajes nuestros y hace menos de 15 min) o la IA ya contestó lo que
+    // preguntó con el dato en su texto («El Yape está a nombre de *Percy…*»): no se repite el bloque entero.
+    // Medido en Probar flujos (Rodrigo, 2026-10-01): el flujo mandó el adelanto con los datos, 20 s después
+    // «¿a nombre de quién sale el yape?» → la IA dijo el nombre Y el motor volvió a pegar los tres medios; y a
+    // «yape» otra vez los tres. Solo si PIDE el número de forma explícita («¿cuál es el número?», «pásame el
+    // yape») se le vuelve a poner a la vista.
+    const _idxRec = (outs ?? []).findIndex((m: any) => nums.length ? nums.some((n) => String(m.content?.text ?? "").includes(n)) : /yape|plin|cuenta|cci/i.test(String(m.content?.text ?? "")));
+    const _recienSalieron = _idxRec >= 0 && _idxRec <= 2
+      && (Date.now() - new Date(String((outs ?? [])[_idxRec]?.ts ?? 0)).getTime()) < 15 * 60 * 1000;
+    const _iaRespuesta = String(respuestaIa ?? "");
+    const _iaYaLoDijo = nums.some((n) => _iaRespuesta.includes(n))
+      || dp.split("\n").map((l) => l.replace(/[*_~]/g, "").trim()).some((l) => l.length >= 8 && !/\d{6,}/.test(l) && _iaRespuesta.includes(l));
+    const _pideElNumero = /(?:cu[aá]l|qu[eé])\s+(?:es\s+)?(?:el\s+|tu\s+|su\s+)?(?:n[uú]mero|yape|plin|cuenta|cci)|p[aá]same\s+(?:el\s+|tu\s+|los\s+)?(?:n[uú]mero|yape|plin|cuenta|datos)|m[aá]ndame\s+(?:el\s+|tu\s+|los\s+)?(?:n[uú]mero|yape|plin|cuenta|datos)|a\s+qu[eé]\s+n[uú]mero|d[oó]nde\s+(?:te\s+)?(?:yapeo|pago|deposito|transfiero)/i.test(String(texto ?? ""));
     // Ya se los mandamos antes → normalmente no se repiten… salvo que los esté PIDIENDO:
     // ahí quiere el dato a la vista, no que le digan que ya se lo pasaron. Sin esto la IA
     // improvisaba el número en medio de una frase —copiándolo del historial— y se perdía la
@@ -14172,6 +14185,11 @@ async function maybeDatosPago(
       _montoCambio = Number.isFinite(_mNuevo) && _mNuevo > 0 && Number.isFinite(_mPrev) && _mPrev !== _mNuevo;
     }
     if (!loPide && _yaSalieron && !_montoCambio) return;
+    if (_yaSalieron && !_montoCambio && (_recienSalieron || _iaYaLoDijo) && !_pideElNumero) {
+      await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago NO repetidos",
+        _iaYaLoDijo ? "La IA ya contestó con el dato en su texto" : "Acaban de salir (últimos mensajes); solo se repiten si pide el número").catch(() => {});
+      return;
+    }
     // Si nombró un método ("yape"), se le manda SOLO ese bloque: mandarle los tres
     // cuando ya eligió es ruido, y encima le da a elegir de nuevo cuando ya decidió.
     const bloques = dp.split(/\n\s*\n/).filter((b) => b.trim());
@@ -27021,6 +27039,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // S/ 139 · …»): pegada con un espacio quedaba al final del precio (G14-precio).
           const _pegaSuave = (s: string, q: string) => {
             s = _sinEmojiRepetido(s, q);
+            // Lo que quedó CORTADO justo antes: «Perfecto, Dime cuántas…», «Ahora, Cuéntame…», «Para darte el monto
+            // exacto del adelanto. Cuéntame…» (chat de Rodrigo, 2026-10-01). La muletilla suelta se va y la coma
+            // que cerraba se vuelve punto; el tocón «Para + infinitivo…» sin frase principal también se va.
+            s = s.replace(/(?:^|\n)[ \t]*(?:ahora|entonces|bueno|listo|perfecto|genial)\s*,\s*$/iu, (m) => m.replace(/,\s*$/, "."))
+              .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))Para\s+(?:darte|decirte|pasarte|confirmarte|calcular(?:te|lo)?|saber|seguir|avanzar|continuar|cerrar(?:lo|te)?|dejarlo\s+listo|enviarte|mandarte|ayudarte)\b[^.!?¿\n]{0,80}\.\s*$/iu, "")
+              .replace(/,\s*$/, ".").trimEnd();
             const ult = s.trimEnd().split("\n").pop() ?? "";
             if (!s.trim()) return q;
             // (+ la línea de la oferta de llevar más: la pregunta va en su propio párrafo, no pegada — simulación B)
@@ -27242,24 +27266,33 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                   : _nPl > _adP
                   ? `Con *${_symP2} ${_nPl}* cubres el adelanto de *${_symP2} ${_adP}* y los *${_symP2} ${_nPl - _adP}* de más se descuentan del saldo 🙌`
                   : `Justo: el adelanto es *${_symP2} ${_adP}* 🙌`;
-                // Fuera lo que la IA dijo leyendo el número como cantidad.
-                const _sinOpc = _s.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])|\n/u)
-                  .filter((f) => !/(?:s[oó]lo|solo|solamente|por\s+el\s+momento)\s+(?:tenemos|hay|manejamos)|no\s+(?:hay|tenemos)\s+(?:para|de)\s+\d|presentaciones\s+de|opciones\s*:|cu[aá]l\s+de\s+(?:esas|estas)\s+(?:opciones|presentaciones)|\b(?:1|una)\s+unidad,?\s+2\s+unidades|te\s+conviene\s+elegir/i.test(sinFormato(f)))
-                  .filter((f) => /[\p{L}\p{N}]/u.test(f))   // (sin la cola de solo emojis que dejaba el recorte)
-                  .join(" ").replace(/[ \t]{2,}/g, " ").trim();
+                // Fuera lo que la IA dijo leyendo el número como cantidad. POR RENGLÓN (la lista de precios conserva
+                // sus saltos: en el chat de Rodrigo salió toda en una línea — 2026-10-01) y por frase dentro de cada uno.
+                const _RE_OPC_MAL = /(?:s[oó]lo|solo|solamente|por\s+el\s+momento|por\s+ahora)\s+(?:tenemos|hay|manejamos|vendemos)|no\s+(?:hay|tenemos|vendemos)\s+(?:para|de)\s+(?:a\s+)?\d|presentaciones\s+de|opciones\s*(?:disponibles)?\s*:|cu[aá]l\s+de\s+(?:esas|estas)\s+(?:opciones|presentaciones)|\b(?:1|una)\s+unidad,?\s+2\s+unidades|te\s+conviene\s+elegir|dime\s+cu[aá]l\s+prefieres/i;
+                const _sinOpc = _s.split("\n").map((ln) =>
+                  ln.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
+                    .filter((f) => !_RE_OPC_MAL.test(sinFormato(f)))
+                    .filter((f) => /[\p{L}\p{N}]/u.test(f))   // (sin la cola de solo emojis que dejaba el recorte)
+                    .join(" ").replace(/[ \t]{2,}/g, " ").trim()
+                ).join("\n").replace(/\n{3,}/g, "\n\n").trim();
                 // Si la IA SÍ lo contestó (nombra el adelanto con su cifra, como en el chat de Rodrigo), se respeta.
                 const _iaContesto = /adelanto|anticipo/i.test(sinFormato(_sinOpc))
                   && new RegExp("(?:^|[^0-9])" + _adP + "(?![0-9])").test(sinFormato(_sinOpc));
-                // Una sola pregunta por burbuja: si lo que queda de la IA ya pregunta («¿Cuál de esas tres quieres
-                // llevar?»), la respuesta del monto va sin la suya (reproducción Barranca 3).
-                const _respP2 = /[?¿]/.test(_sinOpc) ? _respP.replace(/\s*¿[^?]*\?\s*$/u, "").trim() : _respP;
+                // Una sola pregunta por burbuja: sin cantidad elegida la que va es «¿cuántas?» (abajo); y si lo que
+                // queda de la IA ya pregunta, la respuesta del monto va sin la suya (reproducción Barranca 3).
+                const _sinCant = !String(ctx.opcion_id ?? "").trim();
+                const _respP2 = (_sinCant || /[?¿]/.test(_sinOpc)) ? _respP.replace(/\s*¿[^?]*\?\s*$/u, "").trim() : _respP;
                 _s = _iaContesto ? _sinOpc : `${_respP2}${_sinOpc ? "\n\n" + _sinOpc : ""}`;
-                // Sin la cantidad elegida y sin pregunta que quede, la de la cantidad (sin volver a pegar la lista).
-                if (!String(ctx.opcion_id ?? "").trim() && !/[?¿]/.test(_sinOpc)) {
+                // Sin la cantidad elegida, la pregunta de la cantidad (sin volver a pegar la lista), y una sola.
+                if (_sinCant) {
                   try {
                     const _opsPl = await loadOpciones(db, run, String(ctx._product_id ?? ""));
                     const _qPl = preguntaCuantos(_opsPl, ctx, _negOn, true);
-                    if (_qPl) _s = `${_s.trimEnd()}\n\n${_qPl}`;
+                    if (_qPl) {
+                      _s = _s.replace(/[ \t]*¿[^?¿\n]*\b(?:cu[aá]nt[ao]s|cu[aá]l)\b[^?¿\n]*\?[ \t]*(?:\p{Extended_Pictographic}️?[ \t]*)*/giu, " ")
+                        .replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+                      _s = `${_s}\n\n${_qPl}`;
+                    }
                   } catch (_) { /* sin opciones → se queda la pregunta del adelanto */ }
                 }
                 await logEvent(db, run.channel_id, run.contact_id, "nota", "💵 Dijo un monto y se le contestó contra el adelanto",
@@ -27271,9 +27304,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // adelanto puedes mandar?» recibió solo «¿De dónde nos escribes?» —el guard de la pregunta doble se llevó la
           // frase que traía el monto— (Probar flujos, Rodrigo, 2026-10-01). Sin zona también se contesta: el adelanto
           // es el mismo para toda provincia.
+          // (se mira la CIFRA junto a la palabra, no la palabra sola: «Para darte el monto exacto del adelanto.» — un
+          //  tocón que dejó otro recorte — tenía la palabra y ningún monto, y el cliente se quedó sin respuesta — 2026-10-01)
           if (String(ctx.pedido_creado ?? "") !== "si"
               && /\b(adelanto|anticipo|pag(?:ar|o|amos)\s+(?:algo\s+)?(?:antes|adelantad[oa]|por\s+adelantado)|se\s+paga\s+antes)\b/i.test(String(ctx.last_input ?? ""))
-              && !/adelanto|anticipo/i.test(sinFormato(_s))
+              && !/(?:adelanto|anticipo)[^.\n]{0,40}(?:S\/|\$)\s*\d|(?:S\/|\$)\s*\d[^.\n]{0,40}(?:adelanto|anticipo)/i.test(sinFormato(_s))
               && !RE_PIDE_DEVOLUCION.test(String(ctx.last_input ?? "")) && !pideCancelar(String(ctx.last_input ?? ""))
               && !seArrepiente(String(ctx.last_input ?? "")) && !RE_ANUNCIA_PAGO.test(String(ctx.last_input ?? ""))
               && !/(?:^|[^\p{L}])(yape[eé]|plin[eé]|pagu[eé]|deposit[eé]|transfer[ií]|envi[eé]|mand[eé])(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
