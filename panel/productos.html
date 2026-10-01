@@ -2887,7 +2887,10 @@ async function generarFlujoFisico(flowId, N, E){
     // de soltarla: cuánto hoy, cuánto después y a QUIÉN. Lo último es lo que más importa —
     // el saldo se paga a nosotros, NO en la agencia: Shalom solo entrega contra la clave.
     // Sin decirlo, el cliente llega al mostrador con la plata y no puede recoger su paquete.
-    bubbles:[{ text:"¡Perfecto! 🙌 Para mandarte el pedido, confírmalo con un adelanto de *"+curSym(st.prod&&st.prod.config)+" {{adelanto}}*.\n\n{{datos_pago}}\n\nCuando lo hagas, mándame la captura y lo verifico al toque.\n\n{{promesa_despacho}}\n\n{{demora_provincia_linea}}\n\nLos *"+curSym(st.prod&&st.prod.config)+" {{saldo}}* que faltan los pagas recién cuando tu pedido ya esté en la agencia — ahí te paso tu clave para recogerlo." }],
+    // 📏 Corto (Rodrigo, 2026-10-01: «el mensaje del adelanto es largo»): cinco bloques en vez de ocho. La
+    // captura y el saldo van en un párrafo; la promesa de despacho y el plazo, en otro (el motor ya los
+    // junta también en los flujos viejos). «Me los pagas POR ACÁ»: el saldo se paga a nosotros, no en el mostrador.
+    bubbles:[{ text:"¡Perfecto! 🙌 Para despacharlo, confírmalo con un adelanto de *"+curSym(st.prod&&st.prod.config)+" {{adelanto}}*:\n\n{{datos_pago}}\n\nMándame la captura y lo verifico al toque. Los *"+curSym(st.prod&&st.prod.config)+" {{saldo}}* restantes me los pagas por acá cuando ya esté en la agencia, y ahí te paso tu clave para recogerlo.\n\n{{promesa_despacho}} {{demora_provincia_linea}}" }],
   },false,1520,640);
   // ¿El cliente YA pagó el adelanto ANTES de dar sus datos? El motor lo enganchó
   // al crear el pedido (engancharPrepagoAdelanto) y marcó `adelanto_prepagado`. Si
