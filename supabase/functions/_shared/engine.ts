@@ -5610,6 +5610,9 @@ function sinRestosDeRecorte(t: string): string {
     // el final, un emoji, un salto o una frase nueva en mayúscula: «dime cuántas» sigue entero.
     .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))(?:(?:[Yy]\s+)?(?:[Aa]hora|[Ee]ntonces|[Bb]ueno|[Gg]enial|[Pp]erfecto|[Ll]isto|[Oo]k)\s*,?\s+)?(?:[Pp]rimero\s+)?(?:[Dd]ime|[Cc]u[eé]ntame|[Cc]u[eé]ntanos|[Ii]nd[ií]came|[Aa]v[ií]same|[Pp][aá]same|[Cc]onf[ií]rmame)\s*[.,]?[ \t]*(?=(?:[ \t]|\p{Extended_Pictographic}|️)*(?:\n|$)|[A-ZÁÉÍÓÚÑ¿¡])/gu, "")
     .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))(?:Sobre|Respecto\s+a|En\s+cuanto\s+a)\s+(?:el|la|lo|al|tu|los|las)\s+(?:[^\s,.!?¿\n]+\s+){0,4}[^\s,.!?¿\n]+\s*[,:][ \t]*(?=\n|$)/giu, "")
+    // …y la muletilla con coma que cierra un renglón con texto delante («…sin complicaciones 🔧 Ahora,» y debajo la
+    // lista — R1P-adelantoprimero, 2026-10-01)
+    .replace(/(?<=\s)(?:[Aa]hora|[Ee]ntonces|[Bb]ueno|[Yy]\s+bueno)\s*,[ \t]*(?=\n|$)/gu, "")
     .replace(/\n{3,}/g, "\n\n")
     // …y la pregunta que se quedó sin su «?» (se lo llevó el trozo quitado): se le devuelve antes de los emojis.
     // (el emoji con unión o tono de piel — 🤷‍♂️ — cuenta entero: si no, el «?» se metía en medio — auditoría 2026-09-30)
@@ -19491,6 +19494,14 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   if (!prodId) return null;
   const list = await loadOpciones(db, run, prodId);
   if (list.length < 2) return null; // una sola opción → nada que elegir
+  // 💵 Un número que es PLATA no elige nada: «10 t deposito» (= te deposito S/ 10) selló «10 unidades» por el número
+  // pelado —el clasificador y la red del padrón lo leen como cantidad— y salió «Anotado: 10 unidades, S/ 349» a quien
+  // ofrecía diez soles de adelanto (R1P-barranca, tercera relanzada, 2026-10-01). El monto lo contesta el nodo de venta.
+  if (!esDigital(ctx) && RE_NUMERO_DE_PLATA.test(String(texto ?? "")) && !/\b(?:unidad|unidades|packs?|piezas?|kits?|pares?|frascos?|cajas?)\b/i.test(String(texto ?? ""))) {
+    await logEvent(db, run.channel_id, run.contact_id, "nota", "💵 El número es plata, no cantidad",
+      `«${String(texto ?? "").slice(0, 60)}» — no se sella ninguna presentación por ese número`).catch(() => {});
+    return null;
+  }
   // 📍 «la 2» justo después de la LISTA DE OFICINAS/DISTRITOS es elegir de esa lista, no «2 unidades»
   // (F7-psedenumero: «quedó anotado 2 unidades por S/109» a quien eligió la segunda oficina). Se anota
   // cuál nombró (`_ordinalSede`) para que la resolución de la sede la tome.
@@ -26056,7 +26067,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (comboDe(run).length > 0) {
             const _antesC2 = salida;
             salida = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
-              .filter((f) => !/(?:un\s+solo|uno\s+solo|un\s+[uú]nico)\s+acceso|\b(?:con\s+)?un[oa]?\s+sol[oa]\b[^.!?\n]{0,30}\b(?:queda|basta|alcanza|sirve)|no\s+(?:hace\s+falta|necesitas|tienes\s+que)\s+(?:llevar\s+|comprar\s+|tener\s+|pagar\s+)?(?:dos|2)\b|con\s+una\s+(?:vez|sola)\s+te\s+alcanza|el\s+acceso\s+es\s+uno\s+solo|no\s+hay\s+que\s+comprar(?:lo)?\s+dos\s+veces/iu.test(sinFormato(f)))
+              .filter((f) => !/(?:un\s+solo|uno\s+solo|un\s+[uú]nico)\s+acceso|\b(?:con\s+)?un[oa]?\s+sol[oa]\b[^.!?\n]{0,30}\b(?:queda|basta|alcanza|sirve)|\bcon\s+un[oa]?\s+(?:sol[oa]\s+)?te\s+(?:basta|alcanza|sirve)\b|\buna\s+sola\s+compra\b|no\s+(?:hace\s+falta|necesitas|tienes\s+que)\s+(?:llevar\s+|comprar\s+|tener\s+|pagar\s+)?(?:dos|2)\b|con\s+una\s+(?:vez|sola)\s+te\s+alcanza|el\s+acceso\s+es\s+uno\s+solo|no\s+hay\s+que\s+comprar(?:lo)?\s+dos\s+veces/iu.test(sinFormato(f)))
               .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
             if (salida !== _antesC2) await logEvent(db, run.channel_id, run.contact_id, "nota", "🛒 Fuera «un solo acceso»: está llevando dos productos", "").catch(() => {});
           }
@@ -27604,8 +27615,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // (…y sin la petición de la SEDE en imperativo que la IA metió antes: «dime por favor en cuál sede… 📍 Dime
             //  cuántas llevas» eran dos pedidos; la cantidad va primero y la oficina la lista el motor — R1P-prepago)
             const _sinPines = _s.replace(/[ \t]*📌[^\n📌]*/gu, "")
-              .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))(?:y\s+)?(?:dime|cu[eé]ntame|ind[ií]came|conf[ií]rmame|av[ií]same)(?:\s+por\s+favor|\s+porfa)?\s+(?:en\s+)?(?:cu[aá]l|qu[eé])\s+(?:sede|oficina|agencia|distrito)[^.!?\n]*[.!?]?[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)*/giu, "")
-              .trim();
+              // (también a mitad de frase y con relleno: «Para completar tu pedido dime, por favor, en cuál sede de la
+              //  agencia Shalom en Tacna prefieres recogerlo 📍» — segunda relanzada de R1P-prepago)
+              .replace(/(?:(?:para|y\s+para|ahora)\s+(?:completar|terminar|cerrar|avanzar\s+con|dejar\s+listo)\s*(?:tu\s+pedido|el\s+pedido|todo)?\s*,?\s*)?\b(?:y\s+)?(?:dime|cu[eé]ntame|ind[ií]came|conf[ií]rmame|av[ií]same|elige|escoge)\s*,?\s*(?:por\s+favor|porfa)?\s*,?\s*(?:en\s+)?(?:cu[aá]l|qu[eé])\s+(?:sede|oficina|agencia|distrito)[^.!?\n]*[.!?]?[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)*/giu, "")
+              .replace(/[ \t]{2,}/g, " ").trim();
             _s = /[\p{L}\p{N}]/u.test(_sinPines) ? _pegaSuave(_sinPines, _qC) : _qC;
           }
           // 🗺️ Red final: sin zona, con la cantidad ya sellada y sin pedido, el mensaje NO se queda sin pregunta
@@ -28093,8 +28106,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
         // 🛒 El combo recién armado (o completado con la versión que faltaba) ES la decisión de compra.
         const _comboListo = !!(run as any)._comboCambio && comboDe(run).length > 0 && comboSuma(run) != null;
+        // (lo que escribió la IA Y lo que salió: la pregunta «¿cuál prefieres?» a veces la pone el motor —cierre honesto— y
+        //  solo se ve en `salida`; con eso maybeDatosPago no la repite con su lista — R1D-preciodos, 2026-10-01)
         if (!_cubiertaConBolsa) _datosSalieron = !!(await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
-          String(result), _digitalElegido || _recompraUnico || _comboListo,
+          `${String(result)}\n${String(salida ?? "")}`, _digitalElegido || _recompraUnico || _comboListo,
           // Lo que la versión física necesita: la zona (solo provincia tiene adelanto) y
           // cuánto es ese adelanto, para no mandarle un número sin monto.
           { zona: String(ctx.zona_entrega ?? ""), adelanto: Number(ctx.adelanto), sym: simboloMoneda(ctx.moneda as string),
