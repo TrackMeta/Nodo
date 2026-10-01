@@ -26760,12 +26760,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
         } catch (_) { /* sin pedido legible → el mensaje sale igual */ }
       }
-      // 📦 Cómo le llega, en su propia burbuja y ANTES del mensaje: primero cómo le llega,
-      // después lo que se le pide. Va por `emit` y no pegado al texto para que WhatsApp las
-      // muestre como dos mensajes, que es lo que pidió Rodrigo.
-      if (_burbujaEnvio) {
-        await emit(db, run, { text: _burbujaEnvio, _noTpl: true }, ctx).catch(() => {});
-      }
+      // 📦 Cómo le llega: antes salía acá, en su burbuja y ANTES del mensaje. Rodrigo (2026-10-01, viendo
+      // las tres burbujas seguidas —bloque, respuesta, ficha— con la dirección dos veces): «sí, hazlo así»:
+      // primero la respuesta, y el bloque va en el PIE de la ficha de la sede; si la ficha no sale, el
+      // bloque sale solo, después de la respuesta. Ver más abajo, tras emitIaText.
       // 🔬 RASTRO DEL RETOQUE. Cuando lo que sale NO contiene tal cual lo que escribió la IA
       // —o sea, algún guard reescribió o recortó, no solo pegó una lista debajo— el texto
       // crudo queda en la Timeline. Sin esto, un empalme como «pagas al recibirquieres
@@ -27420,15 +27418,29 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         try {
           const { data: _fa } = await db.from("sede_imagenes").select("url").eq("slug", _slugA).maybeSingle();
           if (_fa?.url) {
+            // 📦 El bloque de cómo le llega va en el PIE de la foto: «📍 Esta es la sede donde lo recoges:
+            // *Ica Santiago* de *Shalom* / _frente a la comisaría_ / Lo recoges con la clave… — envío gratis.»
+            // Una burbuja menos y la dirección una sola vez (Rodrigo, 2026-10-01).
+            const _plegable = /^📦\s*Te llega a la sede\s+/u.test(_burbujaEnvio);
+            const _cap = _plegable
+              ? _burbujaEnvio.replace(/^📦\s*Te llega a la sede\s+/u, "📍 Esta es la sede donde lo recoges: ")
+              : "📍 Esta es la sede donde lo recoges.";
             await emit(db, run, {
               media_url: _fa.url, media_kind: "image",
-              caption: "📍 Esta es la sede donde lo recoges.", _noTpl: true,
+              caption: _cap, _noTpl: true,
             }, ctx);
+            if (_plegable) _burbujaEnvio = "";
             delete (run.vars as any)._ficha_sede;   // ya salió: que no se repita al crear el pedido
             await logEvent(db, run.channel_id, run.contact_id, "nota", "🖼️ Ficha de la sede enviada",
-              "Al quedar firme la sede, no al crear el pedido").catch(() => {});
+              _plegable ? "Al quedar firme la sede, con el bloque de cómo le llega en el pie" : "Al quedar firme la sede, no al crear el pedido").catch(() => {});
           }
         } catch { /* sin ficha → el resumen del pedido igual le dice la sede */ }
+      }
+      // 📦 Y el bloque de cómo le llega que no se fue en el pie de una ficha: sale solo, DESPUÉS de la
+      // respuesta (antes salía delante, ver `_burbujaEnvio` más arriba).
+      if (_burbujaEnvio && !handoff) {
+        await emit(db, run, { text: _burbujaEnvio, _noTpl: true }, ctx).catch(() => {});
+        _burbujaEnvio = "";
       }
       // 🖼️ La ficha de la agencia NO se manda desde acá. Se intentó —detrás del mensaje
       // que la nombra, esperando hasta 3 turnos— y el resultado era impredecible: dependía
