@@ -5283,9 +5283,15 @@ const RE_PALABRA_DATO =
 // Quita del texto las frases y renglones con que pide datos; devuelve lo que queda y si quitó algo. Lo usa
 // `conPedidoDeDatosOrdenado` (que pega el bloque canónico) y el recorte SIN ZONA (que no pide datos todavía:
 // «¿Me pasas tu celular, nombre y distrito?» sin saber de dónde es — simulación B, 2026-10-01).
-function quitarPeticionDeDatos(texto: string): { texto: string; hubo: boolean } {
+// (con `conservarZona`, la frase que pide SOLO el distrito/ciudad se queda: en el recorte sin zona es justo la
+//  pregunta que hace falta — «necesito saber de qué distrito o ciudad nos escribes» se iba y quedaba «¿Me lo
+//  pasas porfa?» huérfano; reproducción Barranca, 2026-10-01)
+const RE_PALABRA_DATO_SIN_ZONA =
+  /(?:\b(?:nombre|apellidos?|dni|documento|celular|tel[eé]fono|n[uú]mero\s+de\s+(?:contacto|celular|tel[eé]fono)|tu\s+n[uú]mero|n[uú]mero\s+completo|datos?|direcci[oó]n|referencia)\b|(?:lo\s+siguiente|estos|esto|lo\s+que\s+sigue)\s*(?:👇|:))/iu;
+function quitarPeticionDeDatos(texto: string, conservarZona = false): { texto: string; hubo: boolean } {
   const t = String(texto ?? "");
   if (!t.trim()) return { texto, hubo: false };
+  const _REDATO = conservarZona ? RE_PALABRA_DATO_SIN_ZONA : RE_PALABRA_DATO;
   // La IA también usa 📌 para la lista de precios: un renglón con precio o unidades no es un campo.
   const _esCampo = (ln: string) => !/(?:S\/|\$)\s?\d|\bunidad|\bunidades|\bpack\b|\boferta\b/i.test(ln);
   let hubo = false;
@@ -5300,13 +5306,14 @@ function quitarPeticionDeDatos(texto: string): { texto: string; hubo: boolean } 
       let _quitada = false;
       for (const f of _fr) {
         const sf = sinFormato(f);
-        if (RE_FRASE_PIDE_DATOS.test(sf) && RE_PALABRA_DATO.test(sf)) { hubo = true; _quitada = true; continue; }
+        if (RE_FRASE_PIDE_DATOS.test(sf) && _REDATO.test(sf)) { hubo = true; _quitada = true; continue; }
         if (_quitada) {
-          // La pregunta huérfana que seguía a la petición quitada («¿Me lo pasas? 🙂») y la cola de solo emojis.
-          if (/^\s*¿?\s*(?:me\s+(?:lo|los|la|las)\s+(?:pasas|mandas|env[ií]as|das|confirmas|dejas)|(?:lo|los)\s+(?:tienes|me\s+pasas))\s*\??[\s\p{Extended_Pictographic}️]*$/iu.test(sf)) continue;
+          // La pregunta huérfana que seguía a la petición quitada («¿Me lo pasas? 🙂», «¿Me lo pasas porfa?») y la cola de solo emojis.
+          if (/^\s*¿?\s*(?:me\s+(?:lo|los|la|las)\s+(?:pasas|mandas|env[ií]as|das|confirmas|dejas)|(?:lo|los)\s+(?:tienes|me\s+pasas))(?:\s+(?:porfa|porfis|por\s+favor))?\s*\??[\s\p{Extended_Pictographic}️]*$/iu.test(sf)) continue;
           if (!/[\p{L}\p{N}]/u.test(sf)) continue;
-          // …y el remate que se refería a ella: «Así te lo envío rápido 📦», «Así lo dejamos listo».
-          if (/^\s*as[ií]\s+(?:te\s+lo\s+|te\s+la\s+|lo\s+|la\s+|te\s+)?(?:env[ií]o|mando|dejo|preparo|despacho|coordino|dejamos|cerramos|avanzamos|seguimos)\b/iu.test(sf)) continue;
+          // …y el remate que se refería a ella: «Así te lo envío rápido 📦», «Así lo dejamos listo», «Así te digo
+          // exactamente cómo te llega y cuánto sería».
+          if (/^\s*as[ií]\s+(?:te\s+lo\s+|te\s+la\s+|lo\s+|la\s+|te\s+)?(?:env[ií]o|mando|dejo|preparo|despacho|coordino|dejamos|cerramos|avanzamos|seguimos|digo|cuento|explico|confirmo|indico|s[eé])\b/iu.test(sf)) continue;
         }
         _quitada = false;
         _keep.push(f);
@@ -20968,6 +20975,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             _nPed = _k === "media" ? 6 : Math.round((/^\d+$/.test(_k) ? Number(_k) : (NUM_PALABRA[_k] ?? 1)) * 12);
           }
         }
+        // 💵 Un número que es PLATA no es cantidad: «10 t deposito» (= te deposito S/ 10 de adelanto) se leyó como
+        // «quiero 10» —la IA contestó «no hay para 10» y el clasificador se fue a la oferta oculta de 10— (Probar
+        // flujos, Rodrigo, 2026-10-01). Se le dice al modelo en el bloque del turno y no cuenta como «pide más».
+        const _RE_PLATA_NUM = /(?:(?:S\/|\$|soles?\s+de|adelanto\s+de|dep[oó]sito\s+de|abono\s+de|pago\s+de|te\s+(?:yapeo|plineo|deposito|transfiero|mando|paso|doy|dejo|abono|pago))\s*\d{1,5}|\b\d{1,5}\s*(?:t\s+|te\s+)?(?:dep[oó]sit\p{L}*|yape\p{L}*|plin\p{L}*|transfier\p{L}*|abon\p{L}*|adelant\p{L}*|soles|sol|lucas|de\s+adelanto|de\s+inicial))/iu;
+        if (_RE_PLATA_NUM.test(_liO) && !/\b(?:unidad|unidades|packs?|piezas?|kits?)\b/i.test(_liO)) {
+          if (_nPed) _nPed = 0;
+          _bloqueTurno += "\n\n## El número que escribió es PLATA, no cantidad\n" +
+            "Habla de un MONTO (lo que puede depositar o adelantar), no de unidades. No lo tomes como cantidad ni le digas " +
+            "que «no hay para» ese número: contéstale sobre el pago. Si el monto es menor que el adelanto, dile cuánto es " +
+            "el adelanto y que con eso se manda; si es mayor, que lo que sobre se descuenta del saldo.";
+        }
         const _pideMas = /\b(?:y\s+si\s+(?:llevo|quiero|compro|pido)\s+m[aá]s|(?:llevo|quiero|necesito|compro)\s+(?:m[aá]s|varios|varias|bastantes|muchos|muchas)\b|m[aá]s\s+(?:cantidad|unidades)|(?:packs?|ofertas?|paquetes?)\s+(?:m[aá]s\s+grandes?|de\s+m[aá]s)|(?:hay|tienen|tiene[ns]?)\s+(?:m[aá]s\s+(?:ofertas|packs|cantidad)|ofertas?\s+(?:por|de)\s+(?:m[aá]s|cantidad|volumen))|por\s+(?:mayor|volumen|cantidad)|al\s+por\s+mayor|mayorista|docenas?|revender|(?:tengo|para)\s+(?:una?\s+|mi\s+)?(?:ferreter[ií]a|bodega|taller|tienda|negocio))\b/i.test(_liO)
           || (_modoPacks && _nPed > _maxVis && _maxVis > 0);
         if (_todasO.some((o) => o.oculta) && _pideMas && !(run.vars as any)._ver_ocultas) {
@@ -26981,7 +26999,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // listo?» a «quiero 1», sin saber de dónde es — simulación B, 2026-10-01): se va igual, por frase.
           let _sInline = false;
           if ((!_zonaOk || !!(ctx as any)._falta_opcion) && !/📌/.test(_s)) {
-            const _qI = quitarPeticionDeDatos(_s);
+            const _qI = quitarPeticionDeDatos(_s, true);   // la pregunta por el distrito/ciudad se queda: es la que toca
             if (_qI.hubo && _qI.texto.replace(/[\s\p{P}\p{S}]/gu, "").length >= 3) { _s = _qI.texto; _sInline = true; }
           }
           if ((!_zonaOk || !!(ctx as any)._falta_opcion) && (/📌/.test(_s) || _sInline)) {
