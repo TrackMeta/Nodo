@@ -7068,6 +7068,12 @@ function sinTerceraPersona(texto: string): string {
 function bloqueEnvioExplicado(texto: string, courier: string, modo: string, sede?: { l: string; ref?: string; dir?: string } | null, envio?: { monto: number; sym: string } | null): string {
   const t = String(texto ?? "").trimStart();
   if (!t || RE_YA_EXPLICO_ENVIO.test(t)) return "";
+  return bloqueEnvio(courier, modo, sede, envio);
+}
+// El bloque a secas, sin mirar el texto: lo usa también el PIE de la ficha de la sede, que lo lleva siempre
+// (aunque la IA ya haya dicho «te llega por agencia Shalom», la referencia, la clave y el envío gratis no
+// los dijo — simulación A, 2026-10-01).
+function bloqueEnvio(courier: string, modo: string, sede?: { l: string; ref?: string; dir?: string } | null, envio?: { monto: number; sym: string } | null): string {
   const quien = String(courier ?? "").trim() || "la agencia";
   // Quién paga el flete va acá, ANTES de que dé sus datos y de que mande el adelanto.
   // Es el momento honesto para decirlo: después ya es una sorpresa en el mostrador.
@@ -27067,7 +27073,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // (+ «Así SÉ cómo te llega y te pido unos datos…» — F10-cincoydiez)
             // (el arranque para en un EMOJI también: la IA separa con emoji y, quitada la pregunta de en medio, el
             //  retroceso llegaba al punto DECIMAL de «hasta 1.5 mm» → «hasta 1. ¿Alguna otra duda?» — F11R-cortito)
-            _s = _s.replace(/[^.!?¿\n\p{Extended_Pictographic}]*\bas[ií]\s+(?:te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)|s[eé]|sabr[eé]|veo|reviso)\s+c[oó]mo\s+(?:te\s+)?(?:lo\s+|la\s+)?(?:llega|puede\s+llegar|podr[ií]a\s+llegar|llegar[ií]a|recibes|env[ií]amos|mandamos|despachamos|te\s+lo\s+(?:env[ií]o|mando|hago\s+llegar)|sigue|seguimos|contin[uú]a|avanzamos|queda)\b[^.!?¿\n]*?[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda)/giu, " ");
+            _s = _s.replace(/[^.!?¿\n\p{Extended_Pictographic}]*\bas[ií]\s+(?:te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)|s[eé]|sabr[eé]|veo|reviso)\s+c[oó]mo\s+(?:te\s+)?(?:lo\s+|la\s+)?(?:llega|puede\s+llegar|podr[ií]a\s+llegar|llegar[ií]a|recibes|env[ií]amos|mandamos|despachamos|te\s+lo\s+(?:env[ií]o|mando|hago\s+llegar)|sigue|seguimos|contin[uú]a|avanzamos|queda)\b[^.!?¿\n]*?[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda|Cu[eé]ntame de qu[eé] distrito|Dime cu[aá]ntas llevas)/giu, " ")
+              // (+ la suave nueva «Cuéntame de qué distrito…» delante: quedaba « Así te cuento cómo te llega y seguimos con tu
+              //  pedido. Cuéntame…» — simulación B, 2026-10-01; y el espacio que abría el renglón tras quitar la pregunta)
+              .replace(/\n[ \t]+/g, "\n");
             // (+ «Así te digo cómo SIGUE todo» — F12S-yapague, 2026-09-29)
             // …y la misma cola al final de SU renglón, con la lista de precios en medio y la suave más abajo:
             // «Vendemos solo online… Así te cuento cómo queda el envío\n\n📦\n\n1 unidad — …» (F12T-tienda).
@@ -27400,15 +27409,30 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // 📦 El bloque de cómo le llega va en el PIE de la foto: «📍 Esta es la sede donde lo recoges:
             // *Ica Santiago* de *Shalom* / _frente a la comisaría_ / Lo recoges con la clave… — envío gratis.»
             // Una burbuja menos y la dirección una sola vez (Rodrigo, 2026-10-01).
-            const _plegable = /^📦\s*Te llega a la sede\s+/u.test(_burbujaEnvio);
+            // Si este turno no armó el bloque (la IA no pidió datos, o ya había dicho «te llega por agencia»),
+            // se arma acá igual: el pie lleva siempre la sede, su referencia, la clave y quién paga el envío.
+            let _blF = _burbujaEnvio;
+            if (!_blF) {
+              try {
+                const _entF = await loadEntregas(db, run);
+                const _courF = Object.keys((((_entF as any)?.entregas?.courier ?? {}) as Record<string, unknown>))[0] ?? "";
+                const _nomF = _courF ? _courF.charAt(0).toUpperCase() + _courF.slice(1) : "";
+                const _ofiF = agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""));
+                if (_ofiF) {
+                  _blF = sinDespachar(sinPagarEnLaAgencia(bloqueEnvio(_nomF, modoEnvio(ctx), _ofiF as any,
+                    { monto: envioCobroDe(ctx, "provincia"), sym: simboloMoneda(ctx.moneda as string) }), true));
+                }
+              } catch (_) { /* sin config de courier → pie corto */ }
+            }
+            const _plegable = /^📦\s*Te llega a la sede\s+/u.test(_blF);
             const _cap = _plegable
-              ? _burbujaEnvio.replace(/^📦\s*Te llega a la sede\s+/u, "📍 Esta es la sede donde lo recoges: ")
+              ? _blF.replace(/^📦\s*Te llega a la sede\s+/u, "📍 Esta es la sede donde lo recoges: ")
               : "📍 Esta es la sede donde lo recoges.";
             await emit(db, run, {
               media_url: _fa.url, media_kind: "image",
               caption: _cap, _noTpl: true,
             }, ctx);
-            if (_plegable) _burbujaEnvio = "";
+            if (_plegable) { _burbujaEnvio = ""; run.vars._envio_explicado = 1; }
             delete (run.vars as any)._ficha_sede;   // ya salió: que no se repita al crear el pedido
             await logEvent(db, run.channel_id, run.contact_id, "nota", "🖼️ Ficha de la sede enviada",
               _plegable ? "Al quedar firme la sede, con el bloque de cómo le llega en el pie" : "Al quedar firme la sede, no al crear el pedido").catch(() => {});
