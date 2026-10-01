@@ -26068,7 +26068,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const _antesC2 = salida;
             salida = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
               .filter((f) => !/(?:un\s+solo|uno\s+solo|un\s+[uú]nico)\s+acceso|\b(?:con\s+)?un[oa]?\s+sol[oa]\b[^.!?\n]{0,30}\b(?:queda|basta|alcanza|sirve)|\bcon\s+un[oa]?\s+(?:sol[oa]\s+)?te\s+(?:basta|alcanza|sirve)\b|\buna\s+sola\s+compra\b|no\s+(?:hace\s+falta|necesitas|tienes\s+que)\s+(?:llevar\s+|comprar\s+|tener\s+|pagar\s+)?(?:dos|2)\b|con\s+una\s+(?:vez|sola)\s+te\s+alcanza|el\s+acceso\s+es\s+uno\s+solo|no\s+hay\s+que\s+comprar(?:lo)?\s+dos\s+veces/iu.test(sinFormato(f)))
-              .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+              .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim()
+              // (sin los emojis que la frase quitada dejó abriendo el mensaje: «👇🎓 Dime cuál prefieres…» — tercera relanzada)
+              .replace(/^[\s\p{Extended_Pictographic}\u{FE0F}]+(?=[\p{L}¿¡*])/u, "")
+              .replace(/^[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)+$/gmu, "").replace(/\n{3,}/g, "\n\n").trim();
             if (salida !== _antesC2) await logEvent(db, run.channel_id, run.contact_id, "nota", "🛒 Fuera «un solo acceso»: está llevando dos productos", "").catch(() => {});
           }
           if (!_listaProductos && !_variasPersonas && !_opsDig.some((o) => Number(o.cantidad ?? 0) > 1)) {
@@ -27507,7 +27510,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // Fuera lo que la IA dijo leyendo el número como cantidad. POR RENGLÓN (la lista de precios conserva
                 // sus saltos: en el chat de Rodrigo salió toda en una línea — 2026-10-01) y por frase dentro de cada uno.
                 // (+ «las opciones son solo para 1, 2 o 3 unidades» / «Elige una de esas presentaciones» — R1P-barranca, 2026-10-01)
-                const _RE_OPC_MAL = /(?:s[oó]lo|solo|solamente|por\s+el\s+momento|por\s+ahora)\s+(?:tenemos|hay|manejamos|vendemos)|no\s+(?:hay|tenemos|vendemos)\s+(?:para|de)\s+(?:a\s+)?\d|presentaciones\s+de|opciones\s*(?:disponibles)?\s*:|cu[aá]l\s+de\s+(?:esas|estas)\s+(?:opciones|presentaciones)|\b(?:1|una)\s+unidad,?\s+2\s+unidades|te\s+conviene\s+elegir|dime\s+cu[aá]l\s+prefieres|las\s+opciones\s+son\s+(?:solo|s[oó]lo|solamente|para)|elige\s+una\s+de\s+(?:esas|estas|las)|para\s+1,?\s+2\s+[oó]\s+3/i;
+                const _RE_OPC_MAL = /(?:s[oó]lo|solo|solamente|por\s+el\s+momento|por\s+ahora)\s+(?:tenemos|hay|manejamos|vendemos)|no\s+(?:hay|tenemos|vendemos)\s+(?:para|de)\s+(?:a\s+)?\d|presentaciones\s+de|opciones\s*(?:disponibles)?\s*:|cu[aá]l\s+de\s+(?:esas|estas)\s+(?:opciones|presentaciones)|\b(?:1|una)\s+unidad,?\s+2\s+unidades|te\s+conviene\s+elegir|dime\s+cu[aá]l\s+prefieres|las\s+opciones\s+son\s+(?:solo|s[oó]lo|solamente|para)|elige\s+una\s+de\s+(?:esas|estas|las)|para\s+1,?\s+2\s+[oó]\s+3|no\s+hay\s+(?:opci[oó]n|oferta|presentaci[oó]n|pack)\s+(?:de|para)\s+\d|venta\s+por\s+\d+\s+unidades\s+m[aá]ximo|m[aá]ximo\s+\d+\s+unidades/i;
                 const _sinOpc = _s.split("\n").map((ln) =>
                   ln.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
                     .filter((f) => !_RE_OPC_MAL.test(sinFormato(f)))
