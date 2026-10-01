@@ -26554,7 +26554,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _ops = opcionesParaEmpujar(await loadOpciones(db, run, String(ctx._product_id ?? "")), run)   // 🙈 el empuje nunca usa ocultas
             .filter((o) => o.precio != null && Number(o.precio) > 0 && Number(o.cantidad) > 0);
           const _suya = _ops.find((o) => String(o.id) === String(ctx.opcion_id));
-          if (_suya) {
+          // 💡 Si YA VIO la lista de precios (en los últimos 4 mensajes nuestros), eligió viéndola: el ahorro ya
+          // estaba a la vista y repetírselo es insistir. Rodrigo (2026-10-01, su chat: «precio?» → lista → «necesito
+          // uno» → dos turnos después «ojo que llevando 2…»): «puede confundir al cliente». Se marca para que no
+          // vuelva a intentarse cuando la lista salga de la ventana.
+          if (_suya && await yaLeListamosPrecios(db, run, _ops)) {
+            (run.vars as any)._upsell_cant = 1;
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "💡 Ahorro por llevar más: no va",
+              `Eligió ${_suya.nombre} con la lista de precios a la vista`).catch(() => {});
+          } else if (_suya) {
             const _unit = (o: Opcion) => Number(o.precio) / Number(o.cantidad);
             // La SIGUIENTE hacia arriba, no la más grande de todas. Saltar de 1 a 3 suena a
             // empujón y convierte peor; el paso corto se acepta mucho más. Si después quiere
@@ -26571,20 +26579,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 const v = Math.round(n * 100) / 100;
                 return Number.isInteger(v) ? String(v) : v.toFixed(2);
               };
-              // El ahorro se cuenta contra lo que le costaría comprar esas mismas unidades
-              // de una en una a su precio actual: es la cifra que de verdad se lleva.
-              const _ahorro = _unit(_suya) * Number(_mejor.cantidad) - Number(_mejor.precio);
-              // Dos piezas: la CONFIRMACIÓN de lo que pidió y la OFERTA. Van juntas salvo cuando la oferta
-              // se aplaza: ahí la confirmación sale igual en este turno — era lo único que le decía
-              // «anotado, 1 unidad a S/ 69», y sin ella a «quiero 1» le llegaba solo «¿alguna otra duda?»
-              // (G9-sinciu). La oferta del turno siguiente ya no repite el «Anotado».
-              const _anotado = `Anotado: *${_suya.nombre}* — ${sym} ${r2(Number(_suya.precio))}.`;
-              // «llevando X son Y» evita la concordancia: «*3 unidades* te SALE» quedaba mal,
-              // y el nombre de la opción lo pone el dueño (puede ser singular o plural).
-              const _ojo = `Ojo que llevando *${_mejor.nombre}* son ${sym} ${r2(Number(_mejor.precio))}, o sea ` +
-                `*${sym} ${r2(_unit(_mejor))} cada una*` +
-                (_ahorro > 0 ? ` — te ahorras ${sym} ${r2(_ahorro)}` : "");
-              const _oferta = (run.vars as any)?._upsell_anotado ? _ojo : `${_anotado} ${_ojo}`;
+              // 📏 UNA línea y UNA cifra por idea (Rodrigo, 2026-10-01): «Anotado: *1 unidad*, S/ 69. Si llevas
+              // *2 unidades* te salen S/ 109, o sea *S/ 54.50 cada una* 🔧». Fuera «te ahorras S/ 29» (la misma
+              // idea con otro número) y fuera «si quieres aprovechar, avísame» (no pide nada concreto): la
+              // pregunta del turno —de dónde escribe, la sede— sigue siendo la única.
+              const _anotado = `Anotado: *${_suya.nombre}*, ${sym} ${r2(Number(_suya.precio))}.`;
+              // «te salen» con el nombre de la opción (lo pone el dueño: singular o plural) evita la concordancia.
+              const _ojo = `Si llevas *${_mejor.nombre}* te salen ${sym} ${r2(Number(_mejor.precio))}, o sea ` +
+                `*${sym} ${r2(_unit(_mejor))} cada una* 🔧`;
+              // Sin repetir la confirmación si el mensaje ya trae su precio («Perfecto, 1 unidad por *S/ 69*»).
+              const _oferta = (salida.includes(String(_suya.precio)) || (run.vars as any)?._upsell_anotado) ? _ojo : `${_anotado} ${_ojo}`;
               // Antes del bloque que le pide algo — y antes de la LISTA a la que esa pregunta se refiere
               // (📍 oficinas → «¿Cuál te queda mejor?», con su encabezado «…tenemos estas 👇»): metida
               // entre las dos, la pregunta quedaba lejos de lo que pregunta (G3-truji, La Esperanza).
@@ -26618,42 +26622,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // el mensaje ya le PIDE algo sin signo de pregunta («pásame estos datos 👇 📌…»,
               // «confírmalo con el adelanto»): F5, salían datos + confírmalo + la oferta.
               const _RE_PIDE = /\?|📌|p[aá]same|m[aá]ndame|env[ií]ame|conf[ií]rm|tus datos|estos datos/i;
-              const _pend = !!(run.vars as any)?._upsell_pend;
-              let _aplazado = false;
-              if (!_RE_PIDE.test(salida)) {
-                // El turno no le pide nada: la oferta cierra el mensaje, con su pregunta.
-                salida = salida.trimEnd() +
-                  `\n\n${_oferta}. ¿Te quedas con ${_suya.cantidad === 1 ? "una" : _suya.cantidad} o aprovechas? 🔧`;
-              } else if (!_pend) {
-                // ⏳ El turno ya le pregunta algo (el distrito, la sede, los datos): la oferta ESPERA
-                // al mensaje siguiente. Antes iba debajo como dato («Si quieres aprovechar, avísame»)
-                // y quedaba colgada después del «¿En cuál estás?» — Rodrigo, 27-sep: «que la oferta
-                // espere al siguiente mensaje». No se marca `_upsell_cant`: sigue pendiente.
-                (run.vars as any)._upsell_pend = 1;
-                // La confirmación no espera (si el mensaje no trae ya su precio).
-                if (!salida.includes(String(_suya.precio))) {
-                  salida = _antesDeLaPregunta(salida, _anotado);
-                }
-                // Con el precio ya dicho en este turno («Perfecto, una unidad por *S/ 69*») la confirmación
-                // también quedó hecha: la oferta del turno siguiente no vuelve a decir «Anotado: 1 unidad»
-                // (salía debajo de «Santiago la venta ICA», como si no lo hubiera leído — 2026-09-30).
-                (run.vars as any)._upsell_anotado = 1;
-                await logEvent(db, run.channel_id, run.contact_id, "nota", "💡 Ahorro por llevar más: aplazado",
-                  "El mensaje ya le pregunta algo; va en el siguiente").catch(() => {});
-                _aplazado = true;
-              } else {
-                // Ya esperó un turno y este también pregunta: va como DATO, sin pregunta, ANTES del
-                // párrafo que le pide algo — así la pregunta del turno sigue siendo lo último que lee.
-                // Esperar otra vez sería no ofrecérselo nunca (en provincia casi cada turno pide algo).
-                salida = _antesDeLaPregunta(salida, `${_oferta}. Si quieres aprovechar, avísame 🔧`);
-              }
-              if (!_aplazado) {
-                delete (run.vars as any)._upsell_pend;
-                delete (run.vars as any)._upsell_anotado;
-                (run.vars as any)._upsell_cant = 1;
-                await logEvent(db, run.channel_id, run.contact_id, "nota", "💡 Se le mostró el ahorro por llevar más",
-                  `Eligió ${_suya.nombre} sin ver la lista; se le ofreció ${_mejor.nombre}`).catch(() => {});
-              }
+              // 📍 Sale EN ESTE turno, una sola vez, pegada a la confirmación de lo que eligió: antes del párrafo
+              // que le pregunta algo (de dónde escribe, la sede, los datos) o cerrando el mensaje si no pregunta
+              // nada. Ya no se aplaza al turno siguiente (la decisión del 27-sep «que la oferta espere al
+              // siguiente mensaje» la reemplaza la de hoy: así caía dos turnos después, en medio del cierre) ni
+              // trae pregunta propia: la del turno es la única (Rodrigo, 2026-10-01).
+              salida = _RE_PIDE.test(salida) ? _antesDeLaPregunta(salida, _oferta) : `${salida.trimEnd()}\n\n${_oferta}`;
+              delete (run.vars as any)._upsell_pend;
+              delete (run.vars as any)._upsell_anotado;
+              (run.vars as any)._upsell_cant = 1;
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "💡 Se le mostró el ahorro por llevar más",
+                `Eligió ${_suya.nombre} sin ver la lista; se le ofreció ${_mejor.nombre}`).catch(() => {});
             }
           }
         } catch (e) { console.error("[upsellCantidad]", (e as any)?.message ?? e); }
