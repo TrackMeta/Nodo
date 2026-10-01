@@ -25977,6 +25977,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const _sinRep = _antesQR.replace(/(?:(?:y\s+)?(?:cu[eé]ntame|dime|oye|por\s+cierto|ahora|entonces)\s*[,:]?\s*)?¿[^?¿\n]{8,}(?:\?|(?=\n|$))[\s\p{Extended_Pictographic}️]*/giu, (q) => {
               const a = _pal(q);
               if (a.size < 2) return q;
+              // 🔢 La de la CANTIDAD no se quita mientras no haya elegido: a «ya» se le repreguntó y este guard la borró
+              // porque ya se había hecho, y quedó «📌 *Nombre y apellidos* 📌 *Celular* 📌 *DNI* 🔧» pelado (reproducción
+              // del 3.er chat, 2026-10-01). Los guards físicos de abajo la vuelven suave si hace falta.
+              if ((ctx as any)._falta_opcion && !String(ctx.opcion_id ?? "").trim()
+                  && /\b(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l\s+(?:oferta|opci[oó]n|prefieres|te\s+preparo))\b/i.test(q)) return q;
               const rep = _prevQs.some((b) => { let c = 0; for (const w of a) if (b.has(w)) c++; return c / Math.min(a.size, b.size || 1) >= 0.7; });
               return rep ? " " : q;
             }).replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
@@ -27339,6 +27344,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 _s = `${_antesL2 ? _antesL2 + "\n\n" : ""}${_ln.slice(_idxP[0]).join("\n").trim()}\n\n${_q}`;
               }
             }
+          }
+          // 🔢 Red final de la CANTIDAD: con zona y SIN opción elegida, si los recortes dejaron el mensaje sin pregunta
+          // (o solo con la lista 📌 pelada), va la pregunta de la cantidad — suave si ya se hizo en la burbuja anterior.
+          if (_zonaOk && (ctx as any)._falta_opcion && !String(ctx.opcion_id ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
+              && !/[?¿]/.test(_s) && !_RE_SUAVE_C.test(_s)
+              && !RE_LO_PIENSA.test(String(ctx.last_input ?? "")) && !RE_RECLAMO.test(String(ctx.last_input ?? ""))
+              && !/^\s*(?:no(?:\s+gracias)?|nada|ya\s+no|no\s+me\s+interesa|gracias(?:\s+no)?|chau|adi[oó]s)[\s.!,🙂🙏👍]*$/iu.test(String(ctx.last_input ?? ""))) {
+            const _qC = _cantAntes ? _SUAVE_C : "¿Cuántas unidades o qué oferta te preparo? 🙌";
+            // Sin letras (quedó «🔧» o los 📌 pelados): va la pregunta sola.
+            const _sinPines = _s.replace(/[ \t]*📌[^\n📌]*/gu, "").trim();
+            _s = /[\p{L}\p{N}]/u.test(_sinPines) ? _pegaSuave(_sinPines, _qC) : _qC;
           }
           // 🗺️ Red final: sin zona, con la cantidad ya sellada y sin pedido, el mensaje NO se queda sin pregunta
           // (los recortes de arriba pueden llevarse la única que traía). Salvo que se despida, reclame o lo piense.
