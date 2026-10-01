@@ -27005,8 +27005,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             _s = _s.replace(_RE_Q_CANT, _quitaQCant)
               .replace(/[^.!?\n]*\b(?:para\s+que\s+elijas|elige|escoge|dime)\s+cu[aá]nt[ao]s[^.!?\n]*[.!?:]?/giu, " ");
             // Sin la de la cantidad y sin saber de dónde es, la que queda es esa.
-            if (_s !== _antes1b && _pidioPrecio1b && !_zonaOk && !/[?¿]/.test(_s)) {
-              _s = _pegaSuave(_s.trimEnd(), "¿De qué distrito o ciudad nos escribes? Así te digo cómo te llega 📦");
+            // (sin exigir que haya pedido el precio: a «quiero 1» la IA repreguntó «¿cuántas?», se quitó, y el mensaje
+            //  quedó sin ninguna pregunta — «Veo que quieres 1 unidad, que cuesta S/ 69.» y silencio; simulación B5)
+            if (_s !== _antes1b && !_zonaOk && !/[?¿]/.test(_s) && !_RE_SUAVE_Z.test(_s)) {
+              _s = _pegaSuave(_s.trimEnd(), _Q_ZONA);
             }
             if (_s !== _antes1b && !_pidioPrecio1b) {
               _s = _s.replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, _sinListaVieja)
@@ -27126,6 +27128,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // (+ «Sobre stock, ¿Alguna…» — F10-stock; y el «¿ ¿Alguna…» que dejaba una pregunta vaciada — F10-regateo)
           // La frase que anunciaba la lista que se acaba de quitar (ver sinAnuncioColgado).
           if (_s !== _antesF) _s = sinAnuncioColgado(_s);
+          // 🗺️ Red final: sin zona, con la cantidad ya sellada y sin pedido, el mensaje NO se queda sin pregunta
+          // (los recortes de arriba pueden llevarse la única que traía). Salvo que se despida, reclame o lo piense.
+          if (!_zonaOk && String(ctx.opcion_id ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
+              && !/[?¿]/.test(_s) && !_RE_SUAVE_Z.test(_s)
+              && !(ctx as any)._dos_lugares && !(run.vars as any)?._dos_lugares
+              && !RE_LO_PIENSA.test(String(ctx.last_input ?? "")) && !RE_RECLAMO.test(String(ctx.last_input ?? ""))
+              && !/^\s*(?:no(?:\s+gracias)?|nada|ya\s+no|no\s+me\s+interesa|gracias(?:\s+no)?|ok(?:ey)?|listo|chau|adi[oó]s)[\s.!,🙂🙏👍]*$/iu.test(String(ctx.last_input ?? ""))
+              && _s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 3) {
+            _s = _pegaSuave(_s.trimEnd(), _Q_ZONA);
+          }
           _s = _s.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
           if (_s !== _antesF && _s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10) {
             salida = _s;
