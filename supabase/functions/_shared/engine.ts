@@ -26924,7 +26924,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             s = _sinEmojiRepetido(s, q);
             const ult = s.trimEnd().split("\n").pop() ?? "";
             if (!s.trim()) return q;
-            if (/—\s*\*?\s*(?:S\/|\$)|^\s*(?:[-•]|📌|📍)/u.test(ult)) return `${s.trimEnd()}\n\n${q}`;
+            // (+ la línea de la oferta de llevar más: la pregunta va en su propio párrafo, no pegada — simulación B)
+            if (/—\s*\*?\s*(?:S\/|\$)|^\s*(?:[-•]|📌|📍)|^\s*(?:Anotado:|Si llevas\s+\*)/u.test(ult)) return `${s.trimEnd()}\n\n${q}`;
             // Lo de antes termina SIN puntuación ni emoji (quedó a medias tras quitarle la pregunta): «Así dejo
             // todo listo para ti ¿Alguna otra duda?» — F12-yapague, 2026-09-29. Se le cierra con punto.
             let _s2 = s.trimEnd();
