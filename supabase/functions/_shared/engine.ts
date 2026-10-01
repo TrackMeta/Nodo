@@ -5295,7 +5295,8 @@ const RE_FALSO_CIERRE =
 // pegarle otra petición encima suena a insistencia y repite lo mismo dos veces.
 // («se confirma con un adelanto» NO es un imperativo: sin el lookbehind, esa frase contaba como «ya pide algo»
 //  y el mensaje salía sin la lista de datos — 2026-10-01)
-const RE_YA_PIDE = /\b(dime|dime\s|av[ií]same|cu[eé]ntame|p[aá]same|m[aá]ndame|env[ií]ame|ind[ií]came|escribe|elige|escoge|(?<!\bse\s)confirma|comp[aá]rteme)\b/i;
+// (+ «confírmame»: con tilde y pronombre no casaba y el motor pegaba su pregunta encima — R1L-sanjuan, 2026-10-01)
+const RE_YA_PIDE = /\b(dime|dime\s|av[ií]same|cu[eé]ntame|p[aá]same|m[aá]ndame|env[ií]ame|ind[ií]came|escribe|elige|escoge|(?<!\bse\s)conf[ií]rma(?:me)?|comp[aá]rteme)\b/i;
 // "Lo voy a pensar" / se despide: no es un no, pero tampoco es momento de empujar.
 const RE_LO_PIENSA =
   // + «déjame verlo» y «te confirmo mañana», que es como se dice «lo voy a pensar».
@@ -5607,7 +5608,7 @@ function sinRestosDeRecorte(t: string): string {
     // …y el imperativo que se quedó sin su pregunta: «Sobre el adelanto de *S/ 20*, primero dime» + la lista, «Genial,
     // entonces cuéntame Dime cuántas llevas» (R1P-adelantoprimero, R1P-barranca, 2026-10-01). Solo cuando detrás viene
     // el final, un emoji, un salto o una frase nueva en mayúscula: «dime cuántas» sigue entero.
-    .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))(?:(?:[Yy]\s+)?(?:[Aa]hora|[Ee]ntonces|[Bb]ueno|[Gg]enial|[Pp]erfecto|[Ll]isto|[Oo]k)\s*,?\s+)?(?:[Pp]rimero\s+)?(?:[Dd]ime|[Cc]u[eé]ntame|[Cc]u[eé]ntanos|[Ii]nd[ií]came|[Aa]v[ií]same|[Pp][aá]same|[Cc]onf[ií]rmame)\s*,?[ \t]*(?=(?:[ \t]|\p{Extended_Pictographic}|️)*(?:\n|$)|[A-ZÁÉÍÓÚÑ¿¡])/gu, "")
+    .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))(?:(?:[Yy]\s+)?(?:[Aa]hora|[Ee]ntonces|[Bb]ueno|[Gg]enial|[Pp]erfecto|[Ll]isto|[Oo]k)\s*,?\s+)?(?:[Pp]rimero\s+)?(?:[Dd]ime|[Cc]u[eé]ntame|[Cc]u[eé]ntanos|[Ii]nd[ií]came|[Aa]v[ií]same|[Pp][aá]same|[Cc]onf[ií]rmame)\s*[.,]?[ \t]*(?=(?:[ \t]|\p{Extended_Pictographic}|️)*(?:\n|$)|[A-ZÁÉÍÓÚÑ¿¡])/gu, "")
     .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))(?:Sobre|Respecto\s+a|En\s+cuanto\s+a)\s+(?:el|la|lo|al|tu|los|las)\s+(?:[^\s,.!?¿\n]+\s+){0,4}[^\s,.!?¿\n]+\s*[,:][ \t]*(?=\n|$)/giu, "")
     .replace(/\n{3,}/g, "\n\n")
     // …y la pregunta que se quedó sin su «?» (se lo llevó el trozo quitado): se le devuelve antes de los emojis.
@@ -6716,8 +6717,9 @@ const CAMBIOS_PAGO_PROVINCIA: Array<[RegExp, string]> = [
   [/\bcuando\s+(?:lo\s+|la\s+)?recojas(?:\s+(?:el|tu)\s+(?:paquete|pedido|producto))?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
   // «el resto cuando lo recojas» ya lo cubre lo de arriba, pero «el resto cuando lo RECOJAS; no es posible pagar
   // todo al llegar» (R1P-todoalllegar, 2026-10-01) necesita además el «por acá»: sin eso la frase sigue sonando a
-  // pagar en la agencia. Solo cuando habla del RESTO/SALDO.
-  [/\b(el\s+(?:resto|saldo)|lo\s+(?:que\s+)?(?:resta|falta))\s+(?:lo\s+)?(?:me\s+)?(?:lo\s+)?(?:pagas|abonas|cancelas|pagar[ií]as|lo\s+pagas)?\s*cuando\s+llegue\s+a\s+la\s+agencia(?!\s*(?:,\s*)?(?:por|aqu[ií]|ac[aá]))/giu, "$1 me lo pagas por acá cuando llegue a la agencia"],
+  // pagar en la agencia. Solo cuando habla del RESTO/SALDO. (El verbo que venía DELANTE —«y pagas el resto…»— se
+  // consume con la frase: quedaba «pagas el resto me lo pagas por acá».)
+  [/\b(?:(?:pagas|abonas|cancelas|pagar[ií]as|das|pagando|pagar)\s+)?(el\s+(?:resto|saldo)|lo\s+(?:que\s+)?(?:resta|falta))\s+(?:(?:lo\s+)?(?:me\s+)?(?:lo\s+)?(?:pagas|abonas|cancelas|pagar[ií]as)\s+)?cuando\s+llegue\s+a\s+la\s+agencia(?!\s*(?:,\s*)?(?:por|aqu[ií]|ac[aá]|me\s+lo))/giu, "$1 me lo pagas por acá cuando llegue a la agencia"],
   [/\bal\s+recoger(?:lo|la)?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
   [/\bal\s+momento\s+de\s+recoger(?:lo|la)?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
 ];
@@ -14327,7 +14329,11 @@ async function maybeDatosPago(
         //  burbuja y la lista: tres veces la misma pregunta en dos burbujas — R1D-preciodos/montoraro/sinelegir, 2026-10-01)
         const _iaYaPreguntoCual = /cu[aá]l\s+(?:de\s+las\s+dos\s+)?(?:prefieres|quieres|te\s+preparo|te\s+interesa|eliges|te\s+dejo|te\s+conviene)|prefieres\s+(?:entonces\s+)?(?:la\s+)?\p{L}+\s+o\s+(?:la\s+)?\p{L}+|\b(?:b[aá]sica|premium)\s+o\s+(?:la\s+)?(?:b[aá]sica|premium)/iu
           .test(String(respuestaIa ?? ""));
-        if (_preg && _iaYaPreguntoCual) _preg = "";
+        if (_preg && _iaYaPreguntoCual) {
+          // …pero la SUMA con el combo sí se dice (la IA no la sabe decir): solo esa línea.
+          const _lnSuma = _preg.split("\n").find((l) => /^Con .*sumad[ao]s?:/.test(l)) ?? "";
+          _preg = _lnSuma;
+        }
         if (_preg) await deliverMessage(db, channelId, contactId, _preg).catch(() => {});
         await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago NO enviados",
           "Todavía no hay presentación elegida: mandarle el número sin decirle cuánto es lo deja pagando a ciegas" +
@@ -16845,8 +16851,9 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     z = matchZona(zonas, t);
     // 🧭 Está COMPLETANDO el nombre ambiguo del turno anterior: «san juan» → «lurigancho» es San Juan de
     // Lurigancho, no el distrito Lurigancho (Chosica) ni un pueblo de provincia (R1L-sanjuan, 2026-10-01).
-    // Solo si lo que escribió cabe en UNA sola de las candidatas que se le ofrecieron.
-    if (!z) {
+    // Solo si lo que escribió cabe en UNA sola de las candidatas que se le ofrecieron. Va ANTES que el calce
+    // directo: «lurigancho» a secas también es un distrito de la lista (Chosica) y se quedaba con ese.
+    if (String(ctx.zona_ambigua ?? "").includes("·")) {
       try {
         const _cands = String(ctx.zona_ambigua ?? "").split("·").map((s) => limpiaZona(s)).filter(Boolean);
         const _lt = limpiaZona(t);
@@ -25800,11 +25807,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // para no pegar la lista de precios en una línea; los renglones con precio no se tocan.
               // (+ el esqueleto de la petición que se fue: «Perfecto, solo para dejarlo listo 👇» y «Cuando tenga esos
               //  datos, te paso todo…» — R1P-numerosolo, 2026-10-01)
+              // (+ la pregunta de la SEDE que la IA metió antes de saber la cantidad —«dime en cuál sede de la agencia
+              //  prefieres recoger: AEROPUERTO TACNA · AV VIGIL… ¿Cuál te queda más cerca?»—: la cantidad va primero y la
+              //  oficina la lista el motor cuando toque — R1P-prepago, 2026-10-01)
               _resto = _resto.split("\n").map((ln) => /—\s*\*?\s*(?:S\/|\$|US\$)\s?\d/u.test(ln) ? ln
                 : ln.split(/(?<=[.!?…])\s+/u).filter((f) => !(
                     /(?:^|[^\p{L}\p{N}])(?:\d{1,2}|un[ao]?|dos|tres|cuatro|cinco)\s+unidad(?:es)?(?![\p{L}])/iu.test(f)
                     && !/[?¿]/.test(f) && !/\b(?:si\s+llevas|si\s+quieres|te\s+salen?|m[aá]s\s+barat)/i.test(f))
-                  && !/^\s*(?:cuando\s+(?:tenga|me\s+(?:pases|mandes|des|los\s+pases|los\s+mandes))\s+(?:esos|los|tus|esa|la)\b|con\s+esos\s+datos|apenas\s+me\s+los\s+(?:pases|mandes))/iu.test(f)).join(" ")
+                  && !/^\s*(?:cuando\s+(?:tenga|me\s+(?:pases|mandes|des|los\s+pases|los\s+mandes))\s+(?:esos|los|tus|esa|la)\b|con\s+esos\s+datos|apenas\s+me\s+los\s+(?:pases|mandes))/iu.test(f)
+                  && !(/\b(?:sede|oficina|agencia)\b/i.test(f) && (/[?¿:]/.test(f) || /\b(?:dime|cu[eé]ntame|ind[ií]came|elige|escoge)\b/i.test(f)))
+                  && !/cu[aá]l\s+te\s+queda\s+m[aá]s\s+cerca/i.test(f)).join(" ")
               ).join("\n").replace(/^[^\n📌]{0,70}👇[ \t]*$/gmu, "").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
               const _preg = _yaPregunta ? "" : preguntaCuantos(_opsVis, ctx, _negOn, _yaListadas);
               salida = _resto
@@ -26044,7 +26056,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (comboDe(run).length > 0) {
             const _antesC2 = salida;
             salida = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
-              .filter((f) => !/(?:un\s+solo|uno\s+solo|un\s+[uú]nico)\s+acceso|no\s+(?:hace\s+falta|necesitas)\s+(?:dos|2)|con\s+una\s+(?:vez|sola)\s+te\s+alcanza|el\s+acceso\s+es\s+uno\s+solo|no\s+hay\s+que\s+comprar(?:lo)?\s+dos\s+veces/iu.test(sinFormato(f)))
+              .filter((f) => !/(?:un\s+solo|uno\s+solo|un\s+[uú]nico)\s+acceso|\b(?:con\s+)?un[oa]?\s+sol[oa]\b[^.!?\n]{0,30}\b(?:queda|basta|alcanza|sirve)|no\s+(?:hace\s+falta|necesitas|tienes\s+que)\s+(?:llevar\s+|comprar\s+|tener\s+|pagar\s+)?(?:dos|2)\b|con\s+una\s+(?:vez|sola)\s+te\s+alcanza|el\s+acceso\s+es\s+uno\s+solo|no\s+hay\s+que\s+comprar(?:lo)?\s+dos\s+veces/iu.test(sinFormato(f)))
               .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
             if (salida !== _antesC2) await logEvent(db, run.channel_id, run.contact_id, "nota", "🛒 Fuera «un solo acceso»: está llevando dos productos", "").catch(() => {});
           }
@@ -26414,7 +26426,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _preguntaCuando = new RegExp(
           // (+ «¿cuándo ESTARÍA LLEGANDO?», «cuándo me llegaría», «cuándo lo estaría recibiendo»: «cuándo» + algo + lleg/recib
           //  — Probar flujos, Rodrigo escribió «Cuando estária llegando ?» y no contaba como pregunta de plazo, 2026-10-01)
-          `(?:^|[^\\p{L}])(?:cu[aá]ndo\\s+[^?\\n]{0,25}?(?:lleg|recib)\\p{L}*|cu[aá]ndo\\s+(?:me\\s+)?(?:llega|lo\\s+(?:tengo|traen|entregan|mandan))|para\\s+cu[aá]ndo|` +
+          // («¿puedo pagar TODO cuando llegue?» no pregunta el plazo: habla del pago — R1P-todoalllegar, 2026-10-01)
+          `(?:^|[^\\p{L}])(?<!(?:pag\\p{L}*|todo|resto|saldo|abon\\p{L}*|cancel\\p{L}*)\\s)(?:cu[aá]ndo\\s+[^?\\n]{0,25}?(?:lleg|recib)\\p{L}*|cu[aá]ndo\\s+(?:me\\s+)?(?:llega|lo\\s+(?:tengo|traen|entregan|mandan))|para\\s+cu[aá]ndo|` +
           `(?:me\\s+)?llega(?:r[ií]a)?\\s+(?:hoy|ma[ñn]ana|el\\s+(?:${_DIAS})|este\\s+(?:${_DIAS}))|en\\s+cu[aá]nto\\s+tiempo|` +
           `cu[aá]nto\\s+(?:tarda|demora)|cu[aá]ntos\\s+d[ií]as|llega\\s+r[aá]pido|demora\\s+mucho|` +
           // (+ «lo necesito hoy urgente» — F7-lurgente)
@@ -27527,6 +27540,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // es el mismo para toda provincia.
           // (se mira la CIFRA junto a la palabra, no la palabra sola: «Para darte el monto exacto del adelanto.» — un
           //  tocón que dejó otro recorte — tenía la palabra y ningún monto, y el cliente se quedó sin respuesta — 2026-10-01)
+          // 🔴 Y ANTES de mirar la cifra: fuera la frase de la IA que dice que el adelanto DEPENDE de algo («Cuánto es el
+          // adelanto de *S/ 20* depende de si compras desde Lima o provincia» — con el monto que `conAdelantoConcreto`
+          // le había metido en medio; R1P-adelantoprimero, 2026-10-01). El adelanto es uno solo para toda provincia.
+          if (String(ctx.pedido_creado ?? "") !== "si" && String(ctx.zona_entrega ?? "") !== "lima"
+              && /\b(adelanto|anticipo)\b/i.test(String(ctx.last_input ?? ""))
+              && /\b(?:adelanto|anticipo|monto)\b[^.!?\n]{0,50}\bdepende\s+de\b|\bdepende\s+de\s+(?:si\s+)?(?:compras|eres|est[aá]s|escribes|vives|nos\s+escribes)\b[^.!?\n]{0,40}\b(?:lima|provincia)\b/iu.test(sinFormato(_s))) {
+            _s = _s.split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
+              .filter((f) => !/\b(?:adelanto|anticipo|monto)\b[^.!?\n]{0,50}\bdepende\s+de\b|\bdepende\s+de\s+(?:si\s+)?(?:compras|eres|est[aá]s|escribes|vives|nos\s+escribes)\b[^.!?\n]{0,40}\b(?:lima|provincia)\b/iu.test(sinFormato(f)))
+              .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+          }
           if (String(ctx.pedido_creado ?? "") !== "si"
               && /\b(adelanto|anticipo|pag(?:ar|o|amos)\s+(?:algo\s+)?(?:antes|adelantad[oa]|por\s+adelantado)|se\s+paga\s+antes)\b/i.test(String(ctx.last_input ?? ""))
               && !/(?:adelanto|anticipo)[^.\n]{0,40}(?:S\/|\$)\s*\d|(?:S\/|\$)\s*\d[^.\n]{0,40}(?:adelanto|anticipo)/i.test(sinFormato(_s))
@@ -27569,8 +27592,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
           // 🔢 Red final de la CANTIDAD: con zona y SIN opción elegida, si los recortes dejaron el mensaje sin pregunta
           // (o solo con la lista 📌 pelada), va la pregunta de la cantidad — suave si ya se hizo en la burbuja anterior.
+          // (…ni si la IA ya la pide en IMPERATIVO —«Y confírmame cuántas unidades quieres»—: salían tres preguntas de
+          //  cantidad en una burbuja — R1L-sanjuan, 2026-10-01)
           if (_zonaOk && (ctx as any)._falta_opcion && !String(ctx.opcion_id ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
               && !/[?¿]/.test(_s) && !_RE_SUAVE_C.test(_s)
+              && !/\b(?:dime|cu[eé]ntame|ind[ií]came|conf[ií]rmame|av[ií]same|p[aá]same|me\s+dices)\s+(?:por\s+favor\s+|porfa\s+)?(?:cu[aá]nt[ao]s|cu[aá]l|qu[eé]\s+(?:oferta|cantidad|presentaci[oó]n))\b/i.test(sinFormato(_s))
               && !RE_LO_PIENSA.test(String(ctx.last_input ?? "")) && !RE_RECLAMO.test(String(ctx.last_input ?? ""))
               && !/^\s*(?:no(?:\s+gracias)?|nada|ya\s+no|no\s+me\s+interesa|gracias(?:\s+no)?|chau|adi[oó]s)[\s.!,🙂🙏👍]*$/iu.test(String(ctx.last_input ?? ""))) {
             const _qC = _cantAntes ? _SUAVE_C : "¿Cuántas unidades o qué oferta te preparo? 🙌";
