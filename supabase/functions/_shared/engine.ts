@@ -5354,7 +5354,13 @@ const RE_ANUNCIA_DATOS_QUE_SIGUEN =
   // 🔴 Quinta pasada: el pronombre PEGADO al verbo. «Quedo atento para ENVIARTE los datos de pago»
   // (D10-kdomingo, 2026-09-25) no casaba con ninguna forma de «te + verbo», y salió delante del
   // bloque de pago diciendo que los mandaría «cuando decidas».
-  /[^.!?…¿¡\n\p{Extended_Pictographic}]*(?:\bte\s+(?:llegar[aá]n?|llegan?|env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|comparto|compartir[eé])|\b(?:enviar|mandar|pasar|compartir|dejar)te)(?![\p{L}\p{N}])[^.!?…\n\p{Extended_Pictographic}]*(?:\b(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta|mensaje|indicaciones|instrucciones)\b[^.!?…\n\p{Extended_Pictographic}]*)?\b(?:pago|pagar|adelanto|yape|plin|dep[oó]sito|transferencia)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
+  // 🔴 Sexta pasada: el anuncio en TERCERA persona. «Te lo preparo y en seguida te PASA EL SISTEMA
+  // los datos para el adelanto de S/ 20 y cómo pagar» (Probar flujos, Rodrigo, 2026-09-30): el
+  // sujeto es «el sistema», así que el verbo va en tercera («te pasa», «te manda», «te envía») y
+  // ninguna forma de la lista calzaba. Mismo anuncio, y además le cuenta al cliente la tramoya.
+  // 🔴 Séptima, en la simulación de ese mismo chat: «en un momento TIENES los datos para el adelanto»
+  // — sin «te» ni verbo de mandar: el cliente los «tiene». Entran tener/recibir y «te van a llegar».
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*(?:\bte\s+(?:llegar[aá]n?|llegan?|env[ií]o|enviar[eé]|mando|mandar[eé]|paso|pasar[eé]|comparto|compartir[eé]|pasa|pasan|pasar[aá]n?|manda|mandan|mandar[aá]n?|env[ií]a|env[ií]an|enviar[aá]n?|comparte|comparten|compartir[aá]n?|deja|dejan|dejar[aá]n?|van?\s+a\s+(?:llegar|pasar|mandar|enviar|dejar|compartir))|\b(?:enviar|mandar|pasar|compartir|dejar)te|\b(?:tienes|tendr[aá]s|recibes|recibir[aá]s|vas\s+a\s+(?:tener|recibir))\s+(?:los\s+|las\s+|el\s+|la\s+|tus?\s+)?(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta|indicaciones|instrucciones|info(?:rmaci[oó]n)?))(?![\p{L}\p{N}])[^.!?…\n\p{Extended_Pictographic}]*(?:\b(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta|mensaje|indicaciones|instrucciones)\b[^.!?…\n\p{Extended_Pictographic}]*)?\b(?:pago|pagar|adelanto|yape|plin|dep[oó]sito|transferencia)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 // 🔴 «Te llega a domicilio en Lima, pagas al recibir y puedes revisar antes de pagar» NO es
 // un anuncio de datos: es la explicación de la contraentrega, justo lo que el cliente de Lima
 // necesita oír. «Te llega» es también el verbo de la ENTREGA, y con «pagar» en la misma
@@ -5422,6 +5428,10 @@ function sinColaDeLoQuitado(t: string): string {
 function sinRestosDeRecorte(t: string): string {
   return String(t ?? "")
     .replace(/[¿¡]\s*(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "")
+    // La flecha entre una frase sin cerrar y la pregunta que sigue: «…coordinar la entrega 👇 ¿Me
+    // confirmas tu número?» quedaba «la entrega ¿Me confirmas» — la flecha hacía de punto. Se le
+    // devuelve el punto (Probar flujos, 2026-09-30).
+    .replace(/([\p{L}\p{N}*)])[ \t]*👇[ \t]*(?=[¿¡])/gu, "$1. ")
     .replace(/[ \t]*👇[ \t]*(?=[\p{L}\p{N}¿¡*])/gu, " ")
     // La coma que quedó cerrando el mensaje cuando se fue la frase de después («…con la Tropa 🪖,»).
     .replace(/[,;:]+\s*(?=(?:\s|\p{Extended_Pictographic}|️)*$)/gu, "")
@@ -5449,7 +5459,11 @@ const RE_PRESENCIA =
 const RE_PREGUNTA_MEDIO_PAGO =
   // …y nombrando los medios: «¿vas a usar Yape, Plin o transferencia?», «¿Vas a pagar por Yape, Plin
   // o BCP?» (D13c-dcambioprod, D13c-dfacturapost, 2026-09-25) — la misma pregunta con otra forma.
-  /(?:[¿]?\s*(?:(?:con\s+)?(?:qu[eé]|cu[aá]l)\s+(?:forma|medio|m[eé]todo)(?:\s+de\s+pago)?\s+(?:prefieres|quieres|deseas|te\s+(?:conviene|acomoda|queda\s+mejor)|usar[aá]s|vas\s+a\s+(?:usar|pagar|hacer(?:lo)?)|pagar[aá]s|pagas|eliges|usas)|c[oó]mo\s+(?:prefieres|quieres|deseas|te\s+gustar[ií]a|vas\s+a)\s+pagar)[^?¿.!\n]*\?|[¿]?\s*(?:vas\s+a\s+(?:usar|pagar)|vas|pagas|pagar[aá]s|prefieres(?:\s+pagar)?|quieres\s+pagar)\s+(?:por\s+|con\s+)?\**(?:yape|plin|bcp|transferencia|interbank)\b[^?¿.!\n]*\?)/giu;
+  // …y «¿Me dices si LO HACES por Yape, Plin o transferencia?» (simulación del chat de Probar flujos, 2026-10-01):
+  // el verbo era «hacer», y venía en la misma burbuja que «¿me mandas tu celular de nuevo?».
+  // 🔴 El literal de la regex va en UNA línea: un comentario en medio partió el literal y las 14 funciones
+  // fallaron al empaquetar (el deploy sí lo rechazó: producción se quedó con la versión anterior).
+  /(?:[¿]?\s*(?:(?:con\s+)?(?:qu[eé]|cu[aá]l)\s+(?:forma|medio|m[eé]todo)(?:\s+de\s+pago)?\s+(?:prefieres|quieres|deseas|te\s+(?:conviene|acomoda|queda\s+mejor)|usar[aá]s|vas\s+a\s+(?:usar|pagar|hacer(?:lo)?)|pagar[aá]s|pagas|eliges|usas)|c[oó]mo\s+(?:prefieres|quieres|deseas|te\s+gustar[ií]a|vas\s+a)\s+pagar)[^?¿.!\n]*\?|[¿]?\s*(?:(?:me\s+dices\s+si\s+)?(?:lo\s+)?(?:haces|har[aá]s|vas\s+a\s+hacer(?:lo)?)|vas\s+a\s+(?:usar|pagar)|vas|pagas|pagar[aá]s|prefieres(?:\s+pagar)?|quieres\s+pagar)\s+(?:por\s+|con\s+)?\**(?:yape|plin|bcp|transferencia|interbank)\b[^?¿.!\n]*\?)/giu;
 // ↑ La cola no cruza punto ni otro «¿»: «Si prefieres pagar por Yape antes, sí puedes hacerlo. ¿A qué dirección te lo
 //   llevo?» se iba entera y quedaba «Si 📍» (F12R-prepagolima, 2026-09-29).
 // ↑ «¿Vas con *Yape*, *Plin* o *Transferencia*?» (D15-preuso): «vas con» a secas y el medio en negrita.
@@ -5513,10 +5527,27 @@ function sinAnuncioDePago(texto: string): string {
   // para coordinar el envío y mandarte los datos para el adelanto»—, se va el anuncio y se
   // queda la petición: quitarla entera dejó «Perfecto, Rosa.» y la lista de sedes, y el
   // cliente nunca supo que faltaba el DNI (D11b-psindni, 2026-09-25).
+  // 🔧 …y si lo de antes del anuncio es una ACCIÓN suya («Te lo preparo y en seguida te pasa el
+  // sistema los datos…»), se queda la acción y se va el anuncio: quitarlo entero dejaba «¡Listo,
+  // Juan Carlos! 💰🔧» con los emojis huérfanos. Solo con la conjunción «y/e» (con «para» lo de
+  // antes suele ser un «dame un momento», que solo no sirve) y nunca si lo que queda es una
+  // espera o una promesa de volver («déjame revisar», «ya te confirmo»).
+  const _RE_VERBO_ANUNCIA = /(?:(?:poder\s+)?(?:mandar|enviar|pasar|compartir|dejar)te|te\s+(?:mando|mandar[eé]|env[ií]o|enviar[eé]|paso|pasar[eé]|comparto|compartir[eé]|llegar[aá]n?|llegan?|pasa|pasan|pasar[aá]n?|manda|mandan|mandar[aá]n?|env[ií]a|env[ií]an|enviar[aá]n?|comparte|comparten|compartir[aá]n?|deja|dejan|dejar[aá]n?|van?\s+a\s+(?:llegar|pasar|mandar|enviar|dejar|compartir))|(?:tienes|tendr[aá]s|recibes|recibir[aá]s|vas\s+a\s+(?:tener|recibir))\s+(?:los\s+|las\s+|el\s+|la\s+|tus?\s+)?(?:datos|m[eé]todos?|formas?|medios?|n[uú]mero|cuenta|indicaciones|instrucciones|info(?:rmaci[oó]n)?))/.source;
+  const _RE_ADV_ANUNCIA = /(?:(?:en\s+seguida|enseguida|ahorita|ahora|ya|luego|despu[eé]s|en\s+breve|al\s+toque|de\s+inmediato|en\s+un\s+momento)\s+)?/.source;
   const _sinAnuncio = (m: string): string => {
-    if (!RE_PIDE_SUS_DATOS.test(sinFormato(m))) return "0001";
-    const q = m.replace(/\s*,?\s*(?:y|e|para|y\s+as[ií]|as[ií])\s+(?:(?:poder\s+)?(?:mandar|enviar|pasar|compartir|dejar)te|te\s+(?:mando|mandar[eé]|env[ií]o|enviar[eé]|paso|pasar[eé]|comparto|compartir[eé]|llegar[aá]n?|llegan?))[^.!?…\n]*([.!?…]?)\s*$/iu, "$1");
-    return q !== m && q.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10 ? q : "0001";
+    const _letras = (s: string) => s.replace(/[\s\p{P}\p{S}]/gu, "").length;
+    if (RE_PIDE_SUS_DATOS.test(sinFormato(m))) {
+      const q = m.replace(new RegExp(`\\s*,?\\s*(?:y|e|para|y\\s+as[ií]|as[ií])\\s+${_RE_ADV_ANUNCIA}${_RE_VERBO_ANUNCIA}[^.!?…\\n]*([.!?…]?)\\s*$`, "iu"), "$1");
+      return q !== m && _letras(q) >= 10 ? q : "0001";
+    }
+    // Se compara contra `m` SIN su espacio final (la red deja uno antes del emoji): si no, «no cambió»
+    // parecía «cambió» y el anuncio se quedaba entero, con un punto de regalo.
+    const _mT = m.trimEnd();
+    const q2 = _mT.replace(new RegExp(`\\s*,?\\s+(?:y|e)\\s+${_RE_ADV_ANUNCIA}${_RE_VERBO_ANUNCIA}[^.!?…\\n]*([.!?…]?)\\s*$`, "iu"), "$1").trimEnd();
+    // Sin `\b` al cierre: «déjame», «dejamos», «espérame» tienen que caer igual (la «é» no es frontera de palabra).
+    const _espera = /\b(?:dame|esp[eé]ra|un\s+(?:momento|momentito|segundo|ratito|rato)|perm[ií]te|d[eé]ja|reviso|verifico|confirmo|consulto|aviso|ya\s+te)/i;
+    if (q2 === _mT || _letras(q2) < 10 || _espera.test(sinFormato(q2))) return "0001";
+    return (/[.!?…]$/.test(q2) ? q2 : q2 + ".") + " ";
   };
   const limpio = sinRestosDeRecorte(sinColaDeLoQuitado(t.replace(RE_ANUNCIA_DATOS_QUE_SIGUEN, (m) => (/\d{6,}|https?:/i.test(m) || RE_ORACION_DE_ENTREGA.test(m) ? m : _sinAnuncio(m))))
     // Solo espacios y tabs: \s se come los saltos de línea y pega la lista de datos en un
@@ -8104,7 +8135,11 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       // maybeDatosPago aunque el nodo no haya marcado `_datosSiguen`: «¿Con qué medio vas a
       // pagar?» y debajo los tres medios (D13-dsheets, D13-dprotocolo, 2026-09-25).
       const _liD = String(ctx?.last_input ?? "");
-      const _base = RE_QUIERE_COMPRAR.test(_liD) ? result.replace(RE_PREGUNTA_MEDIO_PAGO, " ") : result;
+      // …y también si la pregunta del medio va JUNTO A OTRA pregunta: «¿Me dices si lo haces por Yape, Plin o
+      // transferencia? … ¿Me lo mandas de nuevo?» (el celular de 8 dígitos). Dos preguntas = contesta una, y la
+      // del medio es aire porque el bloque de pago trae los tres; que quede la que importa (2026-10-01).
+      const _sinMedio = result.replace(RE_PREGUNTA_MEDIO_PAGO, " ");
+      const _base = (RE_QUIERE_COMPRAR.test(_liD) || (_sinMedio !== result && _sinMedio.includes("?"))) ? _sinMedio : result;
       result = sinPedirPermisoPago(sinAnuncioDePago(sinPromesaDeDatosColgada(_base, true, RE_PRESENCIA.test(_liD), _liD)));
     }
     result = sinRestosDeRecorte(result);
@@ -25936,6 +25971,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _lblTal = String(_falta1?.label ?? "").replace(/[¿?¡!]/g, "")
           .replace(/\bsus\b/gi, "tus").replace(/\bsu\b/gi, "tu").trim();
         const _lbl = _lblTal.toLowerCase();
+        // 📌 Si faltan VARIOS, se piden todos de una, como lista — igual que los pide la IA cuando
+        // le toca. «Me falta UN dato: Nombre y apellidos» con nombre, celular y DNI por dar era
+        // mentirle: al turno siguiente le pedía los tres (Probar flujos, Rodrigo, 2026-09-30).
+        // Va el NÚCLEO de cada etiqueta (antes de la coma o el paréntesis), en segunda persona.
+        const _faltanVarios: string[] = (Array.isArray((ctx as any)._datos_faltan) ? (ctx as any)._datos_faltan : [])
+          .filter((f: any) => f?.clave !== "confirmo" && String(f?.label ?? "").trim())
+          .map((f: any) => String(f.label).replace(/[¿?¡!]/g, "").split(/[,(]/)[0]
+            .replace(/\bsus\b/gi, "tus").replace(/\bsu\b/gi, "tu").trim())
+          .filter((s: string, i: number, a: string[]) => s && a.indexOf(s) === i)
+          .slice(0, 4);
+        const _pideVarios = _faltanVarios.length >= 2
+          ? `Me faltan estos datos 👇\n${_faltanVarios.map((s) => `📌 *${s}*`).join("\n")}`
+          : "";
         // 💻 En digital el remate depende de en qué va: si ya dijo que pagó o ya tiene el
         // número, lo que falta es la captura; si no, lo que sigue son los datos (el motor los
         // manda un segundo después). Medido: «la básica» → «Mándame la captura del pago…» y
@@ -25958,6 +26006,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           ? "Dime cuál prefieres y te lo dejo cerrado. 🙂"
           : _falta1?.clave === "confirmo"
           ? "¿Lo confirmo y te lo mando? 🙂"
+          : _pideVarios
+          ? _pideVarios
           : _lbl
           ? `Me falta un dato: ${_lblTal}. ¿Me lo pasas? 🙂`
           // 🔴 En DIGITAL no hay ningún dato pendiente —no hay campos que completar— así que
@@ -26311,10 +26361,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // entre las dos, la pregunta quedaba lejos de lo que pregunta (G3-truji, La Esperanza).
               // Renglones de LISTA (📍 *Nombre*), no cualquier 📍: la IA lo usa de adorno en su frase
               // («…la agencia Shalom recomendada 📍») y el texto se subía encima de todo (G7-chiclayo).
+              // 🔴 …pero no ENCIMA de la respuesta a lo que acaba de decir. Con la respuesta y la petición en
+              // el MISMO párrafo («Perfecto, para *Santiago* en Ica te llega por agencia Shalom 📦 Me falta un
+              // dato…»), la oferta se metía delante de todo y a «Santiago la venta ICA» le contestaba
+              // «Anotado: 1 unidad…» (Probar flujos, Rodrigo, 2026-09-30). Si el párrafo trae frases antes
+              // de la que pide, se parte ahí: respuesta · oferta · petición.
               const _antesDeLaPregunta = (txt: string, nuevo: string) => {
                 const _pars = txt.trimEnd().split(/\n{2,}/);
                 let _at = Math.max(0, _pars.findIndex((p) => _RE_PIDE.test(p)));
                 while (_at > 0 && (/^\s*📍\s*\*/m.test(_pars[_at - 1]) || /👇\s*$/u.test(_pars[_at - 1]))) _at--;
+                if (_RE_PIDE.test(_pars[_at]) && !/^\s*📍\s*\*/m.test(_pars[_at])) {
+                  const _fr = _pars[_at].split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u);
+                  let _k = _fr.findIndex((f) => _RE_PIDE.test(f));
+                  // La frase que INTRODUCE la petición va con ella: «Me falta un dato: Nombre y apellidos.» + «¿Me lo pasas?».
+                  const _RE_INTRO_PIDE = /\b(?:me\s+falta|faltan?|necesito|necesitamos|dato|datos)\b|[:👇]\s*$/iu;
+                  while (_k > 0 && _RE_INTRO_PIDE.test(_fr[_k - 1])) _k--;
+                  if (_k > 0 && _fr.slice(0, _k).join(" ").replace(/[\s\p{P}\p{S}]/gu, "").length >= 8) {
+                    _pars.splice(_at, 1, _fr.slice(0, _k).join(" ").trim(), _fr.slice(_k).join(" ").trim());
+                    _at++;
+                  }
+                }
                 _pars.splice(_at, 0, nuevo);
                 return _pars.join("\n\n");
               };
@@ -26338,8 +26404,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // La confirmación no espera (si el mensaje no trae ya su precio).
                 if (!salida.includes(String(_suya.precio))) {
                   salida = _antesDeLaPregunta(salida, _anotado);
-                  (run.vars as any)._upsell_anotado = 1;
                 }
+                // Con el precio ya dicho en este turno («Perfecto, una unidad por *S/ 69*») la confirmación
+                // también quedó hecha: la oferta del turno siguiente no vuelve a decir «Anotado: 1 unidad»
+                // (salía debajo de «Santiago la venta ICA», como si no lo hubiera leído — 2026-09-30).
+                (run.vars as any)._upsell_anotado = 1;
                 await logEvent(db, run.channel_id, run.contact_id, "nota", "💡 Ahorro por llevar más: aplazado",
                   "El mensaje ya le pregunta algo; va en el siguiente").catch(() => {});
                 _aplazado = true;
@@ -28092,7 +28161,11 @@ function resolve(text: string, ctx: any): string {
     const v = (ctx[k] ?? "").toString();
     if (!v.trim()) hubo = true;
     return v;
-  });
+  })
+    // 📦📦 El mismo emoji cerrando un renglón del dueño y abriendo la línea que trae la variable
+    // («…te aviso en cuanto llegue. 📦» + «📦 Suele estar disponible para recoger en 1 a 2 días»):
+    // se queda el del dueño y la variable arranca con su texto (Probar flujos, 2026-09-30).
+    .replace(/(\p{Extended_Pictographic}️?)([ \t]*\n(?:[ \t]*\n)*[ \t]*)\1️?[ \t]+(?=\p{L})/gu, "$1$2");
   return hubo ? out.replace(/\n[ \t]*\n[ \t]*(?:\n[ \t]*)+/g, "\n\n").trim() : out;
 }
 
