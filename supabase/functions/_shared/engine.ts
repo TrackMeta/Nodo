@@ -5243,6 +5243,71 @@ const RE_LO_PIENSA =
   // + «déjame verlo» y «te confirmo mañana», que es como se dice «lo voy a pensar».
   // Límites Unicode (bandera `u`): con \b, «lo pensaré» (termina en tilde) no calzaba.
   /(?<![\p{L}\p{N}])(lo (voy a |vo a )?pienso|lo voy a pensar|lo pensar[eé]|d[eé]jame (pensarlo|verlo|ver)|lo consulto|lo veo (con|y)|luego te (escribo|aviso|digo|confirmo)|despu[eé]s te (escribo|aviso|digo|confirmo)|te (escribo|aviso|confirmo) (luego|despu[eé]s|m[aá]s tarde|ma[ñn]ana)|ahorita no|por ahora no|mas adelante|m[aá]s adelante|gracias por la info)(?![\p{L}\p{N}])/iu;
+// 📋 La petición de datos, SIEMPRE igual: una línea que la anuncia y un renglón «📌 *Dato*» por cada
+// dato que falta, con la etiqueta del dueño y nada más. Rodrigo (2026-10-01, mirando su chat de Probar
+// flujos): «al momento de pedir datos me parece que debe ser más ordenado y claro». Lo que le llegaba
+// era distinto en cada turno —«Me falta un dato: Nombre y apellidos. ¿Me lo pasas?» (con tres por dar),
+// «solo necesito que me pases nombre y apellidos, celular y DNI 👇» de corrido, o la lista 📌 de la IA
+// con sus propias etiquetas—. El prompt ya pide los 📌 y la IA los pone a veces: pasa a ser del motor.
+// Fuera «confirmo» (no es un dato que se copie) y la sede (la pide su propia lista 📍).
+function bloquePedirDatos(faltan: unknown): string {
+  const _ls = (Array.isArray(faltan) ? faltan : [])
+    .filter((f: any) => f && f.clave !== "confirmo" && f.validar !== "sede" && String(f.label ?? "").trim())
+    .map((f: any) => String(f.label).replace(/[¿?¡!]/g, "").split(/[,(]/)[0]
+      .replace(/\bsus\b/gi, "tus").replace(/\bsu\b/gi, "tu").replace(/\s+/g, " ").trim())
+    .filter((s: string, i: number, a: string[]) => s && a.indexOf(s) === i)
+    .slice(0, 5);
+  if (!_ls.length) return "";
+  const intro = _ls.length === 1 ? "Solo me falta un dato 👇" : "Para dejarlo listo, pásame estos datos 👇";
+  return `${intro}\n${_ls.map((s) => `📌 *${s}*`).join("\n")}`;
+}
+// Frases con las que la IA (o el motor) PIDE datos — verbo de pedir + un dato nombrado. Solo esas se
+// reemplazan: «tu DNI lo pide la agencia para entregarte» nombra el dato sin pedirlo y se queda.
+const RE_FRASE_PIDE_DATOS =
+  /(?:p[aá]same|m[aá]ndame|env[ií]ame|br[ií]ndame|ind[ií]came|dame|comp[aá]rteme|me\s+(?:pasas|mandas|env[ií]as|das|dejas|brindas|indicas|compartes|confirmas|dices)|me\s+(?:puedes|podr[ií]as)\s+(?:pasar|mandar|enviar|dar|dejar|brindar|indicar|compartir)|necesito|necesitar[ií]a|me\s+falta(?:n|r[ií]an?)?|solo\s+falta|faltan?\b|queda(?:n|r[ií]a)?\s+(?:solo\s+)?(?:tu|tus|el|la|los|las|pendiente)|pendiente)/iu;
+const RE_PALABRA_DATO =
+  /(?:\b(?:nombre|apellidos?|dni|documento|celular|tel[eé]fono|n[uú]mero\s+de\s+(?:contacto|celular|tel[eé]fono)|datos?|direcci[oó]n|referencia|distrito)\b|(?:lo\s+siguiente|estos|esto|lo\s+que\s+sigue)\s*(?:👇|:))/iu;
+function conPedidoDeDatosOrdenado(texto: string, bloque: string): string {
+  const t = String(texto ?? "");
+  if (!bloque || !t.trim()) return texto;
+  // La IA también usa 📌 para la lista de precios: un renglón con precio o unidades no es un campo.
+  const _esCampo = (ln: string) => !/(?:S\/|\$)\s?\d|\bunidad|\bunidades|\bpack\b|\boferta\b/i.test(ln);
+  let hubo = false;
+  // Párrafo → renglón → frase. Se trabaja por RENGLÓN para no pegar en una línea lo que iba en varias
+  // (la lista de precios), y por FRASE para quitar solo la que pide y dejar la respuesta a lo que preguntó.
+  const _pars = t.replace(/\r/g, "").split(/\n{2,}/).map((p) => {
+    const _lineas = p.split("\n").map((ln) => {
+      if (/^[ \t]*📌/.test(ln) && _esCampo(ln)) { hubo = true; return ""; }     // renglón «📌 *Dato*» de campos
+      let q = ln.replace(/[ \t]*📌[^📌]*/gu, (seg) => { if (_esCampo(seg)) { hubo = true; return ""; } return seg; });   // 📌 de corrido
+      const _fr = q.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u);
+      const _keep: string[] = [];
+      let _quitada = false;
+      for (const f of _fr) {
+        const sf = sinFormato(f);
+        if (RE_FRASE_PIDE_DATOS.test(sf) && RE_PALABRA_DATO.test(sf)) { hubo = true; _quitada = true; continue; }
+        if (_quitada) {
+          // La pregunta huérfana que seguía a la petición quitada («¿Me lo pasas? 🙂») y la cola de solo emojis.
+          if (/^\s*¿?\s*(?:me\s+(?:lo|los|la|las)\s+(?:pasas|mandas|env[ií]as|das|confirmas|dejas)|(?:lo|los)\s+(?:tienes|me\s+pasas))\s*\??[\s\p{Extended_Pictographic}️]*$/iu.test(sf)) continue;
+          if (!/[\p{L}\p{N}]/u.test(sf)) continue;
+        }
+        _quitada = false;
+        _keep.push(f);
+      }
+      return _keep.join(" ").replace(/[ \t]{2,}/g, " ").trim();
+    }).filter((ln) => ln.replace(/[\s\p{P}\p{S}]/gu, "").length > 0);
+    return _lineas.join("\n");
+  }).filter((p) => p.replace(/[\s\p{P}\p{S}]/gu, "").length > 0);
+  if (!hubo) return texto;
+  let cuerpo = _pars.join("\n\n")
+    // La flecha que apuntaba a la lista quitada, y la muletilla que la anunciaba.
+    .replace(/[ \t]*👇(?=[\s\p{Extended_Pictographic}️]*(?:\n|$))/gu, "")
+    .replace(/[ \t]*\b(?:adem[aá]s|tambi[eé]n|y\s+para\s+(?:terminar|cerrar|seguir|avanzar))\s*,?[ \t]*(?=\n|$)/gimu, "")
+    // Solo la coma o los dos puntos que quedaron CERRANDO el texto (anunciaban la lista quitada): un
+    // «Los precios son:» en medio se queda con su «:».
+    .replace(/[,;:]+\s*$/u, "").trim();
+  if (cuerpo.replace(/[\s\p{P}\p{S}]/gu, "").length < 3) cuerpo = "Perfecto 🙌";
+  return `${cuerpo}\n\n${bloque}`;
+}
 function conPeticionFinal(texto: string, peticion: string, dato?: string): string {
   const t = String(texto ?? "").trimEnd();
   if (!t || !peticion) return texto;
@@ -25975,15 +26040,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // le toca. «Me falta UN dato: Nombre y apellidos» con nombre, celular y DNI por dar era
         // mentirle: al turno siguiente le pedía los tres (Probar flujos, Rodrigo, 2026-09-30).
         // Va el NÚCLEO de cada etiqueta (antes de la coma o el paréntesis), en segunda persona.
-        const _faltanVarios: string[] = (Array.isArray((ctx as any)._datos_faltan) ? (ctx as any)._datos_faltan : [])
-          .filter((f: any) => f?.clave !== "confirmo" && String(f?.label ?? "").trim())
-          .map((f: any) => String(f.label).replace(/[¿?¡!]/g, "").split(/[,(]/)[0]
-            .replace(/\bsus\b/gi, "tus").replace(/\bsu\b/gi, "tu").trim())
-          .filter((s: string, i: number, a: string[]) => s && a.indexOf(s) === i)
-          .slice(0, 4);
-        const _pideVarios = _faltanVarios.length >= 2
-          ? `Me faltan estos datos 👇\n${_faltanVarios.map((s) => `📌 *${s}*`).join("\n")}`
-          : "";
+        // 📋 Y desde el 2026-10-01 con UNO también: el bloque canónico (ver bloquePedirDatos) — en físico,
+        // que es donde hay campos; en digital no hay datos que pedir y se deja el remate de abajo.
+        const _bloqueDatos = esDigital(ctx) ? "" : bloquePedirDatos((ctx as any)._datos_faltan);
+        const _pideVarios = _bloqueDatos;
         // 💻 En digital el remate depende de en qué va: si ya dijo que pagó o ya tiene el
         // número, lo que falta es la captura; si no, lo que sigue son los datos (el motor los
         // manda un segundo después). Medido: «la básica» → «Mándame la captura del pago…» y
@@ -26097,6 +26157,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
         if (_hayQuePedir && !_unaNombrada && !_fisicoSinZona && !_leAdvirtio && !_esReclamoOEstado && !_loMandaLuego && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
           salida = conPeticionFinal(salida, cierreHonesto, _lblTal);
+        }
+        // 📋 La petición de datos, ORDENADA: si el mensaje pide datos (como sea que la IA lo haya escrito), la
+        // petición se reemplaza por el bloque canónico al final —respuesta primero, lista 📌 después— con los
+        // datos que de verdad faltan. Solo en físico con zona y cantidad resueltas y sin pedido creado; no
+        // cuando la lista 📍 de oficinas está pidiendo la sede (esa pregunta manda), ni en los casos en que
+        // tampoco se pega el cierre (advertencia, reclamo, «mañana te lo paso», «lo pienso»).
+        if (_bloqueDatos && !esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
+            && !(ctx as any)._falta_opcion && !(ctx as any)._pack_mixto && !(ctx as any)._falta_variante
+            && !_leAdvirtio && !_esReclamoOEstado && !_loMandaLuego && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))
+            && !/^\s*📍\s*\*/m.test(salida)) {
+          const _antesOrd = salida;
+          salida = conPedidoDeDatosOrdenado(salida, _bloqueDatos);
+          if (salida !== _antesOrd) {
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 Petición de datos ordenada",
+              `Se reemplazó cómo pedía los datos por la lista canónica. Antes: «${_antesOrd.slice(0, 160)}»`).catch(() => {});
+          }
         }
         // ⏰ …y «¿Quieres que te recuerde mañana?» es una promesa que el bot no cumple (no hay
         // recordatorio a pedido): fuera (D14c-pfaltadni, 2026-09-25). El remarketing ya lo retoma solo.
