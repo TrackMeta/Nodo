@@ -26533,7 +26533,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               if (_suyaL && _suyaL.precio != null && !salida.includes(String(_suyaL.precio))) {
                 const _symL = simboloMoneda(ctx.moneda as string);
                 const _vL = Math.round(Number(_suyaL.precio) * 100) / 100;   // 69 pelado, 54.50 con sus dos cifras
-                salida = `Anotado: *${_suyaL.nombre}* — ${_symL} ${Number.isInteger(_vL) ? _vL : _vL.toFixed(2)}.\n\n${salida}`;
+                salida = `Anotado: *${_suyaL.nombre}*, ${_symL} ${Number.isInteger(_vL) ? _vL : _vL.toFixed(2)}.\n\n${salida}`;   // misma forma que la oferta
                 (run.vars as any)._upsell_anotado = 1;   // el aviso del ahorro no lo repite
               }
             } catch (_) { /* sin opciones → sin «Anotado» */ }
@@ -26982,7 +26982,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             if (!_zonaOk && !/[?¿]/.test(_s) && !_RE_SUAVE_Z.test(_s)
                 && !(ctx as any)._dos_lugares && !(run.vars as any)?._dos_lugares
                 && !/conf[ií]rm\p{L}*|necesito que|dime (?:cu[aá]l|en cu[aá]l|d[oó]nde)|cu[aá]l de (?:las|los) dos/iu.test(_s)) {
-              _s = _sinEmojiRepetido(_s.trimEnd(), _Q_ZONA) + " " + _Q_ZONA;
+              _s = _pegaSuave(_s.trimEnd(), _Q_ZONA);   // párrafo propio tras una lista o la línea de la oferta
             }
           }
           // 1) Con la zona ya sabida, «¿en qué distrito?» + «¿cuántas?» → queda solo la cantidad (el
@@ -27047,7 +27047,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               _s = _s.replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, _sinListaVieja)
                 .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "");
             }
-            _s = _sinEmojiRepetido(_s.trim(), _Q_ZONA) + " " + _Q_ZONA;
+            _s = _pegaSuave(_s.trim(), _Q_ZONA);
           } else if (!_zonaOk && _hay(_RE_Q_CANT, _s) && !_hay(_RE_Q_UBIC, _s) && _hay(_RE_Q_UBIC, _ultF)
                      && !RE_CLIENTE_PIDE_PRECIO.test(_li)) {
             // Se le preguntó de dónde es, contestó «si» / «ok» sin decirlo, y el turno saltaba a
@@ -27091,7 +27091,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // (+ «Así SÉ cómo te llega y te pido unos datos…» — F10-cincoydiez)
             // (el arranque para en un EMOJI también: la IA separa con emoji y, quitada la pregunta de en medio, el
             //  retroceso llegaba al punto DECIMAL de «hasta 1.5 mm» → «hasta 1. ¿Alguna otra duda?» — F11R-cortito)
-            _s = _s.replace(/[^.!?¿\n\p{Extended_Pictographic}]*\bas[ií]\s+(?:te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)|s[eé]|sabr[eé]|veo|reviso)\s+c[oó]mo\s+(?:te\s+)?(?:lo\s+|la\s+)?(?:llega|puede\s+llegar|podr[ií]a\s+llegar|llegar[ií]a|recibes|env[ií]amos|mandamos|despachamos|te\s+lo\s+(?:env[ií]o|mando|hago\s+llegar)|sigue|seguimos|contin[uú]a|avanzamos|queda)\b[^.!?¿\n]*?[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda|Cu[eé]ntame de qu[eé] distrito|Dime cu[aá]ntas llevas)/giu, " ")
+            _s = _s.replace(/[^.!?¿\n\p{Extended_Pictographic}]*\bas[ií]\s+(?:te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)|s[eé]|sabr[eé]|veo|reviso)\s+c[oó]mo\s+(?:te\s+)?(?:lo\s+|la\s+)?(?:llega|puede\s+llegar|podr[ií]a\s+llegar|llegar[ií]a|recibes|env[ií]amos|mandamos|despachamos|te\s+lo\s+(?:env[ií]o|mando|hago\s+llegar)|sigue|seguimos|contin[uú]a|avanzamos|queda)\b[^.!?¿\n]*?[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda|Cu[eé]ntame de qu[eé] distrito|Dime cu[aá]ntas llevas)/giu,
+                // (si la cola se llevaba el salto de párrafo —«…🔧 Así te digo cómo te llega 📦\n\nCuéntame…»— el salto se queda)
+                (m: string) => (/\n/.test(m) ? "\n\n" : " "))
               // (+ la suave nueva «Cuéntame de qué distrito…» delante: quedaba « Así te cuento cómo te llega y seguimos con tu
               //  pedido. Cuéntame…» — simulación B, 2026-10-01; y el espacio que abría el renglón tras quitar la pregunta)
               .replace(/\n[ \t]+/g, "\n");
