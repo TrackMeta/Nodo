@@ -6315,12 +6315,19 @@ function sinPreguntarLaSede(texto: string, nombre = "", tieneDatos = false): str
       k + 1 < partes.length && /[?¿]/.test(partes[k + 1]) &&
       RE_PIDE_ELEGIR_SEDE.test(sinFormato(partes[k + 1])));
   }
-  if (i < 0) return texto;
+  const letras = (s: string) => s.replace(/[\s\p{P}\p{S}]/gu, "").length;
+  // Sin pregunta que quitar, igual se van el anuncio suelto («Tenemos varias sedes ahí.») y el «ya sé que
+  // recoges en X»: hablan de una elección que el motor ya hizo.
+  if (i < 0) {
+    const _t2 = t.replace(RE_ANUNCIO_SEDES_SUELTO, "").replace(RE_YA_SE_SEDE, "")
+      .replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    return _t2 !== t.trim() && letras(_t2) >= 8 ? _t2 : texto;
+  }
   // …y sin el anuncio que precedía a la pregunta («En *Arequipa* tenemos varias oficinas de
   // Shalom.»): decir que hay varias y no preguntar cuál es dejar la frase a medias.
   const queda = partes.slice(0, i).join(" ").trim()
-    .replace(RE_ANUNCIO_SEDES_COLGADO, "").replace(/[\s]*(?:,|;|:|—|-)\s*$/u, "").trim();
-  const letras = (s: string) => s.replace(/[\s\p{P}\p{S}]/gu, "").length;
+    .replace(RE_ANUNCIO_SEDES_COLGADO, "").replace(RE_ANUNCIO_SEDES_SUELTO, "").replace(RE_YA_SE_SEDE, "")
+    .replace(/[ \t]{2,}/g, " ").replace(/[\s]*(?:,|;|:|—|-)\s*$/u, "").trim();
   if (letras(queda) >= 8) return queda;
   // No quedó nada: el mensaje ENTERO era la pregunta, así que hay que escribir el reemplazo.
   // 🔴 Y NO se le puede decir «ya tengo tus datos» a quien no ha dado ninguno. Medido en la
@@ -6980,6 +6987,23 @@ function sinAnuncioColgado(texto: string): string {
   return L.join("\n").replace(/^[ \t]*(?:y|o|e|pero|adem[aá]s)[ \t]*[,.]?[ \t]*$/gimu, "");
 }
 
+// 👋 El saludo ABRIENDO un mensaje a mitad de la conversación: «Hola 👋, el número de celular que me diste…»,
+// «Un gusto, Juan Carlos 👋 Por el número que me diste…» — la IA saluda como si fuera el primer mensaje
+// cuando el cliente recién dice su nombre (simulaciones 4 y 5 del chat de Probar flujos, 2026-10-01). Se
+// quita solo si el bot YA le había escrito antes y el cliente no está saludando él (eso lo decide quien llama).
+// El nombre detrás del saludo se va con él solo si lo sigue un signo o un emoji («Hola, Para dejarlo listo»
+// no es un nombre). Si al quitarlo casi no queda mensaje, se deja como estaba.
+const RE_SALUDO_ARRANQUE =
+  /^[\s¡!]*(?:hola+|holi|holas|buen(?:os|as)\s+(?:d[ií]as|tardes|noches)|buenas(?=\s*(?:[,!.]|\p{Extended_Pictographic}))|un\s+gusto|mucho\s+gusto|encantad[oa]|qu[eé]\s+gusto|bienvenid[oa])(?![\p{L}])(?:\s+de\s+nuevo|\s+otra\s+vez)?(?:\s*,?\s*[A-ZÁÉÍÓÚÑ]\p{L}+(?:\s+[A-ZÁÉÍÓÚÑ]\p{L}+)?(?=\s*(?:[,!.]|\p{Extended_Pictographic})))?\s*[,!.]*\s*(?:\p{Extended_Pictographic}️?\s*)*[,!.]*\s*/iu;
+function sinSaludoAMitad(texto: string): string {
+  const t = String(texto ?? "");
+  const m = t.match(RE_SALUDO_ARRANQUE);
+  if (!m || !m[0].trim()) return texto;
+  const resto = t.slice(m[0].length);
+  if (resto.replace(/[\s\p{P}\p{S}]/gu, "").length < 10) return texto;
+  const i = resto.search(/[\p{L}\p{N}]/u);
+  return i < 0 ? resto : resto.slice(0, i) + resto[i].toUpperCase() + resto.slice(i + 1);
+}
 function sinMuletillaDeArranque(texto: string): string {
   return String(texto ?? "").split("\n").map((l) => {
     const sinFija = l.replace(RE_MULETILLA_FIJA, "");
@@ -8003,6 +8027,14 @@ function sinFalsoCierre(texto: string, cierre: string): string {
 // 📍 El anuncio de las sedes que quedó SIN su pregunta al cortarla: «…ya tengo tus datos 🙌 En tu
 // ciudad hay varias sedes de Shalom 📍» / «Perfecto, Luis 👌 En *Arequipa* tenemos varias oficinas
 // de Shalom.» (D11b-pwanchaq, D11e-pfactura, 2026-09-25). Lo usan los dos recortes de la pregunta.
+// 📍 Lo mismo pero EN CUALQUIER SITIO del texto que queda, no solo cerrando: con la sede ya sellada la IA
+// escribió «…te llega por agencia Shalom 📦 Tenemos varias sedes ahí.\nYa sé que recoges en ICA SANTIAGO.\n¿Cuál
+// te queda más cerca?» — se fue la pregunta y quedaron las dos frases de en medio (simulación 6, 2026-10-01).
+const RE_ANUNCIO_SEDES_SUELTO =
+  /(?:^|(?<=[.!?…,]\s)|(?<=\p{Extended_Pictographic}️?\s)|(?<=\n))(?:en\s+(?:tu\s+ciudad|[^\n.!?¿]{2,25}?)\s+)?(?:hay|tenemos|tienes|contamos\s+con|existen)\s+(?:varias|algunas|muchas|dos|tres)\s+(?:sedes|oficinas|agencias)[^\n.!?¿]{0,40}[.!]?[ \t]*/giu;
+// …y la frase con que la IA se contesta a sí misma lo que el motor ya decidió: «Ya sé que recoges en X».
+const RE_YA_SE_SEDE =
+  /(?:^|(?<=[.!?…]\s)|(?<=\n))ya\s+(?:s[eé]|sabemos|tengo|anot[eé]|veo)\s+(?:que\s+)?(?:recoges|recojas|retiras|lo\s+recoges|tu\s+sede|cu[aá]l\s+es\s+tu\s+sede|la\s+sede|tu\s+oficina)[^\n.!?¿]*[.!]?[ \t]*/giu;
 const RE_ANUNCIO_SEDES_COLGADO =
   /(?:^|(?<=[.!?…,]\s)|(?<=\p{Extended_Pictographic}\s)|(?<=\n))(?:en\s+(?:tu\s+ciudad|[^\n.!?¿]{2,25}?)\s+)?(?:hay|tenemos|tienes|contamos\s+con|existen)\s+(?:varias|algunas|muchas|dos|tres)\s+(?:sedes|oficinas|agencias)[^\n.!?¿]{0,40}[.]?\s*(?:\p{Extended_Pictographic}|️|\s)*$/iu;
 function sinPreguntaFinal(texto: string): string {
@@ -25159,6 +25191,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // el mensaje que le explica cómo se paga, o sea en el peor sitio posible.
         salida = sinTerceraPersona(salida);
         salida = sinMuletillaDeArranque(salida);
+        // 👋 Y el saludo a mitad de la conversación (ver sinSaludoAMitad): solo si el bot ya le escribió antes
+        // y el cliente no está saludando él («hola?», «buenas» → ahí sí se le contesta el saludo).
+        if (op === "generar_texto" && !/^[\s¡!]*(?:hola|holi|buenas|buenos|buen\s+d[ií]a)/i.test(String(ctx.last_input ?? ""))) {
+          try {
+            const { count: _nOut } = await db.from("messages").select("id", { count: "exact", head: true })
+              .eq("contact_id", run.contact_id).eq("direction", "out");
+            if ((_nOut ?? 0) >= 1) {
+              const _antesSal = salida;
+              salida = sinSaludoAMitad(salida);
+              if (salida !== _antesSal) {
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "👋 Saludaba a mitad de la conversación",
+                  `Se quitó el saludo de arranque: «${_antesSal.slice(0, 100)}»`).catch(() => {});
+              }
+            }
+          } catch (_) { /* sin conteo → se deja como está */ }
+        }
         // 🪞 Y fuera el eco: abrir repitiendo la frase del cliente («Vivo en Tarapoto…»).
         // Con rastro: era el único recorte sin evento, y una respuesta que arranca a mitad
         // de frase no se puede explicar leyendo el chat.
