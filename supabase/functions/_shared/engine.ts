@@ -27042,7 +27042,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // Lo que quedó CORTADO justo antes: «Perfecto, Dime cuántas…», «Ahora, Cuéntame…», «Para darte el monto
             // exacto del adelanto. Cuéntame…» (chat de Rodrigo, 2026-10-01). La muletilla suelta se va y la coma
             // que cerraba se vuelve punto; el tocón «Para + infinitivo…» sin frase principal también se va.
-            s = s.replace(/(?:^|\n)[ \t]*(?:ahora|entonces|bueno|listo|perfecto|genial)\s*,\s*$/iu, (m) => m.replace(/,\s*$/, "."))
+            s = s.replace(/(?:^|\n)[ \t]*(?:ahora|entonces|bueno)\s*,\s*$/iu, "")
+              .replace(/(?:^|\n)[ \t]*(?:listo|perfecto|genial)\s*,\s*$/iu, (m) => m.replace(/,\s*$/, "."))
               .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))Para\s+(?:darte|decirte|pasarte|confirmarte|calcular(?:te|lo)?|saber|seguir|avanzar|continuar|cerrar(?:lo|te)?|dejarlo\s+listo|enviarte|mandarte|ayudarte)\b[^.!?¿\n]{0,80}\.\s*$/iu, "")
               .replace(/,\s*$/, ".").trimEnd();
             const ult = s.trimEnd().split("\n").pop() ?? "";
