@@ -27050,6 +27050,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             s = s.replace(/(?:^|\n)[ \t]*(?:ahora|entonces|bueno)\s*,\s*$/iu, "")
               .replace(/(?:^|\n)[ \t]*(?:listo|perfecto|genial)\s*,\s*$/iu, (m) => m.replace(/,\s*$/, "."))
               .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))Para\s+(?:darte|decirte|pasarte|confirmarte|calcular(?:te|lo)?|saber|seguir|avanzar|continuar|cerrar(?:lo|te)?|dejarlo\s+listo|enviarte|mandarte|ayudarte)\b[^.!?¿\n]{0,80}\.\s*$/iu, "")
+              // (+ «Respecto al adelanto.» / «Sobre el envío.» — el encabezado de la frase que otro recorte se llevó)
+              // (solo el encabezado pelado, hasta 3 palabras y sin coma: «Sobre el envío te cuento después.» se queda)
+              .replace(/(?:^|(?<=[.!?…]\s)|(?<=\p{Extended_Pictographic}️?\s)|(?<=\n))(?:Respecto|Sobre|En\s+cuanto)\s+(?:a|al|a\s+la|a\s+lo|el|la|lo)\s+(?:[^\s,.!?¿\n]+\s+){0,2}[^\s,.!?¿\n]+\.\s*$/iu, "")
               .replace(/,\s*$/, ".").trimEnd();
             const ult = s.trimEnd().split("\n").pop() ?? "";
             if (!s.trim()) return q;
@@ -27294,7 +27297,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                   try {
                     const _opsPl = await loadOpciones(db, run, String(ctx._product_id ?? ""));
                     const _qPl = preguntaCuantos(_opsPl, ctx, _negOn, true);
-                    if (_qPl) {
+                    // (si la IA ya la pide en imperativo —«Dime cuántas unidades quieres o qué oferta prefieres»— no se
+                    //  pega otra encima; quedaban dos — reproducción corta, 2026-10-01)
+                    const _yaPideCant = /\b(?:dime|cu[eé]ntame|ind[ií]came|av[ií]same|me\s+dices)\s+cu[aá]nt[ao]s/i.test(sinFormato(_s));
+                    if (_qPl && !_yaPideCant) {
                       _s = _s.replace(/[ \t]*¿[^?¿\n]*\b(?:cu[aá]nt[ao]s|cu[aá]l)\b[^?¿\n]*\?[ \t]*(?:\p{Extended_Pictographic}️?[ \t]*)*/giu, " ")
                         .replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
                       _s = `${_s}\n\n${_qPl}`;
