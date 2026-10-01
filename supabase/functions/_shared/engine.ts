@@ -5280,9 +5280,12 @@ const RE_FRASE_PIDE_DATOS =
   /(?:p[aá]same|m[aá]ndame|env[ií]ame|br[ií]ndame|ind[ií]came|dame|comp[aá]rteme|me\s+(?:pasas|mandas|env[ií]as|das|dejas|brindas|indicas|compartes|confirmas|dices)|me\s+(?:puedes|podr[ií]as)\s+(?:pasar|mandar|enviar|dar|dejar|brindar|indicar|compartir)|te\s+(?:pase|pido|pedir[eé]|voy\s+a\s+pedir)|me\s+vas\s+a\s+(?:pasar|dar|mandar)|necesito|necesitar[ií]a|necesitar[eé]|voy\s+a\s+necesitar|me\s+falta(?:n|r[ií]an?)?|solo\s+falta|faltan?\b|queda(?:n|r[ií]a)?\s+(?:solo\s+)?(?:tu|tus|el|la|los|las|pendiente)|pendiente)/iu;
 const RE_PALABRA_DATO =
   /(?:\b(?:nombre|apellidos?|dni|documento|celular|tel[eé]fono|n[uú]mero\s+de\s+(?:contacto|celular|tel[eé]fono)|tu\s+n[uú]mero|n[uú]mero\s+completo|datos?|direcci[oó]n|referencia|distrito)\b|(?:lo\s+siguiente|estos|esto|lo\s+que\s+sigue)\s*(?:👇|:))/iu;
-function conPedidoDeDatosOrdenado(texto: string, bloque: string): string {
+// Quita del texto las frases y renglones con que pide datos; devuelve lo que queda y si quitó algo. Lo usa
+// `conPedidoDeDatosOrdenado` (que pega el bloque canónico) y el recorte SIN ZONA (que no pide datos todavía:
+// «¿Me pasas tu celular, nombre y distrito?» sin saber de dónde es — simulación B, 2026-10-01).
+function quitarPeticionDeDatos(texto: string): { texto: string; hubo: boolean } {
   const t = String(texto ?? "");
-  if (!bloque || !t.trim()) return texto;
+  if (!t.trim()) return { texto, hubo: false };
   // La IA también usa 📌 para la lista de precios: un renglón con precio o unidades no es un campo.
   const _esCampo = (ln: string) => !/(?:S\/|\$)\s?\d|\bunidad|\bunidades|\bpack\b|\boferta\b/i.test(ln);
   let hubo = false;
@@ -5312,14 +5315,21 @@ function conPedidoDeDatosOrdenado(texto: string, bloque: string): string {
     }).filter((ln) => ln.replace(/[\s\p{P}\p{S}]/gu, "").length > 0);
     return _lineas.join("\n");
   }).filter((p) => p.replace(/[\s\p{P}\p{S}]/gu, "").length > 0);
-  if (!hubo) return texto;
-  let cuerpo = _pars.join("\n\n")
+  if (!hubo) return { texto, hubo: false };
+  const cuerpo = _pars.join("\n\n")
     // La flecha que apuntaba a la lista quitada, y la muletilla que la anunciaba.
     .replace(/[ \t]*👇(?=[\s\p{Extended_Pictographic}️]*(?:\n|$))/gu, "")
     .replace(/[ \t]*\b(?:adem[aá]s|tambi[eé]n|y\s+para\s+(?:terminar|cerrar|seguir|avanzar))\s*,?[ \t]*(?=\n|$)/gimu, "")
     // Solo la coma o los dos puntos que quedaron CERRANDO el texto (anunciaban la lista quitada): un
     // «Los precios son:» en medio se queda con su «:».
     .replace(/[,;:]+\s*$/u, "").trim();
+  return { texto: cuerpo, hubo: true };
+}
+function conPedidoDeDatosOrdenado(texto: string, bloque: string): string {
+  if (!bloque) return texto;
+  const q = quitarPeticionDeDatos(texto);
+  if (!q.hubo) return texto;
+  let cuerpo = q.texto;
   if (cuerpo.replace(/[\s\p{P}\p{S}]/gu, "").length < 3) cuerpo = "Perfecto 🙌";
   return `${cuerpo}\n\n${bloque}`;
 }
@@ -26945,7 +26955,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // Solo los 📌 que son CAMPOS de datos: la IA también usa 📌 para la LISTA DE PRECIOS («📌 1 unidad —
           // S/ 69») y se la llevaba entera (F7-hprompt). Un renglón con precio o unidades no es un campo.
           const _esCampo = (ln: string) => !/(?:S\/|\$)\s?\d|\bunidad|\bunidades|\bpack\b|\boferta\b/i.test(ln);
-          if ((!_zonaOk || !!(ctx as any)._falta_opcion) && /📌/.test(_s)) {
+          // …y la petición EN LÍNEA, sin 📌 («¿Me pasas tu *celular*, *nombre* y *distrito o ciudad* para dejarlo
+          // listo?» a «quiero 1», sin saber de dónde es — simulación B, 2026-10-01): se va igual, por frase.
+          let _sInline = false;
+          if ((!_zonaOk || !!(ctx as any)._falta_opcion) && !/📌/.test(_s)) {
+            const _qI = quitarPeticionDeDatos(_s);
+            if (_qI.hubo && _qI.texto.replace(/[\s\p{P}\p{S}]/gu, "").length >= 3) { _s = _qI.texto; _sInline = true; }
+          }
+          if ((!_zonaOk || !!(ctx as any)._falta_opcion) && (/📌/.test(_s) || _sInline)) {
             _s = _s.replace(/^[ \t]*📌[^\n]*(?:\n|$)/gmu, (ln) => _esCampo(ln) ? "" : ln)
               .replace(/[ \t]*📌[^\n📌]*/gu, (seg) => _esCampo(seg) ? "" : seg)
               .replace(/^[ \t]*\*[^*\n]{2,45}\*[ \t]*$/gmu, "")
