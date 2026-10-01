@@ -1385,6 +1385,23 @@ async function runEngineInner(
         const { count: _out } = await db.from("messages").select("id", { count: "exact", head: true })
           .eq("contact_id", contactId).eq("direction", "out");
         if ((_out ?? 0) > 0) reinyectarTrasArranque = true;
+        // 🛒 …y en el PRIMER mensaje también, si lo que queda al quitar la palabra clave nombra OTRO producto del
+        // catálogo: «quiero el protocolo y la plantilla» enrutaba al Protocolo, salía su ficha y el «y la plantilla»
+        // no lo miraba nadie — pagó 29 (10 + 19) y el motor lo trató como sobrepago (R1D-combo, 2026-10-01).
+        if (!reinyectarTrasArranque && decision.keyword) {
+          const _sobra = sinLaPalabraClave(event.text, decision.keyword);
+          if (_sobra.trim().length >= 4) {
+            const _catK = await catalogoDigital(db, { channel_id: channelId } as any).catch(() => [] as any[]);
+            let _pidK = "";
+            try { const { data: _flK } = await db.from("flows").select("product_id").eq("id", flow.id).maybeSingle(); _pidK = String((_flK as any)?.product_id ?? ""); } catch (_) { _pidK = ""; }
+            const _otros = productosNombrados(_sobra, _catK).filter((id) => id !== _pidK);
+            if (_otros.length) {
+              reinyectarTrasArranque = true;
+              await logEvent(db, channelId, contactId, "nota", "🛒 Nombró otro producto en el mismo mensaje",
+                `«${_sobra.slice(0, 60)}» — se atiende después del saludo`).catch(() => {});
+            }
+          }
+        }
       } catch (_) { /* sin el conteo, se arranca como antes */ }
     }
     // 🔢 …PERO no si su mensaje no dice nada. Reinyectar existe para que lo que el cliente
@@ -2658,7 +2675,8 @@ function pideClave(text?: string | null): boolean {
 // "¿cuándo llega?" es una pregunta y la contesta la IA; esto es un cambio de plan.
 const RE_REPROGRAMAR =
   // (+ «¿puede ser el lunes? no estoy el fin de semana» — F7-llunes: «Claro, puede pasar el lunes» y nadie lo anotó)
-  /\b(no\s+(voy\s+a\s+)?(estar|estare|estaré|estoy)|(?:puede|podr[ií]a|pueden)\s+ser\s+(?:el|para\s+el|este|pasado)\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|ma[ñn]ana)|no\s+me\s+(van\s+a\s+)?(encontrar|hallar)|nadie\s+(va\s+a\s+)?(estar|haber)|no\s+hay\s+nadie)\b|\b(reprogram\w+|repro\b)|\b(tra[ée]r?(lo|melo)?|entr[eé]g\w+|d[eé]jal[oa]|mandal[oa]|env[ií]al[oa]|c[aá]mbial[oa])\s+(mejor\s+)?(el|para\s+el|para\s+la|pasado)\s+(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|ma[ñn]ana|fin\s+de\s+semana|pr[oó]xima)\b|\b(otro\s+d[ií]a|cambiar\s+(la\s+fecha|el\s+d[ií]a)|para\s+la\s+(pr[oó]xima\s+)?semana)\b/i;
+  // («no estoy SEGURA de la dirección» no es ausencia: el pedido nació «para otro día» — R1L-direccionluego, 2026-10-01)
+  /\b(no\s+(voy\s+a\s+)?(estar|estare|estaré|estoy(?!\s+(?:segur|interesad|convencid|de\s+acuerdo|tan\b|muy\b|as[ií]\b|en\s+(?!casa|mi\s+casa|la\s+casa))))|(?:puede|podr[ií]a|pueden)\s+ser\s+(?:el|para\s+el|este|pasado)\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|ma[ñn]ana)|no\s+me\s+(van\s+a\s+)?(encontrar|hallar)|nadie\s+(va\s+a\s+)?(estar|haber)|no\s+hay\s+nadie)\b|\b(reprogram\w+|repro\b)|\b(tra[ée]r?(lo|melo)?|entr[eé]g\w+|d[eé]jal[oa]|mandal[oa]|env[ií]al[oa]|c[aá]mbial[oa])\s+(mejor\s+)?(el|para\s+el|para\s+la|pasado)\s+(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|ma[ñn]ana|fin\s+de\s+semana|pr[oó]xima)\b|\b(otro\s+d[ií]a|cambiar\s+(la\s+fecha|el\s+d[ií]a)|para\s+la\s+(pr[oó]xima\s+)?semana)\b/i;
 function pideReprogramar(text?: string | null): boolean {
   const t = String(text ?? "");
   if (!t.trim() || t.length > 240) return false;
@@ -4547,6 +4565,24 @@ async function execute(db: SupabaseClient, run: Run) {
           await saveRun(db, run);
           return;
         }
+        // 💳 Los datos de pago UNA sola vez (regla 9 de Rodrigo): si el motor acaba de mandarlos —«30 de adelanto te
+        // deposito» → el número salió al toque— y ahora el mensaje del adelanto los trae otra vez, en su lugar va una
+        // referencia a los de arriba (R1P-sobrepago, 2026-10-01). Solo en físico; se restaura al terminar el nodo.
+        const _dpOriginal = String(ctx.datos_pago ?? "");
+        if (_pideDatosPago && !esDigital(ctx) && _dpOriginal.trim()) {
+          try {
+            const _numsD = _dpOriginal.match(/\d{6,}/g) ?? [];
+            const { data: _outsD } = await db.from("messages").select("content, ts").eq("contact_id", run.contact_id)
+              .eq("direction", "out").order("ts", { ascending: false }).limit(3);
+            const _idxD = (_outsD ?? []).findIndex((m: any) => _numsD.length
+              ? _numsD.some((n) => String(m?.content?.text ?? "").includes(n)) : /yape|plin|cuenta|cci/i.test(String(m?.content?.text ?? "")));
+            if (_idxD >= 0 && Date.now() - new Date(String((_outsD as any)[_idxD]?.ts ?? 0)).getTime() < 15 * 60 * 1000) {
+              ctx.datos_pago = "a los datos de pago que te pasé arriba 👆";
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "💳 Datos de pago NO repetidos",
+                "Acaban de salir en el mensaje anterior; el del adelanto los referencia").catch(() => {});
+            }
+          } catch (_) { /* sin historial → salen como siempre */ }
+        }
         let hasButtons = false;
         for (const b of bubbles) {
           if (await ritmo(db, run, b)) break;   // escribió mientras tanto → no le hablamos encima
@@ -4555,6 +4591,7 @@ async function execute(db: SupabaseClient, run: Run) {
           // vacíos no se envía ninguno y el flujo esperaría un toque imposible.
           if ((b.buttons ?? []).some((x: any) => String(x?.title ?? "").trim())) hasButtons = true;
         }
+        if (_dpOriginal) ctx.datos_pago = _dpOriginal;   // la referencia «arriba 👆» era solo para este mensaje
         // 💸 LIMA que pidió yapear ANTES de tener pedido («¿a qué número yapeo? estoy en Miraflores» —
         // F8-numyape). Sin total no hay qué cobrarle, así que la IA le dijo que el número va con el pedido
         // (runIa marca `_lima_yapea_antes`); este es ese momento: salió la confirmación de Lima («Pagas al
@@ -4601,7 +4638,15 @@ async function execute(db: SupabaseClient, run: Run) {
         // burbuja siguiente — "¿Qué necesitas esta vez?" / "Claro, tienes el par talla 40…".
         // Y si de verdad no dijo qué quiere, el vendedor IA se lo pregunta acto seguido.
         if ((run.vars as any)?._recompra) {
-          await emit(db, run, { text: "¡Hola de nuevo! 🎉 Con gusto te preparo tu nuevo pedido." }, ctx);
+          // («¡Hola de nuevo!» a quien acaba de comprar hace un minuto sonaba a otro día — R1D-recompra, 2026-10-01:
+          //  si le escribimos hace menos de dos horas, es la misma conversación)
+          let _recienHablamos = false;
+          try {
+            const { data: _uo } = await db.from("messages").select("ts").eq("contact_id", run.contact_id)
+              .eq("direction", "out").order("ts", { ascending: false }).limit(1).maybeSingle();
+            _recienHablamos = !!(_uo as any)?.ts && Date.now() - new Date(String((_uo as any).ts)).getTime() < 2 * 60 * 60 * 1000;
+          } catch (_) { /* sin historial → saludo de siempre */ }
+          await emit(db, run, { text: _recienHablamos ? "¡Claro! 🎉 Con gusto te preparo tu nuevo pedido." : "¡Hola de nuevo! 🎉 Con gusto te preparo tu nuevo pedido." }, ctx);
         } else {
           const all = (node.config?.variantes ?? []) as any[];
           let active = all.filter((v) => v.activo !== false && (v.bubbles?.length));
@@ -5545,6 +5590,11 @@ function sinRestosDeRecorte(t: string): string {
     // (+ «…y recoges 📦 Ahora» — se fue la frase que seguía: INV4F-ef4)
     // …y la muletilla que anunciaba lo quitado, sola en su renglón: «Ahora, para seguir» (INV5F-ef4)
     .replace(/^[ \t]*(?:(?:y\s+)?ahora|entonces|bueno)?[ \t]*,?[ \t]*(?:para\s+(?:seguir|avanzar|continuar)(?:\s+con\s+(?:tu|el)\s+pedido)?)?[ \t]*[,:.]?[ \t]*$/gimu, "")
+    // …y la que quedó CERRANDO el texto delante de los emojis («…a tu ritmo. Mientras tanto🎓» — se fue «¿quieres que
+    //  te pase los datos?»), o sola como frase («👇 Cuando quieras. Apenas me mandes…» — se fue «te paso los datos»)
+    //  (R1D-nogracias, R1D-recompra, 2026-10-01)
+    .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))(?:mientras\s+tanto|cuando\s+quieras|cuando\s+gustes|cuando\s+puedas|por\s+ahora|por\s+lo\s+pronto)\s*[,.]?\s*(?=(?:\s|\p{Extended_Pictographic}|️)*(?:\n|$))/giu, "")
+    .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))(?:cuando\s+quieras|cuando\s+gustes|cuando\s+puedas)\s*\.\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/gu, "")
     .replace(/\n{3,}/g, "\n\n")
     // …y la pregunta que se quedó sin su «?» (se lo llevó el trozo quitado): se le devuelve antes de los emojis.
     // (el emoji con unión o tono de piel — 🤷‍♂️ — cuenta entero: si no, el «?» se metía en medio — auditoría 2026-09-30)
@@ -6650,6 +6700,10 @@ const CAMBIOS_PAGO_PROVINCIA: Array<[RegExp, string]> = [
   // «cuando recojas…» en provincia habla del MOMENTO en que él va por el paquete, y el saldo
   // se paga antes de eso. La variante con lugar («recojas allá») ya estaba arriba.
   [/\bcuando\s+(?:lo\s+|la\s+)?recojas(?:\s+(?:el|tu)\s+(?:paquete|pedido|producto))?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
+  // «el resto cuando lo recojas» ya lo cubre lo de arriba, pero «el resto cuando lo RECOJAS; no es posible pagar
+  // todo al llegar» (R1P-todoalllegar, 2026-10-01) necesita además el «por acá»: sin eso la frase sigue sonando a
+  // pagar en la agencia. Solo cuando habla del RESTO/SALDO.
+  [/\b(el\s+(?:resto|saldo)|lo\s+(?:que\s+)?(?:resta|falta))\s+(?:lo\s+)?(?:me\s+)?(?:lo\s+)?(?:pagas|abonas|cancelas|pagar[ií]as|lo\s+pagas)?\s*cuando\s+llegue\s+a\s+la\s+agencia(?!\s*(?:,\s*)?(?:por|aqu[ií]|ac[aá]))/giu, "$1 me lo pagas por acá cuando llegue a la agencia"],
   [/\bal\s+recoger(?:lo|la)?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
   [/\bal\s+momento\s+de\s+recoger(?:lo|la)?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
 ];
@@ -7369,7 +7423,7 @@ function pinesConEtiquetaBuena(texto: string, etiquetas: string[]): string {
 function emojisEnListaDePrecios(texto: string, sym: string, on: boolean): string {
   if (!on) return texto;
   const esc = sym.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const reItem = new RegExp(String.raw`^[ \t]*(\d{1,3})\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?|docenas?|kits?)\s+—\s*\*?${esc}\s*(\d+(?:[.,]\d+)?)`, "iu");
+  const reItem = new RegExp(String.raw`^[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}]+[ \t]*)*(\d{1,3})\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?|docenas?|kits?)\s+—\s*\*?${esc}\s*(\d+(?:[.,]\d+)?)`, "iu");
   const lineas = String(texto ?? "").split("\n");
   const idx: number[] = []; const unit: number[] = [];
   lineas.forEach((l, i) => {
@@ -7378,7 +7432,11 @@ function emojisEnListaDePrecios(texto: string, sym: string, on: boolean): string
   });
   if (idx.length < 2) return texto;
   const mejor = unit.indexOf(Math.min(...unit));
-  idx.forEach((i, k) => { lineas[i] = `${k === mejor ? "⭐" : "🔹"} ${lineas[i].trimStart()}`; });
+  // (si el renglón ya traía su propio emoji —🔧/🛠️/⚙️ de adorno de la IA— se cambia por el de la lista; así
+  //  también es idempotente: una segunda pasada deja lo mismo — R1L-olivos, R1P-diez, 2026-10-01)
+  idx.forEach((i, k) => {
+    lineas[i] = `${k === mejor ? "⭐" : "🔹"} ${lineas[i].replace(/^[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}]+[ \t]*)*/u, "")}`;
+  });
   const h = idx[0] - 1;
   if (h >= 0 && /^[ \t]*\p{L}[^\n]{2,40}:\s*$/u.test(lineas[h]) && !/\p{Extended_Pictographic}/u.test(lineas[h])) {
     lineas[h] = `💰 ${lineas[h].trimStart()}`;
@@ -9810,7 +9868,7 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
       return;
     }
 
-    const { data: c } = await db.from("contacts").select("product_id").eq("id", run.contact_id).maybeSingle();
+    const { data: c } = await db.from("contacts").select("product_id, wa_id, source").eq("id", run.contact_id).maybeSingle();
 
     // El envío que cobras se SUMA al total del pedido (decisión de Rodrigo).
     const base = parseMonto(a.monto ?? a.amount, ctx) ?? 0;
@@ -10091,7 +10149,15 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     // Guarda stock_mov en el pedido para poder DEVOLVERLO si se cancela.
     try {
       const pidS = (c as any)?.product_id;
-      const esFis = zonaShip === "lima" || zonaShip === "provincia";
+      let esFis = zonaShip === "lima" || zonaShip === "provincia";
+      // 🧪 Los contactos de PRUEBA (Probar flujos y el simulador) NO tocan el stock. Medido (R1, 2026-10-01): el
+      // Adaptador PRO quedó en -110 porque cada tanda de simulaciones descontaba sus pedidos y el reset los borra
+      // sin devolver nada; con eso el bot le decía «ahora mismo está agotado» a TODOS los clientes de verdad.
+      if (esFis && ((c as any)?.wa_id === "webchat-test" || (c as any)?.source === "sim")) {
+        esFis = false;
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🧪 Contacto de prueba: no toca el stock",
+          "Las ventas de Probar flujos y del simulador no descuentan inventario").catch(() => {});
+      }
       if (esFis) {
         const mov: Array<{ product_id: string; key: string; unidades: number }> = [];
         if (pidS) {
@@ -10937,7 +11003,9 @@ function resumenPedido(o: any, sym: string, producto?: string | null, cuando?: s
       // `sinPagarEnLaAgencia` corrige esta misma frase cuando la escribe la IA — pero el
       // resumen lo escribe el MOTOR y no pasaba por ahí. La regla que más ha repetido Rodrigo,
       // rota por el único texto que no se revisaba a sí mismo.
-      L.push(`💰 Total *${sym} ${total}* — adelanto ${sym} ${adel} · falta *${sym} ${saldo}* cuando llegue a la agencia`);
+      // («falta S/ 49 cuando llegue a la agencia» se leía como pagar ALLÁ; el saldo se paga por el chat y recién
+      //  ahí va la clave — auditoría R1P, 2026-10-01)
+      L.push(`💰 Total *${sym} ${total}* — adelanto ${sym} ${adel} · los *${sym} ${saldo}* restantes me los pagas por acá cuando llegue a la agencia`);
     } else {
       L.push(`💰 Total *${sym} ${total}*`);
     }
@@ -11768,6 +11836,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   // y no encontraba nada, así que seguía pidiéndolos todos. Se miran los dos: las vars
   // del run vivo primero, y los campos del contacto como respaldo.
   const _faltantes: string[] = [];
+  let _pideZona = false, _pideCant = false;
   try {
     let v: Record<string, unknown> = {};
     const { data: runVivo } = await db.from("flow_runs").select("vars")
@@ -11783,31 +11852,44 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
     }
     const tiene = (...ks: string[]) => ks.some((k) =>
       String(v[k] ?? "").trim() || String(enCampos.get(k) ?? "").trim());
-    if (!tiene("nombre_completo", "cliente")) _faltantes.push("tu *nombre completo*");
-    if (!tiene("dni")) _faltantes.push("tu *DNI*");
-    // La CIUDAD no es la oficina: «Tacna, quiero 1, [datos]» + la lista de distritos con oficina, y en vez de
-    // elegir mandó el Yape → «Ya tengo tus datos, en un momento te confirmo el envío», el pedido no nacía (le
-    // faltaba la sede) y nadie se la volvía a pedir (F13-tacna2, 2026-09-29).
-    if (!tiene("sede")) {
-      const _ciu = String(v.ciudad ?? enCampos.get("ciudad") ?? "").trim();
-      _faltantes.push(_ciu ? `en qué *distrito de ${bonito(_ciu)}* estás, para elegir la oficina Shalom donde lo recoges`
-        : "la *sede/oficina Shalom* donde lo recoges");
-    }
-    // 🔢 …y la CANTIDAD, que es lo que más suele faltar cuando paga antes de tiempo. Medido (D11,
-    // 2026-09-25): seis adelantos pagados con «ya tengo tus datos, en un momento te confirmo el
-    // envío» y ningún pedido, porque nadie había sellado cuántas unidades quería.
-    if (!tiene("opcion_id", "opcion_elegida")) {
-      try {
-        const { data: _cP } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
-        const _pidP = (_cP as any)?.product_id;
-        if (_pidP) {
-          const { count: _nv } = await db.from("product_versions").select("id", { count: "exact", head: true }).eq("product_id", _pidP);
-          if ((_nv ?? 0) > 1) _faltantes.push("saber *cuántas unidades* quieres");
+    // 🔴 EN ORDEN y SEGÚN LA ZONA (Rodrigo, 2026-10-01: zona → cantidad → datos, y los datos siempre en 📌). Antes
+    // esto daba por hecho PROVINCIA: a quien yapeó sin decir de dónde era le pedía DNI y «sede Shalom» de corrido
+    // (R1L-yapague), y a la de Tacna cuatro cosas en una frase, sin celular (R1P-prepago).
+    const _zonaP = String(v.zona_entrega ?? enCampos.get("zona_entrega") ?? "").trim();
+    if (!_zonaP) _pideZona = true;
+    else {
+      // 🔢 La CANTIDAD primero, que es lo que más suele faltar cuando paga antes de tiempo. Medido (D11,
+      // 2026-09-25): seis adelantos pagados con «ya tengo tus datos, en un momento te confirmo el
+      // envío» y ningún pedido, porque nadie había sellado cuántas unidades quería.
+      if (!tiene("opcion_id", "opcion_elegida")) {
+        try {
+          const { data: _cP } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
+          const _pidP = (_cP as any)?.product_id;
+          if (_pidP) {
+            const { count: _nv } = await db.from("product_versions").select("id", { count: "exact", head: true }).eq("product_id", _pidP);
+            if ((_nv ?? 0) > 1) _pideCant = true;
+          }
+        } catch (_) { /* sin catálogo legible → no se pide */ }
+      }
+      if (!_pideCant) {
+        if (!tiene("nombre_completo", "cliente")) _faltantes.push(_zonaP === "lima" ? "Nombre" : "Nombre y apellidos");
+        if (!tiene("telefono", "celular")) _faltantes.push("Celular");
+        if (_zonaP === "lima") {
+          if (!tiene("direccion")) _faltantes.push("Dirección");
+        } else {
+          if (!tiene("dni")) _faltantes.push("DNI");
+          // La CIUDAD no es la oficina: «Tacna, quiero 1, [datos]» + la lista de distritos con oficina, y en vez de
+          // elegir mandó el Yape → «Ya tengo tus datos, en un momento te confirmo el envío», el pedido no nacía (le
+          // faltaba la sede) y nadie se la volvía a pedir (F13-tacna2, 2026-09-29).
+          if (!tiene("sede")) {
+            const _ciu = String(v.ciudad ?? enCampos.get("ciudad") ?? "").trim();
+            _faltantes.push(_ciu ? `Distrito de ${bonito(_ciu)} (para la oficina Shalom)` : "Oficina Shalom donde lo recoges");
+          }
         }
-      } catch (_) { /* sin catálogo legible → no se pide */ }
+      }
     }
   } catch (_) {
-    _faltantes.push("tu *nombre completo*", "tu *DNI*", "la *sede/oficina Shalom* donde lo recoges");
+    _faltantes.push("Nombre y apellidos", "Celular", "DNI");
   }
 
   const _cabeza = _corto
@@ -11816,14 +11898,15 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   // Con el pago corto NO se promete despacho aunque estén todos los datos: decir
   // "faltarían S/10" y a renglón seguido "en un momento te confirmo el despacho" es
   // contradecirse en el mismo mensaje, y el cliente se queda con la parte buena.
-  const _lista = _faltantes.join(", ").replace(/, ([^,]*)$/, " y $1");
-  const _cola = _corto
-    ? (_faltantes.length
-      ? ` En cuanto completes esa diferencia y me pases ${_lista}, lo dejo en camino. 😊`
-      : " Apenas completes esa diferencia lo dejo en camino. 😊")
-    : _faltantes.length
-    ? ` Para mandarte el pedido solo me falta ${_faltantes.length === 1 ? "" : "confirmar tus datos: "}${_lista}. Dímelo${_faltantes.length === 1 ? "" : "s"} y lo dejo en camino. 😊`
-    : " Ya tengo tus datos, así que en un momento te confirmo el envío. 😊";
+  let _cola: string;
+  if (_pideZona) _cola = " Cuéntame de qué distrito o ciudad eres y te digo cómo te llega 📦";
+  else if (_pideCant) _cola = " ¿Cuántas unidades quieres? 🙌";
+  else if (_faltantes.length) {
+    _cola = (_corto ? " En cuanto completes esa diferencia lo dejo en camino." : "") +
+      `\n\n${_faltantes.length === 1 ? "Solo me falta un dato 👇" : "Para dejarlo listo, pásame estos datos 👇"}\n${_faltantes.map((s) => `📌 *${s}*`).join("\n")}`;
+  } else {
+    _cola = _corto ? " Apenas completes esa diferencia lo dejo en camino. 😊" : " Ya tengo tus datos, así que en un momento te confirmo el envío. 😊";
+  }
   await deliverMessage(db, channelId, contactId, _cabeza + _cola).catch(() => {});
   if (_corto) {
     await pasarAHumano(db, channelId, contactId,
@@ -13807,6 +13890,9 @@ const RE_ACEPTAN_METODO = new RegExp(
   "\\b(?:acept\\w+|recib\\w+|manej\\w+|tien\\w+|hay|trabaj\\w+\\s+con|us\\w+)\\s+(?:solo\\s+|[uo]\\s+)?" + _MEDIOS_PAGO + "\\b" +
   "|\\b(?:pag\\w+|yape\\w*|plin\\w*|transfer\\w+|deposit\\w+)\\s+(?:por|con|v[ií]a|mediante)\\s+" + _MEDIOS_PAGO + "\\b" +
   "|\\b(?:puedo|podr[ií]a|se\\s+puede|podr[ií]amos|puedes)\\s+(?:\\w+\\s+){0,2}(?:por|con|v[ií]a|mediante)\\s+" + _MEDIOS_PAGO + "\\b" +
+  // (+ «con plin se puede?», «por yape vale?» y el medio a secas con signo: «plin?» — R1D-plin, 2026-10-01)
+  "|\\b(?:con|por|v[ií]a)\\s+" + _MEDIOS_PAGO + "\\s+(?:se\\s+puede|puedo|podr[ií]a|vale|sirve|est[aá]\\s+bien|tambi[eé]n)\\b" +
+  "|^\\s*[¿]?\\s*(?:y\\s+)?(?:con\\s+|por\\s+)?" + _MEDIOS_PAGO + "\\s*\\?+\\s*$" +
   "|\\bsolo\\s+(?:aceptan\\s+|hay\\s+|tienen\\s+)?" + _MEDIOS_PAGO + "\\b",
   "i");
 // Devuelve el medio por el que pregunta, o "" si no está preguntando por ninguno.
@@ -13918,7 +14004,8 @@ async function sinKeywordsDelCanal(db: SupabaseClient, channelId: string, texto:
 // Una o varias afirmaciones seguidas, con coma o sin ella: «sí», «ya, dale», «ok listo»,
 // «sí por favor». Medido: «ya, dale» no contaba por la coma y el cliente se quedó sin número.
 const RE_AFIRMA_CORTO =
-  /^[\s¡!.]*(?:(?:s[ií]+|ya|dale|ok(?:ey|a)?|claro|listo|bueno|va|vamos|perfecto|genial|de una|pues|por ?fa(?:vor)?|claro que s[ií]|m[aá]ndamel[oa]s?|p[aá]samel[oa]s?|env[ií]amel[oa]s?|a ver|anda|ahi va|ah[ií] va)[\s,;!.]*){1,4}[\s!.😊🙌👍]*$/iu;
+  // (+ «ok dame», «dámelo»: a «¿Lo quieres hoy?» contestó «ok dame» y el número no salió — R1D-plantillarubro, 2026-10-01)
+  /^[\s¡!.]*(?:(?:s[ií]+|ya|dale|ok(?:ey|a)?|claro|listo|bueno|va|vamos|perfecto|genial|de una|pues|por ?fa(?:vor)?|claro que s[ií]|d[aá]me(?:l[oa]s?)?|m[aá]ndamel[oa]s?|p[aá]samel[oa]s?|env[ií]amel[oa]s?|a ver|anda|ahi va|ah[ií] va)[\s,;!.]*){1,4}[\s!.😊🙌👍]*$/iu;
 // …y también la pregunta de DECISIÓN («¿La quieres?», «¿te la dejo lista?», «¿vamos con la
 // Básica?»): el «sí» a esa pregunta es querer comprar, y si no contara, el que dice «sí» se
 // quedaba con la misma pregunta otra vez (medido: «¿La quieres?» → «sí» → «¿La quieres?»).
@@ -14221,13 +14308,18 @@ async function maybeDatosPago(
         // datos y el mensaje terminó en «el pack con plantillas cuesta *S/ 79*. 💰», sin
         // pedirle nada. La venta se quedó ahí. Es la regla de siempre: el motor que calla
         // deja al cliente sin siguiente paso.
-        const _preg = String(digital?.pedirElegir ?? "").trim();
+        let _preg = String(digital?.pedirElegir ?? "").trim();
+        // (si la IA YA preguntó cuál en su burbuja —«¿Prefieres la Básica o la Premium?»—, no se repite con otra
+        //  burbuja y la lista: tres veces la misma pregunta en dos burbujas — R1D-preciodos/montoraro/sinelegir, 2026-10-01)
+        const _iaYaPreguntoCual = /cu[aá]l\s+(?:de\s+las\s+dos\s+)?(?:prefieres|quieres|te\s+preparo|te\s+interesa|eliges|te\s+dejo|te\s+conviene)|prefieres\s+(?:entonces\s+)?(?:la\s+)?\p{L}+\s+o\s+(?:la\s+)?\p{L}+|\b(?:b[aá]sica|premium)\s+o\s+(?:la\s+)?(?:b[aá]sica|premium)/iu
+          .test(String(respuestaIa ?? ""));
+        if (_preg && _iaYaPreguntoCual) _preg = "";
         if (_preg) await deliverMessage(db, channelId, contactId, _preg).catch(() => {});
         await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago NO enviados",
           "Todavía no hay presentación elegida: mandarle el número sin decirle cuánto es lo deja pagando a ciegas" +
-          (_preg ? " — se le pidió elegir" : "")).catch(() => {});
+          (_preg ? " — se le pidió elegir" : _iaYaPreguntoCual ? " — la IA ya le preguntó cuál" : "")).catch(() => {});
         // Si se le pidió elegir, ESA es la pregunta del turno: el cierre en espera no sale.
-        return !!_preg;
+        return !!_preg || _iaYaPreguntoCual;
       }
       _cab = `Son *${digital?.sym ?? "S/"} ${_m}* 👇\n\n`;
     }
@@ -14924,7 +15016,8 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
           const { data: _chR } = await db.from("channels").select("moneda").eq("id", channelId).maybeSingle();
           const _symR = simboloMoneda((_chR as any)?.moneda);
           const _prR = _pR.versiones[0].precio;
-          await deliverMessage(db, channelId, contactId, `El *${_pR.nombre}* es *${_symR} ${_prR}* 🙌`).catch(() => {});
+          // (sin artículo: «El *Plantilla…*» — el género lo pone el nombre del producto — R1D-recompra, 2026-10-01)
+          await deliverMessage(db, channelId, contactId, `*${_pR.nombre}*: *${_symR} ${_prR}* 🙌`).catch(() => {});
           await maybeDatosPago(db, channelId, contactId, String(event.text ?? ""), "", true, undefined, { monto: _prR, sym: _symR, unico: true });
         } else {
           // Con VARIAS versiones («ahora quiero también el curso BÁSICO»), su mensaje va al nodo de venta recién
@@ -16736,6 +16829,26 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     // 1) Match DETERMINISTA contra la lista de distritos del negocio (lo mejor:
     // gratis y sin ambigüedad). La mayoría nombra el distrito tal cual ("soy de SJL").
     z = matchZona(zonas, t);
+    // 🧭 Está COMPLETANDO el nombre ambiguo del turno anterior: «san juan» → «lurigancho» es San Juan de
+    // Lurigancho, no el distrito Lurigancho (Chosica) ni un pueblo de provincia (R1L-sanjuan, 2026-10-01).
+    // Solo si lo que escribió cabe en UNA sola de las candidatas que se le ofrecieron.
+    if (!z) {
+      try {
+        const _cands = String(ctx.zona_ambigua ?? "").split("·").map((s) => limpiaZona(s)).filter(Boolean);
+        const _lt = limpiaZona(t);
+        if (_cands.length >= 2 && _lt.length >= 4) {
+          const _enc = _cands.filter((cnd) => cnd !== _lt && cnd.includes(_lt));
+          if (_enc.length === 1) {
+            const _zc = matchZona(zonas, _enc[0]);
+            if (_zc) {
+              z = _zc;
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "🧭 Completó el distrito ambiguo",
+                `«${t.slice(0, 40)}» → ${enTitulo(_enc[0])}`).catch(() => {});
+            }
+          }
+        }
+      } catch (_) { /* sin candidatas legibles → como antes */ }
+    }
     // 1b) Falso positivo: el "distrito Lima" matcheado es en realidad el nombre de
     // una OFICINA Shalom que el cliente de provincia nombró (ej. "Shalom de Trujillo
     // La Perla"). Se descarta ese texto y se busca la ciudad en otro mensaje (el
@@ -17061,7 +17174,11 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
   // configurado, su lista manda y esto no llega a correr.
   {
     const _amb = distritoAmbiguoLima(lugar);
-    if (_amb.length >= 2 && !String(ctx.zona_entrega ?? "").trim()) {
+    // 🔴 También con «Lima, distrito por confirmar»: «lima» → «san juan» caía acá con la zona ya en Lima, no
+    // entraba, y el 3c de abajo lo mandaba a PROVINCIA con seis agencias de Loreto, Ica y Ayacucho mezcladas
+    // (R1L-sanjuan, 2026-10-01). Si él ya dijo Lima, con más razón hay que preguntarle cuál San Juan.
+    const _zAct = String(ctx.zona_entrega ?? "").trim();
+    if (_amb.length >= 2 && (!_zAct || (_zAct === "lima" && !String(ctx.zona_nombre ?? "").trim()))) {
       await set("zona_ambigua", _amb.map((x) => enTitulo(x)).join(" · "));
       await logEvent(db, run.channel_id, run.contact_id, "campo", "Zona sin resolver",
         `"${lugar}" puede ser ${_amb.length} distritos distintos (Lima y provincia) — se le pregunta cuál`);
@@ -18349,6 +18466,24 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // sabía cuál faltaba— cerró con "¿te lo mando mañana a Av Pardo 300?". Venta muerta en
   // silencio con TODOS los datos ya dados. Se distinguen por longitud: celular peruano = 9
   // dígitos empezando en 9; DNI = 8. Si el mensaje trae dos números que compiten, no adivina.
+  // 👤 …y el NOMBRE escrito a secas delante de sus números: «dante ruiz 951333444 dni 02345678» — el extractor
+  // rescató el celular y el DNI y le volvió a preguntar «¿cómo te llamas?» (R1P-cambiosede, 2026-10-01). Solo si el
+  // mensaje ARRANCA con 2 a 4 palabras de letras y en seguida viene un número de 8-9 cifras o «dni/cel».
+  for (const c of campos) {
+    if (!["nombre_completo", "cliente"].includes(String(c.clave))) continue;
+    if (String(ctx[c.clave] ?? "").trim()) continue;
+    const _mN = /^\s*([\p{L}][\p{L}'´`-]+(?:\s+[\p{L}][\p{L}'´`-]+){1,3})\s*[,\-–:]?\s*(?=(?:\d{8,9}(?![\d])|dni\b|cel\b|celular\b|tel[eé]fono\b|tel\b))/iu.exec(String(ctx.last_input ?? ""));
+    if (!_mN) continue;
+    const _nom = _mN[1].trim();
+    if (/(?:^|\s)(?:soy|hola|quiero|dame|para|desde|vivo|estoy|mi|el|la|de|del|los|las|con|sin|ya|ok|buenas|buenos|dni|cel|celular|unidad|unidades|lima|provincia)(?:\s|$)/i.test(_nom)) continue;
+    const _val = enTitulo(_nom);
+    const chkN = validarDato(c, _val, ctx);
+    if (!chkN.ok) continue;
+    ctx[c.clave] = _val; run.vars[c.clave] = _val;
+    await setField(db, run.channel_id, run.contact_id, c.clave, _val).catch(() => {});
+    await logEvent(db, run.channel_id, run.contact_id, "campo", "Dato recuperado del mensaje",
+      `${c.clave}: ${_val} (el extractor no lo trajo)`).catch(() => {});
+  }
   for (const c of campos) {
     if (String(ctx[c.clave] ?? "").trim()) continue;
     const tipo = String((c as any).validar ?? "");
@@ -19397,7 +19532,8 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
     // …salvo la SUYA, dicha como tal: «2 para mí y 3 para mi hermano en Cusco» → su pedido es de 2 (F10b-dosdestcant:
     // se le preguntó «¿cuántas quieres para ti?» después de decirlo). La del otro la arma una persona aparte.
     try {
-      const _mMia = /(?:^|[^\p{L}\p{N}])(\d{1,2}|un[oa]?|dos|tres|cuatro|cinco)\s+(?:unidades?\s+)?para\s+m[ií](?![\p{L}\p{N}])/iu.exec(String(texto ?? ""));
+      // («1 para mi TÍO en Jesús María» no es «para mí»: se selló 1 al que pedía 2 + 1 — R1L-dosdestinos, 2026-10-01)
+      const _mMia = /(?:^|[^\p{L}\p{N}])(\d{1,2}|un[oa]?|dos|tres|cuatro|cinco)\s+(?:unidades?\s+)?para\s+m[ií](?![\p{L}\p{N}])(?!\s+(?:ti[oa]|herman[oa]|mam[aá]|pap[aá]|prim[oa]|amig[oa]|espos[oa]|hij[oa]|abuel[oa]|suegr[oa]|cu[ñn]ad[oa]|sobrin[oa]|jef[ea]|vecin[oa]|socio|socia|casa|trabajo|oficina|negocio|taller|tienda|local|chamba)(?![\p{L}]))/iu.exec(String(texto ?? ""));
       if (_mMia) {
         const _raw = _mMia[1].toLowerCase();
         const _nMia = /^\d/.test(_raw) ? Number(_raw) : (NUM_PALABRA[_raw] ?? (/^un[oa]?$/.test(_raw) ? 1 : 0));
@@ -19875,6 +20011,11 @@ async function deducirOpcionPorMonto(db: SupabaseClient, run: Run, ctx: any): Pr
 
   const pagado = parseMonto(run.vars.pago_monto, ctx) ?? NaN;
   if (!Number.isFinite(pagado) || pagado <= 0) return false;
+  // 🛒 Con un COMBO armado, lo pagado trae los otros productos: «dame los dos» (Básica + Plantilla) pagó 58 y
+  // ninguna versión calzaba sola → revisión manual (R1D-preciodos, 2026-10-01). Se mira también pagado − combo.
+  let _sumaC = 0;
+  try { const _sc = comboSuma(run); _sumaC = Number.isFinite(Number(_sc)) && Number(_sc) > 0 ? Number(_sc) : 0; } catch (_) { _sumaC = 0; }
+  const _calzaCon = (p: number) => Math.abs(pagado - p) <= tol + 0.01 || (_sumaC > 0 && Math.abs(pagado - _sumaC - p) <= tol + 0.01);
   const oferta = await ofertaActiva(db, run).catch(() => null);
   const infoT = await channelIaInfo(db, run).catch(() => null);
   const tol = Number((infoT as any)?.pedidos?.digital?.tolerancia ?? 0) || 0;
@@ -19885,7 +20026,7 @@ async function deducirOpcionPorMonto(db: SupabaseClient, run: Run, ctx: any): Pr
   };
   const calzan: Opcion[] = list.filter((o) => {
     const p = precioVivo(o);
-    return p != null && p > 0 && Math.abs(pagado - p) <= tol + 0.01;
+    return p != null && p > 0 && _calzaCon(p);
   });
   // 💵 REDONDEÓ HACIA ARRIBA. Ningún precio calza exacto, pero si NOMBRÓ una opción y pagó
   // de más por poco (el clásico "te mando 200" por un curso de 180), sabemos perfectamente
@@ -19933,7 +20074,9 @@ async function deducirOpcionPorMonto(db: SupabaseClient, run: Run, ctx: any): Pr
       return new RegExp(`(^|[^\\p{L}])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^\\p{L}]|$)`, "u").test(dichoN);
     });
     const pPedida = pedida ? precioVivo(pedida) : null;
-    if (pedida && pPedida != null && pPedida > pagado + tol + 0.01) {
+    // (con combo, lo que cuenta para la versión es lo pagado MENOS los otros productos)
+    const _pagadoOp = _sumaC > 0 && precioVivo(op) != null && Math.abs(pagado - _sumaC - Number(precioVivo(op))) <= tol + 0.01 ? pagado - _sumaC : pagado;
+    if (pedida && pPedida != null && pPedida > _pagadoOp + tol + 0.01) {
       const sym = simboloMoneda(ctx.moneda as string);
       const falta = +(pPedida - pagado).toFixed(2);
       await logEvent(db, run.channel_id, run.contact_id, "nota", "💸 Pagó menos de la opción que pidió",
@@ -21029,7 +21172,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Cuántas pide: la de siempre (≤20) y, para las grandes, un número con verbo de compra o «unidades».
         let _nPed = _modoPacks ? cantidadPedidaDe(_liO, _todasO) : 0;
         if (_modoPacks && !_nPed) {
-          const _mG = /\b(?:quiero|necesito|dame|llevo|me\s+llevo|compro|comprar[ií]a|pido|ser[ií]an|cotiza(?:me)?|precio\s+(?:por|de|x)|cu[aá]nto\s+(?:me\s+|te\s+|nos\s+)?(?:ser[ií]a|sale|saldr[ií]a|es|cuesta[n]?|costar[ií]a|valen?)\s+(?:por\s+|x\s+)?(?:las?\s+|los?\s+)?|(?:^|y\s+|,\s*)(?:por|x)\s+(?=\d{1,4}\s*(?:\?|$|unid)))\s*(\d{1,4})\b(?!\s*(?:soles|lucas|km|cuadras|d[ií]as|a[ñn]os|%))|\b(\d{1,4})\s+(?:unidades|unid|piezas|adaptadores|uds?)\b/i.exec(sinTildes(_liO));
+          // (+ «cuanto por 5?» sin verbo — R1P-cinco, 2026-10-01)
+          const _mG = /\b(?:quiero|necesito|dame|llevo|me\s+llevo|compro|comprar[ií]a|pido|ser[ií]an|cotiza(?:me)?|precio\s+(?:por|de|x)|cu[aá]nto\s+(?:me\s+|te\s+|nos\s+)?(?:ser[ií]a|sale|saldr[ií]a|es|cuesta[n]?|costar[ií]a|valen?)\s+(?:por\s+|x\s+)?(?:las?\s+|los?\s+)?|cu[aá]nto\s+(?:por|x)\s+(?:las?\s+|los?\s+)?|(?:^|y\s+|,\s*)(?:por|x)\s+(?=\d{1,4}\s*(?:\?|$|unid)))\s*(\d{1,4})\b(?!\s*(?:soles|lucas|km|cuadras|d[ií]as|a[ñn]os|%))|\b(\d{1,4})\s+(?:unidades|unid|piezas|adaptadores|uds?)\b/i.exec(sinTildes(_liO));
           // (+ «¿y cuánto me SALE por 4?» con el «me» en medio — OC2-cuatroprecio)
           if (_mG) _nPed = Number(_mG[1] ?? _mG[2]) || 0;
         }
@@ -25631,6 +25775,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               if (!_yaListadas && !RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""))) {
                 _yaListadas = await yaLeListamosPrecios(db, run, _opsVis);
               }
+              // 🔢 …y la cantidad que la IA DIO POR HECHA sin que él la dijera («Perfecto, me dices 1 unidad.» a un «ok
+              // dame esa», y debajo «Dime cuántas llevas» — R1L-recomienda, 2026-10-01): esa frase se va. Por renglón,
+              // para no pegar la lista de precios en una línea; los renglones con precio no se tocan.
+              // (+ el esqueleto de la petición que se fue: «Perfecto, solo para dejarlo listo 👇» y «Cuando tenga esos
+              //  datos, te paso todo…» — R1P-numerosolo, 2026-10-01)
+              _resto = _resto.split("\n").map((ln) => /—\s*\*?\s*(?:S\/|\$|US\$)\s?\d/u.test(ln) ? ln
+                : ln.split(/(?<=[.!?…])\s+/u).filter((f) => !(
+                    /(?:^|[^\p{L}\p{N}])(?:\d{1,2}|un[ao]?|dos|tres|cuatro|cinco)\s+unidad(?:es)?(?![\p{L}])/iu.test(f)
+                    && !/[?¿]/.test(f) && !/\b(?:si\s+llevas|si\s+quieres|te\s+salen?|m[aá]s\s+barat)/i.test(f))
+                  && !/^\s*(?:cuando\s+(?:tenga|me\s+(?:pases|mandes|des|los\s+pases|los\s+mandes))\s+(?:esos|los|tus|esa|la)\b|con\s+esos\s+datos|apenas\s+me\s+los\s+(?:pases|mandes))/iu.test(f)).join(" ")
+              ).join("\n").replace(/^[^\n📌]{0,70}👇[ \t]*$/gmu, "").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
               const _preg = _yaPregunta ? "" : preguntaCuantos(_opsVis, ctx, _negOn, _yaListadas);
               salida = _resto
                 ? (_preg ? `${_resto.trimEnd()}\n\n${_preg}` : _resto)
@@ -25933,7 +26088,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 const _opsPago = ctx._product_id ? await loadOpciones(db, run, String(ctx._product_id)) : [];
                 const _montoPago = (await precioEsperado(db, run, ctx)).monto;
                 if (_opsPago.length > 1 && !(Number(_montoPago) > 0)) {
-                  salida = "Antes de pasarte el número, dime cuál quieres 👇\n\n" +
+                  salida = "Para dejarlo listo, dime cuál quieres 👇\n\n" +
                     preguntaCuantos(_opsPago, ctx, _negOn, false).replace(/^Estas son las opciones 👇\n/, "");
                   (run as any)._pidioElegirTurno = true;   // que maybeDatosPago no lo repita
                   await logEvent(db, run.channel_id, run.contact_id, "campo", "💳 Número de cuenta sin monto",
@@ -26621,7 +26776,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // La FRASE que la presentaba («Estas son las opciones 👇», «Te paso las opciones para que veas:»), sola:
             // lo de antes en el mismo renglón («1 unidad te queda en *S/ 69* 🔥») se queda.
             .replace(/(^|[.!?…][ \t]+|\p{Extended_Pictographic}\u{FE0F}?[ \t]+)[^.!?…\n\p{Extended_Pictographic}]*\b(?:estas\s+son\s+las\s+opciones|las\s+opciones(?:\s+y\s+precios)?\s+son|(?:te\s+)?(?:paso|doy|dejo|cuento|confirmo|muestro)\s+(?:las\s+opciones|los\s+precios)|(?:estos|aqu[ií])\s+(?:son\s+)?los\s+precios|tenemos\s+estas\s+opciones)[^.!?…\n\p{Extended_Pictographic}]*[.!:]?[ \t\p{Extended_Pictographic}\u{FE0F}👇]*$/gimu, "$1");
-          _sL = sinAnuncioColgado(_sL).replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+          _sL = sinAnuncioColgado(_sL)
+            // El encabezado de la lista que se fue («💰 Perfecto, con 2 unidades te queda:») y el emoji que quedó solo
+            // en su renglón («💰») — R1L-todojunto, 2026-10-01.
+            .replace(/^[ \t]*[^\n]{0,70}\b(?:opciones|precios?|presentaciones|te\s+queda|tenemos|te\s+sale)\b[^\n]{0,30}:[ \t]*$/gimu, "")
+            .replace(/^[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)+$/gmu, "")
+            .replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
           // Solo si queda un mensaje de verdad (si la lista era TODO, se deja como estaba).
           if (_sL.replace(/[\s\p{P}\p{S}]/gu, "").length >= 20) {
             salida = _sL;
@@ -26785,11 +26945,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         delete (ctx as any).distrito_ambiguo;
         run.vars.distrito_ambiguo = "";
       }
+      // (si el mensaje ya NOMBRA Lima —«en San Isidro, Lima»— la duda ya está dicha en voz alta y el que no sea de
+      //  ahí corrige; y si ya trae una pregunta, Lima va entre paréntesis junto al distrito, no como segunda pregunta
+      //  — R1L-boleta/ok/preguntadoble, 2026-10-01)
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "lima"
           && String(ctx.distrito_ambiguo ?? "").trim() && !String(ctx.direccion ?? "").trim()
-          && (/direcci[oó]n/i.test(salida) || _prometeEntrega) && !/de lima/i.test(salida)) {
+          && (/direcci[oó]n/i.test(salida) || _prometeEntrega) && !/(?:^|[^\p{L}])lima(?![\p{L}])/iu.test(sinFormato(salida))) {
         const _d = bonito(String(ctx.distrito_ambiguo));
-        salida = salida.trimEnd() + `\n\nAh, y confírmame que es *${_d}* de Lima 🙂`;
+        const _dRe = new RegExp(`(\\*?)${_d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\*?)(?![\\p{L}])`, "iu");
+        if (/[?¿]/.test(salida) && _dRe.test(salida)) salida = salida.replace(_dRe, `$1${_d}$2 (Lima)`);
+        else salida = salida.trimEnd() + `\n\nAh, y confírmame que es *${_d}* de Lima 🙂`;
         await setField(db, run.channel_id, run.contact_id, "distrito_ambiguo", "").catch(() => {});
         delete (ctx as any).distrito_ambiguo;
         run.vars.distrito_ambiguo = "";
@@ -27047,12 +27212,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // Lo que quedó CORTADO justo antes: «Perfecto, Dime cuántas…», «Ahora, Cuéntame…», «Para darte el monto
             // exacto del adelanto. Cuéntame…» (chat de Rodrigo, 2026-10-01). La muletilla suelta se va y la coma
             // que cerraba se vuelve punto; el tocón «Para + infinitivo…» sin frase principal también se va.
+            // (los tocones también con COMA al final: «…en Perú. Para seguir,» quedaba «Para seguir.» porque la coma se
+            //  volvía punto DESPUÉS de buscar el tocón — R1L-mercadolibre, 2026-10-01)
             s = s.replace(/(?:^|\n)[ \t]*(?:ahora|entonces|bueno)\s*,\s*$/iu, "")
               .replace(/(?:^|\n)[ \t]*(?:listo|perfecto|genial)\s*,\s*$/iu, (m) => m.replace(/,\s*$/, "."))
-              .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))Para\s+(?:darte|decirte|pasarte|confirmarte|calcular(?:te|lo)?|saber|seguir|avanzar|continuar|cerrar(?:lo|te)?|dejarlo\s+listo|enviarte|mandarte|ayudarte)\b[^.!?¿\n]{0,80}\.\s*$/iu, "")
+              .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))Para\s+(?:darte|decirte|pasarte|confirmarte|calcular(?:te|lo)?|saber|seguir|avanzar|continuar|cerrar(?:lo|te)?|dejarlo\s+listo|enviarte|mandarte|ayudarte)\b[^.!?¿\n]{0,80}[.,]\s*$/iu, "")
               // (+ «Respecto al adelanto.» / «Sobre el envío.» — el encabezado de la frase que otro recorte se llevó)
               // (solo el encabezado pelado, hasta 3 palabras y sin coma: «Sobre el envío te cuento después.» se queda)
-              .replace(/(?:^|(?<=[.!?…]\s)|(?<=\p{Extended_Pictographic}️?\s)|(?<=\n))(?:Respecto|Sobre|En\s+cuanto)\s+(?:a|al|a\s+la|a\s+lo|el|la|lo)\s+(?:[^\s,.!?¿\n]+\s+){0,2}[^\s,.!?¿\n]+\.\s*$/iu, "")
+              .replace(/(?:^|(?<=[.!?…]\s)|(?<=\p{Extended_Pictographic}️?\s)|(?<=\n))(?:Respecto|Sobre|En\s+cuanto)\s+(?:a|al|a\s+la|a\s+lo|el|la|lo)\s+(?:[^\s,.!?¿\n]+\s+){0,2}[^\s,.!?¿\n]+[.,]\s*$/iu, "")
               .replace(/,\s*$/, ".").trimEnd();
             const ult = s.trimEnd().split("\n").pop() ?? "";
             if (!s.trim()) return q;
@@ -27260,15 +27427,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           {
             const _mPl = RE_NUMERO_DE_PLATA.exec(String(ctx.last_input ?? ""));
             const _nPl = _mPl ? Number(_mPl[1] ?? _mPl[2]) : 0;
+            // («30 de adelanto te deposito» anuncia el pago Y trae un monto que NO es el adelanto: antes el anuncio lo
+            //  sacaba de acá y nadie le decía que son 20 y que los 10 de más van al saldo — R1P-sobrepago, 2026-10-01.
+            //  Si el monto es justo el adelanto, el anuncio sigue siendo solo un anuncio.)
+            const _anunciaPl = RE_ANUNCIA_PAGO.test(String(ctx.last_input ?? ""))
+              || /(?:^|[^\p{L}])(yape[eé]|plin[eé]|pagu[eé]|deposit[eé]|transfer[ií]|envi[eé]|mand[eé])(?![\p{L}])/iu.test(String(ctx.last_input ?? ""));
             if (_nPl > 0 && !/\b(?:unidad|unidades|packs?|piezas?|kits?)\b/i.test(String(ctx.last_input ?? ""))
-                && String(ctx.zona_entrega ?? "") === "provincia" && String(ctx.pedido_creado ?? "") !== "si"
-                && !RE_ANUNCIA_PAGO.test(String(ctx.last_input ?? ""))
-                && !/(?:^|[^\p{L}])(yape[eé]|plin[eé]|pagu[eé]|deposit[eé]|transfer[ií]|envi[eé]|mand[eé])(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))) {
+                && String(ctx.zona_entrega ?? "") === "provincia" && String(ctx.pedido_creado ?? "") !== "si") {
               let _adP = Number(ctx.adelanto);
               if (!(_adP > 0)) {
                 try { const _eP = await loadEntregas(db, run); _adP = Number((_eP as any)?.entregas?.adelanto_default); } catch (_) { _adP = NaN; }
               }
-              if (_adP > 0) {
+              if (_adP > 0 && (!_anunciaPl || _nPl !== _adP)) {
                 const _symP2 = simboloMoneda(ctx.moneda as string);
                 const _respP = _nPl < _adP
                   ? `El adelanto para mandarlo es *${_symP2} ${_adP}*: con *${_symP2} ${_nPl}* no alcanza 🙏 ¿Avanzamos con los *${_symP2} ${_adP}*?`
@@ -27332,6 +27502,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             if (_adR > 0) {
               const _symR = simboloMoneda(ctx.moneda as string);
               const _lineaR = `${_zonaOk ? "Para provincia va" : "A provincia va"} con un adelanto de *${_symR} ${_adR}* y el resto me lo pagas por acá cuando llegue a la agencia 🙌`;
+              // Fuera la frase de la IA que dice que NO puede dar la cifra que el motor acaba de dar («Ahora, para decirte
+              // el adelanto necesito saber de qué distrito…», «antes de darte el monto necesito…» — R1P-adelantoprimero,
+              // R1P-barranca, 2026-10-01). Por frase; si la frase traía la pregunta de la zona, la pone la red de abajo.
+              _s = _s.split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
+                .filter((f) => !/\b(?:para|antes\s+de)\s+(?:poder\s+)?(?:darte|decirte|confirmarte|indicarte|calcular(?:te)?|saber)\s+(?:el\s+|la\s+|cu[aá]nto\s+(?:es\s+)?(?:de\s+|el\s+)?)?(?:monto|adelanto|cifra|anticipo)\b[^.!?\n]{0,60}\b(?:necesito|tengo\s+que|debo|falta)\b/iu.test(sinFormato(f))
+                  && !/\b(?:necesito|tengo\s+que|debo)\s+saber\b[^.!?\n]{0,60}\b(?:para|antes\s+de)\s+(?:poder\s+)?(?:darte|decirte|confirmarte|indicarte|calcular(?:te)?)\s+(?:el\s+|la\s+)?(?:monto|adelanto|cifra|anticipo)\b/iu.test(sinFormato(f)))
+                .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
               _s = `${_lineaR}\n\n${_s.trimStart()}`;
               (run.vars as any)._adelanto_explicado = 1;
             }
@@ -27623,13 +27800,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           && String(ctx.pedido_creado ?? "") !== "si" && String(ctx.zona_entrega ?? "").trim()) {
         const _sfA = sinFormato(String(salida ?? "")).trim();
         // (con `u`: sin ella la clase con 📌📍 casa con la MITAD de cualquier emoji — el 📦 del acuse — y nunca difería)
-        if (_sfA && _sfA.length <= 140 && !/[?¿📌📍\n]/u.test(_sfA)
-            && /^¡?\s*(?:listo|perfecto|genial|excelente|buen[ií]simo|dale|anotado|de una|gracias|vi tus datos|ya tengo tus datos|todo listo)/i.test(_sfA)) {
+        // 🔴 Sin tope de largo ni lista de arranques: con los datos completos y el cliente sin preguntar nada, TODO lo
+        // que escribió la IA es acuse —«Listo, Carmen, gracias por la compra 🔧✨ Te llega a Los Olivos…», «Anotado:
+        // 2 unidades, S/ 109. 💰 Para ti que quieres 2…»— y el mensaje del flujo sale en seguida: dos burbujas, la
+        // regla 12 de Rodrigo rota en 4 chats de 103 (R1L-olivos/todojunto/todojunto2, R1P-tarapoto, 2026-10-01).
+        // Se queda solo si él PREGUNTÓ algo en este mensaje (ahí la IA le contesta) o si la IA pregunta/pide algo.
+        const _liA = String(ctx.last_input ?? "");
+        const _preguntoA = /[?¿]/.test(_liA) || /^\s*(?:cu[aá]nto|cu[aá]ndo|c[oó]mo|d[oó]nde|cu[aá]l|qu[eé]|por\s+qu[eé])\b/i.test(_liA);
+        if (_sfA && !_preguntoA && !/[?¿📌]/u.test(_sfA)) {
           (run.vars as any)._acuse_diferido = String(salida);
           _acuseDiferido = true;
           await logEvent(db, run.channel_id, run.contact_id, "nota", "🤐 Acuse de la IA diferido",
             `El mensaje del flujo sale en seguida; si no sale, se manda al escuchar: «${_sfA.slice(0, 120)}»`).catch(() => {});
         }
+      }
+      // 🔹 Una segunda pasada de los emojis de la lista, ya con el texto armado del todo: algún recorte de más arriba
+      // le quitaba el 🔹 al primer renglón y los demás lo conservaban (R1L-cuatro, 2026-10-01). Es idempotente.
+      if (op === "generar_texto" && _emOn && String(salida ?? "").includes("—")) {
+        salida = emojisEnListaDePrecios(String(salida), simboloMoneda(ctx.moneda as string), _emOn);
       }
       const handoff = _acuseDiferido ? _cubiertaConBolsa : ((await emitIaText(db, run, salida, ctx)) || _cubiertaConBolsa);
       (ctx as any)._diferirPregunta = false;
@@ -27708,6 +27896,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       }
       // 📦 Y el bloque de cómo le llega que no se fue en el pie de una ficha: sale solo, DESPUÉS de la
       // respuesta (antes salía delante, ver `_burbujaEnvio` más arriba).
+      // (…y solo si la respuesta no acaba de decir lo mismo: «te llega por agencia Shalom» + la lista de oficinas
+      //  «¿En cuál estás?» y debajo «📦 Te llega a tu ciudad por agencia Shalom…» era decirlo dos veces — 9 chats
+      //  de la tanda R1P, 2026-10-01. Con la sede firme el bloque va en el pie de la ficha, no acá.)
+      if (_burbujaEnvio && !handoff && /shalom|agencia|olva/i.test(sinFormato(String(salida ?? "")))
+          && !/Te llega a la sede/u.test(_burbujaEnvio)) {
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "📦 Bloque de envío no repetido",
+          "La respuesta ya dice que va por agencia; el bloque completo sale con la ficha de la sede").catch(() => {});
+        _burbujaEnvio = "";
+        delete run.vars._envio_explicado;   // que salga entero cuando la sede quede firme
+      }
       if (_burbujaEnvio && !handoff) {
         await emit(db, run, { text: _burbujaEnvio, _noTpl: true }, ctx).catch(() => {});
         _burbujaEnvio = "";
@@ -27767,7 +27965,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const { data: _outsE } = await db.from("messages").select("content")
                 .eq("contact_id", run.contact_id).eq("direction", "out")
                 .order("ts", { ascending: false }).limit(4);
-              _eligirYaDicho = (_outsE ?? []).some((mm: any) => /Antes de pasarte el n[uú]mero/i.test(String(mm?.content?.text ?? "")));
+              _eligirYaDicho = (_outsE ?? []).some((mm: any) => /Antes de pasarte el n[uú]mero|Para dejarlo listo, dime cu[aá]l quieres/i.test(String(mm?.content?.text ?? "")));
             } catch (_) { /* sin historial → se pregunta */ }
           }
         }
@@ -27786,9 +27984,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // número. Vacía si el propio mensaje ya se la hizo (no se repite en dos burbujas).
             // (con un combo al que le falta la versión de OTRO producto, la pregunta la hace la IA con el
             // bloque «Otros productos que se lleva»: la lista de acá sería la del principal)
+            // («Antes de pasarte el número» anunciaba la tramoya —regla 8 de Rodrigo—; y con un combo armado la lista
+            //  dice cuánto queda cada versión CON lo otro sumado: «dame los dos» pagó 58 sin que nadie le dijera esa
+            //  cifra — R1D-preciodos, 2026-10-01)
             pedirElegir: (!(Number(_montoDig) > 0) && _opsProd.length > 1 && !_eligirYaDicho && !comboDe(run).some((i) => !i.version_id))
-              ? "Antes de pasarte el número, dime cuál quieres 👇\n\n" +
-                preguntaCuantos(_opsProd, ctx, _negOn, false).replace(/^Estas son las opciones 👇\n/, "")
+              ? (() => {
+                  const _pq = preguntaCuantos(_opsProd, ctx, _negOn, false).replace(/^Estas son las opciones 👇\n/, "");
+                  const _cmb = comboDe(run).filter((i) => Number(i.precio) > 0);
+                  if (!_cmb.length) return "Para dejarlo listo, dime cuál quieres 👇\n\n" + _pq;
+                  const _symC = simboloMoneda(ctx.moneda as string);
+                  const _sumC = _cmb.reduce((a, i) => a + Number(i.precio), 0);
+                  const _lin = `Con ${_cmb.map((i) => `*${i.nombre}* (${_symC} ${i.precio})`).join(" + ")} sumad${_cmb.length > 1 ? "os" : "a"}: ` +
+                    _opsProd.filter((o) => Number(o.precio) > 0).map((o) => `${o.nombre} ${_symC} ${+(Number(o.precio) + _sumC).toFixed(2)}`).join(" · ");
+                  const _k = _pq.lastIndexOf("\n\n");
+                  return "Para dejarlo listo, dime cuál quieres 👇\n\n" + (_k > 0 ? `${_pq.slice(0, _k)}\n\n${_lin}${_pq.slice(_k)}` : `${_pq}\n\n${_lin}`);
+                })()
               : "",
           }));
       }
@@ -27818,6 +28028,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     console.error("nodo ia falló:", (err as any)?.message ?? err);
     run.vars._ia_error = String((err as any)?.message ?? err);
     await logEvent(db, run.channel_id, run.contact_id, "error", "Error en nodo IA", String((err as any)?.message ?? err));
+    // ⏱️ El VALIDADOR de comprobantes se quedó sin tiempo («The signal has been aborted»): no es que la IA esté caída,
+    // es que esa lectura tardó más de la cuenta. Al cliente le llegaba «¡Gracias! En un momento te atiende un asesor»
+    // como si hubiera pedido hablar con alguien, y su «me equivoqué, quería la premium» caía en el vacío
+    // (R1D-upgrade, 2026-10-01). Se le dice la verdad —la captura se revisa a mano— y se avisa al dueño con el motivo.
+    if (String(node.config?.operacion ?? "") === "analizar_imagen" && /abort|timeout|tiempo/i.test(String((err as any)?.message ?? err))) {
+      await deliverMessage(db, run.channel_id, run.contact_id,
+        "¡Recibí tu captura! 🙌 La reviso con el equipo y te confirmo por acá en un momento. 😊").catch(() => {});
+      await pasarAHumano(db, run.channel_id, run.contact_id,
+        "⏱️ El validador de comprobantes tardó demasiado y no leyó la captura: revísala a mano en Pagos por validar / el chat.",
+        { aviso: false }).catch(() => {});
+      run.estado = "completado";
+      return;
+    }
     run.current_node_id =
       (await nextNode(db, run.flow_id, node.id, "fallo")) ??
       (await nextNode(db, run.flow_id, node.id, "continuar"));
