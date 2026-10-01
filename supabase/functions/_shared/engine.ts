@@ -27204,7 +27204,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // Si la IA SÍ lo contestó (nombra el adelanto con su cifra, como en el chat de Rodrigo), se respeta.
                 const _iaContesto = /adelanto|anticipo/i.test(sinFormato(_sinOpc))
                   && new RegExp("(?:^|[^0-9])" + _adP + "(?![0-9])").test(sinFormato(_sinOpc));
-                _s = _iaContesto ? _sinOpc : `${_respP}${_sinOpc ? "\n\n" + _sinOpc : ""}`;
+                // Una sola pregunta por burbuja: si lo que queda de la IA ya pregunta («¿Cuál de esas tres quieres
+                // llevar?»), la respuesta del monto va sin la suya (reproducción Barranca 3).
+                const _respP2 = /[?¿]/.test(_sinOpc) ? _respP.replace(/\s*¿[^?]*\?\s*$/u, "").trim() : _respP;
+                _s = _iaContesto ? _sinOpc : `${_respP2}${_sinOpc ? "\n\n" + _sinOpc : ""}`;
                 // Sin la cantidad elegida y sin pregunta que quede, la de la cantidad (sin volver a pegar la lista).
                 if (!String(ctx.opcion_id ?? "").trim() && !/[?¿]/.test(_sinOpc)) {
                   try {
