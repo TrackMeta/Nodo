@@ -20947,6 +20947,52 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "no existe — justo en el mensaje donde va a soltar plata. Es «pagas un adelanto de…», «te paso los " +
       "datos», «te escribo apenas llegue».");
     let _bloqueTurno = "";
+    // 📣 ESTÁ CONTESTANDO A UN REMARKETING. Hasta hoy la IA solo lo deducía del historial (los últimos 12 mensajes,
+    // donde el toque aparece como «Tú: …»). Rodrigo (2026-10-01): «sí, agrégalo» — que lo sepa explícito: qué
+    // secuencia, qué paso, hace cuánto, y si ese toque le ofreció un precio especial. Solo si el último mensaje
+    // nuestro fue ese toque (nada nuestro después) y dentro de las 72 h del ruteo «📣 Responde al remarketing».
+    try {
+      const { data: _cR } = await db.from("contacts").select("ultimo_auto_msg_at, oferta_activa").eq("id", run.contact_id).maybeSingle();
+      const _ultA = (_cR as any)?.ultimo_auto_msg_at ? new Date((_cR as any).ultimo_auto_msg_at).getTime() : 0;
+      if (_ultA && Date.now() - _ultA < 72 * 3600 * 1000) {
+        const { data: _outsR } = await db.from("messages").select("ts").eq("contact_id", run.contact_id).eq("direction", "out")
+          .gt("ts", new Date(_ultA + 5000).toISOString()).limit(1);
+        // Solo si fue un paso de SECUENCIA (la suscripción se sella en el mismo momento del envío): otros
+        // automáticos (recordatorio de pedido) no son remarketing y no se nombran como tal.
+        const { data: _subR } = await db.from("sequence_subscriptions").select("sequence_id, paso_actual, updated_at")
+          .eq("contact_id", run.contact_id).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+        const _subAt = (_subR as any)?.updated_at ? new Date((_subR as any).updated_at).getTime() : 0;
+        if (!(_outsR ?? []).length && _subAt && Math.abs(_subAt - _ultA) < 15 * 60 * 1000) {
+          let _seqNom = "", _pasoN = 0, _pasoTot = 0, _pasoTxt = "";
+          try {
+            const { data: _sq } = await db.from("sequences").select("nombre, pasos").eq("id", (_subR as any).sequence_id).maybeSingle();
+            const _pasos = Array.isArray((_sq as any)?.pasos) ? (_sq as any).pasos : [];
+            _pasoTot = _pasos.length;
+            _pasoN = Math.max(1, Math.min(_pasos.length || 1, Number((_subR as any).paso_actual) || 0));
+            _seqNom = String((_sq as any)?.nombre ?? "").trim();
+            const _p = _pasos[_pasoN - 1] ?? {};
+            _pasoTxt = sinFormato(String(_p?.mensaje ?? _p?.bubbles?.[0]?.text ?? _p?.template_name ?? "")).replace(/\s+/g, " ").trim().slice(0, 200);
+          } catch (_) { /* sin la secuencia legible → el bloque sale sin nombrarla */ }
+          const _minA = Math.round((Date.now() - _ultA) / 60000);
+          const _hace = _minA < 60 ? "hace un rato" : _minA < 60 * 48 ? `hace ${Math.round(_minA / 60)} h` : `hace ${Math.round(_minA / 1440)} días`;
+          const _of = (_cR as any)?.oferta_activa;
+          const _symR = simboloMoneda(ctx.moneda as string);
+          const _ofVigente = _of && _of.origen === "remarketing" && _of.precio != null && (!_of.vence || new Date(_of.vence).getTime() > Date.now());
+          const _venceTxt = _ofVigente && _of.vence
+            ? new Date(_of.vence).toLocaleDateString("es-PE", { day: "numeric", month: "long", timeZone: "America/Lima" }) : "";
+          _bloqueTurno += "\n\n## Está contestando a un recordatorio nuestro (remarketing)\n" +
+            `${_hace[0].toUpperCase() + _hace.slice(1)} le mandamos un mensaje automático` +
+            (_seqNom ? ` de la secuencia «${_seqNom}» (toque ${_pasoN} de ${_pasoTot})` : "") +
+            (_pasoTxt ? `: «${_pasoTxt}»` : "") + ". " +
+            "Su mensaje de ahora responde a eso. Engancha con lo que se le dijo ahí: no lo saludes como si fuera la primera " +
+            "vez ni le presentes el producto desde cero; retoma la venta donde quedó (lo que ya eligió y lo que falta)." +
+            (_ofVigente ? `\nEse toque le ofreció un precio especial: *${_symR} ${_of.precio}*${_venceTxt ? ` hasta el ${_venceTxt}` : ""}. ` +
+              "Ese precio vale: respétalo, no le cobres el normal ni lo pongas en duda." : "");
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "📣 La IA sabe que contesta a un remarketing",
+            `${_seqNom || "secuencia"} · toque ${_pasoN}${_pasoTot ? ` de ${_pasoTot}` : ""} · ${_hace}${_ofVigente ? ` · oferta ${_symR} ${_of.precio}` : ""}`).catch(() => {});
+        }
+      }
+    } catch (_) { /* sin datos de remarketing → sin bloque */ }
     // 🙈 OFERTAS OCULTAS y CANTIDADES que no están en la lista (decisión de Rodrigo, 2026-09-28 — [[ofertas-ocultas]]).
     // Nació de «quiero 5 para mi taller» con packs de 1/2/3 → «dime cuántas quieres» (F9-cinco).
     //  · Pide MÁS («¿y si llevo más?», «por mayor», «para mi taller», o un número mayor que la visible más grande)
