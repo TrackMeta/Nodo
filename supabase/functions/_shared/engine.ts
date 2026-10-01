@@ -6673,6 +6673,9 @@ const CAMBIOS_DESPACHO: Array<[RegExp, string]> = [
   // despacharlo», o sea las dos preposiciones que a uno se le ocurren redactando. Cualquier
   // otra («después de», «al», «tras») dejaba pasar la palabra. El infinitivo suelto, al final
   // de la lista para que las formas con preposición sigan ganando su redacción propia.
+  // «no se puede DESPACHAR» quedaba «no se puede mandártelo» (Probar flujos, Rodrigo, 2026-10-01): con «se puede»
+  // delante el infinitivo va sin pronombre.
+  [/\b(se\s+(?:puede|podr[ií]a|pudo)|(?:no\s+)?puede)\s+despachar(lo|la)?(?![\p{L}\p{N}])/giu, "$1 mandar$2"],
   [/\bdespachar(?:lo|la|te|se)?(?![\p{L}\p{N}])/giu, "mandártelo"],
   // ⚠️ El PRONOMBRE va antes que el verbo suelto: «con un adelanto de S/ 20 lo despachamos»
   // se convertía en «lo TE LO mandamos», que es lo que le llegó a un cliente en la tanda de
@@ -19479,7 +19482,26 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
     // no selló nada; el bot le repreguntó cuál quería dos veces más. El historial está ahí
     // para rescatar lo que se dijo y nadie procesó, no para juzgar lo que está diciendo hoy.
     const _mencionadas = list.filter((o) => mencionaLaOpcion(texto, o, list));
-    if (_mencionadas.length > 1) {
+    // 🔴 Lo que dijo HOY manda sobre el clasificador. «2 unidades» después de «10 t deposito» (S/ 10 de adelanto)
+    // selló «10 unidades» —la OCULTA, S/ 349—: el historial pegado traía el 10 y el clasificador se fue con él
+    // (Probar flujos, Rodrigo, 2026-10-01). Si hoy nombró UNA sola de forma inequívoca, esa es, diga lo que diga.
+    {
+      const _fuertesHoy = _mencionadas.filter((o) => mencionaFuerte(texto, o, list));
+      if (_fuertesHoy.length === 1 && _fuertesHoy[0].id !== cls.clave) {
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "🔢 El clasificador eligió otra; manda lo que escribió",
+          `Clasificador: ${list.find((o) => o.id === cls!.clave)?.nombre ?? cls.clave} → ${_fuertesHoy[0].nombre} («${String(texto ?? "").slice(0, 60)}»)`).catch(() => {});
+        cls = { ...cls, clave: _fuertesHoy[0].id, confianza: 1 };
+      }
+      // 🙈 Y una OCULTA solo si la nombró hoy: no se ofrece ni se adivina por su cuenta (ver [[ofertas-ocultas]]).
+      const _opC = list.find((o) => o.id === cls!.clave);
+      if (_opC?.oculta && !mencionaFuerte(texto, _opC, list)) {
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🙈 El clasificador eligió una oculta que no nombró",
+          `${_opC.nombre}: no se sella`).catch(() => {});
+        cls = { ...cls, intencion: "preguntando", clave: null };
+        _noSellar = true;
+      }
+    }
+    if (cls.clave && _mencionadas.length > 1) {
       // Salvo que UNA sola esté nombrada de verdad y sea justo la que eligió la IA:
       // entonces las otras las trajo el nombre o la dirección del cliente, no él.
       const _fuertes = _mencionadas.filter((o) => mencionaFuerte(texto, o, list));
@@ -27128,6 +27150,43 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // (+ «Sobre stock, ¿Alguna…» — F10-stock; y el «¿ ¿Alguna…» que dejaba una pregunta vaciada — F10-regateo)
           // La frase que anunciaba la lista que se acaba de quitar (ver sinAnuncioColgado).
           if (_s !== _antesF) _s = sinAnuncioColgado(_s);
+          // 💰 Preguntó CUÁNTO ES EL ADELANTO y la respuesta se fue con un recorte (o la IA no la dio): «¿Con cuánto de
+          // adelanto puedes mandar?» recibió solo «¿De dónde nos escribes?» —el guard de la pregunta doble se llevó la
+          // frase que traía el monto— (Probar flujos, Rodrigo, 2026-10-01). Sin zona también se contesta: el adelanto
+          // es el mismo para toda provincia.
+          if (String(ctx.pedido_creado ?? "") !== "si"
+              && /\b(adelanto|anticipo|pag(?:ar|o|amos)\s+(?:algo\s+)?(?:antes|adelantad[oa]|por\s+adelantado)|se\s+paga\s+antes)\b/i.test(String(ctx.last_input ?? ""))
+              && !/adelanto|anticipo/i.test(sinFormato(_s))
+              && !RE_PIDE_DEVOLUCION.test(String(ctx.last_input ?? "")) && !pideCancelar(String(ctx.last_input ?? ""))
+              && !seArrepiente(String(ctx.last_input ?? "")) && !RE_ANUNCIA_PAGO.test(String(ctx.last_input ?? ""))
+              && !/(?:^|[^\p{L}])(yape[eé]|plin[eé]|pagu[eé]|deposit[eé]|transfer[ií]|envi[eé]|mand[eé])(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
+              && String(ctx.zona_entrega ?? "") !== "lima") {
+            let _adR = Number(ctx.adelanto);
+            if (!(_adR > 0)) {
+              try { const _eR = await loadEntregas(db, run); _adR = Number((_eR as any)?.entregas?.adelanto_default); } catch (_) { _adR = NaN; }
+            }
+            if (_adR > 0) {
+              const _symR = simboloMoneda(ctx.moneda as string);
+              const _lineaR = `${_zonaOk ? "Para provincia va" : "A provincia va"} con un adelanto de *${_symR} ${_adR}* y el resto me lo pagas por acá cuando llegue a la agencia 🙌`;
+              _s = `${_lineaR}\n\n${_s.trimStart()}`;
+              (run.vars as any)._adelanto_explicado = 1;
+            }
+          }
+          // 🔢 La pregunta de la CANTIDAD va DESPUÉS de la lista de precios, no antes: «¿Cuántas unidades quieres
+          // llevar?» salía en el primer párrafo y la lista tres párrafos más abajo (Probar flujos, Rodrigo, 2026-10-01).
+          {
+            const _ln = _s.split("\n");
+            const _idxP = _ln.map((l, i) => (/—\s*\*?\s*(?:S\/|\$|US\$)\s?\d/u.test(l) && !/^\s*Anotado:/.test(l)) ? i : -1).filter((i) => i >= 0);
+            if (_idxP.length >= 2) {
+              const _antesL = _ln.slice(0, _idxP[0]).join("\n");
+              const _mQ = _antesL.match(/[ \t]*¿[^?¿\n]*\b(?:cu[aá]nt[ao]s|cu[aá]l|qu[eé]\s+(?:oferta|cantidad|opci[oó]n))\b[^?¿\n]*\?[ \t]*(?:\p{Extended_Pictographic}️?[ \t]*)*/iu);
+              if (_mQ && !/[?¿]/.test(_ln.slice(_idxP[0]).join("\n"))) {
+                const _q = _mQ[0].trim();
+                const _antesL2 = _antesL.replace(_mQ[0], " ").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+                _s = `${_antesL2 ? _antesL2 + "\n\n" : ""}${_ln.slice(_idxP[0]).join("\n").trim()}\n\n${_q}`;
+              }
+            }
+          }
           // 🗺️ Red final: sin zona, con la cantidad ya sellada y sin pedido, el mensaje NO se queda sin pregunta
           // (los recortes de arriba pueden llevarse la única que traía). Salvo que se despida, reclame o lo piense.
           if (!_zonaOk && String(ctx.opcion_id ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
