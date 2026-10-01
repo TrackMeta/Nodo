@@ -5286,6 +5286,10 @@ const RE_PALABRA_DATO =
 // (con `conservarZona`, la frase que pide SOLO el distrito/ciudad se queda: en el recorte sin zona es justo la
 //  pregunta que hace falta — «necesito saber de qué distrito o ciudad nos escribes» se iba y quedaba «¿Me lo
 //  pasas porfa?» huérfano; reproducción Barranca, 2026-10-01)
+// 💵 Un número en contexto de PLATA: «10 t deposito» (= te deposito S/ 10), «te yapeo 10», «S/ 20 ahora», «10 soles de
+// adelanto». Lo usan el nodo de venta (no es cantidad, no destapa ocultas) y la respuesta del motor al monto.
+const RE_NUMERO_DE_PLATA =
+  /(?:(?:S\/|\$|soles?\s+de|adelanto\s+de|dep[oó]sito\s+de|abono\s+de|pago\s+de|te\s+(?:yapeo|plineo|deposito|transfiero|mando|paso|doy|dejo|abono|pago))\s*(\d{1,5})|\b(\d{1,5})\s*(?:t\s+|te\s+)?(?:dep[oó]sit\p{L}*|yape\p{L}*|plin\p{L}*|transfier\p{L}*|abon\p{L}*|adelant\p{L}*|soles|sol|lucas|de\s+adelanto|de\s+inicial))/iu;
 const RE_PALABRA_DATO_SIN_ZONA =
   /(?:\b(?:nombre|apellidos?|dni|documento|celular|tel[eé]fono|n[uú]mero\s+de\s+(?:contacto|celular|tel[eé]fono)|tu\s+n[uú]mero|n[uú]mero\s+completo|datos?|direcci[oó]n|referencia)\b|(?:lo\s+siguiente|estos|esto|lo\s+que\s+sigue)\s*(?:👇|:))/iu;
 function quitarPeticionDeDatos(texto: string, conservarZona = false): { texto: string; hubo: boolean } {
@@ -20978,8 +20982,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // 💵 Un número que es PLATA no es cantidad: «10 t deposito» (= te deposito S/ 10 de adelanto) se leyó como
         // «quiero 10» —la IA contestó «no hay para 10» y el clasificador se fue a la oferta oculta de 10— (Probar
         // flujos, Rodrigo, 2026-10-01). Se le dice al modelo en el bloque del turno y no cuenta como «pide más».
-        const _RE_PLATA_NUM = /(?:(?:S\/|\$|soles?\s+de|adelanto\s+de|dep[oó]sito\s+de|abono\s+de|pago\s+de|te\s+(?:yapeo|plineo|deposito|transfiero|mando|paso|doy|dejo|abono|pago))\s*\d{1,5}|\b\d{1,5}\s*(?:t\s+|te\s+)?(?:dep[oó]sit\p{L}*|yape\p{L}*|plin\p{L}*|transfier\p{L}*|abon\p{L}*|adelant\p{L}*|soles|sol|lucas|de\s+adelanto|de\s+inicial))/iu;
-        if (_RE_PLATA_NUM.test(_liO) && !/\b(?:unidad|unidades|packs?|piezas?|kits?)\b/i.test(_liO)) {
+        if (RE_NUMERO_DE_PLATA.test(_liO) && !/\b(?:unidad|unidades|packs?|piezas?|kits?)\b/i.test(_liO)) {
           if (_nPed) _nPed = 0;
           _bloqueTurno += "\n\n## El número que escribió es PLATA, no cantidad\n" +
             "Habla de un MONTO (lo que puede depositar o adelantar), no de unidades. No lo tomes como cantidad ni le digas " +
@@ -27019,7 +27022,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // Sin zona y sin ninguna pregunta que quede: la que falta es de dónde es.
             // La muletilla que anunciaba la lista quitada («…para completar tu pedido. Además,» — F6c-pdos).
             _s = _s.replace(/[ \t]*\b(?:adem[aá]s|tambi[eé]n|y\s+para\s+(?:terminar|cerrar))\s*,?[ \t]*(?=\n|$)/gimu, "");
+            // (…ni si ya la pide en IMPERATIVO: «Primero dime tu distrito o ciudad para confirmar cómo te llegará 📍» +
+            //  «¿De qué distrito o ciudad nos escribes?» salían juntas — reproducción Barranca 2, 2026-10-01)
             if (!_zonaOk && !/[?¿]/.test(_s) && !_RE_SUAVE_Z.test(_s)
+                && !/\b(?:dime|ind[ií]came|cu[eé]ntame|p[aá]same|conf[ií]rmame|av[ií]same)\s+(?:primero\s+)?(?:tu\s+|en\s+qu[eé]\s+|de\s+qu[eé]\s+|qu[eé]\s+|desde\s+d[oó]nde|de\s+d[oó]nde)?\s*(?:distrito|ciudad|zona|provincia|d[oó]nde)/i.test(_s)
                 && !(ctx as any)._dos_lugares && !(run.vars as any)?._dos_lugares
                 && !/conf[ií]rm\p{L}*|necesito que|dime (?:cu[aá]l|en cu[aá]l|d[oó]nde)|cu[aá]l de (?:las|los) dos/iu.test(_s)) {
               _s = _pegaSuave(_s.trimEnd(), _Q_ZONA);   // párrafo propio tras una lista o la línea de la oferta
@@ -27168,6 +27174,50 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // (+ «Sobre stock, ¿Alguna…» — F10-stock; y el «¿ ¿Alguna…» que dejaba una pregunta vaciada — F10-regateo)
           // La frase que anunciaba la lista que se acaba de quitar (ver sinAnuncioColgado).
           if (_s !== _antesF) _s = sinAnuncioColgado(_s);
+          // 💵 Dijo un MONTO («10 t deposito» = S/ 10 de adelanto) y la IA lo leyó como cantidad DOS veces seguidas, aun con
+          // el bloque del turno que se lo explica («sólo tenemos estas opciones: 1, 2 o 3 unidades… ¿cuál quieres?» —
+          // reproducción Barranca 2, 2026-10-01). Lo que se cae dos veces deja de ser regla del prompt: el monto lo
+          // contesta el motor contra el adelanto real, y se le quita a la IA lo que dijo de «opciones/no hay para N».
+          {
+            const _mPl = RE_NUMERO_DE_PLATA.exec(String(ctx.last_input ?? ""));
+            const _nPl = _mPl ? Number(_mPl[1] ?? _mPl[2]) : 0;
+            if (_nPl > 0 && !/\b(?:unidad|unidades|packs?|piezas?|kits?)\b/i.test(String(ctx.last_input ?? ""))
+                && String(ctx.zona_entrega ?? "") === "provincia" && String(ctx.pedido_creado ?? "") !== "si"
+                && !RE_ANUNCIA_PAGO.test(String(ctx.last_input ?? ""))
+                && !/(?:^|[^\p{L}])(yape[eé]|plin[eé]|pagu[eé]|deposit[eé]|transfer[ií]|envi[eé]|mand[eé])(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))) {
+              let _adP = Number(ctx.adelanto);
+              if (!(_adP > 0)) {
+                try { const _eP = await loadEntregas(db, run); _adP = Number((_eP as any)?.entregas?.adelanto_default); } catch (_) { _adP = NaN; }
+              }
+              if (_adP > 0) {
+                const _symP2 = simboloMoneda(ctx.moneda as string);
+                const _respP = _nPl < _adP
+                  ? `El adelanto para mandarlo es *${_symP2} ${_adP}*: con *${_symP2} ${_nPl}* no alcanza 🙏 ¿Avanzamos con los *${_symP2} ${_adP}*?`
+                  : _nPl > _adP
+                  ? `Con *${_symP2} ${_nPl}* cubres el adelanto de *${_symP2} ${_adP}* y los *${_symP2} ${_nPl - _adP}* de más se descuentan del saldo 🙌`
+                  : `Justo: el adelanto es *${_symP2} ${_adP}* 🙌`;
+                // Fuera lo que la IA dijo leyendo el número como cantidad.
+                const _sinOpc = _s.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])|\n/u)
+                  .filter((f) => !/(?:s[oó]lo|solo|solamente|por\s+el\s+momento)\s+(?:tenemos|hay|manejamos)|no\s+(?:hay|tenemos)\s+(?:para|de)\s+\d|presentaciones\s+de|opciones\s*:|cu[aá]l\s+de\s+(?:esas|estas)\s+(?:opciones|presentaciones)|\b(?:1|una)\s+unidad,?\s+2\s+unidades|te\s+conviene\s+elegir/i.test(sinFormato(f)))
+                  .filter((f) => /[\p{L}\p{N}]/u.test(f))   // (sin la cola de solo emojis que dejaba el recorte)
+                  .join(" ").replace(/[ \t]{2,}/g, " ").trim();
+                // Si la IA SÍ lo contestó (nombra el adelanto con su cifra, como en el chat de Rodrigo), se respeta.
+                const _iaContesto = /adelanto|anticipo/i.test(sinFormato(_sinOpc))
+                  && new RegExp("(?:^|[^0-9])" + _adP + "(?![0-9])").test(sinFormato(_sinOpc));
+                _s = _iaContesto ? _sinOpc : `${_respP}${_sinOpc ? "\n\n" + _sinOpc : ""}`;
+                // Sin la cantidad elegida y sin pregunta que quede, la de la cantidad (sin volver a pegar la lista).
+                if (!String(ctx.opcion_id ?? "").trim() && !/[?¿]/.test(_sinOpc)) {
+                  try {
+                    const _opsPl = await loadOpciones(db, run, String(ctx._product_id ?? ""));
+                    const _qPl = preguntaCuantos(_opsPl, ctx, _negOn, true);
+                    if (_qPl) _s = `${_s.trimEnd()}\n\n${_qPl}`;
+                  } catch (_) { /* sin opciones → se queda la pregunta del adelanto */ }
+                }
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "💵 Dijo un monto y se le contestó contra el adelanto",
+                  `${_symP2} ${_nPl} vs adelanto ${_symP2} ${_adP}`).catch(() => {});
+              }
+            }
+          }
           // 💰 Preguntó CUÁNTO ES EL ADELANTO y la respuesta se fue con un recorte (o la IA no la dio): «¿Con cuánto de
           // adelanto puedes mandar?» recibió solo «¿De dónde nos escribes?» —el guard de la pregunta doble se llevó la
           // frase que traía el monto— (Probar flujos, Rodrigo, 2026-10-01). Sin zona también se contesta: el adelanto
@@ -27209,6 +27259,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // (los recortes de arriba pueden llevarse la única que traía). Salvo que se despida, reclame o lo piense.
           if (!_zonaOk && String(ctx.opcion_id ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
               && !/[?¿]/.test(_s) && !_RE_SUAVE_Z.test(_s)
+              && !/\b(?:dime|ind[ií]came|cu[eé]ntame|p[aá]same|conf[ií]rmame|av[ií]same)\s+(?:primero\s+)?(?:tu\s+|en\s+qu[eé]\s+|de\s+qu[eé]\s+|qu[eé]\s+|desde\s+d[oó]nde|de\s+d[oó]nde)?\s*(?:distrito|ciudad|zona|provincia|d[oó]nde)/i.test(_s)
               && !(ctx as any)._dos_lugares && !(run.vars as any)?._dos_lugares
               && !RE_LO_PIENSA.test(String(ctx.last_input ?? "")) && !RE_RECLAMO.test(String(ctx.last_input ?? ""))
               && !/^\s*(?:no(?:\s+gracias)?|nada|ya\s+no|no\s+me\s+interesa|gracias(?:\s+no)?|ok(?:ey)?|listo|chau|adi[oó]s)[\s.!,🙂🙏👍]*$/iu.test(String(ctx.last_input ?? ""))
