@@ -6256,6 +6256,11 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   // 116 provincias no podía verlo. La lista sirve para ELEGIR; repetirla en cada mensaje es
   // ruido que además empuja hacia abajo lo que sí hay que leer. Si vuelve a preguntar ÉL, va.
   const _yaSeLasPase = !!(run.vars as any)?._sedes_mostradas;
+  // 🔢 La cantidad va ANTES que la oficina (zona → cantidad → sede → datos). Con «no quiero dar adelanto, pago todo en la
+  // agencia» la IA habló de la agencia, la sede se capturó como «Pucallpa» y salieron las 8 oficinas en el PRIMER turno, sin
+  // precio ni cantidad (R1P-sinadelanto, 4.ª relanzada); y con «ayacucho» a secas la pregunta del distrito salía pegada a
+  // la de la cantidad: dos preguntas en una burbuja. Si no eligió cuántas y no pidió la oficina, la lista espera su turno.
+  const _sinCantidad = !String(ctx.opcion_id ?? "").trim() && !String(ctx.opcion ?? "").trim();
 
   // 1) Contestó el distrito y ahí hay varias: se le muestran ESAS, no las de la ciudad.
   //    Va primero porque a esta altura ya no queda nada que preguntarle: solo que elija
@@ -6306,6 +6311,7 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   //    de 8 sedes creo». Tenía razón en lo que importa, aunque en la lista figuren 8.
   if (_ags.filter((a) => !_rezagadaAg(a)).length < 8) {
     if (_yaSeLasPase && !_pidio) return null;
+    if (_sinCantidad && !_pidio) return null;   // (primero la cantidad; ver arriba)
     // UNA sola oficina en su ciudad: no hay nada que elegir. La sede ya quedó deducida (y va su ficha); pegar
     // «tenemos estas 👇 · ¿Cuál te queda más cerca?» con una sola le pedía elegir entre una, y se llevaba el
     // pedido de datos que había escrito la IA (F12-pichanaqui, 2026-09-29).
@@ -6326,7 +6332,7 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   const _dts = (_prop.length && !esSoloDepartamento(ciudad)) ? distritosConOficina(ciudad) : [];
   // (…ni cuando el distrito YA lo dijo y se le mostraron sus oficinas: «trujillo, la esperanza» → sus 2 oficinas, y al
   //  turno siguiente le volvía a preguntar el distrito — R1P-trujilloflujo, 2.ª regresión 2026-10-01)
-  if (_dts.length >= 2 && !(run.vars as any)?._distrito_elegido && (_pidio || !(run.vars as any)?._distrito_preguntado)) {
+  if (_dts.length >= 2 && !(run.vars as any)?._distrito_elegido && (_pidio || !(run.vars as any)?._distrito_preguntado) && (_pidio || !_sinCantidad)) {
     (run.vars as any)._distrito_preguntado = 1;
     // Con más de 12 distritos (Lima 35, Arequipa 13) listarlos es tan largo como listar las
     // oficinas y no ahorra nada; pero la pregunta sigue sirviendo, porque él SÍ sabe su
@@ -26087,6 +26093,29 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
         } catch (_) { /* si no se pueden leer las opciones, se envía tal cual */ }
       }
+      // 💰 Zona ya sabida y NI UN PRECIO: la IA contestó lo suyo («sin adelanto no sale», la agencia) sin escribir la lista,
+      // y en todo el chat no había salido una cifra (R1P-sinadelanto, 4.ª relanzada). Regla 1 de Rodrigo: respuesta → precio
+      // → siguiente paso. Se pega la lista con la pregunta de la cantidad (una sola pregunta por burbuja), salvo que la
+      // burbuja ya pregunte otra cosa (el distrito, cuál de dos zonas) o el turno no sea de venta (pagó, reclama, humano, no).
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
+          && !String(ctx.opcion_id ?? "").trim() && !String(ctx.opcion ?? "").trim() && String(salida ?? "").trim()
+          && !/(?:S\/|\$|US\$)\s?\d/.test(String(salida)) && !(ctx as any)._pidioCaptura
+          && !RE_DICE_QUE_PAGO.test(normalize(String(ctx.last_input ?? ""))) && !RE_RECLAMO.test(String(ctx.last_input ?? ""))
+          && !RE_LO_PIENSA.test(String(ctx.last_input ?? "")) && !pideHumano(String(ctx.last_input ?? ""))
+          && !/^\s*(?:no(?:\s+gracias)?|nada|ya\s+no|no\s+me\s+interesa|gracias\s+no)[\s.!,🙂🙏]*$/iu.test(String(ctx.last_input ?? ""))
+          && !/📍|📌/u.test(String(salida))
+          && !/¿[^?\n]*\b(?:distrito|ciudad|sede|oficina|agencia|cu[aá]l\s+de\s+estos|departamento)\b[^?\n]*\?/i.test(String(salida))) {
+        try {
+          const _opsPr = opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id ?? "")), run);
+          if (_opsPr.length >= 2 && !(await yaLeListamosPrecios(db, run, _opsPr))) {
+            const _sinQ = String(salida).replace(/[ \t]*¿[^?¿\n]*\b(?:cu[aá]nt[ao]s|cu[aá]l)\b[^?¿\n]*\?[ \t]*(?:\p{Extended_Pictographic}️?[ \t]*)*/giu, " ")
+              .replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+            salida = `${_sinQ}\n\n${preguntaCuantos(_opsPr, ctx, _negOn, false)}`;
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Zona sabida y ningún precio en el chat",
+              "Se pegó la lista con la pregunta de la cantidad").catch(() => {});
+          }
+        } catch (_) { /* sin opciones → tal cual */ }
+      }
       // 💸 «YA TE YAPEÉ» SIN CAPTURA (físico, fuera de Lima). El cliente dice que pagó antes de
       // elegir cuántas lleva: la IA le pedía nombre, celular y DNI —saltándose la REGLA DURA
       // de pagos, que le manda pedir la captura—, el guard de la cantidad le quitaba esa
@@ -28313,6 +28342,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // (y la interjección que la abría, que quedaba sola: «Ah.» — R1L-datospartidos, 4.ª relanzada)
             .replace(/(^|\n)[ \t]*(?:Ah|Ya|Ojo|Eso\s+s[ií]|Y|Tambi[eé]n|Adem[aá]s)[ \t]*[.,!]?[ \t]*(?=\n|$)/giu, "$1").replace(/\n{3,}/g, "\n\n").trim();
         }
+      }
+      // 👋 «hola buenas tardes» a mitad del chat y la respuesta arrancaba seca («Cuéntame de qué distrito…» — R1L-pasoapaso,
+      // 3.ª relanzada): si él SOLO saludó, se le devuelve el saludo delante. (El 👋 a mitad de chat lo quita otro guard: va 😊.)
+      if (op === "generar_texto" && String(salida ?? "").trim()
+          && /^\s*(?:hola+|holi|buenas+|buen[oa]s\s+(?:d[ií]as|tardes|noches)|hey|ola|qu[eé]\s+tal)(?:[\s,]+(?:hola|buenas|buen[oa]s\s+(?:d[ií]as|tardes|noches)|qu[eé]\s+tal|amig[oa]|estimad[oa]s?|se[ñn]or(?:a|ita)?))*[\s.!,🙂🙏👋]*$/iu.test(String(ctx.last_input ?? ""))
+          && !/^\s*[¡!]?\s*(?:hola|buen[oa]s|qu[eé]\s+tal|bienvenid)/iu.test(sinFormato(salida))) {
+        const _liS = normalize(String(ctx.last_input ?? ""));
+        const _salS = /buenos dias/.test(_liS) ? "¡Buenos días! 😊" : /buenas tardes/.test(_liS) ? "¡Buenas tardes! 😊" : /buenas noches/.test(_liS) ? "¡Buenas noches! 😊" : "¡Hola! 😊";
+        salida = `${_salS} ${String(salida).trimStart()}`;
       }
       // 💸 «lo cancelo mañana» con el pedido esperando el adelanto = PAGO mañana (Perú), no «ya no lo quiero». La IA
       // lo leyó como abandono («Cuando estés listo para continuar, aquí estaré») y encima le pidió la captura ahora
