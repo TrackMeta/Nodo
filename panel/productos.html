@@ -4253,7 +4253,6 @@ async function saveActivacion(){
 // audio no lleva texto.
 const CAPTION_MAX = 1024;
 const _conCaption = (b) => !!(b && b.media_url && b.media_kind !== "audio");
-const _cierraConPregunta = (t) => /\?[\s\p{Extended_Pictographic}\u{FE0F}]*$/u.test(String(t||"").trim());
 // La imagen pegada a esta burbuja de texto: primero la de ARRIBA (el texto queda debajo, como ya se leía) y si no, la de abajo.
 function _mediaVecina(v, bi){
   const bs=v.bubbles||[];
@@ -4263,9 +4262,8 @@ function _mediaVecina(v, bi){
 }
 function juntarHtml(v,bub,bi){
   if(bub.media_url || (bub.buttons||[]).length) return "";   // con botones es un mensaje interactivo: no puede ir en la foto
-  // La PREGUNTA con que cierra el saludo («¿Desde dónde nos escribe?») se queda en su burbuja: el motor la reconoce
-  // (y la quita cuando el cliente abrió preguntando) leyendo las burbujas de texto, no lo que va debajo de una foto.
-  if(_cierraConPregunta(bub.text)) return "";
+  // (La pregunta del saludo también puede ir debajo de la foto: el motor guarda ese texto en el historial como si fuera
+  //  una burbuja y, si el cliente abrió preguntando, le quita el renglón de la pregunta — ver case "rotador".)
   const m=_mediaVecina(v,bi); if(!m) return "";
   const que=m.b.media_kind==="video"?"el video":m.b.media_kind==="document"?"el archivo":"la imagen";
   return `<button class="btn bjuntar" type="button" style="margin-top:7px;height:28px;padding:0 10px;font-size:12px;background:transparent;border:1px dashed var(--border);color:var(--muted)">${icon("image")} Juntar con ${que} de ${m.arriba?"arriba":"abajo"}</button>`;
@@ -4311,10 +4309,8 @@ function renderBubble(v,vi,bub,bi){
   // 🖼️ El largo del texto debajo: WhatsApp corta el de una foto/video en 1024 caracteres.
   { const cp=el.querySelector(".bcap"), av=el.querySelector(".bcapAviso");
     const pinta=()=>{ if(!cp||!av) return; const n=cp.value.length;
-      const largo = n>CAPTION_MAX;
-      av.textContent = largo ? `Tiene ${n} caracteres: WhatsApp corta el texto debajo de ${kind==="video"?"un video":"una imagen"} en ${CAPTION_MAX}. Acórtalo o pásalo a una burbuja de texto.`
-        : _cierraConPregunta(cp.value) ? "La pregunta del final déjala en su propia burbuja de texto: el bot la usa para saber qué le preguntó." : "";
-      av.style.color = largo ? "var(--red,#e2564a)" : "var(--amber,#f59e0b)"; };
+      av.textContent = n>CAPTION_MAX ? `Tiene ${n} caracteres: WhatsApp corta el texto debajo de ${kind==="video"?"un video":"una imagen"} en ${CAPTION_MAX}. Acórtalo o pásalo a una burbuja de texto.` : "";
+      av.style.color="var(--red,#e2564a)"; };
     if(cp){ cp.addEventListener("input",pinta); pinta(); } }
   { const jb=el.querySelector(".bjuntar"); if(jb) jb.onclick=()=>{ harvest(); juntarConMedia(v,bi); }; }
   // Actualizar el texto/caption EN CADA TECLA (como seq-editor): así la vista

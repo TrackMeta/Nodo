@@ -4758,13 +4758,21 @@ async function execute(db: SupabaseClient, run: Run) {
             if ((run.vars as any)?._entradaConPregunta && esDigital(ctx) && _bubs.length > 1) {
               const _ult = _bubs[_bubs.length - 1];
               const _t = String(_ult?.text ?? "").trim();
-              if (_t && !_ult?.media && !_ult?.url && !(_ult?.buttons?.length) && /\?[\s\p{Extended_Pictographic}️]*$/u.test(_t)) {
+              if (_t && !_ult?.media && !_ult?.media_url && !_ult?.url && !(_ult?.buttons?.length) && /\?[\s\p{Extended_Pictographic}️]*$/u.test(_t)) {
                 _bubs.pop();
                 await logEvent(db, run.channel_id, run.contact_id, "nota", "❓ Abrió con una pregunta",
                   `No sale la pregunta del saludo («${_t.slice(0, 80)}»): la IA contesta la suya y pregunta ella.`).catch(() => {});
+              } else if (_ult?.media_url && /\?[\s\p{Extended_Pictographic}️]*$/u.test(String(_ult?.caption ?? "").trim())) {
+                // …y si la pregunta va DEBAJO de la foto («Juntar con la imagen»), se quita su renglón del pie y la foto sale igual.
+                const _cap = String(_ult.caption).trim();
+                const _sinQ = _cap.replace(/(?:^|\n)[^\n]*\?[\s\p{Extended_Pictographic}️]*$/u, "").trim();
+                _bubs[_bubs.length - 1] = { ..._ult, caption: _sinQ };
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "❓ Abrió con una pregunta",
+                  `No sale la pregunta del pie de la foto («${_cap.slice(_sinQ.length).trim().slice(0, 80)}»): la IA contesta la suya y pregunta ella.`).catch(() => {});
               }
             }
-            for (const b of _bubs) {
+            for (const _b0 of _bubs) {
+              const b = _b0?.media_url ? { ..._b0, _textoEnHistorial: true } : _b0;
               if (await ritmo(db, run, b)) break;
               if ((await emit(db, run, b, ctx)) === false) salioOk = false;
             }
@@ -5232,7 +5240,10 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     await db.from("messages").insert({
       channel_id: run.channel_id, contact_id: run.contact_id,
       direction: "out", type: mediaKind,
-      content: { media_url: mediaUrl, caption: caption || "", mime: bubble.mime ?? "", filename: bubble.filename ?? "", ...(_cubreHasta.get(claveSello(run)) ? { cubre_hasta: _cubreHasta.get(claveSello(run)) } : {}) },
+      // 🖼️ El texto debajo de la foto del SALUDO también va en `text`: unos 20 frenos leen solo `content.text` de lo que ya
+      // se mandó (los precios que vio, la pregunta que se le hizo) y el dueño ahora escribe ahí precios y la pregunta
+      // («Juntar con la imagen», 2026-10-02). El panel pinta la foto con su caption y no usa `text` si hay archivo.
+      content: { media_url: mediaUrl, caption: caption || "", ...(bubble._textoEnHistorial && caption ? { text: caption } : {}), mime: bubble.mime ?? "", filename: bubble.filename ?? "", ...(_cubreHasta.get(claveSello(run)) ? { cubre_hasta: _cubreHasta.get(claveSello(run)) } : {}) },
       status, wamid: wamid || null, error, sent_by: "bot",
       ventana: await ventanaDeCobro(db, run.contact_id),
     });
