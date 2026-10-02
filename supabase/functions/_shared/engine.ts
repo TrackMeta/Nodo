@@ -5134,6 +5134,13 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     // Emojis sueltos ABRIENDO el mensaje: el recorte se llevó la frase que adornaban y quedó «😊📦 Dime cuál prefieres…»
     // (EcoGuard, simulación 29). Solo con dos o más seguidos: uno solo («👋 Hola») puede ser a propósito.
     .replace(/^[ \t]*(?:\p{Extended_Pictographic}\u{FE0F}?[ \t]*){2,}(?=\p{L})/u, (m: string) => bubble._noTpl ? "" : m)
+    // «…sin interrupciones 🔧 Ahora dime» colgando al final del párrafo: el recorte se llevó lo que pedía y la lista del
+    // motor va debajo (sim r, 2026-10-02).
+    .replace(/[ \t]*(?:(?:y\s+)?ahora\s+|y\s+)?(?:dime|cu[eé]ntame|ind[ií]came|av[ií]same|conf[ií]rmame)[ \t]*[,:]?[ \t]*(?=\n\s*\n|$)/giu, (m: string) => bubble._noTpl ? "" : m)
+    // La lista de sedes APLASTADA en un renglón («…Barranca 👇 📍 *Barranca* — … 📍 *Supe* — … ¿Cuál te queda más cerca?»,
+    // Probar flujos 2026-10-02; no se reprodujo en 6 simulaciones): una sede por renglón y la pregunta en su párrafo.
+    .replace(/^.*📍.*📍.*$/gmu, (ln: string) => !bubble._noTpl ? ln
+      : ln.replace(/[ \t]+(?=📍)/gu, "\n").replace(/[ \t]+(¿[^?¿\n]*\?[ \t]*(?:\p{Extended_Pictographic}\u{FE0F}?[ \t]*)*)$/u, "\n\n$1"))
     .replace(/(^|\n)([ \t]*[¿¡])(\p{Ll})/gu, (_m: string, a: string, b: string, c: string) => a + b + c.toUpperCase())
     // El espacio ANTES del punto o la coma que dejó un recorte: «Sobre la factura, no tengo dato .» (D24R-factura).
     .replace(/(\p{L})[ \t]+([.,;])(?=[ \t]|\n|$)/gu, "$1$2")
@@ -19445,8 +19452,14 @@ const UNIDAD_AJENA =
 // (D12-lfoto, 2026-09-25) y encima le pegaba «Anotado: 1 unidad» a quien solo quería ver el producto.
 const GENERICO_TRAS_ARTICULO =
   /^(producto|articulo|item|pedido|paquete|envio|encargo|fotos?|imagen|imagenes|videos?|capturas?|dudas?|preguntas?|consultas?|muestras?|pruebas?|cotizacion|cotizaciones|catalogos?|referencias?|info|informacion|explicacion|idea|ayuda|hora|direccion|sedes?|agencias?|oficinas?|manos?|vez|momento|cosa|pregunta)s?\b/;
-const articuloVago = (pat: string, resto: string) =>
-  (pat === "un" || pat === "una") && GENERICO_TRAS_ARTICULO.test(resto);
+// 🌿 …y por DEFECTO, no por lista: «para un jardín» selló «1 unidad» (Probar flujos / sim h, 2026-10-02) — cada palabra nueva
+// era otro agujero en la lista negra. «un/una» es cantidad solo si va con lo que se vende («una unidad», «un par»), si va
+// solo al final («una nomás», «quiero una») o si lo pide un verbo de compra delante (`antes`: «quiero un adaptador»).
+const articuloVago = (pat: string, resto: string, antes = "") =>
+  (pat === "un" || pat === "una") && (GENERICO_TRAS_ARTICULO.test(resto)
+    || (/^[a-zñ]{3,}/.test(resto) && !UNIDAD_VENTA.test(resto)
+      && !/^(?:nomas|no\s+mas|nada\s+mas|solit[ao]|sol[ao]|porfa|por\s+favor|mas|ok|pues|ya)\b/.test(resto)
+      && !VERBO_COMPRA.test(antes.replace(/[\s.,;:!?¡¿()-]+$/, ""))));
 
 function numeroDelProducto(t: string, cant: number): boolean {
   const vale = (pat: string) => {
@@ -19454,7 +19467,7 @@ function numeroDelProducto(t: string, cant: number): boolean {
     let m: RegExpExecArray | null;
     while ((m = g.exec(t)) !== null) {
       const resto = t.slice(m.index + m[0].length).replace(/^[\s.,;:!?¡¿()-]+/, "");
-      if (articuloVago(pat, resto)) continue;
+      if (articuloVago(pat, resto, t.slice(0, m.index + (m[0].length - pat.length)))) continue;
       if (!UNIDAD_AJENA.test(resto)) return true;
     }
     return false;
@@ -19509,7 +19522,9 @@ function mencionaFuerte(texto: string, op: Opcion, todas: Opcion[]): boolean {
       const resto = t.slice(m.index + m[0].length).replace(/^[\s.,;:!?¡¿()-]+/, "");
       // 🇪🇸 «un producto» es artículo, no cantidad — ver articuloVago. La rama del verbo de
       // compra sigue abajo: «quiero un producto» sí lo es, porque ahí lo está pidiendo.
-      if (articuloVago(pat, resto)) continue;
+      // (con el NOMBRE del producto detrás —«un adaptador», «un ecoguard»— sí nombra la cantidad: va antes que el filtro del artículo)
+      if (propias.some((w) => resto.startsWith(w)) && !/^(?:docenas?|decenas?|cientos?)/.test(resto)) return true;
+      if (articuloVago(pat, resto, t.slice(0, m.index + (m[0].length - pat.length)))) continue;
       // «una DOCENA», «un ciento», «un par de»: el número multiplica, no es la cantidad — «necesito una docena»
       // sellaba «1 unidad» (F13-docena, 2026-09-29).
       if (/^(?:docenas?|decenas?|cientos?|centenar|centenas?|millar|par(?:es)?\s+de|media\s+docena)(?![a-z])/.test(resto)) continue;
@@ -20350,7 +20365,12 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
           });
           // (y nunca con la lista de precios en ese mensaje ni con un rango «2 o 3 unidades»: ahí no recomendó una — n10)
           const _lnP = (String(((_ultR ?? [])[0] as any)?.content?.text ?? "").match(/^.*(?:S\/|\$|US\$)\s?\d.*$/gmu) ?? []).length;
-          if (_porNombre.length === 1 && _lnP < 2 && !/\d+\s*(?:o|u|y|a|-)\s*\d+\s*unidad/.test(_txtUlt)) { _recomienda = _txtUlt; _hitsFallback = _porNombre; }
+          // (ni si nombra DOS cantidades, también en letras: «Lo ideal es una unidad… si quieres más, la de 2 unidades… ¿Te lo
+          //  dejo así?» — «una unidad» no casaba con «1 unidad» y el «si» selló 2 — Probar flujos/sim g, 2026-10-02)
+          const _NUMS: Record<string, number> = { un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6 };
+          const _cants = new Set([..._txtUlt.matchAll(/\b(\d+|una?|uno|dos|tres|cuatro|cinco|seis)\s+unidad(?:es)?\b/g)]
+            .map((mm) => Number(mm[1]) || _NUMS[mm[1]] || 0).filter(Boolean));
+          if (_porNombre.length === 1 && _lnP < 2 && _cants.size <= 1 && !/\d+\s*(?:o|u|y|a|-)\s*\d+\s*unidad/.test(_txtUlt)) { _recomienda = _txtUlt; _hitsFallback = _porNombre; }
         }
         const _hitsR = _hitsFallback ?? (_recomienda ? list.filter((o) => _nombraR(_recomienda, o)) : []);
         if (_hitsR.length === 1) {
@@ -28597,7 +28617,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _preguntaEl = /[?¿]/.test(_liNe) || /^\s*(?:y\s+)?(?:qu[eé]|c[oó]mo|cu[aá]nt[oa]s?|cu[aá]ndo|d[oó]nde|por\s*qu[eé]|funciona|sirve|aguanta|resiste|tiene|hay|puedo|se\s+puede|es\s+(?:bueno|resistente|original))\b/i.test(_liNe);
           // (+ la pregunta de necesidad que hizo la IA con sus palabras: «¿Para qué tipo de trabajos lo usarás?» — p8)
           const _pregNecIa = /¿[^?¿]*\b(?:para\s+qu[eé]|d[oó]nde\s+lo\s+(?:usar|vas|pondr|instalar|colocar)\p{L}*|en\s+qu[eé]\s+(?:espacio|lugar|parte|zona)|qu[eé]\s+tipo|cu[aá]nt[oa]s\s+(?:espacios|personas|zonas|equipos|ambientes|trabajadores)|para\s+qui[eé]n|lo\s+usar[aá]s|lo\s+quieres\s+para|es\s+para)\b[^?¿]*\?/iu.test(_ultNe);
-          if (((_qNec && _nucleoNe && _ultNe.includes(_nucleoNe)) || _pregNecIa) && !_preguntaEl
+          // (+ a «¿Cuántas unidades…?» contestó con su NECESIDAD y no con un número: «para un jardin» — sim g. Solo si no
+          //  dijo ninguna cantidad: con «2» o «dos» ya eligió y esto no corre.)
+          const _cantEnUlt = /¿[^?¿]*\b(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l\s+promoci[oó]n|qu[eé]\s+promoci[oó]n)\b[^?¿]*\?/i.test(_outsNe[0] ?? "");
+          const _sinNumero = !/\b(?:\d+|una?|uno|dos|tres|cuatro|cinco|seis)\b/i.test(_liNe.replace(/\buna?\s+(?=(?:chacr|casa|huert|jard|patio|taller|tienda|oficina|finca|granja|zona|parte|sola|sol[oa])\p{L}*)/giu, ""));
+          // ⛔ …y nunca cuando lo que manda es SU UBICACIÓN: «de barranca» tras el «¿Cuál promoción prefiere?» del saludo salió
+          // «Para una barranca te conviene el de 1 unidad» (sim i). Ni con la ciudad/distrito en el mensaje ni con «de/desde/soy de».
+          const _esUbic = /^\s*(?:de|desde|soy\s+de|estoy\s+en|vivo\s+en|en)\s+\p{L}/iu.test(_liNe)
+            || [ctx.ciudad, (ctx as any).distrito, (ctx as any).departamento, ctx.zona_nombre]
+              .map((x) => normalize(String(x ?? "")).trim()).filter((x) => x.length >= 3).some((x) => normalize(_liNe).includes(x));
+          if (((_qNec && _nucleoNe && _ultNe.includes(_nucleoNe)) || _pregNecIa || (_cantEnUlt && _sinNumero)) && !_preguntaEl && !_esUbic
               && _liNe.trim().split(/\s+/).length >= 2 && !/te\s+lo\s+dejo\s+as[ií]/i.test(_ultNe)) {
             const _opsNe = opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id ?? "")), run);
             const _rec = await recomendarPorNecesidad(db, run, ctx, _opsNe, String(ctx.last_input ?? ""));
