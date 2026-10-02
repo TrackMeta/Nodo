@@ -4354,7 +4354,7 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
             ? `Los ${_catS.length} juntos salen *${_symS} ${_minS}*; no hay descuento adicional por llevarlos juntos 🙌`
             : `Los ${_catS.length} juntos salen desde *${_symS} ${_minS}* hasta *${_symS} ${_maxS}* según la versión que elijas; no hay descuento adicional por llevarlos juntos 🙌`;
           const _sinNoSe = String(result).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=[\p{Extended_Pictographic}\u{FE0F}])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
-            .filter((f) => !/ese\s+dato\s+(?:puntual\s+)?no\s+lo\s+tengo|lo\s+vemos\s+apenas\s+me\s+digas|¿[^?]*\b(?:quieres|deseas)\s+que\s+te\s+(?:env[ií]e|pase|cuente|mande|detalle)\b[^?]*\?|\bsobre\s+(?:los\s+)?descuentos?\b|descuento[^.!?\n]{0,40}\bno\s+(?:te\s+)?(?:puedo|podr[ií]a)\s+confirmar|no\s+(?:te\s+)?puedo\s+confirmar\s+nada/iu.test(sinFormato(f)))
+            .filter((f) => !/ese\s+dato\s+(?:puntual\s+)?no\s+lo\s+tengo|lo\s+vemos\s+apenas\s+me\s+digas|¿[^?]*\b(?:quieres|deseas)\s+que\s+te\s+(?:env[ií]e|pase|cuente|mande|detalle|recuerde|repita|diga|explique|muestre)\b[^?]*\?|\bsobre\s+(?:los\s+)?descuentos?\b|descuento[^.!?\n]{0,40}\bno\s+(?:te\s+)?(?:puedo|podr[ií]a)\s+confirmar|no\s+(?:te\s+)?puedo\s+confirmar\s+nada|no\s+hay\s+descuentos?\b|no\s+(?:manejamos|tenemos|hacemos)\s+descuentos?\b/iu.test(sinFormato(f)))
             .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
           result = `${_lineaS}${_sinNoSe ? "\n\n" + _sinNoSe : ""}`;
           await logEvent(db, channelId, contactId, "nota", "🛒 Preguntó por varios y la Recepción no dio la suma", `Se antepuso: ${_lineaS}`).catch(() => {});
@@ -4656,7 +4656,9 @@ async function execute(db: SupabaseClient, run: Run) {
             const _idxD = (_outsD ?? []).findIndex((m: any) => _numsD.length
               ? _numsD.some((n) => String(m?.content?.text ?? "").includes(n)) : /yape|plin|cuenta|cci/i.test(String(m?.content?.text ?? "")));
             if (_idxD >= 0 && Date.now() - new Date(String((_outsD as any)[_idxD]?.ts ?? 0)).getTime() < 15 * 60 * 1000) {
-              ctx.datos_pago = "a los datos de pago que te pasé arriba 👆";
+              // (la plantilla trae «…adelanto de *S/ 20*:» y debajo {{datos_pago}}: con «a los datos de pago…» pegado al dos puntos no era
+              //  frase — R1P-sobrepago, R1P-trujilloflujo, regresión 4, 2026-10-02)
+              ctx.datos_pago = "👆 A los datos de pago que te pasé arriba.";
               await logEvent(db, run.channel_id, run.contact_id, "nota", "💳 Datos de pago NO repetidos",
                 "Acaban de salir en el mensaje anterior; el del adelanto los referencia").catch(() => {});
             }
@@ -5707,6 +5709,8 @@ function sinRestosDeRecorte(t: string): string {
     .replace(/(?:^|(?<=\n))[ \t]*(?:[Pp][aá]same|[Mm][aá]ndame|[Ee]nv[ií]ame|[Nn]ecesito|[Dd]ame)(?:\s+por\s+favor)?\s*:[ \t]*(?=\n|$)/gu, "")
     // «Sobre el adelanto de *S/ 20*, primero Así te cuento…»: la coma con «primero» colgando de la petición quitada (R1P-barranca)
     .replace(/,\s*primero\s+(?=As[ií]\s)/giu, ". ")
+    // «¿Cuántas unidades del adaptador 🔧» sin su «?» hasta el fin del renglón: una pregunta que un recorte partió (R1P-mama, regresión 4)
+    .replace(/¿[^?¿\n]{0,90}?(?=[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*(?:\n|$))/gu, "")
     // «¿Cuál prefieres? Así 😊» — el «Así» de una frase que se fue (R1D-comopago, regresión 2026-10-01)
     .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))As[ií]\s*[.!]?[ \t]*(?=(?:[ \t]|\p{Extended_Pictographic}|️)*(?:\n|$))/gu, "")
     // La interjección sola en su párrafo, en MEDIO del mensaje («…del saldo 🙌\n\nPerfecto 🙌\n\nPara dejarlo listo…»,
@@ -26047,7 +26051,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               //  en 5 chats de provincia — regresión 3, 2026-10-02. Regla 1: precio antes que adelanto)
               let _iLista = _parsX.findIndex((p) => /—\s*\*?\s*(?:S\/|\$|US\$)\s?\d/u.test(p));
               if (_iLista < 0) _iLista = _parsX.findIndex((p) => /^\s*Anotado:/i.test(p) || /(?:S\/|\$|US\$)\s?\d/u.test(p));
-              _parsX.splice(_iLista >= 0 ? _iLista + 1 : 1, 0, _lineaX);
+              // (nunca entre un encabezado que termina en 👇/«:» y su lista 📍: «En *Cusco* tenemos oficinas en estos distritos 👇» quedó
+              //  apuntando al adelanto — R1P-casa, regresión 4, 2026-10-02)
+              let _insX = _iLista >= 0 ? _iLista + 1 : 1;
+              while (_insX < _parsX.length && (/[👇:]\s*$/u.test(_parsX[_insX - 1]) || /^\s*📍/m.test(_parsX[_insX]))) _insX++;
+              _parsX.splice(_insX, 0, _lineaX);
               salida = _parsX.join("\n\n");
               (run.vars as any)._adelanto_explicado = 1;
               await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Se le explicó el adelanto al saber la zona", _lineaX).catch(() => {});
@@ -26549,6 +26557,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               await logEvent(db, run.channel_id, run.contact_id, "nota", "🛒 Preguntó por varios y la IA no dio la suma",
                 `Se antepuso: ${_lineaCc}`).catch(() => {});
             }
+          }
+          // 🛒 Con el combo armado y SIN versión elegida, la IA no la elige por él: «Perfecto, la Premium entonces por *S/79*…» y
+          // debajo el motor preguntando cuál — dos números para lo mismo (R1D-preciodos, regresión 4, 2026-10-02).
+          if (comboDe(run).length > 0 && !String(ctx.opcion_id ?? "").trim() && _opsDig.length > 1) {
+            const _antesAs = salida;
+            salida = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=[\p{Extended_Pictographic}\u{FE0F}])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
+              .filter((f) => !/\b(?:la\s+)?(?:premium|b[aá]sica)\s+entonces\b|\bentonces\s+(?:la\s+)?(?:premium|b[aá]sica)\b|\b(?:te\s+quedas|vas|quedamos|va)\s+con\s+(?:la\s+)?(?:premium|b[aá]sica)\b|\b(?:la\s+)?(?:premium|b[aá]sica)\s+(?:queda|est[aá])\s+(?:lista|anotada|confirmada)\b/i.test(sinFormato(f)))
+              .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+            if (salida !== _antesAs) await logEvent(db, run.channel_id, run.contact_id, "nota", "🛒 La IA elegía la versión por él con el combo armado", `«${_antesAs.slice(0, 120)}»`).catch(() => {});
           }
           // (…y también SIN combo cuando nadie habló de cantidades: «Con uno te alcanza y te queda para siempre» a quien solo
           //  dijo «quiero el curso» — R1D-sinelegir, R1D-montoraro, regresión 2026-10-01)
@@ -27180,7 +27197,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // ✂️ …y donde el motor NO pide los datos (desconfianza, reclamo, advertencia, «mañana te lo paso», «lo pienso»), la
         // petición en prosa de la IA tampoco va: «Pásame tu *nombre, celular y DNI* y te lo dejo listo 👇» detrás de «¿es
         // seguro pagar adelanto?» (R1P-miedo, 3.ª relanzada). Se quita y queda la respuesta.
-        else if (!esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si" && !/📌/u.test(String(salida))
+        else if (!esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si" && !/^\s*📌/mu.test(String(salida))
             // (+ con la lista 📍 de oficinas preguntando la sede: «necesito tus datos 👇» y debajo los distritos — R1P-miedo, 4.ª relanzada)
             && (_leAdvirtio || _esReclamoOEstado || _loMandaLuego || RE_LO_PIENSA.test(String(ctx.last_input ?? "")) || /^\s*📍\s*\*/m.test(String(salida)))) {
           const _qP = quitarPeticionDeDatos(salida);
@@ -27473,7 +27490,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const _antesDeLaPregunta = (txt: string, nuevo: string) => {
                 const _pars = txt.trimEnd().split(/\n{2,}/);
                 let _at = Math.max(0, _pars.findIndex((p) => _RE_PIDE.test(p)));
-                while (_at > 0 && (/^\s*📍\s*\*/m.test(_pars[_at - 1]) || /👇\s*$/u.test(_pars[_at - 1]))) _at--;
+                // (y antes del bloque «Para provincia va con un adelanto…»: el precio va antes que el adelanto, regla 1 — arequipa2,
+                //  cambiosede, cancelo, hermano, huancavelica, typos; regresión 4, 2026-10-02)
+                while (_at > 0 && (/^\s*📍\s*\*/m.test(_pars[_at - 1]) || /👇\s*$/u.test(_pars[_at - 1])
+                    || /^\s*(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto/i.test(_pars[_at - 1]))) _at--;
                 if (_RE_PIDE.test(_pars[_at]) && !/^\s*📍\s*\*/m.test(_pars[_at])) {
                   const _fr = _pars[_at].split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u);
                   let _k = _fr.findIndex((f) => _RE_PIDE.test(f));
@@ -28839,7 +28859,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       //  «¿En cuál estás?» y debajo «📦 Te llega a tu ciudad por agencia Shalom…» era decirlo dos veces — 9 chats
       //  de la tanda R1P, 2026-10-01. Con la sede firme el bloque va en el pie de la ficha, no acá.)
       // (+ detrás de la lista de distritos/oficinas 📍, que no dice «agencia» pero es la agencia — 5 chats, regresión 3, 2026-10-02)
-      if (_burbujaEnvio && !handoff && (/shalom|agencia|olva/i.test(sinFormato(String(salida ?? ""))) || /^\s*📍/m.test(String(salida ?? "")))
+      if (_burbujaEnvio && !handoff && (/shalom|agencia|olva/i.test(sinFormato(String(salida ?? ""))) || /^\s*(?:📍|📌)/m.test(String(salida ?? "")))
           && !/Te llega a la sede/u.test(_burbujaEnvio)) {
         await logEvent(db, run.channel_id, run.contact_id, "nota", "📦 Bloque de envío no repetido",
           "La respuesta ya dice que va por agencia; el bloque completo sale con la ficha de la sede").catch(() => {});
