@@ -28686,6 +28686,71 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
         } catch (_) { /* sin opciones → tal cual */ }
       }
+      // 💰 LOS PRECIOS A LA VISTA (Rodrigo, 2026-10-02: «a veces el cliente no ve o no presta atención a los precios»). El
+      // saludo de EcoGuard los trae debajo de un video, 4.º de una ráfaga, y el bot ya no los repetía porque «ya los vio».
+      // (1) Una vez, la lista completa —la de siempre, con 🔹/⭐— si todavía no salió en un mensaje de TEXTO del bot (lo del
+      //     saludo no cuenta), antes del adelanto (regla 1: precio → adelanto → siguiente paso).
+      // (2) Al elegir, una línea con lo que eligió y cuánto es, si el mensaje no lo dice ya.
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "").trim()
+          && String(ctx.pedido_creado ?? "") !== "si" && String(salida ?? "").trim() && !(ctx as any)._pidioCaptura) {
+        try {
+          const _opsV = opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id ?? "")), run).filter((o) => Number(o.precio) > 0);
+          const _symV = simboloMoneda(ctx.moneda as string);
+          const _precioEn = (t: string, o: Opcion) => new RegExp("(?:^|[^0-9])" + String(o.precio).replace(".", "[.,]") + "(?![0-9])").test(sinFormato(t));
+          if (_opsV.length >= 2 && !String(ctx.opcion_id ?? "").trim()) {
+            const { data: _txOut } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
+              .eq("direction", "out").eq("type", "text").order("ts", { ascending: false }).limit(10);
+            const _yaEnTexto = ((_txOut ?? []) as any[]).some((mm) => _opsV.filter((o) => _precioEn(String(mm?.content?.text ?? ""), o)).length >= 2);
+            if (!_yaEnTexto && _opsV.filter((o) => _precioEn(String(salida), o)).length < 2 && !/te\s+lo\s+dejo\s+as[ií]/i.test(String(salida))) {
+              const _pz = (v: unknown) => (_negOn ? `*${_symV} ${v}*` : `${_symV} ${v}`);
+              const _lista = emojisEnListaDePrecios("💰 Estos son los precios 👇\n" + _opsV.map((o) =>
+                `${o.nombre} — ${_pz(o.precio)}${o.descripcion ? ` · ${o.descripcion}` : ""}`).join("\n"), _symV, _emOn);
+              // (sin el «Cuéntame,» / «Dime» que dejó colgando el recorte de la pregunta de cantidad — sim v5: al limpiarlo en el
+              //  envío se pegaban los párrafos, «…Shalom 📦 💰 Estos son los precios»)
+              salida = String(salida).split(/\n{2,}/).map((p) => p.replace(/[ \t]*(?:(?:y\s+)?ahora\s+|y\s+)?(?:dime|cu[eé]ntame|ind[ií]came|av[ií]same)[ \t]*[,:]?[ \t]*$/iu, "").trim())
+                .filter(Boolean).join("\n\n");
+              const _pars = String(salida).trim().split(/\n{2,}/);
+              // (todo en UN párrafo —«Perfecto, a Ica te llega… Para provincia va con un adelanto… ¿Lo quieres…?»—: se parte donde
+              //  empieza el adelanto o, si no, antes de la pregunta final; si no, la lista caía arriba de todo — sim v2)
+              if (_pars.length === 1) {
+                const _p0 = _pars[0];
+                let _k = _p0.search(/(?:^|\s)(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto/i);
+                if (_k <= 0) _k = _p0.search(/\s¿[^?¿]*\?[\s\p{Extended_Pictographic}\u{FE0F}]*$/u);
+                if (_k > 0) _pars.splice(0, 1, _p0.slice(0, _k).trim(), _p0.slice(_k).trim());
+              }
+              let _at = _pars.findIndex((p) => /^\s*(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto/i.test(p));
+              if (_at < 0) _at = _pars.findIndex((p, i) => i === _pars.length - 1 && /[?¿]/.test(p));
+              if (_at < 0) _at = _pars.length;
+              _pars.splice(_at, 0, _lista);
+              // La pregunta final en su propio párrafo («…El envío es gratis 🙌 ¿Lo quieres para…?» iba pegada — sim v5).
+              {
+                const _u = _pars.length - 1;
+                const _mq = _u > 0 ? _pars[_u].match(/^([\s\S]*?[.!…\p{Extended_Pictographic}\u{FE0F}])\s+(¿[^?¿]*\?[\s\p{Extended_Pictographic}\u{FE0F}]*)$/u) : null;
+                if (_mq && _mq[1].replace(/[^\p{L}]/gu, "").length >= 15) _pars.splice(_u, 1, _mq[1].trim(), _mq[2].trim());
+              }
+              salida = _pars.join("\n\n");
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Precios a la vista",
+                "Solo los había visto en el saludo (o en ninguno): va la lista una vez").catch(() => {});
+            }
+          }
+          const _opElegida = _opsV.find((o) => o.id === String(ctx.opcion_id ?? "")) as Opcion | undefined;
+          if (_opElegida && (run.vars as any)?._precio_confirmado !== _opElegida.id) {
+            (run.vars as any)._precio_confirmado = _opElegida.id;
+            if (!_precioEn(String(salida), _opElegida)) {
+              const _ca = Number(_opElegida.cantidad) || 1;
+              const _cu = _ca > 1 ? ` (${_symV} ${(Number(_opElegida.precio) / _ca).toFixed(2).replace(/\.00$/, "")} c/u)` : "";
+              const _conf = `Listo: *${_opElegida.nombre}* a *${_symV} ${_opElegida.precio}*${_cu} 🙌`;
+              // En lugar de un acuse pelado de la IA («¡Perfecto!», «Gracias por confirmar 😊»), o arriba de todo.
+              const _pars2 = String(salida).trim().split(/\n{2,}/);
+              if (_pars2.length > 1 && _pars2[0].replace(/[^\p{L}]/gu, "").length <= 25 && !/[?¿]/.test(_pars2[0])) _pars2[0] = _conf;
+              else _pars2.unshift(_conf);
+              salida = _pars2.join("\n\n");
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Precio confirmado al elegir",
+                `${_opElegida.nombre} a ${_symV} ${_opElegida.precio}`).catch(() => {});
+            }
+          }
+        } catch (_) { /* sin opciones → tal cual */ }
+      }
       // 🙈 CANTIDAD QUE NO ESTÁ EN LA LISTA — lo cierra el MOTOR ([[ofertas-ocultas]]). El bloque del prompt no le
       // ganó a «nómbralas TODAS y pregunta cuántas»: a «quiero 4» salió la lista entera + «dime cuántas unidades
       // quieres», y a «necesito 20 unidades» → «¿Para cuántas unidades lo quieres?» (OC-cuatro / OC-veinte).
