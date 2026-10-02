@@ -8551,11 +8551,16 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
         const _reFin = /[.!?…\n]|\p{Extended_Pictographic}/gu; _reFin.lastIndex = _i0;
         const _f = _reFin.exec(result);
         const _fin = _f ? _f.index + _f[0].length : result.length;
-        const _sin = sinRestosDeRecorte((result.slice(0, _ini) + " " + result.slice(_fin)).replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim());
-        // («Por acá no tengo una foto» a quien preguntó «¿es seguro?» sonaba de la nada — R1P-miedo, 2026-10-01: se dice qué
-        //  foto SÍ llega, que es lo que da confianza)
-        const _honesto = "Fotos de otros pedidos no mando por acá 🙏 Lo que sí: apenas salga el tuyo te paso la *foto de la guía* y lo recoges con tu clave.";
-        result = (_sin.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10 ? `${_honesto}\n\n${_sin}` : _honesto);
+        // («apenas salga te paso la foto de la GUÍA» es la foto que sí se manda, no una promesa de catálogo: a «¿es seguro
+        //  pagar adelanto?» le salía «Fotos de otros pedidos no mando por acá» de la nada — R1P-miedo, 4.ª relanzada)
+        const _fraseP = result.slice(_ini, _fin);
+        if (!/\bgu[ií]a\b|comprobante|constancia|voucher|\bclave\b|rastreo|seguimiento|c[oó]digo|captura/i.test(_fraseP)) {
+          const _sin = sinRestosDeRecorte((result.slice(0, _ini) + " " + result.slice(_fin)).replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim());
+          // («Por acá no tengo una foto» a quien preguntó «¿es seguro?» sonaba de la nada — R1P-miedo, 2026-10-01: se dice qué
+          //  foto SÍ llega, que es lo que da confianza)
+          const _honesto = "Fotos de otros pedidos no mando por acá 🙏 Lo que sí: apenas salga el tuyo te paso la *foto de la guía* y lo recoges con tu clave.";
+          result = (_sin.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10 ? `${_honesto}\n\n${_sin}` : _honesto);
+        }
       }
       if (result.trim()) await emit(db, run, { text: result, _noTpl: true }, ctx);
       // 📷 PROMETIÓ una foto y NO la mandó. Medido con el Dermachem: «Claro, te paso una
@@ -14218,7 +14223,7 @@ async function maybeDatosPago(
   db: SupabaseClient, channelId: string, contactId: string, texto: string, respuestaIa = "",
   yaEligio = false, fisico?: { zona?: string; adelanto?: number | null; sym?: string; total?: number | null; forzar?: boolean },
   digital?: { monto?: number | null; sym?: string; pedirElegir?: string; unico?: boolean },
-): Promise<boolean | void> {   // true = mandó los datos (el nodo de venta decide con eso si manda la pregunta en espera)
+): Promise<boolean | "suma" | void> {   // true = mandó los datos (el nodo de venta decide con eso si manda la pregunta en espera); "suma" = solo la línea del combo
   try {
     // Dispara si lo pidió en ESTE mensaje, si lo pidió antes (su primer mensaje lo atiende
     // el rotador y se perdía — mismo agujero que ya se tapó en detectarOpcion), o si la
@@ -14454,6 +14459,9 @@ async function maybeDatosPago(
           "Todavía no hay presentación elegida: mandarle el número sin decirle cuánto es lo deja pagando a ciegas" +
           (_preg ? " — se le pidió elegir" : _iaYaPreguntoCual ? " — la IA ya le preguntó cuál" : "")).catch(() => {});
         // Si se le pidió elegir, ESA es la pregunta del turno: el cierre en espera no sale.
+        // («dame los dos» → la IA preguntó «¿Cuál de las dos prefieres?», emitIaText la DIFIRIÓ, y como esto devolvía true
+        //  la pregunta nunca salió: al cliente le llegó solo la línea de la suma — R1D-preciodos, 4.ª relanzada)
+        if (_preg && _iaYaPreguntoCual) return "suma";
         return !!_preg || _iaYaPreguntoCual;
       }
       _cab = `Son *${digital?.sym ?? "S/"} ${_m}* 👇\n\n`;
@@ -26960,7 +26968,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // petición en prosa de la IA tampoco va: «Pásame tu *nombre, celular y DNI* y te lo dejo listo 👇» detrás de «¿es
         // seguro pagar adelanto?» (R1P-miedo, 3.ª relanzada). Se quita y queda la respuesta.
         else if (!esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si" && !/📌/u.test(String(salida))
-            && (_leAdvirtio || _esReclamoOEstado || _loMandaLuego || RE_LO_PIENSA.test(String(ctx.last_input ?? "")))) {
+            // (+ con la lista 📍 de oficinas preguntando la sede: «necesito tus datos 👇» y debajo los distritos — R1P-miedo, 4.ª relanzada)
+            && (_leAdvirtio || _esReclamoOEstado || _loMandaLuego || RE_LO_PIENSA.test(String(ctx.last_input ?? "")) || /^\s*📍\s*\*/m.test(String(salida)))) {
           const _qP = quitarPeticionDeDatos(salida);
           if (_qP.hubo && _qP.texto.replace(/[\s\p{P}\p{S}]/gu, "").length >= 12) {
             await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Pedía los datos en prosa donde no tocaba",
@@ -27836,7 +27845,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // (si el motor ya contesta el monto contra el adelanto, la línea genérica «Para provincia va con un adelanto…»
                 //  que otro bloque pegó en este mismo turno sobra: salía dos veces — R1P-quince, 2.ª regresión 2026-10-01)
                 // («acá» termina en tilde: `\b` detrás no es límite y la línea nunca se quitaba — 3.ª relanzada; ver regex-tildes-limites-y-emoji)
-                const _sinOpc2 = _iaContesto ? _sinOpc : _sinOpc.replace(/^[ \t]*(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto\s+de\s+\*?[^\n]*?\bpor\s+ac[aá](?![\p{L}])[^\n]*(?:\n+|$)/gimu, "").replace(/\n{3,}/g, "\n\n").trim();
+                const _sinOpc2 = (_iaContesto ? _sinOpc : _sinOpc.replace(/^[ \t]*(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto\s+de\s+\*?[^\n]*?\bpor\s+ac[aá](?![\p{L}])[^\n]*(?:\n+|$)/gimu, "").replace(/\n{3,}/g, "\n\n").trim())
+                  // («el total es *S/ 109*:» y nada debajo: el dos puntos anunciaba lo que se quitó — R1P-quince, 4.ª relanzada)
+                  .replace(/:[ \t]*(?=\n[ \t]*\n|\s*$)/g, ".");
                 _s = _iaContesto ? _sinOpc : `${_respP2}${_sinOpc2 ? "\n\n" + _sinOpc2 : ""}`;
                 // Sin la cantidad elegida, la pregunta de la cantidad (sin volver a pegar la lista), y una sola.
                 if (_sinCant) {
@@ -28298,7 +28309,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // («…, y confírmame que es *Pueblo Libre de Lima* 🙂» con el distrito ya resuelto en Lima — R1L-datospartidos, 3.ª relanzada)
         if (String(ctx.zona_entrega ?? "") === "lima" && String(ctx.zona_distrito_incierto ?? "") !== "si") {
           salida = String(salida).replace(/,?\s*(?:y\s+)?(?:conf[ií]rmame|dime|av[ií]same)\s+(?:que\s+(?:es|sea|est[aá]\s+en|queda\s+en)|si\s+es)\s+(?:el\s+|la\s+)?\*?[^.!?\n*]{3,40}?\*?\s+(?:de|en)\s+Lima\*?\s*[.!]?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*(?=\n|$)/giu, ".")
-            .replace(/([.!?])\.(?=\s|$)/g, "$1");
+            .replace(/([.!?])\.(?=\s|$)/g, "$1")
+            // (y la interjección que la abría, que quedaba sola: «Ah.» — R1L-datospartidos, 4.ª relanzada)
+            .replace(/(^|\n)[ \t]*(?:Ah|Ya|Ojo|Eso\s+s[ií]|Y|Tambi[eé]n|Adem[aá]s)[ \t]*[.,!]?[ \t]*(?=\n|$)/giu, "$1").replace(/\n{3,}/g, "\n\n").trim();
         }
       }
       // 💸 «lo cancelo mañana» con el pedido esperando el adelanto = PAGO mañana (Perú), no «ya no lo quiero». La IA
@@ -28443,6 +28456,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       delete (ctx as any)._preguntaDiferida;
       delete (ctx as any)._promesaQuitada;
       let _datosSalieron = false;
+      let _mdpR: boolean | "suma" | void = false;   // lo que devolvió maybeDatosPago: "suma" = solo la línea del combo, la pregunta diferida sí va
       if (_cubiertaConBolsa) {
         const _symC = simboloMoneda(ctx.moneda as string);
         await pasarAHumano(db, run.channel_id, run.contact_id,
@@ -28591,7 +28605,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _comboListo = !!(run as any)._comboCambio && comboDe(run).length > 0 && comboSuma(run) != null;
         // (lo que escribió la IA Y lo que salió: la pregunta «¿cuál prefieres?» a veces la pone el motor —cierre honesto— y
         //  solo se ve en `salida`; con eso maybeDatosPago no la repite con su lista — R1D-preciodos, 2026-10-01)
-        if (!_cubiertaConBolsa) _datosSalieron = !!(await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
+        if (!_cubiertaConBolsa) _mdpR = await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
           `${String(result)}\n${String(salida ?? "")}`, _digitalElegido || _recompraUnico || _comboListo,
           // Lo que la versión física necesita: la zona (solo provincia tiene adelanto) y
           // cuánto es ese adelanto, para no mandarle un número sin monto.
@@ -28620,13 +28634,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                   return "Para dejarlo listo, dime cuál quieres 👇\n\n" + (_k > 0 ? `${_pq.slice(0, _k)}\n\n${_lin}${_pq.slice(_k)}` : `${_pq}\n\n${_lin}`);
                 })()
               : "",
-          }));
+          });
       }
       // La pregunta en espera sale solo si NO salieron los datos (con los datos delante sobra).
       // Una sola: la de decisión que quedó al quitar la promesa, o si no, el cierre de pago.
+      _datosSalieron = _datosSalieron || (!!_mdpR && _mdpR !== "suma");
       const _cierreDif = String((ctx as any)._cierreDiferido ?? "");
       delete (ctx as any)._cierreDiferido;
-      const _qFinal = _pregDiferida || _cierreDif;
+      // (tras la línea de la suma solo va la pregunta de decisión que se difirió, no el cierre de pago)
+      const _qFinal = _pregDiferida || (_mdpR === "suma" ? "" : _cierreDif);
       // (…ni cuando la respuesta ya le pide la captura: «¿Te queda alguna duda para empezar hoy?» en burbuja aparte justo
       //  después de «mándame la captura» — R1D-premiumdif, regresión 2026-10-01)
       if (_qFinal && !_datosSalieron && !handoff && !/captura|comprobante|constancia|voucher|pantallazo/i.test(String(salida ?? ""))) {
