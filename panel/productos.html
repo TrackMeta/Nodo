@@ -2484,13 +2484,11 @@ async function renderInicio(){
   const sellCard = `<div class="card sell-card" style="margin-bottom:0">
       <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${sellTxt}</div>
       <div id="saludBox"></div>
-      ${fVenta
-        ? `<button class="btn" id="genFlow" style="height:32px;font-size:12.5px;margin-top:12px;color:var(--muted)">Rehacer el flujo desde cero</button>`
-        : `<button class="btn primary" id="genFlow" style="height:46px;font-size:14px;width:100%;margin-top:12px">Poner a vender</button>`}
+      ${fVenta ? "" : `<button class="btn primary" id="genFlow" style="height:46px;font-size:14px;width:100%;margin-top:12px">Poner a vender</button>`}
       ${fVenta && fVenta.estado!=="activo" ? `
         <div style="margin-top:10px;border:1px solid var(--red,#e2564a);background:rgba(226,86,74,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.5">
           <b style="color:var(--red,#e2564a)">En pausa: no vende.</b> Manda el saludo y se queda callado.
-          <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Poner a vender</button></div>
+          <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Reanudar ventas</button></div>
         </div>` : (fVenta?`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
           ${est("activacion").ok
             ? `<span style="font-size:12.5px;color:var(--green,var(--green));font-weight:600">● Activo — ya vende.</span>`
@@ -2514,6 +2512,12 @@ async function renderInicio(){
         ${rowHtml("remarketing",{label:"Reenganche",sub:est("remarketing").msg,opt:true,tone:"gold"})}
         ${fisico?rowHtml("entrega",{label:"Adelanto y envío",sub:"Seña y envío propios de este producto (opcional · si no, usa los de Negocio)",opt:true,tone:"gold",ico:icon("dollar")}):""}
       </div></div>
+      ${fVenta ? `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:10px 6px 2px;font-size:12px;color:var(--faint);line-height:1.5">
+        <!-- 🧹 Estaba a la vista bajo «Activo — ya vende» y casi nadie lo necesita: Guardar ya pone el flujo al día solo.
+             Borra lo editado a mano en el flujo (Rodrigo, 2026-10-02: un solo botón principal por pantalla). -->
+        <button class="btn" id="genFlow" style="height:30px;padding:0 12px;font-size:12.5px;color:var(--muted)">Rehacer el flujo desde cero</button>
+        <span style="flex:1;min-width:200px">Casi nunca hace falta: al guardar, el flujo se pone al día solo. Rehacerlo borra lo que hayas editado a mano en el editor visual.</span>
+      </div>` : ""}
     </details>`;
 
   // ── Ensamblado por clase ───────────────────────────────────────────
@@ -2542,6 +2546,10 @@ async function renderInicio(){
       <div style="margin-top:18px">${sellCard}</div>`;
   }
 
+  // 🔘 Un solo botón principal por pantalla. Antes de vender, el azul es «Poner a vender» (guarda y genera) y el de
+  // arriba guarda a medias; ya vendiendo —o en un extra/regalo, que no tienen «Poner a vender»— el azul es Guardar.
+  { const sb=$("saveBtn"); if(sb){ const borrador=!esExtra && !esRegalo && !fVenta;
+      sb.textContent = borrador ? "Guardar borrador" : "Guardar cambios"; sb.classList.toggle("primary", !borrador); } }
   const hb=$("armHeroBtn"); if(hb) hb.onclick=armOpen;
   b.querySelectorAll(".acc-hd").forEach(hd=> hd.onclick=()=>accToggle(hd.closest(".acc")));
   // Encabezado: emoji (selector) + nombre editable inline.
@@ -2623,7 +2631,7 @@ async function renderInicio(){
       e.target.disabled=true;
       const { error }=await supa.from("flows").update({ estado:"activo" }).eq("id",st.receta.fVenta.id);
       if(error){ toast(error.message,true); e.target.disabled=false; return; }
-      toast("Puesto a vender — el producto ya vende"); st.tab="inicio"; renderDetail();
+      toast("Ventas reanudadas — el producto ya vende"); st.tab="inicio"; renderDetail();
     };
     const pv=$("pausarVenta");
     if(pv) pv.onclick=async(e)=>{
@@ -4679,7 +4687,7 @@ async function _saveProduct(){
   let eAct=null;
   if(actRenderizada()){ try{ eAct=await saveActivacion(); }catch(e){ eAct=(e&&e.message)||"error inesperado"; } }
   st._verOrig=Object.fromEntries((st.versions||[]).filter(v=>v.id).map(v=>[v.id,{ precio:v.precio, costo:v.costo }]));   // nueva foto
-  if(eAct) toast("Se guardó el producto, pero no «Cómo llegan los clientes» ("+eAct+"). Vuelve a pulsar Guardar cambios.",true);
+  if(eAct) toast("Se guardó el producto, pero no «Cómo llegan los clientes» ("+eAct+"). Vuelve a guardar.",true);
   else { markClean(); const av=st._avisoStock; st._avisoStock=null; toast(av?"Guardado. "+av:"Guardado", !!av); }
   loadProducts();
   // 💲 Un EXTRA: su precio vive COPIADO en el flujo de cada principal que lo ofrece (el generador
@@ -4771,7 +4779,7 @@ function armRenderDraft(){
   const amb=(t)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:6px"><span style="color:var(--amber);flex:none;display:inline-flex">${ARM_ALERT}</span>${esc(String(t))}</div>`;
   $("armBody").innerHTML=`
     <div style="font-size:13.5px;font-weight:700;margin-bottom:4px">Borrador listo</div>
-    <div style="font-size:12.5px;color:var(--muted);line-height:1.55;margin-bottom:12px">${esc(String(d.resumen_cambios||"Revisa lo que llené y ajústalo. Nada se guarda hasta que toques Guardar cambios."))}</div>
+    <div style="font-size:12.5px;color:var(--muted);line-height:1.55;margin-bottom:12px">${esc(String(d.resumen_cambios||"Revisa lo que llené y ajústalo. Nada se guarda hasta que toques Guardar."))}</div>
     <div style="border:1px solid var(--border);border-radius:11px;padding:12px">${done.map(chk).join("")||"<div style='font-size:12px;color:var(--faint)'>Sin campos</div>"}</div>
     ${faltan.length?`<div style="margin:12px 0 6px;font-size:12px;font-weight:700;color:var(--amber)">Te toca completar (no lo invento):</div><div style="border:1px solid rgba(240,169,43,.4);background:rgba(240,169,43,.06);border-radius:11px;padding:12px">${faltan.map(amb).join("")}</div>`:""}`;
   $("armFt").innerHTML=`
