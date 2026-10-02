@@ -5131,6 +5131,9 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     // Lo que deja mover una pregunta a otro párrafo: «…Shalom 📦,» con la coma colgando al final del párrafo y
     // «¿cuántas unidades quieres llevar?» en minúscula abriendo el renglón (Adaptador, simulación 15, 2026-10-02).
     .replace(/[ \t]*[,;][ \t]*(?=\n[ \t]*\n|$)/g, "")
+    // Emojis sueltos ABRIENDO el mensaje: el recorte se llevó la frase que adornaban y quedó «😊📦 Dime cuál prefieres…»
+    // (EcoGuard, simulación 29). Solo con dos o más seguidos: uno solo («👋 Hola») puede ser a propósito.
+    .replace(/^[ \t]*(?:\p{Extended_Pictographic}\u{FE0F}?[ \t]*){2,}(?=\p{L})/u, (m: string) => bubble._noTpl ? "" : m)
     .replace(/(^|\n)([ \t]*[¿¡])(\p{Ll})/gu, (_m: string, a: string, b: string, c: string) => a + b + c.toUpperCase())
     // El espacio ANTES del punto o la coma que dejó un recorte: «Sobre la factura, no tengo dato .» (D24R-factura).
     .replace(/(\p{L})[ \t]+([.,;])(?=[ \t]|\n|$)/gu, "$1$2")
@@ -14574,7 +14577,10 @@ async function maybeDatosPago(
       _montoCambio = Number.isFinite(_mNuevo) && _mNuevo > 0 && Number.isFinite(_mPrev) && _mPrev !== _mNuevo;
     }
     if (!loPide && _yaSalieron && !_montoCambio) return;
-    if (_yaSalieron && !_montoCambio && (_recienSalieron || _iaYaLoDijo) && !_pideElNumero) {
+    // («yape» a secas tras los tres medios ES pedir ese número: se le manda SOLO ese bloque — Rodrigo, Probar flujos
+    //  2026-10-02: «no le envió el número de yape nuevamente». Lo que molestaba el 1-oct era recibir los TRES otra vez.)
+    const _unMetodo = !!soloMetodo && dp.split(/\n\s*\n/).filter((b) => b.trim()).length > 1;
+    if (_yaSalieron && !_montoCambio && (_recienSalieron || _iaYaLoDijo) && !_pideElNumero && !_unMetodo) {
       await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago NO repetidos",
         _iaYaLoDijo ? "La IA ya contestó con el dato en su texto" : "Acaban de salir (últimos mensajes); solo se repiten si pide el número").catch(() => {});
       return;
@@ -14584,10 +14590,12 @@ async function maybeDatosPago(
     const bloques = dp.split(/\n\s*\n/).filter((b) => b.trim());
     const elegido = bloques.length > 1
       ? bloques.find((b) => {
-        const nom = (b.match(/^[^\n]*/) ?? [""])[0].replace(/[^\p{L}\p{N}]/gu, "");
+        // Por PALABRA del encabezado: «✅ *Yape* o *Plin*» pegado daba «YapeoPlin», que nunca calza con «yape», y salían
+        // los tres bloques (Probar flujos, 2026-10-02).
+        const noms = ((b.match(/^[^\n]*/) ?? [""])[0].match(/[\p{L}\p{N}]{3,}/gu) ?? []);
         // OJO: \\b — dentro de una cadena, "\b" es el carácter backspace, no el límite de
         // palabra, y el método nunca calzaba (mandaba los tres bloques igual).
-        return nom.length > 2 && new RegExp("\\b" + nom + "\\b", "iu").test(texto);
+        return noms.some((nom) => new RegExp("(?<![\\p{L}\\p{N}])" + nom + "(?![\\p{L}\\p{N}])", "iu").test(texto));
       })
       : null;
     // 💰 En la física el número solo no basta: hay que decirle CUÁNTO. El adelanto sale del
@@ -23789,6 +23797,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `"${ctx.ciudad}" existe en varios departamentos con oficina — no se sella por el nombre`).catch(() => {});
           _ofi = null;
         }
+        // 🏘️ Y si solo calza por el nombre de SU CIUDAD y ahí hay varias oficinas, no eligió ninguna: «desde Barranca»
+        // selló la oficina BARRANCA (hay también Supe y Paramonga) y le llegó la ficha — tercer camino del mismo error
+        // (Probar flujos, 2026-10-02; ver ciudad-que-es-provincia). Vale solo si nombró la agencia o si contesta la lista 📍.
+        if (_ofi && _ciu && _soloPorNombre && !_nombraAgencia && agenciasDeCiudad(String(ctx.ciudad ?? "")).length > 1) {
+          let _contestaLista = false;
+          try {
+            const { data: _oL2 } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
+              .eq("direction", "out").order("ts", { ascending: false }).limit(4);
+            _contestaLista = ((_oL2 ?? []) as any[]).some((mm) => (String(mm?.content?.text ?? "").match(/^\s*📍/gmu) ?? []).length >= 2);
+          } catch (_) { /* sin historial → no se da por elegida */ }
+          if (!_contestaLista) {
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🏘️ Era su ciudad, no la oficina",
+              `"${ctx.ciudad}" tiene ${agenciasDeCiudad(String(ctx.ciudad ?? "")).length} oficinas — no se sella ${_ofi.l}`).catch(() => {});
+            _ofi = null;
+          }
+        }
         if (_ofi && _ciu && !mismoDepartamentoQue(_ofi, String(ctx.sede ?? ""), String(ctx.ciudad ?? "")) &&
             !_soloPorNombre) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "Oficina de otra ciudad",
@@ -26171,7 +26195,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               //  solo párrafo, el adelanto quedaba debajo de la pregunta — EcoGuard, Probar flujos 2026-10-02)
               const _pAntes = _parsX[_insX - 1] ?? "";
               const _mQX = _insX === _parsX.length && /\S[^\n]*\n|[.!…\p{Extended_Pictographic}]\s+¿/u.test(_pAntes)
-                ? _pAntes.match(/(?:^|\n|(?<=[.!…\p{Extended_Pictographic}️]\s))(¿[^?\n]*\?[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)*)$/u) : null;
+                // (con lo que la introduce en la misma frase: «📦 Ahora dime, ¿cuántas unidades…? 😊» — simulación 20)
+                ? _pAntes.match(/(?:^|\n|(?<=[.!…\p{Extended_Pictographic}️]\s))((?:[^.!?…¿\n\p{Extended_Pictographic}]{0,30},\s*)?¿[^?\n]*\?[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)*)$/u) : null;
               if (_mQX && _mQX.index != null && _mQX.index > 0) {
                 _parsX[_insX - 1] = _pAntes.slice(0, _mQX.index).trimEnd();
                 _parsX.splice(_insX, 0, _lineaX, _mQX[1].trim());
@@ -26251,7 +26276,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const _opsVis = opcionesVisibles(opsPend, run);
               // Sin los renglones que quedaron sin una sola letra («🔧📦» solo, arriba de la
               // pregunta — D11-lcancel, D11-lsindni, 2026-09-25).
-              let _resto = sinPedirLosDatos(salida)
+              // (los renglones 📌 se van ANTES del recorte por frases: «📌 *Sede de la agencia* (ej. «BARRANCA», «SUPE» o
+              //  «PARAMONGA»)» se partía en el «ej.» y quedaba ««BARRANCA», «SUPE» o «PARAMONGA»)» suelto — EcoGuard, simulación 20)
+              let _resto = sinPedirLosDatos(String(salida).replace(/^[ \t]*📌[^\n]*(?:\n|$)/gmu, ""))
                 // …ni los renglones «📌 *dato*» de la petición que se quitó: quedaba colgando «📌 *De qué
                 // distrito o ciudad eres (para saber cómo te llega)*» encima de la lista (F1-calidad).
                 .replace(/^[ \t]*📌[^\n]*(?:\n|$)/gmu, "")
@@ -28917,6 +28944,49 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
         }
       }
+      // 💳 «donde pago» sin cantidad elegida (provincia): los datos de pago salen igual (decisión de Rodrigo: hay quien paga
+      // el adelanto antes de elegir o de dar sus datos), pero la IA solo había escrito «¿Cuántas unidades o qué oferta te
+      // preparo?» y eso salía ANTES del bloque de pago, sin contestar lo que preguntó (Probar flujos, 2026-10-02). Si lo
+      // único que hay es la pregunta, espera y va DESPUÉS de los datos: primero la respuesta, después el siguiente paso.
+      // 💳 «yape» → «Perfecto, ya anoté que pagarás por Yape.»: suena a formulario y no le dice qué hacer (Probar flujos,
+      // Rodrigo, 2026-10-02: «también está mal»). Se dice como lo diría el vendedor y con el siguiente paso.
+      if (op === "generar_texto") {
+        salida = String(salida ?? "").replace(
+          /(?:¡?\s*(?:perfecto|listo|genial|excelente|dale)\s*[,!]?\s*)?(?:ya\s+)?(?:anot[eé]|tom[eé]\s+nota\s+de|registr[eé]|dej[eé]\s+anotado)\s+que\s+(?:vas\s+a\s+pagar|pagar[aá]s|pagas|lo\s+pagar[aá]s)\s+(?:por|con|v[ií]a)\s+\*?(yape|plin|transferencia|bcp|interbank|bbva|scotiabank)\*?[^.!?\n]*[.!]?/giu,
+          (_m: string, met: string) => {
+            const _M = /^(?:bcp|bbva)$/i.test(met) ? met.toUpperCase() : met.charAt(0).toUpperCase() + met.slice(1).toLowerCase();
+            // (si solo nombró el medio, el bloque de pago que sale detrás ya trae «mándame la captura»)
+            const _yaCaptura = /captura|comprobante/i.test(String(salida ?? "")) || !!eligeMetodoDePago(String(ctx.last_input ?? ""));
+            return `¡Perfecto, por *${_M}*! 🙌${_yaCaptura ? "" : " Cuando lo hagas, mándame la captura y lo verifico al toque."}`;
+          });
+      }
+      let _qTrasPago = "";
+      // 💳 Solo nombró el MEDIO («yape», «plin») sin haber elegido cantidad: la IA se enredaba —pedía datos y la sede con
+      // ejemplos inventados, «para enviarte los datos del adelanto» justo después de mandarlos, tocones de la lista 📌—
+      // en 4 de 4 corridas (EcoGuard, simulaciones 29-34). Lo escribe el motor: su número (maybeDatosPago, solo ese
+      // bloque) y la pregunta de la cantidad. Si el número no sale, va lo que escribió la IA.
+      let _metodoSolo: string | null = null;
+      {
+        const _liPg = String(ctx.last_input ?? "");
+        if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "") === "provincia"
+            && !String(ctx.opcion_id ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si" && !_acuseDiferido
+            && eligeMetodoDePago(_liPg)) {
+          _metodoSolo = String(salida ?? "");
+          salida = "";
+        } else if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "") === "provincia"
+            && !String(ctx.opcion_id ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si" && !_acuseDiferido
+            && (RE_PIDE_DATOS.test(_liPg) || RE_ANUNCIA_PAGO.test(_liPg) || !!metodoQuePregunta(_liPg))) {
+          // Lo que va DESPUÉS de los datos: desde el primer párrafo que trae la lista de precios o la pregunta de la cantidad
+          // (también la suave en imperativo, «Dime cuántas llevas…» — simulación 20). Lo de antes (el acuse «¡Perfecto, por
+          // *Yape*! 🙌») sale primero. A «yape» salía «ya anoté…» + lista + pregunta y recién después el número (2026-10-02).
+          const _parsPg = String(salida ?? "").trim().split(/\n{2,}/);
+          const _kPg = _parsPg.findIndex((p) => /[?¿]|(?:S\/|\$|US\$)\s?\d|opciones\s*👇|\b(?:dime|cu[eé]ntame|av[ií]same|conf[ií]rmame)\s+cu[aá](?:nt|l)|\bcu[aá]l\s+(?:prefieres|quieres|te\s+preparo)/iu.test(sinFormato(p)));
+          if (_kPg >= 0) {
+            _qTrasPago = _parsPg.slice(_kPg).join("\n\n").trim();
+            salida = _parsPg.slice(0, _kPg).join("\n\n").trim();
+          }
+        }
+      }
       const handoff = _acuseDiferido ? _cubiertaConBolsa : ((await emitIaText(db, run, salida, ctx)) || _cubiertaConBolsa);
       (ctx as any)._diferirPregunta = false;
       const _pregDiferida = String((ctx as any)._preguntaDiferida ?? "");
@@ -29118,6 +29188,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       //  después de «mándame la captura» — R1D-premiumdif, regresión 2026-10-01)
       if (_qFinal && !_datosSalieron && !handoff && !/captura|comprobante|constancia|voucher|pantallazo/i.test(String(salida ?? ""))) {
         await emit(db, run, { text: _qFinal, _noTpl: true }, ctx);
+      }
+      // (la pregunta de la cantidad que esperó a los datos de pago — ver `_qTrasPago`; sale siempre: sin cantidad no hay pedido)
+      if (_qTrasPago && !handoff) await emit(db, run, { text: _qTrasPago, _noTpl: true }, ctx);
+      if (_metodoSolo !== null && !handoff) {
+        if (_mdpR === true) {
+          let _qM = "¿Cuántas unidades o qué oferta te preparo? 🙌";
+          try {
+            const _opsM = opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id ?? "")), run);
+            if (_opsM.length >= 2) _qM = emojisEnListaDePrecios(preguntaCuantos(_opsM, ctx, _negOn, await yaLeListamosPrecios(db, run, _opsM)),
+              simboloMoneda(ctx.moneda as string), _emOn);   // (con 🔹/⭐ como la lista de siempre)
+          } catch (_) { /* sin opciones → la pregunta corta */ }
+          await emit(db, run, { text: _qM, _noTpl: true }, ctx);
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "💳 Eligió el medio sin elegir cantidad",
+            "Se le mandó el número de ese medio y la pregunta de la cantidad (lo de la IA no salió)").catch(() => {});
+        } else if (_metodoSolo.trim()) {
+          await emit(db, run, { text: _metodoSolo, _noTpl: true }, ctx);
+        }
       }
       // La IA pidió pasar a un humano ([[humano]] → bot_activo=false). CORTA el flujo: seguir
       // avanzando emitiría burbujas automáticas de los nodos siguientes ENCIMA del handoff
