@@ -8627,6 +8627,12 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
           result = (_sin.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10 ? `${_honesto}\n\n${_sin}` : _honesto);
         }
       }
+      // 💰 El encabezado de la lista, al salir: una sola vez, con su 👇 y PEGADO al primer renglón (un recorte le quitaba la
+      // flecha y otro metía un renglón en blanco entre el encabezado y la lista — regresión 4, 2026-10-02).
+      result = String(result ?? "")
+        .replace(/^([ \t]*💰 Estos son los precios)[ \t]*$/gmu, "$1 👇")
+        .replace(/^[ \t]*💰 Estos son los precios 👇[ \t]*\n(?:[ \t]*\n)*(?=[ \t]*💰 Estos son los precios)/gmu, "")
+        .replace(/(💰 Estos son los precios 👇)[ \t]*\n(?:[ \t]*\n)+(?=[ \t]*(?:[🔹⭐]|\d{1,3}\s+unidad))/gu, "$1\n");
       if (result.trim()) await emit(db, run, { text: result, _noTpl: true }, ctx);
       // 📷 PROMETIÓ una foto y NO la mandó. Medido con el Dermachem: «Claro, te paso una
       // foto del *Dermachem* para que veas su presentación y tamaño» — y no salió ninguna.
@@ -25256,7 +25262,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // (también cuando pregunta el PRECIO: «precioPrimero» no siempre calza y la lista salía tras la presentación — olivos,
         //  mayus, preguntadoble en la segunda regresión; y solo con DOS párrafos o más: en uno solo la respuesta suele ir
         //  mezclada con la presentación y se perdía — R1L-peso)
-        if ((_preguntaPuntual || RE_CLIENTE_PIDE_PRECIO.test(_liP)) && String(salida ?? "").trim().split(/\n{2,}/).length >= 2) {
+        // (ya sin exigir dos párrafos: la función parte el primero por frases y mueve la presentación detrás de la respuesta —
+        //  olivos, sintaladro, yapeantes seguían abriendo con el producto en un solo párrafo; regresión 4, 2026-10-02)
+        if (_preguntaPuntual || RE_CLIENTE_PIDE_PRECIO.test(_liP)) {
           const _antesRP = salida;
           salida = sinPresentacionRepetida(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""), true, _liP);
           if (salida !== _antesRP) {
