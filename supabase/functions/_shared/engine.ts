@@ -4333,6 +4333,35 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
       }
     }
   } catch (_) { /* sin temas legibles → tal cual */ }
+  // 🛒 «¿tienen descuento si compro los 3?» en la Recepción: con los precios en el prompt, igual contestó «Ese dato no lo
+  // tengo aquí 🙏 Lo vemos apenas me digas qué necesitas» (R1D-tres, 3.ª relanzada). La suma la dice el motor, delante.
+  try {
+    const _liT = String(event.text ?? "");
+    const _pideTodosR = /\b(?:los\s+(?:3|tres)|todos?\s+(?:los\s+)?(?:productos|cursos|tus\s+productos)|todo\s+junto|el\s+paquete\s+completo|las\s+(?:3|tres)\s+cosas)\b/i.test(_liT);
+    const _pideDosR = /\blos\s+(?:dos|2)\b/i.test(_liT);
+    if (result && cands.length > 1 && (_pideTodosR || _pideDosR)
+        && /descuento|precio|cu[aá]nto|sale|cuesta|total|promo|rebaja|oferta/i.test(_liT)) {
+      const _catS = await catalogoDigital(db, run);
+      if (_catS.length >= 2 && (_pideTodosR || _catS.length === 2)) {
+        const _symS = simboloMoneda(ctx.moneda as string);
+        const _vis = (p: any) => (p.versiones.filter((v: any) => !v.oculta).length ? p.versiones.filter((v: any) => !v.oculta) : p.versiones);
+        const _minS = _catS.reduce((a, p) => a + Math.min(..._vis(p).map((v: any) => Number(v.precio))), 0);
+        const _maxS = _catS.reduce((a, p) => a + Math.max(..._vis(p).map((v: any) => Number(v.precio))), 0);
+        const _sfS = sinFormato(result);
+        const _diceS = new RegExp("(?:^|[^0-9])" + _minS + "(?![0-9])").test(_sfS) || new RegExp("(?:^|[^0-9])" + _maxS + "(?![0-9])").test(_sfS);
+        if (Number.isFinite(_minS) && Number.isFinite(_maxS) && _minS > 0 && !_diceS) {
+          const _lineaS = _minS === _maxS
+            ? `Los ${_catS.length} juntos salen *${_symS} ${_minS}*; no hay descuento adicional por llevarlos juntos 🙌`
+            : `Los ${_catS.length} juntos salen desde *${_symS} ${_minS}* hasta *${_symS} ${_maxS}* según la versión que elijas; no hay descuento adicional por llevarlos juntos 🙌`;
+          const _sinNoSe = String(result).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=[\p{Extended_Pictographic}\u{FE0F}])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
+            .filter((f) => !/ese\s+dato\s+(?:puntual\s+)?no\s+lo\s+tengo|lo\s+vemos\s+apenas\s+me\s+digas|¿[^?]*\b(?:quieres|deseas)\s+que\s+te\s+(?:env[ií]e|pase|cuente|mande|detalle)\b[^?]*\?/iu.test(sinFormato(f)))
+            .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+          result = `${_lineaS}${_sinNoSe ? "\n\n" + _sinNoSe : ""}`;
+          await logEvent(db, channelId, contactId, "nota", "🛒 Preguntó por varios y la Recepción no dio la suma", `Se antepuso: ${_lineaS}`).catch(() => {});
+        }
+      }
+    }
+  } catch (_) { /* sin catálogo → tal cual */ }
   // (Los tres retoques de dinero ya no van acá: viven dentro de emitIaText, así valen
   // también para el soporte post-venta y para cualquier otra salida de IA.)
   await emitIaText(db, run, result || "¡Hola! 👋 ¿Qué producto te interesa? Con gusto te ayudo a encontrar lo que buscas.", ctx);
@@ -5355,9 +5384,9 @@ function bloquePedirDatos(faltan: unknown): string {
 //  la IA pidiendo en forma de oferta — simulación 4, 2026-10-01; sin esto la frase se iba por el recorte de
 //  anuncios de pago y el cliente se quedaba sin la lista)
 const RE_FRASE_PIDE_DATOS =
-  /(?:p[aá]same|m[aá]ndame|env[ií]ame|br[ií]ndame|ind[ií]came|dame|comp[aá]rteme|me\s+(?:pasas|mandas|env[ií]as|das|dejas|brindas|indicas|compartes|confirmas|dices)|me\s+(?:puedes|podr[ií]as)\s+(?:pasar|mandar|enviar|dar|dejar|brindar|indicar|compartir)|te\s+(?:pase|pido|pedir[eé]|voy\s+a\s+pedir)|me\s+vas\s+a\s+(?:pasar|dar|mandar)|necesito|necesitar[ií]a|necesitar[eé]|voy\s+a\s+necesitar|me\s+falta(?:n|r[ií]an?)?|solo\s+falta|faltan?\b|queda(?:n|r[ií]a)?\s+(?:solo\s+)?(?:tu|tus|el|la|los|las|pendiente)|pendiente)/iu;
+  /(?:p[aá]same|m[aá]ndame|env[ií]ame|br[ií]ndame|ind[ií]came|dame|comp[aá]rteme|me\s+(?:pasas|mandas|env[ií]as|das|dejas|brindas|indicas|compartes|confirmas|dices)|me\s+(?:puedes|podr[ií]as)\s+(?:pasar|mandar|enviar|dar|dejar|brindar|indicar|compartir)|te\s+(?:pase|pido|pedir[eé]|voy\s+a\s+pedir)|me\s+vas\s+a\s+(?:pasar|dar|mandar)|necesito|necesitar[ií]a|necesitar[eé]|voy\s+a\s+necesitar|me\s+falta(?:n|r[ií]an?)?|solo\s+falta|faltan?\b|queda(?:n|r[ií]a)?\s+(?:solo\s+)?(?:tu|tus|el|la|los|las|pendiente)|pendiente|c[oó]mo\s+te\s+llamas|a\s+qu[eé]\s+n[uú]mero|cu[aá]l\s+es\s+tu\s+(?:nombre|direcci[oó]n|celular|dni|n[uú]mero)|a\s+nombre\s+de\s+qui[eé]n|qu[eé]\s+direcci[oó]n|d[oó]nde\s+te\s+lo\s+(?:dejamos|entregamos|llevamos|mandamos|enviamos))/iu;   // (+ en forma de pregunta: «¿cómo te llamas y a qué número te contacto?» — R1L-cambiocant, 3.ª relanzada)
 const RE_PALABRA_DATO =
-  /(?:\b(?:nombre|apellidos?|dni|documento|celular|tel[eé]fono|n[uú]mero\s+de\s+(?:contacto|celular|tel[eé]fono)|tu\s+n[uú]mero|n[uú]mero\s+completo|datos?|direcci[oó]n|referencia|distrito)\b|(?:lo\s+siguiente|estos|esto|lo\s+que\s+sigue)\s*(?:👇|:))/iu;
+  /(?:\b(?:nombre|apellidos?|dni|documento|celular|tel[eé]fono|n[uú]mero\s+de\s+(?:contacto|celular|tel[eé]fono)|tu\s+n[uú]mero|n[uú]mero\s+completo|datos?|direcci[oó]n|referencia|distrito)\b|(?:lo\s+siguiente|estos|esto|lo\s+que\s+sigue)\s*(?:👇|:)|c[oó]mo\s+te\s+llamas|a\s+qu[eé]\s+n[uú]mero|a\s+nombre\s+de\s+qui[eé]n|d[oó]nde\s+te\s+lo\s+(?:dejamos|entregamos|llevamos|mandamos|enviamos))/iu;
 // Quita del texto las frases y renglones con que pide datos; devuelve lo que queda y si quitó algo. Lo usa
 // `conPedidoDeDatosOrdenado` (que pega el bloque canónico) y el recorte SIN ZONA (que no pide datos todavía:
 // «¿Me pasas tu celular, nombre y distrito?» sin saber de dónde es — simulación B, 2026-10-01).
@@ -5369,7 +5398,7 @@ const RE_PALABRA_DATO =
 const RE_NUMERO_DE_PLATA =
   /(?:(?:S\/|\$|soles?\s+de|adelanto\s+de|dep[oó]sito\s+de|abono\s+de|pago\s+de|te\s+(?:yapeo|plineo|deposito|transfiero|mando|paso|doy|dejo|abono|pago))\s*(\d{1,5})|\b(\d{1,5})\s*(?:t\s+|te\s+)?(?:dep[oó]sit\p{L}*|yape\p{L}*|plin\p{L}*|transfier\p{L}*|abon\p{L}*|adelant\p{L}*|soles|sol|lucas|de\s+adelanto|de\s+inicial))/iu;
 const RE_PALABRA_DATO_SIN_ZONA =
-  /(?:\b(?:nombre|apellidos?|dni|documento|celular|tel[eé]fono|n[uú]mero\s+de\s+(?:contacto|celular|tel[eé]fono)|tu\s+n[uú]mero|n[uú]mero\s+completo|datos?|direcci[oó]n|referencia)\b|(?:lo\s+siguiente|estos|esto|lo\s+que\s+sigue)\s*(?:👇|:))/iu;
+  /(?:\b(?:nombre|apellidos?|dni|documento|celular|tel[eé]fono|n[uú]mero\s+de\s+(?:contacto|celular|tel[eé]fono)|tu\s+n[uú]mero|n[uú]mero\s+completo|datos?|direcci[oó]n|referencia)\b|(?:lo\s+siguiente|estos|esto|lo\s+que\s+sigue)\s*(?:👇|:)|c[oó]mo\s+te\s+llamas|a\s+qu[eé]\s+n[uú]mero|a\s+nombre\s+de\s+qui[eé]n|d[oó]nde\s+te\s+lo\s+(?:dejamos|entregamos|llevamos|mandamos|enviamos))/iu;
 function quitarPeticionDeDatos(texto: string, conservarZona = false): { texto: string; hubo: boolean } {
   const t = String(texto ?? "");
   if (!t.trim()) return { texto, hubo: false };
@@ -5393,6 +5422,8 @@ function quitarPeticionDeDatos(texto: string, conservarZona = false): { texto: s
           // La pregunta huérfana que seguía a la petición quitada («¿Me lo pasas? 🙂», «¿Me lo pasas porfa?») y la cola de solo emojis.
           if (/^\s*¿?\s*(?:me\s+(?:lo|los|la|las)\s+(?:pasas|mandas|env[ií]as|das|confirmas|dejas)|(?:lo|los)\s+(?:tienes|me\s+pasas))(?:\s+(?:porfa|porfis|por\s+favor))?\s*\??[\s\p{Extended_Pictographic}️]*$/iu.test(sf)) continue;
           if (!/[\p{L}\p{N}]/u.test(sf)) continue;
+          // …y el dato que seguía sin verbo: «También la dirección completa en San Borja para el motorizado 👇» (R1L-cambiocant, 3.ª relanzada)
+          if (/^\s*(?:tambi[eé]n|adem[aá]s|y)\s+(?:tu|tus|la|el|los|las|un|una)?\s*(?:nombre|apellidos?|direcci[oó]n|celular|tel[eé]fono|dni|documento|referencia|distrito|n[uú]mero)\b/iu.test(sf)) continue;
           // …y el remate que se refería a ella: «Así te lo envío rápido 📦», «Así lo dejamos listo», «Así te digo
           // exactamente cómo te llega y cuánto sería».
           if (/^\s*as[ií]\s+(?:te\s+lo\s+|te\s+la\s+|lo\s+|la\s+|te\s+)?(?:env[ií]o|mando|dejo|preparo|despacho|coordino|dejamos|cerramos|avanzamos|seguimos|digo|cuento|explico|confirmo|indico|s[eé])\b/iu.test(sf)) continue;
@@ -12232,7 +12263,11 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
     }
   }
   // SEDE (texto libre): guard por solape de palabras + re-evalúa sede_por_confirmar.
-  const nSede = String(p.sede ?? "").trim();
+  // («mándalo a la AGENCIA DE PUNO» llegaba del clasificador como «agencia de puno» y así se guardaba y se acusaba —
+  //  R1P-cambiosede, 3.ª relanzada: este es el tercer sitio que escribe la sede; ver sede-nueve-sitios-de-escritura)
+  const _nSedeRaw = String(p.sede ?? "").trim();
+  const _nSedeSin = _nSedeRaw.replace(/^\s*(?:la\s+|el\s+|una\s+)?(?:agencia|sede|oficina|local|shalom)\s+(?:de\s+shalom\s+)?(?:de\s+|en\s+|del\s+)?/iu, "").trim();
+  const nSede = _nSedeSin && _nSedeSin !== _nSedeRaw ? enTitulo(_nSedeSin) : _nSedeRaw;
   // ⛔ Y NO puede mudarlo de departamento. Este camino aceptaba la sede del clasificador con
   // solo mirar que las palabras estuvieran en el mensaje: un cliente de Arequipa diciendo
   // «mándamelo a la de Miraflores» se llevaba esa sede sin un solo chequeo de zona. El guard
@@ -21462,11 +21497,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     }
     // 🛒 «¿tienen descuento si compro los 3?» / «todo junto»: la IA pedía permiso para pasar los precios y no sumaba
     // (R1D-tres, regresión 2026-10-01). Se le da el catálogo con la suma para que conteste con cifras.
-    if (esDigital(ctx) && String(ctx.pedido_creado ?? "") !== "si"
-        && /\b(?:los\s+(?:3|tres|dos|2)|todos?\s+(?:los\s+)?(?:productos|cursos|tus\s+productos)|todo\s+junto|el\s+paquete\s+completo|las\s+(?:3|tres)\s+cosas)\b/i.test(String(ctx.last_input ?? ""))) {
+    const _pideTodosT = /\b(?:los\s+(?:3|tres)|todos?\s+(?:los\s+)?(?:productos|cursos|tus\s+productos)|todo\s+junto|el\s+paquete\s+completo|las\s+(?:3|tres)\s+cosas)\b/i.test(String(ctx.last_input ?? ""));
+    const _pideDosT = /\blos\s+(?:dos|2)\b/i.test(String(ctx.last_input ?? ""));
+    if (esDigital(ctx) && String(ctx.pedido_creado ?? "") !== "si" && (_pideTodosT || _pideDosT)) {
       try {
         const _catT = await catalogoDigital(db, run);
-        if (_catT.length >= 2) {
+        // («dame los dos» con TRES productos en el catálogo no es «todo junto»: la suma de los tres (68–108) salía junto a la
+        //  del combo real (58/98) — R1D-preciodos, 3.ª relanzada. Con dos en el catálogo, «los dos» sí son todos.)
+        if (_catT.length >= 2 && (_pideTodosT || _catT.length === 2)) {
           const _symT2 = simboloMoneda(ctx.moneda as string);
           const _lineasT = _catT.map((p) => p.versiones.length > 1
             ? `- ${p.nombre}: ${p.versiones.filter((v) => !v.oculta).map((v) => `${v.nombre} ${_symT2} ${v.precio}`).join(" / ")}`
@@ -25698,10 +25736,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // 🛡️ GARANTÍA afirmada que la ficha NO respalda: «con garantía por defecto de fábrica ✅» (R1L-garantia, regresión
           // 2026-10-01). La ficha del Adaptador dice justo lo contrario («no ofrece garantía de resultados»), así que el tema
           // no cuenta como «hueco» y el guard de arriba no lo veía. Si la ficha no AFIRMA una garantía, la frase se cambia.
-          if (op === "generar_texto" && /\bgarant[ií]/i.test(sinFormato(salida))) {
+          // (+ la PREGUNTA sin respuesta: «¿tienen garantía? soy de Lince» → zona + lista y ni sí ni no — R1L-garantia, 3.ª relanzada)
+          const _pideGar = op === "generar_texto" && !esDigital(ctx) && /(?:^|[^\p{L}])garant[ií]\p{L}*(?![\p{L}])/iu.test(String(ctx.last_input ?? ""));
+          if (op === "generar_texto" && (/\bgarant[ií]/i.test(sinFormato(salida)) || _pideGar)) {
             const _fichaG = normalize([ctx.contexto_producto, ctx.faq, info.negocio].map((x) => String(x ?? "")).join(" "));
             const _fichaAfirma = /(?<!\bno\s)(?<!\bsin\s)(?:con|tiene|tienen|incluye|ofrece|ofrecemos|damos|cuenta con|viene con|lleva)\s+(?:una\s+)?garantia\b/.test(_fichaG);
-            const _reAfirma = /[^.!?\n]*\b(?:con|tiene|tienen|incluye|ofrecemos|damos|cuenta\s+con|viene\s+con|lleva|est[aá]\s+garantizad[oa]|garantizamos)\s+(?:una\s+|la\s+|su\s+)?garant[ií]a\b[^.!?\n]*[.!?]?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*/giu;
+            const _reAfirma = /[^.!?\n]*\b(?:con|tiene|tienes|tienen|hay|existe|incluye|ofrecemos|te\s+ofrecemos|damos|te\s+damos|te\s+doy|cuenta\s+con|contamos\s+con|viene\s+con|lleva|est[aá]\s+garantizad[oa]|garantizamos)\s+(?:una\s+|la\s+|su\s+|tu\s+)?garant[ií]a\b[^.!?\n]*[.!?]?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*/giu;   // («acá tienes garantía por defecto de fábrica» — R1L-mercadolibre, 3.ª relanzada)
             // («producto original y GARANTIZADO»: la palabra suelta también es una garantía — R1L-mercadolibre, 2.ª regresión)
             if (!_fichaAfirma) salida = String(salida).replace(/\s*(?:,\s*|\s+y\s+)garantizad[oa]s?\b(?!\s+(?:de|por)\s+)/giu, "").replace(/\bgarantizad[oa]s?\s+y\s+/giu, "");
             if (!_fichaAfirma && _reAfirma.test(sinFormato(salida))) {
@@ -25711,6 +25751,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               salida = salida ? `${_lineaG}\n\n${salida}` : _lineaG;
               await logEvent(db, run.channel_id, run.contact_id, "nota", "🛡️ Afirmó una garantía que la ficha no trae",
                 `«${_antesG.slice(0, 140)}»`).catch(() => {});
+            }
+            if (_pideGar && !_fichaAfirma && !/\bgarant[ií]/i.test(sinFormato(salida))) {
+              salida = `Garantía formal no manejamos 🙏 Es producto original y lo revisas al recibir.\n\n${String(salida).trimStart()}`;
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "🛡️ Preguntó por la garantía y no quedó respuesta",
+                "Lo contestó el motor delante").catch(() => {});
             }
           }
         }
@@ -26080,7 +26125,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _restoCap = salida.split("\n").map((ln) => /—\s*\*?\s*(?:S\/|\$)\s?\d/u.test(ln) ? ln : ln.split(/(?<=[.!?…])\s+/u)
             .filter((f) => !/[?¿]/.test(f) && !/\b(?:dime|cu[eé]ntame|ind[ií]came|conf[ií]rmame)\s+(?:cu[aá]nt[ao]s|de\s+qu[eé]|en\s+qu[eé]|qu[eé])\b/i.test(sinFormato(f))
               && !/\badelanto\s+de\s+\*?(?:S\/|\$)/i.test(sinFormato(f))).join(" ")).join("\n")
-            .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+            // (sin el renglón de solo «🔧» que dejó la pregunta de la cantidad quitada — R1P-prepago, 3.ª relanzada)
+            .replace(/[ \t]{2,}/g, " ").replace(/^[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)+$/gmu, "").replace(/\n{3,}/g, "\n\n").trim();
           salida = _restoCap.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10
             ? (_restoCap.length <= 40 ? _restoCap + " Mándame la captura del pago para validarlo 📷" : "Mándame la captura del pago para validarlo 📷\n\n" + _restoCap)
             : "Mándame la captura del pago para validarlo 📷";
@@ -26207,7 +26253,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _promete = (f: string) => !_preguntaEntrega && _hablaAcc(f) && !_condic.test(f) && !_explicaEntrega(f) && !_esPolitica(f);
           const _antesAcc = salida;
           salida = String(salida).split("\n").map((ln) => !_hablaAcc(ln) ? ln
-            : ln.split(/(?<=[.!?🙌📲😊🙂✅])\s+/u).filter((f) => !_promete(f)).join(" ").trim()).join("\n")
+            // (por frase de verdad: «Ese dato no lo tengo aquí 🙏 Lo que sí te aseguro es que recibes tu acceso…» era UNA frase
+            //  para el corte y se iba entera con la respuesta a la factura — R1D-factura, 3.ª relanzada)
+            : ln.split(/(?<=[.!?…])\s+|(?<=[\p{Extended_Pictographic}\u{FE0F}])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u).filter((f) => !_promete(f)).join(" ").trim()).join("\n")
             .replace(/\n{3,}/g, "\n\n").trim();
           if (salida !== _antesAcc) {
             if (!salida.replace(/[\s\p{P}\p{S}]/gu, "")) salida = "Cuando lo tengas, mándame la captura y te paso el acceso al toque 📷";
@@ -26268,7 +26316,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // («Con un solo acceso te queda para siempre… no hace falta dos» y debajo la suma con la plantilla — R1D-preciodos).
           // 🛒 Preguntó por llevarse VARIOS y la IA, con el catálogo sumado en el prompt, igual pidió permiso («¿Quieres que te
           // los cuente?» — R1D-tres, segunda regresión 2026-10-01): la suma la dice el motor y la pregunta de permiso se va.
-          if ((ctx as any)._comboConsulta) {
+          if ((ctx as any)._comboConsulta && comboDe(run).length === 0) {   // (con combo armado la suma la dice la burbuja del combo)
             const _cc = (ctx as any)._comboConsulta as { min: number; max: number };
             const _symCc2 = simboloMoneda(ctx.moneda as string);
             const _sfC = sinFormato(String(salida ?? ""));
@@ -26906,6 +26954,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (salida !== _antesOrd) {
             await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 Petición de datos ordenada",
               `Se reemplazó cómo pedía los datos por la lista canónica. Antes: «${_antesOrd.slice(0, 160)}»`).catch(() => {});
+          }
+        }
+        // ✂️ …y donde el motor NO pide los datos (desconfianza, reclamo, advertencia, «mañana te lo paso», «lo pienso»), la
+        // petición en prosa de la IA tampoco va: «Pásame tu *nombre, celular y DNI* y te lo dejo listo 👇» detrás de «¿es
+        // seguro pagar adelanto?» (R1P-miedo, 3.ª relanzada). Se quita y queda la respuesta.
+        else if (!esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si" && !/📌/u.test(String(salida))
+            && (_leAdvirtio || _esReclamoOEstado || _loMandaLuego || RE_LO_PIENSA.test(String(ctx.last_input ?? "")))) {
+          const _qP = quitarPeticionDeDatos(salida);
+          if (_qP.hubo && _qP.texto.replace(/[\s\p{P}\p{S}]/gu, "").length >= 12) {
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Pedía los datos en prosa donde no tocaba",
+              `Antes: «${String(salida).slice(0, 160)}»`).catch(() => {});
+            salida = _qP.texto;
           }
         }
         // ⏰ …y «¿Quieres que te recuerde mañana?» es una promesa que el bot no cumple (no hay
@@ -27775,7 +27835,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 const _respP2 = (_sinCant || /[?¿]/.test(_sinOpc)) ? _respP.replace(/\s*¿[^?]*\?\s*$/u, "").trim() : _respP;
                 // (si el motor ya contesta el monto contra el adelanto, la línea genérica «Para provincia va con un adelanto…»
                 //  que otro bloque pegó en este mismo turno sobra: salía dos veces — R1P-quince, 2.ª regresión 2026-10-01)
-                const _sinOpc2 = _iaContesto ? _sinOpc : _sinOpc.replace(/^[ \t]*(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto\s+de\s+\*?[^\n]*?\bpor\s+ac[aá]\b[^\n]*(?:\n+|$)/gimu, "").replace(/\n{3,}/g, "\n\n").trim();
+                // («acá» termina en tilde: `\b` detrás no es límite y la línea nunca se quitaba — 3.ª relanzada; ver regex-tildes-limites-y-emoji)
+                const _sinOpc2 = _iaContesto ? _sinOpc : _sinOpc.replace(/^[ \t]*(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto\s+de\s+\*?[^\n]*?\bpor\s+ac[aá](?![\p{L}])[^\n]*(?:\n+|$)/gimu, "").replace(/\n{3,}/g, "\n\n").trim();
                 _s = _iaContesto ? _sinOpc : `${_respP2}${_sinOpc2 ? "\n\n" + _sinOpc2 : ""}`;
                 // Sin la cantidad elegida, la pregunta de la cantidad (sin volver a pegar la lista), y una sola.
                 if (_sinCant) {
@@ -28138,10 +28199,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           && /\b(?:no\s+(?:quiero|puedo|voy\s+a|pienso)\s+(?:dar|pagar|hacer|mandar|yapear)\s+(?:el\s+|ning[uú]n\s+|nada\s+de\s+)?adelanto|sin\s+(?:el\s+|dar\s+)?adelanto|pag(?:o|ar|ar[ií]a|amos|arlo)\s+todo\s+(?:en\s+la\s+agencia|al\s+recoger|cuando\s+llegue|all[aá]|al\s+llegar|al\s+recibir)|todo\s+(?:en\s+la\s+agencia|al\s+recoger|contra\s*entrega))\b/iu.test(String(ctx.last_input ?? ""))
           && !/sin\s+(?:el\s+)?adelanto\s+no|no\s+sale|solo\s+(?:lo\s+)?recoges|no\s+se\s+paga\s+nada/iu.test(sinFormato(salida))) {
         // (y fuera lo que la IA re-explicaba del adelanto: salía dos veces — R1P-sinadelanto, R1P-todoalllegar, 2.ª regresión)
-        const _sinAdelIA = String(salida).split("\n").map((ln) => /—\s*\*?\s*(?:S\/|\$)\s?\d/u.test(ln) ? ln : ln.split(/(?<=[.!?…])\s+/u)
-          .filter((f) => !/\b(?:adelanto|anticipo)\b/i.test(sinFormato(f)) || /\?/.test(f)).join(" ")).join("\n")
-          .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-        salida = `Sin el adelanto no sale el envío 🙏 Y en la agencia no se paga nada: el saldo también me lo pagas por acá cuando llegue, y allá solo lo recoges con tu clave.${_sinAdelIA ? "\n\n" + _sinAdelIA : ""}`;
+        let _qA = false;
+        const _sinAdelIA = String(salida).split("\n").map((ln) => {
+          if (/—\s*\*?\s*(?:S\/|\$)\s?\d/u.test(ln)) { _qA = false; return ln; }
+          const _keepA: string[] = [];
+          for (const f of ln.split(/(?<=[.!?…])\s+/u)) {
+            const sf = sinFormato(f);
+            if (/\b(?:adelanto|anticipo)\b/i.test(sf) && !/\?/.test(f)) { _qA = true; continue; }
+            // (y el remate de la frase quitada: «Así aseguramos que te llegue sin problemas.» — R1P-sinadelanto, 3.ª relanzada)
+            if (_qA && /^\s*(?:as[ií](?![\p{L}])|de\s+(?:esa|esta)\s+(?:forma|manera)|eso\s+(?:nos\s+)?(?:asegura|garantiza|permite)|con\s+eso(?![\p{L}]))/iu.test(sf)) continue;
+            _qA = false; _keepA.push(f);
+          }
+          return _keepA.join(" ");
+        }).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n[ \t]*\n[ \t]*\n+/g, "\n\n").trim();
+        // (con la CIFRA: «sin el adelanto» a quien todavía no sabe cuánto es no le dice nada — R1P-todoalllegar, 3.ª relanzada)
+        let _adS = Number(ctx.adelanto);
+        if (!(_adS > 0)) { try { const _eS = await loadEntregas(db, run); _adS = Number((_eS as any)?.entregas?.adelanto_default); } catch (_) { _adS = NaN; } }
+        salida = `Sin el adelanto${_adS > 0 ? ` de *${simboloMoneda(ctx.moneda as string)} ${_adS}*` : ""} no sale el envío 🙏 Y en la agencia no se paga nada: el saldo también me lo pagas por acá cuando llegue, y allá solo lo recoges con tu clave.${_sinAdelIA ? "\n\n" + _sinAdelIA : ""}`;
         (run.vars as any)._adelanto_explicado = 1;
         await logEvent(db, run.channel_id, run.contact_id, "nota", "🙅 Quería pagar todo en la agencia",
           "Se le dijo de frente: sin adelanto no sale y en la agencia no se paga").catch(() => {});
@@ -28221,6 +28295,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_nombre ?? ctx.ciudad ?? "").trim()) {
         salida = String(salida).replace(/(?:t[uú]\s+)?(est[aá]s|vives|escribes)\s+(?:en|desde)\s+(\*?[^,?\n]{3,30}\*?)\s*,?\s*¿\s*(?:verdad|cierto|no|correcto)\s*\?\s*/giu,
           (_m, v: string, z: string) => `${v.charAt(0).toUpperCase() + v.slice(1)} en ${z}. `);
+        // («…, y confírmame que es *Pueblo Libre de Lima* 🙂» con el distrito ya resuelto en Lima — R1L-datospartidos, 3.ª relanzada)
+        if (String(ctx.zona_entrega ?? "") === "lima" && String(ctx.zona_distrito_incierto ?? "") !== "si") {
+          salida = String(salida).replace(/,?\s*(?:y\s+)?(?:conf[ií]rmame|dime|av[ií]same)\s+(?:que\s+(?:es|sea|est[aá]\s+en|queda\s+en)|si\s+es)\s+(?:el\s+|la\s+)?\*?[^.!?\n*]{3,40}?\*?\s+(?:de|en)\s+Lima\*?\s*[.!]?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*(?=\n|$)/giu, ".")
+            .replace(/([.!?])\.(?=\s|$)/g, "$1");
+        }
       }
       // 💸 «lo cancelo mañana» con el pedido esperando el adelanto = PAGO mañana (Perú), no «ya no lo quiero». La IA
       // lo leyó como abandono («Cuando estés listo para continuar, aquí estaré») y encima le pidió la captura ahora
