@@ -5128,6 +5128,10 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     .replace(/((\p{Extended_Pictographic})\u{FE0F}?)[ \t]*\n[ \t]*\2\u{FE0F}?[ \t]*(?=\n|$)/gu, "$1")
     // El emoji ya cierra la frase: «…por agencia Shalom 📦.» sin el punto pegado (EcoGuard/Adaptador, simulación 08, 2026-10-02).
     .replace(/(\p{Extended_Pictographic}\u{FE0F}?)\.(?=[ \t]|\n|$)/gu, "$1")
+    // Lo que deja mover una pregunta a otro párrafo: «…Shalom 📦,» con la coma colgando al final del párrafo y
+    // «¿cuántas unidades quieres llevar?» en minúscula abriendo el renglón (Adaptador, simulación 15, 2026-10-02).
+    .replace(/[ \t]*[,;][ \t]*(?=\n[ \t]*\n|$)/g, "")
+    .replace(/(^|\n)([ \t]*[¿¡])(\p{Ll})/gu, (_m: string, a: string, b: string, c: string) => a + b + c.toUpperCase())
     // El espacio ANTES del punto o la coma que dejó un recorte: «Sobre la factura, no tengo dato .» (D24R-factura).
     .replace(/(\p{L})[ \t]+([.,;])(?=[ \t]|\n|$)/gu, "$1$2")
     // «…mejor precio que en tienda;» y debajo la lista: el «;» que encadenaba lo que se quitó cierra con punto (F12S-tienda).
@@ -26129,8 +26133,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // «me lo(s) pagas POR ACÁ»: el saldo se paga a nosotros, no en el mostrador (ver saldo-se-paga-a-nosotros).
               // («va con», no «se confirma con»: `RE_YA_PIDE` tomaba ese «confirma» por un pedido en imperativo
               //  y el cierre honesto ya no pegaba la lista de datos — simulación 4, 2026-10-01)
+              // 🚚 …y el ENVÍO en la misma línea, que es lo que gana él (Rodrigo, Probar flujos 2026-10-02: «debería mencionarlo
+              // aquí»). Va DETRÁS: tres frenos reconocen esta línea por su arranque «Para provincia va con un adelanto».
+              // Se dice según cómo cobra el envío el negocio, y no si la IA ya habló del costo del envío.
+              const _modoX = modoEnvio(ctx);
+              const _cobroX = envioCobroDe(ctx, "provincia");
+              const _envX = /gratis|env[ií]o[^.\n]{0,30}(?:S\/|\$)\s?\d|(?:S\/|\$)\s?\d[^.\n]{0,20}(?:de\s+)?env[ií]o|env[ií]o\s+(?:lo\s+)?pagas/i.test(sinFormato(salida)) ? ""
+                : _modoX === "agencia" ? " El envío lo pagas en la agencia al recoger 📦"
+                : _cobroX > 0 ? ` El envío a tu ciudad es de *${_symX} ${_cobroX}* 📦`
+                : _modoX === "incluido" ? " El envío es *gratis* 🙌" : "";
               const _lineaX = `Para provincia va con un adelanto de *${_symX} ${_adX}*` +
-                (_sdX > 0 ? ` y los *${_symX} ${_sdX}* restantes me los pagas` : " y el resto me lo pagas") + " por acá cuando llegue a la agencia 🙌";
+                (_sdX > 0 ? ` y los *${_symX} ${_sdX}* restantes me los pagas` : " y el resto me lo pagas") + " por acá cuando llegue a la agencia" +
+                (_envX ? `.${_envX}` : " 🙌");
               // (la línea del motor YA dice cómo se paga el resto: fuera lo que la IA improvisó sobre eso. «Te llega por agencia
               //  Shalom a Barranca y pagas cuando llegue a la agencia el resto allá.» + «…me lo pagas por acá» se contradecían
               //  — EcoGuard, simulación 04, 2026-10-02. El saldo se paga por el chat: ver saldo-se-paga-a-nosotros.)
