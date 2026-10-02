@@ -18578,6 +18578,27 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
                 `"${String(val).slice(0, 40)}" no aparece en sus mensajes — se descarta`).catch(() => {});
               continue;
             }
+            // 🏘️ Su CIUDAD no es su oficina cuando ahí hay varias. «De barranca» (la ciudad) volvía como sede al turno
+            // siguiente —«quiero 2»— porque una de las tres oficinas se llama BARRANCA: sede sellada y ficha enviada sin que
+            // eligiera entre Barranca, Supe y Paramonga (Rodrigo, Probar flujos, 2026-10-02). Vale como elección solo si la
+            // nombra AHORA y ya se le mostró la lista 📍 de oficinas.
+            if (c.clave === "sede" && String(ctx.ciudad ?? "").trim()
+                && limpiaZona(String(val)) === limpiaZona(String(ctx.ciudad ?? ""))
+                && agenciasDeCiudad(String(ctx.ciudad ?? "")).length > 1) {
+              let _eligeDeLista = false;
+              if (loDijoElCliente(val, String(ctx.last_input ?? ""))) {
+                try {
+                  const { data: _oL } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
+                    .eq("direction", "out").order("ts", { ascending: false }).limit(4);
+                  _eligeDeLista = ((_oL ?? []) as any[]).some((mm) => (String(mm?.content?.text ?? "").match(/^\s*📍/gmu) ?? []).length >= 2);
+                } catch (_) { /* sin historial → no se da por elegida */ }
+              }
+              if (!_eligeDeLista) {
+                await logEvent(db, run.channel_id, run.contact_id, "nota", "🏘️ Era su ciudad, no la oficina",
+                  `"${String(val).slice(0, 40)}" tiene ${agenciasDeCiudad(String(ctx.ciudad ?? "")).length} oficinas — se le pregunta cuál`).catch(() => {});
+                continue;
+              }
+            }
             // 🏠 «surquillo, 1» NO es una dirección: es el distrito y la cantidad (F5b-hsabado). Sin
             // calle ni nada más que el distrito y un número chico, no se guarda (el motorizado no
             // llega con eso y el pedido se daría por completo).
@@ -18882,7 +18903,14 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
     // 📍 Pampa Grande…» y «¿Cuál te queda más cerca?» dentro de los 400 caracteres no traían
     // ninguna de esas palabras, así que el fallback no disparaba y el pedido de Tumbes esperó
     // dos turnos la oficina (D11b-pnollego, 2026-09-25).
-    const preguntoSede = /(sede|oficina|agencia|sucursal|shalom|recog|recoj|tenemos estas|te queda mas cerca|te queda mejor|en cual estas|📍 \*)/.test(pregN);
+    // 🏘️ Con VARIAS oficinas en su ciudad, nombrar la agencia no es preguntarla: «A Barranca te llega por agencia
+    // Shalom 📦 … ¿Cuántas unidades quieres?» contaba como «ya le preguntamos la sede», y al «quiero 2» la ciudad quedaba
+    // de sede y le salía «Te llega a la sede Barranca» sin elegir entre Barranca, Supe y Paramonga (Probar flujos,
+    // 2026-10-02). Ahí hace falta la lista 📍 o una pregunta de verdad por la oficina.
+    const _variasEnCiudad = agenciasDeCiudad(String(ctx.ciudad ?? "")).length > 1;
+    const preguntoSede = _variasEnCiudad
+      ? /📍|¿[^?]*\b(sede|oficina|agencia|sucursal|recog|recoj|te queda mas cerca|te queda mejor|en cual estas)[^?]*\?/.test(pregN)
+      : /(sede|oficina|agencia|sucursal|shalom|recog|recoj|tenemos estas|te queda mas cerca|te queda mejor|en cual estas|📍 \*)/.test(pregN);
     const noLaSabe = /\bno se\b|no conozco|no estoy segur|cualquiera|la que sea|no importa|no me acuerdo|ni idea|no la se\b|no sabria/.test(textN);
     // Y cuando es el CLIENTE el que ya está hablando de su recojo ("lo recojo en el
     // Shalom de Huancayo Real"): dio una oficina, solo que no calza con la lista oficial

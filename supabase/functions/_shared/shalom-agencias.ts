@@ -727,9 +727,27 @@ function _deCiudadEstricto(ciudad: string): Agencia[] {
 // en la lista desde el principio; se vio al auditar las ventas de los 25 departamentos.
 const NO_OFRECER = new Set(["area shalom empresas", "almacenes bsf", "caja distribucion lima"]);
 const _ofrecible = (a: Agencia) => !NO_OFRECER.has(_n(a.l));
+// A cuántos km una oficina de su misma provincia cuenta como de su ciudad (ver agenciasParaOfrecer).
+const CERCA_KM = 30;
 
 export function agenciasDeCiudad(ciudad: string): Agencia[] {
   const estricto = _deCiudadEstricto(ciudad).filter(_ofrecible);
+  // 🏘️ El nombre es a la vez DISTRITO y PROVINCIA, y el distrito tiene una sola oficina: «Barranca» calzaba
+  // por distrito (BARRANCA) y no se miraba la provincia, que tiene también SUPE (7 km) y PARAMONGA (11 km).
+  // El motor la daba por «la única que hay ahí», la sellaba sola y le mandaba la ficha — eligiendo por el
+  // cliente (Rodrigo, chat de Probar flujos, 2026-10-02: «en Barranca hay 3 sedes»). Pasaba igual en Huánuco
+  // (Amarilis, 2 km), Nazca (Vista Alegre, 3 km), Zarumilla (Aguas Verdes, 4 km), Huaura (Huacho, 4 km)…
+  // Se suman las de su provincia a menos de CERCA_KM, la suya primero y el resto por cercanía. Solo cuando lo
+  // que dijo ES el nombre de la provincia: «Supe» o «Mazuko» siguen siendo una sola.
+  if (estricto.length === 1 && estricto[0].y != null && estricto[0].x != null) {
+    const b = estricto[0];
+    const _dijo = _sinRuido(ciudad) || _n(ciudad);
+    if (_dijo && _n(b.p) === _dijo) {
+      const _vec = AGENCIAS.filter((a) => a !== b && _n(a.p) === _n(b.p) && _n(a.d) === _n(b.d) && _ofrecible(a)
+        && a.y != null && a.x != null && kmEntre(b.y!, b.x!, a.y, a.x) <= CERCA_KM);
+      if (_vec.length) return [b, ...porCercania(_vec, b.y!, b.x!)];
+    }
+  }
   if (estricto.length) return estricto;
   // Último intento: que la ciudad aparezca dentro del nombre de la agencia
   // ("HUANCAYO" → "HUANCAYO CO", "AEROPUERTO HUANCAYO").
@@ -815,7 +833,6 @@ export function agenciasParaOfrecer(ciudad: string): Agencia[] {
   // las coordenadas. A 30 km entran los distritos de una misma ciudad (Chiclayo llega hasta
   // Pátapo, 24 km) y se caen los que son otro viaje (Chongoyape 53 km, Mazuko 200).
   // Al que de verdad vive lejos no se le esconde nada: nombra su distrito y se resuelve solo.
-  const CERCA_KM = 30;
   const _vecinas = resto.filter((a) =>
     a.y != null && a.x != null && kmEntre(y, x, a.y, a.x) <= CERCA_KM);
   return [...base, ...porCercania(_vecinas, y, x)];
