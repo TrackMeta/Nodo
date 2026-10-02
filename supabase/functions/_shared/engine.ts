@@ -5150,6 +5150,9 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
       (m: string, a: string) => bubble._noTpl ? a.trimEnd() : m)
     // La lista de sedes APLASTADA en un renglón («…Barranca 👇 📍 *Barranca* — … 📍 *Supe* — … ¿Cuál te queda más cerca?»,
     // Probar flujos 2026-10-02; no se reprodujo en 6 simulaciones): una sede por renglón y la pregunta en su párrafo.
+    // 💰 El encabezado de la lista de precios pegado a la frase de arriba («…queda registrada 📍 💰 Estos son los precios 👇» —
+    // sims 2b-y1/v2: un recorte se llevó el «Ahora,» con los saltos): va en su párrafo.
+    .replace(/([^\n])[ \t]+(💰 Estos son los precios)/gu, (m: string, a: string, b: string) => bubble._noTpl ? `${a}\n\n${b}` : m)
     .replace(/^.*📍.*📍.*$/gmu, (ln: string) => !bubble._noTpl ? ln
       : ln.replace(/[ \t]+(?=📍)/gu, "\n").replace(/[ \t]+(¿[^?¿\n]*\?[ \t]*(?:\p{Extended_Pictographic}\u{FE0F}?[ \t]*)*)$/u, "\n\n$1"))
     .replace(/(^|\n)([ \t]*[¿¡])(\p{Ll})/gu, (_m: string, a: string, b: string, c: string) => a + b + c.toUpperCase())
@@ -6934,6 +6937,7 @@ function sinPagarEnLaAgencia(texto: string, provincia = false): string {
 const CAMBIOS_DESPACHO: Array<[RegExp, string]> = [
   [/\bpara\s+que\s+despachemos(?![\p{L}\p{N}])/giu, "para que te lo mande"],
   [/\bpara\s+que\s+(?:lo\s+|te\s+lo\s+)?despache(?![\p{L}\p{N}])/giu, "para que te lo mande"],
+  [/\b(cuando|apenas|en\s+cuanto|ni\s+bien)\s+(?:lo\s+|te\s+lo\s+)?despache(?:mos)?(?![\p{L}\p{N}])/giu, "$1 te lo mande"],   // (sim 2b-z10)
   [/\bpara\s+despachar\s+(?:tu|el)\s+(pedido|paquete)(?![\p{L}\p{N}])/giu, "para mandarte el $1"],
   // «y despachar el pedido» con el objeto detrás: el infinitivo suelto lo volvía «mandártelo el
   // pedido» (D14c-pfaltadni, 2026-09-25). Con objeto, el pronombre sobra.
@@ -8862,6 +8866,8 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
         .replace(/^([ \t]*💰 Estos son los precios)[ \t]*$/gmu, "$1 👇")
         // (dos encabezados seguidos: «Estas son las opciones\n💰 Estos son los precios 👇» — sim 2b-v16)
         .replace(/^[ \t]*(?:Estas son las opciones|Las opciones son)[^\n]*\n(?:[ \t]*\n)*(?=[ \t]*💰 Estos son los precios)/gmu, "")
+        // (la lista en su párrafo: «…con la agencia Shalom 📦\n💰 Estos son los precios» iba pegada — sim 2b-y0)
+        .replace(/([^\n])\n(?=[ \t]*💰 Estos son los precios)/gu, "$1\n\n")
         .replace(/^[ \t]*💰 Estos son los precios 👇[ \t]*\n(?:[ \t]*\n)*(?=[ \t]*💰 Estos son los precios)/gmu, "")
         .replace(/(💰 Estos son los precios 👇)[ \t]*\n(?:[ \t]*\n)+(?=[ \t]*(?:[🔹⭐]|\d{1,3}\s+unidad))/gu, "$1\n");
       // 📍 La lista de SEDES va en su propia burbuja (Rodrigo, 2026-10-02): «A Barranca te llega por agencia Shalom + el
@@ -8891,7 +8897,10 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
           const _qs = _arriba.match(_RE_QC);
           if (_qs && _qs.length) {
             const _resto = _arriba.replace(_RE_QC, " ").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-            if (_resto.replace(/[^\p{L}]/gu, "").length >= 5) result = `${_resto}\n\n${_ult.trim()}\n\n${_qs[_qs.length - 1].trim()}`;
+            // (y si arriba solo estaba la pregunta —«¿Cuántas unidades quieres llevar? 😊📦» + la lista: sim 2b-z2—, lista y pregunta)
+            result = _resto.replace(/[^\p{L}]/gu, "").length >= 5
+              ? `${_resto}\n\n${_ult.trim()}\n\n${_qs[_qs.length - 1].trim()}`
+              : `${_ult.trim()}\n\n${_qs[_qs.length - 1].trim()}`;
           }
         }
       }
@@ -26467,7 +26476,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           else if (salida !== _antesRv) {
             // (a «¿es seguro? ¿cómo sé que no es estafa?» la respuesta ERA esa frase: queda lo que sí es verdad — sim 2b-w10)
             if (/segur|estaf|conf[ií]|garant|fraude|real\b/i.test(String(ctx.last_input ?? "")) && !/foto\s+de\s+la\s+gu[ií]a/i.test(salida)) {
-              salida = `Entiendo tu preocupación 🙌 Apenas salga tu pedido te paso la *foto de la guía* de Shalom, y el resto me lo pagas cuando ya esté en la agencia.\n\n${salida}`;
+              const _guia = "Apenas salga tu pedido te paso la *foto de la guía* de Shalom, y el resto me lo pagas cuando ya esté en la agencia.";
+              // (si lo que quedó ya arranca comprensivo —«Entiendo que quieres lo mejor…»—, sin un segundo «Entiendo»: la línea
+              //  va antes de la pregunta final — sim 2b-y10)
+              if (/^\s*(?:entiendo|te\s+entiendo|tranquil|es\s+normal|claro|comprendo)/i.test(salida)) {
+                const _mQg = salida.match(/^([\s\S]*?)(\s*¿[^?¿]*\?[\s\p{Extended_Pictographic}\u{FE0F}]*)$/u);
+                salida = _mQg && _mQg[1].trim() ? `${_mQg[1].trimEnd()} ${_guia}${_mQg[2]}` : `${salida.trimEnd()} ${_guia}`;
+              } else {
+                salida = `Entiendo tu preocupación 🙌 ${_guia}\n\n${salida}`;
+              }
             }
             await logEvent(db, run.channel_id, run.contact_id, "nota", "🙅 Decía que revisa antes de pagar (provincia)",
               `«${_antesRv.slice(0, 140)}»`).catch(() => {});
