@@ -7099,6 +7099,9 @@ function sinPresentacionRepetida(texto: string, producto: string, ventaAhora = f
     if (!_pide) return false;
     const _cab = normalize(prefijo);
     if (/no tengo (el |ese |esa |este )?(dato|informacion)/.test(_cab)) return true;
+    // (+ con el dato DELANTE: «Ese dato puntual no lo tengo aquí 🙏 Lo que sí te digo…» se fue entera como presentación y
+    //  «¿sirve para calamina?» se quedó sin respuesta — simulación q3, 2026-10-02)
+    if (/\b(?:ese|este|el|esa|esta)\s+(?:dato|detalle|informacion)\b.{0,30}\bno\s+(?:lo|la)\s+tengo/.test(_cab)) return true;
     const _pal = _li.split(/[^a-z0-9]+/).filter((w) => w.length >= 4 &&
       !/^(para|pero|como|donde|cuando|hola|quiero|necesito|tienen|puedo|saber|desde|hasta|esta|este|esto|tambien|mejor|solo|unidad|unidades)$/.test(w));
     // (por RAÍZ: «¿cuánto pesa?» → «Respecto al peso…» no casaba palabra por palabra y la respuesta se iba con la
@@ -8080,10 +8083,11 @@ async function preguntaNecesidad(db: SupabaseClient, run: Run, ctx: any): Promis
       model: ai.model || undefined, maxTokens: 60,
       system: "Escribes UNA sola pregunta corta de vendedor por WhatsApp, en español de Perú, tuteando. Respondes solo la pregunta, sin comillas ni nada más.",
       content: `Producto: ${String((p as any)?.nombre ?? "")}\nOpciones de compra: ${ops}\nFicha:\n${ficha}\n\n` +
-        "Escribe UNA pregunta (máximo 14 palabras) que le haría un buen vendedor al cliente sobre SU NECESIDAD, para saber cuántas " +
-        "unidades u opción le conviene: dónde lo va a usar, cuántos espacios, zonas, personas o equipos, para quién es. " +
-        "Que suene natural y cercana. No preguntes «cuántas unidades», no menciones precios. Empieza con ¿ y termina con ?. " +
-        "Puedes cerrar con un emoji." });
+        "Escribe UNA pregunta corta (máximo 10 palabras) que le haría un buen vendedor al cliente sobre SU NECESIDAD, para saber " +
+        "cuántas unidades u opción le conviene. Que sea fácil de contestar, de preferencia con dos alternativas concretas " +
+        "(«¿Es para un solo espacio o para varios?», «¿Lo usarías en casa o en un taller?», «¿Es solo para ti o para varias personas?»). " +
+        "Natural y cercana, sin repetir el nombre del producto. No preguntes «cuántas unidades», no menciones precios. " +
+        "Empieza con ¿ y termina con ?. Puedes cerrar con un emoji." });
     const q = _valida(String(raw ?? "").split("\n").map((l) => l.trim()).find((l) => l.startsWith("¿")) ?? "");
     if (q) {
       // Guardado sobre el config FRESCO y solo la clave nueva: no pisa lo que el dueño esté editando.
@@ -8095,6 +8099,49 @@ async function preguntaNecesidad(db: SupabaseClient, run: Run, ctx: any): Promis
     }
     return q;
   } catch (_) { return ""; }
+}
+// 🎯 LA RECOMENDACIÓN según lo que contó (respuesta a la pregunta de necesidad). La regla del prompt la cumplía ~2 de 3
+// (simulaciones n1-n15, 2026-10-02): la decide una llamada corta a la IA y la escribe el motor, siempre con la misma
+// forma, para que el «sí» siguiente la selle. Devuelve null si con lo que dijo no alcanza para recomendar.
+async function recomendarPorNecesidad(db: SupabaseClient, run: Run, ctx: any, ops: Opcion[], dicho: string): Promise<{ op: Opcion; para: string; porque: string } | null> {
+  try {
+    const vis = ops.filter((o) => Number(o.precio) > 0);
+    if (vis.length < 2 || !String(dicho ?? "").trim()) return null;
+    const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: run.channel_id, p_provider: null });
+    const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+    if (!ai?.api_key) return null;
+    // 🔢 La IA solo CUENTA; la opción la elige el motor por su cantidad. Pidiéndole que eligiera se equivocaba: se corría
+    // un número de la lista («somos 3» → 2 unidades), devolvía el renglón entero en vez del nombre y, sobre todo,
+    // razonaba mal («patio y chacrita» → 1 unidad «para un solo espacio») — simulaciones p5, p7 y p13.
+    const raw = await runAI({ db, channelId: run.channel_id, origen: "clasificar", provider: ai.provider as Provider, apiKey: ai.api_key,
+      model: ai.model || undefined, maxTokens: 120,
+      system: "Respondes ÚNICAMENTE con un objeto JSON, sin texto alrededor.",
+      content: `Producto: ${String(ctx.producto_nombre ?? ctx.producto ?? "")}\n` +
+        `Al preguntarle al cliente para qué o dónde lo va a usar, contestó: "${String(dicho).slice(0, 300)}"\n\n` +
+        "«n»: cuántos espacios, zonas, ambientes, personas o equipos DISTINTOS necesita cubrir según lo que dijo. Ejemplos: " +
+        "«patio y una chacrita» = 2; «solo el jardín de mi casa» = 1; «somos 3 los que cortamos» = 3; «para mi casa nomás» = 1. " +
+        "Si no dice nada que se pueda contar o en vez de contar su necesidad hace una pregunta, n = 0.\n" +
+        "«para»: a qué se refiere él, en 2 a 6 palabras, empezando con «Para» (ej. «Para tu patio y la chacra»).\n" +
+        "«porque»: el motivo en 3 a 9 palabras, tuteando, sin precios ni cantidades (ej. «así cubres cada zona»).\n" +
+        `Responde exactamente: {"n": <entero>, "para": "...", "porque": "..."}` });
+    (run as any)._recRaw = String(raw ?? "").slice(0, 300);   // para el evento cuando no sale (ver el llamador)
+    const mm = /\{[\s\S]*\}/.exec(String(raw ?? ""));
+    if (!mm) return null;
+    const j = JSON.parse(mm[0]);
+    const n = Math.round(Number(j?.n));
+    if (!(n >= 1)) return null;
+    // La opción con esa cantidad o, si no hay, la más chica que la cubra; si ninguna alcanza, la más grande visible.
+    const porCant = [...vis].sort((a, b) => (Number(a.cantidad) || 1) - (Number(b.cantidad) || 1));
+    const op = porCant.find((o) => (Number(o.cantidad) || 1) >= n) ?? porCant[porCant.length - 1];
+    // (en boca del vendedor: «Para mi casa» → «Para tu casa»; y el motivo sin el «porque» delante, que ya lo introducen los «:»)
+    const para = String(j?.para ?? "").trim().replace(/[.,;:]+$/, "")
+      .replace(/(^|\s)mi(?=\s)/giu, "$1tu").replace(/(^|\s)mis(?=\s)/giu, "$1tus").replace(/(^|\s)nuestr([oa]s?)(?=\s)/giu, "$1su");
+    let porque = String(j?.porque ?? "").trim().replace(/[.,;:]+$/, "").replace(/^(?:porque|ya\s+que|pues)\s+/iu, "");
+    if (!/^para\s+\S/i.test(para) || para.length > 60) return null;
+    // Un motivo con precio o con otra cantidad no se usa (queda la recomendación sin motivo).
+    if (porque.length > 80 || /(?:S\/|\$)\s?\d|\b\d+\b|\b(?:uno|una|dos|tres|cuatro|cinco)\s+(?:unidad|equipo|aparato)/i.test(porque)) porque = "";
+    return { op, para: para.charAt(0).toUpperCase() + para.slice(1), porque };
+  } catch (_) { return null; }
 }
 function preguntaCuantos(ops: Opcion[], ctx: any, negritas = true, yaListadas = false): string {
   const sym = simboloMoneda(ctx.moneda as string);
@@ -28246,8 +28293,33 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             try { _qN = await preguntaNecesidad(db, run, ctx); } catch (_) { _qN = ""; }
             const _yaNec = !!_qN && sinFormato(_ultF).includes(sinFormato(_qN).replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, ""));
             _s = _s.replace(_RE_Q_CANT, _quitaQCant).replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, _sinListaVieja)
-              .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "").trim() +
-              " " + (_qN && !_yaNec ? _qN : _SUAVE_C);
+              .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "").trim();
+            // (en su propio párrafo si el mensaje tiene varios: pegada al «Para provincia va con un adelanto…» se perdía — p5)
+            _s = `${_s}${/\n\n/.test(_s) ? "\n\n" : " "}${_qN && !_yaNec ? _qN : _SUAVE_C}`.trim();
+          } else if (_zonaOk && _cantAntes && !RE_CLIENTE_PIDE_PRECIO.test(_li)
+                     && /¿[^?¿]*\b(?:opciones|precios|promociones|ofertas|presentaciones|packs?)\b[^?¿]*\?/i.test(_s)) {
+            // 🎯 …y la misma pregunta dicha de otra forma: «¿Quieres que te pase las opciones y precios para que elijas
+            // cuántas te envío?» (simulación n14) — ya las vio. Va la de necesidad, igual que arriba.
+            let _qN3 = "";
+            try { _qN3 = await preguntaNecesidad(db, run, ctx); } catch (_) { _qN3 = ""; }
+            const _ya3 = !!_qN3 && sinFormato(_ultF).includes(sinFormato(_qN3).replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, ""));
+            if (_qN3 && !_ya3) {
+              _s = _s.replace(/[ \t]*¿[^?¿]*\b(?:opciones|precios|promociones|ofertas|presentaciones|packs?)\b[^?¿]*\?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*/iu, " ").trim();
+              _s = `${_s}${/[.!…\p{Extended_Pictographic}\u{FE0F}]$/u.test(_s) || !_s ? "" : "."}${/\n\n/.test(_s) ? "\n\n" : " "}${_qN3}`.trim();
+            }
+          }
+          // 🎯 La pregunta de necesidad DOS veces seguidas (la IA la copia del historial, a veces sin el «¿»: «Lo quieres para
+          // un jardín pequeño o más amplio? 🌿» — p5): se va, y si el mensaje queda sin pregunta va la suave.
+          {
+            let _qN4 = "";
+            try { _qN4 = await preguntaNecesidad(db, run, ctx); } catch (_) { _qN4 = ""; }
+            const _core4 = normalize(sinFormato(_qN4)).replace(/[¿?]/g, "").replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, "").trim();
+            if (_zonaOk && _core4.length >= 10 && normalize(sinFormato(_ultF)).includes(_core4) && normalize(sinFormato(_s)).includes(_core4)) {
+              const _esc4 = _core4.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+              _s = _s.split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}\u{FE0F}?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
+                .filter((f) => !new RegExp(_esc4, "iu").test(normalize(sinFormato(f)))).join(" ")).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+              if (!/[?¿]/.test(_s)) _s = `${_s}${/\n\n/.test(_s) ? "\n\n" : " "}${_SUAVE_C}`.trim();
+            }
           }
           // 3) Sin saber de dónde es, «¿cuántas?» espera: primero la ubicación (una sola pregunta). La
           //    lista de precios puede quedar como info; la pregunta de cantidad no (F3-calidad).
@@ -28481,7 +28553,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               //  agencia Shalom en Tacna prefieres recogerlo 📍» — segunda relanzada de R1P-prepago)
               .replace(/(?:(?:para|y\s+para|ahora)\s+(?:completar|terminar|cerrar|avanzar\s+con|dejar\s+listo)\s*(?:tu\s+pedido|el\s+pedido|todo)?\s*,?\s*)?\b(?:y\s+)?(?:dime|cu[eé]ntame|ind[ií]came|conf[ií]rmame|av[ií]same|elige|escoge)\s*,?\s*(?:por\s+favor|porfa)?\s*,?\s*(?:en\s+)?(?:cu[aá]l|qu[eé])\s+(?:sede|oficina|agencia|distrito)[^.!?\n]*[.!?]?[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)*/giu, "")
               .replace(/[ \t]{2,}/g, " ").trim();
-            _s = /[\p{L}\p{N}]/u.test(_sinPines) ? _pegaSuave(_sinPines, _qC) : _qC;
+            _s = /[\p{L}\p{N}]/u.test(_sinPines)
+              ? (_qC !== _SUAVE_C && !/^¿Cu[aá]ntas/.test(_qC) && /\n\n/.test(_sinPines) ? `${_sinPines.trimEnd()}\n\n${_qC}` : _pegaSuave(_sinPines, _qC))
+              : _qC;   // (la de necesidad, en su párrafo si el mensaje tiene varios — p5)
           }
           // 🗺️ Red final: sin zona, con la cantidad ya sellada y sin pedido, el mensaje NO se queda sin pregunta
           // (los recortes de arriba pueden llevarse la única que traía). Salvo que se despida, reclame o lo piense.
@@ -28501,6 +28575,56 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               `Se dejó una sola y sin repetir la anterior: «${_antesF.slice(0, 140)}»`).catch(() => {});
           }
         } catch (_) { /* sin historial → tal cual */ }
+      }
+      // 🎯 CONTESTÓ LA PREGUNTA DE NECESIDAD → la recomendación la decide `recomendarPorNecesidad` y la escribe el motor,
+      // siempre igual: «Para tu patio y la chacra te conviene el de *2 unidades* a *S/ 139* (S/ 69.50 c/u): una en cada
+      // zona 🙌 ¿Te lo dejo así?». Lo que la IA contestó de otra cosa se queda; su lista, sus preguntas y su recomendación no.
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "").trim()
+          && !String(ctx.opcion_id ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
+          && !RE_ANUNCIA_PAGO.test(String(ctx.last_input ?? "")) && !RE_PIDE_DATOS.test(String(ctx.last_input ?? ""))
+          && !RE_LO_PIENSA.test(String(ctx.last_input ?? "")) && !RE_RECLAMO.test(String(ctx.last_input ?? ""))) {
+        try {
+          const _qNec = await preguntaNecesidad(db, run, ctx);
+          // (la pregunta de necesidad en cualquiera de las DOS últimas burbujas: entre medio pudo ir otra; y él tiene que estar
+          //  CONTANDO, no preguntando — «¿aguanta la lluvia?» se tomó por su necesidad y salió «Para uso exterior bajo lluvia
+          //  te conviene el de 1 unidad» (simulación p1). Y no se le repite si ya se le recomendó y no aceptó.)
+          const { data: _oNe } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
+            .eq("direction", "out").order("ts", { ascending: false }).limit(2);
+          const _outsNe = ((_oNe ?? []) as any[]).map((mm) => sinFormato(String(mm?.content?.text ?? "")));
+          const _ultNe = _outsNe.join("\n");
+          const _nucleoNe = sinFormato(_qNec).replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, "");
+          const _liNe = String(ctx.last_input ?? "");
+          const _preguntaEl = /[?¿]/.test(_liNe) || /^\s*(?:y\s+)?(?:qu[eé]|c[oó]mo|cu[aá]nt[oa]s?|cu[aá]ndo|d[oó]nde|por\s*qu[eé]|funciona|sirve|aguanta|resiste|tiene|hay|puedo|se\s+puede|es\s+(?:bueno|resistente|original))\b/i.test(_liNe);
+          // (+ la pregunta de necesidad que hizo la IA con sus palabras: «¿Para qué tipo de trabajos lo usarás?» — p8)
+          const _pregNecIa = /¿[^?¿]*\b(?:para\s+qu[eé]|d[oó]nde\s+lo\s+(?:usar|vas|pondr|instalar|colocar)\p{L}*|en\s+qu[eé]\s+(?:espacio|lugar|parte|zona)|qu[eé]\s+tipo|cu[aá]nt[oa]s\s+(?:espacios|personas|zonas|equipos|ambientes|trabajadores)|para\s+qui[eé]n|lo\s+usar[aá]s|lo\s+quieres\s+para|es\s+para)\b[^?¿]*\?/iu.test(_ultNe);
+          if (((_qNec && _nucleoNe && _ultNe.includes(_nucleoNe)) || _pregNecIa) && !_preguntaEl
+              && _liNe.trim().split(/\s+/).length >= 2 && !/te\s+lo\s+dejo\s+as[ií]/i.test(_ultNe)) {
+            const _opsNe = opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id ?? "")), run);
+            const _rec = await recomendarPorNecesidad(db, run, ctx, _opsNe, String(ctx.last_input ?? ""));
+            if (_rec) {
+              const _sym = simboloMoneda(ctx.moneda as string);
+              const _pr = Number(_rec.op.precio), _ca = Number(_rec.op.cantidad) || 1;
+              const _cu = _ca > 1 ? ` (${_sym} ${(_pr / _ca).toFixed(2).replace(/\.00$/, "")} c/u)` : "";
+              const _linea = `${_rec.para} te conviene el de *${_rec.op.nombre}* a *${_sym} ${_pr}*${_cu}${_rec.porque ? `: ${_rec.porque}` : ""} 🙌 ¿Te lo dejo así?`;
+              // Lo de la IA que NO es lista, pregunta, cantidad ni recomendación (la respuesta a otra cosa que haya preguntado).
+              const _nomsNe = _opsNe.map((o) => normalize(String(o.nombre ?? "")).trim()).filter(Boolean);
+              const _resto = String(salida ?? "").split("\n")
+                .filter((ln) => !/(?:S\/|\$|US\$)\s?\d/.test(ln) && !/opciones|promociones|ofertas/i.test(ln))
+                .map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}\u{FE0F}?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u).filter((f) => {
+                  const nf = normalize(sinFormato(f));
+                  return !/[?¿]/.test(f) && !/\bunidad(?:es)?\b|\b(?:dime|cu[eé]ntame)\s+cu[aá]|\b(?:recomiendo|te conviene|lo ideal|lo mejor|ideal para)\b/i.test(nf)
+                    && !_nomsNe.some((n) => nf.includes(n));
+                }).join(" ")).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+              const _letras = _resto.replace(/[^\p{L}]/gu, "").length;
+              salida = _letras >= 25 ? `${_resto}\n\n${_linea}` : _linea;
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "🎯 Le recomendé según lo que necesita",
+                `«${String(ctx.last_input ?? "").slice(0, 80)}» → ${_rec.op.nombre}`).catch(() => {});
+            } else {
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "🎯 Sin recomendación (no alcanzó o no cuadró)",
+                `«${String(ctx.last_input ?? "").slice(0, 80)}» · IA: ${String((run as any)._recRaw ?? "—")}`).catch(() => {});
+            }
+          }
+        } catch (_) { /* sin IA o sin opciones → lo que escribió la IA */ }
       }
       // 🎯 RECOMENDÓ UNA OPCIÓN → el cierre es «¿Te lo dejo así?». Con eso el «ya, dale» que sigue la sella (ver la
       // aceptación de la recomendación en detectarOpcion). La IA recomendaba y cerraba con otra cosa —«¿Cuál promoción te
