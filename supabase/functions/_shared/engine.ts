@@ -16831,9 +16831,10 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
     // lugares conocidos y distintos, ese mensaje no decide la zona: la IA le pregunta cuál.
     // (+ «uno a mi casa en surco y otro a mi trabajo en san isidro» — F6b-ldosdir: sellaba San Isidro)
     const _dosDir = /(?:^|[^\p{L}])(?:un[oa]?|1)\s+(?:para|pa|a|en)\s+[^,.;]{2,40}?\s+y\s+(?:(?:el|la)\s+)?(?:otr[oa]|1|un[oa])\s+(?:para|pa|a|en)(?![\p{L}])/iu.test(t);
-    if (/\s(?:o|u)\s/i.test(t) || _dosDir) {
+    if (/\s(?:o|u|pero|aunque)\s/i.test(t) || _dosDir) {
       const _conoceL = (s: string) => !!s && (!!matchZona(zonas, s) || provinciasDeDistrito(limpiaZona(s)).length > 0 || agenciasDeCiudad(s).length > 0);
-      const _lados = t.split(/[,;.?!]|\s+(?:o|u|y)\s+|\s+(?:en|a|para)\s+/i)
+      // (+ «trabajo en huancayo PERO vivo en jauja»: el motor elegía Jauja solo — R1P-jauja, 2026-10-01)
+      const _lados = t.split(/[,;.?!]|\s+(?:o|u|y|pero|aunque)\s+|\s+(?:en|a|para)\s+/i)
         .map((s) => s.replace(/^\s*(?:soy\s+de|estoy\s+en|vivo\s+en|en|de|a|para|desde)\s+/i, "").trim())
         // «uno para mi casa en Lince y otro…» → salía «¿En cuál lo recoges, Uno o Lince?» (F8b-dosdirec): «uno»,
         // «otro», «mi casa» no son lugares aunque el buscador de agencias encuentre algo parecido.
@@ -17239,6 +17240,23 @@ async function resolverZonaAccion(db: SupabaseClient, run: Run, a: any, ctx: any
       _ciudad = _des;
     }
   }
+  // 🏙️ Nombró la CIUDAD y su DISTRITO en la misma frase («trujillo, la esperanza»): el extractor devuelve el más
+  // específico y la ciudad quedaba «La Esperanza», con Trujillo tratado como su «distrito» — al revés: le listó las
+  // oficinas de Trujillo y después «los distritos de La Esperanza» (R1P-trujilloflujo, 2026-10-01). Si el otro lugar
+  // que nombró es la PROVINCIA del que quedó como ciudad y tiene oficinas, la ciudad es esa y la lista va por el distrito.
+  try {
+    const _ciuN = limpiaZona(_ciudad);
+    const _txtN = limpiaZona(texto);
+    const _provN = provinciasDeDistrito(_ciuN).map((p) => limpiaZona(String(p.prov ?? "")))
+      .find((pn) => pn && pn !== _ciuN && new RegExp("(^|[^a-z0-9])" + pn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^a-z0-9]|$)").test(_txtN));
+    if (_provN && agenciasDeCiudad(_provN).length) {
+      const _ofsD = agenciasDeDistritoEn(_ciudad, _provN);
+      if (_ofsD.length) (run.vars as any)._ofsDistrito = { t: enTitulo(_ciudad), l: _ofsD.map((x) => x.l) };
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "🏙️ Ciudad y distrito en la misma frase",
+        `"${_ciudad}" es distrito de ${enTitulo(_provN)}: la ciudad es ${enTitulo(_provN)}${_ofsD.length ? ` y las oficinas van por ${enTitulo(_ciudad)} (${_ofsD.length})` : ""}`).catch(() => {});
+      _ciudad = _provN;
+    }
+  } catch (_) { /* sin padrón legible → como antes */ }
   await set("ciudad", enTitulo(_ciudad));
   await set("zona_distrito_incierto", "");
   await set("entrega_hoy", "no");
@@ -19160,7 +19178,14 @@ function mencionaLaOpcion(texto: string, op: Opcion, todas: Opcion[]): boolean {
   if (p > 0 && new RegExp("(^|[^0-9])" + Math.round(p) + "([^0-9]|$)").test(t)) return true;
   // 4) Su posición en la lista que le acabamos de decir: "el segundo".
   const i = todas.findIndex((o) => o.id === op.id);
-  if (i >= 0 && ORDINALES[i] && ORDINALES[i].some((w) => t.includes(w))) return true;
+  // El ORDINAL solo si se refiere a una opción («la primera», «la segunda opción», «primera» a secas): «lo quiero
+  // para mañana a PRIMERA hora» sellaba 1 unidad por la palabra suelta (R1L-manana, 2026-10-01).
+  if (i >= 0 && ORDINALES[i] && ORDINALES[i].some((w) => {
+    const _w = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp("(^|[^a-z0-9])(?:la|el|opcion|presentacion|oferta|pack)\\s+" + _w + "([^a-z0-9]|$)").test(t)
+      || new RegExp("(^|[^a-z0-9])" + _w + "\\s+(?:opcion|presentacion|oferta|pack)([^a-z0-9]|$)").test(t)
+      || new RegExp("^\\s*(?:la\\s+|el\\s+)?" + _w + "\\s*(?:nomas|no\\s+mas|porfa)?\\s*[.!]*\\s*$").test(t);
+  })) return true;
   return false;
 }
 
@@ -27937,6 +27962,41 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           _acuseDiferido = true;
           await logEvent(db, run.channel_id, run.contact_id, "nota", "🤐 Acuse de la IA diferido",
             `El mensaje del flujo sale en seguida; si no sale, se manda al escuchar: «${_sfA.slice(0, 120)}»`).catch(() => {});
+        }
+      }
+      // 🙅 «no gracias» / «no me interesa» / «paso» a secas (no un «no» a una pregunta): la IA contestaba empujando la
+      // versión («¿Cuál versión te va mejor?» a quien acaba de decir que no — R1D-nogracias, 2026-10-01). Se le quita
+      // la pregunta y el empuje; queda la despedida, o una cálida si no queda nada. No toca el remarketing.
+      if (op === "generar_texto" && String(ctx.pedido_creado ?? "") !== "si"
+          && /^\s*(?:no+\s*,?\s*(?:gracias|grax|por\s+ahora|por\s+el\s+momento|me\s+interesa|quiero|lo\s+quiero|lo\s+necesito)|paso|mejor\s+no|ya\s+no(?:\s+(?:quiero|gracias))?|as[ií]\s+estoy\s+bien|no\s+por\s+ahora)\s*[.!…🙏🙂👍]*\s*$/iu.test(String(ctx.last_input ?? ""))) {
+        const _antesN = String(salida ?? "");
+        let _sN = _antesN.split("\n").map((ln) => /—\s*\*?\s*(?:S\/|\$)\s?\d/u.test(ln) ? "" : ln.split(/(?<=[.!?…])\s+/u)
+          .filter((f) => !/[?¿]/.test(f) && !/\b(?:versi[oó]n|b[aá]sica|premium|precio|oferta|promoci[oó]n|descuento|datos\s+de\s+pago|yape|plin|pagar|pago|comprar|llevar|aprovech\p{L}*|an[ií]mate|reserv\p{L}*|cu[aá]nt[ao]s|unidades?|elige|dime)\b/iu.test(sinFormato(f)))
+          .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+        if (_sN.replace(/[\s\p{P}\p{S}]/gu, "").length < 12) _sN = "¡Está bien! 🙌 Si más adelante te animas, me escribes por acá y lo vemos.";
+        if (_sN !== _antesN.trim()) {
+          salida = _sN;
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🙅 Dijo que no: sin empujar la venta",
+            `Se quitó la pregunta/el empuje. Antes: «${_antesN.slice(0, 120)}»`).catch(() => {});
+        }
+      }
+      // 💵 «Tomo tu 10 como adelanto» con el adelanto en 20 (R1P-barranca, 2026-10-01): la IA «acepta» un monto menor
+      // que el adelanto real. Se cambia esa frase por la verdad.
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "") === "provincia" && String(ctx.pedido_creado ?? "") !== "si") {
+        let _adT = Number(ctx.adelanto);
+        if (!(_adT > 0)) { try { const _eT = await loadEntregas(db, run); _adT = Number((_eT as any)?.entregas?.adelanto_default); } catch (_) { _adT = NaN; } }
+        if (_adT > 0) {
+          const _reT = /(?:tomo|anoto|registro|considero|cuento|guardo|dejo|acepto)\s+(?:tu|el|los|ese|esos|tus)\s+(?:S\/\s*)?(\d{1,4})(?:\s+soles)?\s+(?:como|de|para\s+el|al|por)\s+adelanto|tu\s+adelanto\s+de\s+(?:S\/\s*)?(\d{1,4})\b|adelanto\s+de\s+(?:S\/\s*)?(\d{1,4})\s+(?:que\s+)?(?:me\s+)?(?:das|mandas|depositas|yapeas|ofreces|propones)/iu;
+          const _mT = _reT.exec(sinFormato(String(salida ?? "")));
+          const _nT = _mT ? Number(_mT[1] ?? _mT[2] ?? _mT[3]) : 0;
+          if (_nT > 0 && _nT < _adT) {
+            const _symT = simboloMoneda(ctx.moneda as string);
+            const _restoT = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u).filter((f) => !_reT.test(sinFormato(f))).join(" ")).join("\n")
+              .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+            salida = `El adelanto para mandarlo es *${_symT} ${_adT}*: con *${_symT} ${_nT}* no alcanza 🙏${_restoT ? "\n\n" + _restoT : ""}`;
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "💵 La IA aceptaba un adelanto menor",
+              `Decía ${_nT} y el adelanto es ${_adT}: se corrigió`).catch(() => {});
+          }
         }
       }
       // 🔹 Una segunda pasada de los emojis de la lista, ya con el texto armado del todo: algún recorte de más arriba
