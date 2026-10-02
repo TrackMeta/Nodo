@@ -5137,6 +5137,14 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     // «…sin interrupciones 🔧 Ahora dime» colgando al final del párrafo: el recorte se llevó lo que pedía y la lista del
     // motor va debajo (sim r, 2026-10-02).
     .replace(/[ \t]*(?:(?:y\s+)?ahora\s+|y\s+)?(?:dime|cu[eé]ntame|ind[ií]came|av[ií]same|conf[ií]rmame)[ \t]*[,:]?[ \t]*(?=\n\s*\n|$)/giu, (m: string) => bubble._noTpl ? "" : m)
+    // El resto de un renglón recortado que cierra un paréntesis que nunca se abrió: «BARRANCA, SUPE o PARAMONGA) ¿Lo quieres…?»
+    // (de «📌 *Sede de la agencia* (ej. BARRANCA, SUPE o PARAMONGA)», partido en el «ej.» — Probar flujos, 2026-10-02).
+    // (+ con «…» y comillas: «JJ ELIAS, ICA SAN JOAQUIN…)» — sim a5)
+    .replace(/(^|\n)[ \t]*[*«"]?[A-ZÁÉÍÓÚÑ0-9](?:[A-ZÁÉÍÓÚÑ0-9.,'’…«»"*\- ]|\s[oy]\s){1,90}\)[ \t]*/gu,
+      (m: string, a: string) => bubble._noTpl ? a : m)
+    // …y en minúsculas, si parece lista (comas o «…») y no hay un «(» antes en el renglón: «Av. JJ Elías, San Joaquín, La
+    // Tinguiña…) ¿Cuántas…?» (sim a6). No toca emoticones («:)»).
+    .replace(/(^|\n)[ \t]*([^\n(]{3,140}?[,…][^\n(]{0,60}?[^:;\s(])\)[ \t]*/gu, (m: string, a: string) => bubble._noTpl ? a : m)
     // La lista de sedes APLASTADA en un renglón («…Barranca 👇 📍 *Barranca* — … 📍 *Supe* — … ¿Cuál te queda más cerca?»,
     // Probar flujos 2026-10-02; no se reprodujo en 6 simulaciones): una sede por renglón y la pregunta en su párrafo.
     .replace(/^.*📍.*📍.*$/gmu, (ln: string) => !bubble._noTpl ? ln
@@ -29598,7 +29606,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         await emit(db, run, { text: _qFinal, _noTpl: true }, ctx);
       }
       // (la pregunta de la cantidad que esperó a los datos de pago — ver `_qTrasPago`; sale siempre: sin cantidad no hay pedido)
-      if (_qTrasPago && !handoff) await emit(db, run, { text: _qTrasPago, _noTpl: true }, ctx);
+      // (tras los datos de pago, con la señal de compra a la vista, la pregunta es la de la CANTIDAD directa, no la de necesidad:
+      //  «a qué número adelanto» → datos → «¿Lo quieres para un jardín pequeño o más amplio?» no pegaba — Probar flujos 2026-10-02)
+      if (_qTrasPago && !handoff) {
+        if (!/cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l\s+(?:prefieres|te\s+preparo|promoci)|opciones|precios/i.test(sinFormato(_qTrasPago))) {
+          _qTrasPago = _qTrasPago.replace(/[ \t]*¿[^?¿]*\?[\s\p{Extended_Pictographic}\u{FE0F}]*$/u, "").trim();
+          _qTrasPago = `${_qTrasPago ? _qTrasPago + "\n\n" : ""}¿Cuántas unidades te preparo? 🙌`;
+        }
+        await emit(db, run, { text: _qTrasPago, _noTpl: true }, ctx);
+      }
       if (_metodoSolo !== null && !handoff) {
         if (_mdpR === true) {
           let _qM = "¿Cuántas unidades o qué oferta te preparo? 🙌";
