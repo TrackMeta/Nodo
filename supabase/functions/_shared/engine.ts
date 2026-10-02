@@ -5126,6 +5126,8 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     // El MISMO emoji solo en el renglón de abajo del que ya lo cerraba: «…con la agencia *Shalom* 📦\n📦» (INV4F-ef1).
     // (se conserva el selector de variante: sin él «❤️» salía como ❤ monocromo — auditoría 2026-09-30)
     .replace(/((\p{Extended_Pictographic})\u{FE0F}?)[ \t]*\n[ \t]*\2\u{FE0F}?[ \t]*(?=\n|$)/gu, "$1")
+    // El emoji ya cierra la frase: «…por agencia Shalom 📦.» sin el punto pegado (EcoGuard/Adaptador, simulación 08, 2026-10-02).
+    .replace(/(\p{Extended_Pictographic}\u{FE0F}?)\.(?=[ \t]|\n|$)/gu, "$1")
     // El espacio ANTES del punto o la coma que dejó un recorte: «Sobre la factura, no tengo dato .» (D24R-factura).
     .replace(/(\p{L})[ \t]+([.,;])(?=[ \t]|\n|$)/gu, "$1$2")
     // «…mejor precio que en tienda;» y debajo la lista: el «;» que encadenaba lo que se quitó cierra con punto (F12S-tienda).
@@ -18595,8 +18597,9 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
             // siguiente —«quiero 2»— porque una de las tres oficinas se llama BARRANCA: sede sellada y ficha enviada sin que
             // eligiera entre Barranca, Supe y Paramonga (Rodrigo, Probar flujos, 2026-10-02). Vale como elección solo si la
             // nombra AHORA y ya se le mostró la lista 📍 de oficinas.
+            // (con lo que la gente antepone: «De barranca» volvió como sede tal cual y la comparación no lo veía — EcoGuard, simulación 06)
             if (c.clave === "sede" && String(ctx.ciudad ?? "").trim()
-                && limpiaZona(String(val)) === limpiaZona(String(ctx.ciudad ?? ""))
+                && limpiaZona(String(val).replace(/^\s*(?:soy\s+|vivo\s+|estoy\s+)?(?:de|desde|en|para|a)\s+/iu, "")) === limpiaZona(String(ctx.ciudad ?? ""))
                 && agenciasDeCiudad(String(ctx.ciudad ?? "")).length > 1) {
               let _eligeDeLista = false;
               if (loDijoElCliente(val, String(ctx.last_input ?? ""))) {
@@ -26128,6 +26131,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               //  y el cierre honesto ya no pegaba la lista de datos — simulación 4, 2026-10-01)
               const _lineaX = `Para provincia va con un adelanto de *${_symX} ${_adX}*` +
                 (_sdX > 0 ? ` y los *${_symX} ${_sdX}* restantes me los pagas` : " y el resto me lo pagas") + " por acá cuando llegue a la agencia 🙌";
+              // (la línea del motor YA dice cómo se paga el resto: fuera lo que la IA improvisó sobre eso. «Te llega por agencia
+              //  Shalom a Barranca y pagas cuando llegue a la agencia el resto allá.» + «…me lo pagas por acá» se contradecían
+              //  — EcoGuard, simulación 04, 2026-10-02. El saldo se paga por el chat: ver saldo-se-paga-a-nosotros.)
+              const _RE_PAGO_RESTO = /(?:pag|abon|cancel)\p{L}*\b[^.!?\n]{0,60}\b(?:resto|saldo|lo\s+dem[aá]s|cuando\s+(?:llegue|lo\s+recoj|recoj)|all[aá]|en\s+la\s+agencia|al\s+recoger)|\b(?:resto|saldo)\b[^.!?\n]{0,40}\b(?:pag|abon|cancel)\p{L}*/iu;
+              salida = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u).map((f) => {
+                if (!_RE_PAGO_RESTO.test(sinFormato(f))) return f;
+                // «X y pagas … allá.» → se queda «X.»; si la frase entera es del pago, se va.
+                const _cl = f.replace(/\s*,?\s+y\s+(?:me\s+)?(?:lo\s+|los\s+)?(?:pag|abon|cancel)\p{L}*\b[^.!?\n]*/iu, "").trim();
+                return _cl !== f.trim() && !_RE_PAGO_RESTO.test(sinFormato(_cl)) && /[\p{L}]{3}/u.test(_cl)
+                  ? (/[.!?…]$/.test(_cl) || /\p{Extended_Pictographic}️?$/u.test(_cl) ? _cl : `${_cl}.`) : "";
+              }).filter(Boolean).join(" ")).join("\n").replace(/\n{3,}/g, "\n\n").trim() || String(salida);
               const _parsX = String(salida).trimEnd().split(/\n{2,}/);
               // (si PREGUNTÓ EL PRECIO, la lista va antes que el adelanto —regla 1—: en «¿cuánto es?» el precio salía al
               //  final, detrás del adelanto y de Shalom — R1P-huancayo, R1P-multi, regresión 2026-10-01)
@@ -26139,7 +26153,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               //  apuntando al adelanto — R1P-casa, regresión 4, 2026-10-02)
               let _insX = _iLista >= 0 ? _iLista + 1 : 1;
               while (_insX < _parsX.length && (/[👇:]\s*$/u.test(_parsX[_insX - 1]) || /^\s*📍/m.test(_parsX[_insX]))) _insX++;
-              _parsX.splice(_insX, 0, _lineaX);
+              // (la PREGUNTA con que cierra ese párrafo baja detrás del adelanto: con la lista y «¿Cuál oferta prefieres?» en un
+              //  solo párrafo, el adelanto quedaba debajo de la pregunta — EcoGuard, Probar flujos 2026-10-02)
+              const _pAntes = _parsX[_insX - 1] ?? "";
+              const _mQX = _insX === _parsX.length && /\S[^\n]*\n|[.!…\p{Extended_Pictographic}]\s+¿/u.test(_pAntes)
+                ? _pAntes.match(/(?:^|\n|(?<=[.!…\p{Extended_Pictographic}️]\s))(¿[^?\n]*\?[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)*)$/u) : null;
+              if (_mQX && _mQX.index != null && _mQX.index > 0) {
+                _parsX[_insX - 1] = _pAntes.slice(0, _mQX.index).trimEnd();
+                _parsX.splice(_insX, 0, _lineaX, _mQX[1].trim());
+              } else _parsX.splice(_insX, 0, _lineaX);
               salida = _parsX.join("\n\n");
               (run.vars as any)._adelanto_explicado = 1;
               await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Se le explicó el adelanto al saber la zona", _lineaX).catch(() => {});
@@ -28269,11 +28291,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // llevar?» salía en el primer párrafo y la lista tres párrafos más abajo (Probar flujos, Rodrigo, 2026-10-01).
           {
             const _ln = _s.split("\n");
-            const _idxP = _ln.map((l, i) => (/—\s*\*?\s*(?:S\/|\$|US\$)\s?\d/u.test(l) && !/^\s*Anotado:/.test(l)) ? i : -1).filter((i) => i >= 0);
+            // (también el renglón con el precio DELANTE: «1️⃣ *S/ 89* — 1 unidad…» no casaba y el bloque no corría — EcoGuard, 2026-10-02)
+            const _idxP = _ln.map((l, i) => ((/—\s*\*?\s*(?:S\/|\$|US\$)\s?\d/u.test(l) || /(?:S\/|\$|US\$)\s?\d[^\n]*—|(?:S\/|\$|US\$)\s?\d[^\n]*\bunidad/u.test(l)) && !/^\s*Anotado:/.test(l)) ? i : -1).filter((i) => i >= 0);
             if (_idxP.length >= 2) {
               const _antesL = _ln.slice(0, _idxP[0]).join("\n");
               const _mQ = _antesL.match(/[ \t]*¿[^?¿\n]*\b(?:cu[aá]nt[ao]s|cu[aá]l|qu[eé]\s+(?:oferta|cantidad|opci[oó]n))\b[^?¿\n]*\?[ \t]*(?:\p{Extended_Pictographic}️?[ \t]*)*/iu);
-              if (_mQ && !/[?¿]/.test(_ln.slice(_idxP[0]).join("\n"))) {
+              const _despL = _ln.slice(_idxP[0]).join("\n");
+              // Y si DEBAJO de la lista ya hay otra pregunta de cantidad/oferta, la de arriba sobra: «¿Cuántas unidades quiere
+              // llevar? 😊👇 [lista] … ¿Cuál oferta prefieres?» eran dos preguntas por lo mismo (EcoGuard, 2026-10-02).
+              if (_mQ && /¿[^?¿\n]*\b(?:cu[aá]nt[ao]s|cu[aá]l|qu[eé]\s+(?:oferta|cantidad|opci[oó]n|promoci[oó]n))\b[^?¿\n]*\?/iu.test(_despL)) {
+                const _antesL2 = _antesL.replace(_mQ[0], " ").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+                _s = `${_antesL2 ? _antesL2 + "\n\n" : ""}${_despL.trim()}`;
+              } else if (_mQ && !/[?¿]/.test(_despL)) {
                 const _q = _mQ[0].trim();
                 const _antesL2 = _antesL.replace(_mQ[0], " ").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
                 _s = `${_antesL2 ? _antesL2 + "\n\n" : ""}${_ln.slice(_idxP[0]).join("\n").trim()}\n\n${_q}`;
