@@ -5145,6 +5145,9 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     // …y en minúsculas, si parece lista (comas o «…») y no hay un «(» antes en el renglón: «Av. JJ Elías, San Joaquín, La
     // Tinguiña…) ¿Cuántas…?» (sim a6). No toca emoticones («:)»).
     .replace(/(^|\n)[ \t]*([^\n(]{3,140}?[,…][^\n(]{0,60}?[^:;\s(])\)[ \t]*/gu, (m: string, a: string) => bubble._noTpl ? a : m)
+    // «…queda claro 📍 Ahora para dejar listo tu pedido.» — el anuncio de la petición que otro recorte se llevó (sim f1).
+    .replace(/(^|[.!?…][ \t]+|\p{Extended_Pictographic}\u{FE0F}?[ \t]+)(?:ahora\s*,?\s*|y\s+)?para\s+dejar(?:lo|la)?\s+list[oa]s?(?:\s+tu\s+pedido|\s+todo)?\s*[.!…]?[ \t]*(?=\n|$)/giu,
+      (m: string, a: string) => bubble._noTpl ? a.trimEnd() : m)
     // La lista de sedes APLASTADA en un renglón («…Barranca 👇 📍 *Barranca* — … 📍 *Supe* — … ¿Cuál te queda más cerca?»,
     // Probar flujos 2026-10-02; no se reprodujo en 6 simulaciones): una sede por renglón y la pregunta en su párrafo.
     .replace(/^.*📍.*📍.*$/gmu, (ln: string) => !bubble._noTpl ? ln
@@ -5467,6 +5470,10 @@ function quitarPeticionDeDatos(texto: string, conservarZona = false): { texto: s
   const _pars = t.replace(/\r/g, "").split(/\n{2,}/).map((p) => {
     const _lineas = p.split("\n").map((ln) => {
       if (/^[ \t]*📌/.test(ln) && _esCampo(ln)) { hubo = true; return ""; }     // renglón «📌 *Dato*» de campos
+      // …y el mismo campo SIN el 📌, en negrita suelto en su renglón («*Nombre y apellidos*» / «*Celular*» / «*DNI*» encima de la
+      // lista canónica: los datos pedidos dos veces — sim d2, 2026-10-02)
+      if (/^[ \t]*(?:[-•·▪][ \t]*)?\*[^*\n]{2,40}\*[ \t:.]*$/.test(ln)
+          && /\b(?:nombre|apellidos?|celular|tel[eé]fono|dni|documento|direcci[oó]n|referencia|sede|distrito)\b/i.test(sinFormato(ln))) { hubo = true; return ""; }
       let q = ln.replace(/[ \t]*📌[^📌]*/gu, (seg) => { if (_esCampo(seg)) { hubo = true; return ""; } return seg; });   // 📌 de corrido
       const _fr = q.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u);
       const _keep: string[] = [];
@@ -6340,12 +6347,19 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   // tenía freno (`_distrito_preguntado`) y esta no: con dos turnos por caso, la tanda de las
   // 116 provincias no podía verlo. La lista sirve para ELEGIR; repetirla en cada mensaje es
   // ruido que además empuja hacia abajo lo que sí hay que leer. Si vuelve a preguntar ÉL, va.
-  const _yaSeLasPase = !!(run.vars as any)?._sedes_mostradas;
+  // («pre»: se le pasaron en el turno de su ciudad, ANTES de la cantidad — `_sedeAhora`. Si después dice la cantidad sin haber
+  //  elegido oficina, se le vuelven a pasar una vez: si no, «quiero 2» quedaba sin sede y el respaldo le ponía la de su ciudad.)
+  const _yaSeLasPase = (run.vars as any)?._sedes_mostradas === "pre"
+    ? !String(ctx.opcion_id ?? "").trim()
+    : !!(run.vars as any)?._sedes_mostradas;
   // 🔢 La cantidad va ANTES que la oficina (zona → cantidad → sede → datos). Con «no quiero dar adelanto, pago todo en la
   // agencia» la IA habló de la agencia, la sede se capturó como «Pucallpa» y salieron las 8 oficinas en el PRIMER turno, sin
   // precio ni cantidad (R1P-sinadelanto, 4.ª relanzada); y con «ayacucho» a secas la pregunta del distrito salía pegada a
   // la de la cantidad: dos preguntas en una burbuja. Si no eligió cuántas y no pidió la oficina, la lista espera su turno.
-  const _sinCantidad = !String(ctx.opcion_id ?? "").trim() && !String(ctx.opcion ?? "").trim();
+  // 🗣️ CONVERSACIONAL (Rodrigo, 2026-10-02: «que llene los datos que necesita, no que siga un orden específico»): el turno en
+  // que él da SU CIUDAD y ahí hay varias sedes (`_sedeAhora`, ver runIa), lo que sigue a lo que está hablando es su sede — la
+  // lista va ya, sin esperar a la cantidad (que sale en el turno siguiente, con los precios).
+  const _sinCantidad = !String(ctx.opcion_id ?? "").trim() && !String(ctx.opcion ?? "").trim() && !(ctx as any)._sedeAhora;
 
   // 1) Contestó el distrito y ahí hay varias: se le muestran ESAS, no las de la ciudad.
   //    Va primero porque a esta altura ya no queda nada que preguntarle: solo que elija
@@ -6403,7 +6417,7 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
     // «tenemos estas 👇 · ¿Cuál te queda más cerca?» con una sola le pedía elegir entre una, y se llevaba el
     // pedido de datos que había escrito la IA (F12-pichanaqui, 2026-09-29).
     if (_prop.length === 1 && !_pidio) return null;
-    (run.vars as any)._sedes_mostradas = 1;
+    (run.vars as any)._sedes_mostradas = (ctx as any)._sedeAhora ? "pre" : 1;
     return { texto: listaSedes(_cab, _ags, 99, "¿Cuál te queda más cerca?"), cat: "campo",
       ev: "📍 Se le pasaron todas", det: `${_ags.length} agencias en ${ciudad} — pocas, van todas con su referencia` };
   }
@@ -6445,7 +6459,7 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   //    después de ocho direcciones, y se leía como si el mensaje se hubiera cortado.
   if (_yaSeLasPase && !_pidio) return null;
   if (_sinCantidad && !_pidio) return null;   // (primero la cantidad; la IA preguntó la sede por su cuenta — R1P-casa, relanzada 2026-10-02)
-  (run.vars as any)._sedes_mostradas = 1;
+  (run.vars as any)._sedes_mostradas = (ctx as any)._sedeAhora ? "pre" : 1;
   return { texto: listaSedes(_cab, _ags, 8, "¿Cuál te queda más cerca?"), cat: "nota", auto: _ags,
     ev: "📍 Se le pegó la lista de agencias", det: "Pidió la sede sin listarlas." };
 }
@@ -7454,7 +7468,9 @@ function bloqueEnvio(courier: string, modo: string, sede?: { l: string; ref?: st
 // Va por código y no por prompt por lo de siempre: el mensaje de este turno ya arrastra el
 // bloque de "no expliques", el tope de 300 y la regla de una sola pregunta — una línea más
 // pedida por prompt es justo la que el modelo sacrifica.
-const RE_YA_CONFIRMO_COBERTURA = /(s[ií],?\s+(?:hacemos|llegamos|enviamos|te\s+lleg)|s[ií]\s+llega|llegamos\s+a|hacemos\s+env[ií]os?\s+a|enviamos\s+a|te\s+llega\s+por|s[ií]\s+enviamos)/i;
+// (+ «tu pedido va por agencia Shalom», «la agencia Shalom de Supe queda anotada»: salía «Sí hacemos envíos a Barranca con la
+//  agencia Shalom» encima de eso mismo — sims c5/c6, 2026-10-02)
+const RE_YA_CONFIRMO_COBERTURA = /(s[ií],?\s+(?:hacemos|llegamos|enviamos|te\s+lleg)|s[ií]\s+llega|llegamos\s+a|hacemos\s+env[ií]os?\s+a|enviamos\s+a|te\s+llega\s+por|s[ií]\s+enviamos|va\s+por\s+(?:la\s+)?agencia|agencia\s+(?:shalom|olva|marvisur)\b|por\s+(?:shalom|olva)\b|lo\s+recoges\s+en|queda\s+anotad|recojo\s+en|en\s+(?:shalom|olva)\b|queda\s+list[ao]\s+para\s+(?:el\s+)?recoj)/i;
 const RE_PREGUNTA_LA_CIUDAD = /(qu[eé]\s+(ciudad|distrito|provincia)|de\s+qu[eé]\s+(ciudad|distrito)|ciudad\s+o\s+distrito|de\s+d[oó]nde\s+(me\s+)?(escribes|eres))/i;
 function conCoberturaConfirmada(texto: string, depto: string, courier: string): string {
   const t = String(texto ?? "").trimStart();
@@ -19065,7 +19081,9 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
     // Misma regla del negocio: con la ciudad basta para seguir; el humano afina la oficina
     // en Pedidos gracias a la bandera `sede_por_confirmar`.
     const hablaDeSede = /\b(shalom|olva|agencia|oficina|sucursal|recoj|recog)/.test(textN);
-    if (preguntoSede || noLaSabe || hablaDeSede) {
+    // (con VARIAS oficinas, que se le haya preguntado no basta: si contestó otra cosa —«quiero 2»— no eligió; la ciudad como sede
+    //  solo si dice que no sabe o habla él de la agencia. Antes: «quiero 2» tras la lista → «Te llega a la sede Barranca» — sim c3)
+    if ((preguntoSede && !_variasEnCiudad) || noLaSabe || hablaDeSede) {
       // Si en lo que dijo aparece UNA sola agencia oficial ("lo recojo en Chilca
       // Huancayo"), esa es la sede de verdad y vale más que la ciudad. Se compara por
       // palabras completas y solo con nombres largos: si no, agencias de nombre corto
@@ -22079,8 +22097,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // Cuatro cosas para una pregunta. La marca NO se consume, así que la cantidad se le
       // pregunta en el turno siguiente, que es cuando toca. Rodrigo: «que conteste solo lo
       // que preguntó».
+      // 🗣️ …ni cuando en su ciudad hay VARIAS sedes y todavía no eligió: acaba de hablar de dónde es, así que lo que sigue es
+      // DÓNDE lo recoge (la lista va en este turno) y la cantidad, con los precios, en el siguiente. Una pregunta por mensaje,
+      // la más ligada a lo que está hablando (Rodrigo, 2026-10-02: «de barranca» → las sedes + el adelanto + ¿cuál?).
+      {
+        const _ciuS = String(ctx.ciudad ?? "").trim();
+        (ctx as any)._sedeAhora = !!(run.vars as any)?._zona_recien && !_faltaSuCiudad
+          && String(ctx.zona_entrega ?? "") === "provincia" && !!_ciuS && !esSoloDepartamento(_ciuS)
+          && agenciasDeCiudad(_ciuS).length > 1 && !agenciaExacta(String(ctx.sede ?? ""), _ciuS)
+          && !String(ctx.opcion_id ?? "").trim();
+      }
       const _tocaPreguntarCant = !!(run.vars as any)?._zona_recien && !_faltaSuCiudad &&
-        !preguntaPorLaSede(ctx.last_input);
+        !preguntaPorLaSede(ctx.last_input) && !(ctx as any)._sedeAhora;
       // La marca se consume acÃ¡: la pregunta sale en ESTE mensaje y en el siguiente turno
       // ya no toca â si no eligiÃ³, se sella la primera (ver arriba) y el tema se cierra.
       if (_tocaPreguntarCant) { delete (run.vars as any)._zona_recien; (run.vars as any)._cant_preguntada = 1; }
@@ -23213,7 +23241,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Si el que saca el tema es ÉL, la lista va igual: eso es contestarle, no cerrarle.
         const _yaEligio = !!String(ctx.opcion_id ?? "").trim();
         const _preguntaSede = preguntaPorLaSede(ctx.last_input);
-        if (!_yaEligio && !_preguntaSede) {
+        if (!_yaEligio && !_preguntaSede && !(ctx as any)._sedeAhora) {   // (en el turno de su ciudad con varias sedes, sí: ver `_sedeAhora`)
           L.push("🕒 Todavía NO le pidas la sede ni le hables de oficinas: primero tiene que decirte " +
             "cuántas unidades lleva. Elegir agencia es logística de un pedido que aún no existe. " +
             "Si te pregunta él por las oficinas, ahí sí se lo contestas.");
@@ -25823,7 +25851,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         agenciasDeCiudad(String(ctx.ciudad ?? "")).length === 1;
       if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia"
           && !_cerrandoPedido
-          && (_yaEligioOp || _elPidioSede || _unicaEnSuCiudad)
+          && (_yaEligioOp || _elPidioSede || _unicaEnSuCiudad || !!(ctx as any)._sedeAhora)
           && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
         try {
           // 📏 Se cambió a una oficina LEJOS dentro de su departamento. Lo escribe el MOTOR,
@@ -26303,7 +26331,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
         // ✅ Y si acaba de decir su departamento y se le está repreguntando la ciudad, primero
         // se le confirma que sí le llega, con la agencia nombrada.
-        if (String(ctx.zona_entrega ?? "") === "provincia" && (run as any)?._zonaRecienTurno) {
+        // (UNA vez: con `_sedeAhora` la marca de la zona dura hasta el turno de la sede y la línea salía otra vez encima de
+        //  «Paramonga queda registrado» — sims d/e, 2026-10-02)
+        if (String(ctx.zona_entrega ?? "") === "provincia" && (run as any)?._zonaRecienTurno && !(run.vars as any)?._cobertura_dicha) {
+          (run.vars as any)._cobertura_dicha = 1;
           try {
             const _entC = await loadEntregas(db, run);
             const _cC = Object.keys((((_entC as any)?.entregas?.courier ?? {}) as Record<string, unknown>))[0] ?? "";
@@ -26376,7 +26407,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // (nunca entre un encabezado que termina en 👇/«:» y su lista 📍: «En *Cusco* tenemos oficinas en estos distritos 👇» quedó
               //  apuntando al adelanto — R1P-casa, regresión 4, 2026-10-02)
               let _insX = _iLista >= 0 ? _iLista + 1 : 1;
-              while (_insX < _parsX.length && (/[👇:]\s*$/u.test(_parsX[_insX - 1]) || /^\s*📍/m.test(_parsX[_insX]))) _insX++;
+              // (con la lista de SEDES en el mensaje —turno `_sedeAhora`—, el adelanto va ANTES de ella: zona → adelanto → sedes →
+              //  «¿Cuál te queda más cerca?». Detrás de la lista se perdía en el envío — sim c3, 2026-10-02)
+              const _iSedes = _parsX.findIndex((p) => (p.match(/^\s*📍/gmu) ?? []).length >= 2);
+              if (_iSedes >= 0 && _iLista < 0) _insX = Math.max(1, Math.min(_insX, _iSedes));
+              else while (_insX < _parsX.length && (/[👇:]\s*$/u.test(_parsX[_insX - 1]) || /^\s*📍/m.test(_parsX[_insX]))) _insX++;
               // (la PREGUNTA con que cierra ese párrafo baja detrás del adelanto: con la lista y «¿Cuál oferta prefieres?» en un
               //  solo párrafo, el adelanto quedaba debajo de la pregunta — EcoGuard, Probar flujos 2026-10-02)
               const _pAntes = _parsX[_insX - 1] ?? "";
@@ -27045,6 +27080,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // del 3.er chat, 2026-10-01). Los guards físicos de abajo la vuelven suave si hace falta.
               if ((ctx as any)._falta_opcion && !String(ctx.opcion_id ?? "").trim()
                   && /\b(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l\s+(?:oferta|opci[oó]n|prefieres|te\s+preparo))\b/i.test(q)) return q;
+              // 📍 …ni la de la SEDE cuando la lista va en este mismo mensaje (se le vuelve a pasar tras decir la cantidad):
+              // sin ella quedaba la lista pelada y la petición de datos pegada al último renglón — sim c6, 2026-10-02.
+              if ((_antesQR.match(/^\s*📍/gmu) ?? []).length >= 2 && /te\s+queda\s+(?:m[aá]s\s+cerca|mejor)|en\s+cu[aá]l\s+est[aá]s/i.test(q)) return q;
               const rep = _prevQs.some((b) => { let c = 0; for (const w of a) if (b.has(w)) c++; return c / Math.min(a.size, b.size || 1) >= 0.7; });
               return rep ? " " : q;
             }).replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
@@ -28740,6 +28778,27 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         try {
           // «Cuéntame cuántas unidades te quedan mejor.» + «¿Cuántas unidades quieres llevar?» en el mismo mensaje (sim w2): el
           // pedido en imperativo sobra si ya va la pregunta.
+          // 🗣️ Con la lista de SEDES en el mensaje (turno `_sedeAhora`), la pregunta es «¿Cuál te queda más cerca?» y nada más:
+          // fuera la de la cantidad que haya escrito la IA (una pregunta por mensaje; la cantidad va en el siguiente).
+          const _hayListaSedes = (String(salida).match(/^\s*📍/gmu) ?? []).length >= 2;
+          // …y con la lista de sedes y la sede SIN elegir, la petición de datos espera al mensaje siguiente (una cosa por vez):
+          // «…Urb. Miguel Grau. Para dejarlo listo, pásame estos datos 👇 📌…» (sim c6). Si quedó sin pregunta, va la de la sede.
+          if (_hayListaSedes && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
+            const _antesPD = String(salida);
+            salida = _antesPD.split("\n").filter((ln) => !/^\s*📌/u.test(ln))
+              .map((ln) => ln.replace(/[.\s]*(?:(?:ahora|y)\s*,?\s*)?(?:para\s+dejarlo\s+listo,?\s*)?(?:p[aá]same|m[aá]ndame|env[ií]ame|necesito)\s+(?:estos\s+|tus\s+|los\s+)?datos[^\n]*$/iu, "").trimEnd())
+              .join("\n").replace(/\n{3,}/g, "\n\n").trim() || _antesPD;
+            if (!/[?¿]/.test(salida)) salida = `${salida}\n\n¿Cuál te queda más cerca?`;
+            // (y si el mensaje arranca directo con el adelanto —la frase de la IA se fue en un recorte—, primero cómo le llega)
+            if (/^\s*(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto/i.test(String(salida)) && String(ctx.ciudad ?? "").trim()) {
+              salida = `A *${bonito(String(ctx.ciudad).toUpperCase())}* te llega por agencia *Shalom* 📦\n\n${salida}`;
+            }
+          }
+          if (_hayListaSedes && /¿[^?¿]*\b(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l\s+promoci[oó]n)\b[^?¿]*\?/i.test(String(salida))) {
+            salida = String(salida).split("\n").map((ln) => /^\s*📍/u.test(ln) ? ln
+              : ln.replace(/[ \t]*¿[^?¿\n]*\b(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l\s+promoci[oó]n)\b[^?¿\n]*\?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*/giu, " ").trimEnd())
+              .join("\n").replace(/\n{3,}/g, "\n\n").trim();
+          }
           if (/¿[^?¿]*\bcu[aá]nt[ao]s\b[^?¿]*\?/i.test(String(salida))) {
             const _antesImp = String(salida);
             salida = _antesImp.split("\n").map((ln) => ln.split(/(?<=[.!…])\s+/u)
@@ -28753,7 +28812,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const { data: _txOut } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
               .eq("direction", "out").eq("type", "text").order("ts", { ascending: false }).limit(10);
             const _yaEnTexto = ((_txOut ?? []) as any[]).some((mm) => _opsV.filter((o) => _precioEn(String(mm?.content?.text ?? ""), o)).length >= 2);
-            if (!_yaEnTexto && _opsV.filter((o) => _precioEn(String(salida), o)).length < 2 && !/te\s+lo\s+dejo\s+as[ií]/i.test(String(salida))) {
+            if (!_yaEnTexto && !_hayListaSedes && _opsV.filter((o) => _precioEn(String(salida), o)).length < 2 && !/te\s+lo\s+dejo\s+as[ií]/i.test(String(salida))) {
               const _pz = (v: unknown) => (_negOn ? `*${_symV} ${v}*` : `${_symV} ${v}`);
               const _lista = emojisEnListaDePrecios("💰 Estos son los precios 👇\n" + _opsV.map((o) =>
                 `${o.nombre} — ${_pz(o.precio)}${o.descripcion ? ` · ${o.descripcion}` : ""}`).join("\n"), _symV, _emOn);
