@@ -16830,8 +16830,16 @@ function oficinaDeTexto(texto: string): { l: string; t: string; p: string; d: st
     // "la de ovalo papal" no calza con ninguna oficina si se compara el texto entero.
     const pelado = crudo.replace(RUIDO_CIUDAD, " ").replace(/\s+/g, " ").trim();
     if (!pelado || provinciasDeDistrito(pelado).length) return null;   // es un distrito de verdad
+    // 🔴 Un «sí» no es una oficina: «dale» salió como MAGDALENA DEL MAR (Lima, a 166 km de Barranca), se cambió la sede
+    // y le llegó su ficha (sims w1 y x3, 2026-10-02).
+    if (/^\s*(?:s[ií]|dale|ok(?:ey|a)?|ya|listo|bueno|perfecto|claro|va|vale|gracias|de\s+una|ya\s+dale|s[ií]\s+dale|est[aá]\s+bien|as[ií]\s+(?:est[aá]\s+bien|nom[aá]s))[\s!.,👍🙌😊]*$/iu.test(crudo)) return null;
     const labels = candidatasAgencia(crudo);
     if (labels.length !== 1) return null;                              // ninguna o varias → no se adivina
+    // …y el nombre de la oficina tiene que ESTAR en lo que escribió, como palabra entera (no un pedazo que se le parece).
+    // (con un dedazo en palabras largas sí: «mazuco» → MAZUKO; y nombres cortos como ICA, enteros)
+    const _palTxt = limpiaZona(crudo).split(/\s+/).filter(Boolean);
+    if (!limpiaZona(labels[0]).split(/\s+/).some((w) => w.length >= 3
+        && (_palTxt.includes(w) || (w.length >= 5 && _palTxt.some((x) => x.length >= 5 && casiIgual(x, w)))))) return null;
     const ags = agenciasDeCiudad(labels[0]).filter((a) => limpiaZona(a.l) === limpiaZona(labels[0]));
     return ags.length === 1 ? ags[0] : null;
   } catch { return null; }
@@ -20331,9 +20339,14 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
       // necesidad en vez de repetir «¿cuántas?» — Rodrigo, 2026-10-02). Solo tras esa pregunta: un «ok» a otra cosa no elige.
       let _aceptaRecom = false;
       if (list.length >= 2 && /^\s*(?:s[ií]|ya|ok(?:ey)?|dale|listo|bueno|perfecto|va|claro|de\s+una|as[ií]\s+(?:est[aá]\s+bien|nom[aá]s|mismo)|d[eé]ja(?:me)?lo\s+as[ií])(?:[\s,!.]+(?:s[ií]|ya|dale|porfa|por\s+favor|gracias|nom[aá]s|as[ií]|est[aá]\s+bien|perfecto))*[\s!.👍🙌😊]*$/iu.test(String(texto ?? ""))) {
+        // (o la penúltima, si la última fue solo la pregunta de cantidad sin nombrar opciones: el «dale» acepta lo recomendado
+        //  y no vuelve a la pregunta de necesidad — sims w1/w2, 2026-10-02)
         const { data: _ultQ } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
-          .eq("direction", "out").order("ts", { ascending: false }).limit(1);
-        _aceptaRecom = /te\s+lo\s+dejo\s+as[ií]/i.test(String(((_ultQ ?? [])[0] as any)?.content?.text ?? ""));
+          .eq("direction", "out").eq("type", "text").order("ts", { ascending: false }).limit(2);
+        const _u0 = String(((_ultQ ?? [])[0] as any)?.content?.text ?? ""), _u1 = String(((_ultQ ?? [])[1] as any)?.content?.text ?? "");
+        _aceptaRecom = /te\s+lo\s+dejo\s+as[ií]/i.test(_u0)
+          || (/te\s+lo\s+dejo\s+as[ií]/i.test(_u1) && !/(?:S\/|\$)\s?\d/.test(_u0) && /cu[aá]nt[ao]s|qu[eé]\s+oferta/i.test(_u0) && _u0.length <= 80);
+        if (_aceptaRecom && !/te\s+lo\s+dejo\s+as[ií]/i.test(_u0)) (run as any)._recPenultima = _u1;
       }
       if (list.length >= 2 && (_aceptaRecom || /^\s*(?:ya|ok|dale|listo|bueno|s[ií])?[\s,]*(?:esa(?:\s+misma)?|ese(?:\s+mismo)?|la\s+que\s+(?:me\s+)?(?:dices|dijiste|recomiendas|recomendaste|me\s+recomiendas)|la\s+recomendada|la\s+que\s+t[uú]\s+digas)\s*[.!]*\s*$/i.test(sinTildes(String(texto ?? ""))))) {
         const { data: _ultR } = await db.from("messages").select("content")
@@ -20358,13 +20371,13 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
         if (_aceptaRecom) _recomienda = undefined;   // tras «¿Te lo dejo así?» manda el nombre entero (abajo), no la 1.ª palabra
         if (!_recomienda && _aceptaRecom) {
           // (por el NOMBRE ENTERO de la opción, «2 unidades»: por la primera palabra, el «1.5 mm» contaba como «1 unidad»)
-          const _txtUlt = normalize(sinFormato(String(((_ultR ?? [])[0] as any)?.content?.text ?? "")));
+          const _txtUlt = normalize(sinFormato(String((run as any)._recPenultima ?? ((_ultR ?? [])[0] as any)?.content?.text ?? "")));
           const _porNombre = list.filter((o) => {
             const n = normalize(String(o.nombre ?? "")).trim();
             return !!n && new RegExp("(?<![\\p{L}\\p{N}])" + n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/unidad(?:es)?/, "unidad(?:es)?") + "(?![\\p{L}\\p{N}])", "u").test(_txtUlt);
           });
           // (y nunca con la lista de precios en ese mensaje ni con un rango «2 o 3 unidades»: ahí no recomendó una — n10)
-          const _lnP = (String(((_ultR ?? [])[0] as any)?.content?.text ?? "").match(/^.*(?:S\/|\$|US\$)\s?\d.*$/gmu) ?? []).length;
+          const _lnP = (String((run as any)._recPenultima ?? ((_ultR ?? [])[0] as any)?.content?.text ?? "").match(/^.*(?:S\/|\$|US\$)\s?\d.*$/gmu) ?? []).length;
           // (ni si nombra DOS cantidades, también en letras: «Lo ideal es una unidad… si quieres más, la de 2 unidades… ¿Te lo
           //  dejo así?» — «una unidad» no casaba con «1 unidad» y el «si» selló 2 — Probar flujos/sim g, 2026-10-02)
           const _NUMS: Record<string, number> = { un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6 };
@@ -23755,8 +23768,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // la boca de la IA en otros productos (ver ejemplo-del-prompt-pesa-mas).
       if (!esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && !String(ctx.opcion_id ?? "").trim()) {
         try {
+          // (solo mensajes de TEXTO del bot: la pregunta del saludo, debajo de un video, no cuenta — ver `_cantAntes`)
           const { data: _oNec } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
-            .eq("direction", "out").order("ts", { ascending: false }).limit(2);
+            .eq("direction", "out").eq("type", "text").order("ts", { ascending: false }).limit(2);
           const _txNec = ((_oNec ?? []) as any[]).map((mm) => sinFormato(String(mm?.content?.text ?? ""))).join("\n");
           const _yaPregCant = /¿[^?¿]*\bcu[aá]nt[ao]s\b[^?¿]*\?|\b(?:dime|cu[eé]ntame|av[ií]same)\s+cu[aá]nt[ao]s|qu[eé]\s+oferta\s+te\s+preparo/i.test(_txNec);
           if (_yaPregCant) {
@@ -26325,7 +26339,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               // Se dice según cómo cobra el envío el negocio, y no si la IA ya habló del costo del envío.
               const _modoX = modoEnvio(ctx);
               const _cobroX = envioCobroDe(ctx, "provincia");
-              const _envX = /gratis|env[ií]o[^.\n]{0,30}(?:S\/|\$)\s?\d|(?:S\/|\$)\s?\d[^.\n]{0,20}(?:de\s+)?env[ií]o|env[ií]o\s+(?:lo\s+)?pagas/i.test(sinFormato(salida)) ? ""
+              // (+ «el envío corre por nuestra cuenta, sin costos adicionales» — salían los dos: Probar flujos 2026-10-02)
+              const _envX = /gratis|por\s+nuestra\s+cuenta|sin\s+costos?(?:\s+adicional(?:es)?)?\s*(?:de\s+env[ií]o)?|env[ií]o\s+(?:va\s+)?incluido|env[ií]o[^.\n]{0,30}(?:S\/|\$)\s?\d|(?:S\/|\$)\s?\d[^.\n]{0,20}(?:de\s+)?env[ií]o|env[ií]o\s+(?:lo\s+)?pagas/i.test(sinFormato(salida)) ? ""
                 : _modoX === "agencia" ? " El envío lo pagas en la agencia al recoger 📦"
                 : _cobroX > 0 ? ` El envío a tu ciudad es de *${_symX} ${_cobroX}* 📦`
                 : _modoX === "incluido" ? " El envío es *gratis* 🙌" : "";
@@ -28262,7 +28277,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             }
           }
           // 2) La misma pregunta que en la burbuja anterior → la versión suave, una vez.
-          const { data: _oF } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
+          const { data: _oF } = await db.from("messages").select("content, type").eq("contact_id", run.contact_id)
             .eq("direction", "out").order("ts", { ascending: false }).limit(1);
           // 👥 Con DOS DESTINOS en su mensaje («uno para mi casa en Lince y otro para mi hermano en Arequipa») no
           // se compara con la burbuja anterior: su «¿desde dónde nos escribe?» contaba como pregunta repetida,
@@ -28273,8 +28288,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _li = String(ctx.last_input ?? "");
           // La burbuja anterior también pregunta la cantidad cuando lo hace en IMPERATIVO: «Dime cuántas
           // unidades o qué oferta te interesa» (F5-hprecio: tras «ok gracias» salió «¿Cuántas…?» otra vez).
-          const _cantAntes = _hay(_RE_Q_CANT, _ultF) ||
-            /(?:^|[^\p{L}])(?:dime|cu[eé]ntame|av[ií]same|me\s+dices)\s+(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l)(?![\p{L}])/iu.test(_ultF);
+          // (solo si la preguntó el BOT en un mensaje de texto: el «¿Cuál promoción prefiere?» del saludo —debajo del video—
+          //  contaba como «ya preguntada» y el primer mensaje con los precios salía con la de necesidad en vez de «¿cuántas?»
+          //  — Rodrigo, 2026-10-02: «¿por qué no le preguntó cuántas unidades quiere ahora?»)
+          const _ultFTxt = String(((_oF ?? [])[0] as any)?.type ?? "text") === "text" ? _ultF : "";
+          const _cantAntes = _hay(_RE_Q_CANT, _ultFTxt) ||
+            /(?:^|[^\p{L}])(?:dime|cu[eé]ntame|av[ií]same|me\s+dices)\s+(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l)(?![\p{L}])/iu.test(_ultFTxt);
           if (!_zonaOk && _hay(_RE_Q_UBIC, _ultF) && _hay(_RE_Q_UBIC, _s) && !_RE_SUAVE_Z.test(_ultF)) {
             _s = _pegaSuave(_s.replace(_RE_Q_UBIC, " ").trim(), _SUAVE_Z);
           } else if (!_zonaOk && _cantAntes && _hay(_RE_Q_CANT, _s) && !RE_CLIENTE_PIDE_PRECIO.test(_li)
@@ -28316,6 +28335,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "").trim();
             // (en su propio párrafo si el mensaje tiene varios: pegada al «Para provincia va con un adelanto…» se perdía — p5)
             _s = `${_s}${/\n\n/.test(_s) ? "\n\n" : " "}${_qN && !_yaNec ? _qN : _SUAVE_C}`.trim();
+          } else if (_zonaOk && _cantAntes && !RE_CLIENTE_PIDE_PRECIO.test(_li) && !/[?¿]/.test(_s)
+                     && /\b(?:dime|cu[eé]ntame|av[ií]same)\s+(?:cu[aá]l\s+(?:prefieres|quieres|te\s+preparo)|cu[aá]nt[ao]s)\b/i.test(_s)
+                     && !_RE_SUAVE_C.test(_ultF)) {
+            // 🎯 …y el pedido en IMPERATIVO sin signo («Dime cuál prefieres y te lo dejo cerrado» — sim x3): ya se preguntó, va la de necesidad.
+            let _qN5 = "";
+            try { _qN5 = await preguntaNecesidad(db, run, ctx); } catch (_) { _qN5 = ""; }
+            const _ya5 = !!_qN5 && sinFormato(_ultF).includes(sinFormato(_qN5).replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, ""));
+            if (_qN5 && !_ya5) {
+              _s = _s.split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}\u{FE0F}?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
+                .filter((f) => !/\b(?:dime|cu[eé]ntame|av[ií]same)\s+(?:cu[aá]l|cu[aá]nt)/i.test(f)).join(" ")).join("\n").trim();
+              _s = `${_s}${/\n\n/.test(_s) ? "\n\n" : " "}${_qN5}`.trim();
+            }
           } else if (_zonaOk && _cantAntes && !RE_CLIENTE_PIDE_PRECIO.test(_li)
                      && /¿[^?¿]*\b(?:opciones|precios|promociones|ofertas|presentaciones|packs?)\b[^?¿]*\?/i.test(_s)) {
             // 🎯 …y la misma pregunta dicha de otra forma: «¿Quieres que te pase las opciones y precios para que elijas
@@ -28619,7 +28650,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _pregNecIa = /¿[^?¿]*\b(?:para\s+qu[eé]|d[oó]nde\s+lo\s+(?:usar|vas|pondr|instalar|colocar)\p{L}*|en\s+qu[eé]\s+(?:espacio|lugar|parte|zona)|qu[eé]\s+tipo|cu[aá]nt[oa]s\s+(?:espacios|personas|zonas|equipos|ambientes|trabajadores)|para\s+qui[eé]n|lo\s+usar[aá]s|lo\s+quieres\s+para|es\s+para)\b[^?¿]*\?/iu.test(_ultNe);
           // (+ a «¿Cuántas unidades…?» contestó con su NECESIDAD y no con un número: «para un jardin» — sim g. Solo si no
           //  dijo ninguna cantidad: con «2» o «dos» ya eligió y esto no corre.)
-          const _cantEnUlt = /¿[^?¿]*\b(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l\s+promoci[oó]n|qu[eé]\s+promoci[oó]n)\b[^?¿]*\?/i.test(_outsNe[0] ?? "");
+          const _cantEnUlt = /¿[^?¿]*\b(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l\s+promoci[oó]n|qu[eé]\s+promoci[oó]n)\b[^?¿]*\?/i.test(_outsNe[0] ?? "")
+            // (+ en imperativo: «Dime cuál prefieres y te lo dejo cerrado» — sim x3)
+            || /\b(?:dime|cu[eé]ntame|av[ií]same)\s+(?:cu[aá]l|cu[aá]nt[ao]s)\b/i.test(_outsNe[0] ?? "");
           const _sinNumero = !/\b(?:\d+|una?|uno|dos|tres|cuatro|cinco|seis)\b/i.test(_liNe.replace(/\buna?\s+(?=(?:chacr|casa|huert|jard|patio|taller|tienda|oficina|finca|granja|zona|parte|sola|sol[oa])\p{L}*)/giu, ""));
           // ⛔ …y nunca cuando lo que manda es SU UBICACIÓN: «de barranca» tras el «¿Cuál promoción prefiere?» del saludo salió
           // «Para una barranca te conviene el de 1 unidad» (sim i). Ni con la ciudad/distrito en el mensaje ni con «de/desde/soy de».
@@ -28641,7 +28674,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 .filter((ln) => !/(?:S\/|\$|US\$)\s?\d/.test(ln) && !/opciones|promociones|ofertas/i.test(ln))
                 .map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}\u{FE0F}?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u).filter((f) => {
                   const nf = normalize(sinFormato(f));
+                  // (+ la frase que empuja OTRA cantidad: «También puedes aprovechar y pedir dos para proteger más áreas» delante
+                  //  de la recomendación de 1 — sim y3)
                   return !/[?¿]/.test(f) && !/\bunidad(?:es)?\b|\b(?:dime|cu[eé]ntame)\s+cu[aá]|\b(?:recomiendo|te conviene|lo ideal|lo mejor|ideal para)\b/i.test(nf)
+                    && !/\b(?:pedir|llevar|llevarte|aprovech\w*|agreg\w*|sumar|comprar|elegir)\b[^.!?]{0,20}\b(?:dos|tres|cuatro|mas|otra|un\s+par)\b|\b(?:dos|tres)\s+para\b/i.test(nf)
                     && !_nomsNe.some((n) => nf.includes(n));
                 }).join(" ")).join("\n").replace(/\n{3,}/g, "\n\n").trim();
               const _letras = _resto.replace(/[^\p{L}]/gu, "").length;
@@ -28694,6 +28730,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "").trim()
           && String(ctx.pedido_creado ?? "") !== "si" && String(salida ?? "").trim() && !(ctx as any)._pidioCaptura) {
         try {
+          // «Cuéntame cuántas unidades te quedan mejor.» + «¿Cuántas unidades quieres llevar?» en el mismo mensaje (sim w2): el
+          // pedido en imperativo sobra si ya va la pregunta.
+          if (/¿[^?¿]*\bcu[aá]nt[ao]s\b[^?¿]*\?/i.test(String(salida))) {
+            const _antesImp = String(salida);
+            salida = _antesImp.split("\n").map((ln) => ln.split(/(?<=[.!…])\s+/u)
+              .filter((f) => !(/\b(?:cu[eé]ntame|dime|av[ií]same|ind[ií]came)\s+cu[aá]nt[ao]s\b/i.test(f) && !/[?¿]/.test(f))).join(" ")).join("\n")
+              .replace(/\n{3,}/g, "\n\n").trim() || _antesImp;
+          }
           const _opsV = opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id ?? "")), run).filter((o) => Number(o.precio) > 0);
           const _symV = simboloMoneda(ctx.moneda as string);
           const _precioEn = (t: string, o: Opcion) => new RegExp("(?:^|[^0-9])" + String(o.precio).replace(".", "[.,]") + "(?![0-9])").test(sinFormato(t));
@@ -28742,7 +28786,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const _conf = `Listo: *${_opElegida.nombre}* a *${_symV} ${_opElegida.precio}*${_cu} 🙌`;
               // En lugar de un acuse pelado de la IA («¡Perfecto!», «Gracias por confirmar 😊»), o arriba de todo.
               const _pars2 = String(salida).trim().split(/\n{2,}/);
-              if (_pars2.length > 1 && _pars2[0].replace(/[^\p{L}]/gu, "").length <= 25 && !/[?¿]/.test(_pars2[0])) _pars2[0] = _conf;
+              // (si la IA ya confirmaba la cantidad sin el precio —«Perfecto, te dejo ese pack de 2 unidades para patio y chacra 🌿»—,
+              //  su frase se cambia por la nuestra: salían las dos seguidas — sim y2)
+              const _nomEl = normalize(String(_opElegida.nombre ?? "")).replace(/unidad(?:es)?/, "unidad");
+              const _iConf = _pars2.findIndex((p) => !/[?¿📍📌]/u.test(p) && p.length <= 200
+                && normalize(sinFormato(p)).replace(/unidades/g, "unidad").includes(_nomEl));
+              if (_iConf >= 0) _pars2[_iConf] = _conf;
+              else if (_pars2.length > 1 && _pars2[0].replace(/[^\p{L}]/gu, "").length <= 25 && !/[?¿]/.test(_pars2[0])) _pars2[0] = _conf;
               else _pars2.unshift(_conf);
               salida = _pars2.join("\n\n");
               await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Precio confirmado al elegir",
