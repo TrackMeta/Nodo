@@ -6407,6 +6407,7 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   //    Cierra con la misma pregunta que las otras tres: era la única que terminaba en seco
   //    después de ocho direcciones, y se leía como si el mensaje se hubiera cortado.
   if (_yaSeLasPase && !_pidio) return null;
+  if (_sinCantidad && !_pidio) return null;   // (primero la cantidad; la IA preguntó la sede por su cuenta — R1P-casa, relanzada 2026-10-02)
   (run.vars as any)._sedes_mostradas = 1;
   return { texto: listaSedes(_cab, _ags, 8, "¿Cuál te queda más cerca?"), cat: "nota", auto: _ags,
     ev: "📍 Se le pegó la lista de agencias", det: "Pidió la sede sin listarlas." };
@@ -26282,7 +26283,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _antesSQ = salida;
         salida = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=[\p{Extended_Pictographic}\u{FE0F}])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
           .filter((f) => !/¿[^?\n]*\b(?:cu[aá]l\s+(?:te\s+)?queda|en\s+qu[eé]\s+(?:sede|oficina|agencia)|qu[eé]\s+(?:sede|oficina|agencia)|cu[aá]l\s+(?:sede|oficina|agencia))\b[^?\n]*\?/i.test(sinFormato(f))
-            && !/\b(?:tenemos|hay)\s+varias\s+(?:sedes|oficinas|agencias)\b[^.!?\n]*$/i.test(sinFormato(f)))
+            && !/\b(?:tengo|tenemos|hay)\s+varias\b[^.!?\n]*$/i.test(sinFormato(f)))
           .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/^[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)+$/gmu, "").replace(/\n{3,}/g, "\n\n").trim();
         if (salida !== _antesSQ) await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 Preguntaba la sede sin la lista", `«${_antesSQ.slice(0, 120)}»`).catch(() => {});
         if (!salida.replace(/[\s\p{P}\p{S}]/gu, "")) salida = _antesSQ;
@@ -26293,7 +26294,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // burbuja ya pregunte otra cosa (el distrito, cuál de dos zonas) o el turno no sea de venta (pagó, reclama, humano, no).
       if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
           && !String(ctx.opcion_id ?? "").trim() && !String(ctx.opcion ?? "").trim() && String(salida ?? "").trim()
-          && !/(?:S\/|\$|US\$)\s?\d/.test(String(salida)) && !(ctx as any)._pidioCaptura
+          && !(ctx as any)._pidioCaptura   // (la cifra del adelanto NO es un precio: con «requiere un adelanto de S/ 20» la red no corría — R1P-sinadelanto, relanzada)
           && !RE_DICE_QUE_PAGO.test(normalize(String(ctx.last_input ?? ""))) && !RE_RECLAMO.test(String(ctx.last_input ?? ""))
           && !RE_LO_PIENSA.test(String(ctx.last_input ?? "")) && !pideHumano(String(ctx.last_input ?? ""))
           && !/^\s*(?:no(?:\s+gracias)?|nada|ya\s+no|no\s+me\s+interesa|gracias\s+no)[\s.!,🙂🙏]*$/iu.test(String(ctx.last_input ?? ""))
@@ -26301,7 +26302,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           && !/¿[^?\n]*\b(?:distrito|ciudad|sede|oficina|agencia|cu[aá]l\s+de\s+estos|departamento)\b[^?\n]*\?/i.test(String(salida))) {
         try {
           const _opsPr = opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id ?? "")), run);
-          if (_opsPr.length >= 2 && !(await yaLeListamosPrecios(db, run, _opsPr))) {
+          const _traePr = _opsPr.some((o) => Number(o.precio) > 0 && new RegExp("(?:^|[^0-9])" + String(o.precio).replace(".", "[.,]") + "(?![0-9])").test(sinFormato(String(salida))));
+          if (_opsPr.length >= 2 && !_traePr && !(await yaLeListamosPrecios(db, run, _opsPr))) {
             const _sinQ = String(salida).replace(/[ \t]*¿[^?¿\n]*\b(?:cu[aá]nt[ao]s|cu[aá]l)\b[^?¿\n]*\?[ \t]*(?:\p{Extended_Pictographic}️?[ \t]*)*/giu, " ")
               .replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
             salida = `${_sinQ}\n\n${preguntaCuantos(_opsPr, ctx, _negOn, false)}`;
