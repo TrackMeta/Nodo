@@ -29676,7 +29676,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
         }
       }
+      // 🖼️ Con la sede recién firme, la FOTO de la sede va ANTES de lo que le pide algo: «Perfecto, Supe queda anotado 📍» →
+      // la foto → los precios y «¿Cuántas unidades quieres?». Salía detrás de la pregunta y la tapaba (Rodrigo, 2026-10-02:
+      // «que la foto de la sede vaya antes»). Sale el acuse acá, la ficha en su sitio de siempre y la cola (`_colaTrasFicha`)
+      // justo después de ella.
+      let _colaTrasFicha = "";
+      if (!_acuseDiferido && op === "generar_texto" && !!(run.vars as any)?._ficha_ahora
+          && String(ctx.zona_entrega ?? "") === "provincia" && !/\[\[\s*humano\s*\]\]/i.test(String(salida ?? ""))) {
+        const _parsF = String(salida ?? "").trim().split(/\n{2,}/);
+        // Se corta donde empieza lo que le PIDE algo: la lista de precios, una pregunta, la petición de datos.
+        const _kF = _parsF.findIndex((pp) => /💰 Estos son los precios|[?¿]|(?:S\/|\$|US\$)\s?\d|^\s*📌|opciones\s*👇/mu.test(pp));
+        if (_kF >= 0) {
+          _colaTrasFicha = _parsF.slice(_kF).join("\n\n").trim();
+          salida = _parsF.slice(0, _kF).join("\n\n").trim();
+        }
+      }
       const handoff = _acuseDiferido ? _cubiertaConBolsa : ((await emitIaText(db, run, salida, ctx)) || _cubiertaConBolsa);
+      // (lo de abajo sigue mirando el mensaje ENTERO, como antes: si ya pregunta algo, si nombra la agencia…)
+      if (_colaTrasFicha) salida = `${String(salida ?? "").trim()}\n\n${_colaTrasFicha}`.trim();
       (ctx as any)._diferirPregunta = false;
       const _pregDiferida = String((ctx as any)._preguntaDiferida ?? "");
       delete (ctx as any)._preguntaDiferida;
@@ -29754,6 +29771,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               _plegable ? "Al quedar firme la sede, con el bloque de cómo le llega en el pie" : "Al quedar firme la sede, no al crear el pedido").catch(() => {});
           }
         } catch { /* sin ficha → el resumen del pedido igual le dice la sede */ }
+      }
+      // 🖼️ …y detrás de la foto, lo que le pide algo (precios, «¿Cuántas unidades quieres?», datos). Sale aunque la ficha no
+      // haya salido: es parte de la respuesta.
+      if (_colaTrasFicha && !handoff) {
+        await emitIaText(db, run, _colaTrasFicha, ctx);
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🖼️ La foto de la sede antes de la pregunta",
+          "El acuse, la ficha de la sede y después los precios / la pregunta").catch(() => {});
       }
       // 📦 Y el bloque de cómo le llega que no se fue en el pie de una ficha: sale solo, DESPUÉS de la
       // respuesta (antes salía delante, ver `_burbujaEnvio` más arriba).
