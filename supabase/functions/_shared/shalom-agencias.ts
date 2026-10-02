@@ -964,10 +964,19 @@ function _resuelveSede(sede: string, ciudad: string): { motivo: string | null; a
   // "Shalom Arequipa Av Ejercito" y calzó con AV EJERCITO… que está en TACNA. El
   // pedido salió sin bandera y el paquete iba a cruzar medio país. Si sabemos su
   // ciudad, la candidata tiene que estar EN esa zona.
+  // (+ las que le LISTAMOS para su ciudad: a «de huacho» se le pasaron Huacho, Salaverry y HUAURA —otro distrito de la
+  //  provincia, a 4 km— y al elegir «huaura» no calzaba: ficha sin nombre y «Te llega a tu ciudad» — sim 2b-r14)
+  //  (…y la lista no salía de acá: Huacho tiene 2 oficinas en el distrito y la 3.ª la sumó el bloque de sedes. Vale también
+  //  cualquier oficina de la PROVINCIA de su distrito: Huacho → provincia Huaura → HUAURA.)
+  const _listadas = String(ciudad ?? "").trim() ? agenciasDeCiudad(ciudad) : [];
+  const _cZ = _sinRuido(ciudad) || _n(ciudad);
+  const _provDeSuDistrito = new Set(_cZ ? AGENCIAS.filter((a) => _n(a.t) === _cZ).map((a) => `${_n(a.d)}|${_n(a.p)}`) : []);
   const enSuZona = (a: Agencia) => {
-    const c = _sinRuido(ciudad) || _n(ciudad);
+    const c = _cZ;
     if (!c) return true;                       // sin ciudad no hay con qué filtrar
-    return _esDist(a, c) || _n(a.p) === c || _n(a.d) === c || _n(a.l).includes(c);
+    return _esDist(a, c) || _n(a.p) === c || _n(a.d) === c || _n(a.l).includes(c)
+      || _listadas.some((b) => b.l === a.l && b.t === a.t && b.d === a.d)   // (por nombre: `porCercania` puede devolver copias)
+      || _provDeSuDistrito.has(`${_n(a.d)}|${_n(a.p)}`);
   };
   const todas = candidatasAgencia(s);
   const deLaZona = AGENCIAS.filter((a) => todas.includes(a.l) && enSuZona(a));
