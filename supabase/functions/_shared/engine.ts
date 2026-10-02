@@ -6321,7 +6321,7 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
     const _ofs = agenciasDeDistritoEn(_od.t, ciudad);
     if (_ofs.length > 1) {
       (run.vars as any)._distrito_elegido = _od.t;   // ya tiene distrito: la pregunta del distrito (rama 3) no vuelve
-      return { texto: listaSedes(`En *${bonito(_od.t)}* tenemos estas 👇`, _ofs, 6, "¿Cuál te queda mejor?"),
+      return { texto: listaSedes(`Estas son las sedes de *Shalom* en *${bonito(_od.t)}* 👇`, _ofs, 6, "¿Cuál te queda mejor?"),
         cat: "campo", ev: "📍 Las de su distrito", det: `${_ofs.length} en ${bonito(_od.t)}` };
     }
   }
@@ -6345,7 +6345,9 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   const _dep = _prop.length && nombreDeVariasProvincias(ciudad)
     ? ` (${bonito(String(_ags[0]?.d ?? ""))})` : "";
   const _cab = _prop.length
-    ? `${CAB}${_dep} tenemos estas 👇`
+    // («En Barranca tenemos estas 👇» quedaba a medias: ¿estas qué? — Rodrigo, Probar flujos, 2026-10-02. Sin «tenemos/hay
+    //  … sedes», que es lo que borran RE_ANUNCIA_SEDES y RE_ANUNCIO_SEDES_SUELTO cuando lo escribe la IA.)
+    ? `Estas son las sedes de *Shalom* en *${bonito(ciudad.toUpperCase())}*${_dep} 👇`
     : `${CAB} no hay oficina; las más cercanas están en *${bonito(String(_cer?.prov ?? "").toUpperCase())}* 👇`;
 
   // 2) POCAS → TODAS DE GOLPE, con su referencia. Decisión de Rodrigo: «si la provincia tiene
