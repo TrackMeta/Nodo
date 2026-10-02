@@ -5440,6 +5440,9 @@ function quitarPeticionDeDatos(texto: string, conservarZona = false): { texto: s
           // La pregunta huérfana que seguía a la petición quitada («¿Me lo pasas? 🙂», «¿Me lo pasas porfa?») y la cola de solo emojis.
           if (/^\s*¿?\s*(?:me\s+(?:lo|los|la|las)\s+(?:pasas|mandas|env[ií]as|das|confirmas|dejas)|(?:lo|los)\s+(?:tienes|me\s+pasas))(?:\s+(?:porfa|porfis|por\s+favor|cuando\s+puedas|cuando\s+lo\s+tengas|apenas\s+puedas))?\s*\??[\s\p{Extended_Pictographic}️]*$/iu.test(sf)) continue;
           if (!/[\p{L}\p{N}]/u.test(sf)) continue;
+          // …y lo que se refería a la petición quitada: «Después de eso, te lo mando rápido», «¿Me los das ahora?», «Cuando me los
+          // pases seguimos con el pedido 📦», «Con eso lo dejo listo» (R1L-cambiocant, R1L-datospartidos, regresión 4, 2026-10-02)
+          if (/^\s*(?:despu[eé]s\s+de\s+eso|con\s+eso|(?:cuando|apenas)\s+me\s+(?:lo|los|la|las)\s+(?:pases|mandes|des|env[ií]es)|¿?\s*me\s+(?:lo|los|la|las)\s+(?:das|pasas|mandas|env[ií]as)\s+ahora)\b/iu.test(sf)) continue;
           // …y el dato que seguía sin verbo: «También la dirección completa en San Borja para el motorizado 👇» (R1L-cambiocant, 3.ª relanzada)
           if (/^\s*(?:tambi[eé]n|adem[aá]s|y)\s+(?:tu|tus|la|el|los|las|un|una)?\s*(?:nombre|apellidos?|direcci[oó]n|celular|tel[eé]fono|dni|documento|referencia|distrito|n[uú]mero)\b/iu.test(sf)) continue;
           // …y el remate que se refería a ella: «Así te lo envío rápido 📦», «Así lo dejamos listo», «Así te digo
@@ -5692,6 +5695,13 @@ function sinRestosDeRecorte(t: string): string {
     // programo para entrega contraentrega en tu casa 🚚»: el remate de una petición que se fue, abriendo renglón o frase
     // (regresión 3, 2026-10-02). Solo verbos de trámite: «Así te llega más rápido» (explica algo) no entra.
     .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*As[ií]\s+(?:te\s+lo\s+|te\s+la\s+|lo\s+|la\s+|te\s+)?(?:env[ií]o|mando|programo|coordinamos|coordino|avanzamos|dejamos|aseguramos|seguimos|cerramos|preparo|despacho)\b[^.!?\n]{0,70}[.!]?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*(?=\n|$|[A-ZÁÉÍÓÚÑ¿¡])/gu, "")
+    // «Cuando me los pases seguimos con el pedido 📦», «Después de eso, te lo mando rápido a tu domicilio.», «¿Me los das ahora?»:
+    // la frase que se refería a una petición de datos que el motor movió al bloque 📌 (R1L-cambiocant, R1L-datospartidos,
+    // regresión 4, 2026-10-02). Abriendo renglón o frase.
+    .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))(?:[Dd]espu[eé]s\s+de\s+eso|[Cc]on\s+eso|(?:[Cc]uando|[Aa]penas)\s+me\s+(?:lo|los|la|las)\s+(?:pases|mandes|des|env[ií]es))\b[^.!?\n]{0,80}[.!]?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*(?=\n|$|[A-ZÁÉÍÓÚÑ¿¡])/gu, "")
+    .replace(/[ \t]*¿\s*[Mm]e\s+(?:lo|los|la|las)\s+(?:das|pasas|mandas|env[ií]as)\s+ahora\s*\?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*/gu, " ")
+    // «Entiendo que pueda parecer, pero el adaptador…»: se fue el «caro» y quedó la muletilla (R1L-muycaro, regresión 4)
+    .replace(/(?:^|(?<=[.!?…]\s)|(?<=\n))[Ee]ntiendo\s+que\s+(?:te\s+)?pueda\s+parecer\s*,\s*pero\s+(\p{L})/gu, (_m, l: string) => l.toUpperCase())
     // «Cuéntame para dejarlo listo.» y «Pásame:» solos en su renglón (R1P-barranca, R1P-hermano, regresión 3, 2026-10-02)
     .replace(/(?:^|(?<=\n))[ \t]*(?:[Cc]u[eé]ntame|[Dd]ime)\s+para\s+dejarlo\s+listo\s*[.!]?[ \t]*(?=\n|$)/gu, "")
     .replace(/(?:^|(?<=\n))[ \t]*(?:[Pp][aá]same|[Mm][aá]ndame|[Ee]nv[ií]ame|[Nn]ecesito|[Dd]ame)(?:\s+por\s+favor)?\s*:[ \t]*(?=\n|$)/gu, "")
@@ -5704,11 +5714,12 @@ function sinRestosDeRecorte(t: string): string {
     .replace(/(?<=\n\n)[ \t]*¡?(?:perfecto|genial|listo|dale|ok|okey|excelente|buen[ií]simo)!?(?:\s*,\s*vamos\s+avanzando)?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*(?=\n\n)/giu, "")
     // «…está muy bien 🔧 Ahora. Cuéntame…» (la muletilla con punto, a mitad de renglón) y «Para avanzar,» cerrando un
     // renglón antes de la lista (R1L-pasoapaso, R1L-hoy, segunda regresión 2026-10-01)
-    .replace(/(?<=\s)(?:Ahora|Entonces|Bueno)\s*[.,]\s+(?=[A-ZÁÉÍÓÚÑ¿¡🔹⭐💰📌])/gu, "")
+    .replace(/(?<=\s)(?:Ahora|Entonces|Bueno|Me\s+dices|Cu[eé]ntame|Dime|Por\s+lo\s+que\s+me\s+cuentas)\s*[.,]\s+(?=[A-ZÁÉÍÓÚÑ¿¡🔹⭐💰📌])/gu, "")
     .replace(/(?:^|(?<=[.!?…]\s)|(?<=\p{Extended_Pictographic}\u{FE0F}?\s)|(?<=\n))Para\s+(?:avanzar|seguir|continuar|cerrar|dejarlo\s+listo)\s*[,:][ \t]*(?=\n|$)/gu, "")
     // …y la muletilla con coma que cierra un renglón con texto delante («…sin complicaciones 🔧 Ahora,» y debajo la
     // lista — R1P-adelantoprimero, 2026-10-01)
-    .replace(/(?<=\s)(?:[Aa]hora|[Ee]ntonces|[Bb]ueno|[Yy]\s+bueno)\s*,[ \t]*(?=\n|$)/gu, "")
+    .replace(/(?<=\s)(?:[Aa]hora|[Ee]ntonces|[Bb]ueno|[Yy]\s+bueno|[Cc]u[eé]ntame|[Dd]ime|[Mm]e\s+dices|[Pp]or\s+lo\s+que\s+me\s+cuentas)\s*,[ \t]*(?=\n|$)/gu, "")
+    .replace(/(?:^|(?<=\n))[ \t]*(?:[Cc]u[eé]ntame|[Dd]ime|[Mm]e\s+dices|[Pp]or\s+lo\s+que\s+me\s+cuentas)\s*,?[ \t]*(?=\n|$)/gu, "")
     .replace(/\n{3,}/g, "\n\n")
     // …y la pregunta que se quedó sin su «?» (se lo llevó el trozo quitado): se le devuelve antes de los emojis.
     // (el emoji con unión o tono de piel — 🤷‍♂️ — cuenta entero: si no, el «?» se metía en medio — auditoría 2026-09-30)
@@ -6275,7 +6286,12 @@ function bloqueDeSedes(ctx: any, run: any): BloqueSedes | null {
   const ciudad = String(ctx.ciudad ?? "").trim();
   if (!ciudad) return null;
   const CAB = `En *${bonito(ciudad.toUpperCase())}*`;
-  const _pidio = preguntaPorLaSede(ctx.last_input);
+  // («no quiero dar adelanto, pago todo en la AGENCIA» nombra la agencia sin pedir la lista: salían las 8 oficinas de Pucallpa en
+  //  el primer turno, sin precio ni cantidad — R1P-sinadelanto, regresión 4, 2026-10-02. Pedirla es preguntar: «¿en qué agencia…?»,
+  //  «¿cuál sede?», «¿dónde lo recojo?», «qué oficinas hay»)
+  const _pidio = preguntaPorLaSede(ctx.last_input)
+    && /[?¿]|\b(?:cual(?:es)?|que|donde|hay|tienen|sedes|oficinas|agencias|recojo|recoger)\b/.test(normalize(String(ctx.last_input ?? "")))
+    && !/\b(?:pag\w*|cancel\w*)\s+(?:todo\s+)?(?:en|al\s+llegar\s+a)\s+la\s+agencia\b/.test(normalize(String(ctx.last_input ?? "")));
   // 🔁 La lista de oficinas va UNA vez. Medido en una conversación de cuatro turnos: las 7 de
   // Tarapoto se pegaron en tres mensajes seguidos —incluso debajo de «pásame tus datos»—,
   // que es exactamente el machaque que ya nos costó con la pregunta del distrito. Aquella
@@ -7598,6 +7614,16 @@ function emojisEnListaDePrecios(texto: string, sym: string, on: boolean): string
   idx.forEach((i, k) => {
     lineas[i] = `${k === mejor ? "⭐" : "🔹"} ${lineas[i].replace(/^[ \t]*(?:[-•▪][ \t]*)?(?:[\p{Extended_Pictographic}\u{FE0F}]+[ \t]*)*/u, "")}`;
   });
+  // (la descripción en el renglón de ABAJO, sin precio ni emoji y en minúscula —«🔹 2 unidades — *S/ 109*\nideal para…»— se sube a
+  //  su renglón con «·» — R1P-diez, regresión 4, 2026-10-02. De atrás hacia adelante para no mover los índices de arriba.)
+  for (let k = idx.length - 1; k >= 0; k--) {
+    const i = idx[k]; const sig = lineas[i + 1];
+    if (sig != null && sig.trim() && sig.trim().length <= 90 && !reItem.test(sig) && /^[ \t]*[a-záéíóúñ]/u.test(sig)
+        && !/(?:S\/|\$|US\$)\s?\d|^[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}]|📌|📍|💰|[¿¡])/u.test(sig) && !/ · /.test(lineas[i])) {
+      lineas[i] = `${lineas[i].trimEnd()} · ${sig.trim()}`;
+      lineas.splice(i + 1, 1);
+    }
+  }
   const h = idx[0] - 1;
   if (h >= 0 && /^[ \t]*\p{L}[^\n]{2,40}:\s*$/u.test(lineas[h]) && !/\p{Extended_Pictographic}/u.test(lineas[h])) {
     lineas[h] = `💰 ${lineas[h].trimStart()}`;
@@ -7620,6 +7646,9 @@ function preciosEnLineas(texto: string, sym: string): string {
   const _item = String.raw`(?:[\p{Extended_Pictographic}]️?[ \t]*)?\d{1,3}\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?)\s+—`;
   // (nunca justo DESPUÉS de un emoji: ese emoji es el del renglón y bajaba solo — «¿Cuántas? 🔧\n\n1 unidad…», F13)
   t = t.replace(new RegExp(String.raw`([^\n\p{Extended_Pictographic}️])[ \t]+(?=${_item}\s*\*?${esc}\s*\d[^\n]*\n[ \t]*${_item})`, "gu"), "$1\n\n");
+  // (y el primer renglón que la IA escribió con SU 🔹 pegado a la frase de antes: «…para que veas el ahorro: 🔹 1 unidad — *S/ 69*»
+  //  — R1P-diez, regresión 4, 2026-10-02)
+  t = t.replace(new RegExp(String.raw`([^\n])[ \t]+(?=[🔹⭐][ \t]?\d{1,3}\s+(?:unidad(?:es)?|packs?|pares?|frascos?|cajas?)\s+—\s*\*?${esc}\s*\d)`, "gu"), "$1\n");
   const rxPrecio = new RegExp(`\\*?${esc}\\s*\\d`, "g");
   return t.split("\n").map((linea) => {
     // Tres o más precios en UNA línea: eso ya no es una frase, es una lista mal escrita.
@@ -27849,6 +27878,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // (…ni si ya la pide en IMPERATIVO: «Primero dime tu distrito o ciudad para confirmar cómo te llegará 📍» +
             //  «¿De qué distrito o ciudad nos escribes?» salían juntas — reproducción Barranca 2, 2026-10-01)
             if (!_zonaOk && !/[?¿]/.test(_s) && !_RE_SUAVE_Z.test(_s)
+                && !/no\s+te\s+(?:sirve|servir[ií]a|funciona|funcionar[ií]a)\b|no\s+(?:le\s+)?(?:sirve|funciona)\s+sin\b/i.test(sinFormato(_s))   // (le acaba de decir que no le sirve — R1L-sintaladro, regresión 4)
                 && !/\b(?:dime|ind[ií]came|cu[eé]ntame|p[aá]same|conf[ií]rmame|av[ií]same)\s+(?:primero\s+)?(?:tu\s+|en\s+qu[eé]\s+|de\s+qu[eé]\s+|qu[eé]\s+|desde\s+d[oó]nde|de\s+d[oó]nde)?\s*(?:distrito|ciudad|zona|provincia|d[oó]nde)/i.test(_s)
                 && !(ctx as any)._dos_lugares && !(run.vars as any)?._dos_lugares
                 && !/conf[ií]rm\p{L}*|necesito que|dime (?:cu[aá]l|en cu[aá]l|d[oó]nde)|cu[aá]l de (?:las|los) dos/iu.test(_s)) {
@@ -28413,7 +28443,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const _otro = _mOtro[1].charAt(0).toUpperCase() + _mOtro[1].slice(1).toLowerCase();
             if (_nomO && normalize(_nomO) !== normalize(_otro)
                 && !new RegExp("por\\s+" + _otro.replace(/\s+/g, "\\s+") + "\\s+no", "i").test(sinFormato(salida))) {
-              salida = `Por ${_otro} no: va por agencia *${_nomO}* 📦\n\n${String(salida).trimStart()}`;
+              const _sinDupO = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=[\p{Extended_Pictographic}\u{FE0F}])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
+                .filter((f) => !/\bpor\s+(?:la\s+)?agencia\b/i.test(sinFormato(f)) || /[?¿]/.test(f)).join(" ")).join("\n")
+                .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+              salida = `Por ${_otro} no: va por agencia *${_nomO}* 📦${_sinDupO ? "\n\n" + _sinDupO : ""}`;
               await logEvent(db, run.channel_id, run.contact_id, "nota", "🚚 Preguntó por otro courier", `${_otro} → ${_nomO}, dicho delante`).catch(() => {});
             }
           } catch (_) { /* sin courier configurado → tal cual */ }
@@ -28457,6 +28490,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         (run.vars as any)._adelanto_explicado = 1;
         await logEvent(db, run.channel_id, run.contact_id, "nota", "🙅 Quería pagar todo en la agencia",
           "Se le dijo de frente: sin adelanto no sale y en la agencia no se paga").catch(() => {});
+      }
+      // 🛵 LIMA es reparto propio: «Para San Borja te llega por agencia *Shalom*» (R1L-dosdestinos) y «para que revises y pruebes
+      // antes de pagar» (R1L-probar) son políticas inventadas (regresión 4, 2026-10-02). Se corrigen por código.
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "") === "lima" && String(salida ?? "").trim()) {
+        const _antesLi = salida;
+        salida = String(salida)
+          .replace(/\b(te\s+)?(?:llega|lo\s+mandamos|lo\s+enviamos|va)\s+por\s+(?:la\s+)?agencia\s+\*?[\p{L}]+\*?/giu, "$1llega a domicilio")
+          .replace(/\b(?:lo\s+)?prueb(?:es|as|e|a)\s+antes\s+de\s+pagar/giu, "lo revisas antes de pagar")
+          .replace(/\bpagas?\s+despu[eé]s\s+de\s+probar(?:lo)?/giu, "pagas al recibirlo, revisándolo en la puerta");
+        if (salida !== _antesLi) await logEvent(db, run.channel_id, run.contact_id, "nota", "🛵 Lima: agencia o prueba inventadas",
+          `«${_antesLi.slice(0, 120)}»`).catch(() => {});
       }
       // 💳 «¿pago con tarjeta?» (Lima): la IA contestaba «pagas al recibir» sin el sí/no. Lo dice el motor con la
       // configuración real del POS (R1L-tarjeta, regresión 2026-10-01).
@@ -28590,6 +28634,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // ⏸️ Si de la respuesta solo queda «¿La quieres? 🙂», emitIaText la deja en espera
       // (`_preguntaDiferida`) y se manda abajo SOLO si los datos de pago no salen en este turno.
       (ctx as any)._diferirPregunta = op === "generar_texto";
+      // 💵 «¿cuánto cuesta en dólares?» (físico): la lista salía en soles sin decir que cobramos en soles (R1L-dolares, regresión 4).
+      if (op === "generar_texto" && !esDigital(ctx) && String(salida ?? "").trim()
+          && /d[oó]lar|dolares|\busd\b|\$\s*\d|en\s+d[oó]lares/i.test(String(ctx.last_input ?? ""))
+          && !/\bsoles\b|d[oó]lar/i.test(sinFormato(salida)) && /(?:S\/)\s?\d/.test(String(salida))) {
+        salida = `Los precios van en soles 🙌\n\n${String(salida).trimStart()}`;
+      }
+      // 🗺️ La petición de zona de la IA («Solo pásame tu distrito o ciudad para indicarte cómo te llega…») y la pregunta del motor
+      // («¿De qué distrito o ciudad nos escribes?») en la misma burbuja: dos veces lo mismo (R1L-ok, regresión 4). Queda la del motor.
+      if (op === "generar_texto" && /¿De qué distrito o ciudad nos escribes\?/u.test(String(salida ?? ""))) {
+        salida = String(salida).replace(/(?:^|(?<=[.!?…]\s)|(?<=[\p{Extended_Pictographic}\u{FE0F}]\s)|(?<=\n))(?:[Ss]olo\s+|[Pp]rimero\s+)?(?:[Pp][aá]same|[Dd]ime|[Cc]u[eé]ntame|[Ii]nd[ií]came|[Cc]onf[ií]rmame)\s+(?:primero\s+)?(?:tu\s+|de\s+qu[eé]\s+|en\s+qu[eé]\s+|qu[eé]\s+)?(?:distrito|ciudad|zona)\b[^.!?\n¿]{0,90}[.!]?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*/gu, "")
+          .replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+      }
       // 🎨 Dos emojis distintos cerrando un renglón («¿Cuántas unidades quieres? 🔧📦», «🔧📍», «👌📦» — regla 16; 8 chats en la
       // regresión 3, 2026-10-02): queda el primero. Solo al FINAL del renglón y con texto delante (un renglón de solo emojis no
       // se toca). Y «para calcular el envío» cuando el envío es gratis (R1L-delivery): la frase se contradice sola.
