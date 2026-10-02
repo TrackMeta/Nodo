@@ -2479,8 +2479,8 @@ async function renderInicio(){
   // una salida discreta para el caso raro — rehacerlo desde cero a propósito.
   const sellTxt = fVenta
     ? "Tu bot ya vende este producto. Lo que guardes acá se aplica solo — no tienes que rehacer nada."
-    : (pct>=100 ? "Todo listo — genera el flujo y tu bot empieza a vender."
-                : "Genera el flujo de venta con IA: vende, toma los datos conversando y crea el pedido.");
+    : (pct>=100 ? "Todo listo — tócalo y tu bot empieza a vender. Guarda tus cambios solo."
+                : "Guarda tus cambios y genera el flujo de venta con IA: vende, toma los datos conversando y crea el pedido.");
   const sellCard = `<div class="card sell-card" style="margin-bottom:0">
       <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${sellTxt}</div>
       <div id="saludBox"></div>
@@ -3126,6 +3126,15 @@ async function generarFlujoVenta(skipConfirm){
     ...(ya ? { messageHtml: msgRegen }
            : { message: "Se creará el flujo de venta con la IA como vendedora. Después puedes editarlo en el editor visual." }),
     confirmText: ya?"Regenerar":"Generar", danger: !!ya })) return;
+
+  // 💾 «Poner a vender» también GUARDA. Eran dos botones para un mismo paso y el flujo se armaba con lo guardado en la base,
+  // no con lo que estaba en pantalla (Rodrigo, 2026-10-02: «¿por qué hay 2 botones al crear un producto?»). Si el guardado
+  // falla o se cancela, no se genera nada: el flujo saldría con datos viejos.
+  // (Siempre, no solo con isDirty(): agregar o quitar una burbuja es un clic y no marca cambios.)
+  if(skipConfirm!==true){
+    if(!await saveProduct()) return;
+    await esperarFlujo();
+  }
 
   toast("Generando…");
   try{
@@ -4238,6 +4247,42 @@ async function saveActivacion(){
   accRerender("activacion"); refreshActivacionRow();
   return null;
 }
+// 🖼️ TEXTO EN LA MISMA BURBUJA QUE LA IMAGEN (Rodrigo, 2026-10-02). El motor ya manda el texto de una burbuja de
+// imagen/video/archivo como su caption; faltaba que el editor lo dejara escribir cómodo y juntar una burbuja de texto
+// que ya existe con la imagen de al lado sin volver a escribirla. WhatsApp corta el caption en 1024 caracteres; el
+// audio no lleva texto.
+const CAPTION_MAX = 1024;
+const _conCaption = (b) => !!(b && b.media_url && b.media_kind !== "audio");
+const _cierraConPregunta = (t) => /\?[\s\p{Extended_Pictographic}\u{FE0F}]*$/u.test(String(t||"").trim());
+// La imagen pegada a esta burbuja de texto: primero la de ARRIBA (el texto queda debajo, como ya se leía) y si no, la de abajo.
+function _mediaVecina(v, bi){
+  const bs=v.bubbles||[];
+  if(_conCaption(bs[bi-1])) return { idx:bi-1, arriba:true, b:bs[bi-1] };
+  if(_conCaption(bs[bi+1])) return { idx:bi+1, arriba:false, b:bs[bi+1] };
+  return null;
+}
+function juntarHtml(v,bub,bi){
+  if(bub.media_url || (bub.buttons||[]).length) return "";   // con botones es un mensaje interactivo: no puede ir en la foto
+  // La PREGUNTA con que cierra el saludo («¿Desde dónde nos escribe?») se queda en su burbuja: el motor la reconoce
+  // (y la quita cuando el cliente abrió preguntando) leyendo las burbujas de texto, no lo que va debajo de una foto.
+  if(_cierraConPregunta(bub.text)) return "";
+  const m=_mediaVecina(v,bi); if(!m) return "";
+  const que=m.b.media_kind==="video"?"el video":m.b.media_kind==="document"?"el archivo":"la imagen";
+  return `<button class="btn bjuntar" type="button" style="margin-top:7px;height:28px;padding:0 10px;font-size:12px;background:transparent;border:1px dashed var(--border);color:var(--muted)">${icon("image")} Juntar con ${que} de ${m.arriba?"arriba":"abajo"}</button>`;
+}
+function juntarConMedia(v,bi){
+  const t=v.bubbles[bi]; const m=_mediaVecina(v,bi); if(!t||!m) return;
+  const txt=String(t.text||"").trim();
+  if(!txt){ toast("Escribe el texto primero",true); return; }
+  const cap=String(m.b.caption||"").trim();
+  // El caption siempre sale DEBAJO de la imagen: si el texto iba antes, se antepone a lo que ya tuviera.
+  const nuevo = cap ? (m.arriba ? `${cap}\n\n${txt}` : `${txt}\n\n${cap}`) : txt;
+  if(nuevo.length>CAPTION_MAX){ toast(`Juntos tendrían ${nuevo.length} caracteres y WhatsApp corta el texto de una imagen en ${CAPTION_MAX}. Acórtalo primero.`,true); return; }
+  m.b.caption=nuevo;
+  v.bubbles.splice(bi,1);
+  markDirty(); renderComposer();
+  toast("Listo: el texto va en la misma burbuja");
+}
 function renderBubble(v,vi,bub,bi){
   const el=document.createElement("div"); el.dataset.bi=bi;
   el.style.cssText="border:1px solid var(--border);border-radius:9px;padding:9px 10px;background:var(--surface)";
@@ -4260,8 +4305,18 @@ function renderBubble(v,vi,bub,bi){
     ${preview}
     ${kind==="text"
       ? `<textarea class="in btext" style="field-sizing:content;min-height:58px;max-height:320px;overflow:auto;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
-      : (kind!=="audio"?`<input class="in bcap" placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
+      : (kind!=="audio"?`<textarea class="in bcap" style="field-sizing:content;min-height:44px;max-height:320px;overflow:auto;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Texto debajo (opcional) — sale en la MISMA burbuja que ${kind==="video"?"el video":kind==="document"?"el archivo":"la imagen"}">${esc(bub.caption||"")}</textarea><div class="bcapAviso" style="font-size:11.5px;margin-top:4px"></div>`:``)}
+    ${juntarHtml(v,bub,bi)}`;
   if(kind==="text") wireBotones(el,bub,()=>{ harvest(); renderComposer(); });
+  // 🖼️ El largo del texto debajo: WhatsApp corta el de una foto/video en 1024 caracteres.
+  { const cp=el.querySelector(".bcap"), av=el.querySelector(".bcapAviso");
+    const pinta=()=>{ if(!cp||!av) return; const n=cp.value.length;
+      const largo = n>CAPTION_MAX;
+      av.textContent = largo ? `Tiene ${n} caracteres: WhatsApp corta el texto debajo de ${kind==="video"?"un video":"una imagen"} en ${CAPTION_MAX}. Acórtalo o pásalo a una burbuja de texto.`
+        : _cierraConPregunta(cp.value) ? "La pregunta del final déjala en su propia burbuja de texto: el bot la usa para saber qué le preguntó." : "";
+      av.style.color = largo ? "var(--red,#e2564a)" : "var(--amber,#f59e0b)"; };
+    if(cp){ cp.addEventListener("input",pinta); pinta(); } }
+  { const jb=el.querySelector(".bjuntar"); if(jb) jb.onclick=()=>{ harvest(); juntarConMedia(v,bi); }; }
   // Actualizar el texto/caption EN CADA TECLA (como seq-editor): así la vista
   // previa de WhatsApp (que lee bub.text) refleja en vivo lo que escribes. Sin
   // esto, bub.text solo se refrescaba en harvest() → el preview salía desfasado.
@@ -4649,6 +4704,7 @@ async function _saveProduct(){
   // activo —bot mudo— o armado con los datos del otro. Salir/abrir/cambiar de bot esperan
   // esta promesa (ver esperarFlujo).
   st._sync=sincronizarFlujo().catch(()=>{}).finally(()=>{ st._sync=null; });
+  return !eAct;   // «Poner a vender» guarda primero y solo genera si esto salió bien
 }
 // Espera a que termine la regeneración del flujo que dejó en curso el último Guardar.
 async function esperarFlujo(){
