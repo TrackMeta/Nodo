@@ -8049,6 +8049,53 @@ function negocioSegunTipo(txt: string, digital: boolean): string {
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+// 🎯 LA PREGUNTA DE NECESIDAD del producto («¿Es para un solo patio o para varias zonas?»). Cuando ya se le preguntó
+// cuántas y no lo dijo, repetir «¿cuántas?» en cada mensaje sonaba a formulario (Rodrigo, 2026-10-02); se le pregunta
+// por su necesidad y, con lo que cuente, la IA le recomienda una opción. La regla en el prompt sola no alcanzó (2 de 2
+// la IA repitió «¿cuántas?»): la pone el motor. Se genera UNA vez por producto con la IA, a partir de su ficha, y se
+// guarda en config.ia.pregunta_necesidad (fuera del sello del flujo: no lo regenera). Vacía si no sale bien.
+async function preguntaNecesidad(db: SupabaseClient, run: Run, ctx: any): Promise<string> {
+  const pid = String(ctx?._product_id ?? "").trim();
+  if (!pid) return "";
+  const _valida = (q: string) => {
+    const t = String(q ?? "").trim().replace(/^["«“]|["»”]$/g, "").trim();
+    return /^¿[^?¿\n]{8,110}\?[\s\p{Extended_Pictographic}\u{FE0F}]*$/u.test(t) && !/\bcu[aá]nt[ao]s\s+(?:unidades|quieres|llevas)|\bprecio|S\/|\$/i.test(t) ? t : "";
+  };
+  try {
+    const { data: p } = await db.from("products").select("nombre, config").eq("id", pid).maybeSingle();
+    const cfg = ((p as any)?.config ?? {}) as any;
+    // La que puso el DUEÑO (Productos → La IA sabe venderlo) manda siempre: se le ponen los signos si faltan y no se
+    // regenera encima. Solo si está vacía la escribe la IA.
+    const _delDueno = String(cfg?.ia?.pregunta_necesidad ?? "").trim();
+    if (_delDueno) {
+      const t = _delDueno.replace(/^¿?\s*/, "¿").replace(/\s*\??(?=[\s\p{Extended_Pictographic}\u{FE0F}]*$)/u, "?");
+      return t.length <= 180 ? t : "";
+    }
+    const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: run.channel_id, p_provider: null });
+    const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+    if (!ai?.api_key) return "";
+    const ops = opcionesVisibles(await loadOpciones(db, run, pid), run).map((o) => o.nombre).filter(Boolean).join(" · ");
+    const ficha = String(cfg?.contexto_producto ?? cfg?.ia?.detalle ?? cfg?.ia?.resumen ?? "").slice(0, 1500);
+    const raw = await runAI({ db, channelId: run.channel_id, origen: "clasificar", provider: ai.provider as Provider, apiKey: ai.api_key,
+      model: ai.model || undefined, maxTokens: 60,
+      system: "Escribes UNA sola pregunta corta de vendedor por WhatsApp, en español de Perú, tuteando. Respondes solo la pregunta, sin comillas ni nada más.",
+      content: `Producto: ${String((p as any)?.nombre ?? "")}\nOpciones de compra: ${ops}\nFicha:\n${ficha}\n\n` +
+        "Escribe UNA pregunta (máximo 14 palabras) que le haría un buen vendedor al cliente sobre SU NECESIDAD, para saber cuántas " +
+        "unidades u opción le conviene: dónde lo va a usar, cuántos espacios, zonas, personas o equipos, para quién es. " +
+        "Que suene natural y cercana. No preguntes «cuántas unidades», no menciones precios. Empieza con ¿ y termina con ?. " +
+        "Puedes cerrar con un emoji." });
+    const q = _valida(String(raw ?? "").split("\n").map((l) => l.trim()).find((l) => l.startsWith("¿")) ?? "");
+    if (q) {
+      // Guardado sobre el config FRESCO y solo la clave nueva: no pisa lo que el dueño esté editando.
+      const { data: f } = await db.from("products").select("config").eq("id", pid).maybeSingle();
+      const c2 = { ...(((f as any)?.config ?? {}) as any) };
+      c2.ia = { ...(c2.ia ?? {}), pregunta_necesidad: q };
+      await db.from("products").update({ config: c2 }).eq("id", pid);
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "🎯 Pregunta de necesidad creada para el producto", q).catch(() => {});
+    }
+    return q;
+  } catch (_) { return ""; }
+}
 function preguntaCuantos(ops: Opcion[], ctx: any, negritas = true, yaListadas = false): string {
   const sym = simboloMoneda(ctx.moneda as string);
   const pz = (v: unknown) => (negritas ? `*${sym} ${v}*` : `${sym} ${v}`);
@@ -20218,7 +20265,15 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
       // La IA tomó «esa» por la última que nombró (la Premium) cuando había recomendado la Básica
       // «para empezar», y no salió ningún número (D13-drecomienda, 2026-09-25). Se mira la frase
       // que recomienda en el último mensaje del bot: la primera que lo hace es la recomendación.
-      if (list.length >= 2 && /^\s*(?:ya|ok|dale|listo|bueno|s[ií])?[\s,]*(?:esa(?:\s+misma)?|ese(?:\s+mismo)?|la\s+que\s+(?:me\s+)?(?:dices|dijiste|recomiendas|recomendaste|me\s+recomiendas)|la\s+recomendada|la\s+que\s+t[uú]\s+digas)\s*[.!]*\s*$/i.test(sinTildes(String(texto ?? "")))) {
+      // 🎯 …y el «sí» a secas cuando el bot cerró RECOMENDANDO una cantidad con «¿Te lo dejo así?» (preguntar por la
+      // necesidad en vez de repetir «¿cuántas?» — Rodrigo, 2026-10-02). Solo tras esa pregunta: un «ok» a otra cosa no elige.
+      let _aceptaRecom = false;
+      if (list.length >= 2 && /^\s*(?:s[ií]|ya|ok(?:ey)?|dale|listo|bueno|perfecto|va|claro|de\s+una|as[ií]\s+(?:est[aá]\s+bien|nom[aá]s|mismo)|d[eé]ja(?:me)?lo\s+as[ií])(?:[\s,!.]+(?:s[ií]|ya|dale|porfa|por\s+favor|gracias|nom[aá]s|as[ií]|est[aá]\s+bien|perfecto))*[\s!.👍🙌😊]*$/iu.test(String(texto ?? ""))) {
+        const { data: _ultQ } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
+          .eq("direction", "out").order("ts", { ascending: false }).limit(1);
+        _aceptaRecom = /te\s+lo\s+dejo\s+as[ií]/i.test(String(((_ultQ ?? [])[0] as any)?.content?.text ?? ""));
+      }
+      if (list.length >= 2 && (_aceptaRecom || /^\s*(?:ya|ok|dale|listo|bueno|s[ií])?[\s,]*(?:esa(?:\s+misma)?|ese(?:\s+mismo)?|la\s+que\s+(?:me\s+)?(?:dices|dijiste|recomiendas|recomendaste|me\s+recomiendas)|la\s+recomendada|la\s+que\s+t[uú]\s+digas)\s*[.!]*\s*$/i.test(sinTildes(String(texto ?? ""))))) {
         const { data: _ultR } = await db.from("messages").select("content")
           .eq("contact_id", run.contact_id).eq("direction", "out")
           .order("ts", { ascending: false }).limit(2);
@@ -20227,15 +20282,30 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
         // La primera frase con marca de recomendación que nombre UNA sola opción. «…la Básica es
         // buena, pero la Premium te lleva paso a paso… la Premium te conviene más» (D13b): la
         // frase que nombra las dos no decide; la que nombra una sí.
-        const _RE_RECOM = /\b(recomiendo|recomendar[ií]a|ideal|te conviene|para (?:empezar|arrancar|comenzar)|para ti que|si (?:reci[eé]n )?empiezas|principiante|es suficiente|te alcanza|yo ir[ií]a|empieza con|la mejor opci[oó]n|te sirve|te va mejor|es buena|es perfecta|perfecta para|te queda bien|es la indicada|la indicada|va bien para|la que m[aá]s|es la que|te ayuda m[aá]s)\b/i;
+        const _RE_RECOM = /\b(recomiendo|lo mejor (?:es|son|ser[ií]a)|recomendar[ií]a|ideal|te conviene|para (?:empezar|arrancar|comenzar)|para ti que|si (?:reci[eé]n )?empiezas|principiante|es suficiente|te alcanza|yo ir[ií]a|empieza con|la mejor opci[oó]n|te sirve|te va mejor|es buena|es perfecta|perfecta para|te queda bien|es la indicada|la indicada|va bien para|la que m[aá]s|es la que|te ayuda m[aá]s)\b/i;
         // Por la PALABRA exacta del nombre («premium», «basica»): mencionaLaOpcion pesca «básicos» en
         // «8 videos básicos» y hacía que la frase de la Premium contara las dos (D13d-drecomienda).
         const _nombraR = (f: string, o: Opcion) => {
           const w = normalize(String(o.nombre ?? "")).split(/\s+/)[0] ?? "";
           return !!w && new RegExp("\\b" + w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b").test(normalize(f));
         };
-        const _recomienda = _frasesR.find((f) => _RE_RECOM.test(f) && list.filter((o) => _nombraR(f, o)).length === 1);
-        const _hitsR = _recomienda ? list.filter((o) => _nombraR(_recomienda, o)) : [];
+        let _recomienda = _frasesR.find((f) => _RE_RECOM.test(f) && list.filter((o) => _nombraR(f, o)).length === 1);
+        // (tras «¿Te lo dejo así?» no hace falta la palabra de recomendación: «para patio y chacrita lo mejor es 2 unidades…»
+        //  no la traía y el «ya, dale» no eligió nada — simulación n4. Vale si el mensaje nombra UNA sola opción.)
+        let _hitsFallback: Opcion[] | null = null;
+        if (_aceptaRecom) _recomienda = undefined;   // tras «¿Te lo dejo así?» manda el nombre entero (abajo), no la 1.ª palabra
+        if (!_recomienda && _aceptaRecom) {
+          // (por el NOMBRE ENTERO de la opción, «2 unidades»: por la primera palabra, el «1.5 mm» contaba como «1 unidad»)
+          const _txtUlt = normalize(sinFormato(String(((_ultR ?? [])[0] as any)?.content?.text ?? "")));
+          const _porNombre = list.filter((o) => {
+            const n = normalize(String(o.nombre ?? "")).trim();
+            return !!n && new RegExp("(?<![\\p{L}\\p{N}])" + n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/unidad(?:es)?/, "unidad(?:es)?") + "(?![\\p{L}\\p{N}])", "u").test(_txtUlt);
+          });
+          // (y nunca con la lista de precios en ese mensaje ni con un rango «2 o 3 unidades»: ahí no recomendó una — n10)
+          const _lnP = (String(((_ultR ?? [])[0] as any)?.content?.text ?? "").match(/^.*(?:S\/|\$|US\$)\s?\d.*$/gmu) ?? []).length;
+          if (_porNombre.length === 1 && _lnP < 2 && !/\d+\s*(?:o|u|y|a|-)\s*\d+\s*unidad/.test(_txtUlt)) { _recomienda = _txtUlt; _hitsFallback = _porNombre; }
+        }
+        const _hitsR = _hitsFallback ?? (_recomienda ? list.filter((o) => _nombraR(_recomienda, o)) : []);
         if (_hitsR.length === 1) {
           const opR = _hitsR[0];
           run.vars.opcion_id = opR.id;
@@ -23612,6 +23682,32 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       parts.push("## Falta elegir la opción\nEl cliente TODAVÍA no eligió qué opción/presentación quiere, y hay VARIAS con precio distinto. " +
         "Antes de cerrar el pedido: nómbrale las opciones con su precio y pregúntale con naturalidad cuál quiere. " +
         "NO des el pedido por cerrado, NO le pidas el pago y NO digas «queda confirmado» hasta que elija una — sin opción no hay precio.");
+      // 🎯 Ya se le preguntó cuántas y no lo dijo: en vez de repetir «¿cuántas?» en cada mensaje (se sentía como un
+      // formulario), se le pregunta por su NECESIDAD y, cuando la cuenta, se le RECOMIENDA una opción con el porqué
+      // (Rodrigo, 2026-10-02: «preguntar por la necesidad»). Sin ejemplo de producto: el ejemplo del prompt sale por
+      // la boca de la IA en otros productos (ver ejemplo-del-prompt-pesa-mas).
+      if (!esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && !String(ctx.opcion_id ?? "").trim()) {
+        try {
+          const { data: _oNec } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
+            .eq("direction", "out").order("ts", { ascending: false }).limit(2);
+          const _txNec = ((_oNec ?? []) as any[]).map((mm) => sinFormato(String(mm?.content?.text ?? ""))).join("\n");
+          const _yaPregCant = /¿[^?¿]*\bcu[aá]nt[ao]s\b[^?¿]*\?|\b(?:dime|cu[eé]ntame|av[ií]same)\s+cu[aá]nt[ao]s|qu[eé]\s+oferta\s+te\s+preparo/i.test(_txNec);
+          if (_yaPregCant) {
+            parts.push("## 🎯 Ya le preguntaste cuántas: ahora ayúdalo a elegir\n" +
+              "En tus mensajes anteriores YA le preguntaste cuántas unidades quiere y todavía no lo dijo. " +
+              "⛔ NO repitas «¿cuántas unidades?», «dime cuántas llevas» ni «¿qué oferta te preparo?».\n" +
+              "1. Contesta primero lo que te preguntó.\n" +
+              "2. Si en la conversación ya te contó algo de su NECESIDAD (dónde lo va a usar, cuántos espacios, zonas, " +
+              "personas o equipos, para quién es), RECOMIÉNDALE UNA sola opción de la lista, con su precio y el porqué en " +
+              "una frase corta ligada a lo que te contó, y cierra exactamente con «¿Te lo dejo así?». La que DE VERDAD le " +
+              "calce: si es un solo espacio o una sola persona, la de 1 (y si quieres, menciona que llevando más sale más barato " +
+              "cada una); no le infles la cantidad, que la recomendación pierde confianza.\n" +
+              "3. Si todavía no sabes su necesidad, cierra con UNA pregunta corta sobre ella, pensada para ESTE producto, " +
+              "que te ayude a saber cuántas le convienen (dónde lo usará, cuántos espacios o personas, para quién es).\n" +
+              "Una sola pregunta al final. Nunca le elijas tú sin preguntarle: recomiendas y él decide.");
+          }
+        } catch (_) { /* sin historial → el bloque de arriba basta */ }
+      }
     }
     // Qué datos faltan (y cuáles vinieron mal). La IA los pide DENTRO de la
     // conversación, no como formulario: uno a la vez, sin repetir lo que el
@@ -27969,7 +28065,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _RE_Q_UBIC = /¿[^?¿]*\b(?:(?:a\s+)?qu[eé]\s+direcci[oó]n|cu[aá]l\s+es\s+tu\s+direcci[oó]n|de\s+d[oó]nde|desde\s+d[oó]nde|qu[eé]\s+(?:distrito|ciudad|provincia|departamento)|en\s+qu[eé]\s+(?:distrito|ciudad|zona|provincia)|d[oó]nde\s+(?:vives|est[aá]s|te\s+lo\s+(?:env[ií]o|mando|enviamos)))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
           // (+ «¿Cuál opción quieres, 1, 2 o 3 unidades?»: la misma pregunta dicha con CUÁL — F2-provincia)
           // (+ «¿Qué cantidad te interesa?», «¿qué opción / pack?» — G15-precio: sin esto no contaba como la de la cantidad)
-          const _RE_Q_CANT = /¿[^?¿]*\b(?:cu[aá]ntas?|cu[aá]ntos?|qu[eé]\s+(?:oferta|cantidad|opci[oó]n(?!\s+de\s+(?:pago|env[ií]o|entrega))|pack)|cu[aá]l\s+(?:opci[oó]n(?!\s+de\s+(?:pago|env[ií]o|entrega))|oferta|presentaci[oó]n|cantidad|pack))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
+          // (+ «¿Cuál promoción quieres…?» — así llama EcoGuard a sus packs; no contaba y la de necesidad no entraba — n7)
+          const _RE_Q_CANT = /¿[^?¿]*\b(?:cu[aá]ntas?|cu[aá]ntos?|qu[eé]\s+(?:oferta|promoci[oó]n|cantidad|opci[oó]n(?!\s+de\s+(?:pago|env[ií]o|entrega))|pack)|cu[aá]l\s+(?:opci[oó]n(?!\s+de\s+(?:pago|env[ií]o|entrega))|oferta|promoci[oó]n|presentaci[oó]n|cantidad|pack))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
           const _hay = (re: RegExp, t: string) => { re.lastIndex = 0; const r = re.test(t); re.lastIndex = 0; return r; };
           // Quitar «¿cuántas?» nunca se lleva una pregunta que PIDE LOS DATOS: «¿me pasas tu nombre, celular y
           // dirección para dejarlo listo y enviártelo en cuanto…?» casaba por el «cuánt-» y salía «Me dices 1
@@ -28142,9 +28239,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           } else if (_zonaOk && _cantAntes && _hay(_RE_Q_CANT, _s) && !RE_CLIENTE_PIDE_PRECIO.test(_li) &&
                      !_RE_SUAVE_C.test(_ultF)) {
             // …y sin volver a pegar la lista de precios que ya vio.
+            // 🎯 En vez de «dime cuántas llevas», la pregunta de NECESIDAD del producto (ver preguntaNecesidad), una vez:
+            // si la burbuja anterior ya la hizo, va la suave. Con señal de compra («donde pago», «lo quiero») no llega acá:
+            // ahí lo atiende el bloque del pago o la IA pregunta directo.
+            let _qN = "";
+            try { _qN = await preguntaNecesidad(db, run, ctx); } catch (_) { _qN = ""; }
+            const _yaNec = !!_qN && sinFormato(_ultF).includes(sinFormato(_qN).replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, ""));
             _s = _s.replace(_RE_Q_CANT, _quitaQCant).replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, _sinListaVieja)
               .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "").trim() +
-              " " + _SUAVE_C;
+              " " + (_qN && !_yaNec ? _qN : _SUAVE_C);
           }
           // 3) Sin saber de dónde es, «¿cuántas?» espera: primero la ubicación (una sola pregunta). La
           //    lista de precios puede quedar como info; la pregunta de cantidad no (F3-calidad).
@@ -28363,7 +28466,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               && !(ctx as any)._pidioCaptura
               && !RE_LO_PIENSA.test(String(ctx.last_input ?? "")) && !RE_RECLAMO.test(String(ctx.last_input ?? ""))
               && !/^\s*(?:no(?:\s+gracias)?|nada|ya\s+no|no\s+me\s+interesa|gracias(?:\s+no)?|chau|adi[oó]s)[\s.!,🙂🙏👍]*$/iu.test(String(ctx.last_input ?? ""))) {
-            const _qC = _cantAntes ? _SUAVE_C : "¿Cuántas unidades o qué oferta te preparo? 🙌";
+            let _qC = _cantAntes ? _SUAVE_C : "¿Cuántas unidades o qué oferta te preparo? 🙌";
+            // (ya preguntada la cantidad: la de necesidad, salvo que acabe de salir — ver preguntaNecesidad)
+            if (_cantAntes) {
+              let _qN2 = "";
+              try { _qN2 = await preguntaNecesidad(db, run, ctx); } catch (_) { _qN2 = ""; }
+              if (_qN2 && !sinFormato(_ultF).includes(sinFormato(_qN2).replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, ""))) _qC = _qN2;
+            }
             // Sin letras (quedó «🔧» o los 📌 pelados): va la pregunta sola.
             // (…y sin la petición de la SEDE en imperativo que la IA metió antes: «dime por favor en cuál sede… 📍 Dime
             //  cuántas llevas» eran dos pedidos; la cantidad va primero y la oficina la lista el motor — R1P-prepago)
@@ -28392,6 +28501,37 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               `Se dejó una sola y sin repetir la anterior: «${_antesF.slice(0, 140)}»`).catch(() => {});
           }
         } catch (_) { /* sin historial → tal cual */ }
+      }
+      // 🎯 RECOMENDÓ UNA OPCIÓN → el cierre es «¿Te lo dejo así?». Con eso el «ya, dale» que sigue la sella (ver la
+      // aceptación de la recomendación en detectarOpcion). La IA recomendaba y cerraba con otra cosa —«¿Cuál promoción te
+      // animo a elegir para seguir?»— y el «dale» no elegía nada (simulación n7, 2026-10-02).
+      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "").trim()
+          && !String(ctx.opcion_id ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si") {
+        try {
+          const _opsRc = opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id ?? "")), run);
+          const _sfRc = normalize(sinFormato(String(salida ?? "")));
+          const _nombraRc = (o: Opcion) => {
+            const n = normalize(String(o.nombre ?? "")).trim();
+            if (!n) return false;
+            const re = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/unidad(?:es)?/, "unidad(?:es)?");
+            return new RegExp("(?<![\\p{L}\\p{N}])" + re + "(?![\\p{L}\\p{N}])", "u").test(_sfRc);
+          };
+          // ⚠️ Recomendación de verdad: UNA frase con la marca que nombra UNA sola opción, sin rangos («2 o 3 unidades») y sin
+          // la lista de precios en el mensaje (con la lista le está pidiendo elegir). Sin esto, «la opción de 2 o 3 unidades
+          // … elige la que te conviene» + la lista se llevó el «¿Te lo dejo así?» y su «ya, dale» selló 3 (simulación n10).
+          const _lnPrecio = (String(salida ?? "").match(/^.*(?:S\/|\$|US\$)\s?\d.*$/gmu) ?? []).length;
+          const _frRc = _sfRc.split(/(?<=[.!?…])\s+|\n+/u);
+          const _RE_MARCA_RC = /\b(te recomiendo|recomiendo|te conviene|lo ideal|lo mejor|ideal para|te va mejor|te sirve|te calza)\b/;
+          const _fraseRc = _frRc.find((f) => _RE_MARCA_RC.test(f) && !/\d+\s*(?:o|u|y|a|-)\s*\d+/.test(f)
+            && _opsRc.filter((o) => { const n = normalize(String(o.nombre ?? "")).trim(); return !!n && new RegExp("(?<![\\p{L}\\p{N}])" + n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/unidad(?:es)?/, "unidad(?:es)?") + "(?![\\p{L}\\p{N}])", "u").test(f); }).length === 1);
+          if (_opsRc.length >= 2 && _lnPrecio < 2 && !!_fraseRc && _opsRc.filter(_nombraRc).length === 1
+              && !/te lo dejo asi/.test(_sfRc)) {
+            const _sinQ = String(salida).replace(/[ \t]*¿[^?¿]*\?[\s\p{Extended_Pictographic}\u{FE0F}]*$/u, "").trimEnd();
+            salida = `${_sinQ}${/[.!…\p{Extended_Pictographic}\u{FE0F}]$/u.test(_sinQ) ? "" : "."} ¿Te lo dejo así?`;
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🎯 Recomendó una opción",
+              "El cierre pasó a «¿Te lo dejo así?» para que su «sí» la elija").catch(() => {});
+          }
+        } catch (_) { /* sin opciones → tal cual */ }
       }
       // 🙈 CANTIDAD QUE NO ESTÁ EN LA LISTA — lo cierra el MOTOR ([[ofertas-ocultas]]). El bloque del prompt no le
       // ganó a «nómbralas TODAS y pregunta cuántas»: a «quiero 4» salió la lista entera + «dime cuántas unidades

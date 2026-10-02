@@ -1386,6 +1386,8 @@ function renderProductoIA(host){
           <span style="display:inline-flex;flex:none;color:var(--muted)">${icon("productos")}</span>
           <div>Las <b>ofertas por cantidad</b>, los <b>packs</b> y las <b>variantes</b> se configuran en <b>Presentaciones y precios</b> — ahí cada una tiene su precio real, y es contra ese precio que se valida el pago. <a href="#" id="goOpciones" style="color:var(--brand)">Ir a Presentaciones y precios →</a></div>
         </div>
+        ${fisico?`${taField("pregunta_necesidad","Pregunta para ayudar a elegir cuántas","Ej. ¿Es para un solo espacio o para varios?",1)}
+        <div style="font-size:11px;color:var(--faint);margin:-4px 0 10px;line-height:1.5">Si el cliente no dice cuántas, en vez de repetirle «¿cuántas?» el bot le hace esta pregunta y, con lo que conteste, le recomienda una opción. Si la dejas vacía, la IA escribe una sola la primera vez.</div>`:""}
         ${taField("descuentos","Precios con descuento","Cuándo aplicar un descuento para incentivar (ej. si deja en visto, si duda…) y cuánto.",2)}
         <details style="margin-top:12px;border-top:1px solid var(--border);padding-top:6px">
           <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px;list-style:none">Método de pago especial para este producto <span style="font-weight:400;color:var(--faint)">— avanzado, opcional</span></summary>
