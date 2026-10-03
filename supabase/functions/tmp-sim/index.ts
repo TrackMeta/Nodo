@@ -5,7 +5,7 @@
 // que nunca salen por WhatsApp.
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel, userIsChannelAdmin } from "../_shared/db.ts";
-import { runEngine, aplicarStock } from "../_shared/engine.ts";
+import { runEngine, aplicarStock, forzarModeloVenta } from "../_shared/engine.ts";
 
 const db = serviceClient();
 
@@ -19,9 +19,11 @@ Deno.serve(async (req) => {
   const { data: member } = await db.from("app_users").select("id").eq("id", uid).eq("activo", true).maybeSingle();
   if (!member) return json({ error: "not_member" }, 403);
 
-  let body: { channel_id?: string; wa_id?: string; nombre?: string; text?: string; buttonId?: string; reset?: boolean; media?: { kind?: string; url?: string; mime?: string; caption?: string }; ad_id?: string };
+  let body: { channel_id?: string; wa_id?: string; nombre?: string; text?: string; buttonId?: string; reset?: boolean; media?: { kind?: string; url?: string; mime?: string; caption?: string }; ad_id?: string; modelo?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
-  const { channel_id, wa_id, nombre, text, buttonId, reset, media, ad_id } = body;
+  const { channel_id, wa_id, nombre, text, buttonId, reset, media, ad_id, modelo } = body;
+  // 🧪 Comparar modelos: el de la respuesta de venta solo para esta simulación (null = el del canal).
+  forzarModeloVenta(modelo ?? null);
   if (!channel_id || !wa_id) return json({ error: "faltan_campos" }, 400);
   if (!(await userOwnsChannel(db, uid, channel_id))) return json({ error: "forbidden_channel" }, 403);
   // Solo ADMIN del canal: el simulador crea contactos con cualquier wa_id, corre el motor y su

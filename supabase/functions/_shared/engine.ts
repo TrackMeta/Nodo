@@ -3897,6 +3897,12 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   ["si se puede en el embarazo o la lactancia", /\b(embaraz|gestaci[oó]n|gestante|lactancia|dando de lactar|amamant|dar de lactar)/, /\b(embaraz|gestaci[oó]n|lactancia)/, "producto"],
   // 👴 «tengo 70 años, ¿puedo hacerlo?» → «¡Claro que sí!, sin importar la edad» (D18-o70). Con edad ≥60 es una duda de salud.
   ["si es apto para su edad (60+)", /(?:tengo|con|a\s+mis?)\s+[6-9]\d\s*a[ñn]os|tercera edad|adulto mayor|soy jubilad/, /adulto mayor|tercera edad|[6-9]\d\s*a[ñn]os|cualquier edad/, "producto"],
+  // 👶 «¿es peligroso para mis hijos?» → «usa ultrasonidos que no afectan a personas ni niños» (EcoGuard, simulación
+  // q-ninos, 2026-10-02): la ficha no dice una palabra de personas. La seguridad de un niño no se afirma de memoria.
+  // (La pregunta y la frase de la IA se reconocen igual: verbo de daño cerca de niño/persona, en cualquier orden.)
+  ["si es seguro para niños o personas", /(?:peligr|segur|da[ñn]|afect|molest|escuch|oye|lastim)\p{L}*[^.?!\n]{0,40}(?:ni[ñn]|hij|beb[eé]|persona|human|familia)|(?:ni[ñn]|hij|beb[eé]|persona|human)\p{L}*[^.?!\n]{0,40}(?:peligr|segur|da[ñn]|afect|molest|escuch|oye|lastim)/u, /ni[ñn]os|personas|humanos|beb[eé]s|o[ií]do humano|inaudible/, "producto"],
+  // 🐈 …y las MASCOTAS: si la ficha habla de ellas (o de «animales domésticos») no es hueco — es la respuesta.
+  ["si es seguro para sus mascotas", /(?:peligr|segur|da[ñn]|afect|molest|lastim|efectiv|funciona|sirve)\p{L}*[^.?!\n]{0,40}(?:mascota|gat|perr|michi|cachorr)|(?:mascota|gat|perr|michi|cachorr)\p{L}*[^.?!\n]{0,40}(?:peligr|segur|da[ñn]|afect|molest|lastim)/u, /mascota|dom[eé]stic|perros?|gatos?/, "producto"],
   ["contraindicaciones, alergias o efectos", /\b(al[eé]rgic|alergia|contraindicaci|efectos? (secundarios?|adversos?)|me hace da[nñ]o|es peligros|piel sensible|dermatitis|rosace|diab[eé]tic|hipertens|tomo (pastillas|medicament)|estoy medicad)/, /\b(contraindicaci|al[eé]rgic|efectos? secundarios?|piel sensible|no usar si)/, "producto"],
   // «tengo 14 años, ¿puedo comprarlo?» (D15-fmenor) no casaba —solo «de 14 años»— y la IA
   // contestó «¡Claro que sí! … sin importar la edad».
@@ -6175,7 +6181,7 @@ function sinPoliticaInventada(texto: string, huecos: Array<[string, RegExp, RegE
 // quita la frase que da un plazo (N días/meses/años) que no está en la ficha y se cambia por la
 // forma honesta, una sola vez. Un plazo que SÍ esté en la ficha se respeta.
 const RE_GARANTIA_PLAZO =
-  /[^.!?…¿¡\n\p{Extended_Pictographic}]*(?:\bgarant[ií]a\b[^.!?…\n\p{Extended_Pictographic}]*?\b(\d+)\s*(d[ií]as?|meses?|mes|a[ñn]os?|semanas?)\b|\b(\d+)\s*(d[ií]as?|meses?|mes|a[ñn]os?|semanas?)\s+de\s+garant[ií]a\b)[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?(?:[ \t]*(?:\p{Extended_Pictographic}|️))*/giu;
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*(?:\bgarant[ií]a\b[^.!?…\n\p{Extended_Pictographic}]*?\b(\d+)\s*(d[ií]as?|meses?|mes|a[ñn]os?|semanas?)\b|\b(\d+)\s*(d[ií]as?|meses?|mes|a[ñn]os?|semanas?)[*_~]*\s+de\s+[*_~]*garant[ií]a\b)[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?(?:[ \t]*(?:\p{Extended_Pictographic}|️))*/giu;
 function sinGarantiaInventada(texto: string, ficha: string): string {
   const t = String(texto ?? "");
   if (!/garant/i.test(t)) return texto;
@@ -8285,6 +8291,12 @@ function sinColetillaRiesgo(texto: string): string {
 // mando hasta tu casa y me lo pagas al recibirlo»; esto es la red por si la IA vuelve a la forma
 // del sistema. Solo la frase de la ENTREGA (con su lugar delante: «En X» → «A X»), y el «pagas al
 // recibir» solo si esa frase estaba — el resto del mensaje no se toca.
+// 🧪 Modelo forzado para la respuesta de venta: lo pone SOLO tmp-sim (cada función lleva su copia del motor, así que en
+// el webhook y en webchat queda siempre en null). Ver runIa.
+let _modeloVentaForzado: string | null = null;
+export function forzarModeloVenta(m: string | null): void {
+  _modeloVentaForzado = m && /^gpt-[\w.-]+$/.test(m) ? m : null;
+}
 // 🎲 El ejemplo del prompt sale casi textual (ver la memoria «ejemplo del prompt pesa más»): con uno solo,
 // 5 de 5 chats de Lima abrieron con «¡Genial! A *X* te lo mando…» (Rodrigo: «que no siempre diga Genial»).
 // Uno distinto en cada turno, todos en primera persona y con «al recibirlo» (el hecho que se dice).
@@ -18043,7 +18055,7 @@ Estas seis no las corrige nadie más. Si las rompes, salen tal cual.
   MAL: "Si no te queda, lo cambias dentro de los 30 días."
   MAL: "No, no incluye factura." · MAL: "Sí, claro que trae certificado."
   MAL: "Del color te confirmo y te aviso."   (nadie va a volver — ver abajo)
-  BIEN: "Tienes *30 días* de garantía por defecto de fábrica ✅"
+  BIEN: la garantía con las palabras y el plazo EXACTOS de la ficha; si la ficha no da un plazo, no pongas ninguno
   BIEN: "Del color no tengo el dato acá 🤔 Lo que sí te digo es que…"  (y sigues vendiendo)
   ⛔ NUNCA prometas averiguarlo y volver ("te confirmo y te aviso", "déjame verificarlo"):
   nadie va a volver, y el sistema BORRA esa frase antes de enviar — te quedarías sin
@@ -23116,10 +23128,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       (esDigital(ctx)
         ? "   MAL: \"Si no te gusta te devuelvo el dinero\" (si la ficha no dice eso, lo acabas de prometer tú)\n" +
           "   BIEN: \"Lo que sí te puedo asegurar es que el acceso es inmediato y no caduca.\" (y sigues con la venta)\n"
-        : "   MAL: \"Si no te queda la talla la cambias dentro de los 30 días\" (la ficha solo dice \"garantía 30 días " +
-          "por defecto de fábrica\": eso cubre fallas, no que le quede grande)\n" +
-          "   BIEN: \"Tienes 30 días de garantía por defecto de fábrica.\" (y eliges bien la talla con él para que " +
-          "no haga falta nada más — ⛔ sin prometerle que lo averiguas y le avisas)\n") +
+        // 🔴 Con el «30 días» escrito como BIEN, la IA lo copiaba a fichas SIN garantía: «Tienes *30 días* de garantía por
+        //  defecto de fábrica ✅» en EcoGuard, cuya ficha no da plazo (simulación q-garantia, 2026-10-02). Sin número.
+        : "   MAL: \"Si no te queda la talla la cambias\" cuando la ficha solo habla de defectos de fábrica " +
+          "(eso cubre fallas, no que le quede grande)\n" +
+          "   BIEN: repetir la garantía tal como la dice la ficha, sin agregarle plazo ni condiciones (y eliges bien la " +
+          "talla con él para que no haga falta nada más — ⛔ sin prometerle que lo averiguas y le avisas)\n") +
       "   Y vale para las dos direcciones: que la ficha no lo mencione NO significa que no exista. Tampoco lo NIEGUES. " +
       "Medido: a \"¿el curso tiene certificado?\" —algo que la ficha ni nombra— contestó \"el curso no incluye " +
       "certificado\", y con eso le tumbó la venta a un interesado por un dato que nadie verificó.\n" +
@@ -24631,6 +24645,37 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           (ctx as any)._material_sin_dato = _mat;
         }
       }
+      // 🐈 «¿Es efectivo con GATOS?» → «no funciona con gatos ni afecta a tus mascotas» (EcoGuard, simulación, 2026-10-02):
+      // la ficha no nombra gatos y sobre mascotas dice lo CONTRARIO («recomendamos no usarlo cerca de tus mascotas»). Lo
+      // mismo que el material de arriba pero para CUALQUIER cosa contra la que pregunte si sirve: un animal, una plaga, un
+      // clima, un lugar. Si esa palabra no está en la ficha, es hueco: ni sí ni no.
+      if (!_mat) {
+        const _mObj = /(?:sirve|funciona|es\s+efectiv[oa]|es\s+bueno|resulta|ahuyenta|aleja|repele|espanta|mata|aguanta|resiste)\s+(?:tambi[eé]n\s+|igual\s+)?(?:(?:con|para|contra|en|a)\s+)?(?:los|las|el|la|mis|mi|un|una|unos|unas|esos|esas)?\s*([a-záéíóúñ]{3,})/i
+          .exec(String(ctx.last_input ?? "").toLowerCase());
+        const _obj = _mObj ? normalize(_mObj[1]) : "";
+        const _NO_OBJ = /^(eso|esto|esta|este|todo|todos|todas|algo|nada|bien|mal|igual|siempre|solo|mucho|poco|rapido|realmente|verdad|seguro|casa|uso|que|cual|como|cuanto|cuando|donde|tipo|cualquier|cualquiera|animal|animales|plagas?|ahi|aqui|aca|ese|esa|mas|menos|entonces|nomas|pues|para|con|contra|tambien|exterior|exteriores|interior|interiores|jardin|jardines|patio|patios|chacra|chacras|cultivo|cultivos)$/;
+        // raíz sin el plural: «gatos» → «gato», «palomas» → «paloma», «ratones» → «raton»
+        const _raizO = _obj.replace(/(?<=[^aeiou])es$/, "").replace(/s$/, "");
+        // 🐕 Una MASCOTA está cubierta si la ficha habla de mascotas o de animales domésticos (la de EcoGuard: «No usar
+        //  … con animales domésticos cerca»): ahí la respuesta existe y es esa, no «no tengo el dato».
+        const _esMascota = /^(gat|perr|michi|cachorr|mascota|conej|hamster|cuy)/.test(_raizO)
+          && /mascota|domestic/.test(normalize(fichaTxt));
+        // …y la CATEGORÍA: «¿sirve para ratas?» con una ficha que dice «roedores» está cubierto (salía «ese dato no lo tengo»
+        //  — simulación q-ratas, q-palomas, 2026-10-02).
+        const _CATEG: Array<[RegExp, RegExp]> = [
+          [/^(rat|raton|pericot|ardill|laucha)/, /roedor/],
+          [/^(palom|gorrion|pajar|loro|tord|cuerv|zorzal|perico|aves?$)/, /\baves?\b|pajaro/],
+          [/^(zancud|mosquit|mosca|cucarach|hormig|polill)/, /insect/],
+        ];
+        const _cubiertaPorCategoria = _CATEG.some(([ra, rf]) => ra.test(_raizO) && rf.test(normalize(fichaTxt)));
+        if (_obj && _raizO.length >= 3 && !_NO_OBJ.test(_obj) && !_esMascota && !_cubiertaPorCategoria && !normalize(fichaTxt).includes(_raizO)) {
+          // con y sin tilde: la raíz va normalizada («raton») y la IA escribe «ratón»
+          const _conTildes = _raizO.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/a/g, "[aá]").replace(/e/g, "[eé]")
+            .replace(/i/g, "[ií]").replace(/o/g, "[oó]").replace(/u/g, "[uúü]").replace(/n/g, "[nñ]");
+          const _reO = new RegExp("(?<![\\p{L}])" + _conTildes, "iu");
+          huecos.push([`si sirve para ${_obj}`, _reO, _reO, "producto"]);
+        }
+      }
       // 🧮 «¿Calcula el IGV?», «¿tiene macros?», «¿trae plantillas de contrato?»: una FUNCIÓN o
       // un contenido concreto del producto. Si esa palabra no está en la ficha, la IA la
       // afirmaba («Sí, incluye el cálculo del IGV», D16-pigv): una promesa que termina en
@@ -25000,7 +25045,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (!ai?.api_key) throw new Error("IA no configurada en este canal (Configuraciones)");
     const provider = ai.provider as Provider;
-    const model = cfg.modelo || (perfil?.proveedor === ai.provider ? perfil?.modelo : null) || ai.model || undefined;
+    // 🧪 Solo el simulador (tmp-sim) puede forzar el modelo de la respuesta de venta, para comparar modelos con la misma
+    // conversación sin tocar la configuración real del canal (prueba del 2026-10-02: gpt-4.1-mini contra uno más fuerte).
+    const model = (op === "generar_texto" && _modeloVentaForzado && provider === "openai" ? _modeloVentaForzado : null)
+      || cfg.modelo || (perfil?.proveedor === ai.provider ? perfil?.modelo : null) || ai.model || undefined;
 
     let content: string | ContentBlock[] = prompt;
     // Sin esto la IA está CIEGA: recibía un prompt fijo ("continúa la
