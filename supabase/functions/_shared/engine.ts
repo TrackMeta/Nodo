@@ -4275,8 +4275,8 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   try {
     result = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 350 });
     // 🔎 Fase 5: el mismo revisor del motor v2 (¿contestó? ¿inventó?) contra la información del NEGOCIO, con UNA
-    // reescritura. Solo si el canal tiene el motor v2 y solo cuando responde ella (no cuando pasa a un producto: [[ir:N]]).
-    if (result && !/\[\[\s*ir\s*:/i.test(result) && (_motorV2Forzado || (await loadEntregas(db, run).catch(() => null))?.motor_v2 === true)) {
+    // reescritura. Solo cuando responde ella (no cuando pasa a un producto: [[ir:N]]).
+    if (result && !/\[\[\s*ir\s*:/i.test(result)) {
       try {
         const _ctxR = { last_input: String(event.text ?? ""), contexto_producto: String(info.negocio ?? ""),
           faq: cands.map((c: any) => `${c.label ?? c.nombre ?? ""}: ${c.intent ?? ""}`).join("\n") };
@@ -6927,7 +6927,9 @@ const CAMBIOS_PAGO_PROVINCIA: Array<[RegExp, string]> = [
   // quedaba «cuando llegue a la agencia en la agencia» (F8-provce, 2026-09-28).
   // (NO negado: «el resto cuando llegues a la agencia, no todo al recibirlo» ya dice lo correcto y quedaba «…no todo
   //  cuando llegue a la agencia» — F12-cusco, 2026-09-29)
-  [/(?<!\bno\s+(?:todo\s+|pagas\s+todo\s+|se\s+paga\s+todo\s+|es\s+)?)\bal\s+recibir(?:lo|la)?(?![\p{L}\p{N}])/giu, "cuando llegue a la agencia"],
+  // (ni «funciona AL RECIBIR luz solar»: eso es el equipo, no la entrega — salía «funciona cuando llegue a la agencia luz
+  //  solar», examen fase 2, 3-oct)
+  [/(?<!\bno\s+(?:todo\s+|pagas\s+todo\s+|se\s+paga\s+todo\s+|es\s+)?)\bal\s+recibir(?:lo|la)?(?![\p{L}\p{N}])(?!\s+(?:(?:la|el|un|una|suficiente|buena|poca|mucha|algo\s+de)\s+)?(?:luz|sol|se[ñn]al|energ\p{L}*|movimiento|carga|calor|radiaci\p{L}*|rayos|ultrasonido|sonido))/giu, "cuando llegue a la agencia"],
   // «y el resto cuando recojas el paquete» — misma idea, otra forma. Se generaliza: cualquier
   // «cuando recojas…» en provincia habla del MOMENTO en que él va por el paquete, y el saldo
   // se paga antes de eso. La variante con lugar («recojas allá») ya estaba arriba.
@@ -7512,7 +7514,6 @@ function bloqueEnvio(courier: string, modo: string, sede?: { l: string; ref?: st
 // (+ «tu pedido va por agencia Shalom», «la agencia Shalom de Supe queda anotada»: salía «Sí hacemos envíos a Barranca con la
 //  agencia Shalom» encima de eso mismo — sims c5/c6, 2026-10-02)
 const RE_YA_CONFIRMO_COBERTURA = /(s[ií],?\s+(?:hacemos|llegamos|enviamos|te\s+lleg)|s[ií]\s+llega|llegamos\s+a|hacemos\s+env[ií]os?\s+a|enviamos\s+a|te\s+llega\s+por|te\s+lo\s+(?:mando|env[ií]o|despacho)\s+(?:por|con|a)\b|s[ií]\s+enviamos|va\s+por\s+(?:la\s+)?agencia|agencia\s+(?:shalom|olva|marvisur)\b|por\s+(?:shalom|olva)\b|lo\s+recoges\s+en|queda\s+anotad|recojo\s+en|en\s+(?:shalom|olva)\b|queda\s+list[ao]\s+para\s+(?:el\s+)?recoj)/i;
-const RE_PREGUNTA_LA_CIUDAD = /(qu[eé]\s+(ciudad|distrito|provincia)|de\s+qu[eé]\s+(ciudad|distrito)|ciudad\s+o\s+distrito|de\s+d[oó]nde\s+(me\s+)?(escribes|eres))/i;
 function conCoberturaConfirmada(texto: string, depto: string, courier: string): string {
   const t = String(texto ?? "").trimStart();
   const zona = String(depto ?? "").trim();
@@ -8323,10 +8324,9 @@ export function forzarModeloVenta(m: string | null): void {
 // El motor decide el SIGUIENTE PASO de la venta y se lo dice a la IA al final del mensaje; la IA contesta lo que le
 // preguntaron y hace la pregunta de ese paso con sus palabras. Después un REVISOR mira la respuesta y, si algo está
 // mal, le pide reescribirla UNA vez (en vez de recortarla con tijeras). Si la segunda tampoco pasa, vuelven las
-// tijeras de siempre (`_v2Fallo`). Hoy solo se enciende desde el examen / el simulador (`forzarMotorV2`).
+// tijeras que quedan de respaldo (`_v2Fallo`: sedes nombradas, datos a destiempo, respuesta vacía).
+// Encendido en TODOS los canales desde el 3-oct-2026 (ya no hay interruptor por canal).
 // ═══════════════════════════════════════════════════════════════════
-let _motorV2Forzado = false;
-export function forzarMotorV2(on: boolean): void { _motorV2Forzado = !!on; }
 
 type PasoV2Nombre = "zona" | "distrito" | "sede" | "cantidad_lista" | "cantidad" | "datos" | "ninguno";
 interface PasoV2 { paso: PasoV2Nombre; pregunta: string; sinPregunta: boolean; preguntoEnvio: boolean }
@@ -17172,7 +17172,7 @@ async function loadEntregas(db: SupabaseClient, run: Run): Promise<any | null> {
   if (cache !== undefined) return cache;
   let out: any = null;
   try {
-    const { data } = await db.from("channels").select("entregas, timezone, motor_v2").eq("id", run.channel_id).maybeSingle();
+    const { data } = await db.from("channels").select("entregas, timezone").eq("id", run.channel_id).maybeSingle();
     out = data ?? null;
   } catch (_) { /* columna pendiente (0032) */ }
   (run as any)._entregas = out;
@@ -20591,7 +20591,13 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
       const _recId = _recG && Date.now() - Number(_recG.ts ?? 0) < 60 * 60 * 1000 ? String(_recG.id ?? "") : "";
       // Una sola nombrada → esa. Varias («te dejo la de 1… ¿o prefieres la oferta de dos unidades?») → la que el motor
       // recomendó si está entre ellas; si no, la PRIMERA (la que propone; lo que sigue es la oferta para subir).
+      // «¿Te dejo 1 o 2 unidades?» es una pregunta con DOS cantidades, aunque solo «2 unidades» case con su nombre: un
+      // «ok» ahí no elige ninguna. Vale la que el motor recomendó; si no hubo, no se sella (examen fase 2, 3-oct: el bot
+      // recomendó 1, preguntó «¿1 o 2?», el cliente dijo «ok» y se anotaron 2).
+      const _NUMW = "\\d{1,2}|un[ao]?|dos|tres|cuatro|cinco|seis";
+      const _disyuntiva = new RegExp(`(?<![\\p{L}\\p{N}])(?:${_NUMW})\\s*(?:,|o|u|y)\\s*(?:${_NUMW})\\s+(?:sola\\s+)?(?:unidad(?:es)?|piezas?|packs?)`, "u").test(_txB);
       const _elegida = _lnPrecioB >= 2 ? null
+        : _disyuntiva ? (_recId ? list.find((o) => o.id === _recId) ?? null : null)
         : _nombradas.length === 1 ? _nombradas[0].o
         : _nombradas.length > 1 ? (_nombradas.find((x) => x.o.id === _recId)?.o ?? _nombradas[0].o)
         : (_recId ? list.find((o) => o.id === _recId) ?? null : null);
@@ -25493,9 +25499,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
 
     // 🧭 Motor v2: el motor decide el siguiente paso y se lo dice a la IA al final (ver pasoV2). Solo venta física, antes
     // de que el pedido se esté cerrando (el cierre tiene sus propias reglas).
-    // Se enciende por canal (`channels.motor_v2`, migración 0123) o lo fuerza el examen.
-    const _v2Encendido = op === "generar_texto" && !esDigital(ctx) &&
-      (_motorV2Forzado || (await loadEntregas(db, run).catch(() => null))?.motor_v2 === true);
+    // Encendido en todos los canales (antes por canal: `channels.motor_v2`, retirado en la migración 0124).
+    const _v2Encendido = op === "generar_texto" && !esDigital(ctx);
     if (_v2Encendido && !!ctx._product_id
         && String(ctx.pedido_creado ?? "") !== "si" && ctx.datos_completos !== "si" && typeof content === "string") {
       (ctx as any)._colgadaV2 = preguntaColgada || "";
@@ -25505,8 +25510,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       content += "\n\n" + instruccionV2(_p, ctx);
       await logEvent(db, run.channel_id, run.contact_id, "nota", `🧭 Motor v2 · paso: ${_p.paso}`,
         _p.pregunta ? `Pregunta del paso: ${_p.pregunta}` : "Sin pregunta de la IA en este paso").catch(() => {});
-    } else if (op === "generar_texto" && esDigital(ctx) && !!ctx._product_id && typeof content === "string"
-        && (_motorV2Forzado || (await loadEntregas(db, run).catch(() => null))?.motor_v2 === true)) {
+    } else if (op === "generar_texto" && esDigital(ctx) && !!ctx._product_id && typeof content === "string") {
       // 💻 Fase 5: en la venta DIGITAL solo el revisor (¿contestó? ¿inventó?) con reescritura. Sin pasoV2 ni tijeras
       // apagadas: la venta digital tiene frenos de plata (acceso, pago, combo) que se quedan como están.
       (run as any)._revSolo = true;
@@ -25560,7 +25564,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const r2 = await runAI({ db, channelId: run.channel_id, origen: "vender", provider, apiKey: ai.api_key, model, system, maxTokens,
             content: content + `\n\n## ⚠️ CORRIGE TU RESPUESTA\nEscribiste esto:\n«${result}»\nTiene estos problemas:\n` +
               v1.map((x) => `• ${x}`).join("\n") + "\nEscribe de nuevo el mensaje COMPLETO corrigiendo solo eso. Responde solo con el mensaje." });
-          const r2b = _p?.paso === "sede" && r2 ? (sinPreguntaDeSedeV2(r2) || r2) : r2;
+          let r2b = _p?.paso === "sede" && r2 ? (sinPreguntaDeSedeV2(r2) || r2) : r2;
+          // Paso sin pregunta (la sede: la pregunta la pone el motor debajo de la lista) y la IA volvió a preguntar
+          // («¿Qué promoción prefieres?»): se quitan sus preguntas y queda lo demás. Mandarla a las tijeras por eso dejó
+          // «La sede de Cayma la tomamos com» (examen fase 2, 3-oct).
+          if (_p?.sinPregunta && r2b && /\?/.test(r2b)) {
+            const _sinQ = r2b.replace(/[^.!?\n¡]*¿?[^.!?\n¿]*\?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*/gu, " ")
+              .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+            if (_sinQ.replace(/[^\p{L}]/gu, "").length >= 10) r2b = _sinQ;
+          }
           const v2 = r2b && r2b.trim() ? await revisar(r2b) : ["(vacía)"];
           if (r2b && r2b.trim()) result = r2b;
           if (v2.length) {
@@ -25568,7 +25580,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // datos a destiempo, una respuesta vacía). Para lo demás —no contestó, un invento, una pregunta de más— recortar
             // empeora: en el examen de la fase 3 dejaron «Para coordinar bien, dime de qué distrito… / Perfecto, recibiste
             // claro lo de…» al revés. Ahí sale la segunda versión tal cual.
-            const _tijerasSirven = v2.some((x) => /sedes|sus datos|\(vac[ií]a\)/i.test(x));
+            // (por el MENSAJE exacto de la regla: «debajo va la lista de sedes» —la de la pregunta de más— también decía
+            //  «sedes» y traía las tijeras de vuelta — examen fase 2, 3-oct)
+            const _tijerasSirven = v2.some((x) => /^No nombres ni recomiendes sedes|^No le pidas sus datos|\(vac[ií]a\)/i.test(x));
             if (_tijerasSirven) (run as any)._v2Fallo = true;
             await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ Motor v2: la reescritura tampoco pasó",
               `${v2.join(" · ")} — ${_tijerasSirven ? "vuelven los recortes de siempre" : "sale la segunda versión sin recortes"}`).catch(() => {});
@@ -26247,40 +26261,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               "Abrió con «buena pregunta» y el cliente no había preguntado nada").catch(() => {});
           }
         }
-        // 💻 En DIGITAL no corre: acá el cliente no «da datos» (no hay ciudad ni sede que
-        // pedir), lo que escribe es su situación —«tengo lesión de rodilla», «nunca he cortado
-        // metal»— y la respuesta a eso habla del producto por fuerza. El recorte se llevaba la
-        // respuesta entera y dejaba la pregunta de cierre sola: «¿Quieres que te pase los datos
-        // para el pago? 😊» a quien acababa de contar su lesión (D9-klesion, D9-cnivel, 2026-09-24).
-        const _antesPres = salida;
-        if (!esDigital(ctx) && !_v2On) salida = sinPresentacionRepetida(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""), _turnoDeVenta, String(ctx.last_input ?? ""));
-        if (salida !== _antesPres) {
-          await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Se quitó la presentación repetida",
-            "El cliente solo estaba dando un dato y el mensaje abría describiendo el producto.").catch(() => {});
-        }
-      }
-      // 🎯 LA RESPUESTA VA PRIMERO (regla 1 de Rodrigo). Cuando el cliente PREGUNTA algo puntual («¿tienen garantía?»,
-      // «¿es lo mismo que el de Mercado Libre?», «¿pago con tarjeta?», «¿me lo mandan por Olva?», «no tengo taladro,
-      // ¿sirve?») la IA abre con el párrafo de presentación del producto y contesta recién después: 8 de 35 chats de
-      // Lima y 4 de provincia en la regresión del 2026-10-01. Es el mismo recorte de arriba, pero también en turnos
-      // de venta: la función ya respeta a quien pidió información del producto y a quien cita algo del producto.
-      if (op === "generar_texto" && _turnoDeVenta && !esDigital(ctx)) {
-        const _liP = String(ctx.last_input ?? "");
-        const _preguntaPuntual = /[?¿]/.test(_liP)
-          || /(?:^|[^\p{L}])(?:tienen|hay|puedo|se\s+puede|sirve|funciona|me\s+recomiendas|cu[aá]nto\s+pesa|es\s+lo\s+mismo|aceptan|cobran|demora|garant[ií]a|tarjeta|boleta|factura|devol\p{L}*|olva|otra\s+agencia|a\s+domicilio)(?![\p{L}])/iu.test(_liP);
-        // (también cuando pregunta el PRECIO: «precioPrimero» no siempre calza y la lista salía tras la presentación — olivos,
-        //  mayus, preguntadoble en la segunda regresión; y solo con DOS párrafos o más: en uno solo la respuesta suele ir
-        //  mezclada con la presentación y se perdía — R1L-peso)
-        // (ya sin exigir dos párrafos: la función parte el primero por frases y mueve la presentación detrás de la respuesta —
-        //  olivos, sintaladro, yapeantes seguían abriendo con el producto en un solo párrafo; regresión 4, 2026-10-02)
-        if ((_preguntaPuntual || RE_CLIENTE_PIDE_PRECIO.test(_liP)) && !_v2On) {
-          const _antesRP = salida;
-          salida = sinPresentacionRepetida(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""), true, _liP);
-          if (salida !== _antesRP) {
-            await logEvent(db, run.channel_id, run.contact_id, "nota", "🎯 La respuesta va primero",
-              `Preguntó algo puntual y el mensaje abría con la presentación del producto: «${_antesRP.slice(0, 100)}»`).catch(() => {});
-          }
-        }
+        // (Acá iba el recorte de la PRESENTACIÓN REPETIDA y el de «la respuesta va primero». Retirados en la fase 2 del
+        //  motor v2: ahora `sinPresentacionRepetida` solo DETECTA —en violacionesV2— y la IA reescribe su mensaje.)
       }
       // 🧹 Y el pitch metido en una respuesta que no lo pedía («¿eres un bot?», «¿me lo dejas
       // en 50?», «quiero 2»): son turnos de venta, así que el recorte de arriba no corre, y
@@ -27828,47 +27810,6 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // "¿lo confirmo y te lo mando?" pegado a un pedido de datos es incoherente: todavía
       // no hay nada que confirmar. De ese turno se encarga el cierre honesto de más abajo,
       // que sí sabe QUÉ dato falta y lo pide por su nombre.
-      // 🔁 LA PREGUNTA QUE YA SE HIZO. «ya el curso» → el mensaje inicial preguntó «¿ya has cortado metal antes o
-      // empiezas de cero?» y la IA, justo debajo, cerró con la MISMA pregunta (D18e-okcurso). La IA copia lo que ve en
-      // el historial. Si la pregunta con que cierra ya salió en las últimas burbujas del bot, se quita; lo que falta
-      // pedir lo ponen después el cierre o la petición del motor.
-      if (op === "generar_texto" && !_v2On && /[?¿]/.test(String(salida ?? ""))) {
-        try {
-          const { data: _oQ } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
-            .eq("direction", "out").order("ts", { ascending: false }).limit(3);
-          const _pal = (s: string) => new Set(normalize(s).replace(/[^a-z0-9ñ\s]/g, " ").split(/\s+/).filter((w) => w.length >= 4));
-          const _prevQs = ((_oQ ?? []) as any[]).flatMap((mm) => String(mm?.content?.text ?? "").match(/¿[^?¿\n]{8,}(?:\?|$)/g) ?? []).map(_pal);
-          if (_prevQs.length) {
-            const _antesQR = String(salida);
-            // (con la muletilla que la presenta: «Cuéntame, ¿…?» dejaba «Cuéntame» colgando — D18f-okcurso)
-            const _sinRep = _antesQR.replace(/(?:(?:y\s+)?(?:cu[eé]ntame|dime|oye|por\s+cierto|ahora|entonces)\s*[,:]?\s*)?¿[^?¿\n]{8,}(?:\?|(?=\n|$))[\s\p{Extended_Pictographic}️]*/giu, (q) => {
-              const a = _pal(q);
-              if (a.size < 2) return q;
-              // 🔢 La de la CANTIDAD no se quita mientras no haya elegido: a «ya» se le repreguntó y este guard la borró
-              // porque ya se había hecho, y quedó «📌 *Nombre y apellidos* 📌 *Celular* 📌 *DNI* 🔧» pelado (reproducción
-              // del 3.er chat, 2026-10-01). Los guards físicos de abajo la vuelven suave si hace falta.
-              if ((ctx as any)._falta_opcion && !String(ctx.opcion_id ?? "").trim()
-                  && /\b(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l\s+(?:oferta|opci[oó]n|prefieres|te\s+preparo))\b/i.test(q)) return q;
-              // 📍 …ni la de la SEDE cuando la lista va en este mismo mensaje (se le vuelve a pasar tras decir la cantidad):
-              // sin ella quedaba la lista pelada y la petición de datos pegada al último renglón — sim c6, 2026-10-02.
-              if ((_antesQR.match(/^\s*📍/gmu) ?? []).length >= 2 && /te\s+queda\s+(?:m[aá]s\s+cerca|mejor)|en\s+cu[aá]l\s+est[aá]s/i.test(q)) return q;
-              // 📍 …ni cuando la lista salió en las burbujas de recién y él, en vez de elegir, preguntó otra cosa («¿cuánto
-              // demora?»): contestarle y volver a la sede es lo que sigue — sin ella quedaba «Dime cuál prefieres» sobre los
-              // precios (sim 2b-r8).
-              if (/\b(?:sede|oficina|agencia)\b|te\s+queda\s+(?:m[aá]s\s+cerca|mejor)/i.test(q)
-                  && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))
-                  && ((_oQ ?? []) as any[]).some((mm) => (String(mm?.content?.text ?? "").match(/^\s*📍/gmu) ?? []).length >= 2)) return q;
-              const rep = _prevQs.some((b) => { let c = 0; for (const w of a) if (b.has(w)) c++; return c / Math.min(a.size, b.size || 1) >= 0.7; });
-              return rep ? " " : q;
-            }).replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-            if (_sinRep !== _antesQR.trim() && _sinRep.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10) {
-              salida = _sinRep;
-              await logEvent(db, run.channel_id, run.contact_id, "nota", "🔁 Repetía una pregunta que ya se hizo",
-                `Se quitó: «${_antesQR.slice(0, 140)}»`).catch(() => {});
-            }
-          }
-        } catch (_) { /* sin historial → tal cual */ }
-      }
       const _faltaAlgoConcreto = ctx.datos_completos !== "si" && String(ctx.pedido_creado ?? "") !== "si" &&
         !!((Array.isArray((ctx as any)._datos_faltan) ? (ctx as any)._datos_faltan[0] : null) ||
            (ctx as any)._falta_opcion || (ctx as any)._falta_variante || (ctx as any)._pack_mixto);
@@ -28358,7 +28299,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // ✂️ …y donde el motor NO pide los datos (desconfianza, reclamo, advertencia, «mañana te lo paso», «lo pienso»), la
         // petición en prosa de la IA tampoco va: «Pásame tu *nombre, celular y DNI* y te lo dejo listo 👇» detrás de «¿es
         // seguro pagar adelanto?» (R1P-miedo, 3.ª relanzada). Se quita y queda la respuesta.
-        else if (!esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si" && !/^\s*📌/mu.test(String(salida))
+        // (con el motor v2 no corre: el revisor ya manda a reescribir la petición de datos a destiempo, y esta tijera tomaba
+        //  «¿me dices en qué distrito estás?» por una petición de datos y dejaba a «¿cuándo llega?» sin la pregunta del
+        //  paso — examen fase 2, 3-oct)
+        else if (!_v2On && !esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si" && !/^\s*📌/mu.test(String(salida))
             // (+ con la lista 📍 de oficinas preguntando la sede: «necesito tus datos 👇» y debajo los distritos — R1P-miedo, 4.ª relanzada)
             && (_leAdvirtio || _esReclamoOEstado || _loMandaLuego || RE_LO_PIENSA.test(String(ctx.last_input ?? "")) || /^\s*📍\s*\*/m.test(String(salida)))) {
           const _qP = quitarPeticionDeDatos(salida);
@@ -28956,507 +28900,6 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         await logEvent(db, run.channel_id, run.contact_id, "nota", "💸 Contestó lo del Yape",
           "Preguntó a qué número yapea (Lima, sin pedido) y la IA no lo contestaba").catch(() => {});
       }
-      // 📦 FÍSICO: una pregunta por mensaje y sin repetirla (Rodrigo, 2026-09-26, tras F1). El cierre
-      // en físico es el PASO QUE FALTA (de dónde eres → cuántas → datos), no «¿cómo pagas?» (en Lima
-      // se paga al recibir). Medido: «¿de qué distrito o ciudad nos escribes?» al final de TRES
-      // respuestas seguidas mientras el cliente preguntaba otra cosa, y «¿en qué distrito de Lima te
-      // lo envío? ¿Cuántas unidades quieres?» juntas.
-      if (op === "generar_texto" && !esDigital(ctx) && !_v2On && String(ctx.pedido_creado ?? "") !== "si" && String(salida ?? "").trim()
-          && !(ctx as any)._yaPagoSinPedido) {
-        try {
-          // (+ «¿A qué dirección te lo envío?» junto a «¿Cuántas unidades?» — F6-lmanana)
-          const _RE_Q_UBIC = /¿[^?¿]*\b(?:(?:a\s+)?qu[eé]\s+direcci[oó]n|cu[aá]l\s+es\s+tu\s+direcci[oó]n|de\s+d[oó]nde|desde\s+d[oó]nde|qu[eé]\s+(?:distrito|ciudad|provincia|departamento)|en\s+qu[eé]\s+(?:distrito|ciudad|zona|provincia)|d[oó]nde\s+(?:vives|est[aá]s|te\s+lo\s+(?:env[ií]o|mando|enviamos)))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
-          // (+ «¿Cuál opción quieres, 1, 2 o 3 unidades?»: la misma pregunta dicha con CUÁL — F2-provincia)
-          // (+ «¿Qué cantidad te interesa?», «¿qué opción / pack?» — G15-precio: sin esto no contaba como la de la cantidad)
-          // (+ «¿Cuál promoción quieres…?» — así llama EcoGuard a sus packs; no contaba y la de necesidad no entraba — n7)
-          const _RE_Q_CANT = /¿[^?¿]*\b(?:cu[aá]ntas?|cu[aá]ntos?|qu[eé]\s+(?:oferta|promoci[oó]n|cantidad|opci[oó]n(?!\s+de\s+(?:pago|env[ií]o|entrega))|pack)|cu[aá]l\s+(?:opci[oó]n(?!\s+de\s+(?:pago|env[ií]o|entrega))|oferta|promoci[oó]n|presentaci[oó]n|cantidad|pack))\b[^?¿]*\?[\s\p{Extended_Pictographic}️]*/giu;
-          const _hay = (re: RegExp, t: string) => { re.lastIndex = 0; const r = re.test(t); re.lastIndex = 0; return r; };
-          // Quitar «¿cuántas?» nunca se lleva una pregunta que PIDE LOS DATOS: «¿me pasas tu nombre, celular y
-          // dirección para dejarlo listo y enviártelo en cuanto…?» casaba por el «cuánt-» y salía «Me dices 1
-          // unidad;» sin pedir nada (F9b-yanoquiero).
-          const _quitaQCant = (q: string) => /\b(nombre|celular|direcci[oó]n|dni|tel[eé]fono|datos)\b/i.test(q) ? q : " ";
-          // «No volver a pegar la lista que ya vio» no vale para las ofertas OCULTAS que se le acaban de mostrar porque
-          // pidió más: esa lista NO la vio (F10-ok5luego: «¿y si llevo más?» → se borraron 5 y 10 y quedó «¿de dónde eres?»).
-          const _sinListaVieja = (l: string) => (ctx as any)._ocultasRecien ? l : "";
-          const _zonaOk = !!String(ctx.zona_entrega ?? "").trim();
-          // 🗣️ La «versión suave» de la pregunta repetida, DIRECTA. Era «¿Alguna otra duda? Cuando quieras me
-          // dices de dónde eres y te digo cómo te llega 🙂»: después de la lista de precios cerraba sin pedir
-          // nada (Rodrigo, 2026-10-01: «cierre flojo tras los precios»). Sigue sin repetir la pregunta seca
-          // del turno anterior, pero pide el paso que falta. Las regex reconocen la frase vieja y la nueva.
-          const _SUAVE_Z = "Cuéntame de qué distrito o ciudad eres y te digo cómo te lo mando 📦";
-          const _RE_SUAVE_Z = /cuando quieras me dices de d[oó]nde eres|cu[eé]ntame de qu[eé] distrito o ciudad eres/i;
-          const _SUAVE_C = "Dime cuántas llevas y te lo dejo listo 🙌";
-          const _RE_SUAVE_C = /cuando quieras me dices cu[aá]ntas|dime cu[aá]ntas llevas y te lo dejo listo/i;
-          const _Q_ZONA = "¿De qué distrito o ciudad me escribes? Así te digo cómo te lo mando 📦";
-          // 📦📦 Si lo de antes ya cierra con el MISMO emoji con que cierra lo que se pega («…rápido 📦 ¿De qué
-          // distrito…? Así te digo cómo te lo mando 📦»), el primero sobra.
-          const _sinEmojiRepetido = (s: string, q: string) => {
-            const e = q.match(/(\p{Extended_Pictographic})️?\s*$/u)?.[1];
-            return e && new RegExp(`\\s*${e}\\uFE0F?\\s*$`, "u").test(s) ? s.replace(new RegExp(`\\s*${e}\\uFE0F?\\s*$`, "u"), "") : s;
-          };
-          // La pregunta suave va en su propio renglón si lo último es un renglón de LISTA («3 unidades —
-          // S/ 139 · …»): pegada con un espacio quedaba al final del precio (G14-precio).
-          const _pegaSuave = (s: string, q: string) => {
-            s = _sinEmojiRepetido(s, q);
-            // Lo que quedó CORTADO justo antes: «Perfecto, Dime cuántas…», «Ahora, Cuéntame…», «Para darte el monto
-            // exacto del adelanto. Cuéntame…» (chat de Rodrigo, 2026-10-01). La muletilla suelta se va y la coma
-            // que cerraba se vuelve punto; el tocón «Para + infinitivo…» sin frase principal también se va.
-            // (los tocones también con COMA al final: «…en Perú. Para seguir,» quedaba «Para seguir.» porque la coma se
-            //  volvía punto DESPUÉS de buscar el tocón — R1L-mercadolibre, 2026-10-01)
-            s = s.replace(/(?:^|\n)[ \t]*(?:ahora|entonces|bueno)\s*,\s*$/iu, "")
-              .replace(/(?:^|\n)[ \t]*(?:listo|perfecto|genial)\s*,\s*$/iu, (m) => m.replace(/,\s*$/, "."))
-              .replace(/(?:^|(?<=[.!?…]\s)|(?<=\p{Extended_Pictographic}\u{FE0F}?\s)|(?<=\n))Para\s+(?:darte|decirte|pasarte|confirmarte|calcular(?:te|lo)?|saber|seguir|avanzar|continuar|cerrar(?:lo|te)?|dejarlo\s+listo|enviarte|mandarte|ayudarte)\b[^.!?¿\n]{0,80}[.,]\s*$/iu, "")
-              // (+ «Respecto al adelanto.» / «Sobre el envío.» — el encabezado de la frase que otro recorte se llevó)
-              // (solo el encabezado pelado, hasta 3 palabras y sin coma: «Sobre el envío te cuento después.» se queda)
-              .replace(/(?:^|(?<=[.!?…]\s)|(?<=\p{Extended_Pictographic}️?\s)|(?<=\n))(?:Respecto|Sobre|En\s+cuanto)\s+(?:a|al|a\s+la|a\s+lo|el|la|lo)\s+(?:[^\s,.!?¿\n]+\s+){0,2}[^\s,.!?¿\n]+[.,]\s*$/iu, "")
-              .replace(/,\s*$/, ".").trimEnd();
-            const ult = s.trimEnd().split("\n").pop() ?? "";
-            if (!s.trim()) return q;
-            // (+ la línea de la oferta de llevar más: la pregunta va en su propio párrafo, no pegada — simulación B)
-            if (/—\s*\*?\s*(?:S\/|\$)|^\s*(?:[-•]|📌|📍)|^\s*(?:Anotado:|Si llevas\s+\*)/u.test(ult)) return `${s.trimEnd()}\n\n${q}`;
-            // Lo de antes termina SIN puntuación ni emoji (quedó a medias tras quitarle la pregunta): «Así dejo
-            // todo listo para ti ¿Alguna otra duda?» — F12-yapague, 2026-09-29. Se le cierra con punto.
-            let _s2 = s.trimEnd();
-            // …y si termina ANUNCIANDO algo con «:» (la lista 📌 que anunciaba se fue): «Pásame por favor: ¿Alguna otra
-            // duda?» — F12R-yapague. Se va esa última frase; si no queda nada, va la suave sola.
-            if (/:\s*$/.test(_s2)) {
-              _s2 = _s2.replace(/(^|[.!?…\n]\s*|\p{Extended_Pictographic}\u{FE0F}?\s+)[^.!?…\n\p{Extended_Pictographic}]*:\s*$/u, "$1").trimEnd();
-              if (!_s2.replace(/[\s\p{P}\p{S}]/gu, "")) return q;
-            }
-            return /[\p{L}\p{N}*)]$/u.test(_s2) ? `${_s2}. ${q}` : `${_s2} ${q}`;
-          };
-          const _antesF = String(salida);
-          let _s = _antesF;
-          // 0) La lista de datos («📌 *Nombre* / 📌 *Celular*…») ANTES de saber de dónde es o cuántas
-          //    quiere: al que solo preguntó «¿es de buena calidad?» le llegó un formulario (F2-calidad).
-          //    Los datos van cuando ya hay zona y cantidad; antes, solo los renglones de la lista se van.
-          // Solo los 📌 que son CAMPOS de datos: la IA también usa 📌 para la LISTA DE PRECIOS («📌 1 unidad —
-          // S/ 69») y se la llevaba entera (F7-hprompt). Un renglón con precio o unidades no es un campo.
-          const _esCampo = (ln: string) => !/(?:S\/|\$)\s?\d|\bunidad|\bunidades|\bpack\b|\boferta\b/i.test(ln);
-          // …y la petición EN LÍNEA, sin 📌 («¿Me pasas tu *celular*, *nombre* y *distrito o ciudad* para dejarlo
-          // listo?» a «quiero 1», sin saber de dónde es — simulación B, 2026-10-01): se va igual, por frase.
-          let _sInline = false;
-          if ((!_zonaOk || !!(ctx as any)._falta_opcion) && !/📌/.test(_s)) {
-            const _qI = quitarPeticionDeDatos(_s, true);   // la pregunta por el distrito/ciudad se queda: es la que toca
-            if (_qI.hubo && _qI.texto.replace(/[\s\p{P}\p{S}]/gu, "").length >= 3) { _s = _qI.texto; _sInline = true; }
-          }
-          if ((!_zonaOk || !!(ctx as any)._falta_opcion) && (/📌/.test(_s) || _sInline)) {
-            _s = _s.replace(/^[ \t]*📌[^\n]*(?:\n|$)/gmu, (ln) => _esCampo(ln) ? "" : ln)
-              .replace(/[ \t]*📌[^\n📌]*/gu, (seg) => _esCampo(seg) ? "" : seg)
-              .replace(/^[ \t]*\*[^*\n]{2,45}\*[ \t]*$/gmu, "")
-              .replace(/[ \t]*\*(?:celular|nombre|dni|direcci[oó]n|distrito|ciudad|referencia|tel[eé]fono|sede)[^*\n]{0,40}\*[ \t]*(?=\n|$)/giu, "")
-              .replace(/(?:Para dejarlo listo,?\s*)?p[aá]same (?:estos|tus|los siguientes) datos[^\n]*\n?/giu, "")
-              // …y el anuncio SIN «datos» que cierra el renglón: «Para cerrar, pásame estos 👇», «Por favor, pásame
-              // estos», «Pásame por favor:» (F12T-yapague, 2026-09-29) — quedaba pidiendo nada.
-              .replace(/(?:^|(?<=[.!?…][ \t]|\p{Extended_Pictographic}\u{FE0F}?[ \t]))[^.!?¿\n\p{Extended_Pictographic}]*\bp[aá]same\b(?:[ \t]+(?:por[ \t]+favor|estos|esos|tus|los|siguientes|datos))*[ \t]*[,:]?[ \t👇\u{FE0F}]*(?=\n|$)/gimu, "")
-              // «¿Me pasas esos datos para dejarlo listo?» sin la lista delante (F6-lparados): pide nada.
-              .replace(/¿?\s*me\s+(?:pasas|das|env[ií]as|mandas|compartes)\s+(?:esos|estos|tus|los)\s+datos[^?\n]*\??[\s\p{Extended_Pictographic}️]*/giu, " ")
-              // …y la frase que REMATABA la lista quitada y se quedaba sola: «Así te lo envío rápido 📦», «Así lo
-              // dejamos listo» (simulación del chat de Probar flujos, 2026-10-01).
-              .replace(/(?:^|(?<=[.!?…][ \t]|\p{Extended_Pictographic}\u{FE0F}?[ \t]))As[ií]\s+(?:te\s+lo\s+|te\s+la\s+|lo\s+|la\s+|te\s+)?(?:env[ií]o|mando|dejo|preparo|despacho|coordino|dejamos|cerramos|avanzamos|seguimos)[^.!?¿\n]*[.!?]?[ \t]*(?:\p{Extended_Pictographic}\u{FE0F}?[ \t]*)*/gimu, "");
-            // Sin zona y sin ninguna pregunta que quede: la que falta es de dónde es.
-            // La muletilla que anunciaba la lista quitada («…para completar tu pedido. Además,» — F6c-pdos).
-            _s = _s.replace(/[ \t]*\b(?:adem[aá]s|tambi[eé]n|y\s+para\s+(?:terminar|cerrar))\s*,?[ \t]*(?=\n|$)/gimu, "");
-            // (…ni si ya la pide en IMPERATIVO: «Primero dime tu distrito o ciudad para confirmar cómo te llegará 📍» +
-            //  «¿De qué distrito o ciudad nos escribes?» salían juntas — reproducción Barranca 2, 2026-10-01)
-            if (!_zonaOk && !/[?¿]/.test(_s) && !_RE_SUAVE_Z.test(_s)
-                && !/no\s+te\s+(?:sirve|servir[ií]a|funciona|funcionar[ií]a)\b|no\s+(?:le\s+)?(?:sirve|funciona)\s+sin\b/i.test(sinFormato(_s))   // (le acaba de decir que no le sirve — R1L-sintaladro, regresión 4)
-                && !/\b(?:dime|ind[ií]came|cu[eé]ntame|p[aá]same|conf[ií]rmame|av[ií]same)\s+(?:primero\s+)?(?:tu\s+|en\s+qu[eé]\s+|de\s+qu[eé]\s+|qu[eé]\s+|desde\s+d[oó]nde|de\s+d[oó]nde)?\s*(?:distrito|ciudad|zona|provincia|d[oó]nde)/i.test(_s)
-                && !(ctx as any)._dos_lugares && !(run.vars as any)?._dos_lugares
-                && !/conf[ií]rm\p{L}*|necesito que|dime (?:cu[aá]l|en cu[aá]l|d[oó]nde)|cu[aá]l de (?:las|los) dos/iu.test(_s)) {
-              _s = _pegaSuave(_s.trimEnd(), _Q_ZONA);   // párrafo propio tras una lista o la línea de la oferta
-            }
-          }
-          // 1) Con la zona ya sabida, «¿en qué distrito?» + «¿cuántas?» → queda solo la cantidad (el
-          //    distrito va con los datos, un paso después).
-          if (_zonaOk && _hay(_RE_Q_CANT, _s) && _hay(_RE_Q_UBIC, _s)) _s = _s.replace(_RE_Q_UBIC, " ");
-          //    …y lo mismo dicho en IMPERATIVO: «Confírmame la dirección exacta y a qué nombre lo envío» +
-          //    «¿Cuántas unidades quieres?» (F6b-lmanana). La dirección va con los datos, después.
-          if (_zonaOk && _hay(_RE_Q_CANT, _s) && String(ctx.pedido_creado ?? "") !== "si" && !String(ctx.opcion_id ?? "").trim()) {
-            _s = _s.replace(/[^.!?¿\n]*\b(?:conf[ií]rmame|p[aá]same|dime|ind[ií]came|env[ií]ame)\s+(?:tu\s+|la\s+)?(?:direcci[oó]n|nombre|a\s+qu[eé]\s+nombre)[^.!?¿\n]*[.!]?/giu, " ");
-          }
-          // 1b) La cantidad YA está sellada («quiero 2 para lima los olivos, Juan…», F5-htodojunto): la IA
-          //    igual pegaba «Estas son las opciones… para que elijas cuántas unidades llevas» + la lista,
-          //    y el pedido se confirmaba en la burbuja siguiente. Fuera la pregunta y la lista.
-          // Si preguntó el PRECIO la lista se queda (la está pidiendo), pero la pregunta de la cantidad se va
-          // igual: «¿cuánto cuestan 2?» → precios + «¿Cuántas unidades quieres?» (G13-sinciu).
-          const _pidioPrecio1b = RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? ""));
-          if (String(ctx.opcion_id ?? "").trim() && !(ctx as any)._falta_opcion
-              && !/(?:^|[^\p{L}])(?:cu[aá]nt[ao]s|otra\s+(?:opci[oó]n|cantidad)|m[aá]s\s+unidades|cambi\p{L}*)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))) {
-            const _antes1b = _s;
-            _s = _s.replace(_RE_Q_CANT, _quitaQCant)
-              .replace(/[^.!?\n]*\b(?:para\s+que\s+elijas|elige|escoge|dime)\s+cu[aá]nt[ao]s[^.!?\n]*[.!?:]?/giu, " ");
-            // Sin la de la cantidad y sin saber de dónde es, la que queda es esa.
-            // (sin exigir que haya pedido el precio: a «quiero 1» la IA repreguntó «¿cuántas?», se quitó, y el mensaje
-            //  quedó sin ninguna pregunta — «Veo que quieres 1 unidad, que cuesta S/ 69.» y silencio; simulación B5)
-            if (_s !== _antes1b && !_zonaOk && !/[?¿]/.test(_s) && !_RE_SUAVE_Z.test(_s)) {
-              _s = _pegaSuave(_s.trimEnd(), _Q_ZONA);
-            }
-            if (_s !== _antes1b && !_pidioPrecio1b) {
-              _s = _s.replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, _sinListaVieja)
-                .replace(/[^.!?\n]*\b(?:Estas son las opciones|Las opciones son)[^\n]*$/gimu, "");
-            }
-          }
-          // 2) La misma pregunta que en la burbuja anterior → la versión suave, una vez.
-          const { data: _oF } = await db.from("messages").select("content, type").eq("contact_id", run.contact_id)
-            .eq("direction", "out").order("ts", { ascending: false }).limit(1);
-          // 👥 Con DOS DESTINOS en su mensaje («uno para mi casa en Lince y otro para mi hermano en Arequipa») no
-          // se compara con la burbuja anterior: su «¿desde dónde nos escribe?» contaba como pregunta repetida,
-          // se le quitaba a la IA la suya («¿empezamos por el de Lince?») y se le pegaba «cuando quieras me
-          // dices de dónde eres» — a quien acababa de nombrar dos lugares (F8-dosdirec).
-          const _ultF = RE_DOS_DESTINOS.test(String(ctx.last_input ?? "")) ? ""
-            : String(((_oF ?? [])[0] as any)?.content?.text ?? "");
-          const _li = String(ctx.last_input ?? "");
-          // La burbuja anterior también pregunta la cantidad cuando lo hace en IMPERATIVO: «Dime cuántas
-          // unidades o qué oferta te interesa» (F5-hprecio: tras «ok gracias» salió «¿Cuántas…?» otra vez).
-          // (solo si la preguntó el BOT en un mensaje de texto: el «¿Cuál promoción prefiere?» del saludo —debajo del video—
-          //  contaba como «ya preguntada» y el primer mensaje con los precios salía con la de necesidad en vez de «¿cuántas?»
-          //  — Rodrigo, 2026-10-02: «¿por qué no le preguntó cuántas unidades quiere ahora?»)
-          const _ultFTxt = String(((_oF ?? [])[0] as any)?.type ?? "text") === "text" ? _ultF : "";
-          const _cantAntes = _hay(_RE_Q_CANT, _ultFTxt) ||
-            /(?:^|[^\p{L}])(?:dime|cu[eé]ntame|av[ií]same|me\s+dices)\s+(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l)(?![\p{L}])/iu.test(_ultFTxt);
-          if (!_zonaOk && _hay(_RE_Q_UBIC, _ultF) && _hay(_RE_Q_UBIC, _s) && !_RE_SUAVE_Z.test(_ultF)) {
-            _s = _pegaSuave(_s.replace(_RE_Q_UBIC, " ").trim(), _SUAVE_Z);
-          } else if (!_zonaOk && _cantAntes && _hay(_RE_Q_CANT, _s) && !RE_CLIENTE_PIDE_PRECIO.test(_li)
-                     && !_RE_SUAVE_Z.test(_ultF)) {
-            // Sin zona y la cantidad ya se preguntó: a «ok» / «ok gracias» no se le repite «¿cuántas?»
-            // (F5-orepuesto, F5-hprecio): se le pide el paso que falta, suave — de dónde es.
-            _s = _s.replace(_RE_Q_CANT, _quitaQCant).replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, _sinListaVieja)
-              .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "")
-              .replace(/^\s*(?:perfecto|listo|genial|de acuerdo|claro)[,!.]?\s*(?:vamos avanzando)?[\s\p{Extended_Pictographic}️.!]*$/gimu, "").trim();
-            _s = _pegaSuave(_s, _SUAVE_Z);
-          } else if (!_zonaOk && _hay(_RE_Q_CANT, _s) && !_hay(_RE_Q_UBIC, _s)
-                     && _RE_SUAVE_Z.test(_ultF)) {
-            // Ya se le dijo «cuando quieras me dices de dónde eres» y contesta «ok»: el motor le cambiaba
-            // el pedido de datos de la IA por «¿cuántas?» + la lista (F5b-orepuesto). Sin zona el paso
-            // que falta sigue siendo de dónde es — ahora sí, preguntado directo.
-            _s = _s.replace(_RE_Q_CANT, _quitaQCant);
-            if (!RE_CLIENTE_PIDE_PRECIO.test(_li)) {
-              _s = _s.replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, _sinListaVieja)
-                .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "");
-            }
-            _s = _pegaSuave(_s.trim(), _Q_ZONA);
-          } else if (!_zonaOk && _hay(_RE_Q_CANT, _s) && !_hay(_RE_Q_UBIC, _s) && _hay(_RE_Q_UBIC, _ultF)
-                     && !RE_CLIENTE_PIDE_PRECIO.test(_li)) {
-            // Se le preguntó de dónde es, contestó «si» / «ok» sin decirlo, y el turno saltaba a
-            // «¿cuántas?» + la lista (F6-lsisi): la zona sigue faltando — va la versión suave.
-            _s = _s.replace(_RE_Q_CANT, _quitaQCant).replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, _sinListaVieja)
-              .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "").trim();
-            _s = _pegaSuave(_s, _SUAVE_Z);
-          } else if (_zonaOk && _cantAntes && _hay(_RE_Q_CANT, _s) && !RE_CLIENTE_PIDE_PRECIO.test(_li) &&
-                     !_RE_SUAVE_C.test(_ultF)) {
-            // …y sin volver a pegar la lista de precios que ya vio.
-            // 🎯 En vez de «dime cuántas llevas», la pregunta de NECESIDAD del producto (ver preguntaNecesidad), una vez:
-            // si la burbuja anterior ya la hizo, va la suave. Con señal de compra («donde pago», «lo quiero») no llega acá:
-            // ahí lo atiende el bloque del pago o la IA pregunta directo.
-            let _qN = "";
-            try { _qN = await preguntaNecesidad(db, run, ctx); } catch (_) { _qN = ""; }
-            const _yaNec = !!_qN && sinFormato(_ultF).includes(sinFormato(_qN).replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, ""));
-            _s = _s.replace(_RE_Q_CANT, _quitaQCant).replace(/^.*—\s*\*?\s*(?:S\/|\$|US\$)\s?\d[^\n]*$/gmu, _sinListaVieja)
-              .replace(/^\s*(?:Estas son las opciones|Las opciones son)[^\n]*$/gmu, "").trim();
-            // (en su propio párrafo si el mensaje tiene varios: pegada al «Para provincia va con un adelanto…» se perdía — p5)
-            _s = `${_s}${/\n\n/.test(_s) ? "\n\n" : " "}${_qN && !_yaNec ? _qN : _SUAVE_C}`.trim();
-          } else if (_zonaOk && _cantAntes && !RE_CLIENTE_PIDE_PRECIO.test(_li) && !/[?¿]/.test(_s)
-                     && /\b(?:dime|cu[eé]ntame|av[ií]same)\s+(?:cu[aá]l\s+(?:prefieres|quieres|te\s+preparo)|cu[aá]nt[ao]s)\b/i.test(_s)
-                     && !_RE_SUAVE_C.test(_ultF)) {
-            // 🎯 …y el pedido en IMPERATIVO sin signo («Dime cuál prefieres y te lo dejo cerrado» — sim x3): ya se preguntó, va la de necesidad.
-            let _qN5 = "";
-            try { _qN5 = await preguntaNecesidad(db, run, ctx); } catch (_) { _qN5 = ""; }
-            const _ya5 = !!_qN5 && sinFormato(_ultF).includes(sinFormato(_qN5).replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, ""));
-            if (_qN5 && !_ya5) {
-              _s = _s.split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}\u{FE0F}?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
-                .filter((f) => !/\b(?:dime|cu[eé]ntame|av[ií]same)\s+(?:cu[aá]l|cu[aá]nt)/i.test(f)).join(" ")).join("\n").trim();
-              _s = `${_s}${/\n\n/.test(_s) ? "\n\n" : " "}${_qN5}`.trim();
-            }
-          } else if (_zonaOk && _cantAntes && !RE_CLIENTE_PIDE_PRECIO.test(_li)
-                     && /¿[^?¿]*\b(?:opciones|precios|promociones|ofertas|presentaciones|packs?)\b[^?¿]*\?/i.test(_s)) {
-            // 🎯 …y la misma pregunta dicha de otra forma: «¿Quieres que te pase las opciones y precios para que elijas
-            // cuántas te envío?» (simulación n14) — ya las vio. Va la de necesidad, igual que arriba.
-            let _qN3 = "";
-            try { _qN3 = await preguntaNecesidad(db, run, ctx); } catch (_) { _qN3 = ""; }
-            const _ya3 = !!_qN3 && sinFormato(_ultF).includes(sinFormato(_qN3).replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, ""));
-            if (_qN3 && !_ya3) {
-              _s = _s.replace(/[ \t]*¿[^?¿]*\b(?:opciones|precios|promociones|ofertas|presentaciones|packs?)\b[^?¿]*\?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*/iu, " ").trim();
-              _s = `${_s}${/[.!…\p{Extended_Pictographic}\u{FE0F}]$/u.test(_s) || !_s ? "" : "."}${/\n\n/.test(_s) ? "\n\n" : " "}${_qN3}`.trim();
-            }
-          }
-          // 🎯 La pregunta de necesidad DOS veces seguidas (la IA la copia del historial, a veces sin el «¿»: «Lo quieres para
-          // un jardín pequeño o más amplio? 🌿» — p5): se va, y si el mensaje queda sin pregunta va la suave.
-          {
-            let _qN4 = "";
-            try { _qN4 = await preguntaNecesidad(db, run, ctx); } catch (_) { _qN4 = ""; }
-            const _core4 = normalize(sinFormato(_qN4)).replace(/[¿?]/g, "").replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, "").trim();
-            if (_zonaOk && _core4.length >= 10 && normalize(sinFormato(_ultF)).includes(_core4) && normalize(sinFormato(_s)).includes(_core4)) {
-              const _esc4 = _core4.split(/\s+/).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
-              _s = _s.split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}\u{FE0F}?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
-                .filter((f) => !new RegExp(_esc4, "iu").test(normalize(sinFormato(f)))).join(" ")).join("\n").replace(/\n{3,}/g, "\n\n").trim();
-              if (!/[?¿]/.test(_s)) _s = `${_s}${/\n\n/.test(_s) ? "\n\n" : " "}${_SUAVE_C}`.trim();
-            }
-          }
-          // 3) Sin saber de dónde es, «¿cuántas?» espera: primero la ubicación (una sola pregunta). La
-          //    lista de precios puede quedar como info; la pregunta de cantidad no (F3-calidad).
-          //    La ubicación también cuenta pedida en IMPERATIVO, sin signos: «¿Qué cantidad te interesa para
-          //    seguir? También dime en qué distrito o ciudad estás…» (G15-precio) — dos pedidos en una burbuja.
-          const _RE_PIDE_UBIC_IMP = /\b(?:dime|ind[ií]came|cu[eé]ntame|p[aá]same|conf[ií]rmame)\s+(?:(?:en|de|desde)\s+)?(?:qu[eé]|cu[aá]l)\s+(?:distrito|ciudad|zona|provincia)|\bde\s+d[oó]nde\s+(?:eres|me\s+escribes|nos\s+escribes)/iu;
-          if (!_zonaOk && _hay(_RE_Q_CANT, _s) && (_hay(_RE_Q_UBIC, _s) || _RE_PIDE_UBIC_IMP.test(_s) || _RE_SUAVE_Z.test(_s))) {
-            _s = _s.replace(_RE_Q_CANT, _quitaQCant)
-              // Quitada la primera, el «También dime…» de la segunda queda sin nada delante: va solo.
-              .replace(/(^|[.!?…\n]\s*|\s{2,})(?:tambi[eé]n|adem[aá]s),?\s+(dime|ind[ií]came|cu[eé]ntame|p[aá]same|conf[ií]rmame)\b/giu,
-                (_m, a: string, v: string) => a + v[0].toUpperCase() + v.slice(1));
-          }
-          // ⚖️ Nombró dos ciudades y todavía no eligió: si el mensaje no pregunta nada, se le pregunta cuál
-          // (F6d-pdos: tras «1» quedó «Anotado: 1 unidad…» y seco).
-          {
-            const _dosF = String((ctx as any)._dos_lugares ?? (run.vars as any)?._dos_lugares ?? "").trim();
-            // (no si son DOS DESTINOS: quiere los dos, no elegir uno — F8b-dosdirec)
-            if (!_zonaOk && _dosF && !/[?¿]/.test(_s) && !RE_DOS_DESTINOS.test(String(ctx.last_input ?? "")))
-              _s = _s.trimEnd() + `\n\n¿En cuál lo recoges, ${_dosF}? 📦`;
-          }
-          // La cola de la pregunta que se quitó («…¿de dónde eres? Así te cuento cómo te llega 📦») quedaba
-          // suelta delante de la suave, que ya dice lo mismo (F4-calidad).
-          if (_RE_SUAVE_Z.test(_s) && _s !== _antesF) {
-            // (+ «…cómo te llega y seguimos con tu pedido. ¿Alguna…», con su punto — G13-compara)
-            // (+ «Así te explico cómo te PUEDE LLEGAR el pedido» — F8-inalambrico: quedaba «Para seguir, Así te explico…»)
-            // (+ «…cómo te LO ENVIAMOS y cuánto demora» — F9-bolivia; y los emojis de la cola se van con ella:
-            //  quedaba «📍 ¿Alguna otra duda?» colgado — F9-tresprecios)
-            // (+ «Así SÉ cómo te llega y te pido unos datos…» — F10-cincoydiez)
-            // (el arranque para en un EMOJI también: la IA separa con emoji y, quitada la pregunta de en medio, el
-            //  retroceso llegaba al punto DECIMAL de «hasta 1.5 mm» → «hasta 1. ¿Alguna otra duda?» — F11R-cortito)
-            _s = _s.replace(/[^.!?¿\n\p{Extended_Pictographic}]*\bas[ií]\s+(?:te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)|s[eé]|sabr[eé]|veo|reviso)\s+c[oó]mo\s+(?:te\s+)?(?:lo\s+|la\s+)?(?:llega|puede\s+llegar|podr[ií]a\s+llegar|llegar[ií]a|recibes|env[ií]amos|mandamos|despachamos|te\s+lo\s+(?:env[ií]o|mando|hago\s+llegar)|sigue|seguimos|contin[uú]a|avanzamos|queda)\b[^.!?¿\n]*?[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda|Cu[eé]ntame de qu[eé] distrito|Dime cu[aá]ntas llevas)/giu,
-                // (si la cola se llevaba el salto de párrafo —«…🔧 Así te digo cómo te lo mando 📦\n\nCuéntame…»— el salto se queda)
-                (m: string) => (/\n/.test(m) ? "\n\n" : " "))
-              // (+ la suave nueva «Cuéntame de qué distrito…» delante: quedaba « Así te cuento cómo te llega y seguimos con tu
-              //  pedido. Cuéntame…» — simulación B, 2026-10-01; y el espacio que abría el renglón tras quitar la pregunta)
-              .replace(/\n[ \t]+/g, "\n");
-            // (+ «Así te digo cómo SIGUE todo» — F12S-yapague, 2026-09-29)
-            // …y la misma cola al final de SU renglón, con la lista de precios en medio y la suave más abajo:
-            // «Vendemos solo online… Así te cuento cómo queda el envío\n\n📦\n\n1 unidad — …» (F12T-tienda).
-            _s = _s.replace(/[ \t]*\bas[ií]\s+(?:te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)|s[eé]|sabr[eé]|veo|reviso)\s+c[oó]mo\s+[^.!?¿\n]*[.!]?[ \t\p{Extended_Pictographic}️]*(?=\n)/giu, "")
-              .replace(/^[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)+$/gmu, "").replace(/\n{3,}/g, "\n\n");
-            // (+ «Para seguir, Esto es para indicarte cómo te llegará.» — OC6-cuatroprecio)
-            _s = _s.replace(/[^.!?¿\n\p{Extended_Pictographic}]*\besto\s+es\s+para\s+(?:indicarte|decirte|saber|confirmarte)\s+c[oó]mo\s+te\s+lleg\p{L}*[^.!?¿\n]*[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda)/giu, " ");
-            // Emoji suelto que quedó delante de la suave tras otros recortes («…volumen\n\n 📍 ¿Alguna otra duda?»).
-            _s = _s.replace(/(^|\n)[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)+(?=¿Alguna otra duda)/gu, "$1");
-          }
-          // «…para un uso adecuado. Para seguir, ¿Alguna otra duda?» (F5b-orepuesto): la muletilla que
-          // anunciaba la pregunta quitada queda colgando delante de la suave.
-          // «Para seguir CON TU PEDIDO, ¿Alguna otra duda?» (G3-sinciu) se escapaba: solo casaba «para seguir» pelado.
-          // Hasta 3 pasadas: «Ahora, dime, ¿Alguna…» se lleva «dime,» en la primera y «Ahora,» en la segunda (F11S-cortito2).
-          for (let _k = 0; _k < 3; _k++) {
-            const _a = _s;
-            _s = _s.replace(/(?:^|(?<=[.!?\s]))(?:(?:y\s+)?para\s+(?:seguir|avanzar|continuar)(?:\s+con\s+(?:tu|el|su)\s+(?:pedido|compra|orden))?|(?:y\s+)?ahora,?\s+cu[eé]ntame|(?:y\s+)?ahora(?=\s*,?\s*¿Alguna otra duda)|cu[eé]ntame|cont[aá]me|dime|¿\s*me\s+lo\s+(?:pasas|dices|confirmas|env[ií]as)\s*\??|sobre\s+(?:el\s+|la\s+|los\s+|las\s+|tu\s+)?\p{L}+(?:\s+\p{L}+)?|¿\s*(?=\s*¿Alguna)|(?:y\s+)?(?:tambi[eé]n|adem[aá]s))\s*,?\s*(?=¿Alguna otra duda)/giu, "");
-            if (_s === _a) break;
-          }
-          // Si del mensaje solo quedó la suave, a un saludo no se le pregunta «¿Alguna otra duda?» — no preguntó
-          // nada (F11S-cortito: a «hola» se le fueron la presentación repetida y la pregunta repetida).
-          if (/^\s*¿Alguna otra duda\?\s*/.test(_s)) {
-            const _saludo = /^\s*(?:hola|holi|buenas|buen[oa]s?\s+(?:d[ií]as|tardes|noches)|hey|ola)\b/i.test(_li);
-            _s = _s.replace(/^\s*¿Alguna otra duda\?\s*/, _saludo ? "¡Hola! 👋 " : "");
-          }
-          // (+ «También, ¿Alguna otra duda?» — la pregunta de la ubicación iba tras «También,» — F11R-cortito2)
-          // (+ «Sobre stock, ¿Alguna…» — F10-stock; y el «¿ ¿Alguna…» que dejaba una pregunta vaciada — F10-regateo)
-          // La frase que anunciaba la lista que se acaba de quitar (ver sinAnuncioColgado).
-          if (_s !== _antesF) _s = sinAnuncioColgado(_s);
-          // 💵 Dijo un MONTO («10 t deposito» = S/ 10 de adelanto) y la IA lo leyó como cantidad DOS veces seguidas, aun con
-          // el bloque del turno que se lo explica («sólo tenemos estas opciones: 1, 2 o 3 unidades… ¿cuál quieres?» —
-          // reproducción Barranca 2, 2026-10-01). Lo que se cae dos veces deja de ser regla del prompt: el monto lo
-          // contesta el motor contra el adelanto real, y se le quita a la IA lo que dijo de «opciones/no hay para N».
-          {
-            const _mPl = RE_NUMERO_DE_PLATA.exec(String(ctx.last_input ?? ""));
-            const _nPl = _mPl ? Number(_mPl[1] ?? _mPl[2]) : 0;
-            // («30 de adelanto te deposito» anuncia el pago Y trae un monto que NO es el adelanto: antes el anuncio lo
-            //  sacaba de acá y nadie le decía que son 20 y que los 10 de más van al saldo — R1P-sobrepago, 2026-10-01.
-            //  Si el monto es justo el adelanto, el anuncio sigue siendo solo un anuncio.)
-            const _anunciaPl = RE_ANUNCIA_PAGO.test(String(ctx.last_input ?? ""))
-              || /(?:^|[^\p{L}])(yape[eé]|plin[eé]|pagu[eé]|deposit[eé]|transfer[ií]|envi[eé]|mand[eé])(?![\p{L}])/iu.test(String(ctx.last_input ?? ""));
-            if (_nPl > 0 && !/\b(?:unidad|unidades|packs?|piezas?|kits?)\b/i.test(String(ctx.last_input ?? ""))
-                && String(ctx.zona_entrega ?? "") === "provincia" && String(ctx.pedido_creado ?? "") !== "si") {
-              let _adP = Number(ctx.adelanto);
-              if (!(_adP > 0)) {
-                try { const _eP = await loadEntregas(db, run); _adP = Number((_eP as any)?.entregas?.adelanto_default); } catch (_) { _adP = NaN; }
-              }
-              if (_adP > 0 && (!_anunciaPl || _nPl !== _adP)) {
-                const _symP2 = simboloMoneda(ctx.moneda as string);
-                const _respP = _nPl < _adP
-                  ? `El adelanto para mandarlo es *${_symP2} ${_adP}*: con *${_symP2} ${_nPl}* no alcanza 🙏 Cuando tengas los *${_symP2} ${_adP}* me avisas y te lo mando; el resto me lo pagas por acá cuando llegue a la agencia 🙌 ¿Avanzamos con los *${_symP2} ${_adP}*?`
-                  : _nPl > _adP
-                  ? `Con *${_symP2} ${_nPl}* cubres el adelanto de *${_symP2} ${_adP}* y los *${_symP2} ${_nPl - _adP}* de más se descuentan del saldo 🙌`
-                  : `Justo: el adelanto es *${_symP2} ${_adP}* 🙌`;
-                // Fuera lo que la IA dijo leyendo el número como cantidad. POR RENGLÓN (la lista de precios conserva
-                // sus saltos: en el chat de Rodrigo salió toda en una línea — 2026-10-01) y por frase dentro de cada uno.
-                // (+ «las opciones son solo para 1, 2 o 3 unidades» / «Elige una de esas presentaciones» — R1P-barranca, 2026-10-01)
-                const _RE_OPC_MAL = /(?:s[oó]lo|solo|solamente|por\s+el\s+momento|por\s+ahora)\s+(?:tenemos|hay|manejamos|vendemos)|no\s+(?:hay|tenemos|vendemos)\s+(?:para|de)\s+(?:a\s+)?\d|presentaciones\s+de|opciones\s*(?:disponibles)?\s*:|cu[aá]l\s+de\s+(?:esas|estas)\s+(?:opciones|presentaciones)|\b(?:1|una)\s+unidad,?\s+2\s+unidades|te\s+conviene\s+elegir|dime\s+cu[aá]l\s+prefieres|las\s+opciones\s+son\s+(?:solo|s[oó]lo|solamente|para)|elige\s+una\s+de\s+(?:esas|estas|las)|para\s+1,?\s+2\s+[oó]\s+3|no\s+hay\s+(?:opci[oó]n|oferta|presentaci[oó]n|pack)\s+(?:de|para)\s+\d|venta\s+por\s+\d+\s+unidades\s+m[aá]ximo|m[aá]ximo\s+\d+\s+unidades/i;
-                const _sinOpc = _s.split("\n").map((ln) =>
-                  ln.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
-                    .filter((f) => !_RE_OPC_MAL.test(sinFormato(f)))
-                    .filter((f) => /[\p{L}\p{N}]/u.test(f))   // (sin la cola de solo emojis que dejaba el recorte)
-                    .join(" ").replace(/[ \t]{2,}/g, " ").trim()
-                ).join("\n").replace(/\n{3,}/g, "\n\n").trim();
-                // Si la IA SÍ lo contestó (nombra el adelanto con su cifra, como en el chat de Rodrigo), se respeta.
-                // (…y, si su monto NO es el adelanto, solo si también nombra SU cifra: «con un adelanto de S/ 20 lo mando»
-                //  a quien dijo 30 no le dice que los 10 de más van al saldo — R1P-sobrepago, 2026-10-01)
-                const _iaContesto = /adelanto|anticipo/i.test(sinFormato(_sinOpc))
-                  && new RegExp("(?:^|[^0-9])" + _adP + "(?![0-9])").test(sinFormato(_sinOpc))
-                  && (_nPl === _adP || new RegExp("(?:^|[^0-9])" + _nPl + "(?![0-9])").test(sinFormato(_sinOpc)));
-                // Una sola pregunta por burbuja: sin cantidad elegida la que va es «¿cuántas?» (abajo); y si lo que
-                // queda de la IA ya pregunta, la respuesta del monto va sin la suya (reproducción Barranca 3).
-                const _sinCant = !String(ctx.opcion_id ?? "").trim();
-                const _respP2 = (_sinCant || /[?¿]/.test(_sinOpc)) ? _respP.replace(/\s*¿[^?]*\?\s*$/u, "").trim() : _respP;
-                // (si el motor ya contesta el monto contra el adelanto, la línea genérica «Para provincia va con un adelanto…»
-                //  que otro bloque pegó en este mismo turno sobra: salía dos veces — R1P-quince, 2.ª regresión 2026-10-01)
-                // («acá» termina en tilde: `\b` detrás no es límite y la línea nunca se quitaba — 3.ª relanzada; ver regex-tildes-limites-y-emoji)
-                const _sinOpc2 = (_iaContesto ? _sinOpc : _sinOpc.replace(/^[ \t]*(?:(?:Para|A)\s+provincia\s+(?:va|te\s+lo\s+mando)\s+con|Solo\s+te\s+pido)\s+un\s+adelanto\s+de\s+\*?[^\n]*?\bpor\s+ac[aá](?![\p{L}])[^\n]*(?:\n+|$)/gimu, "")
-                    // (…y las frases de la IA sobre el adelanto: «Genial, con ese adelanto de *S/ 20* lo mando…» debajo de la
-                    //  respuesta del motor era decirlo tres veces en el turno — R1P-sobrepago, regresión 3, 2026-10-02)
-                    .split("\n").map((ln) => /—\s*\*?\s*(?:S\/|\$)\s?\d/u.test(ln) ? ln : ln.split(/(?<=[.!?…])\s+/u)
-                      .filter((f) => !/\b(?:adelanto|anticipo)\b/i.test(sinFormato(f)) || /[?¿]/.test(f)).join(" ")).join("\n")
-                    .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim())
-                  // («el total es *S/ 109*:» y nada debajo: el dos puntos anunciaba lo que se quitó — R1P-quince, 4.ª relanzada)
-                  .replace(/:[ \t]*(?=\n[ \t]*\n|\s*$)/g, ".");
-                _s = _iaContesto ? _sinOpc : `${_respP2}${_sinOpc2 ? "\n\n" + _sinOpc2 : ""}`;
-                // Sin la cantidad elegida, la pregunta de la cantidad (sin volver a pegar la lista), y una sola.
-                if (_sinCant) {
-                  try {
-                    const _opsPl = await loadOpciones(db, run, String(ctx._product_id ?? ""));
-                    const _qPl = preguntaCuantos(_opsPl, ctx, _negOn, true);
-                    // (si la IA ya la pide en imperativo —«Dime cuántas unidades quieres o qué oferta prefieres»— no se
-                    //  pega otra encima; quedaban dos — reproducción corta, 2026-10-01)
-                    const _yaPideCant = /\b(?:dime|cu[eé]ntame|ind[ií]came|av[ií]same|me\s+dices)\s+cu[aá]nt[ao]s/i.test(sinFormato(_s));
-                    if (_qPl && !_yaPideCant) {
-                      _s = _s.replace(/[ \t]*¿[^?¿\n]*\b(?:cu[aá]nt[ao]s|cu[aá]l)\b[^?¿\n]*\?[ \t]*(?:\p{Extended_Pictographic}️?[ \t]*)*/giu, " ")
-                        .replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-                      _s = `${_s}\n\n${_qPl}`;
-                    }
-                  } catch (_) { /* sin opciones → se queda la pregunta del adelanto */ }
-                }
-                await logEvent(db, run.channel_id, run.contact_id, "nota", "💵 Dijo un monto y se le contestó contra el adelanto",
-                  `${_symP2} ${_nPl} vs adelanto ${_symP2} ${_adP}`).catch(() => {});
-              }
-            }
-          }
-          // 💰 Preguntó CUÁNTO ES EL ADELANTO y la respuesta se fue con un recorte (o la IA no la dio): «¿Con cuánto de
-          // adelanto puedes mandar?» recibió solo «¿De dónde nos escribes?» —el guard de la pregunta doble se llevó la
-          // frase que traía el monto— (Probar flujos, Rodrigo, 2026-10-01). Sin zona también se contesta: el adelanto
-          // es el mismo para toda provincia.
-          // (se mira la CIFRA junto a la palabra, no la palabra sola: «Para darte el monto exacto del adelanto.» — un
-          //  tocón que dejó otro recorte — tenía la palabra y ningún monto, y el cliente se quedó sin respuesta — 2026-10-01)
-          // 🔴 Y ANTES de mirar la cifra: fuera la frase de la IA que dice que el adelanto DEPENDE de algo («Cuánto es el
-          // adelanto de *S/ 20* depende de si compras desde Lima o provincia» — con el monto que `conAdelantoConcreto`
-          // le había metido en medio; R1P-adelantoprimero, 2026-10-01). El adelanto es uno solo para toda provincia.
-          if (String(ctx.pedido_creado ?? "") !== "si" && String(ctx.zona_entrega ?? "") !== "lima"
-              && /\b(adelanto|anticipo)\b/i.test(String(ctx.last_input ?? ""))
-              && /\b(?:adelanto|anticipo|monto)\b[^.!?\n]{0,50}\bdepende\s+de\b|\bdepende\s+de\s+(?:si\s+)?(?:compras|eres|est[aá]s|escribes|vives|nos\s+escribes)\b[^.!?\n]{0,40}\b(?:lima|provincia)\b/iu.test(sinFormato(_s))) {
-            _s = _s.split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
-              .filter((f) => !/\b(?:adelanto|anticipo|monto)\b[^.!?\n]{0,50}\bdepende\s+de\b|\bdepende\s+de\s+(?:si\s+)?(?:compras|eres|est[aá]s|escribes|vives|nos\s+escribes)\b[^.!?\n]{0,40}\b(?:lima|provincia)\b/iu.test(sinFormato(f)))
-              .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-          }
-          if (String(ctx.pedido_creado ?? "") !== "si"
-              && /\b(adelanto|anticipo|pag(?:ar|o|amos)\s+(?:algo\s+)?(?:antes|adelantad[oa]|por\s+adelantado)|se\s+paga\s+antes)\b/i.test(String(ctx.last_input ?? ""))
-              && !/(?:adelanto|anticipo)[^.\n]{0,40}(?:S\/|\$)\s*\d|(?:S\/|\$)\s*\d[^.\n]{0,40}(?:adelanto|anticipo)/i.test(sinFormato(_s))
-              && !RE_PIDE_DEVOLUCION.test(String(ctx.last_input ?? "")) && !pideCancelar(String(ctx.last_input ?? ""))
-              && !seArrepiente(String(ctx.last_input ?? "")) && !RE_ANUNCIA_PAGO.test(String(ctx.last_input ?? ""))
-              && !/(?:^|[^\p{L}])(yape[eé]|plin[eé]|pagu[eé]|deposit[eé]|transfer[ií]|envi[eé]|mand[eé])(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
-              && String(ctx.zona_entrega ?? "") !== "lima") {
-            let _adR = Number(ctx.adelanto);
-            if (!(_adR > 0)) {
-              try { const _eR = await loadEntregas(db, run); _adR = Number((_eR as any)?.entregas?.adelanto_default); } catch (_) { _adR = NaN; }
-            }
-            if (_adR > 0) {
-              const _symR = simboloMoneda(ctx.moneda as string);
-              const _lineaR = `A provincia te lo mando con un adelanto de *${_symR} ${_adR}* y el resto me lo pagas por acá cuando llegue a la agencia 🙌`;
-              // Fuera la frase de la IA que dice que NO puede dar la cifra que el motor acaba de dar («Ahora, para decirte
-              // el adelanto necesito saber de qué distrito…», «antes de darte el monto necesito…» — R1P-adelantoprimero,
-              // R1P-barranca, 2026-10-01). Por frase; si la frase traía la pregunta de la zona, la pone la red de abajo.
-              _s = _s.split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
-                .filter((f) => !/\b(?:para|antes\s+de)\s+(?:poder\s+)?(?:darte|decirte|confirmarte|indicarte|calcular(?:te)?|saber)\s+(?:el\s+|la\s+|cu[aá]nto\s+(?:es\s+)?(?:de\s+|el\s+)?)?(?:monto|adelanto|cifra|anticipo)\b[^.!?\n]{0,60}\b(?:necesito|tengo\s+que|debo|falta)\b/iu.test(sinFormato(f))
-                  && !/\b(?:necesito|tengo\s+que|debo)\s+saber\b[^.!?\n]{0,60}\b(?:para|antes\s+de)\s+(?:poder\s+)?(?:darte|decirte|confirmarte|indicarte|calcular(?:te)?)\s+(?:el\s+|la\s+)?(?:monto|adelanto|cifra|anticipo)\b/iu.test(sinFormato(f)))
-                .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-              _s = `${_lineaR}\n\n${_s.trimStart()}`;
-              (run.vars as any)._adelanto_explicado = 1;
-            }
-          }
-          // 🔢 La pregunta de la CANTIDAD va DESPUÉS de la lista de precios, no antes: «¿Cuántas unidades quieres
-          // llevar?» salía en el primer párrafo y la lista tres párrafos más abajo (Probar flujos, Rodrigo, 2026-10-01).
-          {
-            const _ln = _s.split("\n");
-            // (también el renglón con el precio DELANTE: «1️⃣ *S/ 89* — 1 unidad…» no casaba y el bloque no corría — EcoGuard, 2026-10-02)
-            const _idxP = _ln.map((l, i) => ((/—\s*\*?\s*(?:S\/|\$|US\$)\s?\d/u.test(l) || /(?:S\/|\$|US\$)\s?\d[^\n]*—|(?:S\/|\$|US\$)\s?\d[^\n]*\bunidad/u.test(l)) && !/^\s*Anotado:/.test(l)) ? i : -1).filter((i) => i >= 0);
-            if (_idxP.length >= 2) {
-              const _antesL = _ln.slice(0, _idxP[0]).join("\n");
-              const _mQ = _antesL.match(/[ \t]*¿[^?¿\n]*\b(?:cu[aá]nt[ao]s|cu[aá]l|qu[eé]\s+(?:oferta|cantidad|opci[oó]n))\b[^?¿\n]*\?[ \t]*(?:\p{Extended_Pictographic}️?[ \t]*)*/iu);
-              const _despL = _ln.slice(_idxP[0]).join("\n");
-              // Y si DEBAJO de la lista ya hay otra pregunta de cantidad/oferta, la de arriba sobra: «¿Cuántas unidades quiere
-              // llevar? 😊👇 [lista] … ¿Cuál oferta prefieres?» eran dos preguntas por lo mismo (EcoGuard, 2026-10-02).
-              if (_mQ && /¿[^?¿\n]*\b(?:cu[aá]nt[ao]s|cu[aá]l|qu[eé]\s+(?:oferta|cantidad|opci[oó]n|promoci[oó]n))\b[^?¿\n]*\?/iu.test(_despL)) {
-                const _antesL2 = _antesL.replace(_mQ[0], " ").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-                _s = `${_antesL2 ? _antesL2 + "\n\n" : ""}${_despL.trim()}`;
-              } else if (_mQ && !/[?¿]/.test(_despL)) {
-                const _q = _mQ[0].trim();
-                const _antesL2 = _antesL.replace(_mQ[0], " ").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-                _s = `${_antesL2 ? _antesL2 + "\n\n" : ""}${_ln.slice(_idxP[0]).join("\n").trim()}\n\n${_q}`;
-              }
-            }
-          }
-          // 🔢 Red final de la CANTIDAD: con zona y SIN opción elegida, si los recortes dejaron el mensaje sin pregunta
-          // (o solo con la lista 📌 pelada), va la pregunta de la cantidad — suave si ya se hizo en la burbuja anterior.
-          // (…ni si la IA ya la pide en IMPERATIVO —«Y confírmame cuántas unidades quieres»—: salían tres preguntas de
-          //  cantidad en una burbuja — R1L-sanjuan, 2026-10-01)
-          if (_zonaOk && (ctx as any)._falta_opcion && !String(ctx.opcion_id ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
-              && !/[?¿]/.test(_s) && !_RE_SUAVE_C.test(_s)
-              && !/\b(?:dime|cu[eé]ntame|ind[ií]came|conf[ií]rmame|av[ií]same|p[aá]same|me\s+dices)\s+(?:por\s+favor\s+|porfa\s+)?(?:cu[aá]nt[ao]s|cu[aá]l|qu[eé]\s+(?:oferta|cantidad|presentaci[oó]n))\b/i.test(sinFormato(_s))
-              // (ni si ya habla de «cuántas unidades» de cualquier forma: «Solo falta confirmar cuántas unidades quieres» + la
-              //  pegada eran dos — R1P-mama, regresión 2026-10-01; ni si acaba de pedir la captura: una sola cosa por burbuja)
-              && !/\bcu[aá]nt[ao]s\s+(?:unidades|llevas|quieres|te\s+preparo|vas\s+a\s+llevar)/i.test(sinFormato(_s))
-              && !(ctx as any)._pidioCaptura
-              && !RE_LO_PIENSA.test(String(ctx.last_input ?? "")) && !RE_RECLAMO.test(String(ctx.last_input ?? ""))
-              && !/^\s*(?:no(?:\s+gracias)?|nada|ya\s+no|no\s+me\s+interesa|gracias(?:\s+no)?|chau|adi[oó]s)[\s.!,🙂🙏👍]*$/iu.test(String(ctx.last_input ?? ""))) {
-            let _qC = _cantAntes ? _SUAVE_C : "¿Cuántas unidades o qué oferta te preparo? 🙌";
-            // (ya preguntada la cantidad: la de necesidad, salvo que acabe de salir — ver preguntaNecesidad)
-            if (_cantAntes) {
-              let _qN2 = "";
-              try { _qN2 = await preguntaNecesidad(db, run, ctx); } catch (_) { _qN2 = ""; }
-              if (_qN2 && !sinFormato(_ultF).includes(sinFormato(_qN2).replace(/[\s\p{Extended_Pictographic}\u{FE0F}]+$/u, ""))) _qC = _qN2;
-            }
-            // Sin letras (quedó «🔧» o los 📌 pelados): va la pregunta sola.
-            // (…y sin la petición de la SEDE en imperativo que la IA metió antes: «dime por favor en cuál sede… 📍 Dime
-            //  cuántas llevas» eran dos pedidos; la cantidad va primero y la oficina la lista el motor — R1P-prepago)
-            const _sinPines = _s.replace(/[ \t]*📌[^\n📌]*/gu, "")
-              // (también a mitad de frase y con relleno: «Para completar tu pedido dime, por favor, en cuál sede de la
-              //  agencia Shalom en Tacna prefieres recogerlo 📍» — segunda relanzada de R1P-prepago)
-              .replace(/(?:(?:para|y\s+para|ahora)\s+(?:completar|terminar|cerrar|avanzar\s+con|dejar\s+listo)\s*(?:tu\s+pedido|el\s+pedido|todo)?\s*,?\s*)?\b(?:y\s+)?(?:dime|cu[eé]ntame|ind[ií]came|conf[ií]rmame|av[ií]same|elige|escoge)\s*,?\s*(?:por\s+favor|porfa)?\s*,?\s*(?:en\s+)?(?:cu[aá]l|qu[eé])\s+(?:sede|oficina|agencia|distrito)[^.!?\n]*[.!?]?[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)*/giu, "")
-              .replace(/[ \t]{2,}/g, " ").trim();
-            _s = /[\p{L}\p{N}]/u.test(_sinPines)
-              ? (_qC !== _SUAVE_C && !/^¿Cu[aá]ntas/.test(_qC) && /\n\n/.test(_sinPines) ? `${_sinPines.trimEnd()}\n\n${_qC}` : _pegaSuave(_sinPines, _qC))
-              : _qC;   // (la de necesidad, en su párrafo si el mensaje tiene varios — p5)
-          }
-          // 🗺️ Red final: sin zona, con la cantidad ya sellada y sin pedido, el mensaje NO se queda sin pregunta
-          // (los recortes de arriba pueden llevarse la única que traía). Salvo que se despida, reclame o lo piense.
-          if (!_zonaOk && String(ctx.opcion_id ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
-              && !/[?¿]/.test(_s) && !_RE_SUAVE_Z.test(_s)
-              && !/\b(?:dime|ind[ií]came|cu[eé]ntame|p[aá]same|conf[ií]rmame|av[ií]same)\s+(?:primero\s+)?(?:tu\s+|en\s+qu[eé]\s+|de\s+qu[eé]\s+|qu[eé]\s+|desde\s+d[oó]nde|de\s+d[oó]nde)?\s*(?:distrito|ciudad|zona|provincia|d[oó]nde)/i.test(_s)
-              && !(ctx as any)._dos_lugares && !(run.vars as any)?._dos_lugares
-              && !RE_LO_PIENSA.test(String(ctx.last_input ?? "")) && !RE_RECLAMO.test(String(ctx.last_input ?? ""))
-              && !/^\s*(?:no(?:\s+gracias)?|nada|ya\s+no|no\s+me\s+interesa|gracias(?:\s+no)?|ok(?:ey)?|listo|chau|adi[oó]s)[\s.!,🙂🙏👍]*$/iu.test(String(ctx.last_input ?? ""))
-              && _s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 3) {
-            // (sin los restos de la petición de datos que se fue: «Para dejártelo listo y coordinar envío,» colgando y «Así te
-            //  paso todo para que lo tengas hoy mismo 📦☀️», que a provincia es mentira — sim 2b-s5)
-            {
-              const _limpio = _s.split("\n")
-                .filter((l) => !(l.trim().length <= 90 && /,\s*$/.test(l.trim()) && !/[?¿]/.test(l)))
-                .map((l) => l.replace(/(?:^|(?<=[.!…]\s))(?:y\s+)?as[ií]\s+te\s+(?:paso|dejo|mando|env[ií]o)\s+todo\b[^.!?\n]*[.!]?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*/giu, "").trimEnd())
-                .join("\n").replace(/\n{3,}/g, "\n\n").trim();
-              if (_limpio.replace(/[^\p{L}]/gu, "").length >= 10) _s = _limpio;
-            }
-            _s = _pegaSuave(_s.trimEnd(), _Q_ZONA);
-          }
-          _s = _s.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-          if (_s !== _antesF && _s.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10) {
-            salida = _s;
-            await logEvent(db, run.channel_id, run.contact_id, "nota", "🔁 Pregunta repetida o doble (físico)",
-              `Se dejó una sola y sin repetir la anterior: «${_antesF.slice(0, 140)}»`).catch(() => {});
-          }
-        } catch (_) { /* sin historial → tal cual */ }
-      }
       // 🎯 CONTESTÓ LA PREGUNTA DE NECESIDAD → la recomendación la decide `recomendarPorNecesidad` y la escribe el motor,
       // siempre igual: «Para tu patio y la chacra te conviene el de *2 unidades* a *S/ 139* (S/ 69.50 c/u): una en cada
       // zona 🙌 ¿Te lo dejo así?». Lo que la IA contestó de otra cosa se queda; su lista, sus preguntas y su recomendación no.
@@ -29739,7 +29182,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // dejaba «(calle» abierto (F11-callao, 2026-09-29).
           .replace(/[ \t]*\([^()\n]*\so\s+(?:una\s+)?referencia[^()\n]*\)/giu, "")
           // (+ «📌 *Dirección* puede ser referencia…» — F7b-otiktok)
-          .replace(/[ \t,]*\(?\s*(?:puede|pueden|basta|vale|o)\s+(?:ser\s+)?(?:solo\s+)?(?:una\s+)?referencia[^)\n]*\)?/giu, "");
+          // (la «o» como PALABRA: sin el límite se llevaba el final de «la tomamos com|o referencia para el envío» y salía
+          //  «La sede de Cayma la tomamos com» — examen fase 2, 3-oct)
+          .replace(/[ \t,]*\(?\s*(?<![\p{L}])(?:puede|pueden|basta|vale|o)\s+(?:ser\s+)?(?:solo\s+)?(?:una\s+)?referencia[^)\n]*\)?/giu, "");
         // (+ «¿Me confirmas si lo quieres así?» debajo de la lista — F7-otiktok)
         if (/📌/.test(_sd)) _sd = _sd.replace(/[ \t]*¿\s*me\s+confirmas\s+si\s+(?:lo|la|los|las)\s+quieres\s+as[ií]\s*\?[\s\p{Extended_Pictographic}️]*/giu, " ");
         if (/📌/.test(_sd)) _sd = _sd.replace(/[ \t]*(?:^|(?<=[\s.!]))y\s+(?:dime\s+si\s+confirmas\s+(?:la\s+compra|el\s+pedido)|conf[ií]rmame\s+si\s+(?:te\s+lo\s+mando|lo\s+confirmo|seguimos|lo\s+dejo|avanzamos))[^.\n]*[.!]?\s*(?:[\p{Extended_Pictographic}️]\s*)*/gimu, " ");

@@ -132,11 +132,18 @@ Zonas y distritos, sedes Shalom, pagos y OCR de comprobantes, pedidos, avisos, r
 | 2026-10-03 | **FINAL fases 1-5 · EcoGuard** | **5 / 35**, de las cuales **4 son el precio por unidad de la ficha** (S/ 56.50 escrito vs S/ 56.33) y 1 invento (lluvia) | Examen `9322b635`. Reescrituras 13 de 77 (17 %), 2 no pasaron |
 | 2026-10-03 | **FINAL · Digital (Guía Experta)** | **0 / 14** (base sin revisor: 3 / 14) | Examen `a1cc16f1`. Reescrituras 4 de 28 |
 | 2026-10-03 | **FINAL · Adaptador** | **0 / 5** | Examen `c7fff2b5` |
+| 2026-10-03 | **Fase 2 · v2 en todo + tijeras borradas** | EcoGuard **3 / 35** · Digital 1 / 14 · Adaptador 1 / 5 | Exámenes `5dfc814b`, `99fef6ba`, `b40a26fe`. Las 3 fallas nuevas eran del motor y se arreglaron: «com|o referencia» cortado por una regex sin límite de palabra; el revisor traía las tijeras de vuelta por la palabra «sedes» en otra regla; una tijera viva («Pedía los datos en prosa») borraba la pregunta del distrito; «ok» a «¿1 o 2 unidades?» sellaba 2. Digital: «devolución» no está en la ficha del curso (honesto, no invento) |
+| 2026-10-03 | Fase 2 · con esos arreglos | EcoGuard **4 / 35** · Adaptador **0 / 5** | Exámenes `cc6590d7`, adaptador. Arreglado además «funciona al recibir luz solar» → «cuando llegue a la agencia» (regex de provincia). Quedan 2 inventos de la IA (lluvia, «sin riesgos») y 1 abierto: a «¿cuánto demora a Tacna?» algo del post-proceso quita en silencio la frase del plazo (intermitente; en la corrida anterior salió bien) |
 
-**Estado al cierre (3-oct):** fases 0, 1, 3 y 5 hechas; fase 2 medida (lo que sigue corriendo en v2 casi todo agrega; el
-código de las tijeras se borra cuando v2 esté en todos los canales); fase 4 = `FICHAS_QUE_FALTAN.md`, la completa Rodrigo.
-Encendido: solo Prime Digital (`channels.motor_v2`). La venta digital y la Recepción ya tienen el revisor, pero esperan el
-interruptor de su canal.
+**Estado al cierre (3-oct):** fases 0, 1, 2, 3 y 5 hechas; fase 4 = `FICHAS_QUE_FALTAN.md`, la completa Rodrigo.
+
+**Fase 2 cerrada (3-oct, tarde):** el motor v2 quedó encendido en **todos los canales** (físico, digital y Recepción),
+también en los que se creen desde ahora; el interruptor `channels.motor_v2` se retiró (migración 0124). Borradas las
+tijeras que el revisor reemplaza: «Pregunta repetida o doble (físico)» (~500 líneas), «Repetía una pregunta que ya se
+hizo», el recorte de la presentación repetida y «La respuesta va primero» (`sinPresentacionRepetida` queda solo como
+detector). Quedan, solo como **respaldo** cuando la reescritura falla, el recorte de sedes nombradas y «Pidió datos sin
+saber la cantidad» (que además sella la opción que el cliente nombró), y la limpieza de restos de `emitIaText`.
+El botón «Examen» salió de Probar flujos (el examen se sigue corriendo con `scripts/examen.ps1`).
 
 **Cómo leer la nota:** se compara «conversaciones con falla grave» (de 35). Una diferencia de 1–2 puede ser ruido del
 juez; para dar por buena una mejora, que baje al menos 3 o que se repita en dos corridas.

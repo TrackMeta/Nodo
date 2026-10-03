@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userIsChannelAdmin } from "../_shared/db.ts";
-import { runEngine, aplicarStock, forzarModeloVenta, forzarMotorV2 } from "../_shared/engine.ts";
+import { runEngine, aplicarStock, forzarModeloVenta } from "../_shared/engine.ts";
 import { runAI } from "../_shared/ai.ts";
 import { BATERIAS, BATERIA_ECOGUARD, type ConvExamen } from "./bateria.ts";
 
@@ -298,7 +298,7 @@ Deno.serve(async (req) => {
     const modelo = typeof body?.modelo === "string" && /^gpt-[\w.-]+$/.test(body.modelo) ? body.modelo : null;
     const { data: ex, error } = await db.from("examenes").insert({
       channel_id: channelId, etiqueta: String(body?.etiqueta ?? "").slice(0, 120) || null, modelo,
-      total: bat.conversaciones.length, creado_por: a.uid ?? null, motor_v2: body?.v2 === true, bateria: bat.id,
+      total: bat.conversaciones.length, creado_por: a.uid ?? null, motor_v2: true, bateria: bat.id,
     }).select("id").single();
     if (error) return json({ error: error.message }, 500);
     const exId = (ex as any).id;
@@ -329,7 +329,6 @@ Deno.serve(async (req) => {
     const t0 = Date.now();
     const channelId = (examen as any).channel_id as string;
     forzarModeloVenta((examen as any).modelo ?? null);
-    forzarMotorV2((examen as any).motor_v2 === true);
     const tr: Array<{ c: string; b: string[] }> = Array.isArray((fila as any).transcript) ? (fila as any).transcript : [];
     try {
       // Un wa_id por examen y conversación: dos corridas a la vez no se pisan el contacto.
@@ -355,7 +354,6 @@ Deno.serve(async (req) => {
       return json({ error: "engine_error", detalle: String(e).slice(0, 300) }, 500);
     } finally {
       forzarModeloVenta(null);
-      forzarMotorV2(false);
     }
   }
 
