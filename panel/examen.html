@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Examen del bot</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --amber-bg:#2c2210; --red:#e2564a; --red-bg:#2c1513;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .wrap{padding:var(--nodo-pad);max-width:980px;margin:0 auto;width:100%}
+  .hidden{display:none!important}
+  h1{font-size:26px;margin:0 0 6px;font-weight:700;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 18px;max-width:720px;line-height:1.5}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px;margin-bottom:16px}
+  .card h3{margin:0 0 10px;font-size:14px;font-weight:700}
+  .btn{height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
+  .btn.primary{background:var(--brand);border:none;color:#fff} .btn.primary:hover{background:var(--brand-2)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--muted);font-weight:600;font-size:11.5px;padding:8px 6px;border-bottom:1px solid var(--border)}
+  td{padding:9px 6px;border-bottom:1px solid var(--border);vertical-align:top}
+  tr.cl{cursor:pointer} tr.cl:hover td{background:var(--surface-2)}
+  .nota{font-weight:800;font-size:15px}
+  .tag{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:700}
+  .t-g{background:var(--red-bg);color:var(--red)} .t-l{background:var(--amber-bg);color:var(--amber)} .t-ok{background:var(--green-bg);color:var(--green)}
+  .conv{border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:var(--surface-2)}
+  .conv .h{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  .conv .tt{font-weight:700} .conv .id{color:var(--faint);font-size:12px}
+  .falla{margin:8px 0 0;font-size:13px;line-height:1.45}
+  .falla .q{color:var(--muted)}
+  details{margin-top:8px} summary{cursor:pointer;color:var(--brand);font-size:12.5px}
+  .tr{white-space:pre-wrap;font-size:12.5px;line-height:1.5;margin-top:8px;color:var(--text)}
+  .tr .c{color:var(--amber);font-weight:700} .tr .b{color:var(--muted)}
+  .prog{height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden;flex:1;min-width:160px}
+  .prog>div{height:100%;background:var(--brand);width:0;transition:width .3s}
+  .muted{color:var(--muted)}
+  @media (max-width:640px){ th:nth-child(4),td:nth-child(4){display:none} }
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="wrap">
+    <h1>Examen del bot</h1>
+    <p class="sub">Siempre las mismas conversaciones de prueba contra el bot real (sin salir por WhatsApp) y un revisor
+      con IA que marca cada respuesta: no contestó, frase cortada, inventó, supuso la ciudad… Sirve para saber si un
+      cambio mejora o empeora: <b>ningún cambio se queda si la nota sube</b>. Una corrida tarda unos 15 minutos.</p>
+
+    <div class="card">
+      <div class="bar">
+        <button class="btn primary" id="runBtn">Correr examen</button>
+        <div class="prog hidden" id="progWrap"><div id="progBar"></div></div>
+        <span class="muted" id="progTxt"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Corridas</h3>
+      <table><thead><tr><th>Fecha</th><th>Etiqueta</th><th>Fallas graves</th><th>Conversaciones con falla grave</th></tr></thead>
+        <tbody id="lista"><tr><td colspan="4" class="muted">Cargando…</td></tr></tbody></table>
+    </div>
+
+    <div class="card hidden" id="detCard">
+      <h3 id="detTtl">Detalle</h3>
+      <div id="det"></div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast, askText, SUPABASE_URL, SUPABASE_ANON_KEY, conRegion } from "./shell.js";
+const $=(id)=>document.getElementById(id);
+const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" });
+const st={ channelId:null, corriendo:false };
+const TIPOS={ no_contesto:"No contestó", cortada:"Frase cortada / sin sentido", invento:"Inventó", dato_erroneo:"Dato equivocado",
+  supuso_zona:"Supuso la ciudad", fuera_de_orden:"Fuera de orden", repite:"Repite", robotico:"Robótico", otro:"Otro" };
+
+async function api(body){
+  const { data:{ session } }=await supa.auth.getSession();
+  const r=await fetch(conRegion(`${SUPABASE_URL}/functions/v1/examen`),{ method:"POST",
+    headers:{ "Content-Type":"application/json", apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${session?.access_token}` },
+    body:JSON.stringify(body) });
+  const j=await r.json().catch(()=>({ error:`HTTP ${r.status}` }));
+  if(!r.ok && !j.error) j.error=`HTTP ${r.status}`;
+  return j;
+}
+
+function tagGraves(n){ return n>0?`<span class="tag t-g">${n}</span>`:`<span class="tag t-ok">0</span>`; }
+
+async function cargarLista(){
+  const j=await api({ accion:"listar", channel_id:st.channelId });
+  if(j.error){ $("lista").innerHTML=`<tr><td colspan="4" class="muted">${esc(j.error==="forbidden"?"Solo un administrador puede ver el examen.":j.error)}</td></tr>`; return; }
+  const ex=j.examenes||[];
+  if(!ex.length){ $("lista").innerHTML=`<tr><td colspan="4" class="muted">Todavía no hay corridas.</td></tr>`; return; }
+  $("lista").innerHTML=ex.map(e=>`<tr class="cl" data-id="${e.id}"><td>${fmt.format(new Date(e.created_at))}</td>
+    <td>${esc(e.etiqueta||"—")}${e.modelo?` <span class="muted">· ${esc(e.modelo)}</span>`:""}${e.juzgadas<e.total?` <span class="muted">(${e.juzgadas}/${e.total} calificadas)</span>`:""}</td>
+    <td class="nota">${tagGraves(e.graves)} <span class="muted" style="font-weight:500;font-size:12px">· leves ${e.leves}</span></td>
+    <td>${e.con_grave} de ${e.juzgadas}</td></tr>`).join("");
+  document.querySelectorAll("#lista tr.cl").forEach(tr=>tr.onclick=()=>verExamen(tr.dataset.id));
+}
+
+async function verExamen(id){
+  const j=await api({ accion:"ver", examen_id:id });
+  if(j.error){ toast(j.error,true); return; }
+  $("detCard").classList.remove("hidden");
+  const e=j.examen; $("detTtl").textContent=`${e.etiqueta||"Corrida"} · ${fmt.format(new Date(e.created_at))}`;
+  const cs=(j.conversaciones||[]).slice().sort((a,b)=>(b.graves??-1)-(a.graves??-1)||(b.leves??0)-(a.leves??0));
+  $("det").innerHTML=cs.map(c=>{
+    const fallas=(c.juicio?.fallas||[]);
+    const est=c.estado==="juzgada"?`${tagGraves(c.graves)} ${c.leves?`<span class="tag t-l">${c.leves} leves</span>`:""}`
+      :`<span class="tag t-l">${esc(c.estado)}</span>`;
+    const tr=(c.transcript||[]).map((t,i)=>`<span class="c">T${i+1} Cliente:</span> ${esc(t.c)}\n<span class="b">Bot:</span> ${esc((t.b||[]).join("\n   ‖ "))||"(sin respuesta)"}`).join("\n\n");
+    return `<div class="conv"><div class="h"><div><span class="tt">${esc(c.titulo||c.conv)}</span> <span class="id">${esc(c.conv)}</span></div><div>${est}</div></div>
+      ${fallas.map(f=>`<div class="falla"><span class="tag ${f.grave?"t-g":"t-l"}">${esc(TIPOS[f.tipo]||f.tipo)}</span> <b>T${f.turno}</b> ${esc(f.explicacion)} <span class="q">«${esc(f.cita)}»</span></div>`).join("")}
+      ${c.error?`<div class="falla"><span class="tag t-g">Error</span> ${esc(c.error)}</div>`:""}
+      ${tr?`<details><summary>Ver la conversación</summary><div class="tr">${tr}</div></details>`:""}</div>`;
+  }).join("");
+  $("detCard").scrollIntoView({ behavior:"smooth", block:"start" });
+}
+
+async function correrUna(examenId, conv, onDone){
+  for(let k=0;k<8;k++){
+    const r=await api({ accion:"correr", examen_id:examenId, conv });
+    if(r.error){ onDone(); return; }
+    if(!r.pendiente) break;
+  }
+  for(let k=0;k<2;k++){ const j=await api({ accion:"juzgar", examen_id:examenId, conv }); if(!j.error) break; }
+  onDone();
+}
+
+async function correrExamen(){
+  if(st.corriendo) return;
+  const etiqueta=await askText({ title:"Correr examen", label:"Etiqueta (para reconocer esta corrida)", value:"", placeholder:"ej. después del cambio X" });
+  if(etiqueta===null) return;
+  st.corriendo=true; $("runBtn").disabled=true; $("progWrap").classList.remove("hidden");
+  try{
+    const ini=await api({ accion:"iniciar", channel_id:st.channelId, etiqueta });
+    if(ini.error){ toast(ini.error==="forbidden"?"Solo un administrador puede correr el examen":ini.error,true); return; }
+    const convs=(ini.conversaciones||[]).map(c=>c.conv); let hechas=0;
+    const avance=()=>{ $("progBar").style.width=`${Math.round(100*hechas/convs.length)}%`; $("progTxt").textContent=`${hechas} de ${convs.length} conversaciones`; };
+    avance();
+    const cola=convs.slice();
+    const trabajador=async()=>{ while(cola.length){ const c=cola.shift(); await correrUna(ini.examen_id,c,()=>{ hechas++; avance(); }); } };
+    await Promise.all([trabajador(),trabajador(),trabajador(),trabajador(),trabajador()]);
+    toast("Examen terminado");
+    await cargarLista(); await verExamen(ini.examen_id);
+  } finally { st.corriendo=false; $("runBtn").disabled=false; }
+}
+
+async function boot(){
+  const { data:{ session } }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  const shell=await mountShell({ active:"probar" });
+  st.channelId=shell.channelId;
+  $("runBtn").onclick=correrExamen;
+  await cargarLista();
+}
+boot();
+</script>
+</body>
+</html>
