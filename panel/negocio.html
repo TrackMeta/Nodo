@@ -600,7 +600,7 @@ function renderEntregas(b){
       <label style="margin-top:4px">Destinos con envío aéreo <span style="color:var(--faint);font-weight:400">(uno por línea)</span></label>
       <textarea class="in" id="aerDest" rows="4" placeholder="Iquitos&#10;Pucallpa&#10;Puerto Maldonado&#10;Tarapoto" style="min-height:96px;line-height:1.5;font-family:var(--font);resize:vertical">${esc((E.aereo.destinos||[]).join("\n"))}</textarea>
       <label style="margin-top:14px">Cómo lo presenta el bot <span style="color:var(--faint);font-weight:400">(mensaje de beneficio, opcional)</span></label>
-      <textarea class="in" id="aerMsg" rows="3" placeholder="¡Buena noticia! 🙌 Para tu zona el envío lo hacemos aéreo con Shalom, así te llega mucho más rápido. 😊" style="min-height:74px;line-height:1.5;font-family:var(--font);resize:vertical">${esc(E.aereo.mensaje||"")}</textarea>
+      <textarea class="in" id="aerMsg" rows="3" placeholder="¡Buena noticia! 🙌 A tu zona te lo mando aéreo con Shalom, y lo tienes mucho más rápido. 😊" style="min-height:74px;line-height:1.5;font-family:var(--font);resize:vertical">${esc(E.aereo.mensaje||"")}</textarea>
       <div style="font-size:11px;color:var(--faint);margin-top:6px">Preséntalo siempre como algo <b>bueno</b> para el cliente (llega más rápido), nunca como un costo extra. Vacío = el bot usa un mensaje cálido por defecto.</div>
     </div>
     <div class="card">

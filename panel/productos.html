@@ -2867,7 +2867,7 @@ async function generarFlujoFisico(flowId, N, E){
     // quince burbujas y nunca vio JUNTO lo que lleva, cuánto es y a dónde va. El motor
     // arma {{resumen_pedido}} con el pedido YA GRABADO — e incluye el regalo, si lo hay,
     // que hasta ahora viajaba en la caja sin que nadie se lo dijera.
-    bubbles:[{ text:"¡Listo, {{cliente}}! ✅ Tu pedido quedó confirmado.\n\n{{resumen_pedido}}\n\n🛵 Pagas al recibirlo. Te avisamos cuando salga el motorizado." }],
+    bubbles:[{ text:"¡Listo, {{cliente}}! ✅ Tu pedido quedó confirmado.\n\n{{resumen_pedido}}\n\n🛵 Me lo pagas al recibirlo. Te aviso cuando salga el motorizado." }],
   },false,1520,440);
 
   // ── Rama Provincia (crea el pedido y recién ahí pide el adelanto) ──
@@ -2900,7 +2900,7 @@ async function generarFlujoFisico(flowId, N, E){
     // 📏 Corto (Rodrigo, 2026-10-01: «el mensaje del adelanto es largo»): cinco bloques en vez de ocho. La
     // captura y el saldo van en un párrafo; la promesa de despacho y el plazo, en otro (el motor ya los
     // junta también en los flujos viejos). «Me los pagas POR ACÁ»: el saldo se paga a nosotros, no en el mostrador.
-    bubbles:[{ text:"¡Perfecto! 🙌 Para despacharlo, confírmalo con un adelanto de *"+curSym(st.prod&&st.prod.config)+" {{adelanto}}*:\n\n{{datos_pago}}\n\nMándame la captura y lo verifico al toque. Los *"+curSym(st.prod&&st.prod.config)+" {{saldo}}* restantes me los pagas por acá cuando ya esté en la agencia, y ahí te paso tu clave para recogerlo.\n\n{{promesa_despacho}} {{demora_provincia_linea}}" }],
+    bubbles:[{ text:"¡Perfecto! 🙌 Para mandártelo, solo necesito un adelanto de *"+curSym(st.prod&&st.prod.config)+" {{adelanto}}*:\n\n{{datos_pago}}\n\nMándame la captura y lo verifico al toque. Los *"+curSym(st.prod&&st.prod.config)+" {{saldo}}* restantes me los pagas por acá cuando ya esté en la agencia, y ahí te paso tu clave para recogerlo.\n\n{{promesa_despacho}} {{demora_provincia_linea}}" }],
   },false,1520,640);
   // ¿El cliente YA pagó el adelanto ANTES de dar sus datos? El motor lo enganchó
   // al crear el pedido (engancharPrepagoAdelanto) y marcó `adelanto_prepagado`. Si
@@ -2988,7 +2988,7 @@ async function generarFlujoFisico(flowId, N, E){
     await E(nYaPago,"continuar",nEsperarAdel);   // ya pagó → parqueado esperando tu validación
     await E(nEsperarAdel,"continuar",nRespAdel); // escribe (aún no paga)
     await E(nRespAdel,"exito",nEsperarAdel);     // vuelve a esperar → parqueado ahí
-    const nRecibido=await N("mensaje","Adelanto recibido",{ bubbles:[{ text:"{{pago_titulo}} 🎉 Ya empiezo a preparar tu despacho." }] },false,1520,640);
+    const nRecibido=await N("mensaje","Adelanto recibido",{ bubbles:[{ text:"{{pago_titulo}} 🎉 Ya estoy preparando tu pedido para mandártelo." }] },false,1520,640);
     await E(nEsperarAdel,"post_adelanto",nRecibido); // el motor reanuda por acá al validar
     await buildRideAlongExtras(N,E,nRecibido,nFin,extras,catX,esperaSeg,1040,cfg.extras_seguir);
   }

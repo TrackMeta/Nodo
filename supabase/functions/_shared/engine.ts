@@ -573,7 +573,7 @@ async function runEngineInner(
           const _d = enTitulo(String(_s.destino ?? _s.sede ?? _s.ciudad ?? "").trim()
             .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, ""));
           await deliverMessage(db, channelId, contactId,
-            `Entiendo 🙏 Lo que pasa es que tu pedido ya salió${_d ? ` rumbo a *${_d}*` : ""}, ` +
+            `Entiendo 🙏 Lo que pasa es que ya te lo mandé${_d ? ` a *${_d}*` : ""}, ` +
             "así que anularlo ya no depende de mí: tengo que verlo con el equipo y la agencia.").catch(() => {});
         }
         await pasarAHumano(db, channelId, contactId,
@@ -770,7 +770,7 @@ async function runEngineInner(
       await logEvent(db, channelId, contactId, "nota", "🚪 Que lo reciba otra persona", _nota).catch(() => {});
       await deliverMessage(db, channelId, contactId,
         `¡Anotado! 🙌 Le dejo la indicación al motorizado: *${_nota.toLowerCase().replace(/\bsu\b/, "tu")}*.` +
-        (_saldoP > 0 ? ` Como se paga al recibir, déjale los *${_symP} ${_saldoP}* a quien lo reciba (o, si prefieres pagarlo antes por Yape, avísame) 👌` : "")).catch(() => {});
+        (_saldoP > 0 ? ` Como me lo pagas al recibirlo, déjale los *${_symP} ${_saldoP}* a quien lo reciba (o, si prefieres pagarlo antes por Yape, avísame) 👌` : "")).catch(() => {});
       return;
     }
   }
@@ -800,7 +800,7 @@ async function runEngineInner(
         { reprogramacion_pedida: _txtR, reprogramacion_at: new Date().toISOString() }, { ship: _shR });
       await logEvent(db, channelId, contactId, "nota", "📅 Pide reprogramar con el pedido EN REPARTO", _txtR).catch(() => {});
       await deliverMessage(db, channelId, contactId,
-        "¡Anotado! 🙌 Tu pedido ya salió con el motorizado, así que le aviso ahora mismo al equipo para " +
+        "¡Anotado! 🙌 Ya te lo mandé con el motorizado, así que le aviso ahora mismo al equipo para " +
         "coordinarlo. Te confirmamos por acá en un ratito. 😊").catch(() => {});
       await pasarAHumano(db, channelId, contactId,
         `🚨 Pide REPROGRAMAR y el pedido YA ESTÁ EN REPARTO: “${_txtR}”. Llama al motorizado antes de que vaya.`,
@@ -2615,7 +2615,7 @@ const RE_QUITA_EXTRA =
 // 💳 Pregunta por el MEDIO de pago (no por el precio): tarjeta, POS, efectivo, Yape, o
 // directamente «¿cómo pago?». Es una pregunta que decide compras y no se puede esquivar.
 const RE_COMO_PAGA =
-  /\b(con\s+)?(tarjeta|visa|mastercard|pos|d[eé]bito|cr[eé]dito)\b|\bc[oó]mo\s+(se\s+)?(paga|pago|pagar[ií]a)\b|\bqu[eé]\s+(formas?|medios?|m[eé]todos?)\s+de\s+pago\b|\bacept(an|as)\s+(tarjeta|yape|plin|transferencia|efectivo)\b|\bpag(?:an|as|o|ar|ue)\s+con\s+(yape|plin|tarjeta|transferencia|efectivo|visa)\b|\bse\s+puede\s+pagar\s+con\b|\bpag(?:o|ar)\s+en\s+efectivo\b/i;
+  /\b(con\s+)?(tarjeta|visa|mastercard|pos|d[eé]bito|cr[eé]dito)\b|\bc[oó]mo\s+(se\s+)?(paga|pago|pagar[ií]a)\b|\bc[oó]mo\s+(?:es|ser[ií]a|va|funciona|hago)\s+(?:el|lo\s+del|para\s+el)?\s*pago\b|\bqu[eé]\s+(formas?|medios?|m[eé]todos?)\s+de\s+pago\b|\bacept(an|as)\s+(tarjeta|yape|plin|transferencia|efectivo)\b|\bpag(?:an|as|o|ar|ue)\s+con\s+(yape|plin|tarjeta|transferencia|efectivo|visa)\b|\bse\s+puede\s+pagar\s+con\b|\bpag(?:o|ar)\s+en\s+efectivo\b/i;
 // 🙋 Condiciones concretas por las que un cliente pregunta «¿sirve para…?». No es una lista
 // de lo que el producto hace: es la palabra que hay que ir a buscar EN LA FICHA antes de
 // afirmar o negar nada sobre ella.
@@ -3717,8 +3717,8 @@ const REGLA_SIN_DISCURSO_RIESGO =
   "Y tampoco la coletilla que lo niega: «nada antes», «nada por adelantado», «no pagas hasta " +
   "que…», «cero riesgo», «sin adelanto», «sin pagos antes», «sin pagar nada antes». " +
   "Con decir cuándo paga ya está: no le agregues nada detrás. " +
-  "Di cómo paga y sigue: «te lo mando a tu casa y me lo pagas al recibirlo» en Lima; en provincia, un adelanto y lo mando " +
-  "y el saldo cuando el paquete llega a la agencia.";
+  "Di cómo paga y sigue: «te lo mando a tu casa y me lo pagas al recibirlo» en Lima; en provincia, «te lo mando " +
+  "con un adelanto y el resto me lo pagas por acá cuando ya esté en la agencia».";
 
 
 // 💵 Un pago se acusa cuando está VERIFICADO, no cuando el cliente lo dice. Medido, y de
@@ -5222,7 +5222,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     if (run) run._ultApertura = _ap || "";
   }
   if ((run?.vars as any)?._extra_tarde && /te lo sumo al pedido|te los sumo al pedido/i.test(text)) {
-    text = "¡Gracias! 🙌 Justo tu pedido ya salió, así que eso no alcanza a ir en el mismo envío. " +
+    text = "¡Gracias! 🙌 Justo ya te mandé tu pedido, así que eso no alcanza a ir en el mismo paquete. " +
       "Se lo paso al equipo para que te digan cómo hacértelo llegar. 😊";
     delete (run.vars as any)._extra_tarde;
   }
@@ -7466,7 +7466,9 @@ function bloqueEnvio(courier: string, modo: string, sede?: { l: string; ref?: st
   const _donde = sede
     ? `a la sede *${bonito(sede.l)}* de *${quien}*${_pista ? `\n_${bonito(_pista, true)}_` : ""}`
     : `a tu ciudad por *agencia ${quien}*`;
-  return `📦 Te llega ${_donde}\nLo recoges con la clave que te paso apenas llegue${costo}.`;
+  // 🗣️ «Te llega…» era el paquete viajando solo (Rodrigo, 2026-10-02: «responde como robot, en 3.ª persona»).
+  // OJO: cinco frenos más abajo reconocen este bloque por su arranque («Te (llega|lo mando) a la sede»).
+  return `📦 Te lo mando ${_donde}\nLo recoges con la clave que te paso apenas llegue${costo}.`;
 }
 // ✅ SÍ LLEGAMOS. Cuando el cliente dice su departamento y todavía falta su ciudad, el bot
 // contestaba solo con la repregunta: «😊🔧 Dime, ¿de qué ciudad o distrito de Madre de Dios
@@ -7479,7 +7481,7 @@ function bloqueEnvio(courier: string, modo: string, sede?: { l: string; ref?: st
 // pedida por prompt es justo la que el modelo sacrifica.
 // (+ «tu pedido va por agencia Shalom», «la agencia Shalom de Supe queda anotada»: salía «Sí hacemos envíos a Barranca con la
 //  agencia Shalom» encima de eso mismo — sims c5/c6, 2026-10-02)
-const RE_YA_CONFIRMO_COBERTURA = /(s[ií],?\s+(?:hacemos|llegamos|enviamos|te\s+lleg)|s[ií]\s+llega|llegamos\s+a|hacemos\s+env[ií]os?\s+a|enviamos\s+a|te\s+llega\s+por|s[ií]\s+enviamos|va\s+por\s+(?:la\s+)?agencia|agencia\s+(?:shalom|olva|marvisur)\b|por\s+(?:shalom|olva)\b|lo\s+recoges\s+en|queda\s+anotad|recojo\s+en|en\s+(?:shalom|olva)\b|queda\s+list[ao]\s+para\s+(?:el\s+)?recoj)/i;
+const RE_YA_CONFIRMO_COBERTURA = /(s[ií],?\s+(?:hacemos|llegamos|enviamos|te\s+lleg)|s[ií]\s+llega|llegamos\s+a|hacemos\s+env[ií]os?\s+a|enviamos\s+a|te\s+llega\s+por|te\s+lo\s+(?:mando|env[ií]o|despacho)\s+(?:por|con|a)\b|s[ií]\s+enviamos|va\s+por\s+(?:la\s+)?agencia|agencia\s+(?:shalom|olva|marvisur)\b|por\s+(?:shalom|olva)\b|lo\s+recoges\s+en|queda\s+anotad|recojo\s+en|en\s+(?:shalom|olva)\b|queda\s+list[ao]\s+para\s+(?:el\s+)?recoj)/i;
 const RE_PREGUNTA_LA_CIUDAD = /(qu[eé]\s+(ciudad|distrito|provincia)|de\s+qu[eé]\s+(ciudad|distrito)|ciudad\s+o\s+distrito|de\s+d[oó]nde\s+(me\s+)?(escribes|eres))/i;
 function conCoberturaConfirmada(texto: string, depto: string, courier: string): string {
   const t = String(texto ?? "").trimStart();
@@ -8280,6 +8282,51 @@ function sinColetillaRiesgo(texto: string): string {
 // mando hasta tu casa y me lo pagas al recibirlo»; esto es la red por si la IA vuelve a la forma
 // del sistema. Solo la frase de la ENTREGA (con su lugar delante: «En X» → «A X»), y el «pagas al
 // recibir» solo si esa frase estaba — el resto del mensaje no se toca.
+// 🎲 El ejemplo del prompt sale casi textual (ver la memoria «ejemplo del prompt pesa más»): con uno solo,
+// 5 de 5 chats de Lima abrieron con «¡Genial! A *X* te lo mando…» (Rodrigo: «que no siempre diga Genial»).
+// Uno distinto en cada turno, todos en primera persona y con «al recibirlo» (el hecho que se dice).
+const EJEMPLOS_ENTREGA_LIMA = [
+  "¡Perfecto! A *Surco* te lo llevo hasta tu puerta y me lo pagas al recibirlo 🛵",
+  "Buenísimo, a *Surco* te lo mando a tu casa y me pagas recién al recibirlo 🏡",
+  "Claro que sí, a *Surco* te lo mando a domicilio y me lo pagas al recibirlo 😊",
+  "A *Surco* te lo llevo a tu casa sin problema, y me lo pagas al recibirlo 🛵",
+  "¡Qué bien! Hasta *Surco* te lo mando yo, y me lo pagas en efectivo al recibirlo 🙌",
+  "¡Genial! A *Surco* te lo mando hasta tu casa y me lo pagas al recibirlo 🛵",
+];
+function ejemploEntregaLima(): string {
+  return EJEMPLOS_ENTREGA_LIMA[Math.floor(Math.random() * EJEMPLOS_ENTREGA_LIMA.length)];
+}
+// Lo mismo para provincia (sin el adelanto: en el turno de la zona no se nombra — ver «SIN el adelanto»).
+const EJEMPLOS_ENTREGA_PROVINCIA = [
+  "Perfecto, a *Trujillo* te lo mando por agencia *Shalom* 📦",
+  "¡Claro! A *Trujillo* te lo envío por *Shalom* y lo recoges en la agencia con la clave que te paso 📦",
+  "Buenísimo, a *Trujillo* te lo mando por *Shalom* 🚚",
+  // (sin «despacho»: sinDespachar lo cambia por «te lo mando» y quedaría «Te te lo mando»)
+  "¡Listo! A *Trujillo* te lo envío por agencia *Shalom* 📦",
+  "A *Trujillo* te lo mando sin problema por agencia *Shalom* 🙌",
+];
+function ejemploEntregaProvincia(): string {
+  return EJEMPLOS_ENTREGA_PROVINCIA[Math.floor(Math.random() * EJEMPLOS_ENTREGA_PROVINCIA.length)];
+}
+// 🎲 …y la PRIMERA palabra, que el modelo saca de otros ejemplos del prompt: con los de arriba, 10 de 10 chats abrieron
+// con «Perfecto, a *X*…» (simulación 3p, 2026-10-02). Se le dice con cuál abrir, una distinta por turno.
+const APERTURAS_ZONA = ["¡Buenísimo!", "¡Claro!", "¡Qué bien!", "¡Listo!", "¡Genial!", "¡Perfecto!", "¡De una!", ""];
+function aperturaZona(run: any): string {
+  const a = APERTURAS_ZONA[Math.floor(Math.random() * APERTURAS_ZONA.length)];
+  if (run) run._aperturaZona = a;
+  return a ? `Ábrelo con «${a}» (no con otra muletilla). ` : "Ábrelo directo con el lugar («A *Surco*…»), sin «Perfecto» ni otra muletilla. ";
+}
+// …y como la IA igual abre con la suya (3 de 5 «¡Genial!» con la instrucción puesta — simulación 3p-2), en el turno de la
+// zona la muletilla del arranque se cambia por la elegida. Solo la muletilla: lo que sigue («A *Surco* te lo mando…») queda.
+const RE_MULETILLA_INICIAL = /^(\s*)¡?\s*(?:genial|perfecto|excelente|buen[ií]simo|claro(?:\s+que\s+s[ií])?|listo|qu[eé]\s+bien|de\s+una|s[uú]per)(?![\p{L}])\s*[!.,]*\s*/iu;
+function conAperturaElegida(texto: string, ap: string): string {
+  const t = String(texto ?? "");
+  const m = t.match(RE_MULETILLA_INICIAL);
+  if (!m) return t;
+  const resto = t.slice(m[0].length).replace(/^(\p{Ll})/u, (c) => c.toUpperCase());
+  if (!resto.trim()) return t;
+  return m[1] + (ap ? `${ap} ` : "") + resto;
+}
 const RE_TE_LLEGA_CONTRAENTREGA =
   /(^|[.!?¡,\n]\s*|\p{Extended_Pictographic}\s*)(?:(?:en|a|para)\s+([^,.!?¡¿\n]{1,40}?)\s+)?te\s+llega\s+(?:contra\s?entrega|a\s+domicilio|a\s+tu\s+(?:casa|puerta|direcci[oó]n)|hasta\s+tu\s+(?:casa|puerta))(?![\p{L}])/giu;
 function entregaEnPrimeraPersona(texto: string): string {
@@ -8294,6 +8341,13 @@ function entregaEnPrimeraPersona(texto: string): string {
       : `${mayus ? "Te" : "te"} lo mando hasta tu casa`);
   }).replace(/(?<!(?:^|[^\p{L}])lo\s+)(?<![\p{L}])(p)agas\s+al\s+recibir(?:lo|\s+(?:el|tu)\s+pedido)?(?![\p{L}])/giu,
     (_m, p: string) => `${p === "P" ? "Me" : "me"} lo pagas al recibirlo`);
+}
+// …y PROVINCIA: «te llega por agencia *Shalom*» → «te lo mando por agencia *Shalom*» (Rodrigo, 2026-10-02: «arregla todos
+// los casos en tercera persona, Lima y provincia»). Solo «te llega POR …» (agencia/courier): «¿cuándo te llega?» o «te
+// llega a la agencia en 2 días» cuentan un plazo, no quién lo manda, y se quedan.
+const RE_TE_LLEGA_POR_AGENCIA = /(?<![\p{L}])([Tt])e\s+llega\s+por\s+(?=(?:la\s+)?(?:agencia|\*?shalom|\*?olva|\*?marvisur)(?![\p{L}]))/giu;
+function envioEnPrimeraPersona(texto: string): string {
+  return String(texto ?? "").replace(RE_TE_LLEGA_POR_AGENCIA, (_m, t: string) => `${t}e lo mando por `);
 }
 
 // ⛔ «DÉJAME CONFIRMARLO Y TE AVISO». La promesa de un seguimiento que NO existe: nadie vuelve
@@ -8878,7 +8932,7 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
           const _sin = sinRestosDeRecorte((result.slice(0, _ini) + " " + result.slice(_fin)).replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim());
           // («Por acá no tengo una foto» a quien preguntó «¿es seguro?» sonaba de la nada — R1P-miedo, 2026-10-01: se dice qué
           //  foto SÍ llega, que es lo que da confianza)
-          const _honesto = "Fotos de otros pedidos no mando por acá 🙏 Lo que sí: apenas salga el tuyo te paso la *foto de la guía* y lo recoges con tu clave.";
+          const _honesto = "Fotos de otros pedidos no mando por acá 🙏 Lo que sí: apenas te mande el tuyo te paso la *foto de la guía* y lo recoges con tu clave.";
           result = (_sin.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10 ? `${_honesto}\n\n${_sin}` : _honesto);
         }
       }
@@ -11415,8 +11469,8 @@ function promesaDespacho(pedidosCfg: any, zona: string): string {
   // Corto: va en el mismo párrafo que el plazo ({{demora_provincia_linea}}, ver resolve). Rodrigo,
   // 2026-10-01: «el mensaje del adelanto es largo».
   return conFoto
-    ? "Apenas salga te mando la *foto de la guía* y te aviso cuando llegue 📦"
-    : "Apenas salga te paso el *número de guía* para que le hagas seguimiento, y te aviso cuando llegue 📦";
+    ? "Apenas te lo mande te paso la *foto de la guía* y te aviso cuando llegue 📦"
+    : "Apenas te lo mande te paso el *número de guía* para que le hagas seguimiento, y te aviso cuando llegue 📦";
 }
 
 // 🧾 {{resumen_pedido}} — el detalle final de lo que compró, para la burbuja de
@@ -11528,7 +11582,7 @@ function resumenPedido(o: any, sym: string, producto?: string | null, cuando?: s
     : "*otro día*";
   if (_pidioDia && !ESTADOS_DESPACHADO.has(String(o?.estado ?? ""))) {
     L.push(`📅 Pediste que llegue ${_diaTxt}: lo coordinamos con el reparto y te confirmamos por acá`);
-  } else if (_cuando) L.push(`📅 Te llega *${_cuando}*`);
+  } else if (_cuando) L.push(`📅 Te lo llevo *${_cuando}*`);
   // 🛡️ Y el resumen se somete a la MISMA red que el texto de la IA. No porque quede algo por
   // corregir hoy —la línea del saldo ya se arregló arriba—, sino porque tener la regla del
   // saldo solo en el camino de la IA es lo que dejó salir «al recogerlo» durante meses: dos
@@ -11605,11 +11659,11 @@ export function mensajeEstadoDefault(
       // Si el negocio configuró el plazo se lo decimos acá mismo, sin que tenga que
       // preguntarlo. En DÍAS y como estimado: una fecha exacta que la agencia no cumpla es
       // un reclamo, y el paquete no lo movemos nosotros.
-      ((demora ?? "").trim() ? `📦 Suele estar disponible para recoger en *${String(demora).trim()}*.\n\n` : "") +
+      ((demora ?? "").trim() ? `📦 Normalmente lo tienes para recoger en *${String(demora).trim()}*.\n\n` : "") +
       (det
         ? "Te aviso apenas llegue a la agencia y te paso tu clave para recogerlo. 🙌"
         : (saldo != null && saldo > 0
-          ? `Los *${sym} ${saldo}* que faltan los pagas recién cuando llegue — ahí te paso tu clave para recogerlo. 🙌`
+          ? `Los *${sym} ${saldo}* que faltan me los pagas recién cuando llegue — ahí te paso tu clave para recogerlo. 🙌`
           : "Te aviso apenas esté en la agencia con tu clave para recogerlo. 🙌"));
   }
   // 🛵 SALIÓ A REPARTO. Reescrito con lo que Rodrigo mandaba a mano el día de la entrega,
@@ -11628,15 +11682,15 @@ export function mensajeEstadoDefault(
     // La dirección puede ser el enlace del mapa que compartió (ver extraerDatos): en el
     // mensaje al cliente eso no aporta —él sabe dónde vive— y encima queda feo.
     const dirTxt = /^https?:\/\//i.test(dir) ? "" : dir;
-    return `🛵 ¡Tu pedido ya salió! El motorizado lo tiene${dirTxt ? ` para llevarlo a ${dirTxt}` : ""} ` +
-      `y te va a llamar para coordinar la hora. *Mantente atento a su llamada o mensaje* — si no te ubica, el pedido se regresa. ` +
+    return `🛵 ¡Ya te mandé tu pedido! El motorizado ya va${dirTxt ? ` a ${dirTxt}` : " en camino"} ` +
+      `y te va a llamar para coordinar la hora. *Mantente atento a su llamada o mensaje* — si no te ubica, me lo tiene que regresar. ` +
       // Cubierto del todo (prepago de Lima): «Ten listo S/ 0» se leía como un error.
       `${cobra != null ? (Number(cobra) <= 0.009 ? `\n\nYa está *todo pagado* ✅ — no pagas nada al recibirlo. ` : `\n\nTen listo *${sym} ${cobra}* para pagar al recibirlo. `) : ""}` +
       `\n\n¿No vas a estar? Avísame y lo dejamos con alguien o lo reprogramamos, sin problema. 🙌`;
   }
   if (estado === "despachado") {
     const guia = String(s.guia || "").trim();
-    return `📦 ¡Tu pedido ya va en camino a la agencia ${courier}${sede ? ` de ${sede}` : ""}! ` +
+    return `📦 ¡Ya te mandé tu pedido a la agencia ${courier}${sede ? ` de ${sede}` : ""}! ` +
       // El rastreo de Shalom pide N° de orden Y código: con uno solo el cliente no encuentra nada.
       `${guia ? `Tu guía es *${guia}*${String(s.codigo_envio ?? "").trim() ? ` (código *${String(s.codigo_envio).trim()}*)` : ""}. ` : ""}Te aviso apenas llegue para que puedas recogerlo. 🙌`;
   }
@@ -12394,7 +12448,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   // "faltarían S/10" y a renglón seguido "en un momento te confirmo el despacho" es
   // contradecirse en el mismo mensaje, y el cliente se queda con la parte buena.
   let _cola: string;
-  if (_pideZona) _cola = " Cuéntame de qué distrito o ciudad eres y te digo cómo te llega 📦";
+  if (_pideZona) _cola = " Cuéntame de qué distrito o ciudad eres y te digo cómo te lo mando 📦";
   else if (_pideCant) _cola = " ¿Cuántas unidades quieres?";
   else if (_faltantes.length) {
     _cola = (_corto ? " En cuanto completes esa diferencia lo dejo en camino." : "") +
@@ -12675,7 +12729,7 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
   if (nSede && yaSalio) {
     const _d = enTitulo(String(sh.destino ?? sh.sede ?? sh.ciudad ?? "").trim().replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, ""));
     await deliverMessage(db, channelId, contactId,
-      `Tu pedido ya salió${_d ? ` rumbo a *${_d}*` : ""}, así que cambiar la oficina ya no depende de mí. ` +
+      `Ya te mandé tu pedido${_d ? ` a *${_d}*` : ""}, así que cambiar la oficina ya no depende de mí. ` +
       "Se lo paso al equipo para ver con la agencia si todavía se puede redirigir, y te confirman por acá. 🙏").catch(() => {});
     await pasarAHumano(db, channelId, contactId,
       `🚚 Quiere cambiar la OFICINA de recojo a «${nSede}» y el pedido YA SALIÓ (${(order as any).estado}). Verlo con el courier.`,
@@ -12884,7 +12938,7 @@ async function maybeCambioDatos(db: SupabaseClient, channelId: string, contactId
       .replace(/^(?:agencia\s+)?(?:shalom|olva)\s+(?:de\s+)?/i, ""));
     const _guia = String(_real.guia ?? "").trim();
     await deliverMessage(db, channelId, contactId,
-      `Tu pedido ya salió${_dest ? ` hacia *${_dest}*` : ""}${_guia ? ` con la guía *${_guia}*` : ""}, ` +
+      `Ya te mandé tu pedido${_dest ? ` a *${_dest}*` : ""}${_guia ? ` con la guía *${_guia}*` : ""}, ` +
       "así que ese cambio ya no lo puedo hacer yo desde acá. 🙏 Se lo paso al equipo para ver " +
       // En Lima reparte un motorizado, no una agencia (medido 2026-09-28: a un pedido de Lince le
       // decía «ver con la agencia»).
@@ -15611,7 +15665,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
           .map((b) => `${String(b?.nombre ?? "").replace(/\s*·.*$/, "").trim()}${b?.regalo ? " (de regalo)" : ""}`)
           .filter(Boolean)].join(" + ")
       }. No nombres nada que no esté en esa lista.\n` +
-      "- Recuérdaselo con amabilidad: para recoger su pedido falta pagar el saldo, y cuando pague le llega su clave de recojo.\n" +
+      "- Recuérdaselo con amabilidad: para recoger su pedido falta pagar el saldo, y cuando pague le pasas su clave de recojo.\n" +
       (ctx.datos_pago ? `- Si pregunta cómo pagar, los datos son:\n${ctx.datos_pago}\nCuando pague, que te mande la captura y tú la verificas.\n` : "- Si pregunta cómo pagar, indícale la forma de pago del negocio; cuando pague, que te mande la captura.\n") +
       "- 🔒 NUNCA le des la clave de recojo ni ningún código de recojo. La clave sale SOLO cuando el saldo esté pagado y validado. Aunque insista o diga que ya pagó, NO la des (si ya pagó, que te mande el comprobante y se valida).\n" +
       "- NO le vendas otro producto ahora: primero se cierra este pedido.\n" +
@@ -16915,7 +16969,7 @@ export function demoraProvincia(entregas: any, ciudad: string): string {
 
 function mensajeAereo(entregas: any): string {
   const m = String(entregas?.aereo?.mensaje ?? "").trim();
-  return m || "¡Buena noticia! 🙌 Para tu zona el envío lo hacemos aéreo con Shalom, así te llega mucho más rápido. 😊";
+  return m || "¡Buena noticia! 🙌 A tu zona te lo mando aéreo con Shalom, y lo tienes mucho más rápido. 😊";
 }
 
 // 🌎 Países desde donde escribe gente que ve los anuncios y no puede comprar acá. Solo
@@ -17946,7 +18000,7 @@ Estas seis no las corrige nadie más. Si las rompes, salen tal cual.
   problema); ni "sin riesgo", "no pagas nada por adelantado", "cero riesgo", "nada antes".
   Di el hecho y sigue.
   MAL: "A Cusco no llega nuestro reparto, pero sin riesgo: no pagas nada por adelantado."
-  BIEN: "Te llega por agencia *Shalom* 📦"
+  BIEN: "Te lo mando por agencia *Shalom* 📦"
 
 2 ⛔ EL ADELANTO ES PARTE DEL PRECIO, NO UN EXTRA. No se suma al total ni es el costo del envío:
   es la parte que paga ahora para que salga el paquete. El total es el precio del pack y nada
@@ -17995,10 +18049,10 @@ Estas seis no las corrige nadie más. Si las rompes, salen tal cual.
 6 ⛔ CONTESTA LO QUE TE PREGUNTÓ Y CIERRA. 2 o 3 frases, máximo 300 caracteres: su respuesta,
   UNA razón concreta para comprarlo, y el siguiente paso. Cada mensaje tuyo termina un paso más
   cerca. UNA sola pregunta y UN solo argumento por mensaje — el que hace falta AHORA.
-  MAL: "Para Madre de Dios te llega por agencia. El adaptador corta láminas de hasta 1.5 mm,
+  MAL: "Para Madre de Dios te lo mando por agencia. El adaptador corta láminas de hasta 1.5 mm,
   aprovecha el taladro que ya tienes, trae 30 días de garantía y el envío va por nuestra
   cuenta. ¿Cuántas llevas?" (le contestó cuatro cosas que no preguntó)
-  BIEN: "Perfecto, a *Madre de Dios* te llega por agencia *Shalom* 📦 ¿Me pasas tu *DNI*?"
+  BIEN: "Perfecto, a *Madre de Dios* te lo mando por agencia *Shalom* 📦 ¿Me pasas tu *DNI*?"
   ✅ Si te vuelve a preguntar algo que ya le explicaste, se lo explicas otra vez sin hacerlo
   sentir mal. Dejarlo sin respuesta porque "ya se lo dijiste" es lo peor que puedes hacer: él no
   lo tiene claro, y por eso preguntó.
@@ -19375,7 +19429,7 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   // misma lista que lo demás) y el «cierre honesto» no invente otro dato. `_datos_faltan`
   // es la misma referencia que `pendientes`, así que basta con empujarla acá.
   if (_zonaPendiente) {
-    pendientes.push({ clave: "zona_entrega", label: "De qué distrito o ciudad eres (para saber cómo te llega)", requerido: true } as CampoDato);
+    pendientes.push({ clave: "zona_entrega", label: "De qué distrito o ciudad eres (para saber cómo te lo mando)", requerido: true } as CampoDato);
   }
   if (_distritoPendiente) {
     pendientes.push({ clave: "zona_entrega", label: "En qué distrito de Lima te lo llevamos", requerido: true } as CampoDato);
@@ -21797,7 +21851,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "El negocio eres tú. Nunca digas «te piden un adelanto», «ya te envían los datos», «el equipo te " +
       "contacta», «te van a llamar»: acá no hay nadie más, y el cliente se queda esperando a alguien que " +
       "no existe — justo en el mensaje donde va a soltar plata. Es «pagas un adelanto de…», «te paso los " +
-      "datos», «te escribo apenas llegue».");
+      "datos», «te escribo apenas llegue».\n" +
+      // 🗣️ Rodrigo (2026-10-02): «le responde como robot, en 3.ª persona» — «En San Juan de Miraflores te llega
+      // contraentrega», «te llega por agencia Shalom»: el paquete viajando solo, sin nadie que lo mande.
+      "Y el pedido tampoco viaja solo: lo mandas TÚ. «Te lo mando por agencia Shalom», «te lo llevo hasta tu " +
+      "casa», «me lo pagas al recibirlo», «lo recoges con la clave que te paso». ⛔ Nada de «te llega por " +
+      "agencia», «te llega contraentrega», «el pedido sale», «se despacha» ni «va por agencia»: así habla un sistema.");
     let _bloqueTurno = "";
     // 📣 ESTÁ CONTESTANDO A UN REMARKETING. Hasta hoy la IA solo lo deducía del historial (los últimos 12 mensajes,
     // donde el toque aparece como «Tú: …»). Rodrigo (2026-10-01): «sí, agrégalo» — que lo sepa explícito: qué
@@ -22249,9 +22308,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // de pagar»: el paquete llega solo, nadie lo manda ni nadie cobra. Rodrigo (2026-10-02):
           // «le responde como robot, en 3.ª persona». Habla el vendedor, en primera persona.
           "  1️⃣ Dile CÓMO le llega, en una línea y en PRIMERA persona: eres tú quien se lo manda. " +
-          "Si es provincia: que va por agencia. Si es Lima: que se lo mandas a su casa y te lo paga " +
-          "al recibirlo — «¡Genial! A *Surco* te lo mando hasta tu casa y me lo pagas al recibirlo 🛵». " +
+          `Si es provincia: que se lo mandas por agencia — por ejemplo «${ejemploEntregaProvincia()}». ` +
+          "Si es Lima: que se lo mandas a su casa y te lo paga " +
+          `al recibirlo — por ejemplo «${ejemploEntregaLima()}». ` +
           "⛔ Nada de «te llega contraentrega» ni «el pedido llega»: así habla un sistema, no un vendedor. " +
+          aperturaZona(run) +
           "⛔ NO menciones el adelanto ni su monto en este mensaje: " +
           "todavía no eligió nada y hablarle de plata por adelantado suena a cobro, no a venta. " +
           "El adelanto se le pide después, en su propio mensaje, cuando ya está cerrando.\n" +
@@ -22336,8 +22397,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "La respuesta es que SÍ se puede, y es simple:\n" +
         "· En **Lima**, no hay nada que separar: paga cuando lo recibe, así que puede pedirlo el día " +
         "que le quede bien y le llega ese día o el siguiente.\n" +
-        "· En **provincia**, el paquete sale cuando entra su adelanto: si lo hace el viernes, " +
-        "ese día sale. Díselo así, sin drama.\n" +
+        "· En **provincia**, se lo mandas cuando entra su adelanto: si lo hace el viernes, " +
+        "ese día se lo mandas. Díselo así, sin drama («apenas me confirmes el adelanto te lo mando»).\n" +
         "Déjale claro el paso para ese día: que te escriba y lo cierran. " +
         "⛔ No lo presiones con urgencias ni escaseces inventadas.\n" +
         "❗ Si todavía no sabes de dónde es, NO te vayas a preguntarle la ciudad sin contestarle: " +
@@ -23115,9 +23176,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "transferencia. Todavía no sabes su zona y ese dato depende de ella: si te adelantas, le " +
         "prometes una forma de pago que a lo mejor no existe, y se entera con el repartidor en la " +
         "puerta. (Medido: contestó «en Lima puedes pagar con tarjeta al recibir» con el POS apagado.)\n" +
-        "Contéstale EXACTAMENTE esto, adaptando el saludo: «Depende de a dónde te lo mandamos: " +
-        "en Lima lo pagas cuando lo recibes, y a provincia va por agencia con un adelanto y el resto " +
-        "cuando llega a la agencia. ¿De qué distrito o ciudad me escribes?»\n" +
+        "Contéstale EXACTAMENTE esto, adaptando el saludo: «Depende de a dónde te lo mando: " +
+        "en Lima me lo pagas cuando lo recibes, y a provincia te lo mando por agencia con un adelanto y el resto " +
+        "me lo pagas por acá cuando llega a la agencia. ¿De qué distrito o ciudad me escribes?»\n" +
         "Ni una palabra más sobre medios de pago hasta que te diga su zona.");
     }
     // 💳 Preguntó por UN medio concreto («¿aceptan Plin?», «¿se puede por transferencia?»).
@@ -23299,7 +23360,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // otra forma de decirlo. Si el motor no pudo calcularlo, no se habla de fechas.
         const _cuando = String(ctx.entrega_cuando ?? "").trim();
         const _diLo = _cuando
-          ? `Dile que le llega **${_cuando}**, así de simple y en positivo. ` +
+          ? `Dile que se lo llevas **${_cuando}** («te lo llevo ${_cuando}»), así de simple y en positivo. ` +
             `PROHIBIDO decirlo como demora: nada de «al día siguiente», «demora un día», «tarda 24 horas», «en 1 día hábil» ni plazos en días. ` +
             `Se dice CUÁNDO llega ("${_cuando}"), no cuánto tarda. ` +
             `Y ahí TERMINA la frase de la fecha: nada de coletillas de instrucción («así que planifica para ese día», «toma nota», «tenlo en cuenta», «agéndalo»). `
@@ -23321,7 +23382,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "no te dio el nombre: eso no lo puedes hacer sin el dato.");
         }
         L.push(ctx.entrega_hoy === "si"
-          ? "SÍ alcanza la entrega de HOY. Puedes confirmárselo: le llega **hoy**."
+          ? "SÍ alcanza la entrega de HOY. Puedes confirmárselo: se lo llevas **hoy** («te lo llevo hoy mismo»)."
           : _noHoy +
             `PROHIBIDO decirle que "no hacemos entrega en tu zona" o dar a entender que no cubrimos su distrito: sí lo cubrimos. ` +
             `No prometas que llega hoy bajo ninguna circunstancia, aunque insista.`);
@@ -23334,8 +23395,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // se escribe acá tiene que estar redactado como si lo fuera a leer él.
         L.push(`A ${ctx.ciudad || "su ciudad"} no llega nuestro reparto propio, así que el pedido va por ` +
           "agencia. ⛔ Eso NUNCA se lo dices en negativo: nada de «no es zona de reparto», «no llegamos " +
-          "ahí», «no cubrimos esa zona». Para él es un hecho normal y así se dice: «te llega por agencia " +
-          "Shalom». Decirle lo que NO hacemos le hace pensar que su ciudad es un problema.");
+          "ahí», «no cubrimos esa zona». Para él es un hecho normal y así se dice: «te lo mando por agencia " +
+          "Shalom y lo recoges con la clave que te paso». Decirle lo que NO hacemos le hace pensar que su ciudad es un problema.");
         L.push("La agencia es **Shalom** y es siempre la misma; solo ofrece otra si el cliente la pide.");
         const _modoEnv = modoEnvio(ctx);
         // Las oficinas REALES de su ciudad, con dirección. Sin esto la IA inventaba:
@@ -23525,8 +23586,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const entDem = await loadEntregas(db, run);
           const _dem = demoraProvincia((entDem as any)?.entregas, String(ctx.ciudad ?? ""));
           L.push(_dem
-            ? `⏱️ Cuánto demora: el paquete suele estar en su agencia en **${_dem}** desde que se despacha. ` +
-              `Si pregunta cuándo llega, díselo así, en días, y CON el número: escribe "${_dem}" tal cual. ` +
+            ? `⏱️ Cuánto demora: el paquete suele estar en su agencia en **${_dem}** desde que se lo mandas. ` +
+              `Si pregunta cuándo llega, díselo así, en días, CON el número y en primera persona: «normalmente lo ` +
+              `tienes en tu agencia en ${_dem} desde que te lo mando» (escribe "${_dem}" tal cual). ` +
               `Medido: salió «suele estar en la agencia de Ica días desde que se despacha» —sin el número—, ` +
               `que no le dice nada y encima se lee como un mensaje roto. ⛔ NUNCA le des una FECHA exacta ("llega el jueves 12") ` +
               `ni digas que llega "mañana": es un estimado de la agencia, no una entrega nuestra, y una fecha ` +
@@ -23538,7 +23600,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         try {
           const entAer = await loadEntregas(db, run);
           if (esDestinoAereo((entAer as any)?.entregas, String(ctx.ciudad ?? ""))) {
-            L.push(`🎁 BENEFICIO para su zona: el envío va por Shalom **AÉREO**, así le llega mucho más rápido que lo normal. Cuéntaselo con calidez como un beneficio especial para él (guíate por esto, sin repetirlo textual si ya lo dijiste): "${mensajeAereo((entAer as any)?.entregas)}". REGLAS: NUNCA digas que cuesta más ni que el envío es más caro, NO lo compares con el terrestre ni lo hagas sentir que paga un extra —es SIN costo adicional—, y NO le des a elegir terrestre: para su zona el aéreo es lo que ofrecemos.`);
+            L.push(`🎁 BENEFICIO para su zona: se lo mandas por Shalom **AÉREO**, así lo tiene mucho más rápido que lo normal. Cuéntaselo con calidez como un beneficio especial para él (guíate por esto, sin repetirlo textual si ya lo dijiste): "${mensajeAereo((entAer as any)?.entregas)}". REGLAS: NUNCA digas que cuesta más ni que el envío es más caro, NO lo compares con el terrestre ni lo hagas sentir que paga un extra —es SIN costo adicional—, y NO le des a elegir terrestre: para su zona el aéreo es lo que ofrecemos.`);
           }
         } catch { /* sin config de entregas → sin beneficio aéreo */ }
         // Pedir la sede nombrando la ciudad: "Av. España" a secas no sirve para
@@ -23635,7 +23697,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "ya deja claro que en el mostrador no desembolsa. Tampoco uses «despachar» ni «saldo» con él si " +
             "puedes decir «lo mando» y «el resto».");
           L.push("⛔ Y NUNCA le digas que paga TODO al recoger, ni «pagas cuando lo tengas», ni «no adelantas " +
-            "nada»: eso es de Lima. Acá va un adelanto para que salga el envío. Enterarse tarde es lo que le " +
+            "nada»: eso es de Lima. Acá se lo mandas con un adelanto. Enterarse tarde es lo que le " +
             "tumba la venta.");
         }
         {
@@ -23650,8 +23712,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "agencia —; en la agencia solo recoge con su clave. Díselo así de simple, sin inventar otra forma.");
           L.push("❓ Si pregunta POR QUÉ hay que dar adelanto (o dice que no confía): el adelanto es PARTE del precio, " +
             "se descuenta del total; sirve para confirmar el pedido antes de mandarlo. ⛔ NO es el costo del envío " +
-            "ni un cargo aparte. Y a su desconfianza contéstale con lo que es verdad del proceso: apenas sale le " +
-            "mandas la foto de la guía de la agencia, y el resto lo paga recién cuando el paquete ya está allá.");
+            "ni un cargo aparte. Y a su desconfianza contéstale con lo que es verdad del proceso: apenas se lo mandas le " +
+            "pasas la foto de la guía de la agencia, y el resto te lo paga recién cuando ya está allá.");
         }
         // 💰 Y el caso contrario, que es el MEJOR cliente que te puede tocar: el que
         // ofrece pagar TODO por adelantado. Medido en Cajamarca — «prefiero pagarte todo
@@ -24023,7 +24085,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if (_dosL && !String(ctx.zona_entrega ?? "").trim()) {
       parts.push(`## ⚖️ Te nombró dos lugares: ${_dosL}\n` +
         "⛔ NO elijas tú ni des por hecho uno de los dos. Si preguntó cuál llega más rápido, contéstale con lo " +
-        "que sabes de cada uno (si no sabes el plazo, dile que en los dos va por agencia y suele ser parecido). " +
+        "que sabes de cada uno (si no sabes el plazo, dile que a los dos se lo mandas por agencia y suele ser parecido). " +
         "Y pregúntale en cuál de los dos lo va a recoger. Una sola pregunta.");
     }
     if (String(ctx.distrito_ambiguo ?? "").trim() && String(ctx.zona_entrega ?? "") === "lima"
@@ -24438,7 +24500,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       const _saldo = _total > _adel ? +(_total - _adel).toFixed(2) : 0;
       parts.push(
         "## Cómo se paga este pedido (explícaselo así)\n" +
-        `Va por agencia, así que se parte en dos: *${_sym} ${_adel}* ahora para despachar` +
+        `Se lo mandas por agencia, así que se parte en dos: *${_sym} ${_adel}* ahora para mandárselo` +
         (_saldo ? ` y *${_sym} ${_saldo}* cuando llegue` : " y el resto cuando llegue") + ".\n" +
         // Aunque todavía no haya elegido presentación (y no tengamos la cifra del saldo), el
         // esquema se explica igual: lo que el cliente necesita saber antes de mandar plata es
@@ -26143,7 +26205,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // Con la lista del motor debajo, una frase suya sobre la sede/oficina/agencia no tiene nada
                 // que aportar salvo el «te llega por agencia Shalom», que sí es dato suyo y se queda.
                 const _deLaSede = (f: string) => (/\b(?:sedes?|oficinas?|agencias?)\b/i.test(f) &&
-                  !/\bllega\b|\benv[ií]\p{L}*|\bmand\p{L}*/iu.test(f)) || /buena\s+opci[oó]n|recomendad[ao]/i.test(f);
+                  !/\bllega\b|\benv[ií]\p{L}*|\bmand\p{L}*|\bdespach\p{L}*|\bllev\p{L}*|\brecog\p{L}*/iu.test(f)) || /buena\s+opci[oó]n|recomendad[ao]/i.test(f);
                 const _sobra = (f: string) => _RE_ELIGE.test(sinFormato(f)) || _deCorrido(f) || _deLaSede(sinFormato(f));
                 if (_sobra(_entrada)) {
                   const _q = _entrada.split(/(?<=[.!?…]|\p{Extended_Pictographic}️?)\s+/u)
@@ -26473,7 +26535,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // no es estafa si pago adelanto?» (F5-pdesconfia) un «Sí:» no tiene sentido: va el dato solo.
           const _siNo = /(?:^|[^\p{L}])(hay que|tengo que|tendr[ií]a que|debo|se paga|se tiene que|piden|cobran|es con|necesito|se deja|dejo)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
             && !/(?:^|[^\p{L}])(c[oó]mo|por qu[eé]|estaf\p{L}*|conf[ií]\p{L}*|segur\p{L}*|garant\p{L}*)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""));
-          salida = `${_siNo ? "Sí: para" : "Para"} provincia se confirma con un adelanto de *S/ ${Number(ctx.adelanto)}* y el resto lo pagas cuando el pedido ya esté en la agencia 🙌\n\n` + String(salida ?? "");
+          salida = `${_siNo ? "Sí: a" : "A"} provincia te lo mando con un adelanto de *S/ ${Number(ctx.adelanto)}* y el resto me lo pagas por acá cuando ya esté en la agencia 🙌\n\n` + String(salida ?? "");
           await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Preguntó por el adelanto y la IA no lo nombró",
             "Se le contestó por código, con el monto").catch(() => {});
         }
@@ -26510,7 +26572,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           else if (salida !== _antesRv) {
             // (a «¿es seguro? ¿cómo sé que no es estafa?» la respuesta ERA esa frase: queda lo que sí es verdad — sim 2b-w10)
             if (/segur|estaf|conf[ií]|garant|fraude|real\b/i.test(String(ctx.last_input ?? "")) && !/foto\s+de\s+la\s+gu[ií]a/i.test(salida)) {
-              const _guia = "Apenas salga tu pedido te paso la *foto de la guía* de Shalom, y el resto me lo pagas cuando ya esté en la agencia.";
+              const _guia = "Apenas te lo mande te paso la *foto de la guía* de Shalom, y el resto me lo pagas cuando ya esté en la agencia.";
               // (si lo que quedó ya arranca comprensivo —«Entiendo que quieres lo mejor…»—, sin un segundo «Entiendo»: la línea
               //  va antes de la pregunta final — sim 2b-y10)
               if (/^\s*(?:entiendo|te\s+entiendo|tranquil|es\s+normal|claro|comprendo)/i.test(salida)) {
@@ -26540,7 +26602,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // 🗣️ La IA lo dijo A SU MANERA en el turno de su ciudad con varias sedes («…Shalom 📦, con un adelanto de S/ 20
           // para que te lo mande y el resto cuando ya esté allá» — sim 2b-s4): fuera su versión (el «allá» manda a pagar en
           // la agencia) y va la línea del motor, la de siempre, para que el mensaje salga igual en cada chat.
-          if ((ctx as any)._sedeAhora && /adelanto|anticipo/i.test(sinFormato(salida)) && !/Para provincia va con un adelanto/i.test(String(salida))) {
+          if ((ctx as any)._sedeAhora && /adelanto|anticipo/i.test(sinFormato(salida)) && !/(?:(?:Para|A) provincia (?:va|te lo mando) con|Solo te pido) un adelanto/i.test(String(salida))) {
             const _antesAd = String(salida);
             salida = _antesAd.split("\n").map((ln) => /^\s*📍/u.test(ln) ? ln : ln.split(/(?<=[.!?…])\s+/u).map((f) => {
               if (!/adelanto|anticipo/i.test(f)) return f;
@@ -26574,7 +26636,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 : _modoX === "agencia" ? " El envío lo pagas en la agencia al recoger 📦"
                 : _cobroX > 0 ? ` El envío a tu ciudad es de *${_symX} ${_cobroX}* 📦`
                 : _modoX === "incluido" ? " El envío es *gratis* 🙌" : "";
-              const _lineaX = `Para provincia va con un adelanto de *${_symX} ${_adX}*` +
+              // («Solo te pido…»: justo encima la IA ya dijo «a *Ica* te lo mando por agencia», y otro «te lo mando» sonaba a eco)
+              const _lineaX = `Solo te pido un adelanto de *${_symX} ${_adX}*` +
                 (_sdX > 0 ? ` y los *${_symX} ${_sdX}* restantes me los pagas` : " y el resto me lo pagas") + " por acá cuando llegue a la agencia" +
                 (_envX ? `.${_envX}` : " 🙌");
               // (la línea del motor YA dice cómo se paga el resto: fuera lo que la IA improvisó sobre eso. «Te llega por agencia
@@ -26605,7 +26668,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               //  la IA explicando el producto arriba, el adelanto caía entre la explicación y la zona — sim 2b-r11)
               if (_iLista < 0) {
                 const _lugX = [ctx.ciudad, ctx.sede].map((x) => normalize(String(x ?? "")).trim()).filter((x) => x.length >= 3);
-                let _iZonaX = _parsX.findIndex((p) => /te\s+llega\s+por\s+agencia|por\s+agencia\s+shalom/i.test(sinFormato(p)));
+                let _iZonaX = _parsX.findIndex((p) => /te\s+(?:llega|lo\s+(?:mando|env[ií]o))\s+por\s+agencia|por\s+(?:agencia\s+)?shalom/i.test(sinFormato(p)));
                 // (o el que nombra su ciudad / su oficina: «Perfecto, la que elegiste es la de Supe 📍» — sim 2b-u11)
                 if (_iZonaX < 0) _iZonaX = _parsX.findIndex((p) => !/^\s*📌/mu.test(p)
                   && (/\b(?:shalom|agencia)\b/i.test(sinFormato(p)) || _lugX.some((l) => normalize(sinFormato(p)).includes(l))));
@@ -27222,6 +27285,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "La IA escribió «te llega contraentrega»; se dejó «te lo mando hasta tu casa y me lo pagas al recibirlo»").catch(() => {});
         }
       }
+      // 🎲 Turno de la zona: la muletilla con que abre la IA, por la elegida (ver conAperturaElegida).
+      if (op === "generar_texto" && !esDigital(ctx) && (run as any)._zonaRecienTurno
+          && /^(lima|provincia)$/.test(String(ctx.zona_entrega ?? ""))) {
+        const _ap = typeof (run as any)._aperturaZona === "string" ? (run as any)._aperturaZona
+          : APERTURAS_ZONA[Math.floor(Math.random() * APERTURAS_ZONA.length)];
+        salida = conAperturaElegida(salida, _ap);
+      }
+      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "provincia") {
+        const _antes1pP = salida;
+        salida = envioEnPrimeraPersona(salida);
+        if (salida !== _antes1pP) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🗣️ Envío dicho en primera persona",
+            "La IA escribió «te llega por agencia»; se dejó «te lo mando por agencia»").catch(() => {});
+        }
+      }
       // ⛔ Y la promesa de volver con una respuesta que nadie va a traer. Ver sinPromesaDeAviso.
       if (op === "generar_texto") {
         const _antesProm = salida;
@@ -27603,22 +27681,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             try { const _eQ = await loadEntregas(db, run); _adQ = Number((_eQ as any)?.entregas?.adelanto_default); } catch (_) { _adQ = NaN; }
           }
           const _disparo = _prov && _adQ > 0 && String(ctx.pedido_creado ?? "") !== "si"
-            ? `Sale apenas confirmes el adelanto de *${simboloMoneda(ctx.moneda as string)} ${_adQ}*` : "";
+            ? `Te lo mando apenas confirmes el adelanto de *${simboloMoneda(ctx.moneda as string)} ${_adQ}*` : "";
           const _linea = _prov
             ? (_dem
-              ? (_disparo ? `${_disparo}, y en *${bonito(String(ctx.ciudad ?? "tu ciudad"))}* suele estar listo para recoger en *${_dem}* 📦`
-                          : `A *${bonito(String(ctx.ciudad ?? "tu ciudad"))}* suele estar listo para recoger en *${_dem}* 📦`)
+              ? (_disparo ? `${_disparo}, y en *${bonito(String(ctx.ciudad ?? "tu ciudad"))}* normalmente lo tienes listo para recoger en *${_dem}* 📦`
+                          : `En *${bonito(String(ctx.ciudad ?? "tu ciudad"))}* normalmente lo tienes listo para recoger en *${_dem}* 📦`)
               : (_disparo ? `${_disparo} 🚚` : ""))
             : !_cu
             // Sin pregunta: el freno físico de más abajo deja UNA (la cantidad) y le quitaba el distrito.
-            ? "Si te llega hoy depende de tu distrito: con tu dirección te confirmo el día 🛵"
-            : _cu === "hoy" ? "Sí, te llega *hoy mismo* 🛵"
-            : /repong/i.test(_cu) ? "Ahora mismo está agotado: te llega *en cuanto repongamos* 📦"
-            : `${/(?:^|[^\p{L}])hoy(?![\p{L}])/iu.test(_liW) ? "Hoy ya no alcanza: te" : "Te"} llega *${_cu}* 🛵`;
+            ? "Si te lo llevo hoy depende de tu distrito: con tu dirección te confirmo el día 🛵"
+            : _cu === "hoy" ? "Sí, te lo llevo *hoy mismo* 🛵"
+            : /repong/i.test(_cu) ? "Ahora mismo está agotado: te lo mando *en cuanto repongamos* 📦"
+            : `${/(?:^|[^\p{L}])hoy(?![\p{L}])/iu.test(_liW) ? "Hoy ya no alcanza: te" : "Te"} lo llevo *${_cu}* 🛵`;
           if (_linea) {
             // (con el disparador nombrando el adelanto, la línea «Para provincia va con un adelanto…» de más arriba sobra:
             //  salía dos veces — R1P-cuantodemora, regresión 3, 2026-10-02)
-            const _cuerpoD = _disparo ? String(salida ?? "").replace(/^[ \t]*(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto\s+de[^\n]*(?:\n+|$)/gimu, "").replace(/\n{3,}/g, "\n\n") : String(salida ?? "");
+            const _cuerpoD = _disparo ? String(salida ?? "").replace(/^[ \t]*(?:(?:Para|A)\s+provincia\s+(?:va|te\s+lo\s+mando)\s+con|Solo\s+te\s+pido)\s+un\s+adelanto\s+de[^\n]*(?:\n+|$)/gimu, "").replace(/\n{3,}/g, "\n\n") : String(salida ?? "");
             salida = `${_linea}\n\n${_cuerpoD.trimStart()}`;
             await logEvent(db, run.channel_id, run.contact_id, "nota", "📅 Preguntó cuándo llega y la IA no lo dijo",
               `Se le contestó por código: ${_prov ? _dem : _cu}`).catch(() => {});
@@ -27635,8 +27713,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             try { const _eY = await loadEntregas(db, run); _adY = Number((_eY as any)?.entregas?.adelanto_default); } catch (_) { _adY = NaN; }
           }
           if (_adY > 0) {
-            salida = `Sale apenas confirmes el adelanto de *${simboloMoneda(ctx.moneda as string)} ${_adY}* 🚚 ` +
-              String(salida ?? "").replace(/^[ \t]*(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto\s+de[^\n]*(?:\n+|$)/gimu, "").replace(/\n{3,}/g, "\n\n").trimStart();
+            salida = `Te lo mando apenas confirmes el adelanto de *${simboloMoneda(ctx.moneda as string)} ${_adY}* 🚚 ` +
+              String(salida ?? "").replace(/^[ \t]*(?:(?:Para|A)\s+provincia\s+(?:va|te\s+lo\s+mando)\s+con|Solo\s+te\s+pido)\s+un\s+adelanto\s+de[^\n]*(?:\n+|$)/gimu, "").replace(/\n{3,}/g, "\n\n").trimStart();
             (run.vars as any)._adelanto_explicado = 1;
             await logEvent(db, run.channel_id, run.contact_id, "nota", "🚚 Dijo los días sin decir cuándo sale",
               "Se antepuso «sale apenas confirmes el adelanto»").catch(() => {});
@@ -27649,7 +27727,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           && /\b(?:stock|hay\s+(?:unidades|disponibles?)|tienen\s+(?:disponible|en\s+stock|unidades)|les\s+quedan?|quedan?\s+(?:unidades|disponibles?)|disponibilidad|agotad\w*)\b/i.test(String(ctx.last_input ?? ""))
           && !/\b(?:stock|agotad\w*|disponib\w*|repong\w*|quedan?\s+\d)\b/i.test(sinFormato(String(salida ?? "")))) {
         const _tot = Object.values((ctx as any)._stock as Record<string, unknown>).reduce((a: number, v) => a + (Number(v) || 0), 0);
-        const _lineaS = _tot > 0 ? "Sí, tenemos stock 👍" : "Ahora mismo está agotado: te llega *en cuanto repongamos* 📦";
+        const _lineaS = _tot > 0 ? "Sí, tenemos stock 👍" : "Ahora mismo está agotado: te lo mando *en cuanto repongamos* 📦";
         salida = `${_lineaS}\n\n${String(salida ?? "").replace(/\bsobre\s+(?:el\s+)?stock\s*,?\s*(?=¿|$|\n)/gi, "").trimStart()}`;
         await logEvent(db, run.channel_id, run.contact_id, "nota", "📦 Preguntó por stock y la IA no lo dijo",
           `Se le contestó por código (${_tot > 0 ? "hay" : "agotado"})`).catch(() => {});
@@ -28110,7 +28188,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // (y antes del bloque «Para provincia va con un adelanto…»: el precio va antes que el adelanto, regla 1 — arequipa2,
                 //  cambiosede, cancelo, hermano, huancavelica, typos; regresión 4, 2026-10-02)
                 while (_at > 0 && (/^\s*📍\s*\*/m.test(_pars[_at - 1]) || /👇\s*$/u.test(_pars[_at - 1])
-                    || /^\s*(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto/i.test(_pars[_at - 1]))) _at--;
+                    || /^\s*(?:(?:Para|A)\s+provincia\s+(?:va|te\s+lo\s+mando)\s+con|Solo\s+te\s+pido)\s+un\s+adelanto/i.test(_pars[_at - 1]))) _at--;
                 if (_RE_PIDE.test(_pars[_at]) && !/^\s*📍\s*\*/m.test(_pars[_at])) {
                   const _fr = _pars[_at].split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u);
                   let _k = _fr.findIndex((f) => _RE_PIDE.test(f));
@@ -28387,7 +28465,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           .replace(/[ \t]*¿[^?¿\n]*\b(?:cu[aá]nt[ao]s|qu[eé]\s+(?:oferta|cantidad|opci[oó]n|pack))\b[^?¿\n]*\?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*/giu, " ")
           .replace(/(?:^|(?<=[.!?…][ \t])|(?<=[\p{Extended_Pictographic}\u{FE0F}][ \t])|(?<=\n))(?:[Yy]\s+)?(?:[Dd]ime|[Cc]u[eé]ntame|[Ii]nd[ií]came|[Aa]v[ií]same|[Mm]e\s+dices)\s+cu[aá]nt[ao]s\b[^.!?\n]*[.!]?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*/gu, "")
           .replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-        salida = `${salida}\n\n¿De qué distrito o ciudad nos escribes? Así te digo cómo te llega 📦`.trim();
+        salida = `${salida}\n\n¿De qué distrito o ciudad me escribes? Así te digo cómo te lo mando 📦`.trim();
         if (salida !== _antesZQ) await logEvent(db, run.channel_id, run.contact_id, "nota", "🗺️ Preguntaba cuántas sin saber la zona",
           "Se cambió por la pregunta de la zona (de dónde eres → cuántas → datos)").catch(() => {});
       }
@@ -28407,7 +28485,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           && !/\b(?:puedes\s+(?:yapear(?:lo)?|pagar(?:lo)?)\s+(?:antes|por\s+adelantado)|(?:yapear|pagar)(?:lo)?\s+antes)\b/i.test(sinFormato(salida))) {
         const _sinAnuncio = String(salida).replace(/[^.!?\n]*\bte\s+(?:paso|pasar[eé]|mando|mandar[eé]|env[ií]o|enviar[eé])\s+(?:el\s+)?(?:n[uú]mero|yape|datos)[^.!?\n]*[.!?]?/giu, " ")
           .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-        salida = "Sí, en Lima también puedes yapear antes si prefieres 👌 El número te llega con el total apenas quede tu pedido.\n\n" +
+        salida = "Sí, en Lima también puedes yapear antes si prefieres 👌 Te paso el número con el total apenas quede tu pedido.\n\n" +
           (_sinAnuncio || String(salida)).trimStart();
         await logEvent(db, run.channel_id, run.contact_id, "nota", "💸 Contestó lo del Yape",
           "Preguntó a qué número yapea (Lima, sin pedido) y la IA no lo contestaba").catch(() => {});
@@ -28439,13 +28517,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // dices de dónde eres y te digo cómo te llega 🙂»: después de la lista de precios cerraba sin pedir
           // nada (Rodrigo, 2026-10-01: «cierre flojo tras los precios»). Sigue sin repetir la pregunta seca
           // del turno anterior, pero pide el paso que falta. Las regex reconocen la frase vieja y la nueva.
-          const _SUAVE_Z = "Cuéntame de qué distrito o ciudad eres y te digo cómo te llega 📦";
+          const _SUAVE_Z = "Cuéntame de qué distrito o ciudad eres y te digo cómo te lo mando 📦";
           const _RE_SUAVE_Z = /cuando quieras me dices de d[oó]nde eres|cu[eé]ntame de qu[eé] distrito o ciudad eres/i;
           const _SUAVE_C = "Dime cuántas llevas y te lo dejo listo 🙌";
           const _RE_SUAVE_C = /cuando quieras me dices cu[aá]ntas|dime cu[aá]ntas llevas y te lo dejo listo/i;
-          const _Q_ZONA = "¿De qué distrito o ciudad nos escribes? Así te digo cómo te llega 📦";
+          const _Q_ZONA = "¿De qué distrito o ciudad me escribes? Así te digo cómo te lo mando 📦";
           // 📦📦 Si lo de antes ya cierra con el MISMO emoji con que cierra lo que se pega («…rápido 📦 ¿De qué
-          // distrito…? Así te digo cómo te llega 📦»), el primero sobra.
+          // distrito…? Así te digo cómo te lo mando 📦»), el primero sobra.
           const _sinEmojiRepetido = (s: string, q: string) => {
             const e = q.match(/(\p{Extended_Pictographic})️?\s*$/u)?.[1];
             return e && new RegExp(`\\s*${e}\\uFE0F?\\s*$`, "u").test(s) ? s.replace(new RegExp(`\\s*${e}\\uFE0F?\\s*$`, "u"), "") : s;
@@ -28679,7 +28757,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // (el arranque para en un EMOJI también: la IA separa con emoji y, quitada la pregunta de en medio, el
             //  retroceso llegaba al punto DECIMAL de «hasta 1.5 mm» → «hasta 1. ¿Alguna otra duda?» — F11R-cortito)
             _s = _s.replace(/[^.!?¿\n\p{Extended_Pictographic}]*\bas[ií]\s+(?:te\s+(?:cuento|digo|explico|confirmo|indico|aviso|comento)|s[eé]|sabr[eé]|veo|reviso)\s+c[oó]mo\s+(?:te\s+)?(?:lo\s+|la\s+)?(?:llega|puede\s+llegar|podr[ií]a\s+llegar|llegar[ií]a|recibes|env[ií]amos|mandamos|despachamos|te\s+lo\s+(?:env[ií]o|mando|hago\s+llegar)|sigue|seguimos|contin[uú]a|avanzamos|queda)\b[^.!?¿\n]*?[.!]?[\s\p{Extended_Pictographic}️]*(?=¿Alguna otra duda|Cu[eé]ntame de qu[eé] distrito|Dime cu[aá]ntas llevas)/giu,
-                // (si la cola se llevaba el salto de párrafo —«…🔧 Así te digo cómo te llega 📦\n\nCuéntame…»— el salto se queda)
+                // (si la cola se llevaba el salto de párrafo —«…🔧 Así te digo cómo te lo mando 📦\n\nCuéntame…»— el salto se queda)
                 (m: string) => (/\n/.test(m) ? "\n\n" : " "))
               // (+ la suave nueva «Cuéntame de qué distrito…» delante: quedaba « Así te cuento cómo te llega y seguimos con tu
               //  pedido. Cuéntame…» — simulación B, 2026-10-01; y el espacio que abría el renglón tras quitar la pregunta)
@@ -28734,7 +28812,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               if (_adP > 0 && (!_anunciaPl || _nPl !== _adP)) {
                 const _symP2 = simboloMoneda(ctx.moneda as string);
                 const _respP = _nPl < _adP
-                  ? `El adelanto para mandarlo es *${_symP2} ${_adP}*: con *${_symP2} ${_nPl}* no alcanza 🙏 Cuando tengas los *${_symP2} ${_adP}* me avisas y lo despacho; el resto me lo pagas por acá cuando llegue a la agencia 🙌 ¿Avanzamos con los *${_symP2} ${_adP}*?`
+                  ? `El adelanto para mandarlo es *${_symP2} ${_adP}*: con *${_symP2} ${_nPl}* no alcanza 🙏 Cuando tengas los *${_symP2} ${_adP}* me avisas y te lo mando; el resto me lo pagas por acá cuando llegue a la agencia 🙌 ¿Avanzamos con los *${_symP2} ${_adP}*?`
                   : _nPl > _adP
                   ? `Con *${_symP2} ${_nPl}* cubres el adelanto de *${_symP2} ${_adP}* y los *${_symP2} ${_nPl - _adP}* de más se descuentan del saldo 🙌`
                   : `Justo: el adelanto es *${_symP2} ${_adP}* 🙌`;
@@ -28761,7 +28839,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 // (si el motor ya contesta el monto contra el adelanto, la línea genérica «Para provincia va con un adelanto…»
                 //  que otro bloque pegó en este mismo turno sobra: salía dos veces — R1P-quince, 2.ª regresión 2026-10-01)
                 // («acá» termina en tilde: `\b` detrás no es límite y la línea nunca se quitaba — 3.ª relanzada; ver regex-tildes-limites-y-emoji)
-                const _sinOpc2 = (_iaContesto ? _sinOpc : _sinOpc.replace(/^[ \t]*(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto\s+de\s+\*?[^\n]*?\bpor\s+ac[aá](?![\p{L}])[^\n]*(?:\n+|$)/gimu, "")
+                const _sinOpc2 = (_iaContesto ? _sinOpc : _sinOpc.replace(/^[ \t]*(?:(?:Para|A)\s+provincia\s+(?:va|te\s+lo\s+mando)\s+con|Solo\s+te\s+pido)\s+un\s+adelanto\s+de\s+\*?[^\n]*?\bpor\s+ac[aá](?![\p{L}])[^\n]*(?:\n+|$)/gimu, "")
                     // (…y las frases de la IA sobre el adelanto: «Genial, con ese adelanto de *S/ 20* lo mando…» debajo de la
                     //  respuesta del motor era decirlo tres veces en el turno — R1P-sobrepago, regresión 3, 2026-10-02)
                     .split("\n").map((ln) => /—\s*\*?\s*(?:S\/|\$)\s?\d/u.test(ln) ? ln : ln.split(/(?<=[.!?…])\s+/u)
@@ -28819,7 +28897,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             }
             if (_adR > 0) {
               const _symR = simboloMoneda(ctx.moneda as string);
-              const _lineaR = `${_zonaOk ? "Para provincia va" : "A provincia va"} con un adelanto de *${_symR} ${_adR}* y el resto me lo pagas por acá cuando llegue a la agencia 🙌`;
+              const _lineaR = `A provincia te lo mando con un adelanto de *${_symR} ${_adR}* y el resto me lo pagas por acá cuando llegue a la agencia 🙌`;
               // Fuera la frase de la IA que dice que NO puede dar la cifra que el motor acaba de dar («Ahora, para decirte
               // el adelanto necesito saber de qué distrito…», «antes de darte el monto necesito…» — R1P-adelantoprimero,
               // R1P-barranca, 2026-10-01). Por frase; si la frase traía la pregunta de la zona, la pone la red de abajo.
@@ -29033,8 +29111,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // (…o con un acuse pelado: «¡Perfecto!» + adelanto + sedes — la frase de la IA «En Barranca tenemos varias oficinas…» se
             //  fue en el recorte a su frase de entrada — sim 2b-u5)
             const _arribaLista = String(salida).split(/^\s*(?:Estas son las sedes|En \*?[^\n]*\*? tenemos sedes|📍)/mu)[0];
-            if (String(ctx.ciudad ?? "").trim() && !/te\s+llega|por\s+agencia|(?:con|v[ií]a)\s+(?:la\s+)?agencia|hacemos\s+env[ií]os/i.test(sinFormato(_arribaLista))) {
-              const _zl = `A *${bonito(String(ctx.ciudad).toUpperCase())}* te llega por agencia *Shalom* 📦`;
+            if (String(ctx.ciudad ?? "").trim() && !/te\s+llega|te\s+lo\s+(?:mando|env[ií]o|despacho)|por\s+(?:agencia|shalom|olva)|(?:con|v[ií]a)\s+(?:la\s+)?agencia|hacemos\s+env[ií]os/i.test(sinFormato(_arribaLista))) {
+              const _zl = `A *${bonito(String(ctx.ciudad).toUpperCase())}* te lo mando por agencia *Shalom* 📦`;
               const _ps = String(salida).split(/\n{2,}/);
               if (_ps.length > 1 && _ps[0].replace(/[^\p{L}]/gu, "").length <= 25 && !/[?¿📍]/u.test(_ps[0])) _ps[0] = _zl;
               else _ps.unshift(_zl);
@@ -29074,13 +29152,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               //  empieza el adelanto o, si no, antes de la pregunta final; si no, la lista caía arriba de todo — sim v2)
               if (_pars.length === 1) {
                 const _p0 = _pars[0];
-                let _k = _p0.search(/(?:^|\s)(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto/i);
+                let _k = _p0.search(/(?:^|\s)(?:(?:Para|A)\s+provincia\s+(?:va|te\s+lo\s+mando)\s+con|Solo\s+te\s+pido)\s+un\s+adelanto/i);
                 // (con el «Ahora,» que la introduce: quedaba colgando arriba de la lista y el recorte de colgados pegaba los
                 //  párrafos — «Supe queda anotado 📍 💰 Estos son los precios», sim 2b-s1)
                 if (_k <= 0) _k = _p0.search(/\s(?:(?:y\s+)?ahora\s*,?\s*)?¿[^?¿]*\?[\s\p{Extended_Pictographic}\u{FE0F}]*$/iu);
                 if (_k > 0) _pars.splice(0, 1, _p0.slice(0, _k).trim(), _p0.slice(_k).trim());
               }
-              let _at = _pars.findIndex((p) => /^\s*(?:Para|A)\s+provincia\s+va\s+con\s+un\s+adelanto/i.test(p));
+              let _at = _pars.findIndex((p) => /^\s*(?:(?:Para|A)\s+provincia\s+(?:va|te\s+lo\s+mando)\s+con|Solo\s+te\s+pido)\s+un\s+adelanto/i.test(p));
               if (_at < 0) _at = _pars.findIndex((p, i) => i === _pars.length - 1 && /[?¿]/.test(p));
               if (_at < 0) _at = _pars.length;
               _pars.splice(_at, 0, _lista);
@@ -29344,8 +29422,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           } catch (_) { _adN = NaN; }
         }
         if (_adN > 0) {
-          salida = `El pago va a nuestra cuenta (Yape, Plin o transferencia): un adelanto de *${simboloMoneda(ctx.moneda as string)} ${_adN}* ` +
-            `para mandártelo y el resto cuando ya esté en la agencia; allá solo lo recoges con tu clave 🙌\n\n` +
+          salida = `El pago me lo haces a mí (Yape, Plin o transferencia): un adelanto de *${simboloMoneda(ctx.moneda as string)} ${_adN}* ` +
+            `para mandártelo y el resto por acá cuando ya esté en la agencia; allá solo lo recoges con tu clave 🙌\n\n` +
             String(salida).replace(/^\s*¡(?:Claro|Perfecto)!\s*/u, "").trim();
           await logEvent(db, run.channel_id, run.contact_id, "nota", "💳 Preguntó cómo se paga y no quedó respuesta",
             "Provincia: se antepuso la forma de pago").catch(() => {});
@@ -29367,7 +29445,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const _sinDupO = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=[\p{Extended_Pictographic}\u{FE0F}])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
                 .filter((f) => !/\bpor\s+(?:la\s+)?agencia\b/i.test(sinFormato(f)) || /[?¿]/.test(f)).join(" ")).join("\n")
                 .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-              salida = `Por ${_otro} no: va por agencia *${_nomO}* 📦${_sinDupO ? "\n\n" + _sinDupO : ""}`;
+              salida = `Por ${_otro} no: te lo mando por agencia *${_nomO}* 📦${_sinDupO ? "\n\n" + _sinDupO : ""}`;
               await logEvent(db, run.channel_id, run.contact_id, "nota", "🚚 Preguntó por otro courier", `${_otro} → ${_nomO}, dicho delante`).catch(() => {});
             }
           } catch (_) { /* sin courier configurado → tal cual */ }
@@ -29380,7 +29458,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           && /(?:^|[^\p{L}])(?:(?:a|hasta)\s+(?:mi\s+|la\s+)?(?:casa|domicilio|direcci[oó]n|puerta|chacra|trabajo|oficina)|delivery|motorizado|a\s+domicilio)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
           && /[?¿]|no\s+puedo\s+(?:ir|recoger|acercarme)|me\s+lo\s+(?:mandan|traen|llevan|dejan)/iu.test(String(ctx.last_input ?? ""))
           && !/domicilio|a\s+tu\s+casa|a\s+la\s+casa|a\s+tu\s+puerta/iu.test(sinFormato(salida))) {
-        salida = `A provincia no llegamos a domicilio: va por agencia y lo recoges ahí con tu clave 🙌\n\n${String(salida).trimStart()}`;
+        // (si la IA ya explicó la agencia —«te lo mando por agencia Shalom y lo recoges con la clave…»—, delante va solo el
+        //  «no»: con la frase entera se decía dos veces seguidas — simulación 3p-p4, 2026-10-02)
+        const _yaAgencia = /por\s+(?:la\s+)?agencia|lo\s+recoges/i.test(sinFormato(salida));
+        salida = (_yaAgencia ? "A domicilio en provincia no llego 🙏 " : "A provincia no llego a domicilio: te lo mando por agencia y lo recoges ahí con tu clave 🙌\n\n") +
+          String(salida).trimStart();
         await logEvent(db, run.channel_id, run.contact_id, "nota", "🏠 Pidió entrega a domicilio en provincia",
           "La IA no lo contestó: el motor lo dijo delante").catch(() => {});
       }
@@ -29407,7 +29489,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // (con la CIFRA: «sin el adelanto» a quien todavía no sabe cuánto es no le dice nada — R1P-todoalllegar, 3.ª relanzada)
         let _adS = Number(ctx.adelanto);
         if (!(_adS > 0)) { try { const _eS = await loadEntregas(db, run); _adS = Number((_eS as any)?.entregas?.adelanto_default); } catch (_) { _adS = NaN; } }
-        salida = `Sin el adelanto${_adS > 0 ? ` de *${simboloMoneda(ctx.moneda as string)} ${_adS}*` : ""} no sale el envío 🙏 Y en la agencia no se paga nada: el saldo también me lo pagas por acá cuando llegue, y allá solo lo recoges con tu clave.${_sinAdelIA ? "\n\n" + _sinAdelIA : ""}`;
+        salida = `Sin el adelanto${_adS > 0 ? ` de *${simboloMoneda(ctx.moneda as string)} ${_adS}*` : ""} no te lo puedo mandar 🙏 Y en la agencia no pagas nada: el saldo también me lo pagas por acá cuando llegue, y allá solo lo recoges con tu clave.${_sinAdelIA ? "\n\n" + _sinAdelIA : ""}`;
         (run.vars as any)._adelanto_explicado = 1;
         await logEvent(db, run.channel_id, run.contact_id, "nota", "🙅 Quería pagar todo en la agencia",
           "Se le dijo de frente: sin adelanto no sale y en la agencia no se paga").catch(() => {});
@@ -29417,7 +29499,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && !esDigital(ctx) && String(ctx.zona_entrega ?? "") === "lima" && String(salida ?? "").trim()) {
         const _antesLi = salida;
         salida = String(salida)
-          .replace(/\b(te\s+)?(?:llega|lo\s+mandamos|lo\s+enviamos|va)\s+por\s+(?:la\s+)?agencia\s+\*?[\p{L}]+\*?/giu, "$1llega a domicilio")
+          // (en primera persona: «te llega a domicilio» era otra vez el paquete viajando solo — Rodrigo, 2026-10-02)
+          .replace(/\b(te\s+)?(llega|lo\s+mandamos|lo\s+enviamos|lo\s+mando|lo\s+env[ií]o|va)\s+por\s+(?:la\s+)?agencia\s+\*?[\p{L}]+\*?/giu,
+            (_m, te: string | undefined, v: string) => (te || /^lo\s/i.test(v)) ? "te lo mando a tu casa" : "va a tu casa")
           .replace(/\b(?:lo\s+)?prueb(?:es|as|e|a)\s+antes\s+de\s+pagar/giu, "lo revisas antes de pagar")
           .replace(/\bpagas?\s+despu[eé]s\s+de\s+probar(?:lo)?/giu, "pagas al recibirlo, revisándolo en la puerta");
         if (salida !== _antesLi) await logEvent(db, run.channel_id, run.contact_id, "nota", "🛵 Lima: agencia o prueba inventadas",
@@ -29493,7 +29577,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (op === "generar_texto" && !esDigital(ctx) && !String(ctx.zona_entrega ?? "").trim()
           && /\b(?:dime|cu[eé]ntame|ind[ií]came)\s+(?:de\s+)?qu[eé]\s+(?:distrito|ciudad)/i.test(sinFormato(salida))
           && /¿[^?\n]*\b(?:distrito|ciudad)\b[^?\n]*\?/i.test(salida)) {
-        salida = String(salida).replace(/[ \t]*¿[^?\n]*\b(?:distrito|ciudad)\b[^?\n]*\?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*(?:As[ií]\s+te\s+(?:digo|cuento)\s+c[oó]mo\s+te\s+llega\.?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*)?/giu, " ")
+        salida = String(salida).replace(/[ \t]*¿[^?\n]*\b(?:distrito|ciudad)\b[^?\n]*\?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*(?:As[ií]\s+te\s+(?:digo|cuento)\s+c[oó]mo\s+te\s+(?:llega|lo\s+mando)\.?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*)?/giu, " ")
           .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
       }
       // 🗺️ «Tú estás en Lince, ¿verdad? Ahí te llega…» con la zona ya resuelta: pregunta retórica sobre lo que él dijo
@@ -29787,7 +29871,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             let _blF = _burbujaEnvio;
             // (el bloque genérico «Te llega a tu ciudad…» no es el pie: quedaba «📍 Esta es la sede donde lo recoges.» sin nombre ni
             //  referencia — R1P-cancelo, regresión 3, 2026-10-02)
-            if (!_blF || !/^📦\s*Te llega a la sede\s+/u.test(_blF)) {
+            if (!_blF || !/^📦\s*Te (?:llega|lo mando) a la sede\s+/u.test(_blF)) {
               try {
                 const _entF = await loadEntregas(db, run);
                 const _courF = Object.keys((((_entF as any)?.entregas?.courier ?? {}) as Record<string, unknown>))[0] ?? "";
@@ -29799,9 +29883,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 }
               } catch (_) { /* sin config de courier → pie corto */ }
             }
-            const _plegable = /^📦\s*Te llega a la sede\s+/u.test(_blF);
+            const _plegable = /^📦\s*Te (?:llega|lo mando) a la sede\s+/u.test(_blF);
             const _cap = _plegable
-              ? _blF.replace(/^📦\s*Te llega a la sede\s+/u, "📍 Esta es la sede donde lo recoges: ")
+              ? _blF.replace(/^📦\s*Te (?:llega|lo mando) a la sede\s+/u, "📍 Esta es la sede donde lo recoges: ")
               : "📍 Esta es la sede donde lo recoges.";
             await emit(db, run, {
               media_url: _fa.url, media_kind: "image",
@@ -29830,15 +29914,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // (+ detrás de la lista de distritos/oficinas 📍, que no dice «agencia» pero es la agencia — 5 chats, regresión 3, 2026-10-02)
       // (+ si se lo dijimos en las burbujas de recién: a «donde pago?» / «yape» justo tras las sedes salía «📦 Te llega a tu
       //  ciudad por agencia Shalom» otra vez, encima del Yape — sim 2b-r6/r7)
-      const _agenciaRecien = !!_burbujaEnvio && !/Te llega a la sede/u.test(_burbujaEnvio) && await (async () => {
+      const _agenciaRecien = !!_burbujaEnvio && !/Te (?:llega|lo mando) a la sede/u.test(_burbujaEnvio) && await (async () => {
         try {
           const { data: _oAg } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
             .eq("direction", "out").eq("type", "text").order("ts", { ascending: false }).limit(3);
-          return ((_oAg ?? []) as any[]).some((mm) => /te\s+llega\s+por\s+agencia|por\s+agencia\s+shalom/i.test(sinFormato(String(mm?.content?.text ?? ""))));
+          return ((_oAg ?? []) as any[]).some((mm) => /te\s+(?:llega|lo\s+(?:mando|env[ií]o))\s+por\s+agencia|por\s+(?:agencia\s+)?shalom/i.test(sinFormato(String(mm?.content?.text ?? ""))));
         } catch (_) { return false; }
       })();
       if (_burbujaEnvio && !handoff && (/shalom|agencia|olva/i.test(sinFormato(String(salida ?? ""))) || /^\s*(?:📍|📌)/m.test(String(salida ?? "")) || _agenciaRecien)
-          && !/Te llega a la sede/u.test(_burbujaEnvio)) {
+          && !/Te (?:llega|lo mando) a la sede/u.test(_burbujaEnvio)) {
         await logEvent(db, run.channel_id, run.contact_id, "nota", "📦 Bloque de envío no repetido",
           "La respuesta ya dice que va por agencia; el bloque completo sale con la ficha de la sede").catch(() => {});
         _burbujaEnvio = "";
@@ -30862,7 +30946,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
   // configurado queda vacía y `resolve` cierra el hueco que deja.
   // Sin el 📦 delante: se pega al párrafo de {{promesa_despacho}}, que ya cierra con él (ver resolve).
   ctx.demora_provincia_linea = ctx.demora_provincia
-    ? `Suele estar listo para recoger en *${ctx.demora_provincia}*.`
+    ? `Normalmente lo tienes listo para recoger en *${ctx.demora_provincia}*.`
     : "";
   // 🏪 Biblioteca del NEGOCIO (Negocio → "Archivos que la IA puede enviar"): lo que no es
   // de un producto concreto —la prueba de envíos a provincia, un audio explicando cómo
