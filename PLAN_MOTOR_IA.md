@@ -121,4 +121,8 @@ Zonas y distritos, sedes Shalom, pagos y OCR de comprobantes, pedidos, avisos, r
 ## 9. Registro
 | Fecha | Fase | Examen (graves / 25) | Nota |
 |---|---|---|---|
-| 2026-10-02 | Línea base | 9 | gpt-4.1-mini, sin cambios de arquitectura |
+| 2026-10-02 | Línea base (a mano) | 9 / 25 | gpt-4.1-mini, sin cambios de arquitectura; calificado por Claude leyendo |
+| 2026-10-03 | **Línea base oficial (examen)** | **12 / 35 conversaciones con falla grave** (13–15 graves) | Examen `89ef4c74`. Juez gpt-5-mini por turno con clave; dos calificaciones de las mismas transcripciones: 13 y 15 graves → ruido del juez ±2. Origen: ~3 cortes/respuestas borradas por el motor, ~3 de flujo (supone la zona, esquiva «¿cómo pago?»), ~7 inventos de la IA |
+
+**Cómo leer la nota:** se compara «conversaciones con falla grave» (de 35). Una diferencia de 1–2 puede ser ruido del
+juez; para dar por buena una mejora, que baje al menos 3 o que se repita en dos corridas.
