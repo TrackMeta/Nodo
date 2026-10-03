@@ -8297,6 +8297,151 @@ let _modeloVentaForzado: string | null = null;
 export function forzarModeloVenta(m: string | null): void {
   _modeloVentaForzado = m && /^gpt-[\w.-]+$/.test(m) ? m : null;
 }
+// ═══════════════════════════════════════════════════════════════════
+// 🧭 MOTOR V2 — «la IA conversa, el motor guía» (PLAN_MOTOR_IA.md, fase 1).
+// El motor decide el SIGUIENTE PASO de la venta y se lo dice a la IA al final del mensaje; la IA contesta lo que le
+// preguntaron y hace la pregunta de ese paso con sus palabras. Después un REVISOR mira la respuesta y, si algo está
+// mal, le pide reescribirla UNA vez (en vez de recortarla con tijeras). Si la segunda tampoco pasa, vuelven las
+// tijeras de siempre (`_v2Fallo`). Hoy solo se enciende desde el examen / el simulador (`forzarMotorV2`).
+// ═══════════════════════════════════════════════════════════════════
+let _motorV2Forzado = false;
+export function forzarMotorV2(on: boolean): void { _motorV2Forzado = !!on; }
+
+type PasoV2Nombre = "zona" | "distrito" | "sede" | "cantidad_lista" | "cantidad" | "datos" | "ninguno";
+interface PasoV2 { paso: PasoV2Nombre; pregunta: string; sinPregunta: boolean; preguntoEnvio: boolean }
+
+// Preguntó cómo se paga o cómo le llega (para explicar las dos opciones cuando aún no se sabe su zona).
+const RE_PREGUNTA_ENVIO_PAGO = /(?<![\p{L}])(pag(?:o|ar|as|a|an|aria)|cancel\p{L}*|yape\p{L}*|plin|transferencia|tarjeta|efectivo|env[ií](?:o|os|an|as|ar)|mand(?:an|as|ar)|llega|lleguen?|delivery|domicilio|agencia|shalom|contra ?entrega|recoj\p{L}*|recog\p{L}*)(?![\p{L}])/iu;
+
+function pasoV2(ctx: any, run: any): PasoV2 {
+  const li = String(ctx?.last_input ?? "");
+  const preguntoEnvio = RE_PREGUNTA_ENVIO_PAGO.test(li);
+  if (RE_LO_PIENSA.test(li) || RE_RECLAMO.test(li) || pideCancelar(li) || seArrepiente(li)) {
+    return { paso: "ninguno", pregunta: "", sinPregunta: true, preguntoEnvio };
+  }
+  const zona = String(ctx?.zona_entrega ?? "");
+  if (!zona) return { paso: "zona", pregunta: "de qué distrito o ciudad es, para decirle cómo le llega", sinPregunta: false, preguntoEnvio };
+  if (zona === "lima" && String(ctx?.zona_distrito_incierto ?? "") === "si") {
+    return { paso: "distrito", pregunta: "en qué distrito de Lima está, para coordinar la entrega", sinPregunta: false, preguntoEnvio };
+  }
+  if (ctx?._sedeAhora) return { paso: "sede", pregunta: "", sinPregunta: true, preguntoEnvio };
+  if (!String(ctx?.opcion_id ?? "").trim()) {
+    const pres = !!run?._esPresentaciones;
+    const yaSePregunto = !!run?.vars?._cant_preguntada && !run?._tocaCantidad;
+    const q = pres ? "cuál de las presentaciones quiere"
+      : yaSePregunto ? "algo que lo ayude a elegir cuántas llevar (para qué espacio lo quiere, o si le dejas la oferta que más le conviene)"
+      : "cuántas unidades quiere llevar";
+    return { paso: run?._tocaCantidad ? "cantidad_lista" : "cantidad", pregunta: q, sinPregunta: false, preguntoEnvio };
+  }
+  const faltan = Array.isArray(ctx?._datos_faltan) ? ctx._datos_faltan : [];
+  if (faltan.length) {
+    const nombres = faltan.map((f: any) => String(f?.label ?? f?.clave ?? "").split(/[,(]/)[0].trim()).filter(Boolean).join(", ");
+    return { paso: "datos", pregunta: nombres || "los datos que faltan", sinPregunta: false, preguntoEnvio };
+  }
+  return { paso: "ninguno", pregunta: "", sinPregunta: true, preguntoEnvio };
+}
+
+function instruccionV2(p: PasoV2, ctx: any): string {
+  const li = String(ctx?.last_input ?? "").slice(0, 300);
+  const L = [
+    "## 🧭 TU TAREA EN ESTE MENSAJE",
+    "(Esto manda sobre cualquier instrucción de arriba sobre qué preguntar o qué mencionar.)",
+    `1. Contesta lo que te escribió: «${li}». Si preguntó varias cosas, contesta CADA una. Si algo no está en la ficha, ` +
+    "dilo con honestidad («ese dato no lo tengo») y sigue vendiendo con lo que sí sabes: no lo inventes.",
+  ];
+  switch (p.paso) {
+    case "zona":
+      L.push(p.preguntoEnvio
+        ? "2. Todavía NO sabes de dónde es. Como te preguntó por el pago o el envío, explícale en una línea las DOS opciones: " +
+          "en Lima se lo llevas a su casa y te lo paga al recibirlo; a provincia se lo mandas por agencia Shalom con un adelanto. " +
+          "Termina preguntándole, con tus palabras, de qué distrito o ciudad es."
+        : "2. Termina con UNA pregunta, con tus palabras: de qué distrito o ciudad es, para decirle cómo le llega. Todavía NO " +
+          "sabes de dónde es: no hables de Shalom, agencia, adelanto, contraentrega ni de cómo le llega.");
+      break;
+    case "distrito":
+      L.push("2. Termina con UNA pregunta, con tus palabras: en qué distrito de Lima está, para coordinar la entrega. " +
+        "No le prometas un día de entrega todavía.");
+      break;
+    case "sede":
+      L.push("2. NO hagas ninguna pregunta. Debajo de tu mensaje van las sedes de Shalom de su ciudad y la pregunta de cuál " +
+        "le queda más cerca. No nombres ni recomiendes sedes y no hables del adelanto (también va debajo). Puedes decirle " +
+        "en una línea que a su ciudad se lo mandas por agencia Shalom.");
+      break;
+    case "cantidad_lista":
+      L.push("2. Si acaba de decirte de dónde es, dile en una línea cómo le llega (sin hablar del adelanto). Termina con UNA " +
+        `pregunta, con tus palabras: ${p.pregunta}. La lista de precios va debajo: no la escribas.`);
+      break;
+    case "cantidad":
+      L.push(`2. Termina con UNA pregunta, con tus palabras, que lo acerque a elegir: ${p.pregunta}.`);
+      break;
+    case "datos":
+      L.push(`2. Termina pidiéndole, con tus palabras, los datos que faltan: ${p.pregunta}. El sistema los ordena en una lista.`);
+      break;
+    case "ninguno":
+      L.push("2. No hagas preguntas de venta ni lo apures: contesta con calidez y déjale la puerta abierta.");
+      break;
+  }
+  L.push("3. No escribas listas de precios, de sedes ni de datos: las pone el sistema. Como máximo UNA pregunta.");
+  return L.join("\n");
+}
+
+// Lo que se puede comprobar por código (palabras), sin IA.
+function violacionesV2(texto: string, p: PasoV2): string[] {
+  const t = sinFormato(String(texto ?? ""));
+  const v: string[] = [];
+  const nq = (t.match(/\?/g) ?? []).length;
+  if (p.sinPregunta && nq > 0) {
+    v.push(p.paso === "sede"
+      ? "No hagas ninguna pregunta: debajo va la lista de sedes con su pregunta."
+      : "No hagas ninguna pregunta en este mensaje.");
+  } else if (!p.sinPregunta && nq > 1) {
+    v.push("Haz UNA sola pregunta, al final.");
+  }
+  if ((p.paso === "zona" || p.paso === "distrito") && nq === 0) v.push(`Termina preguntándole ${p.pregunta}.`);
+  if (p.paso === "zona") {
+    const hablaEnvio = /shalom|agencia|contra ?entrega|adelanto|pagas? al recibir|a tu casa|domicilio|te lo (?:llevo|mando|env[ií]o)/i.test(t);
+    if (p.preguntoEnvio) {
+      if (!(/lima/i.test(t) && /provincia|shalom|agencia/i.test(t))) {
+        v.push("Te preguntó cómo se paga o cómo le llega y todavía no sabes su zona: explícale las DOS opciones (Lima: a su casa " +
+          "y paga al recibir; provincia: por agencia Shalom con un adelanto) y pregúntale de dónde es.");
+      }
+    } else if (hablaEnvio) {
+      v.push("Todavía no sabes de dónde es: no hables de Shalom, agencia, adelanto ni de cómo le llega. Solo pregúntale de qué distrito o ciudad es.");
+    }
+  }
+  if (p.paso === "sede" && (/📍/u.test(String(texto ?? "")) || /\b(?:te\s+recomiendo|la\s+m[aá]s\s+cercana|elige|est[aá]\s+en\s+la)\b[^.!?\n]{0,40}\b(?:sede|oficina)/i.test(t))) {
+    v.push("No nombres ni recomiendes sedes: la lista va debajo.");
+  }
+  if (p.paso !== "datos" && RE_FRASE_PIDE_DATOS.test(t) && RE_PALABRA_DATO.test(t)) {
+    v.push("No le pidas sus datos todavía (nombre, celular, DNI, dirección): no es el momento.");
+  }
+  return v;
+}
+
+// ¿Contestó lo que preguntó? Eso no se ve con palabras: lo mira una IA chica, solo cuando el cliente preguntó algo.
+const CONTESTA_SCHEMA = {
+  type: "object", additionalProperties: false,
+  properties: { contesta: { type: "boolean" }, falta: { type: "string" } },
+  required: ["contesta", "falta"],
+};
+async function contestoV2(texto: string, ctx: any, ai: any, provider: Provider, channelId: string, db: SupabaseClient): Promise<string | null> {
+  const li = String(ctx?.last_input ?? "").trim();
+  if (!li || !(/[?¿]/.test(li) || traePregunta(li))) return null;
+  try {
+    const raw = await runAI({
+      db, channelId, origen: "clasificar", provider, apiKey: ai.api_key, model: ai.model || undefined, maxTokens: 120,
+      system: "Revisas si la respuesta de un vendedor contesta lo que el cliente le preguntó. Contestar incluye decir con " +
+        "honestidad que no tiene ese dato, o responder con lo que sabe aunque no sea exacto. Si el cliente preguntó varias " +
+        "cosas, cada una tiene que estar contestada. Saludar, preguntar otra cosa o hablar de envíos/precios NO es contestar. " +
+        "Responde SOLO el JSON: {\"contesta\": true|false, \"falta\": \"qué quedó sin contestar, en pocas palabras (vacío si contestó)\"}.",
+      content: `Cliente: «${li.slice(0, 500)}»\nVendedor: «${String(texto ?? "").slice(0, 1500)}»`,
+      jsonSchema: CONTESTA_SCHEMA as unknown as Record<string, unknown>, jsonStrict: true,
+    });
+    const j = JSON.parse(raw);
+    return j?.contesta === false ? `No contestaste lo que te preguntó: ${String(j?.falta ?? "").slice(0, 160) || "su pregunta"}.` : null;
+  } catch (_) { return null; }   // el revisor nunca frena la venta
+}
+
 // 🎲 El ejemplo del prompt sale casi textual (ver la memoria «ejemplo del prompt pesa más»): con uno solo,
 // 5 de 5 chats de Lima abrieron con «¡Genial! A *X* te lo mando…» (Rodrigo: «que no siempre diga Genial»).
 // Uno distinto en cada turno, todos en primera persona y con «al recibirlo» (el hecho que se dice).
@@ -8861,7 +9006,10 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       const _base = (RE_QUIERE_COMPRAR.test(_liD) || (_sinMedio !== result && _sinMedio.includes("?"))) ? _sinMedio : result;
       result = sinPedirPermisoPago(sinAnuncioDePago(sinPromesaDeDatosColgada(_base, true, RE_PRESENCIA.test(_liD), _liD)));
     }
-    result = sinRestosDeRecorte(result);
+    // 🧭 Con el motor v2 y la respuesta aprobada por el revisor, la limpieza de «restos» no corre: se llevaba preguntas
+    // enteras que terminan en emoji («Para coordinar bien tu pedido, ¿desde qué distrito o ciudad nos escribes? 📍» quedó
+    // en «Para coordinar bien tu pedido,» — examen v2, 3-oct). Si algo de arriba sí recortó, ahí sí se limpia.
+    if (!(run?._v2Activo && !run?._v2Fallo) || result !== _antesD) result = sinRestosDeRecorte(result);
     // 🕳️ Nunca VACÍO: la Recepción contestó «Claro, estos son los precios: Plantilla S/19, Curso S/39/79, Protocolo
     // S/10…» y el recorte de anuncios de pago se llevó el mensaje entero — el cliente no recibió nada (D18b-cpreciosep).
     // Si no quedó nada, vuelven las líneas que no son el anuncio de los datos.
@@ -25163,10 +25311,60 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       } catch (_) { /* sin memoria → responde normal */ }
     }
 
+    // 🧭 Motor v2: el motor decide el siguiente paso y se lo dice a la IA al final (ver pasoV2). Solo venta física, antes
+    // de que el pedido se esté cerrando (el cierre tiene sus propias reglas).
+    if (op === "generar_texto" && _motorV2Forzado && !esDigital(ctx) && !!ctx._product_id
+        && String(ctx.pedido_creado ?? "") !== "si" && ctx.datos_completos !== "si" && typeof content === "string") {
+      const _p = pasoV2(ctx, run);
+      (run as any)._v2Activo = true;
+      (run as any)._pasoV2 = _p;
+      content += "\n\n" + instruccionV2(_p, ctx);
+      await logEvent(db, run.channel_id, run.contact_id, "nota", `🧭 Motor v2 · paso: ${_p.paso}`,
+        _p.pregunta ? `Pregunta del paso: ${_p.pregunta}` : "Sin pregunta de la IA en este paso").catch(() => {});
+    } else if (op === "generar_texto" && _motorV2Forzado) {
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "🧭 Motor v2 no aplica en este turno",
+        `digital=${esDigital(ctx)} venta=${_turnoDeVenta} producto=${!!ctx._product_id} pedido=${ctx.pedido_creado ?? ""} datos=${ctx.datos_completos ?? ""}`).catch(() => {});
+    }
+
     let result = await runAI({ db, channelId: run.channel_id, origen: op === "analizar_imagen" ? "ocr" : "vender",
       provider, apiKey: ai.api_key, model, system, content, maxTokens,
       jsonSchema: op === "extraer" ? cfg.json_schema : undefined,
     });
+
+    // 🧭 Motor v2: el REVISOR. Si la respuesta rompe una regla del paso o no contesta lo que preguntó, se le pide
+    // reescribirla UNA vez con la indicación exacta. Si la segunda tampoco pasa, se queda la segunda y vuelven las
+    // tijeras de siempre (`_v2Fallo`).
+    if ((run as any)._v2Activo && typeof result === "string" && result.trim() && typeof content === "string") {
+      try {
+        const _p = (run as any)._pasoV2 as PasoV2;
+        const revisar = async (txt: string) => {
+          const v = violacionesV2(txt, _p);
+          const c = await contestoV2(txt, ctx, ai, provider, run.channel_id, db);
+          return c ? [c, ...v] : v;
+        };
+        const v1 = await revisar(result);
+        if (!v1.length) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "✅ Motor v2: respuesta aprobada", result.slice(0, 200)).catch(() => {});
+        }
+        if (v1.length) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "✍️ Motor v2: se pidió reescribir",
+            `${v1.join(" · ")} — escribió: «${result.slice(0, 220)}»`).catch(() => {});
+          const r2 = await runAI({ db, channelId: run.channel_id, origen: "vender", provider, apiKey: ai.api_key, model, system, maxTokens,
+            content: content + `\n\n## ⚠️ CORRIGE TU RESPUESTA\nEscribiste esto:\n«${result}»\nTiene estos problemas:\n` +
+              v1.map((x) => `• ${x}`).join("\n") + "\nEscribe de nuevo el mensaje COMPLETO corrigiendo solo eso. Responde solo con el mensaje." });
+          const v2 = r2 && r2.trim() ? await revisar(r2) : ["(vacía)"];
+          if (r2 && r2.trim()) result = r2;
+          if (v2.length) {
+            (run as any)._v2Fallo = true;
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ Motor v2: la reescritura tampoco pasó",
+              `${v2.join(" · ")} — vuelven los recortes de siempre`).catch(() => {});
+          }
+        }
+      } catch (e) {   // el revisor nunca tumba la venta — pero que se vea por qué falló
+        (run as any)._v2Fallo = true;
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ Motor v2: el revisor falló", String(e).slice(0, 300)).catch(() => {});
+      }
+    }
 
     // Guardar el resultado como variable del run y (si existe) campo persistente.
     if (cfg.guardar_en) {
@@ -25750,6 +25948,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // preguntar es justo lo que toca, y el cliente recibió una frase cortada.
       // 💬 La explicación del envío, si toca, va como burbuja SUYA delante del mensaje.
       let _burbujaEnvio = "";
+      // 🧭 Motor v2 con la respuesta aprobada por el revisor: las tijeras que destrozaban respuestas buenas no corren
+      // (recorte a la primera línea en el turno de sedes, «la respuesta va primero», preguntas repetidas). Ver pasoV2.
+      const _v2On = !!(run as any)._v2Activo && !(run as any)._v2Fallo;
       let salida = (op === "generar_texto" && ctx.datos_completos === "si"
         && String(ctx.pedido_creado ?? "") !== "si"
         && !(ctx as any)._falta_variante && !(ctx as any)._falta_opcion)
@@ -25838,7 +26039,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // respuesta entera y dejaba la pregunta de cierre sola: «¿Quieres que te pase los datos
         // para el pago? 😊» a quien acababa de contar su lesión (D9-klesion, D9-cnivel, 2026-09-24).
         const _antesPres = salida;
-        if (!esDigital(ctx)) salida = sinPresentacionRepetida(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""), _turnoDeVenta, String(ctx.last_input ?? ""));
+        if (!esDigital(ctx) && !_v2On) salida = sinPresentacionRepetida(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""), _turnoDeVenta, String(ctx.last_input ?? ""));
         if (salida !== _antesPres) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ Se quitó la presentación repetida",
             "El cliente solo estaba dando un dato y el mensaje abría describiendo el producto.").catch(() => {});
@@ -25858,7 +26059,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         //  mezclada con la presentación y se perdía — R1L-peso)
         // (ya sin exigir dos párrafos: la función parte el primero por frases y mueve la presentación detrás de la respuesta —
         //  olivos, sintaladro, yapeantes seguían abriendo con el producto en un solo párrafo; regresión 4, 2026-10-02)
-        if (_preguntaPuntual || RE_CLIENTE_PIDE_PRECIO.test(_liP)) {
+        if ((_preguntaPuntual || RE_CLIENTE_PIDE_PRECIO.test(_liP)) && !_v2On) {
           const _antesRP = salida;
           salida = sinPresentacionRepetida(salida, String(ctx.producto_nombre ?? ctx.producto ?? ""), true, _liP);
           if (salida !== _antesRP) {
@@ -26161,7 +26362,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // suelto), no se corta nada y el trabajo queda para el colador de formato de abajo.
             // El costo, asumido: si en ese mismo turno contestó OTRA cosa debajo de un salto
             // de línea, se pierde. En lo medido —cuatro ciudades— su mensaje era una sola línea.
-            if (_seguro) {
+            if (_seguro && !_v2On) {
               let _entrada = salida.split("\n")[0].trim();
               // 🧹 Y sin el ANUNCIO HUÉRFANO. La línea que se conserva a veces termina
               // anunciando lo que venía debajo («…para dejarlo listo, pásame estos datos 👇»,
@@ -26771,7 +26972,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // 📍 La SEDE se ataja ANTES, no acá: sin la lista de agencias en el prompt la IA no
       // saca el tema (ver el bloque de oficinas). Meterla en este guard se probó y salió
       // mal — el recorte se llevaba por delante la respuesta al «¿hacen envíos a Puno?».
-      if (op === "generar_texto" && ctx._product_id && !String(ctx.opcion_id ?? "").trim()
+      if (op === "generar_texto" && !_v2On && ctx._product_id && !String(ctx.opcion_id ?? "").trim()
           && RE_PIDE_SUS_DATOS.test(sinFormato(salida))) {
         try {
           const opsPend = await loadOpciones(db, run, ctx._product_id);
@@ -27417,7 +27618,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // empiezas de cero?» y la IA, justo debajo, cerró con la MISMA pregunta (D18e-okcurso). La IA copia lo que ve en
       // el historial. Si la pregunta con que cierra ya salió en las últimas burbujas del bot, se quita; lo que falta
       // pedir lo ponen después el cierre o la petición del motor.
-      if (op === "generar_texto" && /[?¿]/.test(String(salida ?? ""))) {
+      if (op === "generar_texto" && !_v2On && /[?¿]/.test(String(salida ?? ""))) {
         try {
           const { data: _oQ } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
             .eq("direction", "out").order("ts", { ascending: false }).limit(3);
@@ -28546,7 +28747,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // se paga al recibir). Medido: «¿de qué distrito o ciudad nos escribes?» al final de TRES
       // respuestas seguidas mientras el cliente preguntaba otra cosa, y «¿en qué distrito de Lima te
       // lo envío? ¿Cuántas unidades quieres?» juntas.
-      if (op === "generar_texto" && !esDigital(ctx) && String(ctx.pedido_creado ?? "") !== "si" && String(salida ?? "").trim()
+      if (op === "generar_texto" && !esDigital(ctx) && !_v2On && String(ctx.pedido_creado ?? "") !== "si" && String(salida ?? "").trim()
           && !(ctx as any)._yaPagoSinPedido) {
         try {
           // (+ «¿A qué dirección te lo envío?» junto a «¿Cuántas unidades?» — F6-lmanana)

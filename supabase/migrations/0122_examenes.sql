@@ -40,3 +40,6 @@ create index if not exists idx_examenes_canal on examenes(channel_id, created_at
 alter table examenes enable row level security;
 --##--
 alter table examen_conversaciones enable row level security;
+--##--
+-- (fase 1) la corrida puede ser con el motor v2 encendido solo para ella (forzarMotorV2)
+alter table examenes add column if not exists motor_v2 boolean not null default false;
