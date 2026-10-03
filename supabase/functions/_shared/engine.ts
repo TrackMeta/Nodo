@@ -8506,7 +8506,7 @@ const REVISOR_SCHEMA = {
   required: ["contesta", "falta", "inventos"],
 };
 // Temas donde la IA inventa (se revisa aunque el cliente no haya preguntado nada).
-const RE_TEMA_RIESGOSO = /segur\p{L}*|peligr\p{L}*|ni[ñn]\p{L}*|hij[oa]s?|beb[eé]s?|mascotas?|perr\p{L}*|gat[oa]s?|domestic\p{L}*|lluvia|agua|impermeab\p{L}*|resist\p{L}*|humedad|noche|nocturn\p{L}*|metros?|m2|hect[aá]rea|cubre|alcance|dura(?:ci[oó]n)?|bater[ií]a|garant\p{L}*|devoluci\p{L}*|cambio|interior\p{L}*|almac[eé]n|dentro\s+de|ruido|molest\p{L}*|audible|o[ií]do|no\s+afecta|no\s+da[ñn]a|cert\p{L}*|original/iu;
+const RE_TEMA_RIESGOSO = /edad|a[ñn]os|lesi[oó]n|rodilla|espalda|embaraz\p{L}*|salud|enfermedad|m[eé]dico|segur\p{L}*|peligr\p{L}*|ni[ñn]\p{L}*|hij[oa]s?|beb[eé]s?|mascotas?|perr\p{L}*|gat[oa]s?|domestic\p{L}*|lluvia|agua|impermeab\p{L}*|resist\p{L}*|humedad|noche|nocturn\p{L}*|metros?|m2|hect[aá]rea|cubre|alcance|dura(?:ci[oó]n)?|bater[ií]a|garant\p{L}*|devoluci\p{L}*|cambio|interior\p{L}*|almac[eé]n|dentro\s+de|ruido|molest\p{L}*|audible|o[ií]do|no\s+afecta|no\s+da[ñn]a|cert\p{L}*|original/iu;
 
 async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider, channelId: string, db: SupabaseClient): Promise<string[]> {
   const colg = String(ctx?._colgadaV2 ?? "").trim();
@@ -8528,10 +8528,21 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
         "2) inventos: las afirmaciones CONCRETAS del vendedor sobre el producto que la FICHA NO dice o CONTRADICE: contra qué " +
         "animales/plagas sirve, dónde se puede usar (interiores, almacenes), si es seguro o no afecta a personas, niños o " +
         "mascotas, si resiste agua o lluvia, si funciona de noche, cuánto cubre (metros), cuánto dura, garantía, devoluciones, " +
-        "si hace ruido o molesta, certificados. Si la ficha dice «no usar cerca de mascotas» y el vendedor dice que no las " +
+        "si hace ruido o molesta, certificados, y la SALUD: si el cliente cuenta su edad, una lesión, un embarazo o una " +
+        "enfermedad, asegurarle que puede hacerlo/usarlo sin problema cuando la ficha no lo dice ES invento (lo correcto es " +
+        "sugerir que lo consulte con un profesional). También: prueba social con cifras que la ficha no trae («miles ya " +
+        "aprendieron», «más de 500 clientes») y resultados prometidos como seguros («vas a evitar errores desde la primera " +
+        "vez», «te garantizo que aprendes»). El entusiasmo de vendedor sin cifras ni garantías («te va a servir mucho») NO es " +
+        "invento. Si la ficha dice «no usar cerca de mascotas» y el vendedor dice que no las " +
         "afecta, CONTRADICE. NO cuentes: precios, envío, pago, frases de venta genéricas, lo que la ficha sí dice, ni lo que se " +
         "deduce directo de ella (si la ficha dice que ahuyenta, decir que no mata está bien). Decir «ese dato no lo tengo» NO es invento. " +
         "Un ejemplo de una categoría que la ficha nombra tampoco (si la ficha dice «roedores», decir «ratas» está bien; «aves» → «palomas»).\n" +
+        "Tampoco son invento: lo que repite la ficha con otras palabras («cubre un área moderada»), ni nada sobre CÓMO se " +
+        "envía o se paga (Shalom, agencia, sedes, Lima/provincia, adelanto, contraentrega, plazos de entrega): eso son reglas " +
+        "del negocio, no del producto.\n" +
+        "OJO: debajo de esta respuesta el sistema pega solo la lista de precios, la de sedes y la de datos. Si el cliente pidió " +
+        "el precio o las sedes, NO marques «no contestó» porque la respuesta no traiga esa lista. Pero si preguntó CÓMO SE PAGA, " +
+        "la respuesta tiene que decir los medios (Yape, Plin, transferencia, efectivo…).\n" +
         "Responde SOLO el JSON {\"contesta\": bool, \"falta\": \"qué quedó sin contestar (vacío si contestó)\", " +
         "\"inventos\": [{\"frase\": \"la frase del vendedor\", \"por_que\": \"qué dice la ficha\"}]}.",
       content: `## FICHA\n${ficha}\n\n## CLIENTE\n«${(pregunto ? li : ahora).slice(0, 500)}»\n\n## VENDEDOR\n«${String(texto ?? "").slice(0, 1500)}»`,
@@ -25499,6 +25510,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // 💻 Fase 5: en la venta DIGITAL solo el revisor (¿contestó? ¿inventó?) con reescritura. Sin pasoV2 ni tijeras
       // apagadas: la venta digital tiene frenos de plata (acceso, pago, combo) que se quedan como están.
       (run as any)._revSolo = true;
+      // Sin versión elegida, los datos de pago NO salen: si la IA los anuncia («te paso los datos para el pago 👇»), un freno
+      // de plata le borra el mensaje entero y queda «Dime cuál prefieres» — y la respuesta a «¿cómo pago?» se pierde
+      // (examen digital, 3-oct). Se le dice antes qué toca.
+      try {
+        const _opsD = await loadOpciones(db, run, String(ctx._product_id));
+        if (_opsD.length >= 2 && !String(ctx.opcion_id ?? "").trim()) {
+          (run as any)._revDigitalSinVersion = true;
+          content += "\n\n## 🧭 TU TAREA EN ESTE MENSAJE\n" +
+            `1. Contesta lo que te escribió: «${String(ctx.last_input ?? "").slice(0, 300)}». Si preguntó cómo se paga: por Yape, Plin o ` +
+            "transferencia, y el acceso le llega por este chat apenas valides su pago. Si algo no está en la ficha, dilo con honestidad.\n" +
+            "2. Todavía NO eligió cuál quiere: termina preguntándole, con tus palabras, cuál de las versiones prefiere. ⛔ NO digas que le " +
+            "pasas los datos de pago ni que «ya te llegan»: salen solos cuando elija.";
+        }
+      } catch (_) { /* sin opciones → solo el revisor */ }
     } else if (_v2Encendido) {
       await logEvent(db, run.channel_id, run.contact_id, "nota", "🧭 Motor v2 no aplica en este turno",
         `digital=${esDigital(ctx)} venta=${_turnoDeVenta} producto=${!!ctx._product_id} pedido=${ctx.pedido_creado ?? ""} datos=${ctx.datos_completos ?? ""}`).catch(() => {});
@@ -25518,6 +25543,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         if (_p?.paso === "sede") result = sinPreguntaDeSedeV2(result) || result;
         const revisar = async (txt: string) => {
           const v = _p ? violacionesV2(txt, _p, ctx) : [];
+          // Digital sin versión: anunciar los datos de pago es prometer algo que no sale (ver _revDigitalSinVersion).
+          if ((run as any)._revDigitalSinVersion && /te\s+(?:paso|env[ií]o|mando|dejo)\s+(?:los\s+)?datos|datos\s+(?:de|para\s+el)\s+pago|te\s+llegan?\s+(?:los\s+)?datos/i.test(sinFormato(txt))) {
+            v.push("Todavía no eligió la versión: no digas que le pasas los datos de pago (salen cuando elija). Contesta y pregúntale cuál prefiere.");
+          }
           const c = await revisorIAV2(txt, ctx, ai, provider, run.channel_id, db);
           return [...c, ...v];
         };
