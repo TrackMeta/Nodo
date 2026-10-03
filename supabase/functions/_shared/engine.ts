@@ -31051,6 +31051,7 @@ export async function recomputeStageOnLoss(db: SupabaseClient, channelId: string
 async function markProduct(db: SupabaseClient, contactId: string, productId?: string | null) {
   if (!productId) return;
   try { await db.from("contacts").update({ product_id: productId }).eq("id", contactId); } catch (_) { /* columna pendiente */ }
+  _graduado.delete(contactId);   // producto nuevo → su remarketing por dato se vuelve a mirar
   // Auto-enrolar al remarketing: apenas el contacto muestra interés (escribe la
   // palabra clave = entra a la conversación del producto) es un CURIOSO. Entra a
   // la secuencia "solo_inicio" del PRODUCTO (o su general, dentro de
@@ -31074,8 +31075,25 @@ async function markProduct(db: SupabaseClient, contactId: string, productId?: st
 // empiezan con "_". Antes, `datos_completos="no"` (que el motor setea temprano)
 // mandaba al contacto a Interesado en el primer mensaje, saltándose "Curioso".
 const INTERNAL_FIELDS = new Set(["datos_completos", "pedido_creado", "opcion_id", "opcion", "opcion_elegida"]);
+// ⏱️ Cada setField eran 4 consultas en fila (id del campo, guardar, etapa, remarketing) y la
+// zona sola guarda 9 campos seguidos: 1,5 s del turno medido el 2-oct. El id de un campo no
+// cambia (si lo borran, el guardado falla y se vuelve a buscar) y la graduación solo avanza,
+// así que después de la primera en el turno las siguientes no hacían nada.
+const _campoId = new Map<string, string>();
+const _graduado = new Map<string, number>();
+const GRADUADO_TTL_MS = 15_000;
 async function setField(db: SupabaseClient, channelId: string, contactId: string, key: string, value: string | null) {
   if (!key) return;
+  const _ck = `${channelId}:${key}`;
+  const _idCache = _campoId.get(_ck);
+  if (_idCache) {
+    const { error } = await db.from("contact_field_values").upsert(
+      { contact_id: contactId, field_id: _idCache, value, updated_at: new Date().toISOString() },
+      { onConflict: "contact_id,field_id" },
+    );
+    if (!error) { await graduarPorDato(db, channelId, contactId, key, value); return; }
+    _campoId.delete(_ck);   // el campo ya no existe (o falló) → camino completo
+  }
   let { data: f } = await db.from("custom_fields").select("id")
     .eq("channel_id", channelId).eq("key", key).limit(1).maybeSingle();
   // Si el flujo escribe en un campo que no existe, se crea solo (dinámico) →
@@ -31091,17 +31109,24 @@ async function setField(db: SupabaseClient, channelId: string, contactId: string
       .eq("channel_id", channelId).eq("key", key).maybeSingle());
   }
   if (!f) return;
-  await db.from("contact_field_values").upsert(
+  const { error: _upErr } = await db.from("contact_field_values").upsert(
     { contact_id: contactId, field_id: (f as any).id, value, updated_at: new Date().toISOString() },
     { onConflict: "contact_id,field_id" },
   );
-  // El contacto dejó un dato REAL (no un candado interno del motor, que empieza
-  // con "_") → "interesado activo": gradúa a esa secuencia si el negocio la
-  // configuró. No-op si no la hay, y nunca degrada a quien ya está más profundo.
-  if (!key.startsWith("_") && !INTERNAL_FIELDS.has(key) && value != null && String(value).trim() !== "") {
-    await moverEtapa(db, channelId, contactId, "interesado").catch(() => {}); // etapa del embudo
-    await enrolarSegmento(db, channelId, contactId, "interactuo").catch(() => {}); // secuencia
-  }
+  if (!_upErr) _campoId.set(_ck, String((f as any).id));
+  await graduarPorDato(db, channelId, contactId, key, value);
+}
+// El contacto dejó un dato REAL (no un candado interno del motor, que empieza
+// con "_") → "interesado activo": gradúa a esa secuencia si el negocio la
+// configuró. No-op si no la hay, y nunca degrada a quien ya está más profundo.
+async function graduarPorDato(db: SupabaseClient, channelId: string, contactId: string, key: string, value: string | null) {
+  if (key.startsWith("_") || INTERNAL_FIELDS.has(key) || value == null || String(value).trim() === "") return;
+  const ahora = Date.now();
+  if (ahora - (_graduado.get(contactId) ?? 0) < GRADUADO_TTL_MS) return;
+  _graduado.set(contactId, ahora);
+  if (_graduado.size > 2000) for (const [k, t] of _graduado) if (ahora - t >= GRADUADO_TTL_MS) _graduado.delete(k);
+  await moverEtapa(db, channelId, contactId, "interesado").catch(() => {}); // etapa del embudo
+  await enrolarSegmento(db, channelId, contactId, "interactuo").catch(() => {}); // secuencia
 }
 async function hasTag(db: SupabaseClient, contactId: string, tagName: string): Promise<boolean> {
   const { data } = await db.from("contact_tags")

@@ -12,7 +12,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { runEngine, startFlowRun, aplicarStock, type EngineEvent } from "../_shared/engine.ts";
+import { runEngine, startFlowRun, aplicarStock, arranqueSinEspera, type EngineEvent } from "../_shared/engine.ts";
 
 const db = serviceClient();
 const TEST_WA_ID = "webchat-test";
@@ -249,9 +249,12 @@ Deno.serve(async (req) => {
   // (comprobante) tiene que llegar entera y sin espera.
   const esTexto = !buttonId && !mediaKind && !location;
   const { data: ch } = await db.from("channels").select("buffer_default_seg").eq("id", channel_id).maybeSingle();
-  const bufferSeg = esTexto
+  let bufferSeg = esTexto
     ? Math.min(Math.max(Number((ch as any)?.buffer_default_seg ?? 4) || 0, 0), MAX_BUFFER_SEG)
     : 0;
+  // ⚡ Igual que el webhook: palabra clave sin conversación en curso → los mensajes iniciales
+  // salen sin esperar. Sin esto el banco de pruebas tardaba 4 s más que WhatsApp en el arranque.
+  if (bufferSeg > 0 && await arranqueSinEspera(db, channel_id, contactId, String(text ?? ""))) bufferSeg = 0;
   const task = correrMotor(channel_id, contactId, event, String((msgRow as any)?.id ?? ""), bufferSeg);
   // Se le contesta YA al panel y el motor sigue por detrás: con el buffer, esperar el turno
   // entero dejaba el botón de enviar bloqueado 25 s y era imposible mandar dos mensajes
