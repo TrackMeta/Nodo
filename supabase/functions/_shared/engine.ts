@@ -1462,6 +1462,10 @@ async function runEngineInner(
     // toca `contacts.last_input`: en la Bandeja se sigue viendo lo que él mandó de verdad.
     if (event.type === "message" && decision.keyword) {
       const _sinKw = sinLaPalabraClave(event.text, decision.keyword);
+      // Lo que escribió ADEMÁS de la palabra clave: la «pregunta pendiente» del primer mensaje (preguntaColgada) mira
+      // esto y no el mensaje entero — la palabra clave nunca se responde (Rodrigo, 3-oct: «el bot no tiene que responder
+      // a la palabra clave»). «-» = no escribió nada más.
+      await setField(db, channelId, contactId, "_entrada_sin_clave", _sinKw.trim() || "-").catch(() => {});
       if (_sinKw !== String(event.text ?? "")) {
         event = { ...event, text: _sinKw };
         await logEvent(db, channelId, contactId, "nota", "🔑 La palabra clave solo enruta",
@@ -23337,7 +23341,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         .select("content, ts").eq("contact_id", run.contact_id).eq("direction", "in")
         .order("ts", { ascending: true }).limit(4);
       const linesIn = (ins ?? []).map((m: any) => String(m.content?.text ?? m.content?.caption ?? "").trim()).filter(Boolean);
-      const primera = linesIn[0] ?? "";
+      // 🔑 La PALABRA CLAVE (o el texto que pone Meta en los anuncios: «Hola. ¿Puedo obtener más información sobre X?») no
+      // es una pregunta del cliente: activa el flujo y nada más. Rodrigo (3-oct): «el bot no tiene que responder a la
+      // palabra clave, eso no va». Se mira solo lo que escribió además de la clave.
+      const _sinClave = String((ctx as any)._entrada_sin_clave ?? "");
+      const _primeraRaw = linesIn[0] ?? "";
+      const primera = esPrellenadoDeAnuncio(_primeraRaw) ? "" : (_sinClave ? (_sinClave === "-" ? "" : _sinClave) : _primeraRaw);
       // Solo al principio de la conversación y solo si de verdad preguntó algo.
       // Y UNA SOLA VEZ: el rango `<= 3` volvía a inyectar la pregunta en el turno
       // siguiente, cuando la IA YA la había contestado, así que el bot recitaba el
