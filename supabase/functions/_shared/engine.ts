@@ -7129,7 +7129,10 @@ function sinPresentacionRepetida(texto: string, producto: string, ventaAhora = f
   // o expresó una DESCONFIANZA («he visto comentarios malos», «¿es estafa?»): lo que abre el mensaje es la respuesta,
   // no una presentación repetida. Se la llevaba entera y quedaba «¡Hola! Cuando quieras me dices de dónde eres»
   // (F13-formal, F13-audio, F13-quejas, 2026-09-29).
-  if (/\b(informacion|info|detall\w*|condiciones|saber\s+(?:del|de\s+la|de\s+el|sobre|mas)|conocer|de\s+que\s+se\s+trata|como\s+funciona|que\s+es\s+(?:el|la|esto|eso)|comentari\w*|opinion\w*|resen\w*|queja\w*|estaf\w*|confi\w*|fraude|enga\w*|malos?|malas?)\b/.test(_li)) return t;
+  // (+ si FUNCIONA / si es efectivo / si de verdad sirve: «pero si funciona», «quiero saber si funciona» → la IA contestaba
+  //  «Claro que sí funciona ☀️ EcoGuard™ Solar está diseñado para…» y el recorte se llevaba la respuesta entera: quedaba
+  //  «Perfecto 🙌» + los datos, tres veces seguidas — Probar flujos, Rodrigo, 2026-10-02)
+  if (/\b(informacion|info|detall\w*|condiciones|saber\s+(?:del|de\s+la|de\s+el|sobre|mas)|conocer|de\s+que\s+se\s+trata|como\s+funciona|funcion\w*|efectiv\w*|eficaz|es\s+bueno|de\s+verdad|realmente|resultados?|que\s+es\s+(?:el|la|esto|eso)|comentari\w*|opinion\w*|resen\w*|queja\w*|estaf\w*|confi\w*|fraude|enga\w*|malos?|malas?)\b/.test(_li)) return t;
   // (+ los pedidos en imperativo: «mándame el link para comprar en la web» — F6-hweb: se fue la
   // respuesta «vendemos solo por WhatsApp» con la presentación y quedó solo «¿Alguna otra duda?»)
   const _pide = /[?¿]|\b(necesito|quiero saber|me interesa saber|tienen|hay|puedo|se puede|cuanto|como|que|factura|boleta|ruc|garantia|mandame|enviame|pasame|dime|explicame|muestrame|ensename|link|enlace|web|pagina|video|foto)\b/.test(_li);
