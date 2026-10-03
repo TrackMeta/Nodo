@@ -124,5 +124,9 @@ Zonas y distritos, sedes Shalom, pagos y OCR de comprobantes, pedidos, avisos, r
 | 2026-10-02 | Línea base (a mano) | 9 / 25 | gpt-4.1-mini, sin cambios de arquitectura; calificado por Claude leyendo |
 | 2026-10-03 | **Línea base oficial (examen)** | **12 / 35 conversaciones con falla grave** (13–15 graves) | Examen `89ef4c74`. Juez gpt-5-mini por turno con clave; dos calificaciones de las mismas transcripciones: 13 y 15 graves → ruido del juez ±2. Origen: ~3 cortes/respuestas borradas por el motor, ~3 de flujo (supone la zona, esquiva «¿cómo pago?»), ~7 inventos de la IA |
 
+| 2026-10-03 | Fase 1 · motor v2, corrida 1 | **6 / 35** (7 graves) | Examen `2a9925e8`. Cero frases cortadas, cero «no contestó», cero «supuso la zona». Quedan 5 inventos de la IA (lluvia, metros, niños, noche, ruido) + el precio por unidad de la ficha (56.50 vs 56.33) + «el resto cuando ya esté allá». Leves 28 → 18. Revisor: reescribió 36 de 77 respuestas (47 %), 26 por la pregunta de la sede repetida → se quita esa pregunta sola |
+
+| 2026-10-03 | Fase 1 · motor v2, corrida 2 | **5 / 35** (5 graves) | Examen `c0114345`. Las 5 son inventos de la IA (lluvia, niños, noche, almacén, ruido): cero fallas del motor. Revisor: reescribió 10 de 77 (13 %), 4 no pasaron ni así (5 %). Interruptor por canal listo (`channels.motor_v2`, apagado) |
+
 **Cómo leer la nota:** se compara «conversaciones con falla grave» (de 35). Una diferencia de 1–2 puede ser ruido del
 juez; para dar por buena una mejora, que baje al menos 3 o que se repita en dos corridas.

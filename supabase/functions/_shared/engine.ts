@@ -8418,6 +8418,15 @@ function violacionesV2(texto: string, p: PasoV2): string[] {
   return v;
 }
 
+// En el paso de la SEDE la IA casi siempre cierra con «¿cuál te queda más cerca?» — la misma pregunta que el motor pone
+// debajo de la lista. Mandarla a reescribir por eso era la mitad de las reescrituras del examen v2 (26 de 36, 3-oct).
+// Se quita SOLO esa última pregunta y solo si habla de la sede/oficina: el resto de su mensaje queda intacto.
+function sinPreguntaDeSedeV2(texto: string): string {
+  return String(texto ?? "").replace(
+    /[ \t]*¿[^?¿\n]*(?<![\p{L}])(?:sedes?|oficinas?|agencias?|cerca|queda|recog\p{L}*|recoj\p{L}*)(?![\p{L}])[^?¿\n]*\?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*$/iu,
+    "").trimEnd();
+}
+
 // ¿Contestó lo que preguntó? Eso no se ve con palabras: lo mira una IA chica, solo cuando el cliente preguntó algo.
 const CONTESTA_SCHEMA = {
   type: "object", additionalProperties: false,
@@ -17053,7 +17062,7 @@ async function loadEntregas(db: SupabaseClient, run: Run): Promise<any | null> {
   if (cache !== undefined) return cache;
   let out: any = null;
   try {
-    const { data } = await db.from("channels").select("entregas, timezone").eq("id", run.channel_id).maybeSingle();
+    const { data } = await db.from("channels").select("entregas, timezone, motor_v2").eq("id", run.channel_id).maybeSingle();
     out = data ?? null;
   } catch (_) { /* columna pendiente (0032) */ }
   (run as any)._entregas = out;
@@ -25313,7 +25322,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
 
     // 🧭 Motor v2: el motor decide el siguiente paso y se lo dice a la IA al final (ver pasoV2). Solo venta física, antes
     // de que el pedido se esté cerrando (el cierre tiene sus propias reglas).
-    if (op === "generar_texto" && _motorV2Forzado && !esDigital(ctx) && !!ctx._product_id
+    // Se enciende por canal (`channels.motor_v2`, migración 0123) o lo fuerza el examen.
+    const _v2Encendido = op === "generar_texto" && !esDigital(ctx) &&
+      (_motorV2Forzado || (await loadEntregas(db, run).catch(() => null))?.motor_v2 === true);
+    if (_v2Encendido && !!ctx._product_id
         && String(ctx.pedido_creado ?? "") !== "si" && ctx.datos_completos !== "si" && typeof content === "string") {
       const _p = pasoV2(ctx, run);
       (run as any)._v2Activo = true;
@@ -25321,7 +25333,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       content += "\n\n" + instruccionV2(_p, ctx);
       await logEvent(db, run.channel_id, run.contact_id, "nota", `🧭 Motor v2 · paso: ${_p.paso}`,
         _p.pregunta ? `Pregunta del paso: ${_p.pregunta}` : "Sin pregunta de la IA en este paso").catch(() => {});
-    } else if (op === "generar_texto" && _motorV2Forzado) {
+    } else if (_v2Encendido) {
       await logEvent(db, run.channel_id, run.contact_id, "nota", "🧭 Motor v2 no aplica en este turno",
         `digital=${esDigital(ctx)} venta=${_turnoDeVenta} producto=${!!ctx._product_id} pedido=${ctx.pedido_creado ?? ""} datos=${ctx.datos_completos ?? ""}`).catch(() => {});
     }
@@ -25337,6 +25349,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     if ((run as any)._v2Activo && typeof result === "string" && result.trim() && typeof content === "string") {
       try {
         const _p = (run as any)._pasoV2 as PasoV2;
+        if (_p.paso === "sede") result = sinPreguntaDeSedeV2(result) || result;
         const revisar = async (txt: string) => {
           const v = violacionesV2(txt, _p);
           const c = await contestoV2(txt, ctx, ai, provider, run.channel_id, db);
@@ -25352,8 +25365,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const r2 = await runAI({ db, channelId: run.channel_id, origen: "vender", provider, apiKey: ai.api_key, model, system, maxTokens,
             content: content + `\n\n## ⚠️ CORRIGE TU RESPUESTA\nEscribiste esto:\n«${result}»\nTiene estos problemas:\n` +
               v1.map((x) => `• ${x}`).join("\n") + "\nEscribe de nuevo el mensaje COMPLETO corrigiendo solo eso. Responde solo con el mensaje." });
-          const v2 = r2 && r2.trim() ? await revisar(r2) : ["(vacía)"];
-          if (r2 && r2.trim()) result = r2;
+          const r2b = _p.paso === "sede" && r2 ? (sinPreguntaDeSedeV2(r2) || r2) : r2;
+          const v2 = r2b && r2b.trim() ? await revisar(r2b) : ["(vacía)"];
+          if (r2b && r2b.trim()) result = r2b;
           if (v2.length) {
             (run as any)._v2Fallo = true;
             await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ Motor v2: la reescritura tampoco pasó",
