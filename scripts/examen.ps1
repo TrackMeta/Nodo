@@ -16,7 +16,9 @@ param(
   [string[]]$Solo = @(),
   [string]$ExamenId = "",
   [string]$ChannelId = "f5e85bad-11c1-41ac-99a4-77d59834de28",
-  [int]$Paralelo = 5
+  [int]$Paralelo = 5,
+  [switch]$Rejuzgar,         # solo vuelve a calificar (no repite las conversaciones)
+  [string]$Juez = ""         # modelo del juez (por defecto el de la función)
 )
 $ErrorActionPreference = "Stop"
 $src = @"
@@ -66,7 +68,7 @@ if (-not $ExamenId) {
   Write-Output ("Examen " + $ExamenId + " · " + $convs.Count + " conversaciones")
 } else {
   $v = & $llamar $url $secret @{ accion = "ver"; examen_id = $ExamenId }
-  $convs = @($v.conversaciones | Where-Object { $_.estado -ne "juzgada" } | ForEach-Object { $_.conv })
+  $convs = if ($Rejuzgar) { @($v.conversaciones | ForEach-Object { $_.conv }) } else { @($v.conversaciones | Where-Object { $_.estado -ne "juzgada" } | ForEach-Object { $_.conv }) }
   Write-Output ("Retomando " + $ExamenId + " · faltan " + $convs.Count)
 }
 # (con -File, «-Solo gatos,lluvia» llega como UN texto: se separa por comas)
@@ -75,17 +77,17 @@ if ($Solo.Count) { $convs = @($convs | Where-Object { $Solo -contains $_ }) }
 
 # Cada trabajador: correr (en varias llamadas si hace falta) y después juzgar.
 $trabajo = {
-  param($url, $secret, $examenId, $conv, $llamarTxt)
+  param($url, $secret, $examenId, $conv, $llamarTxt, $soloJuzgar, $juez)
   $llamar = [scriptblock]::Create($llamarTxt)
-  $estado = "?"
-  for ($k = 0; $k -lt 8; $k++) {
+  $estado = if ($soloJuzgar) { "corrida" } else { "?" }
+  if (-not $soloJuzgar) { for ($k = 0; $k -lt 8; $k++) {
     $r = & $llamar $url $secret @{ accion = "correr"; examen_id = $examenId; conv = $conv }
     if ($r.error) { $estado = "error al correr: " + $r.error; break }
     if (-not $r.pendiente) { $estado = "corrida"; break }
-  }
+  } }
   if ($estado -eq "corrida") {
     for ($k = 0; $k -lt 2; $k++) {
-      $j = & $llamar $url $secret @{ accion = "juzgar"; examen_id = $examenId; conv = $conv }
+      $j = & $llamar $url $secret @{ accion = "juzgar"; examen_id = $examenId; conv = $conv; juez = $juez }
       if (-not $j.error) { $estado = "graves " + $j.graves + " · leves " + $j.leves; break }
       $estado = "error del juez: " + $j.error
     }
@@ -97,7 +99,7 @@ $pool = [RunspaceFactory]::CreateRunspacePool(1, $Paralelo); $pool.Open()
 $jobs = @()
 foreach ($c in $convs) {
   $ps = [PowerShell]::Create(); $ps.RunspacePool = $pool
-  [void]$ps.AddScript($trabajo).AddArgument($url).AddArgument($secret).AddArgument($ExamenId).AddArgument($c).AddArgument($llamar.ToString())
+  [void]$ps.AddScript($trabajo).AddArgument($url).AddArgument($secret).AddArgument($ExamenId).AddArgument($c).AddArgument($llamar.ToString()).AddArgument([bool]$Rejuzgar).AddArgument($Juez)
   $jobs += [pscustomobject]@{ ps = $ps; h = $ps.BeginInvoke() }
 }
 foreach ($j in $jobs) { Write-Output ("  " + ($j.ps.EndInvoke($j.h) -join "")); $j.ps.Dispose() }

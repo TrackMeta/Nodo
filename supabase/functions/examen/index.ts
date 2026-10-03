@@ -21,7 +21,7 @@ import { runAI } from "../_shared/ai.ts";
 import { BATERIAS, BATERIA_ECOGUARD, type ConvExamen } from "./bateria.ts";
 
 const db = serviceClient();
-const MODELO_JUEZ = "gpt-4.1";
+const MODELO_JUEZ = "gpt-5-mini";   // razona antes de calificar: más parejo que gpt-4.1 (calibración 3-oct)
 // Una invocación de Edge Function muere a los ~150 s: se corta antes y la conversación sigue en la próxima llamada.
 const PRESUPUESTO_MS = 95_000;
 
@@ -103,6 +103,8 @@ async function turno(channelId: string, contactId: string, texto: string): Promi
 const JUICIO_SCHEMA = {
   type: "object", additionalProperties: false,
   properties: {
+    // Primero el razonamiento (turno por turno) y después el veredicto: así el juez no marca de memoria.
+    analisis: { type: "string" },
     fallas: {
       type: "array",
       items: {
@@ -119,12 +121,13 @@ const JUICIO_SCHEMA = {
     },
     resumen: { type: "string" },
   },
-  required: ["fallas", "resumen"],
+  required: ["analisis", "fallas", "resumen"],
 };
 
-const SISTEMA_JUEZ = `Eres un auditor de calidad de un bot de ventas por WhatsApp de una tienda peruana. Lees UNA conversación
-entre un cliente de prueba (C) y el bot (B) y marcas las FALLAS de las respuestas del bot. Eres exigente pero justo:
-no marques como falla lo que está bien, y no inventes problemas.
+const SISTEMA_JUEZ = `Eres un auditor de calidad de un bot de ventas por WhatsApp de una tienda peruana. Te paso una
+conversación entre un cliente de prueba (C) y el bot (B) y evalúas SOLO EL TURNO INDICADO: la respuesta del bot a ese
+mensaje del cliente. Lo anterior es contexto. Eres exigente pero justo: no marques como falla lo que está bien, y no
+inventes problemas.
 
 El bot combina dos cosas:
 · Texto que escribe una IA vendedora (tono cercano, emojis, primera persona). Un poco de floreo vendedor está BIEN.
@@ -134,24 +137,46 @@ El bot combina dos cosas:
   cuando llegue a la agencia»), «Garantía formal no manejamos 🙏…», los datos de pago y el resumen del pedido.
 · El TURNO 1 son mensajes de bienvenida escritos por el dueño: NO los evalúes.
 
+· Los PLAZOS, el costo del envío (p. ej. «el envío es gratis») y la forma de entrega que salen de la CONFIGURACIÓN DE
+  ENTREGAS son del negocio: decirlos («te lo llevo mañana», «normalmente lo tienes en 1 a 2 días») NO es inventar.
+
 Tipos de falla (usa exactamente estos):
-· no_contesto (GRAVE): el cliente preguntó algo concreto y ese turno no lo contesta (decir con honestidad «ese dato no
-  lo tengo» SÍ cuenta como contestar). Si hizo varias preguntas, cada una sin contestar es una falla.
+· no_contesto (GRAVE): el cliente preguntó algo concreto y ese turno no lo contesta. NO es falla —y no la marques—
+  si el bot responde con lo que dice la ficha aunque sea poco preciso («cubre un área moderada»), o si dice con
+  honestidad que no tiene ese dato («ese dato no lo tengo aquí»): eso ES contestar. Si hizo varias preguntas, cada
+  una sin contestar es una falla. Responder «primero dime de qué ciudad eres» a algo que se puede contestar para los
+  dos casos (cómo se paga, cómo se envía: Lima y provincia) NO es contestar.
 · cortada (GRAVE): frase incompleta o cortada a la mitad, palabras pegadas, un trozo suelto que no se entiende, o un
-  mensaje que no tiene sentido en ese momento.
+  mensaje que no tiene sentido en ese momento. Ejemplos reales: «Para coordinar la entrega y cerrar el pedido.» (empieza
+  con «Para…» y le falta la acción principal), «Así te digo la que te queda.» sin la pregunta a la que se refiere,
+  «Sobre el pago, Estas son las opciones» (dos frases empalmadas).
 · invento (GRAVE): afirma o niega algo concreto del producto, la garantía, devoluciones, seguridad (personas, niños,
-  mascotas), plazos o políticas que la FICHA no dice o que la contradice. Si es un detalle genérico, inofensivo y obvio
-  («es fácil de usar»), márcalo como invento NO grave.
+  mascotas), plazos o políticas que la FICHA no dice o que la contradice, y que puede crearle al cliente una
+  expectativa falsa o terminar en un reclamo. Lo que se deduce directo de la ficha (si la ficha dice «ahuyenta», decir
+  «no los mata») NO es invento. Si es un detalle genérico, inofensivo y obvio («es fácil de usar»), márcalo como
+  invento NO grave.
 · dato_erroneo (GRAVE): precio, adelanto, cantidad o forma de pago/entrega distintos a la ficha y las reglas.
 · supuso_zona (GRAVE): habla de Shalom, agencia, contraentrega, adelanto o días de entrega como si supiera de dónde es
-  el cliente, cuando el cliente todavía no lo dijo.
+  el cliente, cuando el cliente todavía no dijo NINGÚN lugar (ni en ese turno ni antes). Si el cliente ya nombró su
+  ciudad o distrito, hablar de cómo le llega NO es esta falla. Explicar las dos opciones (Lima y provincia) sin
+  saber la zona tampoco lo es.
 · fuera_de_orden (leve): pide datos, sede o pago antes de tiempo, o se salta un paso.
 · repite (leve): repite una pregunta o un bloque que ya se dijo, o dice lo mismo dos veces en el mismo turno.
 · robotico (leve): suena a formulario, frío, o habla en tercera persona («te llega», «el sistema te manda»).
 · otro (leve): cualquier otro defecto que un cliente notaría.
 
-Responde SOLO el JSON. Para cada falla: el número de turno, el tipo, si es grave, una cita corta (máx. 15 palabras) del
-texto del bot y una explicación de máx. 25 palabras. Máximo 10 fallas. «resumen»: una frase sobre la conversación.`;
+La CLAVE DE RESPUESTA de abajo dice qué es correcto e incorrecto en esta conversación y MANDA sobre tu criterio: si el
+bot hizo lo que la clave llama CORRECTO, ese punto no es falla.
+
+Responde SOLO el JSON. En «analisis» contesta, en una línea cada una, estas preguntas SOBRE EL TURNO INDICADO:
+1) ¿Qué preguntó o pidió el cliente en este mensaje? (puede ser más de una cosa)
+2) ¿El bot lo contestó, o dijo con honestidad que no tiene el dato? ¿Contestó CADA cosa?
+3) Lee el texto del bot ORACIÓN POR ORACIÓN: ¿hay alguna cortada, incompleta, suelta o que no se entienda?
+4) ¿Afirma algo que la ficha, las preguntas frecuentes o la configuración no dicen?
+5) ¿Habla de por dónde le llega, de Shalom o del pago como si supiera la zona, sin que el cliente la haya dicho antes?
+6) ¿Repite algo que el bot ya dijo en turnos anteriores, o lo mismo dos veces en este turno?
+Después «fallas», solo con lo que el análisis encontró. Para cada falla: el número del turno indicado, el tipo, si es
+grave, una cita corta (máx. 15 palabras) del texto del bot y una explicación de máx. 25 palabras. «resumen»: una frase.`;
 
 function transcriptTexto(tr: Array<{ c: string; b: string[] }>): string {
   const corto = (s: string) => {
@@ -167,7 +192,7 @@ function transcriptTexto(tr: Array<{ c: string; b: string[] }>): string {
   return tr.map((t, i) => `── TURNO ${i + 1}\nC: ${t.c}\nB: ${t.b.length ? t.b.map((x, j) => `[burbuja ${j + 1}] ${corto(x)}`).join("\n") : "(el bot no respondió nada)"}`).join("\n\n");
 }
 
-async function juzgar(examen: any, conv: ConvExamen, tr: Array<{ c: string; b: string[] }>) {
+async function juzgar(examen: any, conv: ConvExamen, tr: Array<{ c: string; b: string[] }>, modeloJuez?: string) {
   const bat = BATERIAS[examen.bateria ?? ""] ?? BATERIA_ECOGUARD;
   const [{ data: prod }, { data: ch }, { data: aiRows }] = await Promise.all([
     db.from("products").select("nombre, config").eq("channel_id", examen.channel_id).ilike("nombre", bat.producto).limit(1).maybeSingle(),
@@ -179,27 +204,65 @@ async function juzgar(examen: any, conv: ConvExamen, tr: Array<{ c: string; b: s
   const cfg = ((prod as any)?.config ?? {}) as any;
   const txt = (x: unknown) => typeof x === "string" ? x : JSON.stringify(x ?? "");
   const ent = ((ch as any)?.entregas ?? {}) as any;
-  const reglas = {
-    adelanto_provincia: ent?.adelanto_default ?? null,
-    envio: ent?.envio ?? ent?.modo_envio ?? null,
-    pos_tarjeta: ent?.pos_tarjeta ?? null,
-  };
-  const contenido =
+  // Sin la lista de distritos de Lima (son decenas): tapaba el envío, el adelanto y los plazos, que es lo que importa.
+  const { zonas: _zonas, ...entSinZonas } = ent ?? {};
+  const encabezado =
     `## FICHA DEL PRODUCTO «${(prod as any)?.nombre ?? bat.producto}»\n${txt(cfg.contexto_producto).slice(0, 6000)}\n\n` +
     `## PREGUNTAS FRECUENTES\n${txt(cfg.faq).slice(0, 3000)}\n\n` +
     `## LÍMITES (lo que NO se promete)\n${txt(cfg?.ia?.limites).slice(0, 1500)}\n\n` +
     `## REGLAS DEL NEGOCIO\nLima: entrega a domicilio, contraentrega (paga al recibir). Provincia: por agencia Shalom, con un ` +
     `adelanto y el resto se paga por el chat cuando llega a la agencia; en la agencia solo recoge con su clave.\n` +
-    `Datos de configuración: ${JSON.stringify(reglas)}\n${txt((ch as any)?.negocio).slice(0, 2000)}\n\n` +
-    `## QUÉ SE PRUEBA EN ESTA CONVERSACIÓN\n${conv.foco}\n\n## CONVERSACIÓN\n${transcriptTexto(tr)}`;
-  const raw = await runAI({
-    db, channelId: examen.channel_id, origen: "otro", provider: ai.provider, apiKey: ai.api_key, model: MODELO_JUEZ,
-    system: SISTEMA_JUEZ, content: contenido, maxTokens: 1400,
-    jsonSchema: JUICIO_SCHEMA as unknown as Record<string, unknown>, jsonStrict: true,
-  });
-  const j = JSON.parse(raw);
-  const fallas = Array.isArray(j?.fallas) ? j.fallas : [];
-  return { juicio: j, graves: fallas.filter((f: any) => f?.grave).length, leves: fallas.filter((f: any) => !f?.grave).length };
+    `${txt((ch as any)?.negocio).slice(0, 2000)}\n\n` +
+    `## CONFIGURACIÓN DE ENTREGAS (plazos, envío y adelanto del negocio)\n${JSON.stringify(entSinZonas).slice(0, 3500)}\n` +
+    `Distritos de Lima con reparto propio: ${Array.isArray(_zonas) ? _zonas.length : 0}\n\n` +
+    `## CLAVE DE RESPUESTA (manda sobre tu criterio)\n${conv.foco}\n\n`;
+  const juez = typeof modeloJuez === "string" && /^gpt-[\w.-]+$/.test(modeloJuez) ? modeloJuez : MODELO_JUEZ;
+  // Un juicio por TURNO, en paralelo: leyendo la conversación entera de una vez, el juez se distraía en las largas
+  // (dejó pasar una frase cortada y una pregunta esquivada en el chat de Rodrigo, 3-oct).
+  const porTurno = await Promise.all(tr.map(async (_t, i) => {
+    if (i === 0) return [] as any[];   // turno 1 = bienvenida del dueño
+    const contenido = encabezado +
+      `## CONVERSACIÓN HASTA ESTE TURNO (contexto)\n${transcriptTexto(tr.slice(0, i))}\n\n` +
+      `## TURNO A EVALUAR: TURNO ${i + 1}\n${transcriptTexto([tr[i]]).replace("── TURNO 1", `── TURNO ${i + 1}`)}`;
+    const j = await llamarJuez(juez, ai, examen.channel_id, contenido);
+    return (Array.isArray(j?.fallas) ? j.fallas : []).map((f: any) => ({ ...f, turno: i + 1, _analisis: undefined }))
+      .concat([{ _analisis: String(j?.analisis ?? ""), turno: i + 1 }]);
+  }));
+  const todo = porTurno.flat();
+  const fallas = todo.filter((f: any) => f.tipo);
+  const analisis = todo.filter((f: any) => !f.tipo).map((f: any) => `T${f.turno}: ${f._analisis}`).join("\n");
+  const juicio = { juez, analisis, fallas, resumen: "" };
+  return { juicio, graves: fallas.filter((f: any) => f?.grave).length, leves: fallas.filter((f: any) => !f?.grave).length };
+}
+
+async function llamarJuez(juez: string, ai: any, channelId: string, contenido: string): Promise<any> {
+  let raw: string;
+  if (/^gpt-5/.test(juez)) {
+    // Los gpt-5 RAZONAN antes de contestar: tardan más que el tope de 28 s de runAI. Se llaman directo, con 110 s.
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 110_000);
+    try {
+      const r = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST", signal: ctrl.signal,
+        headers: { Authorization: `Bearer ${ai.api_key}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          model: juez, reasoning_effort: "medium", max_completion_tokens: 12000,
+          messages: [{ role: "system", content: SISTEMA_JUEZ }, { role: "user", content: contenido }],
+          response_format: { type: "json_schema", json_schema: { name: "juicio", strict: true, schema: JUICIO_SCHEMA } },
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(`juez ${r.status}: ${JSON.stringify(d?.error ?? d).slice(0, 200)}`);
+      raw = String(d?.choices?.[0]?.message?.content ?? "");
+    } finally { clearTimeout(to); }
+  } else {
+    raw = await runAI({
+      db, channelId, origen: "otro", provider: ai.provider, apiKey: ai.api_key, model: juez,
+      system: SISTEMA_JUEZ, content: contenido, maxTokens: 1500,
+      jsonSchema: JUICIO_SCHEMA as unknown as Record<string, unknown>, jsonStrict: true,
+    });
+  }
+  return JSON.parse(raw);
 }
 
 Deno.serve(async (req) => {
@@ -298,7 +361,7 @@ Deno.serve(async (req) => {
     const tr = (fila as any).transcript;
     if (!Array.isArray(tr) || tr.length < conv.turnos.length) return json({ error: "la conversación todavía no terminó" }, 409);
     try {
-      const r = await juzgar(examen, conv, tr);
+      const r = await juzgar(examen, conv, tr, typeof body?.juez === "string" ? body.juez : undefined);
       await db.from("examen_conversaciones").update({ estado: "juzgada", juicio: r.juicio, graves: r.graves, leves: r.leves, error: null, updated_at: new Date().toISOString() })
         .eq("examen_id", examenId).eq("conv", convId);
       return json({ ok: true, graves: r.graves, leves: r.leves });
