@@ -128,5 +128,15 @@ Zonas y distritos, sedes Shalom, pagos y OCR de comprobantes, pedidos, avisos, r
 
 | 2026-10-03 | Fase 1 · motor v2, corrida 2 | **5 / 35** (5 graves) | Examen `c0114345`. Las 5 son inventos de la IA (lluvia, niños, noche, almacén, ruido): cero fallas del motor. Revisor: reescribió 10 de 77 (13 %), 4 no pasaron ni así (5 %). Interruptor por canal listo (`channels.motor_v2`, apagado) |
 
+| 2026-10-03 | Fase 3 · revisor contra inventos | **4 / 35** → afinado **3 / 35** | Exámenes `7b5de81d`, `a7437a49`. El revisor compara con la ficha; reescrituras ~27 % antes de quitarle falsas alarmas |
+| 2026-10-03 | **FINAL fases 1-5 · EcoGuard** | **5 / 35**, de las cuales **4 son el precio por unidad de la ficha** (S/ 56.50 escrito vs S/ 56.33) y 1 invento (lluvia) | Examen `9322b635`. Reescrituras 13 de 77 (17 %), 2 no pasaron |
+| 2026-10-03 | **FINAL · Digital (Guía Experta)** | **0 / 14** (base sin revisor: 3 / 14) | Examen `a1cc16f1`. Reescrituras 4 de 28 |
+| 2026-10-03 | **FINAL · Adaptador** | **0 / 5** | Examen `c7fff2b5` |
+
+**Estado al cierre (3-oct):** fases 0, 1, 3 y 5 hechas; fase 2 medida (lo que sigue corriendo en v2 casi todo agrega; el
+código de las tijeras se borra cuando v2 esté en todos los canales); fase 4 = `FICHAS_QUE_FALTAN.md`, la completa Rodrigo.
+Encendido: solo Prime Digital (`channels.motor_v2`). La venta digital y la Recepción ya tienen el revisor, pero esperan el
+interruptor de su canal.
+
 **Cómo leer la nota:** se compara «conversaciones con falla grave» (de 35). Una diferencia de 1–2 puede ser ruido del
 juez; para dar por buena una mejora, que baje al menos 3 o que se repita en dos corridas.
