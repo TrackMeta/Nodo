@@ -3717,7 +3717,7 @@ const REGLA_SIN_DISCURSO_RIESGO =
   "Y tampoco la coletilla que lo niega: «nada antes», «nada por adelantado», «no pagas hasta " +
   "que…», «cero riesgo», «sin adelanto», «sin pagos antes», «sin pagar nada antes». " +
   "Con decir cuándo paga ya está: no le agregues nada detrás. " +
-  "Di cómo paga y sigue: «pagas al recibirlo» en Lima; en provincia, un adelanto y lo mando " +
+  "Di cómo paga y sigue: «te lo mando a tu casa y me lo pagas al recibirlo» en Lima; en provincia, un adelanto y lo mando " +
   "y el saldo cuando el paquete llega a la agencia.";
 
 
@@ -8272,6 +8272,28 @@ function sinColetillaRiesgo(texto: string): string {
     .replace(/[ \t]{2,}/g, " ").trim();
   // Si abría la frase, la que queda arranca en minúscula: se le devuelve la mayúscula.
   return limpio.replace(/^(\p{Ll})/u, (m) => m.toUpperCase());
+}
+
+// 🗣️ LIMA EN PRIMERA PERSONA. «En San Juan de Miraflores te llega contraentrega, pagas al recibir
+// el pedido y puedes revisarlo antes de pagar» (Probar flujos, Rodrigo, 2026-10-02: «le responde
+// como robot, en 3.ª persona»): el paquete llega solo y nadie lo cobra. El prompt ya pide «te lo
+// mando hasta tu casa y me lo pagas al recibirlo»; esto es la red por si la IA vuelve a la forma
+// del sistema. Solo la frase de la ENTREGA (con su lugar delante: «En X» → «A X»), y el «pagas al
+// recibir» solo si esa frase estaba — el resto del mensaje no se toca.
+const RE_TE_LLEGA_CONTRAENTREGA =
+  /(^|[.!?¡,\n]\s*|\p{Extended_Pictographic}\s*)(?:(?:en|a|para)\s+([^,.!?¡¿\n]{1,40}?)\s+)?te\s+llega\s+(?:contra\s?entrega|a\s+domicilio|a\s+tu\s+(?:casa|puerta|direcci[oó]n)|hasta\s+tu\s+(?:casa|puerta))(?![\p{L}])/giu;
+function entregaEnPrimeraPersona(texto: string): string {
+  const t = String(texto ?? "");
+  RE_TE_LLEGA_CONTRAENTREGA.lastIndex = 0;
+  if (!RE_TE_LLEGA_CONTRAENTREGA.test(t)) return t;
+  RE_TE_LLEGA_CONTRAENTREGA.lastIndex = 0;
+  return t.replace(RE_TE_LLEGA_CONTRAENTREGA, (_m, pre: string, lugar?: string) => {
+    const mayus = !/,\s*$/.test(pre);
+    return pre + (lugar
+      ? `${mayus ? "A" : "a"} ${lugar} te lo mando hasta tu casa`
+      : `${mayus ? "Te" : "te"} lo mando hasta tu casa`);
+  }).replace(/(?<!(?:^|[^\p{L}])lo\s+)(?<![\p{L}])(p)agas\s+al\s+recibir(?:lo|\s+(?:el|tu)\s+pedido)?(?![\p{L}])/giu,
+    (_m, p: string) => `${p === "P" ? "Me" : "me"} lo pagas al recibirlo`);
 }
 
 // ⛔ «DÉJAME CONFIRMARLO Y TE AVISO». La promesa de un seguimiento que NO existe: nadie vuelve
@@ -22222,8 +22244,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // es —ni siquiera dijo cuántas quiere— y lo primero que lee es que tiene que
           // adelantar plata. El monto tiene su momento y ya tiene su mensaje propio, cuando el
           // pedido se está cerrando. Acá solo toca decirle CÓMO le llega.
-          "  1️⃣ Dile CÓMO le llega, en una línea. Si es provincia: que va por agencia. Si es " +
-          "Lima: que paga al recibirlo. ⛔ NO menciones el adelanto ni su monto en este mensaje: " +
+          // 🗣️ …y dicho por ALGUIEN. «Si es Lima: que paga al recibirlo» salió como «En San Juan de
+          // Miraflores te llega contraentrega, pagas al recibir el pedido y puedes revisarlo antes
+          // de pagar»: el paquete llega solo, nadie lo manda ni nadie cobra. Rodrigo (2026-10-02):
+          // «le responde como robot, en 3.ª persona». Habla el vendedor, en primera persona.
+          "  1️⃣ Dile CÓMO le llega, en una línea y en PRIMERA persona: eres tú quien se lo manda. " +
+          "Si es provincia: que va por agencia. Si es Lima: que se lo mandas a su casa y te lo paga " +
+          "al recibirlo — «¡Genial! A *Surco* te lo mando hasta tu casa y me lo pagas al recibirlo 🛵». " +
+          "⛔ Nada de «te llega contraentrega» ni «el pedido llega»: así habla un sistema, no un vendedor. " +
+          "⛔ NO menciones el adelanto ni su monto en este mensaje: " +
           "todavía no eligió nada y hablarle de plata por adelantado suena a cobro, no a venta. " +
           "El adelanto se le pide después, en su propio mensaje, cuando ya está cerrando.\n" +
           _preguntaCant +
@@ -23162,6 +23191,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         L.push("Todavía NO sabes su **distrito** de Lima. Pregúntaselo con naturalidad para coordinar la entrega; recién con el distrito podrás decirle si llega hoy. No prometas el mismo día hasta saberlo.");
       } else if (ctx.zona_entrega === "lima") {
         L.push(`El cliente es de **${ctx.zona_nombre || "Lima"}** → entrega en Lima, CONTRAENTREGA (paga al recibir).`);
+        // 🗣️ «En San Juan de Miraflores te llega contraentrega, pagas al recibir el pedido…»: el
+        // paquete llega solo y nadie cobra. Rodrigo: «le responde como robot, en 3.ª persona».
+        L.push("🗣️ Cuéntaselo en PRIMERA persona, como el vendedor que se lo manda: «te lo mando hasta tu casa y " +
+          "me lo pagas al recibirlo». ⛔ Nunca «te llega contraentrega», «el pedido llega» ni «pagas al recibir el " +
+          "pedido» a secas: así suena un sistema, no una persona.");
         // Visto en vivo: "queda confirmado tu pedido… con RECOJO en Barranco, Av Grau 300".
         // "Recojo" es vocabulario de provincia (agencia): en Lima va un motorizado a la
         // puerta, y decirle recojo lo deja pensando que tiene que ir a buscarlo él.
@@ -27179,6 +27213,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // entera: «pagas al recibir el pedido, sin adelantos» tiene que seguir diciendo
       // «pagas al recibir el pedido», que es el hecho y sí se dice.
       if (op === "generar_texto") salida = sinColetillaRiesgo(salida);
+      // 🗣️ Lima en primera persona: «te llega contraentrega» → «te lo mando hasta tu casa». Ver entregaEnPrimeraPersona.
+      if (op === "generar_texto" && String(ctx.zona_entrega ?? "") === "lima") {
+        const _antes1p = salida;
+        salida = entregaEnPrimeraPersona(salida);
+        if (salida !== _antes1p) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🗣️ Entrega dicha en primera persona",
+            "La IA escribió «te llega contraentrega»; se dejó «te lo mando hasta tu casa y me lo pagas al recibirlo»").catch(() => {});
+        }
+      }
       // ⛔ Y la promesa de volver con una respuesta que nadie va a traer. Ver sinPromesaDeAviso.
       if (op === "generar_texto") {
         const _antesProm = salida;
