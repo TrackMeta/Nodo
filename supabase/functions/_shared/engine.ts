@@ -4274,6 +4274,23 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   let result = "";
   try {
     result = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 350 });
+    // 🔎 Fase 5: el mismo revisor del motor v2 (¿contestó? ¿inventó?) contra la información del NEGOCIO, con UNA
+    // reescritura. Solo si el canal tiene el motor v2 y solo cuando responde ella (no cuando pasa a un producto: [[ir:N]]).
+    if (result && !/\[\[\s*ir\s*:/i.test(result) && (_motorV2Forzado || (await loadEntregas(db, run).catch(() => null))?.motor_v2 === true)) {
+      try {
+        const _ctxR = { last_input: String(event.text ?? ""), contexto_producto: String(info.negocio ?? ""),
+          faq: cands.map((c: any) => `${c.label ?? c.nombre ?? ""}: ${c.intent ?? ""}`).join("\n") };
+        const _vR = await revisorIAV2(result, _ctxR, ai, ai.provider, run.channel_id, db);
+        if (_vR.length) {
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "✍️ Recepción: se pidió reescribir", _vR.join(" · ").slice(0, 400)).catch(() => {});
+          const _r2 = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model,
+            system: parts.join("\n\n"), maxTokens: 350,
+            content: content + `\n\n## ⚠️ CORRIGE TU RESPUESTA\nEscribiste esto:\n«${result}»\nTiene estos problemas:\n` +
+              _vR.map((x) => `• ${x}`).join("\n") + "\nEscribe de nuevo el mensaje COMPLETO corrigiendo solo eso. Responde solo con el mensaje." });
+          if (_r2 && _r2.trim()) result = _r2;
+        }
+      } catch (_) { /* el revisor nunca tumba la recepción */ }
+    }
   } catch (e) {
     console.error("[recepcion/ai]", (e as any)?.message ?? e);
     // Era el ÚNICO camino que se quedaba callado ante una caída de la IA: el nodo IA del flujo
@@ -8397,7 +8414,7 @@ function instruccionV2(p: PasoV2, ctx: any): string {
   L.push("3. No escribas listas de precios, de sedes ni de datos: las pone el sistema. Como máximo UNA pregunta.");
   // (Probar flujos, 3-oct: a «san juan de miraflores» abrió con «¡Claro! El Adaptador PRO protege tu taladro y te
   //  ayuda a cortar láminas…» antes de decirle cómo le llega. Antes una tijera borraba eso; ahora se le pide no hacerlo.)
-  if (!String(ctx?._colgadaV2 ?? "").trim() && !/[?¿]/.test(String(ctx?.last_input ?? "")) && !traePregunta(String(ctx?.last_input ?? ""))) {
+  if (!String(ctx?._colgadaV2 ?? "").trim() && !pareceConsultaV2(String(ctx?.last_input ?? ""))) {
     L.push("4. Esta vez NO te preguntó nada: solo te dio un dato. No describas el producto ni repitas sus beneficios: " +
       "confirma lo que te dijo en una línea y sigue con el paso. Una sola muletilla al inicio («¡Perfecto!»), no dos.");
   }
@@ -8411,7 +8428,7 @@ function violacionesV2(texto: string, p: PasoV2, ctx?: any): string[] {
   // Solo dio un dato y el mensaje abre describiendo el producto: la vieja tijera de la «presentación repetida», ahora como
   // DETECTOR (si la función recortaría algo, hay presentación de más) — la IA lo reescribe, no se corta.
   const _li = String(ctx?.last_input ?? "");
-  if (ctx && !String(ctx._colgadaV2 ?? "").trim() && !/[?¿]/.test(_li) && !traePregunta(_li)) {
+  if (ctx && !String(ctx._colgadaV2 ?? "").trim() && !pareceConsultaV2(_li)) {
     const prod = String(ctx.producto_nombre ?? ctx.producto ?? "");
     if (prod && sinPresentacionRepetida(String(texto ?? ""), prod, true, _li) !== String(texto ?? "").trim()) {
       v.push("Solo te dio un dato y no te preguntó nada: no describas el producto ni repitas sus beneficios. Confirma lo que te dijo y sigue con el paso.");
@@ -8443,7 +8460,7 @@ function violacionesV2(texto: string, p: PasoV2, ctx?: any): string[] {
   if (p.paso === "sede" && (/📍/u.test(String(texto ?? "")) || /\b(?:te\s+recomiendo|la\s+m[aá]s\s+cercana|elige|est[aá]\s+en\s+la)\b[^.!?\n]{0,40}\b(?:sede|oficina)/i.test(t))) {
     v.push("No nombres ni recomiendes sedes: la lista va debajo.");
   }
-  if (p.paso !== "datos" && RE_FRASE_PIDE_DATOS.test(t) && RE_PALABRA_DATO.test(t)) {
+  if (p.paso !== "datos" && RE_FRASE_PIDE_DATOS.test(t) && RE_PALABRA_DATO_SIN_ZONA.test(t)) {
     v.push("No le pidas sus datos todavía (nombre, celular, DNI, dirección): no es el momento.");
   }
   return v;
@@ -8458,31 +8475,79 @@ function sinPreguntaDeSedeV2(texto: string): string {
     "").trimEnd();
 }
 
-// ¿Contestó lo que preguntó? Eso no se ve con palabras: lo mira una IA chica, solo cuando el cliente preguntó algo.
-const CONTESTA_SCHEMA = {
+// ¿Preguntó algo, aunque sea sin signo? «y si me llega roto quien se hace responsable» no lleva «?» y traePregunta no
+// lo veía: el revisor lo tomó por «solo dio un dato» y le prohibió contestar (examen fase 3, 3-oct).
+function pareceConsultaV2(texto: string): boolean {
+  const t = String(texto ?? "").trim();
+  if (!t) return false;
+  if (/[?¿]/.test(t) || traePregunta(t)) return true;
+  return /^\s*(?:y\s+|pero\s+|oye\s+|entonces\s+)?(?:si\s+)?(?:qu[ié]n|qu[eé]|c[oó]mo|cu[aá]ndo|d[oó]nde|cu[aá]nt\p{L}*|cu[aá]l\p{L}*|por\s*qu[eé]|se\s+puede|sirve|funciona|tiene|tienen|hay|es|son|puedo|aceptan)(?![\p{L}])/iu.test(t)
+    || /(?<![\p{L}])(?:y\s+si|qu[eé]\s+pasa\s+si|qui[eé]n\s+se\s+hace|qui[eé]n\s+responde)(?![\p{L}])/iu.test(t);
+}
+
+// ¿Contestó lo que preguntó? Eso no se ve con palabras: lo mira una IA chica (revisorIAV2).
+// 🔎 FASE 3 (contra los inventos): el mismo revisor compara la respuesta con la FICHA. En el examen v2 lo único que
+// quedaba eran inventos de la IA: «resiste la lluvia», «es seguro para tus hijos», «funciona de noche», «no afecta a tus
+// mascotas» (la ficha dice lo contrario), «para tu almacén» (la ficha prohíbe interiores), «no te molesta el sonido».
+const REVISOR_SCHEMA = {
   type: "object", additionalProperties: false,
-  properties: { contesta: { type: "boolean" }, falta: { type: "string" } },
-  required: ["contesta", "falta"],
+  properties: {
+    contesta: { type: "boolean" },
+    falta: { type: "string" },
+    inventos: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false,
+        properties: { frase: { type: "string" }, por_que: { type: "string" } },
+        required: ["frase", "por_que"],
+      },
+    },
+  },
+  required: ["contesta", "falta", "inventos"],
 };
-async function contestoV2(texto: string, ctx: any, ai: any, provider: Provider, channelId: string, db: SupabaseClient): Promise<string | null> {
+// Temas donde la IA inventa (se revisa aunque el cliente no haya preguntado nada).
+const RE_TEMA_RIESGOSO = /segur\p{L}*|peligr\p{L}*|ni[ñn]\p{L}*|hij[oa]s?|beb[eé]s?|mascotas?|perr\p{L}*|gat[oa]s?|domestic\p{L}*|lluvia|agua|impermeab\p{L}*|resist\p{L}*|humedad|noche|nocturn\p{L}*|metros?|m2|hect[aá]rea|cubre|alcance|dura(?:ci[oó]n)?|bater[ií]a|garant\p{L}*|devoluci\p{L}*|cambio|interior\p{L}*|almac[eé]n|dentro\s+de|ruido|molest\p{L}*|audible|o[ií]do|no\s+afecta|no\s+da[ñn]a|cert\p{L}*|original/iu;
+
+async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider, channelId: string, db: SupabaseClient): Promise<string[]> {
   const colg = String(ctx?._colgadaV2 ?? "").trim();
   const ahora = String(ctx?.last_input ?? "").trim();
   // Con su primera pregunta pendiente, también tiene que quedar contestada (ver instruccionV2).
   const li = colg ? `${colg}\n(y ahora escribió:) ${ahora}` : ahora;
-  if (!li || !(colg || /[?¿]/.test(ahora) || traePregunta(ahora))) return null;
+  const pregunto = !!(colg || pareceConsultaV2(ahora));
+  const riesgo = RE_TEMA_RIESGOSO.test(String(texto ?? ""));
+  if (!pregunto && !riesgo) return [];
+  const ficha = [ctx?.contexto_producto, ctx?.faq].map((x) => String(x ?? "")).join("\n\n").slice(0, 7000);
   try {
     const raw = await runAI({
-      db, channelId, origen: "clasificar", provider, apiKey: ai.api_key, model: ai.model || undefined, maxTokens: 120,
-      system: "Revisas si la respuesta de un vendedor contesta lo que el cliente le preguntó. Contestar incluye decir con " +
-        "honestidad que no tiene ese dato, o responder con lo que sabe aunque no sea exacto. Si el cliente preguntó varias " +
-        "cosas, cada una tiene que estar contestada. Saludar, preguntar otra cosa o hablar de envíos/precios NO es contestar. " +
-        "Responde SOLO el JSON: {\"contesta\": true|false, \"falta\": \"qué quedó sin contestar, en pocas palabras (vacío si contestó)\"}.",
-      content: `Cliente: «${li.slice(0, 500)}»\nVendedor: «${String(texto ?? "").slice(0, 1500)}»`,
-      jsonSchema: CONTESTA_SCHEMA as unknown as Record<string, unknown>, jsonStrict: true,
+      db, channelId, origen: "clasificar", provider, apiKey: ai.api_key, model: ai.model || undefined, maxTokens: 350,
+      system:
+        "Eres el revisor de un vendedor por WhatsApp. Te doy la FICHA del producto, el mensaje del cliente y la respuesta del vendedor.\n" +
+        "1) contesta: ¿la respuesta contesta lo que el cliente preguntó? Contestar incluye decir con honestidad que no tiene ese " +
+        "dato, o responder con lo que dice la ficha aunque sea poco preciso. Si preguntó varias cosas, cada una tiene que estar " +
+        "contestada. Saludar, preguntar otra cosa o hablar de envíos/precios NO es contestar. Si el cliente no preguntó nada, contesta=true.\n" +
+        "2) inventos: las afirmaciones CONCRETAS del vendedor sobre el producto que la FICHA NO dice o CONTRADICE: contra qué " +
+        "animales/plagas sirve, dónde se puede usar (interiores, almacenes), si es seguro o no afecta a personas, niños o " +
+        "mascotas, si resiste agua o lluvia, si funciona de noche, cuánto cubre (metros), cuánto dura, garantía, devoluciones, " +
+        "si hace ruido o molesta, certificados. Si la ficha dice «no usar cerca de mascotas» y el vendedor dice que no las " +
+        "afecta, CONTRADICE. NO cuentes: precios, envío, pago, frases de venta genéricas, lo que la ficha sí dice, ni lo que se " +
+        "deduce directo de ella (si la ficha dice que ahuyenta, decir que no mata está bien). Decir «ese dato no lo tengo» NO es invento. " +
+        "Un ejemplo de una categoría que la ficha nombra tampoco (si la ficha dice «roedores», decir «ratas» está bien; «aves» → «palomas»).\n" +
+        "Responde SOLO el JSON {\"contesta\": bool, \"falta\": \"qué quedó sin contestar (vacío si contestó)\", " +
+        "\"inventos\": [{\"frase\": \"la frase del vendedor\", \"por_que\": \"qué dice la ficha\"}]}.",
+      content: `## FICHA\n${ficha}\n\n## CLIENTE\n«${(pregunto ? li : ahora).slice(0, 500)}»\n\n## VENDEDOR\n«${String(texto ?? "").slice(0, 1500)}»`,
+      jsonSchema: REVISOR_SCHEMA as unknown as Record<string, unknown>, jsonStrict: true,
     });
     const j = JSON.parse(raw);
-    return j?.contesta === false ? `No contestaste lo que te preguntó: ${String(j?.falta ?? "").slice(0, 160) || "su pregunta"}.` : null;
-  } catch (_) { return null; }   // el revisor nunca frena la venta
+    const v: string[] = [];
+    if (pregunto && j?.contesta === false) v.push(`No contestaste lo que te preguntó: ${String(j?.falta ?? "").slice(0, 160) || "su pregunta"}.`);
+    for (const inv of (Array.isArray(j?.inventos) ? j.inventos : []).slice(0, 3)) {
+      const fr = String(inv?.frase ?? "").trim().slice(0, 160);
+      if (!fr) continue;
+      v.push(`No afirmes «${fr}»: la ficha no lo dice (${String(inv?.por_que ?? "").slice(0, 120)}). Di solo lo que dice la ficha, ` +
+        "o con honestidad que ese dato no lo tienes, y sigue vendiendo con lo que sí sabes.");
+    }
+    return v;
+  } catch (_) { return []; }   // el revisor nunca frena la venta
 }
 
 // 🎲 El ejemplo del prompt sale casi textual (ver la memoria «ejemplo del prompt pesa más»): con uno solo,
@@ -25429,6 +25494,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       content += "\n\n" + instruccionV2(_p, ctx);
       await logEvent(db, run.channel_id, run.contact_id, "nota", `🧭 Motor v2 · paso: ${_p.paso}`,
         _p.pregunta ? `Pregunta del paso: ${_p.pregunta}` : "Sin pregunta de la IA en este paso").catch(() => {});
+    } else if (op === "generar_texto" && esDigital(ctx) && !!ctx._product_id && typeof content === "string"
+        && (_motorV2Forzado || (await loadEntregas(db, run).catch(() => null))?.motor_v2 === true)) {
+      // 💻 Fase 5: en la venta DIGITAL solo el revisor (¿contestó? ¿inventó?) con reescritura. Sin pasoV2 ni tijeras
+      // apagadas: la venta digital tiene frenos de plata (acceso, pago, combo) que se quedan como están.
+      (run as any)._revSolo = true;
     } else if (_v2Encendido) {
       await logEvent(db, run.channel_id, run.contact_id, "nota", "🧭 Motor v2 no aplica en este turno",
         `digital=${esDigital(ctx)} venta=${_turnoDeVenta} producto=${!!ctx._product_id} pedido=${ctx.pedido_creado ?? ""} datos=${ctx.datos_completos ?? ""}`).catch(() => {});
@@ -25442,14 +25512,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // 🧭 Motor v2: el REVISOR. Si la respuesta rompe una regla del paso o no contesta lo que preguntó, se le pide
     // reescribirla UNA vez con la indicación exacta. Si la segunda tampoco pasa, se queda la segunda y vuelven las
     // tijeras de siempre (`_v2Fallo`).
-    if ((run as any)._v2Activo && typeof result === "string" && result.trim() && typeof content === "string") {
+    if (((run as any)._v2Activo || (run as any)._revSolo) && typeof result === "string" && result.trim() && typeof content === "string") {
       try {
-        const _p = (run as any)._pasoV2 as PasoV2;
-        if (_p.paso === "sede") result = sinPreguntaDeSedeV2(result) || result;
+        const _p = (run as any)._pasoV2 as PasoV2 | undefined;   // (sin paso en lo digital: solo el revisor IA)
+        if (_p?.paso === "sede") result = sinPreguntaDeSedeV2(result) || result;
         const revisar = async (txt: string) => {
-          const v = violacionesV2(txt, _p, ctx);
-          const c = await contestoV2(txt, ctx, ai, provider, run.channel_id, db);
-          return c ? [c, ...v] : v;
+          const v = _p ? violacionesV2(txt, _p, ctx) : [];
+          const c = await revisorIAV2(txt, ctx, ai, provider, run.channel_id, db);
+          return [...c, ...v];
         };
         const v1 = await revisar(result);
         if (!v1.length) {
@@ -25461,13 +25531,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const r2 = await runAI({ db, channelId: run.channel_id, origen: "vender", provider, apiKey: ai.api_key, model, system, maxTokens,
             content: content + `\n\n## ⚠️ CORRIGE TU RESPUESTA\nEscribiste esto:\n«${result}»\nTiene estos problemas:\n` +
               v1.map((x) => `• ${x}`).join("\n") + "\nEscribe de nuevo el mensaje COMPLETO corrigiendo solo eso. Responde solo con el mensaje." });
-          const r2b = _p.paso === "sede" && r2 ? (sinPreguntaDeSedeV2(r2) || r2) : r2;
+          const r2b = _p?.paso === "sede" && r2 ? (sinPreguntaDeSedeV2(r2) || r2) : r2;
           const v2 = r2b && r2b.trim() ? await revisar(r2b) : ["(vacía)"];
           if (r2b && r2b.trim()) result = r2b;
           if (v2.length) {
-            (run as any)._v2Fallo = true;
+            // Las tijeras vuelven SOLO si lo que quedó mal es algo que ellas sí arreglan (sedes nombradas por la IA, pedir
+            // datos a destiempo, una respuesta vacía). Para lo demás —no contestó, un invento, una pregunta de más— recortar
+            // empeora: en el examen de la fase 3 dejaron «Para coordinar bien, dime de qué distrito… / Perfecto, recibiste
+            // claro lo de…» al revés. Ahí sale la segunda versión tal cual.
+            const _tijerasSirven = v2.some((x) => /sedes|sus datos|\(vac[ií]a\)/i.test(x));
+            if (_tijerasSirven) (run as any)._v2Fallo = true;
             await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ Motor v2: la reescritura tampoco pasó",
-              `${v2.join(" · ")} — vuelven los recortes de siempre`).catch(() => {});
+              `${v2.join(" · ")} — ${_tijerasSirven ? "vuelven los recortes de siempre" : "sale la segunda versión sin recortes"}`).catch(() => {});
           }
         }
       } catch (e) {   // el revisor nunca tumba la venta — pero que se vea por qué falló
@@ -29648,7 +29723,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           _sd = _sd.replace(/[ \t]*¿\s*me\s+confirmas\s+(?:y\s+te\s+lo\s+(?:env[ií]o|mando|llevo)|que\s+(?:s[ií]\s+)?(?:lo\s+|la\s+)?quieres[^?\n]*|si\s+(?:lo\s+|la\s+)?(?:quieres|llevas|confirmas)[^?\n]*|(?:la|el)\s+compra[^?\n]*|para\s+(?:avanzar|enviarlo|mandarlo)[^?\n]*)\?[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)*/giu, " ");
         }
         _sd = _sd.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
-        if (_sd !== _antesDir.trim()) {
+        // (el aviso solo si de verdad se quitó algo: juntar espacios no es «quitar una regla» — salía en 21 de 70
+        //  conversaciones del examen sin haber tocado una palabra, y ensuciaba la medición de la fase 2)
+        const _sinEsp = (s: string) => s.replace(/\s+/g, "");
+        if (_sd !== _antesDir.trim() && _sinEsp(_sd) !== _sinEsp(_antesDir)) {
           salida = _sd;
           await logEvent(db, run.channel_id, run.contact_id, "nota", "🏠 Se quitó una regla de datos inventada",
             `«${_antesDir.slice(0, 140)}»`).catch(() => {});

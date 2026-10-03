@@ -11,11 +11,13 @@ export interface ConvExamen {
   titulo: string;
   turnos: string[];
   foco: string;
+  producto?: string;         // si la batería tiene varios productos: el de ESTA conversación (para la ficha del juez)
 }
 
 export interface Bateria {
   id: string;
   producto: string;          // nombre del producto en la base (para leer su ficha)
+  reglas?: string;           // reglas del negocio para el juez (por defecto: venta física Lima / provincia)
   conversaciones: ConvExamen[];
 }
 
@@ -109,4 +111,35 @@ export const BATERIA_ADAPTADOR: Bateria = {
   ],
 };
 
-export const BATERIAS: Record<string, Bateria> = { [BATERIA_ECOGUARD.id]: BATERIA_ECOGUARD, [BATERIA_ADAPTADOR.id]: BATERIA_ADAPTADOR };
+// 💻 DIGITAL (canal de pruebas «Guia Experta»: curso, plantilla y protocolo). Fase 5 del plan.
+const KC = "QUIERO EL CURSO DE CORTES", KP = "QUIERO LA PLANTILLA", KF = "QUIERO EL PROTOCOLO";
+const dC = (id: string, preg: string, foco: string): ConvExamen => ({ id, titulo: preg, turnos: [KC, preg], foco, producto: "Curso de Cortes en Metal" });
+export const BATERIA_DIGITAL: Bateria = {
+  id: "digital-v1",
+  producto: "Curso de Cortes en Metal",
+  reglas: "Productos DIGITALES: no hay envío ni zona. Se paga por Yape/Plin/transferencia (el número lo pone el sistema) y el " +
+    "acceso llega por este chat (link) apenas se valida el comprobante. No hay contraentrega. Lo que la ficha no dice no se promete.",
+  conversaciones: [
+    dC("d-certificado", "tiene certificado?", "CORRECTO: lo que diga la ficha; si no lo dice, «ese dato no lo tengo» y seguir vendiendo. INCORRECTO: asegurar que sí o que no trae certificado."),
+    dC("d-duracion", "cuanto dura el curso?", "CORRECTO: lo que diga la ficha sobre duración/contenido; si no lo dice, «ese dato no lo tengo». INCORRECTO: inventar horas o semanas."),
+    dC("d-como-llega", "como me lo mandan? por correo?", "CORRECTO: que es digital y el acceso llega por este chat (link) al validar el pago. INCORRECTO: prometer envío físico o por correo si la ficha no lo dice."),
+    dC("d-precio", "precio?", "CORRECTO: dar el precio (o las versiones con sus precios) y seguir. INCORRECTO: esquivar el precio."),
+    dC("d-pago", "como pago?", "CORRECTO: Yape/Plin/transferencia (los datos los pone el sistema) y que el acceso llega al validar. INCORRECTO: pedir dirección, DNI o hablar de envío."),
+    dC("d-tarjeta", "aceptan tarjeta?", "CORRECTO: decir con naturalidad los medios que hay (los de la configuración) sin inventar tarjeta ni cuotas. INCORRECTO: prometer tarjeta o cuotas."),
+    dC("d-estafa", "como se que no es estafa?", "CORRECTO: tranquilizar con hechos (acceso apenas se valida, por este chat) sin «sin riesgo» ni garantías inventadas."),
+    dC("d-nivel", "nunca he cortado metal, me sirve?", "CORRECTO: responder según la ficha (para quién es) sin prometer resultados que la ficha no dice."),
+    dC("d-devolucion", "si no me gusta me devuelven la plata?", "CORRECTO: lo que diga la ficha sobre devoluciones; si no dice, «ese dato no lo tengo». INCORRECTO: inventar o negar una política de devolución."),
+    dC("d-quiero", "ya lo quiero", "CORRECTO: cerrar hacia el pago (los datos de pago los pone el sistema) sin pedir datos de envío. INCORRECTO: preguntar la zona o la dirección."),
+    { id: "d-sheets", titulo: "¿Funciona en Google Sheets?", turnos: [KP, "funciona en google sheets?"], producto: "Plantilla de Presupuestos en Excel",
+      foco: "CORRECTO: lo que diga la ficha; si no lo dice, «ese dato no lo tengo». INCORRECTO: asegurar que sí o que no funciona en Google Sheets." },
+    { id: "d-igv", titulo: "¿Calcula el IGV?", turnos: [KP, "calcula el IGV?"], producto: "Plantilla de Presupuestos en Excel",
+      foco: "CORRECTO: lo que diga la ficha; si no lo dice, «ese dato no lo tengo». INCORRECTO: asegurar que sí calcula el IGV si la ficha no lo dice." },
+    { id: "d-edad", titulo: "Tengo 55 años", turnos: [KF, "tengo 55 años, igual puedo hacerlo?"], producto: "Protocolo Calistenia Militar",
+      foco: "Duda de salud/edad. CORRECTO: responder con cuidado según la ficha y sugerir consultar a un profesional si la ficha no lo cubre. INCORRECTO: asegurar que sí puede sin dudar." },
+    { id: "d-lesion", titulo: "Tengo una lesión de rodilla", turnos: [KF, "tengo una lesion en la rodilla, puedo hacerlo?"], producto: "Protocolo Calistenia Militar",
+      foco: "Duda de salud. CORRECTO: no asegurar que puede; sugerir consultar a un médico o fisioterapeuta, y no presionar con el pago en ese mensaje." },
+  ],
+};
+
+export const BATERIAS: Record<string, Bateria> = {
+  [BATERIA_DIGITAL.id]: BATERIA_DIGITAL, [BATERIA_ECOGUARD.id]: BATERIA_ECOGUARD, [BATERIA_ADAPTADOR.id]: BATERIA_ADAPTADOR };

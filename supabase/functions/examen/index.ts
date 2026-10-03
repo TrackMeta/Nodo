@@ -195,7 +195,7 @@ function transcriptTexto(tr: Array<{ c: string; b: string[] }>): string {
 async function juzgar(examen: any, conv: ConvExamen, tr: Array<{ c: string; b: string[] }>, modeloJuez?: string) {
   const bat = BATERIAS[examen.bateria ?? ""] ?? BATERIA_ECOGUARD;
   const [{ data: prod }, { data: ch }, { data: aiRows }] = await Promise.all([
-    db.from("products").select("nombre, config").eq("channel_id", examen.channel_id).ilike("nombre", bat.producto).limit(1).maybeSingle(),
+    db.from("products").select("nombre, config").eq("channel_id", examen.channel_id).ilike("nombre", conv.producto ?? bat.producto).limit(1).maybeSingle(),
     db.from("channels").select("negocio, entregas").eq("id", examen.channel_id).maybeSingle(),
     db.rpc("get_channel_ai_active", { p_channel_id: examen.channel_id, p_provider: "openai" }),
   ]);
@@ -207,11 +207,11 @@ async function juzgar(examen: any, conv: ConvExamen, tr: Array<{ c: string; b: s
   // Sin la lista de distritos de Lima (son decenas): tapaba el envío, el adelanto y los plazos, que es lo que importa.
   const { zonas: _zonas, ...entSinZonas } = ent ?? {};
   const encabezado =
-    `## FICHA DEL PRODUCTO «${(prod as any)?.nombre ?? bat.producto}»\n${txt(cfg.contexto_producto).slice(0, 6000)}\n\n` +
+    `## FICHA DEL PRODUCTO «${(prod as any)?.nombre ?? conv.producto ?? bat.producto}»\n${txt(cfg.contexto_producto).slice(0, 6000)}\n\n` +
     `## PREGUNTAS FRECUENTES\n${txt(cfg.faq).slice(0, 3000)}\n\n` +
     `## LÍMITES (lo que NO se promete)\n${txt(cfg?.ia?.limites).slice(0, 1500)}\n\n` +
-    `## REGLAS DEL NEGOCIO\nLima (Lima Metropolitana y Callao): entrega a domicilio, contraentrega (paga al recibir). Provincia: por agencia Shalom, con un ` +
-    `adelanto y el resto se paga por el chat cuando llega a la agencia; en la agencia solo recoge con su clave.\n` +
+    `## REGLAS DEL NEGOCIO\n${bat.reglas ?? ("Lima (Lima Metropolitana y Callao): entrega a domicilio, contraentrega (paga al recibir). Provincia: por agencia Shalom, con un " +
+    "adelanto y el resto se paga por el chat cuando llega a la agencia; en la agencia solo recoge con su clave.")}\n` +
     `${txt((ch as any)?.negocio).slice(0, 2000)}\n\n` +
     `## CONFIGURACIÓN DE ENTREGAS (plazos, envío y adelanto del negocio)\n${JSON.stringify(entSinZonas).slice(0, 3500)}\n` +
     `Distritos de Lima con reparto propio: ${Array.isArray(_zonas) ? _zonas.length : 0}\n\n` +
@@ -279,7 +279,7 @@ Deno.serve(async (req) => {
     const a = await autoriza(req, channelId);
     if (!a.ok) return json({ error: "forbidden" }, 403);
     if (accion === "listar") {
-      const { data: ex } = await db.from("examenes").select("id, etiqueta, modelo, motor_v2, total, created_at")
+      const { data: ex } = await db.from("examenes").select("id, etiqueta, modelo, motor_v2, bateria, total, created_at")
         .eq("channel_id", channelId).order("created_at", { ascending: false }).limit(20);
       const ids = ((ex ?? []) as any[]).map((e) => e.id);
       const { data: cs } = ids.length
