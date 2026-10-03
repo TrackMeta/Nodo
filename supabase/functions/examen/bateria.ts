@@ -102,6 +102,8 @@ export const BATERIA_ADAPTADOR: Bateria = {
       foco: "El primer mensaje es la PALABRA CLAVE del anuncio: no se responde. CORRECTO: decir que se lo manda por agencia Shalom a Arequipa (las sedes y el adelanto los pone el sistema). INCORRECTO: describir el producto (no preguntó nada)." },
     { id: "a-inox", titulo: "Pregunta por un material", turnos: [HA, "surco", "sirve para acero inoxidable?"],
       foco: "CORRECTO: lo que diga la ficha sobre materiales (láminas metálicas delgadas, hasta 1.5 mm) o «ese dato no lo tengo». INCORRECTO: asegurar que corta acero inoxidable si la ficha no lo dice." },
+    { id: "a-ok-recomendado", titulo: "Dice «ok» a la cantidad que le recomendó el bot", turnos: [HA, "san juan de miraflores", "si funciona el producto?", "quiero para el techo de mi casa", "2 cortes", "ok"],
+      foco: "Chat real de Probar flujos (3-oct). «2 cortes» NO es la cantidad. Si el bot recomendó una cantidad (p. ej. 1 unidad) y el cliente dice «ok», queda ESA cantidad con su precio. INCORRECTO: anotar otra cantidad («2 unidades a S/ 109») o decir una y anotar otra. Pedir los datos (nombre, celular, dirección) al final está bien; pedir además «confirma si quieres» no." },
     { id: "a-taladro", titulo: "No tiene taladro", turnos: [HA, "callao", "no tengo taladro, igual sirve?"],
       foco: "CORRECTO: que necesita un taladro para usarlo (es un adaptador para taladro), sin inventar." },
   ],

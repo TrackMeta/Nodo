@@ -8337,7 +8337,10 @@ function pasoV2(ctx: any, run: any): PasoV2 {
       : "cuántas unidades quiere llevar";
     return { paso: run?._tocaCantidad ? "cantidad_lista" : "cantidad", pregunta: q, sinPregunta: false, preguntoEnvio };
   }
-  const faltan = Array.isArray(ctx?._datos_faltan) ? ctx._datos_faltan : [];
+  // (sin el «confirmo»: no es un dato que se le pida — salió «Confirma si quieres que te lo mande así» encima de la
+  //  lista de datos, Probar flujos 3-oct; el bloque de datos del motor también lo deja fuera)
+  const faltan = (Array.isArray(ctx?._datos_faltan) ? ctx._datos_faltan : [])
+    .filter((f: any) => String(f?.clave ?? "") !== "confirmo" && !/confirm/i.test(String(f?.label ?? "")));
   if (faltan.length) {
     const nombres = faltan.map((f: any) => String(f?.label ?? f?.clave ?? "").split(/[,(]/)[0].trim()).filter(Boolean).join(", ");
     return { paso: "datos", pregunta: nombres || "los datos que faltan", sinPregunta: false, preguntoEnvio };
@@ -20477,6 +20480,60 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
   // Solo se mira atrás cuando NO hay opción sellada todavía: con una ya elegida se usa
   // el último mensaje a secas, para que "mejor la premium" siga pesando como cambio de
   // opinión y el historial no reviva la anterior.
+  // 👍 «ok» a lo que le RECOMENDÓ el bot. Probar flujos (3-oct): el bot dijo «con 1 unidad estás cubierto… ¿quieres que
+  // te deje esa opción o prefieres llevar más?», el cliente «ok», y el clasificador —que solo lee los mensajes del
+  // CLIENTE— vio «2 cortes» en el historial y selló «2 unidades (90%)», mientras el texto decía «vamos con 1 unidad».
+  // Un sí pelado acepta lo que el bot propuso: si su último mensaje nombró UNA sola opción, esa es.
+  if (!String(ctx.opcion_id ?? "").trim() &&
+      /^\s*(?:ok(?:ey|a|i)?|s[ií]+|ya|dale|listo|bueno|va|de\s+acuerdo|perfecto|esa|ese|claro|ok\s+dale|ya\s+dale|s[ií]\s+dale|esa\s+nom[aá]s|as[ií]\s+est[aá]\s+bien)\s*[.!👍🙌]*\s*$/iu.test(String(texto ?? ""))) {
+    try {
+      const { data: _ub } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
+        .eq("direction", "out").order("ts", { ascending: false }).limit(1);
+      const _txB = normalize(String((_ub ?? [])[0]?.content?.text ?? ""));
+      const _lnPrecioB = (_txB.match(/(?:s\/|\$)\s?\d/g) ?? []).length;
+      // Dónde nombra cada opción el último mensaje: por su nombre («1 unidad») o como lo escribe la IA («una sola
+      // unidad», «dos unidades», «la de 2»). Medido en el examen del Adaptador: escribió «una sola unidad» y no casaba.
+      const _PAL: Record<number, string> = { 1: "un|una|uno", 2: "dos", 3: "tres", 4: "cuatro", 5: "cinco", 6: "seis" };
+      const _posDe = (o: any): number => {
+        const n = normalize(String(o.nombre ?? "")).trim();
+        const pats: string[] = [];
+        if (n) pats.push(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/unidad(?:es)?/, "unidad(?:es)?"));
+        const ca = Number(o.cantidad) || 0;
+        if (ca > 0) {
+          const num = `(?:${ca}${_PAL[ca] ? "|" + _PAL[ca] : ""})`;
+          pats.push(`${num}\\s+(?:sola\\s+)?(?:unidad(?:es)?|piezas?|packs?)`, `la\\s+de\\s+${num}`);
+        }
+        let best = -1;
+        for (const p of pats) {
+          const m = new RegExp("(?<![\\p{L}\\p{N}])(?:" + p + ")(?![\\p{L}\\p{N}])", "u").exec(_txB);
+          if (m && (best < 0 || m.index < best)) best = m.index;
+        }
+        return best;
+      };
+      const _nombradas = list.map((o) => ({ o, pos: _posDe(o) })).filter((x) => x.pos >= 0).sort((a, b) => a.pos - b.pos);
+      const _recG = (run.vars as any)?._recomendada;
+      const _recId = _recG && Date.now() - Number(_recG.ts ?? 0) < 60 * 60 * 1000 ? String(_recG.id ?? "") : "";
+      // Una sola nombrada → esa. Varias («te dejo la de 1… ¿o prefieres la oferta de dos unidades?») → la que el motor
+      // recomendó si está entre ellas; si no, la PRIMERA (la que propone; lo que sigue es la oferta para subir).
+      const _elegida = _lnPrecioB >= 2 ? null
+        : _nombradas.length === 1 ? _nombradas[0].o
+        : _nombradas.length > 1 ? (_nombradas.find((x) => x.o.id === _recId)?.o ?? _nombradas[0].o)
+        : (_recId ? list.find((o) => o.id === _recId) ?? null : null);
+      if (_elegida) {
+        const op1 = _elegida;
+        run.vars.opcion_id = op1.id; ctx.opcion_id = op1.id;
+        (ctx as any)._falta_opcion = false; (run.vars as any)._falta_opcion = false;
+        await setField(db, run.channel_id, run.contact_id, "opcion_id", op1.id);
+        await setField(db, run.channel_id, run.contact_id, "opcion_elegida", op1.nombre);
+        ctx.opcion = op1.nombre; ctx.cantidad = op1.cantidad ?? 1; (ctx as any)._opcion = op1;
+        const { monto: _mA } = await precioEsperado(db, run, ctx);
+        if (_mA != null) { ctx.precio = _mA; ctx.precio_esperado = _mA; }
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "👍 Aceptó lo que le propuse",
+          `«${String(texto).trim()}» → ${op1.nombre} (la que nombraba mi último mensaje)`).catch(() => {});
+        return { clave: op1.id, confianza: 1, intencion: "eligiendo" } as Clasificacion;
+      }
+    } catch (_) { /* sin el último mensaje → como antes */ }
+  }
   let texto2 = texto;
   if (!String(ctx.opcion_id ?? "").trim()) {
     try {
@@ -20485,7 +20542,9 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
         .order("ts", { ascending: false }).limit(5);
       const lineas = (previos ?? []).reverse()
         .map((m: any) => String(m.content?.text ?? m.content?.caption ?? "").trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        // «2 cortes», «3 metros», «4 perros»: el número es de OTRA cosa, no la cantidad (Probar flujos, 3-oct).
+        .map((l) => l.replace(/(?<![\p{L}\p{N}])\d{1,3}\s+(?=(?:cortes?|metros?|m2|mts?|cm|mm|veces|horas?|d[ií]as?|semanas?|meses|años?|anos?|plantas?|perros?|gatos?|animales|hect[aá]reas?|cuartos?|ambientes?|pisos?|ventanas?|puertas?|kilos?|kg|litros?|personas?|hijos?|soles)(?![\p{L}]))/giu, ""));
       if (lineas.length > 1) texto2 = lineas.join("\n");
     } catch (_) { /* sin historial, se sigue con el último mensaje */ }
   }
@@ -29331,6 +29390,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const _opsNe = opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id ?? "")), run);
             const _rec = await recomendarPorNecesidad(db, run, ctx, _opsNe, String(ctx.last_input ?? ""));
             if (_rec) {
+              // Se guarda: si después contesta «ok» a secas, es ESTA (ver «👍 Aceptó lo que le propuse» en detectarOpcion).
+              (run.vars as any)._recomendada = { id: _rec.op.id, ts: Date.now() };
               const _sym = simboloMoneda(ctx.moneda as string);
               const _pr = Number(_rec.op.precio), _ca = Number(_rec.op.cantidad) || 1;
               const _cu = _ca > 1 ? ` (${_sym} ${(_pr / _ca).toFixed(2).replace(/\.00$/, "")} c/u)` : "";
