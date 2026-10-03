@@ -19,7 +19,8 @@ param(
   [int]$Paralelo = 5,
   [switch]$Rejuzgar,         # solo vuelve a calificar (no repite las conversaciones)
   [string]$Juez = "",        # modelo del juez (por defecto el de la función)
-  [switch]$V2                # corre con el motor v2 (PLAN_MOTOR_IA, fase 1) solo para esta corrida
+  [switch]$V2,               # corre con el motor v2 (PLAN_MOTOR_IA, fase 1) solo para esta corrida
+  [string]$Bateria = ""      # ecoguard-v1 (por defecto) · adaptador-v1
 )
 $ErrorActionPreference = "Stop"
 $src = @"
@@ -62,7 +63,7 @@ $llamar = {
 }
 
 if (-not $ExamenId) {
-  $ini = & $llamar $url $secret @{ accion = "iniciar"; channel_id = $ChannelId; etiqueta = $Etiqueta; modelo = $Modelo; v2 = [bool]$V2 }
+  $ini = & $llamar $url $secret @{ accion = "iniciar"; channel_id = $ChannelId; etiqueta = $Etiqueta; modelo = $Modelo; v2 = [bool]$V2; bateria = $Bateria }
   if ($ini.error) { Write-Output ("No se pudo iniciar: " + $ini.error); exit 1 }
   $ExamenId = $ini.examen_id
   $convs = @($ini.conversaciones | ForEach-Object { $_.conv })

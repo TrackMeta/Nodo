@@ -210,7 +210,7 @@ async function juzgar(examen: any, conv: ConvExamen, tr: Array<{ c: string; b: s
     `## FICHA DEL PRODUCTO «${(prod as any)?.nombre ?? bat.producto}»\n${txt(cfg.contexto_producto).slice(0, 6000)}\n\n` +
     `## PREGUNTAS FRECUENTES\n${txt(cfg.faq).slice(0, 3000)}\n\n` +
     `## LÍMITES (lo que NO se promete)\n${txt(cfg?.ia?.limites).slice(0, 1500)}\n\n` +
-    `## REGLAS DEL NEGOCIO\nLima: entrega a domicilio, contraentrega (paga al recibir). Provincia: por agencia Shalom, con un ` +
+    `## REGLAS DEL NEGOCIO\nLima (Lima Metropolitana y Callao): entrega a domicilio, contraentrega (paga al recibir). Provincia: por agencia Shalom, con un ` +
     `adelanto y el resto se paga por el chat cuando llega a la agencia; en la agencia solo recoge con su clave.\n` +
     `${txt((ch as any)?.negocio).slice(0, 2000)}\n\n` +
     `## CONFIGURACIÓN DE ENTREGAS (plazos, envío y adelanto del negocio)\n${JSON.stringify(entSinZonas).slice(0, 3500)}\n` +
@@ -298,7 +298,7 @@ Deno.serve(async (req) => {
     const modelo = typeof body?.modelo === "string" && /^gpt-[\w.-]+$/.test(body.modelo) ? body.modelo : null;
     const { data: ex, error } = await db.from("examenes").insert({
       channel_id: channelId, etiqueta: String(body?.etiqueta ?? "").slice(0, 120) || null, modelo,
-      total: bat.conversaciones.length, creado_por: a.uid ?? null, motor_v2: body?.v2 === true,
+      total: bat.conversaciones.length, creado_por: a.uid ?? null, motor_v2: body?.v2 === true, bateria: bat.id,
     }).select("id").single();
     if (error) return json({ error: error.message }, 500);
     const exId = (ex as any).id;
@@ -312,7 +312,7 @@ Deno.serve(async (req) => {
   if (!examen) return json({ error: "examen no encontrado" }, 404);
   const a = await autoriza(req, (examen as any).channel_id);
   if (!a.ok) return json({ error: "forbidden" }, 403);
-  (examen as any).bateria = BATERIA_ECOGUARD.id;   // hoy hay una sola batería
+  if (!BATERIAS[(examen as any).bateria ?? ""]) (examen as any).bateria = BATERIA_ECOGUARD.id;   // las corridas viejas no la guardaban
 
   if (accion === "ver") {
     const { data: cs } = await db.from("examen_conversaciones").select("*").eq("examen_id", examenId).order("conv");
@@ -320,7 +320,7 @@ Deno.serve(async (req) => {
   }
 
   const convId = String(body?.conv ?? "");
-  const conv = convDe(BATERIA_ECOGUARD.id, convId);
+  const conv = convDe((examen as any).bateria, convId);
   if (!conv) return json({ error: "conversación no encontrada" }, 404);
   const { data: fila } = await db.from("examen_conversaciones").select("*").eq("examen_id", examenId).eq("conv", convId).maybeSingle();
   if (!fila) return json({ error: "conversación fuera de este examen" }, 404);

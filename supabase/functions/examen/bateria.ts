@@ -90,4 +90,21 @@ export const BATERIA_ECOGUARD: Bateria = {
   ],
 };
 
-export const BATERIAS: Record<string, Bateria> = { [BATERIA_ECOGUARD.id]: BATERIA_ECOGUARD };
+// El Adaptador PRO (mismo canal). Corta: lo que se vio en Probar flujos el 3-oct + lo básico de Lima y provincia.
+const HA = "Hola. ¿Puedo obtener más información sobre el ADAPTADOR PRO PARA CORTAR LAMINAS?";
+export const BATERIA_ADAPTADOR: Bateria = {
+  id: "adaptador-v1",
+  producto: "Adaptador PRO para Taladro – Cortador de Láminas",
+  conversaciones: [
+    { id: "a-sjm", titulo: "Solo dice su distrito (Lima)", turnos: [HA, "san juan de miraflores"],
+      foco: "CORRECTO: confirmar que se lo lleva a su casa en San Juan de Miraflores y pagar al recibirlo, y preguntar cuántas quiere. INCORRECTO: volver a describir el producto o sus beneficios (no preguntó nada)." },
+    { id: "a-arequipa", titulo: "Solo dice su ciudad (provincia)", turnos: [HA, "arequipa"],
+      foco: "CORRECTO: que se lo manda por agencia Shalom a Arequipa (las sedes y el adelanto los pone el sistema). INCORRECTO: describir otra vez el producto." },
+    { id: "a-inox", titulo: "Pregunta por un material", turnos: [HA, "surco", "sirve para acero inoxidable?"],
+      foco: "CORRECTO: lo que diga la ficha sobre materiales (láminas metálicas delgadas, hasta 1.5 mm) o «ese dato no lo tengo». INCORRECTO: asegurar que corta acero inoxidable si la ficha no lo dice." },
+    { id: "a-taladro", titulo: "No tiene taladro", turnos: [HA, "callao", "no tengo taladro, igual sirve?"],
+      foco: "CORRECTO: que necesita un taladro para usarlo (es un adaptador para taladro), sin inventar." },
+  ],
+};
+
+export const BATERIAS: Record<string, Bateria> = { [BATERIA_ECOGUARD.id]: BATERIA_ECOGUARD, [BATERIA_ADAPTADOR.id]: BATERIA_ADAPTADOR };

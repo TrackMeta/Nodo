@@ -8382,13 +8382,31 @@ function instruccionV2(p: PasoV2, ctx: any): string {
       break;
   }
   L.push("3. No escribas listas de precios, de sedes ni de datos: las pone el sistema. Como máximo UNA pregunta.");
+  // (Probar flujos, 3-oct: a «san juan de miraflores» abrió con «¡Claro! El Adaptador PRO protege tu taladro y te
+  //  ayuda a cortar láminas…» antes de decirle cómo le llega. Antes una tijera borraba eso; ahora se le pide no hacerlo.)
+  if (!/[?¿]/.test(String(ctx?.last_input ?? "")) && !traePregunta(String(ctx?.last_input ?? ""))) {
+    L.push("4. Esta vez NO te preguntó nada: solo te dio un dato. No describas el producto ni repitas sus beneficios: " +
+      "confirma lo que te dijo en una línea y sigue con el paso. Una sola muletilla al inicio («¡Perfecto!»), no dos.");
+  }
   return L.join("\n");
 }
 
 // Lo que se puede comprobar por código (palabras), sin IA.
-function violacionesV2(texto: string, p: PasoV2): string[] {
+function violacionesV2(texto: string, p: PasoV2, ctx?: any): string[] {
   const t = sinFormato(String(texto ?? ""));
   const v: string[] = [];
+  // Solo dio un dato y el mensaje abre describiendo el producto: la vieja tijera de la «presentación repetida», ahora como
+  // DETECTOR (si la función recortaría algo, hay presentación de más) — la IA lo reescribe, no se corta.
+  const _li = String(ctx?.last_input ?? "");
+  if (ctx && !/[?¿]/.test(_li) && !traePregunta(_li)) {
+    const prod = String(ctx.producto_nombre ?? ctx.producto ?? "");
+    if (prod && sinPresentacionRepetida(String(texto ?? ""), prod, true, _li) !== String(texto ?? "").trim()) {
+      v.push("Solo te dio un dato y no te preguntó nada: no describas el producto ni repitas sus beneficios. Confirma lo que te dijo y sigue con el paso.");
+    }
+  }
+  if ((t.match(/(?:^|[.!?]\s+)¡\s*(?:claro|perfecto|genial|excelente|listo|buen[ií]simo|qu[eé]\s+bien|de\s+una)/giu) ?? []).length >= 2) {
+    v.push("Usa una sola muletilla al inicio («¡Perfecto!»), no dos.");
+  }
   const nq = (t.match(/\?/g) ?? []).length;
   if (p.sinPregunta && nq > 0) {
     v.push(p.paso === "sede"
@@ -25351,7 +25369,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _p = (run as any)._pasoV2 as PasoV2;
         if (_p.paso === "sede") result = sinPreguntaDeSedeV2(result) || result;
         const revisar = async (txt: string) => {
-          const v = violacionesV2(txt, _p);
+          const v = violacionesV2(txt, _p, ctx);
           const c = await contestoV2(txt, ctx, ai, provider, run.channel_id, db);
           return c ? [c, ...v] : v;
         };
