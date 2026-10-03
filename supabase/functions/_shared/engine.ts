@@ -8343,11 +8343,17 @@ function pasoV2(ctx: any, run: any): PasoV2 {
 
 function instruccionV2(p: PasoV2, ctx: any): string {
   const li = String(ctx?.last_input ?? "").slice(0, 300);
+  // Su PRIMER mensaje traía una pregunta que solo contestó el saludo automático («¿Puedo obtener más información sobre
+  // el ADAPTADOR PRO…?»): se contesta acá, corto. Rodrigo (3-oct): «creo que estaba respondiendo a mi palabra activadora».
+  const colgada = String(ctx?._colgadaV2 ?? "").trim();
   const L = [
     "## 🧭 TU TAREA EN ESTE MENSAJE",
     "(Esto manda sobre cualquier instrucción de arriba sobre qué preguntar o qué mencionar.)",
-    `1. Contesta lo que te escribió: «${li}». Si preguntó varias cosas, contesta CADA una. Si algo no está en la ficha, ` +
-    "dilo con honestidad («ese dato no lo tengo») y sigue vendiendo con lo que sí sabes: no lo inventes.",
+    (colgada
+      ? `1. Primero contesta, en 1 o 2 líneas, la pregunta de su primer mensaje que quedó sin responder: «${colgada.slice(0, 200)}». ` +
+        `Después responde lo que te escribió ahora: «${li}». `
+      : `1. Contesta lo que te escribió: «${li}». Si preguntó varias cosas, contesta CADA una. `) +
+    "Si algo no está en la ficha, dilo con honestidad («ese dato no lo tengo») y sigue vendiendo con lo que sí sabes: no lo inventes.",
   ];
   switch (p.paso) {
     case "zona":
@@ -8384,7 +8390,7 @@ function instruccionV2(p: PasoV2, ctx: any): string {
   L.push("3. No escribas listas de precios, de sedes ni de datos: las pone el sistema. Como máximo UNA pregunta.");
   // (Probar flujos, 3-oct: a «san juan de miraflores» abrió con «¡Claro! El Adaptador PRO protege tu taladro y te
   //  ayuda a cortar láminas…» antes de decirle cómo le llega. Antes una tijera borraba eso; ahora se le pide no hacerlo.)
-  if (!/[?¿]/.test(String(ctx?.last_input ?? "")) && !traePregunta(String(ctx?.last_input ?? ""))) {
+  if (!String(ctx?._colgadaV2 ?? "").trim() && !/[?¿]/.test(String(ctx?.last_input ?? "")) && !traePregunta(String(ctx?.last_input ?? ""))) {
     L.push("4. Esta vez NO te preguntó nada: solo te dio un dato. No describas el producto ni repitas sus beneficios: " +
       "confirma lo que te dijo en una línea y sigue con el paso. Una sola muletilla al inicio («¡Perfecto!»), no dos.");
   }
@@ -8398,7 +8404,7 @@ function violacionesV2(texto: string, p: PasoV2, ctx?: any): string[] {
   // Solo dio un dato y el mensaje abre describiendo el producto: la vieja tijera de la «presentación repetida», ahora como
   // DETECTOR (si la función recortaría algo, hay presentación de más) — la IA lo reescribe, no se corta.
   const _li = String(ctx?.last_input ?? "");
-  if (ctx && !/[?¿]/.test(_li) && !traePregunta(_li)) {
+  if (ctx && !String(ctx._colgadaV2 ?? "").trim() && !/[?¿]/.test(_li) && !traePregunta(_li)) {
     const prod = String(ctx.producto_nombre ?? ctx.producto ?? "");
     if (prod && sinPresentacionRepetida(String(texto ?? ""), prod, true, _li) !== String(texto ?? "").trim()) {
       v.push("Solo te dio un dato y no te preguntó nada: no describas el producto ni repitas sus beneficios. Confirma lo que te dijo y sigue con el paso.");
@@ -8452,8 +8458,11 @@ const CONTESTA_SCHEMA = {
   required: ["contesta", "falta"],
 };
 async function contestoV2(texto: string, ctx: any, ai: any, provider: Provider, channelId: string, db: SupabaseClient): Promise<string | null> {
-  const li = String(ctx?.last_input ?? "").trim();
-  if (!li || !(/[?¿]/.test(li) || traePregunta(li))) return null;
+  const colg = String(ctx?._colgadaV2 ?? "").trim();
+  const ahora = String(ctx?.last_input ?? "").trim();
+  // Con su primera pregunta pendiente, también tiene que quedar contestada (ver instruccionV2).
+  const li = colg ? `${colg}\n(y ahora escribió:) ${ahora}` : ahora;
+  if (!li || !(colg || /[?¿]/.test(ahora) || traePregunta(ahora))) return null;
   try {
     const raw = await runAI({
       db, channelId, origen: "clasificar", provider, apiKey: ai.api_key, model: ai.model || undefined, maxTokens: 120,
@@ -25345,6 +25354,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       (_motorV2Forzado || (await loadEntregas(db, run).catch(() => null))?.motor_v2 === true);
     if (_v2Encendido && !!ctx._product_id
         && String(ctx.pedido_creado ?? "") !== "si" && ctx.datos_completos !== "si" && typeof content === "string") {
+      (ctx as any)._colgadaV2 = preguntaColgada || "";
       const _p = pasoV2(ctx, run);
       (run as any)._v2Activo = true;
       (run as any)._pasoV2 = _p;

@@ -97,9 +97,9 @@ export const BATERIA_ADAPTADOR: Bateria = {
   producto: "Adaptador PRO para Taladro – Cortador de Láminas",
   conversaciones: [
     { id: "a-sjm", titulo: "Solo dice su distrito (Lima)", turnos: [HA, "san juan de miraflores"],
-      foco: "CORRECTO: confirmar que se lo lleva a su casa en San Juan de Miraflores y pagar al recibirlo, y preguntar cuántas quiere. INCORRECTO: volver a describir el producto o sus beneficios (no preguntó nada)." },
+      foco: "Su primer mensaje pedía «más información» y el saludo automático no se la dio. CORRECTO: contestarla en 1 o 2 líneas (qué es el producto), confirmar que se lo lleva a su casa en San Juan de Miraflores y lo paga al recibirlo, y preguntar cuántas quiere. INCORRECTO: un párrafo largo de beneficios, o dos muletillas seguidas." },
     { id: "a-arequipa", titulo: "Solo dice su ciudad (provincia)", turnos: [HA, "arequipa"],
-      foco: "CORRECTO: que se lo manda por agencia Shalom a Arequipa (las sedes y el adelanto los pone el sistema). INCORRECTO: describir otra vez el producto." },
+      foco: "Su primer mensaje pedía «más información» y el saludo no se la dio. CORRECTO: contestarla en 1 o 2 líneas y decir que se lo manda por agencia Shalom a Arequipa (las sedes y el adelanto los pone el sistema). INCORRECTO: un párrafo largo de beneficios." },
     { id: "a-inox", titulo: "Pregunta por un material", turnos: [HA, "surco", "sirve para acero inoxidable?"],
       foco: "CORRECTO: lo que diga la ficha sobre materiales (láminas metálicas delgadas, hasta 1.5 mm) o «ese dato no lo tengo». INCORRECTO: asegurar que corta acero inoxidable si la ficha no lo dice." },
     { id: "a-taladro", titulo: "No tiene taladro", turnos: [HA, "callao", "no tengo taladro, igual sirve?"],
