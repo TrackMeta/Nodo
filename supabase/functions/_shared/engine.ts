@@ -5570,8 +5570,10 @@ function resumenParaConfirmar(ctx: any, nombre: string): string {
   const queLleva = [prod, opc].filter(Boolean).join(" · ");
   if (queLleva) L.push(`📦 *${queLleva}*${Number.isFinite(precio) && precio > 0 ? ` — *${sym} ${precio}*` : ""}`);
   if (String(ctx?.zona_entrega ?? "") === "lima") {
-    const dir = String(ctx?.direccion ?? "").trim();
-    if (dir) L.push(`📍 ${dir}`);
+    const dir = direccionBonita(String(ctx?.direccion ?? ""));
+    if (dir) L.push(/https?:\/\//i.test(dir) ? `📍 ${dir}` : `📍 *${dir}*`);
+    const ref = refBonita(String(ctx?.referencia ?? ""));
+    if (ref) L.push(`🏠 Referencia: ${ref}`);
   } else {
     // (como la escribió el cliente —«av charcani»— se ve descuidado en un resumen: en minúsculas pasa a nombre propio)
     const _bonito = (s: string) => /\p{Lu}/u.test(s) ? s : enTitulo(s);
@@ -5594,13 +5596,21 @@ function bloquePedirDatos(faltan: unknown, perfil = "", ctx: any = null): string
   }
   const _ls = (Array.isArray(faltan) ? faltan : [])
     .filter((f: any) => f && f.clave !== "confirmo" && f.validar !== "sede" && String(f.label ?? "").trim())
-    .map((f: any) => String(f.label).replace(/[¿?¡!]/g, "").split(/[,(]/)[0]
-      .replace(/\bsus\b/gi, "tus").replace(/\bsu\b/gi, "tu").replace(/\s+/g, " ").trim())
+    .map((f: any) => {
+      const lb = String(f.label).replace(/[¿?¡!]/g, "").split(/[,(]/)[0]
+        .replace(/\bsus\b/gi, "tus").replace(/\bsu\b/gi, "tu").replace(/\s+/g, " ").trim();
+      // 🏠 La dirección se pide con su referencia, o la ubicación de WhatsApp (Rodrigo, 4-oct-2026, en su chat de
+      // Probar flujos). La referencia es opcional y no salía en la lista: el motorizado llegaba sin ella. El pin lo
+      // guarda el motor como enlace de mapa (ver «📍 Dirección por ubicación de WhatsApp»).
+      // (`\t` separa la etiqueta de lo que va FUERA de la negrita; solo se agrega si el dueño dejó «Dirección» a secas)
+      if (f.clave === "direccion" && /^direcci[oó]n$/i.test(lb)) return "Dirección y referencia\t(o tu ubicación de WhatsApp 📍)";   // (≤ 60 letras: más largo, el recorte de 📌 no lo reconoce como campo)
+      return lb;
+    })
     .filter((s: string, i: number, a: string[]) => s && a.indexOf(s) === i)
     .slice(0, 5);
   if (!_ls.length) return "";
   const intro = _ls.length === 1 ? "Solo me falta un dato 👇" : "Para dejarlo listo, pásame estos datos 👇";
-  return `${intro}\n${_ls.map((s) => `📌 *${s}*`).join("\n")}`;
+  return `${intro}\n${_ls.map((s) => { const [lb, extra] = s.split("\t"); return `📌 *${lb}*${extra ? ` ${extra}` : ""}`; }).join("\n")}`;
 }
 // Frases con las que la IA (o el motor) PIDE datos — verbo de pedir + un dato nombrado. Solo esas se
 // reemplazan: «tu DNI lo pide la agencia para entregarte» nombra el dato sin pedirlo y se queda.
@@ -12207,7 +12217,61 @@ function promesaDespacho(pedidosCfg: any, zona: string): string {
 // nunca (ver `regalo_mencionar`), así que llegaba una sorpresa que nadie agradece.
 // Se arma con el pedido YA GRABADO, no con lo que la IA recuerde: si acá dice 3 frascos
 // es porque hay 3 en la base.
-function resumenPedido(o: any, sym: string, producto?: string | null, cuando?: string | null): string {
+// 🏠 La dirección como se escribe en un rótulo, no como la tecleó apurado: «mz x7 lt 10 villa san luis pamplona alta»
+// → «Mz. X7 Lt. 10, Villa San Luis Pamplona Alta» (Rodrigo, 4-oct-2026: «que el bot arregle la escritura, con
+// mayúsculas»). Solo FORMA: no agrega ni quita una palabra, así que no puede cambiar a dónde va el paquete. Un enlace
+// de mapa (ubicación compartida) se deja tal cual.
+const ABREV_DIRECCION: Record<string, string> = {
+  mz: "Mz.", mzna: "Mz.", mzn: "Mz.", manzana: "Mz.", lt: "Lt.", lote: "Lt.", av: "Av.", avenida: "Av.", jr: "Jr.",
+  jiron: "Jr.", calle: "Calle", psje: "Psje.", pje: "Psje.", pasaje: "Psje.", urb: "Urb.", urbanizacion: "Urb.",
+  aahh: "AA.HH.", asoc: "Asoc.", asociacion: "Asoc.", dpto: "Dpto.", dep: "Dpto.", int: "Int.", interior: "Int.",
+  nro: "N.°", coop: "Coop.", cooperativa: "Coop.", prolong: "Prolong.", prolongacion: "Prolong.", sector: "Sector",
+  block: "Block", blq: "Block", edif: "Edif.", edificio: "Edif.", piso: "Piso",
+};
+const NEXOS_DIRECCION = new Set(["de", "del", "la", "las", "los", "el", "y", "en", "al", "a", "con"]);
+// Las que van pegadas a un número o letra (Mz. X7, Lt. 10, Dpto. 402): antes de ellas no se pone coma.
+const ABREV_CON_NUMERO = new Set(["Mz.", "Lt.", "Dpto.", "Int.", "N.°", "Block", "Piso", "Edif."]);
+function direccionBonita(dir: string): string {
+  const t = String(dir ?? "").replace(/\*/g, "").replace(/\s+/g, " ").trim();
+  if (!t || /https?:\/\//i.test(t)) return t;
+  // Si ya la escribió con mayúsculas y minúsculas, se respeta su forma y solo se ordenan las abreviaturas.
+  const mezclada = /\p{Lu}/u.test(t) && /\p{Ll}/u.test(t);
+  const toks = t.replace(/\s*,\s*/g, " , ").split(" ").filter(Boolean);
+  const out: string[] = [];
+  for (let i = 0; i < toks.length; i++) {
+    const w = toks[i];
+    if (w === ",") { if (out.length && out[out.length - 1] !== ",") out.push(","); continue; }
+    const k = w.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[.°º]/g, "");
+    const prev = out[out.length - 1];
+    let v: string;
+    if (ABREV_DIRECCION[k]) v = ABREV_DIRECCION[k];
+    else if (/\d/.test(w)) v = w.toLocaleUpperCase("es");                                      // 10, X7, 402-B
+    else if (i > 0 && /^(?:i{1,3}|iv|vi{0,3}|ix)$/i.test(w)) v = w.toUpperCase();              // Etapa II
+    else if (w.length === 1 && prev && ABREV_CON_NUMERO.has(prev)) v = w.toLocaleUpperCase("es");   // Mz. A
+    // «sjl», «smp», «vmt»: siglas de distrito (sin vocales) van en mayúscula.
+    else if (/^[b-df-hj-np-tv-zñ]{2,4}$/i.test(w)) v = w.toLocaleUpperCase("es");
+    // Nexos en minúscula («Av. 28 de Julio», «frente al parque»)… salvo el artículo que ABRE un nombre después de
+    // Av./Jr./Urb. o de una coma: «Av. Los Olivos», no «Av. los Olivos».
+    else if (i > 0 && NEXOS_DIRECCION.has(w.toLocaleLowerCase("es"))
+      && !(/^(?:los|las|la|el)$/i.test(w) && (prev === "," || Object.values(ABREV_DIRECCION).includes(prev ?? ""))))
+      v = w.toLocaleLowerCase("es");
+    else if (mezclada) v = w;
+    else { const b = w.toLocaleLowerCase("es"); v = b.charAt(0).toLocaleUpperCase("es") + b.slice(1); }
+    // Coma entre el número de la casa y lo que sigue (la urbanización, el distrito): «Lt. 10, Villa San Luis».
+    // No antes de otra abreviatura pegada a número (Mz. X7 Lt. 10) ni de un nexo («Av. 28 de Julio»).
+    const prevEsNumero = !!prev && prev !== "," && (/\d/.test(prev) ||
+      (/^[A-ZÑ]$/.test(prev) && ABREV_CON_NUMERO.has(out[out.length - 2] ?? "")));
+    if (prevEsNumero && /^\p{Lu}/u.test(v) && !ABREV_CON_NUMERO.has(v) && !/^(?:[IVX]+|[A-ZÑ])$/.test(v)) out.push(",");
+    out.push(v);
+  }
+  return out.join(" ").replace(/\s+,/g, ",").replace(/^,\s*|,\s*$/g, "").trim();
+}
+function refBonita(ref: string): string {
+  const t = String(ref ?? "").replace(/\*/g, "").replace(/\s+/g, " ").trim();
+  return t ? t.charAt(0).toLocaleUpperCase("es") + t.slice(1) : "";
+}
+function resumenPedido(o: any, sym: string, producto?: string | null, cuando?: string | null,
+  franja?: { desde: string; hasta: string } | null): string {
   const s = (o?.shipping ?? {}) as any;
   const L: string[] = [];
   // El nombre del producto NO vive en `shipping` (ahí solo va la presentación elegida):
@@ -12242,9 +12306,12 @@ function resumenPedido(o: any, sym: string, producto?: string | null, cuando?: s
   // oficina está marcada para confirmar, NO se nombra (se la desmentiríamos dos mensajes
   // después, que es justo el bug que ya cerró `sede_por_confirmar` en los avisos).
   if (String(s.zona || "") === "lima") {
-    const dir = String(s.direccion || "").trim();
-    const ref = String(s.referencia || "").trim();
-    if (dir) L.push(`📍 ${dir}${ref ? ` (ref: ${ref})` : ""}`);
+    // 🏠 En negrita y bien escrita, con la referencia en su renglón: es lo que el cliente revisa para ver que el
+    // motorizado llegue (Rodrigo, 4-oct-2026).
+    const dir = direccionBonita(String(s.direccion || ""));
+    const ref = refBonita(String(s.referencia || ""));
+    if (dir) L.push(/https?:\/\//i.test(dir) ? `📍 ${dir}` : `📍 *${dir}*`);
+    if (ref) L.push(`🏠 Referencia: ${ref}`);
   } else {
     const ciudad = enTitulo(String(s.ciudad || ""));
     // `enTitulo` porque el cliente escribe su oficina como le sale ("oxapampa") y este
@@ -12309,7 +12376,16 @@ function resumenPedido(o: any, sym: string, producto?: string | null, cuando?: s
     : "*otro día*";
   if (_pidioDia && !ESTADOS_DESPACHADO.has(String(o?.estado ?? ""))) {
     L.push(`📅 Pediste que llegue ${_diaTxt}: lo coordinamos con el reparto y te confirmamos por acá`);
-  } else if (_cuando) L.push(`📅 Te lo llevo *${_cuando}*`);
+  } else if (_cuando) {
+    // 📅 Con la franja de Negocio → Entrega y quién coordina la hora (Rodrigo, 4-oct-2026: «La entrega está programada
+    // para mañana, miércoles 30 de septiembre, entre 10:00 a.m. y 6:00 p.m. El motorizado se comunicará contigo para
+    // coordinar la hora exacta 🚚»). Sin franja configurada no se inventa una: queda el día. («en cuanto repongamos»
+    // no es una fecha: va como antes.)
+    if (/^(?:hoy|mañana|el)\b/i.test(_cuando) && franja) {
+      L.push(`📅 La entrega está programada para *${_cuando}*, entre las *${franja.desde}* y las *${franja.hasta}*. ` +
+        "El motorizado se comunicará contigo para coordinar la hora exacta 🚚");
+    } else L.push(`📅 Te lo llevo *${_cuando}*`);
+  }
   // 🛡️ Y el resumen se somete a la MISMA red que el texto de la IA. No porque quede algo por
   // corregir hoy —la línea del saldo ya se arregló arriba—, sino porque tener la regla del
   // saldo solo en el camino de la IA es lo que dejó salir «al recogerlo» durante meses: dos
@@ -31431,18 +31507,34 @@ async function buildContext(db: SupabaseClient, run: Run) {
         // día siguiente, "mañana" ya no es mañana. Se le pega el día y la fecha —«mañana (jue
         // 06/09)»— en la zona horaria del negocio, no en UTC. Solo cuando el motor dice HOY o
         // MAÑANA: para "el lunes" o "en 2 días" la cuenta no es directa y prefiero no inventar.
+        // 📅 Y con la fecha LARGA, como se dice en voz alta: «mañana, lunes 5 de octubre» (Rodrigo, 4-oct-2026,
+        // mirando «mañana (Lun 5/10)» en su chat de Probar flujos: quería «mañana, miércoles 30 de septiembre»).
+        // «el lunes» también lleva su fecha: es el próximo lunes, y así no hay duda de cuál.
+        let _franja: { desde: string; hasta: string } | null = null;
         try {
-          const _dias = /\bhoy\b/i.test(_cuandoLlega) ? 0 : /\bmañana\b/i.test(_cuandoLlega) ? 1 : null;
-          if (_dias != null && !/\d{1,2}\/\d{1,2}/.test(_cuandoLlega)) {
-            const _tz = await tzDe(db, run);
-            const _f = new Date(Date.now() + _dias * 86400000);
-            const _dia = new Intl.DateTimeFormat("es-PE", { timeZone: _tz, weekday: "short" }).format(_f)
-              .replace(/\.$/, "");
-            const _fecha = new Intl.DateTimeFormat("es-PE", { timeZone: _tz, day: "2-digit", month: "2-digit" }).format(_f);
-            _cuandoLlega = `${_cuandoLlega} (${_dia.charAt(0).toLocaleUpperCase("es") + _dia.slice(1)} ${_fecha})`;
+          const _tz = await tzDe(db, run);
+          const _DIAS_ES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+          const _wdDe = (f: Date) => ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
+            .indexOf(new Intl.DateTimeFormat("en-US", { timeZone: _tz, weekday: "short" }).format(f).toLowerCase());
+          let _dias: number | null = /^\s*hoy\b/i.test(_cuandoLlega) ? 0 : /^\s*mañana\b/i.test(_cuandoLlega) ? 1 : null;
+          const _elDia = /^\s*el\s+(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\s*$/i.exec(_cuandoLlega);
+          if (_elDia) {
+            const _quiere = _DIAS_ES.findIndex((d) => normalize(d) === normalize(_elDia[1]));
+            for (let i = 1; i <= 7 && _dias == null; i++) if (_wdDe(new Date(Date.now() + i * 86400000)) === _quiere) _dias = i;
           }
+          if (_dias != null && !/\d{1,2}\/\d{1,2}/.test(_cuandoLlega)) {
+            const _f = new Date(Date.now() + _dias * 86400000);
+            const _num = new Intl.DateTimeFormat("es-PE", { timeZone: _tz, day: "numeric" }).format(_f);
+            const _mes = new Intl.DateTimeFormat("es-PE", { timeZone: _tz, month: "long" }).format(_f).toLocaleLowerCase("es");
+            const _fecha = `${_DIAS_ES[_wdDe(_f)] ?? ""} ${_num} de ${_mes}`.trim();
+            _cuandoLlega = _dias === 0 ? `hoy, ${_fecha}` : _dias === 1 ? `mañana, ${_fecha}` : `el ${_fecha}`;
+          }
+          // ⏰ La franja de reparto de Negocio → Entrega (la misma que la IA dice si le preguntan «¿a qué hora?»).
+          const _hE = ((await loadEntregas(db, run)) as any)?.entregas?.horario ?? {};
+          const _d = String(_hE.desde ?? "").trim(), _h = String(_hE.hasta ?? "").trim();
+          if (/^\d{1,2}:\d{2}$/.test(_d) && /^\d{1,2}:\d{2}$/.test(_h)) _franja = { desde: fmtHora(_d), hasta: fmtHora(_h) };
         } catch (_) { /* sin zona horaria legible → queda el "mañana" a secas, como antes */ }
-        ctx.resumen_pedido = resumenPedido(o, simboloMoneda((o as any).currency), String(ctx.producto_nombre ?? ""), _cuandoLlega);
+        ctx.resumen_pedido = resumenPedido(o, simboloMoneda((o as any).currency), String(ctx.producto_nombre ?? ""), _cuandoLlega, _franja);
       } catch (_) { ctx.resumen_pedido = ""; }
     }
   } catch (_) { /* columna/tabla pendiente */ }
