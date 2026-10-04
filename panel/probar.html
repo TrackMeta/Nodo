@@ -353,7 +353,7 @@ async function callFn(name, body){
 async function boot(){
   const { data:{ session } }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"probar" });
-  shell.onLeave?.(()=>{ if(st.rt) supa.removeChannel(st.rt); });
+  shell.onLeave?.(()=>{ clearTimeout(st.rtRetry); alDiaTimers.forEach(clearTimeout); window.__probarAlDia=null; if(st.rt){ const v=st.rt; st.rt=null; supa.removeChannel(v); } });
   st.channelId=shell.channelId;
   // Iconos del sistema (reemplazan emojis de interfaz).
   $("pageTtl").innerHTML=icon("probar")+" Probar flujos";
@@ -535,6 +535,7 @@ async function sendMsg(){
       } else {
         await callFn("webchat",{ channel_id:st.channelId, media:{ ...media, caption:text } });
         quitarAdjunto();
+        ponerAlDia();
       }
     }catch{ toast("Error de red",true); devolver(); }
     $("sendBtn").disabled=false;
@@ -543,13 +544,37 @@ async function sendMsg(){
   if(!text||!st.contactId) return;
   $("sendBtn").disabled=true;
   limpiar();
+  // 👀 Tu mensaje se ve AL TOQUE, sin esperar a la conexión en vivo. Rodrigo (4-oct-2026): «mando la palabra clave y no
+  // aparece nada, tengo que actualizar la página» — y la mandó dos veces creyendo que no había salido. El mensaje sí
+  // llegaba (y el bot contestaba); lo que se había caído era la conexión en vivo que pinta el hilo.
+  const tmp = st.testAs==="bot" ? null : burbujaPendiente(text);
   try{
     if(st.testAs==="bot"){ const { error }=await supa.from("messages").insert({ channel_id:st.channelId, contact_id:st.contactId, direction:"out", type:"text", content:{ text }, status:"sent" }); if(error){ toast(msgRls(error),true); devolver(); } }
-    else { await callFn("webchat",{ channel_id:st.channelId, text }); }
-  }catch{ toast("Error de red",true); devolver(); }
+    else {
+      const r = await callFn("webchat",{ channel_id:st.channelId, text });
+      if(r && !r.ok){ tmp?.remove(); toast("No se pudo enviar ("+r.status+")",true); devolver(); }
+      else ponerAlDia();
+    }
+  }catch{ tmp?.remove(); toast("Error de red",true); devolver(); }
   $("sendBtn").disabled=false;
 }
-async function sendButton(id,title){ await callFn("webchat",{ channel_id:st.channelId, buttonId:id, text:title }); }
+// La burbuja provisoria de lo que acabas de mandar: la reemplaza la de verdad cuando llega (en vivo o al releer el hilo).
+function burbujaPendiente(text){
+  const t=$("thread"); if(!t) return null;
+  const el=document.createElement("div"); el.className="msg nueva in-m"; el.dataset.tmp="1"; el.dataset.txt=text;
+  el.innerHTML=`${waFmt(text)}<div class="meta">${fmtTime.format(new Date())} · enviando…</div>`;
+  t.appendChild(el); t.scrollTop=t.scrollHeight;
+  return el;
+}
+// 🔄 PONERSE AL DÍA leyendo el hilo de la base, sin depender de la conexión en vivo. `webchat` vuelve cuando el motor
+// terminó de contestar: ahí se relee, y otra vez un rato después (lo que el bot manda con pausa entre burbujas).
+let alDiaTimers=[];
+function ponerAlDia(){
+  if(!st.contactId) return;
+  alDiaTimers.forEach(clearTimeout);
+  alDiaTimers=[300, 3000].map(ms=>setTimeout(()=>{ if(st.contactId){ loadThread(); refreshPanel(); } }, ms));
+}
+async function sendButton(id,title){ await callFn("webchat",{ channel_id:st.channelId, buttonId:id, text:title }); ponerAlDia(); }
 function fileToDataURL(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
 // ── Adjunto con pie de foto ─────────────────────────────────────────
 // El archivo espera acá hasta que le pongas el texto, y salen juntos en una sola
@@ -925,11 +950,18 @@ async function exportMessages(){
 // ── Realtime ──
 let panelTimer=null, threadTimer=null;
 function subscribe(){
-  if(st.rt) supa.removeChannel(st.rt);
+  clearTimeout(st.rtRetry);
+  if(st.rt){ const viejo=st.rt; st.rt=null; supa.removeChannel(viejo); }
+  st.rtYaUnido=false;
   // Filtro server-side por canal (como el resto de páginas) + channelId en el nombre: sin
   // esto recibía TODOS los INSERT de mensajes de la cuenta (RLS acota al tenant, no al bot).
-  st.rt=supa.channel("nodo-probar-"+st.channelId).on("postgres_changes",{ event:"INSERT", schema:"public", table:"messages", filter:"channel_id=eq."+st.channelId },(p)=>{
+  const ch=supa.channel("nodo-probar-"+st.channelId).on("postgres_changes",{ event:"INSERT", schema:"public", table:"messages", filter:"channel_id=eq."+st.channelId },(p)=>{
     if(p.new.contact_id!==st.contactId) return;
+    // Llegó el mensaje de verdad: fuera la burbuja provisoria de «enviando…» (ver burbujaPendiente).
+    if(p.new.direction==="in"){
+      const pend=[...document.querySelectorAll('.msg[data-tmp]')];
+      (pend.find(x=>x.dataset.txt===String(p.new.content?.text??""))||pend[0])?.remove();
+    }
     // Con actividad ON hay que recargar el hilo (para intercalar los eventos
     // que el motor acaba de registrar); con OFF basta con pintar el mensaje.
     if(st.showActivity){ clearTimeout(threadTimer); threadTimer=setTimeout(loadThread,350); }
@@ -937,7 +969,24 @@ function subscribe(){
     // (el mismo mensaje pudo venir en el fetch inicial), igual que la Bandeja.
     else if(!document.querySelector('.msg[data-id="'+((window.CSS&&CSS.escape)?CSS.escape(p.new.id):p.new.id)+'"]')) renderMsg(p.new, true);
     clearTimeout(panelTimer); panelTimer=setTimeout(refreshPanel,600);
-  }).subscribe();
+  }).subscribe((status)=>{
+    if(ch!==st.rt) return;   // (el canal viejo avisa CLOSED al quitarlo: no es una caída)
+    // 🔌 La conexión en vivo se cae sin avisar (pestaña dormida, PC suspendida, internet que parpadea) y al volver NO
+    // trae lo que pasó mientras tanto. Igual que en la Bandeja: al re-unirse se relee el hilo; si se cayó, se reintenta.
+    if(status==="SUBSCRIBED"){ if(st.rtYaUnido) ponerAlDia(); st.rtYaUnido=true; }
+    else if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"||status==="CLOSED"){
+      clearTimeout(st.rtRetry); st.rtRetry=setTimeout(()=>{ if(ch===st.rt) subscribe(); }, 2000);
+    }
+  });
+  st.rt=ch;
+  // …y al volver a la pestaña o al volver el internet, ponerse al día (por si la caída no avisó). En window, una sola
+  // vez: el panel es de una página y este módulo se vuelve a ejecutar al regresar (mismo patrón que la Bandeja).
+  window.__probarAlDia=()=>{ if(st.rt && st.rt.state!=="joined") subscribe(); ponerAlDia(); };
+  if(!window.__probarAlDiaWired){
+    window.__probarAlDiaWired=true;
+    window.addEventListener("online",()=>window.__probarAlDia?.());
+    document.addEventListener("visibilitychange",()=>{ if(!document.hidden) window.__probarAlDia?.(); });
+  }
 }
 boot();
 </script>
