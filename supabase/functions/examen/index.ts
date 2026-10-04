@@ -17,7 +17,7 @@
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userIsChannelAdmin } from "../_shared/db.ts";
 import { runEngine, aplicarStock, forzarModeloVenta } from "../_shared/engine.ts";
-import { runAI } from "../_shared/ai.ts";
+import { runAI, anotarUsoIA } from "../_shared/ai.ts";
 import { BATERIAS, BATERIA_ECOGUARD, type ConvExamen } from "./bateria.ts";
 
 const db = serviceClient();
@@ -254,10 +254,16 @@ async function llamarJuez(juez: string, ai: any, channelId: string, contenido: s
       const d = await r.json();
       if (!r.ok) throw new Error(`juez ${r.status}: ${JSON.stringify(d?.error ?? d).slice(0, 200)}`);
       raw = String(d?.choices?.[0]?.message?.content ?? "");
+      // 💵 Que el gasto del juez quede anotado (origen «examen»): llamado directo, no pasaba por runAI y no se veía en el
+      // panel — la factura de OpenAI salió el doble de lo registrado (3-4 oct). Los tokens de razonamiento vienen dentro de
+      // completion_tokens y se cobran como salida.
+      const u = d?.usage ?? {};
+      await anotarUsoIA(db, channelId, ai.provider ?? "openai", juez, "examen",
+        Number(u.prompt_tokens ?? 0), Number(u.completion_tokens ?? 0), Number(u?.prompt_tokens_details?.cached_tokens ?? 0));
     } finally { clearTimeout(to); }
   } else {
     raw = await runAI({
-      db, channelId, origen: "otro", provider: ai.provider, apiKey: ai.api_key, model: juez,
+      db, channelId, origen: "examen", provider: ai.provider, apiKey: ai.api_key, model: juez,
       system: SISTEMA_JUEZ, content: contenido, maxTokens: 1500,
       jsonSchema: JUICIO_SCHEMA as unknown as Record<string, unknown>, jsonStrict: true,
     });

@@ -8626,14 +8626,14 @@ function inventosRojos(texto: string, ficha: string): string[] {
   // 2) Seguridad de personas, niños o mascotas que la ficha no afirma.
   // (+ «no hace ruido que moleste», «no se siente», «silencioso» — examen 4-oct)
   // (+ el ADJETIVO: «no es un ruido constante ni molesto para ti», «no es dañino para tu familia» — examen 4-oct)
-  const reSeg = /(?<![\p{L}])(?:no\s+(?:te\s+|les?\s+|los\s+|las\s+|nos\s+)?(?:va\s+a\s+)?(?:afecta|molesta|da[ñn]a|lastima|perjudica|hace\s+da[ñn]o)\p{L}*|(?:no|ni)\s+(?:es\s+)?(?:\p{L}+\s+){0,3}?(?:molest[oa]s?|da[ñn]in[oa]s?|peligros[oa]s?|perjudicial(?:es)?|nociv[oa]s?)|no\s+(?:hace|emite|produce|genera)\s+(?:ning[uú]n\s+)?(?:ruido|sonido)|no\s+(?:se\s+)?(?:siente|percibe|nota)|silencios[oa]|(?:es\s+)?(?:seguro|inofensiv\p{L}*)\s+para|solo\s+(?:afecta|act[uú]a|funciona)\s+(?:a|con|sobre)\s+(?:los\s+)?animales\s+no\s+deseados|afecta\s+solo\s+a\s+(?:los\s+)?animales|no\s+(?:se\s+)?(?:escucha|oye)|inaudible|imperceptible\s+para)(?![\p{L}])/iu;
+  const reSeg = /(?<![\p{L}])(?:no\s+(?:te\s+|les?\s+|los\s+|las\s+|nos\s+)?(?:va\s+a\s+)?(?:afecta|molesta|da[ñn]a|lastima|perjudica|hace\s+da[ñn]o)\p{L}*|(?:no|ni)\s+(?:es\s+)?(?:\p{L}+\s+){0,3}?(?:molest[oa]s?|da[ñn]in[oa]s?|peligros[oa]s?|perjudicial(?:es)?|nociv[oa]s?)|no\s+(?:hace|emite|produce|genera)\s+(?:ning[uú]n\s+)?(?:ruido|sonido)|no\s+(?:se\s+)?(?:siente|percibe|nota)|silencios[oa]|no\s+(?:te\s+|les?\s+)?(?:causa|genera|provoca|produce)n?\s+(?:ning[uú]na?\s+)?(?:molestias?|da[ñn]os?|problemas?)|no\s+(?:son|es)\s+(?:\p{L}+\s+)?percibid[oa]s?|imperceptibles?|(?:es\s+)?(?:seguro|inofensiv\p{L}*)\s+para|solo\s+(?:afecta|act[uú]a|funciona)\s+(?:a|con|sobre)\s+(?:los\s+)?animales\s+no\s+deseados|afecta\s+solo\s+a\s+(?:los\s+)?animales|no\s+(?:se\s+)?(?:escucha|oye)|inaudible|imperceptible\s+para)(?![\p{L}])/iu;
   const reQuien = /(?<![\p{L}])(?:personas?|gente|humanos?|ni[ñn]\p{L}*|hij\p{L}*|beb[eé]s?|familia|mascotas?|perr\p{L}*|gat[oa]s?|dom[eé]stic\p{L}*|t[uú]|ti|ustedes?|vecinos?)(?![\p{L}])/iu;
   for (const fr0 of t.split(/(?<=[.!?…\n])\s*/u)) {
     // (cortesía y seguridad de la COMPRA no son afirmaciones del producto: «si no te molesta, me pasas…», «es seguro
     //  para ti comprar online»)
     const fr = fr0.replace(/(?<![\p{L}])si\s+no\s+(?:te|le|les)\s+molesta(?![\p{L}])/giu, " ");
     if (/(?<![\p{L}])(?:compr\p{L}*|pag\p{L}*|online|en\s+l[ií]nea|transacci\p{L}*|estafa|confiable|datos)(?![\p{L}])/iu.test(fr)) continue;
-    if (reSeg.test(fr) && (reQuien.test(fr) || /no\s+(?:te\s+)?molest|no\s+(?:se\s+)?(?:escucha|oye)|inaudible|solo\s+(?:afecta|act)|afecta\s+solo|no\s+(?:hace|emite|produce|genera)\s+(?:ning[uú]n\s+)?(?:ruido|sonido)/i.test(fr))) {
+    if (reSeg.test(fr) && (reQuien.test(fr) || /no\s+(?:te\s+)?molest|no\s+(?:se\s+)?(?:escucha|oye)|inaudible|solo\s+(?:afecta|act)|afecta\s+solo|no\s+(?:hace|emite|produce|genera)\s+(?:ning[uú]n\s+)?(?:ruido|sonido)|no\s+(?:te\s+|les?\s+)?(?:causa|genera|provoca|produce)n?\s+(?:ning[uú]na?\s+)?molestias?|imperceptibles?|no\s+(?:son|es)\s+(?:\p{L}+\s+)?percibid/iu.test(fr))) {
       // (solo lo que la ficha AFIRMA: sin las preguntas de las preguntas frecuentes — «¿Es seguro para mascotas?» de EcoGuard
       //  contaba como si dijera que lo es y dejaba pasar «no te molesta a ti», examen 4-oct)
       const fAfirma = normalize(String(ficha ?? "").split("\n").filter((l) => !/\?|^\s*P\s*:/i.test(l)).join("\n"));
@@ -8646,9 +8646,16 @@ function inventosRojos(texto: string, ficha: string): string[] {
   // 3) Interiores cuando la ficha los prohíbe.
   if (/no\s+usar\s+en\s+interiores|solo\s+(?:para\s+)?(?:uso\s+)?exteriores|no\s+(?:es\s+)?para\s+interiores/.test(f)
       // (con plurales: «ideal para proteger almacenES» pasaba — examen 4-oct)
-      && /(?<![\p{L}])(?:almac[eé]n(?:es)?|almacenes|bodegas?|interior(?:es)?|dentro\s+de\s+(?:la\s+|tu\s+)?(?:casa|cocina|cuarto|habitaci[oó]n)|cocinas?|s[oó]tanos?|garajes?|techados?|dep[oó]sitos?)(?![\p{L}])/iu.test(t)
+      // (y NEGADO cerca no cuenta: «está diseñado para exteriores, NO EN interiores como almacenes» era la respuesta buena y
+      //  el freno la tumbaba — examen 4-oct. Se mira cada mención con lo que tiene 45 letras antes.)
+      && [...t.matchAll(/(?<![\p{L}])(?:almac[eé]n(?:es)?|almacenes|bodegas?|interior(?:es)?|dentro\s+de\s+(?:la\s+|tu\s+)?(?:casa|cocina|cuarto|habitaci[oó]n)|cocinas?|s[oó]tanos?|garajes?|techados?|dep[oó]sitos?)(?![\p{L}])/giu)]
+        // (solo dentro de la MISMA frase: el «no» de la anterior —«…no usa químicos. A tu almacen le puede ayudar»— no la niega)
+        .some((m) => !/(?<![\p{L}])(?:no|ni|nunca|evita\p{L}*|sin|excepto|salvo|menos)(?![\p{L}])/iu.test(
+          (t.slice(Math.max(0, (m.index ?? 0) - 45), m.index ?? 0).split(/[.!?…\n]/).pop() ?? "")))
       && !/(?<![\p{L}])(?:no\s+(?:es|est[aá]|se\s+recomienda|lo\s+uses|usarlo|va)|no\s+(?:lo\s+)?(?:recomiendo|recomendamos)|evita|exterior(?:es)?\s+(?:solamente|nom[aá]s))(?![\p{L}])/iu.test(t)) {
-    v.push("La ficha dice que no se usa en interiores: no lo recomiendes para almacenes, bodegas ni dentro de casa. Dile con tacto que es para exteriores.");
+    // (contestando ADEMÁS lo que preguntó: «¿sirve para ratas en mi almacén?» quedaba sin decir si sirve para ratas)
+    v.push("La ficha dice que no se usa en interiores: no lo recomiendes para almacenes, bodegas ni dentro de casa. Contesta lo " +
+      "que te preguntó según la ficha (por ejemplo, si sirve contra ese animal) y aclara con tacto que es para exteriores.");
   }
   return v;
 }
@@ -25552,7 +25559,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _mFeat = /(?:^|[¿\s])(?:calcula|incluye|trae|tiene|viene\s+con|lleva|hace\s+el|hace\s+la|genera|saca)\s+(?:el|la|los|las|un|una|tambi[eé]n)?\s*([a-záéíóúñ0-9]{3,})/i
           .exec(String(ctx.last_input ?? "").toLowerCase());
         const _pal = _mFeat ? normalize(_mFeat[1]) : "";
-        const _NO_FUNC = /^(virus|precio|precios|costo|descuento|promo|promocion|oferta|stock|envio|delivery|tiempo|algo|eso|esto|todo|alguna|algun|fecha|link|acceso|garantia|certificado|devolucion|factura|boleta|cuotas|que|cuanto|como|mucho|muchos|varios|otra|otro|nada|problema|problemas|error|errores|sentido)$/;
+        const _NO_FUNC = /^(virus|precio|precios|costo|descuento|promo|promocion|oferta|stock|envio|delivery|tiempo|algo|eso|esto|todo|alguna|algun|fecha|link|acceso|garantia|certificado|devolucion|factura|boleta|cuotas|que|cuanto|como|mucho|muchos|varios|otra|otro|nada|problema|problemas|error|errores|sentido|cada|uno|una|unos|unas|todo|toda|version|versiones|opcion|opciones|plan|planes|paquete|curso|producto|modulo|modulos)$/;   // (+ «¿qué incluye CADA versión?» no es «si trae cada» — examen 4-oct)
         if (_pal && _pal.length >= 3 && !_NO_FUNC.test(_pal) && !normalize(fichaTxt).includes(_pal.replace(/s$/, ""))) {
           const _reF = new RegExp("\\b" + _pal.replace(/s$/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
           huecos.push([`si trae ${_pal}`, _reF, _reF, "producto"]);

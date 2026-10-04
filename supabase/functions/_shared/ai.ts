@@ -152,6 +152,16 @@ async function registraUso(
   } catch (_) { /* el contador nunca tumba una llamada */ }
 }
 
+// Para las llamadas que NO pasan por runAI (el juez del examen llama directo a gpt-5-mini porque razona más que el
+// tope de 28 s). Sin esto ese gasto no quedaba en ningún lado: el 3 y 4-oct fueron ~2.400 calificaciones y la factura
+// de OpenAI le llegó a Rodrigo el doble de lo que mostraba el panel.
+export async function anotarUsoIA(
+  db: AiCall["db"], channelId: string, provider: string, model: string, origen: string,
+  tokIn: number, tokOut: number, tokCache = 0,
+): Promise<void> {
+  await registraUso({ db, channelId, provider, origen } as AiCall, model, tokIn, tokOut, tokCache);
+}
+
 // Tope de tamaño del input de TEXTO (~50k tokens). Las Edge Functions de IA no acotaban
 // el input (brief/comando/resumen/texto), así que un miembro podía mandar varios MB y
 // quemar el presupuesto de IA de la cuenta. Está MUY por encima de cualquier prompt real
