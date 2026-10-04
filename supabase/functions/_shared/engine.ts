@@ -8685,11 +8685,15 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
         "RAZONABLE DE USO sin números: dónde se usa, cuidados básicos (no sumergir, poner bajo techo), contra qué más sirve " +
         "parecido a lo que dice la ficha, con qué es compatible, cómo se instala o se usa. Repetir una respuesta «provisional» " +
         "de las PREGUNTAS YA REGISTRADAS no es invento.\n" +
-        "3) fuera_de_ficha: por cada cosa que el cliente PREGUNTÓ sobre el producto y que la FICHA no contesta, una entrada: " +
-        "`pregunta` = cómo la haría un cliente, corta y empezando con ¿ (si ya está en PREGUNTAS YA REGISTRADAS, copia ese " +
-        "texto EXACTO); `respuesta` = lo que le contestó el vendedor sobre eso, en una frase (vacío si dijo que no tiene el " +
-        "dato o no lo contestó). NO incluyas preguntas de precio, envío, pago, sedes, entrega, plazos ni del pedido. Si la " +
-        "ficha sí lo contesta, no va.\n" +
+        "3) fuera_de_ficha: por cada cosa que el cliente PREGUNTÓ sobre el producto y que la FICHA no contesta de forma " +
+        "EXPLÍCITA, una entrada. Va también cuando el vendedor tuvo que SUPONER o DEDUCIR el detalle a partir de algo general " +
+        "(la ficha dice «para exterior» y él afirma que resiste la lluvia; dice «funciona con luz solar» y él dice qué pasa de " +
+        "noche): el dueño tiene que revisar esa deducción. `pregunta` = cómo la haría un cliente, corta y empezando con ¿. " +
+        "Si es EXACTAMENTE la misma pregunta que una de PREGUNTAS YA REGISTRADAS (el mismo animal, material o tema), copia " +
+        "ese texto tal cual; si es parecida pero de otra cosa (murciélagos ≠ serpientes, lluvia ≠ noche), escribe una nueva. " +
+        "`respuesta` = lo que le contestó el vendedor sobre eso, en una frase (vacío si dijo que no tiene el dato o no lo " +
+        "contestó). NO incluyas preguntas de precio, envío, pago, sedes, entrega, plazos ni del pedido. Si la ficha lo dice " +
+        "con todas sus letras, no va.\n" +
         "Responde SOLO el JSON {\"contesta\": bool, \"falta\": \"qué quedó sin contestar (vacío si contestó)\", " +
         "\"inventos\": [{\"frase\": \"la frase del vendedor\", \"por_que\": \"qué dice la ficha\", \"grave\": bool}], " +
         "\"fuera_de_ficha\": [{\"pregunta\": \"¿…?\", \"respuesta\": \"…\"}]}.",
