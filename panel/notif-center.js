@@ -41,6 +41,7 @@ const TIPOS = {
   mayorista:            { g: "atencion", lb: "Piden precio por mayor",        ic: "users" },
   entrega_pedida:       { g: "atencion", lb: "Cliente pide cambiar la entrega", ic: "calendar" },
   organico_sin_atender: { g: "atencion", lb: "Cliente orgánico sin atender",  ic: "message" },
+  pregunta_cliente:     { g: "atencion", lb: "Preguntas de clientes",         ic: "help" },
   whatsapp_salud:       { g: "sistema",  lb: "Salud de tu WhatsApp",          ic: "shield",   crit: 1 },
   campana_detenida:     { g: "sistema",  lb: "Campaña detenida",              ic: "megaphone", crit: 1 },
   problema:             { g: "sistema",  lb: "Algo falló",                    ic: "alert",    crit: 1 },
@@ -673,6 +674,11 @@ function acciones(n) {
   else if (t === "whatsapp_salud") A.push({ k: "ir", href: "canales.html", lb: "Ver mi WhatsApp", ic: "canales" });
   else if (t === "campana_detenida") A.push({ k: "ir", href: "campanas.html", lb: "Ver campañas", ic: "campanas" });
   else if (t === "anuncio_sin_producto") { A.push({ k: "ir", href: "productos.html", lb: "Asignar producto", ic: "productos" }); if (chat) A.push(chat); }
+  // 🙋 Abre el producto con «Preguntas de clientes» desplegada (productos.html?p=…&preguntas=1).
+  else if (t === "pregunta_cliente") {
+    const pid = String(n.datos?.product_id || "");
+    A.push({ k: "ir", href: pid ? `productos.html?p=${encodeURIComponent(pid)}&preguntas=1` : "productos.html", lb: "Revisar preguntas", ic: "help" });
+  }
   else {
     if (chat) A.push(chat);
     if (ped && ["reclama_vuelto", "pago_de_mas", "cambio_tras_despacho", "pedido_cancelado", "entrega_pedida"].includes(t)) A.push(ped);

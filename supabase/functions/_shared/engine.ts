@@ -4280,7 +4280,8 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
       try {
         const _ctxR = { last_input: String(event.text ?? ""), contexto_producto: String(info.negocio ?? ""),
           faq: cands.map((c: any) => `${c.label ?? c.nombre ?? ""}: ${c.intent ?? ""}`).join("\n") };
-        const _vR = await revisorIAV2(result, _ctxR, ai, ai.provider, run.channel_id, db);
+        // (sin `suponer`: la Recepción habla del NEGOCIO, no de un producto; ahí todo invento sigue siendo grave)
+        const _vR = (await revisorIAV2(result, _ctxR, ai, ai.provider, run.channel_id, db)).viol;
         if (_vR.length) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "✍️ Recepción: se pidió reescribir", _vR.join(" · ").slice(0, 400)).catch(() => {});
           const _r2 = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model,
@@ -8377,7 +8378,10 @@ function instruccionV2(p: PasoV2, ctx: any): string {
       ? `1. Primero contesta, en 1 o 2 líneas, la pregunta de su primer mensaje que quedó sin responder: «${colgada.slice(0, 200)}». ` +
         `Después responde lo que te escribió ahora: «${li}». `
       : `1. Contesta lo que te escribió: «${li}». Si preguntó varias cosas, contesta CADA una. `) +
-    "Si algo no está en la ficha, dilo con honestidad («ese dato no lo tengo») y sigue vendiendo con lo que sí sabes: no lo inventes.",
+    // (🙋 3-oct: lo que la ficha no trae ya no es siempre «no tengo el dato» — ver «Te preguntó algo que la ficha no trae»)
+    "Si algo no está en la ficha: en cómo se usa, dónde, cuidados o contra qué sirve, contesta lo razonable con seguridad; " +
+    "en plata, garantías, salud o seguridad, plazos y cifras no inventes — di con honestidad que ese detalle no lo tienes " +
+    "y sigue vendiendo con lo que sí sabes.",
   ];
   switch (p.paso) {
     case "zona":
@@ -8498,28 +8502,158 @@ const REVISOR_SCHEMA = {
       type: "array",
       items: {
         type: "object", additionalProperties: false,
-        properties: { frase: { type: "string" }, por_que: { type: "string" } },
-        required: ["frase", "por_que"],
+        properties: { frase: { type: "string" }, por_que: { type: "string" }, grave: { type: "boolean" } },
+        required: ["frase", "por_que", "grave"],
+      },
+    },
+    // 🙋 Lo que preguntó y la ficha no contesta, con lo que respondió el vendedor (ver preguntas_clientes, 0125).
+    fuera_de_ficha: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false,
+        properties: { pregunta: { type: "string" }, respuesta: { type: "string" } },
+        required: ["pregunta", "respuesta"],
       },
     },
   },
-  required: ["contesta", "falta", "inventos"],
+  required: ["contesta", "falta", "inventos", "fuera_de_ficha"],
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// 🙋 PREGUNTAS DE CLIENTES (3-oct-2026, decisión de Rodrigo: «el bot puede inventarse algo con tal de vender, pero no
+// una mentira gigante, y que me llegue a un apartado donde decido si lo agrego a la ficha»).
+// Ante una pregunta que la ficha no contesta, el bot SUPONE lo razonable para ese tipo de producto (dónde se usa,
+// cuidados, usos parecidos, compatibilidad). Nunca en lo que es una mentira gigante: plata, garantía/devoluciones, salud
+// y seguridad, plazos, cifras exactas, políticas del negocio, qué incluye. La pregunta y lo que respondió quedan en
+// `preguntas_clientes` (0125) y el dueño decide en la ficha: agregar / corregir / rechazar.
+// Mientras espera, la respuesta es PROVISIONAL: se le pasa a la IA para que el siguiente cliente reciba la MISMA.
+// ═══════════════════════════════════════════════════════════════════
+// Los huecos (TEMAS_FICHA + los que arma el detector) donde SÍ puede suponer. El resto es 🔴: honesto, como antes.
+// «si sirve para X» (un animal, un material, un clima, un lugar) entra; la condición de SALUD (acné, embarazo…) no:
+// esa la marca el detector en `_huecosRojos`.
+const RE_HUECO_SUPONIBLE = /^(?:si resiste el agua|el material|para qué terreno o uso sirve|si funciona en otro programa o equipo|si se descarga o solo se ve en línea|por dónde es el grupo o el soporte|en qué formato viene|si sirve para .+)$/i;
+function huecoSuponible(nombre: string, rojos?: Set<string>): boolean {
+  return RE_HUECO_SUPONIBLE.test(String(nombre ?? "").trim()) && !(rojos?.has(nombre));
+}
+// La pregunta normalizada: junta «¿Aguanta la lluvia?» con «aguanta la lluvia» (y la reescritura exacta que pide el
+// revisor cuando ya está registrada).
+function claveDePregunta(s: string): string {
+  return normalize(String(s ?? "")).replace(/[¿?¡!.,;:"«»()]/g, " ").replace(/\s+/g, " ").trim().replace(/^si\s+/, "").slice(0, 160);
+}
+type PreguntaCliente = { pregunta: string; respuesta: string | null; estado: string; respuesta_final: string | null; tipo: string };
+// Las provisionales (pendientes con respuesta) y las rechazadas del producto. Una consulta por run y producto.
+async function cargarPreguntasCliente(db: SupabaseClient, run: Run, productId: string): Promise<PreguntaCliente[]> {
+  if (!productId) return [];
+  const k = `_pregCli_${productId}`;
+  if ((run as any)[k]) return (run as any)[k];
+  let rows: PreguntaCliente[] = [];
+  try {
+    const { data } = await db.from("preguntas_clientes").select("pregunta, respuesta, estado, respuesta_final, tipo")
+      .eq("product_id", productId).in("estado", ["pendiente", "rechazada"]).order("veces", { ascending: false }).limit(40);
+    rows = (data ?? []) as PreguntaCliente[];
+  } catch (_) { /* tabla pendiente (0125) → como antes */ }
+  (run as any)[k] = rows;
+  return rows;
+}
+// Lo que se le dice a la IA (y al revisor) de esas preguntas.
+function bloquePreguntasCliente(rows: PreguntaCliente[]): string {
+  const prov = rows.filter((r) => r.estado === "pendiente" && String(r.respuesta ?? "").trim());
+  const rech = rows.filter((r) => r.estado === "rechazada" && String(r.respuesta ?? "").trim());   // (descartada sin respuesta: nada que desmentir)
+  if (!prov.length && !rech.length) return "";
+  // (UN solo bloque y con «⚠️» en el título: el prompt digital filtra los bloques por su encabezado y uno sin la alerta no
+  //  le llega al modelo — ver la memoria «bloque digital necesita alerta»)
+  const L: string[] = ["## ⚠️ Preguntas de clientes que ya pasaron por acá (fuera de la ficha)"];
+  if (prov.length) {
+    L.push("Respuestas que ya diste a otros clientes (el dueño todavía no las revisó). Si te preguntan lo mismo, contesta " +
+      "LO MISMO con tus palabras: dos clientes no pueden recibir dos versiones.\n" +
+      prov.slice(0, 25).map((r) => `- ${r.pregunta} → ${String(r.respuesta).slice(0, 220)}`).join("\n"));
+  }
+  if (rech.length) {
+    L.push("⛔ El dueño dijo que esto NO es así: no lo repitas ni supongas otra cosa. Sobre estas preguntas di con honestidad " +
+      "que ese detalle no lo tienes y sigue vendiendo con lo que sí sabes.\n" +
+      rech.slice(0, 25).map((r) => `- ${r.pregunta} → FALSO: «${String(r.respuesta ?? "").slice(0, 200)}»`).join("\n"));
+  }
+  return L.join("\n");
+}
+// Guarda lo que preguntó y lo que respondió el bot. Nunca lanza: registrar no puede tumbar una venta.
+async function registrarPreguntasCliente(db: SupabaseClient, run: Run, ctx: any, fuera: Array<{ pregunta: string; respuesta: string }>): Promise<void> {
+  try {
+    const productId = String(ctx?._product_id ?? "");
+    if (!productId || !fuera?.length) return;
+    // Fuera las simulaciones y los exámenes (ruido); Probar flujos sí cuenta (decisión de Rodrigo).
+    let c = (run as any)._pregCliContacto;
+    if (c === undefined) {
+      const { data } = await db.from("contacts").select("wa_id, source, nombre").eq("id", run.contact_id).maybeSingle();
+      c = (run as any)._pregCliContacto = data ?? null;
+    }
+    if ((c as any)?.source === "sim" || String((c as any)?.wa_id ?? "").startsWith("exam-")) return;
+    const cita = String(ctx?.last_input ?? "").slice(0, 180);
+    const nuevas: string[] = [];
+    for (const f of fuera.slice(0, 4)) {
+      const pregunta = String(f?.pregunta ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+      const clave = claveDePregunta(pregunta);
+      if (clave.length < 4) continue;
+      const respuesta = String(f?.respuesta ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
+      const cli = { contact_id: run.contact_id, nombre: (c as any)?.nombre ?? null, cita, respuesta: respuesta || null, ts: new Date().toISOString() };
+      const { data: prev } = await db.from("preguntas_clientes").select("id, estado, respuesta, veces, clientes")
+        .eq("product_id", productId).eq("clave", clave).maybeSingle();
+      if (!prev) {
+        const { error } = await db.from("preguntas_clientes").insert({
+          channel_id: run.channel_id, product_id: productId, pregunta, clave,
+          respuesta: respuesta || null, tipo: respuesta ? "suposicion" : "sin_dato", clientes: [cli],
+        });
+        if (!error) nuevas.push(respuesta ? `«${pregunta}» → ${respuesta}` : `«${pregunta}» (sin respuesta)`);
+        continue;
+      }
+      if ((prev as any).estado !== "pendiente") continue;   // ya decidida: la ficha manda
+      const lista = Array.isArray((prev as any).clientes) ? (prev as any).clientes : [];
+      const yaEste = lista.some((x: any) => x?.contact_id === run.contact_id);
+      const upd: Record<string, unknown> = { ultimo_at: new Date().toISOString() };
+      if (!yaEste) { upd.veces = Number((prev as any).veces || 1) + 1; upd.clientes = [cli, ...lista].slice(0, 30); }
+      // Era «sin dato» y ahora el bot sí supuso algo (tema permitido): pasa a suposición con esa respuesta.
+      if (!String((prev as any).respuesta ?? "").trim() && respuesta) { upd.respuesta = respuesta; upd.tipo = "suposicion"; }
+      await db.from("preguntas_clientes").update(upd).eq("id", (prev as any).id);
+    }
+    (run as any)[`_pregCli_${productId}`] = undefined;   // la próxima lectura trae lo recién guardado
+    if (nuevas.length) {
+      const prod = String(ctx?.producto_nombre ?? "tu producto");
+      await registrarNotificacion(db, {
+        channelId: run.channel_id, tipo: "pregunta_cliente",
+        titulo: `${prod}: preguntas nuevas de clientes`,
+        detalle: nuevas.join(" · ").slice(0, 220),
+        datos: { product_id: productId, producto: prod },
+        dedupeKey: `${run.channel_id}:pregunta_cliente:${productId}`,
+      });
+    }
+  } catch (e) { console.error("[preguntas_clientes]", (e as any)?.message ?? e); }
+}
 // Temas donde la IA inventa (se revisa aunque el cliente no haya preguntado nada).
 const RE_TEMA_RIESGOSO = /edad|a[ñn]os|lesi[oó]n|rodilla|espalda|embaraz\p{L}*|salud|enfermedad|m[eé]dico|segur\p{L}*|peligr\p{L}*|ni[ñn]\p{L}*|hij[oa]s?|beb[eé]s?|mascotas?|perr\p{L}*|gat[oa]s?|domestic\p{L}*|lluvia|agua|impermeab\p{L}*|resist\p{L}*|humedad|noche|nocturn\p{L}*|metros?|m2|hect[aá]rea|cubre|alcance|dura(?:ci[oó]n)?|bater[ií]a|garant\p{L}*|devoluci\p{L}*|cambio|interior\p{L}*|almac[eé]n|dentro\s+de|ruido|molest\p{L}*|audible|o[ií]do|no\s+afecta|no\s+da[ñn]a|cert\p{L}*|original/iu;
 
-async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider, channelId: string, db: SupabaseClient): Promise<string[]> {
+// `suponer`: en la venta de un producto, una suposición razonable de USO no se manda a reescribir (decisión de Rodrigo,
+// 3-oct): queda en `fuera` para que el dueño la revise. En la Recepción (sin producto) todo invento sigue siendo grave.
+// `previas`: las preguntas ya registradas del producto (provisionales y rechazadas) — ver preguntas_clientes.
+type RevisionV2 = { viol: string[]; fuera: Array<{ pregunta: string; respuesta: string }> };
+async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider, channelId: string, db: SupabaseClient,
+    opts: { suponer?: boolean; previas?: PreguntaCliente[] } = {}): Promise<RevisionV2> {
   const colg = String(ctx?._colgadaV2 ?? "").trim();
   const ahora = String(ctx?.last_input ?? "").trim();
   // Con su primera pregunta pendiente, también tiene que quedar contestada (ver instruccionV2).
   const li = colg ? `${colg}\n(y ahora escribió:) ${ahora}` : ahora;
   const pregunto = !!(colg || pareceConsultaV2(ahora));
   const riesgo = RE_TEMA_RIESGOSO.test(String(texto ?? ""));
-  if (!pregunto && !riesgo) return [];
+  if (!pregunto && !riesgo) return { viol: [], fuera: [] };
   const ficha = [ctx?.contexto_producto, ctx?.faq].map((x) => String(x ?? "")).join("\n\n").slice(0, 7000);
+  const previas = (opts.previas ?? []).filter((r) => r.estado === "pendiente" || (r.estado === "rechazada" && String(r.respuesta ?? "").trim()));
+  const bloquePrevias = previas.length
+    ? "\n\n## PREGUNTAS YA REGISTRADAS de este producto (todavía no están en la ficha)\n" +
+      previas.slice(0, 30).map((r) => r.estado === "rechazada"
+        ? `- ${r.pregunta} → ⛔ FALSO (el dueño lo rechazó): «${String(r.respuesta ?? "").slice(0, 160)}»`
+        : `- ${r.pregunta} → provisional: ${String(r.respuesta ?? "(sin respuesta)").slice(0, 160)}`).join("\n")
+    : "";
   try {
     const raw = await runAI({
-      db, channelId, origen: "clasificar", provider, apiKey: ai.api_key, model: ai.model || undefined, maxTokens: 350,
+      db, channelId, origen: "clasificar", provider, apiKey: ai.api_key, model: ai.model || undefined, maxTokens: 550,
       system:
         "Eres el revisor de un vendedor por WhatsApp. Te doy la FICHA del producto, el mensaje del cliente y la respuesta del vendedor.\n" +
         "1) contesta: ¿la respuesta contesta lo que el cliente preguntó? Contestar incluye decir con honestidad que no tiene ese " +
@@ -8543,9 +8677,23 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
         "OJO: debajo de esta respuesta el sistema pega solo la lista de precios, la de sedes y la de datos. Si el cliente pidió " +
         "el precio o las sedes, NO marques «no contestó» porque la respuesta no traiga esa lista. Pero si preguntó CÓMO SE PAGA, " +
         "la respuesta tiene que decir los medios (Yape, Plin, transferencia, efectivo…).\n" +
+        "Cada invento lleva `grave`. grave=true si es sobre: plata (precios o descuentos distintos, costos), garantía o " +
+        "devoluciones, salud o seguridad (personas, niños, mascotas, condiciones médicas, edad), plazos, CIFRAS o medidas " +
+        "(cualquier número: metros, horas, mAh, años, días), certificados, registros u originalidad, qué incluye el paquete " +
+        "(accesorios, piezas), políticas del negocio (tienda, factura, cuotas), credenciales, prueba social con cifras, " +
+        "resultados garantizados, o si CONTRADICE la ficha o algo marcado ⛔ FALSO. grave=false si es una SUPOSICIÓN " +
+        "RAZONABLE DE USO sin números: dónde se usa, cuidados básicos (no sumergir, poner bajo techo), contra qué más sirve " +
+        "parecido a lo que dice la ficha, con qué es compatible, cómo se instala o se usa. Repetir una respuesta «provisional» " +
+        "de las PREGUNTAS YA REGISTRADAS no es invento.\n" +
+        "3) fuera_de_ficha: por cada cosa que el cliente PREGUNTÓ sobre el producto y que la FICHA no contesta, una entrada: " +
+        "`pregunta` = cómo la haría un cliente, corta y empezando con ¿ (si ya está en PREGUNTAS YA REGISTRADAS, copia ese " +
+        "texto EXACTO); `respuesta` = lo que le contestó el vendedor sobre eso, en una frase (vacío si dijo que no tiene el " +
+        "dato o no lo contestó). NO incluyas preguntas de precio, envío, pago, sedes, entrega, plazos ni del pedido. Si la " +
+        "ficha sí lo contesta, no va.\n" +
         "Responde SOLO el JSON {\"contesta\": bool, \"falta\": \"qué quedó sin contestar (vacío si contestó)\", " +
-        "\"inventos\": [{\"frase\": \"la frase del vendedor\", \"por_que\": \"qué dice la ficha\"}]}.",
-      content: `## FICHA\n${ficha}\n\n## CLIENTE\n«${(pregunto ? li : ahora).slice(0, 500)}»\n\n## VENDEDOR\n«${String(texto ?? "").slice(0, 1500)}»`,
+        "\"inventos\": [{\"frase\": \"la frase del vendedor\", \"por_que\": \"qué dice la ficha\", \"grave\": bool}], " +
+        "\"fuera_de_ficha\": [{\"pregunta\": \"¿…?\", \"respuesta\": \"…\"}]}.",
+      content: `## FICHA\n${ficha}${bloquePrevias}\n\n## CLIENTE\n«${(pregunto ? li : ahora).slice(0, 500)}»\n\n## VENDEDOR\n«${String(texto ?? "").slice(0, 1500)}»`,
       jsonSchema: REVISOR_SCHEMA as unknown as Record<string, unknown>, jsonStrict: true,
     });
     const j = JSON.parse(raw);
@@ -8554,11 +8702,18 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
     for (const inv of (Array.isArray(j?.inventos) ? j.inventos : []).slice(0, 3)) {
       const fr = String(inv?.frase ?? "").trim().slice(0, 160);
       if (!fr) continue;
-      v.push(`No afirmes «${fr}»: la ficha no lo dice (${String(inv?.por_que ?? "").slice(0, 120)}). Di solo lo que dice la ficha, ` +
-        "o con honestidad que ese dato no lo tienes, y sigue vendiendo con lo que sí sabes.");
+      if (opts.suponer && inv?.grave === false) continue;   // suposición de uso: se queda y la revisa el dueño
+      v.push(`No afirmes «${fr}»: la ficha no lo dice (${String(inv?.por_que ?? "").slice(0, 120)}). ` +
+        (opts.suponer
+          ? "En plata, garantías, salud o seguridad, plazos y cifras no se supone: di con honestidad que ese detalle no lo tienes, " +
+            "o dilo sin números («un área mediana»), y sigue vendiendo con lo que sí sabes."
+          : "Di solo lo que dice la ficha, o con honestidad que ese dato no lo tienes, y sigue vendiendo con lo que sí sabes."));
     }
-    return v;
-  } catch (_) { return []; }   // el revisor nunca frena la venta
+    const fuera = (Array.isArray(j?.fuera_de_ficha) ? j.fuera_de_ficha : [])
+      .filter((f: any) => String(f?.pregunta ?? "").trim())
+      .map((f: any) => ({ pregunta: String(f.pregunta).trim(), respuesta: String(f?.respuesta ?? "").trim() }));
+    return { viol: v, fuera };
+  } catch (_) { return { viol: [], fuera: [] }; }   // el revisor nunca frena la venta
 }
 
 // 🎲 El ejemplo del prompt sale casi textual (ver la memoria «ejemplo del prompt pesa más»): con uno solo,
@@ -24879,6 +25034,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // 💾 Al PREFIJO FIJO igual que el negocio: las objeciones son del producto, no del turno,
     // y se verifico que no traen variables, asi que resolve las devuelve identicas siempre.
     if (ctx.faq) fijos.push("## Preguntas frecuentes y objeciones\n" + resolve(String(ctx.faq), ctx));
+    // 🙋 Las respuestas provisionales (ya dichas a otros clientes, sin revisar) y las que el dueño rechazó. Va en `parts`
+    // (no en el prefijo fijo): cambia cada vez que entra una pregunta nueva o el dueño decide.
+    if (ctx._product_id) {
+      const _bPC = bloquePreguntasCliente(await cargarPreguntasCliente(db, run, String(ctx._product_id)));
+      if (_bPC) parts.push(_bPC);
+    }
     // Preguntó por algo que la ficha NO menciona. La regla general ("si no está escrito,
     // ofrécele confirmarlo") no basta: medido, a "¿el curso tiene certificado?" —palabra
     // que la ficha ni nombra— contestó "el curso no incluye certificado" y le tumbó la
@@ -24960,9 +25121,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // memoria «para acné activo no es lo indicado» — una negativa que nadie escribió, y
       // con ella desaconsejó la compra. Negar de memoria cuesta igual que prometer.
       const _cond = (preg.match(RE_CONDICION) ?? [])[0];
+      // (🙋 una condición de SALUD nunca se supone: queda en `_rojos`, aunque se llame «si sirve para …» como un material)
+      const _rojos = new Set<string>();
       if (_cond) {
         const _reCond = new RegExp("\\b" + _cond.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-        if (!_reCond.test(fichaTxt)) huecos.push([`si sirve para ${_cond}`, _reCond, _reCond, "producto"]);
+        if (!_reCond.test(fichaTxt)) { huecos.push([`si sirve para ${_cond}`, _reCond, _reCond, "producto"]); _rojos.add(`si sirve para ${_cond}`); }
       }
       // 🔩 «¿sirve para acero inoxidable?» → «Sí, sirve… como acero inoxidable de hasta 1.5 mm»
       // (F5b-omaterial, 2026-09-26): la ficha del Adaptador dice «láminas metálicas delgadas» y sus
@@ -24975,8 +25138,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _nz = (s: string) => sinTildes(String(s)).toLowerCase().replace(/\s+/g, "");
         const _raiz = _nz(_mat).replace(/^acero/, "").slice(0, 5);
         if (!_nz(fichaTxt).includes(_raiz)) {
+          // (antes además se marcaba `_material_sin_dato` y un freno de salida cambiaba «sí corta calamina» por «no lo tengo
+          //  confirmado». Ahora un material es suposición de uso: la IA supone y la pregunta llega al dueño — 3-oct)
           huecos.push([`si sirve para ${_mat}`, /$^/, /$^/, "producto"]);
-          (ctx as any)._material_sin_dato = _mat;
         }
       }
       // 🐈 «¿Es efectivo con GATOS?» → «no funciona con gatos ni afecta a tus mascotas» (EcoGuard, simulación, 2026-10-02):
@@ -25044,9 +25208,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
       }
       const faltan = huecos.map(([nombre]) => nombre);
+      // 🙋 Los que puede SUPONER (uso, cuidados, contra qué sirve, compatibilidad) y los 🔴 donde inventar es una mentira
+      // gigante (plata, garantía, salud, plazos, cifras, políticas). Ver RE_HUECO_SUPONIBLE.
+      const _suponibles = faltan.filter((n) => huecoSuponible(n, _rojos));
+      const _faltanRojos = faltan.filter((n) => !huecoSuponible(n, _rojos));
       // Lo que quedó como hueco ESTE turno lo lee el guard de salida (sinPoliticaInventada):
-      // si la IA igual afirma o niega algo de ese tema, se le cambia por «no tengo el dato».
-      (run as any)._huecosTurno = huecos;
+      // si la IA igual afirma o niega algo de ese tema, se le cambia por «no tengo el dato». Solo los 🔴: en los que puede
+      // suponer, su respuesta se queda y la revisa el dueño en «Preguntas de clientes».
+      (run as any)._huecosTurno = huecos.filter(([n]) => !huecoSuponible(n, _rojos));
       // La frase donde de verdad lo preguntó — para citarla en el registro del hueco.
       const citaDe = (re: RegExp) => lineas.find((l) => re.test(l.toLowerCase())) ?? "";
       if (faltan.length) {
@@ -25175,7 +25344,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // años, ¿le puede hacer daño?» → «Lo que sí te puedo contar es que tiene una textura
         // ligera… ¿desde dónde me escribes?». Le hablaron de textura a quien preguntó si es
         // seguro para su hija, porque el segundo bloque pisó al primero.
-        if (!_esSalud)
+        // 🙋 Lo que puede SUPONER (decisión de Rodrigo, 3-oct): como un vendedor que conoce este tipo de producto, con
+        // seguridad y sin «no tengo el dato». La pregunta y lo que conteste le llegan al dueño para revisar.
+        if (_suponibles.length) {
+          parts.push("## ⚠️ Te preguntó algo que la ficha no trae: CONTÉSTALO como vendedor que conoce el producto\n" +
+            `Te preguntó por **${_suponibles.join(", ")}** y la ficha no lo dice. Contéstale en tu próxima respuesta, con ` +
+            "seguridad y en positivo, lo más razonable para este tipo de producto según lo que la ficha SÍ dice: dónde se " +
+            "usa, cuidados básicos (no sumergirlo, ponerlo bajo techo), contra qué más sirve si es parecido a lo que dice la " +
+            "ficha, con qué es compatible, cómo se usa. Sin «ese dato no lo tengo» y sin desaconsejarle la compra.\n" +
+            "⛔ Pero ojo con lo que sería una mentira grande: NADA de cifras o medidas (di «un área de jardín mediana», no " +
+            "«8 metros»), ni garantías, devoluciones, plazos o precios, ni asegurar que es seguro para personas, niños o " +
+            "mascotas. Y nunca contradigas la ficha.\n" +
+            "Si en «Respuestas que ya diste a otros clientes» está esta misma pregunta, contesta LO MISMO.");
+        }
+        if (!_esSalud && _faltanRojos.length)
         parts.push("## ⚠️ Te preguntó algo que NO está en la ficha (y puede decidir su compra)\n" +
           // ❗ Lo primero, porque el fallo medido no fue inventar: fue IGNORAR. «quiero 3
           // frascos, necesito factura, mi RUC es 20512345678, soy de lima jesús maría» →
@@ -25186,7 +25368,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           `❗ ESTO SE CONTESTA EN TU PRÓXIMA RESPUESTA, no más adelante, y ANTES de pedirle ` +
           `el siguiente dato. Si le pides el nombre o la dirección sin haberle contestado esto, ` +
           `para él lo ignoraste.\n` +
-          `Sobre esto no tienes dato: **${faltan.join(", ")}**. Que la ficha no lo mencione NO significa que no exista: ` +
+          `Sobre esto no tienes dato: **${_faltanRojos.join(", ")}**. Que la ficha no lo mencione NO significa que no exista: ` +
           `no lo afirmes ni lo niegues, y NUNCA le desaconsejes la compra por esto ("para eso quizás necesites otra cosa") — ` +
           `estarías tumbando una venta con un dato que nadie escribió.\n` +
           `Pero tampoco la sueltes con un "déjame confirmarlo" a secas: eso enfría igual que una negativa. ` +
@@ -25523,7 +25705,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           (run as any)._revDigitalSinVersion = true;
           content += "\n\n## 🧭 TU TAREA EN ESTE MENSAJE\n" +
             `1. Contesta lo que te escribió: «${String(ctx.last_input ?? "").slice(0, 300)}». Si preguntó cómo se paga: por Yape, Plin o ` +
-            "transferencia, y el acceso le llega por este chat apenas valides su pago. Si algo no está en la ficha, dilo con honestidad.\n" +
+            "transferencia, y el acceso le llega por este chat apenas valides su pago. Si algo no está en la ficha: en cómo se usa " +
+            "o con qué funciona, contesta lo razonable con seguridad; en plata, garantías, plazos y cifras, dilo con honestidad.\n" +
             "2. Todavía NO eligió cuál quiere: termina preguntándole, con tus palabras, cuál de las versiones prefiere. ⛔ NO digas que le " +
             "pasas los datos de pago ni que «ya te llegan»: salen solos cuando elija.";
         }
@@ -25545,14 +25728,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       try {
         const _p = (run as any)._pasoV2 as PasoV2 | undefined;   // (sin paso en lo digital: solo el revisor IA)
         if (_p?.paso === "sede") result = sinPreguntaDeSedeV2(result) || result;
+        // 🙋 Las preguntas ya registradas del producto (provisionales y rechazadas): el revisor las usa para no marcar como
+        // invento lo que ya se dijo, para cazar lo rechazado y para reusar el texto exacto de la pregunta.
+        const _previas = await cargarPreguntasCliente(db, run, String(ctx._product_id ?? ""));
+        let _fueraUltima: Array<{ pregunta: string; respuesta: string }> = [];
         const revisar = async (txt: string) => {
           const v = _p ? violacionesV2(txt, _p, ctx) : [];
           // Digital sin versión: anunciar los datos de pago es prometer algo que no sale (ver _revDigitalSinVersion).
           if ((run as any)._revDigitalSinVersion && /te\s+(?:paso|env[ií]o|mando|dejo)\s+(?:los\s+)?datos|datos\s+(?:de|para\s+el)\s+pago|te\s+llegan?\s+(?:los\s+)?datos/i.test(sinFormato(txt))) {
             v.push("Todavía no eligió la versión: no digas que le pasas los datos de pago (salen cuando elija). Contesta y pregúntale cuál prefiere.");
           }
-          const c = await revisorIAV2(txt, ctx, ai, provider, run.channel_id, db);
-          return [...c, ...v];
+          const c = await revisorIAV2(txt, ctx, ai, provider, run.channel_id, db, { suponer: true, previas: _previas });
+          _fueraUltima = c.fuera;
+          return [...c.viol, ...v];
         };
         const v1 = await revisar(result);
         if (!v1.length) {
@@ -25587,6 +25775,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ Motor v2: la reescritura tampoco pasó",
               `${v2.join(" · ")} — ${_tijerasSirven ? "vuelven los recortes de siempre" : "sale la segunda versión sin recortes"}`).catch(() => {});
           }
+        }
+        // 🙋 Lo que preguntó fuera de la ficha, con lo que se le respondió (la versión que sale), a «Preguntas de clientes».
+        if (_fueraUltima.length) {
+          await registrarPreguntasCliente(db, run, ctx, _fueraUltima);
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🙋 Pregunta fuera de la ficha",
+            _fueraUltima.map((f) => `${f.pregunta} → ${f.respuesta || "(sin respuesta)"}`).join(" · ").slice(0, 400)).catch(() => {});
         }
       } catch (e) {   // el revisor nunca tumba la venta — pero que se vea por qué falló
         (run as any)._v2Fallo = true;
@@ -29221,30 +29415,6 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           _out.push(_lns[i]);
         }
         salida = _out.join("\n").replace(/^\n+/, "");
-      }
-      // 🔩 Y si igual lo afirmó («sirve… como acero inoxidable de hasta 1.5 mm»), la frase se cambia
-      // por la verdad: ese material no está confirmado. Ver `_material_sin_dato`.
-      if (op === "generar_texto" && (ctx as any)._material_sin_dato) {
-        const _m = String((ctx as any)._material_sin_dato);
-        const _nzM = (s: string) => sinTildes(String(s)).toLowerCase().replace(/\s+/g, "");
-        const _raizM = _nzM(_m).replace(/^acero/, "").slice(0, 5);
-        const _reM = { test: (s: string) => _nzM(s).includes(_raizM) };
-        const _NEG = /(?:^|[^\p{L}])(no|ni|tampoco|sin\s+confirmar|no\s+te\s+(?:lo\s+)?(?:puedo\s+)?asegur\p{L}*|no\s+tengo|no\s+est[aá]\s+confirmad\p{L}*)(?![\p{L}])/iu;
-        let _cambio = false;
-        salida = String(salida ?? "").split("\n").map((ln) => !_reM.test(ln) ? ln
-          : ln.split(/(?<=[.!?🙌📦✅😊🙂🔧])\s+/u).map((f) => {
-              if (!_reM.test(f) || _NEG.test(f)) return f;
-              _cambio = true;
-              // Un material se nombra («acero inoxidable»); una especificación del taladro (12v,
-              // inalámbrico, marca) no, que sale cruda y sin tilde.
-              return /\d|inal|roto|percu|mandril|bosch|dewalt|makita|truper|stanley|black/i.test(_m)
-                ? "Con ese modelo de taladro en particular no te lo puedo asegurar, no lo tengo confirmado 🙏"
-                : `Con *${_m}* en particular no te lo puedo asegurar, no lo tengo confirmado 🙏`;
-            }).join(" ")).join("\n");
-        if (_cambio) {
-          await logEvent(db, run.channel_id, run.contact_id, "nota", "🔩 Afirmó un material que la ficha no nombra",
-            `«${_m}»: se cambió por «no te lo puedo asegurar»`).catch(() => {});
-        }
       }
       // ⏰ «¿Quieres que te vaya recordando mañana o prefieres avisar tú?» (D17b-pmanana): no hay recordatorio
       // a pedido — el bot no escribe «mañana» porque se lo prometió. Fuera la oferta (en los dos tipos).

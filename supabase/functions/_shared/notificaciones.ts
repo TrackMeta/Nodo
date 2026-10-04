@@ -53,6 +53,8 @@ const META: Record<string, Meta> = {
   whatsapp_salud:       { grupo: "sistema",  prioridad: "urgente",    porAtender: true },
   campana_detenida:     { grupo: "sistema",  prioridad: "urgente",    porAtender: true },
   anuncio_sin_producto: { grupo: "sistema",  prioridad: "importante", porAtender: true },
+  // 🙋 Un cliente preguntó algo que la ficha no trae (0125). Se resuelve sola cuando el dueño revisa todas las del producto.
+  pregunta_cliente:     { grupo: "atencion", prioridad: "importante", porAtender: true },
   aviso:                { grupo: "sistema",  prioridad: "info",       porAtender: false },
 };
 // Avisos de PAGO: se enganchan al pedido vivo del cliente para que el trigger los resuelva solos.
