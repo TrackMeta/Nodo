@@ -124,7 +124,7 @@
      ir más lejos— y con un <input> el operador NO podía escribir ni una. Shift+Enter no
      "no funcionaba": el campo era incapaz de contener un salto de línea. Crece solo hasta
      6 líneas y a partir de ahí hace scroll. */
-  .composer textarea#msgInput{flex:1;min-height:42px;max-height:148px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;color:var(--text);padding:11px 16px;outline:none;resize:none;overflow-y:auto;font:inherit;line-height:1.35}
+  .composer textarea#msgInput{flex:1;min-height:42px;max-height:148px;background:var(--surface-2);border:1px solid var(--border);border-radius:22px;color:var(--text);padding:11px 16px;outline:none;resize:none;overflow-y:hidden;font:inherit;line-height:1.35}
   .composer textarea#msgInput:focus{border-color:var(--brand)}
   .send{width:42px;height:42px;flex:none;border-radius:50%;background:var(--brand);border:none;color:#fff;display:flex;align-items:center;justify-content:center}
   .send svg{width:19px;height:19px} .send:disabled{opacity:.4}
@@ -506,7 +506,9 @@ function mediaHtml(m){ if(m.type==="location") return ubiHtml(m);
 // El compositor crece con el texto y vuelve a su alto al vaciarse (el tope lo pone
 // max-height en CSS). Va acá arriba, FUERA del init: declarada dentro, sendMsg no la
 // veía y el campo se quedaba alto después de enviar (el catch se comía el ReferenceError).
-function autoGrow(){ const t = $("msgInput"); if(!t) return; t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 148) + "px"; }
+// (+ el BORDE: con box-sizing border-box, alto = scrollHeight dejaba 2 px de contenido fuera y salía la barra de
+//  desplazamiento con una sola línea. La barra solo cuando el texto pasa del tope.)
+function autoGrow(){ const t = $("msgInput"); if(!t) return; t.style.height = "auto"; const h = t.scrollHeight + (t.offsetHeight - t.clientHeight); t.style.height = Math.min(h, 148) + "px"; t.style.overflowY = h > 148 ? "auto" : "hidden"; }
 async function sendMsg(){
   const inp=$("msgInput"); const text=inp.value.trim();
   // 🧹 El campo se vacía AL TOQUE, no cuando contesta el servidor. `callFn("webchat")`
