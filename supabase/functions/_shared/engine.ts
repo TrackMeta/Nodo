@@ -29988,8 +29988,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           && String(ctx.pedido_creado ?? "") !== "si" && ctx.datos_completos !== "si"
           && !/\[\[\s*humano\s*\]\]/i.test(String(salida ?? ""))) {
         try {
+          // (si el prompt llegó a LEER un mensaje más nuevo —historial() lo deja en el sello `cubre_hasta`—, ese mensaje ya
+          //  está contestado en esta respuesta: la referencia es el más nuevo de los dos. Es la «Espera antes de responder»
+          //  + el sello de siempre; esto cubre solo lo que llegó DESPUÉS de que el bot leyó la conversación.)
+          const _sello = _cubreHasta.get(claveSello(run));
+          const _ref = _sello && Date.parse(_sello) > Date.parse(_ultimoInTurno) ? _sello : _ultimoInTurno;
           const { count: _nNuevos } = await db.from("messages").select("id", { count: "exact", head: true })
-            .eq("contact_id", run.contact_id).eq("direction", "in").gt("ts", _ultimoInTurno);
+            .eq("contact_id", run.contact_id).eq("direction", "in").gt("ts", _ref);
           if ((_nNuevos ?? 0) > 0) {
             _turnoViejo = true;
             // (la pregunta de su primer mensaje no se llegó a contestar: que el turno siguiente la retome)
