@@ -2801,7 +2801,8 @@ function sinLaPalabraClave(text?: string | null, keyword?: string | null): strin
   const t = String(text ?? "");
   // (el saludo con que arranca la clave vale escrito como sea: «ola», «holaa», «holi» = «hola»; si no, una letra de
   //  diferencia hacía que la clave no se descontara y la IA la contestara — Probar flujos, 3-oct)
-  const _p = (s: string) => normalize(s).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").replace(/^(?:h?ola+|holi+|hla)$/u, "hola");
+  // (y una letra de diferencia en cualquier palabra: ver palabraParecida)
+  const _p = (s: string) => saludoCanonico(normalize(s).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""));
   const kw = normalize(keyword ?? "").split(/\s+/).map(_p).filter(Boolean);
   if (!kw.length || !t.trim()) return t;
   const piezas = t.split(/(\s+)/);           // conserva los espacios para no pegar palabras
@@ -2812,7 +2813,7 @@ function sinLaPalabraClave(text?: string | null, keyword?: string | null): strin
     let j = i, k = 0;
     while (j < piezas.length && k < kw.length) {
       if (!pal[j]) { j++; continue; }         // espacios y signos sueltos
-      if (pal[j] !== kw[k]) break;
+      if (!palabraParecida(pal[j], kw[k])) break;   // (una letra de diferencia vale: «curzo» = «curso»)
       j++; k++;
     }
     if (k === kw.length) { for (let z = i; z < j; z++) out[z] = ""; i = j - 1; }
@@ -2825,8 +2826,49 @@ function sinLaPalabraClave(text?: string | null, keyword?: string | null): strin
 // que soloLaPalabraClave daba false, el «?» contaba como pregunta y la IA soltaba una burbuja detrás
 // de los mensajes iniciales (auditoría 2026-09-30). Con un «sobre X» corto (el nombre de algo) sigue
 // siendo la frase de Meta; con dígitos o una cola larga ya es una pregunta del cliente.
+// 🔤 UNA LETRA DE DIFERENCIA (4-oct, Rodrigo: «¿y si la palabra clave no se equivoca en el hola sino en otra cosa, una
+// letra errónea?»). La gente escribe «obtner», «imformación», «curzo»: la palabra clave y la frase de Meta tienen que
+// reconocerse igual. Palabras de 4+ letras admiten 1 cambio (agregar, quitar o cambiar una letra); de 8+, 2 (`casiIgual`, más abajo, es otra: 5+ letras y un solo cambio, para las opciones). Las cortas
+// («de», «el», «más») y las que tienen números van exactas: ahí una letra ya es otra palabra.
+function distanciaEdicion(a: string, b: string, tope = 2): number {
+  if (Math.abs(a.length - b.length) > tope) return tope + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let minFila = i;
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (cur[j] < minFila) minFila = cur[j];
+    }
+    if (minFila > tope) return tope + 1;
+    prev = cur;
+  }
+  return prev[b.length];
+}
+function palabraParecida(a: string, b: string): boolean {
+  if (a === b) return true;
+  const n = Math.min(a.length, b.length);
+  if (n < 4 || /\d/.test(a + b)) return false;
+  return distanciaEdicion(a, b, 2) <= (n >= 8 ? 2 : 1);
+}
+// El saludo como lo escribe la gente («ola», «holaa», «holi») vale «hola».
+const saludoCanonico = (w: string) => (/^(?:h?ola+|holi+|hla)$/u.test(w) ? "hola" : w);
+// ¿La clave aparece en el texto palabra por palabra, tolerando una letra? (para cuando no calzó exacta)
+function claveCasiEnTexto(textoNorm: string, claveNorm: string): boolean {
+  const pal = textoNorm.split(/[^\p{L}\p{N}]+/u).filter(Boolean).map(saludoCanonico);
+  const kw = claveNorm.split(/[^\p{L}\p{N}]+/u).filter(Boolean).map(saludoCanonico);
+  // Una sola palabra corta no se adivina: «pago» no es «pato».
+  if (!kw.length || (kw.length === 1 && kw[0].length < 5)) return false;
+  for (let i = 0; i + kw.length <= pal.length; i++) {
+    if (kw.every((w, k) => palabraParecida(pal[i + k], w))) return true;
+  }
+  return false;
+}
+// Las palabras de la frase de Meta, para llevar «obtner» → «obtener» antes de reconocerla.
+const VOCAB_PRELLENADO = ["puedo", "obtener", "informacion", "quisiera", "gustaria", "recibir", "acerca", "buenas", "buenos", "tardes", "noches", "quiero", "deseo"];
 function esPrellenadoDeAnuncio(text?: string | null): boolean {
-  const t = normalize(text ?? "").replace(/[^\p{L}\p{N}\s]+/gu, " ").replace(/\s+/g, " ").trim();
+  const t = normalize(text ?? "").replace(/[^\p{L}\p{N}\s]+/gu, " ").replace(/\s+/g, " ").trim()
+    .split(" ").map((w) => VOCAB_PRELLENADO.includes(w) ? w : (VOCAB_PRELLENADO.find((v) => palabraParecida(w, v)) ?? w)).join(" ");
   // (el saludo como lo escribe la gente: «ola», «holaa», «holi» — Probar flujos 3-oct: con «ola. ¿Puedo obtener más
   //  información de EcoGuard?» no se reconocía y la IA respondió la frase del anuncio con otro pitch)
   const m = t.match(/^(?:(?:h?ola+|holi+|hla|buenas?|buen dia|buenos dias|buenas tardes|buenas noches) )?(?:puedo obtener|quiero|quisiera|deseo|me gustaria(?: obtener| recibir| tener)?) (?:mas )?informacion(?: (?:sobre|de|del|acerca de) (.*))?$/u);
@@ -2848,9 +2890,9 @@ function soloTextoDeEntrada(text: string | null | undefined, decision: { tier?: 
 function soloLaPalabraClave(text?: string | null, keyword?: string | null): boolean {
   const kw = normalize(keyword ?? "");
   if (!kw) return false;             // sin keyword no hay nada que descontar
-  let resto = normalize(text ?? "");
-  if (!resto) return false;
-  // Fuera la clave (todas sus apariciones) y el relleno de cortesía con el que se escribe.
+  if (!normalize(text ?? "")) return false;
+  // Fuera la clave (todas sus apariciones, tolerando una letra: ver sinLaPalabraClave) y el relleno de cortesía.
+  let resto = normalize(sinLaPalabraClave(text, keyword));
   resto = resto.split(kw).join(" ")
     .replace(/\b(hola+|holi|buenas?|buenos|dias|tardes|noches|hi|hello|que tal|disculpa|disculpe|porfa|porfavor|por favor|gracias|amigo|amiga|senor|senora|senorita)\b/g, " ")
     .replace(/\b(el|la|los|las|un|una|unos|unas|de|del|sobre|acerca|respecto|a|al|y|e|o|u|en|con|para|me|mi|te|tu|se|lo|le|este|esta|estos|estas|ese|esa|eso|esto|aqui|ahi)\b/g, " ")
@@ -3489,6 +3531,18 @@ function matchTrigger(db: SupabaseClient, channelId: string, text: string, adId?
           if (m && k.length > best) { best = k.length; bestTxt = k; }
         }
         if (best > kwLen) { kwHit = flow; kwLen = best; kwTexto = bestTxt; } // keyword gana sobre entrada; el más específico gana
+      }
+    }
+    // 🔤 Ninguna clave calzó EXACTA: se prueba con una letra de diferencia («quiero el curzo de cortes», «ola. ¿Puedo
+    // obtner más información de…?»). Sin esto lo elegía la IA —a veces bien— pero el motor no sabía que esa frase era la
+    // ENTRADA y la contestaba como si fuera del cliente (4-oct). Solo claves de varias palabras o de 5+ letras.
+    if (!kwHit) {
+      for (const t of triggers ?? []) {
+        const flow = (t as any).flows;
+        if (!flow || flow.estado !== "activo" || t.tipo !== "keyword") continue;
+        for (const k of ((t.config?.keywords ?? []) as string[]).map(normalize)) {
+          if (k && k.length > kwLen && claveCasiEnTexto(norm, k)) { kwHit = flow; kwLen = k.length; kwTexto = k; }
+        }
       }
     }
     // La keyword solo se adjunta si apunta al MISMO flujo que ganó: la de otro producto no
@@ -5632,7 +5686,11 @@ function conPedidoDeDatosOrdenado(texto: string, bloque: string): string {
   if (!bloque) return texto;
   const q = quitarPeticionDeDatos(texto);
   if (!q.hubo) return texto;
-  let cuerpo = q.texto;
+  // (sin la frase que presentaba la lista y quedó sin objeto: «Para avanzar con el pedido, pásame por favor 👇» + su lista
+  //  → se iba la lista y quedaba «…pásame por favor» colgando encima de la nuestra — examen 4-oct)
+  let cuerpo = q.texto.split("\n").filter((ln) =>
+    !/^[^\n]{0,70}(?<![\p{L}])(?:p[aá]same|m[aá]ndame|env[ií]ame|dame|br[ií]ndame|ind[ií]came|comp[aá]rteme|me\s+(?:pasas|mandas|env[ií]as|das|brindas))(?:\s+(?:por\s+favor|porfa|porfis|estos|tus|los|lo\s+siguiente|datos))*\s*[:👇.]?\s*$/iu.test(ln.trim()))
+    .join("\n").replace(/\n{3,}/g, "\n\n").trim();
   if (cuerpo.replace(/[\s\p{P}\p{S}]/gu, "").length < 3) cuerpo = "Perfecto 🙌";
   return `${cuerpo}\n\n${bloque}`;
 }
@@ -8540,6 +8598,81 @@ function instruccionV2(p: PasoV2, ctx: any): string {
 }
 
 // Lo que se puede comprobar por código (palabras), sin IA.
+// 🚫 LA LÍNEA ROJA, POR CÓDIGO (4-oct). La IA puede suponer lo razonable de USO (decisión de Rodrigo), pero el revisor
+// con IA dejó pasar como «suposición» justo lo prohibido: «cubre aproximadamente 100 metros cuadrados», «ideal para tu
+// almacén» (la ficha dice «no usar en interiores»), «afecta solo a animales no deseados», «no te molesta» (examen
+// completo, 4-oct). Esto no depende de que el revisor lo note: cifras que la ficha no trae, seguridad de personas o
+// mascotas que la ficha no afirma, e interiores cuando la ficha los prohíbe.
+function inventosRojos(texto: string, ficha: string): string[] {
+  const t = sinFormato(String(texto ?? ""));
+  const f = normalize(String(ficha ?? ""));
+  const v: string[] = [];
+  // 1) Cifras del producto: área, distancia, batería, potencia, peso que aguanta… (no plazos de entrega ni precios).
+  const reCifra = /(?<![\p{L}\p{N}])(\d+(?:[.,]\d+)?)\s*(m2|m²|metros?(?:\s+cuadrados)?|mts?|km|kil[oó]metros?|cent[ií]metros?|cm|mil[ií]metros?|mm|hect[aá]reas?|mah|watts?|vatios|w|voltios|v|decibel(?:es|ios)?|db|khz|hz|kilos?|kg|grados|°)(?![\p{L}])/giu;
+  for (const m of t.matchAll(reCifra)) {
+    const num = m[1].replace(",", ".");
+    if (!f.includes(num)) { v.push(`No des cifras que la ficha no trae («${m[0].trim()}»): dilo sin números («un área de jardín mediana», «buen alcance»).`); break; }
+  }
+  {
+    const reDura = /(?<![\p{L}\p{N}])(\d+(?:[.,]\d+)?)\s*(horas?|hrs?|a[ñn]os?|meses)(?![\p{L}])[^.!?\n]{0,40}|(?:dura|bater[ií]a|carga|autonom[ií]a|vida\s+[uú]til)[^.!?\n]{0,40}?(\d+(?:[.,]\d+)?)\s*(horas?|hrs?|a[ñn]os?|meses)/giu;
+    for (const m of t.matchAll(reDura)) {
+      const num = String(m[1] ?? m[3] ?? "").replace(",", ".");
+      const ctxF = m[0];
+      if (num && /dura|bater|carga|autonom|vida|funciona|activ/i.test(ctxF) && !f.includes(num)) {
+        v.push(`No des cifras de duración que la ficha no trae («${ctxF.trim().slice(0, 60)}»): dilo sin números.`); break;
+      }
+    }
+  }
+  // 2) Seguridad de personas, niños o mascotas que la ficha no afirma.
+  // (+ «no hace ruido que moleste», «no se siente», «silencioso» — examen 4-oct)
+  // (+ el ADJETIVO: «no es un ruido constante ni molesto para ti», «no es dañino para tu familia» — examen 4-oct)
+  const reSeg = /(?<![\p{L}])(?:no\s+(?:te\s+|les?\s+|los\s+|las\s+|nos\s+)?(?:va\s+a\s+)?(?:afecta|molesta|da[ñn]a|lastima|perjudica|hace\s+da[ñn]o)\p{L}*|(?:no|ni)\s+(?:es\s+)?(?:\p{L}+\s+){0,3}?(?:molest[oa]s?|da[ñn]in[oa]s?|peligros[oa]s?|perjudicial(?:es)?|nociv[oa]s?)|no\s+(?:hace|emite|produce|genera)\s+(?:ning[uú]n\s+)?(?:ruido|sonido)|no\s+(?:se\s+)?(?:siente|percibe|nota)|silencios[oa]|(?:es\s+)?(?:seguro|inofensiv\p{L}*)\s+para|solo\s+(?:afecta|act[uú]a|funciona)\s+(?:a|con|sobre)\s+(?:los\s+)?animales\s+no\s+deseados|afecta\s+solo\s+a\s+(?:los\s+)?animales|no\s+(?:se\s+)?(?:escucha|oye)|inaudible|imperceptible\s+para)(?![\p{L}])/iu;
+  const reQuien = /(?<![\p{L}])(?:personas?|gente|humanos?|ni[ñn]\p{L}*|hij\p{L}*|beb[eé]s?|familia|mascotas?|perr\p{L}*|gat[oa]s?|dom[eé]stic\p{L}*|t[uú]|ti|ustedes?|vecinos?)(?![\p{L}])/iu;
+  for (const fr0 of t.split(/(?<=[.!?…\n])\s*/u)) {
+    // (cortesía y seguridad de la COMPRA no son afirmaciones del producto: «si no te molesta, me pasas…», «es seguro
+    //  para ti comprar online»)
+    const fr = fr0.replace(/(?<![\p{L}])si\s+no\s+(?:te|le|les)\s+molesta(?![\p{L}])/giu, " ");
+    if (/(?<![\p{L}])(?:compr\p{L}*|pag\p{L}*|online|en\s+l[ií]nea|transacci\p{L}*|estafa|confiable|datos)(?![\p{L}])/iu.test(fr)) continue;
+    if (reSeg.test(fr) && (reQuien.test(fr) || /no\s+(?:te\s+)?molest|no\s+(?:se\s+)?(?:escucha|oye)|inaudible|solo\s+(?:afecta|act)|afecta\s+solo|no\s+(?:hace|emite|produce|genera)\s+(?:ning[uú]n\s+)?(?:ruido|sonido)/i.test(fr))) {
+      // (solo lo que la ficha AFIRMA: sin las preguntas de las preguntas frecuentes — «¿Es seguro para mascotas?» de EcoGuard
+      //  contaba como si dijera que lo es y dejaba pasar «no te molesta a ti», examen 4-oct)
+      const fAfirma = normalize(String(ficha ?? "").split("\n").filter((l) => !/\?|^\s*P\s*:/i.test(l)).join("\n"));
+      if (!/inaudible|no\s+afecta\s+a\s+(?:las\s+)?personas|(?<!no\s)(?:es|son)\s+seguros?\s+para\s+(?:las\s+)?(?:personas|ninos|mascotas)/.test(fAfirma)) {
+        v.push(`No asegures que no afecta o que es seguro para personas, niños o mascotas («${fr.trim().slice(0, 80)}»): la ficha no lo dice. Di lo que sí dice la ficha (por ejemplo, si pide no usarlo cerca de mascotas) o que ese detalle no lo tienes.`);
+        break;
+      }
+    }
+  }
+  // 3) Interiores cuando la ficha los prohíbe.
+  if (/no\s+usar\s+en\s+interiores|solo\s+(?:para\s+)?(?:uso\s+)?exteriores|no\s+(?:es\s+)?para\s+interiores/.test(f)
+      // (con plurales: «ideal para proteger almacenES» pasaba — examen 4-oct)
+      && /(?<![\p{L}])(?:almac[eé]n(?:es)?|almacenes|bodegas?|interior(?:es)?|dentro\s+de\s+(?:la\s+|tu\s+)?(?:casa|cocina|cuarto|habitaci[oó]n)|cocinas?|s[oó]tanos?|garajes?|techados?|dep[oó]sitos?)(?![\p{L}])/iu.test(t)
+      && !/(?<![\p{L}])(?:no\s+(?:es|est[aá]|se\s+recomienda|lo\s+uses|usarlo|va)|no\s+(?:lo\s+)?(?:recomiendo|recomendamos)|evita|exterior(?:es)?\s+(?:solamente|nom[aá]s))(?![\p{L}])/iu.test(t)) {
+    v.push("La ficha dice que no se usa en interiores: no lo recomiendes para almacenes, bodegas ni dentro de casa. Dile con tacto que es para exteriores.");
+  }
+  return v;
+}
+// …y si la reescritura TAMBIÉN la cruza, se va solo esa frase (la línea roja no sale nunca; el resto del mensaje sí).
+function sinFrasesRojas(texto: string, ficha: string): string {
+  // (por renglón y, dentro de cada renglón, por frase: los saltos de línea del mensaje se conservan)
+  // La frase NO se borra a secas: quedaba sin contestar lo que preguntó («¿cuántos metros cubre?» → solo la lista de
+  // precios, examen 4-oct). Va la forma honesta, una vez por tipo.
+  const usados = new Set<string>();
+  const out = String(texto ?? "").split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
+    .map((fr) => {
+      const r = fr.trim() ? inventosRojos(fr, ficha) : [];
+      if (!r.length) return fr;
+      const tipo = /^No des cifras/.test(r[0]) ? "cifra" : /^No asegures/.test(r[0]) ? "seguridad" : "interior";
+      if (usados.has(tipo)) return "";
+      usados.add(tipo);
+      return tipo === "cifra" ? "La medida exacta no la tengo a la mano 🙏"
+        : tipo === "seguridad" ? "Ese detalle no lo tengo confirmado, así que no te lo puedo asegurar 🙏"
+        // (sin afirmar que sirve contra lo que preguntó —eso podría ser falso—; solo el lugar, claro)
+        : "Eso sí, ojo con el lugar: está pensado para exteriores, así que dentro de un almacén o un ambiente cerrado no te lo recomiendo 🌿";
+    }).filter(Boolean).join(" ").trimEnd())
+    .join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return out.replace(/[^\p{L}]/gu, "").length >= 15 ? out : texto;
+}
 function violacionesV2(texto: string, p: PasoV2, ctx?: any): string[] {
   const t = sinFormato(String(texto ?? ""));
   const v: string[] = [];
@@ -8796,7 +8929,9 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
       system:
         "Eres el revisor de un vendedor por WhatsApp. Te doy la FICHA del producto, el mensaje del cliente y la respuesta del vendedor.\n" +
         "1) contesta: ¿la respuesta contesta lo que el cliente preguntó? Contestar incluye decir con honestidad que no tiene ese " +
-        "dato, o responder con lo que dice la ficha aunque sea poco preciso. Si preguntó varias cosas, cada una tiene que estar " +
+        "dato, o responder con lo que dice la ficha aunque sea poco preciso. Si pidió una CIFRA (metros, horas, años…) que la " +
+        "ficha no trae, responder sin número («cubre un área moderada») o decir que la medida exacta no la tiene ES contestar: " +
+        "nunca marques contesta=false por eso (empujarías al vendedor a inventar el número). Si preguntó varias cosas, cada una tiene que estar " +
         "contestada. Saludar, preguntar otra cosa o hablar de envíos/precios NO es contestar. Si el cliente no preguntó nada, contesta=true.\n" +
         "2) inventos: las afirmaciones CONCRETAS del vendedor sobre el producto que la FICHA NO dice o CONTRADICE: contra qué " +
         "animales/plagas sirve, dónde se puede usar (interiores, almacenes), si es seguro o no afecta a personas, niños o " +
@@ -8819,7 +8954,8 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
         "Cada invento lleva `grave`. grave=true si es sobre: plata (precios o descuentos distintos, costos), garantía o " +
         "devoluciones, salud o seguridad (personas, niños, mascotas, condiciones médicas, edad), plazos, CIFRAS o medidas " +
         "(cualquier número: metros, horas, mAh, años, días), certificados, registros u originalidad, qué incluye el paquete " +
-        "(accesorios, piezas), políticas del negocio (tienda, factura, cuotas), credenciales, prueba social con cifras, " +
+        "(accesorios, piezas), políticas del negocio (tienda, factura, cuotas), ver o probar el contenido antes de pagar " +
+        "(prueba gratis, muestra, «ya estás viendo el contenido»), credenciales, prueba social con cifras, " +
         "resultados garantizados, o si CONTRADICE la ficha o algo marcado ⛔ FALSO. grave=false si es una SUPOSICIÓN " +
         "RAZONABLE DE USO sin números: dónde se usa, cuidados básicos (no sumergir, poner bajo techo), contra qué más sirve " +
         "parecido a lo que dice la ficha, con qué es compatible, cómo se instala o se usa. Repetir una respuesta «provisional» " +
@@ -16417,6 +16553,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
       const _ctxP = { last_input: String(event.text ?? ""), contexto_producto: String(ctx.contexto_producto ?? ""),
         faq: String(ctx.faq ?? ""), _product_id: ctx._product_id, producto_nombre: ctx.producto_nombre ?? prod };
       const _revP = await revisorIAV2(result, _ctxP, ai, ai.provider, run.channel_id, db, { negocio: String(info.negocio ?? "") });
+      _revP.viol.push(...inventosRojos(result, [_ctxP.contexto_producto, _ctxP.faq, info.negocio].map((x) => String(x ?? "")).join("\n")));
       if (_revP.fuera.length) await registrarPreguntasCliente(db, run as any, _ctxP, _revP.fuera);
       if (_revP.viol.length) {
         await logEvent(db, channelId, contactId, "nota", "✍️ Post-venta: se pidió reescribir", _revP.viol.join(" · ").slice(0, 400)).catch(() => {});
@@ -20957,8 +21094,13 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
       // recomendó 1, preguntó «¿1 o 2?», el cliente dijo «ok» y se anotaron 2).
       const _NUMW = "\\d{1,2}|un[ao]?|dos|tres|cuatro|cinco|seis";
       const _disyuntiva = new RegExp(`(?<![\\p{L}\\p{N}])(?:${_NUMW})\\s*(?:,|o|u|y)\\s*(?:${_NUMW})\\s+(?:sola\\s+)?(?:unidad(?:es)?|piezas?|packs?)`, "u").test(_txB);
+      // …y tampoco cuando el último mensaje ofrecía DOS como alternativa («¿te dejo 1 unidad para probar, O PREFIERES la
+      // oferta de 2?»): «ok» ahí no elige. Se anotaba la recomendada y la IA decía «quedamos con 2» (examen 4-oct). No se
+      // sella: el paso sigue en la cantidad y se le pregunta cuál.
+      const _alternativa = _disyuntiva || (_nombradas.length > 1
+        && /(?<![\p{L}])o\s+(?:prefieres|prefiere|quieres|mejor|te\s+(?:animas|dejo|preparo)|aprovech\p{L}*|la\s+(?:de|oferta)|el\s+(?:de|pack)|las?\s+\d|los?\s+\d)(?![\p{L}])/iu.test(_txB));
       const _elegida = _lnPrecioB >= 2 ? null
-        : _disyuntiva ? (_recId ? list.find((o) => o.id === _recId) ?? null : null)
+        : _alternativa ? null
         : _nombradas.length === 1 ? _nombradas[0].o
         : _nombradas.length > 1 ? (_nombradas.find((x) => x.o.id === _recId)?.o ?? _nombradas[0].o)
         : (_recId ? list.find((o) => o.id === _recId) ?? null : null);
@@ -25967,7 +26109,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
           const c = await revisorIAV2(txt, ctx, ai, provider, run.channel_id, db, { suponer: true, previas: _previas, negocio: String(info.negocio ?? "") });
           _fueraUltima = c.fuera;
-          return [...c.viol, ...v];
+          // 🚫 La línea roja, por código (cifras, seguridad, interiores): no depende de que el revisor la vea.
+          const _rojos = inventosRojos(txt, [ctx.contexto_producto, ctx.faq, info.negocio].map((x) => String(x ?? "")).join("\n"));
+          if (_rojos.length) {
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "🚫 Cruzó la línea roja", _rojos.join(" · ").slice(0, 300)).catch(() => {});
+          }
+          return [...c.viol, ...v, ..._rojos];
         };
         const v1 = await revisar(result);
         if (!v1.length) {
@@ -25998,6 +26145,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // (por el MENSAJE exacto de la regla: «debajo va la lista de sedes» —la de la pregunta de más— también decía
             //  «sedes» y traía las tijeras de vuelta — examen fase 2, 3-oct)
             const _tijerasSirven = v2.some((x) => /^No nombres ni recomiendes sedes|^No le pidas sus datos|\(vac[ií]a\)/i.test(x));
+            // 🚫 La línea roja no sale nunca: si la reescritura la volvió a cruzar, se quita esa frase.
+            if (v2.some((x) => /^No des cifras|^No asegures que no afecta|no se usa en interiores/i.test(x))) {
+              const _fichaR = [ctx.contexto_producto, ctx.faq, info.negocio].map((x) => String(x ?? "")).join("\n");
+              const _antesR = result;
+              result = sinFrasesRojas(result, _fichaR);
+              if (result !== _antesR) await logEvent(db, run.channel_id, run.contact_id, "nota", "🚫 Se quitó la frase de la línea roja",
+                `«${_antesR.slice(0, 200)}»`).catch(() => {});
+            }
             if (_tijerasSirven) (run as any)._v2Fallo = true;
             await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ Motor v2: la reescritura tampoco pasó",
               `${v2.join(" · ")} — ${_tijerasSirven ? "vuelven los recortes de siempre" : "sale la segunda versión sin recortes"}`).catch(() => {});
@@ -29702,8 +29857,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // 2026-09-26) le dice al cliente que lee de un formulario. Se dice como lo diría un vendedor.
       if (op === "generar_texto" && /ficha/i.test(String(salida ?? ""))) {
         salida = String(salida)
-          .replace(/\b(?:la|nuestra|mi)\s+ficha(?:\s+(?:del|de\s+este|de\s+la)\s+\p{L}+)?\s+no\s+(?:habla|dice\s+nada)\s+(de|del|sobre)\b/giu, "no tengo el dato $1")
-          .replace(/\b(?:la|nuestra|mi)\s+ficha(?:\s+(?:del|de\s+este|de\s+la)\s+\p{L}+)?\s+no\s+(?:lo\s+|la\s+)?(?:especifica|dice|menciona|indica|detalla|trae|incluye|precisa|aclara)\b/giu, "no tengo a la mano")
+          // (con el «en»/«de» que la presenta: «pero EN la ficha no dice…» quedaba «pero en no tengo a la mano…» — examen 4-oct)
+          .replace(/\b(?:(?:en|de)\s+)?(?:la|nuestra|mi)\s+ficha(?:\s+(?:del|de\s+este|de\s+la)\s+\p{L}+)?\s+no\s+(?:habla|dice\s+nada)\s+(de|del|sobre)\b/giu, "no tengo el dato $1")
+          .replace(/\b(?:(?:en|de)\s+)?(?:la|nuestra|mi)\s+ficha(?:\s+(?:del|de\s+este|de\s+la)\s+\p{L}+)?\s+no\s+(?:lo\s+|la\s+)?(?:especifica|dice|menciona|indica|detalla|trae|incluye|precisa|aclara)\b/giu, "no tengo a la mano")
           .replace(/\b(?:seg[uú]n|como\s+dice|por\s+lo\s+que\s+dice)\s+(?:la|nuestra|mi)\s+ficha(?:\s+(?:del|de\s+este)\s+\p{L}+)?,?\s*/giu, "")
           .replace(/\b(?:en|de)\s+(?:la|nuestra|mi)\s+ficha(?:\s+del\s+producto)?\b/giu, "")
           .replace(/[ \t]{2,}/g, " ");
