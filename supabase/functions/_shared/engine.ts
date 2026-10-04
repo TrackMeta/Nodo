@@ -4284,7 +4284,11 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
         const _ctxR = { last_input: String(event.text ?? ""), contexto_producto: String(info.negocio ?? ""),
           faq: cands.map((c: any) => `${c.label ?? c.nombre ?? ""}: ${c.intent ?? ""}`).join("\n") };
         // (sin `suponer`: la Recepción habla del NEGOCIO, no de un producto; ahí todo invento sigue siendo grave)
-        const _vR = (await revisorIAV2(result, _ctxR, ai, ai.provider, run.channel_id, db)).viol;
+        const _revR = await revisorIAV2(result, _ctxR, ai, ai.provider, run.channel_id, db);
+        const _vR = _revR.viol;
+        // 🙋 Lo que preguntó del NEGOCIO y no está escrito → «Preguntas de clientes» de Negocio (0126). Sin producto acá:
+        // las del producto no tienen dónde ir y registrarPreguntasCliente las salta.
+        if (_revR.fuera.length) await registrarPreguntasCliente(db, run, _ctxR, _revR.fuera);
         if (_vR.length) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "✍️ Recepción: se pidió reescribir", _vR.join(" · ").slice(0, 400)).catch(() => {});
           const _r2 = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model,
@@ -8514,8 +8518,9 @@ const REVISOR_SCHEMA = {
       type: "array",
       items: {
         type: "object", additionalProperties: false,
-        properties: { pregunta: { type: "string" }, respuesta: { type: "string" } },
-        required: ["pregunta", "respuesta"],
+        // `ambito`: del PRODUCTO (lluvia, metros, materiales) o del NEGOCIO (garantía, devoluciones, factura…) — 0126.
+        properties: { pregunta: { type: "string" }, respuesta: { type: "string" }, ambito: { type: "string", enum: ["producto", "negocio"] } },
+        required: ["pregunta", "respuesta", "ambito"],
       },
     },
   },
@@ -8579,10 +8584,12 @@ function bloquePreguntasCliente(rows: PreguntaCliente[]): string {
   return L.join("\n");
 }
 // Guarda lo que preguntó y lo que respondió el bot. Nunca lanza: registrar no puede tumbar una venta.
-async function registrarPreguntasCliente(db: SupabaseClient, run: Run, ctx: any, fuera: Array<{ pregunta: string; respuesta: string }>): Promise<void> {
+// Las del PRODUCTO van a su ficha; las del NEGOCIO (garantía, devoluciones, factura…) van sin producto y se contestan en
+// Negocio → Conocimiento (0126). En la Recepción no hay producto: ahí solo se guardan las del negocio.
+async function registrarPreguntasCliente(db: SupabaseClient, run: Run, ctx: any, fuera: FueraDeFicha[]): Promise<void> {
   try {
+    if (!fuera?.length) return;
     const productId = String(ctx?._product_id ?? "");
-    if (!productId || !fuera?.length) return;
     // Fuera las simulaciones y los exámenes (ruido); Probar flujos sí cuenta (decisión de Rodrigo).
     let c = (run as any)._pregCliContacto;
     if (c === undefined) {
@@ -8591,21 +8598,30 @@ async function registrarPreguntasCliente(db: SupabaseClient, run: Run, ctx: any,
     }
     if ((c as any)?.source === "sim" || String((c as any)?.wa_id ?? "").startsWith("exam-")) return;
     const cita = String(ctx?.last_input ?? "").slice(0, 180);
-    const nuevas: string[] = [];
+    const nuevas: Record<"producto" | "negocio", string[]> = { producto: [], negocio: [] };
     for (const f of fuera.slice(0, 4)) {
+      const ambito = f?.ambito === "negocio" ? "negocio" : "producto";
+      if (ambito === "producto" && !productId) continue;   // (Recepción: una pregunta de producto sin producto no tiene dónde ir)
       const pregunta = String(f?.pregunta ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
       const clave = claveDePregunta(pregunta);
       if (clave.length < 4) continue;
-      const respuesta = String(f?.respuesta ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
+      // Precio, envío, pago, plazos y sedes los contesta el MOTOR con los datos del panel: no son preguntas para la ficha
+      // (el revisor igual coló «¿cuánto demora a Tacna?» — prueba del 3-oct).
+      if (/\b(?:demora|tarda|cu[aá]ndo\s+(?:me\s+)?llega|lleg[ao]\s+(?:a|en)|plazo|env[ií]o|env[ií]an|delivery|precio|cu[aá]nto\s+(?:cuesta|sale|es)|pag[oa]r?|yape|plin|adelanto|saldo|contra\s?entrega|sedes?|agencia|shalom|oferta|descuento|promoci[oó]n)\b/i.test(normalize(pregunta))) continue;
+      // En lo del negocio el bot no supone: lo que haya dicho no es una respuesta para aprobar, es el «no tengo el dato».
+      // (y si el revisor copió el «ese dato no lo tengo» como respuesta, tampoco es una suposición)
+      let respuesta = ambito === "negocio" ? "" : String(f?.respuesta ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
+      if (/no\s+(?:lo\s+)?tengo\s+(?:a\s+la\s+mano\s+)?(?:el|ese|este)?\s*dato|no\s+tengo\s+(?:esa\s+)?informaci[oó]n|dato\s+puntual\s+no\s+lo\s+tengo|no\s+te\s+(?:lo\s+)?(?:puedo|podr[ií]a)\s+(?:asegurar|confirmar)/i.test(respuesta)) respuesta = "";
       const cli = { contact_id: run.contact_id, nombre: (c as any)?.nombre ?? null, cita, respuesta: respuesta || null, ts: new Date().toISOString() };
-      const { data: prev } = await db.from("preguntas_clientes").select("id, estado, respuesta, veces, clientes")
-        .eq("product_id", productId).eq("clave", clave).maybeSingle();
+      let q = db.from("preguntas_clientes").select("id, estado, respuesta, veces, clientes").eq("clave", clave);
+      q = ambito === "negocio" ? q.eq("channel_id", run.channel_id).is("product_id", null) : q.eq("product_id", productId);
+      const { data: prev } = await q.maybeSingle();
       if (!prev) {
         const { error } = await db.from("preguntas_clientes").insert({
-          channel_id: run.channel_id, product_id: productId, pregunta, clave,
+          channel_id: run.channel_id, product_id: ambito === "negocio" ? null : productId, pregunta, clave,
           respuesta: respuesta || null, tipo: respuesta ? "suposicion" : "sin_dato", clientes: [cli],
         });
-        if (!error) nuevas.push(respuesta ? `«${pregunta}» → ${respuesta}` : `«${pregunta}» (sin respuesta)`);
+        if (!error) nuevas[ambito].push(respuesta ? `«${pregunta}» → ${respuesta}` : `«${pregunta}» (sin respuesta)`);
         continue;
       }
       if ((prev as any).estado !== "pendiente") continue;   // ya decidida: la ficha manda
@@ -8617,15 +8633,24 @@ async function registrarPreguntasCliente(db: SupabaseClient, run: Run, ctx: any,
       if (!String((prev as any).respuesta ?? "").trim() && respuesta) { upd.respuesta = respuesta; upd.tipo = "suposicion"; }
       await db.from("preguntas_clientes").update(upd).eq("id", (prev as any).id);
     }
-    (run as any)[`_pregCli_${productId}`] = undefined;   // la próxima lectura trae lo recién guardado
-    if (nuevas.length) {
+    if (productId) (run as any)[`_pregCli_${productId}`] = undefined;   // la próxima lectura trae lo recién guardado
+    if (nuevas.producto.length) {
       const prod = String(ctx?.producto_nombre ?? "tu producto");
       await registrarNotificacion(db, {
         channelId: run.channel_id, tipo: "pregunta_cliente",
         titulo: `${prod}: preguntas nuevas de clientes`,
-        detalle: nuevas.join(" · ").slice(0, 220),
-        datos: { product_id: productId, producto: prod },
+        detalle: nuevas.producto.join(" · ").slice(0, 220),
+        datos: { product_id: productId, producto: prod, ambito: "producto" },
         dedupeKey: `${run.channel_id}:pregunta_cliente:${productId}`,
+      });
+    }
+    if (nuevas.negocio.length) {
+      await registrarNotificacion(db, {
+        channelId: run.channel_id, tipo: "pregunta_cliente",
+        titulo: "Tu negocio: preguntas nuevas de clientes",
+        detalle: nuevas.negocio.join(" · ").slice(0, 220),
+        datos: { ambito: "negocio" },
+        dedupeKey: `${run.channel_id}:pregunta_cliente:negocio`,
       });
     }
   } catch (e) { console.error("[preguntas_clientes]", (e as any)?.message ?? e); }
@@ -8636,7 +8661,8 @@ const RE_TEMA_RIESGOSO = /edad|a[ñn]os|lesi[oó]n|rodilla|espalda|embaraz\p{L}*
 // `suponer`: en la venta de un producto, una suposición razonable de USO no se manda a reescribir (decisión de Rodrigo,
 // 3-oct): queda en `fuera` para que el dueño la revise. En la Recepción (sin producto) todo invento sigue siendo grave.
 // `previas`: las preguntas ya registradas del producto (provisionales y rechazadas) — ver preguntas_clientes.
-type RevisionV2 = { viol: string[]; fuera: Array<{ pregunta: string; respuesta: string }> };
+type RevisionV2 = { viol: string[]; fuera: FueraDeFicha[] };
+type FueraDeFicha = { pregunta: string; respuesta: string; ambito?: "producto" | "negocio" };
 async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider, channelId: string, db: SupabaseClient,
     opts: { suponer?: boolean; previas?: PreguntaCliente[]; negocio?: string } = {}): Promise<RevisionV2> {
   const colg = String(ctx?._colgadaV2 ?? "").trim();
@@ -8698,11 +8724,14 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
         "Si es EXACTAMENTE la misma pregunta que una de PREGUNTAS YA REGISTRADAS (el mismo animal, material o tema), copia " +
         "ese texto tal cual; si es parecida pero de otra cosa (murciélagos ≠ serpientes, lluvia ≠ noche), escribe una nueva. " +
         "`respuesta` = lo que le contestó el vendedor sobre eso, en una frase (vacío si dijo que no tiene el dato o no lo " +
-        "contestó). NO incluyas preguntas de precio, envío, pago, sedes, entrega, plazos ni del pedido. Si la ficha lo dice " +
-        "con todas sus letras, no va.\n" +
+        "contestó). `ambito` = \"negocio\" si es una condición del NEGOCIO que vale para cualquier producto (garantía, " +
+        "devoluciones o cambios, factura o boleta, cuotas, tienda física, horario de atención, envíos al extranjero, quién es " +
+        "la empresa); \"producto\" si es sobre ESTE producto (cómo funciona, dónde se usa, materiales, contra qué sirve, " +
+        "compatibilidad). NO incluyas preguntas de precio, envío, pago, sedes, entrega, plazos ni del pedido. Si la FICHA o " +
+        "lo DEL NEGOCIO lo dice con todas sus letras, no va.\n" +
         "Responde SOLO el JSON {\"contesta\": bool, \"falta\": \"qué quedó sin contestar (vacío si contestó)\", " +
         "\"inventos\": [{\"frase\": \"la frase del vendedor\", \"por_que\": \"qué dice la ficha\", \"grave\": bool}], " +
-        "\"fuera_de_ficha\": [{\"pregunta\": \"¿…?\", \"respuesta\": \"…\"}]}.",
+        "\"fuera_de_ficha\": [{\"pregunta\": \"¿…?\", \"respuesta\": \"…\", \"ambito\": \"producto|negocio\"}]}.",
       content: `## FICHA\n${ficha}${bloquePrevias}\n\n## CLIENTE\n«${(pregunto ? li : ahora).slice(0, 500)}»\n\n## VENDEDOR\n«${String(texto ?? "").slice(0, 1500)}»`,
       jsonSchema: REVISOR_SCHEMA as unknown as Record<string, unknown>, jsonStrict: true,
     });
@@ -8721,7 +8750,8 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
     }
     const fuera = (Array.isArray(j?.fuera_de_ficha) ? j.fuera_de_ficha : [])
       .filter((f: any) => String(f?.pregunta ?? "").trim())
-      .map((f: any) => ({ pregunta: String(f.pregunta).trim(), respuesta: String(f?.respuesta ?? "").trim() }));
+      .map((f: any) => ({ pregunta: String(f.pregunta).trim(), respuesta: String(f?.respuesta ?? "").trim(),
+        ambito: f?.ambito === "negocio" ? "negocio" as const : "producto" as const }));
     return { viol: v, fuera };
   } catch (_) { return { viol: [], fuera: [] }; }   // el revisor nunca frena la venta
 }
@@ -25741,7 +25771,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // 🙋 Las preguntas ya registradas del producto (provisionales y rechazadas): el revisor las usa para no marcar como
         // invento lo que ya se dijo, para cazar lo rechazado y para reusar el texto exacto de la pregunta.
         const _previas = await cargarPreguntasCliente(db, run, String(ctx._product_id ?? ""));
-        let _fueraUltima: Array<{ pregunta: string; respuesta: string }> = [];
+        let _fueraUltima: FueraDeFicha[] = [];
         const revisar = async (txt: string) => {
           const v = _p ? violacionesV2(txt, _p, ctx) : [];
           // Digital sin versión: anunciar los datos de pago es prometer algo que no sale (ver _revDigitalSinVersion).

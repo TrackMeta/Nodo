@@ -72,6 +72,37 @@
   .armhero{border:1px solid rgba(168,85,247,.4);background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.12),transparent 60%),var(--surface);border-radius:14px;padding:15px 16px;margin-bottom:16px;display:flex;gap:12px;align-items:center}
   .armhero .hg{width:38px;height:38px;flex:none;border-radius:11px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center}
   .armhero .hg svg{width:20px;height:20px}
+  /* 🙋 Preguntas de clientes del NEGOCIO (mismos estilos que la tarjeta de Productos) */
+  .pc-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--amber);border-radius:16px;padding:14px 16px;margin:-4px 0 16px}
+  .pc-hd{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .pc-ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--amber-bg);color:var(--amber);flex:none}
+  .pc-ico svg{width:17px;height:17px}
+  .pc-tt{font-weight:800;font-size:14px}
+  .pc-sub{font-size:12px;color:var(--muted);margin-top:1px}
+  .pc-badge{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--amber-bg);color:var(--amber)}
+  .pc-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .pc-chip{font-size:12px;padding:4px 10px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pc-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+  .pc-item{border:1px solid var(--border);border-radius:12px;padding:11px 12px;background:var(--surface-2)}
+  .pc-q{font-weight:700;font-size:13.5px}
+  .pc-meta{font-size:11.5px;color:var(--faint);margin-top:2px}
+  .pc-lbl{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-top:9px}
+  .pc-a{font-size:13px;line-height:1.5;margin-top:3px;padding:7px 10px;border-radius:9px;background:var(--surface);border:1px solid var(--border)}
+  .pc-a.vacia{color:var(--muted);font-style:italic}
+  .pc-cita{font-size:11.5px;color:var(--faint);margin-top:6px}
+  .pc-acts{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+  .pc-acts .btn{height:32px;padding:0 12px;font-size:12.5px;display:inline-flex;align-items:center;gap:6px}
+  .pc-acts .btn svg{width:14px;height:14px}
+  .pc-acts .btn.ok{border-color:rgba(34,192,121,.45);color:var(--green)}
+  .pc-acts .btn.no{border-color:rgba(239,68,68,.4);color:var(--red)}
+  .pc-edit{width:100%;min-height:62px;margin-top:8px;padding:8px 10px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit;font-size:13px;line-height:1.5;resize:vertical}
+  .pc-edit:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg,rgba(99,102,241,.15))}
+  .pc-done{font-size:12.5px;line-height:1.55;margin-top:8px;padding:8px 10px;border-radius:9px}
+  .pc-done.ok{background:rgba(34,192,121,.10);color:var(--green)}
+  .pc-done.no{background:var(--red-bg);color:var(--text)}
+  .pc-done a{color:var(--brand);font-weight:600}
+  .pc-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted)}
+  .pc-link{background:none;border:none;padding:0;color:var(--brand);font-weight:600;font-size:12.5px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -128,6 +159,8 @@ async function boot(){
   // Si ya estabas editando Entregas cuando llega la lista, NO se redibuja (se perdía lo editado):
   // la lista queda guardada y se usa en el próximo redibujo.
   cargarListas().then(l=>{ st.listas=l; if(st.tab==="entrega" && !isDirty()) render(); });
+  // 🔗 La campanita («Revisar preguntas» del negocio) abre acá con la tarjeta desplegada.
+  try{ const qp=new URLSearchParams(location.search); if(qp.get("preguntas")==="1"){ st._abrirPreguntas=true; history.replaceState(null,"",location.pathname); } }catch(_){}
   if(st.channelId) await load();
 }
 async function load(){
@@ -367,6 +400,7 @@ function renderConocimiento(b){
     });
   };
   paintFaq();
+  st._paintFaq=paintFaq;   // (la tarjeta «Preguntas de clientes» repinta la lista al agregar una respuesta)
   $("faqAdd").onclick=()=>{ form.faq.push({q:"",a:""}); paintFaq(); };
   // ── Archivos que la IA puede enviar (del NEGOCIO) ─────────────────
   // Mismo mecanismo que los del producto: la IA escribe [[media:TAG]] y el motor
@@ -422,40 +456,132 @@ function renderConocimiento(b){
   $("previewNeg").onclick=()=>{ harvest(); const md=compileNegocio(form)||"(vacío)"; askText({title:"Contexto que recibe la IA",message:"Así se arma el conocimiento del negocio que la IA usa en cada chat.",label:"Texto compilado",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
   $("saveNegocio").onclick=async(e)=>{ harvest(); if(await saveForm(e.target)) toast("Conocimiento guardado"); };
   const hbN=$("armHeroBtn"); if(hbN) hbN.onclick=armOpen;
-  pintaHuecosNegocio();
+  pintaPreguntasNegocio();
 }
 
-// Lo que TE PREGUNTAN y este formulario no contesta. El motor registra un `negocio_hueco`
-// cada vez que un cliente toca un tema del negocio —factura con RUC, cuotas, devoluciones,
-// tienda física, envíos al extranjero— que no está escrito en ningún lado, con su frase
-// textual. Va acá y no en la ficha del producto porque acá es donde se arregla: son
-// condiciones del negocio, no de una zapatilla (y si vendes diez productos, ponerlo en la
-// ficha te mostraría el mismo aviso diez veces sin ser de ninguno).
-async function pintaHuecosNegocio(){
+// ── 🙋 PREGUNTAS DE CLIENTES DEL NEGOCIO (0126) ──────────────────────────────────────────────────
+// Garantía, devoluciones, factura, cuotas, tienda física, horarios: lo que un cliente preguntó y no está escrito en
+// ningún lado. Son condiciones del negocio (valen para todo producto), por eso se contestan ACÁ y la respuesta va a las
+// preguntas frecuentes de este formulario. En estos temas el bot nunca supone: siempre llegan sin respuesta.
+// Reemplaza al aviso amarillo «Te preguntaron esto y tu negocio no lo contesta».
+const PCN = { abierta:false, rows:[], editando:null, hechas:new Map(), _cid:null };
+function haceCuanto(ts){
+  const m=Math.max(0,Math.round((Date.now()-Date.parse(ts))/60000));
+  if(m<60) return m<=1?"hace un momento":`hace ${m} min`;
+  const h=Math.round(m/60); if(h<24) return `hace ${h} h`;
+  const d=Math.round(h/24); return d===1?"ayer":`hace ${d} días`;
+}
+async function pintaPreguntasNegocio(){
   const host=$("negHuecos"); if(!host||!st.channelId) return;
+  const cid=st.channelId;
+  let rows=[];
   try{
-    const { data:ev }=await supa.from("contact_events")
-      .select("titulo,detalle,created_at").eq("channel_id",st.channelId).eq("tipo","negocio_hueco")
-      .order("created_at",{ascending:false}).limit(200);
-    if(!ev||!ev.length) return;
-    const m=new Map();
-    for(const e of ev){
-      const tema=String(e.titulo||"").replace(/^(?:❓ )?Preguntó por\s*/,"").replace(/\s*y no está en la ficha$/,"").trim();
-      for(const t of tema.split(",").map(s=>s.trim()).filter(Boolean)){
-        const r=m.get(t)||{n:0,ej:""};
-        r.n++; if(!r.ej && e.detalle) r.ej=String(e.detalle);
-        m.set(t,r);
+    const { data, error }=await supa.from("preguntas_clientes")
+      .select("id,pregunta,estado,veces,clientes,ultimo_at")
+      .eq("channel_id",cid).is("product_id",null).order("ultimo_at",{ascending:false}).limit(200);
+    if(error) throw error;
+    rows=data||[];
+  }catch(_){ host.innerHTML=""; return; }
+  if(cid!==st.channelId) return;
+  if(PCN._cid!==cid){ PCN._cid=cid; PCN.abierta=false; PCN.editando=null; PCN.hechas=new Map(); }
+  PCN.rows=rows;
+  if(st._abrirPreguntas){ PCN.abierta=true; st._abrirPreguntas=false; setTimeout(()=>host.scrollIntoView({behavior:"smooth",block:"start"}),80); }
+  renderPreguntasNegocio();
+}
+function renderPreguntasNegocio(){
+  const host=$("negHuecos"); if(!host) return;
+  const pend=PCN.rows.filter(r=>r.estado==="pendiente");
+  const vis=PCN.rows.filter(r=>r.estado==="pendiente" || PCN.hechas.has(r.id));
+  if(!vis.length){ host.innerHTML=""; return; }
+  const n=pend.length;
+  const hd=`<div class="pc-hd">
+      <span class="pc-ico">${icon("help")}</span>
+      <div style="flex:1;min-width:180px">
+        <div class="pc-tt">Preguntas de clientes sobre tu negocio</div>
+        <div class="pc-sub">Garantía, devoluciones, factura y demás políticas que preguntaron y no están escritas. Aquí el bot no supone: escribe la respuesta y vale para todos tus productos.</div>
+      </div>
+      ${n?`<span class="pc-badge">${n} por responder</span>`:`<span class="pc-badge" style="background:rgba(34,192,121,.12);color:var(--green)">Todo respondido</span>`}
+    </div>`;
+  if(!PCN.abierta){
+    host.innerHTML=`<div class="pc-card" style="margin:0 0 14px">${hd}
+      <div class="pc-chips">${pend.slice(0,3).map(r=>`<span class="pc-chip">${esc(r.pregunta)}</span>`).join("")}${n>3?`<span class="pc-chip" style="color:var(--muted)">+${n-3} más</span>`:""}</div>
+      <div class="pc-acts"><button class="btn primary" data-pc="abrir">Responder${n?` (${n})`:""}</button></div></div>`;
+  } else {
+    host.innerHTML=`<div class="pc-card" style="margin:0 0 14px">${hd}<div class="pc-list">${vis.map(itemPreguntaNegocio).join("")}</div>
+      <div class="pc-foot"><span>Lo que respondes queda en <b>Preguntas frecuentes</b> (más abajo) y el bot lo dice así desde ese momento.</span>
+      <button class="pc-link" data-pc="cerrar">Ocultar</button></div></div>`;
+  }
+  host.onclick=onClickPreguntaNegocio;
+}
+function itemPreguntaNegocio(r){
+  const id=esc(r.id), veces=Number(r.veces)||1;
+  const cli=Array.isArray(r.clientes)?r.clientes:[];
+  const cita=(cli.find(x=>x&&x.cita)||{}).cita||"";
+  const hecha=PCN.hechas.get(r.id);
+  if(hecha) return `<div class="pc-item"><div class="pc-q">${esc(r.pregunta)}</div>${hecha.accion==="aprobar"
+    ?`<div class="pc-done ok">${icon("check")} Quedó en tus preguntas frecuentes: «${esc(hecha.texto)}». El bot ya lo responde así.</div>`
+    :`<div class="pc-done no">Descartada.</div>`}</div>`;
+  const meta=`<div class="pc-meta">${veces===1?"1 vez":`${veces} veces`} · ${esc(haceCuanto(r.ultimo_at))}</div>`;
+  const citaH=cita?`<div class="pc-cita">Así lo preguntó: “${esc(cita.slice(0,140))}”</div>`:"";
+  const acts=PCN.editando===r.id
+    ? `<textarea class="pc-edit" id="pcnEdit" placeholder="Tu política, como te salga (el bot la redacta con su tono). Ej.: «Sí, damos boleta; factura con RUC también»"></textarea>
+       <div class="pc-acts"><button class="btn primary" data-pc="guardar" data-id="${id}">Guardar</button><button class="btn" data-pc="cancelar">Cancelar</button></div>`
+    : `<div class="pc-acts"><button class="btn primary" data-pc="editar" data-id="${id}">${icon("edit")} Escribir la respuesta</button>
+       <button class="btn" data-pc="descartar" data-id="${id}">Descartar</button></div>`;
+  return `<div class="pc-item"><div class="pc-q">${esc(r.pregunta)}</div>${meta}
+    <div class="pc-lbl">Lo que hace el bot mientras tanto</div>
+    <div class="pc-a vacia">Le dice con honestidad que ese detalle no lo tiene y sigue vendiendo.</div>${citaH}${acts}</div>`;
+}
+async function onClickPreguntaNegocio(ev){
+  const b=ev.target.closest("[data-pc]"); if(!b) return;
+  const a=b.dataset.pc, id=b.dataset.id;
+  if(a==="abrir"){ PCN.abierta=true; return renderPreguntasNegocio(); }
+  if(a==="cerrar"){ PCN.abierta=false; PCN.editando=null; return renderPreguntasNegocio(); }
+  if(a==="editar"){ PCN.editando=id; renderPreguntasNegocio(); const t=$("pcnEdit"); if(t) t.focus(); return; }
+  if(a==="cancelar"){ PCN.editando=null; return renderPreguntasNegocio(); }
+  const r=PCN.rows.find(x=>x.id===id); if(!r) return;
+  if(a==="guardar"){ const t=$("pcnEdit"); return decidirPreguntaNegocio(r,"aprobar",t?t.value:"",b); }
+  if(a==="descartar") return decidirPreguntaNegocio(r,"rechazar",null,b);
+}
+async function decidirPreguntaNegocio(r, accion, texto, btn){
+  const cid=st.channelId; if(!cid) return;
+  const a=String(texto||"").replace(/\s+/g," ").trim();
+  if(accion==="aprobar" && !a){ toast("Escribe la respuesta",true); return; }
+  if(btn) btn.disabled=true;
+  try{
+    if(accion==="aprobar"){
+      // Sobre lo FRESCO de la base y solo las preguntas frecuentes: no arrastra lo que estés editando a medias arriba.
+      const { data:fresh, error:eR }=await supa.from("channels").select("negocio_form,negocio").eq("id",cid).maybeSingle();
+      if(eR){ toast("No se pudo leer tu negocio. Prueba de nuevo.",true); return; }
+      const f=(fresh&&fresh.negocio_form&&typeof fresh.negocio_form==="object")?JSON.parse(JSON.stringify(fresh.negocio_form)):{};
+      if(!(fresh&&fresh.negocio_form) && fresh&&fresh.negocio && !f.extra) f.extra=fresh.negocio;
+      if(!Array.isArray(f.faq)) f.faq=[];
+      f.faq.push({q:r.pregunta,a});
+      const { error }=await updateChannel(cid,{ negocio_form:f, negocio:compileNegocio(f).trim()||null });
+      if(error){ toast(error.soloAdmin?"Solo un administrador puede cambiar el conocimiento del negocio":"No se pudo guardar. Prueba de nuevo.",true); return; }
+      // …y lo mismo en lo que tienes abierto (y en su foto), para que tu próximo «Guardar» no la borre.
+      for(const o of [st.form, st.snap, st.channel&&st.channel.negocio_form]){
+        if(!o||typeof o!=="object") continue;
+        if(!Array.isArray(o.faq)) o.faq=[];
+        if(!o.faq.some(x=>x&&x.q===r.pregunta&&x.a===a)) o.faq.push({q:r.pregunta,a});
       }
+      if(typeof st._paintFaq==="function") st._paintFaq();
     }
-    if(!m.size) return;
-    const filas=[...m.entries()].sort((a,b)=>b[1].n-a[1].n).slice(0,6)
-      .map(([t,r])=>`<li style="margin-bottom:5px"><b>${esc(t)}</b> · ${r.n} ${r.n===1?"vez":"veces"}`
-        +(r.ej?`<div style="color:var(--faint,#888);font-size:11px;margin-top:1px">“${esc(r.ej.slice(0,90))}”</div>`:"")+`</li>`).join("");
-    host.innerHTML=`<div style="border:1px solid var(--amber,#f59e0b);background:rgba(245,158,11,.08);border-radius:11px;padding:11px 12px;margin:0 0 14px">
-      <div style="font-weight:700;font-size:12.5px;margin-bottom:5px">Te preguntaron esto y tu negocio no lo contesta</div>
-      <div style="font-size:11.5px;color:var(--muted);margin-bottom:7px">Cuando el dato no está acá, el bot no lo inventa: lo esquiva con calidez y sigue vendiendo. Si lo completas abajo (Políticas, Cómo se paga, Envíos), lo responde al toque.</div>
-      <ul style="margin:0;padding-left:17px;font-size:12px">${filas}</ul></div>`;
-  }catch(_){ /* sin datos todavía → no se muestra nada */ }
+    let quien=null; try{ const { data:{ user } }=await supa.auth.getUser(); quien=user&&user.email||null; }catch(_){}
+    const upd={ estado:accion==="aprobar"?"aprobada":"rechazada", respuesta_final:accion==="aprobar"?a:null,
+      decidida_at:new Date().toISOString(), decidida_por:quien };
+    const { error }=await supa.from("preguntas_clientes").update(upd).eq("id",r.id);
+    if(error){ toast("No se pudo guardar tu decisión. Prueba de nuevo.",true); return; }
+    Object.assign(r,upd); PCN.hechas.set(r.id,{accion,texto:a}); PCN.editando=null;
+    toast(accion==="aprobar"?"Guardada en tus preguntas frecuentes":"Descartada");
+    renderPreguntasNegocio();
+    if(!PCN.rows.some(x=>x.estado==="pendiente")){
+      try{
+        const { data }=await supa.from("notificaciones").select("id").eq("channel_id",cid).eq("tipo","pregunta_cliente").is("resuelta_at",null).eq("datos->>ambito","negocio");
+        for(const n of data||[]) await supa.rpc("notif_resolver",{ p_id:n.id, p_por:"Preguntas respondidas" });
+      }catch(_){ /* la campanita se puede marcar a mano */ }
+    }
+  } finally { if(btn) btn.disabled=false; }
 }
 
 // ════════ ENTREGA Y LOGÍSTICA (movido de Ajustes → Entregas Lima) ════════

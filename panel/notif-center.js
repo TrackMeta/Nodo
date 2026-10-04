@@ -677,7 +677,10 @@ function acciones(n) {
   // 🙋 Abre el producto con «Preguntas de clientes» desplegada (productos.html?p=…&preguntas=1).
   else if (t === "pregunta_cliente") {
     const pid = String(n.datos?.product_id || "");
-    A.push({ k: "ir", href: pid ? `productos.html?p=${encodeURIComponent(pid)}&preguntas=1` : "productos.html", lb: "Revisar preguntas", ic: "help" });
+    // (las del NEGOCIO —garantía, devoluciones, factura— se contestan en Negocio → Conocimiento: 0126)
+    A.push({ k: "ir", lb: "Revisar preguntas", ic: "help",
+      href: n.datos?.ambito === "negocio" ? "negocio.html?preguntas=1"
+        : pid ? `productos.html?p=${encodeURIComponent(pid)}&preguntas=1` : "productos.html" });
   }
   else {
     if (chat) A.push(chat);
