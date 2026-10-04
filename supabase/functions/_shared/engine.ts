@@ -2799,8 +2799,10 @@ function traePregunta(text?: string | null): boolean {
 // pregunta, porque "cortar" y "láminas" están en el nombre del producto.
 function sinLaPalabraClave(text?: string | null, keyword?: string | null): string {
   const t = String(text ?? "");
-  const _p = (s: string) => normalize(s).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
-  const kw = _p(keyword ?? "").split(/\s+/).filter(Boolean);
+  // (el saludo con que arranca la clave vale escrito como sea: «ola», «holaa», «holi» = «hola»; si no, una letra de
+  //  diferencia hacía que la clave no se descontara y la IA la contestara — Probar flujos, 3-oct)
+  const _p = (s: string) => normalize(s).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").replace(/^(?:h?ola+|holi+|hla)$/u, "hola");
+  const kw = normalize(keyword ?? "").split(/\s+/).map(_p).filter(Boolean);
   if (!kw.length || !t.trim()) return t;
   const piezas = t.split(/(\s+)/);           // conserva los espacios para no pegar palabras
   const pal = piezas.map(_p);
@@ -2825,7 +2827,9 @@ function sinLaPalabraClave(text?: string | null, keyword?: string | null): strin
 // siendo la frase de Meta; con dígitos o una cola larga ya es una pregunta del cliente.
 function esPrellenadoDeAnuncio(text?: string | null): boolean {
   const t = normalize(text ?? "").replace(/[^\p{L}\p{N}\s]+/gu, " ").replace(/\s+/g, " ").trim();
-  const m = t.match(/^(?:(?:hola+|buenas?|buenos dias|buenas tardes|buenas noches) )?(?:puedo obtener|quiero|quisiera|deseo|me gustaria(?: obtener| recibir| tener)?) (?:mas )?informacion(?: (?:sobre|de|del|acerca de) (.*))?$/u);
+  // (el saludo como lo escribe la gente: «ola», «holaa», «holi» — Probar flujos 3-oct: con «ola. ¿Puedo obtener más
+  //  información de EcoGuard?» no se reconocía y la IA respondió la frase del anuncio con otro pitch)
+  const m = t.match(/^(?:(?:h?ola+|holi+|hla|buenas?|buen dia|buenos dias|buenas tardes|buenas noches) )?(?:puedo obtener|quiero|quisiera|deseo|me gustaria(?: obtener| recibir| tener)?) (?:mas )?informacion(?: (?:sobre|de|del|acerca de) (.*))?$/u);
   if (!m) return false;
   const cola = (m[1] ?? "").trim();
   return !/\d/.test(cola) && (cola ? cola.split(" ").length : 0) <= 7;
@@ -2834,7 +2838,11 @@ function esPrellenadoDeAnuncio(text?: string | null): boolean {
 // ¿Escribió solo lo que trae la entrada (su palabra clave, o la frase de Meta si vino de un anuncio)?
 function soloTextoDeEntrada(text: string | null | undefined, decision: { tier?: string; keyword?: string } | null | undefined): boolean {
   if (soloLaPalabraClave(text, decision?.keyword)) return true;
-  return (decision?.tier === "anuncio" || decision?.tier === "referral") && esPrellenadoDeAnuncio(text);
+  // (la frase de Meta cuenta como entrada venga por donde venga el ruteo: con «ola. ¿Puedo obtener más información de
+  //  EcoGuard?» la clave no calzó por la letra, el producto lo eligió la IA —tier «ia»— y la frase se reinyectaba como
+  //  pregunta: salía un pitch detrás de los mensajes iniciales repitiendo «¿desde dónde nos escribe?» — Probar flujos, 3-oct.
+  //  Un pedido genérico de información lo contestan los mensajes iniciales, que para eso los escribió el dueño.)
+  return esPrellenadoDeAnuncio(text);
 }
 
 function soloLaPalabraClave(text?: string | null, keyword?: string | null): boolean {

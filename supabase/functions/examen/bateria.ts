@@ -105,6 +105,10 @@ export const BATERIA_ECOGUARD: Bateria = {
     { id: "perfil-apodo", titulo: "Perfil «Mamá 💕»: el nombre se pide", perfil: "Mamá 💕",
       foco: "El nombre de WhatsApp es un apodo: CORRECTO pedir el nombre (con el celular) en T3; INCORRECTO poner «Mamá» como nombre del pedido.",
       turnos: [H, "miraflores av pardo 300", "quiero 1"] },
+    // 🔑 La frase del anuncio con el saludo mal escrito (Probar flujos de Rodrigo, 3-oct): no se responde.
+    { id: "saludo-ola", titulo: "«ola. ¿Puedo obtener más información…?»: la frase del anuncio no se contesta",
+      foco: "T1: CORRECTO solo los mensajes de bienvenida (terminan preguntando de dónde escribe); INCORRECTO una burbuja más de la IA describiendo el producto o volviendo a preguntar la ciudad. T2: Lima/Surco, precios y cantidad.",
+      turnos: ["ola. ¿Puedo obtener más información de EcoGuard™ Solar - Ahuyentador Ultrasóni?", "surco"] },
     // 🛎️ Post-venta con revisor: la ficha dice «no usar con animales domésticos cerca».
     { id: "post-mascotas", titulo: "Después de comprar: ¿le afecta a mi perro?",
       foco: "T4 crea el pedido (Lima). T5: CORRECTO decir que no se use cerca de mascotas (lo dice la ficha); INCORRECTO decir que no les afecta o que es seguro para mascotas.",
