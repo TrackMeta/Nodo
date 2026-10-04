@@ -770,7 +770,7 @@ async function runEngineInner(
       await logEvent(db, channelId, contactId, "nota", "🚪 Que lo reciba otra persona", _nota).catch(() => {});
       await deliverMessage(db, channelId, contactId,
         `¡Anotado! 🙌 Le dejo la indicación al motorizado: *${_nota.toLowerCase().replace(/\bsu\b/, "tu")}*.` +
-        (_saldoP > 0 ? ` Como me lo pagas al recibirlo, déjale los *${_symP} ${_saldoP}* a quien lo reciba (o, si prefieres pagarlo antes por Yape, avísame) 👌` : "")).catch(() => {});
+        (_saldoP > 0 ? ` Como lo pagas al recibirlo, déjale los *${_symP} ${_saldoP}* a quien lo reciba (o, si prefieres pagarlo antes por Yape, avísame) 👌` : "")).catch(() => {});
       return;
     }
   }
@@ -3783,7 +3783,7 @@ const REGLA_SIN_DISCURSO_RIESGO =
   "Y tampoco la coletilla que lo niega: «nada antes», «nada por adelantado», «no pagas hasta " +
   "que…», «cero riesgo», «sin adelanto», «sin pagos antes», «sin pagar nada antes». " +
   "Con decir cuándo paga ya está: no le agregues nada detrás. " +
-  "Di cómo paga y sigue: «te lo mando a tu casa y me lo pagas al recibirlo» en Lima; en provincia, «te lo mando " +
+  "Di cómo paga y sigue: «te lo mando a tu casa y lo pagas al recibirlo» en Lima; en provincia, «te lo mando " +
   "con un adelanto y el resto me lo pagas por acá cuando ya esté en la agencia».";
 
 
@@ -8459,7 +8459,7 @@ function sinColetillaRiesgo(texto: string): string {
 // 🗣️ LIMA EN PRIMERA PERSONA. «En San Juan de Miraflores te llega contraentrega, pagas al recibir
 // el pedido y puedes revisarlo antes de pagar» (Probar flujos, Rodrigo, 2026-10-02: «le responde
 // como robot, en 3.ª persona»): el paquete llega solo y nadie lo cobra. El prompt ya pide «te lo
-// mando hasta tu casa y me lo pagas al recibirlo»; esto es la red por si la IA vuelve a la forma
+// mando hasta tu casa y lo pagas al recibirlo»; esto es la red por si la IA vuelve a la forma
 // del sistema. Solo la frase de la ENTREGA (con su lugar delante: «En X» → «A X»), y el «pagas al
 // recibir» solo si esa frase estaba — el resto del mensaje no se toca.
 // 🧪 Modelo forzado para la respuesta de venta: lo pone SOLO tmp-sim (cada función lleva su copia del motor, así que en
@@ -9020,12 +9020,12 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
 // 5 de 5 chats de Lima abrieron con «¡Genial! A *X* te lo mando…» (Rodrigo: «que no siempre diga Genial»).
 // Uno distinto en cada turno, todos en primera persona y con «al recibirlo» (el hecho que se dice).
 const EJEMPLOS_ENTREGA_LIMA = [
-  "¡Perfecto! A *Surco* te lo llevo hasta tu puerta y me lo pagas al recibirlo 🛵",
-  "Buenísimo, a *Surco* te lo mando a tu casa y me pagas recién al recibirlo 🏡",
-  "Claro que sí, a *Surco* te lo mando a domicilio y me lo pagas al recibirlo 😊",
-  "A *Surco* te lo llevo a tu casa sin problema, y me lo pagas al recibirlo 🛵",
-  "¡Qué bien! Hasta *Surco* te lo mando yo, y me lo pagas en efectivo al recibirlo 🙌",
-  "¡Genial! A *Surco* te lo mando hasta tu casa y me lo pagas al recibirlo 🛵",
+  "¡Perfecto! A *Surco* te lo llevo hasta tu puerta y lo pagas al recibirlo 🛵",
+  "Buenísimo, a *Surco* te lo mando a tu casa y pagas recién al recibirlo 🏡",
+  "Claro que sí, a *Surco* te lo mando a domicilio y lo pagas al recibirlo 😊",
+  "A *Surco* te lo llevo a tu casa sin problema, y lo pagas al recibirlo 🛵",
+  "¡Qué bien! Hasta *Surco* te lo mando yo, y lo pagas en efectivo al recibirlo 🙌",
+  "¡Genial! A *Surco* te lo mando hasta tu casa y lo pagas al recibirlo 🛵",
 ];
 function ejemploEntregaLima(): string {
   return EJEMPLOS_ENTREGA_LIMA[Math.floor(Math.random() * EJEMPLOS_ENTREGA_LIMA.length)];
@@ -9074,7 +9074,12 @@ function entregaEnPrimeraPersona(texto: string): string {
       ? `${mayus ? "A" : "a"} ${lugar} te lo mando hasta tu casa`
       : `${mayus ? "Te" : "te"} lo mando hasta tu casa`);
   }).replace(/(?<!(?:^|[^\p{L}])lo\s+)(?<![\p{L}])(p)agas\s+al\s+recibir(?:lo|\s+(?:el|tu)\s+pedido)?(?![\p{L}])/giu,
-    (_m, p: string) => `${p === "P" ? "Me" : "me"} lo pagas al recibirlo`);
+    (_m, p: string) => `${p === "P" ? "Lo" : "lo"} pagas al recibirlo`)
+    // 💵 «lo pagas al recibirlo», sin el «me» (Rodrigo, 4-oct-2026: «dice me lo pagas al recibirlo en lugar de lo pagas
+    // al recibirlo»). El envío sigue en primera persona («te lo mando»); el pago no. Red por si la IA lo escribe igual.
+    // (solo el pago AL RECIBIR: «el resto me lo pagas por acá» de provincia es otra cosa y se queda)
+    .replace(/(?<![\p{L}])(m)e\s+(lo\s+)?pagas(\s+(?:reci[eé]n\s+|en\s+efectivo\s+)?(?:al\s+recibir|cuando\s+lo\s+recib))/giu,
+      (_m, m: string, lo: string | undefined, cola: string) => `${m === "M" ? (lo ? "Lo" : "Pagas") : (lo ? "lo" : "pagas")}${lo ? " pagas" : ""}${cola}`);
 }
 // …y PROVINCIA: «te llega por agencia *Shalom*» → «te lo mando por agencia *Shalom*» (Rodrigo, 2026-10-02: «arregla todos
 // los casos en tercera persona, Lima y provincia»). Solo «te llega POR …» (agencia/courier): «¿cuándo te llega?» o «te
@@ -22796,7 +22801,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // 🗣️ Rodrigo (2026-10-02): «le responde como robot, en 3.ª persona» — «En San Juan de Miraflores te llega
       // contraentrega», «te llega por agencia Shalom»: el paquete viajando solo, sin nadie que lo mande.
       "Y el pedido tampoco viaja solo: lo mandas TÚ. «Te lo mando por agencia Shalom», «te lo llevo hasta tu " +
-      "casa», «me lo pagas al recibirlo», «lo recoges con la clave que te paso». ⛔ Nada de «te llega por " +
+      "casa», «lo pagas al recibirlo», «lo recoges con la clave que te paso». ⛔ Nada de «te llega por " +
       "agencia», «te llega contraentrega», «el pedido sale», «se despacha» ni «va por agencia»: así habla un sistema.");
     let _bloqueTurno = "";
     // 📣 ESTÁ CONTESTANDO A UN REMARKETING. Hasta hoy la IA solo lo deducía del historial (los últimos 12 mensajes,
@@ -24134,7 +24139,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "prometes una forma de pago que a lo mejor no existe, y se entera con el repartidor en la " +
         "puerta. (Medido: contestó «en Lima puedes pagar con tarjeta al recibir» con el POS apagado.)\n" +
         "Contéstale EXACTAMENTE esto, adaptando el saludo: «Depende de a dónde te lo mando: " +
-        "en Lima me lo pagas cuando lo recibes, y a provincia te lo mando por agencia con un adelanto y el resto " +
+        "en Lima lo pagas cuando lo recibes, y a provincia te lo mando por agencia con un adelanto y el resto " +
         "me lo pagas por acá cuando llega a la agencia. ¿De qué distrito o ciudad me escribes?»\n" +
         "Ni una palabra más sobre medios de pago hasta que te diga su zona.");
     }
@@ -24212,7 +24217,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // 🗣️ «En San Juan de Miraflores te llega contraentrega, pagas al recibir el pedido…»: el
         // paquete llega solo y nadie cobra. Rodrigo: «le responde como robot, en 3.ª persona».
         L.push("🗣️ Cuéntaselo en PRIMERA persona, como el vendedor que se lo manda: «te lo mando hasta tu casa y " +
-          "me lo pagas al recibirlo». ⛔ Nunca «te llega contraentrega», «el pedido llega» ni «pagas al recibir el " +
+          "lo pagas al recibirlo». ⛔ Nunca «te llega contraentrega», «el pedido llega» ni «pagas al recibir el " +
           "pedido» a secas: así suena un sistema, no una persona.");
         // Visto en vivo: "queda confirmado tu pedido… con RECOJO en Barranco, Av Grau 300".
         // "Recojo" es vocabulario de provincia (agencia): en Lima va un motorizado a la
@@ -28389,7 +28394,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         salida = entregaEnPrimeraPersona(salida);
         if (salida !== _antes1p) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "🗣️ Entrega dicha en primera persona",
-            "La IA escribió «te llega contraentrega»; se dejó «te lo mando hasta tu casa y me lo pagas al recibirlo»").catch(() => {});
+            "La IA escribió «te llega contraentrega»; se dejó «te lo mando hasta tu casa y lo pagas al recibirlo»").catch(() => {});
         }
       }
       // 🎲 Turno de la zona: la muletilla con que abre la IA, por la elegida (ver conAperturaElegida).
