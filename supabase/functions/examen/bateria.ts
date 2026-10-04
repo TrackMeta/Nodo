@@ -12,6 +12,7 @@ export interface ConvExamen {
   turnos: string[];
   foco: string;
   producto?: string;         // si la batería tiene varios productos: el de ESTA conversación (para la ficha del juez)
+  perfil?: string;           // nombre de perfil de WhatsApp simulado (ver nombreDePerfilUsable): sin él, el contacto se llama «exam-…»
 }
 
 export interface Bateria {
@@ -94,6 +95,20 @@ export const BATERIA_ECOGUARD: Bateria = {
     { id: "jaen-adelanto", titulo: "Dónde lo adquiero + porcentaje del adelanto (Jaén)",
       foco: "T1: CORRECTO contestar dónde se compra (online, se envía a todo el Perú) y preguntar la zona; INCORRECTO solo describir el producto. T2: Jaén = provincia, Shalom con adelanto, anota 2 unidades. T4: el adelanto es S/ 20 fijo (no un porcentaje) y CORRECTO nombrar con qué se paga (Yape, Plin, BCP…); INCORRECTO no decir con qué se paga.",
       turnos: [H + " Dónde lo puedo adquirir", "asé entrega en la provincia de Jaén. Necesito 2 unidades", "tiene algún tiempo de garantía o no", "cuánto es el porcentaje de adelanto"] },
+    // 👤 Nombre del perfil de WhatsApp (3-oct, Rodrigo): si parece real no se pide, va en un resumen para confirmar.
+    { id: "perfil-lima", titulo: "Perfil «Carlos Chumpitaz» (Lima): resumen y «sí»", perfil: "Carlos Chumpitaz",
+      foco: "El cliente se llama Carlos Chumpitaz en WhatsApp. T2 «quiero la oferta»: CORRECTO una sola línea de que la oferta es por cantidad + la lista UNA vez + preguntar la zona; INCORRECTO dos arranques («La oferta está en la cantidad…» y además «Ya tienes la oferta a tu disposición»). T4: CORRECTO pedir SOLO el celular; INCORRECTO pedir el nombre. T5: CORRECTO un resumen con Carlos Chumpitaz, 3 unidades S/ 169 y la dirección, preguntando si lo confirma; INCORRECTO decir que el pedido ya quedó confirmado o pedir el nombre. T6: pedido confirmado a nombre de Carlos Chumpitaz.",
+      turnos: [H, "Quiero la oferta", "San Juan de Lurigancho Mz O12 Lt 9 Urb Mariscal Caceres", "la oferta de 3", "977533352", "sí"] },
+    { id: "perfil-otro-nombre", titulo: "Perfil «Carlos Chumpitaz» (Arequipa) pero va a nombre de la esposa", perfil: "Carlos Chumpitaz",
+      foco: "T5: CORRECTO pedir celular y DNI, NO el nombre. T6: CORRECTO un resumen a nombre de Carlos Chumpitaz con el DNI y la agencia, preguntando si lo confirma. T7: CORRECTO que el pedido quede a nombre de Rosa Pérez Quispe (no Carlos) y siga al adelanto; INCORRECTO volver a pedir el nombre.",
+      turnos: [H, "arequipa", "la de cayma", "la de av charcani", "quiero 2", "977533352 dni 45678912", "a nombre de mi esposa Rosa Pérez Quispe"] },
+    { id: "perfil-apodo", titulo: "Perfil «Mamá 💕»: el nombre se pide", perfil: "Mamá 💕",
+      foco: "El nombre de WhatsApp es un apodo: CORRECTO pedir el nombre (con el celular) en T3; INCORRECTO poner «Mamá» como nombre del pedido.",
+      turnos: [H, "miraflores av pardo 300", "quiero 1"] },
+    // 🛎️ Post-venta con revisor: la ficha dice «no usar con animales domésticos cerca».
+    { id: "post-mascotas", titulo: "Después de comprar: ¿le afecta a mi perro?",
+      foco: "T4 crea el pedido (Lima). T5: CORRECTO decir que no se use cerca de mascotas (lo dice la ficha); INCORRECTO decir que no les afecta o que es seguro para mascotas.",
+      turnos: [H, "san isidro av arequipa 2500", "quiero 1", "Juan Perez 977533352", "¿y le afecta a mi perro?"] },
   ],
 };
 

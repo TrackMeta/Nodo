@@ -793,7 +793,7 @@ function renderContactPanel(){
   const nodos=events.filter(e=>e.tipo==="nodo");
   const errs=events.filter(e=>e.tipo==="error");
   const datosBody = `
-    <div class="kv"><span class="k">Usuario</span><span class="v">${esc(contact.nombre||"—")}</span></div>
+    <div class="kv"><span class="k">Nombre en WhatsApp</span><span class="v"><button type="button" id="pNomWa" title="Simular el nombre de perfil de WhatsApp del cliente: si parece un nombre real, el bot no se lo pide y lo pone en el resumen para que confirme" style="background:none;border:none;padding:0;color:inherit;font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:5px">${esc(contact.nombre||"—")} <span style="color:var(--muted);display:inline-flex">${icon("edit")}</span></button></span></div>
     <div class="kv"><span class="k">Teléfono</span><span class="v">Web Chat · sin número</span></div>
     <div class="kv"><span class="k">Estado del bot</span><span class="v">${contact.bot_activo!==false?'<span style="color:var(--green)">● Activo</span>':'<span style="color:var(--amber)">● En pausa</span>'}</span></div>
     <div class="kv"><span class="k">Producto</span><span class="v">${contact.product?`${contact.product.emoji?esc(contact.product.emoji)+" ":""}${esc(contact.product.nombre||"")}`:"—"}</span></div>
@@ -886,6 +886,19 @@ function renderContactPanel(){
   // Memoria IA · editar/borrar/agregar chips "Quién es" / "Cómo tratar"
   wireMemoriaChips(p, contact, { supa, toast, reRender: renderContactPanel });
   const edP=$("pEdit"); if(edP) edP.onclick=async()=>{ const ok=await openEditarPedido({...order,contact}, { supa }); if(ok) refreshPanel(); };
+  // 👤 Simular el nombre de perfil de WhatsApp (en un cliente real llega solo). Con un nombre de persona —«Carlos
+  // Chumpitaz»— el bot no le pide el nombre: lo pone en el resumen para que confirme. Con «Prueba (webchat)», un apodo
+  // o emojis, se lo pide como siempre.
+  const nW=$("pNomWa"); if(nW) nW.onclick=async()=>{
+    const v=await askText({ title:"Nombre en WhatsApp (simulado)", value:contact.nombre||"",
+      message:"Así se llama el cliente en su perfil de WhatsApp. Si parece un nombre real (nombre y apellido), el bot no se lo pide: se lo muestra en el resumen para que confirme.",
+      placeholder:"Ej.: Carlos Chumpitaz" });
+    if(v==null) return;
+    const nom=String(v).replace(/\s+/g," ").trim()||"Prueba (webchat)";
+    const { error }=await supa.from("contacts").update({ nombre:nom }).eq("id",contact.id);
+    if(error){ toast("No se pudo cambiar el nombre",true); return; }
+    contact.nombre=nom; st.contactName=nom; toast("Nombre de WhatsApp actualizado"); renderContactPanel();
+  };
   const rot=$("pRotulo"); if(rot) rot.onclick=async()=>{ rot.disabled=true; const rem=await remitenteDe(supa,st.channelId); printRotulo({...order,contact}, rem); rot.disabled=false; };
   if(cet) wireCopiloto(p, {...order,contact,contact_id:contact.id}, cet, { supa, toast, confirmDialog, askChoice, askText, channelId:st.channelId, reload:refreshPanel });
 }

@@ -88,9 +88,12 @@ Deno.serve(async (req) => {
   const mediaKind = media?.url ? (media.kind || "document") : null;
 
   // Contacto de prueba del canal.
+  // 👤 El nombre solo se pone al CREARLO: en Probar flujos se puede cambiar por el «nombre de WhatsApp» que se quiera
+  // simular (ver nombreDePerfilUsable en el motor), y antes cada mensaje lo volvía a «Prueba (webchat)».
+  const { data: _yaC } = await db.from("contacts").select("id, nombre").eq("channel_id", channel_id).eq("wa_id", TEST_WA_ID).maybeSingle();
   const { data: contact } = await db.from("contacts").upsert(
     {
-      channel_id, wa_id: TEST_WA_ID, nombre: "Prueba (webchat)",
+      channel_id, wa_id: TEST_WA_ID, nombre: String((_yaC as any)?.nombre ?? "").trim() || "Prueba (webchat)",
       last_input: _ubiTxt || media?.caption || text || buttonId || (mediaKind ? `[${mediaKind}]` : ""),
       // Un documento con mime de imagen o PDF cuenta como IMAGEN para las condiciones del
       // flujo (el evento ya se arma así para el OCR). Ver el mismo arreglo en whatsapp-webhook:

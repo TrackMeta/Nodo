@@ -5464,7 +5464,72 @@ const RE_LO_PIENSA =
 // «solo necesito que me pases nombre y apellidos, celular y DNI 👇» de corrido, o la lista 📌 de la IA
 // con sus propias etiquetas—. El prompt ya pide los 📌 y la IA los pone a veces: pasa a ser del motor.
 // Fuera «confirmo» (no es un dato que se copie) y la sede (la pide su propia lista 📍).
-function bloquePedirDatos(faltan: unknown): string {
+// 👤 NOMBRE DEL PERFIL DE WHATSAPP (3-oct-2026, Rodrigo: «si el nombre del cliente es normal, ej. Carlos Chumpitaz,
+// ¿también lo pediría? ¿no sería mejor que solo le pase el resumen para que lo confirme?»). Si el nombre con el que el
+// cliente se registró en WhatsApp parece un nombre de persona, no se le pide: va en un resumen que confirma con un «sí»
+// (y si es para otra persona, escribe su nombre). Apodos, emojis, «Mamá», «Tienda X» o una sola palabra no sirven para
+// el rótulo ni para cotejar con el DNI en la agencia: ahí se le pide, como siempre.
+const CLAVES_NOMBRE = new Set(["nombre_completo", "cliente"]);
+const RE_NO_ES_NOMBRE = /^(?:mam[aá]|pap[aá]|mami|papi|mamita|papito|amor|bebe|beb[eé]|gord[oa]|flac[oa]|chin[oa]|negr[oa]|t[ií][oa]|abuel[oa]|hij[oa]|herman[oa]|prim[oa]|se[ñn]or|se[ñn]ora|srta?|sra|dra?|ing|lic|prof|don|do[ñn]a|tienda|ventas?|store|shop|oficial|negocio|empresa|importacion(?:es)?|distribuidora|servicios?|bodega|minimarket|market|bazar|boutique|whatsapp|business|cliente|usuario|user|prueba|test|webchat|bot|admin|hola|info|contacto)$/i;
+const RE_PARTICULA_NOMBRE = /^(?:de|del|la|las|los|y|san|santa)$/i;
+function nombreDePerfilUsable(nombre: unknown): string {
+  const t = String(nombre ?? "").replace(/\s+/g, " ").trim();
+  if (!t || t.length > 60) return "";
+  // Sin emojis, números ni signos: «Rodrigo 🌟», «Ana 987…», «Juan (trabajo)», «J.P.».
+  if (/[\p{Extended_Pictographic}\d@#_.,;:!?¡¿()\[\]{}"«»\/\\|*+=~<>$%&]/u.test(t)) return "";
+  const pal = t.split(" ");
+  if (pal.length < 2 || pal.length > 5) return "";
+  if (pal.some((p) => !/^[\p{L}][\p{L}'´`-]*$/u.test(p))) return "";
+  if (pal.some((p) => RE_NO_ES_NOMBRE.test(p))) return "";
+  // Nombre y apellido de verdad: el primero y el último con 3 letras o más y que no sean partículas («Rodrigo FN» no:
+  // son iniciales); las del medio pueden ser «de», «la»… («María de la Cruz»).
+  const [pri, ult] = [pal[0], pal[pal.length - 1]];
+  if ([pri, ult].some((p) => p.replace(/[^\p{L}]/gu, "").length < 3 || RE_PARTICULA_NOMBRE.test(p))) return "";
+  if (new Set(pal.map((p) => p.toLowerCase())).size < pal.length) return "";
+  return enTitulo(t);
+}
+// «sí», «ok, confírmalo», «está bien», «dale» — a la pregunta del resumen. No: una pregunta, un «no», un «pero…» o un
+// cambio de nombre (ese lo pesca el extractor como dato).
+function afirmaResumen(texto: string): boolean {
+  const t = String(texto ?? "").trim();
+  if (!t || t.length > 60 || /\?|¿/.test(t)) return false;
+  if (/(?<![\p{L}])(?:no|pero|nombre|cambi\p{L}*|otr[oa]|mejor|espera|todav[ií]a)(?![\p{L}])/iu.test(t)) return false;
+  return /^[\s¡!]*(?:s[ií]+p?|ok(?:ey|i|a)?|dale|listo|correcto|confirm\p{L}*|conforme|as[ií]\s+(?:es|est[aá]\s+bien)|est[aá]\s+bien|todo\s+(?:bien|ok|correcto|perfecto)|perfecto|de\s+acuerdo|exacto|claro|ya|va|bueno|genial|excelente|de\s+una)(?![\p{L}])/iu.test(t);
+}
+// El resumen que se le muestra para que confirme. Lo que ya sabemos, en el orden en que lo lee: quién, qué, dónde.
+function resumenParaConfirmar(ctx: any, nombre: string): string {
+  const sym = simboloMoneda(ctx?.moneda as string);
+  const prod = String(ctx?.producto_nombre ?? "").trim();
+  const opc = String(ctx?.opcion_elegida ?? ctx?.opcion ?? "").trim();
+  const precio = Number(ctx?.precio_esperado ?? ctx?.precio);
+  const L = ["Listo, te lo dejo así 👇", `👤 *${nombre}*`];
+  const tel = String(ctx?.telefono ?? "").trim().replace(/^\+?51(?=9\d{8}$)/, "");   // (el de WhatsApp llega con 51 delante)
+  if (tel) L.push(`📱 ${tel}`);
+  const queLleva = [prod, opc].filter(Boolean).join(" · ");
+  if (queLleva) L.push(`📦 *${queLleva}*${Number.isFinite(precio) && precio > 0 ? ` — *${sym} ${precio}*` : ""}`);
+  if (String(ctx?.zona_entrega ?? "") === "lima") {
+    const dir = String(ctx?.direccion ?? "").trim();
+    if (dir) L.push(`📍 ${dir}`);
+  } else {
+    // (como la escribió el cliente —«av charcani»— se ve descuidado en un resumen: en minúsculas pasa a nombre propio)
+    const _bonito = (s: string) => /\p{Lu}/u.test(s) ? s : enTitulo(s);
+    const donde = [_bonito(String(ctx?.sede ?? "").trim()), _bonito(String(ctx?.ciudad ?? "").trim())].filter(Boolean)
+      .filter((x, i, a) => a.findIndex((y) => normalize(y) === normalize(x)) === i).join(", ");
+    if (donde) L.push(`📍 Agencia Shalom: ${donde}`);
+    const dni = String(ctx?.dni ?? "").trim();
+    if (dni) L.push(`🪪 DNI ${dni}`);
+  }
+  L.push("", "¿Lo confirmo? Si va a nombre de otra persona, escríbeme su nombre.");
+  return L.join("\n");
+}
+function bloquePedirDatos(faltan: unknown, perfil = "", ctx: any = null): string {
+  const _fs = (Array.isArray(faltan) ? faltan : []) as any[];
+  // 👤 Con el nombre del perfil: el nombre no se pide en la lista; si es lo ÚNICO que falta, sale el resumen.
+  if (perfil && _fs.some((f) => f && CLAVES_NOMBRE.has(String(f.clave)))) {
+    const _resto = _fs.filter((f) => f && !CLAVES_NOMBRE.has(String(f.clave)) && f.clave !== "confirmo" && f.validar !== "sede");
+    if (!_resto.length) return ctx ? resumenParaConfirmar(ctx, perfil) : "";
+    faltan = _fs.filter((f) => f && !CLAVES_NOMBRE.has(String(f.clave)));
+  }
   const _ls = (Array.isArray(faltan) ? faltan : [])
     .filter((f: any) => f && f.clave !== "confirmo" && f.validar !== "sede" && String(f.label ?? "").trim())
     .map((f: any) => String(f.label).replace(/[¿?¡!]/g, "").split(/[,(]/)[0]
@@ -8336,7 +8401,7 @@ export function forzarModeloVenta(m: string | null): void {
 // Encendido en TODOS los canales desde el 3-oct-2026 (ya no hay interruptor por canal).
 // ═══════════════════════════════════════════════════════════════════
 
-type PasoV2Nombre = "zona" | "distrito" | "sede" | "cantidad_lista" | "cantidad" | "datos" | "ninguno";
+type PasoV2Nombre = "zona" | "distrito" | "sede" | "cantidad_lista" | "cantidad" | "datos" | "resumen" | "ninguno";
 interface PasoV2 { paso: PasoV2Nombre; pregunta: string; sinPregunta: boolean; preguntoEnvio: boolean }
 
 // Preguntó cómo se paga o cómo le llega (para explicar las dos opciones cuando aún no se sabe su zona).
@@ -8366,8 +8431,15 @@ function pasoV2(ctx: any, run: any): PasoV2 {
   }
   // (sin el «confirmo»: no es un dato que se le pida — salió «Confirma si quieres que te lo mande así» encima de la
   //  lista de datos, Probar flujos 3-oct; el bloque de datos del motor también lo deja fuera)
-  const faltan = (Array.isArray(ctx?._datos_faltan) ? ctx._datos_faltan : [])
+  let faltan = (Array.isArray(ctx?._datos_faltan) ? ctx._datos_faltan : [])
     .filter((f: any) => String(f?.clave ?? "") !== "confirmo" && !/confirm/i.test(String(f?.label ?? "")));
+  // 👤 Con el nombre de su WhatsApp, el nombre no se pide (ver nombreDePerfilUsable). Si era lo único que faltaba, el
+  // motor le muestra el RESUMEN para confirmar: la IA solo contesta lo suyo, sin pedir ni preguntar.
+  if (ctx?._nombre_perfil) {
+    const sinNombre = faltan.filter((f: any) => !CLAVES_NOMBRE.has(String(f?.clave ?? "")));
+    if (sinNombre.length !== faltan.length && !sinNombre.length) return { paso: "resumen", pregunta: "", sinPregunta: true, preguntoEnvio };
+    faltan = sinNombre;
+  }
   if (faltan.length) {
     const nombres = faltan.map((f: any) => String(f?.label ?? f?.clave ?? "").split(/[,(]/)[0].trim()).filter(Boolean).join(", ");
     return { paso: "datos", pregunta: nombres || "los datos que faltan", sinPregunta: false, preguntoEnvio };
@@ -8402,6 +8474,15 @@ function instruccionV2(p: PasoV2, ctx: any): string {
     L.push(`💳 Te preguntó por el adelanto o el pago: además de lo que preguntó, dile con qué lo puede pagar (${_lista}). ` +
       "Solo los nombres: el número y el titular salen solos en su propio mensaje cuando toca.");
   }
+  // 🏷️ «Quiero la oferta» / «¿está en promoción?»: la oferta de este negocio es por CANTIDAD y la LISTA la pone el motor.
+  // Antes la IA contestaba por su cuenta («¡Perfecto! Ya tienes la oferta a tu disposición…») y el motor le pegaba encima
+  // «La oferta está en la cantidad… 👇» con la lista: dos arranques (Probar flujos de Rodrigo, 3-oct). Se le dice antes.
+  if (/(?<![\p{L}])(?:ofertas?|promoci[oó]n(?:es)?|promo|descuentos?|rebajas?)(?![\p{L}])/iu.test(li)
+      && !/\bmayor|mayorista|docena|revend/i.test(li) && !String(ctx?.opcion_id ?? "").trim()) {
+    L.push("🏷️ Te habló de la oferta: dile en UNA línea que la oferta está en la cantidad (mientras más lleva, menos paga " +
+      "por cada una). La lista de precios la pone el sistema justo debajo de esa línea: no la escribas ni digas «ya tienes " +
+      "la oferta a tu disposición».");
+  }
   switch (p.paso) {
     case "zona":
       L.push(p.preguntoEnvio
@@ -8429,6 +8510,12 @@ function instruccionV2(p: PasoV2, ctx: any): string {
       break;
     case "datos":
       L.push(`2. Termina pidiéndole, con tus palabras, los datos que faltan: ${p.pregunta}. El sistema los ordena en una lista.`);
+      break;
+    case "resumen":
+      // 👤 Ya está todo menos el nombre, que se toma de su WhatsApp: el motor le muestra el resumen con «¿Lo confirmo?».
+      L.push("2. Ya tienes todo lo que hace falta. Debajo el sistema le muestra el RESUMEN del pedido para que lo confirme: " +
+        "NO pidas datos (tampoco el nombre), NO hagas preguntas y NO digas que el pedido ya quedó confirmado. Una línea " +
+        "corta que acompañe (si te preguntó algo, contéstalo primero).");
       break;
     case "ninguno":
       L.push("2. No hagas preguntas de venta ni lo apures: contesta con calidez y déjale la puerta abierta.");
@@ -16312,6 +16399,28 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
 
   await logEvent(db, channelId, contactId, "nota", "🛎️ Soporte post-venta", (event.text ?? "").slice(0, 80)).catch(() => {});
 
+  // 🔎 EL REVISOR TAMBIÉN EN LA POST-VENTA (3-oct, Probar flujos de Rodrigo): a «¿y si sirve el producto?» → «sí» le dijo
+  // a un cliente que YA COMPRÓ que el EcoGuard «no afecta a mascotas cerca», con una ficha que dice «no usar con animales
+  // domésticos cerca». Quien ya compró va a USAR el producto según lo que le digamos: acá no se supone (sin `suponer`),
+  // todo invento o contradicción con la ficha o el negocio se reescribe una vez. Y lo que preguntó y la ficha no trae
+  // queda en «Preguntas de clientes», igual que en la venta.
+  if (result && !/\[\[\s*(?:humano|recompra)/i.test(result)) {
+    try {
+      const _ctxP = { last_input: String(event.text ?? ""), contexto_producto: String(ctx.contexto_producto ?? ""),
+        faq: String(ctx.faq ?? ""), _product_id: ctx._product_id, producto_nombre: ctx.producto_nombre ?? prod };
+      const _revP = await revisorIAV2(result, _ctxP, ai, ai.provider, run.channel_id, db, { negocio: String(info.negocio ?? "") });
+      if (_revP.fuera.length) await registrarPreguntasCliente(db, run as any, _ctxP, _revP.fuera);
+      if (_revP.viol.length) {
+        await logEvent(db, channelId, contactId, "nota", "✍️ Post-venta: se pidió reescribir", _revP.viol.join(" · ").slice(0, 400)).catch(() => {});
+        const _r2 = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model,
+          system, maxTokens: 500,
+          content: content + `\n\n## ⚠️ CORRIGE TU RESPUESTA\nEscribiste esto:\n«${result}»\nTiene estos problemas:\n` +
+            _revP.viol.map((x) => `• ${x}`).join("\n") + "\nEscribe de nuevo el mensaje COMPLETO corrigiendo solo eso. Responde solo con el mensaje." });
+        if (_r2 && _r2.trim()) result = _r2;
+      }
+    } catch (_) { /* el revisor nunca tumba la post-venta */ }
+  }
+
   // 🔑 LA CONTRASEÑA INVENTADA. «El enlace está protegido por contraseña para tu seguridad. La
   // contraseña es: *tropa21*» (D9-kpostlink, 2026-09-24) — no existe ninguna contraseña en la ficha
   // ni en la entrega. Un dato de acceso que no está escrito en ningún lado no se dice: lo confirma
@@ -19859,6 +19968,43 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
   } catch (_) { /* si no se puede leer, se comporta como antes */ }
   (ctx as any)._pack_mixto = packMixto;
   run.vars._pack_mixto = packMixto;
+  // 👤 EL NOMBRE DEL PERFIL (ver nombreDePerfilUsable). Si el nombre de WhatsApp parece de persona, no se pide: cuando es
+  // lo único que falta sale el RESUMEN para confirmar (bloquePedirDatos) y este turno mira la respuesta a ese resumen.
+  //   · «sí / ok / confirmo» → el pedido va a nombre del perfil (y el «confirmo» de Lima queda dado: acaba de confirmar).
+  //   · escribió OTRO nombre → lo guardó el extractor arriba; también confirma.
+  //   · cualquier otra cosa (una pregunta) → sigue pendiente y se le vuelve a mostrar el resumen.
+  {
+    const _perfil = esDigital(ctx) ? "" : nombreDePerfilUsable(ctx.nombre);
+    const _ofrecido = !!_perfil && String((run.vars as any)._resumen_perfil ?? "") === _perfil;
+    const _nomCampo = campos.find((c) => CLAVES_NOMBRE.has(String(c.clave)) && c.requerido !== false);
+    const _nomPend = pendientes.find((c) => CLAVES_NOMBRE.has(String(c.clave)));
+    const _resto = () => pendientes.filter((c) => !CLAVES_NOMBRE.has(String(c.clave)) && c.clave !== "confirmo");
+    const _darConfirmo = async () => {
+      const iC = pendientes.findIndex((c) => c.clave === "confirmo");
+      if (iC < 0) return;
+      pendientes.splice(iC, 1);
+      ctx.confirmo = "si"; run.vars.confirmo = "si";
+      await setField(db, run.channel_id, run.contact_id, "confirmo", "si").catch(() => {});
+    };
+    if (_perfil && _nomPend) {
+      (ctx as any)._nombre_perfil = _perfil;
+      if (_ofrecido && !_resto().length && afirmaResumen(texto)) {
+        ctx[_nomPend.clave] = _perfil; run.vars[_nomPend.clave] = _perfil;
+        await setField(db, run.channel_id, run.contact_id, _nomPend.clave, _perfil).catch(() => {});
+        pendientes.splice(pendientes.indexOf(_nomPend), 1);
+        await _darConfirmo();
+        delete (run.vars as any)._resumen_perfil;
+        await logEvent(db, run.channel_id, run.contact_id, "campo", "👤 Confirmó el resumen",
+          `A nombre de ${_perfil} (el de su WhatsApp) — «${texto.slice(0, 60)}»`).catch(() => {});
+      }
+    } else if (_ofrecido && _nomCampo && !_nomPend && !_resto().length) {
+      // Contestó al resumen con OTRO nombre («a nombre de mi esposa, Rosa Pérez»): eso ya es confirmar.
+      await _darConfirmo();
+      delete (run.vars as any)._resumen_perfil;
+      await logEvent(db, run.channel_id, run.contact_id, "campo", "👤 Confirmó con otro nombre",
+        `${String(ctx[_nomCampo.clave] ?? "").slice(0, 60)} (no el de su WhatsApp, ${_perfil})`).catch(() => {});
+    }
+  }
   // 🛒 CERRAR DIRECTO (decisión de Rodrigo, 2026-09-03). En Lima el flujo pide un campo
   // `confirmo` antes de crear el pedido, y existe por algo: sin él, un mensaje de consulta
   // bien completo ("¿tienen talla 38? soy Juan Pérez, Av. Larco 100") despachaba un pedido
@@ -28429,7 +28575,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // Va el NÚCLEO de cada etiqueta (antes de la coma o el paréntesis), en segunda persona.
         // 📋 Y desde el 2026-10-01 con UNO también: el bloque canónico (ver bloquePedirDatos) — en físico,
         // que es donde hay campos; en digital no hay datos que pedir y se deja el remate de abajo.
-        const _bloqueDatos = esDigital(ctx) ? "" : bloquePedirDatos((ctx as any)._datos_faltan);
+        // 👤 (con el nombre de su WhatsApp: sin «📌 Nombre» en la lista y, si era lo único, el RESUMEN para confirmar)
+        const _bloqueDatos = esDigital(ctx) ? "" : bloquePedirDatos((ctx as any)._datos_faltan, String((ctx as any)._nombre_perfil ?? ""), ctx);
+        const _esResumen = /^Listo, te lo dejo así/.test(_bloqueDatos);
         const _pideVarios = _bloqueDatos;
         // 💻 En digital el remate depende de en qué va: si ya dijo que pagó o ya tiene el
         // número, lo que falta es la captura; si no, lo que sigue son los datos (el motor los
@@ -28451,6 +28599,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           ? "Dime con cuál te quedas y te lo dejo cerrado. 🙂"
           : (ctx as any)._falta_opcion
           ? "Dime cuál prefieres y te lo dejo cerrado. 🙂"
+          : _esResumen
+          ? "Te dejo el resumen para que lo confirmes 👇"
           : _falta1?.clave === "confirmo"
           ? "¿Lo confirmo y te lo mando? 🙂"
           : _pideVarios
@@ -28552,7 +28702,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // datos que de verdad faltan. Solo en físico con zona y cantidad resueltas y sin pedido creado; no
         // cuando la lista 📍 de oficinas está pidiendo la sede (esa pregunta manda), ni en los casos en que
         // tampoco se pega el cierre (advertencia, reclamo, «mañana te lo paso», «lo pienso»).
-        if (_bloqueDatos && !esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
+        if (_bloqueDatos && !_esResumen && !esDigital(ctx) && String(ctx.zona_entrega ?? "").trim() && String(ctx.pedido_creado ?? "") !== "si"
             && !(ctx as any)._falta_opcion && !(ctx as any)._pack_mixto && !(ctx as any)._falta_variante
             && !_leAdvirtio && !_esReclamoOEstado && !_loMandaLuego && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))
             && !/^\s*📍\s*\*/m.test(salida)) {
@@ -28562,6 +28712,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 Petición de datos ordenada",
               `Se reemplazó cómo pedía los datos por la lista canónica. Antes: «${_antesOrd.slice(0, 160)}»`).catch(() => {});
           }
+        }
+        // 👤 EL RESUMEN PARA CONFIRMAR va en SU PROPIA BURBUJA, armada por el motor y enviada al final (ver
+        // `_resumenBurbuja` al emitir): metido en el texto de la IA, los frenos de salida que vienen después le borraban
+        // la línea del precio y la del celular (cuidan que la IA no escriba números de pago) y salía dos veces —una por el
+        // cierre honesto, otra por acá—. Del texto de la IA se van sus peticiones de datos y su propio «¿lo confirmo?».
+        // Queda marcado en el run para que el próximo «sí» lo confirme (ver extraerDatos → «👤 Confirmó el resumen»).
+        if (_esResumen && String(ctx.pedido_creado ?? "") !== "si" && !(ctx as any)._falta_opcion && !(ctx as any)._pack_mixto
+            && !(ctx as any)._falta_variante && !_esReclamoOEstado && !_loMandaLuego && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))) {
+          let _cuerpoR = quitarPeticionDeDatos(salida).texto
+            .replace(/[^.!?\n]*¿[^?¿\n]*\b(?:confirm\p{L}*|te\s+lo\s+(?:mando|env[ií]o|dejo)|est[aá]\s+(?:todo\s+)?(?:bien|correcto))\b[^?¿\n]*\?[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)*/giu, " ")
+            .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+          if (_cuerpoR.replace(/[\s\p{P}\p{S}]/gu, "").length < 3) _cuerpoR = "Te dejo el resumen para que lo confirmes 👇";
+          salida = _cuerpoR;
+          (ctx as any)._resumenBurbuja = _bloqueDatos;
+          (run.vars as any)._resumen_perfil = String((ctx as any)._nombre_perfil ?? "");
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "👤 Resumen para confirmar",
+            `A nombre de ${String((ctx as any)._nombre_perfil ?? "")} (su nombre de WhatsApp): no se le pidió el nombre`).catch(() => {});
         }
         // ✂️ …y donde el motor NO pide los datos (desconfianza, reclamo, advertencia, «mañana te lo paso», «lo pienso»), la
         // petición en prosa de la IA tampoco va: «Pásame tu *nombre, celular y DNI* y te lo dejo listo 👇» detrás de «¿es
@@ -29709,7 +29876,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               : "La oferta está en la cantidad: mientras más llevas, menos pagas por cada una 👇";
             const _negO = _negOn;
             const _lista = _opsOf.map((o) => `${o.nombre} — ${_negO ? `*${_symO} ${o.precio}*` : `${_symO} ${o.precio}`}${o.descripcion ? ` · ${o.descripcion}` : ""}`).join("\n");
-            _sOf = _yaVioOf ? `${_cab.replace(/\s*👇\s*$/u, ".")}${_sOf ? "\n\n" + _sOf : ""}` : `${_cab}\n${_lista}${_sOf ? "\n\n" + _sOf : ""}`;
+            // 🏷️ Si la IA YA dijo que la oferta es por cantidad (se le pide en instruccionV2), no va otro arranque encima: la
+            // lista entra en su lugar —después de esa explicación y antes de la pregunta con que cierra—. Antes salían dos
+            // («La oferta está en la cantidad… 👇 [lista] ¡Perfecto! Ya tienes la oferta a tu disposición…», 3-oct).
+            const _yaExplica = /(?<![\p{L}])(?:por\s+cantidad|en\s+la\s+cantidad|m[aá]s\s+(?:llevas|lleves|unidades)|menos\s+pagas|te\s+sale\s+m[aá]s\s+barat\p{L}*|mejor\s+precio\s+por\s+unidad)(?![\p{L}])/iu.test(sinFormato(_sOf));
+            if (_yaExplica && _sOf) {
+              if (!_yaVioOf) {
+                const _mQ = _sOf.match(/(?:^|\n|(?<=[.!…\p{Extended_Pictographic}️]\s))((?:[^.!?…¿\n\p{Extended_Pictographic}]{0,40},\s*)?¿[^?\n]*\?[ \t]*(?:[\p{Extended_Pictographic}️][ \t]*)*)\s*$/u);
+                const _antesQ = _mQ && _mQ.index != null ? _sOf.slice(0, _mQ.index).trimEnd() : _sOf.trimEnd();
+                const _q = _mQ ? _mQ[1].trim() : "";
+                _sOf = `${_antesQ.replace(/[ \t]*👇?\s*$/u, "")} 👇\n${_lista}${_q ? "\n\n" + _q : ""}`;
+              }
+            } else {
+              _sOf = _yaVioOf ? `${_cab.replace(/\s*👇\s*$/u, ".")}${_sOf ? "\n\n" + _sOf : ""}` : `${_cab}\n${_lista}${_sOf ? "\n\n" + _sOf : ""}`;
+            }
             await logEvent(db, run.channel_id, run.contact_id, "nota", "🏷️ Preguntó por oferta/descuento y no había cifras",
               "Se contestó con la lista: la oferta es por cantidad").catch(() => {});
           }
@@ -30005,6 +30185,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         } catch (_) { /* sin dato → se manda como siempre */ }
       }
       const handoff = (_acuseDiferido || _turnoViejo) ? _cubiertaConBolsa : ((await emitIaText(db, run, salida, ctx)) || _cubiertaConBolsa);
+      // 👤 El resumen para confirmar, en su burbuja y tal cual lo armó el motor (ver «EL RESUMEN PARA CONFIRMAR»).
+      if ((ctx as any)._resumenBurbuja && !_turnoViejo && !handoff) {
+        await emit(db, run, { text: String((ctx as any)._resumenBurbuja), _noTpl: true }, ctx);
+        delete (ctx as any)._resumenBurbuja;
+      } else if (_turnoViejo) {
+        delete (run.vars as any)._resumen_perfil;   // (no llegó a verlo: el «sí» de ahora no es a ese resumen)
+      }
       // (lo de abajo sigue mirando el mensaje ENTERO, como antes: si ya pregunta algo, si nombra la agencia…)
       if (_colaTrasFicha) salida = `${String(salida ?? "").trim()}\n\n${_colaTrasFicha}`.trim();
       (ctx as any)._diferirPregunta = false;

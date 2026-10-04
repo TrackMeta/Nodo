@@ -41,11 +41,11 @@ function convDe(bateriaId: string, conv: string): ConvExamen | null {
 }
 
 // ── Contacto de prueba: igual que tmp-sim (source «sim», nunca un contacto real) ──────────────
-async function contactoDePrueba(channelId: string, waId: string): Promise<string> {
+async function contactoDePrueba(channelId: string, waId: string, perfil?: string): Promise<string> {
   const { data: ya } = await db.from("contacts").select("id, source").eq("channel_id", channelId).eq("wa_id", waId).maybeSingle();
   if (ya && (ya as any).source !== "sim") throw new Error(`el wa_id ${waId} es un contacto real`);
   const { data: c } = await db.from("contacts").upsert({
-    channel_id: channelId, wa_id: waId, nombre: waId, source: "sim",
+    channel_id: channelId, wa_id: waId, nombre: perfil || waId, source: "sim",
     ultimo_mensaje_at: new Date().toISOString(), ultimo_mensaje_cliente_at: new Date().toISOString(),
   }, { onConflict: "channel_id,wa_id" }).select("id").single();
   const contactId = (c as any).id as string;
@@ -333,7 +333,7 @@ Deno.serve(async (req) => {
     try {
       // Un wa_id por examen y conversación: dos corridas a la vez no se pisan el contacto.
       const waId = `exam-${examenId.slice(0, 8)}-${convId}`;
-      const contactId = await contactoDePrueba(channelId, waId);
+      const contactId = await contactoDePrueba(channelId, waId, (conv as any).perfil);
       if (!tr.length) await reiniciar(channelId, contactId);
       let hechos = 0;
       for (let i = tr.length; i < conv.turnos.length; i++) {
