@@ -8344,7 +8344,9 @@ async function recomendarPorNecesidad(db: SupabaseClient, run: Run, ctx: any, op
         "«patio y una chacrita» = 2; «solo el jardín de mi casa» = 1; «somos 3 los que cortamos» = 3; «para mi casa nomás» = 1. " +
         "Si no dice nada que se pueda contar o en vez de contar su necesidad hace una pregunta, n = 0.\n" +
         "«para»: a qué se refiere él, en 2 a 6 palabras, empezando con «Para» (ej. «Para tu patio y la chacra»).\n" +
-        "«porque»: el motivo en 3 a 9 palabras, tuteando, sin precios ni cantidades (ej. «así cubres cada zona»).\n" +
+        "«porque»: el motivo en 3 a 9 palabras, tuteando, sin precios ni cantidades, que hable de CUÁNTO ESPACIO cubre, " +
+        "nunca de un resultado (ej. «así cubres cada zona», «alcanza para ese espacio»; ⛔ nada de «evitas que…», «se acaba…», " +
+        "«ya no vuelven»).\n" +
         `Responde exactamente: {"n": <entero>, "para": "...", "porque": "..."}` });
     (run as any)._recRaw = String(raw ?? "").slice(0, 300);   // para el evento cuando no sale (ver el llamador)
     const mm = /\{[\s\S]*\}/.exec(String(raw ?? ""));
@@ -8362,6 +8364,9 @@ async function recomendarPorNecesidad(db: SupabaseClient, run: Run, ctx: any, op
     if (!/^para\s+\S/i.test(para) || para.length > 60) return null;
     // Un motivo con precio o con otra cantidad no se usa (queda la recomendación sin motivo).
     if (porque.length > 80 || /(?:S\/|\$)\s?\d|\b\d+\b|\b(?:uno|una|dos|tres|cuatro|cinco)\s+(?:unidad|equipo|aparato)/i.test(porque)) porque = "";
+    // …ni uno que PROMETE un resultado: lo escribe el motor y no pasa por el revisor. «evitas que el perro orine ahí»
+    // (examen cerrador-jardin, 4-oct — y la ficha dice no usarlo cerca de mascotas).
+    if (/(?<![\p{L}])(?:evit\p{L}*|elimin\p{L}*|acab\p{L}*|termin\p{L}*|garantiz\p{L}*|asegur\p{L}*|nunca|ya\s+no|no\s+(?:vuelv|volver|regres|entr|se\s+acerc)\p{L}*|olv[ií]da\p{L}*|adi[oó]s|chau|cero|100\s*%|seguro|seguridad|mascota\p{L}*|perr\p{L}*|gat[oa]s?)(?![\p{L}])/iu.test(porque)) porque = "";
     return { op, para: para.charAt(0).toUpperCase() + para.slice(1), porque };
   } catch (_) { return null; }
 }
@@ -8478,7 +8483,7 @@ export function forzarModeloVenta(m: string | null): void {
 // ═══════════════════════════════════════════════════════════════════
 
 type PasoV2Nombre = "zona" | "distrito" | "sede" | "cantidad_lista" | "cantidad" | "datos" | "resumen" | "ninguno";
-interface PasoV2 { paso: PasoV2Nombre; pregunta: string; sinPregunta: boolean; preguntoEnvio: boolean }
+interface PasoV2 { paso: PasoV2Nombre; pregunta: string; sinPregunta: boolean; preguntoEnvio: boolean; recomendar?: boolean }
 
 // Preguntó cómo se paga o cómo le llega (para explicar las dos opciones cuando aún no se sabe su zona).
 // (+ «¿dónde lo puedo adquirir?», «¿dónde lo compro?», «¿lo venden?»: también es cómo le llega — Probar flujos 3-oct: sin
@@ -8500,10 +8505,16 @@ function pasoV2(ctx: any, run: any): PasoV2 {
   if (!String(ctx?.opcion_id ?? "").trim()) {
     const pres = !!run?._esPresentaciones;
     const yaSePregunto = !!run?.vars?._cant_preguntada && !run?._tocaCantidad;
+    // 🎯 MÁS CERRADOR (Rodrigo, 4-oct-2026: «conversa demasiado, que sea más cerrador de ventas»). Medido en su chat: tras
+    // «¿cuántas?» vinieron «¿para qué área?», «¿qué tan grande es?», «¿quieres que te aconseje?» y «¿2 o 3?» — cuatro
+    // vueltas sin cerrar. Ahora: «¿cuántas?» → UNA pregunta de necesidad → al turno siguiente se RECOMIENDA una opción
+    // con «¿Te lo dejo así?», conteste lo que conteste.
+    const recomendar = !pres && yaSePregunto && Number(run?.vars?._nec_turnos ?? 0) >= 1;
     const q = pres ? "cuál de las presentaciones quiere"
-      : yaSePregunto ? "algo que lo ayude a elegir cuántas llevar (para qué espacio lo quiere, o si le dejas la oferta que más le conviene)"
+      : recomendar ? "recomendarle UNA opción"
+      : yaSePregunto ? "UNA pregunta corta sobre su necesidad, para poder recomendarle (por ejemplo, para qué espacio o uso lo quiere)"
       : "cuántas unidades quiere llevar";
-    return { paso: run?._tocaCantidad ? "cantidad_lista" : "cantidad", pregunta: q, sinPregunta: false, preguntoEnvio };
+    return { paso: run?._tocaCantidad ? "cantidad_lista" : "cantidad", pregunta: q, sinPregunta: false, preguntoEnvio, recomendar };
   }
   // (sin el «confirmo»: no es un dato que se le pida — salió «Confirma si quieres que te lo mande así» encima de la
   //  lista de datos, Probar flujos 3-oct; el bloque de datos del motor también lo deja fuera)
@@ -8582,7 +8593,12 @@ function instruccionV2(p: PasoV2, ctx: any): string {
         `pregunta, con tus palabras: ${p.pregunta}. La lista de precios va debajo: no la escribas.`);
       break;
     case "cantidad":
-      L.push(`2. Termina con UNA pregunta, con tus palabras, que lo acerque a elegir: ${p.pregunta}.`);
+      L.push(p.recomendar
+        ? "2. Ya le preguntaste cuántas y para qué lo quiere: ahora RECOMIÉNDALE tú UNA sola opción, con su nombre y su precio, " +
+          "según lo que te contó (si no queda claro cuál le calza, la MÁS PEDIDA), con el porqué en pocas palabras, y termina " +
+          "con «¿Te lo dejo así?». ⛔ No le hagas otra pregunta sobre su espacio, tamaño o uso; no le ofrezcas dos opciones " +
+          "(«¿1 o prefieres 2?»); no le preguntes si quiere que le aconsejes. Si eligió otra, respeta la suya."
+        : `2. Termina con ${p.pregunta}. ⛔ No le ofrezcas elegir entre dos opciones ni le preguntes si quiere que le aconsejes.`);
       break;
     case "datos":
       L.push(`2. Termina pidiéndole, con tus palabras, los datos que faltan: ${p.pregunta}. El sistema los ordena en una lista.`);
@@ -26143,6 +26159,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         && String(ctx.pedido_creado ?? "") !== "si" && ctx.datos_completos !== "si" && typeof content === "string") {
       (ctx as any)._colgadaV2 = preguntaColgada || "";
       const _p = pasoV2(ctx, run);
+      // (cuenta los turnos de la pregunta de necesidad: con uno ya hecho, el siguiente recomienda — ver pasoV2)
+      if (_p.paso === "cantidad" && !_p.recomendar && /necesidad/.test(_p.pregunta)) {
+        run.vars._nec_turnos = Number(run.vars._nec_turnos ?? 0) + 1;
+      }
       (run as any)._v2Activo = true;
       (run as any)._pasoV2 = _p;
       (ctx as any)._metodosV2 = (run as any)._metodosPago ?? [];   // (los nombres de los medios, para «¿cómo pago el adelanto?»)
@@ -29605,7 +29625,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _liNe = String(ctx.last_input ?? "");
           const _preguntaEl = /[?¿]/.test(_liNe) || /^\s*(?:y\s+)?(?:qu[eé]|c[oó]mo|cu[aá]nt[oa]s?|cu[aá]ndo|d[oó]nde|por\s*qu[eé]|funciona|sirve|aguanta|resiste|tiene|hay|puedo|se\s+puede|es\s+(?:bueno|resistente|original))\b/i.test(_liNe);
           // (+ la pregunta de necesidad que hizo la IA con sus palabras: «¿Para qué tipo de trabajos lo usarás?» — p8)
-          const _pregNecIa = /¿[^?¿]*\b(?:para\s+qu[eé]|d[oó]nde\s+lo\s+(?:usar|vas|pondr|instalar|colocar)\p{L}*|en\s+qu[eé]\s+(?:espacio|lugar|parte|zona)|qu[eé]\s+tipo|cu[aá]nt[oa]s\s+(?:espacios|personas|zonas|equipos|ambientes|trabajadores)|para\s+qui[eé]n|lo\s+usar[aá]s|lo\s+quieres\s+para|es\s+para)\b[^?¿]*\?/iu.test(_ultNe);
+          const _pregNecIa = /¿[^?¿]*\b(?:para\s+qu[eé]|d[oó]nde\s+lo\s+(?:usar|vas|pondr|instalar|colocar)\p{L}*|en\s+qu[eé]\s+(?:espacio|lugar|parte|zona)|qu[eé]\s+tipo|cu[aá]nt[oa]s\s+(?:espacios|personas|zonas|equipos|ambientes|trabajadores)|para\s+qui[eé]n|lo\s+usar[aá]s|lo\s+quieres\s+para|es\s+para)(?![\p{L}])[^?¿]*\?/iu.test(_ultNe);
+          // 🔴 (antes cerraba con `\b`: tras «qué» con tilde no hay frontera ASCII y «¿Para qué espacio lo quieres usar?» NUNCA
+          //  contaba — la recomendación no salía y el bot seguía preguntando; chat de Rodrigo, 4-oct. Ver regex-tildes-limites-y-emoji)
           // (+ a «¿Cuántas unidades…?» contestó con su NECESIDAD y no con un número: «para un jardin» — sim g. Solo si no
           //  dijo ninguna cantidad: con «2» o «dos» ya eligió y esto no corre.)
           const _cantEnUlt = /¿[^?¿]*\b(?:cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l\s+promoci[oó]n|qu[eé]\s+promoci[oó]n)\b[^?¿]*\?/i.test(_outsNe[0] ?? "")
