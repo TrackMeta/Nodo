@@ -3833,7 +3833,10 @@ const TEMAS_FICHA: Array<[string, RegExp, RegExp, "producto" | "negocio"]> = [
   // devolver, satisfacción, retracto) o si niega TODA devolución, no solo la del mal uso.
   ["la devolución si no te gusta",
     /(?:devolv|devoluci|devuelv|reembols|cambiar|cambio)[^.!?]{0,40}(?:no me gust|no le gust|no te gust|gusto personal|arrepent|no me convenc)|(?:no me gust|no le gust|no te gust|arrepent|no me convenc)[^.!?]{0,40}(?:devolv|devoluci|devuelv|reembols|cambiar)/,
-    /\b(no te gusta|no le gusta|arrepent|retracto|satisfacci[oó]n|\d+\s*d[ií]as para (devolver|cambiar)|devoluci[oó]n sin|de ning[uú]n motivo|ninguna circunstancia)/, "negocio"],
+    // (+ la negativa TOTAL: «no hay devoluciones una vez enviado el acceso» — Guía Experta, Negocio → Conocimiento — no
+    //  casaba y el bot dijo «sobre la devolución no tengo información» teniendo la respuesta escrita (examen digital, 3-oct).
+    //  «ni devoluciones POR MAL USO» sigue sin contar: es el caso de arriba.)
+    /\b(no te gusta|no le gusta|arrepent|retracto|satisfacci[oó]n|\d+\s*d[ií]as para (devolver|cambiar)|devoluci[oó]n sin|de ning[uú]n motivo|ninguna circunstancia|no hay devoluci[oó]n(?:es)?(?!\s+por\s+mal\s+uso)|no (?:se )?(?:aceptan|hacemos|realizamos|aceptamos|hay) (?:cambios ni )?devoluci[oó]n(?:es)?(?!\s+por\s+mal\s+uso)|sin devoluci[oó]n)/, "negocio"],
   ["envío al extranjero", /\b(extranjero|internacional|fuera del pa[ií]s)/, /\b(extranjero|internacional)/, "negocio"],
   // 👥 «¿cuántos alumnos tienen? ¿hay testimonios?» → «No compartimos datos de alumnos ni testimonios» (D18-oalumnos):
   // una política inventada. Ni negar ni inventar prueba social: no tiene el dato.
@@ -8635,7 +8638,7 @@ const RE_TEMA_RIESGOSO = /edad|a[ñn]os|lesi[oó]n|rodilla|espalda|embaraz\p{L}*
 // `previas`: las preguntas ya registradas del producto (provisionales y rechazadas) — ver preguntas_clientes.
 type RevisionV2 = { viol: string[]; fuera: Array<{ pregunta: string; respuesta: string }> };
 async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider, channelId: string, db: SupabaseClient,
-    opts: { suponer?: boolean; previas?: PreguntaCliente[] } = {}): Promise<RevisionV2> {
+    opts: { suponer?: boolean; previas?: PreguntaCliente[]; negocio?: string } = {}): Promise<RevisionV2> {
   const colg = String(ctx?._colgadaV2 ?? "").trim();
   const ahora = String(ctx?.last_input ?? "").trim();
   // Con su primera pregunta pendiente, también tiene que quedar contestada (ver instruccionV2).
@@ -8643,7 +8646,10 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
   const pregunto = !!(colg || pareceConsultaV2(ahora));
   const riesgo = RE_TEMA_RIESGOSO.test(String(texto ?? ""));
   if (!pregunto && !riesgo) return { viol: [], fuera: [] };
-  const ficha = [ctx?.contexto_producto, ctx?.faq].map((x) => String(x ?? "")).join("\n\n").slice(0, 7000);
+  // (+ el conocimiento del NEGOCIO: garantía, devoluciones, factura y demás políticas viven ahí, no en el producto. Sin
+  //  él, «no hay devoluciones» —escrito por el dueño en Guía Experta— contaba como invento y se mandaba a reescribir.)
+  const ficha = [ctx?.contexto_producto, ctx?.faq].map((x) => String(x ?? "")).join("\n\n").slice(0, 7000) +
+    (String(opts.negocio ?? "").trim() ? `\n\n## DEL NEGOCIO (políticas generales, valen para todo producto)\n${String(opts.negocio).slice(0, 3000)}` : "");
   const previas = (opts.previas ?? []).filter((r) => r.estado === "pendiente" || (r.estado === "rechazada" && String(r.respuesta ?? "").trim()));
   const bloquePrevias = previas.length
     ? "\n\n## PREGUNTAS YA REGISTRADAS de este producto (todavía no están en la ficha)\n" +
@@ -25742,7 +25748,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if ((run as any)._revDigitalSinVersion && /te\s+(?:paso|env[ií]o|mando|dejo)\s+(?:los\s+)?datos|datos\s+(?:de|para\s+el)\s+pago|te\s+llegan?\s+(?:los\s+)?datos/i.test(sinFormato(txt))) {
             v.push("Todavía no eligió la versión: no digas que le pasas los datos de pago (salen cuando elija). Contesta y pregúntale cuál prefiere.");
           }
-          const c = await revisorIAV2(txt, ctx, ai, provider, run.channel_id, db, { suponer: true, previas: _previas });
+          const c = await revisorIAV2(txt, ctx, ai, provider, run.channel_id, db, { suponer: true, previas: _previas, negocio: String(info.negocio ?? "") });
           _fueraUltima = c.fuera;
           return [...c.viol, ...v];
         };

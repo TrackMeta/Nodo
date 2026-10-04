@@ -20,6 +20,10 @@
 |---|---|
 | 🦇 Eco Guard | ¿funciona de noche?, ¿resiste la lluvia?, ¿cuántos metros cubre?, ¿cuánto dura?, ¿es seguro para niños / lo oyen las personas?, ¿sirve para serpientes o murciélagos?, ¿se puede en un almacén o techado? |
 | 🔧 Adaptador PRO | ¿corta calamina?, ¿corta acero inoxidable? |
-| 🎓 Curso de Cortes (Guía Experta) | ¿hay devolución si no le gusta? |
 
 Las preguntas sobre garantía, salud, cifras y plazos son las que más conviene llenar a mano: ahí el bot no supone.
+
+## Garantía, devoluciones, factura y demás políticas
+
+Van en **Negocio → Conocimiento** (valen para todos tus productos). El bot y el revisor leen las dos fichas: la del
+producto y la del negocio. Si una política está escrita en el negocio, el bot la responde tal cual.
