@@ -89,6 +89,11 @@ export const BATERIA_ECOGUARD: Bateria = {
       turnos: [H, "precio?"] },
     { id: "varias-preguntas", titulo: "Tres preguntas en un mensaje", foco: "Contestar las tres (original, garantía, demora a Tacna)",
       turnos: [H, "es original y tiene garantia? cuanto demora a tacna?"] },
+    // Chat real de Probar flujos (Rodrigo, 3-oct): «¿dónde lo puedo adquirir?» en el primer mensaje y «¿cuánto es el
+    // porcentaje de adelanto?» sin que le nombraran con qué pagarlo.
+    { id: "jaen-adelanto", titulo: "Dónde lo adquiero + porcentaje del adelanto (Jaén)",
+      foco: "T1: CORRECTO contestar dónde se compra (online, se envía a todo el Perú) y preguntar la zona; INCORRECTO solo describir el producto. T2: Jaén = provincia, Shalom con adelanto, anota 2 unidades. T4: el adelanto es S/ 20 fijo (no un porcentaje) y CORRECTO nombrar con qué se paga (Yape, Plin, BCP…); INCORRECTO no decir con qué se paga.",
+      turnos: [H + " Dónde lo puedo adquirir", "asé entrega en la provincia de Jaén. Necesito 2 unidades", "tiene algún tiempo de garantía o no", "cuánto es el porcentaje de adelanto"] },
   ],
 };
 

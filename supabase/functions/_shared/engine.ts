@@ -8340,7 +8340,9 @@ type PasoV2Nombre = "zona" | "distrito" | "sede" | "cantidad_lista" | "cantidad"
 interface PasoV2 { paso: PasoV2Nombre; pregunta: string; sinPregunta: boolean; preguntoEnvio: boolean }
 
 // Preguntó cómo se paga o cómo le llega (para explicar las dos opciones cuando aún no se sabe su zona).
-const RE_PREGUNTA_ENVIO_PAGO = /(?<![\p{L}])(pag(?:o|ar|as|a|an|aria)|cancel\p{L}*|yape\p{L}*|plin|transferencia|tarjeta|efectivo|env[ií](?:o|os|an|as|ar)|mand(?:an|as|ar)|llega|lleguen?|delivery|domicilio|agencia|shalom|contra ?entrega|recoj\p{L}*|recog\p{L}*)(?![\p{L}])/iu;
+// (+ «¿dónde lo puedo adquirir?», «¿dónde lo compro?», «¿lo venden?»: también es cómo le llega — Probar flujos 3-oct: sin
+//  esto el revisor le prohibió hablar del envío y la IA contestó describiendo el producto)
+const RE_PREGUNTA_ENVIO_PAGO = /(?<![\p{L}])(adquir\p{L}*|compr(?:o|arlo|arla|ar)|consig(?:o|uen?)|conseguir(?:lo|la)?|venden|pag(?:o|ar|as|a|an|aria)|cancel\p{L}*|yape\p{L}*|plin|transferencia|tarjeta|efectivo|env[ií](?:o|os|an|as|ar)|mand(?:an|as|ar)|llega|lleguen?|delivery|domicilio|agencia|shalom|contra ?entrega|recoj\p{L}*|recog\p{L}*)(?![\p{L}])/iu;
 
 function pasoV2(ctx: any, run: any): PasoV2 {
   const li = String(ctx?.last_input ?? "");
@@ -8390,6 +8392,16 @@ function instruccionV2(p: PasoV2, ctx: any): string {
     "en plata, garantías, salud o seguridad, plazos y cifras no inventes — di con honestidad que ese detalle no lo tienes " +
     "y sigue vendiendo con lo que sí sabes.",
   ];
+  // 💳 Preguntó por el ADELANTO o el pago («¿cuánto es el porcentaje de adelanto?») en provincia: además de cuánto, con qué
+  // lo paga. Rodrigo (Probar flujos, 3-oct): «si el cliente pregunta algo del adelanto, ¿por qué no le menciona el método
+  // de pago que tenemos?». Solo los NOMBRES (el número y el titular los manda el motor en su bloque, para copiarlos).
+  const _mets = [...new Set(((ctx?._metodosV2 ?? []) as string[]).map((m) => String(m).trim()).filter(Boolean))];
+  if (_mets.length && String(ctx?.zona_entrega ?? "") !== "lima"
+      && /(?<![\p{L}])(?:adelanto|abono|separ(?:o|ar|arlo)|pag(?:o|ar|as|a)|cancel(?:o|ar)|dep[oó]sit\p{L}*|transfer\p{L}*|c[oó]mo\s+(?:te\s+)?(?:pago|abono))(?![\p{L}])/iu.test(li)) {
+    const _lista = _mets.length > 1 ? `${_mets.slice(0, -1).join(", ")} o ${_mets[_mets.length - 1]}` : _mets[0];
+    L.push(`💳 Te preguntó por el adelanto o el pago: además de lo que preguntó, dile con qué lo puede pagar (${_lista}). ` +
+      "Solo los nombres: el número y el titular salen solos en su propio mensaje cuando toca.");
+  }
   switch (p.paso) {
     case "zona":
       L.push(p.preguntoEnvio
@@ -21919,6 +21931,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   // bloque — por eso vive acá: declarada adentro daba «_turnoDeVenta is not defined» y el nodo
   // se caía entero (el cliente terminó escalado a un humano). Por defecto true: sin señal, no se recorta.
   let _turnoDeVenta = true;
+  // ⏭️ El último mensaje del cliente que este turno ya tiene en cuenta (hora de la BASE, no del reloj de la función: los
+  // dos relojes se desfasan). Si antes de mandar la respuesta aparece uno más nuevo, la respuesta ya quedó vieja — ver
+  // «Escribió mientras le respondía» al emitir.
+  let _ultimoInTurno: string | null = null;
+  if (op === "generar_texto") {
+    try {
+      const { data: _uIn } = await db.from("messages").select("ts").eq("contact_id", run.contact_id).eq("direction", "in")
+        .order("ts", { ascending: false }).limit(1).maybeSingle();
+      _ultimoInTurno = (_uIn as any)?.ts ?? null;
+    } catch (_) { /* sin dato → se responde como siempre */ }
+  }
   const info = await channelIaInfo(db, run);
   // Las perillas de estilo del dueño (IA → Vendedor IA). Acá arriba porque la lista de
   // precios de más abajo se arma con ellas, no solo el bloque de formato.
@@ -23692,6 +23715,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // días de garantía". Suena a bot y quema la conversación. La línea "si ya se la
       // respondiste, ignora este aviso" no alcanzaba: el modelo la re-respondía igual.
       // Se marca en el contacto en cuanto se inyecta, y no se vuelve a inyectar.
+      // (Y si la IA la contesta YA, en el turno de su primer mensaje —«…¿Dónde lo puedo adquirir?» es su last_input—, queda
+      //  marcada acá mismo: si no, el turno siguiente la volvía a inyectar y el bot contestaba dos veces «lo puedes adquirir
+      //  con nosotros» — chat de Jaén, Probar flujos 3-oct. Si esa respuesta no llega a salir —«Escribió mientras le
+      //  respondía»— la marca se borra y queda pendiente.)
+      if (linesIn.length === 1 && primera.includes("?") && !String((ctx as any)._colgada_resp ?? "").trim()) {
+        await setField(db, run.channel_id, run.contact_id, "_colgada_resp", "si").catch(() => {});
+        (ctx as any)._colgada_resp = "si";
+        (run as any)._colgadaMarcadaAhora = true;
+      }
       if (linesIn.length >= 2 && linesIn.length <= 3 && primera.includes("?") &&
           !String((ctx as any)._colgada_resp ?? "").trim()) {
         preguntaColgada = primera.slice(0, 300);
@@ -25729,6 +25761,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       const _p = pasoV2(ctx, run);
       (run as any)._v2Activo = true;
       (run as any)._pasoV2 = _p;
+      (ctx as any)._metodosV2 = (run as any)._metodosPago ?? [];   // (los nombres de los medios, para «¿cómo pago el adelanto?»)
       content += "\n\n" + instruccionV2(_p, ctx);
       await logEvent(db, run.channel_id, run.contact_id, "nota", `🧭 Motor v2 · paso: ${_p.paso}`,
         _p.pregunta ? `Pregunta del paso: ${_p.pregunta}` : "Sin pregunta de la IA en este paso").catch(() => {});
@@ -29944,7 +29977,29 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           salida = _parsF.slice(0, _kF).join("\n\n").trim();
         }
       }
-      const handoff = _acuseDiferido ? _cubiertaConBolsa : ((await emitIaText(db, run, salida, ctx)) || _cubiertaConBolsa);
+      // ⏭️ ESCRIBIÓ MIENTRAS LE RESPONDÍA. La IA tarda 5-13 s; si en ese rato el cliente mandó otro mensaje, esta respuesta
+      // ya es vieja. Probar flujos (Rodrigo, 3-oct): el bot contestaba su primer mensaje mientras él ya había escrito «la
+      // provincia de Jaén, necesito 2 unidades», y le salió «¿De qué distrito o ciudad nos escribes?» — una pregunta que ya
+      // estaba contestada. Ese mensaje nuevo arma su propio turno enseguida y ahí se contesta TODO junto (incluida la pregunta
+      // de antes: ver preguntaColgada). Solo si en este turno no pasa nada más que el texto: sin pedido ni datos completos,
+      // sin la ficha de la sede por salir y sin acuse diferido.
+      let _turnoViejo = false;
+      if (op === "generar_texto" && _ultimoInTurno && !_acuseDiferido && !_colaTrasFicha && !(run.vars as any)?._ficha_ahora
+          && String(ctx.pedido_creado ?? "") !== "si" && ctx.datos_completos !== "si"
+          && !/\[\[\s*humano\s*\]\]/i.test(String(salida ?? ""))) {
+        try {
+          const { count: _nNuevos } = await db.from("messages").select("id", { count: "exact", head: true })
+            .eq("contact_id", run.contact_id).eq("direction", "in").gt("ts", _ultimoInTurno);
+          if ((_nNuevos ?? 0) > 0) {
+            _turnoViejo = true;
+            // (la pregunta de su primer mensaje no se llegó a contestar: que el turno siguiente la retome)
+            if ((run as any)._colgadaMarcadaAhora) await setField(db, run.channel_id, run.contact_id, "_colgada_resp", "").catch(() => {});
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "⏭️ Escribió mientras le respondía",
+              `No se mandó (ya era vieja); su mensaje nuevo se contesta junto con esto: «${String(salida ?? "").slice(0, 160)}»`).catch(() => {});
+          }
+        } catch (_) { /* sin dato → se manda como siempre */ }
+      }
+      const handoff = (_acuseDiferido || _turnoViejo) ? _cubiertaConBolsa : ((await emitIaText(db, run, salida, ctx)) || _cubiertaConBolsa);
       // (lo de abajo sigue mirando el mensaje ENTERO, como antes: si ya pregunta algo, si nombra la agencia…)
       if (_colaTrasFicha) salida = `${String(salida ?? "").trim()}\n\n${_colaTrasFicha}`.trim();
       (ctx as any)._diferirPregunta = false;
@@ -30121,7 +30176,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _comboListo = !!(run as any)._comboCambio && comboDe(run).length > 0 && comboSuma(run) != null;
         // (lo que escribió la IA Y lo que salió: la pregunta «¿cuál prefieres?» a veces la pone el motor —cierre honesto— y
         //  solo se ve en `salida`; con eso maybeDatosPago no la repite con su lista — R1D-preciodos, 2026-10-01)
-        if (!_cubiertaConBolsa) _mdpR = await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
+        if (!_cubiertaConBolsa && !_turnoViejo) _mdpR = await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
           `${String(result)}\n${String(salida ?? "")}`, _digitalElegido || _recompraUnico || _comboListo,
           // Lo que la versión física necesita: la zona (solo provincia tiene adelanto) y
           // cuánto es ese adelanto, para no mandarle un número sin monto.
@@ -30162,13 +30217,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       const _qFinal = _pregDiferida || (_mdpR === "suma" ? "" : _cierreDif);
       // (…ni cuando la respuesta ya le pide la captura: «¿Te queda alguna duda para empezar hoy?» en burbuja aparte justo
       //  después de «mándame la captura» — R1D-premiumdif, regresión 2026-10-01)
-      if (_qFinal && !_datosSalieron && !handoff && !/captura|comprobante|constancia|voucher|pantallazo/i.test(String(salida ?? ""))) {
+      if (_qFinal && !_turnoViejo && !_datosSalieron && !handoff && !/captura|comprobante|constancia|voucher|pantallazo/i.test(String(salida ?? ""))) {
         await emit(db, run, { text: _qFinal, _noTpl: true }, ctx);
       }
       // (la pregunta de la cantidad que esperó a los datos de pago — ver `_qTrasPago`; sale siempre: sin cantidad no hay pedido)
       // (tras los datos de pago, con la señal de compra a la vista, la pregunta es la de la CANTIDAD directa, no la de necesidad:
       //  «a qué número adelanto» → datos → «¿Lo quieres para un jardín pequeño o más amplio?» no pegaba — Probar flujos 2026-10-02)
-      if (_qTrasPago && !handoff) {
+      if (_qTrasPago && !handoff && !_turnoViejo) {
         if (!/cu[aá]nt[ao]s|qu[eé]\s+oferta|cu[aá]l\s+(?:prefieres|te\s+preparo|promoci)|opciones|precios/i.test(sinFormato(_qTrasPago))) {
           _qTrasPago = _qTrasPago.replace(/[ \t]*¿[^?¿]*\?[\s\p{Extended_Pictographic}\u{FE0F}]*$/u, "").trim();
           _qTrasPago = `${_qTrasPago ? _qTrasPago + "\n\n" : ""}¿Cuántas unidades te preparo? 🙌`;
