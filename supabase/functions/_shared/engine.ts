@@ -4169,6 +4169,13 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   }
   const info = await channelIaInfo(db, run);
   const cands = await receptionCands(db, channelId);
+  // ⏸️ Hay productos pero TODOS en pausa (Productos → Pausar): la pausa promete «los mensajes quedan en la Bandeja
+  // para que los atiendas tú». La Recepción no tiene a dónde llevarlo, así que no conversa.
+  if (!cands.length) {
+    const { count: _vtas } = await db.from("flows").select("id", { count: "exact", head: true })
+      .eq("channel_id", channelId).eq("role", "venta");
+    if ((_vtas ?? 0) > 0) return { hecho: false };
+  }
   const parts: string[] = [];
   parts.push("## Tu rol AHORA: RECEPCIÓN\n" + (String(rec.prompt || "").trim() ||
     "Eres la recepción de este negocio. Saluda con calidez, cuenta brevemente qué vendemos y ayuda al cliente a decir qué producto le interesa."));

@@ -948,6 +948,19 @@ async function processSub(s: any, now: number): Promise<boolean> {
       .update({ estado: "completada", updated_at: new Date().toISOString() }).eq("id", s.id);
     return false;
   }
+  // ⏸️ PRODUCTO EN PAUSA (Productos → Pausar): la pausa apaga el producto entero —bienvenida y venta— así que su
+  // remarketing tampoco sale: le ofrecería algo que nadie atiende si contesta. Espera y sigue solo al reanudarlo.
+  // (Solo si TODOS los productos que comparten la secuencia están en pausa; uno sin flujo de venta no cuenta como pausado.)
+  {
+    const _prods = await productosDeSecuencia(s.channel_id, s.sequence_id);
+    if (_prods.length) {
+      const { data: _fv } = await db.from("flows").select("product_id, estado")
+        .eq("channel_id", s.channel_id).eq("role", "venta").in("product_id", _prods);
+      const _filas = (_fv ?? []) as any[];
+      const _pausados = _prods.filter((p) => { const f = _filas.filter((x) => x.product_id === p); return f.length > 0 && !f.some((x) => x.estado === "activo"); });
+      if (_pausados.length === _prods.length) { await posponer(s.id, 15 * 60_000); return false; }
+    }
+  }
   // 3) Fuera del horario permitido → esperar al próximo tick (no se pierde el
   //    paso, solo se posterga hasta una hora decente).
   // Fuera del horario de remarketing. Se aparta hasta que ABRA (antes se la revisaba cada

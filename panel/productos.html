@@ -2637,8 +2637,8 @@ async function renderInicio(){
       ${fVenta ? "" : `<button class="btn primary" id="genFlow" style="height:46px;font-size:14px;width:100%;margin-top:12px">Poner a vender</button>`}
       ${fVenta && fVenta.estado!=="activo" ? `
         <div style="margin-top:10px;border:1px solid var(--red,#e2564a);background:rgba(226,86,74,.08);border-radius:11px;padding:10px 12px;font-size:12.5px;line-height:1.5">
-          <b style="color:var(--red,#e2564a)">En pausa: no vende.</b> Manda el saludo y se queda callado.
-          <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Reanudar ventas</button></div>
+          <b style="color:var(--red,#e2564a)">En pausa:</b> el bot no lo atiende — ni mensajes iniciales, ni venta, ni remarketing. Los mensajes quedan en la Bandeja.
+          <div style="margin-top:8px"><button class="btn" id="activarVenta" style="height:32px">Reanudar producto</button></div>
         </div>` : (fVenta?`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
           ${est("activacion").ok
             ? `<span style="font-size:12.5px;color:var(--green,var(--green));font-weight:600">● Activo — ya vende.</span>`
@@ -2779,19 +2779,23 @@ async function renderInicio(){
     pintaPreguntasClientes();
     const g=$("genFlow"); if(g) g.onclick=generarFlujoVenta;
     const av=$("activarVenta");
+    // ⏸️ La pausa apaga el producto ENTERO: venta Y mensajes iniciales (y el scheduler frena su remarketing).
+    // Antes pausaba solo la venta y dejaba el saludo: sin venta, cada mensaje del cliente volvía a rutear al
+    // saludo y le llegaba la bienvenida completa otra vez — 4 veces seguidas a un cliente real (Alex, 5-oct).
+    const _flujosProd=()=>[st.receta.fVenta?.id, st.receta.fIni?.id].filter(Boolean);
     if(av) av.onclick=async(e)=>{
       e.target.disabled=true;
-      const { error }=await supa.from("flows").update({ estado:"activo" }).eq("id",st.receta.fVenta.id);
+      const { error }=await supa.from("flows").update({ estado:"activo" }).in("id",_flujosProd());
       if(error){ toast(error.message,true); e.target.disabled=false; return; }
-      toast("Ventas reanudadas — el producto ya vende"); st.tab="inicio"; renderDetail();
+      toast("Producto reanudado — el bot vuelve a saludar y vender"); st.tab="inicio"; renderDetail();
     };
     const pv=$("pausarVenta");
     if(pv) pv.onclick=async(e)=>{
-      if(!await confirmDialog({title:"Pausar producto",message:`¿Pausar "${st.prod.nombre}"? El bot dejará de venderlo (sigue saludando). Lo reactivas cuando quieras.`,confirmText:"Pausar"})) return;
+      if(!await confirmDialog({title:"Pausar producto",message:`¿Pausar "${st.prod.nombre}"? El bot deja de atenderlo: no manda los mensajes iniciales, no vende y no le hace remarketing. Los mensajes de los clientes quedan en la Bandeja para que los atiendas tú. Lo reanudas cuando quieras.`,confirmText:"Pausar"})) return;
       e.target.disabled=true;
-      const { error }=await supa.from("flows").update({ estado:"borrador" }).eq("id",st.receta.fVenta.id);
+      const { error }=await supa.from("flows").update({ estado:"borrador" }).in("id",_flujosProd());
       if(error){ toast(error.message,true); e.target.disabled=false; return; }
-      toast("Producto pausado — ya no vende"); st.tab="inicio"; renderDetail();
+      toast("Producto pausado — el bot ya no lo atiende"); st.tab="inicio"; renderDetail();
     };
   }
 }
