@@ -11,6 +11,7 @@ import { enParalelo } from "./concurrencia.ts";
 import { pageAll } from "./paginar.ts";
 import { sendTelegram } from "./telegram.ts";
 import { registrarNotificacion } from "./notificaciones.ts";
+import { finVentanaAnuncio } from "./fep.ts";
 
 // Envíos por tick, por campaña. El cron corre cada minuto, así que ESTE número es el ritmo
 // real de una campaña. Se EXPORTA porque el panel lo muestra al programar ("salen de a N por
@@ -24,13 +25,9 @@ export const BATCH = 25;
 // cada clic nuevo en un anuncio — deducirlo después da una respuesta inventada.
 // Copia local a propósito: importar el motor desde acá sería una dependencia circular (el
 // motor ya importa campaigns para los avisos de pedido). Son cuatro líneas.
+// (Ya no es copia: el cálculo vive en fep.ts, que no importa el motor — hasta 7 días desde la primera respuesta.)
 async function ventanaDeCobro(db: SupabaseClient, contactId: string): Promise<"fep" | "plantilla"> {
-  try {
-    const { data } = await db.from("contacts").select("fep_hasta").eq("id", contactId).maybeSingle();
-    const fep = (data as any)?.fep_hasta ? new Date((data as any).fep_hasta).getTime() : 0;
-    if (fep > Date.now()) return "fep";
-  } catch (_) { /* sin lectura, se etiqueta como plantilla: es lo que sí sabemos */ }
-  return "plantilla";
+  return (await finVentanaAnuncio(db, contactId) > Date.now()) ? "fep" : "plantilla";
 }
 // Campañas que envían a la vez. Los envíos DENTRO de una campaña siguen espaciados uno a uno
 // (el retraso anti-baneo no se toca); en paralelo van campañas distintas, normalmente de

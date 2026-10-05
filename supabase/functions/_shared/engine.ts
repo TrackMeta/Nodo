@@ -25,6 +25,7 @@ import {
 import { provinciasDeDistrito, distritoAmbiguoLima } from "./distritos-peru.ts";
 import { actualizarMemoriaIA, leerMemoria, memoriaComoContexto, nivelMemoria, type NivelMemoria } from "./memoria.ts";
 import { fetchConTimeout } from "./http.ts";
+import { finVentanaAnuncio } from "./fep.ts";
 import { urlArchivo, urlDirecta as urlStorageDirecta } from "./archivo.ts";
 
 export type EngineEvent =
@@ -10045,11 +10046,9 @@ export async function ventana24hAbierta(db: SupabaseClient, contactId: string): 
 async function ventanaDeCobro(
   db: SupabaseClient, contactId: string, esPlantilla = false,
 ): Promise<"fep" | "servicio" | "plantilla"> {
-  try {
-    const { data } = await db.from("contacts").select("fep_hasta").eq("id", contactId).maybeSingle();
-    const fep = (data as any)?.fep_hasta ? new Date((data as any).fep_hasta).getTime() : 0;
-    if (fep > Date.now()) return "fep";     // dentro de las 72h del anuncio → Meta no cobra
-  } catch (_) { /* si no se puede leer, se etiqueta por lo que sí sabemos */ }
+  // (5-oct-2026: la ventana del anuncio dura hasta 7 días desde la PRIMERA respuesta, si fue dentro de las 24 h del
+  //  clic — ver _shared/fep.ts. Antes: clic + 72 h, sin mirar si alguien respondió.)
+  if (await finVentanaAnuncio(db, contactId) > Date.now()) return "fep";   // Meta no cobra
   return esPlantilla ? "plantilla" : "servicio";
 }
 

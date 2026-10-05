@@ -8,6 +8,7 @@ import { serviceClient, userClient, getChannelSecrets, userOwnsChannel } from ".
 import { sendText, sendMedia, MetaApiError } from "../_shared/meta.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 import { urlDirecta } from "../_shared/archivo.ts";
+import { finVentanaAnuncio } from "../_shared/fep.ts";
 
 const db = serviceClient();
 
@@ -136,12 +137,8 @@ Deno.serve(async (req) => {
     // 💵 Sello de cobro (fep | servicio), igual que el motor y campañas: los mensajes que
     // escribe el OPERADOR también los cobra Meta desde el 01/10/2026 y quedaban con ventana
     // NULL → el reporte «Mensajes que Meta cobra» no los contaba.
-    let ventana: "fep" | "servicio" = "servicio";
-    try {
-      const { data: cf } = await db.from("contacts").select("fep_hasta").eq("id", contact_id).maybeSingle();
-      const fep = (cf as any)?.fep_hasta ? new Date((cf as any).fep_hasta).getTime() : 0;
-      if (fep > Date.now()) ventana = "fep";
-    } catch (_) { /* se etiqueta por lo que sí sabemos */ }
+    // (Ventana del anuncio: hasta 7 días desde la primera respuesta — ver _shared/fep.ts.)
+    const ventana: "fep" | "servicio" = (await finVentanaAnuncio(db, contact_id) > Date.now()) ? "fep" : "servicio";
     const { error: insErr } = await db.from("messages").insert({
       channel_id, contact_id, direction: "out", type: msgType,
       // wamid || null: si Meta omite el id, guardar null (no ""), para que los webhooks de

@@ -803,6 +803,20 @@ async function pintarAlertaWA() {
   };
 }
 
+// 📣 Ventana SIN COSTO del anuncio (Free Entry Point). Espejo de supabase/functions/_shared/fep.ts — si cambia
+// una, cambia la otra. Regla de Meta (doc oficial, 5-oct-2026): se abre cuando el negocio RESPONDE dentro de las
+// 24 h del clic en el anuncio y dura hasta 7 días desde esa respuesta. `fep_hasta` = clic + 72 h (solo marca el clic).
+export const FEP_DIAS = 7;
+export async function ventanaAnuncio(contactId, fepHasta) {
+  const H = 3600e3, marca = fepHasta ? Date.parse(fepHasta) : NaN;
+  if (!Number.isFinite(marca)) return { deAnuncio: false };
+  const clic = marca - 72 * H, limite = clic + 24 * H;
+  const { data } = await supa.from("messages").select("ts").eq("contact_id", contactId).eq("direction", "out")
+    .gte("ts", new Date(clic).toISOString()).order("ts", { ascending: true }).limit(1).maybeSingle();
+  const primera = data?.ts ? Date.parse(data.ts) : NaN;
+  const respondida = Number.isFinite(primera) && primera <= limite;
+  return { deAnuncio: true, clic, limite, respondida, fin: respondida ? primera + FEP_DIAS * 24 * H : 0 };
+}
 export async function updateChannel(channelId, patch) {
   const { data, error } = await supa.from("channels").update(patch).eq("id", channelId).select("id");
   if (!error && !(data && data.length)) return { error: { message: "No se guardó: solo un administrador puede cambiar esto", soloAdmin: true } };

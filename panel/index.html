@@ -671,7 +671,7 @@ import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=13";
 import { mountDateRange, computePreset, rangeLabel, ymd, ymdTZ as ymdLima, getTZ } from "./date-range.js";
 import * as O from "./orders.js";
 import { esCampoInterno, esValorPresentable, wireMemoriaChips, origenLabel, latestOrder, remitenteDe, pedidoResumenHtml, printRotulo, openEditarPedido, openVentaManual, ventaChipsHtml, openMetaDetalle, injectExtrasCss, sec, copilotoEtapa, copilotoCardHtml, wireCopiloto, EMBUDO_STAGES, stagePickerHtml } from "./contact-extras.js";
-import { norm, pageAll, enTrozos, conRegion } from "./shell.js";
+import { norm, pageAll, enTrozos, conRegion, ventanaAnuncio, FEP_DIAS } from "./shell.js";
 injectExtrasCss();
 
 // La hora de cada mensaje, en la zona del NEGOCIO (Ajustes), no en Lima fija. Se resuelve al
@@ -2406,7 +2406,6 @@ async function updateWindow() {
   if (cid !== state.contactId) return;
   const now = Date.now();
   const svcEnd = data?.ultimo_mensaje_cliente_at ? new Date(data.ultimo_mensaje_cliente_at).getTime() + 24*3.6e6 : 0;
-  const fepEnd = data?.fep_hasta ? new Date(data.fep_hasta).getTime() : 0;
   const svcOpen = svcEnd > now;
   // La ventana gratis del anuncio NO se abre porque el cliente escriba: Meta la abre cuando
   // el NEGOCIO le responde dentro de las 24h siguientes. Acá se marca al recibir el mensaje
@@ -2414,24 +2413,17 @@ async function updateWindow() {
   // que esa respuesta exista de verdad. Si nadie contestó y ya pasaron las 24h, esa ventana
   // nunca se abrió y la plantilla SÍ se cobra — decir lo contrario es hacerte gastar
   // creyendo que no gastas. La comprobación es un conteo con índice y solo al abrir el chat.
-  // 📣 Las 72 h sin costo del anuncio (Free Entry Point) NO se abren con el clic: Meta las abre cuando el NEGOCIO le
-  // responde dentro de las 24 h siguientes. Tres casos con anuncio vivo: ya respondiste (abierta), todavía estás a
-  // tiempo (sin respuesta y dentro de las 24 h) o se pasó (nadie respondió en 24 h). Antes el segundo caía en
-  // «Se cobra» con el texto «no vino por un anuncio»: falso las dos cosas (Rosmery, 5-oct, recién llegada del anuncio).
-  const deAnuncio = fepEnd > now;
-  const inicioFep = fepEnd - 72*3.6e6;            // el clic en el anuncio
-  const limiteResp = inicioFep + 24*3.6e6;        // hasta cuándo responder para abrirla
-  let fepOpen = false;
-  if (deAnuncio) {
-    const { count } = await supa.from("messages").select("id", { count:"exact", head:true })
-      .eq("contact_id", cid).eq("direction","out")
-      .gte("ts", new Date(inicioFep).toISOString())
-      .lte("ts", new Date(limiteResp).toISOString());
-    if (cid !== state.contactId) return;          // cambiaste de chat mientras contaba
-    fepOpen = (count ?? 0) > 0;
-  }
-  const aTiempo = deAnuncio && !fepOpen && now < limiteResp;   // vino por anuncio, nadie respondió aún, todavía se puede
-  const fmt = (ms)=>{ const h=Math.floor(ms/3.6e6), m=Math.floor((ms%3.6e6)/6e4); return h>0?`${h}h ${m}m`:`${m}m`; };
+  // 📣 La ventana sin costo del anuncio (Free Entry Point) NO se abre con el clic: Meta la abre cuando el NEGOCIO le
+  // responde dentro de las 24 h siguientes, y dura hasta 7 días DESDE ESA RESPUESTA (doc de Meta, 5-oct-2026; antes
+  // eran 72 h). Tres casos: ya respondiste (abierta), todavía estás a tiempo (sin respuesta y dentro de las 24 h) o se
+  // pasó. Antes el segundo caía en «Se cobra» con el texto «no vino por un anuncio» (Rosmery, 5-oct). Ver ventanaAnuncio.
+  const va = await ventanaAnuncio(cid, data?.fep_hasta);
+  if (cid !== state.contactId) return;            // cambiaste de chat mientras contaba
+  const fepOpen = !!va.respondida && va.fin > now;
+  const fepEnd = fepOpen ? va.fin : 0;
+  const limiteResp = va.limite || 0;              // hasta cuándo responder para abrirla
+  const aTiempo = va.deAnuncio && !va.respondida && now < limiteResp;   // vino por anuncio, nadie respondió aún, todavía se puede
+  const fmt = (ms)=>{ const h=Math.floor(ms/3.6e6), m=Math.floor((ms%3.6e6)/6e4); return h>=24?`${Math.floor(h/24)}d ${h%24}h`:(h>0?`${h}h ${m}m`:`${m}m`); };
   const hora = (ms)=>new Date(ms).toLocaleString("es-PE",{ weekday:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
   // Chip 1 — servicio 24h.
   const svcChip = svcOpen
@@ -2452,25 +2444,25 @@ async function updateWindow() {
       : `<span class="win fep${poco ? " urge" : ""}" title="Las 24h para escribir libre ya cerraron, pero por venir de un anuncio la plantilla no te cuesta">${icon("megaphone")} Plantilla gratis · ${fmt(rem)}</span>`;
   } else if (aTiempo) {
     const rem = limiteResp - now;
-    fepChip = `<span class="win fep${rem < 6*3.6e6 ? " urge" : ""}" title="Llegó por un anuncio. Si le respondes antes del ${esc(hora(limiteResp))}, Meta no te cobra los mensajes por 72 h (hasta el ${esc(hora(fepEnd))}). Si nadie le responde a tiempo, se cobra.">${icon("megaphone")} Gratis si respondes · ${fmt(rem)}</span>`;
+    fepChip = `<span class="win fep${rem < 6*3.6e6 ? " urge" : ""}" title="Llegó por un anuncio. Si le respondes antes del ${esc(hora(limiteResp))}, Meta no te cobra los mensajes por hasta ${FEP_DIAS} días desde esa respuesta. Si nadie le responde a tiempo, se cobra.">${icon("megaphone")} Gratis si respondes · ${fmt(rem)}</span>`;
   }
   // Chip 3 — 💸 ¿este chat se cobra? «Escribe libre» dice si PUEDES escribir, no si CUESTA, y
-  // desde el 1-oct-2026 Meta cobra por mensaje todo lo que no caiga dentro de las 72 h de un
+  // desde el 1-oct-2026 Meta cobra por mensaje todo lo que no caiga dentro de la ventana de un
   // clic en anuncio. Sin esto, la barra decía exactamente lo mismo en un chat gratis y en uno
   // que se paga: una decisión de plata sin un solo indicador. Solo sale cuando NO hay FEP
   // vivo ni a tiempo de abrirse, y solo desde esa fecha. El texto dice la razón REAL.
   const COBRO_DESDE = Date.UTC(2026, 9, 1);   // 1 de octubre de 2026
-  const porQueCobra = deAnuncio
-    ? `Llegó por un anuncio, pero no hay una respuesta tuya en sus primeras 24 h (hasta el ${hora(limiteResp)}), así que la ventana de 72 h sin costo no se abrió: Meta cobra cada mensaje. Si le respondió otra app conectada al número (por ejemplo ChatLevel), puede que sí esté abierta.`
-    : (fepEnd > 0
-      ? "Su ventana de 72 h sin costo por el anuncio ya terminó: Meta cobra cada mensaje que le mandes."
-      : "Este contacto no vino por un anuncio, así que no tiene la ventana de 72 h sin costo: Meta cobra cada mensaje que le mandes.");
+  const porQueCobra = !va.deAnuncio
+    ? `Este contacto no vino por un anuncio, así que no tiene la ventana sin costo: Meta cobra cada mensaje que le mandes.`
+    : (va.respondida
+      ? `Su ventana sin costo por el anuncio ya terminó (dura hasta ${FEP_DIAS} días desde la primera respuesta): Meta cobra cada mensaje que le mandes.`
+      : `Llegó por un anuncio, pero no hay una respuesta tuya en sus primeras 24 h (hasta el ${hora(limiteResp)}), así que la ventana sin costo no se abrió: Meta cobra cada mensaje. Si le respondió otra app conectada al número (por ejemplo ChatLevel), puede que sí esté abierta.`);
   const cobraChip = (!fepOpen && !aTiempo && now >= COBRO_DESDE)
     ? `<span class="win closed" title="${esc(porQueCobra)} El precio por mensaje se configura en Ajustes → Meta.">${icon("banknote")} Se cobra</span>`
     : "";
   w.innerHTML = svcChip + fepChip + cobraChip;
   // ⚠ El candado mira SOLO la ventana de servicio (24h), y así debe quedarse.
-  // Las 72h del anuncio (Free Entry Point) son sobre el COBRO, no sobre el permiso: durante
+  // La ventana del anuncio (Free Entry Point, hasta 7 días) es sobre el COBRO, no sobre el permiso: durante
   // esa ventana los mensajes no se cobran, pero para mandar TEXTO LIBRE sigue haciendo falta
   // la ventana de 24h abierta. Si las 24h se cerraron y el FEP sigue vivo, lo único que se
   // puede mandar es una plantilla — que ahí sale gratis.

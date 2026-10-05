@@ -14,7 +14,7 @@
 //  · EXTRAS_CSS       — estilos de las tarjetas nuevas (una sola fuente)
 // ═══════════════════════════════════════════════════════════════════
 import * as O from "./orders.js";
-import { toast, icon, norm, esUbicacionCompartida } from "./shell.js";
+import { toast, icon, norm, esUbicacionCompartida, ventanaAnuncio } from "./shell.js";
 import { cargarListas, sugerirAgencia } from "./courier-export.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
@@ -833,23 +833,14 @@ export async function cargarAviso(supa, channelId, contactId, momento, orderId =
   // al recibir el mensaje, así que antes de decir "gratis" se comprueba que esa respuesta
   // exista: si nadie contestó y ya pasaron las 24h, la ventana nunca se abrió y la plantilla
   // SÍ se cobra. Prometer gratis ahí es hacerte gastar creyendo que no gastas.
+  // (Ventana: hasta 7 días desde la PRIMERA respuesta, si fue dentro de las 24 h del clic — ver ventanaAnuncio en shell.js.)
   try {
     const { data: ct } = await supa.from("contacts").select("fep_hasta").eq("id", contactId).maybeSingle();
-    const f = ct?.fep_hasta ? new Date(ct.fep_hasta).getTime() : 0;
-    let abierto = f > Date.now();
-    if (abierto) {
-      const inicioFep = f - 72 * 3600 * 1000;
-      const { count } = await supa.from("messages").select("id", { count: "exact", head: true })
-        .eq("contact_id", contactId).eq("direction", "out")
-        .gte("ts", new Date(inicioFep).toISOString())
-        .lte("ts", new Date(inicioFep + 24 * 3600 * 1000).toISOString());
-      abierto = (count ?? 0) > 0;
-    }
-    if (abierto) {
+    const va = await ventanaAnuncio(contactId, ct?.fep_hasta);
+    if (va.respondida && va.fin > Date.now()) {
       info.fepActivo = true;
-      const m = Math.floor((f - Date.now()) / 60000);
-      // Mismo tope que la ventana: el FEP dura 72 h. Más que eso es dato anómalo.
-      info.fepRestante = m > 72 * 60 ? "" : (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
+      const m = Math.floor((va.fin - Date.now()) / 60000);
+      info.fepRestante = m >= 1440 ? `${Math.floor(m / 1440)} d ${Math.floor((m % 1440) / 60)} h` : (m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`);
     }
   } catch (_) { /* sin FEP */ }
   try {
