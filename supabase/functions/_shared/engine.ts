@@ -152,6 +152,11 @@ export async function runEngine(
   db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
 ) {
   if (!(await canalActivo(db, channelId))) return;   // bot archivado: no conversa
+  // 🔌 Bot APAGADO: no contesta a nadie real. Probar flujos y el simulador sí (es como se prueba antes de prenderlo).
+  if (!(await botEncendido(db, channelId))) {
+    const { data: _ctOff } = await db.from("contacts").select("wa_id, source").eq("id", contactId).maybeSingle();
+    if (!((_ctOff as any)?.wa_id === "webchat-test" || (_ctOff as any)?.source === "sim")) return;
+  }
   const holder = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   let locked = false;
   // ⏳ Hasta ~30s. Eran ~5s, y un turno con llamada a la IA tarda 8-12s: dos mensajes
@@ -32143,6 +32148,21 @@ export async function canalActivo(db: SupabaseClient, channelId: string): Promis
     const { data } = await db.from("channels").select("activo").eq("id", channelId).maybeSingle();
     const v = !!data && (data as any).activo !== false;
     _canalAct.set(channelId, { v, t: Date.now() });
+    return v;
+  } catch (_) { return true; }   // sin dato no se apaga nada por error
+}
+
+// 🔌 INTERRUPTOR GENERAL (Canales → «Bot encendido», migración 0127). Apagado, el bot no escribe NADA por su
+// cuenta: ni bienvenida, ni IA, ni remarketing, ni recordatorios. Distinto de archivar: los mensajes siguen
+// entrando a la Bandeja y lo que hace el dueño a mano sí sale. Caché corta: al prenderlo/apagarlo manda en ≤30 s.
+const _botOn = new Map<string, { v: boolean; t: number }>();
+export async function botEncendido(db: SupabaseClient, channelId: string): Promise<boolean> {
+  const c = _botOn.get(channelId);
+  if (c && Date.now() - c.t < 30_000) return c.v;
+  try {
+    const { data } = await db.from("channels").select("bot_apagado").eq("id", channelId).maybeSingle();
+    const v = (data as any)?.bot_apagado !== true;
+    _botOn.set(channelId, { v, t: Date.now() });
     return v;
   } catch (_) { return true; }   // sin dato no se apaga nada por error
 }

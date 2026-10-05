@@ -9,7 +9,7 @@ import { transcribeAudio } from "../_shared/ai.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
 import { urlArchivo } from "../_shared/archivo.ts";
 import { CAMPOS_SALUD, veredictoWebhook, aplicarVeredicto } from "../_shared/salud-wa.ts";
-import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, avisarEscribioEnPausa, arranqueSinEspera, type EngineEvent } from "../_shared/engine.ts";
+import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, avisarEscribioEnPausa, arranqueSinEspera, botEncendido, type EngineEvent } from "../_shared/engine.ts";
 
 // Runtime de Supabase Edge: permite terminar trabajo DESPUÉS de responder
 // (Meta exige un 200 rápido; el motor puede tardar por el LLM).
@@ -503,6 +503,12 @@ async function processInbound(
         console.error("[solo_anuncios] no pude reactivar el bot:", eOn.message);
       }
     }
+  }
+  // 🔌 Bot APAGADO (Canales → «Bot encendido»): el mensaje ya quedó guardado y se ve en la Bandeja; el bot no
+  // contesta nada —ni el «te atiende un asesor» de abajo—. La baja («no me escriban») sí se registra.
+  if (!(await botEncendido(db, channelId))) {
+    if (type === "text" && text && esOptOut(text)) await aplicarOptOut(db, channelId, contact.id).catch(() => {});
+    return;
   }
   if ((contact as any).bot_activo === false) {
     // «Ya no me escriban» con un humano atendiendo (bot en pausa): la detección de baja vive

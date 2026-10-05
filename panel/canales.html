@@ -186,7 +186,7 @@ async function load(){
   // no depende de ella, y en fila la tarjeta esperaba las dos sumadas.
   const statusP=callFn("channel-config",{ action:"status", channel_id:forChannel }).catch(()=>null);
   let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,phone_number_id,waba_id,verify_token,telegram_chat_ids,telegram_vinculos,ia_router").eq("id",forChannel).maybeSingle();
+    .select("nombre,phone_number_id,waba_id,verify_token,telegram_chat_ids,telegram_vinculos,ia_router,bot_apagado").eq("id",forChannel).maybeSingle();
   if(chErr){ ({ data:ch } = await supa.from("channels")
     .select("nombre,phone_number_id,waba_id,verify_token,ia_router").eq("id",forChannel).maybeSingle()); }
   if(gen!==st.loadGen) return; // cambiaste de bot mientras cargaba
@@ -259,6 +259,14 @@ function renderWA(){
 
       <div class="metabox">
         <div class="mt">Comportamiento del bot</div>
+        <div class="adsrow">
+          <span class="ads-ic">${icon("robot")}</span>
+          <span class="ads-tx">
+            <b>Bot encendido</b>
+            <span>Apagado, el bot no le escribe nada a nadie: ni mensajes iniciales, ni respuestas de la IA, ni remarketing, ni recordatorios. Los mensajes siguen entrando a la Bandeja y lo que tú hagas a mano (escribir, aprobar un pago, mover un pedido) sí sale. Probar flujos sigue funcionando.</span>
+          </span>
+          <div class="swx ${c.bot_apagado?"":"on"}" id="w_boton" role="switch" aria-checked="${c.bot_apagado?"false":"true"}" title="Prender/apagar el bot"></div>
+        </div>
         <div class="adsrow">
           <span class="ads-ic">${icon("megaphone")}</span>
           <span class="ads-tx">
@@ -356,6 +364,18 @@ function renderWA(){
   const disc=$("waDisc"); if(disc) disc.onclick=()=>desconectarWA(disc);
   // Si el número está conectado, trae y muestra la tarjeta bonita apenas se abre.
   if(conn) cargarNumeroHero();
+  // 🔌 Interruptor general: guarda al instante. Apagar pide confirmación (deja de atender a todos).
+  $("w_boton").onclick=async(e)=>{
+    const sw=e.currentTarget, prender=!sw.classList.contains("on");
+    if(!prender && !await confirmDialog({title:"Apagar el bot",
+      message:`El bot de «${st.channel.nombre||"este bot"}» deja de escribirle a todos: mensajes iniciales, IA, remarketing y recordatorios. Los mensajes siguen llegando a la Bandeja. Lo prendes cuando quieras.`,
+      confirmText:"Apagar", danger:true})) return;
+    const { error }=await updateChannel(st.channelId, { bot_apagado:!prender });
+    if(error){ toast(/bot_apagado|column/.test(error.message)?"Falta aplicar la migración 0127":error.message,true); return; }
+    sw.classList.toggle("on",prender); sw.setAttribute("aria-checked",prender?"true":"false");
+    st.channel.bot_apagado=!prender;
+    toast(prender?"Bot encendido: vuelve a atender (en menos de un minuto)":"Bot apagado: no le escribe a nadie");
+  };
   // Toggle "solo anuncios": guarda al instante (merge sobre ia_router para no
   // pisar el resto del ruteo — fallback_flow_id, umbral, etc.).
   $("w_soloads").onclick=async(e)=>{

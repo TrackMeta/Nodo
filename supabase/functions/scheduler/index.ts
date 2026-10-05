@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
-import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, aplicarStock, soloAnunciosBloquea, pasarAHumano, esOptOut, canalActivo } from "../_shared/engine.ts";
+import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, aplicarStock, soloAnunciosBloquea, pasarAHumano, esOptOut, canalActivo, botEncendido } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 import { esRechazoTemporal } from "../_shared/meta.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
@@ -170,6 +170,16 @@ Deno.serve(async (req) => {
         await db.from("flow_runs").update({ wake_at: new Date(Date.now() + 24 * 3600_000).toISOString() })
           .eq("id", r.id).eq("estado", "esperando").eq("wake_at", r.wake_at).then(() => {}, () => {});
         return;
+      }
+      // 🔌 Bot APAGADO: igual que el archivado (runEngine no haría nada y el run taparía la cola), pero se vuelve a
+      // mirar en 15 min — apagarlo es para un rato, y al prenderlo retoma solo. Las pruebas (Probar flujos) siguen.
+      if (!(await botEncendido(db, r.channel_id))) {
+        const { data: _ctW } = await db.from("contacts").select("wa_id, source").eq("id", r.contact_id).maybeSingle();
+        if (!((_ctW as any)?.wa_id === "webchat-test" || (_ctW as any)?.source === "sim")) {
+          await db.from("flow_runs").update({ wake_at: new Date(Date.now() + 15 * 60_000).toISOString() })
+            .eq("id", r.id).eq("estado", "esperando").eq("wake_at", r.wake_at).then(() => {}, () => {});
+          return;
+        }
       }
       await runEngine(db, r.channel_id, r.contact_id, { type: "resume" }); woke++;
     } catch (e) { console.error("[scheduler] wake:", (e as any)?.message ?? e); }
@@ -436,6 +446,7 @@ async function processAdelantos(now: number): Promise<{ recordados: number; venc
     const cfg = (ch as any)?.pedidos_config?.adelanto;
     if (!cfg) continue;
     const chId = (ch as any).id;
+    if (!(await botEncendido(db, chId))) continue;   // 🔌 bot apagado: ni recuerda ni vence adelantos (le avisaría al cliente)
 
     // Vencer primero: si ya pasó el plazo, no tiene sentido recordarle.
     const venc = cfg.vencimiento ?? {};
@@ -604,6 +615,7 @@ async function processOrderReminders(now: number): Promise<number> {
     if (Date.now() - now > PRESUPUESTO_MS + 16_000) break;
     if ((t as any).flows?.estado !== "activo") continue;
     if (!(await canalActivo(db, (t as any).channel_id))) continue;   // bot archivado
+    if (!(await botEncendido(db, (t as any).channel_id))) continue;  // 🔌 bot apagado: tampoco recuerda pedidos
     const estado = (t as any).config?.estado;
     const horas = Number((t as any).config?.horas ?? 24);
     if (!estado || !(horas > 0)) continue;
@@ -872,6 +884,8 @@ const SEQ_MAX_INTENTOS = 3;
 async function processSub(s: any, now: number): Promise<boolean> {
   // Bot ARCHIVADO: su remarketing no sale (se re-mira en un día por si lo reactivas).
   if (!(await canalActivo(db, s.channel_id))) { await posponer(s.id, 24 * 3600_000); return false; }
+  // 🔌 Bot APAGADO: el remarketing espera (se re-mira en 15 min; al prenderlo sigue donde iba).
+  if (!(await botEncendido(db, s.channel_id))) { await posponer(s.id, 15 * 60_000); return false; }
   const { data: seq, error: errSeq } = await leerSecuencia(s.sequence_id);
   // Distinguir "la secuencia ya no existe" de "no pude leerla". Sin esto, un error transitorio
   // dejaba `seq` en null y caía en el branch de abajo, que marca la suscripción COMPLETADA:
@@ -1404,6 +1418,7 @@ async function processSinRespuesta(now: number) {
     if (c.bot_activo === false || c.bloqueado === true) continue;          // ya lo atiende una persona / bloqueado
     if (c.source === "sim" || c.wa_id === "webchat-test") continue;        // pruebas
     if (!(await canalActivo(db, c.channel_id))) continue;                  // bot archivado
+    if (!(await botEncendido(db, c.channel_id))) continue;                 // 🔌 bot apagado: el silencio es a propósito
     // Último mensaje REAL del cliente (un 👍 o un sticker no piden respuesta).
     const { data: ult } = await db.from("messages").select("ts, type, content")
       .eq("contact_id", c.id).eq("direction", "in").not("type", "in", "(system,sticker)")
