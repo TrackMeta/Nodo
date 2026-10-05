@@ -449,12 +449,27 @@ Deno.serve(async (req) => {
       const num = await g(`${phoneId}?fields=verified_name,display_phone_number,quality_rating,code_verification_status,platform_type,status`);
       const numOk = num.status === 200 && !num.body?.error;
 
+      // Vida del token. `debug_token` trae `expires_at` (0 = permanente, de System User) y se
+      // descartaba: el token temporal de 24 h del Explorador de la API pasaba todas las
+      // pruebas en verde y al día siguiente Meta contestaba 190 y el bot se quedaba mudo.
+      const dbg = await metaGet(token, `debug_token?input_token=${encodeURIComponent(token)}`);
+      const miAppId = dbg.status === 200 ? String(dbg.body?.data?.app_id ?? "") : "";
+
       // 2) Suscripción de la app a la WABA (necesaria para RECIBIR mensajes).
-      let suscripcion: { comprobado: boolean; suscrito?: boolean; error?: string } | null = null;
+      // 🔴 Tiene que estar suscrita LA NUESTRA (la del token), no «alguna». Medido 4-oct al pasar un número de ChatLevel:
+      // la app de ChatLevel seguía suscrita, esto daba verde, «Guardar y conectar» saltaba la suscripción por lo mismo
+      // y a Nodo no le llegaba ni un mensaje (a ChatLevel sí). `otras` = las demás apps que también reciben (contestan dos bots).
+      let suscripcion: { comprobado: boolean; suscrito?: boolean; otras?: string[]; error?: string } | null = null;
       if (wabaId) {
         const sub = await g(`${wabaId}/subscribed_apps`);
         if (sub.status === 200 && Array.isArray((sub.body as any)?.data)) {
-          suscripcion = { comprobado: true, suscrito: (sub.body as any).data.length > 0 };
+          const apps = ((sub.body as any).data as any[]).map((x) => x?.whatsapp_business_api_data ?? x ?? {});
+          const mia = (a: any) => miAppId && String(a?.id ?? "") === miAppId;
+          suscripcion = {
+            comprobado: true,
+            suscrito: miAppId ? apps.some(mia) : apps.length > 0,
+            otras: miAppId ? apps.filter((a) => !mia(a)).map((a) => String(a?.name ?? a?.id ?? "otra app")) : [],
+          };
         } else {
           suscripcion = { comprobado: false, error: (sub.body as any)?.error?.message ?? "no se pudo consultar" };
         }
@@ -466,10 +481,6 @@ Deno.serve(async (req) => {
       //    era invisible. El app_id sale de debug_token; el app access token, de juntarlo
       //    con el App Secret que el usuario ya pegó.
       let appHook: { comprobado: boolean; apunta_aqui?: boolean; region_fija?: boolean; url?: string | null; campos?: string[]; error?: string } | null = null;
-      // Vida del token. `debug_token` trae `expires_at` (0 = permanente, de System User) y se
-      // descartaba: el token temporal de 24 h del Explorador de la API pasaba todas las
-      // pruebas en verde y al día siguiente Meta contestaba 190 y el bot se quedaba mudo.
-      const dbg = await metaGet(token, `debug_token?input_token=${encodeURIComponent(token)}`);
       const tokenInfo = dbg.status === 200 && dbg.body?.data ? (() => {
         const d = dbg.body.data;
         const exp = Number(d.expires_at ?? 0);
@@ -817,11 +828,13 @@ Deno.serve(async (req) => {
       // decía «conectado»: pero el webhook rechaza con 401 todo canal sin app_secret, o sea
       // un bot sordo con cartel de listo. Cada paso que no se pudo hacer ahora va a `fallo`.
       const appSecret = secrets?.app_secret;
+      const dbgTok = await metaGet(token, `debug_token?input_token=${encodeURIComponent(token)}`);
+      const miAppId = dbgTok.status === 200 ? String(dbgTok.body?.data?.app_id ?? "") : "";
       if (!appSecret) {
         fallo.push({ que: "webhook", motivo: "Falta el App Secret: sin él Nodo rechaza los mensajes que le manda Meta. Pégalo (Configuración → Básica de tu app) y guarda." });
       } else {
-        const dbg = await metaGet(token, `debug_token?input_token=${encodeURIComponent(token)}`);
-        const appId = dbg.status === 200 ? String(dbg.body?.data?.app_id ?? "") : "";
+        const dbg = dbgTok;
+        const appId = miAppId;
         if (!appId) {
           fallo.push({ que: "webhook", motivo: String(dbg.body?.error?.message ?? "Meta no dijo de qué app es el token; vuelve a intentar en un minuto.") });
         } else {
@@ -871,7 +884,10 @@ Deno.serve(async (req) => {
         fallo.push({ que: "suscribir", motivo: "Falta el WABA ID: sin él no puedo conectar la entrada de mensajes." });
       } else {
         const sub = await metaGet(token, `${wabaId}/subscribed_apps`);
-        const yaEsta = sub.status === 200 && Array.isArray(sub.body?.data) && sub.body.data.length > 0;
+        // LA NUESTRA, no «alguna»: con otra app suscrita (ChatLevel, Sendy…) esto se saltaba y Nodo quedaba sordo
+        // (ver whatsapp_test). Sin app_id conocido se suscribe igual: el POST es idempotente.
+        const apps = (Array.isArray(sub.body?.data) ? sub.body.data : []).map((x: any) => x?.whatsapp_business_api_data ?? x ?? {});
+        const yaEsta = sub.status === 200 && !!miAppId && apps.some((a: any) => String(a?.id ?? "") === miAppId);
         if (!yaEsta) {
           const r = await metaPost(token, `${wabaId}/subscribed_apps`);
           if (r.status === 200 && r.body?.success) hecho.push("suscribir");

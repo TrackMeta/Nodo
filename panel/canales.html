@@ -676,6 +676,10 @@ function pintarWA(r){
         : fila(false, "La app NO está suscrita a la cuenta",
                "Es el interruptor que viene apagado y que nadie avisa: todo se ve verde y no entra ni un mensaje.",
                { que:"suscribir", lbl:"Suscribir ahora" }));
+      // Otra app (ChatLevel, Sendy…) también recibe los mensajes del número: si contesta sola, el cliente recibe dos respuestas.
+      if((r.suscripcion.otras||[]).length)
+        filas.push(fila(false, "También está conectada: "+esc(r.suscripcion.otras.join(", ")),
+               "Esa app también recibe los mensajes de este número. Si contesta sola, el cliente recibe dos respuestas: apágala o quítala de tu cuenta de WhatsApp."));
     }
   }else{
     filas.push(fila(true, "Suscripción no comprobada", "Agrega el WABA ID arriba para verificar automáticamente que la app recibe mensajes."));
