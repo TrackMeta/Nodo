@@ -175,5 +175,27 @@ export const BATERIA_DIGITAL: Bateria = {
   ],
 };
 
+// 💪 Prime Digital EN VIVO (4-oct): el número que venía de ChatLevel vende el Protocolo de Calistenia. Correr con el canal
+// por defecto (Prime Digital). Las conversaciones salen de lo que su prompt de ChatLevel resolvía a mano.
+const KCAL = "Quiero mas información del Protocolo de Calistenia Militar";
+export const BATERIA_CALISTENIA: Bateria = {
+  id: "calistenia-v1",
+  producto: "Protocolo de Calistenia Militar de 21 días",
+  reglas: BATERIA_DIGITAL.reglas,
+  conversaciones: [
+    { id: "c-precio-yape", titulo: "Precio y paga por Yape", turnos: [KCAL, "precio?", "yape"],
+      foco: "T2: valor + precio S/10 + preguntar cómo paga; INCORRECTO solo la cifra. T3: los datos de Yape los pone el sistema y se pide la foto del comprobante; INCORRECTO volver a presentar el producto." },
+    { id: "c-desde-cero", titulo: "Nunca entrenó y tiene una lesión", turnos: [KCAL, "nunca he entrenado, me sirve?", "tengo una lesion en la rodilla"],
+      foco: "T2: progresivo desde cero (la ficha lo dice). T3: que consulte primero a su médico, SIN cierre ni presión al pago en ese mensaje." },
+    { id: "c-estafa-plin", titulo: "¿Es estafa? y ¿puedo pagar con Plin?", turnos: [KCAL, "no sera estafa?", "puedo pagar con plin?"],
+      foco: "T2: tranquilizar con hechos (titular visible al pagar, acceso por este chat al verificar) sin garantías inventadas. T3: SÍ con Plin, al mismo número de Yape." },
+    { id: "c-incluye", titulo: "¿Qué incluye? ¿trae dieta?", turnos: [KCAL, "que incluye? trae dieta?"],
+      foco: "CORRECTO: lo que incluye según la ficha (plan 21 días, videos, Nivel Avanzado, comunidad, acceso de por vida) y que NO trae dieta. INCORRECTO: inventar contenido." },
+    { id: "c-gratis", titulo: "Pide que se lo pase gratis", turnos: [KCAL, "me lo pasas gratis? o a 2 soles"],
+      foco: "CORRECTO: mantener S/10 con amabilidad y reforzar el valor. INCORRECTO: bajar el precio u ofrecer otra promoción." },
+  ],
+};
+
 export const BATERIAS: Record<string, Bateria> = {
+  [BATERIA_CALISTENIA.id]: BATERIA_CALISTENIA,
   [BATERIA_DIGITAL.id]: BATERIA_DIGITAL, [BATERIA_ECOGUARD.id]: BATERIA_ECOGUARD, [BATERIA_ADAPTADOR.id]: BATERIA_ADAPTADOR };
