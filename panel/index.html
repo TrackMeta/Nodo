@@ -521,24 +521,37 @@
   .cpanel .kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--border)}
   .cpanel .kv .k{color:var(--muted);flex:none} .cpanel .kv .v{color:var(--text);text-align:right;word-break:break-word;min-width:0}
   /* Origen del lead: el anuncio que trajo al cliente */
-  .ol-hd{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-bottom:8px}
-  .ol-src{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text)}
-  .ol-src svg{width:15px;height:15px;color:var(--brand-2)}
-  .ol-camp{font-size:11px;color:var(--brand-2);background:color-mix(in srgb,var(--brand) 14%,transparent);border-radius:999px;padding:2px 8px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .ol-name{font-size:13px;font-weight:600;color:var(--text);word-break:break-word}
-  .ol-sub{font-size:11.5px;color:var(--faint);margin-top:1px;word-break:break-word}
-  .ol-media{margin:10px 0 2px;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--surface-2);max-height:220px;display:flex;align-items:center;justify-content:center}
-  .ol-media img{width:100%;max-height:220px;object-fit:cover;display:block}
-  .ol-k{font-size:11px;color:var(--muted);margin-top:10px}
-  .ol-v{font-size:12.5px;color:var(--text);margin-top:2px;white-space:pre-wrap;word-break:break-word;line-height:1.45}
+  .ol-src{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;
+    background:color-mix(in srgb,var(--brand) 10%,transparent);border:1px solid color-mix(in srgb,var(--brand) 30%,transparent)}
+  .ol-src-ic{width:30px;height:30px;border-radius:9px;flex:none;display:flex;align-items:center;justify-content:center;background:var(--brand);color:#fff}
+  .ol-src-ic svg{width:16px;height:16px}
+  .ol-src-tx{min-width:0}
+  .ol-src-t{font-size:13px;font-weight:700;color:var(--text)}
+  .ol-src-s{font-size:11.5px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ol-card{margin-top:10px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2);padding:11px 12px}
+  .ol-ad{display:flex;align-items:center;gap:10px}
+  .ol-thumb{width:46px;height:46px;border-radius:9px;flex:none;overflow:hidden;display:flex;align-items:center;justify-content:center;
+    background:var(--surface);border:1px solid var(--border);color:var(--faint)}
+  .ol-thumb svg{width:20px;height:20px} .ol-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+  a.ol-thumb{cursor:zoom-in}
+  .ol-ad-tx{min-width:0}
+  .ol-name{font-size:13px;font-weight:600;color:var(--text);word-break:break-word;line-height:1.3}
+  .ol-sub{font-size:11.5px;color:var(--muted);margin-top:2px;word-break:break-word}
+  .ol-copy-blk{border-top:1px solid var(--border);margin-top:11px;padding-top:9px}
+  .ol-k{font-size:10.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:var(--faint);margin-top:8px}
+  .ol-k:first-child{margin-top:0}
+  .ol-v{font-size:12.5px;color:var(--text);margin-top:3px;white-space:pre-wrap;word-break:break-word;line-height:1.45}
   .ol-v.ol-title{font-weight:600}
-  .ol-v.clamp{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
-  .ol-more{background:none;border:0;padding:2px 0;color:var(--brand-2);font-size:11.5px;cursor:pointer}
-  .cpanel a.ol-link{margin:12px 0 4px;width:100%;text-decoration:none;box-sizing:border-box}
-  .ol-id{display:inline-flex;align-items:center;gap:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px}
-  .ol-copy{background:none;border:0;padding:2px;color:var(--muted);cursor:pointer;display:inline-flex}
-  .ol-copy:hover{color:var(--text)} .ol-copy svg{width:13px;height:13px}
-  .ol-note{font-size:11.5px;color:var(--faint);margin-top:8px;line-height:1.4}
+  .ol-v.clamp{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .ol-more{background:none;border:0;padding:3px 0 0;color:var(--brand-2);font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit}
+  .cpanel a.ol-link{margin-top:11px;width:100%;height:34px;text-decoration:none;box-sizing:border-box;background:var(--surface)}
+  .ol-rows{margin-top:6px}
+  .ol-rows .kv:last-child{border-bottom:0}
+  .ol-id{display:inline-flex;align-items:center;gap:4px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px}
+  .ol-copy{background:none;border:0;padding:3px;border-radius:6px;color:var(--muted);cursor:pointer;display:inline-flex}
+  .ol-copy:hover{color:var(--text);background:var(--surface-2)} .ol-copy svg{width:13px;height:13px}
+  .ol-note{display:flex;gap:7px;align-items:flex-start;font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.4}
+  .ol-note svg{width:13px;height:13px;flex:none;margin-top:1px}
   .media-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
   .media-grid a{aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--surface-2);display:flex;align-items:center;justify-content:center;border:1px solid var(--border);color:var(--muted);font-size:20px;text-decoration:none}
   .media-grid img,.media-grid video{width:100%;height:100%;object-fit:cover}
@@ -1617,22 +1630,38 @@ function origenLeadHtml(contact, adMeta){
   const verUrl = urlSegura(ref?.source_url);
   const imgUrl = urlSegura(ref?.image_url) || urlSegura(ref?.thumbnail_url);
   const body = ref?.body || "";
-  const largo = body.length > 220 || body.split("\n").length > 5;
+  const largo = body.length > 180 || body.split("\n").length > 4;
   const primer = contact.primera_interaccion || contact.created_at;
   // Volvió por un anuncio después de su primer contacto: se dice cuándo fue ese clic.
   const clicTarde = ref?.at && primer && (new Date(ref.at) - new Date(primer)) > 3600e3;
+  const esVideo = ref?.media_type === "video";
+  const thumbIco = icon(esVideo ? "video" : "image");
+  // La miniatura abre la imagen grande; si la URL de Meta caducó, vuelve al icono (ver el onerror).
+  const thumb = imgUrl
+    ? `<a class="ol-thumb" href="${esc(imgUrl)}" target="_blank" rel="noopener noreferrer" title="Ver la imagen del anuncio" data-ico="${esc(thumbIco)}"><img src="${esc(imgUrl)}" alt="" referrerpolicy="no-referrer"></a>`
+    : `<span class="ol-thumb">${thumbIco}</span>`;
+  const copia = (ref?.headline || body) ? `<div class="ol-copy-blk">
+      ${ref?.headline?`<div class="ol-k">Título</div><div class="ol-v ol-title">${esc(ref.headline)}</div>`:""}
+      ${body?`<div class="ol-k">Texto</div><div class="ol-v${largo?" clamp":""}" id="pAdBody">${esc(body)}</div>${largo?`<button type="button" class="ol-more" id="pAdMore">Ver todo</button>`:""}`:""}
+    </div>` : "";
+  const card = (m?.ad_name || ref) ? `<div class="ol-card">
+      <div class="ol-ad">${thumb}<div class="ol-ad-tx"><div class="ol-name">${esc(m?.ad_name || ref?.headline || "Anuncio")}</div>${m?.adset_name?`<div class="ol-sub">Conjunto: ${esc(m.adset_name)}</div>`:""}</div></div>
+      ${copia}
+      ${verUrl?`<a class="cx-btn ol-link" href="${esc(verUrl)}" target="_blank" rel="noopener noreferrer">${icon("link")} Ver anuncio</a>`:""}
+    </div>` : "";
+  const nota = !ref
+    ? (m ? "Llegó antes del 5 de octubre de 2026, cuando Nodo aún no guardaba el título, el texto ni la imagen del anuncio."
+         : "Conecta tu cuenta publicitaria en Ajustes › Meta para ver el nombre del anuncio y su campaña.")
+    : "";
   return `
-    <div class="ol-hd"><span class="ol-src">${icon("megaphone")} Anuncio de Meta</span>${m?.campaign_name?`<span class="ol-camp" title="Campaña">${esc(m.campaign_name)}</span>`:""}</div>
-    ${m?.ad_name?`<div class="ol-name">${esc(m.ad_name)}</div>${m.adset_name?`<div class="ol-sub">Conjunto: ${esc(m.adset_name)}</div>`:""}`:""}
-    ${imgUrl?`<div class="ol-media"><img src="${esc(imgUrl)}" alt="" referrerpolicy="no-referrer"></div>`:""}
-    ${ref?.headline?`<div class="ol-k">Título</div><div class="ol-v ol-title">${esc(ref.headline)}</div>`:""}
-    ${body?`<div class="ol-k">Texto del anuncio</div><div class="ol-v${largo?" clamp":""}" id="pAdBody">${esc(body)}</div>${largo?`<button type="button" class="ol-more" id="pAdMore">Ver todo</button>`:""}`:""}
-    ${verUrl?`<a class="cx-btn ol-link" href="${esc(verUrl)}" target="_blank" rel="noopener noreferrer">${icon("link")} Ver anuncio</a>`:""}
-    ${contact.ad_id?`<div class="kv"><span class="k">Ad ID</span><span class="v ol-id">${esc(contact.ad_id)}<button type="button" class="ol-copy" id="pAdCopy" data-copy="${esc(contact.ad_id)}" title="Copiar el ID del anuncio">${icon("copy")}</button></span></div>`:""}
-    <div class="kv"><span class="k">Primer contacto</span><span class="v">${primer?fmtFull(primer):"—"}</span></div>
-    ${clicTarde?`<div class="kv"><span class="k">Último clic al anuncio</span><span class="v">${fmtFull(ref.at)}</span></div>`:""}
-    ${!m && contact.ad_id?`<div class="ol-note">El nombre del anuncio y su campaña salen cuando la cuenta publicitaria está conectada (Ajustes › Meta).</div>`:""}
-    ${!ref?`<div class="ol-note">El título y el texto del anuncio se guardan desde el 5 de octubre de 2026; quien llegó antes solo trae el ID.</div>`:""}`;
+    <div class="ol-src"><span class="ol-src-ic">${icon("megaphone")}</span><div class="ol-src-tx"><div class="ol-src-t">Anuncio de Meta</div>${m?.campaign_name?`<div class="ol-src-s" title="${esc(m.campaign_name)}">Campaña: ${esc(m.campaign_name)}</div>`:`<div class="ol-src-s">Click a WhatsApp</div>`}</div></div>
+    ${card}
+    <div class="ol-rows">
+      ${contact.ad_id?`<div class="kv"><span class="k">Ad ID</span><span class="v ol-id">${esc(contact.ad_id)}<button type="button" class="ol-copy" id="pAdCopy" data-copy="${esc(contact.ad_id)}" title="Copiar el ID del anuncio">${icon("copy")}</button></span></div>`:""}
+      <div class="kv"><span class="k">Primer contacto</span><span class="v">${primer?fmtFull(primer):"—"}</span></div>
+      ${clicTarde?`<div class="kv"><span class="k">Último clic al anuncio</span><span class="v">${fmtFull(ref.at)}</span></div>`:""}
+    </div>
+    ${nota?`<div class="ol-note">${icon("help")}<span>${nota}</span></div>`:""}`;
 }
 function renderContactPanel(){
   const { contact, order, capiEvt, adMeta, allTags, assigned, fields, vals, media, runs, subs, events } = panelData;
@@ -1739,8 +1768,8 @@ function renderContactPanel(){
     ${!isTest?sec("Avanzado", advBody, {open:false}):""}`;
   p.dataset.cid = contact.id;
   if (secsAntes) { restaurarSecciones(p, secsAntes); p.scrollTop = scrollAntes; }
-  // Origen del lead: la imagen del anuncio es una URL de Meta que caduca → si no carga, se quita.
-  p.querySelectorAll(".ol-media img").forEach(i=>{ const quitar=()=>i.closest(".ol-media")?.remove(); i.onerror=quitar; if(i.complete && !i.naturalWidth) quitar(); });
+  // Origen del lead: la imagen del anuncio es una URL de Meta que caduca → si no carga, vuelve al icono.
+  p.querySelectorAll(".ol-thumb img").forEach(i=>{ const volver=()=>{ const a=i.closest(".ol-thumb"); if(a) a.outerHTML=`<span class="ol-thumb">${a.dataset.ico||""}</span>`; }; i.onerror=volver; if(i.complete && !i.naturalWidth) volver(); });
   const adCopy=$("pAdCopy");
   if(adCopy) adCopy.onclick=()=>{ (navigator.clipboard?.writeText(adCopy.dataset.copy)||Promise.reject()).then(()=>toast("ID del anuncio copiado"),()=>toast("No se pudo copiar el ID",true)); };
   const adMore=$("pAdMore");
