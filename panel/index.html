@@ -2414,17 +2414,25 @@ async function updateWindow() {
   // que esa respuesta exista de verdad. Si nadie contestó y ya pasaron las 24h, esa ventana
   // nunca se abrió y la plantilla SÍ se cobra — decir lo contrario es hacerte gastar
   // creyendo que no gastas. La comprobación es un conteo con índice y solo al abrir el chat.
-  let fepOpen = fepEnd > now;
-  if (fepOpen) {
-    const inicioFep = fepEnd - 72*3.6e6;          // el clic en el anuncio
+  // 📣 Las 72 h sin costo del anuncio (Free Entry Point) NO se abren con el clic: Meta las abre cuando el NEGOCIO le
+  // responde dentro de las 24 h siguientes. Tres casos con anuncio vivo: ya respondiste (abierta), todavía estás a
+  // tiempo (sin respuesta y dentro de las 24 h) o se pasó (nadie respondió en 24 h). Antes el segundo caía en
+  // «Se cobra» con el texto «no vino por un anuncio»: falso las dos cosas (Rosmery, 5-oct, recién llegada del anuncio).
+  const deAnuncio = fepEnd > now;
+  const inicioFep = fepEnd - 72*3.6e6;            // el clic en el anuncio
+  const limiteResp = inicioFep + 24*3.6e6;        // hasta cuándo responder para abrirla
+  let fepOpen = false;
+  if (deAnuncio) {
     const { count } = await supa.from("messages").select("id", { count:"exact", head:true })
       .eq("contact_id", cid).eq("direction","out")
       .gte("ts", new Date(inicioFep).toISOString())
-      .lte("ts", new Date(inicioFep + 24*3.6e6).toISOString());
+      .lte("ts", new Date(limiteResp).toISOString());
     if (cid !== state.contactId) return;          // cambiaste de chat mientras contaba
     fepOpen = (count ?? 0) > 0;
   }
+  const aTiempo = deAnuncio && !fepOpen && now < limiteResp;   // vino por anuncio, nadie respondió aún, todavía se puede
   const fmt = (ms)=>{ const h=Math.floor(ms/3.6e6), m=Math.floor((ms%3.6e6)/6e4); return h>0?`${h}h ${m}m`:`${m}m`; };
+  const hora = (ms)=>new Date(ms).toLocaleString("es-PE",{ weekday:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
   // Chip 1 — servicio 24h.
   const svcChip = svcOpen
     ? `<span class="win svc">${icon("clock")} Escribe libre · ${fmt(svcEnd-now)}</span>`
@@ -2439,19 +2447,26 @@ async function updateWindow() {
     // pensar que se podía escribir de corrido y no se cobraba. Se dice qué es lo gratis.
     fepChip = svcOpen
       ? (poco
-        ? `<span class="win fep urge">${icon("megaphone")} Aprovecha · ${fmt(rem)} sin costo</span>`
-        : `<span class="win fep">${icon("megaphone")} Sin costo por anuncio · ${fmt(rem)}</span>`)
+        ? `<span class="win fep urge" title="Llegó por un anuncio y le respondiste a tiempo: sin costo hasta el ${esc(hora(fepEnd))}">${icon("megaphone")} Aprovecha · ${fmt(rem)} sin costo</span>`
+        : `<span class="win fep" title="Llegó por un anuncio y le respondiste a tiempo: sin costo hasta el ${esc(hora(fepEnd))}">${icon("megaphone")} Sin costo por anuncio · ${fmt(rem)}</span>`)
       : `<span class="win fep${poco ? " urge" : ""}" title="Las 24h para escribir libre ya cerraron, pero por venir de un anuncio la plantilla no te cuesta">${icon("megaphone")} Plantilla gratis · ${fmt(rem)}</span>`;
+  } else if (aTiempo) {
+    const rem = limiteResp - now;
+    fepChip = `<span class="win fep${rem < 6*3.6e6 ? " urge" : ""}" title="Llegó por un anuncio. Si le respondes antes del ${esc(hora(limiteResp))}, Meta no te cobra los mensajes por 72 h (hasta el ${esc(hora(fepEnd))}). Si nadie le responde a tiempo, se cobra.">${icon("megaphone")} Gratis si respondes · ${fmt(rem)}</span>`;
   }
   // Chip 3 — 💸 ¿este chat se cobra? «Escribe libre» dice si PUEDES escribir, no si CUESTA, y
   // desde el 1-oct-2026 Meta cobra por mensaje todo lo que no caiga dentro de las 72 h de un
   // clic en anuncio. Sin esto, la barra decía exactamente lo mismo en un chat gratis y en uno
   // que se paga: una decisión de plata sin un solo indicador. Solo sale cuando NO hay FEP
-  // vivo (si lo hay, el chip 2 ya dice que es gratis) y solo desde esa fecha — antes sería
-  // mentira, porque hoy todavía no se cobra.
+  // vivo ni a tiempo de abrirse, y solo desde esa fecha. El texto dice la razón REAL.
   const COBRO_DESDE = Date.UTC(2026, 9, 1);   // 1 de octubre de 2026
-  const cobraChip = (!fepOpen && now >= COBRO_DESDE)
-    ? `<span class="win closed" title="Este contacto no vino por un anuncio, así que no tiene la ventana de 72 h sin costo: Meta cobra cada mensaje que le mandes. El precio por mensaje se configura en Ajustes → Meta.">${icon("banknote")} Se cobra</span>`
+  const porQueCobra = deAnuncio
+    ? `Llegó por un anuncio, pero no hay una respuesta tuya en sus primeras 24 h (hasta el ${hora(limiteResp)}), así que la ventana de 72 h sin costo no se abrió: Meta cobra cada mensaje. Si le respondió otra app conectada al número (por ejemplo ChatLevel), puede que sí esté abierta.`
+    : (fepEnd > 0
+      ? "Su ventana de 72 h sin costo por el anuncio ya terminó: Meta cobra cada mensaje que le mandes."
+      : "Este contacto no vino por un anuncio, así que no tiene la ventana de 72 h sin costo: Meta cobra cada mensaje que le mandes.");
+  const cobraChip = (!fepOpen && !aTiempo && now >= COBRO_DESDE)
+    ? `<span class="win closed" title="${esc(porQueCobra)} El precio por mensaje se configura en Ajustes → Meta.">${icon("banknote")} Se cobra</span>`
     : "";
   w.innerHTML = svcChip + fepChip + cobraChip;
   // ⚠ El candado mira SOLO la ventana de servicio (24h), y así debe quedarse.
