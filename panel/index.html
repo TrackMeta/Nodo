@@ -520,6 +520,25 @@
   /* Panel derecho: secciones ricas */
   .cpanel .kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--border)}
   .cpanel .kv .k{color:var(--muted);flex:none} .cpanel .kv .v{color:var(--text);text-align:right;word-break:break-word;min-width:0}
+  /* Origen del lead: el anuncio que trajo al cliente */
+  .ol-hd{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-bottom:8px}
+  .ol-src{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--text)}
+  .ol-src svg{width:15px;height:15px;color:var(--brand-2)}
+  .ol-camp{font-size:11px;color:var(--brand-2);background:color-mix(in srgb,var(--brand) 14%,transparent);border-radius:999px;padding:2px 8px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ol-name{font-size:13px;font-weight:600;color:var(--text);word-break:break-word}
+  .ol-sub{font-size:11.5px;color:var(--faint);margin-top:1px;word-break:break-word}
+  .ol-media{margin:10px 0 2px;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--surface-2);max-height:220px;display:flex;align-items:center;justify-content:center}
+  .ol-media img{width:100%;max-height:220px;object-fit:cover;display:block}
+  .ol-k{font-size:11px;color:var(--muted);margin-top:10px}
+  .ol-v{font-size:12.5px;color:var(--text);margin-top:2px;white-space:pre-wrap;word-break:break-word;line-height:1.45}
+  .ol-v.ol-title{font-weight:600}
+  .ol-v.clamp{display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+  .ol-more{background:none;border:0;padding:2px 0;color:var(--brand-2);font-size:11.5px;cursor:pointer}
+  .cpanel a.ol-link{margin:12px 0 4px;width:100%;text-decoration:none;box-sizing:border-box}
+  .ol-id{display:inline-flex;align-items:center;gap:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px}
+  .ol-copy{background:none;border:0;padding:2px;color:var(--muted);cursor:pointer;display:inline-flex}
+  .ol-copy:hover{color:var(--text)} .ol-copy svg{width:13px;height:13px}
+  .ol-note{font-size:11.5px;color:var(--faint);margin-top:8px;line-height:1.4}
   .media-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
   .media-grid a{aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--surface-2);display:flex;align-items:center;justify-content:center;border:1px solid var(--border);color:var(--muted);font-size:20px;text-decoration:none}
   .media-grid img,.media-grid video{width:100%;height:100%;object-fit:cover}
@@ -1527,7 +1546,7 @@ async function loadContactPanel(c){
       <div class="cph">${isT ? "Contacto de prueba (Web Chat)" : "+"+esc(c.wa_id||"")}</div>
     </div>
     <div class="cx-skel"><div class="cx-skrow sm"></div><div class="cx-skrow"></div><div class="cx-skrow sm"></div><div class="cx-skrow"></div></div>`;
-  const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,bloqueado,no_remarketing,source,ad_id,ctwa_clid,primera_interaccion,ultimo_mensaje_cliente_at,ultimo_mensaje_at,created_at,memoria_ia${prod?",product_id,product:products(nombre,emoji)":""}`;
+  const cSel=(prod)=>`id,nombre,wa_id,stage,bot_activo,bloqueado,no_remarketing,source,ad_id,ctwa_clid,ad_ref,primera_interaccion,ultimo_mensaje_cliente_at,ultimo_mensaje_at,created_at,memoria_ia${prod?",product_id,product:products(nombre,emoji)":""}`;
   const [ctRes, tagsRes, ctagsRes, fieldsRes, valsRes, msgRes, runsRes, subsRes, evRes, orderRes] = await Promise.all([
     supa.from("contacts").select(cSel(true)).eq("id",c.id).maybeSingle().then(r=> r.error ? supa.from("contacts").select(cSel(false)).eq("id",c.id).maybeSingle() : r),
     supa.from("tags").select("id,nombre,color").eq("channel_id", state.channelId).order("nombre"),
@@ -1544,13 +1563,20 @@ async function loadContactPanel(c){
     latestOrder(supa, c.id),
   ]);
   if (state.contactId !== c.id) return; // cambió de chat mientras cargaba
-  let capiEvt=null;
-  if(orderRes && orderRes.id){ try{ const { data }=await supa.from("capi_events").select("estado, value, currency, event_id, action_source, meta_response, created_at").eq("order_id",orderRes.id).eq("event_name","Purchase").maybeSingle(); capiEvt=data; }catch(_){} }
+  let capiEvt=null, adMeta=null;
+  // Nombre del anuncio y de la campaña para «Origen del lead»: salen de ads_meta (lo baja ads-sync
+  // de la cuenta publicitaria conectada). Sin cuenta conectada simplemente no hay fila.
+  const adIdCt = (ctRes.data||c).ad_id;
+  await Promise.all([
+    (orderRes && orderRes.id) ? supa.from("capi_events").select("estado, value, currency, event_id, action_source, meta_response, created_at").eq("order_id",orderRes.id).eq("event_name","Purchase").maybeSingle().then(r=>{ capiEvt=r.data||null; },()=>{}) : null,
+    adIdCt ? supa.from("ads_meta").select("ad_name,adset_name,campaign_name").eq("channel_id", state.channelId).eq("ad_id", String(adIdCt)).maybeSingle().then(r=>{ adMeta=r.data||null; },()=>{}) : null,
+  ]);
   if (state.contactId !== c.id) return; // ese await también es una ventana: sin esto la ficha de A se pintaba en el chat de B
   panelData = {
     contact: ctRes.data || c,
     order: orderRes || null,
     capiEvt,
+    adMeta,
     allTags: tagsRes.data || [],
     assigned: new Set((ctagsRes.data||[]).map(r=>r.tag_id)),
     fields: fieldsRes.data || [],
@@ -1578,8 +1604,38 @@ function pasoSubTxt(s){
   if(n>=t) return `${t} de ${t} enviados`;
   return `${n} de ${t} enviados · sigue el ${n+1}.º`;
 }
+// «Origen del lead»: el anuncio que trajo al cliente. Nombre y campaña salen de ads_meta (cuenta
+// publicitaria conectada); título, texto, imagen y enlace, del referral que Meta manda en el primer
+// mensaje (contacts.ad_ref, desde la 0128). Solo se usa ad_ref si es del MISMO anuncio que ad_id.
+const ES_ANUNCIO = (s) => ["ad","ctwa"].includes(String(s||"").toLowerCase());
+const urlSegura = (u) => typeof u === "string" && /^https:\/\//i.test(u) ? u : "";
+function origenLeadHtml(contact, adMeta){
+  if (!contact.ad_id && !ES_ANUNCIO(contact.source)) return "";
+  const r0 = contact.ad_ref && typeof contact.ad_ref === "object" ? contact.ad_ref : null;
+  const ref = r0 && (!contact.ad_id || String(r0.source_id||"") === String(contact.ad_id)) ? r0 : null;
+  const m = adMeta || null;
+  const verUrl = urlSegura(ref?.source_url);
+  const imgUrl = urlSegura(ref?.image_url) || urlSegura(ref?.thumbnail_url);
+  const body = ref?.body || "";
+  const largo = body.length > 220 || body.split("\n").length > 5;
+  const primer = contact.primera_interaccion || contact.created_at;
+  // Volvió por un anuncio después de su primer contacto: se dice cuándo fue ese clic.
+  const clicTarde = ref?.at && primer && (new Date(ref.at) - new Date(primer)) > 3600e3;
+  return `
+    <div class="ol-hd"><span class="ol-src">${icon("megaphone")} Anuncio de Meta</span>${m?.campaign_name?`<span class="ol-camp" title="Campaña">${esc(m.campaign_name)}</span>`:""}</div>
+    ${m?.ad_name?`<div class="ol-name">${esc(m.ad_name)}</div>${m.adset_name?`<div class="ol-sub">Conjunto: ${esc(m.adset_name)}</div>`:""}`:""}
+    ${imgUrl?`<div class="ol-media"><img src="${esc(imgUrl)}" alt="" referrerpolicy="no-referrer"></div>`:""}
+    ${ref?.headline?`<div class="ol-k">Título</div><div class="ol-v ol-title">${esc(ref.headline)}</div>`:""}
+    ${body?`<div class="ol-k">Texto del anuncio</div><div class="ol-v${largo?" clamp":""}" id="pAdBody">${esc(body)}</div>${largo?`<button type="button" class="ol-more" id="pAdMore">Ver todo</button>`:""}`:""}
+    ${verUrl?`<a class="cx-btn ol-link" href="${esc(verUrl)}" target="_blank" rel="noopener noreferrer">${icon("link")} Ver anuncio</a>`:""}
+    ${contact.ad_id?`<div class="kv"><span class="k">Ad ID</span><span class="v ol-id">${esc(contact.ad_id)}<button type="button" class="ol-copy" id="pAdCopy" data-copy="${esc(contact.ad_id)}" title="Copiar el ID del anuncio">${icon("copy")}</button></span></div>`:""}
+    <div class="kv"><span class="k">Primer contacto</span><span class="v">${primer?fmtFull(primer):"—"}</span></div>
+    ${clicTarde?`<div class="kv"><span class="k">Último clic al anuncio</span><span class="v">${fmtFull(ref.at)}</span></div>`:""}
+    ${!m && contact.ad_id?`<div class="ol-note">El nombre del anuncio y su campaña salen cuando la cuenta publicitaria está conectada (Ajustes › Meta).</div>`:""}
+    ${!ref?`<div class="ol-note">El título y el texto del anuncio se guardan desde el 5 de octubre de 2026; quien llegó antes solo trae el ID.</div>`:""}`;
+}
 function renderContactPanel(){
-  const { contact, order, capiEvt, allTags, assigned, fields, vals, media, runs, subs, events } = panelData;
+  const { contact, order, capiEvt, adMeta, allTags, assigned, fields, vals, media, runs, subs, events } = panelData;
   const p = $("cpanel");
   const isTest = contact.wa_id === "webchat-test";
   const userFields = fields.filter(f=>!esCampoInterno(f.key)); // datos del cliente
@@ -1602,11 +1658,11 @@ function renderContactPanel(){
     <div class="kv"><span class="k">País</span><span class="v">${prefixLook(contact.wa_id, COUNTRY_BY_PREFIX, "—")}</span></div>
     <div class="kv"><span class="k">Hora local</span><span class="v">${localTime(contact.wa_id)}</span></div>
     <div class="kv"><span class="k">Origen</span><span class="v">${esc(origenLabel(contact.source))}</span></div>
-    ${contact.ad_id?`<div class="kv"><span class="k">Anuncio (Ad ID)</span><span class="v">${esc(contact.ad_id)}</span></div>`:""}
     ${contact.product?`<div class="kv"><span class="k">Producto</span><span class="v">${emoji?esc(emoji)+" ":""}${esc(contact.product.nombre||"")}</span></div>`:""}
     <div class="kv"><span class="k">Primer contacto</span><span class="v">${fmtDate(contact.primera_interaccion||contact.created_at)}</span></div>
     <div class="kv"><span class="k">Último mensaje</span><span class="v" title="${contact.ultimo_mensaje_cliente_at?fmtFull(contact.ultimo_mensaje_cliente_at):''}">${contact.ultimo_mensaje_cliente_at?rel(contact.ultimo_mensaje_cliente_at):"—"}</span></div>`;
   const stageBody = stagePickerHtml(contact.stage||"nuevo");
+  const origenBody = isTest ? "" : origenLeadHtml(contact, adMeta);
   const tagsBody = `<div id="pTags" class="tagrow">${
       [...assigned].map(id=>{ const t=allTags.find(x=>x.id===id); if(!t) return ""; const c=tagHex(t.color); return `<span class="tagchip" style="background:${c}1e;color:${c};border-color:${c}4d"><span class="tdot" style="background:${c}"></span>${esc(t.nombre)}<button data-tag="${t.id}" title="Quitar">×</button></span>`; }).join("")
     }${avail.length
@@ -1677,11 +1733,18 @@ function renderContactPanel(){
     ${!isTest && (!order || O.esPerdido(order) || O.esCerrado(order))?`<div class="cx-actions" style="margin-top:8px"><button class="cx-btn" id="pVentaManual" title="${order&&O.esCerrado(order)?"Registrar una NUEVA venta (recompra) que cerraste por fuera, sin tocar el pedido anterior":"Registrar una venta que cerraste por fuera (llamada, otro número): crea el pedido, entrega el link si es digital y la atribuye a Meta"}">${icon("dollar")} ${order&&O.esCerrado(order)?"Registrar otra venta":"Registrar venta a mano"}</button></div>`:""}
     ${miaCard}
     ${sec("Etapa del embudo", stageBody, {open:true})}
+    ${origenBody?sec("Origen del lead", origenBody, {open:true}):""}
     ${sec("Etiquetas", tagsBody, {count:assigned.size})}
     ${sec("Medios y archivos", mediaBody, {count:media.length})}
     ${!isTest?sec("Avanzado", advBody, {open:false}):""}`;
   p.dataset.cid = contact.id;
   if (secsAntes) { restaurarSecciones(p, secsAntes); p.scrollTop = scrollAntes; }
+  // Origen del lead: la imagen del anuncio es una URL de Meta que caduca → si no carga, se quita.
+  p.querySelectorAll(".ol-media img").forEach(i=>{ const quitar=()=>i.closest(".ol-media")?.remove(); i.onerror=quitar; if(i.complete && !i.naturalWidth) quitar(); });
+  const adCopy=$("pAdCopy");
+  if(adCopy) adCopy.onclick=()=>{ (navigator.clipboard?.writeText(adCopy.dataset.copy)||Promise.reject()).then(()=>toast("ID del anuncio copiado"),()=>toast("No se pudo copiar el ID",true)); };
+  const adMore=$("pAdMore");
+  if(adMore) adMore.onclick=()=>{ const b=$("pAdBody"); const abierto=b.classList.toggle("clamp")===false; adMore.textContent=abierto?"Ver menos":"Ver todo"; };
   const remk=$("pRemk");
   if(remk) remk.onclick=async()=>{
     const val=!contact.no_remarketing, quien=contact.nombre||"Este contacto", n=subsA.length;

@@ -1,0 +1,13 @@
+-- ═══════════════════════════════════════════════════════════════════
+-- Nodo · 0128 — Lo que Meta cuenta del anuncio que trajo al cliente.
+--
+-- Rodrigo (5-oct), mirando la ficha del contacto: le falta un «Origen del lead» como el de
+-- ChatLevel (título, texto e imagen del anuncio, «Ver anuncio»). Meta lo manda en el `referral`
+-- del primer mensaje (headline, body, source_url, image_url/video_url/thumbnail_url) y el webhook
+-- solo se quedaba con el ad_id: lo demás se botaba.
+--
+-- ad_ref = ese referral, guardado JUNTO con ad_id/ctwa_clid (mismo criterio: solo un clic de
+-- anuncio lo pisa). Lleva su propio source_id: la ficha lo muestra solo si coincide con ad_id.
+-- contacts tiene SELECT de tabla para authenticated (no va columna por columna como channels).
+-- ═══════════════════════════════════════════════════════════════════
+alter table public.contacts add column if not exists ad_ref jsonb;

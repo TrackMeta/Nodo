@@ -374,6 +374,18 @@ async function processInbound(
     // el ad_id dejaba el contacto con el anuncio de un lado y el clic de otro (Meta atribuía la venta a
     // A y Rendimiento a la publicación). Sin ctwa_clid no se toca la atribución.
     if (ref.ctwa_clid) { patch.ctwa_clid = ref.ctwa_clid; if (ref.source_id) patch.ad_id = ref.source_id; }
+    // Lo que Meta cuenta del anuncio (título, texto, enlace, imagen) para el «Origen del lead» de la
+    // ficha. Se botaba: solo quedaba el ad_id. Va con el mismo criterio que ad_id (solo un clic de
+    // anuncio lo pisa) y lleva su source_id: la ficha lo muestra solo si coincide con ad_id.
+    if (ref.ctwa_clid && ref.source_id) {
+      const t = (v: unknown, n: number) => typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null;
+      patch.ad_ref = {
+        source_id: String(ref.source_id), source_type: t(ref.source_type, 20), source_url: t(ref.source_url, 500),
+        headline: t(ref.headline, 300), body: t(ref.body, 2000), media_type: t(ref.media_type, 20),
+        image_url: t(ref.image_url, 1500), video_url: t(ref.video_url, 1500), thumbnail_url: t(ref.thumbnail_url, 1500),
+        at: tsCliente,
+      };
+    }
     patch.source = ref.source_type ?? "ctwa";
     // Free Entry Point: el mensaje que entra desde un anuncio abre 72h en las que Meta NO
     // cobra los mensajes. Ojo con qué significa eso: NO habilita texto libre —para eso hace
@@ -405,9 +417,9 @@ async function processInbound(
     .upsert(patch, { onConflict: "channel_id,wa_id" })
     .select("id, bot_activo, fep_hasta, bloqueado")
     .single();
-  if (upErr && /user_id|username|telefono|column/i.test(upErr.message)) {
-    // Migración 0062 aún no aplicada → reintenta sin las columnas nuevas.
-    const { user_id: _u, username: _n, telefono: _t, ...base } = patch as any;
+  if (upErr && /user_id|username|telefono|ad_ref|column/i.test(upErr.message)) {
+    // Migración 0062 (o 0128) aún no aplicada → reintenta sin las columnas nuevas.
+    const { user_id: _u, username: _n, telefono: _t, ad_ref: _r, ...base } = patch as any;
     ({ data: contact, error: upErr } = await db
       .from("contacts").upsert(base, { onConflict: "channel_id,wa_id" })
       .select("id, bot_activo, fep_hasta, bloqueado").single());
