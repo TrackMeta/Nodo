@@ -7217,6 +7217,13 @@ function fichaSinPresentacion(ficha: string): string {
   // Si al quitarlas no queda ficha, se manda la original: quedarse sin contexto es peor.
   return salida.replace(/[\s#]/g, "").length < 40 ? t : salida;
 }
+// …y lo que fichaSinPresentacion le quita: el «## Resumen» y la «## Descripción», para mandarlos aparte en los turnos de
+// venta (ver «Sobre el producto: presentación»).
+function presentacionDeLaFicha(ficha: string): string {
+  const t = String(ficha ?? "");
+  if (!t.includes("## ")) return "";
+  return t.split(/\n(?=## )/).filter((b) => SECCIONES_PITCH.test(b.replace(/^##\s*/, "").trim())).join("\n").trim();
+}
 
 // 🪞 EL BOT CONTESTÁNDOSE SOLO. El rotador cierra preguntando «¿ya tienes un taladro?», el
 // cliente lo ignora y contesta «soy de Cerro de Pasco», y el bot arranca con «**Buena
@@ -8473,6 +8480,10 @@ let _modeloVentaForzado: string | null = null;
 export function forzarModeloVenta(m: string | null): void {
   _modeloVentaForzado = m && /^gpt-[\w.-]+$/.test(m) ? m : null;
 }
+// 🔬 Lo mismo para la radiografía del prompt (`_rxPrompt: "full"`): el examen la enciende con una etiqueta «rx…» para
+// medir en qué carácter se parte el prompt entre dos turnos (la caché corta ahí). Solo el examen; nunca un canal real.
+let _rxForzado = false;
+export function forzarRxPrompt(on: boolean): void { _rxForzado = !!on; }
 // ═══════════════════════════════════════════════════════════════════
 // 🧭 MOTOR V2 — «la IA conversa, el motor guía» (PLAN_MOTOR_IA.md, fase 1).
 // El motor decide el SIGUIENTE PASO de la venta y se lo dice a la IA al final del mensaje; la IA contesta lo que le
@@ -18987,9 +18998,11 @@ hagas — responde comercialmente normal y no las menciones.`;
 //
 // 🔴 Y ojo: reordenar un prompt PUEDE cambiar el comportamiento (justo por lo de arriba). Por
 // eso este cambio se mide con batería, no solo con el contador de caché.
+// (4-oct, examen rx: la presentación de la ficha y las órdenes de la cantidad entraban y salían ENTRE los fijos y
+//  partían el prompt en el carácter ~13-16 mil de ~27 mil. Ahora van con los que cambian.)
 const RE_BLOQUE_AL_FINAL = /^## (Este turno|C[oó]mo se ve tu mensaje)/;
 const RE_BLOQUE_QUE_CAMBIA =
-  /^(## (Ya eligi[oó]|Ya se lo dijiste|Con qu[eé] (empezaste|cerraste)|Datos que faltan|No hay ning[uú]n dato|Entrega de este cliente|Existencias|Te mand[oó]|⚠️|🗺️)|Ahora mismo el cliente|🔴 Ya eligi[oó])/;
+  /^(## (Sobre el producto: presentaci[oó]n|Este mensaje lleva DOS cosas|NO le preguntes (la cantidad|cu[aá]l presentaci[oó]n)|Ya eligi[oó]|Ya se lo dijiste|Con qu[eé] (empezaste|cerraste)|Datos que faltan|No hay ning[uú]n dato|Entrega de este cliente|Existencias|Te mand[oó]|⚠️|🗺️)|Ahora mismo el cliente|🔴 Ya eligi[oó])/;
 
 // Reparte en tres montones conservando el orden RELATIVO de cada uno: fijos, los que cambian,
 // y los dos que van al final sí o sí. Nada se pierde y nada se duplica — es una permutación.
@@ -23462,8 +23475,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     (run as any)._sinPitchTurno = _noPreguntaPorElProducto && !_esObjecionPrecio;   // lo usa sinPitchDelProducto al salir
     if (ctx.contexto_producto) {
       const _fichaTxt = resolve(String(ctx.contexto_producto), ctx);
-      parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` +
-        (_turnoDeVenta && !_noPreguntaPorElProducto ? _fichaTxt : fichaSinPresentacion(_fichaTxt)));
+      // 💾 La ficha va SIEMPRE sin la presentación, y la presentación —cuando toca— va en su propio bloque, entre los
+      // que cambian (ordenPorEstabilidad). Antes se le quitaba del MEDIO según el turno: el prompt se partía ahí y la
+      // caché cortaba en el carácter 16.140 de ~26.600 en uno de cada dos turnos (medido 4-oct, examen rx 187ec898).
+      const _fichaSin = fichaSinPresentacion(_fichaTxt);
+      parts.push(`## Sobre el producto${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + _fichaSin);
+      if (_turnoDeVenta && !_noPreguntaPorElProducto && _fichaSin !== _fichaTxt) {
+        const _pitch = presentacionDeLaFicha(_fichaTxt);
+        if (_pitch) parts.push(`## Sobre el producto: presentación${ctx.producto_nombre ? ` (${ctx.producto_nombre})` : ""}\n` + _pitch);
+      }
     }
     // 🧾 Ya eligió: no se le vuelve a leer la carta. Medido — una clienta abrió con
     // «quiero el dermachem, los 2 frascos» y el mensaje siguiente le listaba otra vez
@@ -25952,7 +25972,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // Apagada por defecto — se enciende con `_rxPrompt` en las vars del run cuando hay que
     // medir. Vale la pena dejarla: con ella se vio en un minuto que el guion físico dentro de
     // una venta digital eran 1.164 caracteres, no los ~7.000 que yo había estimado a ojo.
-    if ((run.vars as any)?._rxPrompt) {
+    const _rxModo = (run.vars as any)?._rxPrompt || (_rxForzado ? "full" : "");
+    if (_rxModo) {
       try {
         const _rx = _bloquesUsados.map((b) =>
           `${(b.split("\n")[0] || "").replace(/^#+\s*/, "").slice(0, 44)} (${b.length})`).join(" · ");
@@ -25961,7 +25982,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // `_rxPrompt: "full"` guarda ADEMÁS el prompt entero, sin recortar. Es para reescribir
         // un prompt: la lista de titulares dice qué bloques hay, pero para no perder una regla
         // hay que leer el texto tal cual le llega al modelo. No se enciende solo.
-        if (String((run.vars as any)._rxPrompt) === "full") {
+        if (String(_rxModo) === "full") {
           await logEvent(db, run.channel_id, run.contact_id, "nota",
             `🔬 Prompt ENTERO ${_promptUsado}`, String(system ?? "")).catch(() => {});
         }

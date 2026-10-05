@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userIsChannelAdmin } from "../_shared/db.ts";
-import { runEngine, aplicarStock, forzarModeloVenta } from "../_shared/engine.ts";
+import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt } from "../_shared/engine.ts";
 import { runAI, anotarUsoIA } from "../_shared/ai.ts";
 import { BATERIAS, BATERIA_ECOGUARD, type ConvExamen } from "./bateria.ts";
 
@@ -335,6 +335,8 @@ Deno.serve(async (req) => {
     const t0 = Date.now();
     const channelId = (examen as any).channel_id as string;
     forzarModeloVenta((examen as any).modelo ?? null);
+    // 🔬 Etiqueta «rx…» = guardar el prompt ENTERO de cada turno (medir la caché). Correr de a UNA conversación.
+    forzarRxPrompt(/^rx/i.test(String((examen as any).etiqueta ?? "")));
     const tr: Array<{ c: string; b: string[] }> = Array.isArray((fila as any).transcript) ? (fila as any).transcript : [];
     try {
       // Un wa_id por examen y conversación: dos corridas a la vez no se pisan el contacto.
@@ -360,6 +362,7 @@ Deno.serve(async (req) => {
       return json({ error: "engine_error", detalle: String(e).slice(0, 300) }, 500);
     } finally {
       forzarModeloVenta(null);
+      forzarRxPrompt(false);
     }
   }
 

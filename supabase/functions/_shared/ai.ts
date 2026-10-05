@@ -301,6 +301,9 @@ async function callOpenAI(call: AiCall): Promise<string> {
     max_tokens: call.maxTokens ?? 1024,
     messages,
   };
+  // 💾 OpenAI manda a la misma máquina (= la que tiene la caché) las llamadas con el mismo prefijo Y la misma llave.
+  // Por canal y trabajo: un bot no le enfría la caché a otro, y «vender» no se mezcla con «extraer». No cambia la respuesta.
+  if (call.channelId) body.prompt_cache_key = `nodo:${call.channelId}:${call.origen || "otro"}`;
   // OpenAI: para "extraer" forzamos objeto JSON.
   if (call.jsonSchema && call.jsonStrict) {
     // Modo estricto: OpenAI obliga el esquema. Pide que TODAS las propiedades estén en
