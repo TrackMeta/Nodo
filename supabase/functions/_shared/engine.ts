@@ -4076,7 +4076,7 @@ const TEMAS_FICHA_DIGITAL: Array<[string, RegExp, RegExp, "producto" | "negocio"
 //
 // La redacción es ORDEN, no permiso: "puedes usar, con moderación" es exactamente
 // con lo que el modelo no pone ni una negrita (ya estaba documentado para emojis).
-function estiloDeEscritura(est: any, opts?: { emojisProducto?: string; emojisNegocio?: string }): string {
+function estiloDeEscritura(est: any, opts?: { emojisProducto?: string; emojisNegocio?: string; digital?: boolean }): string {
   const e = est ?? {};
   const negOn = e.negritas !== false;
   const mxRaw = Number(e.emoji_max);
@@ -4087,13 +4087,17 @@ function estiloDeEscritura(est: any, opts?: { emojisProducto?: string; emojisNeg
   // Si el dueño tocó la perilla, manda ella (aunque el producto no tenga lista y su
   // copy no traiga ninguno). En 0 es un NO explícito y le gana a todo lo demás.
   const emOn = Number.isFinite(mx) ? mx > 0 : !!(emProd || emNeg);
+  // 💻 En un DIGITAL no hay agencia, clave de recojo, talla, dirección ni datos que pedir: nombrarlos en los ejemplos
+  // le sugiere al modelo un envío que no existe (auditoría del prompt digital, 6-oct).
+  const dig = !!opts?.digital;
 
   const fmt = "## Cómo se ve tu mensaje en WhatsApp\n" + (negOn
     ? "WhatsApp entiende *negrita*, _cursiva_ y ~tachado~ con esos símbolos pegados a la palabra. " +
       "USA la negrita —no es opcional—: el cliente relee el chat buscando un dato concreto y tiene que " +
-      "saltarle a la vista. Van en *asteriscos* los precios y montos, la fecha o el plazo, la clave de " +
-      "recojo, la talla o presentación que quedó, el nombre de la agencia, y el nombre del producto la " +
-      "primera vez que lo nombras. Dos o tres por mensaje; si " +
+      "saltarle a la vista. Van en *asteriscos* los precios y montos, " + (dig
+        ? "la presentación que eligió y el nombre del producto la primera vez que lo nombras. "
+        : "la fecha o el plazo, la clave de recojo, la talla o presentación que quedó, el nombre de la agencia, y " +
+          "el nombre del producto la primera vez que lo nombras. ") + "Dos o tres por mensaje; si " +
       "resaltas todo, no resaltas nada. Nunca para adornar ni para gritar. " +
       // El tope se comía justo las negritas que más valen. Medido dos veces seguidas: el
       // mensaje ya gastaba una en *Dermachem* (el nombre del producto, que también le pedimos)
@@ -4118,16 +4122,21 @@ function estiloDeEscritura(est: any, opts?: { emojisProducto?: string; emojisNeg
       ? "Este negocio usa estos: " + emNeg + ". Usa esos o alguno afín al tema. "
       : "Elige los que peguen con lo que estás diciendo. ");
   return fmt + "\n\n## Emojis\n" + cuales + cuantos + ". " +
-    "Tienen que APORTAR: marcan de qué habla la frase (✅ lo que queda listo, 📦 el envío, 💰 el precio, " +
-    "📍 la dirección, ⏱️ el plazo), no decoran. Nunca dos pegados, nunca en medio de una frase, nunca uno " +
+    // Con lista propia del producto, los ejemplos no pueden salir de afuera: el bloque decía «ninguno fuera de esa
+    // lista» y en la frase siguiente ponía de ejemplo 📦 📍 ⏱️, que no estaban en ella (auditoría 6-oct).
+    "Tienen que APORTAR: " + (emProd
+      ? "que cada uno marque de qué habla la frase"
+      : (dig ? "marcan de qué habla la frase (✅ lo que queda listo, 💰 el precio, 📲 el acceso)"
+             : "marcan de qué habla la frase (✅ lo que queda listo, 📦 el envío, 💰 el precio, 📍 la dirección, ⏱️ el plazo)")) +
+    ", no decoran. Nunca dos pegados, nunca en medio de una frase, nunca uno " +
     "por oración (la lista de precios es la excepción: ahí va uno por línea). " +
     // El "sin emoji al pedir datos" chocaba con la plantilla del propio motor, que arma la
     // lista de datos con un 👇 («pásame estos datos 👇»). El modelo veía la orden y el
     // ejemplo contrario en el mismo prompt. Se acota: el que resta seriedad es el emoji
     // decorativo junto a la PLATA; el que señala la lista de datos ayuda a leerla.
     "⛔ Sin ninguno cuando el cliente reclama, se queja o algo salió mal, y sin ninguno en el mensaje del " +
-    "PAGO (montos, cuentas, comprobantes): ahí resta seriedad. Al pedirle sus datos puedes usar UNO que " +
-    "señale la lista (👇) y ninguno más.\n" +
+    "PAGO (montos, cuentas, comprobantes): ahí resta seriedad." +
+    (dig ? "\n" : " Al pedirle sus datos puedes usar UNO que señale la lista (👇) y ninguno más.\n") +
     // El mínimo, repetido AL FINAL y como conteo. Medido: con "pon entre 2 y 3 por mensaje"
     // dicho una sola vez y arriba, los mensajes del medio salían con uno o con ninguno —
     // el modelo se quedaba con las excepciones, que son lo último que leía. Ahora la
@@ -5889,6 +5898,10 @@ function conMayusculaInicial(t: string): string {
 // en mayúscula, y una «y» de enlace al frente sobra). Con menos, es retazo y se va.
 function sinColaDeLoQuitado(t: string): string {
   return String(t ?? "")
+    // El PUNTO que cerraba la frase quitada se va con ella. «Perfecto, te paso los datos para el pago 👇. Mándame la
+    // captura…»: la regex del anuncio frena antes del punto y al cliente le llegó «. Mándame la captura…» (Probar
+    // flujos, 6-oct). Va primero: con el punto fuera, si sigue una minúscula es la cola de esa misma frase.
+    .replace(/0001(?:[ \t️]|\p{Extended_Pictographic})*[.,;:!…]+/gu, "0001")
     .replace(/0001(?:[ \t️]|\p{Extended_Pictographic})*(\p{Ll}[^.!?…\n]*[.!?…]?)/gu, (_m, cola: string) =>
       (cola.match(/[\p{L}\p{N}]+/gu) ?? []).length >= 6 ? ` ${cola.replace(/^(?:y|e)\s+/i, "")}` : " ")
     .replace(/0001/g, " ");
@@ -6072,7 +6085,7 @@ function sinAnuncioDePago(texto: string): string {
     .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n")
     // La flecha «👇» que apuntaba al anuncio quitado, sola al final del renglón.
     // (…salvo la flecha que apunta a la lista 📌 de datos, que sí sigue debajo — R1L-comas, regresión 2026-10-01)
-    .replace(/[ \t]*👇(?=[ \t]*(?:\n|$))(?![ \t]*\n+[ \t]*📌)/gu, "").replace(/^[\s👇]+/u, "").trim());   // y la flecha que quedó ABRIENDO la frase siguiente («👇 Apenas me mandes…»)
+    .replace(/[ \t]*👇(?=[ \t]*(?:\n|$))(?![ \t]*\n+[ \t]*📌)/gu, "").replace(/^[\s👇.,;:!…]+/u, "").trim());   // (+ el punto suelto que quedó abriendo, 6-oct) y la flecha que quedó ABRIENDO la frase siguiente («👇 Apenas me mandes…»)
   // Si al quitarla no queda mensaje, se deja el original: mejor la burbuja de más que una
   // vacía. El piso es bajo a propósito: lo que suele quedar es el acuse («¡Listo, Bertha!»),
   // que es un mensaje perfectamente válido porque los datos vienen en la burbuja siguiente.
@@ -9622,7 +9635,11 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       // transferencia? … ¿Me lo mandas de nuevo?» (el celular de 8 dígitos). Dos preguntas = contesta una, y la
       // del medio es aire porque el bloque de pago trae los tres; que quede la que importa (2026-10-01).
       const _sinMedio = result.replace(RE_PREGUNTA_MEDIO_PAGO, " ");
-      const _base = (RE_QUIERE_COMPRAR.test(_liD) || (_sinMedio !== result && _sinMedio.includes("?"))) ? _sinMedio : result;
+      // (+ si la propia IA promete los datos o el cliente anuncia que paga: «Perfecto, te paso los datos para el pago 👇
+      //  … ¿Prefieres *Yape* o *transferencia BCP*?» a «Para hacer el pago» — y 2 s después llegaron los dos medios
+      //  juntos, sin que contestara. Probar flujos, 6-oct.)
+      const _base = (RE_QUIERE_COMPRAR.test(_liD) || RE_ANUNCIA_PAGO.test(_liD) || RE_PROMETE_PAGO.test(result)
+        || (_sinMedio !== result && _sinMedio.includes("?"))) ? _sinMedio : result;
       result = sinPedirPermisoPago(sinAnuncioDePago(sinPromesaDeDatosColgada(_base, true, RE_PRESENCIA.test(_liD), _liD)));
     }
     // 🧭 Con el motor v2 y la respuesta aprobada por el revisor, la limpieza de «restos» no corre: se llevaba preguntas
@@ -15668,7 +15685,12 @@ async function maybeDatosPago(
     const _recienSalieron = _idxRec >= 0 && _idxRec <= 2
       && (Date.now() - new Date(String((outs ?? [])[_idxRec]?.ts ?? 0)).getTime()) < 15 * 60 * 1000;
     const _iaRespuesta = String(respuestaIa ?? "");
-    const _iaYaLoDijo = nums.some((n) => _iaRespuesta.includes(n))
+    // 🔢 El número de la IA se compara SIN espacios: el Yape está guardado «931 934 092» y `nums` (\d{6,}) no lo veía —
+    // solo pescaba la cuenta del BCP—, así que la IA escribía el Yape y el motor lo volvía a pegar debajo (Probar
+    // flujos, 6-oct: el número de Yape le llegó dos veces seguidas, tres en total).
+    const _numsJuntos = (dp.match(/\d[\d \t.-]{4,}\d/g) ?? []).map((x) => x.replace(/\D/g, "")).filter((x) => x.length >= 6);
+    const _iaDioElNumero = _numsJuntos.some((n) => _iaRespuesta.replace(/\D/g, " ").replace(/(\d)\s+(?=\d)/g, "$1").includes(n));
+    const _iaYaLoDijo = _iaDioElNumero || nums.some((n) => _iaRespuesta.includes(n))
       || dp.split("\n").map((l) => l.replace(/[*_~]/g, "").trim()).some((l) => l.length >= 8 && !/\d{6,}/.test(l) && _iaRespuesta.includes(l));
     const _pideElNumero = /(?:cu[aá]l|qu[eé])\s+(?:es\s+)?(?:el\s+|tu\s+|su\s+)?(?:n[uú]mero|yape|plin|cuenta|cci)|p[aá]same\s+(?:el\s+|tu\s+|los\s+)?(?:n[uú]mero|yape|plin|cuenta|datos)|m[aá]ndame\s+(?:el\s+|tu\s+|los\s+)?(?:n[uú]mero|yape|plin|cuenta|datos)|a\s+qu[eé]\s+n[uú]mero|d[oó]nde\s+(?:te\s+)?(?:yapeo|pago|deposito|transfiero)/i.test(String(texto ?? ""));
     // Ya se los mandamos antes → normalmente no se repiten… salvo que los esté PIDIENDO:
@@ -15694,7 +15716,10 @@ async function maybeDatosPago(
     // («yape» a secas tras los tres medios ES pedir ese número: se le manda SOLO ese bloque — Rodrigo, Probar flujos
     //  2026-10-02: «no le envió el número de yape nuevamente». Lo que molestaba el 1-oct era recibir los TRES otra vez.)
     const _unMetodo = !!soloMetodo && dp.split(/\n\s*\n/).filter((b) => b.trim()).length > 1;
-    if (_yaSalieron && !_montoCambio && (_recienSalieron || _iaYaLoDijo) && !_pideElNumero && !_unMetodo) {
+    // (Si la IA ya escribió el NÚMERO en este mismo turno, no se pega otra vez aunque haya dicho «yape» o lo pida: lo
+    //  acaba de leer dos segundos antes. Así salió «Aquí están los datos… 931 934 092…» y debajo «Son S/ 10 👇 Yape…
+    //  931 934 092» — Probar flujos, 6-oct.)
+    if (_yaSalieron && !_montoCambio && (((_recienSalieron || _iaYaLoDijo) && !_pideElNumero && !_unMetodo) || _iaDioElNumero)) {
       await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago NO repetidos",
         _iaYaLoDijo ? "La IA ya contestó con el dato en su texto" : "Acaban de salir (últimos mensajes); solo se repiten si pide el número").catch(() => {});
       return;
@@ -15775,7 +15800,8 @@ async function maybeDatosPago(
     await deliverMessage(db, channelId, contactId, _cab + (elegido ?? dp) +
       (_esDigital ? "" : "\n\nCuando lo hagas mándame la captura y lo verifico al toque. 😊"));
     await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago enviados",
-      _montoCambio ? "Cambió de presentación: se reenvían con el monto nuevo" : "Dijo que iba a pagar y todavía no los tenía").catch(() => {});
+      _montoCambio ? "Cambió de presentación: se reenvían con el monto nuevo"
+        : (_yaSalieron ? (elegido ? "Eligió un medio: se le manda solo ese" : "Pidió el número otra vez") : "Dijo que iba a pagar y todavía no los tenía")).catch(() => {});
     return true;
   } catch (e) {
     // Antes esto moría en un console.error: los datos de pago no salían y en el panel no
@@ -18741,13 +18767,14 @@ ni lo niegues: dilo con naturalidad y sigue atendiéndolo tú mismo.
   MAL: "Soy una persona que te atiende directamente."
   BIEN: "Soy el asistente de la tienda 🤖 y te atiendo yo mismo. Si necesitas a alguien del
   equipo, te lo paso. ¿Seguimos?"
+Si el negocio te dio un nombre, úsalo: es tu nombre de asistente, no te vuelve una persona.
 
 ## Qué vendes
 Es un producto DIGITAL: se entrega por link o archivo, en este mismo chat, apenas se valide el
 pago. El acceso es uno solo y le queda de por vida.
 
 ## Cómo se compra (esto es todo el camino)
-1. Elige cuál presentación quiere.  2. Le llegan los datos de pago con el monto exacto.
+1. Si hay más de una presentación, elige cuál quiere.  2. Le llegan los datos de pago con el monto exacto.
 3. Manda la captura.  4. Se valida y le llega su acceso.
 No hay más pasos. No inventes ninguno.
 
@@ -18757,7 +18784,7 @@ Estas cinco no las corrige nadie más. Si las rompes, salen tal cual.
 1 ⛔ NO LE PREGUNTES DE DÓNDE ES. Ni ciudad, ni distrito, ni dirección. No hay envío, ni
   agencia, ni adelanto. Ni siquiera cuando ya eligió y estás pensando en "el siguiente paso".
   MAL: "Perfecto, la Básica. ¿Desde qué ciudad lo vas a descargar?"
-  BIEN: "Perfecto, la Básica. Te paso los datos para el pago 👇"
+  BIEN: "Perfecto, la *Básica* 🙌 Apenas pagues, mándame la captura y te dejo tu acceso listo."
   ✅ Si ÉL pregunta cómo le llega: contéstale. Por acá, apenas pague, lo abre desde donde esté.
 
 2 ⛔ EL TITULAR DE LA CUENTA NO ES EL CLIENTE. Ese nombre es el del negocio. Si no sabes cómo
@@ -18767,7 +18794,7 @@ Estas cinco no las corrige nadie más. Si las rompes, salen tal cual.
 3 ⛔ ELIGE CUÁL, NO CUÁNTAS. Nunca preguntes "¿cuántas unidades?". Si pide varias, el acceso es
   uno solo y le queda de por vida: díselo con calidez. NUNCA multipliques el precio.
   MAL: "3 accesos serían S/ 30"
-  BIEN: "Con uno te alcanza, te queda de por vida 🙌 ¿Cuál de las dos prefieres?"
+  BIEN: "Con uno te alcanza, te queda de por vida 🙌" (y si hay varias presentaciones, le preguntas cuál)
 
 4 ⛔ UN PAGO QUE NO VISTE NO ES UN PAGO. "Ya te yapeé" es una intención, no un pago. Pídele la
   captura y espera. Quien confirma el dinero es el sistema, no tú.
@@ -18804,10 +18831,12 @@ Si algo de acá se te escapa, el sistema lo corrige antes de enviar. Igual resp�
 · Elegir una presentación YA es decidir comprar: no le preguntes otra vez si lo quiere.
 · No ofrezcas descuentos ni presiones con escasez inventada: un digital no se agota.
 · No puedes cancelar ni anular un pedido. Si te lo piden, escribe [[humano]].
-· Si dice que lo va a pensar: una línea cálida, la puerta abierta, y listo. No insistas.
+· Si dice que lo va a pensar: como mucho UN argumento breve (el que más le sirve a él) y la
+  puerta abierta. Si lo mantiene, despídete cálido y no insistas más.
 · Si vuelve a preguntar algo que ya le explicaste, se lo explicas otra vez sin hacerlo sentir mal.
 · Si ya te compró, no le vendas lo mismo: atiéndelo. Otra presentación sí se vende.
-· Si dice que no le llegó su acceso o que perdió el link, escribe [[humano]].
+· Si dice que no le llegó su acceso, que perdió el link o reclama: discúlpate breve, dile que
+  ya lo estás revisando y escribe [[humano]]. Nada de "un asesor te va a escribir".
 
 ## Cuando te cuenta algo suyo
 A veces no pregunta: se abre ("nunca he hecho esto", "no tengo tiempo"). Te lo dice para saber
@@ -23017,7 +23046,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "que le toca a ÉL por lo que acaba de decir, con lo que tienes en la ficha. Igual, corto: lo que " +
           "responde su duda y nada más."
         : "## Este turno NO es para explicar el producto\nNo te preguntó nada: solo te está dando un dato " +
-          "(su ciudad, su nombre, cuántas unidades). ⛔ Para ESTE mensaje ignora cualquier instrucción de " +
+          // (En digital no hay ciudad ni unidades que dar: el dato es cuál eligió o cómo va a pagar.)
+          (esDigital(ctx) ? "(cuál eligió, cómo va a pagar, su nombre). " : "(su ciudad, su nombre, cuántas unidades). ") +
+          "⛔ Para ESTE mensaje ignora cualquier instrucción de " +
           "«explicar el valor» o «hablar en beneficios» —no toca ahora—, y NO describas el producto: los " +
           "mensajes iniciales ya se lo contaron. Acusas lo que te dio, contestas si preguntó algo y das el " +
           "siguiente paso. Dos líneas.");
@@ -23432,8 +23463,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       parts.push("## Formas de pago aceptadas\n" + [...new Set(pm)].join("\n") +
         "\n⛔ NO escribas tú el número ni el titular, ni siquiera si te los piden y ni aunque los veas " +
         "más arriba en esta misma conversación: copiarlos dentro de una frase le quita al cliente lo " +
-        "único que necesita hacer, que es copiar el número de un toque. Di que se los pasas (o que van " +
-        "enseguida) y sigue: el sistema se los manda completos justo después de tu mensaje. Y no le " +
+        "único que necesita hacer, que es copiar el número de un toque. Tampoco anuncies que van a llegar " +
+        // Decía «di que se los pasas (o que van enseguida)», y las reglas de arriba prohíben justo eso: la IA lo
+        // escribía, el freno de salida lo borraba y quedaba «. Mándame la captura…» (auditoría 6-oct).
+        "(«te paso los datos», «ahí van»): el sistema se los manda completos justo debajo de tu mensaje, " +
+        "sin que lo digas. Tú contesta lo suyo y, si ya decidió, invítalo a mandar la captura. Y no le " +
         "expliques qué es Yape o Plin: los conoce mejor que tú.\n" +
         // 🔴 EL TITULAR DE LA CUENTA NO ES EL CLIENTE. Medido en una venta digital sin campo de
         // nombre: el modelo se quedó sin ningún nombre del cliente en el contexto, agarró el
@@ -25432,6 +25466,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const _bloqueEstilo = estiloDeEscritura(_est, {
       emojisProducto: String(ctx.emojis ?? ""),
       emojisNegocio: String((ctx as any)._negocio_emojis ?? ""),
+      digital: esDigital(ctx),
     });
     // Cómo VENDE, no solo cómo responde. Los tres vicios de abajo salieron de leer un chat
     // real de punta a punta, y los tres se pagan en ventas: contestar sin cerrar deja al

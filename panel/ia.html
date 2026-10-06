@@ -529,7 +529,7 @@ const TONOS={ cercano:"Cercano y amigable, con tuteo", formal:"Formal y profesio
 // negrita. Medido: el bot escribía plano teniendo las perillas activadas.
 function compilePersona(form){
   const p=[];
-  if(form.nombre_ia&&form.nombre_ia.trim()) p.push(`Te llamas ${form.nombre_ia.trim()}${form.nombre?`, asesor(a) de ventas de ${form.nombre.trim()}`:""}. Si te preguntan tu nombre, ese es.`);
+  if(form.nombre_ia&&form.nombre_ia.trim()) p.push(`Te llamas ${form.nombre_ia.trim()}${form.nombre?`, el asistente virtual de ventas de ${form.nombre.trim()}`:""}. Si te preguntan tu nombre, ese es.`);
   const t=[]; if(form.tono&&TONOS[form.tono]) t.push(TONOS[form.tono]); if(form.tono_detalle&&form.tono_detalle.trim()) t.push(form.tono_detalle.trim());
   if(t.length) p.push("Tono: "+t.join(". ")+".");
   return p.length?p.join(" "):"";
