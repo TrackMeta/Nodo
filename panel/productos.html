@@ -117,6 +117,16 @@
   .armhero .hg{width:38px;height:38px;flex:none;border-radius:11px;background:linear-gradient(135deg,var(--ia1,#a855f7),var(--ia2,#ec4899));color:#fff;display:flex;align-items:center;justify-content:center}
   .armhero .hg svg{width:20px;height:20px}
   .hint{color:var(--muted);font-size:12.5px;line-height:1.55}
+  /* ¿Cómo se entrega? — editor en el MISMO orden en que sale + vista previa al lado */
+  .entGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(210px,250px);gap:14px;align-items:start}
+  .entPrevCol{position:sticky;top:12px}
+  @media (max-width:820px){ .entGrid{grid-template-columns:1fr} .entPrevCol{position:static} }
+  .entPaso{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;flex:none;
+    background:var(--brand);color:#fff;font-size:11px;font-weight:700}
+  .entSub{font-size:12px;color:var(--faint);margin:2px 0 10px;line-height:1.5}
+  .entItem{margin-bottom:10px;padding:9px 10px;border:1px solid var(--border);border-radius:10px}
+  .entItem .entLbl{font-size:11px;color:var(--muted);margin:0 0 4px;display:block}
+  .entItem .emsg+.entLbl{margin-top:9px}
   label{display:block;font-size:11.5px;color:var(--muted);margin:16px 0 6px;font-weight:700}
   .in,.ta{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px;font-size:13.5px;outline:none;font-family:var(--font)}
   .ta{min-height:90px;font-family:monospace;font-size:12px}
@@ -1253,6 +1263,35 @@ function wireEmojiPicker(){
 }
 
 // ── Pestaña ENTREGA: cómo le llega al cliente ──────────────────────
+// Saludo por defecto: el MISMO que pone el generador del flujo en el nodo «Entregar» si lo dejas vacío.
+function ENT_SALUDO_DEF(){ return "¡Pago confirmado! 🎉 Acá tienes tu acceso:"; }
+var _entBrand; // nombre/logo del negocio para la cabecera de la vista previa (var: sin zona muerta)
+// Vista previa de la entrega. Copia EXACTA del orden de entregarOpcion (engine.ts): si cambia
+// cómo arma las burbujas el motor, esto se cambia igual — si no, la pantalla vuelve a mentir.
+//  · separadas: saludo · y por cada ítem: su texto (si tiene) → «Nombre: link» o el archivo
+//  · una burbuja: saludo + una línea por link «texto-o-nombre link»; los archivos, aparte
+function entregaPreviewHtml(hdr, entrega, una){
+  const items=(Array.isArray(entrega)?entrega:[]).filter(it=>it && String(it.url||"").trim());
+  const br=_entBrand||{};
+  if(!items.length) return waScreenHtml({ title:br.nombre, logoUrl:br.logo_url, bubblesHtml:"", empty:"Agrega el link o archivo para ver cómo llega…" });
+  const mk=(it)=>({ media_url:it.url, media_kind:it.media_kind==="image"||it.media_kind==="video"||it.media_kind==="audio"?it.media_kind:"document" });
+  const out=[];
+  if(una){
+    let text=hdr||"";
+    items.filter(it=>it.tipo!=="archivo").forEach(it=>{ const lab=it.mensaje||it.nombre; text+=(text?"\n":"")+(lab?lab+" ":"")+it.url; });
+    if(text) out.push({ text });
+    items.filter(it=>it.tipo==="archivo").forEach(it=>out.push({ ...mk(it), caption:it.mensaje||it.nombre||"" }));
+  } else {
+    if(hdr) out.push({ text:hdr });
+    items.forEach(it=>{
+      if(it.mensaje) out.push({ text:it.mensaje });
+      if(it.tipo==="archivo") out.push({ ...mk(it), caption:it.nombre||"" });
+      else out.push({ text:`${it.nombre?it.nombre+": ":""}${it.url}` });
+    });
+  }
+  const smp=(t)=>String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana").replace(/\{\{[^}]*\}\}/g,"…");
+  return waScreenHtml({ title:br.nombre, logoUrl:br.logo_url, bubblesHtml: waBubbles(out, smp), empty:"Agrega el link o archivo para ver cómo llega…" });
+}
 function renderEntrega(host){
   const b=host||$("tabBody");
   const c=st.prod.config=st.prod.config||{};
@@ -1260,28 +1299,45 @@ function renderEntrega(host){
   if(tipo==="digital"){
     const simple = st.versions.length<=1;
     let v = st.versions[0]; if(!v){ v={ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:0 }; st.versions.push(v); }
+    // Ejemplo de la vista previa cuando hay varias presentaciones: la primera activa con algo que entregar.
+    const vPrev = simple ? v : (st.versions.find(x=>x.activo!==false && Array.isArray(x.entrega) && x.entrega.some(it=>it&&it.url)) || st.versions[0]);
     b.innerHTML=`
-      <p class="hint" style="margin:0 0 14px">Cómo recibe el cliente lo que compró, apenas confirma el pago.</p>
+      <p class="hint" style="margin:0 0 14px">Cómo recibe el cliente lo que compró, apenas confirma el pago. Se envía <b>en el orden de esta pantalla</b>, de arriba hacia abajo.</p>
+      <div class="entGrid">
+      <div>
+      <div class="card">
+        <h4 style="display:flex;align-items:center;gap:8px;margin-top:0"><span class="entPaso">1</span> El saludo <span style="font-size:11.5px;font-weight:500;color:var(--faint)">· sale primero</span></h4>
+        <div class="entSub">Abre la entrega. Si lo dejas vacío, se usa el que ves de ejemplo.</div>
+        <input class="in" id="pEntMsg" value="${esc(c.entrega_mensaje||"")}" placeholder="${esc(ENT_SALUDO_DEF())}"/>
+      </div>
       ${simple ? `
       <div class="card">
-        <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("link")} Qué recibe el cliente</h4>
-        <div style="font-size:12px;color:var(--faint);margin:2px 0 8px">El <b>link, archivo, imagen o video</b> que se envía al confirmar el pago. Disponible en flujos como <b style="color:var(--brand)">{{link_entrega}}</b>.</div>
+        <h4 style="display:flex;align-items:center;gap:8px;margin-top:0"><span class="entPaso">2</span> Lo que recibe <span style="font-size:11.5px;font-weight:500;color:var(--faint)">· sale después, en este orden</span></h4>
+        <div class="entSub">El <b>link, archivo, imagen o video</b> que compró. Cada uno puede llevar un texto que sale <b>justo antes</b>. Disponible en flujos como <b style="color:var(--brand)">{{link_entrega}}</b>.</div>
         <div class="oe"></div>
-        <div style="display:flex;gap:6px;margin-top:8px">
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
           <button class="btn oel" style="height:32px">${icon("link")} Link</button>
           <button class="btn oef" style="height:32px">${icon("file")} Archivo / imagen / video</button>
         </div>
       </div>` : `
-      <div class="card"><div style="font-size:12.5px;color:var(--muted);line-height:1.6">Tienes <b>varias presentaciones</b> y cada una entrega lo suyo. Configura el link/archivo de cada una en <a href="#" id="goEntOpc" style="color:var(--brand)">¿Cuánto cuesta? →</a>.</div></div>`}
       <div class="card">
-        <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("message")} El mensaje de entrega</h4>
-        <label style="margin-top:6px">Mensaje que abre la entrega</label>
-        <input class="in" id="pEntMsg" value="${esc(c.entrega_mensaje||"")}" placeholder="¡Pago confirmado! 🎉 Acá tienes tu acceso:"/>
-        <label class="chk" style="margin-top:16px;justify-content:space-between">
+        <h4 style="display:flex;align-items:center;gap:8px;margin-top:0"><span class="entPaso">2</span> Lo que recibe</h4>
+        <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Tienes <b>varias presentaciones</b> y cada una entrega lo suyo. Configura el link/archivo de cada una en <a href="#" id="goEntOpc" style="color:var(--brand)">¿Cuánto cuesta? →</a>.</div>
+      </div>`}
+      <div class="card">
+        <h4 style="display:flex;align-items:center;gap:8px;margin-top:0"><span class="entPaso">3</span> Cómo se envía</h4>
+        <label class="chk" style="margin-top:6px;justify-content:space-between">
           <span style="font-weight:600;font-size:13px">Entregar todo en una sola burbuja</span>
           <span class="sw ${c.entrega_burbuja_unica?'on':''}" id="pEntUna"></span>
         </label>
-        <div style="font-size:11px;color:var(--faint);margin-top:7px">Junta el saludo + todos los links en un mismo mensaje. Los <b>archivos adjuntos</b> salen aparte (regla de WhatsApp).</div>
+        <div style="font-size:11px;color:var(--faint);margin-top:7px">Apagado: el saludo, cada texto y cada link salen en mensajes separados. Prendido: todo junto en un mismo mensaje. Los <b>archivos adjuntos</b> siempre salen aparte (regla de WhatsApp).</div>
+      </div>
+      </div>
+      <div class="entPrevCol">
+        <div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">Así le llega</div>
+        <div id="entPrev"></div>
+        ${!simple && vPrev?.nombre ? `<div style="font-size:11px;color:var(--faint);margin-top:7px;line-height:1.45">Ejemplo con la presentación «${esc(vPrev.nombre)}».</div>` : ""}
+      </div>
       </div>
       <div class="card">
         <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("shield")} Validación del pago <span style="font-size:11px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);padding:2px 8px;border-radius:20px">ajuste de pago</span></h4>
@@ -1292,14 +1348,23 @@ function renderEntrega(host){
           <option value="manual" ${c.validacion_pago==="manual"?"selected":""}>Manual — me avisa para aprobarlo yo</option>
         </select>
       </div>`;
+    // Vista previa: se repinta con cada tecla y cada clic (agregar, borrar, prender la burbuja única).
+    const prevBox=$("entPrev");
+    const updPrev=()=>{ if(!prevBox) return;
+      const hdr=(!simple && vPrev && String(vPrev.entrega_mensaje||"").trim()) ? vPrev.entrega_mensaje : (($("pEntMsg")?.value||"").trim() || ENT_SALUDO_DEF());
+      prevBox.innerHTML=entregaPreviewHtml(hdr, vPrev?.entrega, !!c.entrega_burbuja_unica); };
     const em=$("pEntMsg"); if(em) em.onchange=(e)=>prodSetC("entrega_mensaje", e.target.value.trim()||undefined);
-    const eu=$("pEntUna"); if(eu) eu.onclick=()=>{ const on=!c.entrega_burbuja_unica; c.entrega_burbuja_unica=on; prodSetC("entrega_burbuja_unica", on||undefined); eu.classList.toggle("on", on); };
+    const eu=$("pEntUna"); if(eu) eu.onclick=()=>{ const on=!c.entrega_burbuja_unica; c.entrega_burbuja_unica=on; prodSetC("entrega_burbuja_unica", on||undefined); eu.classList.toggle("on", on); updPrev(); };
     const vp=$("pValPago"); if(vp) vp.onchange=(e)=>prodSetC("validacion_pago", e.target.value||undefined);
     if(simple){
-      const oel=b.querySelector(".oel"); if(oel) oel.onclick=()=>{ v.entrega=Array.isArray(v.entrega)?v.entrega:[]; v.entrega.push({tipo:"link",url:"",nombre:""}); paintEntrega(b,v,false); const f=b.querySelectorAll(".oe .eu"); if(f[f.length-1]) f[f.length-1].focus(); };
-      const oef=b.querySelector(".oef"); if(oef) oef.onclick=()=>pickEntregaFile(v,()=>paintEntrega(b,v,false));
+      const oel=b.querySelector(".oel"); if(oel) oel.onclick=()=>{ v.entrega=Array.isArray(v.entrega)?v.entrega:[]; v.entrega.push({tipo:"link",url:"",nombre:""}); paintEntrega(b,v,false); updPrev(); const f=b.querySelectorAll(".oe .eu"); if(f[f.length-1]) f[f.length-1].focus(); };
+      const oef=b.querySelector(".oef"); if(oef) oef.onclick=()=>pickEntregaFile(v,()=>{ paintEntrega(b,v,false); updPrev(); });
       if(b.querySelector(".oe")) paintEntrega(b,v,false);
     } else { const g=$("goEntOpc"); if(g) g.onclick=(e)=>{ e.preventDefault(); accOpen("opciones"); }; }
+    const grid=b.querySelector(".entGrid");
+    if(grid){ grid.addEventListener("input", updPrev); grid.addEventListener("click", ()=>setTimeout(updPrev,0)); }
+    updPrev();
+    seqBrand(st.channelId).then(br=>{ _entBrand=br||{}; updPrev(); }).catch(()=>{}); // nombre/logo real en la cabecera
     return;
   }
   // Físico: TODA la logística (zonas, agencias, envío gratis, costos, adelanto
@@ -3869,7 +3934,7 @@ function paintEntrega(el,v,fisico){
   const items=v.entrega=Array.isArray(v.entrega)?v.entrega:[];
   if(!items.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin entrega configurada.</div>`; return; }
   items.forEach((it,j)=>{
-    const r=document.createElement("div"); r.style.cssText="margin-bottom:10px;padding:8px 9px;border:1px solid var(--border);border-radius:10px";
+    const r=document.createElement("div"); r.className="entItem";
     // Miniatura para imagen/video subidos; icono para link o archivo (pdf/zip…).
     const prev = (it.tipo==="archivo" && it.media_kind==="image")
       ? `<img src="${esc(it.url)}" style="width:38px;height:38px;object-fit:cover;border-radius:7px;flex:0 0 auto"/>`
@@ -3877,13 +3942,17 @@ function paintEntrega(el,v,fisico){
       ? `<video src="${esc(it.url)}" muted style="width:38px;height:38px;object-fit:cover;border-radius:7px;flex:0 0 auto"></video>`
       : `<span style="flex:0 0 auto;color:var(--muted);display:inline-flex">${icon(it.tipo==="archivo"?"file":"link")}</span>`;
     const kindLabel = it.tipo!=="archivo" ? "" : (it.media_kind==="image"?" · imagen":it.media_kind==="video"?" · video":it.media_kind==="audio"?" · audio":" · archivo");
-    r.innerHTML=`<div class="row" style="align-items:center;gap:7px">
+    // Mismo orden en que sale: primero el texto (va ANTES del link/archivo), después el link/archivo.
+    const deQue = it.media_kind==="image"?"esta imagen":it.media_kind==="video"?"este video":it.tipo==="archivo"?"este archivo":"este link";
+    r.innerHTML=`<span class="entLbl">Texto antes de ${deQue} <span style="color:var(--faint)">(opcional)</span></span>
+      <input class="in emsg" value="${esc(it.mensaje||"")}" placeholder="Ej. “📂 Tu carpeta del curso:”"/>
+      <span class="entLbl">${it.tipo==="archivo"?"El archivo":"El link"}</span>
+      <div class="row" style="align-items:center;gap:7px">
         ${prev}
-        <input class="in en" style="flex:0 0 170px" value="${esc(it.nombre||"")}" placeholder="Nombre"/>
-        <input class="in eu" style="flex:1" value="${esc(it.tipo==="archivo"?((it.filename||it.nombre||"archivo subido")+kindLabel):(it.url||""))}" ${it.tipo==="archivo"?"readonly":`placeholder="Pega el link — Drive, curso, acceso…"`}/>
-        <button class="iconbtn edel" style="flex:0 0 auto">${icon("trash")}</button>
-      </div>
-      <input class="in emsg" style="margin-top:6px" value="${esc(it.mensaje||"")}" placeholder="Mensaje al entregar est${it.media_kind==="image"?"a imagen":it.media_kind==="video"?"e video":it.tipo==="archivo"?"e archivo":"e link"} (opcional) — ej. “Acá está tu curso 🎥”"/>`;
+        <input class="in en" style="flex:0 0 150px;min-width:0" value="${esc(it.nombre||"")}" placeholder="Nombre (opcional)" title="Sale delante del link cuando van en mensajes separados"/>
+        <input class="in eu" style="flex:1;min-width:0" value="${esc(it.tipo==="archivo"?((it.filename||it.nombre||"archivo subido")+kindLabel):(it.url||""))}" ${it.tipo==="archivo"?"readonly":`placeholder="Pega el link — Drive, curso, acceso…"`}/>
+        <button class="iconbtn edel" style="flex:0 0 auto" title="Quitar">${icon("trash")}</button>
+      </div>`;
     r.querySelector(".en").oninput=(e)=>{ it.nombre=e.target.value; };
     r.querySelector(".eu").oninput=(e)=>{ it.url=e.target.value; };
     r.querySelector(".emsg").oninput=(e)=>{ it.mensaje=e.target.value; };
