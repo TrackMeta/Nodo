@@ -36,8 +36,8 @@ const ETIQUETAS = {
   limites: "Lo que NO incluye", reglas_precio: "Reglas del precio", descuentos: "Precios con descuento",
   proceso: "Proceso de venta", tecnicas: "Técnicas de venta", objeciones: "Lo que te preguntan",
   ejemplos: "Ejemplos de respuesta", faq: "Lo que te preguntan", saludo: "Mensajes iniciales",
-  transferir: "Cuándo transferir a una persona", tono_detalle: "Tono", no_hacer: "Nunca hacer",
-  politicas: "Políticas", extra: "Instrucciones extra", pagos: "Cómo se paga", entrega: "Envíos y entrega",
+  transferir: "Cuándo transferir a una persona", tono_detalle: "Tono", no_hacer: "Políticas y lo que nunca se promete",
+  politicas: "Políticas y lo que nunca se promete", extra: "Información adicional", pagos: "Cómo se paga y cómo se entrega", entrega: "Cómo se paga y cómo se entrega",
 };
 const et = (k) => ETIQUETAS[k] || k;
 const lista = (ks) => [...new Set(ks.map(et))].map((x) => `«${x}»`).join(", ");

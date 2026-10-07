@@ -143,6 +143,7 @@
 
 <script type="module">
 import { revisarNegocio, avisosHtml } from "./revisar-textos.js";
+import { TONOS, compileNegocio, fusionarNegocio } from "./negocio-texto.js";
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, guardUnsaved, markClean, confirmDescartar, updateChannel, pageAll } from "./shell.js";
 import { mountDateRange, computePreset, ymd as ymdDia, startOfDayTZ, endOfDayTZ } from "./date-range.js";
 const $ = (id) => document.getElementById(id);
@@ -508,56 +509,8 @@ async function saveCampos(e){
 // El usuario llena un formulario ordenado; al guardar se compila a un texto
 // bien estructurado (Markdown) en channels.negocio (lo que lee el motor) y se
 // conserva el formulario en channels.negocio_form para poder re-editarlo.
-const NEG_FIELDS=[
-  ["nombre","Nombre del negocio","input","Ej. Mi Negocio",""],
-  ["rubro","¿Qué vendes? (productos o servicios)","ta","Ej. Cursos y guías digitales de fitness; también asesorías 1 a 1…",""],
-  ["publico","¿A quién le vendes? (cliente ideal)","ta","Ej. Personas de 25-45 en Perú que quieren bajar de peso sin gimnasio",""],
-  ["propuesta","Propuesta de valor / diferencial","ta","¿Por qué te compran a ti y no a la competencia?",""],
-  ["horario","Horario de atención","input","Ej. Lun-Sáb 9:00-20:00 (hora Perú)",""],
-  ["transferir","¿Cuándo pasar a una persona? (humano)","ta","Ej. Reclamos, facturación, o si el bot no está seguro de algo",""],
-  ["pagos","¿Cómo se paga? (general)","ta","Ej. contraentrega en Lima; adelanto para provincia. Los métodos exactos (Yape/Plin/cuentas) se ponen en la pestaña Validador de comprobantes y se sincronizan solos.",""],
-  ["entrega","Envíos y entrega","ta","Ej. Digital: enlace de Drive al confirmar el pago. Físico: Lima 24h contraentrega, provincia por Shalom/Olva con adelanto.",""],
-  ["politicas","Políticas (cambios, devoluciones, garantía)","ta","Ej. Cambios dentro de 7 días con boleta; sin devolución de digitales.",""],
-  ["no_hacer","Nunca hacer / no prometer","ta","Ej. No prometer resultados médicos; no dar descuentos no autorizados; no pedir datos de tarjeta.",""],
-];
-const TONOS={ cercano:"Cercano y amigable, con tuteo", formal:"Formal y profesional, trato de usted", directo:"Directo y breve, sin rodeos", divertido:"Divertido y relajado, con buena onda", ventas:"Persuasivo y orientado a cerrar la venta" };
-// Sección "cómo debe comportarse" (persona del bot) al inicio del contexto.
-// El TONO se compila acá porque el motor no tiene de dónde deducirlo. Las negritas y
-// los emojis NO: desde el 2026-08-31 el motor lee `negocio_form` directo y arma su
-// propio bloque de formato (estiloDeEscritura). Dejarlos también acá metía DOS
-// instrucciones distintas en el mismo prompt — y la de acá era la mala: "puedes usar
-// … con moderación" es exactamente la redacción con la que el modelo no pone ni una
-// negrita. Medido: el bot escribía plano teniendo las perillas activadas.
-function compilePersona(form){
-  const p=[];
-  if(form.nombre_ia&&form.nombre_ia.trim()) p.push(`Te llamas ${form.nombre_ia.trim()}${form.nombre?`, el asistente virtual de ventas de ${form.nombre.trim()}`:""}. Si te preguntan tu nombre, ese es.`);
-  const t=[]; if(form.tono&&TONOS[form.tono]) t.push(TONOS[form.tono]); if(form.tono_detalle&&form.tono_detalle.trim()) t.push(form.tono_detalle.trim());
-  if(t.length) p.push("Tono: "+t.join(". ")+".");
-  return p.length?p.join(" "):"";
-}
-function compileNegocio(form){
-  const L=[]; const add=(t,v)=>{ if(v&&String(v).trim()) L.push(`## ${t}\n${String(v).trim()}`); };
-  if(form.nombre&&form.nombre.trim()) L.push(`# ${form.nombre.trim()}`);
-  const persona=compilePersona(form); if(persona) L.push("## Cómo debes comportarte\n"+persona);
-  add("Qué vendemos",form.rubro); add("Cliente ideal",form.publico); add("Propuesta de valor",form.propuesta);
-  add("Horario de atención",form.horario);
-  add("Cuándo transferir a una persona",form.transferir); add("Cómo se paga",form.pagos);
-  add("Envíos y entrega",form.entrega); add("Políticas",form.politicas); add("Nunca hacer / no prometer",form.no_hacer);
-  const faq=(form.faq||[]).filter(x=>x&&(x.q||x.a));
-  if(faq.length) L.push("## Preguntas frecuentes\n"+faq.map(x=>`- P: ${(x.q||"").trim()}\n  R: ${(x.a||"").trim()}`).join("\n"));
-  if(form.extra&&form.extra.trim()) L.push("## Información adicional\n"+form.extra.trim());
-  // MISMO bloque que negocio.html: las dos pantallas recompilan `channels.negocio` con su
-  // propia copia de esta función, y a esta le faltaba la biblioteca de archivos → guardar
-  // «Vendedor IA» borraba del contexto las instrucciones para mandar [[media:TAG]] (los
-  // archivos seguían en negocio_form, pero el modelo ya no sabía que podía enviarlos).
-  const mm=(form.multimedia||[]).filter(m=>m&&m.media_url&&m.tag);
-  if(mm.length) L.push("## Archivos que puedes enviar\n" +
-    "Cuando la situación lo pida, envía el archivo escribiendo `[[media:TAG]]` en una línea aparte.\n" +
-    mm.map(m=>`- [[media:${m.tag}]] — ${(m.descripcion||"").trim()||"archivo del negocio"}`).join("\n") +
-    "\n⛔ Como MUCHO uno por conversación, y solo si responde algo que el cliente preguntó o una duda que mostró. " +
-    "No los mandes de saludo ni encadenes varios: cada archivo es una burbuja más que él tiene que abrir.");
-  return L.join("\n\n");
-}
+// (6-oct) Los campos, el tono y el armado del texto del negocio viven en negocio-texto.js, compartido con
+// negocio.html: eran dos copias de la misma función y ya se habían desincronizado una vez.
 // Semilla común del formulario del negocio, compartida por las pestañas
 // "Vendedor IA" (personalidad + retraso) y "Conocimiento" (identidad/negocio).
 // Ambas guardan el formulario COMPLETO, así que editar una preserva la otra.
@@ -570,6 +523,7 @@ function seedForm(){
   let form=JSON.parse(JSON.stringify(base));
   if(!c.negocio_form && c.negocio) form.extra=c.negocio; // migra el texto libre anterior
   if(!form.nombre && c.nombre) form.nombre=c.nombre; // igual que negocio.html: canal nuevo con nombre
+  fusionarNegocio(form);   // ficha del negocio de 4 cuadros (negocio-texto.js)
   if(!Array.isArray(form.multimedia)) form.multimedia=[];
   if(!Array.isArray(form.faq)) form.faq=[];
   if(form.negritas===undefined) form.negritas=true;
@@ -595,6 +549,7 @@ async function saveForm(btn){
   const old=btn.textContent; btn.disabled=true; btn.textContent="Guardando…";
   const cid=st.channelId;
   const { form, retraso }=await mezclarConFresco(st.form, st.retraso);
+  fusionarNegocio(form);   // (lo fresco de la base puede traer los casilleros viejos: se juntan antes de compilar)
   const negocio=compileNegocio(form).trim()||null;
   // updateChannel comprueba que la fila se tocó (a un operador el UPDATE afecta 0 filas sin error).
   let { error }=await updateChannel(cid, { negocio, negocio_form:form, buffer_default_seg:retraso });

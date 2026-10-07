@@ -140,6 +140,7 @@
 
 <script type="module">
 import { revisarNegocio, avisosHtml } from "./revisar-textos.js";
+import { TONOS, compileNegocio, fusionarNegocio } from "./negocio-texto.js";
 import { supa, mountShell, toast, icon, askText, guardUnsaved, markClean, markDirty, isDirty, confirmDialog, confirmDescartar, updateChannel } from "./shell.js";
 import { cargarListas } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
@@ -233,32 +234,21 @@ function sincronizaFab(){
 // IMPORTANTE: negocio_form es COMPARTIDO con el Vendedor IA (sección IA). Por eso
 // seedForm carga el form COMPLETO y saveForm lo escribe COMPLETO: editar el
 // conocimiento acá preserva la personalidad que se configuró en IA, y viceversa.
-const NEG_FIELDS=[
-  ["nombre","Nombre del negocio","input","Ej. Mi Negocio"],
-  ["rubro","¿Qué vendes? (productos o servicios)","ta","Ej. Cursos y guías digitales de fitness; también asesorías 1 a 1…"],
-  ["publico","¿A quién le vendes? (cliente ideal)","ta","Ej. Personas de 25-45 en Perú que quieren bajar de peso sin gimnasio"],
-  ["propuesta","Propuesta de valor / diferencial","ta","¿Por qué te compran a ti y no a la competencia?"],
-  ["horario","Horario de atención","input","Ej. Lun-Sáb 9:00-20:00 (hora Perú)"],
-  ["transferir","¿Cuándo pasar a una persona? (humano)","ta","Ej. Reclamos, facturación, o si el bot no está seguro de algo"],
-  ["pagos","¿Cómo se paga? (general)","ta","Ej. contraentrega en Lima; adelanto para provincia. Los métodos exactos (Yape/Plin/cuentas) se ponen en IA → Validador de comprobantes y se sincronizan solos."],
-  ["entrega","Envíos y entrega","ta","Ej. Digital: enlace de Drive al confirmar el pago. Físico: Lima 24h contraentrega, provincia por Shalom/Olva con adelanto."],
-  ["politicas","Políticas (cambios, devoluciones, garantía)","ta","Ej. Cambios dentro de 7 días con boleta; sin devolución de digitales."],
-  ["no_hacer","Nunca hacer / no prometer","ta","Ej. No prometer resultados médicos; no dar descuentos no autorizados; no pedir datos de tarjeta."],
+// 🧩 LA FICHA DEL NEGOCIO EN 4 CUADROS (6-oct) — ver negocio-texto.js (el armado del texto, compartido con ia.html).
+// [clave, etiqueta, tipo, ejemplo]. Cada cuadro dice debajo qué NO va ahí, para que no se repita la ficha del producto.
+const NEG_CUADROS=[
+  { n:1, titulo:"Tu negocio", sub:"Cómo se llama y qué vendes, a quién y por qué te eligen, en 1 o 2 frases. Lo de cada producto va en su ficha.",
+    campos:[["nombre","Nombre del negocio","input","Ej. Mi Negocio"],
+            ["rubro","¿Qué vendes y a quién?","ta","Ej. Programas digitales de entrenamiento para gente que quiere ponerse en forma en casa, sin gimnasio."]] },
+  { n:2, titulo:"Cómo se paga y cómo se entrega", sub:"Solo lo general. Los números de Yape y cuentas van en IA → Validador de comprobantes; los costos y zonas de envío, en Entrega.",
+    campos:[["pagos","","ta","Ej. Plin también: se paga al mismo número de Yape. No aceptamos tarjeta ni efectivo. Físico: contraentrega en Lima, adelanto en provincia."]] },
+  { n:3, titulo:"Políticas y lo que nunca se promete", sub:"Garantía, cambios, devoluciones, factura, y lo que el bot no debe prometer en NINGÚN producto. Lo de un producto va en su ficha.",
+    campos:[["politicas","","ta","Ej. Cambios dentro de 7 días con boleta. No dar consejos médicos. No inventar testimonios ni cifras. No decir que el precio bajará."]] },
+  { n:4, titulo:"Cuándo pasar a una persona", sub:"Cuándo el bot debe dejar el chat a tu equipo. No hace falta escribir qué le dice: se disculpa y avisa que lo están revisando.",
+    campos:[["transferir","","ta","Ej. Si pagó y no recibe su acceso, si reclama, o si pide factura."],
+            ["horario","Horario de atención (opcional)","input","Ej. Lun-Sáb 9:00-20:00 (hora Perú)"]] },
 ];
-const TONOS={ cercano:"Cercano y amigable, con tuteo", formal:"Formal y profesional, trato de usted", directo:"Directo y breve, sin rodeos", divertido:"Divertido y relajado, con buena onda", ventas:"Persuasivo y orientado a cerrar la venta" };
-// El TONO se compila acá porque el motor no tiene de dónde deducirlo. Las negritas y
-// los emojis NO: desde el 2026-08-31 el motor lee `negocio_form` directo y arma su
-// propio bloque de formato (estiloDeEscritura). Dejarlos también acá metía DOS
-// instrucciones distintas en el mismo prompt — y la de acá era la mala: "puedes usar
-// … con moderación" es exactamente la redacción con la que el modelo no pone ni una
-// negrita. Medido: el bot escribía plano teniendo las perillas activadas.
-function compilePersona(form){
-  const p=[];
-  if(form.nombre_ia&&form.nombre_ia.trim()) p.push(`Te llamas ${form.nombre_ia.trim()}${form.nombre?`, el asistente virtual de ventas de ${form.nombre.trim()}`:""}. Si te preguntan tu nombre, ese es.`);
-  const t=[]; if(form.tono&&TONOS[form.tono]) t.push(TONOS[form.tono]); if(form.tono_detalle&&form.tono_detalle.trim()) t.push(form.tono_detalle.trim());
-  if(t.length) p.push("Tono: "+t.join(". ")+".");
-  return p.length?p.join(" "):"";
-}
+const NEG_FIELDS=NEG_CUADROS.flatMap(c=>c.campos);
 // Sube un archivo y lo agrega a form.multimedia con un tag único. Reusa la Edge
 // Function media-upload, igual que la biblioteca de cada producto.
 function pickNegMedia(kind, onDone){
@@ -281,29 +271,6 @@ function pickNegMedia(kind, onDone){
   };
   inp.click();
 }
-function compileNegocio(form){
-  const L=[]; const add=(t,v)=>{ if(v&&String(v).trim()) L.push(`## ${t}\n${String(v).trim()}`); };
-  if(form.nombre&&form.nombre.trim()) L.push(`# ${form.nombre.trim()}`);
-  const persona=compilePersona(form); if(persona) L.push("## Cómo debes comportarte\n"+persona);
-  add("Qué vendemos",form.rubro); add("Cliente ideal",form.publico); add("Propuesta de valor",form.propuesta);
-  add("Horario de atención",form.horario);
-  add("Cuándo transferir a una persona",form.transferir); add("Cómo se paga",form.pagos);
-  add("Envíos y entrega",form.entrega); add("Políticas",form.politicas); add("Nunca hacer / no prometer",form.no_hacer);
-  const faq=(form.faq||[]).filter(x=>x&&(x.q||x.a));
-  if(faq.length) L.push("## Preguntas frecuentes\n"+faq.map(x=>`- P: ${(x.q||"").trim()}\n  R: ${(x.a||"").trim()}`).join("\n"));
-  if(form.extra&&form.extra.trim()) L.push("## Información adicional\n"+form.extra.trim());
-  // Archivos del NEGOCIO que la IA puede mandar sola. Mismo marcador que los del
-  // producto ([[media:TAG]]), y el motor junta las dos bibliotecas en un catálogo.
-  // El límite va escrito acá a propósito: sin él, el modelo mete un archivo en cada
-  // mensaje y la conversación se vuelve un álbum que el cliente tiene que ir pasando.
-  const mm=(form.multimedia||[]).filter(m=>m&&m.media_url&&m.tag);
-  if(mm.length) L.push("## Archivos que puedes enviar\n" +
-    "Cuando la situación lo pida, envía el archivo escribiendo `[[media:TAG]]` en una línea aparte.\n" +
-    mm.map(m=>`- [[media:${m.tag}]] — ${(m.descripcion||"").trim()||"archivo del negocio"}`).join("\n") +
-    "\n⛔ Como MUCHO uno por conversación, y solo si responde algo que el cliente preguntó o una duda que mostró. " +
-    "No los mandes de saludo ni encadenes varios: cada archivo es una burbuja más que él tiene que abrir.");
-  return L.join("\n\n");
-}
 function seedForm(){
   const c=st.channel||{};
   // Copia PROFUNDA (antes era superficial y el array de FAQ quedaba compartido con el
@@ -320,6 +287,7 @@ function seedForm(){
   // Prellenar el nombre del negocio con el del canal cuando aún no se configuró
   // (un canal nuevo salía con el campo vacío aunque el bot ya tiene nombre).
   if(!form.nombre && c.nombre) form.nombre=c.nombre;
+  fusionarNegocio(form);   // ficha de 4 cuadros: «Cliente ideal», «Propuesta», «Envíos» y «Nunca hacer» pasan a su cuadro (negocio-texto.js)
   if(!Array.isArray(form.faq)) form.faq=[];
   if(!Array.isArray(form.multimedia)) form.multimedia=[];
   if(form.negritas===undefined) form.negritas=true;
@@ -344,6 +312,7 @@ async function saveForm(btn){
   const old=btn.textContent; btn.disabled=true; btn.textContent="Guardando…";
   const cid=st.channelId;
   const { form, retraso }=await mezclarConFresco(st.form, st.retraso);
+  fusionarNegocio(form);   // (lo fresco de la base puede traer los casilleros viejos: se juntan antes de compilar)
   const negocio=compileNegocio(form).trim()||null;
   // updateChannel comprueba que la fila se tocó: a un operador (channels es solo-admin por
   // RLS) el UPDATE le afecta 0 filas sin error y esto decía «guardado» sin guardar.
@@ -361,15 +330,21 @@ async function saveForm(btn){
 }
 function renderConocimiento(b){
   const form=seedForm();
+  // (alto del cuadro según lo que ya tiene escrito, para leerlo entero sin arrastrar la esquina; tope de 12 renglones)
+  const alto=(k)=>Math.min(12,Math.max(3,String(form[k]||"").split("\n").reduce((s,l)=>s+Math.max(1,Math.ceil(l.length/90)),0)+1));
   const field=([k,label,type,ph])=>`
-    <label style="margin-top:14px">${label}</label>
+    ${label?`<label style="margin-top:12px">${label}</label>`:""}
     ${type==="ta"
-      ? `<textarea class="in" id="nf_${k}" rows="3" style="min-height:64px;line-height:1.5;resize:vertical" placeholder="${esc(ph)}">${esc(form[k]||"")}</textarea>`
+      ? `<textarea class="in" id="nf_${k}" rows="${alto(k)}" style="min-height:${alto(k)*24+10}px;line-height:1.5;resize:vertical" placeholder="${esc(ph)}">${esc(form[k]||"")}</textarea>`
       : `<input class="in" id="nf_${k}" value="${esc(form[k]||"")}" placeholder="${esc(ph)}"/>`}`;
+  const cuadro=(c)=>`<div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:${c.n===1?4:12}px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:2px">${c.n} · ${c.titulo}</div>
+      <div class="desc" style="margin:0 0 4px;line-height:1.5">${c.sub}</div>
+      ${c.campos.map(field).join("")}</div>`;
   const vacioNeg = !(form.rubro && String(form.rubro).trim());
   b.innerHTML=`
     <h2>Conocimiento del negocio</h2>
-    <p class="sub">Completa este formulario: la IA lo usa en <b>todas</b> las conversaciones. Cuanto más y mejor lo llenes, más natural e informada responde. La personalidad del vendedor va en <b>IA → Vendedor IA</b>; lo específico de cada producto va en su ficha de <b>Productos</b>.</p>
+    <p class="sub">Lo que vale para <b>todo</b> tu negocio: la IA lo usa en todas las conversaciones, también cuando todavía no sabe qué producto quiere el cliente. Escribe cada dato <b>una sola vez</b>: lo de cada producto va en su ficha de <b>Productos</b>, y el nombre y el tono del vendedor en <b>IA → Vendedor IA</b>.</p>
     <div id="negHuecos"></div>
     ${vacioNeg?`<div class="armhero">
       <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
@@ -377,10 +352,13 @@ function renderConocimiento(b){
       <button id="armHeroBtn" style="flex:none;border:none;border-radius:10px;cursor:pointer;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-weight:700;font-size:13px;padding:10px 15px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-.15em"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg> Armar con IA</button>
     </div>`:""}
     <div class="card">
-      <div class="chd"><span class="ico">${IC.book}</span><span class="nm">Identidad y contexto del negocio</span></div>
-      ${NEG_FIELDS.map(field).join("")}
-      <label style="margin-top:18px">Preguntas frecuentes del negocio (FAQ)</label>
-      <div class="desc" style="margin-top:0">Las dudas que más te hacen y su respuesta ideal. La IA responderá con estas.</div>
+      <div class="chd"><span class="ico">${IC.book}</span><span class="nm">Lo que el bot sabe de tu negocio</span></div>
+      ${NEG_CUADROS.map(cuadro).join("")}
+      <details style="border:1px solid var(--border);border-radius:12px;padding:0 13px;margin-top:16px">
+      <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:13px 0;list-style:none">Avanzado <span style="font-weight:400;color:var(--faint)">— preguntas frecuentes del negocio, archivos e información adicional</span></summary>
+      <div style="padding-bottom:13px">
+      <label style="margin-top:4px">Preguntas frecuentes del negocio</label>
+      <div class="desc" style="margin-top:0">Solo las que valen para todo el negocio (¿tienen tienda?, ¿dan factura?). Las de un producto van en su ficha.</div>
       <div id="faqList" style="margin-top:8px"></div>
       <button class="btn" id="faqAdd" style="margin-top:8px">+ Agregar pregunta</button>
       <label style="margin-top:18px">Archivos que la IA puede enviar</label>
@@ -393,6 +371,7 @@ function renderConocimiento(b){
       </div>
       <label style="margin-top:18px">Información adicional (texto libre)</label>
       <textarea class="in" id="nf_extra" rows="3" style="min-height:60px;line-height:1.5;resize:vertical" placeholder="Cualquier otra cosa que la IA deba saber y no encaje arriba.">${esc(form.extra||"")}</textarea>
+      </div></details>
       <div class="acts"><button class="btn primary" id="saveNegocio">Guardar conocimiento</button>
         <button class="btn" id="previewNeg">Ver cómo lo lee la IA</button></div>
     </div>`;
@@ -568,6 +547,7 @@ async function decidirPreguntaNegocio(r, accion, texto, btn){
       if(!(fresh&&fresh.negocio_form) && fresh&&fresh.negocio && !f.extra) f.extra=fresh.negocio;
       if(!Array.isArray(f.faq)) f.faq=[];
       f.faq.push({q:r.pregunta,a});
+      fusionarNegocio(f);   // (la ficha de 4 cuadros: lo viejo se junta antes de compilar)
       const { error }=await updateChannel(cid,{ negocio_form:f, negocio:compileNegocio(f).trim()||null });
       if(error){ toast(error.soloAdmin?"Solo un administrador puede cambiar el conocimiento del negocio":"No se pudo guardar. Prueba de nuevo.",true); return; }
       // …y lo mismo en lo que tienes abierto (y en su foto), para que tu próximo «Guardar» no la borre.
@@ -1028,12 +1008,10 @@ async function armGenerar(){
 function armRenderDraft(){
   const d=armDraft||{};
   const done=[];
-  if(d.rubro) done.push("Qué vendes");
-  if(d.publico) done.push("Cliente ideal");
-  if(d.propuesta) done.push("Propuesta de valor");
-  if(d.horario) done.push("Horario");
-  if(d.pagos||d.entrega) done.push("Pagos y entrega");
-  if(d.politicas||d.no_hacer) done.push("Políticas y límites");
+  if(d.rubro||d.publico||d.propuesta) done.push("Tu negocio");
+  if(d.pagos||d.entrega) done.push("Cómo se paga y se entrega");
+  if(d.politicas||d.no_hacer) done.push("Políticas y lo que nunca se promete");
+  if(d.transferir||d.horario) done.push("Cuándo pasar a una persona");
   if(d.tono) done.push("Tono del vendedor · "+esc(String(d.tono)));
   if(Array.isArray(d.faq)&&d.faq.length) done.push(`Preguntas frecuentes · ${d.faq.length}`);
   const faltan=Array.isArray(d.faltan)?d.faltan:[];
@@ -1063,8 +1041,12 @@ async function armAplicar(d){
   // curado del dueño (incl. `no_hacer` = los guardarraíles del bot). Ahora: por defecto solo
   // llena lo VACÍO; si el borrador chocaría con algo ya escrito, se avisa qué y se ofrece
   // "Reemplazar todo". Nunca se pierde config curada sin que el dueño lo elija.
-  const CAMPOS=["nombre","rubro","publico","propuesta","horario","transferir","pagos","entrega","politicas","no_hacer","tono"];
-  const LBL={nombre:"Nombre",rubro:"Rubro",publico:"Público",propuesta:"Propuesta",horario:"Horario",transferir:"Cuándo pasar a un humano",pagos:"Pagos",entrega:"Entrega",politicas:"Políticas",no_hacer:"Qué NO hacer",tono:"Tono"};
+  // 🧩 El borrador trae los casilleros viejos: se acomoda a los 4 cuadros ANTES de comparar/aplicar (mismo criterio que
+  // fusionarNegocio), y lo que ya tenía el formulario se acomoda también, para comparar cuadro con cuadro.
+  d=fusionarNegocio({ ...d });
+  fusionarNegocio(f);
+  const CAMPOS=["nombre","rubro","horario","transferir","pagos","politicas","tono"];
+  const LBL={nombre:"Nombre",rubro:"Tu negocio",horario:"Horario",transferir:"Cuándo pasar a una persona",pagos:"Cómo se paga y se entrega",politicas:"Políticas y lo que nunca se promete",tono:"Tono"};
   const pisa=CAMPOS.filter(k=> d[k] && String(f[k]??"").trim() && String(f[k]).trim()!==String(d[k]).trim());
   const pisaFaq=Array.isArray(d.faq)&&d.faq.length && Array.isArray(f.faq)&&f.faq.length;
   let reemplazar=true;
