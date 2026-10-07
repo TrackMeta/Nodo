@@ -664,7 +664,7 @@ function item(n, conDia) {
           + (tags.length ? `<div class="nn-meta">${tags.join("")}</div>` : "");
         return foto ? `<div class="nn-fila"><div class="nn-fila-tx">${txt}</div>${foto}</div>` : txt;
       })()}
-      ${acc.length ? `<div class="nn-acts">${acc.map((a, i) => `<button class="nn-btn${a.ghost ? " ghost" : i === 0 && !res ? " pri" : ""}" data-act="${a.k}"${a.href ? ` data-href="${a.href}"` : ""}${a.k === "resolver" ? ' title="Marcar como atendido: sale de «Por atender» para todo el equipo"' : ""}>${I(a.ic)}${esc(a.lb)}</button>`).join("")}</div>` : ""}
+      ${acc.length ? `<div class="nn-acts">${acc.map((a, i) => `<button class="nn-btn${a.ghost ? " ghost" : i === 0 && !res ? " pri" : ""}" data-act="${a.k}"${a.href ? ` data-href="${a.href}"` : ""}${a.k === "resolver" ? ' title="Marcar como atendido: sale de «Por atender» para todo el equipo"' : a.tt ? ` title="${esc(a.tt)}"` : ""}>${I(a.ic)}${esc(a.lb)}</button>`).join("")}</div>` : ""}
     </div>
   </article>`;
 }
@@ -727,7 +727,7 @@ function pagoLinea(n) {
 const TXT_APROBAR = {
   digital: ["Aprobar el pago digital", "El bot le entrega el producto al instante y sigue con su proceso de venta.", "Aprobar y entregar"],
   adelanto: ["Aprobar el adelanto", "El pedido pasa a listo para enviar y el bot le confirma al cliente.", "Aprobar"],
-  saldo: ["Aprobar el saldo", "El bot le envía la clave de recojo al cliente.", "Aprobar y dar la clave"],
+  saldo: ["Aprobar el saldo", "El bot le envía la clave de recojo al cliente.", "Aprobar y dar clave"],
   extra: ["Aprobar la venta extra", "El bot le entrega el extra al instante y continúa.", "Aprobar y entregar"],
 };
 async function aprobarPago(n) {
@@ -761,7 +761,9 @@ function acciones(n) {
     // (con la foto a la vista, el pago se aprueba desde acá; rechazar y lo que pide un dato, en Copiloto)
     const pg = !n.resuelta_at ? pagoDe(n) : null;
     if (pg?.directo) A.push({ k: "aprobar", lb: TXT_APROBAR[pg.et][2], ic: "check" });
-    A.push({ k: "validar", lb: pg?.directo ? "Rechazar o revisar" : "Validar pago", ic: "compass" });
+    // (rótulo corto: con 4 botones, «Rechazar o revisar» empujaba la fila a 3 líneas)
+    A.push(pg?.directo ? { k: "validar", lb: "Revisar", ic: "compass", tt: "Rechazar o revisar el pago en Copiloto" }
+      : { k: "validar", lb: "Validar pago", ic: "compass" });
     if (chat) A.push(chat);
   }
   else if (["pedido_lima", "pedido_provincia", "venta_extra"].includes(t)) { if (ped) A.push(ped); if (chat) A.push(chat); }
