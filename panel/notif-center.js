@@ -115,7 +115,7 @@ export async function montar(ctx) {
   });
   document.addEventListener("pointerdown", (e) => {
     if (!N.abierto) return;
-    if (e.target.closest("#nodoNotif") || e.target.closest("#nodoBell") || e.target.closest(".nodo-modal-back,.nodo-modal,[role=dialog]")) return;
+    if (e.target.closest("#nodoNotif") || e.target.closest("#nodoBell") || e.target.closest(".nodo-modal-back,.nodo-modal,[role=dialog],.nn-visor")) return;   // (el visor de la foto no cierra el cajón)
     cerrar();
   });
   window.addEventListener("resize", () => { if (N.abierto) ubicar(); });
@@ -912,6 +912,9 @@ function onClickCajon(e) {
   if (tab) { N.tab = tab.dataset.tab; N.grupo = "todo"; pintar(); d.querySelector(".nn-list").scrollTop = 0; return; }
   const chip = e.target.closest("[data-g]");
   if (chip && !chip.disabled) { N.grupo = chip.dataset.g; pintarLista(); return; }
+  // 🖼️ La foto del comprobante se abre AHÍ MISMO, en grande (no en otra pestaña — pedido de Rodrigo, 7-oct).
+  const foto = e.target.closest(".nn-pago-foto");
+  if (foto) { e.preventDefault(); verFoto(foto.getAttribute("href")); return; }
   const it = e.target.closest(".nn-item");
   if (!it) return;
   const n = N.rows.get(it.dataset.id);
@@ -1084,4 +1087,22 @@ function cuando(iso, conDia) {
   if (!conDia || _mismoDia(d, new Date())) return hm;
   if (_mismoDia(d, new Date(Date.now() - 864e5))) return "ayer " + hm;
   return d.toLocaleDateString("es-PE", { day: "numeric", month: "short" });
+}
+
+// Visor de la foto del comprobante: encima de todo, se cierra tocando afuera, con la × o con Esc. El enlace «Abrir en
+// otra pestaña» queda por si quiere hacer zoom o descargarla.
+function verFoto(url) {
+  if (!url) return;
+  document.getElementById("nnVisor")?.remove();
+  const v = document.createElement("div");
+  v.id = "nnVisor";
+  v.className = "nn-visor";
+  v.innerHTML = `<button class="nn-visor-x" type="button" aria-label="Cerrar">${I("x")}</button>
+    <img src="${esc(url)}" alt="Comprobante">
+    <a class="nn-visor-link" href="${esc(url)}" target="_blank" rel="noopener">Abrir en otra pestaña</a>`;
+  const cerrarV = () => { v.remove(); document.removeEventListener("keydown", onKey, true); };
+  const onKey = (ev) => { if (ev.key === "Escape") { ev.stopPropagation(); cerrarV(); } };
+  v.addEventListener("click", (ev) => { if (!ev.target.closest(".nn-visor-link") && ev.target.tagName !== "IMG") cerrarV(); });
+  document.addEventListener("keydown", onKey, true);
+  document.body.appendChild(v);
 }

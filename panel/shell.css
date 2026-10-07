@@ -954,3 +954,11 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 @keyframes nnBar{from{width:100%}to{width:0}}
 @keyframes nnIn{from{opacity:0;transform:translateY(16px) scale(.96)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.nodo-bell.ring svg,.nn-toast{animation:none}.nn-drawer{transition:none}}
+/* 🖼️ Visor de la foto del comprobante (campanita): encima del cajón */
+.nn-visor{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px;cursor:zoom-out}
+.nn-visor img{max-width:min(92vw,560px);max-height:82vh;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5);cursor:default;background:#fff}
+.nn-visor-x{position:absolute;top:14px;right:14px;width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.nn-visor-x svg{width:20px;height:20px}
+.nn-visor-x:hover{background:rgba(255,255,255,.25)}
+.nn-visor-link{color:#fff;opacity:.75;font-size:12.5px;text-decoration:underline}
+.nn-visor-link:hover{opacity:1}
