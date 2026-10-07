@@ -656,9 +656,14 @@ function item(n, conDia) {
     <span class="nn-ic">${I(t.ic)}</span>
     <div class="nn-body">
       <div class="nn-top"><b class="nn-tt">${esc(n.titulo)}</b><time title="${esc(new Date(n.created_at).toLocaleString("es-PE"))}">${esc(cuando(n.created_at, conDia))}</time>${nl ? `<i class="nn-dot" title="Sin leer"></i>` : ""}${!pendiente(n) ? `<button class="nn-x" type="button" data-act="quitar" title="Quitar de mi campanita (al resto del equipo no se le quita)">${I("x")}</button>` : ""}</div>
-      ${n.detalle ? `<div class="nn-dt">${esc(n.detalle)}</div>` : ""}
-      ${VALIDAR.has(n.tipo) && !res ? pagoHtml(n) : ""}
-      ${tags.length ? `<div class="nn-meta">${tags.join("")}</div>` : ""}
+      ${(() => {
+        // (pago por validar: la foto chica a la DERECHA del texto, y debajo banco · operación — ver pagoFoto/pagoLinea)
+        const pg = VALIDAR.has(n.tipo) && !res;
+        const foto = pg ? pagoFoto(n) : "";
+        const txt = (n.detalle ? `<div class="nn-dt">${esc(n.detalle)}</div>` : "") + (pg ? pagoLinea(n) : "")
+          + (tags.length ? `<div class="nn-meta">${tags.join("")}</div>` : "");
+        return foto ? `<div class="nn-fila"><div class="nn-fila-tx">${txt}</div>${foto}</div>` : txt;
+      })()}
       ${acc.length ? `<div class="nn-acts">${acc.map((a, i) => `<button class="nn-btn${a.ghost ? " ghost" : i === 0 && !res ? " pri" : ""}" data-act="${a.k}"${a.href ? ` data-href="${a.href}"` : ""}${a.k === "resolver" ? ' title="Marcar como atendido: sale de «Por atender» para todo el equipo"' : ""}>${I(a.ic)}${esc(a.lb)}</button>`).join("")}</div>` : ""}
     </div>
   </article>`;
@@ -703,22 +708,21 @@ function pagoDe(n) {
   const directo = espera && (et === "digital" || et === "adelanto" || et === "extra" || (et === "saldo" && !!String(s.clave_recojo ?? "").trim()));
   return { et, o, foto: /^https?:/.test(String(foto ?? "")) ? String(foto) : "", monto, moneda: o.currency, metodo, op, motivo, espera, directo };
 }
-function pagoHtml(n) {
+// Compacto (7-oct, Rodrigo: «ocupa mucho espacio»): la miniatura va a la derecha del texto, dentro del mismo aviso,
+// y abajo una sola línea con lo que el texto del aviso no dice (banco y operación). El monto y el motivo ya están en él.
+function pagoFoto(n) {
   const p = pagoDe(n);
-  if (!p) return "";
-  if (p.cargando) return `<div class="nn-pago"><span class="nn-pago-ph"></span><span class="nn-pago-tx">Cargando el comprobante…</span></div>`;
-  if (!p.o) return "";
-  const sym = (p.moneda || "PEN") === "PEN" ? "S/" : esc(p.moneda);
-  const leyo = [p.monto != null && p.monto !== "" ? `<b>${sym} ${esc(p.monto)}</b>` : "", p.metodo ? esc(p.metodo) : "", p.op ? `op ${esc(p.op)}` : ""].filter(Boolean).join(" · ");
-  return `<div class="nn-pago">
-    ${p.foto ? `<a class="nn-pago-foto" href="${esc(p.foto)}" target="_blank" rel="noopener" title="Ver el comprobante completo" data-act="foto"><img src="${esc(p.foto)}" alt="Comprobante" loading="lazy"></a>`
-      : `<span class="nn-pago-ph" title="Sin foto guardada">${I("image")}</span>`}
-    <div class="nn-pago-tx">
-      ${leyo ? `<div>La IA leyó: ${leyo}</div>` : ""}
-      ${p.motivo ? `<div class="nn-pago-mot">${esc(p.motivo)}</div>` : ""}
-      ${!p.espera ? `<div class="nn-pago-mot">Ya no está esperando (lo resolvió alguien o el cliente mandó otro).</div>` : ""}
-    </div>
-  </div>`;
+  if (!p || !p.o) return p?.cargando ? `<span class="nn-pago-mini ph"></span>` : "";
+  return p.foto
+    ? `<a class="nn-pago-foto nn-pago-mini" href="${esc(p.foto)}" target="_blank" rel="noopener" title="Ver el comprobante" data-act="foto"><img src="${esc(p.foto)}" alt="Comprobante" loading="lazy"></a>`
+    : "";
+}
+function pagoLinea(n) {
+  const p = pagoDe(n);
+  if (!p || !p.o) return "";
+  const partes = [p.metodo ? esc(p.metodo) : "", p.op ? `op ${esc(p.op)}` : ""].filter(Boolean);
+  if (!p.espera) partes.push("ya no está esperando");
+  return partes.length ? `<div class="nn-pago-ln">${partes.join(" · ")}</div>` : "";
 }
 const TXT_APROBAR = {
   digital: ["Aprobar el pago digital", "El bot le entrega el producto al instante y sigue con su proceso de venta.", "Aprobar y entregar"],
