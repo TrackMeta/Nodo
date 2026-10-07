@@ -17122,14 +17122,17 @@ export async function armarProducto(
     "característica única del producto —contenido, peso, tiempo de resultados, frecuencia de " +
     "uso, para quién es— NO es un atributo: va en la descripción o en el detalle. Ante la duda, " +
     "deja `atributos` vacío: un atributo de más hace que el bot pregunte tonterías y parte el stock.\n" +
-    "- `ia.estilo_venta` debe ser uno de: consultivo, directo, educativo, urgencia, objeciones (o vacío).\n" +
     // 📝 `ia.detalle` es el campo del que el bot saca casi todo lo que dice del producto, y era
     // el ÚNICO sin una sola instrucción: en el formato de salida figuraba como "detalle":"" y
     // nada más. Un campo sin instrucción se llena con lo obvio — acá, la caja del producto.
+    // 🧩 (6-oct) La ficha del panel es de 3 cuadros: «¿Qué es y qué incluye?» = resumen + detalle juntos. Por eso el
+    // detalle cierra con lo que TRAE: sin eso el cuadro salía sin un solo dato de qué recibe el cliente.
+    "- `ia.resumen` = UNA línea: qué es y para quién (va arriba del detalle, en el mismo cuadro).\n" +
     "- `ia.detalle` (el texto del que el bot saca todo lo que sabe): empieza por EL PROBLEMA de " +
     "la persona que compra, con sus palabras («te despiertas cansado», «las manchas no se van " +
-    "con nada»); sigue con cómo este producto entra en su día; y cierra con por qué no conviene " +
-    "llevar uno solo. 3 o 4 frases. ⛔ NO arranques por la composición, la fórmula ni los " +
+    "con nada»); sigue con cómo este producto entra en su día; si se vende en packs, por qué no conviene " +
+    "llevar uno solo; y cierra con QUÉ INCLUYE en una lista corta (lo que el brief diga que trae: contenido, módulos, " +
+    "accesorios, acceso), sin inventar piezas que el brief no nombra. 3 o 4 frases + la lista. ⛔ NO arranques por la composición, la fórmula ni los " +
     "ingredientes —eso es la etiqueta del frasco, no una razón para comprar— y no copies el " +
     "lenguaje de rotulado («apoya el funcionamiento normal de…»): dilo como se lo dirías a un " +
     "amigo. Si es un suplemento o un cosmético, habla de la rutina y de la constancia, nunca de " +
@@ -17172,8 +17175,11 @@ export async function armarProducto(
     // detector de huecos de ficha la da por CUBIERTA, así que la pregunta ya nunca le llega al
     // dueño. Una política inventada por el asistente se vuelve la política de la casa en
     // silencio. Va a `faltan`, que es justo el mecanismo para esto.
-    "- `ia.reglas_producto` = lo que hay que saber del PRODUCTO EN SÍ para usarlo bien: qué " +
-    "incluye y qué no, cuidados, compatibilidad, cómo se usa. ⛔ NUNCA escribas acá —ni en " +
+    // 🧩 (6-oct) En la ficha de 3 cuadros reglas_producto se junta con los límites en «Lo que NO incluye o no se
+    // promete»: lo que SÍ trae va en el detalle. Acá solo lo que NO trae o lo que hay que respetar para usarlo.
+    "- `ia.reglas_producto` = lo que el producto NO trae o NO hace según el brief («no incluye taladro», «no trae " +
+    "dieta») y los cuidados o requisitos para usarlo bien (compatibilidad, cómo NO usarlo). Lo que SÍ incluye va en " +
+    "`ia.detalle`, no acá. Si no hay nada de eso, déjalo vacío. ⛔ NUNCA escribas acá —ni en " +
     "ningún otro campo— la POLÍTICA COMERCIAL del negocio: garantía, devoluciones, cambios, " +
     "reembolsos, factura o boleta, plazos de entrega. Eso lo decide el dueño y tú no lo puedes " +
     "saber; aunque suene de sentido común («no hay devoluciones por mal uso»), su bot la va a " +
@@ -17182,7 +17188,11 @@ export async function armarProducto(
     "- `ia.limites` = lo que el bot NUNCA debe decir ni prometer (promesas de resultado, " +
     "afirmaciones de salud si es un suplemento o cosmético, plazos que no controlas, " +
     "garantías o devoluciones que el dueño no haya escrito). ⛔ NO es la disponibilidad ni el " +
-    "stock: la escasez es un argumento de venta y va en `ia.tecnicas`, no acá.\n" +
+    "stock: eso va en `stock`, y la escasez no la escribas en ningún campo (el bot no puede inventarla).\n" +
+    // 🧩 (6-oct) Proceso, técnicas y estilo quedaron en «Avanzado» de la ficha: Nodo ya lleva la venta y cobra solo,
+    // y lo que el asistente escribía ahí («pregúntale cómo paga», escasez) chocaba con el motor (auditoría del prompt).
+    "- `ia.proceso`, `ia.tecnicas` y `ia.estilo_venta`: déjalos VACÍOS. El sistema ya sabe llevar la venta, mandar " +
+    "los datos de pago y cerrar; lo que escribas ahí choca con eso.\n" +
     // 🔴 La política se colaba por acá: con «devoluciones que el dueño no ofrece» de ejemplo,
     // el modelo escribió «No ofrece garantía extendida ni devoluciones por mal uso» — una
     // AFIRMACIÓN de política, en el campo que debía ser una prohibición al bot. Y el bot la
@@ -17201,14 +17211,23 @@ export async function armarProducto(
     "la clave y anótalo en `faltan` («Cuántas unidades tienes en stock»). ⛔ Jamás lo " +
     "inventes ni lo estimes. Y si el producto tiene `atributos` (talla, color…), omítelo " +
     "igual: ahí el stock va por variante y eso solo lo sabe él.\n" +
-    "- `faq`: 3 a 5 dudas u objeciones reales con su respuesta ideal, cada una como {\"q\":\"pregunta\",\"a\":\"respuesta\"}.\n" +
+    // (6-oct: FAQ y objeciones se juntan en UNA lista en el panel — «Lo que te preguntan → tu respuesta». Eran 3-5 +
+    //  10-12 = hasta 17 filas para revisar; ahora 3-4 + 5-6, las que más pesan.)
+    "- `faq`: 3 a 4 dudas reales con su respuesta ideal, cada una como {\"q\":\"pregunta\",\"a\":\"respuesta\"}.\n" +
+    // 🔴 (6-oct, prueba con un adaptador de taladro) Salió «¿Cuánto pesa? → es ligero y compacto», «la mayoría de
+    // taladros estándar son compatibles» y «el envío es rápido, apenas confirmamos tu pago…»: datos que el brief no
+    // daba, y el último contradice el pago al recibir. El bot repite la FAQ como verdad: tiene que salir del brief.
+    "  · Solo preguntas cuya respuesta SALE DEL BRIEF. ⛔ No contestes peso, medidas, compatibilidad, materiales, " +
+    "duración ni tiempos que el brief no diga (si es una duda típica pero no tienes el dato, ponla en `faltan`). " +
+    "⛔ Nada de envío, entrega, pago ni plazos en la FAQ ni en las objeciones: eso lo arma el sistema con la " +
+    "configuración real del negocio.\n" +
     // 🛡️ Las OBJECIONES son lo que el bot usa cuando el cliente DUDA, y es donde se gana o se
     // pierde la venta. El asistente no las generaba nunca: no estaban en el esquema ni en el
     // formato de salida, así que un producto recién armado nacía con cero. Son distintas de
     // la FAQ: la FAQ responde preguntas, esto rebate pegas.
-    "- `objeciones`: 10 a 12 PEGAS con cómo rebatirlas, cada una como {\"o\":\"la pega en boca del " +
-    "cliente\",\"r\":\"la respuesta\"}. Son distintas de la FAQ: la FAQ resuelve dudas («¿cómo " +
-    "pago?»), esto rebate resistencias. Van los DOS grupos, no elijas:\n" +
+    "- `objeciones`: 5 a 6 PEGAS —las que más tumban la venta— con cómo rebatirlas, cada una como {\"o\":\"la pega en boca del " +
+    "cliente\",\"r\":\"la respuesta\"}. Son distintas de la FAQ: la FAQ resuelve dudas, esto rebate " +
+    "resistencias; no repitas en una lo que ya está en la otra. Van los DOS grupos (2-3 de cada uno):\n" +
     "  · Las UNIVERSALES, que le pasan a cualquier venta por WhatsApp: «está caro», «lo pienso», " +
     "«no confío en comprar online», «prefiero comprar en tienda», «¿es original?».\n" +
     // 🎯 Las genéricas solas dan un producto que se defiende de lo que le pasa a todos y no de
@@ -17219,9 +17238,14 @@ export async function armarProducto(
     "«mi doctor me recomendó otra marca», «lo vi más barato en Mercado Libre». Un cosmético: " +
     "«¿me va a irritar?», «¿sirve para piel grasa?». Un curso: «¿tiene certificado?», «no voy a " +
     "tener tiempo». Piensa qué le preguntan a ESTE producto y escríbelas.\n" +
-    "  La respuesta reconoce primero y después da la razón concreta (valor, garantía, prueba), " +
+    "  La respuesta reconoce primero y después da la razón concreta (valor, cómo funciona, por qué confiar), " +
     "sin discutir ni presionar. Si la pega toca salud o resultados, no prometas: sé honesto y " +
     "manda a consultar con su médico.\n" +
+    // (los mismos choques que caza el aviso al guardar del panel — revisar-textos.js)
+    "- ⛔ En NINGUNA respuesta (FAQ u objeción) ni en ningún campo: pasos de cobro («pásale el Yape», «pregúntale con " +
+    "qué medio paga» — el sistema manda los datos de pago solo), montos distintos de los precios del brief (nada de " +
+    "«te lo dejo en…», ofertas ni descuentos), garantías o devoluciones que el brief no diga, ni «un asesor te va a " +
+    "contactar» (el bot es un asistente y no hay nadie más).\n" +
     "- `resumen_cambios`: una sola frase de qué llenaste.\n\n" +
     "## Formato de salida — usa EXACTAMENTE estas claves, NO las renombres ni las traduzcas:\n" +
     "{\n" +
@@ -17229,7 +17253,7 @@ export async function armarProducto(
     '  "tipo": "fisico"  (SIN tilde) o "digital",\n' +
     '  "presentaciones": [{"nombre":"1 par","descripcion":"","cantidad":1,"precio":45}]  (precio SOLO si el dueño lo dijo; si no, omite la clave),\n' +
     '  "atributos": [{"nombre":"Talla","valores":"38, 39, 40"}]  (ARRAY de objetos, NUNCA un objeto {talla:[...]}; valores = texto separado por comas),\n' +
-    '  "ia": {"resumen":"pitch corto de venta","detalle":"","reglas_producto":"","limites":"","estilo_venta":"consultivo","proceso":"","tecnicas":""},\n' +
+    '  "ia": {"resumen":"una línea: qué es y para quién","detalle":"problema → cómo entra en su día → Incluye: …","reglas_producto":"","limites":"","estilo_venta":"","proceso":"","tecnicas":""},\n' +
     '  "faq": [{"q":"...","a":"..."}],\n' +
     '  "objeciones": [{"o":"está caro","r":"..."}],\n' +
     '  "stock": 50  (SOLO si el dueño dijo cuántas unidades tiene; si no, omite la clave),\n' +
@@ -17270,7 +17294,46 @@ export async function armarProducto(
   let parsed: any;
   try { parsed = m ? JSON.parse(m[0]) : JSON.parse(raw); }
   catch { throw new Error("La IA no devolvió un borrador válido. Intenta de nuevo con un brief un poco más claro."); }
-  return normalizarDraftProducto(parsed);
+  return sinTemasQueElBriefNoDice(normalizarDraftProducto(parsed), brief);
+}
+
+// 🧹 El prompt de arriba ya prohíbe contestar lo que el brief no dice, y el modelo igual lo hacía. Medido el 6-oct con
+// dos briefs (calistenia y un adaptador de taladro): «¿Viene con garantía? → Por ahora no contamos con garantía
+// formal» (una POLÍTICA que el dueño nunca escribió), «no es un curso certificado», «compatible con la mayoría de
+// taladros estándar», «¿Cuánto pesa? → ligero y compacto» y «el envío es rápido, apenas confirmamos tu pago» (choca
+// con el pago al recibir). El bot repite la lista como verdad, así que acá se corta en código: la pregunta u objeción
+// que toca uno de esos temas SIN que el brief lo nombre sale de la lista y pasa a `faltan` (el dueño la contesta).
+// Envío, entrega y plazos salen siempre: los arma el sistema con la configuración real del negocio.
+const TEMAS_DEL_DUENO: Array<[RegExp, string]> = [
+  [/garant/i, "Si das garantía y por cuánto tiempo"],
+  [/devoluc|devolver|reembols|\bcambio(?:s)?\s+(?:de|por|si)/i, "Si aceptas devoluciones o cambios, y en qué casos"],
+  [/certific|oficial|registro\s+sanitario|digesa/i, "Si tiene certificado o registro"],
+  [/\bpes[ao]s?\b|\bmedidas?\b|dimensi|tama[ñn]o|\bkg\b|\bkilos?\b|\bgramos?\b|\bcm\b/i, "Peso y medidas"],
+  [/compatib/i, "Con qué es compatible"],
+];
+const RE_TEMA_ENVIO = /\benv[ií](?:o|os|a|amos|an)\b|\bdemora|\bdespach|delivery|\bshalom\b|\bllega(?:n|r[aá])?\s+(?:en|a\s+tu)|plazo\s+de\s+entrega/i;
+function sinTemasQueElBriefNoDice(d: any, brief: string): any {
+  if (!d || typeof d !== "object") return d;
+  const b = String(brief ?? "");
+  const faltan: string[] = Array.isArray(d.faltan) ? d.faltan.map((x: any) => String(x)) : [];
+  const quitados: string[] = [];
+  const pasa = (texto: string): boolean => {
+    if (d.tipo !== "digital" && RE_TEMA_ENVIO.test(texto)) return false;   // (en digital «te enviamos el link» ES la entrega)
+    for (const [re, falta] of TEMAS_DEL_DUENO) {
+      if (re.test(texto) && !re.test(b)) {
+        if (!faltan.some((f) => re.test(f) || f === falta)) faltan.push(falta);
+        return false;
+      }
+    }
+    return true;
+  };
+  if (Array.isArray(d.faq)) d.faq = d.faq.filter((x: any) => { const ok = pasa(`${x?.q ?? ""} ${x?.a ?? ""}`); if (!ok) quitados.push(String(x?.q ?? "")); return ok; });
+  if (Array.isArray(d.objeciones)) d.objeciones = d.objeciones.filter((x: any) => { const ok = pasa(`${x?.o ?? ""} ${x?.r ?? ""}`); if (!ok) quitados.push(String(x?.o ?? "")); return ok; });
+  // Un digital no tiene stock que contar, y un físico no tiene link de entrega.
+  d.faltan = d.tipo === "digital" ? faltan.filter((f) => !/\bstock\b|unidades\s+tienes/i.test(f))
+    : faltan.filter((f) => !/link\s+de\s+entrega|medio\s+de\s+entrega\s+digital/i.test(f));
+  if (quitados.length) d._quitadas = quitados;
+  return d;
 }
 
 // ── Asistente "Armar con IA": brief → borrador del CONOCIMIENTO DEL NEGOCIO ──

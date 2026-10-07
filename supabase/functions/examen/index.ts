@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userIsChannelAdmin } from "../_shared/db.ts";
-import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt } from "../_shared/engine.ts";
+import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt, armarProducto } from "../_shared/engine.ts";
 import { runAI, anotarUsoIA } from "../_shared/ai.ts";
 import { BATERIAS, BATERIA_ECOGUARD, type ConvExamen } from "./bateria.ts";
 
@@ -277,6 +277,18 @@ Deno.serve(async (req) => {
   let body: any;
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
   const accion = String(body?.accion ?? "");
+
+  // ── armar: corre «Armar con IA» con un brief y devuelve el borrador SIN guardar nada (para revisar qué arma —
+  //    6-oct, ficha de 3 cuadros). Mismo acceso que el examen. ──
+  if (accion === "armar") {
+    const channelId = String(body?.channel_id ?? "");
+    const brief = String(body?.brief ?? "").trim();
+    if (!channelId || !brief) return json({ error: "falta channel_id o brief" }, 400);
+    const a = await autoriza(req, channelId);
+    if (!a.ok) return json({ error: "forbidden" }, 403);
+    try { return json({ ok: true, borrador: await armarProducto(db, channelId, brief, String(body?.tipo ?? "")) }); }
+    catch (e) { return json({ error: String((e as any)?.message ?? e) }, 500); }
+  }
 
   // ── iniciar / listar: por canal ──
   if (accion === "iniciar" || accion === "listar") {
