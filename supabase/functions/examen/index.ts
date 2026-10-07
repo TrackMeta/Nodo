@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userIsChannelAdmin } from "../_shared/db.ts";
-import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt, armarProducto, armarNegocio } from "../_shared/engine.ts";
+import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt, armarProducto, armarNegocio, probarRetoques } from "../_shared/engine.ts";
 import { runAI, anotarUsoIA } from "../_shared/ai.ts";
 import { BATERIAS, BATERIA_ECOGUARD, type ConvExamen } from "./bateria.ts";
 
@@ -271,6 +271,75 @@ async function llamarJuez(juez: string, ai: any, channelId: string, contenido: s
   return JSON.parse(raw);
 }
 
+const SISTEMA_RETOQUES = `Eres auditor de un bot de ventas por WhatsApp (Perú). La IA escribió un BORRADOR y luego un sistema de reglas
+automáticas (filtros por palabras) lo retocó antes de mandarlo. Compara el BORRADOR con lo que SALIÓ, mirando el último mensaje del
+cliente y lo que se venía hablando. Ojo: el sistema a veces manda DESPUÉS, en otra burbuja, los datos de pago, la lista de precios o
+la foto de la sede; quitar un anuncio de eso («te paso los datos 👇») no es una pérdida.
+Decide:
+- veredicto: "mejor" si el retoque arregló algo real (quitó un invento, una promesa indebida, una repetición, una pregunta que ya se
+  hizo, pedir el pago a quien todavía no quiere comprar, un dato equivocado); "igual" si solo cambió formato, emojis, negritas o algo
+  sin importancia; "peor" si se perdió información útil que contestaba al cliente o lo tranquilizaba, si quedó una frase rota, cortada
+  o que se refiere a algo borrado, o si una buena respuesta se reemplazó por una peor. Si arregló algo pero además rompió otra cosa, "peor".
+- perdio_util: true si se perdió algo que el cliente necesitaba o que respondía a lo que preguntó.
+- incoherente: true si lo que salió tiene frases rotas o que no se entienden sin lo borrado.
+- tipo: categoría corta del retoque, en minúsculas (ej.: "pedido de captura", "anuncio de pago", "pregunta repetida",
+  "recomendación reemplazada", "emojis/formato", "saludo", "plazo/envío", "precios", "sedes", "datos del cliente", "otro").
+- quitado: lo que se quitó o cambió, en pocas palabras.
+- explicacion: una frase.`;
+const RETOQUE_SCHEMA = {
+  type: "object", additionalProperties: false,
+  required: ["veredicto", "perdio_util", "incoherente", "tipo", "quitado", "explicacion"],
+  properties: {
+    veredicto: { type: "string", enum: ["mejor", "igual", "peor"] },
+    perdio_util: { type: "boolean" }, incoherente: { type: "boolean" },
+    tipo: { type: "string" }, quitado: { type: "string" }, explicacion: { type: "string" },
+  },
+};
+
+async function juzgarRetoques(channelId: string, dias: number, offset: number, limite: number, desde: string) {
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: "openai" });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) throw new Error("El canal no tiene una clave de OpenAI para el juez");
+  const corte = desde || new Date(Date.now() - Math.max(1, dias) * 86400_000).toISOString();
+  const { data: evs } = await db.from("contact_events").select("id, channel_id, contact_id, created_at, detalle, meta")
+    .like("titulo", "%antes de los retoques%").gt("created_at", corte)
+    .order("created_at", { ascending: false }).range(offset, offset + limite - 1);
+  const filas = (evs ?? []) as any[];
+  const res = await Promise.all(filas.map(async (e) => {
+    const m = /^«([\s\S]*?)»\s*→ salió: (?:«([\s\S]*?)»|NADA \(vacío\))(?:\n⚙️ Pasos: ([\s\S]*))?\s*$/.exec(String(e.detalle ?? ""));
+    if (!m) return { id: e.id, error: "no se pudo leer el evento" };
+    const antes = m[1], salio = m[2] ?? "";
+    const [{ data: msgs }, { data: v2 }] = await Promise.all([
+      db.from("messages").select("direction, content, ts").eq("contact_id", e.contact_id).lte("ts", e.created_at)
+        .order("ts", { ascending: false }).limit(6),
+      db.from("contact_events").select("id").eq("contact_id", e.contact_id).like("titulo", "🧭 Motor v2 · paso%")
+        .gte("created_at", new Date(Date.parse(e.created_at) - 120_000).toISOString()).lte("created_at", e.created_at).limit(1),
+    ]);
+    const hilo = ((msgs ?? []) as any[]).reverse().map((x) =>
+      `${x.direction === "in" ? "CLIENTE" : "BOT"}: ${String(x.content?.text ?? x.content?.caption ?? `[${x.content?.type ?? "medio"}]`).slice(0, 400)}`).join("\n");
+    const contenido = `## LO ÚLTIMO DE LA CONVERSACIÓN\n${hilo}\n\n## BORRADOR DE LA IA\n${antes}\n\n## LO QUE SALIÓ\n${salio || "(nada: se borró entero)"}`;
+    try {
+      const r = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST", headers: { Authorization: `Bearer ${ai.api_key}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          model: MODELO_JUEZ, reasoning_effort: "low", max_completion_tokens: 4000,
+          messages: [{ role: "system", content: SISTEMA_RETOQUES }, { role: "user", content: contenido }],
+          response_format: { type: "json_schema", json_schema: { name: "retoque", strict: true, schema: RETOQUE_SCHEMA } },
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(`juez ${r.status}: ${JSON.stringify(d?.error ?? d).slice(0, 200)}`);
+      const u = d?.usage ?? {};
+      await anotarUsoIA(db, channelId, ai.provider ?? "openai", MODELO_JUEZ, "examen",
+        Number(u.prompt_tokens ?? 0), Number(u.completion_tokens ?? 0), Number(u?.prompt_tokens_details?.cached_tokens ?? 0));
+      const j = JSON.parse(String(d?.choices?.[0]?.message?.content ?? "{}"));
+      return { id: e.id, canal: e.channel_id, fecha: e.created_at, fisico: !!(v2 ?? []).length, pasos: m[3] ?? null,
+        antes: antes.slice(0, 600), salio: salio.slice(0, 400), ...j };
+    } catch (err) { return { id: e.id, error: String(err).slice(0, 200) }; }
+  }));
+  return { total: filas.length, resultados: res };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -292,6 +361,29 @@ Deno.serve(async (req) => {
         : await armarProducto(db, channelId, brief, String(body?.tipo ?? "")) });
     }
     catch (e) { return json({ error: String((e as any)?.message ?? e) }, 500); }
+  }
+
+  // ── probar: qué le hace cada freno de texto a unas frases (sin conversación). {casos: [{texto, li?}]} ──
+  if (accion === "probar") {
+    const channelId = String(body?.channel_id ?? "");
+    const a = await autoriza(req, channelId);
+    if (!a.ok) return json({ error: "forbidden" }, 403);
+    const casos = Array.isArray(body?.casos) ? body.casos.slice(0, 50) : [];
+    return json({ ok: true, resultados: casos.map((c: any) => ({ texto: String(c?.texto ?? ""), ...probarRetoques(String(c?.texto ?? ""), String(c?.li ?? "")) })) });
+  }
+
+  // ── retoques: un juez IA compara lo que escribió la IA con lo que salió tras los retoques del motor (evento 🔬),
+  //    para saber qué recortes dañan respuestas buenas (7-oct). `channel_id` = el canal cuya clave paga el juez;
+  //    los eventos son de todos los canales. ──
+  if (accion === "retoques") {
+    const channelId = String(body?.channel_id ?? "");
+    if (!channelId) return json({ error: "falta channel_id" }, 400);
+    const a = await autoriza(req, channelId);
+    if (!a.ok) return json({ error: "forbidden" }, 403);
+    try {
+      return json({ ok: true, ...(await juzgarRetoques(channelId, Number(body?.dias ?? 7), Number(body?.offset ?? 0),
+        Math.min(60, Number(body?.limite ?? 40)), String(body?.desde ?? ""))) });
+    } catch (e) { return json({ error: String((e as any)?.message ?? e) }, 500); }
   }
 
   // ── iniciar / listar: por canal ──
