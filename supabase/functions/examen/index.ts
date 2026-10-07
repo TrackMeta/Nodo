@@ -20,6 +20,7 @@ import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt, armarProduc
 import { runAI, anotarUsoIA } from "../_shared/ai.ts";
 import { BATERIAS, BATERIA_ECOGUARD, type ConvExamen } from "./bateria.ts";
 import { conectarVentasMeta, reenviarVentasPendientes, estadoVentasMeta, infoDataset } from "../_shared/capi-auto.ts";
+import { registrarNotificacion } from "../_shared/notificaciones.ts";
 
 const db = serviceClient();
 const MODELO_JUEZ = "gpt-5-mini";   // razona antes de calificar: más parejo que gpt-4.1 (calibración 3-oct)
@@ -365,6 +366,66 @@ Deno.serve(async (req) => {
         : await armarProducto(db, channelId, brief, String(body?.tipo ?? "")) });
     }
     catch (e) { return json({ error: String((e as any)?.message ?? e) }, 500); }
+  }
+
+  // ── demo-campanita: avisos de PAGO POR VALIDAR de muestra en la campanita (7-oct, Rodrigo: «quiero ver qué opciones
+  //    salen y qué pasa con un físico»). Clientes «PRUEBA-NOTIF-DEMO-…» (source sim: nunca salen por WhatsApp; la
+  //    campanita sí los muestra por el prefijo). {op:"crear", imagenes:{digital,adelanto,saldo,lima}: base64} | {op:"borrar"}.
+  if (accion === "demo-campanita") {
+    const channelId = String(body?.channel_id ?? "");
+    const a = await autoriza(req, channelId);
+    if (!a.ok) return json({ error: "forbidden" }, 403);
+    const { data: viejos } = await db.from("contacts").select("id").eq("channel_id", channelId).like("wa_id", "PRUEBA-NOTIF-DEMO-%");
+    const idsViejos = ((viejos ?? []) as any[]).map((x) => x.id);
+    if (idsViejos.length) {
+      await db.from("notificaciones").delete().in("contact_id", idsViejos);
+      await db.from("orders").delete().in("contact_id", idsViejos);
+      await db.from("contacts").delete().in("id", idsViejos);
+    }
+    if (String(body?.op ?? "") === "borrar") return json({ ok: true, borrados: idsViejos.length });
+    const { data: prod } = await db.from("products").select("id, nombre").eq("channel_id", channelId).limit(1).maybeSingle();
+    const subir = async (b64: string) => {
+      if (!b64) return "";
+      const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
+      const path = `examen/${channelId}/demo-${crypto.randomUUID()}.png`;
+      const up = await db.storage.from("media").upload(path, bytes, { contentType: "image/png" });
+      return up.error ? "" : db.storage.from("media").getPublicUrl(path).data.publicUrl;
+    };
+    const img = body?.imagenes ?? {};
+    const casos: any[] = [
+      { k: "digital", nombre: "DEMO · Digital (Yape)", tipo: "pago_digital_validar", estado: "pendiente", monto: 10,
+        ship: (u: string) => ({ digital_pendiente: true, digital_comprobante: u, digital_monto_leido: "10", digital_metodo: "Yape", digital_operacion: "11223344",
+          digital_ok_ia: false, digital_revisar: "No se ve el texto de un comprobante con ese monto: revisa la imagen antes de aprobar.", digital_recibido_at: new Date().toISOString() }),
+        datos: { producto: prod?.nombre ?? "Producto digital", monto: 10, operacion: "11223344" } },
+      { k: "adelanto", nombre: "DEMO · Físico provincia (adelanto)", tipo: "adelanto_validar", estado: "esperando_adelanto", monto: 109,
+        ship: (u: string) => ({ zona: "provincia", ciudad: "Arequipa", adelanto: 20, saldo: 89, adelanto_comprobante: u, adelanto_monto_leido: "20", adelanto_metodo: "Interbank",
+          adelanto_operacion: "55667788", adelanto_revisar: "el comprobante dice que el dinero fue a «Percy Flores N.», revísalo" }),
+        datos: { monto_leido: 20, monto_esperado: 20, operacion: "55667788", motivo: "el comprobante dice que el dinero fue a «Percy Flores N.», revísalo" } },
+      { k: "saldo", nombre: "DEMO · Físico provincia (saldo con clave)", tipo: "saldo_validar", estado: "en_agencia", monto: 109,
+        ship: (u: string) => ({ zona: "provincia", ciudad: "Trujillo", adelanto: 20, saldo: 89, adelanto_validado: true, saldo_comprobante: u, saldo_monto_leido: "89",
+          saldo_metodo: "BBVA", saldo_operacion: "99001122", saldo_revisar: "la fecha del comprobante no se leía bien", clave_recojo: "4821" }),
+        datos: { monto_leido: 89, monto_esperado: 89, operacion: "99001122", motivo: "la fecha del comprobante no se leía bien" } },
+      { k: "saldo", nombre: "DEMO · Físico provincia (saldo SIN clave)", tipo: "saldo_validar", estado: "en_agencia", monto: 109,
+        ship: (u: string) => ({ zona: "provincia", ciudad: "Piura", adelanto: 20, saldo: 89, adelanto_validado: true, saldo_comprobante: u, saldo_monto_leido: "89",
+          saldo_metodo: "Yape", saldo_operacion: "33445566", saldo_revisar: "el monto no se leía bien" }),
+        datos: { monto_leido: 89, monto_esperado: 89, operacion: "33445566", motivo: "el monto no se leía bien" } },
+      { k: "lima", nombre: "DEMO · Físico Lima (pagó antes de recibir)", tipo: "prepago_lima_validar", estado: "confirmado", monto: 69,
+        ship: (u: string) => ({ zona: "lima", distrito: "Surco", pago_adelantado_por_validar: true, pago_adelantado_comprobante: u, pago_adelantado_monto: "69" }),
+        datos: { monto_leido: 69, por_cobrar: 69, operacion: "77889900" } },
+    ];
+    const hechos: any[] = [];
+    let i = 0;
+    for (const c of casos) {
+      i++;
+      const url = await subir(String(img[c.k] ?? ""));
+      const { data: ct } = await db.from("contacts").insert({ channel_id: channelId, wa_id: `PRUEBA-NOTIF-DEMO-${i}`, nombre: c.nombre, source: "sim",
+        bot_activo: true, ultimo_mensaje_at: new Date().toISOString(), primera_interaccion: new Date().toISOString() }).select("id").single();
+      const { data: o } = await db.from("orders").insert({ channel_id: channelId, contact_id: (ct as any).id, product_id: prod?.id ?? null,
+        amount: c.monto, currency: "PEN", estado: c.estado, shipping: { ...c.ship(url), cliente: c.nombre } }).select("id").single();
+      await registrarNotificacion(db, { channelId, contactId: (ct as any).id, orderId: (o as any).id, tipo: c.tipo, datos: { cliente: c.nombre, moneda: "S/", ...c.datos } });
+      hechos.push({ caso: c.nombre, foto: !!url, order_id: (o as any).id });
+    }
+    return json({ ok: true, hechos });
   }
 
   // ── ventas-meta: {op: "estado" | "conectar" | "reenviar"} — lo mismo que el panel (channel-config), con el secreto. ──
