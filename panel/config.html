@@ -858,6 +858,9 @@ async function saveBrand(btn){
 // donde se pierde.
 function renderPixel(box){
   const c=st.channel||{}, s=st.secrets||{};
+  // (el gasto también se lee con el token de WhatsApp: «Conectado» si hay token —propio o el de WhatsApp—, cuentas y ningún
+  //  error de sincronización. Antes miraba solo `ads_token` y decía «Sin conectar» con el gasto bajando cada hora — 7-oct.
+  //  El conteo de cuentas lo confirma loadAdAccounts, que actualiza el badge.)
   const adsOn=!!s.ads_token, capiOn=!!(c.pixel_id&&(s.capi_token||s.access_token));   // (el token de WhatsApp también sirve para las ventas — 7-oct)
   box.innerHTML=`
     <h2>Meta</h2>
@@ -866,7 +869,7 @@ function renderPixel(box){
       <div class="chd">
         <span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span>
         <div><div class="nm">Gasto de anuncios</div><div class="sub2">Meta &#8594; Nodo</div></div>
-        <span class="badge${adsOn?" on":""}">${adsOn?"Conectado":"Sin conectar"}</span>
+        <span class="badge${adsOn?" on":""}" id="adsBadge">${adsOn?"Conectado":"Sin conectar"}</span>
       </div>
       <div class="desc">Trae lo que gastaste en cada anuncio y lo pone al lado de tus ventas reales en <b>Rendimiento</b>: CPA de confirmación, CPA real, ganancia neta y ROAS. Sin esto, Rendimiento te muestra las ventas pero no lo que te costaron — y la ganancia sale inflada.</div>
 
@@ -1025,6 +1028,8 @@ async function loadAdAccounts(){
   const box=$("adAccList"); if(!box) return;
   const { data,error }=await supa.from("ad_accounts").select("id,account_id,nombre").eq("channel_id",st.channelId).order("created_at");
   if(error){ box.innerHTML=`<span style="color:var(--red);font-size:12.5px">${esc(error.message)}</span>`; return; }
+  { const s=st.secrets||{}, c=st.channel||{}; const on=!!(data&&data.length) && !!(s.ads_token||s.access_token) && !c.ads_sync_error;
+    const bd=$("adsBadge"); if(bd){ bd.textContent=on?"Conectado":"Sin conectar"; bd.classList.toggle("on",on); bd.closest(".card")?.classList.toggle("on",on); } }
   if(!data||!data.length){ box.innerHTML=`<span style="color:var(--faint);font-size:12.5px">Aún no agregaste ninguna cuenta.</span>`; return; }
   box.innerHTML=data.map(a=>`<div style="display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 11px">
     <span style="font-family:monospace;font-size:12.5px;color:var(--text)">${esc(a.account_id)}</span>
