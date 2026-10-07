@@ -409,7 +409,7 @@ function avisoNavegador(n) {
       body: [n.detalle, c && (N.ctx.S.channels.length > 1) ? c.nombre : ""].filter(Boolean).join("\n"),
       icon: c?.logo_url || N.ctx.logoFallback, tag: "nodo-" + n.id, renotify: true,
     });
-    nt.onclick = () => { window.focus(); nt.close(); marcarLeida(n); const a = acciones(n)[0]; a ? ejecutar(n, a) : abrir(); };
+    nt.onclick = () => { window.focus(); nt.close(); marcarLeida(n); const a = acciones(n).find((x) => x.k !== "aprobar"); a ? ejecutar(n, a) : abrir(); };
   } catch (_) {}
 }
 
@@ -417,7 +417,7 @@ function avisoNavegador(n) {
 function tarjeta(n) {
   let box = document.getElementById("nodoNotifToasts");
   if (!box) { box = document.createElement("div"); box.id = "nodoNotifToasts"; document.body.appendChild(box); }
-  const t = tipoDe(n), c = canal(n.channel_id), acc = acciones(n).filter((a) => a.k !== "resolver").slice(0, 1);
+  const t = tipoDe(n), c = canal(n.channel_id), acc = acciones(n).filter((a) => a.k !== "resolver" && a.k !== "aprobar").slice(0, 1);   // (aprobar, solo mirando la foto en el cajón)
   const el = document.createElement("div");
   el.className = "nn-toast pr-" + n.prioridad;
   el.setAttribute("role", "alert");
@@ -657,18 +657,109 @@ function item(n, conDia) {
     <div class="nn-body">
       <div class="nn-top"><b class="nn-tt">${esc(n.titulo)}</b><time title="${esc(new Date(n.created_at).toLocaleString("es-PE"))}">${esc(cuando(n.created_at, conDia))}</time>${nl ? `<i class="nn-dot" title="Sin leer"></i>` : ""}${!pendiente(n) ? `<button class="nn-x" type="button" data-act="quitar" title="Quitar de mi campanita (al resto del equipo no se le quita)">${I("x")}</button>` : ""}</div>
       ${n.detalle ? `<div class="nn-dt">${esc(n.detalle)}</div>` : ""}
+      ${VALIDAR.has(n.tipo) && !res ? pagoHtml(n) : ""}
       ${tags.length ? `<div class="nn-meta">${tags.join("")}</div>` : ""}
       ${acc.length ? `<div class="nn-acts">${acc.map((a, i) => `<button class="nn-btn${a.ghost ? " ghost" : i === 0 && !res ? " pri" : ""}" data-act="${a.k}"${a.href ? ` data-href="${a.href}"` : ""}${a.k === "resolver" ? ' title="Marcar como atendido: sale de «Por atender» para todo el equipo"' : ""}>${I(a.ic)}${esc(a.lb)}</button>`).join("")}</div>` : ""}
     </div>
   </article>`;
 }
 
+
+// ── 💳 Pago por validar: la FOTO del comprobante y APROBAR desde el aviso (7-oct, pedido de Rodrigo para reemplazar
+// Telegram). Mismo camino que Copiloto (order-update con el mismo cuerpo), así que valen los mismos candados:
+// operación reusada, transición inválida, doble clic. Rechazar y los casos que piden un dato (saldo sin clave, prepago
+// de Lima con monto) siguen en Copiloto. El pedido se carga una vez por aviso y se guarda acá.
+const ETAPA_DE = { pago_digital_validar: "digital", adelanto_validar: "adelanto", saldo_validar: "saldo",
+  pago_extra_validar: "extra", prepago_lima_validar: "lima" };
+const ESTADO_ETAPA = { digital: "pendiente", adelanto: "esperando_adelanto", saldo: "en_agencia" };
+N.ordenes = new Map();   // order_id → pedido | "cargando" | null
+async function cargarOrden(id) {
+  if (!id || N.ordenes.has(id)) return;
+  N.ordenes.set(id, "cargando");
+  try {
+    const { data } = await N.ctx.supa.from("orders").select("id,estado,amount,currency,shipping,contact_id").eq("id", id).maybeSingle();
+    N.ordenes.set(id, data || null);
+  } catch (_) { N.ordenes.set(id, null); }
+  refrescar();
+}
+function pagoDe(n) {
+  const et = ETAPA_DE[n.tipo];
+  if (!et || !n.order_id) return null;
+  const o = N.ordenes.get(n.order_id);
+  if (o === undefined) { cargarOrden(n.order_id); return { et, cargando: true }; }
+  if (!o || o === "cargando") return { et, cargando: o === "cargando" };
+  const s = o.shipping || {};
+  const foto = et === "digital" ? s.digital_comprobante : et === "adelanto" ? s.adelanto_comprobante
+    : et === "saldo" ? s.saldo_comprobante : et === "extra" ? s.extra_comprobante : s.pago_adelantado_comprobante;
+  const monto = et === "digital" ? (s.digital_monto_leido ?? o.amount) : et === "adelanto" ? (s.adelanto_monto_leido ?? s.adelanto)
+    : et === "saldo" ? (s.saldo_monto_leido ?? s.saldo) : et === "extra" ? s.extra_monto_leido : s.pago_adelantado_monto;
+  const metodo = et === "digital" ? s.digital_metodo : s[et + "_metodo"] ?? s.pago_metodo;
+  const op = et === "digital" ? s.digital_operacion : s[et + "_operacion"];
+  const motivo = et === "digital" ? s.digital_revisar : et === "extra" ? s.extra_revisar : et === "lima" ? s.pago_adelantado_revisar : s[et + "_revisar"];
+  // ¿Sigue esperando? (si ya lo aprobó alguien, el aviso se resuelve solo; mientras tanto no se ofrece el botón)
+  const espera = et === "extra" ? s.extra_pendiente === true : et === "lima" ? s.pago_adelantado_por_validar === true
+    : o.estado === ESTADO_ETAPA[et];
+  // Aprobable con un toque: digital, adelanto y extra siempre; el saldo solo si ya tiene la clave de recojo.
+  const directo = espera && (et === "digital" || et === "adelanto" || et === "extra" || (et === "saldo" && !!String(s.clave_recojo ?? "").trim()));
+  return { et, o, foto: /^https?:/.test(String(foto ?? "")) ? String(foto) : "", monto, moneda: o.currency, metodo, op, motivo, espera, directo };
+}
+function pagoHtml(n) {
+  const p = pagoDe(n);
+  if (!p) return "";
+  if (p.cargando) return `<div class="nn-pago"><span class="nn-pago-ph"></span><span class="nn-pago-tx">Cargando el comprobante…</span></div>`;
+  if (!p.o) return "";
+  const sym = (p.moneda || "PEN") === "PEN" ? "S/" : esc(p.moneda);
+  const leyo = [p.monto != null && p.monto !== "" ? `<b>${sym} ${esc(p.monto)}</b>` : "", p.metodo ? esc(p.metodo) : "", p.op ? `op ${esc(p.op)}` : ""].filter(Boolean).join(" · ");
+  return `<div class="nn-pago">
+    ${p.foto ? `<a class="nn-pago-foto" href="${esc(p.foto)}" target="_blank" rel="noopener" title="Ver el comprobante completo" data-act="foto"><img src="${esc(p.foto)}" alt="Comprobante" loading="lazy"></a>`
+      : `<span class="nn-pago-ph" title="Sin foto guardada">${I("image")}</span>`}
+    <div class="nn-pago-tx">
+      ${leyo ? `<div>La IA leyó: ${leyo}</div>` : ""}
+      ${p.motivo ? `<div class="nn-pago-mot">${esc(p.motivo)}</div>` : ""}
+      ${!p.espera ? `<div class="nn-pago-mot">Ya no está esperando (lo resolvió alguien o el cliente mandó otro).</div>` : ""}
+    </div>
+  </div>`;
+}
+const TXT_APROBAR = {
+  digital: ["Aprobar el pago digital", "El bot le entrega el producto al instante y sigue con su proceso de venta.", "Aprobar y entregar"],
+  adelanto: ["Aprobar el adelanto", "El pedido pasa a listo para enviar y el bot le confirma al cliente.", "Aprobar"],
+  saldo: ["Aprobar el saldo", "El bot le envía la clave de recojo al cliente.", "Aprobar y dar la clave"],
+  extra: ["Aprobar la venta extra", "El bot le entrega el extra al instante y continúa.", "Aprobar y entregar"],
+};
+async function aprobarPago(n) {
+  const p = pagoDe(n);
+  if (!p || !p.o || !p.directo) { await ejecutar(n, { k: "validar" }); return; }
+  const [titulo, detalle] = TXT_APROBAR[p.et];
+  const quien = n.contact?.nombre || "Cliente";
+  const ok = N.ctx.confirmDialog
+    ? await N.ctx.confirmDialog({ title: titulo, message: `${quien} — ${detalle}`, confirmText: "Confirmar" })
+    : window.confirm(`${titulo}\n${quien} — ${detalle}`);
+  if (!ok) return;
+  const body = p.et === "extra"
+    ? { order_id: p.o.id, resume: true, shipping: { extra_pendiente: false, extra_aprobado_at: new Date().toISOString() } }
+    : { order_id: p.o.id, estado: p.et === "digital" ? "confirmada" : p.et === "adelanto" ? "adelanto_validado" : "saldo_pagado" };
+  const { data, error } = await N.ctx.supa.functions.invoke("order-update", { body });
+  let det = "";
+  if (error) { try { const j = await error.context?.json?.(); det = (j && (j.detalle || j.error)) || ""; } catch (_) {} }
+  if (error || data?.error) { N.ctx.toast(det || data?.detalle || data?.error || error?.message || "No se pudo aprobar", true); return; }
+  if (data?.deduped) { N.ctx.toast("Ese pago ya lo aprobó alguien más — no se cambió nada", true); }
+  else if (data?.entrega_pendiente) N.ctx.toast("Aprobado, pero el producto NO se entregó solo: entrégaselo a mano desde el chat", true);
+  else N.ctx.toast(data?.flow_started || data?.resumed ? "Aprobado · el bot le está escribiendo" : "Aprobado");
+  N.ordenes.delete(p.o.id);   // (se vuelve a leer: el aviso se resuelve solo por el trigger de la base)
+  refrescar();
+}
 // Qué se puede hacer con cada aviso. El primero es el botón principal.
 function acciones(n) {
   const t = n.tipo, A = [];
   const chat = n.contact_id ? { k: "chat", lb: "Abrir chat", ic: "message" } : null;
   const ped = n.order_id ? { k: "pedido", lb: "Ver pedido", ic: "kanban" } : null;
-  if (VALIDAR.has(t)) { A.push({ k: "validar", lb: "Validar pago", ic: "compass" }); if (chat) A.push(chat); }
+  if (VALIDAR.has(t)) {
+    // (con la foto a la vista, el pago se aprueba desde acá; rechazar y lo que pide un dato, en Copiloto)
+    const pg = !n.resuelta_at ? pagoDe(n) : null;
+    if (pg?.directo) A.push({ k: "aprobar", lb: TXT_APROBAR[pg.et][2], ic: "check" });
+    A.push({ k: "validar", lb: pg?.directo ? "Rechazar o revisar" : "Validar pago", ic: "compass" });
+    if (chat) A.push(chat);
+  }
   else if (["pedido_lima", "pedido_provincia", "venta_extra"].includes(t)) { if (ped) A.push(ped); if (chat) A.push(chat); }
   else if (t === "stock_agotado" || t === "stock_bajo") A.push({ k: "ir", href: "productos.html", lb: "Ver productos", ic: "productos" });
   else if (t === "whatsapp_salud") A.push({ k: "ir", href: "canales.html", lb: "Ver mi WhatsApp", ic: "canales" });
@@ -732,6 +823,8 @@ async function limpiar() {
 
 async function ejecutar(n, a) {
   if (!a) return;
+  if (a.k === "aprobar") return aprobarPago(n);
+  if (a.k === "foto") return;   // (el enlace abre la foto en otra pestaña)
   if (a.k === "quitar") return quitar([n.id]);
   if (a.k === "resolver") return resolver(n);
   if (a.k === "llamar") { location.href = "tel:+" + String(n.contact?.wa_id || "").replace(/\D/g, ""); return; }
