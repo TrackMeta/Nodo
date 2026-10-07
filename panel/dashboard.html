@@ -1169,7 +1169,22 @@ async function load(){
   animateNums($("kpis"));
   renderBand({ bruta, gastoAds, gastosExtra, gastoIa, iaUsd, iaSinConvertir, neta, roas, pctAds, hasAds, sinCostoF, faltaTxt, brutaDesconocida, tipo });
 
-  renderMetricas(porStage);
+  // 📈 Efectividad DEL PERIODO (7-oct, pedido de Rodrigo): los que te escribieron por PRIMERA vez en las fechas elegidas
+  // y cuántos de ellos compraron. Antes las dos tarjetas eran «todo el tiempo» y en Prime Digital sumaban a los ~90 que
+  // escribió ChatLevel (5 de 115 = 4 %), un número que no decía nada del bot. Tres conteos con head:true: sin tope de filas.
+  let cohorte=null;
+  try{
+    const base=()=>supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId)
+      .or("source.is.null,source.neq.sim").neq("wa_id","webchat-test").gte("primera_interaccion",fromISO).lt("primera_interaccion",toISO);
+    const [tAll,tInt,tBuy]=await Promise.all([
+      base(),
+      base().in("stage",["interesado","caliente","confirmado","comprado","perdido"]),
+      base().eq("stage","comprado"),
+    ]);
+    if(!tAll.error&&!tInt.error&&!tBuy.error) cohorte={ total:tAll.count||0, interes:tInt.count||0, compraron:tBuy.count||0, label:r.label };
+  }catch(_){ cohorte=null; }
+  if(cid!==channelId) return;
+  renderMetricas(porStage, cohorte);
   renderFunnel(porStage);
   // ventasOk (excluye rechazado/no_recogido): el panel "Ventas confirmadas" y el desglose por
   // producto deben usar las ventas CERRADAS, no `orders` (que incluye los perdidos). Antes
@@ -1326,13 +1341,17 @@ function renderBand(b){
 //    no cuenta a quien escribió y nunca entró a comprar ("nuevo").
 //  • Conversión a compra = compras ÷ TODOS los contactos (incluye "nuevo").
 //    Mide la conversión total del embudo (engancha + cierra).
-function renderMetricas(porStage){
+function renderMetricas(porStage, cohorte){
   const el=$("efecPanel"); if(!el) return;
   const c={}; STAGES.forEach(s=>c[s.k]=Number(porStage[s.k]||0));
   if(porStage["null"]!=null) c.nuevo+=Number(porStage["null"]||0);   // sin etapa → nuevo
-  const total=STAGES.reduce((a,s)=>a+c[s.k],0);
-  const conv=c.interesado+c.caliente+c.confirmado+c.comprado+c.perdido;
-  const comprado=c.comprado;
+  // Con el conteo del PERIODO (los que escribieron por primera vez en las fechas elegidas), las dos tarjetas
+  // miden ese grupo; sin él (falló la consulta) quedan como antes: todo el tiempo.
+  const porFecha=!!cohorte;
+  const total=porFecha?cohorte.total:STAGES.reduce((a,s)=>a+c[s.k],0);
+  const conv=porFecha?cohorte.interes:c.interesado+c.caliente+c.confirmado+c.comprado+c.perdido;
+  const comprado=porFecha?cohorte.compraron:c.comprado;
+  const cuando=porFecha?`escribieron por primera vez · ${esc(String(cohorte.label||"").toLowerCase())}`:"en vivo · todo el tiempo (no filtra por fecha)";
   // Efectividad (semáforo: cierra bien / regular / flojo)
   const eP = conv? Math.round(comprado/conv*100) : null;
   const eCls = "mia"; // violeta fijo (tema IA), por elección de Rodrigo — ya no semáforo
@@ -1340,18 +1359,19 @@ function renderMetricas(porStage){
   const efec=`<div class="metric ${eCls}" title="${tEfec}"><div class="num">${eP==null?"—":eP+"%"}</div><div class="mtxt">`+
     `<div class="mlbl"><span class="miabadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>Efectividad de cierre <span class="mtag">base: interesados</span></div>`+
     `<div class="mdesc">De los que se interesaron, cuántos terminas cerrando.</div>`+
-    `<div class="mbrk">${eP==null?"Aún sin interesados":comprado+" de "+conv+(conv===1?" interesado":" interesados")} · en vivo · todo el tiempo (no filtra por fecha)</div>`+
+    `<div class="mbrk">${eP==null?"Aún sin interesados":comprado+" de "+conv+(conv===1?" interesado":" interesados")} · ${cuando}</div>`+
     `</div></div>`;
   // Conversión a compra (informativa, color marca)
   const cP = total? Math.round(comprado/total*100) : null;
   const cCls = total ? "mconv" : "low"; // OJO: no usar "conv" — colisiona con .conv (píldoras del embudo, margin-top:16px)
-  const tConv="Compras ÷ TODOS los contactos, incluidos los curiosos que solo escribieron. Es todo el embudo junto: engancha + cierra.";
+  const tConv="Compras ÷ TODOS los que te escribieron en el periodo, incluidos los curiosos que solo escribieron. Es todo el embudo junto: engancha + cierra.";
   const convHtml=`<div class="metric ${cCls}" title="${tConv}"><div class="num">${cP==null?"—":cP+"%"}</div><div class="mtxt">`+
-    `<div class="mlbl">Conversión total <span class="mtag">base: todos los contactos</span></div>`+
+    `<div class="mlbl">Conversión total <span class="mtag">base: todos los que escribieron</span></div>`+
     `<div class="mdesc">De todos los que te escriben, cuántos compraron.</div>`+
-    `<div class="mbrk">${cP==null?"Aún sin contactos":comprado+" de "+total+(total===1?" contacto":" contactos")} · en vivo · todo el tiempo (no filtra por fecha)</div>`+
+    `<div class="mbrk">${cP==null?"Aún sin contactos":comprado+" de "+total+(porFecha?(total===1?" que te escribió":" que te escribieron"):(total===1?" contacto":" contactos"))} · ${cuando}</div>`+
     `</div></div>`;
-  el.innerHTML=`<div class="metricas">${efec}${convHtml}</div>`;
+  // Primero la conversión total (todos, curiosos incluidos) y después la de cierre — orden pedido por Rodrigo (7-oct).
+  el.innerHTML=`<div class="metricas">${convHtml}${efec}</div>`;
 }
 // Embudo de contactos por etapa (mismo que la sección Embudos): foto EN VIVO,
 // no filtrada por fecha. Sale de dashboard_stats.por_stage.
