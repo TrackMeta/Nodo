@@ -376,6 +376,19 @@ Deno.serve(async (req) => {
     if (op === "conectar") return json(await conectarVentasMeta(db, channelId, { forzar: !!body?.forzar }));
     if (op === "reenviar") return json(await reenviarVentasPendientes(db, channelId));
     if (op === "info") return json(await infoDataset(db, channelId));
+    if (op === "conjuntos") {
+      // Solo LECTURA: qué optimiza cada conjunto de anuncios activo y con qué dataset/píxel (promoted_object).
+      const { getAdsToken } = await import("../_shared/db.ts");
+      const t = await getAdsToken(db, channelId);
+      const { data: accs } = await db.from("ad_accounts").select("account_id").eq("channel_id", channelId);
+      const out: any[] = [];
+      for (const a of (accs ?? []) as any[]) {
+        const u = `https://graph.facebook.com/v25.0/${a.account_id}/adsets?fields=name,effective_status,optimization_goal,destination_type,promoted_object,campaign{name,objective}&effective_status=${encodeURIComponent('["ACTIVE"]')}&limit=50`;
+        const r = await fetch(u, { headers: { Authorization: `Bearer ${t.token}` } });
+        out.push({ cuenta: a.account_id, ...(await r.json()) });
+      }
+      return json(out);
+    }
     return json(await estadoVentasMeta(db, channelId));
   }
 
