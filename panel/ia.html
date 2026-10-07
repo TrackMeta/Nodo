@@ -142,6 +142,7 @@
 </div>
 
 <script type="module">
+import { revisarNegocio, avisosHtml } from "./revisar-textos.js";
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, guardUnsaved, markClean, confirmDescartar, updateChannel, pageAll } from "./shell.js";
 import { mountDateRange, computePreset, ymd as ymdDia, startOfDayTZ, endOfDayTZ } from "./date-range.js";
 const $ = (id) => document.getElementById(id);
@@ -581,6 +582,16 @@ function seedForm(){
 }
 // Guarda el formulario completo + retraso (la única fuente de ambos es st).
 async function saveForm(btn){
+  // 🔎 Textos que hacen equivocar al bot («un asesor te contactará», pedirle que pase el Yape, números de cuenta
+  // sueltos): avisa con el porqué y deja guardar igual (revisar-textos.js, auditoría del prompt digital 6-oct).
+  // Lo que ya aceptó con «Guardar igual» en esta visita no se vuelve a preguntar.
+  { const vistos=(st._avisosVistos=st._avisosVistos||new Set());
+    const nuevos=revisarNegocio(st.form||{}).filter(a=>!vistos.has(a.titulo));
+    if(nuevos.length){
+      const ok=await confirmDialog({ title:"Antes de guardar, revisa esto", messageHtml:avisosHtml(nuevos, esc), confirmText:"Guardar igual", cancelText:"Corregir" });
+      if(!ok) return false;
+      nuevos.forEach(a=>vistos.add(a.titulo));
+    } }
   const old=btn.textContent; btn.disabled=true; btn.textContent="Guardando…";
   const cid=st.channelId;
   const { form, retraso }=await mezclarConFresco(st.form, st.retraso);

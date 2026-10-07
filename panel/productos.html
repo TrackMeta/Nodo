@@ -301,6 +301,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
+import { revisarFicha, avisosHtml } from "./revisar-textos.js";
 // 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se pregunta a shell.js, pero SIN
 // importarlo estático: si el navegador tiene cacheado un shell.js viejo (sin ese export),
 // un `import { avanzadoPermitido }` deja la página EN BLANCO — el módulo entero no carga y
@@ -4668,6 +4669,24 @@ async function _saveProduct(){
   // Antes de escribir NADA: si se va a quitar la palabra clave, que lo confirme. Cancelar deja
   // todo sin guardar (no un guardado a medias).
   if(actRenderizada() && !await confirmaQuitarPalabraClave()) return;
+  // 🔎 Los textos que suelen hacer equivocar al bot (pedirle que cobre, montos de ofertas, «asesor», el mismo tema en
+  // dos sitios, emojis prohibidos o signos que faltan en la bienvenida). Avisa con el porqué y deja guardar igual —
+  // auditoría del prompt digital, 6-oct (ver revisar-textos.js). Cancelar no escribe nada.
+  if(st.prod.config && st.prod.clase!=="regalo"){
+    const c=st.prod.config;
+    const saludo=(st.act?.node?.config?.variantes||[]).flatMap(v=>(v?.bubbles||[]).map(bb=>bb?.text??bb?.caption??"")).join("\n");
+    const avisos=revisarFicha({ ia:c.ia||{}, faq:c.faq_items||[], emojis:c.emojis||"", saludo,
+      precios:(st.versions||[]).filter(v=>v.activo!==false).map(v=>Number(v.precio)) });
+    // Lo que ya aceptó con «Guardar igual» en esta visita no se le vuelve a preguntar en cada guardado.
+    const vistos=(st._avisosVistos=st._avisosVistos||{})[st.prod.id||"nuevo"]||=new Set();
+    const nuevos=avisos.filter(a=>!vistos.has(a.titulo));
+    if(nuevos.length){
+      const ok=await confirmDialog({ title:"Antes de guardar, revisa esto", messageHtml:avisosHtml(nuevos, esc),
+        confirmText:"Guardar igual", cancelText:"Corregir" });
+      if(!ok) return;
+      nuevos.forEach(a=>vistos.add(a.titulo));
+    }
+  }
   // Aviso al cambiar digital↔físico: el flujo de venta YA GENERADO sigue vendiendo como el
   // tipo ANTERIOR (entrega un link vs pide dirección) hasta que lo REGENERES. st.tipoGuardado
   // guardaba el tipo original pero NUNCA se leía → el cambio pasaba sin advertencia y el
