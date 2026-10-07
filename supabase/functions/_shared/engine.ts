@@ -8377,9 +8377,14 @@ async function recomendarPorNecesidad(db: SupabaseClient, run: Run, ctx: any, op
         "«patio y una chacrita» = 2; «solo el jardín de mi casa» = 1; «somos 3 los que cortamos» = 3; «para mi casa nomás» = 1. " +
         "Si no dice nada que se pueda contar o en vez de contar su necesidad hace una pregunta, n = 0.\n" +
         "«para»: a qué se refiere él, en 2 a 6 palabras, empezando con «Para» (ej. «Para tu patio y la chacra»).\n" +
-        "«porque»: el motivo en 3 a 9 palabras, tuteando, sin precios ni cantidades, que hable de CUÁNTO ESPACIO cubre, " +
-        "nunca de un resultado (ej. «así cubres cada zona», «alcanza para ese espacio»; ⛔ nada de «evitas que…», «se acaba…», " +
-        "«ya no vuelven»).\n" +
+        // (6-oct, examen del Adaptador: «así cubres el área del techo» — una COBERTURA que la ficha no da, y el ejemplo de
+        //  acá la pedía literalmente. El porqué se ata a lo que él contó, nunca a que alcance o cubra un espacio.)
+        // (y en la voz del VENDEDOR: con «atado a lo que contó» a secas salió «quiero usarlo específicamente ahí», en
+        //  primera persona del cliente — examen del Adaptador, 6-oct)
+        "«porque»: el motivo en 3 a 9 palabras, dicho por el VENDEDOR y hablándole de tú (nunca en primera persona del " +
+        "cliente), sin precios, que se apoye en CUÁNTOS lugares, personas o trabajos nombró (ej. «es un solo lugar, con " +
+        "una vas bien», «una para cada zona», «así trabajan los dos a la vez»); ⛔ nunca que algo alcanza, cubre o rinde " +
+        "para un área, una cantidad o un tiempo (eso no lo sabes), ni un resultado («evitas que…», «se acaba…»).\n" +
         `Responde exactamente: {"n": <entero>, "para": "...", "porque": "..."}` });
     (run as any)._recRaw = String(raw ?? "").slice(0, 300);   // para el evento cuando no sale (ver el llamador)
     const mm = /\{[\s\S]*\}/.exec(String(raw ?? ""));
@@ -19072,9 +19077,9 @@ Estas seis no las corrige nadie más. Si las rompes, salen tal cual.
 6 ⛔ CONTESTA LO QUE TE PREGUNTÓ Y CIERRA. 2 o 3 frases, máximo 300 caracteres: su respuesta,
   UNA razón concreta para comprarlo, y el siguiente paso. Cada mensaje tuyo termina un paso más
   cerca. UNA sola pregunta y UN solo argumento por mensaje — el que hace falta AHORA.
-  MAL: "Para Madre de Dios te lo mando por agencia. El adaptador corta láminas de hasta 1.5 mm,
-  aprovecha el taladro que ya tienes, trae 30 días de garantía y el envío va por nuestra
-  cuenta. ¿Cuántas llevas?" (le contestó cuatro cosas que no preguntó)
+  MAL: "Para Madre de Dios te lo mando por agencia. Además es súper práctico, lo usas en casa o
+  en el trabajo, es de lo más pedido y el envío va por nuestra cuenta. ¿Cuántas llevas?" (le
+  contestó cuatro cosas que no preguntó)
   BIEN: "Perfecto, a *Madre de Dios* te lo mando por agencia *Shalom* 📦 ¿Me pasas tu *DNI*?"
   ✅ Si te vuelve a preguntar algo que ya le explicaste, se lo explicas otra vez sin hacerlo
   sentir mal. Dejarlo sin respuesta porque "ya se lo dijiste" es lo peor que puedes hacer: él no
@@ -19088,11 +19093,11 @@ Si algo de acá se te escapa, el sistema lo corrige antes de enviar. Igual resp�
 · Cierra afirmando ("listo, queda confirmado"), no preguntando "¿confirmo?" ni "¿te paso los
   datos de pago?". Si ya decidió, cobrarle no necesita permiso: preguntarlo lo obliga a decir
   que sí dos veces, y en ese paso de más se enfrían las ventas.
-· Si vas a preguntar algo, no lo escribas como hecho antes: "¿te lo dejo en 2 frascos? Serían
-  *S/ 119*" — nunca "ya te lo cambié", "listo, actualizado".
+· Si vas a preguntar algo, no lo escribas como hecho antes: "¿te lo dejo en el pack de 2?" —
+  nunca "ya te lo cambié", "listo, actualizado".
 · El precio se da, no se ofrece: nunca "¿te menciono los precios?". Cada presentación en su
-  línea con su cifra, y cierras preguntando cuál lleva. Y el precio no va solo: acompáñalo de
-  qué se lleva por eso. La moneda una sola vez ("*S/ 69*", nunca "S/ 69 soles").
+  línea con su cifra. Y el precio no va solo: acompáñalo de qué se lleva por eso. La moneda una
+  sola vez ("*S/ 50*", nunca "S/ 50 soles").
 · Se vende SOLO por las presentaciones que ves arriba, y se nombran tal cual están escritas. Si
   pide una cantidad que no calza con ninguna, dile cuáles hay y que elija. Nunca inventes un
   precio ni cierres una cantidad que no exista.
@@ -19108,8 +19113,8 @@ Si algo de acá se te escapa, el sistema lo corrige antes de enviar. Igual resp�
   horario de ATENCIÓN del negocio no es una ventana de entrega.
 · Cuánto rinde o cuánto dura sale de la ficha, multiplicado por las unidades del pack. Si la
   ficha no lo dice, habla del beneficio sin poner plazos.
-· Nadie compra "21 días de rutinas con video": eso es lo que el producto ES. Di lo que le PASA a
-  él con eso — "en tres semanas notas que el cuerpo te responde distinto". Sin inventar
+· Nadie compra las características ("trae 3 piezas", "es de acero"): eso es lo que el producto
+  ES. Di lo que le PASA a él con eso, con lo que la ficha dice que le resuelve. Sin inventar
   resultados que la ficha no respalde (kilos, plazos, promesas médicas).
 · No arranques siempre igual: varía la primera palabra. No repitas lo ya dicho ni resumas al
   final. No describas el producto si no te lo preguntó: los mensajes iniciales ya lo hicieron.
@@ -19166,19 +19171,53 @@ hagas — responde comercialmente normal y no las menciones.`;
 // (4-oct, examen rx: la presentación de la ficha y las órdenes de la cantidad entraban y salían ENTRE los fijos y
 //  partían el prompt en el carácter ~13-16 mil de ~27 mil. Ahora van con los que cambian.)
 const RE_BLOQUE_AL_FINAL = /^## (Este turno|C[oó]mo se ve tu mensaje)/;
+// (6-oct, examen rx del físico: «Falta elegir la opción», «🎯 Ya le preguntaste cuántas» y el estado de la elección
+//  entraban y salían ENTRE los fijos — el prefijo idéntico era 62-69 % contra 83 % del digital.)
 const RE_BLOQUE_QUE_CAMBIA =
-  /^(## (Sobre el producto: presentaci[oó]n|Este mensaje lleva DOS cosas|NO le preguntes (la cantidad|cu[aá]l presentaci[oó]n)|Ya eligi[oó]|Ya se lo dijiste|Con qu[eé] (empezaste|cerraste)|Datos que faltan|No hay ning[uú]n dato|Entrega de este cliente|Existencias|Te mand[oó]|⚠️|🗺️)|Ahora mismo el cliente|🔴 Ya eligi[oó])/;
+  /^(## (Sobre el producto: presentaci[oó]n|Este mensaje lleva DOS cosas|NO le preguntes (la cantidad|cu[aá]l presentaci[oó]n)|Ya eligi[oó]|Ya se lo dijiste|Con qu[eé] (empezaste|cerraste)|Datos que faltan|No hay ning[uú]n dato|Entrega de este cliente|Existencias|Te mand[oó]|Falta elegir|🎯 Ya le preguntaste|Qu[eé] eligi[oó] hasta ahora|⚠️|🗺️)|Ahora mismo el cliente|🔴 Ya eligi[oó])/;
+// 💾 Los que cambian POCO: se calculan una vez por conversación (la entrega de SU zona, las existencias) y casi no se
+// mueven después. Van entre los fijos y los que cambian cada turno: detrás de «Con qué empezaste» o «Datos que
+// faltan» nunca entraban al descuento, y «Entrega de este cliente» son ~3.900 caracteres (el bloque más grande).
+const RE_BLOQUE_CAMBIA_POCO = /^## (Entrega de este cliente|Existencias)/;
 
-// Reparte en tres montones conservando el orden RELATIVO de cada uno: fijos, los que cambian,
-// y los dos que van al final sí o sí. Nada se pierde y nada se duplica — es una permutación.
+// Reparte en cuatro montones conservando el orden RELATIVO de cada uno: fijos, los que cambian poco, los que cambian
+// cada turno, y los dos que van al final sí o sí. Nada se pierde y nada se duplica — es una permutación.
 function ordenPorEstabilidad(bloques: string[]): string[] {
-  const fijo: string[] = [], cambia: string[] = [], alFinal: string[] = [];
+  const fijo: string[] = [], poco: string[] = [], cambia: string[] = [], alFinal: string[] = [];
   for (const b of bloques) {
     if (RE_BLOQUE_AL_FINAL.test(b)) alFinal.push(b);
+    else if (RE_BLOQUE_CAMBIA_POCO.test(b)) poco.push(b);
     else if (RE_BLOQUE_QUE_CAMBIA.test(b)) cambia.push(b);
     else fijo.push(b);
   }
-  return [...fijo, ...cambia, ...alFinal];
+  return [...fijo, ...poco, ...cambia, ...alFinal];
+}
+
+// 🔢 UNA sola orden sobre la cantidad por turno (auditoría del prompt físico, 6-oct). En el mismo prompt llegaban
+// «cierras preguntándole CUÁNTAS UNIDADES —así, con esas palabras—» (opciones de compra), «⛔ NO repitas
+// "¿cuántas unidades?"» (🎯) y «⛔ NO le preguntes la cantidad en este mensaje». El motor ya decidió cuál vale en este
+// turno: si mandó cualquiera de las dos últimas, la de las opciones se calla y «Falta elegir» se queda solo con el freno.
+const CIERRE_PREGUNTA_CANTIDAD =
+  ", y cierras preguntándole CUÁNTAS UNIDADES o QUÉ OFERTA quiere —así, con esas palabras—, no «¿cuál de estas " +
+  "opciones te gustaría?»: eso suena a formulario. No des por elegida la más barata.";
+const CIERRE_SIN_PREGUNTA_CANTIDAD =
+  ". Con qué pregunta cierras te lo dicen los bloques «Ya le preguntaste cuántas» o «NO le preguntes la cantidad» de este mismo mensaje, no esta lista. No des por elegida la más barata.";
+const FALTA_ELEGIR_SIN_PREGUNTA =
+  "## Falta elegir la opción\nEl cliente TODAVÍA no eligió qué opción/presentación quiere, y hay VARIAS con precio " +
+  "distinto. NO des el pedido por cerrado, NO le pidas el pago y NO digas «queda confirmado» hasta que elija una — sin " +
+  "opción no hay precio.";
+function unaSolaOrdenDeCantidad(parts: string[]): void {
+  const hay = (re: RegExp) => parts.some((p) => re.test(p));
+  const yaPregunto = hay(/^## 🎯 Ya le preguntaste/);
+  const noPreguntar = hay(/^## NO le preguntes la cantidad/);
+  if (!yaPregunto && !noPreguntar) return;
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    if (p.startsWith("## Qué eligió hasta ahora")) parts[i] = p.replace(CIERRE_PREGUNTA_CANTIDAD, CIERRE_SIN_PREGUNTA_CANTIDAD);
+    else if (p.startsWith("## Falta elegir la opción")) parts[i] = FALTA_ELEGIR_SIN_PREGUNTA;
+    // (con el 🎯 —que ya guía la recomendación y prohíbe repetir «¿cuántas?»— el «NO le preguntes» sobra)
+    else if (yaPregunto && p.startsWith("## NO le preguntes la cantidad")) parts.splice(i, 1);
+  }
 }
 
 // Los bloques de REGLAS que PROMPT_FISICO_V2 reemplaza.
@@ -19199,7 +19238,7 @@ const RE_BLOQUE_DE_REGLAS_FIS =
   /^## (C[oó]mo cerrar|C[oó]mo vendes|C[oó]mo hablas|Cuando te cuenta algo suyo|Cuando necesites a una persona|Escribe CORTO|El precio se da|Lo que no controlas del env[ií]o|Del pago se dice|Sobre los pagos|No des por recibido|La agencia tiene nombre|Si te dice que lo va a pensar|Si lo vas a preguntar|Usa lo que ya sabes|Hablas en PRIMERA persona|Reglas de seguridad|⏳ Cu[aá]nto dura)/;
 
 const RE_BLOQUE_DE_DATOS =
-  /^## (Sobre el negocio|Sobre el producto|Otros productos|Preguntas frecuentes|Opciones de compra|Datos|No hay ning[uú]n dato|Ya eligi[oó]|Ya se lo dijiste|Con qu[eé] (empezaste|cerraste)|C[oó]mo se ve tu mensaje|Este turno|Formas de pago|Existencias|Te mand[oó]|⚠️|🎁)/;
+  /^## (Sobre el negocio|Sobre el producto|Otros productos|Preguntas frecuentes|Opciones de compra|Qu[eé] eligi[oó] hasta ahora|Datos|No hay ning[uú]n dato|Ya eligi[oó]|Ya se lo dijiste|Con qu[eé] (empezaste|cerraste)|C[oó]mo se ve tu mensaje|Este turno|Formas de pago|Existencias|Te mand[oó]|⚠️|🎁)/;
 
 // 📍 EL ÚNICO SITIO QUE SELLA UNA SEDE.
 //
@@ -19427,10 +19466,14 @@ function validarDato(v: CampoDato, valor: string, ctx?: any): { ok: boolean; mot
   if ((v.validar as string) === "direccion" || v.clave === "direccion") {
     const low = " " + normalize(s) + " ";
     const tieneNumero = /\d/.test(s);
-    const tieneVia = /\b(av|avenida|jr|jiron|calle|ca|pasaje|psje|prolongacion|prol|mz|manzana|lote|lt|urb|urbanizacion|km|carretera|panamericana|block|dpto|departamento|interior|int)\b/.test(low);
+    // (+ las formas de Lima que el bloque de entrega da por COMPLETAS —«AA.HH.», «Asoc.», «Etapa», «Sector», «Comité»—:
+    //  este validador las rechazaba y el prompt decía al mismo tiempo «dalas por buenas», 6-oct)
+    const tieneVia = /\b(av|avenida|jr|jiron|calle|ca|pasaje|psje|prolongacion|prol|mz|manzana|lote|lt|urb|urbanizacion|km|carretera|panamericana|block|dpto|departamento|interior|int|asoc|asociacion|aa\s?hh|ahh|asentamiento|etapa|sector|comite|cooperativa|coop|pueblo joven|pj|villa|residencial|condominio)\b/.test(low.replace(/\./g, " ").replace(/\ba\s+a\s+h\s+h\b/g, "aahh"));
     const tieneRef = /\b(frente|costado|espalda|altura|cerca|esquina|cuadra|cdra|mercado|colegio|parque|plaza|iglesia|grifo|paradero|ovalo|cruce|puente|lado|junto|detras|atras|entrada|posta|hospital|banco|tienda|bodega)\b/.test(low);
     if (!tieneNumero && !tieneVia && !tieneRef) {
-      return { ok: false, motivo: `"${s}" parece la ciudad o el distrito, no la dirección — falta la calle y el número (ej. «Av. Larco 345, dpto 502»)` };
+      // (sin «falta la calle y el número»: en Lima una Mz/Lote o un AA.HH. sin número también vale, y el bloque de entrega
+      //  le prohíbe al bot exigir calle y número — los dos mensajes llegaban juntos al mismo prompt, 6-oct)
+      return { ok: false, motivo: `"${s}" es el distrito o la ciudad, no dónde entregar — pídele la dirección (calle y número, o Mz y Lote) o una referencia (una tienda o un paradero cerca)` };
     }
   }
   return { ok: true };
@@ -23748,10 +23791,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           parts.push(
             "## Otros productos del negocio\n" + _lin + "\n" +
             "⛔ NUNCA digas que «solo vendes» este producto. Si pregunta qué más vendes o por uno de estos, nómbralo " +
-            "en una línea con su nombre exacto y su precio (el de arriba: ese sí lo sabes). Si quiere VARIOS, se pueden " +
-            "pagar JUNTOS en un solo pago: el sistema arma el total y le manda los datos con ese monto; al pagar le " +
-            "llegan los accesos de todos. Tú NO sumes ni confirmes un total por tu cuenta: si el bloque «Otros productos " +
-            "que se lleva» está abajo, el total es ESE; si no está, pregúntale cuáles quiere llevar. " +
+            "en una línea con su nombre exacto y su precio (el de arriba: ese sí lo sabes). " +
+            // (el pago JUNTO de varios es solo de la venta DIGITAL — run.vars._combo: en una venta física el bloque le
+            //  hablaba de «los accesos de todos» a quien compra un paquete, 6-oct)
+            (esDigital(ctx)
+              ? "Si quiere VARIOS, se pueden pagar JUNTOS en un solo pago: el sistema arma el total y le manda los datos " +
+                "con ese monto; al pagar le llegan los accesos de todos. Tú NO sumes ni confirmes un total por tu cuenta: " +
+                "si el bloque «Otros productos que se lleva» está abajo, el total es ESE; si no está, pregúntale cuáles quiere llevar. "
+              : "Si quiere también uno de esos, dile su precio y que primero dejan listo este pedido y después lo ves con " +
+                "él: ⛔ no los sumes ni lo metas en ESTE pedido (cada uno va aparte). ") +
             "No lo describas más allá de esa línea (no tienes su ficha).\n" +
             // «quiero 5 para mi equipo» de la Plantilla → «¿Básica o Premium?» (las versiones del CURSO)
             // (D13-dempresa, 2026-09-25): mezcló las presentaciones de otro producto con este.
@@ -23935,29 +23983,49 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // quote no, y quedaba una incoherencia (le decía un precio y le cobraba otro).
         const ofertaLista = await ofertaActiva(db, run);
         const _symC = simboloMoneda(ctx.moneda as string);   // «S/» fijo cotizaba en soles a un canal en USD
-        const lista = ops.map((o) => {
-          const conOferta = ofertaLista && ofertaLista.opcion_id === o.id && Number.isFinite(Number(ofertaLista.precio));
-          const precioTxt = conOferta
-            ? `: ${_symC} ${ofertaLista.precio} (precio con su descuento vigente${o.precio != null ? `, antes ${_symC} ${o.precio}` : ""})`
-            : (o.precio != null ? `: ${_symC} ${o.precio}` : "");
-          return `- ${o.nombre}${precioTxt}${o.descripcion ? ` — ${o.descripcion}` : ""}`;
-        }).join("\n");
-        const estado = ctx.opcion
-          ? `\n\nAhora mismo el cliente se inclina por: **${ctx.opcion}**${ctx.precio != null ? ` (${_symC} ${ctx.precio})` : ""}. ` +
-            `Puede cambiar de opinión en cualquier momento: si lo hace, respétalo sin reprocharle.`
-          : `\n\nEl cliente AÚN NO eligió. No des ninguna por elegida: si pregunta o compara, informa y ayúdalo a decidir. ` +
-            `Solo cuando decida, confirma cuál y su precio.`;
         // El molde de la lista de precios, armado con SUS presentaciones y SUS precios.
         // A propósito NO lleva marcadores tipo "(emoji)" ni "(beneficio)": el modelo copia
         // literal lo que ve. Medido con un ejemplo de precios inventados: copió los emojis
         // 💧✨🏆 y hasta un «ahorras S/ 39» que era del ejemplo, no del producto. Acá solo
         // van datos REALES; qué emoji y qué beneficio poner se lo pedimos en palabras.
+        // 🧾 (6-oct) UNA sola lista: antes iban dos con los mismos precios —«- 1 unidad: S/ 69 — …» y debajo el molde
+        // «1 unidad — *S/ 69*»—. Ahora el molde lleva también la oferta vigente y la descripción del dueño.
         const molde = ops.map((o) => {
           const conOf = ofertaLista && ofertaLista.opcion_id === o.id && Number.isFinite(Number(ofertaLista.precio));
           const pr = conOf ? Number(ofertaLista.precio) : o.precio;
-          return `${o.nombre}${pr != null ? " — " + (_negOn ? `*S/ ${pr}*` : `S/ ${pr}`) : ""}`;
+          return `${o.nombre}${pr != null ? " — " + (_negOn ? `*${_symC} ${pr}*` : `${_symC} ${pr}`) : ""}` +
+            (conOf && o.precio != null ? ` (precio con su descuento vigente, antes ${_symC} ${o.precio})` : "") +
+            (o.descripcion ? ` · ${o.descripcion}` : "");
         }).join("\n");
-        parts.push("## Opciones de compra disponibles\n" + lista + estado +
+        // 💾 Lo que CAMBIA cada turno (qué eligió) va en su propio bloque, entre los que cambian: pegado acá cortaba el
+        // descuento de caché en medio del prompt (examen rx del Adaptador, 6-oct: «El cliente AÚN NO eligió» → «se
+        // inclina por 2 unidades» partía el prefijo en el carácter ~17.400 de ~29.000).
+        // (y también CÓMO listar los precios y con qué cerrar: dependen de si ya eligió y de qué decidió el motor para la
+        //  cantidad en este turno —unaSolaOrdenDeCantidad—; dentro de la lista volvían a partir el prefijo, 6-oct)
+        const _estadoEleccion = "## Qué eligió hasta ahora\n" + (ctx.opcion
+          ? `Ahora mismo el cliente se inclina por: **${ctx.opcion}**${ctx.precio != null ? ` (${_symC} ${ctx.precio})` : ""}. ` +
+            `Puede cambiar de opinión en cualquier momento: si lo hace, respétalo sin reprocharle.`
+          : `El cliente AÚN NO eligió. No des ninguna por elegida: si pregunta o compara, informa y ayúdalo a decidir. ` +
+            `Solo cuando decida, confirma cuál y su precio.`) +
+          // 🔁 Solo MIENTRAS NO HAYA ELEGIDO. Con la opción ya sellada, este bloque le pedía
+          // «nómbralas TODAS en lista» y el bloque "## Ya eligió" —que se empuja al mismo
+          // tiempo— le prohibía volver a listarlas. Dos órdenes opuestas sobre lo mismo, en el
+          // mismo prompt: el modelo tenía que adivinar, y adivinar acá es re-abrirle la
+          // decisión a alguien que ya compró.
+          (String(ctx.opcion_elegida ?? "").trim()
+            ? "\n\n💰 Ya eligió: NO le vuelvas a listar las presentaciones. Si pregunta por un precio, " +
+              "dile el de LO SUYO y sigue: las cifras exactas son las de «Opciones de compra», no inventes ninguna."
+            : "\n\n💰 Cuando hables del PRECIO, nómbralas TODAS —aunque pregunte por una sola: es la " +
+              "diferencia entre vender uno y vender dos— y ponlas EN LISTA, una por línea, nunca de corrido, " +
+              "con el nombre y el precio tal como están en «Opciones de compra»." +
+              " A cada línea súmale, después de un «·», en pocas palabras qué gana con esa opción (si la lista ya trae una, esa)" +
+              (_emOn ? ", y ábrela con un emoji distinto que pegue con eso (esta lista es la única excepción al tope de emojis por mensaje)" : "") +
+              ". El ahorro solo si sale de restar esos precios — nunca inventes un descuento ni un precio tachado. " +
+              "Debajo de la lista, UNA línea diciéndole cuál le conviene a ÉL por lo que te contó" +
+              (esDigital(ctx)
+                ? ", y cierras preguntándole CUÁL quiere. ⛔ Nunca «¿cuántas unidades?»: esto es digital y no hay unidades. No des por elegida la más barata."
+                : CIERRE_PREGUNTA_CANTIDAD));
+        parts.push("## Opciones de compra disponibles\n" + molde +
           // Nombrar SIEMPRE las dos: si solo dice el precio de una, el cliente ni se entera
           // de que existe el pack y se pierde la venta más grande. Medido con un kit de
           // S/ 89 que también viene en pack de 2 a S/ 159: el bot dijo "cuesta S/ 89" y el
@@ -23969,26 +24037,6 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // tiene que releerlo para comparar, y comparar es justo lo que lo lleva al pack
           // grande. El molde se arma acá con SUS presentaciones reales a propósito: cuando
           // el ejemplo llevaba precios inventados, el modelo copiaba esos números.
-          // 🔁 Solo MIENTRAS NO HAYA ELEGIDO. Con la opción ya sellada, este bloque le pedía
-          // «nómbralas TODAS en lista» y el bloque "## Ya eligió" —que se empuja al mismo
-          // tiempo— le prohibía volver a listarlas. Dos órdenes opuestas sobre lo mismo, en el
-          // mismo prompt: el modelo tenía que adivinar, y adivinar acá es re-abrirle la
-          // decisión a alguien que ya compró.
-          (String(ctx.opcion_elegida ?? "").trim()
-            ? "\n\n💰 Ya eligió: NO le vuelvas a listar las presentaciones. Si pregunta por un precio, " +
-              "dile el de LO SUYO y sigue. Estas son las cifras exactas, para que no inventes ninguna:\n\n" + molde
-            : "\n\n💰 Cuando hables del PRECIO, nómbralas TODAS —aunque pregunte por una sola: es la " +
-              "diferencia entre vender uno y vender dos— y ponlas EN LISTA, una por línea, nunca de corrido. " +
-              "Estas son, con sus precios exactos:\n\n" +
-              molde +
-              "\n\nA cada línea súmale, después de un «·», en pocas palabras qué gana con esa opción" +
-              (_emOn ? ", y ábrela con un emoji distinto que pegue con eso (esta lista es la única excepción al tope de emojis por mensaje)" : "") +
-              ". El ahorro solo si sale de restar los precios de arriba — nunca inventes un descuento ni un precio tachado. " +
-              "Debajo de la lista, UNA línea diciéndole cuál le conviene a ÉL por lo que te contó, y cierras " +
-              (esDigital(ctx)
-                ? "preguntándole CUÁL de las dos quiere. ⛔ Nunca «¿cuántas unidades?»: esto es digital y no hay unidades. No des por elegida la más barata."
-                : "preguntándole CUÁNTAS UNIDADES o QUÉ OFERTA quiere —así, con esas palabras—, no «¿cuál de estas " +
-                  "opciones te gustaría?»: eso suena a formulario. No des por elegida la más barata.")) +
           // Los nombres los escribe el dueño y no siempre concuerdan con la palabra que
           // el modelo les pone delante: con una presentación llamada "Básica" salía "La
           // plan Básica cuesta S/ 99". Se lee a máquina justo en el mensaje del precio.
@@ -24004,6 +24052,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               "Si el cliente pide una cantidad que NO calza con ninguna (ej. pide 2 y solo hay una presentación de 1 unidad), " +
               "NO se la confirmes ni inventes un precio: dile con naturalidad qué presentaciones hay y que elija una. " +
               "NUNCA cierres un pedido ni acuerdes una cantidad que no exista como presentación."));
+        parts.push(_estadoEleccion);
       } else if (ops.length === 1) {
         // Una sola presentación: NO entra al bloque de arriba, así que la IA se
         // quedaba SIN el precio en su contexto y lo INVENTABA (ej. decía S/120 con
@@ -26119,6 +26168,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // 💾 El montaje se ordena por ESTABILIDAD antes de armar el texto: lo fijo primero (que es
     // el prefijo que la caché cobra al 25%), lo que cambia cada turno después, y el turno y el
     // estilo al final pase lo que pase. Ver ordenPorEstabilidad().
+    unaSolaOrdenDeCantidad(parts);   // (6-oct: una sola orden sobre la cantidad por turno)
     const _mont = ordenPorEstabilidad([...fijos, ...parts]);
     let _promptUsado = "compartido";
     let _bloquesUsados: string[] = _mont;
