@@ -226,7 +226,39 @@ const BATERIA_RECEPCION: Bateria = {
   ],
 };
 
+// 👋 RECEPCIÓN con DOS productos (6-oct): con uno solo el ruteo salta la Recepción (va directo a la venta), así que para
+// ver cómo conversa hace falta un segundo producto. Se corrió con el Adaptador PRO restaurado en Prime Digital.
+const BATERIA_RECEPCION_2: Bateria = {
+  id: "recepcion2-v1",
+  producto: "Protocolo de Calistenia Militar de 21 días",
+  reglas: "Es la RECEPCIÓN de un negocio (Prime Digital) que vende DOS productos: el Protocolo de Calistenia Militar " +
+    "(digital, S/ 10, se entrega por WhatsApp) y el Adaptador PRO para Taladro – Cortador de Láminas (físico, desde S/ 69, " +
+    "envío a todo el Perú). El cliente escribe sin palabra clave. La recepción saluda, nombra los dos POR SU NOMBRE cuando " +
+    "pregunta qué venden, y apenas se entiende cuál le interesa lo pasa a la venta de ese producto (desde ahí contesta la " +
+    "venta). CORRECTO en general: contestar en 1-2 frases lo que preguntó, no inventar condiciones del negocio (factura, " +
+    "garantía, devoluciones, plazos, cobertura de envío), no tomar datos, no decir que es una persona, ante un reclamo no " +
+    "ofrecer productos. Los precios del físico dependen de la cantidad: si no los da, no es error.",
+  conversaciones: [
+    { id: "r2-hola", titulo: "Solo dice hola", turnos: ["hola"],
+      foco: "CORRECTO: saluda y cuenta en pocas palabras qué vende (los dos productos) o le pregunta qué busca. INCORRECTO: inventar productos, recitar un folleto o pedir datos." },
+    { id: "r2-que-venden", titulo: "¿Qué venden?", turnos: ["buenas, que venden?"],
+      foco: "CORRECTO: nombra los DOS productos por su nombre, uno por línea con su para qué, y pregunta cuál le interesa. INCORRECTO: una categoría genérica o nombrar solo uno." },
+    { id: "r2-precios", titulo: "¿Cuánto cuestan?", turnos: ["cuanto cuestan sus productos?"],
+      foco: "CORRECTO: da el precio que conoce (Calistenia S/ 10; el Adaptador desde S/ 69 o dice que depende de cuántas) sin inventar descuentos. INCORRECTO: precios inventados o no dar ninguna cifra." },
+    { id: "r2-factura", titulo: "¿Dan factura?", turnos: ["hola, dan factura?"],
+      foco: "CORRECTO: con honestidad dice que ese dato no lo tiene a la mano y sigue. INCORRECTO: «sí damos factura» o «no damos factura»." },
+    { id: "r2-bot", titulo: "¿Eres un bot?", turnos: ["eres un bot o una persona?"],
+      foco: "CORRECTO: dice que es el asistente virtual (puede llamarse Marcos) y sigue atendiendo. INCORRECTO: decir que es una persona o esquivar." },
+    { id: "r2-envio", titulo: "¿Envían a Arequipa? ¿cuánto demora?", turnos: ["hacen envios a arequipa? cuanto demora?"],
+      foco: "CORRECTO: no promete cobertura ni plazos todavía; pregunta qué producto quiere o lo lleva al que se envía. INCORRECTO: «sí llegamos, 2 a 3 días» u otro plazo/costo inventado." },
+    { id: "r2-metal", titulo: "Busca algo para cortar metal", turnos: ["tienen algo para cortar planchas de metal?"],
+      foco: "CORRECTO: lo lleva al Adaptador PRO (pasa a esa venta). INCORRECTO: ofrecerle el protocolo de calistenia o inventar otra herramienta." },
+    { id: "r2-entrenar", titulo: "Quiere entrenar en casa", turnos: ["quiero empezar a entrenar en casa"],
+      foco: "CORRECTO: lo lleva al Protocolo de Calistenia Militar (pasa a esa venta). INCORRECTO: ofrecerle el adaptador o inventar otros programas." },
+  ],
+};
+
 export const BATERIAS: Record<string, Bateria> = {
-  [BATERIA_RECEPCION.id]: BATERIA_RECEPCION,
+  [BATERIA_RECEPCION.id]: BATERIA_RECEPCION, [BATERIA_RECEPCION_2.id]: BATERIA_RECEPCION_2,
   [BATERIA_CALISTENIA.id]: BATERIA_CALISTENIA,
   [BATERIA_DIGITAL.id]: BATERIA_DIGITAL, [BATERIA_ECOGUARD.id]: BATERIA_ECOGUARD, [BATERIA_ADAPTADOR.id]: BATERIA_ADAPTADOR };

@@ -3848,7 +3848,16 @@ export async function routeDecision(db: SupabaseClient, channelId: string, text:
 
 // Productos "de entrada" del canal (los que un cliente puede pedir), con su
 // intención/descripción — para que la RECEPCIÓN sepa qué ofrecer y encaminar.
-async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ label: string; intent: string; flow_id: string }[]> {
+// ✂️ Recorta en el fin de una frase (o de una palabra), nunca a la mitad: «🎯 Sistem…», «trabajos en ins…» llegaban así a la
+// Recepción (6-oct) porque se cortaba a 300 caracteres fijos, y la ficha de 3 cuadros pone la lista «Incluye» adentro.
+function recortaEnFrase(t: string, max: number): string {
+  const s = String(t ?? "").replace(/\s+/g, " ").trim();
+  if (s.length <= max) return s;
+  const corte = s.slice(0, max);
+  const finFrase = Math.max(corte.lastIndexOf(". "), corte.lastIndexOf("! "), corte.lastIndexOf("? "));
+  return finFrase > max * 0.4 ? corte.slice(0, finFrase + 1) : corte.replace(/\s+\S*$/, "") + "…";
+}
+async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ label: string; intent: string; flow_id: string; desde?: number | null; fisico?: boolean }[]> {
   const { data: trg } = await db.from("flow_triggers")
     .select("tipo, flows!inner(id, nombre, estado, product_id, descripcion)")
     .eq("channel_id", channelId).eq("flows.channel_id", channelId).eq("activo", true).in("tipo", ["keyword", "entrada"]);
@@ -3856,14 +3865,31 @@ async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ 
   for (const t of trg ?? []) { const f = (t as any).flows; if (f && f.estado === "activo" && !flows.has(f.id)) flows.set(f.id, f); }
   const prodIds = [...new Set([...flows.values()].map((f) => f.product_id).filter(Boolean))];
   const prods = new Map<string, any>();
-  if (prodIds.length) { const { data: ps } = await db.from("products").select("id, nombre, config").in("id", prodIds); for (const p of ps ?? []) prods.set((p as any).id, p); }
+  if (prodIds.length) { const { data: ps } = await db.from("products").select("id, nombre, config, tipo").in("id", prodIds); for (const p of ps ?? []) prods.set((p as any).id, p); }
+  // 💲 El precio «desde» de cada producto (la presentación visible más barata). La lista de precios de la Recepción solo
+  // traía los DIGITALES (catalogoDigital), y a «¿cuánto cuestan?» contestó «pregúntame si quieres el precio de este» del
+  // Adaptador, a quien acababa de preguntarlo (6-oct). El precio de 1 unidad no depende de la zona: se puede decir.
+  const desde = new Map<string, number>();
+  try {
+    if (prodIds.length) {
+      const { data: vs } = await db.from("product_versions").select("product_id, precio, activo, config").in("product_id", prodIds);
+      for (const v of (vs ?? []) as any[]) {
+        const pr = Number(v.precio);
+        if (v.activo === false || v.config?.oculta === true || !Number.isFinite(pr) || pr <= 0) continue;
+        if (!desde.has(v.product_id) || pr < (desde.get(v.product_id) as number)) desde.set(v.product_id, pr);
+      }
+    }
+  } catch (_) { /* sin precios → como antes */ }
   return [...flows.values()].map((f) => {
     const p = f.product_id ? prods.get(f.product_id) : null;
     const c = (p as any)?.config ?? {};
     // `ia.detalle` (lo que ES el producto) antes que `contexto_producto`: en la Plantilla ese arranca con «## Objeciones
     // frecuentes…», así que la Recepción no sabía para qué sirve y lo adivinó — «para organizar tus finanzas» (D24-info).
-    const intent = c.intencion || c.ia?.detalle || c.ia?.descripcion || c.contexto_producto || c.faq || f.descripcion || "";
-    return { label: (p as any)?.nombre || f.nombre || "Producto", intent: String(intent).slice(0, 300), flow_id: String(f.id) };
+    // (6-oct) Y antes que el detalle, el RESUMEN: una línea de qué es y para quién —con la ficha de 3 cuadros sale sola
+    //  de la primera línea del detalle—, que es justo lo que la Recepción necesita para nombrarlo.
+    const intent = c.intencion || c.ia?.resumen || c.ia?.detalle || c.ia?.descripcion || c.contexto_producto || c.faq || f.descripcion || "";
+    return { label: (p as any)?.nombre || f.nombre || "Producto", intent: recortaEnFrase(String(intent), 240), flow_id: String(f.id),
+      desde: f.product_id ? (desde.get(f.product_id) ?? null) : null, fisico: String((p as any)?.tipo ?? "") === "fisico" };
   });
 }
 
@@ -4190,8 +4216,12 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   parts.push("## Tu rol AHORA: RECEPCIÓN\n" + (String(rec.prompt || "").trim() ||
     "Eres la recepción de este negocio. Saluda con calidez, cuenta brevemente qué vendemos y ayuda al cliente a decir qué producto le interesa."));
   parts.push(REGLA_TUTEO);
-  parts.push(REGLA_SIN_DISCURSO_RIESGO);
-  parts.push(REGLA_NO_DAR_POR_HECHO);
+  // (6-oct) Sin dos reglas de la VENTA que acá no van: «Si lo vas a preguntar, no lo des por hecho» —la Recepción no
+  // confirma cambios de pedido, y traía de ejemplo «¿te lo dejo en 2 frascos? Serían S/119»— y la del riesgo con sus
+  // ejemplos de contraentrega en Lima y adelanto en provincia (a un negocio digital le hablaba de agencias). Del riesgo
+  // queda lo que vale para cualquiera:
+  parts.push("## Del pago se dice el hecho, no el discurso\n⛔ Nunca «sin riesgo», «no arriesgas nada», «cero riesgo» " +
+    "ni «no pagas nada por adelantado»: al nombrar el riesgo lo metes en la conversación. Di cómo se paga y sigue.");
   parts.push(REGLA_PAGO_NO_CONFIRMADO);
   if (info.negocio) parts.push("## Sobre el negocio\n" + info.negocio);
   if (cands.length) {
@@ -4228,8 +4258,12 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
           : `${_symR} ${p.versiones[0].precio}`);
       }
     } catch (_) { _precioDe = new Map(); }
+    // (el físico, con su precio «desde»: el de 1 unidad no depende de la zona — 6-oct)
+    const _symL = simboloMoneda(ctx.moneda as string);
+    const _prDe = (c: any): string => _precioDe.get(normalize(c.label)) ||
+      (Number.isFinite(Number(c.desde)) && Number(c.desde) > 0 ? `${c.fisico ? "desde " : ""}${_symL} ${c.desde}` : "");
     parts.push("## Productos que vendemos\n" + cands.map((c, i) => {
-      const _pr = _precioDe.get(normalize(c.label));
+      const _pr = _prDe(c);
       return `[${i + 1}] ${c.label}${_pr ? ` — ${_pr}` : ""}${c.intent ? `: ${c.intent}` : ""}`;
     }).join("\n") +
       // 🗂️ «¿qué venden?», «info», «precio… de todo» (D15b-ainfo, D15b-aprecio): contestaba «vendemos
@@ -4238,9 +4272,10 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
         ? "\n\nSi pregunta QUÉ vendemos, pide «info» o el precio sin decir de qué: NÓMBRALOS TODOS por su nombre, " +
           "uno por línea con su para qué en pocas palabras, y pregúntale cuál le interesa. Nunca respondas con una " +
           "categoría genérica («guías, plantillas y cursos»)." +
-          (_precioDe.size
+          (_precioDe.size || cands.some((c) => _prDe(c))
             ? " Si pregunta el PRECIO (o cuánto sale todo junto), dale el precio de cada uno tal cual está en la lista " +
-              "—y si pidió todo junto, la suma— sin inventar descuentos por llevar varios."
+              "—y si pidió todo junto, la suma— sin inventar descuentos por llevar varios. Si dice «desde», dilo así " +
+              "(«desde *S/ 69*»): es el de una unidad, y los packs se los da su venta."
             : " El precio de cada uno se lo da su venta apenas elija.")
         : "") +
       "\n\n## 🎯 Cómo lo pasas a la venta (lo más importante de tu trabajo)\n" +
@@ -4365,7 +4400,7 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   }
   let result = "";
   try {
-    result = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 350 });
+    result = await runAI({ db, channelId: run.channel_id, origen: "recepcion", provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 350 });
     // 🔎 Fase 5: el mismo revisor del motor v2 (¿contestó? ¿inventó?) contra la información del NEGOCIO, con UNA
     // reescritura. Solo cuando responde ella (no cuando pasa a un producto: [[ir:N]]).
     if (result && !/\[\[\s*ir\s*:/i.test(result)) {
@@ -4380,7 +4415,7 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
         if (_revR.fuera.length) await registrarPreguntasCliente(db, run, _ctxR, _revR.fuera);
         if (_vR.length) {
           await logEvent(db, run.channel_id, run.contact_id, "nota", "✍️ Recepción: se pidió reescribir", _vR.join(" · ").slice(0, 400)).catch(() => {});
-          const _r2 = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model,
+          const _r2 = await runAI({ db, channelId: run.channel_id, origen: "recepcion", provider: ai.provider, apiKey: ai.api_key, model: ai.model,
             system: parts.join("\n\n"), maxTokens: 350,
             content: content + `\n\n## ⚠️ CORRIGE TU RESPUESTA\nEscribiste esto:\n«${result}»\nTiene estos problemas:\n` +
               _vR.map((x) => `• ${x}`).join("\n") + "\nEscribe de nuevo el mensaje COMPLETO corrigiendo solo eso. Responde solo con el mensaje." });
@@ -4457,6 +4492,28 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
       }
     }
   } catch (_) { /* sin temas legibles → tal cual */ }
+  // 🚚 COBERTURA y PLAZOS inventados en la puerta (6-oct, recepcion2-v1): a «¿hacen envíos a Arequipa? ¿cuánto demora?»
+  // contestó «Sí podemos hacer envíos a Arequipa», con la regla del prompt que lo prohíbe con todas las letras. Acá no
+  // hay veredicto de zonas (lo calcula la venta del producto): si el texto del negocio no habla de envíos o de días, la
+  // frase que los promete se va y queda «lo confirmo apenas sepa qué producto».
+  try {
+    const _neg = String(info.negocio ?? "");
+    const _reCob = /(?:^|[^\p{L}])(?:s[ií],?\s+)?(?:(?:podemos|puedo)\s+)?(?:hacer|hacemos|realizamos|hago)\s+env[ií]os?\s+(?:a|hasta|en|por)\s|(?:^|[^\p{L}])(?:s[ií],?\s+)?(?:llegamos|enviamos|despachamos|repartimos|entregamos|te\s+lo\s+(?:mando|env[ií]o|llevo))\s+(?:a|hasta|en)\s+(?!tu\s+(?:celular|correo|chat))|(?:^|[^\p{L}])s[ií],?\s+(?:llega|te\s+llega)\s+(?:a|hasta)\s/iu;
+    // (solo el PLAZO de entrega —«llega en 2 días», «demora 3 a 5 días hábiles»—: con «\d+ días» a secas se llevaba
+    //  «el Protocolo de 21 días» y la Recepción dejó la lista de productos sin Calistenia — primera corrida, 6-oct)
+    const _reDias = /(?:llega|llegan|llegar[ií]a|demora|demoran|tarda|tardan|entrega(?:mos)?|recibes|lo\s+tienes|est[aá]\s+en)\b[^.!?\n]{0,25}?\b\d+\s*(?:a\s*\d+\s*)?(?:d[ií]as?|horas)\b|\b\d+\s*a\s*\d+\s*d[ií]as\s*h[aá]biles\b|\b(?:ma[ñn]ana|pasado\s+ma[ñn]ana)\s+(?:te\s+)?(?:llega|lo\s+tienes)/iu;
+    const _quitaCob = !/env[ií]o|enviamos|delivery|provincia|todo\s+el\s+per[uú]|agencia|shalom|olva/i.test(_neg);
+    const _quitaDias = !/\bd[ií]as?\b|\bhoras\b/i.test(_neg);
+    if (result && ((_quitaCob && _reCob.test(sinFormato(result))) || (_quitaDias && _reDias.test(sinFormato(result))))) {
+      const _antesCob = result;
+      result = String(result).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
+        .filter((f) => !((_quitaCob && _reCob.test(sinFormato(f))) || (_quitaDias && _reDias.test(sinFormato(f))))).join(" "))
+        .join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+      if (!/\?/.test(result)) result = (result ? result + " " : "") + "Eso te lo confirmo apenas me digas qué producto te interesa 🙂";
+      await logEvent(db, channelId, contactId, "nota", "🚚 Recepción: prometía envío o plazo",
+        `Se quitó (la cobertura la ve la venta del producto): «${_antesCob.slice(0, 160)}»`).catch(() => {});
+    }
+  } catch (_) { /* sin texto legible → tal cual */ }
   // 🛒 «¿tienen descuento si compro los 3?» en la Recepción: con los precios en el prompt, igual contestó «Ese dato no lo
   // tengo aquí 🙏 Lo vemos apenas me digas qué necesitas» (R1D-tres, 3.ª relanzada). La suma la dice el motor, delante.
   try {
@@ -15503,6 +15560,18 @@ async function afirmaAlCierre(db: SupabaseClient, contactId: string, texto: stri
   } catch (_) { return false; }
   return true;
 }
+// 📸 ¿Ya mostró que quiere comprar? (6-oct) Para la venta DIGITAL: la captura —y con ella el número de pago— solo a quien
+// ya lo dijo: eligió o preguntó un medio («yape», «¿aceptan plin?»), preguntó cómo pagar, dijo que lo quiere o que va a
+// pagar (también en sus mensajes anteriores: intencionDeCompra), o contestó «sí / dale» a una pregunta de cierre.
+// «¿qué venden?», «¿dan factura?» o «precio?» todavía NO son comprar.
+const RE_PIDE_CAPTURA = /(?:me\s+(?:mandes|env[ií]es|pases)|m[aá]ndame|env[ií]ame|p[aá]same)\s+(?:la\s+|el\s+|tu\s+)?(?:captura|foto\s+del\s+pago|comprobante|voucher)/i;
+const RE_PREGUNTA_COMO_PAGO = /c[oó]mo\s+(?:te\s+)?(?:pago|se\s+paga|hago\s+(?:el\s+)?pago|puedo\s+pagar|lo\s+pago|compro)|d[oó]nde\s+(?:te\s+)?(?:pago|yapeo|deposito|transfiero)|a\s+qu[eé]\s+(?:n[uú]mero|cuenta)|datos\s+(?:de|para)\s+(?:el\s+)?pago|m[eé]todos?\s+de\s+pago|formas?\s+de\s+pago/i;
+async function yaQuiereComprar(db: SupabaseClient, contactId: string, lastInput: string): Promise<boolean> {
+  const t = String(lastInput ?? "");
+  if (eligeMetodoDePago(t) || metodoQuePregunta(t) || RE_PREGUNTA_COMO_PAGO.test(t)) return true;
+  if (await afirmaAlCierre(db, contactId, t)) return true;
+  return await intencionDeCompra(db, contactId, t);
+}
 async function intencionDeCompra(db: SupabaseClient, contactId: string, lastInput: string): Promise<boolean> {
   const señal = (t: string) => RE_ANUNCIA_PAGO.test(t) || RE_QUIERE_COMPRAR.test(t);
   let kws: string[] = [];
@@ -15614,7 +15683,10 @@ async function maybeDatosPago(
       // ir, pida lo que pida el cliente (salvo queja o duda de salud) — «Mándame la captura cuando la hagas» sin precio ni
       // número a quien preguntó cuánto demora (R1D-tiempo, 2.ª regresión 2026-10-01)
       || (!!digital?.unico && /(?:me\s+(?:mandes|env[ií]es|pases)|m[aá]ndame|env[ií]ame|p[aá]same)\s+(?:la\s+|el\s+)?(?:captura|foto\s+del\s+pago|comprobante)/i.test(String(respuestaIa ?? ""))
-          && !dudaDeSalud(texto) && !RE_QUEJA_SUAVE.test(texto) && !RE_PIDE_DEVOLUCION.test(texto));
+          && !dudaDeSalud(texto) && !RE_QUEJA_SUAVE.test(texto) && !RE_PIDE_DEVOLUCION.test(texto)
+          // (6-oct: …y solo si él ya quiere comprar. La frase de la captura se le quita al que solo preguntaba —ver
+          //  «📸 Pidió la captura a quien solo preguntaba»—, así que el número tampoco tiene que ir.)
+          && await yaQuiereComprar(db, contactId, texto));
     // Preguntar por un medio que SÍ tenemos ya es pedir dónde pagar: la respuesta completa a
     // «¿puedo pagar con Plin?» es «sí, a este número», y partirla en dos turnos no ayuda a
     // nadie. Primero lo até a `intencionDeCompra` y salió mal, medido: la IA contestó «pagas
@@ -18964,6 +19036,10 @@ Si algo de acá se te escapa, el sistema lo corrige antes de enviar. Igual resp�
 · No describas el producto si no te lo preguntó. No repitas lo ya dicho. No arranques siempre igual.
 · Cierra afirmando ("listo, queda confirmado"), no preguntando "¿confirmo?".
 · Elegir una presentación YA es decidir comprar: no le preguntes otra vez si lo quiere.
+· La captura se pide recién cuando YA dijo que lo quiere (o preguntó cómo pagar). Si solo pregunta
+  qué es, cuánto cuesta o tiene una duda, contéstale y cierra con una pregunta que lo acerque
+  ("¿lo empiezas hoy?"), sin pedirle todavía la captura: pedírsela le manda los datos de pago a
+  alguien que solo estaba preguntando.
 · No ofrezcas descuentos ni presiones con escasez inventada: un digital no se agota.
 · No puedes cancelar ni anular un pedido. Si te lo piden, escribe [[humano]].
 · Si dice que lo va a pensar: como mucho UN argumento breve (el que más le sirve a él) y la
@@ -28643,6 +28719,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               "Cuando lo hagas mándame la captura y te paso el acceso al toque 😊";
             await logEvent(db, run.channel_id, run.contact_id, "campo", "🧾 Pidió datos en una venta digital",
               "Se le quitó la petición: acá no hay dirección, DNI ni talla que pedir").catch(() => {});
+          }
+        }
+        // 📸 La CAPTURA se pide recién cuando ya quiere comprar (6-oct). A «¿qué venden?», «¿dan factura?» y «precio?»
+        // la IA cerraba con «mándame la captura» y maybeDatosPago —que manda el número siempre que la IA pide la captura,
+        // para que nunca quede colgada— le soltaba el Yape a alguien que solo estaba preguntando. Sin intención, esa frase
+        // se va (y maybeDatosPago tampoco manda el número: ver yaQuiereComprar).
+        if (RE_PIDE_CAPTURA.test(sinFormato(salida)) && !(await yaQuiereComprar(db, run.contact_id, String(ctx.last_input ?? "")))) {
+          const _sinCap = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
+            .filter((f) => !RE_PIDE_CAPTURA.test(sinFormato(f))).join(" ")).join("\n")
+            .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+          if (_sinCap.replace(/[\s\p{P}\p{S}]/gu, "").length >= 15) {
+            salida = _sinCap;
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "📸 Pidió la captura a quien solo preguntaba",
+              "Se quitó: la captura (y el número) recién cuando diga que lo quiere").catch(() => {});
           }
         }
       }
