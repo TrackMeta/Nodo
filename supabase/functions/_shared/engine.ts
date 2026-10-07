@@ -6569,6 +6569,16 @@ function sinNumeroDePagoAjeno(texto: string, datosPago: string, lastInput: strin
   return cambio ? out.join("\n").replace(/\n{3,}/g, "\n\n").trim() : texto;
 }
 
+// 🧾 «Ya la estoy validando… en breve te lo paso», «Ya está, tu acceso queda activo»: la IA contando un pago que NADIE
+// está revisando y un acceso que NO salió (7-oct, Wilson: su Yape había sido rechazado y el bot le dijo las dos cosas).
+// Solo el motor sabe si hay un comprobante en revisión o un acceso entregado: sin pedido confirmado y sin imagen en
+// este mensaje, esas frases son mentira. Devuelve las frases; el revisor digital pide reescribir y, de respaldo, se quitan.
+const RE_PAGO_EN_CURSO = /\bya\s+(?:la|lo)\s+estoy\s+(?:validando|revisando|verificando|confirmando|chequeando)\b|\bestoy\s+(?:validando|revisando|verificando|confirmando|chequeando)\b(?=[^.!?\n]{0,50}\b(?:pago|comprobante|captura|yape|plin|transferencia|acceso)\b)|\b(?:ya\s+)?(?:revisé|validé|verifiqué|confirmé|recibí)\s+(?:tu|el|la)\s+(?:pago|comprobante|captura|yape|plin|transferencia)\b|\bacceso\b[^.!?\n]{0,60}?\b(?:queda|est[aá]|qued[oó])\s+(?:ya\s+)?(?:activo|activado|listo|habilitado|enviado)\b(?!\s+(?:de\s+por\s+vida|para\s+siempre|siempre|sin\s+l[ií]mite))|\bya\s+tienes\s+(?:tu\s+|el\s+)?acceso\b|\b(?:ya\s+)?(?:te\s+)?(?:activé|habilité|envié|mandé|pasé)\s+(?:tu|el)\s+acceso\b|\ben\s+breve\s+te\s+lo\s+(?:paso|env[ií]o|mando|activo)\b/i;
+function afirmaPagoEnCurso(texto: string): string[] {
+  return String(texto ?? "").split("\n").flatMap((ln) => ln.split(/(?<=[.!?…])\s+|(?<=[\p{Extended_Pictographic}\u{FE0F}])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u))
+    .filter((f) => RE_PAGO_EN_CURSO.test(sinFormato(f)));
+}
+
 function sinPromesaDeAcceso(texto: string, lastInput: string): string {
   const malas = promesasDeAcceso(texto, lastInput);
   if (!malas.length) return texto;
@@ -8732,6 +8742,9 @@ export function probarRetoques(texto: string, lastInput = ""): Record<string, st
     promesasDeAcceso: promesasDeAcceso(t, lastInput).join(" | "),
     emitConDatosDetras: sinPedirPermisoPago(sinAnuncioDePago(t.replace(RE_PREGUNTA_MEDIO_PAGO, " "))),
     pideCaptura: String(RE_PIDE_CAPTURA.test(sinFormato(t))),
+    pagoEnCurso: afirmaPagoEnCurso(t).join(" | "),
+    // (el titular visible en un comprobante contra los de Prime Digital — titularCasa)
+    titularCasa: String(titularCasa({ metodos: [{ titular: "Percy Rodrigo Flores Nuñez", numero: "931934092" }, { titular: "Percy Flores", numero: "19415193047011" }] }, t)),
     // (con un número en lastInput: ¿pruebaDeTexto ve ese monto en el texto? — el validador de comprobantes)
     pruebaMonto: /^\d+(?:\.\d+)?$/.test(lastInput.trim()) ? String(pruebaDeTexto({ texto_visible: t }, Number(lastInput))) : "",
   };
@@ -22455,6 +22468,30 @@ function titularNoCoincide(ocrCfg: any, quien: unknown): boolean {
   // darlo por bueno. Cero coincidencias con todos = el dinero fue a otra persona.
   return !suyos.some((x) => { const a = toks(x); for (const w of t) if (a.has(w)) return true; return false; });
 }
+// ¿El nombre de QUIEN RECIBE es uno de tus titulares? true = sí, false = es otro, null = no se puede saber. A
+// diferencia de titularNoCoincide (que solo acusa lo descarado), este también lee la MÁSCARA de Yape/Plin: cada
+// pedazo visible tiene que ser el comienzo de una palabra del MISMO titular («Percy Flo*» → «Percy Rodrigo Flores
+// Nuñez»: «percy» y «flo…»; «P*** F****» → «p…» y «f…»). Lo usa el rescate del rechazo por titular (7-oct).
+function titularCasa(ocrCfg: any, quien: unknown): boolean | null {
+  const s = String(quien ?? "").trim();
+  if (!s) return null;
+  const norm = (x: string) => x.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const suyos: string[][] = (Array.isArray(ocrCfg?.metodos) ? ocrCfg.metodos : [])
+    .map((m: any) => norm(String(m?.titular ?? "")).replace(/[^a-z\s]/g, " ").split(/\s+/).filter((w: string) => w.length >= 2))
+    .filter((ws: string[]) => ws.length);
+  if (!suyos.length) return null;
+  const enmascarado = /[*•·]|\.{2,}/.test(s);
+  // Los pedazos visibles: lo que hay antes de cada máscara («Flo*» → «flo»), sin partículas sueltas.
+  const piezas = norm(s).split(/[\s.]+/).map((w) => w.replace(/[*•·]+.*$/, "").replace(/[^a-z]/g, "")).filter((w) => w.length >= 1);
+  if (!piezas.length || !piezas.some((w) => w.length >= 3)) return null;   // «P*** F****» solo con iniciales: no alcanza para afirmar
+  if (enmascarado) {
+    return suyos.some((ws) => piezas.every((p) => ws.some((w) => w.startsWith(p))));
+  }
+  // Sin máscara: basta una palabra de 3+ letras en común con alguno (igual que titularNoCoincide, pero afirmando).
+  const largas = piezas.filter((w) => w.length >= 3);
+  // (y recortado sin asterisco, «PER FLO»: cada pedazo es el comienzo de una palabra del mismo titular)
+  return suyos.some((ws) => largas.some((p) => ws.includes(p)) || piezas.every((p) => ws.some((w) => w.startsWith(p))));
+}
 // Devuelve POR QUÉ este comprobante no puede auto-aprobarse, o null si no hay freno.
 // El motivo que escribe la IA del comprobante le habla al CLIENTE («El número destino no corresponde…,
 // por favor envia la captura del pago correcto»). Ese texto lo lee el DUEÑO (campanita, Telegram,
@@ -26713,6 +26750,29 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // (para el detector de «mándame la captura» del revisor: la misma decisión que maybeDatosPago y el freno 📸)
       try { (run as any)._quiereComprarTurno = await yaQuiereComprar(db, run.contact_id, String(ctx.last_input ?? "")); }
       catch (_) { (run as any)._quiereComprarTurno = true; }   // sin dato → no se frena nada
+      // 🧾 Lo que la IA NO puede saber y por eso inventaba (Wilson, 7-oct): si su comprobante acaba de ser observado
+      // (y él insiste en que pagó bien) y si los datos de pago ya están arriba en el chat (y no se van a repetir).
+      try {
+        const { data: _outsP } = await db.from("messages").select("content, ts").eq("contact_id", run.contact_id)
+          .eq("direction", "out").gte("ts", new Date(Date.now() - 60 * 60_000).toISOString()).order("ts", { ascending: false }).limit(8);
+        const _txtsP = ((_outsP ?? []) as any[]).map((m) => String(m?.content?.text ?? ""));
+        const _liP = String(ctx.last_input ?? "");
+        // (1) DISPUTA: el validador observó su comprobante (en la última hora) y ahora insiste en que pagó, que es el
+        //     número correcto o que es estafa. No se discute ni se le vuelve a pedir la captura: lo mira una persona.
+        const _observado = _txtsP.slice(0, 4).some((t) => /revis[eé] tu comprobante|sali[oó] a otra cuenta|ya se us[oó] antes|no pude confirmar tu comprobante|faltan? \*?S\//i.test(t));
+        const _insiste = /\b(?:ya\s+(?:te\s+)?(?:yape|pagu|pag[oóé]|deposit|transfer|plin)|s[ií]\s+(?:te\s+)?yap|yap[eé]\s*(?:al|a\s+ese)|ah[ií]\s+est[aá]|es\s+(?:el\s+)?mismo|ese\s+n[uú]mero|c[oó]mo\s+no\s+va|estaf|robo|ya\s+(?:te\s+)?(?:lo\s+)?(?:envi|mand)[eé]|pero\s+si\s+ya)/i.test(_liP);
+        if (_observado && _insiste && String(ctx.last_input_type ?? "text") !== "image" && String(ctx.pedido_creado ?? "") !== "si") {
+          (run as any)._disputaPago = true;
+        }
+        // (2) DATOS ARRIBA: el bloque «Son *S/…» con el número salió hace menos de una hora → no se anuncia de nuevo.
+        if (_txtsP.some((t) => /^Son \*/.test(t.trim()) && /\d{3}[\s-]?\d{3}[\s-]?\d{3}|\d{9,}/.test(t))) {
+          (run as any)._datosArriba = true;
+          content += "\n\n## 💳 Los datos de pago ya están arriba\nYa se los pasaste en este chat hace un rato. ⛔ NO digas que se " +
+            "los pasas, que se los dejas ni «te dejo los datos»: si los pide o pregunta a dónde pagar, dile que están arriba en el " +
+            "chat. Y ⛔ no digas que estás revisando o validando su pago ni que su acceso está listo: eso pasa recién cuando " +
+            "manda la captura y se valida.";
+        }
+      } catch (_) { /* sin historial → como siempre */ }
       // Sin versión elegida, los datos de pago NO salen: si la IA los anuncia («te paso los datos para el pago 👇»), un freno
       // de plata le borra el mensaje entero y queda «Dime cuál prefieres» — y la respuesta a «¿cómo pago?» se pierde
       // (examen digital, 3-oct). Se le dice antes qué toca.
@@ -26741,7 +26801,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // 🧭 Motor v2: el REVISOR. Si la respuesta rompe una regla del paso o no contesta lo que preguntó, se le pide
     // reescribirla UNA vez con la indicación exacta. Si la segunda tampoco pasa, se queda la segunda y vuelven las
     // tijeras de siempre (`_v2Fallo`).
-    if (((run as any)._v2Activo || (run as any)._revSolo) && typeof result === "string" && result.trim() && typeof content === "string") {
+    if (((run as any)._v2Activo || (run as any)._revSolo) && !(run as any)._disputaPago && typeof result === "string" && result.trim() && typeof content === "string") {
       try {
         const _p = (run as any)._pasoV2 as PasoV2 | undefined;   // (sin paso en lo digital: solo el revisor IA)
         if (_p?.paso === "sede") result = sinPreguntaDeSedeV2(result) || result;
@@ -26769,6 +26829,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             if (_acc.length) {
               v.push(`No prometas el acceso como si ya saliera («${_acc[0].slice(0, 120)}»): el acceso sale recién cuando se valida su pago. ` +
                 "Dilo con la condición: «apenas me mandes la captura y la valide, te paso tu acceso».");
+            }
+            // 🧾 Un pago «en revisión» o un acceso «activo» que no existen (ver afirmaPagoEnCurso).
+            if (String(ctx.last_input_type ?? "text") !== "image") {
+              const _enCurso = afirmaPagoEnCurso(txt);
+              if (_enCurso.length) {
+                v.push(`No digas «${_enCurso[0].slice(0, 100)}»: nadie está revisando un pago ni hay un acceso entregado. Si dice que ya pagó, ` +
+                  "pídele que te mande (o reenvíe) la captura por acá y que apenas se valide le llega su acceso.");
+              }
+            }
+            if ((run as any)._datosArriba && /\bte\s+(?:dejo|paso|mando|env[ií]o|comparto)\s+(?:los\s+|tus\s+)?datos|\bya\s+te\s+(?:dejo|paso)\s+los\s+datos/i.test(sinFormato(txt))) {
+              v.push("Los datos de pago ya están arriba en el chat y no se vuelven a mandar: no digas que se los pasas; si hace falta, dile que están arriba.");
             }
             if (!(run as any)._quiereComprarTurno && RE_PIDE_CAPTURA.test(sinFormato(txt))) {
               v.push("Todavía no dijo que lo quiere: no le pidas la captura ni que pague. Contesta lo que preguntó y, si viene al caso, " +
@@ -26839,6 +26910,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         (run as any)._v2Fallo = true;
         await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ Motor v2: el revisor falló", String(e).slice(0, 300)).catch(() => {});
       }
+    }
+
+    // 🧾 DISPUTA DE PAGO (ver `_disputaPago`): el validador observó su comprobante y él insiste en que pagó bien. Discutirle o
+    // volver a pedirle la captura es lo que hizo que Wilson escribiera «Pura estafa» (7-oct); lo mira una persona, que tiene el
+    // comprobante a la vista en Pagos/Bandeja. Texto fijo: el motor decide, no la IA.
+    if ((run as any)._disputaPago && op === "generar_texto" && typeof result === "string") {
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "🧾 Insiste en que pagó tras un comprobante observado",
+        `«${String(ctx.last_input ?? "").slice(0, 120)}» → lo revisa una persona. La IA había escrito: «${result.slice(0, 160)}»`).catch(() => {});
+      result = "Entiendo, y gracias por la paciencia 🙏 Le paso tu comprobante a una persona del equipo para que lo revise ahora mismo y te confirmamos por acá. [[humano]]";
     }
 
     // Guardar el resultado como variable del run y (si existe) campo persistente.
@@ -26974,9 +27054,31 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (/PAGO_NO/i.test(String(result ?? "")) && /(destinatari|titular|beneficiari|otra\s+cuenta|otro\s+n[uú]mero|a\s+nombre\s+de)/i.test(String(result ?? ""))) {
         const _ocrCfgT = (info as any)?.ocr;
         const _destT = String(_ocrLeyo?.destino ?? "");
-        const _numOk = _destT.replace(/\D/g, "").length >= 6 && !destinoNoCoincide(_ocrCfgT, _destT);
-        const _titOk = !!String(_ocrLeyo?.destinatario ?? "").trim() && !titularNoCoincide(_ocrCfgT, _ocrLeyo?.destinatario);
-        if (_numOk && _titOk) {
+        const _digT = _destT.replace(/\D/g, "");
+        const _hayNumsT = (Array.isArray(_ocrCfgT?.metodos) ? _ocrCfgT.metodos : []).some((m: any) => String(m?.numero ?? "").replace(/\D/g, "").length >= 6);
+        // (+ el número ENMASCARADO de Yape/Plin: «*** *** 092» — solo se ven 3 dígitos y tienen que ser el final de uno tuyo)
+        const _numOk = _hayNumsT && (_digT.length >= 6 || (_digT.length >= 3 && /[*•xX·]/.test(_destT))) && !destinoNoCoincide(_ocrCfgT, _destT);
+        const _nomT = _ocrLeyo?.destinatario ?? _ocrLeyo?.titular;
+        const _titOk = titularCasa(_ocrCfgT, _nomT) === true;
+        // 🔑 7-oct, la primera venta real de Nodo (Wilson): un Yape bueno —S/ 10 a «Percy Flo*», celular «*** *** 092»—
+        // salió PAGO_NO «el destinatario no coincide» y, con la MISMA imagen nueve minutos después, PAGO_OK. El
+        // veredicto del modelo sobre un nombre enmascarado es una moneda al aire (y el prompt ya le explica la máscara).
+        // Cuando el número y el nombre son tuyos por CÓDIGO y el rechazo no dice nada más (ni monto, ni fecha, ni
+        // edición, ni operación), se acepta: el resto de los frenos del pago (anti-reúso, monto en la transcripción,
+        // fecha, número ajeno) corren igual en el camino del PAGO_OK. El cliente se había quedado con «salió a otra
+        // cuenta», escribió «Pura estafa» y casi se va.
+        const _otrasDudasT = /(monto|falta|menor|fecha|edit|alterad|borros|ilegible|proceso|pendiente|duplic|usad|operaci[oó]n|vencid|antig|recort)/i
+          .test(String(result ?? "").replace(/\{[\s\S]*\}/, ""));
+        if (_numOk && _titOk && !_otrasDudasT && _ocrLeyo) {
+          const _antesT = String(result ?? "");
+          result = `PAGO_OK\n${JSON.stringify(_ocrLeyo)}`;
+          if (cfg.guardar_en) {
+            run.vars[cfg.guardar_en] = result;
+            await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, result);
+          }
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "👤 El validador dudó del titular, pero el número y el nombre son tuyos",
+            `Destino «${_destT}» y titular «${String(_nomT ?? "")}» calzan con tus datos: se acepta. Había dicho: «${_antesT.replace(/\{[\s\S]*\}/, "").slice(0, 140)}»`).catch(() => {});
+        } else if (_numOk && _titOk) {
           const _antesT = String(result ?? "");
           result = "PAGO_NO Déjame confirmarlo con calma 🙌 En un momento te aviso por acá.";
           if (cfg.guardar_en) {
@@ -28890,6 +28992,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _antesAcc = salida;
           _tr("🔑 Prometía el acceso sin pago validado ·L28563");
           salida = sinPromesaDeAcceso(String(salida), String(ctx.last_input ?? ""));
+          // 🧾 …y el pago «en revisión» / el acceso «activo» que no existen (ver afirmaPagoEnCurso; respaldo del revisor).
+          if (String(ctx.last_input_type ?? "text") !== "image") {
+            const _enCursoS = afirmaPagoEnCurso(String(salida));
+            if (_enCursoS.length) {
+              salida = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+|(?<=[\p{Extended_Pictographic}\u{FE0F}])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u)
+                .filter((f) => !_enCursoS.includes(f)).join(" ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+              if (!salida.replace(/[\s\p{P}\p{S}]/gu, "")) salida = "Si ya pagaste, mándame la captura por acá y apenas la valide te llega tu acceso 📸";
+              await logEvent(db, run.channel_id, run.contact_id, "nota", "🧾 Decía que revisa un pago o que el acceso está listo",
+                `Nadie lo está revisando: «${_enCursoS[0].slice(0, 120)}»`).catch(() => {});
+            }
+          }
           if (salida !== _antesAcc) {
             if (!salida.replace(/[\s\p{P}\p{S}]/gu, "")) salida = "Cuando lo tengas, mándame la captura y te paso el acceso al toque 📷";
             await logEvent(db, run.channel_id, run.contact_id, "nota", "🔑 Prometía el acceso sin pago validado",
