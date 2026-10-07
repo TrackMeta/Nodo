@@ -9705,8 +9705,9 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       // (+ si la propia IA promete los datos o el cliente anuncia que paga: «Perfecto, te paso los datos para el pago 👇
       //  … ¿Prefieres *Yape* o *transferencia BCP*?» a «Para hacer el pago» — y 2 s después llegaron los dos medios
       //  juntos, sin que contestara. Probar flujos, 6-oct.)
-      const _base = (RE_QUIERE_COMPRAR.test(_liD) || RE_ANUNCIA_PAGO.test(_liD) || RE_PROMETE_PAGO.test(result)
-        || (_sinMedio !== result && _sinMedio.includes("?"))) ? _sinMedio : result;
+      // (+ «¿cómo se paga?»: contestó «¿Con qué método prefieres pagar?» y debajo llegaron los dos medios — Probar flujos, 6-oct)
+      const _base = (RE_QUIERE_COMPRAR.test(_liD) || RE_ANUNCIA_PAGO.test(_liD) || RE_PREGUNTA_COMO_PAGO.test(_liD)
+        || RE_PROMETE_PAGO.test(result) || (_sinMedio !== result && _sinMedio.includes("?"))) ? _sinMedio : result;
       result = sinPedirPermisoPago(sinAnuncioDePago(sinPromesaDeDatosColgada(_base, true, RE_PRESENCIA.test(_liD), _liD)));
     }
     // 🧭 Con el motor v2 y la respuesta aprobada por el revisor, la limpieza de «restos» no corre: se llevaba preguntas
@@ -15564,12 +15565,25 @@ async function afirmaAlCierre(db: SupabaseClient, contactId: string, texto: stri
 // ya lo dijo: eligió o preguntó un medio («yape», «¿aceptan plin?»), preguntó cómo pagar, dijo que lo quiere o que va a
 // pagar (también en sus mensajes anteriores: intencionDeCompra), o contestó «sí / dale» a una pregunta de cierre.
 // «¿qué venden?», «¿dan factura?» o «precio?» todavía NO son comprar.
-const RE_PIDE_CAPTURA = /(?:me\s+(?:mandes|env[ií]es|pases)|m[aá]ndame|env[ií]ame|p[aá]same)\s+(?:la\s+|el\s+|tu\s+)?(?:captura|foto\s+del\s+pago|comprobante|voucher)/i;
+// (solo el PEDIDO directo —«mándame la captura», «¿me mandas el comprobante?»—, no la explicación de cómo funciona: «apenas
+//  me envíes la captura, te llega el acceso» era LA respuesta a «¿cómo sé que no es estafa?» y el freno se la llevó —
+//  Probar flujos, 6-oct—: al cliente le quedó «Así sabes que es seguro» sin decir por qué)
+const RE_PIDE_CAPTURA = /(?:m[aá]ndame|env[ií]ame|p[aá]same|¿\s*me\s+(?:mandas|env[ií]as|pasas))\s+(?:la\s+|el\s+|tu\s+)?(?:captura|foto\s+del\s+pago|comprobante|voucher)/i;
 const RE_PREGUNTA_COMO_PAGO = /c[oó]mo\s+(?:te\s+)?(?:pago|se\s+paga|hago\s+(?:el\s+)?pago|puedo\s+pagar|lo\s+pago|compro)|d[oó]nde\s+(?:te\s+)?(?:pago|yapeo|deposito|transfiero)|a\s+qu[eé]\s+(?:n[uú]mero|cuenta)|datos\s+(?:de|para)\s+(?:el\s+)?pago|m[eé]todos?\s+de\s+pago|formas?\s+de\s+pago/i;
 async function yaQuiereComprar(db: SupabaseClient, contactId: string, lastInput: string): Promise<boolean> {
   const t = String(lastInput ?? "");
   if (eligeMetodoDePago(t) || metodoQuePregunta(t) || RE_PREGUNTA_COMO_PAGO.test(t)) return true;
   if (await afirmaAlCierre(db, contactId, t)) return true;
+  // (…o ya lo había preguntado antes, o ya tiene los datos de pago en el chat: a quien preguntó «¿cómo se paga?» y después
+  //  «¿cómo sé que no es estafa?» no hay nada que frenarle — Probar flujos, 6-oct)
+  try {
+    const { data: ins } = await db.from("messages").select("content")
+      .eq("contact_id", contactId).eq("direction", "in").order("ts", { ascending: false }).limit(6);
+    if ((ins ?? []).some((m: any) => { const x = String(m.content?.text ?? ""); return RE_PREGUNTA_COMO_PAGO.test(x) || eligeMetodoDePago(x); })) return true;
+    const { data: outs } = await db.from("messages").select("content")
+      .eq("contact_id", contactId).eq("direction", "out").order("ts", { ascending: false }).limit(15);
+    if ((outs ?? []).some((m: any) => /^Son \*/.test(String(m.content?.text ?? "")) && /\d{3}[\s.-]?\d{3}[\s.-]?\d{3}/.test(String(m.content?.text ?? "")))) return true;
+  } catch (_) { /* sin historial → solo lo de este mensaje */ }
   return await intencionDeCompra(db, contactId, t);
 }
 async function intencionDeCompra(db: SupabaseClient, contactId: string, lastInput: string): Promise<boolean> {

@@ -191,6 +191,9 @@ export const BATERIA_CALISTENIA: Bateria = {
       foco: "T2: tranquilizar con hechos (titular visible al pagar, acceso por este chat al verificar) sin garantías inventadas. T3: SÍ con Plin, al mismo número de Yape." },
     { id: "c-incluye", titulo: "¿Qué incluye? ¿trae dieta?", turnos: [KCAL, "que incluye? trae dieta?"],
       foco: "CORRECTO: lo que incluye según la ficha (plan 21 días, videos, Nivel Avanzado, comunidad, acceso de por vida) y que NO trae dieta. INCORRECTO: inventar contenido." },
+    // (6-oct, Probar flujos de Rodrigo: el freno de la captura se llevó la explicación de por qué es seguro)
+    { id: "c-comopago-estafa", titulo: "¿Cómo se paga? y después ¿cómo sé que no es estafa?", turnos: [KCAL, "como se paga", "y como se que no es estafa"],
+      foco: "T2: dice los medios (Yape, Plin, BCP) y los datos los pone el sistema; INCORRECTO preguntar «¿con qué método prefieres?» si debajo llegan los dos medios. T3: explica POR QUÉ es seguro con hechos de la ficha (el titular se ve al pagar, el acceso llega por este chat al validar); INCORRECTO una frase que se refiere a algo que no dijo («así sabes que es seguro» sin decir cómo)." },
     { id: "c-gratis", titulo: "Pide que se lo pase gratis", turnos: [KCAL, "me lo pasas gratis? o a 2 soles"],
       foco: "CORRECTO: mantener S/10 con amabilidad y reforzar el valor. INCORRECTO: bajar el precio u ofrecer otra promoción." },
   ],
