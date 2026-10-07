@@ -13,6 +13,7 @@ import { registrarNotificacion, clasificarTextoLibre } from "./notificaciones.ts
 import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate, sheetsBorrarFila, HOJAS } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
+import { clienteDeTurno, despues, vaciarDespues } from "./turno.ts";
 import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendMedia, sendText } from "./meta.ts";
 import {
   sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
@@ -203,6 +204,8 @@ export async function runEngine(
     return;
   }
   if (!locked) console.warn(`[runEngine] sin lock tras ~75s (contacto ${contactId}) — se procede igual`);
+  // ⏱️ Cliente de ESTE turno: lecturas repetidas desde memoria y la hoja/Meta/avisos para después de responder (turno.ts).
+  const dbT = clienteDeTurno(db);
   try {
     // 🔁 DOBLE RESPUESTA a dos mensajes seguidos (medido en vivo el 2026-09-17: «No gracias»
     // y «Como estas» con 12 s de diferencia → dos «Estoy bien…»). El turno 1 arma su prompt
@@ -256,7 +259,7 @@ export async function runEngine(
       await logEvent(db, channelId, contactId, "nota", "🔁 Ya contestado por el turno anterior", String(event.text ?? "").slice(0, 80)).catch(() => {});
       return;
     }
-    return await runEngineInner(db, channelId, contactId, event);
+    return await runEngineInner(dbT, channelId, contactId, event);
   } finally {
     if (locked) {
       // db.rpc(...) devuelve un builder thenable SIN método .catch → hay que
@@ -272,6 +275,8 @@ export async function runEngine(
         if (eRel) console.error("[runEngine] contact_lock_release:", eRel.message, "— lo libera el TTL");
       } catch { /* el TTL lo libera igual */ }
     }
+    // Con el candado ya suelto: un mensaje nuevo del cliente no espera a la hoja ni a Telegram.
+    try { await vaciarDespues(dbT); } catch (e) { console.error("[runEngine] despues:", (e as any)?.message ?? e); }
   }
 }
 
@@ -5298,6 +5303,7 @@ async function ritmo(db: SupabaseClient, run: any, bubble: any): Promise<boolean
   const r = (run._ritmo ??= { ms: 0, t0: Date.now(), tH: Date.now() - 30_000, primera: true });
   if (r.primera) {
     r.primera = false;
+    r.ult = Date.now();
     if (!(run as any)._porCliente) return false;
     try {
       const { data: h0 } = await db.from("messages").select("ts").eq("contact_id", run.contact_id)
@@ -5309,7 +5315,11 @@ async function ritmo(db: SupabaseClient, run: any, bubble: any): Promise<boolean
   const libre = Math.max(0, RITMO_TOPE_TURNO_MS - r.ms);
   const p = libre > 0 ? Math.min(pausaDe(bubble), libre) : RITMO_MIN_MS;
   r.ms += p;
-  await new Promise((res) => setTimeout(res, p));
+  // ⏱️ La pausa se cuenta desde que SALIÓ la burbuja anterior, no desde que Meta confirmó el envío (~1 s por burbuja):
+  // medido el 7-oct, el saludo de 6 burbujas duraba ~5 s más que sus pausas. El cliente ve el mismo ritmo, sin el extra.
+  const _espera = Math.max(0, p - (r.ult ? Date.now() - r.ult : 0));
+  if (_espera > 0) await new Promise((res) => setTimeout(res, _espera));
+  r.ult = Date.now();
   if (await clienteEscribio(db, run.contact_id, r.t0)) return true;
   if (!(run as any)._porCliente) return false;
   // Un OPERADOR le escribió en medio de la ráfaga: el bot se calla (antes seguía soltando precio
@@ -10733,9 +10743,12 @@ async function runAcciones(db: SupabaseClient, run: Run, acciones: any[], ctx: a
           // el precio de ESTE extra, por ejemplo). Se resuelven por si traen {{}}.
           const extra: Record<string, unknown> = {};
           for (const [k, v] of Object.entries(a.datos ?? {})) extra[k] = resolve(String(v ?? ""), ctx);
-          await avisar(db, run.channel_id, run.contact_id, String(a.plantilla), { ...datosAviso(ctx), ...extra }, { foto });
+          // ⏱️ Al dueño, DESPUÉS de responder (turno.ts): Telegram con la foto tardaba ~3 s con el cliente esperando.
+          const _datosAv = { ...datosAviso(ctx), ...extra }, _plantilla = String(a.plantilla);
+          await despues(db, "aviso " + _plantilla, () => avisar(db, run.channel_id, run.contact_id, _plantilla, _datosAv, { foto }));
         } else {
-          await notifyAdmin(db, run, resolve(String(a.mensaje ?? a.valor ?? ""), ctx), foto);
+          const _txtAv = resolve(String(a.mensaje ?? a.valor ?? ""), ctx);
+          await despues(db, "aviso al dueño", () => notifyAdmin(db, run, _txtAv, foto));
         }
         break;
       }
@@ -11763,16 +11776,20 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     if (vuelto > 0) await avisarVuelto(db, run, amount, vuelto);
     // 🛒 Los otros productos del mismo pago, ANTES de Sheets y del Purchase (que releen los bumps).
     await adjuntarCombo(db, run, (ord as any).id);
-    await syncPedidoSheet(db, (ord as any).id); // la fila nace con el pedido
-    // Si el pedido NACE ya como venta real (digital confirmada al toque / OCR
-    // automático), Purchase a Meta. Físico nace en esperando_adelanto/confirmada
-    // de Lima: maybePurchase ignora lo que no es cierre real. Dedup por pedido.
-    try {
-      await maybePurchase(db, {
-        id: (ord as any).id, channel_id: run.channel_id, contact_id: run.contact_id,
-        estado: a.estado || "carrito", amount, currency: String(ctx.moneda || "PEN"), shipping: ship,
-      });
-    } catch (e) { console.error("[crearPedido] capi purchase:", (e as any)?.message ?? e); }
+    // ⏱️ La hoja y el Purchase, DESPUÉS de responder (turno.ts): con el cliente esperando su acceso eran ~4 s.
+    const _oidV = (ord as any).id, _estV = a.estado || "carrito", _monV = String(ctx.moneda || "PEN");
+    await despues(db, "hoja + Purchase del pedido nuevo", async () => {
+      await syncPedidoSheet(db, _oidV).catch(() => {}); // la fila nace con el pedido
+      // Si el pedido NACE ya como venta real (digital confirmada al toque / OCR
+      // automático), Purchase a Meta. Físico nace en esperando_adelanto/confirmada
+      // de Lima: maybePurchase ignora lo que no es cierre real. Dedup por pedido.
+      try {
+        await maybePurchase(db, {
+          id: _oidV, channel_id: run.channel_id, contact_id: run.contact_id,
+          estado: _estV, amount, currency: _monV, shipping: ship,
+        });
+      } catch (e) { console.error("[crearPedido] capi purchase:", (e as any)?.message ?? e); }
+    });
     // 🎁 Regalo con la compra: adjunta los regalos del producto como bumps gratis.
     // El físico viaja en el paquete; el digital lo entrega entregarExtrasDigitales
     // al CERRAR (para una venta digital `confirmada`, ya mismo; para físico Lima/
@@ -12111,8 +12128,11 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
     // sub-reportada, sin cron que la recupere, y en el CRM se ve como venta cerrada (nadie
     // sospecha). maybePurchase ignora los estados que no son cierre real, exige ctwa_clid y
     // deduplica por pedido (Purchase:<id>). Sin pixel → no-op.
+    // ⏱️ Todo el bloque de Meta va DESPUÉS de responder (turno.ts); junto, porque el upsell depende del principal.
+    const _hayEstado = !!patch.estado;
+    await despues(db, "Purchase del pedido actualizado", async () => {
     let principalCapi: any = null;
-    if (patch.estado) {
+    if (_hayEstado) {
       try {
         const { data: op } = await db.from("orders").select("estado, amount, currency, shipping").eq("id", orderId).maybeSingle();
         if (op) principalCapi = await maybePurchase(db, { id: orderId, channel_id: run.channel_id, contact_id: run.contact_id, estado: (op as any).estado, amount: (op as any).amount, currency: (op as any).currency, shipping: (op as any).shipping });
@@ -12130,6 +12150,7 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
         if (ou) await maybePurchaseUpsell(db, { id: orderId, channel_id: run.channel_id, contact_id: run.contact_id, estado: (ou as any).estado, amount: (ou as any).amount, currency: (ou as any).currency, shipping: (ou as any).shipping }, bumpUpsell.value, bumpUpsell.sufijo);
       } catch (e) { console.error("[actualizarPedido] capi upsell:", (e as any)?.message ?? e); }
     }
+    });
     // 📦 Si esta acción CANCELA el pedido (estado de pérdida) y tenía stock reservado,
     // devuélvelo al inventario. Antes solo el panel (order-update) devolvía → un
     // "cancélalo" resuelto por la IA dejaba las unidades restadas para siempre
@@ -12172,7 +12193,7 @@ async function actualizarPedido(db: SupabaseClient, run: Run, a: any, ctx: any) 
       } catch (e) { console.error("[actualizarPedido] stock extra:", (e as any)?.message ?? e); }
     }
     if (a.estado) await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido → " + patch.estado);
-    await syncPedidoSheet(db, orderId); // la fila sigue al pedido
+    await despues(db, "hoja del pedido actualizado", () => syncPedidoSheet(db, orderId)); // la fila sigue al pedido
   } catch (err) {
     await logEvent(db, run.channel_id, run.contact_id, "error", "Error al actualizar pedido", String((err as any)?.message ?? err));
   }
