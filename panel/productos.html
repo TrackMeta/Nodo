@@ -894,6 +894,47 @@ function parseObj(txt){
 }
 function compileObj(items){ return (items||[]).filter(x=>x&&(x.o||x.r)).map(x=>`«${(x.o||"").trim()}» → ${(x.r||"").trim()}`).join("\n"); }
 
+// 🧩 LA FICHA DE 3 CUADROS (6-oct, Rodrigo: «¿no crees que es muy largo de rellenar?»).
+// Eran 17 casilleros y en Calistenia «de por vida» salía 12 veces en el prompt: cada casillero invitaba a escribir
+// otra regla, y esas reglas chocaban con las del motor (auditoría del prompt digital). Ahora son tres:
+//   1 · ¿Qué es y qué incluye?            → ia.detalle   (el «Resumen» se junta adentro)
+//   2 · Lo que NO incluye o no se promete  → ia.limites   (las «Reglas del producto» se juntan adentro)
+//   3 · Lo que te preguntan → respuesta   → faq_items    (las «Objeciones» se juntan en la misma lista)
+// Nada se borra sin pasar antes a su cuadro, y es idempotente (prodSync lo corre en cada tecla). El motor no cambia:
+// lee los mismos campos. `ia.resumen` queda DERIVADO (primera línea de la descripción, `_resumen_auto`) porque el
+// motor lo usa para listar «lo demás que vende el negocio»; compileProductoIA ya no lo repite en la ficha.
+// Solo productos principales: el EXTRA usa su formulario corto con resumen y detalle aparte (renderExtraIA).
+function primeraLineaFicha(t){
+  const l=String(t||"").split(/\n/).map(s=>s.replace(/^[#*\-•\s]+/,"").trim()).find(Boolean)||"";
+  return l.length>160 ? l.slice(0,157).replace(/\s+\S*$/,"")+"…" : l;
+}
+function fusionarFicha(c){
+  if(!c) return; const ia=c.ia=c.ia||{};
+  const norm=(s)=>String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+  // 1) Resumen → arriba de la descripción (si no estaba ya adentro)
+  if(String(ia.resumen||"").trim() && !ia._resumen_auto){
+    const r=String(ia.resumen).trim(), d=String(ia.detalle||"").trim();
+    ia.detalle = !d ? r : (norm(d).includes(norm(r)) ? d : r+"\n\n"+d);
+  }
+  if(String(ia.detalle||"").trim()){ ia.resumen=primeraLineaFicha(ia.detalle); ia._resumen_auto=true; }
+  else if(ia._resumen_auto){ delete ia.resumen; }
+  // 2) Reglas del producto → al principio del cuadro de límites
+  if(String(ia.reglas_producto||"").trim()){
+    const rp=String(ia.reglas_producto).trim(), li=String(ia.limites||"").trim();
+    ia.limites = !li ? rp : (norm(li).includes(norm(rp)) ? li : rp+"\n"+li);
+  }
+  delete ia.reglas_producto;
+  // 3) Objeciones → a la lista de «lo que te preguntan» (sin repetir la misma pregunta)
+  const obs=(Array.isArray(ia.objeciones_items) ? ia.objeciones_items : parseObj(ia.objeciones)).filter(o=>o&&(String(o.o||"").trim()||String(o.r||"").trim()));
+  if(obs.length){
+    if(!Array.isArray(c.faq_items)) c.faq_items=parseFaq(c.faq);
+    const ya=new Set(c.faq_items.map(x=>norm(x.q)).filter(Boolean));
+    obs.forEach(o=>{ const k=norm(o.o); if(!k || !ya.has(k)){ c.faq_items.push({ q:String(o.o||"").trim(), a:String(o.r||"").trim() }); if(k) ya.add(k); } });
+    c.faq=compileFaq(c.faq_items);
+  }
+  if(Array.isArray(ia.objeciones_items) || ia.objeciones!=null){ ia.objeciones_items=[]; delete ia.objeciones; }
+}
+
 // ── Conocimiento del producto para la IA ────────────────────────────
 // Igual que negocio_form→negocio en ia.html: los campos guiados viven en
 // config.ia y se COMPILAN a config.contexto_producto, que es lo que el motor
@@ -949,10 +990,11 @@ function compileProductoIA(c,tipo){
   // Objeciones: la munición del vendedor. Se compila prominente para que la IA
   // las tenga a la mano y rebata con tacto (no discutir), sin inventar.
   if(ia.objeciones&&ia.objeciones.trim()) L.push("## Objeciones frecuentes y cómo responderlas\nCuando el cliente ponga una de estas dudas o pegas, responde en esta línea (con tacto, nunca discutas ni presiones de más; si no aplica, sé honesto):\n"+ia.objeciones.trim());
-  add("Resumen del producto",ia.resumen);
+  // (con la ficha de 3 cuadros el resumen es la primera línea de la descripción: no se repite — ver fusionarFicha)
+  if(!ia._resumen_auto) add("Resumen del producto",ia.resumen);
   add("Descripción / detalle",ia.detalle);
   add("Reglas del producto",ia.reglas_producto);
-  add("Límites: lo que este producto NO hace, NO incluye o NO se promete (si te lo preguntan, dilo de frente, sin inventar más)",ia.limites);
+  add("Límites: lo que este producto NO hace, NO incluye o NO se promete, y lo que hay que respetar siempre (si te lo preguntan, dilo de frente, sin inventar más)",ia.limites);
   add("Reglas del precio",ia.reglas_precio);
   // Las ofertas por cantidad ya NO se compilan acá: son Opciones de compra
   // reales (migración 0029) y el motor le inyecta a la IA el catálogo con sus
@@ -961,7 +1003,8 @@ function compileProductoIA(c,tipo){
   add("Formas de pago de este producto (tienen PRIORIDAD sobre las generales)",ia.metodos_pago);
   const ej=(ia.ejemplos||[]).filter(e=>e&&(e.sit||e.resp));
   if(ej.length) L.push("## Ejemplos de respuesta\n"+ej.map(e=>`- Si el cliente ${(e.sit||"").trim()} → responde: ${(e.resp||"").trim()}`).join("\n"));
-  if(ia.emojis_prohibidos&&ia.emojis_prohibidos.trim()) L.push("## Emojis prohibidos\nNunca uses estos emojis ni de ese estilo: "+ia.emojis_prohibidos.trim());
+  // (con lista de permitidos ya dice «ninguno fuera de esa lista»: la de prohibidos sobra y el panel ya no la pide)
+  if(ia.emojis_prohibidos&&ia.emojis_prohibidos.trim()&&!String(c.emojis||"").trim()) L.push("## Emojis prohibidos\nNunca uses estos emojis ni de ese estilo: "+ia.emojis_prohibidos.trim());
   const mm=(c.ia_multimedia||[]).filter(m=>m&&m.media_url);
   if(mm.length) L.push("## Archivos que puedes enviar\nCuando la situación lo pida, envía el archivo escribiendo `[[media:TAG]]` en una línea aparte.\n"+mm.map(m=>`- [[media:${m.tag||"archivo"}]] — ${m.descripcion||m.filename||"archivo"}`).join("\n"));
   const req=compileConfirmaciones(c,tipo); if(req) L.push(req);
@@ -1001,6 +1044,7 @@ function prodSync(){
   // legado recompilaría a vacío y BORRARÍA el conocimiento, dejando a saveProduct sin
   // nada que rescatar (pérdida de datos silenciosa).
   if(!c.ia.detalle && c.contexto_producto && !c.ia._migrado){ c.ia.detalle=c.contexto_producto; c.ia._migrado=true; }
+  if(st.prod.clase!=="extra" && st.prod.clase!=="regalo") fusionarFicha(c);
   c.contexto_producto=compileProductoIA(c, st.prod.tipo||"digital")||undefined;
   const t=$("pConfig"); if(t) t.value=JSON.stringify(st.prod.config||{},null,2);
 }
@@ -1451,92 +1495,73 @@ function renderProductoIA(host){
   if(st.prod.clase==="extra"){ renderExtraIA(b,c,ia); return; }
   if(!Array.isArray(ia.ejemplos)) ia.ejemplos=[];
   if(!Array.isArray(c.ia_multimedia)) c.ia_multimedia=[];
-  if(!Array.isArray(ia.objeciones_items)) ia.objeciones_items=parseObj(ia.objeciones); // objeciones estructuradas
+  // 🧩 Los campos viejos (resumen, reglas del producto, objeciones) se juntan en sus cuadros ANTES de dibujar.
+  fusionarFicha(c);
   const P="#a855f7";
   const fisico=(st.prod.tipo||"digital")==="fisico"; // ejemplos/placeholders acordes al tipo
   const taField=(k,label,ph,rows)=>`<label>${label}</label><textarea class="in ia-f" data-k="${k}" rows="${rows||2}" style="min-height:${(rows||2)*26+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(ia[k]||"")}</textarea>`;
+  const caja=(n,titulo,sub,cuerpo)=>`<div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:${n===1?0:12}px">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px">${n} · ${titulo}</div>
+        <div style="font-size:11.5px;color:var(--faint);margin-bottom:8px;line-height:1.5">${sub}</div>${cuerpo}</div>`;
+  // (alto según lo que ya tiene escrito, para que se lea entero sin arrastrar la esquina; tope de 14 renglones)
+  const altoDe=(k,min)=>Math.min(14,Math.max(min,String(ia[k]||"").split("\n").reduce((s,l)=>s+Math.max(1,Math.ceil(l.length/85)),0)+1));
+  const taBox=(k,ph,rows0)=>{ const rows=altoDe(k,rows0); return `<textarea class="in ia-f" data-k="${k}" rows="${rows}" style="min-height:${rows*26+8}px;line-height:1.5;font-family:var(--font);resize:vertical;width:100%" placeholder="${esc(ph)}">${esc(ia[k]||"")}</textarea>`; };
+  // Campos viejos de precio: ya no se piden (el precio vive en ¿Cuánto cuesta? y las ofertas en Remarketing), pero si
+  // un producto los tiene escritos se muestran en Avanzado para poder verlos y borrarlos — nunca texto invisible.
+  const viejosPrecio=["reglas_precio","descuentos"].filter(k=>String(ia[k]||"").trim());
   b.innerHTML=`
     <div class="ia-hd">
       <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
       <div>
         <div class="tt">Venta con IA</div>
-        <div class="ds">Lo que tu vendedor necesita saber de <b>este</b> producto para venderlo y responder dudas. Todo es opcional — cuanto más, mejor vende. (La personalidad general del vendedor va en <a href="ia.html">IA → Vendedor IA</a>.)</div>
+        <div class="ds">Solo lo que únicamente tú sabes de <b>este</b> producto. Escribe cada dato <b>una sola vez</b>: los pagos, el precio, las ofertas y la entrega ya los maneja Nodo. (La personalidad del vendedor va en <a href="ia.html">IA → Vendedor IA</a>.)</div>
       </div>
     </div>
     <div class="card ia-card">
-      <div style="border:1px solid var(--border);border-radius:12px;padding:13px">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px">1 · Qué es el producto</div>
-        <div style="font-size:11.5px;color:var(--faint);margin-bottom:8px">Lo primero que la IA necesita: qué vendes y por qué conviene.</div>
-        ${taField("resumen","Información resumida (pitch corto)","En 1-2 frases: qué es y por qué conviene.",2)}
-        ${taField("detalle","Descripción / detalle","Qué es, qué incluye, para quién es, beneficios, cómo se entrega…",4)}
-        ${taField("reglas_producto","Reglas del producto",fisico?"Ej. stock, tallas, colores, garantía, tiempos…":"Ej. acceso de por vida, formato, requisitos, actualizaciones, garantía…",2)}
-        ${taField("limites","Límites (nunca hacer / no prometer)","Ej. no prometer entregas en 24h, no dar descuentos mayores a X…",2)}
-      </div>
-      <div style="border:1px solid var(--brand,#2b7fff);border-radius:12px;padding:13px;margin-top:12px;background:color-mix(in srgb, var(--brand,#2b7fff) 5%, transparent)">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px">2 · Objeciones y cómo responderlas <span style="font-weight:400;color:var(--faint)">— lo que más ayuda a cerrar</span></div>
-        <div style="font-size:11.5px;color:var(--muted);margin:2px 0 10px;line-height:1.5">Cuando el cliente pone una pega para no comprar, la IA usa tu mejor respuesta para rebatirla con tacto (sin discutir ni presionar de más). Agrega una por una.</div>
-        <div id="objList"></div>
-        <button class="btn" id="objAdd" style="margin-top:6px;height:34px">+ Agregar objeción</button>
-        <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
-          <div style="font-weight:700;font-size:12.5px;margin-bottom:2px">Preguntas frecuentes <span style="font-weight:400;color:var(--faint)">— duda concreta → respuesta ideal</span></div>
-          <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Como "${fisico?"¿hacen envíos a provincia?":"¿cómo recibo el acceso?"}". La IA responderá con estas.</div>
-          <div id="faqList"></div>
-          <button class="btn" id="faqAdd" style="margin-top:6px;height:34px">+ Agregar pregunta</button>
-        </div>
-      </div>
-      <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:12px">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px">3 · Precio y promociones</div>
-        ${taField("reglas_precio","Reglas del precio","Cuándo y cómo se cobra, qué incluye, negociación permitida…",2)}
-        <div style="display:flex;gap:9px;align-items:flex-start;border:1px solid var(--border);border-radius:11px;padding:11px 12px;margin:10px 0;font-size:12px;color:var(--muted);line-height:1.55">
-          <span style="display:inline-flex;flex:none;color:var(--muted)">${icon("productos")}</span>
-          <div>Las <b>ofertas por cantidad</b>, los <b>packs</b> y las <b>variantes</b> se configuran en <b>Presentaciones y precios</b> — ahí cada una tiene su precio real, y es contra ese precio que se valida el pago. <a href="#" id="goOpciones" style="color:var(--brand)">Ir a Presentaciones y precios →</a></div>
-        </div>
-        ${fisico?`${taField("pregunta_necesidad","Pregunta para ayudar a elegir cuántas","Ej. ¿Es para un solo espacio o para varios?",1)}
-        <div style="font-size:11px;color:var(--faint);margin:-4px 0 10px;line-height:1.5">Si el cliente no dice cuántas, en vez de repetirle «¿cuántas?» el bot le hace esta pregunta y, con lo que conteste, le recomienda una opción. Si la dejas vacía, la IA escribe una sola la primera vez.</div>`:""}
-        ${taField("descuentos","Precios con descuento","Cuándo aplicar un descuento para incentivar (ej. si deja en visto, si duda…) y cuánto.",2)}
-        <details style="margin-top:12px;border-top:1px solid var(--border);padding-top:6px">
-          <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px;list-style:none">Método de pago especial para este producto <span style="font-weight:400;color:var(--faint)">— avanzado, opcional</span></summary>
-          <div style="display:flex;gap:8px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:8px 0 10px;font-size:11.5px;color:var(--muted);line-height:1.5">
-            <span style="color:var(--brand);flex:none;display:inline-flex;margin-top:1px">${icon("shield")}</span>
-            <div>Normalmente los métodos de pago salen de <a href="ia.html" style="color:var(--brand)">IA → Validador de comprobantes</a> (una sola fuente para todo el negocio). Llena esto <b>solo</b> si <b>este</b> producto se cobra por un método <b>distinto o especial</b> (otra cuenta, otro Yape, transferencia puntual…). Si lo pones, <b>tiene prioridad</b> sobre los generales para este producto.</div>
-          </div>
-          ${taField("metodos_pago","Método de pago de este producto","Ej. transferencia al BCP 123-456 solo para este producto, o un Yape distinto…",2)}
-        </details>
-      </div>
-      <div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);margin:20px 4px 8px">Ajustes avanzados <span style="font-weight:400;text-transform:none">— opcionales</span></div>
-      <div style="border:1px solid var(--ia-brd);border-radius:12px;padding:13px;margin-bottom:12px;background:var(--ia-bg)">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px;color:var(--ia1)">Memoria del cliente — qué tan personal</div>
-        <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Cuánto usa la IA lo que sabe de cada cliente (“compra para su mamá”, “decide rápido”) al venderle <b>este</b> producto. La venta siempre manda.</div>
-        <select class="sel" id="pMemoriaNivel" style="width:100%">
-          <option value="off" ${c.memoria_nivel==="off"?"selected":""}>Solo vender — ignora la memoria</option>
-          <option value="suave" ${(!c.memoria_nivel||c.memoria_nivel==="suave")?"selected":""}>Equilibrado — un guiño natural (recomendado)</option>
-          <option value="cercano" ${c.memoria_nivel==="cercano"?"selected":""}>Trato cercano — cálido y personal</option>
-        </select>
-      </div>
-      <details style="border:1px solid var(--border);border-radius:12px;padding:0 13px">
-        <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:13px 0;list-style:none">Cómo vender este producto <span style="font-weight:400;color:var(--faint)">— estilo, proceso, técnicas</span></summary>
+      ${caja(1,"¿Qué es y qué incluye?","Qué es, para quién es y qué trae. Lo primero que el bot cuenta cuando le preguntan.",
+        taBox("detalle", fisico
+          ? "Ej. Adaptador que convierte tu taladro en cortadora de láminas. Para talleres y hogar. Trae 2 cuchillas y estuche."
+          : "Ej. Plan de 21 días para ganar fuerza con tu propio peso, sin gimnasio. Para quien empieza o está estancado. Incluye rutinas en video, comunidad y acceso de por vida.", 5))}
+      ${caja(2,"Lo que NO incluye o no se promete","Lo que el bot nunca debe ofrecer ni asegurar, y lo que hay que respetar siempre (garantía, requisitos). Así no inventa.",
+        taBox("limites", fisico
+          ? "Ej. No trae taladro. Garantía de 30 días solo por defecto de fábrica. No se prometen cortes de más de 1.5 mm."
+          : "Ej. No trae dieta ni nutrición. No se prometen resultados exactos ni plazos. Con una lesión, que consulte a su médico.", 3))}
+      ${caja(3,"Lo que te preguntan → tu respuesta","Las dudas y las pegas en una sola lista: lo que dice el cliente y cómo le contestas.",
+        `<div id="faqList"></div><button class="btn" id="faqAdd" style="margin-top:6px;height:34px">+ Agregar</button>`)}
+      <details style="border:1px solid var(--border);border-radius:12px;padding:0 13px;margin-top:16px">
+        <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:13px 0;list-style:none">Avanzado <span style="font-weight:400;color:var(--faint)">— opcional, casi nunca hace falta</span></summary>
         <div style="padding-bottom:13px">
-          <label style="margin-top:0">Estilo de venta</label>
+          ${viejosPrecio.length?`<div style="display:flex;gap:8px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:0 0 6px;font-size:11.5px;color:var(--muted);line-height:1.5">
+            <span style="color:var(--brand);flex:none;display:inline-flex;margin-top:1px">${icon("alert")}</span>
+            <div>Estos campos ya no hacen falta: el precio está en <b>¿Cuánto cuesta?</b> y las ofertas en <b>Remarketing</b>, con su precio real. Si los vacías, el bot vende igual — y sin cifras que pueda repetir.</div></div>
+          ${viejosPrecio.includes("reglas_precio")?taField("reglas_precio","Reglas del precio (campo antiguo)","",2):""}
+          ${viejosPrecio.includes("descuentos")?taField("descuentos","Precios con descuento (campo antiguo)","",2):""}`:""}
+          ${fisico?`${taField("pregunta_necesidad","Pregunta para ayudar a elegir cuántas","Ej. ¿Es para un solo espacio o para varios?",1)}
+          <div style="font-size:11px;color:var(--faint);margin:4px 0 0;line-height:1.5">Si el cliente no dice cuántas, el bot le hace esta pregunta y le recomienda una opción. Vacía, la IA escribe una sola la primera vez.</div>`:""}
+          <label>Memoria del cliente — qué tan personal</label>
+          <select class="sel" id="pMemoriaNivel" style="width:100%">
+            <option value="off" ${c.memoria_nivel==="off"?"selected":""}>Solo vender — ignora la memoria</option>
+            <option value="suave" ${(!c.memoria_nivel||c.memoria_nivel==="suave")?"selected":""}>Equilibrado — un guiño natural (recomendado)</option>
+            <option value="cercano" ${c.memoria_nivel==="cercano"?"selected":""}>Trato cercano — cálido y personal</option>
+          </select>
+          <label>Estilo de venta</label>
           <select class="sel ia-f" data-k="estilo_venta" style="width:100%">
             <option value="" ${!ia.estilo_venta?"selected":""}>— Sin definir —</option>
             ${Object.entries(ESTILOS_VENTA).map(([k,v])=>`<option value="${k}" ${ia.estilo_venta===k?"selected":""}>${esc(v)}</option>`).join("")}
           </select>
-          <div style="font-size:11px;color:var(--faint);margin-top:4px">Distinto al <b>tono</b> (sección IA): esto es la estrategia de venta.</div>
-          ${taField("proceso","Proceso de venta","Paso a paso de cómo llevar la conversación hasta el cierre…",3)}
-          ${taField("tecnicas","Técnicas de venta","Ej. prueba social, garantía, comparativas, bundle…",2)}
-        </div>
-      </details>
-      <details style="border:1px solid var(--border);border-radius:12px;padding:0 13px;margin-top:12px">
-        <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:13px 0;list-style:none">Más ayudas para la IA <span style="font-weight:400;color:var(--faint)">— ejemplos, emojis, multimedia (opcional)</span></summary>
-        <div style="padding-bottom:13px">
-          <label style="margin-top:0">Ejemplos de respuesta</label>
-          <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Situación del cliente → cómo responder. Le dan estilo y criterio a la IA.</div>
+          ${taField("proceso","Proceso de venta","Solo si este producto se vende distinto. No escribas pasos de cobro: Nodo manda los datos de pago solo.",2)}
+          ${taField("tecnicas","Técnicas de venta","Ej. compáralo con algo cotidiano; personaliza el beneficio según lo que cuente.",2)}
+          <label>Ejemplos de respuesta</label>
+          <div style="font-size:11px;color:var(--faint);margin-bottom:6px">Ojo: el bot los copia casi tal cual. Úsalos poco.</div>
           <div id="ejList"></div>
           <button class="btn" id="ejAdd" style="margin-top:6px;height:34px">+ Agregar ejemplo</button>
-          <div class="row" style="margin-top:14px;align-items:flex-start">
-            <div><label style="margin-top:0">Emojis permitidos</label><input class="in" id="pEmojis" value="${esc(c.emojis||"")}" placeholder="👟🔥⚡"/></div>
-            <div><label style="margin-top:0">Emojis prohibidos</label><input class="in ia-f" data-k="emojis_prohibidos" value="${esc(ia.emojis_prohibidos||"")}" placeholder="💀🤡 o 'ninguno serio'"/></div>
-          </div>
+          <label>Emojis que puede usar</label>
+          <input class="in" id="pEmojis" value="${esc(c.emojis||"")}" placeholder="👟🔥⚡ (fuera de esta lista no usa ninguno)"/>
+          <details style="margin-top:12px;border-top:1px solid var(--border);padding-top:6px">
+            <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px;list-style:none">Método de pago especial para este producto</summary>
+            <div style="font-size:11.5px;color:var(--muted);margin:6px 0 4px;line-height:1.5">Normalmente los métodos de pago salen de <a href="ia.html" style="color:var(--brand)">IA → Validador de comprobantes</a>. Llena esto <b>solo</b> si este producto se cobra por otra cuenta. Tiene prioridad sobre los generales.</div>
+            ${taField("metodos_pago","Método de pago de este producto","Ej. transferencia al BCP 123-456 solo para este producto…",2)}
+          </details>
           <label>Multimedia que la IA puede enviar</label>
           <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Sube imágenes, videos o archivos y explica <b>cuándo</b> usarlos. La IA los enviará sola cuando la conversación lo pida (vía <b style="color:${P}">[[media:tag]]</b>).</div>
           <div id="mmList"></div>
@@ -1593,34 +1618,20 @@ function renderProductoIA(host){
   };
   paintMM();
   b.querySelectorAll(".mmAdd").forEach(btn=> btn.onclick=()=>pickProdMedia(btn.dataset.k, paintMM, prodSync));
-  // Objeciones estructuradas: "Dice" (la pega) / "Respondes" (tu rebate).
-  const objEx = fisico
-    ? ["Está caro","Te dura años y el envío va incluido; además pagas al recibir."]
-    : ["Está caro","Es acceso de por vida y pago único — se paga solo con lo que aprendes."];
-  const paintObj=()=>{
-    const box=$("objList"); if(!box) return; box.innerHTML="";
-    if(!ia.objeciones_items.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:4px 0">Sin objeciones todavía. Agrega las pegas típicas ("está caro", "lo pienso", "no confío"…).</div>`; }
-    ia.objeciones_items.forEach((ob,i)=>{
-      const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
-      el.innerHTML=`
-        <div style="display:flex;align-items:center;gap:8px"><span style="flex:0 0 66px;font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.03em">Dice</span><input class="in oo" style="flex:1" value="${esc(ob.o||"")}" placeholder="${esc(objEx[0])}"/><button class="iconbtn odl" style="flex:0 0 auto" title="Eliminar">${icon("trash")}</button></div>
-        <div style="display:flex;align-items:flex-start;gap:8px;margin-top:8px"><span style="flex:0 0 66px;font-size:11px;font-weight:700;color:var(--ia1,#a855f7);text-transform:uppercase;letter-spacing:.03em;margin-top:10px">Respondes</span><textarea class="in orr" rows="2" style="flex:1;min-height:52px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(objEx[1])}">${esc(ob.r||"")}</textarea></div>`;
-      const sync=()=>{ ia.objeciones=compileObj(ia.objeciones_items); prodSync(); };
-      el.querySelector(".oo").oninput=(e)=>{ ob.o=e.target.value; sync(); };
-      el.querySelector(".orr").oninput=(e)=>{ ob.r=e.target.value; sync(); };
-      el.querySelector(".odl").onclick=()=>{ ia.objeciones_items.splice(i,1); ia.objeciones=compileObj(ia.objeciones_items); prodSync(); paintObj(); };
-      box.appendChild(el);
-    });
-  };
-  paintObj();
-  $("objAdd").onclick=()=>{ ia.objeciones_items.push({o:"",r:""}); paintObj(); };
+  // 3 · «Lo que te preguntan → tu respuesta»: dudas y pegas en UNA lista (antes Objeciones y Preguntas frecuentes iban
+  // separadas, con la misma forma). Se guarda en faq_items → config.faq, que el motor ya manda en «## Preguntas
+  // frecuentes y objeciones». Las objeciones viejas se mudaron acá en fusionarFicha.
+  const qaEx = fisico
+    ? ["¿Hacen envíos a provincia?  ·  Está caro","Sí, por agencia. / Te dura años y pagas al recibir."]
+    : ["¿Cómo recibo el acceso?  ·  Está caro","Por este chat apenas pagues. / Es de por vida y pago único."];
   const paintFaq=()=>{
-    const box=$("faqList"); box.innerHTML="";
-    if(!c.faq_items.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:4px 0">Sin preguntas todavía.</div>`; }
+    const box=$("faqList"); if(!box) return; box.innerHTML="";
+    if(!c.faq_items.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:4px 0">Todavía nada. Agrega lo que más te preguntan y las pegas típicas («está caro», «lo pensaré», «¿no es estafa?»).</div>`; }
     c.faq_items.forEach((qa,i)=>{
       const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
-      el.innerHTML=`<div class="row" style="align-items:flex-start"><input class="in fq" value="${esc(qa.q||"")}" placeholder="Pregunta (ej. ${fisico?"¿Hacen envíos a provincia?":"¿Cómo recibo el acceso?"})"/><button class="iconbtn fdel" style="flex:0 0 auto">${icon("trash")}</button></div>
-        <textarea class="in fa" rows="2" style="margin-top:8px;min-height:52px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="Respuesta ideal">${esc(qa.a||"")}</textarea>`;
+      el.innerHTML=`
+        <div style="display:flex;align-items:center;gap:8px"><span style="flex:0 0 74px;font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.03em">Te dice</span><input class="in fq" style="flex:1" value="${esc(qa.q||"")}" placeholder="${esc(qaEx[0])}"/><button class="iconbtn fdel" style="flex:0 0 auto" title="Eliminar">${icon("trash")}</button></div>
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-top:8px"><span style="flex:0 0 74px;font-size:11px;font-weight:700;color:var(--ia1,#a855f7);text-transform:uppercase;letter-spacing:.03em;margin-top:10px">Respondes</span><textarea class="in fa" rows="2" style="flex:1;min-height:52px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(qaEx[1])}">${esc(qa.a||"")}</textarea></div>`;
       const sync=()=>{ c.faq=compileFaq(c.faq_items); prodSync(); };
       el.querySelector(".fq").oninput=(e)=>{ qa.q=e.target.value; sync(); };
       el.querySelector(".fa").oninput=(e)=>{ qa.a=e.target.value; sync(); };
@@ -4673,7 +4684,10 @@ async function _saveProduct(){
   // dos sitios, emojis prohibidos o signos que faltan en la bienvenida). Avisa con el porqué y deja guardar igual —
   // auditoría del prompt digital, 6-oct (ver revisar-textos.js). Cancelar no escribe nada.
   if(st.prod.config && st.prod.clase!=="regalo"){
-    const c=st.prod.config;
+    const c=st.prod.config; c.ia=c.ia||{};
+    // (la ficha de 3 cuadros: lo viejo se junta antes de revisar y de compilar, aunque no se haya abierto la sección)
+    if(!c.ia.detalle && c.contexto_producto && !c.ia._migrado){ c.ia.detalle=c.contexto_producto; c.ia._migrado=true; }
+    if(st.prod.clase!=="extra") fusionarFicha(c);
     const saludo=(st.act?.node?.config?.variantes||[]).flatMap(v=>(v?.bubbles||[]).map(bb=>bb?.text??bb?.caption??"")).join("\n");
     const avisos=revisarFicha({ ia:c.ia||{}, faq:c.faq_items||[], emojis:c.emojis||"", saludo,
       precios:(st.versions||[]).filter(v=>v.activo!==false).map(v=>Number(v.precio)) });
@@ -5039,9 +5053,16 @@ async function armAplicar(d){
   // los atributos, la sección "Venta con IA" (pitch/reglas curadas), el nombre y el tipo.
   // Ahora: por defecto solo llena lo VACÍO; si chocaría con algo ya escrito, se avisa qué y
   // se ofrece "Reemplazar todo". Nunca se pierde config curada sin que el dueño lo elija.
-  const dia=d.ia||{}; c.ia=c.ia||{};
-  const IA_CAMPOS=["resumen","detalle","reglas_producto","limites","estilo_venta","proceso","tecnicas"];
-  const IA_LBL={resumen:"Resumen de venta",detalle:"Detalle",reglas_producto:"Reglas del producto",limites:"Límites",estilo_venta:"Estilo de venta",proceso:"Proceso",tecnicas:"Técnicas"};
+  c.ia=c.ia||{};
+  // 🧩 El borrador viene con los campos de la ficha vieja: se acomoda a los 3 cuadros ANTES de comparar/aplicar
+  // (resumen + detalle → «¿Qué es y qué incluye?», reglas + límites → «Lo que NO incluye»). Si no, el resumen chocaba
+  // con el derivado (_resumen_auto) y las reglas entraban siempre porque su campo ya no existe.
+  const dia={ ...(d.ia||{}) };
+  if(dia.resumen||dia.detalle){ dia.detalle=[dia.resumen,dia.detalle].map(x=>String(x||"").trim()).filter(Boolean).join("\n\n"); }
+  if(dia.reglas_producto||dia.limites){ dia.limites=[dia.reglas_producto,dia.limites].map(x=>String(x||"").trim()).filter(Boolean).join("\n"); }
+  delete dia.resumen; delete dia.reglas_producto;
+  const IA_CAMPOS=["detalle","limites","estilo_venta","proceso","tecnicas"];
+  const IA_LBL={detalle:"¿Qué es y qué incluye?",limites:"Lo que NO incluye",estilo_venta:"Estilo de venta",proceso:"Proceso",tecnicas:"Técnicas"};
   // La FAQ y las objeciones ya NO entran al aviso de "esto se te va a pisar": se fusionan más
   // abajo, así que no hay nada que perder y preguntarlo sería una alarma falsa. Se cuentan
   // aparte para decírselo en positivo («se suman N a las que ya tienes»).

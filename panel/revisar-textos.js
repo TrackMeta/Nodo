@@ -32,15 +32,15 @@ const TEMAS = [
 ];
 
 const ETIQUETAS = {
-  resumen: "Información resumida", detalle: "Descripción / detalle", reglas_producto: "Reglas del producto",
-  limites: "Límites", reglas_precio: "Reglas del precio", descuentos: "Precios con descuento",
-  proceso: "Proceso de venta", tecnicas: "Técnicas de venta", objeciones: "Objeciones",
-  ejemplos: "Ejemplos de respuesta", faq: "Preguntas frecuentes", saludo: "Mensajes iniciales",
+  resumen: "Información resumida", detalle: "¿Qué es y qué incluye?", reglas_producto: "Reglas del producto",
+  limites: "Lo que NO incluye", reglas_precio: "Reglas del precio", descuentos: "Precios con descuento",
+  proceso: "Proceso de venta", tecnicas: "Técnicas de venta", objeciones: "Lo que te preguntan",
+  ejemplos: "Ejemplos de respuesta", faq: "Lo que te preguntan", saludo: "Mensajes iniciales",
   transferir: "Cuándo transferir a una persona", tono_detalle: "Tono", no_hacer: "Nunca hacer",
   politicas: "Políticas", extra: "Instrucciones extra", pagos: "Cómo se paga", entrega: "Envíos y entrega",
 };
 const et = (k) => ETIQUETAS[k] || k;
-const lista = (ks) => ks.map((k) => `«${et(k)}»`).join(", ");
+const lista = (ks) => [...new Set(ks.map(et))].map((x) => `«${x}»`).join(", ");
 
 function avisoCobro(campos) {
   const en = Object.keys(campos).filter((k) => RE_PIDE_COBRAR.test(campos[k]));
@@ -94,8 +94,8 @@ function avisoTemasRepetidos(reglasDeVenta, objeciones) {
   const temas = TEMAS.filter(([, re]) => re.test(rv) && re.test(ob)).map(([n]) => n);
   return temas.length ? [{
     campo: "tecnicas", titulo: `${temas.join(" y ")} está${temas.length > 1 ? "n" : ""} en dos sitios`,
-    detalle: `Aparece${temas.length > 1 ? "n" : ""} en «Proceso / Técnicas de venta» y también en «Objeciones». Si las dos ` +
-      `dicen cosas distintas, el bot no sabe cuál seguir. Deja la respuesta solo en Objeciones.`,
+    detalle: `Aparece${temas.length > 1 ? "n" : ""} en «Proceso / Técnicas de venta» (Avanzado) y también en «Lo que te preguntan». Si las dos ` +
+      `dicen cosas distintas, el bot no sabe cuál seguir. Deja la respuesta solo en «Lo que te preguntan».`,
   }] : [];
 }
 function avisoEmojis(permitidos, prohibidos, saludo) {
@@ -142,7 +142,8 @@ export function revisarFicha({ ia = {}, faq = [], emojis = "", precios = [], sal
     ...avisoNumeros(campos),            // (el método de pago especial del producto sí lleva su número: no se mira)
     ...avisoPersona(conSaludo),
     ...avisoMontos(conSaludo, precios),
-    ...avisoTemasRepetidos(`${ia.proceso ?? ""}\n${ia.tecnicas ?? ""}`, ia.objeciones),
+    // (con la ficha de 3 cuadros las objeciones viven en la lista de «lo que te preguntan»)
+    ...avisoTemasRepetidos(`${ia.proceso ?? ""}\n${ia.tecnicas ?? ""}`, `${ia.objeciones ?? ""}\n${faqTxt}`),
     ...avisoEmojis(emojis, ia.emojis_prohibidos, saludo),
     ...avisoOrtografiaSaludo(saludo),
   ];
