@@ -372,6 +372,51 @@ Deno.serve(async (req) => {
     return json({ ok: true, resultados: casos.map((c: any) => ({ texto: String(c?.texto ?? ""), ...probarRetoques(String(c?.texto ?? ""), String(c?.li ?? "")) })) });
   }
 
+  // ── guion: una conversación de prueba con pasos que el examen normal no puede dar (7-oct, ofertas de remarketing):
+  //    {texto} = mensaje del cliente · {oferta: {texto, precio, version_id}} = el paso de la secuencia con oferta (graba
+  //    oferta_activa como el scheduler y deja su mensaje en el chat) · {imagen_b64, mime} = el cliente manda esa imagen
+  //    (un comprobante: se sube a storage y entra igual que por el webhook). Devuelve el chat y los eventos. ──
+  if (accion === "guion") {
+    const channelId = String(body?.channel_id ?? "");
+    const a = await autoriza(req, channelId);
+    if (!a.ok) return json({ error: "forbidden" }, 403);
+    try {
+      const contactId = await contactoDePrueba(channelId, `exam-guion-${String(body?.tag ?? "a").slice(0, 20)}`, "Prueba guion");
+      await reiniciar(channelId, contactId);
+      const tr: Array<{ c: string; b: string[] }> = [];
+      for (const p of (Array.isArray(body?.pasos) ? body.pasos.slice(0, 12) : [])) {
+        if (p?.oferta) {
+          await db.from("contacts").update({ oferta_activa: { opcion_id: String(p.oferta.version_id), precio: Number(p.oferta.precio),
+            vence: new Date(Date.now() + 48 * 3600_000).toISOString(), origen: "remarketing" } }).eq("id", contactId);
+          await db.from("messages").insert({ channel_id: channelId, contact_id: contactId, direction: "out", type: "text",
+            content: { text: String(p.oferta.texto ?? "") }, status: "delivered" });
+          tr.push({ c: "[secuencia con oferta S/ " + p.oferta.precio + "]", b: [String(p.oferta.texto ?? "")] });
+        } else if (p?.imagen_b64) {
+          const mime = String(p.mime ?? "image/png");
+          const bytes = Uint8Array.from(atob(String(p.imagen_b64)), (ch) => ch.charCodeAt(0));
+          const path = `examen/${channelId}/${crypto.randomUUID()}.${mime.includes("jpeg") ? "jpg" : "png"}`;
+          const up = await db.storage.from("media").upload(path, bytes, { contentType: mime, upsert: false });
+          if (up.error) throw new Error("storage: " + up.error.message);
+          const url = db.storage.from("media").getPublicUrl(path).data.publicUrl;
+          await db.from("contacts").update({ last_input: "[image]", last_input_type: "image",
+            ultimo_mensaje_at: new Date().toISOString(), ultimo_mensaje_cliente_at: new Date().toISOString() }).eq("id", contactId);
+          const { data: m } = await db.from("messages").insert({ channel_id: channelId, contact_id: contactId, direction: "in", type: "image",
+            content: { media_url: url, caption: "", mime }, status: "delivered" }).select("ts").single();
+          const ts = String((m as any)?.ts ?? new Date().toISOString());
+          await runEngine(db, channelId, contactId, { type: "message", text: "", msgType: "image", msgTs: ts, mediaRef: url } as any);
+          const { data: out } = await db.from("messages").select("content, type").eq("contact_id", contactId)
+            .eq("direction", "out").gt("ts", ts).order("ts", { ascending: true }).limit(20);
+          tr.push({ c: "[imagen]", b: ((out ?? []) as any[]).map((o) => String(o?.content?.text ?? o?.content?.caption ?? `[${o?.type}]`)) });
+        } else {
+          tr.push({ c: String(p?.texto ?? ""), b: await turno(channelId, contactId, String(p?.texto ?? "")) });
+        }
+      }
+      const { data: evs } = await db.from("contact_events").select("titulo, detalle").eq("contact_id", contactId).order("created_at");
+      const { data: ords } = await db.from("orders").select("estado, amount, version_id, shipping").eq("contact_id", contactId);
+      return json({ ok: true, contact_id: contactId, chat: tr, eventos: evs ?? [], pedidos: ords ?? [] });
+    } catch (e) { return json({ error: String((e as any)?.message ?? e) }, 500); }
+  }
+
   // ── retoques: un juez IA compara lo que escribió la IA con lo que salió tras los retoques del motor (evento 🔬),
   //    para saber qué recortes dañan respuestas buenas (7-oct). `channel_id` = el canal cuya clave paga el juez;
   //    los eventos son de todos los canales. ──

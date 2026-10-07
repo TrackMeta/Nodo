@@ -8732,6 +8732,8 @@ export function probarRetoques(texto: string, lastInput = ""): Record<string, st
     promesasDeAcceso: promesasDeAcceso(t, lastInput).join(" | "),
     emitConDatosDetras: sinPedirPermisoPago(sinAnuncioDePago(t.replace(RE_PREGUNTA_MEDIO_PAGO, " "))),
     pideCaptura: String(RE_PIDE_CAPTURA.test(sinFormato(t))),
+    // (con un número en lastInput: ¿pruebaDeTexto ve ese monto en el texto? — el validador de comprobantes)
+    pruebaMonto: /^\d+(?:\.\d+)?$/.test(lastInput.trim()) ? String(pruebaDeTexto({ texto_visible: t }, Number(lastInput))) : "",
   };
 }
 // ═══════════════════════════════════════════════════════════════════
@@ -13121,10 +13123,20 @@ function pruebaDeTexto(parsed: any, monto: number): boolean {
     cands.add(e); cands.add(e + "." + cent); cands.add(e + "," + cent);
   }
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // 🔴 7-oct: borrar los espacios PEGA el monto con la fecha de abajo. En un Yape el monto «S/ 7» va justo encima de
+  // «07 Oct. 2026», y sin espacios queda «s/707oct» — ningún monto entero pasaba cuando lo seguía la fecha (prueba de
+  // la oferta S/ 7 de remarketing: el pago correcto se fue a revisión manual). Primero se busca el monto pegado a su
+  // moneda CON los espacios en su sitio («S/ 7», «S/. 7.00», «7 soles»); eso no deja colar la fecha suelta, porque exige
+  // la moneda al lado. Si no aparece así, la búsqueda de siempre (sin espacios).
+  const conEspacios = crudo.replace(/\s+/g, " ");
+  if ([...cands].some((c) => new RegExp("(?:s\\/\\.?|s\\.\\/|pen|\\$)\\s?" + esc(c) + "(?![.,]?\\d)|(?<![\\d.,])" + esc(c) + "(?![.,]?\\d)\\s?(?:soles|sol\\b|pen\\b)").test(conEspacios))) return true;
   // El límite excluye también «.» y «,»: si no, los separadores de miles y el decimal crean
   // frontera y colaban FRAGMENTOS — con «1,234.50» pasaban montos de 234 o de 50.
   const limite = "[\\d.,]";
-  return [...cands].some((c) => new RegExp("(?<!" + limite + ")" + esc(c) + "(?!" + limite + ")").test(sinEspacios));
+  // (…y que no sea el DÍA de la fecha: «7oct2026», «07/10» — con un pago de S/ 70 hecho el 7 de octubre, un monto
+  //  inventado de 7 pasaba por la fecha; 7-oct)
+  const noFecha = "(?!(?:ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)|\\/)";
+  return [...cands].some((c) => new RegExp("(?<!" + limite + ")" + esc(c) + "(?!" + limite + ")" + noFecha).test(sinEspacios));
 }
 
 // Con qué app/banco pagó, tal como se ve en el comprobante. Se guarda para el
