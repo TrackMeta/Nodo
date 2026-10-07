@@ -32733,6 +32733,12 @@ async function handoffAlVender(db: SupabaseClient, channelId: string, contactId:
   // «Mensaje al pasar a un asesor» general, y si ese también está vacío, el de fábrica. Va
   // DESPUÉS del acceso en digital (ver entregarOpcion). El texto propio se manda tal cual,
   // sin la lógica de horario: es el cierre de la compra, no un «ahora no hay nadie».
+  // 🔇 «Sin mensaje» (Rodrigo, 7-oct): el mensaje de la entrega ya cierra la compra («Gracias por tu compra… aquí tienes
+  // tu acceso»); el bot solo se apaga en ese chat, sin decirle nada más al cliente. El aviso al dueño sale igual.
+  if ((ch as any)?.pedidos_config?.humano?.aviso_venta_silencio === true) {
+    await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal, sin mensaje al cliente)", { aviso: false });
+    return;
+  }
   const _txtVenta = String((ch as any)?.pedidos_config?.humano?.aviso_venta ?? "").trim();
   if (_txtVenta) {
     await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal)", { aviso: false });
