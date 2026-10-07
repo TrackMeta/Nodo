@@ -424,8 +424,8 @@ function renderConocimiento(b){
     </div>`;
   // En vivo: el «Listo / Falta» de cada cuadro, el resumen de arriba y el alto del texto mientras escribe. Solo
   // pinta: lo que se guarda sigue saliendo de harvest() al tocar Guardar, como siempre.
-  const crece=(ta)=>{ ta.style.height="auto"; ta.style.height=Math.min(ta.scrollHeight+2, 12*22+24)+"px"; };
-  b.querySelectorAll(".nq-ta").forEach(ta=>{ crece(ta); ta.addEventListener("input",()=>crece(ta)); });
+  const crece=(ta)=>{ if(!ta.offsetParent) return; ta.style.height="auto"; ta.style.height=Math.min(ta.scrollHeight+2, 12*22+24)+"px"; };
+  b.querySelectorAll(".nq-ta").forEach(ta=>{ crece(ta); requestAnimationFrame(()=>crece(ta)); ta.addEventListener("input",()=>crece(ta)); ta.addEventListener("focus",()=>crece(ta)); });
   b.querySelectorAll(".nq").forEach(box=>{
     const req=box.dataset.req, el=$("nf_"+req); if(!el) return;
     el.addEventListener("input",()=>{

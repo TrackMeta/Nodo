@@ -185,6 +185,33 @@
   }
   .ia-card .in:focus,.ia-card .ta:focus,.ia-card textarea:focus,.ia-card .sel:focus{
     border-color:var(--ia1);box-shadow:0 0 0 3px var(--ia-bg)}
+  /* 🧩 Ficha de 3 cuadros (prefijo pq-): mismo lenguaje que la ficha del Negocio, con el violeta de la sección IA.
+     Verde SOLO para lo que ya está listo. */
+  .pq-prog{display:flex;align-items:center;gap:10px;margin:0 0 4px;font-size:12.5px;color:var(--muted)}
+  .pq-prog .bar{flex:1;max-width:220px;height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+  .pq-prog .bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--ia1),var(--ia2));transition:width .25s}
+  .pq-prog.ok .bar i{background:var(--green)}
+  .pq-prog b{color:var(--text)}
+  .pq{border:1px solid var(--border);border-radius:14px;padding:14px 16px 16px;margin-top:12px;background:var(--surface);transition:border-color .15s,box-shadow .15s}
+  .pq:focus-within{border-color:var(--ia1);box-shadow:0 0 0 3px var(--ia-bg)}
+  .pq .in:focus,.pq textarea:focus{box-shadow:none}
+  .pq-hd{display:flex;align-items:center;gap:11px}
+  .pq-ic{width:36px;height:36px;border-radius:10px;background:var(--ia-bg);color:var(--ia1);display:grid;place-items:center;flex:none;position:relative}
+  .pq-ic svg{width:18px;height:18px}
+  .pq-ic .n{position:absolute;right:-5px;bottom:-5px;width:17px;height:17px;border-radius:50%;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:10px;font-weight:800;display:grid;place-items:center}
+  .pq-tt{font-weight:700;font-size:14.5px;letter-spacing:-.1px;flex:1;min-width:0}
+  .pq-st{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--surface-2);color:var(--faint);flex:none}
+  .pq.lleno .pq-st{background:var(--green-bg);color:var(--green)}
+  .pq-va{font-size:12.5px;color:var(--muted);line-height:1.5;margin:9px 0 0}
+  .pq-no{display:flex;gap:7px;align-items:flex-start;font-size:11.5px;color:var(--faint);line-height:1.5;margin:5px 0 10px}
+  .pq-no svg{width:13px;height:13px;flex:none;margin-top:2px}
+  .pq textarea.in{line-height:1.55;resize:vertical}
+  .pq-adv{border:1px solid var(--border);border-radius:14px;padding:0 16px;margin-top:14px;background:var(--surface)}
+  .pq-adv>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:14px 0;font-weight:700;font-size:13.5px}
+  .pq-adv>summary::-webkit-details-marker{display:none}
+  .pq-adv>summary .chev{width:16px;height:16px;color:var(--muted);transition:transform .2s;flex:none}
+  .pq-adv[open]>summary .chev{transform:rotate(90deg)}
+  .pq-adv>summary span{font-weight:400;color:var(--faint);font-size:12.5px}
   /* Hub de Ángulos */
   .hub-prod{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:14px}
   .hub-prod-hd{display:flex;align-items:center;gap:12px;margin-bottom:4px}
@@ -1500,12 +1527,25 @@ function renderProductoIA(host){
   const P="#a855f7";
   const fisico=(st.prod.tipo||"digital")==="fisico"; // ejemplos/placeholders acordes al tipo
   const taField=(k,label,ph,rows)=>`<label>${label}</label><textarea class="in ia-f" data-k="${k}" rows="${rows||2}" style="min-height:${(rows||2)*26+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(ia[k]||"")}</textarea>`;
-  const caja=(n,titulo,sub,cuerpo)=>`<div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:${n===1?0:12}px">
-        <div style="font-weight:700;font-size:13px;margin-bottom:2px">${n} · ${titulo}</div>
-        <div style="font-size:11.5px;color:var(--faint);margin-bottom:8px;line-height:1.5">${sub}</div>${cuerpo}</div>`;
-  // (alto según lo que ya tiene escrito, para que se lea entero sin arrastrar la esquina; tope de 14 renglones)
-  const altoDe=(k,min)=>Math.min(14,Math.max(min,String(ia[k]||"").split("\n").reduce((s,l)=>s+Math.max(1,Math.ceil(l.length/85)),0)+1));
-  const taBox=(k,ph,rows0)=>{ const rows=altoDe(k,rows0); return `<textarea class="in ia-f" data-k="${k}" rows="${rows}" style="min-height:${rows*26+8}px;line-height:1.5;font-family:var(--font);resize:vertical;width:100%" placeholder="${esc(ph)}">${esc(ia[k]||"")}</textarea>`; };
+  // 🎨 Cada cuadro: ícono + número, «Listo / Falta» en vivo, qué va y una línea «No va aquí» (mismo lenguaje que la
+  // ficha del Negocio, con el violeta de la sección IA). `listo()` dice si el cuadro ya tiene lo mínimo.
+  const PQ_ICO={
+    caja:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg>',
+    escudo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9.5 9.5 5 5M14.5 9.5l-5 5"/></svg>',
+    chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg>',
+    no:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>',
+  };
+  const faqLista=()=>(c.faq_items||[]).filter(x=>x&&String(x.q||"").trim()&&String(x.a||"").trim()).length;
+  const PQ_LISTO={ 1:()=>!!String(ia.detalle||"").trim(), 2:()=>!!String(ia.limites||"").trim(), 3:()=>faqLista()>0 };
+  const caja=(n,ico,titulo,va,no,cuerpo)=>`<div class="pq${PQ_LISTO[n]()?" lleno":""}" data-pq="${n}">
+        <div class="pq-hd"><span class="pq-ic">${PQ_ICO[ico]}<span class="n">${n}</span></span>
+          <span class="pq-tt">${titulo}</span><span class="pq-st">${PQ_LISTO[n]()?"Listo":"Falta"}</span></div>
+        <div class="pq-va">${va}</div>
+        <div class="pq-no">${PQ_ICO.no}<span>No va aquí: ${no}</span></div>${cuerpo}</div>`;
+  const nListos=()=>[1,2,3].filter(n=>PQ_LISTO[n]()).length;
+  const progHtml=()=>`<div class="pq-prog${nListos()===3?" ok":""}" id="pqProg"><span class="bar"><i style="width:${Math.round(100*nListos()/3)}%"></i></span><span><b>${nListos()} de 3</b> listos${nListos()===3?" — el bot ya sabe venderlo":""}</span></div>`;
+  // (el texto crece solo con lo escrito: ver `crece` abajo)
+  const taBox=(k,ph)=>`<textarea class="in ia-f pq-ta" data-k="${k}" rows="2" style="width:100%" placeholder="${esc(ph)}">${esc(ia[k]||"")}</textarea>`;
   // Campos viejos de precio: ya no se piden (el precio vive en ¿Cuánto cuesta? y las ofertas en Remarketing), pero si
   // un producto los tiene escritos se muestran en Avanzado para poder verlos y borrarlos — nunca texto invisible.
   const viejosPrecio=["reglas_precio","descuentos"].filter(k=>String(ia[k]||"").trim());
@@ -1518,18 +1558,22 @@ function renderProductoIA(host){
       </div>
     </div>
     <div class="card ia-card">
-      ${caja(1,"¿Qué es y qué incluye?","Qué es, para quién es y qué trae. Lo primero que el bot cuenta cuando le preguntan.",
+      ${progHtml()}
+      ${caja(1,"caja","¿Qué es y qué incluye?","Qué es, para quién es y qué trae. Lo primero que el bot cuenta cuando le preguntan.",
+        "el precio, los pagos ni la entrega (los maneja Nodo), ni lo que vale para todo tu negocio (va en Negocio).",
         taBox("detalle", fisico
           ? "Ej. Adaptador que convierte tu taladro en cortadora de láminas. Para talleres y hogar. Trae 2 cuchillas y estuche."
-          : "Ej. Plan de 21 días para ganar fuerza con tu propio peso, sin gimnasio. Para quien empieza o está estancado. Incluye rutinas en video, comunidad y acceso de por vida.", 5))}
-      ${caja(2,"Lo que NO incluye o no se promete","Lo que el bot nunca debe ofrecer ni asegurar, y lo que hay que respetar siempre (garantía, requisitos). Así no inventa.",
+          : "Ej. Plan de 21 días para ganar fuerza con tu propio peso, sin gimnasio. Para quien empieza o está estancado. Incluye rutinas en video, comunidad y acceso de por vida."))}
+      ${caja(2,"escudo","Lo que NO incluye o no se promete","Lo que el bot nunca debe ofrecer ni asegurar, y lo que hay que respetar siempre (garantía, requisitos). Así no inventa.",
+        "lo que ya está en tus preguntas de abajo, ni montos u ofertas (el bot repite las cifras que lee).",
         taBox("limites", fisico
           ? "Ej. No trae taladro. Garantía de 30 días solo por defecto de fábrica. No se prometen cortes de más de 1.5 mm."
-          : "Ej. No trae dieta ni nutrición. No se prometen resultados exactos ni plazos. Con una lesión, que consulte a su médico.", 3))}
-      ${caja(3,"Lo que te preguntan → tu respuesta","Las dudas y las pegas en una sola lista: lo que dice el cliente y cómo le contestas.",
+          : "Ej. No trae dieta ni nutrición. No se prometen resultados exactos ni plazos. Con una lesión, que consulte a su médico."))}
+      ${caja(3,"chat","Lo que te preguntan → tu respuesta","Las dudas y las pegas en una sola lista: lo que dice el cliente y cómo le contestas.",
+        "pasos de cobro («pásale el Yape», «pregúntale cómo paga»): Nodo manda los datos de pago solo.",
         `<div id="faqList"></div><button class="btn" id="faqAdd" style="margin-top:6px;height:34px">+ Agregar</button>`)}
-      <details style="border:1px solid var(--border);border-radius:12px;padding:0 13px;margin-top:16px">
-        <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:13px 0;list-style:none">Avanzado <span style="font-weight:400;color:var(--faint)">— opcional, casi nunca hace falta</span></summary>
+      <details class="pq-adv">
+        <summary><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>Avanzado <span>— opcional, casi nunca hace falta</span></summary>
         <div style="padding-bottom:13px">
           ${viejosPrecio.length?`<div style="display:flex;gap:8px;align-items:flex-start;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:0 0 6px;font-size:11.5px;color:var(--muted);line-height:1.5">
             <span style="color:var(--brand);flex:none;display:inline-flex;margin-top:1px">${icon("alert")}</span>
@@ -1576,7 +1620,18 @@ function renderProductoIA(host){
   const setC=(k,v)=>prodSetC(k,v);
   const g=$("pEmojis"); if(g) g.oninput=(e)=>setC("emojis", e.target.value.trim());
   const mn=$("pMemoriaNivel"); if(mn) mn.onchange=(e)=>setC("memoria_nivel", e.target.value);
-  b.querySelectorAll(".ia-f").forEach(el=>{ el.oninput=el.onchange=()=>{ const v=el.value; if(v==null||v==="") delete ia[el.dataset.k]; else ia[el.dataset.k]=v; prodSync(); }; });
+  // En vivo: «Listo / Falta» de cada cuadro y la barra de arriba (solo pinta: lo que se guarda no cambia).
+  const refrescaPq=()=>{
+    b.querySelectorAll(".pq[data-pq]").forEach(box=>{
+      const ok=!!PQ_LISTO[box.dataset.pq]?.(); box.classList.toggle("lleno",ok);
+      const t=box.querySelector(".pq-st"); if(t) t.textContent=ok?"Listo":"Falta";
+    });
+    const pg=b.querySelector("#pqProg"); if(pg) pg.outerHTML=progHtml();
+  };
+  // El texto crece solo con lo escrito (se lee entero sin arrastrar la esquina; tope ~14 renglones).
+  const crece=(ta)=>{ if(!ta.offsetParent) return; ta.style.height="auto"; ta.style.height=Math.min(ta.scrollHeight+2, 14*23+24)+"px"; };   // (oculto: no se mide, quedaría en 2px)
+  b.querySelectorAll(".pq-ta").forEach(ta=>{ crece(ta); requestAnimationFrame(()=>crece(ta)); ta.addEventListener("input",()=>crece(ta)); ta.addEventListener("focus",()=>crece(ta)); });
+  b.querySelectorAll(".ia-f").forEach(el=>{ el.oninput=el.onchange=()=>{ const v=el.value; if(v==null||v==="") delete ia[el.dataset.k]; else ia[el.dataset.k]=v; prodSync(); refrescaPq(); }; });
   const goOp=$("goOpciones"); if(goOp) goOp.onclick=(e)=>{ e.preventDefault(); accOpen("opciones"); };
   const paintEj=()=>{
     const box=$("ejList"); box.innerHTML="";
@@ -1632,10 +1687,10 @@ function renderProductoIA(host){
       el.innerHTML=`
         <div style="display:flex;align-items:center;gap:8px"><span style="flex:0 0 74px;font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.03em">Te dice</span><input class="in fq" style="flex:1" value="${esc(qa.q||"")}" placeholder="${esc(qaEx[0])}"/><button class="iconbtn fdel" style="flex:0 0 auto" title="Eliminar">${icon("trash")}</button></div>
         <div style="display:flex;align-items:flex-start;gap:8px;margin-top:8px"><span style="flex:0 0 74px;font-size:11px;font-weight:700;color:var(--ia1,#a855f7);text-transform:uppercase;letter-spacing:.03em;margin-top:10px">Respondes</span><textarea class="in fa" rows="2" style="flex:1;min-height:52px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(qaEx[1])}">${esc(qa.a||"")}</textarea></div>`;
-      const sync=()=>{ c.faq=compileFaq(c.faq_items); prodSync(); };
+      const sync=()=>{ c.faq=compileFaq(c.faq_items); prodSync(); refrescaPq(); };
       el.querySelector(".fq").oninput=(e)=>{ qa.q=e.target.value; sync(); };
       el.querySelector(".fa").oninput=(e)=>{ qa.a=e.target.value; sync(); };
-      el.querySelector(".fdel").onclick=()=>{ c.faq_items.splice(i,1); c.faq=compileFaq(c.faq_items); prodSync(); paintFaq(); };
+      el.querySelector(".fdel").onclick=()=>{ c.faq_items.splice(i,1); c.faq=compileFaq(c.faq_items); prodSync(); paintFaq(); refrescaPq(); };
       box.appendChild(el);
     });
   };
