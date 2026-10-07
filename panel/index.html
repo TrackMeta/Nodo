@@ -828,7 +828,7 @@ const ENTREGA_LBL = Object.fromEntries(ENTREGA_PROV.map(g => [g.k, g]));
 const esRecompra = (c)=> !!c && c.stage==="comprado" && !!state.recompraSet && state.recompraSet.has(c.id);
 async function loadConversations() {
   const gen=(state.loadGen=(state.loadGen||0)+1); // anti-carrera al cambiar de bot
-  const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,window_type,requiere_humano,archivada,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage,source${p?",product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado":""})`;
+  const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,window_type,requiere_humano,archivada,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage,source,fep_hasta${p?",product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado":""})`;
   // 1000 y no 200: los filtros («Requiere humano», fechas, archivados) y sus contadores trabajan sobre
   // lo cargado, y con más de 200 chats los que esperaban desde hace días simplemente no aparecían
   // (el Dashboard, que cuenta en la base, decía 37 y el filtro 12). Lo que sigue va por trozos.
@@ -1444,12 +1444,17 @@ function renderConversations(){
     const recomprando = esRecompra(c);
     const el = document.createElement("div");
     el.className = "conv" + (state.contactId === c.id ? " active" : "") + (bought ? " bought" : "");
-    // Origen anuncio (CTWA): verde mientras la ventana de 72h siga viva. Acá NO dice "gratis"
+    // Origen anuncio (CTWA): verde mientras la ventana del anuncio (hasta 7 días) siga viva. Acá NO dice "gratis"
     // a propósito: para afirmarlo hay que comprobar que el negocio respondió dentro de las
     // 24h del clic (así la abre Meta), y eso es una consulta POR CHAT — cara en una lista de
     // 200. La promesa de "sin costo" se hace donde se decide gastar y sí está verificada: la
     // barra del chat abierto y el modal de aviso al despachar. Acá solo se marca el origen.
-    const fepViva = cv.window_type === "fep_72h" && cv.expira_at && new Date(cv.expira_at) > new Date();
+    // (7-oct: la ventana del anuncio dura hasta 7 días desde la primera respuesta, no 72 h — ver ventanaAnuncio. Acá, sin
+    //  consultar por fila, se cuenta desde el clic: el bot responde en segundos. Lo exacto, en la barra del chat abierto.)
+    const _clicFep = c.fep_hasta ? Date.parse(c.fep_hasta) - 72*3.6e6 : NaN;
+    const _finFep = Number.isFinite(_clicFep) ? _clicFep + FEP_DIAS*864e5 : 0;
+    const fepViva = _finFep > Date.now();
+    const fepDias = fepViva ? Math.max(1, Math.ceil((_finFep - Date.now()) / 864e5)) : 0;
     // Nota: hubo acá una insignia «No atiende · orgánico» para el modo «solo anuncios». Se
     // quitó cuando el motor pasó a APAGAR el bot de verdad en ese caso: el chat aparece como
     // «Humano» solo, que es información REAL y no una deducción. La insignia además podía
@@ -1457,7 +1462,7 @@ function renderConversations(){
     // y el panel no puede saber eso sin una consulta por fila. Panel y motor no pueden decir
     // cosas distintas: ante la duda, el panel muestra el estado, no su interpretación.
     const dots = `${bot?'<span class="idot bot">● Bot activo</span>':'<span class="idot human">● Humano</span>'}`
-      + (fepViva?`<span class="idot fep">${icon("megaphone")} Anuncio · 72h</span>`:(c.source?`<span class="idot ad">${icon("megaphone")} Anuncio</span>`:''))
+      + (fepViva?`<span class="idot fep" title="Llegó por un anuncio: si le respondieron en sus primeras 24 h, Meta no cobra los mensajes hasta ${FEP_DIAS} días desde esa respuesta. Lo exacto lo ves al abrir el chat.">${icon("megaphone")} Anuncio · ${fepDias} ${fepDias === 1 ? "día" : "días"}</span>`:(c.source?`<span class="idot ad">${icon("megaphone")} Anuncio</span>`:''))
       + (cv.requiere_humano?`<span class="idot paused">${icon("clock")} Seguimiento</span>`:'')
       + (bought?`<span class="idot bought">${icon("star")} Compró</span>`:'')
       + (recomprando?`<span class="idot recompra">${icon("refresh")} Recompra</span>`:'');
