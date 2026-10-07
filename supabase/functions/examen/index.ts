@@ -93,6 +93,9 @@ async function turno(channelId: string, contactId: string, texto: string): Promi
     channel_id: channelId, contact_id: contactId, direction: "in", type: "text", content: { text: texto }, status: "delivered",
   }).select("id, ts").single();
   const ts = String((m as any)?.ts ?? new Date().toISOString());
+  // Igual que el webhook: con el bot apagado en este contacto (pasó a una persona) el motor no corre.
+  const { data: _ba } = await db.from("contacts").select("bot_activo").eq("id", contactId).maybeSingle();
+  if ((_ba as any)?.bot_activo === false) return ["(bot apagado en este chat: lo atiende una persona)"];
   await runEngine(db, channelId, contactId, { type: "message", text: texto, msgType: "text", msgTs: ts } as any);
   const { data: out } = await db.from("messages").select("content, type, ts").eq("contact_id", contactId)
     .eq("direction", "out").gt("ts", ts).order("ts", { ascending: true }).limit(20);
