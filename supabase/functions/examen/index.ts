@@ -471,7 +471,9 @@ Deno.serve(async (req) => {
     const a = await autoriza(req, channelId);
     if (!a.ok) return json({ error: "forbidden" }, 403);
     try {
-      const contactId = await contactoDePrueba(channelId, `exam-guion-${String(body?.tag ?? "a").slice(0, 20)}`, "Prueba guion");
+      // `notif`: wa_id PRUEBA-NOTIF-… → sus avisos SÍ entran a la campanita (para ver qué le llega al dueño).
+      const contactId = await contactoDePrueba(channelId,
+        `${body?.notif ? "PRUEBA-NOTIF-guion-" : "exam-guion-"}${String(body?.tag ?? "a").slice(0, 20)}`, "Prueba guion");
       await reiniciar(channelId, contactId);
       const tr: Array<{ c: string; b: string[] }> = [];
       for (const p of (Array.isArray(body?.pasos) ? body.pasos.slice(0, 12) : [])) {

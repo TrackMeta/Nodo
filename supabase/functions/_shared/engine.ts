@@ -220,10 +220,11 @@ export async function runEngine(
     // al vender»— y el «Listo», que ya había pasado el chequeo del webhook, corrió igual: abrió una venta nueva y la IA
     // le dijo «ya vi tu captura, en unos minutos te llega el acceso» con el acceso ya entregado). Se mira de nuevo acá,
     // con el candado tomado. Solo mensajes del cliente: el despertador y las aprobaciones siguen su camino.
+    // (Título distinto del «💬 Escribió con el bot en pausa» del webhook: ese evento frena su aviso al dueño por 7 días.)
     if (event.type === "message" || event.type === "button") {
       const { data: _ctB } = await db.from("contacts").select("bot_activo").eq("id", contactId).maybeSingle();
       if ((_ctB as any)?.bot_activo === false) {
-        await logEvent(db, channelId, contactId, "nota", "💬 Escribió con el bot en pausa",
+        await logEvent(db, channelId, contactId, "nota", "💬 Escribió mientras el bot se apagaba",
           `${String((event as any).text ?? "").slice(0, 120)} (el bot se apagó en este chat mientras el mensaje esperaba)`).catch(() => {});
         return;
       }
@@ -3367,11 +3368,14 @@ export async function pasarAHumano(
   // para poder validarlo desde el propio Telegram, sin abrir el chat.
   // `texto`: el aviso al cliente cuando el dueño no configuró uno (dentro de horario). «¡Gracias! En un momento te
   // atiende un asesor» a quien pidió hablar con alguien sonaba a formulario (R1D-hablar, 2026-10-01).
-  opts?: { aviso?: boolean | "fuera"; molesto?: boolean; foto?: string; texto?: string },
+  // `venta`: lo apaga el «Pasar a un asesor al vender» —no hay nada que atender—: sin aviso «Te necesita a ti» al
+  // dueño (ya le llegó el de la venta, 7-oct: sonaba urgente en cada venta) y sin «requiere humano». Si el cliente
+  // escribe después, el webhook lo marca y avisa (avisarEscribioEnPausa).
+  opts?: { aviso?: boolean | "fuera"; molesto?: boolean; foto?: string; texto?: string; venta?: boolean },
 ) {
   try {
     await db.from("contacts").update({ bot_activo: false }).eq("id", contactId);
-    await db.from("conversations").update({ requiere_humano: true }).eq("contact_id", contactId);
+    if (!opts?.venta) await db.from("conversations").update({ requiere_humano: true }).eq("contact_id", contactId);
     await logEvent(db, channelId, contactId, "humano", "Transferido a un humano", motivo);
 
     let dentro = true, proxima: string | null = null, avisoTxt = "", chequeoHorario = false;
@@ -3418,6 +3422,7 @@ export async function pasarAHumano(
     const nota = !chequeoHorario ? "" : dentro
       ? "\n🟢 En horario de atención."
       : `\n🔴 Fuera de horario${proxima ? ` — al cliente le dijimos que respondes ${proxima}` : ""}.`;
+    if (opts?.venta) return;
     await avisar(db, channelId, contactId, "pide_humano", { cliente: quien, motivo, horario: nota },
       opts?.foto ? { foto: opts.foto } : {});
   } catch (e) { console.error("[pasarAHumano]", (e as any)?.message ?? e); }
@@ -32770,18 +32775,18 @@ async function handoffAlVender(db: SupabaseClient, channelId: string, contactId:
   // DESPUÉS del acceso en digital (ver entregarOpcion). El texto propio se manda tal cual,
   // sin la lógica de horario: es el cierre de la compra, no un «ahora no hay nadie».
   // 🔇 «Sin mensaje» (Rodrigo, 7-oct): el mensaje de la entrega ya cierra la compra («Gracias por tu compra… aquí tienes
-  // tu acceso»); el bot solo se apaga en ese chat, sin decirle nada más al cliente. El aviso al dueño sale igual.
+  // tu acceso»); el bot solo se apaga en ese chat, sin decirle nada más al cliente. Al dueño le basta el aviso de la venta.
   if ((ch as any)?.pedidos_config?.humano?.aviso_venta_silencio === true) {
-    await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal, sin mensaje al cliente)", { aviso: false });
+    await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal, sin mensaje al cliente)", { aviso: false, venta: true });
     return;
   }
   const _txtVenta = String((ch as any)?.pedidos_config?.humano?.aviso_venta ?? "").trim();
   if (_txtVenta) {
-    await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal)", { aviso: false });
+    await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal)", { aviso: false, venta: true });
     await deliverMessage(db, channelId, contactId, _txtVenta).catch(() => {});
     return;
   }
-  await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal)", { aviso: true });
+  await pasarAHumano(db, channelId, contactId, "Venta concretada — pasa a atención humana (perilla del canal)", { aviso: true, venta: true });
 }
 
 // Al ANULAR / perder un pedido, recalcula la etapa del contacto desde los
