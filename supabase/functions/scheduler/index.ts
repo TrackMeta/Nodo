@@ -1438,6 +1438,13 @@ async function processSinRespuesta(now: number) {
       .order("ts", { ascending: false }).limit(1).maybeSingle();
     if (!ult) continue;
     const tsIn = new Date((ult as any).ts).getTime();
+    // 🔌 Llegó con el bot APAGADO y el bot se prendió después: ese silencio fue a propósito, no un turno cortado.
+    // (Dida, 7-oct: escribió con el bot apagado, Rodrigo lo prendió y a los 12 min le llegó «te atiende un asesor».)
+    {
+      const { data: ch } = await db.from("channels").select("bot_encendido_at").eq("id", c.channel_id).maybeSingle();
+      const on = Date.parse(String((ch as any)?.bot_encendido_at ?? ""));
+      if (Number.isFinite(on) && tsIn < on) continue;
+    }
     if (!(now - tsIn >= SIN_RESP_MIN_MS && now - tsIn <= SIN_RESP_MAX_MS)) continue;
     // ¿Alguien le contestó después? (bot o persona)
     const { data: resp } = await db.from("messages").select("id").eq("contact_id", c.id)
