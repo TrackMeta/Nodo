@@ -17360,15 +17360,29 @@ export async function armarNegocio(
     "por cuánto tiempo», «Si aceptas devoluciones y en qué casos»). No la deduzcas ni la " +
     "completes con lo que suele hacer el rubro: su bot se la va a decir a los clientes como " +
     "una promesa suya. Lo mismo para la factura/boleta y para los plazos de entrega.\n" +
-    "- `faq`: 3 a 6 preguntas frecuentes reales del negocio, cada una como {\"q\":\"pregunta\",\"a\":\"respuesta\"}.\n" +
+    // 🧩 (6-oct) La ficha del negocio del panel es de 4 cuadros: «Tu negocio» (rubro, y adentro se juntan público y
+    // propuesta), «Cómo se paga y cómo se entrega» (pagos + entrega), «Políticas y lo que nunca se promete»
+    // (politicas + no_hacer) y «Cuándo pasar a una persona». Lo de UN producto va en su ficha: repetirlo acá era la
+    // mitad del texto del negocio de Prime Digital.
+    "- `rubro` = qué vende, a quién y por qué le compran, en 1 o 2 frases. Deja `publico` y `propuesta` VACÍOS: " +
+    "van dentro de `rubro`.\n" +
+    "- `pagos` y `entrega`: una línea cada uno, solo la modalidad general del negocio. Nada de un producto en particular.\n" +
+    "- `no_hacer` = lo que el bot no debe prometer ni hacer en NINGÚN producto (inventar testimonios o cifras, dar " +
+    "consejos médicos, decir que el precio bajará…). Lo de un solo producto no va acá.\n" +
+    "- `transferir` = en qué situaciones se pasa a una persona (reclamos, pago que no llega, factura…). Solo el CUÁNDO: " +
+    "⛔ nunca «un asesor te va a contactar» ni «te llamamos» (el bot se disculpa y avisa que lo están revisando).\n" +
+    "- `faq`: 2 a 4 preguntas del NEGOCIO (no de un producto): si tienen tienda, si dan factura, en qué horario " +
+    "atienden… cada una como {\"q\":\"pregunta\",\"a\":\"respuesta\"}. ⛔ Solo con respuesta que SALGA DEL BRIEF: " +
+    "si es una duda típica pero no tienes el dato, va a `faltan`. Y que no repitan lo que ya dicen `pagos`, `entrega` " +
+    "o `transferir` (si la respuesta ya está en esos campos, no la pongas de pregunta).\n" +
     "- Redacta cada campo claro y útil, como lo diría el propio dueño, sin relleno.\n" +
     "- `resumen_cambios`: una sola frase de qué llenaste.\n\n" +
     "## Formato de salida — usa EXACTAMENTE estas claves, NO las renombres ni las traduzcas:\n" +
     "{\n" +
     '  "nombre": "nombre del negocio",\n' +
-    '  "rubro": "qué vende el negocio",\n' +
-    '  "publico": "cliente ideal / a quién le vende",\n' +
-    '  "propuesta": "propuesta de valor, por qué comprarle a él",\n' +
+    '  "rubro": "qué vende, a quién y por qué le compran (1-2 frases)",\n' +
+    '  "publico": "",\n' +
+    '  "propuesta": "",\n' +
     '  "horario": "horario de atención",\n' +
     '  "transferir": "cuándo pasar la conversación a un humano",\n' +
     '  "pagos": "modalidad general de pago (no el Yape exacto)",\n' +
@@ -17414,7 +17428,55 @@ export async function armarNegocio(
   let parsed: any;
   try { parsed = m ? JSON.parse(m[0]) : JSON.parse(raw); }
   catch { throw new Error("La IA no devolvió un borrador válido. Intenta de nuevo con un brief un poco más claro."); }
-  return normalizarDraftNegocio(parsed);
+  return sinPoliticasQueElBriefNoDice(normalizarDraftNegocio(parsed), brief);
+}
+
+// 🧹 Mismo criterio que sinTemasQueElBriefNoDice (producto), para el NEGOCIO: el prompt prohíbe escribir políticas,
+// horarios o direcciones que el dueño no dijo, y el modelo igual los completa «de sentido común». El bot se los repite
+// a los clientes como si fueran de la casa. Lo que toca uno de esos temas sin que el brief lo nombre sale de la frase,
+// de la pregunta o del campo, y pasa a `faltan` para que lo conteste el dueño (6-oct, ficha del negocio de 4 cuadros).
+const TEMAS_DEL_NEGOCIO: Array<[RegExp, string]> = [
+  [/garant/i, "Si das garantía y por cuánto tiempo"],
+  [/devoluc|devolver|reembols|\bcambios?\s+(?:de|por|si|dentro)/i, "Si aceptas devoluciones o cambios, y en qué casos"],
+  [/factura|boleta/i, "Si das factura o boleta"],
+  [/direcci[oó]n|tienda\s+f[ií]sica|\blocal\b|\boficina\b|\bav\.|\bjr\.|\bcalle\b/i, "Si tienes tienda o local, y dónde"],
+  [/\b\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.\s?m|p\.\s?m|hrs?|horas)\b|\blun(?:es)?\b|\bs[aá]b(?:ado)?\b|\bdomingos?\b|horario/i, "Horario de atención real"],
+  [/d[ií]as?\s+h[aá]biles|\bdemora\b|\ben\s+\d+\s*(?:a\s*\d+\s*)?d[ií]as\b/i, "Plazos de entrega reales"],
+];
+function sinPoliticasQueElBriefNoDice(d: any, brief: string): any {
+  if (!d || typeof d !== "object") return d;
+  const b = String(brief ?? "");
+  const faltan: string[] = Array.isArray(d.faltan) ? d.faltan.map((x: any) => String(x)) : [];
+  const anota = (falta: string, re: RegExp) => { if (!faltan.some((f) => f === falta || re.test(f))) faltan.push(falta); };
+  const temaNoDicho = (texto: string): [RegExp, string] | null => {
+    for (const [re, falta] of TEMAS_DEL_NEGOCIO) if (re.test(texto) && !re.test(b)) return [re, falta];
+    return null;
+  };
+  // Frase por frase en los campos de texto (una frase inventada no tumba el resto del campo).
+  const limpiaCampo = (k: string) => {
+    const t = String(d[k] ?? "").trim(); if (!t) return;
+    const quedan = t.split(/(?<=[.!?])\s+|\n+/).filter((fr) => {
+      // Una PROHIBICIÓN al bot («no prometas garantías») no es una política inventada: se queda.
+      if (/^\s*[-•*]?\s*(?:no|nunca)\s+(?:prometas|prometer|ofrezcas|ofrecer|inventes|inventar|asegures|asegurar|des|dar|digas|decir|hables|hablar|confirmes)\b/i.test(fr)) return true;
+      const x = temaNoDicho(fr); if (x) { anota(x[1], x[0]); return false; }
+      return true;
+    });
+    d[k] = quedan.join(" ").trim();
+  };
+  for (const k of ["politicas", "no_hacer", "pagos", "entrega", "rubro", "propuesta", "publico"]) limpiaCampo(k);   // (no_hacer casi siempre son prohibiciones: se quedan)
+  // El horario entero, si el brief no da días u horas.
+  if (String(d.horario ?? "").trim() && !TEMAS_DEL_NEGOCIO[4][0].test(b)) { d.horario = ""; anota("Horario de atención real", TEMAS_DEL_NEGOCIO[4][0]); }
+  // «Cuándo pasar a una persona»: el CUÁNDO sí, la promesa de que alguien va a escribir no.
+  if (String(d.transferir ?? "").trim()) {
+    d.transferir = String(d.transferir).split(/(?<=[.!?])\s+/)
+      .filter((fr) => !/asesor|te\s+(?:va|van)\s+a\s+(?:llamar|contactar|escribir)|te\s+(?:llamamos|contactamos)/i.test(fr)).join(" ").trim();
+  }
+  if (Array.isArray(d.faq)) d.faq = d.faq.filter((x: any) => {
+    const t = temaNoDicho(`${x?.q ?? ""} ${x?.a ?? ""}`); if (t) { anota(t[1], t[0]); return false; }
+    return true;
+  });
+  d.faltan = faltan;
+  return d;
 }
 
 // Normaliza el borrador del NEGOCIO a las claves que aplica el panel (negocio.html

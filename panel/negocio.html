@@ -72,6 +72,33 @@
   .armhero{border:1px solid rgba(168,85,247,.4);background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.12),transparent 60%),var(--surface);border-radius:14px;padding:15px 16px;margin-bottom:16px;display:flex;gap:12px;align-items:center}
   .armhero .hg{width:38px;height:38px;flex:none;border-radius:11px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center}
   .armhero .hg svg{width:20px;height:20px}
+  /* 🧩 Ficha del negocio en 4 cuadros (prefijo nq-). Mismo lenguaje que el resto: superficie, borde fino, ícono en
+     cuadradito con el color de marca, y verde SOLO para lo que ya está listo. */
+  .nq-prog{display:flex;align-items:center;gap:10px;margin:14px 0 4px;font-size:12.5px;color:var(--muted)}
+  .nq-prog .bar{flex:1;max-width:220px;height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+  .nq-prog .bar i{display:block;height:100%;border-radius:99px;background:var(--brand);transition:width .25s}
+  .nq-prog.ok .bar i{background:var(--green)}
+  .nq-prog b{color:var(--text)}
+  .nq{border:1px solid var(--border);border-radius:14px;padding:14px 16px 16px;margin-top:12px;background:var(--surface);transition:border-color .15s,box-shadow .15s}
+  .nq:focus-within{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg)}
+  .nq-hd{display:flex;align-items:center;gap:11px}
+  .nq-ic{width:36px;height:36px;border-radius:10px;background:var(--brand-bg);color:var(--brand);display:grid;place-items:center;flex:none;position:relative}
+  .nq-ic svg{width:18px;height:18px}
+  .nq-ic .n{position:absolute;right:-5px;bottom:-5px;width:17px;height:17px;border-radius:50%;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:10px;font-weight:800;display:grid;place-items:center}
+  .nq-tt{font-weight:700;font-size:14.5px;letter-spacing:-.1px;flex:1;min-width:0}
+  .nq-st{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--surface-2);color:var(--faint);flex:none}
+  .nq.lleno .nq-st{background:var(--green-bg);color:var(--green)}
+  .nq-va{font-size:12.5px;color:var(--muted);line-height:1.5;margin:9px 0 0}
+  .nq-no{display:flex;gap:7px;align-items:flex-start;font-size:11.5px;color:var(--faint);line-height:1.5;margin:5px 0 2px}
+  .nq-no svg{width:13px;height:13px;flex:none;margin-top:2px}
+  .nq label{margin:12px 0 6px}
+  .nq textarea.in{line-height:1.55;resize:vertical}
+  .nq-adv{border:1px solid var(--border);border-radius:14px;padding:0 16px;margin-top:14px;background:var(--surface)}
+  .nq-adv>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:14px 0;font-weight:700;font-size:13.5px}
+  .nq-adv>summary::-webkit-details-marker{display:none}
+  .nq-adv>summary .chev{width:16px;height:16px;color:var(--muted);transition:transform .2s;flex:none}
+  .nq-adv[open]>summary .chev{transform:rotate(90deg)}
+  .nq-adv>summary span{font-weight:400;color:var(--faint);font-size:12.5px}
   /* 🙋 Preguntas de clientes del NEGOCIO (mismos estilos que la tarjeta de Productos) */
   .pc-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--amber);border-radius:16px;padding:14px 16px;margin:-4px 0 16px}
   .pc-hd{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
@@ -235,16 +262,32 @@ function sincronizaFab(){
 // seedForm carga el form COMPLETO y saveForm lo escribe COMPLETO: editar el
 // conocimiento acá preserva la personalidad que se configuró en IA, y viceversa.
 // 🧩 LA FICHA DEL NEGOCIO EN 4 CUADROS (6-oct) — ver negocio-texto.js (el armado del texto, compartido con ia.html).
-// [clave, etiqueta, tipo, ejemplo]. Cada cuadro dice debajo qué NO va ahí, para que no se repita la ficha del producto.
+// [clave, etiqueta, tipo, ejemplo]. Cada cuadro dice qué va y qué NO va ahí, para que no se repita la ficha del producto.
+// `req`: la clave que tiene que tener texto para que el cuadro cuente como «Listo».
+const NQ_ICO={
+  tienda:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v2a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13v7h14v-7"/><path d="M10 20v-4h4v4"/></svg>',
+  pago:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>',
+  escudo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>',
+  persona:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></svg>',
+  no:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>',
+};
 const NEG_CUADROS=[
-  { n:1, titulo:"Tu negocio", sub:"Cómo se llama y qué vendes, a quién y por qué te eligen, en 1 o 2 frases. Lo de cada producto va en su ficha.",
+  { n:1, ico:"tienda", req:"rubro", titulo:"Tu negocio",
+    va:"Cómo se llama y qué vendes, a quién y por qué te eligen, en 1 o 2 frases.",
+    no:"Lo de cada producto (qué incluye, precio): eso va en su ficha.",
     campos:[["nombre","Nombre del negocio","input","Ej. Mi Negocio"],
             ["rubro","¿Qué vendes y a quién?","ta","Ej. Programas digitales de entrenamiento para gente que quiere ponerse en forma en casa, sin gimnasio."]] },
-  { n:2, titulo:"Cómo se paga y cómo se entrega", sub:"Solo lo general. Los números de Yape y cuentas van en IA → Validador de comprobantes; los costos y zonas de envío, en Entrega.",
+  { n:2, ico:"pago", req:"pagos", titulo:"Cómo se paga y cómo se entrega",
+    va:"Solo lo general: qué medios aceptas y cómo llega lo que vendes.",
+    no:"Los números de Yape y cuentas (van en IA → Validador de comprobantes) ni los costos y zonas de envío (van en Entrega).",
     campos:[["pagos","","ta","Ej. Plin también: se paga al mismo número de Yape. No aceptamos tarjeta ni efectivo. Físico: contraentrega en Lima, adelanto en provincia."]] },
-  { n:3, titulo:"Políticas y lo que nunca se promete", sub:"Garantía, cambios, devoluciones, factura, y lo que el bot no debe prometer en NINGÚN producto. Lo de un producto va en su ficha.",
+  { n:3, ico:"escudo", req:"politicas", titulo:"Políticas y lo que nunca se promete",
+    va:"Garantía, cambios, devoluciones, factura, y lo que el bot no debe prometer en ningún producto.",
+    no:"Lo que no incluye un producto en particular: eso va en su ficha.",
     campos:[["politicas","","ta","Ej. Cambios dentro de 7 días con boleta. No dar consejos médicos. No inventar testimonios ni cifras. No decir que el precio bajará."]] },
-  { n:4, titulo:"Cuándo pasar a una persona", sub:"Cuándo el bot debe dejar el chat a tu equipo. No hace falta escribir qué le dice: se disculpa y avisa que lo están revisando.",
+  { n:4, ico:"persona", req:"transferir", titulo:"Cuándo pasar a una persona",
+    va:"En qué casos el bot deja el chat a tu equipo.",
+    no:"Qué le dice al cliente: el bot se disculpa y avisa que lo están revisando, solo.",
     campos:[["transferir","","ta","Ej. Si pagó y no recibe su acceso, si reclama, o si pide factura."],
             ["horario","Horario de atención (opcional)","input","Ej. Lun-Sáb 9:00-20:00 (hora Perú)"]] },
 ];
@@ -330,17 +373,20 @@ async function saveForm(btn){
 }
 function renderConocimiento(b){
   const form=seedForm();
-  // (alto del cuadro según lo que ya tiene escrito, para leerlo entero sin arrastrar la esquina; tope de 12 renglones)
-  const alto=(k)=>Math.min(12,Math.max(3,String(form[k]||"").split("\n").reduce((s,l)=>s+Math.max(1,Math.ceil(l.length/90)),0)+1));
   const field=([k,label,type,ph])=>`
-    ${label?`<label style="margin-top:12px">${label}</label>`:""}
+    ${label?`<label>${label}</label>`:`<div style="height:10px"></div>`}
     ${type==="ta"
-      ? `<textarea class="in" id="nf_${k}" rows="${alto(k)}" style="min-height:${alto(k)*24+10}px;line-height:1.5;resize:vertical" placeholder="${esc(ph)}">${esc(form[k]||"")}</textarea>`
+      ? `<textarea class="in nq-ta" id="nf_${k}" rows="2" placeholder="${esc(ph)}">${esc(form[k]||"")}</textarea>`
       : `<input class="in" id="nf_${k}" value="${esc(form[k]||"")}" placeholder="${esc(ph)}"/>`}`;
-  const cuadro=(c)=>`<div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:${c.n===1?4:12}px">
-      <div style="font-weight:700;font-size:13px;margin-bottom:2px">${c.n} · ${c.titulo}</div>
-      <div class="desc" style="margin:0 0 4px;line-height:1.5">${c.sub}</div>
+  const lleno=(c)=>!!String(form[c.req]||"").trim();
+  const cuadro=(c)=>`<div class="nq${lleno(c)?" lleno":""}" data-req="${c.req}">
+      <div class="nq-hd"><span class="nq-ic">${NQ_ICO[c.ico]||""}<span class="n">${c.n}</span></span>
+        <span class="nq-tt">${c.titulo}</span><span class="nq-st">${lleno(c)?"Listo":"Falta"}</span></div>
+      <div class="nq-va">${c.va}</div>
+      <div class="nq-no">${NQ_ICO.no}<span>No va aquí: ${c.no}</span></div>
       ${c.campos.map(field).join("")}</div>`;
+  const nLlenos=()=>NEG_CUADROS.filter(lleno).length;
+  const progHtml=()=>`<div class="nq-prog${nLlenos()===NEG_CUADROS.length?" ok":""}" id="nqProg"><span class="bar"><i style="width:${Math.round(100*nLlenos()/NEG_CUADROS.length)}%"></i></span><span><b>${nLlenos()} de ${NEG_CUADROS.length}</b> listos${nLlenos()===NEG_CUADROS.length?" — el bot ya sabe lo esencial de tu negocio":""}</span></div>`;
   const vacioNeg = !(form.rubro && String(form.rubro).trim());
   b.innerHTML=`
     <h2>Conocimiento del negocio</h2>
@@ -353,9 +399,10 @@ function renderConocimiento(b){
     </div>`:""}
     <div class="card">
       <div class="chd"><span class="ico">${IC.book}</span><span class="nm">Lo que el bot sabe de tu negocio</span></div>
+      ${progHtml()}
       ${NEG_CUADROS.map(cuadro).join("")}
-      <details style="border:1px solid var(--border);border-radius:12px;padding:0 13px;margin-top:16px">
-      <summary style="cursor:pointer;font-weight:700;font-size:13px;padding:13px 0;list-style:none">Avanzado <span style="font-weight:400;color:var(--faint)">— preguntas frecuentes del negocio, archivos e información adicional</span></summary>
+      <details class="nq-adv">
+      <summary><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>Avanzado <span>— preguntas frecuentes del negocio, archivos e información adicional</span></summary>
       <div style="padding-bottom:13px">
       <label style="margin-top:4px">Preguntas frecuentes del negocio</label>
       <div class="desc" style="margin-top:0">Solo las que valen para todo el negocio (¿tienen tienda?, ¿dan factura?). Las de un producto van en su ficha.</div>
@@ -375,6 +422,19 @@ function renderConocimiento(b){
       <div class="acts"><button class="btn primary" id="saveNegocio">Guardar conocimiento</button>
         <button class="btn" id="previewNeg">Ver cómo lo lee la IA</button></div>
     </div>`;
+  // En vivo: el «Listo / Falta» de cada cuadro, el resumen de arriba y el alto del texto mientras escribe. Solo
+  // pinta: lo que se guarda sigue saliendo de harvest() al tocar Guardar, como siempre.
+  const crece=(ta)=>{ ta.style.height="auto"; ta.style.height=Math.min(ta.scrollHeight+2, 12*22+24)+"px"; };
+  b.querySelectorAll(".nq-ta").forEach(ta=>{ crece(ta); ta.addEventListener("input",()=>crece(ta)); });
+  b.querySelectorAll(".nq").forEach(box=>{
+    const req=box.dataset.req, el=$("nf_"+req); if(!el) return;
+    el.addEventListener("input",()=>{
+      form[req]=el.value;
+      const ok=!!el.value.trim(); box.classList.toggle("lleno",ok);
+      const stt=box.querySelector(".nq-st"); if(stt) stt.textContent=ok?"Listo":"Falta";
+      const pg=$("nqProg"); if(pg) pg.outerHTML=progHtml();
+    });
+  });
   const paintFaq=()=>{
     const box=$("faqList"); box.innerHTML="";
     if(!form.faq.length){ box.innerHTML=`<div class="desc" style="padding:6px 0">Sin preguntas todavía.</div>`; }

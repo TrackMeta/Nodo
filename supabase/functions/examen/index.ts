@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userIsChannelAdmin } from "../_shared/db.ts";
-import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt, armarProducto } from "../_shared/engine.ts";
+import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt, armarProducto, armarNegocio } from "../_shared/engine.ts";
 import { runAI, anotarUsoIA } from "../_shared/ai.ts";
 import { BATERIAS, BATERIA_ECOGUARD, type ConvExamen } from "./bateria.ts";
 
@@ -286,7 +286,11 @@ Deno.serve(async (req) => {
     if (!channelId || !brief) return json({ error: "falta channel_id o brief" }, 400);
     const a = await autoriza(req, channelId);
     if (!a.ok) return json({ error: "forbidden" }, 403);
-    try { return json({ ok: true, borrador: await armarProducto(db, channelId, brief, String(body?.tipo ?? "")) }); }
+    try {
+      return json({ ok: true, borrador: String(body?.que ?? "") === "negocio"
+        ? await armarNegocio(db, channelId, brief)
+        : await armarProducto(db, channelId, brief, String(body?.tipo ?? "")) });
+    }
     catch (e) { return json({ error: String((e as any)?.message ?? e) }, 500); }
   }
 
