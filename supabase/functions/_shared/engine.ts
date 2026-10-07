@@ -215,6 +215,42 @@ export async function runEngine(
     // ni la foto ni la transcripción. Saltarla descartaba la CAPTURA del pago que llegó mientras
     // el bot contestaba «ya te yapeé» — nunca pasaba por el OCR ni llegaba a Pagos por validar.
     const _soloTexto = !event.mediaRef && (!event.msgType || event.msgType === "text");
+    // 🔌 El bot pudo APAGARSE en este chat mientras este mensaje esperaba el candado (7-oct, Edwin: mandó la captura
+    // y «Listo» 4 s después; el turno de la captura entregó el acceso y pasó el chat a una persona —«Pasar a un asesor
+    // al vender»— y el «Listo», que ya había pasado el chequeo del webhook, corrió igual: abrió una venta nueva y la IA
+    // le dijo «ya vi tu captura, en unos minutos te llega el acceso» con el acceso ya entregado). Se mira de nuevo acá,
+    // con el candado tomado. Solo mensajes del cliente: el despertador y las aprobaciones siguen su camino.
+    if (event.type === "message" || event.type === "button") {
+      const { data: _ctB } = await db.from("contacts").select("bot_activo").eq("id", contactId).maybeSingle();
+      if ((_ctB as any)?.bot_activo === false) {
+        await logEvent(db, channelId, contactId, "nota", "💬 Escribió con el bot en pausa",
+          `${String((event as any).text ?? "").slice(0, 120)} (el bot se apagó en este chat mientras el mensaje esperaba)`).catch(() => {});
+        return;
+      }
+    }
+    // 🧾 «Listo», «ya», «ya te yapeé» pegado a la CAPTURA: el turno de la imagen ya contestó (validó, entregó o pidió
+    // otra). Contestarlo aparte era abrir otra conversación encima (Edwin, 7-oct). Solo un acuse corto, solo si la imagen
+    // llegó hasta 2 min antes y el bot ya respondió después de ella.
+    if (event.type === "message" && event.msgTs && _soloTexto
+        && /^\s*(?:listo|ya|ok(?:ey|i)?|okay|hecho|ah[ií]\s+(?:est[aá]|va|te\s+va)|ya\s+est[aá]|ya\s+(?:te\s+)?(?:pagu[eé]|yape[eé]|plin[eé]|transfer[ií]|deposit[eé]|envi[eé]|mand[eé])(?:\s+\p{L}+){0,2}|gracias|listo\s+gracias|ya\s+listo)[\s.!👍🙏🙌✅😊]*$/iu.test(String(event.text ?? ""))) {
+      try {
+        const _tsT = Date.parse(event.msgTs);
+        const { data: _img } = await db.from("messages").select("ts").eq("contact_id", contactId).eq("direction", "in")
+          .in("type", ["image", "document"]).lt("ts", event.msgTs).gte("ts", new Date(_tsT - 120_000).toISOString())
+          .order("ts", { ascending: false }).limit(1).maybeSingle();
+        if (_img) {
+          const { data: _resps } = await db.from("messages").select("content").eq("contact_id", contactId).eq("direction", "out")
+            .gt("ts", (_img as any).ts).limit(6);
+          // (si esa respuesta fue un RECHAZO u observación, su «ya pagué» SÍ se atiende: es la disputa que pasa a una persona)
+          const _txR = ((_resps ?? []) as any[]).map((m) => String(m?.content?.text ?? "")).join("\n");
+          if (_txR.trim() && !/revis[eé] tu comprobante|sali[oó] a otra cuenta|ya se us[oó]|faltan? \*?S\/|no pude confirmar/i.test(_txR)) {
+            await logEvent(db, channelId, contactId, "nota", "🔁 Acuse de la captura: ya contestado",
+              `«${String(event.text ?? "").slice(0, 60)}» llegó pegado a su comprobante, que ya tuvo respuesta`).catch(() => {});
+            return;
+          }
+        }
+      } catch (_) { /* sin dato → se contesta como siempre */ }
+    }
     if (event.type === "message" && event.msgTs && _soloTexto && await yaCubiertoPorTurnoAnterior(db, contactId, event.msgTs)) {
       await logEvent(db, channelId, contactId, "nota", "🔁 Ya contestado por el turno anterior", String(event.text ?? "").slice(0, 80)).catch(() => {});
       return;
@@ -6519,7 +6555,7 @@ const RE_ACC_PROMESA = /(?:^|[^\p{L}])(?:ahora|ya|en\s+(?:un\s+)?(?:momento|mome
 const RE_ACC_CONDICION = /captura|comprobante|voucher|(?:cuando|apenas|en\s+cuanto|una\s+vez\s+(?:que\s+)?|luego\s+de\s+que|despu[eé]s\s+de\s+que)\s*(?:me\s+|se\s+|lo\s+|la\s+|los\s+|nos\s+|te\s+)?(?:mandes|env[ií]es|pagues|pagas|pague|completes|yapees|confirm\w*|valid\w*|verifi\w*|revis\w*|recib\w*|llegue\s+(?:tu|el)\s+pago)|(?:tras|al|luego\s+de|despu[eé]s\s+de)\s+(?:confirmar|validar|verificar|recibir|revisar|pagar|hacer\s+el\s+pago|tu\s+pago|el\s+pago)|(?:confirmad|validad|verificad|recibid)o\s+(?:tu\s+|el\s+)?pago|valid|si\s+me\s+(?:mandas|env)/i;
 // Por INGREDIENTES, que la IA cambia la forma cada vez («en un momento te llega el link», «en breve te llegará el link» —
 // D17c/D17d-pdospartes): link/acceso + un «ya / ahora / en breve / al toque».
-const RE_ACC_PRONTO = /(?:^|[^\p{L}])(?:en\s+breve|en\s+un\s+(?:momento|momentito|ratito|segundo)|ahora(?:\s+mismo)?|ya\s+mismo|al\s+toque|en\s+seguida|enseguida|de\s+inmediato|al\s+instante)(?![\p{L}])/iu;
+const RE_ACC_PRONTO = /(?:^|[^\p{L}])(?:en\s+breve|en\s+(?:unos\s+)?minutos|en\s+un\s+rato|en\s+un\s+(?:momento|momentito|ratito|segundo)|ahora(?:\s+mismo)?|ya\s+mismo|al\s+toque|en\s+seguida|enseguida|de\s+inmediato|al\s+instante)(?![\p{L}])/iu;
 function promesasDeAcceso(texto: string, lastInput: string): string[] {
   const hablaAcc = (f: string) => RE_ACC_PROMESA.test(f) || (/(?:^|[^\p{L}])(?:link|acceso|enlace)(?![\p{L}])/iu.test(f) && RE_ACC_PRONTO.test(f));
   // Si él preguntó cómo/cuándo le llega, contarlo es la respuesta: no se toca nada.
@@ -6573,7 +6609,7 @@ function sinNumeroDePagoAjeno(texto: string, datosPago: string, lastInput: strin
 // está revisando y un acceso que NO salió (7-oct, Wilson: su Yape había sido rechazado y el bot le dijo las dos cosas).
 // Solo el motor sabe si hay un comprobante en revisión o un acceso entregado: sin pedido confirmado y sin imagen en
 // este mensaje, esas frases son mentira. Devuelve las frases; el revisor digital pide reescribir y, de respaldo, se quitan.
-const RE_PAGO_EN_CURSO = /\bya\s+(?:la|lo)\s+estoy\s+(?:validando|revisando|verificando|confirmando|chequeando)\b|\bestoy\s+(?:validando|revisando|verificando|confirmando|chequeando)\b(?=[^.!?\n]{0,50}\b(?:pago|comprobante|captura|yape|plin|transferencia|acceso)\b)|\b(?:ya\s+)?(?:revisé|validé|verifiqué|confirmé|recibí)\s+(?:tu|el|la)\s+(?:pago|comprobante|captura|yape|plin|transferencia)\b|\bacceso\b[^.!?\n]{0,60}?\b(?:queda|est[aá]|qued[oó])\s+(?:ya\s+)?(?:activo|activado|listo|habilitado|enviado)\b(?!\s+(?:de\s+por\s+vida|para\s+siempre|siempre|sin\s+l[ií]mite))|\bya\s+tienes\s+(?:tu\s+|el\s+)?acceso\b|\b(?:ya\s+)?(?:te\s+)?(?:activé|habilité|envié|mandé|pasé)\s+(?:tu|el)\s+acceso\b|\ben\s+breve\s+te\s+lo\s+(?:paso|env[ií]o|mando|activo)\b/i;
+const RE_PAGO_EN_CURSO = /\bya\s+(?:vi|tengo|revisé|recibí)\s+(?:tu|la|el)\s+(?:captura|comprobante|pago|yape|plin|transferencia)\b|\bya\s+(?:la|lo)\s+estoy\s+(?:validando|revisando|verificando|confirmando|chequeando)\b|\bestoy\s+(?:validando|revisando|verificando|confirmando|chequeando)\b(?=[^.!?\n]{0,50}\b(?:pago|comprobante|captura|yape|plin|transferencia|acceso)\b)|\b(?:ya\s+)?(?:revisé|validé|verifiqué|confirmé|recibí)\s+(?:tu|el|la)\s+(?:pago|comprobante|captura|yape|plin|transferencia)\b|\bacceso\b[^.!?\n]{0,60}?\b(?:queda|est[aá]|qued[oó])\s+(?:ya\s+)?(?:activo|activado|listo|habilitado|enviado)\b(?!\s+(?:de\s+por\s+vida|para\s+siempre|siempre|sin\s+l[ií]mite))|\bya\s+tienes\s+(?:tu\s+|el\s+)?acceso\b|\b(?:ya\s+)?(?:te\s+)?(?:activé|habilité|envié|mandé|pasé)\s+(?:tu|el)\s+acceso\b|\ben\s+breve\s+te\s+lo\s+(?:paso|env[ií]o|mando|activo)\b/i;
 function afirmaPagoEnCurso(texto: string): string[] {
   return String(texto ?? "").split("\n").flatMap((ln) => ln.split(/(?<=[.!?…])\s+|(?<=[\p{Extended_Pictographic}\u{FE0F}])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u))
     .filter((f) => RE_PAGO_EN_CURSO.test(sinFormato(f)));
