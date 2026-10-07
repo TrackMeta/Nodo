@@ -858,7 +858,7 @@ async function saveBrand(btn){
 // donde se pierde.
 function renderPixel(box){
   const c=st.channel||{}, s=st.secrets||{};
-  const adsOn=!!s.ads_token, capiOn=!!(c.pixel_id&&s.capi_token);
+  const adsOn=!!s.ads_token, capiOn=!!(c.pixel_id&&(s.capi_token||s.access_token));   // (el token de WhatsApp también sirve para las ventas — 7-oct)
   box.innerHTML=`
     <h2>Meta</h2>
     <p class="sub">Dos conexiones que van en sentidos contrarios: una <b>trae</b> de Meta el gasto de tus anuncios, para que Rendimiento sepa cuánto te costó cada venta. La otra <b>le manda</b> a Meta tus ventas reales, para que su algoritmo aprenda a quién mostrarte. Son independientes: puedes tener una sin la otra.</p>
@@ -918,47 +918,92 @@ function renderPixel(box){
     <div class="card${capiOn?" on":""}">
       <div class="chd">
         <span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span>
-        <div><div class="nm">Eventos de conversión</div><div class="sub2">Nodo &#8594; Meta</div></div>
-        <span class="badge${capiOn?" on":""}">${capiOn?"Conectado":"Sin conectar"}</span>
+        <div><div class="nm">Ventas a Meta</div><div class="sub2">Nodo &#8594; Meta</div></div>
+        <span class="badge${capiOn?" on":""}" id="vmBadge">${capiOn?"Conectado":"Sin conectar"}</span>
       </div>
-      <div class="desc">Cada vez que alguien escribe, avanza o compra, Nodo se lo cuenta a Meta junto con el clic del anuncio que lo trajo. Eso es lo que le enseña a su algoritmo a quién mostrarte. Sin esto tu bot vende igual, pero <b>Meta optimiza a ciegas</b>: no sabe cuáles de tus clics terminaron en plata.</div>
+      <div class="desc">Cada venta que vino de un anuncio se le cuenta a Meta con el clic que la trajo y su monto. Eso le enseña a su algoritmo a quién mostrarte. Sin esto tu bot vende igual, pero <b>Meta optimiza a ciegas</b>: no sabe cuáles de tus clics terminaron en plata.</div>
 
-      <details class="guia">
-        <summary>${icon("help")} Cómo conectarlo</summary>
-        <div class="gb"><div class="steps">
-          <div class="step"><div class="num"></div><div class="st-b">
-            <div class="st-t">Copia el Pixel ID</div>
-            <div class="st-d">En <b>Events Manager</b> (business.facebook.com/events_manager) &#8594; <b>Orígenes de datos</b>, elige tu pixel. El número largo que sale bajo el nombre es el ID.</div></div></div>
-          <div class="step"><div class="num"></div><div class="st-b">
-            <div class="st-t">Genera el token CAPI</div>
-            <div class="st-d">En ese mismo pixel: <b>Configuración</b> &#8594; <b>Conversions API</b> &#8594; <b>Generar token de acceso</b>. Cópialo al momento, Meta lo muestra una sola vez. Es un token distinto del de WhatsApp: este es del pixel.</div></div></div>
-          <div class="step"><div class="num"></div><div class="st-b">
-            <div class="st-t">Compruébalo antes de confiar</div>
-            <div class="st-d">En <b>Events Manager</b> &#8594; <b>Probar eventos</b> sale un código tipo <code>TEST12345</code>. Pégalo abajo y manda un evento de prueba: lo vas a ver llegar en vivo, sin hacer una venta.</div></div></div>
-        </div></div>
+      <div id="vmEstado" style="margin-top:12px"><span style="color:var(--faint);font-size:12.5px">Revisando…</span></div>
+
+      <details class="guia" style="margin-top:14px">
+        <summary>${icon("wrench")} Usar otro dataset o token</summary>
+        <div class="gb">
+          <div class="hint" style="margin:8px 0 10px">Solo si quieres mandar las ventas a un pixel distinto del de tu WhatsApp. Si dejas el token vacío, se usa el de WhatsApp.</div>
+          <label>Pixel / dataset ID</label>
+          <input class="in" id="m_pixel_id" value="${esc(c.pixel_id)}" placeholder="p. ej. 998798536397963"/>
+          <label>Token CAPI ${s.capi_token?'<span class="badge on">Guardado</span>':""}</label>
+          <input class="in" type="password" id="s_capi_token" autocomplete="off" placeholder="${s.capi_token?'•••••••• guardado':"vacío = el de WhatsApp"}"/>
+          <div class="acts"><button class="btn primary" id="savePixel">Guardar</button></div>
+          <div class="sep"></div>
+          <label>Evento de prueba</label>
+          <div class="hint" style="margin:0 0 10px">Para verlo llegar en vivo sin una venta. El código sale de <b>Events Manager → tu pixel → Probar eventos</b>. <b>Es obligatorio</b>: sin él entraría como una conversión real.</div>
+          <div class="row" style="align-items:flex-end;gap:8px">
+            <div class="f" style="flex:1;margin:0"><input class="in" id="m_test_code" placeholder="TEST12345"/></div>
+            <button class="btn" id="testPixel">Enviar evento de prueba</button>
+          </div>
+          <div id="testPixelOut" style="margin-top:10px;font-size:13px;line-height:1.5"></div>
+        </div>
       </details>
-
-      <label>Pixel ID</label>
-      <input class="in" id="m_pixel_id" value="${esc(c.pixel_id)}" placeholder="p. ej. 998798536397963"/>
-      <label>Token CAPI ${s.capi_token?'<span class="badge on">Guardado</span>':""}</label>
-      <input class="in" type="password" id="s_capi_token" autocomplete="off" placeholder="${s.capi_token?'•••••••• guardado':"token del pixel (Configuración → Conversions API)"}"/>
-      <div class="hint">La cuenta de WhatsApp que Meta necesita para cruzar la venta con el anuncio la toma sola del canal: no hay un tercer dato que buscar.</div>
-      <div class="acts"><button class="btn primary" id="savePixel">Guardar</button></div>
-
-      <div class="sep"></div>
-      <label>Probar la conexión</label>
-      <div class="hint" style="margin:0 0 10px">Manda un evento de prueba sin hacer una venta. El código sale de <b>Events Manager → tu pixel → Probar eventos</b>, y ahí mismo lo ves llegar. <b>Es obligatorio</b>: sin él entraría como una conversión real en tu pixel.</div>
-      <div class="row" style="align-items:flex-end;gap:8px">
-        <div class="f" style="flex:1;margin:0"><input class="in" id="m_test_code" placeholder="TEST12345"/></div>
-        <button class="btn" id="testPixel">Enviar evento de prueba</button>
-      </div>
-      <div id="testPixelOut" style="margin-top:10px;font-size:13px;line-height:1.5"></div>
     </div>`;
   $("savePixel").onclick=(e)=>saveChannel(e.target,{ pixel_id:$("m_pixel_id").value, capi_token:$("s_capi_token").value||undefined });
   $("testPixel").onclick=(e)=>testPixel(e.target);
   $("addAdAcc").onclick=addAdAccount;
   $("saveAdsToken").onclick=(e)=>guardarYDescubrirAds(e.target);
-  loadAdAccounts(); loadAdsFreq();
+  loadAdAccounts(); loadAdsFreq(); loadVentasMeta();
+}
+// 📈 Ventas a Meta: el estado de verdad (dataset, con qué token, la última venta que llegó, las que faltan) y los dos
+// botones que lo arreglan sin ir a Meta — conectar (dataset de la cuenta de WhatsApp + token de WhatsApp) y mandar las
+// ventas de la semana que no llegaron. La «prueba» son esas ventas: Meta no tiene ensayo en seco (ver capi-test). 7-oct.
+async function loadVentasMeta(){
+  const box=$("vmEstado"); if(!box) return;
+  let r=null;
+  try{ r=await callFn("channel-config",{ action:"ventas_meta_estado", channel_id:st.channelId }); }
+  catch(err){ box.innerHTML=`<span style="color:var(--faint);font-size:12.5px">No pude revisar el estado: ${esc(err.message||String(err))}</span>`; return; }
+  const fila=(k,v)=>`<div style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px"><span style="color:var(--muted)">${k}</span><span style="text-align:right">${v}</span></div>`;
+  const aviso=(t)=>`<div style="border:1px solid var(--amber);background:rgba(240,169,43,.08);border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.5;color:var(--text);margin-top:10px">${icon("alert")} ${t}</div>`;
+  const conectado=!!(r&&r.dataset_id&&r.token);
+  const bd=$("vmBadge"); if(bd){ bd.textContent=conectado?"Conectado":"Sin conectar"; bd.classList.toggle("on",conectado); }
+  let html="";
+  if(!r||!r.dataset_id){
+    html = r&&r.whatsapp
+      ? `<div class="hint" style="margin:0">Todavía no está conectado. Lo hago en un clic con tu token de WhatsApp: busco el dataset de tu cuenta de WhatsApp Business y, de paso, mando las ventas de esta semana que no llegaron.</div>
+         <div class="acts"><button class="btn primary" id="vmConectar">Conectar ventas a Meta</button></div>`
+      : `<div class="hint" style="margin:0">Primero conecta WhatsApp en <b>Canales</b>: las ventas se conectan con ese mismo token, sin pegar nada más.</div>`;
+  }else{
+    const tok=r.token==="propio"?"el que pegaste a mano":r.token==="whatsapp"?"el mismo de WhatsApp":"falta";
+    const u=r.ultima_venta;
+    const ult=u?`${new Date(u.created_at).toLocaleString("es-PE",{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"})} · ${u.currency==="PEN"?"S/":esc(u.currency||"")} ${esc(String(u.value??""))}`:"todavía ninguna";
+    html = fila("Dataset", esc(r.dataset_id)) + fila("Token", tok) + fila("Última venta enviada", ult);
+    if(r.ultimo_fallo) html += aviso(`El último envío falló (${new Date(r.ultimo_fallo.at).toLocaleString("es-PE",{day:"numeric",month:"short",hour:"numeric",minute:"2-digit"})}): ${esc(r.ultimo_fallo.error||"")}`);
+    if(r.pendientes>0) html += aviso(`<b>${r.pendientes} venta${r.pendientes>1?"s":""} de esta semana no llegaron a Meta.</b> Vinieron de un anuncio y se pueden mandar todavía (Meta acepta hasta 7 días).`)
+      + `<div class="acts"><button class="btn primary" id="vmReenviar">Enviarlas ahora</button></div>`;
+    else html += `<div class="hint" style="margin-top:8px">Cada venta que viene de un anuncio se manda sola apenas se valida el pago.</div>`;
+  }
+  box.innerHTML=html;
+  const bc=$("vmConectar");
+  if(bc) bc.onclick=async()=>{
+    bc.disabled=true; const old=bc.textContent; bc.textContent="Conectando…";
+    try{
+      const c=await callFn("channel-config",{ action:"ventas_meta_conectar", channel_id:st.channelId });
+      if(!c||!c.ok){ box.insertAdjacentHTML("beforeend", aviso(esc((c&&c.detalle)||"No se pudo conectar."))); return; }
+      const ok=((c.reenvio&&c.reenvio.enviadas)||[]).filter(x=>x.ok).length;
+      if(st.channel) st.channel.pixel_id=c.dataset_id; const pi=$("m_pixel_id"); if(pi) pi.value=c.dataset_id||"";
+      toast("Ventas a Meta conectadas"+(ok?` · mandé ${ok} venta${ok>1?"s":""} de esta semana`:""));
+      await loadVentasMeta();
+    }catch(err){ toast(err.message||"No se pudo conectar",true); }
+    finally{ bc.disabled=false; bc.textContent=old; }
+  };
+  const br=$("vmReenviar");
+  if(br) br.onclick=async()=>{
+    br.disabled=true; const old=br.textContent; br.textContent="Enviando…";
+    try{
+      const x=await callFn("channel-config",{ action:"ventas_meta_reenviar", channel_id:st.channelId });
+      const env=(x&&x.enviadas)||[]; const ok=env.filter(v=>v.ok).length; const mal=env.filter(v=>!v.ok);
+      toast(mal.length?`Mandé ${ok} de ${env.length}: ${mal[0].error||"Meta no la aceptó"}`:`Listo · ${ok} venta${ok>1?"s":""} enviada${ok>1?"s":""} a Meta`, !!mal.length);
+      await loadVentasMeta();
+    }catch(err){ toast(err.message||"No se pudo enviar",true); }
+    finally{ br.disabled=false; br.textContent=old; }
+  };
 }
 const ADS_FREQS=[["1h","Cada hora"],["3h","Cada 3h"],["6h","Cada 6h"],["12h","Cada 12h"],["off","Apagada"]];
 function renderAdsFreq(current){

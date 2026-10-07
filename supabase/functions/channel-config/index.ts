@@ -11,6 +11,7 @@ import { setWebhook, deleteWebhook } from "../_shared/telegram.ts";
 import { AVISOS } from "../_shared/avisos.ts";
 import { matchSegment, BATCH } from "../_shared/campaigns.ts";
 import { fetchConTimeout } from "../_shared/http.ts";
+import { conectarVentasMeta, reenviarVentasPendientes, estadoVentasMeta } from "../_shared/capi-auto.ts";
 
 const db = serviceClient();
 const GRAPH_V = "v25.0";
@@ -202,7 +203,7 @@ Deno.serve(async (req) => {
   // estado del lado de Meta) → coherente con el resto del gating, solo admin.
   // whatsapp_fix escribe en la cuenta de Meta DEL CLIENTE (suscribe la app, registra el
   // número): mismo criterio que el resto de acciones de conexión, solo admin.
-  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "ads_descubrir", "channel_archive", "channel_delete", "channel_delete_preview", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit", "template_delete", "contact_files_delete"]);
+  const ADMIN_ACTIONS = new Set(["save", "whatsapp_disconnect", "whatsapp_fix", "whatsapp_finish", "whatsapp_descubrir", "ads_descubrir", "channel_archive", "channel_delete", "channel_delete_preview", "telegram_disconnect", "telegram_connect", "telegram_pair_start", "template_submit", "template_delete", "contact_files_delete", "ventas_meta_conectar", "ventas_meta_reenviar"]);
   if (ADMIN_ACTIONS.has(action) && !esAdmin) return json({ error: "forbidden", detalle: "Solo un administrador puede cambiar los secretos o conexiones del canal." }, 403);
 
   try {
@@ -578,6 +579,16 @@ Deno.serve(async (req) => {
     // mal —sin el permiso, o con el usuario de sistema sin cuentas asignadas, que es el error
     // más común— el dueño se enteraba HASTA TRES HORAS DESPUÉS, cuando el cron fallaba y
     // escribía `ads_sync_error`. Acá se sabe al instante y con el motivo exacto.
+    // 📈 VENTAS A META sin pegar nada (7-oct): el dataset sale de la WABA y el token es el de WhatsApp. Ver capi-auto.ts.
+    if (action === "ventas_meta_estado") return json({ ok: true, ...(await estadoVentasMeta(db, channel_id)) });
+    if (action === "ventas_meta_conectar") {
+      const c = await conectarVentasMeta(db, channel_id, { forzar: !!body.forzar });
+      // Conectado → se mandan de una las ventas de los últimos 7 días que no llegaron (son la prueba de que sirve).
+      const r = c.ok && !c.ya_tenia ? await reenviarVentasPendientes(db, channel_id) : null;
+      return json({ ...c, reenvio: r });
+    }
+    if (action === "ventas_meta_reenviar") return json({ ok: true, ...(await reenviarVentasPendientes(db, channel_id)) });
+
     if (action === "ads_descubrir") {
       // 🔁 Sin token pegado y sin `ads_token` guardado, se prueba el de WHATSAPP. Un token de
       // usuario de sistema lleva grabados los permisos que se marcaron al generarlo: si el

@@ -35,8 +35,9 @@ Deno.serve(async (req) => {
   if (!channel?.pixel_id) return json({ ok: false, error: "Falta el Pixel ID. Cárgalo y guarda antes de probar." }, 200);
 
   const secrets = await getChannelSecrets(db, body.channel_id);
-  const capiToken = secrets?.capi_token;
-  if (!capiToken) return json({ ok: false, error: "Falta el token CAPI. Cárgalo y guarda antes de probar." }, 200);
+  // (sin token CAPI propio, el de WhatsApp — igual que capi.ts al mandar las ventas de verdad, 7-oct)
+  const capiToken = secrets?.capi_token || secrets?.access_token;
+  if (!capiToken) return json({ ok: false, error: "Falta el token: conecta WhatsApp o pega un token CAPI y guarda antes de probar." }, 200);
 
   // EXIGIR el código de prueba: sin él, este Lead de prueba entra como CONVERSIÓN REAL en la data
   // del pixel (Meta la cuenta y la usa para optimización/audiencias) — el comentario "no toca las

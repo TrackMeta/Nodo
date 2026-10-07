@@ -19,6 +19,7 @@ import { serviceClient, userClient, userIsChannelAdmin } from "../_shared/db.ts"
 import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt, armarProducto, armarNegocio, probarRetoques } from "../_shared/engine.ts";
 import { runAI, anotarUsoIA } from "../_shared/ai.ts";
 import { BATERIAS, BATERIA_ECOGUARD, type ConvExamen } from "./bateria.ts";
+import { conectarVentasMeta, reenviarVentasPendientes, estadoVentasMeta } from "../_shared/capi-auto.ts";
 
 const db = serviceClient();
 const MODELO_JUEZ = "gpt-5-mini";   // razona antes de calificar: más parejo que gpt-4.1 (calibración 3-oct)
@@ -364,6 +365,17 @@ Deno.serve(async (req) => {
         : await armarProducto(db, channelId, brief, String(body?.tipo ?? "")) });
     }
     catch (e) { return json({ error: String((e as any)?.message ?? e) }, 500); }
+  }
+
+  // ── ventas-meta: {op: "estado" | "conectar" | "reenviar"} — lo mismo que el panel (channel-config), con el secreto. ──
+  if (accion === "ventas-meta") {
+    const channelId = String(body?.channel_id ?? "");
+    const a = await autoriza(req, channelId);
+    if (!a.ok) return json({ error: "forbidden" }, 403);
+    const op = String(body?.op ?? "estado");
+    if (op === "conectar") return json(await conectarVentasMeta(db, channelId, { forzar: !!body?.forzar }));
+    if (op === "reenviar") return json(await reenviarVentasPendientes(db, channelId));
+    return json(await estadoVentasMeta(db, channelId));
   }
 
   // ── probar: qué le hace cada freno de texto a unas frases (sin conversación). {casos: [{texto, li?}]} ──

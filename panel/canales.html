@@ -774,8 +774,11 @@ async function terminarWA(cid, pin){
   }
   // El token ya quedó guardado: se aprovecha el MISMO viaje para ver si además lee anuncios.
   const ads=await adsDelMismoToken(cid);
-  if(!hizo.length){ toast("Guardado · la conexión ya estaba completa"+(ads?` · ${ads}`:"")); return; }
-  toast(`Guardado · ${hizo.join(" y ")}`+(ads?` · ${ads}`:""));
+  // 📈 …y las VENTAS a Meta, con el mismo token y el dataset de esta cuenta de WhatsApp (ver capi-auto.ts).
+  const vm=await ventasMetaDelMismoToken(cid);
+  const extra=[ads,vm].filter(Boolean).map(x=>` · ${x}`).join("");
+  if(!hizo.length){ toast("Guardado · la conexión ya estaba completa"+extra); return; }
+  toast(`Guardado · ${hizo.join(" y ")}`+extra);
 }
 // 📊 UN solo viaje a developers.facebook.com. Un token de usuario de sistema puede nacer con
 // `ads_read` además de los dos permisos de WhatsApp (la guía ya lo pide así), y los permisos
@@ -783,6 +786,17 @@ async function terminarWA(cid, pin){
 // de anuncios queda conectado sin que el dueño vuelva a Meta — que era el segundo viaje que
 // nadie quiere hacer. Si no los trae: silencio. No haberlo marcado no es un fallo de la
 // conexión de WhatsApp, y un aviso rojo acá solo asustaría.
+// 📈 Ventas a Meta del MISMO viaje: si el bot todavía no tiene dataset, se le pide a su cuenta de WhatsApp Business y se
+// deja conectado (y salen las ventas de la última semana que no habían llegado). Si ya tenía uno, no se toca. Silencio si falla:
+// el motivo exacto lo muestra Ajustes → Meta, y no es un fallo de la conexión de WhatsApp.
+async function ventasMetaDelMismoToken(cid){
+  try{
+    const r=await callFn("channel-config",{ action:"ventas_meta_conectar", channel_id:cid });
+    if(!r||!r.ok||r.ya_tenia) return "";
+    const n=((r.reenvio&&r.reenvio.enviadas)||[]).filter(x=>x.ok).length;
+    return `ventas a Meta conectadas`+(n?` (y mandé ${n} venta${n>1?"s":""} de esta semana)`:"");
+  }catch(_){ return ""; }
+}
 async function adsDelMismoToken(cid){
   try{
     // Si ya eligió cuentas, no se toca nada: esto resuelve el arranque, no manda después.

@@ -22,6 +22,9 @@ export interface CapiOpts {
   // viaja en customData para Meta; la dedup del upsell es por su event_id único.
   noOrderLock?: boolean;
   eventId?: string;      // si no se da, se deriva de orderId/contacto
+  // Hora del hecho (segundos). Para una venta que se manda TARDE (reenvío de las que no llegaron): Meta la ubica el
+  // día de la compra, no el del envío. Sin dato, ahora.
+  eventTime?: number;
   // El ctwa_clid CONGELADO del pedido. Se antepone al del contacto porque el
   // Purchase se dispara al cierre (días después), cuando el contacto ya pudo
   // hacer clic en otro anuncio y sobrescribir su ctwa_clid. La foto del pedido
@@ -160,7 +163,9 @@ export async function sendCapiEvent(
 
   // Token CAPI del canal (Vault).
   const secrets = await getChannelSecrets(db, channelId);
-  const capiToken = secrets?.capi_token;
+  // 🔑 Sin token CAPI propio, el de WhatsApp: un token de usuario de sistema del negocio dueño del dataset de la WABA
+  // escribe ahí (7-oct, «conectar ventas a Meta» sin pegar otro token — ver capi-auto.ts).
+  const capiToken = secrets?.capi_token || secrets?.access_token;
   if (!capiToken) {
     await markEvent(db, channelId, eventId, "fallido", { error: "sin capi_token" });
     return { ok: false, error: "canal sin capi_token" };
@@ -222,7 +227,7 @@ export async function sendCapiEvent(
 
   const evt: Record<string, unknown> = {
     event_name: nombreParaMeta,
-    event_time: Math.floor(Date.now() / 1000),
+    event_time: Math.max(Math.floor(Date.now() / 1000) - 7 * 86400 + 3600, Math.min(Math.floor(Date.now() / 1000), Math.floor(Number(opts.eventTime) || Date.now() / 1000))),
     action_source: actionSource,
     event_id: eventId,
     user_data: userData,
@@ -271,7 +276,7 @@ export interface OrderLike {
   currency?: string | null;
   shipping?: Record<string, unknown> | null;
 }
-export async function maybePurchase(db: SupabaseClient, order: OrderLike): Promise<CapiResult | null> {
+export async function maybePurchase(db: SupabaseClient, order: OrderLike, extra: { eventTime?: number } = {}): Promise<CapiResult | null> {
   if (!order?.estado || !PURCHASE_STATES.has(order.estado)) return null;
   const ship = (order.shipping ?? {}) as Record<string, unknown>;
   // Solo se envía a Meta lo que vino de un ANUNCIO (tiene ctwa_clid congelado). Una
@@ -305,6 +310,7 @@ export async function maybePurchase(db: SupabaseClient, order: OrderLike): Promi
     value: Number.isFinite(val) && val > 0 ? val : undefined,
     currency: (order.currency as string) || "PEN",
     orderId: order.id, // → event_id "Purchase:<id>" = una sola vez por pedido
+    eventTime: extra.eventTime,
     ctwaClid: (ship.ctwa_clid as string) || undefined,
     match: { fullName: (ship.cliente as string) || undefined, city: (ship.ciudad as string) || undefined },
   });
