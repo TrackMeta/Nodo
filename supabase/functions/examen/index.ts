@@ -19,7 +19,7 @@ import { serviceClient, userClient, userIsChannelAdmin } from "../_shared/db.ts"
 import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt, armarProducto, armarNegocio, probarRetoques } from "../_shared/engine.ts";
 import { runAI, anotarUsoIA } from "../_shared/ai.ts";
 import { BATERIAS, BATERIA_ECOGUARD, type ConvExamen } from "./bateria.ts";
-import { conectarVentasMeta, reenviarVentasPendientes, estadoVentasMeta } from "../_shared/capi-auto.ts";
+import { conectarVentasMeta, reenviarVentasPendientes, estadoVentasMeta, infoDataset } from "../_shared/capi-auto.ts";
 
 const db = serviceClient();
 const MODELO_JUEZ = "gpt-5-mini";   // razona antes de calificar: más parejo que gpt-4.1 (calibración 3-oct)
@@ -375,6 +375,7 @@ Deno.serve(async (req) => {
     const op = String(body?.op ?? "estado");
     if (op === "conectar") return json(await conectarVentasMeta(db, channelId, { forzar: !!body?.forzar }));
     if (op === "reenviar") return json(await reenviarVentasPendientes(db, channelId));
+    if (op === "info") return json(await infoDataset(db, channelId));
     return json(await estadoVentasMeta(db, channelId));
   }
 

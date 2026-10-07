@@ -121,3 +121,18 @@ export async function estadoVentasMeta(db: DB, channelId: string) {
     pendientes,
   };
 }
+
+// Qué es el dataset conectado, según Meta (nombre, cuándo se creó, cuándo recibió su último evento).
+export async function infoDataset(db: DB, channelId: string): Promise<any> {
+  const { data: ch } = await db.from("channels").select("pixel_id").eq("id", channelId).maybeSingle();
+  const ds = String((ch as any)?.pixel_id ?? "").trim();
+  if (!ds) return { error: "sin dataset" };
+  const sec = await getChannelSecrets(db, channelId).catch(() => null);
+  const token = String(sec?.capi_token || sec?.access_token || "");
+  const r = await graph("GET", `${ds}?fields=id,name,creation_time,last_fired_time,is_unavailable,owner_business{id,name}`, token);
+  if (r.status !== 200) {
+    const r2 = await graph("GET", `${ds}?fields=id,name,creation_time`, token);
+    return { status: r2.status, ...r2.body, primer_intento: r.body?.error?.message };
+  }
+  return r.body;
+}
