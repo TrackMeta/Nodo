@@ -232,7 +232,7 @@
           <button data-t="fisico">Físico</button>
         </div>
         <div class="datefilter">
-          <button class="df-btn" id="dfBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> <span class="cur" id="dfLabel">Últimos 7 días</span></button>
+          <button class="df-btn" id="dfBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> <span class="cur" id="dfLabel">Hoy</span></button>
           <div class="df-pop" id="dfPop"></div>
         </div>
       </div>
@@ -536,7 +536,7 @@ const PRESET_LABEL=Object.fromEntries(PRESETS);
 const MESES=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 const MES_ABBR=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
 const DOW=["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
-const range={ preset:"7d", from:null, to:null };
+const range={ preset:"hoy", from:null, to:null };   // (por defecto HOY — pedido de Rodrigo, 7-oct)
 let dfDraft=null; // estado del picker mientras está abierto (se aplica con "Actualizar")
 // Qué operación estás mirando: todo | digital | fisico.
 let tipo="todo";
