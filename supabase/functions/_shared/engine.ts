@@ -4358,6 +4358,11 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
   const hist = await historial(db, run, 10);
   const content = `El cliente escribe:\n"${event.text ?? ""}"` +
     (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje, breve y cálido.` : "");
+  // 🔬 Radiografía de la Recepción (6-oct): igual que la de la venta, solo con el examen «rx…» (forzarRxPrompt). Sin
+  // esto no había forma de leer el prompt real de la puerta ni de medir su caché.
+  if (_rxForzado) {
+    await logEvent(db, channelId, contactId, "nota", "🔬 Prompt ENTERO recepcion", parts.join("\n\n")).catch(() => {});
+  }
   let result = "";
   try {
     result = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 350 });

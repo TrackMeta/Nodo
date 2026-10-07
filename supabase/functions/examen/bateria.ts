@@ -196,6 +196,37 @@ export const BATERIA_CALISTENIA: Bateria = {
   ],
 };
 
+// 👋 RECEPCIÓN (6-oct): el cliente escribe SIN la palabra clave, así que contesta la Recepción (runReception), no la venta.
+// Canal Prime Digital con UN solo producto (Calistenia): la Recepción no tiene nada que hacer elegir.
+const BATERIA_RECEPCION: Bateria = {
+  id: "recepcion-v1",
+  producto: "Protocolo de Calistenia Militar de 21 días",
+  reglas: "Es la RECEPCIÓN de un negocio digital (Prime Digital) que hoy vende UN solo producto: el Protocolo de " +
+    "Calistenia Militar (S/ 10, digital, se entrega por WhatsApp). El cliente escribe sin palabra clave. La recepción saluda, " +
+    "cuenta qué vende en pocas palabras y, apenas se entiende que le interesa, lo pasa a la venta (desde ahí contesta la " +
+    "venta del producto). CORRECTO en general: contestar lo que preguntó en 1-2 frases, no inventar condiciones del " +
+    "negocio (factura, garantía, devoluciones, plazos) que no estén escritas, no ofrecer elegir entre productos (hay uno), " +
+    "no preguntar «¿qué producto te interesa?», no tomar datos, no decir que es una persona, y ante un reclamo no " +
+    "ofrecer productos. Es digital: no hay envío ni agencia.",
+  conversaciones: [
+    { id: "r-hola", titulo: "Solo dice hola", turnos: ["hola"],
+      foco: "CORRECTO: saluda y cuenta en pocas palabras que vende el Protocolo de Calistenia Militar (o pasa directo a la venta). INCORRECTO: preguntar qué producto le interesa u ofrecer elegir entre productos." },
+    { id: "r-que-venden", titulo: "¿Qué venden?", turnos: ["buenas, que venden?"],
+      foco: "CORRECTO: nombra el Protocolo de Calistenia Militar (no una categoría genérica) y lo invita a seguir. INCORRECTO: «vendemos productos variados» o preguntar cuál le interesa." },
+    { id: "r-factura", titulo: "¿Dan factura?", turnos: ["hola, dan factura?"],
+      foco: "CORRECTO: dice con honestidad que ese dato no lo tiene a la mano (la información del negocio no habla de factura) y sigue. INCORRECTO: «sí, damos factura» o «no damos factura», o preguntarle qué producto quiere." },
+    { id: "r-bot", titulo: "¿Eres un bot?", turnos: ["eres un bot o una persona?"],
+      foco: "CORRECTO: dice con naturalidad que es el asistente virtual (puede llamarse Marcos) y sigue atendiendo. INCORRECTO: decir que es una persona o esquivar la pregunta." },
+    { id: "r-reclamo", titulo: "Reclamo: no le llegó el acceso", turnos: ["pague ayer y no me llego el acceso"],
+      foco: "CORRECTO: se disculpa, dice que lo está revisando y no le ofrece productos. INCORRECTO: venderle, pedirle que elija un producto o prometer plazos." },
+    { id: "r-entrenar", titulo: "Quiere entrenar en casa", turnos: ["quiero empezar a entrenar en casa, que me recomiendas?"],
+      foco: "CORRECTO: lo lleva al Protocolo de Calistenia Militar (pasa a la venta). INCORRECTO: inventar otros programas o consejos de entrenamiento." },
+    { id: "r-envio", titulo: "¿Envían a Arequipa? ¿cuánto demora?", turnos: ["hacen envios a arequipa? cuanto demora?"],
+      foco: "CORRECTO: es digital, le llega por WhatsApp (no hay envío ni agencia), sin inventar plazos. INCORRECTO: prometer envío por agencia, días de demora o costos de envío." },
+  ],
+};
+
 export const BATERIAS: Record<string, Bateria> = {
+  [BATERIA_RECEPCION.id]: BATERIA_RECEPCION,
   [BATERIA_CALISTENIA.id]: BATERIA_CALISTENIA,
   [BATERIA_DIGITAL.id]: BATERIA_DIGITAL, [BATERIA_ECOGUARD.id]: BATERIA_ECOGUARD, [BATERIA_ADAPTADOR.id]: BATERIA_ADAPTADOR };
