@@ -9894,6 +9894,8 @@ function quitaZonaRepetida(texto: string, saludo: string): string {
 }
 
 async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any): Promise<boolean> {
+  // 🧠 La marca `[[datos_pago]]` nunca le llega al cliente, venga por donde venga (la venta ya la sacó al leerla).
+  result = tomaMarcaDatosPago(null, result);
   // Lo primero: el Markdown del modelo pasado al formato que WhatsApp sí entiende.
   result = aFormatoWhatsApp(result);
   // 🔢 La PLATA la escribe el motor: el número de Yape/cuenta no está en el prompt, pero la IA puede copiarlo del historial
@@ -15911,6 +15913,17 @@ async function intencionDeCompra(db: SupabaseClient, contactId: string, lastInpu
 }
 const RE_PROMETE_PAGO =
   /\b(te (paso|comparto|env[ií]o|mando|dejo) (los |el )?(datos|n[uú]mero|yape|m[eé]todos?)|los datos (de pago|para (el|tu) pago)|te (los|lo) (paso|comparto|env[ií]o))\b/i;
+// 🧠 La IA DECIDE cuándo salen los datos de pago (8-oct, Rodrigo: «no me gustan los parches, quiero confiar más en la IA»).
+// Las listas de frases nunca alcanzaban —«Si yape será mi medio de pago», «Hola plin», «Num», «¿es a este mismo número?»— y
+// a cada frase que faltaba el cliente se quedaba sin número (deypradoba yapeó al número del bot). Ahora la IA, que sí entiende
+// cómo habla la gente, escribe `[[datos_pago]]` al final y el motor manda el bloque: el NÚMERO lo sigue poniendo el motor,
+// nunca la IA. Las listas de abajo quedan de respaldo.
+const RE_MARCA_DATOS_PAGO = /\[\[\s*datos[_ ]?(?:de[_ ])?pago\s*\]\]/iu;
+function tomaMarcaDatosPago(run: any, txt: string): string {
+  if (typeof txt !== "string" || !RE_MARCA_DATOS_PAGO.test(txt)) return txt;
+  if (run) run._iaDatosPago = true;
+  return txt.replace(new RegExp(RE_MARCA_DATOS_PAGO.source, "giu"), "").replace(/[ \t]+$/gmu, "").trim();
+}
 async function maybeDatosPago(
   db: SupabaseClient, channelId: string, contactId: string, texto: string, respuestaIa = "",
   yaEligio = false, fisico?: { zona?: string; adelanto?: number | null; sym?: string; total?: number | null; forzar?: boolean },
@@ -24113,9 +24126,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         "único que necesita hacer, que es copiar el número de un toque. Tampoco anuncies que van a llegar " +
         // Decía «di que se los pasas (o que van enseguida)», y las reglas de arriba prohíben justo eso: la IA lo
         // escribía, el freno de salida lo borraba y quedaba «. Mándame la captura…» (auditoría 6-oct).
-        "(«te paso los datos», «ahí van»): el sistema se los manda completos justo debajo de tu mensaje, " +
-        "sin que lo digas. Tú contesta lo suyo y, si ya decidió, invítalo a mandar la captura. Y no le " +
-        "expliques qué es Yape o Plin: los conoce mejor que tú.\n" +
+        (esDigital(ctx)
+          // 🧠 En DIGITAL la decisión es de la IA (ver tomaMarcaDatosPago): antes este texto le decía que «el sistema se los
+          // manda debajo», pero quien decidía era una lista de frases, y cuando no reconocía la del cliente la IA quedaba
+          // contestando sobre datos que nunca salieron («yapea al mismo número de este chat» — deypradoba, 8-oct).
+          ? "(«te paso los datos», «ahí van»).\n" +
+            "🔑 TÚ decides cuándo salen. Cuando el cliente quiera pagar o pregunte cómo, dónde o a qué número pagar —lo diga como " +
+            "lo diga: «yape será mi medio de pago», «hola plin», «num», «¿a quién yapeo?», «¿es a este mismo número?», «no me " +
+            "deja yapear», «ya, lo quiero»—, termina tu mensaje con `[[datos_pago]]` (el cliente no lo ve): el sistema le manda " +
+            "justo debajo el bloque con el monto y los números. Tú contesta lo suyo y, si ya decidió, invítalo a mandar la captura.\n" +
+            "No lo pongas si solo pregunta qué incluye, si es confiable o cómo funciona, ni si dice que no le interesa. Si ya " +
+            "habló de pagar y dudas, ponlo: mandarle los datos a quien quiere pagar nunca sobra; dejarlo sin número es perder la venta.\n" +
+            "⛔ Jamás le digas que pague «a este mismo número» o «al número de este chat»: este WhatsApp NO recibe pagos.\n" +
+            "Y no le expliques qué es Yape o Plin: los conoce mejor que tú.\n"
+          : "(«te paso los datos», «ahí van»): el sistema se los manda completos justo debajo de tu mensaje, " +
+            "sin que lo digas. Tú contesta lo suyo y, si ya decidió, invítalo a mandar la captura. Y no le " +
+            "expliques qué es Yape o Plin: los conoce mejor que tú.\n") +
         // 🔴 EL TITULAR DE LA CUENTA NO ES EL CLIENTE. Medido en una venta digital sin campo de
         // nombre: el modelo se quedó sin ningún nombre del cliente en el contexto, agarró el
         // único que había —el del titular de la cuenta— y le contestó «¡Gracias, Percy! Lo dejo
@@ -26957,10 +26983,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         `digital=${esDigital(ctx)} venta=${_turnoDeVenta} producto=${!!ctx._product_id} pedido=${ctx.pedido_creado ?? ""} datos=${ctx.datos_completos ?? ""}`).catch(() => {});
     }
 
+    (run as any)._iaDatosPago = false;
     let result = await runAI({ db, channelId: run.channel_id, origen: op === "analizar_imagen" ? "ocr" : "vender",
       provider, apiKey: ai.api_key, model, system, content, maxTokens,
       jsonSchema: op === "extraer" ? cfg.json_schema : undefined,
     });
+    // 🧠 `[[datos_pago]]`: la IA decidió que salen los datos (ver tomaMarcaDatosPago). Se saca acá, antes del revisor y de
+    // cualquier retoque, para que nadie lo vea como texto; y si decidió que quiere pagar, pedir la captura ya no es adelantarse.
+    if (op === "generar_texto" && typeof result === "string") {
+      result = tomaMarcaDatosPago(run, result);
+      if ((run as any)._iaDatosPago) {
+        (run as any)._quiereComprarTurno = true;
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🧠 La IA decidió mandar los datos de pago",
+          `Por «${String(ctx.last_input ?? "").slice(0, 100)}»`).catch(() => {});
+      }
+    }
 
     // 🧭 Motor v2: el REVISOR. Si la respuesta rompe una regla del paso o no contesta lo que preguntó, se le pide
     // reescribirla UNA vez con la indicación exacta. Si la segunda tampoco pasa, se queda la segunda y vuelven las
@@ -27032,6 +27069,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             content: content + `\n\n## ⚠️ CORRIGE TU RESPUESTA\nEscribiste esto:\n«${result}»\nTiene estos problemas:\n` +
               v1.map((x) => `• ${x}`).join("\n") + "\nEscribe de nuevo el mensaje COMPLETO corrigiendo solo eso. Responde solo con el mensaje." });
           let r2b = _p?.paso === "sede" && r2 ? (sinPreguntaDeSedeV2(r2) || r2) : r2;
+          if (typeof r2b === "string") r2b = tomaMarcaDatosPago(run, r2b);   // (la marca de la reescritura tampoco se ve)
           // Paso sin pregunta (la sede: la pregunta la pone el motor debajo de la lista) y la IA volvió a preguntar
           // («¿Qué promoción prefieres?»): se quitan sus preguntas y queda lo demás. Mandarla a las tijeras por eso dejó
           // «La sede de Cayma la tomamos com» (examen fase 2, 3-oct).
@@ -29149,6 +29187,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         salida = salida.replace(/[ \t]*(?:📦|🚚)️?/gu, "");
         let _opsDig: Opcion[] = [];
         try { _opsDig = ctx._product_id ? await loadOpciones(db, run, String(ctx._product_id)) : []; } catch (_) { _opsDig = []; }
+        // 🧠 La IA decidió que salen los datos: emitIaText no anda buscando promesas colgadas (los datos van detrás).
+        if ((run as any)._iaDatosPago) (ctx as any)._datosSiguen = true;
         // 🎚️ Con UNA sola presentación no hay «¿Básica o Premium?» que preguntar: eran las
         // versiones de OTRO producto del catálogo (D13-dempresa, 2026-09-25) y la regla del
         // prompt no lo frenó. Fuera la frase que ofrece elegir entre versiones ajenas — en
@@ -29171,7 +29211,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const _li = String(ctx.last_input ?? "");
             const _ops = _opsDig;
             const _eligioMulti = _ops.length > 1 && !!String(ctx.opcion_id ?? run.vars?.opcion_id ?? "").trim() && !preguntaSobreOpcion(_li);
-            const _vanASalir = _eligioMulti || RE_PIDE_DATOS.test(_li) || RE_ANUNCIA_PAGO.test(_li)
+            const _vanASalir = !!(run as any)._iaDatosPago || _eligioMulti || RE_PIDE_DATOS.test(_li) || RE_ANUNCIA_PAGO.test(_li)
               || eligeMetodoDePago(_li)
               || (!!(run.vars as any)?._recompra && _ops.length <= 1)
               || await intencionDeCompra(db, run.contact_id, _li)
@@ -29412,7 +29452,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // la IA cerraba con «mándame la captura» y maybeDatosPago —que manda el número siempre que la IA pide la captura,
         // para que nunca quede colgada— le soltaba el Yape a alguien que solo estaba preguntando. Sin intención, esa frase
         // se va (y maybeDatosPago tampoco manda el número: ver yaQuiereComprar).
-        if (RE_PIDE_CAPTURA.test(sinFormato(salida)) && !(await yaQuiereComprar(db, run.contact_id, String(ctx.last_input ?? "")))) {
+        // (🧠 …salvo que la IA haya decidido que quiere pagar: ver tomaMarcaDatosPago)
+        if (RE_PIDE_CAPTURA.test(sinFormato(salida)) && !(run as any)._iaDatosPago && !(await yaQuiereComprar(db, run.contact_id, String(ctx.last_input ?? "")))) {
           const _sinCap = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
             .filter((f) => !RE_PIDE_CAPTURA.test(sinFormato(f))).join(" ")).join("\n")
             .replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
@@ -31797,7 +31838,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // (lo que escribió la IA Y lo que salió: la pregunta «¿cuál prefieres?» a veces la pone el motor —cierre honesto— y
         //  solo se ve en `salida`; con eso maybeDatosPago no la repite con su lista — R1D-preciodos, 2026-10-01)
         if (!_cubiertaConBolsa && !_turnoViejo) _mdpR = await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
-          `${String(result)}\n${String(salida ?? "")}`, _digitalElegido || _recompraUnico || _comboListo,
+          `${String(result)}\n${String(salida ?? "")}`, _digitalElegido || _recompraUnico || _comboListo
+            // 🧠 …o la IA decidió que quiere pagar (`[[datos_pago]]`, ver tomaMarcaDatosPago). Solo digital: en físico el
+            // adelanto depende de la zona y eso sigue en las reglas de maybeDatosPago.
+            || (esDigital(ctx) && !!(run as any)._iaDatosPago),
           // Lo que la versión física necesita: la zona (solo provincia tiene adelanto) y
           // cuánto es ese adelanto, para no mandarle un número sin monto.
           { zona: String(ctx.zona_entrega ?? ""), adelanto: Number(ctx.adelanto), sym: simboloMoneda(ctx.moneda as string),
