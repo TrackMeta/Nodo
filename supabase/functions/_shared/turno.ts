@@ -26,6 +26,7 @@ const VIVAS_MS = 4000;
 const BITACORAS = new Set(["contact_events", "capi_events", "variante_envios", "notificaciones", "ai_usage"]);
 const RPC_LECTURA = new Set(["get_channel_secrets", "get_channel_ai_active", "contact_lock_try", "contact_lock_release",
   "ai_usage_add", "get_gsheets_token"]);
+const RPC_GUARDABLE = new Set(["get_channel_secrets"]);
 
 type Guardado = { t: number; tabla: string; p: Promise<{ status: number; body: string; ctype: string } | null> };
 
@@ -48,8 +49,21 @@ function memoriaFetch(base: typeof fetch, mem: Map<string, Guardado>): typeof fe
     const u = new URL(url);
     const ruta = u.pathname.slice(u.pathname.indexOf("/rest/v1/") + 9);
     if (ruta.startsWith("rpc/")) {
-      if (!RPC_LECTURA.has(ruta.slice(4))) mem.clear();
-      return base(input as any, init);
+      const fn = ruta.slice(4);
+      if (!RPC_LECTURA.has(fn)) { mem.clear(); return base(input as any, init); }
+      // Las credenciales del bot se pedían antes de CADA burbuja (6 en el saludo): no cambian en el turno.
+      if (!RPC_GUARDABLE.has(fn)) return base(input as any, init);
+      const k = `rpc:${fn}:${typeof init?.body === "string" ? init.body : ""}`;
+      let g = mem.get(k);
+      if (!g) {
+        g = { t: Date.now(), tabla: "rpc", p: base(input as any, init)
+          .then(async (r) => r.ok ? { status: r.status, body: await r.text(), ctype: r.headers.get("content-type") ?? "application/json" } : null)
+          .catch(() => null) };
+        mem.set(k, g);
+      }
+      const r = await g.p;
+      if (!r) { mem.delete(k); return base(input as any, init); }
+      return new Response(r.body, { status: r.status, headers: { "content-type": r.ctype } });
     }
     const tabla = ruta.split("/")[0];
     if (metodo !== "GET") {

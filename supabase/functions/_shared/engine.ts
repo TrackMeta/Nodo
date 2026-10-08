@@ -32848,7 +32848,10 @@ async function markProduct(db: SupabaseClient, contactId: string, productId?: st
   // la secuencia "solo_inicio" del PRODUCTO (o su general, dentro de
   // enrolarSegmento). No degrada ni resetea (si ya interactuó/compró, no lo mueve);
   // el scheduler lo saca solo si compra/responde/opt-out.
-  try {
+  // ⏱️ Etapa, etiqueta y remarketing, DESPUÉS de responder (turno.ts): eran ~0,5 s antes del primer saludo (8-oct).
+  // No dependen del orden: moverEtapa y enrolarSegmento solo avanzan, así que si en el mismo turno ya pasó a Interesado
+  // o a otra secuencia, esto no lo retrocede.
+  await despues(db, "etapa + etiqueta + remarketing del producto", async () => {
     const { data: p } = await db.from("products").select("channel_id, tipo").eq("id", productId).maybeSingle();
     const chId = (p as any)?.channel_id;
     // Entró a la venta de un producto por la palabra clave → CURIOSO (solo tiró
@@ -32858,7 +32861,7 @@ async function markProduct(db: SupabaseClient, contactId: string, productId?: st
     // Producto digital → etiqueta "Digital" desde ya (filtrable en la Bandeja).
     if (chId && (p as any)?.tipo === "digital") await autoEtiquetaZona(db, chId, contactId, "digital");
     if (chId) await enrolarSegmento(db, chId, contactId, "solo_inicio");
-  } catch (_) { /* sin remarketing / columnas pendientes → no pasa nada */ }
+  });   // (sin remarketing / columnas pendientes → despues lo anota y sigue)
 }
 
 // Flags INTERNOS que el motor guarda como campo pero NO son un dato del cliente
