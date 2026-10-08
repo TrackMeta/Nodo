@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userIsChannelAdmin } from "../_shared/db.ts";
-import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt, armarProducto, armarNegocio, probarRetoques, rejectDigitalPending } from "../_shared/engine.ts";
+import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt, armarProducto, armarNegocio, probarRetoques, rejectDigitalPending, forzarPostventa } from "../_shared/engine.ts";
 import { runAI, anotarUsoIA } from "../_shared/ai.ts";
 import { BATERIAS, BATERIA_ECOGUARD, type ConvExamen } from "./bateria.ts";
 import { conectarVentasMeta, reenviarVentasPendientes, estadoVentasMeta, infoDataset } from "../_shared/capi-auto.ts";
@@ -470,6 +470,8 @@ Deno.serve(async (req) => {
     const channelId = String(body?.channel_id ?? "");
     const a = await autoriza(req, channelId);
     if (!a.ok) return json({ error: "forbidden" }, 403);
+    // `postventa`: prende el soporte post-venta SOLO en esta corrida (y el bot no se apaga al vender) — engine.forzarPostventa.
+    forzarPostventa(!!body?.postventa);
     try {
       // `notif`: wa_id PRUEBA-NOTIF-… → sus avisos SÍ entran a la campanita (para ver qué le llega al dueño).
       const contactId = await contactoDePrueba(channelId,
@@ -514,6 +516,7 @@ Deno.serve(async (req) => {
       const { data: ords } = await db.from("orders").select("estado, amount, version_id, shipping").eq("contact_id", contactId);
       return json({ ok: true, contact_id: contactId, chat: tr, eventos: evs ?? [], pedidos: ords ?? [] });
     } catch (e) { return json({ error: String((e as any)?.message ?? e) }, 500); }
+    finally { forzarPostventa(false); }
   }
 
   // ── retoques: un juez IA compara lo que escribió la IA con lo que salió tras los retoques del motor (evento 🔬),
