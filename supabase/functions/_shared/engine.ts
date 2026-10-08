@@ -15629,6 +15629,11 @@ async function maybePideReembolso(
 // mismo agujero que ya mordió con «¿cómo te llamas?» y con «te doy el precio»: la lista tiene
 // las formas que uno escribiría redactando, no las que la gente escribe en WhatsApp. Ahora
 // cubre cualquier verbo de "dame" seguido del medio de pago, y el «para yapear» del final.
+// «Num», «el número?», «con este num es?», «este num no está en plin» (marescx16, 8-oct): pedir el número así de corto, o
+// avisar que el que tiene no le funciona, también es pedir los datos. «num» suelto solo como mensaje entero o pegado a
+// «este/ese/qué/cuál/tu» — para no confundirlo con cualquier frase que lo nombre de pasada.
+const RE_PIDE_NUMERO_CORTO =
+  /^\s*(?:y\s+|y\s+el\s+|el\s+|tu\s+|su\s+|ese\s+|este\s+|qu[eé]\s+|cu[aá]l\s+(?:es\s+)?(?:el\s+|tu\s+)?)?(?:n[uú]m(?:ero)?|nro)\.?\s*(?:es|de\s+(?:yape|plin|pago))?\s*[?¿!.]*\s*$|con\s+(?:este|ese|qu[eé]|cu[aá]l)\s+n[uú]m(?:ero)?\b|(?:este|ese|tu|su|el)\s+n[uú]m(?:ero)?\s+no\s+(?:est[aá]|aparece|sale|existe|figura|tiene|funciona)|n[uú]m(?:ero)?\s+(?:de|para)\s+(?:yape|plin|pagar|el\s+pago|yapear|plinear)/i;
 const RE_PIDE_DATOS =
   /\b(cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|(p[aá]same|pasame|m[aá]ndame|mandame|env[ií]ame|enviame|d[aá]me|dame|me pasas|me mandas|me env[ií]as|me das)[^.?!\n]{0,24}(yape|plin|n[uú]mero|nro|cuenta|datos)|a qu[eé] n[uú]mero|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|n[uú]mero de (yape|plin|cuenta)|d[oó]nde (te )?(pago|dep[oó]sito|transfiero)|para (yapear|plinear|depositar|transferir)|c[oó]mo (te )?(pago|cancelo|abono|deposito|transfiero|yapeo|plineo)( por (yape|plin|transferencia|bcp))?)\b/i;
 // ↑ «¿cómo cancelo por yape?» (D17-pcancelo) es pedir el número: recibía «¿con qué lo pagas?» sin datos.
@@ -15640,7 +15645,7 @@ const RE_ANUNCIA_PAGO =
   // D15 (2026-09-25): «ya pues te pago ahorita», «ya ok pago 19» y «mi prima te yapea» (paga
   // otro) tampoco contaban, y al que se decidía le llegaba el precio sin el número.
   // (+ «pago el adelanto ahora», «quiero pagar el adelanto ya»: decidió pagar y no le salía el número — R1P-trujilloflujo, regresión 2026-10-01)
-  /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te (yapeo|deposito|transfiero|yapea|deposita|transfiere|plinea)\b|(?<!no )voy a (yapear|pagar|depositar|transferir)|paso a (yapear|pagar|depositar)|ahorita (te )?(yapeo|pago|deposito)|(?<!no )(?:pago|abono|deposito|yapeo|te paso)\s+(?:el\s+|los\s+)?(?:adelanto|anticipo|\d{1,4})\s+(?:ahora|ahorita|ya|hoy|de una|al toque|en un rato)|(?<!no )(?:quiero|voy a|puedo)\s+(?:pagar|hacer|mandar|yapear)(?:te)?\s+(?:el\s+|los\s+)?(?:adelanto|anticipo)\s+(?:ahora|ahorita|ya|hoy|de una|al toque)|(?<!no )te (pago|yapeo|plineo) (ahorita|ahora|ya|al toque|de una|enseguida|en un (rato|ratito|momento))|(?:^|[.!,]\s*)(?:(?:ya|ok|okey|bueno|listo|dale|pues)[\s,]+){1,3}(?:te )?pago(?:\s+(?:los\s+)?(?:s\/\s?)?\d+(?:[.,]\d+)?(?:\s*soles)?)?\s*[.!]*$|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|(p[aá]same|m[aá]ndame|env[ií]ame|pasame) (el|tu) (yape|n[uú]mero|plin|cuenta)|n[uú]mero de (yape|plin|cuenta)|cu[eé]nta para|cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|d[oó]nde (te )?(dep[oó]sito|transfiero)|me pasas (el|tu) (yape|n[uú]mero)|(?<!\bno\s+(?:(?:les?|le|te)\s+)?)(?:(?:les?|le|te)\s+)?hago\s+(?:una\s+|la\s+|el\s+)?(?:transferencia|dep[oó]sito|yape|plin)|(?<!\bno\s)(?:les?|te)\s+(?:yapeo|plineo|deposito|transfiero))\b/i;
+  /\b(ya te (yapeo|yapie|deposito|transfiero|pago)|ya te paso el (yape|pago)|te (yapeo|plineo|deposito|transfiero|yapea|deposita|transfiere|plinea)\b|(?<!no )voy a (yapear|pagar|depositar|transferir)|paso a (yapear|pagar|depositar)|ahor(?:a|ita) (te )?(yapeo|plineo|pago|deposito|transfiero)|(?<!no )(?:pago|abono|deposito|yapeo|te paso)\s+(?:el\s+|los\s+)?(?:adelanto|anticipo|\d{1,4})\s+(?:ahora|ahorita|ya|hoy|de una|al toque|en un rato)|(?<!no )(?:quiero|voy a|puedo)\s+(?:pagar|hacer|mandar|yapear)(?:te)?\s+(?:el\s+|los\s+)?(?:adelanto|anticipo)\s+(?:ahora|ahorita|ya|hoy|de una|al toque)|(?<!no )te (pago|yapeo|plineo) (ahorita|ahora|ya|al toque|de una|enseguida|en un (rato|ratito|momento))|(?:^|[.!,]\s*)(?:(?:ya|ok|okey|bueno|listo|dale|pues)[\s,]+){1,3}(?:te )?pago(?:\s+(?:los\s+)?(?:s\/\s?)?\d+(?:[.,]\d+)?(?:\s*soles)?)?\s*[.!]*$|c[oó]mo (te )?pago|d[oó]nde (te )?pago|a qu[eé] n[uú]mero|(p[aá]same|m[aá]ndame|env[ií]ame|pasame) (el|tu) (yape|n[uú]mero|plin|cuenta)|n[uú]mero de (yape|plin|cuenta)|cu[eé]nta para|cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|d[oó]nde (te )?(dep[oó]sito|transfiero)|me pasas (el|tu) (yape|n[uú]mero)|(?<!\bno\s+(?:(?:les?|le|te)\s+)?)(?:(?:les?|le|te)\s+)?hago\s+(?:una\s+|la\s+|el\s+)?(?:transferencia|dep[oó]sito|yape|plin)|(?<!\bno\s)(?:les?|te)\s+(?:yapeo|plineo|deposito|transfiero))\b/i;
 // (el «no» se mira delante del pronombre Y delante de «hago»: con el pronombre opcional el match arrancaba en «hago» y
 //  «NO les hago transferencia» contaba como anuncio de pago — auditoría 2026-09-30)
 // ↑ «les hago transferencia BCP» (D24-transferencia, 2026-09-29): el bot anunció «te paso los datos», el freno se lo
@@ -15680,9 +15685,10 @@ const RE_ACEPTAN_METODO = new RegExp(
 // Y «ok y yape?» después de que le dijeron que cripto no (D15-pcripto): la «y» también es relleno.
 function eligeMetodoDePago(texto: string): boolean {
   const t = normalize(String(texto ?? "")).replace(/[.!¡¿?,;:]+/g, " ")
-    .replace(/(?:^|\s)(?:ok|okey|okay|ya|dale|listo|bueno|entonces|entonce|mejor|va|vamos|nomas|por|con|prefiero|pago|pagare|pagaria|pagar|te|voy|a|uso|usare|el|la|de|mi|mediante|via|desde|app|cuenta|ahi|ahorita|sera|seria|pues|si|claro|perfecto|va|ser|y|e)(?=\s|$)/g, " ")
+    // (+ saludos y cortesías: «Hola plin» no contaba como elegir — marescx16, 8-oct: pidió el número 4 veces y nunca salió)
+    .replace(/(?:^|\s)(?:ok|okey|okay|ya|dale|listo|bueno|entonces|entonce|mejor|va|vamos|nomas|por|con|prefiero|pago|pagare|pagaria|pagar|te|voy|a|uso|usare|el|la|de|mi|mediante|via|desde|app|cuenta|ahi|ahora|ahorita|sera|seria|pues|si|claro|perfecto|va|ser|y|e|hola|holi|buenas|buenos|buen|dia|dias|tardes|noches|gracias|porfa|favor|amigo|amiga|bro|hermano|joven)(?=\s|$)/g, " ")
     .replace(/\s+/g, " ").trim();
-  return /^(yape|plin|transferencia|deposito|bcp|bbva|interbank|scotiabank)$/.test(t);
+  return /^(yape|yapeo|yapear|plin|plineo|plinear|transferencia|deposito|bcp|bbva|interbank|scotiabank)$/.test(t);
 }
 // 👋 «ok», «gracias», «listo»: un acuse corto, sin nada más.
 const RE_ACUSE_CORTO =
@@ -15931,7 +15937,7 @@ async function maybeDatosPago(
     // (cada mensaje por separado: «Ninguna duda» + «Plin» llegan juntos y «ninguna duda plin» no es elegir — Traslado
     //  Personal, 7-oct: dijo «Plin» y no le llegó el número)
     const soloMetodo = eligeMetodoDePago(texto) || String(texto ?? "").split(/\n+/).some((l) => eligeMetodoDePago(l));
-    const loPide = RE_PIDE_DATOS.test(texto) || soloMetodo;
+    const loPide = RE_PIDE_DATOS.test(texto) || RE_PIDE_NUMERO_CORTO.test(String(texto ?? "")) || soloMetodo;
     // 💳 «¿Aceptan Plin?» — preguntar por el MEDIO es preguntar dónde pagar, pero solo vale
     // si ese medio está cargado de verdad (se comprueba abajo, contra `dp`) y si el cliente
     // ya mostró intención: al que todavía está averiguando, mandarle el número es el error
@@ -16083,7 +16089,7 @@ async function maybeDatosPago(
     const _iaDioElNumero = _numsJuntos.some((n) => _iaRespuesta.replace(/\D/g, " ").replace(/(\d)\s+(?=\d)/g, "$1").includes(n));
     const _iaYaLoDijo = _iaDioElNumero || nums.some((n) => _iaRespuesta.includes(n))
       || dp.split("\n").map((l) => l.replace(/[*_~]/g, "").trim()).some((l) => l.length >= 8 && !/\d{6,}/.test(l) && _iaRespuesta.includes(l));
-    const _pideElNumero = /(?:cu[aá]l|qu[eé])\s+(?:es\s+)?(?:el\s+|tu\s+|su\s+)?(?:n[uú]mero|yape|plin|cuenta|cci)|p[aá]same\s+(?:el\s+|tu\s+|los\s+)?(?:n[uú]mero|yape|plin|cuenta|datos)|m[aá]ndame\s+(?:el\s+|tu\s+|los\s+)?(?:n[uú]mero|yape|plin|cuenta|datos)|a\s+qu[eé]\s+n[uú]mero|d[oó]nde\s+(?:te\s+)?(?:yapeo|pago|deposito|transfiero)/i.test(String(texto ?? ""));
+    const _pideElNumero = /(?:cu[aá]l|qu[eé])\s+(?:es\s+)?(?:el\s+|tu\s+|su\s+)?(?:n[uú]mero|yape|plin|cuenta|cci)|p[aá]same\s+(?:el\s+|tu\s+|los\s+)?(?:n[uú]mero|yape|plin|cuenta|datos)|m[aá]ndame\s+(?:el\s+|tu\s+|los\s+)?(?:n[uú]mero|yape|plin|cuenta|datos)|a\s+qu[eé]\s+n[uú]mero|d[oó]nde\s+(?:te\s+)?(?:yapeo|pago|deposito|transfiero)/i.test(String(texto ?? "")) || RE_PIDE_NUMERO_CORTO.test(String(texto ?? ""));
     // Ya se los mandamos antes → normalmente no se repiten… salvo que los esté PIDIENDO:
     // ahí quiere el dato a la vista, no que le digan que ya se lo pasaron. Sin esto la IA
     // improvisaba el número en medio de una frase —copiándolo del historial— y se perdía la
@@ -16106,7 +16112,10 @@ async function maybeDatosPago(
     if (!loPide && _yaSalieron && !_montoCambio) return;
     // («yape» a secas tras los tres medios ES pedir ese número: se le manda SOLO ese bloque — Rodrigo, Probar flujos
     //  2026-10-02: «no le envió el número de yape nuevamente». Lo que molestaba el 1-oct era recibir los TRES otra vez.)
-    const _unMetodo = !!soloMetodo && dp.split(/\n\s*\n/).filter((b) => b.trim()).length > 1;
+    // («plineo», «ahora yapeo» es AVISAR que va a pagar, no pedir el número: con los datos recién mandados no se repiten —
+    //  marescx16 replay, 8-oct: «Ok ahora plineo» repetía el bloque que acababa de salir)
+    const _anunciaConVerbo = /(?:yap|plin)e(?:o|ar[eé]?)(?![\p{L}])/iu.test(String(texto ?? ""));
+    const _unMetodo = !!soloMetodo && !_anunciaConVerbo && dp.split(/\n\s*\n/).filter((b) => b.trim()).length > 1;
     // (Si la IA ya escribió el NÚMERO en este mismo turno, no se pega otra vez aunque haya dicho «yape» o lo pida: lo
     //  acaba de leer dos segundos antes. Así salió «Aquí están los datos… 931 934 092…» y debajo «Son S/ 10 👇 Yape…
     //  931 934 092» — Probar flujos, 6-oct.)
