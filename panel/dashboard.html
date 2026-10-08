@@ -1134,6 +1134,14 @@ async function load(){
         : !_vAd.length ? (gastoAds>0 ? `gastaste ${money(gastoAds)} y ninguna venta de anuncio cobrada aún` : "sin gasto en este período")
         : `cada venta cobrada de tus anuncios (${_vAd.length})` + (cpaMax!=null ? ` · máximo para no perder: ${money(cpaMax)}` : " · falta el costo o flete de alguna para saber tu máximo")));
   }
+  // 💬 COSTO POR CHAT y POR INTERESADO (8-oct, Rodrigo): gasto de anuncios ÷ TOTAL de personas que llegaron por un anuncio
+  // en el periodo (primera vez que escribieron), y ÷ las que siguieron después de la palabra clave. División de totales, no
+  // promedio de anuncios (un anuncio chico con 1 chat inflaba el promedio). El primero mide al ANUNCIO (qué tan barato trae
+  // gente); el segundo, la CALIDAD de esa gente. Se llenan abajo, con dos conteos de contactos (ver «costosPorChat»).
+  if(hasAds){
+    K.push(`<div id="kpiCostoChat">${kpi("lead","#2b7fff","Costo por chat","…","contando los chats de tus anuncios")}</div>`);
+    K.push(`<div id="kpiCostoInteresado">${kpi("users","#9b6cf0","Costo por interesado","…","contando los que siguieron conversando")}</div>`);
+  }
   // ROI al lado del ROAS a propósito: juntos cuentan la historia completa (cuánto
   // facturas por sol de ads vs. cuánto GANAS). Si faltan costos, la neta no es
   // confiable y el ROI tampoco — se dice, en vez de mostrar un número bonito.
@@ -1204,6 +1212,26 @@ async function load(){
   }catch(_){ cohorte=null; }
   if(cid!==channelId) return;
   renderMetricas(porStage, cohorte);
+  // 💬 costosPorChat: los que llegaron por un anuncio en el periodo (con el filtro Digital/Físico por el tipo del anuncio,
+  // igual que el gasto) y cuántos siguieron después de la palabra clave (etapa Interesado o más, o un pedido que se cayó).
+  if(hasAds && $("kpiCostoChat")) (async()=>{   // en paralelo: no frena el resto del tablero
+    try{
+      const _ids = tipo==="todo" ? null : Object.keys(adTipo).filter(a=>adTipo[a]===tipo);
+      const baseAd=()=>{ let q=supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId)
+        .or("source.is.null,source.neq.sim").neq("wa_id","webchat-test").gte("primera_interaccion",fromISO).lt("primera_interaccion",toISO);
+        return _ids ? q.in("ad_id", _ids.length ? _ids : ["-"]) : q.not("ad_id","is",null); };
+      const [cA,cI]=await Promise.all([ baseAd(), baseAd().in("stage",["interesado","caliente","confirmado","comprado","perdido"]) ]);
+      if(cid===channelId && $("kpiCostoChat") && !cA.error && !cI.error){
+        const chats=cA.count||0, inter=cI.count||0;
+        $("kpiCostoChat").innerHTML = kpi("lead","#2b7fff","Costo por chat",
+          chats ? money(gastoAds/chats) : "—",
+          chats ? `${chats} ${chats===1?"persona te escribió":"personas te escribieron"} por tus anuncios` : "nadie escribió por tus anuncios en este período");
+        $("kpiCostoInteresado").innerHTML = kpi("users","#9b6cf0","Costo por interesado",
+          inter ? money(gastoAds/inter) : "—",
+          inter ? `${inter} de ${chats} siguieron después de la palabra clave (${Math.round(inter/Math.max(chats,1)*100)}%)` : (chats ? "ninguno siguió después de la palabra clave" : "sin chats de anuncios en este período"));
+      }
+    }catch(_){ /* sin conteo → se quedan en «…» */ }
+  })();
   renderFunnel(porStage);
   // ventasOk (excluye rechazado/no_recogido): el panel "Ventas confirmadas" y el desglose por
   // producto deben usar las ventas CERRADAS, no `orders` (que incluye los perdidos). Antes
