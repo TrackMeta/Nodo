@@ -1115,6 +1115,25 @@ async function load(){
     !hasAds ? "conecta Meta para verlo"
       : roas>0 ? `${money(cobrado)} cobrados por ${money(gastoAds)} de anuncios${monedaAdsRara?" · "+avisoAds:""}`
       : "aún sin cobrar nada en este período"));
+  // 🎯 CPA REAL (8-oct, Rodrigo): cuánto te cuesta en anuncios cada venta COBRADA que vino de un anuncio. Mismo criterio
+  // que Rendimiento (ventas reales con shipping.ad_id, cobradas del todo) y el mismo color contra el CPA máximo — lo que
+  // deja en promedio cada una de esas ventas antes de pagar anuncios: pagar más que eso por venta es perder plata.
+  // Respeta el filtro Digital/Físico (el gasto y las ventas ya vienen filtrados).
+  {
+    const _vAd = ventasOk.filter(o => o.shipping && o.shipping.ad_id && (O.EST[o.estado]||{}).cobro==="todo");
+    const cpaReal = _vAd.length && gastoAds>0 ? gastoAds/_vAd.length : null;
+    let _mg=0, _sinMg=false;
+    _vAd.forEach(o=>{ const cant=cantPorVersion[o.version_id]??1;
+      const m = !O.esFisico(o) ? O.cobrado(o)-(O.costoProducto(o, prodPorId[o.product_id], cant)||0) : O.margen(o, prodPorId[o.product_id], cant);
+      if(m==null) _sinMg=true; else _mg+=m; });
+    const cpaMax = _vAd.length && !_sinMg ? _mg/_vAd.length : null;
+    const _col = cpaReal==null||cpaMax==null ? "#6d8ea0" : cpaMax<=0 ? "#e2564a" : cpaReal<=cpaMax*0.8 ? "#22c079" : cpaReal<=cpaMax ? "#f0a92b" : "#e2564a";
+    K.push(kpi("cart", _col, "CPA real",
+      cpaReal==null ? "—" : money(cpaReal),
+      !hasAds ? "conecta Meta para verlo"
+        : !_vAd.length ? (gastoAds>0 ? `gastaste ${money(gastoAds)} y ninguna venta de anuncio cobrada aún` : "sin gasto en este período")
+        : `cada venta cobrada de tus anuncios (${_vAd.length})` + (cpaMax!=null ? ` · máximo para no perder: ${money(cpaMax)}` : " · falta el costo o flete de alguna para saber tu máximo")));
+  }
   // ROI al lado del ROAS a propósito: juntos cuentan la historia completa (cuánto
   // facturas por sol de ads vs. cuánto GANAS). Si faltan costos, la neta no es
   // confiable y el ROI tampoco — se dice, en vez de mostrar un número bonito.
