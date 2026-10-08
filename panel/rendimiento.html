@@ -127,6 +127,10 @@
   .roas .rd{width:7px;height:7px;border-radius:50%;background:currentColor}
   .roas.g{color:var(--green)} .roas.a{color:var(--amber)} .roas.r{color:var(--red)}
   td .sub{color:var(--faint);font-size:10.5px;font-weight:600;margin-left:3px}
+  /* Efectividad del bot: el violeta de la IA del Dashboard (tarjeta «Efectividad de cierre») */
+  .efb{font-weight:800;background:linear-gradient(120deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+  .iab{width:15px;height:15px;border-radius:5px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:inline-flex;align-items:center;justify-content:center;margin-right:5px;vertical-align:-3px;box-shadow:0 2px 6px rgba(168,85,247,.4)}
+  .iab svg{width:10px;height:10px}
   /* Embudo de los anuncios: chats → contestaron → calientes → compraron, con el paso donde más se pierde */
   .embudo{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:13px 15px;margin-bottom:18px}
   .embudo:empty{display:none}
@@ -276,7 +280,7 @@ async function loadData(){
     (angs||[]).forEach(a=>{ const t=a.product?(a.product.tipo==="fisico"?"fisico":"digital"):null;
       (a.ad_ids||[]).forEach(id=>{ const k=String(id); if(!angMap[k]) angMap[k]={slug:a.slug,nombre:a.nombre,tipo:t}; }); }); }catch(_){}
   const byAd={};
-  const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; const ang=angMap[String(adId)]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), angulo:ang.nombre||"— Sin ángulo —", anguloSlug:ang.slug||null, tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:0,clics:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, chats:0,interes:0,calientes:0,compraron:0,vRemarketing:0, daily:{} }; } return byAd[adId]; };
+  const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; const ang=angMap[String(adId)]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), angulo:ang.nombre||"— Sin ángulo —", anguloSlug:ang.slug||null, tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:0,clics:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, chats:0,interes:0,calientes:0,compraron:0,perdidos:0,vRemarketing:0, daily:{} }; } return byAd[adId]; };
   const day=(row,f)=>{ if(!row.daily[f]) row.daily[f]={gasto:0,impr:0,clics:0,conf:0,ventas:0,ingresos:0}; return row.daily[f]; };
   // El gasto llega en la moneda de la CUENTA de Meta. Se lleva a la del negocio con
   // la misma regla que el Dashboard (factorAds, en shell.js): si Meta ya factura en tu
@@ -317,7 +321,8 @@ async function loadData(){
       row.chats++;
       if(["interesado","caliente","confirmado","comprado"].includes(s)) row.interes++;
       if(["caliente","confirmado","comprado"].includes(s)) row.calientes++;
-      if(s==="comprado") row.compraron++; });
+      if(s==="comprado") row.compraron++;
+      if(s==="perdido") row.perdidos++; });
   }catch(_){ /* sin la cohorte, las columnas de chats salen en blanco */ }
   // 🔁 Venta POR REMARKETING = antes de comprar, el cliente ya había recibido al menos un toque de una secuencia
   // (sequence_subscriptions.paso_actual ≥ 1 en una suscripción que empezó antes del pedido). Las secuencias se cortan
@@ -374,6 +379,9 @@ function metrics(a){
     neta:a.neta, roas:a.gasto?a.ingresos/a.gasto:null,
     chats:a.chats||0, cpr:a.chats?a.gasto/a.chats:null, interes:a.interes||0, calientes:a.calientes||0, compraron:a.compraron||0,
     pInteres:a.chats?(a.interes||0)/a.chats:null, pCalientes:a.chats?(a.calientes||0)/a.chats:null, conv:a.chats?(a.compraron||0)/a.chats:null,
+    // Efectividad del BOT (igual que el Dashboard): de los que se interesaron de verdad —más los que llegaron a tener
+    // pedido y se cayeron—, cuántos cerró. El Conv% juzga al anuncio; esto, a la conversación.
+    efect:((a.interes||0)+(a.perdidos||0))?(a.compraron||0)/((a.interes||0)+(a.perdidos||0)):null, baseEfect:(a.interes||0)+(a.perdidos||0),
     vRemarketing:a.vRemarketing||0, vDirectas:Math.max(0,a.ventas-(a.vRemarketing||0)),
     ticket:a.ventas?a.ingresos/a.ventas:null,
     // CPA máximo = lo que deja cada venta antes de pagar anuncios (margen promedio). Pagar más que eso por venta es perder.
@@ -384,9 +392,11 @@ function metrics(a){
 const semCpa=(cpa,max)=> cpa==null||max==null ? "" : max<=0 ? "r" : cpa<=max*0.8 ? "g" : cpa<=max ? "a" : "r";
 const conPct=(n,p)=>`${nf(n)}${p==null?"":` <span class="sub">${nf(p*100,0)}%</span>`}`;
 const oDash=(v,f)=> v==null||!Number.isFinite(Number(v)) ? "—" : f(v);
-const sumAds=(arr)=>{ const k=["gasto","impr","alcance","clics","clicsWA","conf","ventas","ingresos","neta","chats","interes","calientes","compraron","vRemarketing","_margen","_sinMargen"]; const o={}; k.forEach(x=>o[x]=0); arr.forEach(a=>k.forEach(x=>{ if(o[x]===null) return; if(a[x]==null){ if(x==="neta") o[x]=null; return; } o[x]+=a[x]; })); return o; };
+const sumAds=(arr)=>{ const k=["gasto","impr","alcance","clics","clicsWA","conf","ventas","ingresos","neta","chats","interes","calientes","compraron","perdidos","vRemarketing","_margen","_sinMargen"]; const o={}; k.forEach(x=>o[x]=0); arr.forEach(a=>k.forEach(x=>{ if(o[x]===null) return; if(a[x]==null){ if(x==="neta") o[x]=null; return; } o[x]+=a[x]; })); return o; };
 
 // Catálogo de columnas: key, label, grupo, cómo se pinta, y si es fija.
+// El robot de la tarjeta «Efectividad de cierre» del Dashboard.
+const ROBOT=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>`;
 const COLS=[
   {k:"gasto",  l:"Gasto",         g:"Inversión", fix:true,  cell:m=>`<td class="num money">${money0(m.gasto)}</td>`},
   {k:"impr",   l:"Impresiones",   g:"Entrega",   cell:m=>`<td class="num">${nf(m.impr)}</td>`},
@@ -403,6 +413,7 @@ const COLS=[
   {k:"interes",l:"Contestaron",   g:"WhatsApp",  t:"Escribieron algo más que la palabra clave (2+ mensajes). El % es sobre los chats", cell:m=>`<td class="num">${conPct(m.interes,m.pInteres)}</td>`},
   {k:"calientes",l:"Calientes",   g:"WhatsApp",  t:"Escribieron 4+ mensajes o ya avanzaron más. El % es sobre los chats", cell:m=>`<td class="num">${conPct(m.calientes,m.pCalientes)}</td>`},
   {k:"conv",   l:"Conv%",         g:"WhatsApp",  fix:true,  t:"De los chats del periodo, cuántos ya compraron", cell:m=>`<td class="num" title="${m.compraron} de ${m.chats} chats ya compraron">${oDash(m.conv,pct)}</td>`},
+  {k:"efect",  l:"Efectividad del bot", h:`<span class="iab">${ROBOT}</span>Efect. bot`, g:"WhatsApp", fix:true, t:"Compras ÷ los que se interesaron de verdad (contestaron, incluidos los pedidos que se cayeron). Mide qué tan bien cierra el bot; el Conv% mide al anuncio", cell:m=>`<td class="num" title="${m.compraron} de ${m.baseEfect} interesados compraron">${m.efect==null?"—":`<span class="efb">${pct(m.efect)}</span>`}</td>`},
   {k:"conf",   l:"Confirmaciones",g:"Ventas",    fix:true,  cell:m=>`<td class="num">${m.conf}</td>`},
   {k:"cpaConf",l:"CPA conf.",     g:"Ventas",    fix:true,  cell:m=>`<td class="num">${oDash(m.cpaConf,money)}</td>`},
   {k:"ventas", l:"Ventas reales", g:"Ventas",    fix:true,  cell:m=>`<td class="num">${m.ventas}</td>`},
@@ -418,7 +429,7 @@ const COLS=[
 const DEFAULT_ON=new Set(["gasto","conf","cpaConf","ventas","cpaReal","neta","roas","interes","vRemarketing","cpaMax","ingresos"]);
 
 function visibleCols(){ return COLS.filter(c=>c.fix||st.cols.has(c.k)); }
-function headRow(first){ return `<th>${first}</th>`+visibleCols().map(c=>`<th${c.t?` title="${esc(c.t)}"`:""}>${c.l}</th>`).join(""); }
+function headRow(first){ return `<th>${first}</th>`+visibleCols().map(c=>`<th${c.t?` title="${esc(c.t)}"`:""}>${c.h||c.l}</th>`).join(""); }
 function cells(m){ return visibleCols().map(c=>c.cell(m)).join(""); }
 
 function boot(){
@@ -631,7 +642,7 @@ function renderEmbudoAds(m){
   // El paso que más pierde: la tasa más baja entre escalones (con al menos 5 personas arriba para no gritar por 1 de 2).
   let fuga=-1, peor=2;
   P.forEach(([,n,de],i)=>{ if(de && de>=5){ const r=n/de; if(r<peor){ peor=r; fuga=i; } } });
-  el.innerHTML=`<div class="eh"><b>Embudo de tus anuncios</b><span>${m.compraron} de ${m.chats} chats compraron (${pct(m.conv||0)})${m.cpr!=null?` · cada chat te cuesta ${money(m.cpr)}`:""}${fuga>0?` · donde más se pierde: <b>${P[fuga-1][0]} → ${P[fuga][0]}</b>`:""}</span></div>
+  el.innerHTML=`<div class="eh"><b>Embudo de tus anuncios</b><span>${m.compraron} de ${m.chats} chats compraron (${pct(m.conv||0)})${m.cpr!=null?` · cada chat te cuesta ${money(m.cpr)}`:""}${m.efect!=null?` · <span class="iab">${ROBOT}</span>el bot cierra <b class="efb">${pct(m.efect)}</b> de los que se interesan`:""}${fuga>0?` · donde más se pierde: <b>${P[fuga-1][0]} → ${P[fuga][0]}</b>`:""}</span></div>
     <div class="ep">${P.map(([l,n,de,s],i)=>`<div class="es${i===fuga?" fuga":""}" title="${esc(s)}"><div class="l">${l}</div><div class="n num">${nf(n)}</div><div class="p">${de==null?s:`${pct(de?n/de:0)} de ${P[i-1][0].toLowerCase()}`}</div><span class="bar" style="width:${Math.max(2,Math.round(n/m.chats*100))}%"></span></div>`).join("")}</div>`;
 }
 function renderTable(){
