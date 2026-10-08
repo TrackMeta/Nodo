@@ -25460,6 +25460,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "\"enseguida\", ni \"te va a llegar\", ni \"recibirás un mensaje con…\". Sale INMEDIATAMENTE después del " +
           "tuyo, así que anunciarlo solo lo duplica. Cierra tu mensaje con naturalidad y ya. " +
           "Tampoco negocies el monto ni le preguntes con cuánto quiere adelantar.");
+        // 🧠 (8-oct) Ese «mensaje siguiente» lo dispara la IA (ver tomaMarcaDatosPago): antes lo decidía una lista de frases,
+        // y si no reconocía la del cliente, la frase de arriba («salen solos») le mentía a la IA y el número no salía.
+        L.push("🔑 TÚ decides cuándo sale ese mensaje del adelanto. Cuando el cliente quiera pagar o pregunte cómo, dónde o a qué " +
+          "número pagar —lo diga como lo diga: «ya, mándame el número», «¿a quién deposito?», «hola plin», «yapeo ahorita», " +
+          "«listo, lo quiero»—, termina tu mensaje con `[[datos_pago]]` (el cliente no lo ve) y el sistema le manda el adelanto con " +
+          "los números justo debajo. No hace falta que antes te dé su nombre, DNI u oficina: hay quien paga primero y da sus datos " +
+          "después. No lo pongas si solo está preguntando o dice que no le interesa. " +
+          "⛔ Jamás le digas que pague «a este mismo número» o «al número de este chat»: este WhatsApp NO recibe pagos.");
       }
       // "Solo me falta tu número de celular" a alguien que te escribe POR WhatsApp.
       // La regla vivía únicamente en la rama de provincia (y encima colgada del
@@ -29178,6 +29186,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
         } catch (_) { /* sin historial → se envía tal cual */ }
       }
+      // 🧠 Físico con la decisión de la IA y la zona sabida: los datos salen detrás (ver el `forzar` de maybeDatosPago), así
+      // que emitIaText no anda buscando promesas colgadas.
+      if (op === "generar_texto" && !esDigital(ctx) && (run as any)._iaDatosPago
+          && (String(ctx.zona_entrega ?? "") === "provincia" || (String(ctx.zona_entrega ?? "") === "lima" && Number(ctx.precio) > 0))) (ctx as any)._datosSiguen = true;
       // En digital no hay dato que pedir: si se lo inventó, se le quita antes de enviarlo.
       _tr("En digital no hay dato que pedir: si se lo inventó, se le quita antes  ·L28478");
       if (op === "generar_texto" && esDigital(ctx)) {
@@ -31839,13 +31851,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         //  solo se ve en `salida`; con eso maybeDatosPago no la repite con su lista — R1D-preciodos, 2026-10-01)
         if (!_cubiertaConBolsa && !_turnoViejo) _mdpR = await maybeDatosPago(db, run.channel_id, run.contact_id, String(ctx.last_input ?? ""),
           `${String(result)}\n${String(salida ?? "")}`, _digitalElegido || _recompraUnico || _comboListo
-            // 🧠 …o la IA decidió que quiere pagar (`[[datos_pago]]`, ver tomaMarcaDatosPago). Solo digital: en físico el
-            // adelanto depende de la zona y eso sigue en las reglas de maybeDatosPago.
-            || (esDigital(ctx) && !!(run as any)._iaDatosPago),
+            // 🧠 …o la IA decidió que quiere pagar (`[[datos_pago]]`, ver tomaMarcaDatosPago). En físico, además, va `forzar`
+            // abajo: la IA decide CUÁNDO, el motor sigue decidiendo CUÁNTO por la zona (provincia = adelanto, Lima = total).
+            || !!(run as any)._iaDatosPago,
           // Lo que la versión física necesita: la zona (solo provincia tiene adelanto) y
           // cuánto es ese adelanto, para no mandarle un número sin monto.
           { zona: String(ctx.zona_entrega ?? ""), adelanto: Number(ctx.adelanto), sym: simboloMoneda(ctx.moneda as string),
-            total: Number.isFinite(Number(ctx.precio)) ? Number(ctx.precio) : null },
+            total: Number.isFinite(Number(ctx.precio)) ? Number(ctx.precio) : null,
+            // 🧠 (8-oct) Físico con la decisión de la IA: solo con la ZONA sabida —sin ella no hay monto que cobrarle—.
+            forzar: !esDigital(ctx) && !!(run as any)._iaDatosPago && ["lima", "provincia"].includes(String(ctx.zona_entrega ?? "")) },
           {
             monto: _montoDig, sym: simboloMoneda(ctx.moneda as string),
             unico: _opsProd.length <= 1,
