@@ -15634,6 +15634,9 @@ async function maybePideReembolso(
 // «este/ese/qué/cuál/tu» — para no confundirlo con cualquier frase que lo nombre de pasada.
 const RE_PIDE_NUMERO_CORTO =
   /^\s*(?:y\s+|y\s+el\s+|el\s+|tu\s+|su\s+|ese\s+|este\s+|qu[eé]\s+|cu[aá]l\s+(?:es\s+)?(?:el\s+|tu\s+)?)?(?:n[uú]m(?:ero)?|nro)\.?\s*(?:es|de\s+(?:yape|plin|pago))?\s*[?¿!.]*\s*$|con\s+(?:este|ese|qu[eé]|cu[aá]l)\s+n[uú]m(?:ero)?\b|(?:este|ese|tu|su|el)\s+n[uú]m(?:ero)?\s+no\s+(?:est[aá]|aparece|sale|existe|figura|tiene|funciona)|n[uú]m(?:ero)?\s+(?:de|para)\s+(?:yape|plin|pagar|el\s+pago|yapear|plinear)/i;
+// 🛟 Para la red de seguridad de maybeDatosPago: cualquier forma de hablar del pago o de cómo pagar.
+const RE_HABLA_DE_PAGAR = /(?:^|[^\p{L}])(?:yape\w*|yap[eé]\w*|plin\w*|n[uú]m(?:ero)?|nro|pag(?:o|ar|ue|u[eé]|ar[eé]|amos|ando|ues)|transfer\w*|dep[oó]sit\w*|bcp|interbank|bbva|scotiabank|cci|cuenta\s+(?:bancaria|de\s+banco))(?![\p{L}])/iu;
+const RE_NO_QUIERE_PAGAR = /(?:^|[^\p{L}])no\s+(?:quiero|me\s+interesa|voy\s+a\s+(?:pagar|comprar)|gracias|por\s+ahora)|ya\s+no(?![\p{L}])|muy\s+caro|es\s+estafa/iu;
 const RE_PIDE_DATOS =
   /\b(cu[aá]l es (el|tu) (yape|plin|n[uú]mero|cuenta)|(p[aá]same|pasame|m[aá]ndame|mandame|env[ií]ame|enviame|d[aá]me|dame|me pasas|me mandas|me env[ií]as|me das)[^.?!\n]{0,24}(yape|plin|n[uú]mero|nro|cuenta|datos)|a qu[eé] n[uú]mero|a qui[eé]n (le )?(pago|dep[oó]sito)|a nombre de qui[eé]n|n[uú]mero de (yape|plin|cuenta)|d[oó]nde (te )?(pago|dep[oó]sito|transfiero)|para (yapear|plinear|depositar|transferir)|c[oó]mo (te )?(pago|cancelo|abono|deposito|transfiero|yapeo|plineo)( por (yape|plin|transferencia|bcp))?)\b/i;
 // ↑ «¿cómo cancelo por yape?» (D17-pcancelo) es pedir el número: recibía «¿con qué lo pagas?» sin datos.
@@ -16017,6 +16020,29 @@ async function maybeDatosPago(
         .eq("contact_id", contactId).eq("direction", "in")
         .order("ts", { ascending: false }).limit(5);
       pidio = (ins ?? []).some((m: any) => RE_ANUNCIA_PAGO.test(String(m.content?.text ?? m.content?.caption ?? "")));
+    }
+    // 🛟 RED DE SEGURIDAD (8-oct, Rodrigo): las listas de frases de arriba no alcanzan —cada cliente escribe distinto: «Hola
+    // plin», «Num», «ahora plineo», «pasa el nro»— y tres chats reales en dos días (Traslado Personal, LUISIN, marescx16) se
+    // quedaron SIN número queriendo pagar; la IA, que no escribe datos, rellenó con «paga a este mismo número». En DIGITAL, si
+    // habla de pagar de cualquier forma y en toda la conversación todavía no salieron los datos, salen. Mandarle el número a
+    // quien habla de pagar casi no tiene costo; no mandárselo es perder la venta. (Físico no: ahí el adelanto depende de la zona.)
+    if (!pidio && RE_HABLA_DE_PAGAR.test(String(texto ?? "")) && !RE_NO_QUIERE_PAGAR.test(String(texto ?? ""))) {
+      try {
+        const { data: _cRed } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
+        const { data: _pRed } = (_cRed as any)?.product_id
+          ? await db.from("products").select("tipo").eq("id", (_cRed as any).product_id).maybeSingle() : { data: null };
+        if (String((_pRed as any)?.tipo ?? "") === "digital") {
+          const { data: _oRed } = await db.from("messages").select("content").eq("contact_id", contactId)
+            .eq("direction", "out").order("ts", { ascending: false }).limit(40);
+          const _yaDatosRed = ((_oRed ?? []) as any[]).some((m) => { const x = String(m?.content?.text ?? "");
+            return /^Son \*/.test(x) && /\d{3}[\s.-]?\d{3}[\s.-]?\d{3}/.test(x); });
+          if (!_yaDatosRed) {
+            pidio = true;
+            await logEvent(db, channelId, contactId, "nota", "🛟 Red de seguridad: datos de pago",
+              `Habló de pagar («${String(texto ?? "").slice(0, 60)}») y en el chat todavía no estaban los datos`).catch(() => {});
+          }
+        }
+      } catch (_) { /* sin dato → como antes */ }
     }
     if (!pidio) return;
     const { data: c } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle();
