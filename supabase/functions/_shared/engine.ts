@@ -5929,7 +5929,8 @@ const RE_PERMISO_PAGO_PRONOMBRE =
   /¿\s*(?:(?:quieres|deseas|te parece|prefieres)\s+(?:que\s+)?te\s+(?:los|las)\s+(?:env[ií]e|pase|mande|comparta|d[eé])|listo\s+para\s+(?:pasar|pasarte|enviarte|mandarte|recibir)\s+los\s+datos|list[oa]\s*(?:para\s+(?:empezar|arrancar|comenzar|iniciar))?\s*(?=\?))[^?¿\n]*\?/giu;
 // ↑ …y «¿Listo?» / «¿Listo para empezar?» con los datos debajo (D17-udiferencia, D17-uupgrade).
 // ↑ …y «¿Listo para pasar los datos y que te llegue ya mismo?» (D15b-pdoble).
-function sinPedirPermisoPago(texto: string): string {
+function sinPedirPermisoPago(texto: string): string { return conDecimalesDeVuelta(_sinPedirPermisoPago(conDecimalesProtegidos(texto))); }
+function _sinPedirPermisoPago(texto: string): string {
   const _sinPron = String(texto ?? "").replace(RE_PERMISO_PAGO_PRONOMBRE, " ").replace(/[ \t]{2,}/g, " ").trim();
   if (_sinPron !== String(texto ?? "").trim() && _sinPron.replace(/[\s\p{P}\p{Extended_Pictographic}]/gu, "").length >= 15) texto = _sinPron;
   const t = String(texto ?? "");
@@ -6184,7 +6185,15 @@ const RE_HIPOTETICO =
 // también pesca «gracias por la info»): acá solo las formas que son un paso atrás explícito.
 const RE_LO_PIENSA_PEDIDO =
   /\b(?:mejor\s+lo\s+pienso|lo\s+voy\s+a\s+pensar|lo\s+pensar[eé]|d[eé]jame\s+pensarlo|lo\s+consulto\s+(?:y\s+te\s+aviso|con\s+mi|primero)|mejor\s+(?:despu[eé]s|luego|m[aá]s\s+adelante|otro\s+d[ií]a|en\s+otra\s+ocasi[oó]n|la\s+pr[oó]xima)|por\s+ahora\s+no|ahorita\s+no|mejor\s+no\s+por\s+ahora)\b/i;
-function sinAnuncioDePago(texto: string): string {
+// 🔢 Los recortes por FRASE cortan en «.», y el punto de un monto no es fin de frase: «Te paso los datos para el pago por
+// S/ *7.00* para que comiences…» se cortó en «7.» y al cliente le llegó «Perfecto, soldado 🫡 00* para que comiences…»
+// (LUISIN, 7-oct). Mientras se recorta, el punto decimal (1-2 cifras detrás: «7.00», «19.5») va escondido; un celular
+// «931.934.092» o un «1.050» no se tocan, así que sus frases se siguen respetando por el número.
+const _PUNTO_DECIMAL = "\uE000";
+const conDecimalesProtegidos = (t: string) => String(t ?? "").replace(/(\d)\.(\d{1,2})(?![\d.])/g, `$1${_PUNTO_DECIMAL}$2`);
+const conDecimalesDeVuelta = (t: string) => String(t ?? "").replace(/\uE000/g, ".");
+function sinAnuncioDePago(texto: string): string { return conDecimalesDeVuelta(_sinAnuncioDePago(conDecimalesProtegidos(texto))); }
+function _sinAnuncioDePago(texto: string): string {
   const t = String(texto ?? "");
   RE_ANUNCIA_DATOS_QUE_SIGUEN.lastIndex = 0;
   if (!RE_ANUNCIA_DATOS_QUE_SIGUEN.test(t)) return texto;
@@ -6244,7 +6253,11 @@ function sinAnuncioDePago(texto: string): string {
 // cuatro frases y salió el vacío. Regla: toda regex con un emoji y un cuantificador lleva `u`.
 const RE_FRASE_PROMETE_DATOS =
   /(?:\b(?:perfecto|listo|claro|dale|genial|ya|bueno)[,!]?\s+)?\bte\s+(?:paso|pasar[eé]|mando|mandar[eé]|env[ií]o|enviar[eé]|comparto|compartir[eé]|dejo)\s+(?:los\s+|el\s+|las\s+|la\s+)?(?:datos|n[uú]mero|yape|plin|m[eé]todos?|info|informaci[oó]n)\b[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?[ \t]*👇?/giu;
+// (con el punto decimal escondido mientras recorta, igual que sinAnuncioDePago: «S/ *7.00*» no es fin de frase)
 function sinPromesaDeDatosColgada(texto: string, unico: boolean, presencia = false, lastInput = ""): string {
+  return conDecimalesDeVuelta(_sinPromesaDeDatosColgada(conDecimalesProtegidos(texto), unico, presencia, lastInput));
+}
+function _sinPromesaDeDatosColgada(texto: string, unico: boolean, presencia = false, lastInput = ""): string {
   const t = String(texto ?? "");
   RE_FRASE_PROMETE_DATOS.lastIndex = 0;
   if (!RE_FRASE_PROMETE_DATOS.test(t)) return texto;
@@ -15766,7 +15779,7 @@ async function sinKeywordsDelCanal(db: SupabaseClient, channelId: string, texto:
 // «sí por favor». Medido: «ya, dale» no contaba por la coma y el cliente se quedó sin número.
 const RE_AFIRMA_CORTO =
   // (+ «ok dame», «dámelo»: a «¿Lo quieres hoy?» contestó «ok dame» y el número no salió — R1D-plantillarubro, 2026-10-01)
-  /^[\s¡!.]*(?:(?:s[ií]+|ya|dale|ok(?:ey|a)?|claro|listo|bueno|va|vamos|perfecto|genial|de una|pues|por ?fa(?:vor)?|claro que s[ií]|d[aá]me(?:l[oa]s?)?|m[aá]ndamel[oa]s?|p[aá]samel[oa]s?|env[ií]amel[oa]s?|a ver|anda|ahi va|ah[ií] va)[\s,;!.]*){1,4}[\s!.😊🙌👍]*$/iu;
+  /^[\s¡!.]*(?:(?:s[ií]+|ya|dale|ok(?:ey|a)?|claro|listo|bueno|va|vamos|perfecto|genial|de una|pues|por ?fa(?:vor)?|claro que s[ií]|d[aá]me(?:l[oa]s?)?|m[aá]ndamel[oa]s?|p[aá]samel[oa]s?|env[ií]amel[oa]s?|a ver|anda|ahi va|ah[ií] va)[\s,;!.]*){1,4}[\s!.😊🙌👍]*$|^\s*(?:(?:👍|👌|✅|🙌|💪|🔥|🫡|🤝|👏)[\u{1F3FB}-\u{1F3FF}\u{FE0F}]?\s*){1,4}$/iu;
 // …y también la pregunta de DECISIÓN («¿La quieres?», «¿te la dejo lista?», «¿vamos con la
 // Básica?»): el «sí» a esa pregunta es querer comprar, y si no contara, el que dice «sí» se
 // quedaba con la misma pregunta otra vez (medido: «¿La quieres?» → «sí» → «¿La quieres?»).
@@ -15845,7 +15858,8 @@ async function afirmaAlCierre(db: SupabaseClient, contactId: string, texto: stri
 //  me envíes la captura, te llega el acceso» era LA respuesta a «¿cómo sé que no es estafa?» y el freno se la llevó —
 //  Probar flujos, 6-oct—: al cliente le quedó «Así sabes que es seguro» sin decir por qué)
 const RE_PIDE_CAPTURA = /(?:m[aá]ndame|env[ií]ame|p[aá]same|¿\s*me\s+(?:mandas|env[ií]as|pasas))\s+(?:la\s+|el\s+|tu\s+)?(?:captura|foto\s+del\s+pago|comprobante|voucher)/i;
-const RE_PREGUNTA_COMO_PAGO = /c[oó]mo\s+(?:te\s+)?(?:pago|se\s+paga|hago\s+(?:el\s+)?pago|puedo\s+pagar|lo\s+pago|compro)|d[oó]nde\s+(?:te\s+)?(?:pago|yapeo|deposito|transfiero)|a\s+qu[eé]\s+(?:n[uú]mero|cuenta)|datos\s+(?:de|para)\s+(?:el\s+)?pago|m[eé]todos?\s+de\s+pago|formas?\s+de\s+pago/i;
+// (+ «¿cuál es el procedimiento a seguir?», «¿qué tengo que hacer?», «¿cómo hago para tenerlo?» — LUISIN, 7-oct)
+const RE_PREGUNTA_COMO_PAGO = /c[oó]mo\s+(?:te\s+)?(?:pago|se\s+paga|hago\s+(?:el\s+)?pago|puedo\s+pagar|lo\s+pago|compro)|procedimiento|pasos\s+(?:a\s+seguir|para\s+(?:comprar|pagar|tenerlo|obtenerlo|inscribirme))|qu[eé]\s+(?:tengo|debo|hay)\s+que\s+hacer|c[oó]mo\s+hago\s+para\s+(?:comprar|tenerlo|obtenerlo|adquirirlo|inscribirme|pagar)|c[oó]mo\s+(?:lo\s+)?(?:adquiero|obtengo|consigo)|d[oó]nde\s+(?:te\s+)?(?:pago|yapeo|deposito|transfiero)|a\s+qu[eé]\s+(?:n[uú]mero|cuenta)|datos\s+(?:de|para)\s+(?:el\s+)?pago|m[eé]todos?\s+de\s+pago|formas?\s+de\s+pago/i;
 async function yaQuiereComprar(db: SupabaseClient, contactId: string, lastInput: string): Promise<boolean> {
   const t = String(lastInput ?? "");
   if (eligeMetodoDePago(t) || metodoQuePregunta(t) || RE_PREGUNTA_COMO_PAGO.test(t)) return true;
@@ -15958,6 +15972,9 @@ async function maybeDatosPago(
     }
     const _textoSinKw = _esPrimerIn && _vinoPorAnuncio ? await sinKeywordsDelCanal(db, channelId, texto) : _textoEntero;
     let pidio = yaEligio || loPide || RE_ANUNCIA_PAGO.test(texto)
+      // 💻 «¿cómo pago?», «¿cuál es el procedimiento a seguir?» ES pedir dónde pagar (LUISIN, 7-oct: la IA le explicó los
+      // medios y el monto, y el número no salió — lo mandó Rodrigo a mano). En físico lo vuelve a filtrar `!_esDigital` abajo.
+      || RE_PREGUNTA_COMO_PAGO.test(String(texto ?? ""))
       || (promesaIa && await intencionDeCompra(db, contactId, texto))
       // «¿Te paso los datos?» → «sí»: con la oferta delante, el sí lo dice todo.
       || await respondeSiALosDatos(db, contactId, texto)
@@ -15969,12 +15986,12 @@ async function maybeDatosPago(
       // IA lo tomó como compra y le pide el comprobante de un pago para el que nunca tuvo el
       // número (Q1-psoporte, Q1-kbarra, 2026-09-26). Si la conversación ya está en «mándame la
       // captura», el número tiene que ir con ella.
-      || ((promesaIa || /(?:me\s+(?:mandes|env[ií]es|pases)|m[aá]ndame|env[ií]ame|p[aá]same)\s+(?:la\s+|el\s+)?(?:captura|foto\s+del\s+pago|comprobante)/i.test(String(respuestaIa ?? "")))
+      || ((promesaIa || /(?:me\s+(?:mandes|mandas|env[ií]es|env[ií]as|pases|pasas)|m[aá]ndame|env[ií]ame|p[aá]same)\s+(?:la\s+|el\s+)?(?:captura|foto\s+del\s+pago|comprobante)/i.test(String(respuestaIa ?? "")))
           && await afirmaAlCierre(db, contactId, String(texto ?? "")))
       // 📸 …y en un digital de PRECIO ÚNICO, si la IA pide la captura es porque da la venta por hecha: el número tiene que
       // ir, pida lo que pida el cliente (salvo queja o duda de salud) — «Mándame la captura cuando la hagas» sin precio ni
       // número a quien preguntó cuánto demora (R1D-tiempo, 2.ª regresión 2026-10-01)
-      || (!!digital?.unico && /(?:me\s+(?:mandes|env[ií]es|pases)|m[aá]ndame|env[ií]ame|p[aá]same)\s+(?:la\s+|el\s+)?(?:captura|foto\s+del\s+pago|comprobante)/i.test(String(respuestaIa ?? ""))
+      || (!!digital?.unico && /(?:me\s+(?:mandes|mandas|env[ií]es|env[ií]as|pases|pasas)|m[aá]ndame|env[ií]ame|p[aá]same)\s+(?:la\s+|el\s+)?(?:captura|foto\s+del\s+pago|comprobante)/i.test(String(respuestaIa ?? ""))
           && !dudaDeSalud(texto) && !RE_QUEJA_SUAVE.test(texto) && !RE_PIDE_DEVOLUCION.test(texto)
           // (6-oct: …y solo si él ya quiere comprar. La frase de la captura se le quita al que solo preguntaba —ver
           //  «📸 Pidió la captura a quien solo preguntaba»—, así que el número tampoco tiene que ir.)
