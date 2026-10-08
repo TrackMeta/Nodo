@@ -109,6 +109,8 @@ function defaultPedidos(){
     humano:{ reclamos:true, horario:{ activo:false, desde:"09:00", hasta:"20:00", dias:{lun:true,mar:true,mie:true,jue:true,vie:true,sab:true,dom:false} }, aviso_dentro:"", aviso_fuera:"" },
     // Tras la compra, el bot atiende como soporte (no re-vende) y maneja la recompra.
     postventa:{ activo:true, instrucciones:"", cierre:"" },
+    // Lo que el bot dice cuando TÚ rechazas un comprobante (Copiloto / ficha → «Que el bot le pida otro»). Vacío = la de fábrica.
+    rechazo:{ mensaje:"" },
   };
 }
 
@@ -187,6 +189,7 @@ function render(b){
       horario:{ ...D.humano.horario, ...((src.humano||{}).horario||{}),
         dias:{ ...D.humano.horario.dias, ...(((src.humano||{}).horario||{}).dias||{}) } } },
     postventa:{ ...D.postventa, ...(src.postventa||{}) },
+    rechazo:{ ...D.rechazo, ...(src.rechazo||{}) },
     adelanto:{
       ...D.adelanto, ...(src.adelanto||{}),
       nudge:{ ...D.adelanto.nudge, ...((src.adelanto||{}).nudge||{}) },
@@ -230,6 +233,14 @@ function render(b){
         <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Si se pasa <b>un poco</b>, el bot entrega solo. Si se pasa <b>mucho</b>, no entrega: te lo deja en <b>Pagos por validar</b> y al cliente le dice que lo está revisando. Sirve también por si el bot lee mal la captura (ve S/190 donde decía S/19). En productos baratos el bot es más estricto: revisa desde la mitad del precio. Ej. producto de S/19 → lo revisas tú si paga más de <b>S/28.50</b>. Ponlo en <b>0</b> para revisar cualquier pago de más.</span>
       </div>
       <div class="snote" style="margin-top:12px"><span class="si">${IC.shield}</span><span>¿Cómo cuenta en tus ventas un pago de más? Si se pasa <b>un poco</b> (ej. S/25 por uno de S/19), la venta cuenta <b>lo que pagó</b> (S/25) y no queda vuelto pendiente. Si se pasa <b>mucho</b> y tú lo apruebas, cuenta <b>solo el precio</b> y lo demás queda anotado como <b>vuelto</b> para devolver. Así un error de lectura no infla tus números ni lo que se reporta a Meta.</span></div>
+    </div>
+
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.shield}</span><span class="nm">Cuando rechazas un comprobante</span></div>
+      <div class="desc">Si rechazas un pago en <b>Pagos por validar</b> o en la ficha del cliente y eliges <b>«Que el bot le pida otro»</b>, el bot le escribe esto. Al rechazar te lo mostramos igual, para que lo cambies si ese cliente necesita otro motivo.</div>
+      <label style="margin-top:10px">Lo que le dice el bot</label>
+      ${ta(p.rechazo.mensaje,"No pude validar ese comprobante. ¿Me lo reenvías, por favor?",3).replace('class="in"','class="in" id="rzMsg"')}
+      <div style="font-size:11px;color:var(--faint);margin-top:6px;line-height:1.5">Le llega así: <b>«Mmm, revisé tu comprobante 🤔»</b>, después esta frase y al final el cierre de tu flujo («Cualquier duda, dime nomás 🙂»). Si lo dejas vacío, usa la frase de ejemplo.</div>
     </div>
 
     <div class="card ia">
@@ -451,6 +462,7 @@ function render(b){
     p.digital.tolerancia=Math.max(0,Number($("pDigTol").value)||0);
     if($("pDigRev")) p.digital.revisar_sobre_sol=Math.max(0,Number($("pDigRev").value)||0);
     if($("vlMsg")) p.vuelto.mensaje=$("vlMsg").value.trim();
+    if($("rzMsg")) p.rechazo.mensaje=$("rzMsg").value.trim();
     p.log.tolerancia=Math.max(0,Number($("pLogTol").value)||0);
     // Avisos de pedido: el mensaje que se manda dentro de la ventana y la
     // plantilla para cuando está cerrada. El toggle de la foto ya se fue

@@ -565,16 +565,19 @@ async function _rechazar(o,tipo){
   // por siempre. Por eso acá se elige, en vez de asumir.
   const parqueado=tipo==="digital"||tipo==="extra";
   let quien="humano";
+  const MOTIVO_DEF="No pude validar ese comprobante. ¿Me lo reenvías, por favor?"; let motivo=null;
   if(parqueado){
     quien=await askChoice({ title:"Rechazar el comprobante",
       message:`${c.nombre||"Cliente"} — marcas el pago como no válido. ¿Y después?`,
       value:"bot", options:[
         { value:"bot", label:"Que el bot le pida otro", icon:"robot",
-          desc:"Le dice que no pudo validar ese comprobante y le pide que reenvíe uno correcto. La venta sigue sola, y el siguiente comprobante vuelve a pasar por ti." },
+          desc:"Le pide que reenvíe uno correcto, con el motivo que le escribes en el paso siguiente. La venta sigue sola, y el siguiente comprobante vuelve a pasar por ti." },
         { value:"humano", label:"Lo atiendo yo", icon:"user",
           desc:"El bot queda en pausa en este chat y le escribes tú." },
       ] });
     if(!quien) return;
+    // ✍️ Qué le dice el bot: tu frase de Pagos y avisos, editable para este cliente (orders.js).
+    if(quien==="bot"){ motivo = typeof O.pedirMotivoRechazo==="function" ? await O.pedirMotivoRechazo(supa, askText, st.channelId, c.nombre) : MOTIVO_DEF; if(!motivo) return; }
   }else{
     if(!await confirmDialog({ title:"Rechazar el comprobante",
       message:`${c.nombre||"Cliente"} — se marca el ${tipo} como no válido. El pedido queda como está; escríbele para pedirle un pago correcto.`,
@@ -585,7 +588,7 @@ async function _rechazar(o,tipo){
               : tipo==="extra"    ? { extra_rechazado_at:new Date().toISOString(), extra_revisar:"Lo rechazaste tú", extra_pendiente:false }
               : { digital_rechazado_at:new Date().toISOString(), digital_revisar:"Lo rechazaste tú", digital_pendiente:false };
   const r=await updateOrder({ order_id:o.id, shipping:patch,
-    ...(parqueado?{ reject:quien, reject_motivo:"No pude validar ese comprobante. ¿Me lo reenvías, por favor?" }:{}) });
+    ...(parqueado?{ reject:quien, reject_motivo:motivo||MOTIVO_DEF }:{}) });
   const pausa=parqueado&&quien==="humano";
   let pausaOk=pausa;
   // Antes el catch tragaba el error y el toast decía «el bot quedó en pausa» igual: el operador

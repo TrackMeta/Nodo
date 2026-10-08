@@ -1686,7 +1686,9 @@ export async function rejectDigitalPending(
   const node = await getNode(db, aw.node_id);
   const clave = String((node as any)?.config?.guardar_en || "pago_resultado");
   const razon = String(motivo ?? "").trim() || "El comprobante no pasó la revisión.";
-  const veredicto = `PAGO_NO ${razon}`;
+  // ‹manual›: lo escribió el dueño al rechazar (o es su frase de Pagos y avisos). Va TAL CUAL al cliente: sin la marca,
+  // un «salió a otra cuenta» o «borrosa» suyo se cambiaba por el texto de fábrica del bot (ver 4.5 en buildCtx).
+  const veredicto = String(motivo ?? "").trim() ? `PAGO_NO ‹manual› ${razon}` : `PAGO_NO ${razon}`;
   run.vars[clave] = veredicto;
   await setField(db, channelId, contactId, clave, veredicto).catch(() => {});
 
@@ -32348,6 +32350,12 @@ async function buildContext(db: SupabaseClient, run: Run) {
     if (!/^pago_(resultado|extra_\d+)$/.test(k)) continue;
     const s = String(ctx[k] ?? "");
     if (!s) continue;
+    // ✍️ Motivo escrito por el dueño al rechazar desde el panel: tal cual, sin los textos de fábrica de abajo.
+    if (s.includes("‹manual›")) {
+      ctx[k + "_motivo"] = s.replace(/\{[\s\S]*\}/g, "").replace(/\bPAGO_(OK|NO)\b\s*[:.-]?\s*/gi, "").replace("‹manual›", "").trim();
+      ctx[k + "_intro"] = "Mmm, revisé tu comprobante 🤔";
+      continue;
+    }
     ctx[k + "_motivo"] = s
       .replace(/\{[\s\S]*\}/g, "")        // el JSON que agrega el OCR
       .replace(/\bPAGO_(OK|NO)\b\s*[:.-]?\s*/gi, "")

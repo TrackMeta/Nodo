@@ -2528,18 +2528,21 @@ export function wireCopiloto(root, o, et, deps) {
   const rechazar = async (tipo) => {
     const parqueado = tipo === "digital" || tipo === "extra";
     let quien = "humano";
+    const MOTIVO_DEF = "No pude validar ese comprobante. ¿Me lo reenvías, por favor?"; let motivo = null;
     if (parqueado) {
       quien = await askChoice({ title: "Rechazar el comprobante", message: `${c.nombre || "Cliente"} — marcas el pago como no válido. ¿Y después?`, value: "bot", options: [
-        { value: "bot", label: "Que el bot le pida otro", icon: "robot", desc: "Le dice que no pudo validar ese comprobante y le pide que reenvíe uno correcto. La venta sigue sola." },
+        { value: "bot", label: "Que el bot le pida otro", icon: "robot", desc: "Le pide que reenvíe uno correcto, con el motivo que le escribes en el paso siguiente. La venta sigue sola." },
         { value: "humano", label: "Lo atiendo yo", icon: "user", desc: "El bot queda en pausa en este chat y le escribes tú." },
       ] });
       if (!quien) return;
+      // ✍️ Qué le dice el bot: tu frase de Pagos y avisos, editable para este cliente (orders.js).
+      if (quien === "bot") { motivo = typeof O.pedirMotivoRechazo === "function" ? await O.pedirMotivoRechazo(supa, askText, channelId, c.nombre) : MOTIVO_DEF; if (!motivo) return; }
     } else if (!await confirmDialog({ title: "Rechazar el comprobante", message: `${c.nombre || "Cliente"} — se marca el ${tipo} como no válido. Escríbele para pedirle un pago correcto.`, confirmText: "Rechazar", danger: true })) return;
     const patch = tipo === "adelanto" ? { adelanto_rechazado_at: new Date().toISOString(), adelanto_revisar: "Lo rechazaste tú" }
       : tipo === "saldo" ? { saldo_rechazado_at: new Date().toISOString(), saldo_revisar: "Lo rechazaste tú" }
       : tipo === "extra" ? { extra_rechazado_at: new Date().toISOString(), extra_revisar: "Lo rechazaste tú", extra_pendiente: false }
       : { digital_rechazado_at: new Date().toISOString(), digital_revisar: "Lo rechazaste tú", digital_pendiente: false };
-    const r = await update({ order_id: o.id, shipping: patch, ...(parqueado ? { reject: quien, reject_motivo: "No pude validar ese comprobante. ¿Me lo reenvías, por favor?" } : {}) });
+    const r = await update({ order_id: o.id, shipping: patch, ...(parqueado ? { reject: quien, reject_motivo: motivo || MOTIVO_DEF } : {}) });
     const pausa = parqueado && quien === "humano";
     // supabase-js NO lanza: el try/catch que había acá no veía nada y el toast decía «el bot quedó
     // en pausa» aunque no se hubiera pausado (el operador escribía a mano con el bot contestando

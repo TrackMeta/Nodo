@@ -16,7 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userIsChannelAdmin } from "../_shared/db.ts";
-import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt, armarProducto, armarNegocio, probarRetoques } from "../_shared/engine.ts";
+import { runEngine, aplicarStock, forzarModeloVenta, forzarRxPrompt, armarProducto, armarNegocio, probarRetoques, rejectDigitalPending } from "../_shared/engine.ts";
 import { runAI, anotarUsoIA } from "../_shared/ai.ts";
 import { BATERIAS, BATERIA_ECOGUARD, type ConvExamen } from "./bateria.ts";
 import { conectarVentasMeta, reenviarVentasPendientes, estadoVentasMeta, infoDataset } from "../_shared/capi-auto.ts";
@@ -483,6 +483,13 @@ Deno.serve(async (req) => {
           await db.from("messages").insert({ channel_id: channelId, contact_id: contactId, direction: "out", type: "text",
             content: { text: String(p.oferta.texto ?? "") }, status: "delivered" });
           tr.push({ c: "[secuencia con oferta S/ " + p.oferta.precio + "]", b: [String(p.oferta.texto ?? "")] });
+        } else if (typeof p?.rechazar === "string") {
+          // {rechazar: "motivo"} = el dueño rechaza el pago parqueado desde el panel con «Que el bot le pida otro» (order-update).
+          const t0 = new Date().toISOString();
+          const ok = await rejectDigitalPending(db, channelId, contactId, p.rechazar);
+          const { data: out } = await db.from("messages").select("content, type").eq("contact_id", contactId)
+            .eq("direction", "out").gt("ts", t0).order("ts", { ascending: true }).limit(10);
+          tr.push({ c: `[rechazo del panel${ok ? "" : " — NO había pago esperando"}: ${p.rechazar}]`, b: ((out ?? []) as any[]).map((o) => String(o?.content?.text ?? `[${o?.type}]`)) });
         } else if (p?.imagen_b64) {
           const mime = String(p.mime ?? "image/png");
           const bytes = Uint8Array.from(atob(String(p.imagen_b64)), (ch) => ch.charCodeAt(0));
