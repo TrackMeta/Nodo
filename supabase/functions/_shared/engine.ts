@@ -28020,6 +28020,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         try {
           _opsPre = opcionesVisibles(await loadOpciones(db, run, ctx._product_id), run)   // 🙈
             .filter((o) => o.precio != null && Number(o.precio) > 0);
+          // 💸 Con OFERTA vigente (remarketing S/ 7/5/3) SU precio es el de la oferta: «El precio es *S/ 3.00*» se leía
+          // como «sin cifra» (buscaba el 10 de lista) y pegaba «Única — *S/ 10*» debajo — dos precios en una burbuja
+          // (Fernando, Prime Digital, 8-oct).
+          const _ofPre = await ofertaActiva(db, run);
+          if (_ofPre && Number(_ofPre.precio) > 0) {
+            _opsPre = _opsPre.map((o) => o.id === _ofPre.opcion_id ? { ...o, precio: Number(_ofPre.precio) } : o);
+          }
         } catch (_) { /* sin opciones legibles → se cae al criterio de antes */ }
       }
       const _symP = simboloMoneda(ctx.moneda as string);
