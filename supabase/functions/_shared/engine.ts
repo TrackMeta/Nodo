@@ -5896,7 +5896,9 @@ function conPeticionFinal(texto: string, peticion: string, dato?: string): strin
 // también en «¿ ¡», el salto de línea y los pictogramas. Misma piedra que la coletilla.
 const RE_PERMISO_PAGO =
   // (+ «¿quieres que te RECUERDE los datos de pago?» con los datos ya debajo, D15-tluego)
-  /[^.!?…¿¡\n\p{Extended_Pictographic}]*¿?\s*te\s+(paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|comparta|doy|d[eé]|recuerdo|recuerde|reenv[ií]o|reenv[ií]e)\s+(?:ahora\s+|ya\s+|de\s+una\s+|de\s+nuevo\s+)?(los\s+|el\s+|las\s+)?(datos|yape|plin|n[uú]mero|cuenta|informaci[oó]n)[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
+  // (`te` como PALABRA: «el comprobanTE DE Plin» se leía «te dé Plin» y se borraba toda la frase hasta el 📸 — Traslado
+  //  Personal, 7-oct: le llegó solo «📸 Y te paso todo para que entres a la misión».)
+  /[^.!?…¿¡\n\p{Extended_Pictographic}]*¿?\s*(?<![\p{L}\p{N}])te\s+(paso|pase|mando|mande|env[ií]o|env[ií]e|comparto|comparta|doy|d[eé]|recuerdo|recuerde|reenv[ií]o|reenv[ií]e)\s+(?:ahora\s+|ya\s+|de\s+una\s+|de\s+nuevo\s+)?(los\s+|el\s+|las\s+)?(datos|yape|plin|n[uú]mero|cuenta|informaci[oó]n)[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
 // "Te lo mando HOY mismo" cuando el sistema ya calculó que en esa zona hoy no alcanza.
 // El prompt lo prohíbe con todas las letras ("no prometas que llega hoy bajo ninguna
 // circunstancia") y el modelo lo dijo igual: medido en la simulación, ofreció "¿confirmo
@@ -15912,7 +15914,9 @@ async function maybeDatosPago(
     // cómo pagar: lo que espera después es el número, no un "perfecto". Va ACÁ, en la
     // condición que decide si se mandan: calculado más abajo no servía de nada, porque la
     // función ya había salido — medido, a "yape" no le llegaba ningún dato.
-    const soloMetodo = eligeMetodoDePago(texto);
+    // (cada mensaje por separado: «Ninguna duda» + «Plin» llegan juntos y «ninguna duda plin» no es elegir — Traslado
+    //  Personal, 7-oct: dijo «Plin» y no le llegó el número)
+    const soloMetodo = eligeMetodoDePago(texto) || String(texto ?? "").split(/\n+/).some((l) => eligeMetodoDePago(l));
     const loPide = RE_PIDE_DATOS.test(texto) || soloMetodo;
     // 💳 «¿Aceptan Plin?» — preguntar por el MEDIO es preguntar dónde pagar, pero solo vale
     // si ese medio está cargado de verdad (se comprueba abajo, contra `dp`) y si el cliente
