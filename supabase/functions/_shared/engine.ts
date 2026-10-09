@@ -9325,8 +9325,13 @@ const RE_TEMA_RIESGOSO = /edad|a[ñn]os|lesi[oó]n|rodilla|espalda|embaraz\p{L}*
 // `previas`: las preguntas ya registradas del producto (provisionales y rechazadas) — ver preguntas_clientes.
 type RevisionV2 = { viol: string[]; fuera: FueraDeFicha[]; corrio?: boolean };   // corrio = el revisor IA leyó la respuesta contra la ficha
 type FueraDeFicha = { pregunta: string; respuesta: string; ambito?: "producto" | "negocio" };
+// 💳 «¿A qué número mando los 3 soles?», «¿dónde te yapeo?», «¿cómo pago?»: preguntar A DÓNDE pagar no es una política que
+// le falte a la ficha — la contesta el bloque de datos del motor. Llegó a «Preguntas de clientes sobre tu negocio» como
+// «1 por responder» (Lorenzo, 9-oct), con «le dice con honestidad que ese detalle no lo tiene» de explicación.
+// (cuotas, tarjeta o factura NO van acá: esas sí son condiciones del negocio)
+const RE_PREGUNTA_A_DONDE_PAGO = /a\s+qu[eé]\s+n[uú]mero|n[uú]mero\s+(?:de|del|para)\s+(?:yape|plin|cuenta|pag\p{L}*|dep[oó]sit\p{L}*|transfer\p{L}*|yape\p{L}*)|cuenta\s+(?:bancaria|bcp|bbva|interbank|scotiabank|de\s+(?:banco|ahorros?)|para\s+(?:pagar|depositar|transferir))|(?:^|[^\p{L}])(?:cci|yape\p{L}*|plin\p{L}*|transfer\p{L}*|dep[oó]sit\p{L}*)(?![\p{L}])|(?:c[oó]mo|d[oó]nde|a\s+d[oó]nde|a\s+qui[eé]n)\s+(?:te\s+|le\s+|se\s+|lo\s+)?(?:pago|pagar|pagas|pagamos|mando|env[ií]o|deposito|transfiero|yapeo|plineo)(?![\p{L}])|m[eé](?:dios?|todos?)\s+de\s+pago|datos\s+(?:de|para)\s+(?:pago|pagar)/iu;
 async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider, channelId: string, db: SupabaseClient,
-    opts: { suponer?: boolean; previas?: PreguntaCliente[]; negocio?: string } = {}): Promise<RevisionV2> {
+    opts: { suponer?: boolean; previas?: PreguntaCliente[]; negocio?: string; datosSiguen?: boolean } = {}): Promise<RevisionV2> {
   const colg = String(ctx?._colgadaV2 ?? "").trim();
   const ahora = String(ctx?.last_input ?? "").trim();
   // Con su primera pregunta pendiente, también tiene que quedar contestada (ver instruccionV2).
@@ -9373,6 +9378,11 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
         "OJO: debajo de esta respuesta el sistema pega solo la lista de precios, la de sedes y la de datos. Si el cliente pidió " +
         "el precio o las sedes, NO marques «no contestó» porque la respuesta no traiga esa lista. Pero si preguntó CÓMO SE PAGA, " +
         "la respuesta tiene que decir los medios (Yape, Plin, transferencia, efectivo…).\n" +
+        (opts.datosSiguen
+          ? "OJO 2: en ESTE turno, debajo de la respuesta sale además el bloque con los DATOS DE PAGO (número de Yape/Plin, " +
+            "cuenta y titular). Si preguntó a qué número, a dónde o cómo pagar, ESO YA ESTÁ CONTESTADO: no lo marques como " +
+            "«no contestó» porque el número no esté en la respuesta.\n"
+          : "") +
         "Cada invento lleva `grave`. grave=true si es sobre: plata (precios o descuentos distintos, costos), garantía o " +
         "devoluciones, salud o seguridad (personas, niños, mascotas, condiciones médicas, edad), plazos, CIFRAS o medidas " +
         "(cualquier número: metros, horas, mAh, años, días), certificados, registros u originalidad, qué incluye el paquete " +
@@ -9402,7 +9412,10 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
     });
     const j = JSON.parse(raw);
     const v: string[] = [];
-    if (pregunto && j?.contesta === false) v.push(`No contestaste lo que te preguntó: ${String(j?.falta ?? "").slice(0, 160) || "su pregunta"}.`);
+    // (con los datos saliendo debajo, un «falta» sobre el número o la cuenta no es real: el revisor no siempre lee el OJO 2 —
+    //  Lorenzo, 9-oct: «no dijo a qué número específico se envía el pago», con el número en la burbuja siguiente)
+    const _faltaPago = opts.datosSiguen && /n[uú]mero|cuenta|cci|yape|plin|pag[oa]r?\b|pago|transfer|dep[oó]sit|datos|medios?|titular/i.test(String(j?.falta ?? ""));
+    if (pregunto && j?.contesta === false && !_faltaPago) v.push(`No contestaste lo que te preguntó: ${String(j?.falta ?? "").slice(0, 160) || "su pregunta"}.`);
     for (const inv of (Array.isArray(j?.inventos) ? j.inventos : []).slice(0, 3)) {
       const fr = String(inv?.frase ?? "").trim().slice(0, 160);
       if (!fr) continue;
@@ -9414,7 +9427,7 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
           : "Di solo lo que dice la ficha, o con honestidad que ese dato no lo tienes, y sigue vendiendo con lo que sí sabes."));
     }
     const fuera = (Array.isArray(j?.fuera_de_ficha) ? j.fuera_de_ficha : [])
-      .filter((f: any) => String(f?.pregunta ?? "").trim())
+      .filter((f: any) => String(f?.pregunta ?? "").trim() && !RE_PREGUNTA_A_DONDE_PAGO.test(String(f.pregunta)))
       .map((f: any) => ({ pregunta: String(f.pregunta).trim(), respuesta: String(f?.respuesta ?? "").trim(),
         ambito: f?.ambito === "negocio" ? "negocio" as const : "producto" as const }));
     return { viol: v, fuera, corrio: true };
@@ -10027,6 +10040,9 @@ async function repararMensajeCortado(db: SupabaseClient, run: any, ctx: any, fin
     const conocidas = new Set([...todas(final), ...todas(crudo)]);
     if (todas(rep).some((x) => !conocidas.has(x))) return "agregó una cifra";
     if (repiteLoQuitado(rep, quitadas)) return "repitió lo quitado";
+    // Ni la IA ni lo que quedó preguntaban nada: una pregunta nueva es de la reescritura, no un arreglo («Cuando me envíes la
+    // captura, te dejo el acceso listo 💪 ¿Me la envías?» encima de los datos de pago — Lorenzo, 9-oct). Lo que quedó ya se lee bien.
+    if (!/\?/.test(crudo) && !/\?/.test(final) && /\?/.test(rep)) return "agregó una pregunta";
     // (y las reglas que el revisor ya hace cumplir: la reescritura no puede traer una que el mensaje no tenía — prueba del
     //  8-oct: metió «¿Quieres que te envíe los datos para el pago?» con los datos saliendo debajo)
     const _rompe = (f: (t: string) => string) => f(rep) !== rep && f(final) === final;
@@ -27806,7 +27822,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 "explica que el acceso llega por este chat apenas se valida el pago, sin pedírselo.");
             }
           }
-          const c = await revisorIAV2(txt, ctx, ai, provider, run.channel_id, db, { suponer: true, previas: _previas, negocio: String(info.negocio ?? "") });
+          const c = await revisorIAV2(txt, ctx, ai, provider, run.channel_id, db, { suponer: true, previas: _previas, negocio: String(info.negocio ?? ""),
+            datosSiguen: !!(run as any)._iaDatosPago });
           (run as any)._revisorCorrio = !!c.corrio;
           _fueraUltima = c.fuera;
           // 🚫 La línea roja, por código (cifras, seguridad, interiores): no depende de que el revisor la vea.
