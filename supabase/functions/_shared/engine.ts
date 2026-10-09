@@ -9937,8 +9937,13 @@ function repiteLoQuitado(rep: string, quitadas: string[]): boolean {
 async function repararMensajeCortado(db: SupabaseClient, run: any, ctx: any, final: string): Promise<string> {
   const crudo = String(ctx?._iaCrudo ?? "");
   const cfg = run?._iaCfg;
-  if (!crudo || !cfg?.apiKey || !String(final ?? "").trim() || !esDigital(ctx)) return final;
-  const quitadas = frasesQuitadas(crudo, final);
+  // (8-oct: también FÍSICO — «…S/ 54.50 cada una 🔧\n\n🔧» quedó con el emoji suelto tras un corte. Lo que arma el motor
+  //  —sedes 📍, datos 📌, precios 🔹⭐, medios ✅— tiene que salir intacto: ver el candado de renglones abajo.)
+  if (!crudo || !cfg?.apiKey || !String(final ?? "").trim()) return final;
+  // (la petición de datos 📌 la saca el motor A PROPÓSITO cuando primero toca elegir la sede: no es un mensaje roto, y
+  //  reescribir por eso metió «¿A qué número me haces el Yape?» a quien preguntaba a qué número yapear — prueba física 8-oct)
+  const quitadas = frasesQuitadas(crudo, final)
+    .filter((q) => !/^\s*📌/u.test(q) && !/\b(?:p[aá]same|m[aá]ndame|env[ií]ame)\s+(?:estos|tus|los)\s+datos\b|dejarlo\s+listo|dejar\s+todo/i.test(sinFormato(q)));
   if (quitadas.join("").replace(/[^\p{L}]/gu, "").length < 15) return final;
   let rep = "";
   try {
@@ -9952,16 +9957,23 @@ async function repararMensajeCortado(db: SupabaseClient, run: any, ctx: any, fin
         `Y quedó así:\n«${final}»\n\n` +
         "Puede haber quedado sin sentido, con una pregunta colgando («¿me la envías?» sin decir qué) o con ideas pegadas. " +
         "Reescríbelo COMPLETO para que se lea natural y conteste lo que el cliente escribió:\n" +
-        "- Conserva TAL CUAL los precios, montos, listas, nombres y números que quedaron.\n" +
+        "- Conserva TAL CUAL los precios, montos, listas, nombres y números que quedaron. Los renglones que empiezan con " +
+        "📍, 📌, 🔹, ⭐ o ✅ (oficinas, datos que se le piden, precios, medios de pago) van EXACTAMENTE iguales, en el mismo orden.\n" +
         "- NO vuelvas a decir lo que se quitó, ni con otras palabras.\n" +
         "- No agregues datos nuevos (precios, plazos, garantías, números de pago).\n" +
-        "- Termina con UNA pregunta corta que lo acerque a la compra, solo si viene al caso.",
+        "- Si lo que quedó ya trae una pregunta, no agregues otra. Si no trae y tu original sí terminaba preguntando, cierra " +
+        "con UNA pregunta corta con sentido. Nunca le preguntes a él por un número, una cuenta o un dato nuestro.",
     });
   } catch (_) { return final; }
   rep = tomaMarcaDatosPago(null, String(rep ?? "")).replace(/^[«"“]+|[»"”]+$/g, "").trim();
   // 🔒 Los candados de plata, por código: ante la duda, sale la versión del motor.
   const motivo = (() => {
     if (rep.replace(/[^\p{L}]/gu, "").length < 10) return "vacía";
+    // Los renglones que arma el MOTOR (sedes, datos que se piden, precios, medios) salen intactos o no sale la reescritura.
+    const _armados = (s: string) => String(s).split("\n").map((l) => sinFormato(l).replace(/\s+/g, " ").trim())
+      .filter((l) => /^(?:📍|📌|🔹|⭐|✅)/u.test(l));
+    const _repArm = new Set(_armados(rep));
+    if (_armados(final).some((l) => !_repArm.has(l))) return "tocó una lista del sistema";
     // Plata = montos con S/ o $ y números largos (cuentas, Yape): ninguno se pierde. Y ninguna cifra que no estuviera ni en lo
     // que quedó ni en lo que escribió la IA (una «garantía de 30 días» nueva).
     const num = (x: string) => String(Number(x.replace(",", ".")));
@@ -10218,6 +10230,8 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       result = result.replace(/(?<=[\s.!?…,;:]|^)™[ \t]*/gmu, "").replace(/[ \t]+\n/g, "\n").replace(/[ \t]+$/u, "");
       // 🧠 Si los frenos se llevaron frases enteras, la IA lo reescribe completo (ver repararMensajeCortado). Una vez por turno.
       if ((ctx as any)?._iaCrudo) { result = await repararMensajeCortado(db, run, ctx, result); delete (ctx as any)._iaCrudo; }
+      // (y el párrafo final que quedó SOLO con emojis —«…cada una 🔧\n\n🔧», resto de un corte—: fuera)
+      result = result.replace(/\n{2,}[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}\u{200D}][ \t]*)+$/u, "");
       let _antesSedes = "";
       {
         const _parsS = String(result ?? "").split(/\n{2,}/);
@@ -27444,7 +27458,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // fecha futura inventada: no se aprueba solo (el dinero manda revisarlo), pero no se le acusa.
       // (el motivo SIN el JSON: «destinatario» es una clave del JSON del OCR y calzaba con cualquier rechazo — el de la
       // fecha de «luar la L» salió como «rechazó por el titular», 7-oct)
-      if (/PAGO_NO/i.test(String(result ?? "")) && !/‹antes›/.test(String(result ?? "")) && /(destinatari|titular|beneficiari|otra\s+cuenta|otro\s+n[uú]mero|a\s+nombre\s+de)/i.test(String(result ?? "").replace(/\{[\s\S]*$/, ""))) {
+      // 🧠 (9-oct, Juanpi) Ya NO depende de las PALABRAS del rechazo: «el número destino no corresponde al esperado» no traía
+      // «destinatario/titular/otro número» y el rescate no corrió, aunque el OCR había leído «*** *** 092» y «Percy Flo*» —
+      // los tuyos—. Lo que decide son los HECHOS que el código comprueba (número y nombre tuyos) y que el rechazo no hable de
+      // otra cosa (monto, fecha, edición, operación…). Las palabras solo eligen el camino de «revisión sin acusar».
+      const _motivoT0 = String(result ?? "").replace(/\{[\s\S]*$/, "");
+      const _hablaDeQuienT = /(destinatari|titular|beneficiari|otra\s+cuenta|otro\s+n[uú]mero|a\s+nombre\s+de|destino|n[uú]mero)/i.test(_motivoT0);
+      if (/PAGO_NO/i.test(String(result ?? "")) && !/‹antes›/.test(String(result ?? ""))) {
         const _ocrCfgT = (info as any)?.ocr;
         const _destT = String(_ocrLeyo?.destino ?? "");
         const _digT = _destT.replace(/\D/g, "");
@@ -27460,8 +27480,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // edición, ni operación), se acepta: el resto de los frenos del pago (anti-reúso, monto en la transcripción,
         // fecha, número ajeno) corren igual en el camino del PAGO_OK. El cliente se había quedado con «salió a otra
         // cuenta», escribió «Pura estafa» y casi se va.
-        const _otrasDudasT = /(monto|falta|menor|fecha|edit|alterad|borros|ilegible|proceso|pendiente|duplic|usad|operaci[oó]n|vencid|antig|recort)/i
-          .test(String(result ?? "").replace(/\{[\s\S]*$/, ""));
+        const _otrasDudasT = /(monto|falta|menor|fecha|edit|alterad|borros|ilegible|proceso|pendiente|duplic|usad|operaci[oó]n|vencid|antig|recort|fals[oa]|sospech|incomplet|no\s+(?:es|parece)\s+(?:un\s+)?(?:comprobante|yape|plin|pago)|\bqr\b)/i
+          .test(_motivoT0);
         if (_numOk && _titOk && !_otrasDudasT && _ocrLeyo) {
           const _antesT = String(result ?? "");
           result = `PAGO_OK\n${JSON.stringify(_ocrLeyo)}`;
@@ -27471,7 +27491,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
           await logEvent(db, run.channel_id, run.contact_id, "nota", "👤 El validador dudó del titular, pero el número y el nombre son tuyos",
             `Destino «${_destT}» y titular «${String(_nomT ?? "")}» calzan con tus datos: se acepta. Había dicho: «${_antesT.replace(/\{[\s\S]*\}/, "").slice(0, 140)}»`).catch(() => {});
-        } else if (_numOk && _titOk) {
+        } else if (_numOk && _titOk && _hablaDeQuienT) {
           const _antesT = String(result ?? "");
           result = "PAGO_NO Déjame confirmarlo con calma 🙌 En un momento te aviso por acá.";
           if (cfg.guardar_en) {
@@ -30992,7 +31012,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (_hayListaSedes && !agenciaExacta(String(ctx.sede ?? ""), String(ctx.ciudad ?? ""))) {
             const _antesPD = String(salida);
             _tr("…y con la lista de sedes y la sede SIN elegir, la petición de datos es ·L30075");
-            salida = _antesPD.split("\n").filter((ln) => !/^\s*📌/u.test(ln))
+            // (…y los campos SIN 📌: la IA a veces los escribe pelados —«*Nombre y apellidos* / *Celular* / *DNI*»— y
+            //  quedaban sueltos sin su encabezado — prueba física en Guía Experta, 8-oct)
+            salida = _antesPD.split("\n").filter((ln) => !/^\s*📌/u.test(ln)
+                && !/^\s*[-•·]?\s*\*?\s*(?:nombres?(?:\s+(?:y\s+apellidos?|completo))?|apellidos?|celular|tel[eé]fono|dni|documento|sede(?:\s+de\s+(?:la\s+)?agencia)?|agencia|direcci[oó]n|referencia|distrito)\b[^\n]{0,60}$/iu.test(sinFormato(ln)))
               .map((ln) => ln.replace(/[.\s]*(?:(?:ahora|y)\s*,?\s*)?(?:para\s+dejarlo\s+listo,?\s*)?(?:p[aá]same|m[aá]ndame|env[ií]ame|necesito)\s+(?:estos\s+|tus\s+|los\s+)?datos[^\n]*$/iu, "").trimEnd())
               .join("\n").replace(/\n{3,}/g, "\n\n").trim() || _antesPD;
             if (!/[?¿]/.test(salida)) salida = `${salida}\n\n¿Cuál te queda más cerca?`;
