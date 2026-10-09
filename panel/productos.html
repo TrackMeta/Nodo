@@ -740,14 +740,22 @@ function nuevoProductoModal(){
     const close=(v)=>{ ov.remove(); resolve(v); };
     const okBtn=()=>ov.querySelector("#nptOk");
     const refresh=()=>{ const name=ov.querySelector("#nptName").value.trim(); const ready=!!tipo&&!!name; okBtn().disabled=!ready; okBtn().style.opacity=ready?"1":".5"; };
+    const pintaClase=()=> ov.querySelectorAll(".npc").forEach(x=>{ const on=x.dataset.c===clase;
+      // 📱 Una micro app solo puede ser Principal: como extra o regalo no se crearía el acceso (8-oct).
+      const bloq=tipo==="microapp" && x.dataset.c!=="principal";
+      x.style.borderColor=on?"var(--brand)":"var(--border)"; x.style.background=on?"var(--brand-bg,rgba(43,127,255,.12))":"var(--surface-2)";
+      x.style.opacity=bloq?".4":"1"; x.style.cursor=bloq?"not-allowed":"pointer";
+      x.title=bloq?"Una micro app solo se vende como producto principal":""; });
     ov.querySelectorAll(".npt").forEach(btn=> btn.onclick=()=>{
       tipo=btn.dataset.t;
+      if(tipo==="microapp") clase="principal";
       ov.querySelectorAll(".npt").forEach(x=>{ const on=x===btn; x.style.borderColor=on?"var(--brand)":"var(--border)"; x.style.background=on?"var(--brand-bg,rgba(43,127,255,.12))":"var(--surface-2)"; });
-      refresh(); ov.querySelector("#nptName").focus();
+      pintaClase(); refresh(); ov.querySelector("#nptName").focus();
     });
     ov.querySelectorAll(".npc").forEach(btn=> btn.onclick=()=>{
+      if(tipo==="microapp" && btn.dataset.c!=="principal"){ toast("Una micro app solo se vende como producto principal",true); return; }
       clase=btn.dataset.c;
-      ov.querySelectorAll(".npc").forEach(x=>{ const on=x===btn; x.style.borderColor=on?"var(--brand)":"var(--border)"; x.style.background=on?"var(--brand-bg,rgba(43,127,255,.12))":"var(--surface-2)"; });
+      pintaClase();
     });
     const done=()=>close({ tipo, clase, nombre:ov.querySelector("#nptName").value.trim() });
     ov.querySelector("#nptName").oninput=refresh;
