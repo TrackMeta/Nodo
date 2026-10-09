@@ -2746,6 +2746,11 @@ async function renderInicio(){
   if(!priced.length){ precioSub="Falta ponerle precio"; precioWarn=true; }
   else if(active.length===1){ precioSub=`${$s} ${prices[0]} · 1 presentación`; if(costo>0&&prices[0]>costo) precioSub+=` · ganas ${$s} ${Math.round(prices[0]-costo)}`; }
   else precioSub=`${active.length} presentaciones · desde ${$s} ${Math.min(...prices)}`;
+  // 📱 Micro app: «Pago único S/ 29 · Mensual S/ 12» (los descuentos por meses no se cuentan como presentaciones).
+  if(st.prod.tipo==="microapp" && priced.length){
+    const _u=priced.find(v=>v.config?.modalidad!=="mensual"), _m=priced.find(v=>v.config?.modalidad==="mensual"&&(Number(v.config?.meses)||1)===1);
+    precioSub=[_u?`Pago único ${$s} ${_u.precio}`:"", _m?`Mensual ${$s} ${_m.precio}`:""].filter(Boolean).join(" · ")||precioSub;
+  }
   const sStock=(c.stock&&typeof c.stock==="object")?c.stock:{}; const totStock=Object.keys(sStock).reduce((a,k)=>a+(Number(sStock[k])||0),0);
   const atrs=(c.atributos||[]).length;
   const stockSub = (atrs||totStock) ? `${atrs?atrs+" variante(s) · ":""}${totStock} unidad(es) en stock` : "Sin variantes · agrega cuántas tienes";
