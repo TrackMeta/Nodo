@@ -67,4 +67,23 @@ export const CATALOGO = [
     params: ["{{nombre}}", "{{producto_nombre}}", "{{oferta}}"],
     ejemplos: ["María", "Zapatillas Runner", "15% de descuento"],
   },
+  // ── Mini Apps (Utility) — pestaña propia «Recomendadas Mini Apps» (grupo:"apps").
+  // Recordatorios de renovación del plan mensual: salen fuera de las 24 h (el cliente no
+  // escribe hace un mes), por eso necesitan plantilla aprobada.
+  {
+    grupo: "apps", folder: "Recomendadas · Mini Apps", categoria: "UTILITY", name: "acceso_por_vencer", language: "es",
+    titulo: "Acceso por vencer (renovación)",
+    body: "¡Hola {{1}}! 📅 Tu acceso a {{2}} vence el {{3}}. Para seguir usándola, renuévalo con {{4}}. Escríbenos por aquí y te pasamos los datos de pago. 😊",
+    params: ["{{nombre}}", "{{producto_nombre}}", "{{acceso_vence}}", "{{precio_renovacion}}"],
+    ejemplos: ["María", "Simulador de brevete", "8 de noviembre", "S/ 12"],
+    nota: "Pensada para las micro apps (todavía en diseño): Nodo la usará para recordar la renovación del plan mensual.",
+  },
+  {
+    grupo: "apps", folder: "Recomendadas · Mini Apps", categoria: "UTILITY", name: "acceso_vencido", language: "es",
+    titulo: "Acceso vencido (renovar)",
+    body: "Hola {{1}}, hoy venció tu acceso a {{2}}. Tu progreso quedó guardado 💾. Renuévalo con {{3}} y sigues donde te quedaste. Escríbenos por aquí 🙌",
+    params: ["{{nombre}}", "{{producto_nombre}}", "{{precio_renovacion}}"],
+    ejemplos: ["María", "Simulador de brevete", "S/ 12"],
+    nota: "Pensada para las micro apps (todavía en diseño): Nodo la usará el día que vence el plan mensual.",
+  },
 ];
