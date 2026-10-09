@@ -88,6 +88,8 @@ $env:SUPABASE_ACCESS_TOKEN = $tok   # los secretos de NODO van con el token de N
 & supabase secrets set "NODO_APPS_SECRET=$secreto" "NODO_APPS_URL=https://$Ref.supabase.co/functions/v1/nodo" --project-ref $NODO | Out-Null
 $env:SUPABASE_ACCESS_TOKEN = $tokApps
 Push-Location $PSScriptRoot
+# El CLI escribe avisos por stderr («Docker is not running»): con Stop, PowerShell 5 los toma como error y corta.
+$ErrorActionPreference = "Continue"
 foreach ($f in @("kit", "nodo")) {
   $r = (& supabase functions deploy $f --project-ref $Ref --no-verify-jwt 2>&1 | Select-Object -Last 3) -join " "
   if ($r -match "Deployed Functions") { Write-Host "   OK $f" } else { Write-Host "   FALLO $f :: $r" -ForegroundColor Red }

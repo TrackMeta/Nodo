@@ -15,7 +15,7 @@
 (function () {
   "use strict";
   // Dirección de la base de Apps. Se puede pasar `api` en iniciar() para otra base.
-  var API_DEFECTO = "https://APPS_REF.supabase.co/functions/v1/kit";
+  var API_DEFECTO = "https://zllosysoknhtalpkjabv.supabase.co/functions/v1/kit";
   var REVISAR_MS = 10 * 60 * 1000;
   var cfg = null, cliente = null, timer = null, guardando = null, pendiente = null;
 
