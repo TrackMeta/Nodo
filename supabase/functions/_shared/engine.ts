@@ -7087,7 +7087,7 @@ const RE_PIDE_SUS_DATOS =
   // 🔴 «Pásame la siguiente INFO… 📌 Nombre y apellidos 📌 Celular» pasó de largo: ni «datos»
   // ni «tu nombre». Medido en S-yapeo-2, pidiendo los datos antes de la cantidad. Entran
   // «info/información» tras «pásame» y la etiqueta «nombre y apellidos» tal como la escribe.
-  /(nombre completo|tu nombre|nombre y apellidos?|tus? apellidos?|c[oó]mo te llamas|cu[aá]l es tu nombre|a nombre de qui[eé]n|\bdni\b|documento de identidad|(?<!\b(?:en|a|hasta|desde|hacia|por)\s)tu direcci[oó]n|(?<!\b(?:en|a|hasta|desde|hacia|por)\s)tu distrito|tu celular|n[uú]mero de celular|tu n[uú]mero de contacto|estos datos|(?<!\b(?:cargues|cargas|cargar|ingresas|ingreses|ingresar|pones|pongas|poner|escribes|escribas|escribir|llenas|llenes|llenar|colocas|coloques|colocar|editas|edites|editar|metes|metas|meter|con)\s)tus datos|pasarme.{0,12}datos|p[aá]same.{0,20}(?:datos|info|informaci[oó]n)|d[oó]nde te lo (?:env[ií]|mand|dej|entreg))/i;
+  /(nombre completo|tu nombre|nombre y apellidos?|tus? apellidos?|c[oó]mo te llamas|cu[aá]l es tu nombre|a nombre de qui[eé]n|\bdni\b|documento de identidad|(?<!\b(?:en|a|hasta|desde|hacia|por)\s)tu direcci[oó]n|(?<!\b(?:en|a|hasta|desde|hacia|por)\s)tu distrito|(?<!\b(?:en|a|hasta|desde|hacia|por|al)\s)tu celular|n[uú]mero de celular|tu n[uú]mero de contacto|estos datos|(?<!\b(?:cargues|cargas|cargar|ingresas|ingreses|ingresar|pones|pongas|poner|escribes|escribas|escribir|llenas|llenes|llenar|colocas|coloques|colocar|editas|edites|editar|metes|metas|meter|con)\s)tus datos|pasarme.{0,12}datos|p[aá]same.{0,20}(?:datos|info|informaci[oó]n)|d[oó]nde te lo (?:env[ií]|mand|dej|entreg))/i;
 // 🔤 Los marcadores de WhatsApp (*negrita*, _cursiva_, ~tachado~) ROMPEN cualquier regex que
 // busque dos palabras seguidas: la IA escribe «¿me pasas tu *nombre*, *celular* y
 // *dirección*?» y «tu nombre» ya no calza porque en el medio hay un asterisco. Medido en una
@@ -9893,6 +9893,101 @@ function quitaZonaRepetida(texto: string, saludo: string): string {
   return limpio;
 }
 
+// 🧠 NADA DE MENSAJES MOCHOS (8-oct, Rodrigo: «¿por qué seguimos usando tijeras si la IA nos demostró que responde bien?»).
+// Los frenos del motor quitan frases y mandan lo que queda: «Son videos guiados 🎥 [Apenas me mandes la captura te paso el
+// acceso.] ¿Me la envías?» le llegó como «Son videos guiados 🎥 ¿Me la envías?» —¿qué cosa?—. El juez del 7-oct midió 27 de
+// 231 retoques que EMPEORABAN la respuesta. Acá, justo antes de enviar, se compara lo que escribió la IA con lo que quedó:
+// si se fueron frases enteras, la IA reescribe el mensaje COMPLETO sin esas ideas (con lo que el motor agregó: precios,
+// listas). Los CANDADOS DE PLATA siguen siendo código: si la reescritura promete el acceso sin pago, da un pago por
+// recibido, pide la captura a quien no quiere comprar, cambia una cifra o vuelve a decir lo quitado, se descarta y sale la
+// versión del motor como antes. Por ahora solo DIGITAL (el físico se prueba aparte).
+const _normFrase = (s: string) => sinFormato(String(s ?? "")).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .replace(/[^a-zñ0-9]+/g, " ").trim();
+// Lo que se fue, EXACTO: de una frase recortada a medias («…para que avances [sin riesgos ni frustraciones]») sale solo el
+// trozo que falta, no la frase entera — con la frase entera, la reescritura se llevaba también la parte buena (8-oct).
+function frasesQuitadas(crudo: string, final: string): string[] {
+  const fin = ` ${_normFrase(final)} `;
+  const esta = (ws: string[]) => !ws.length || fin.includes(` ${ws.join(" ")} `);
+  const out: string[] = [];
+  for (const f of String(crudo ?? "").split(/\n+/).flatMap((ln) => ln.split(/(?<=[.!?…])\s+|(?<=[\p{Extended_Pictographic}\u{FE0F}])\s+(?=[¿¡A-ZÁÉÍÓÚÑ])/u))) {
+    const n = _normFrase(f);
+    if (n.replace(/[^a-zñ]/g, "").length < 12 || fin.includes(` ${n} `)) continue;
+    const pal = f.trim().split(/\s+/).map((o) => ({ o, n: _normFrase(o) })).filter((x) => x.n);
+    const ns = pal.map((x) => x.n);
+    let a = 0; while (a < ns.length && esta(ns.slice(0, a + 1))) a++;
+    let b = 0; while (b < ns.length - a && esta(ns.slice(ns.length - b - 1))) b++;
+    const frag = (a < 2 && b < 2 ? pal : pal.slice(a, pal.length - b)).map((x) => x.o).join(" ").trim();
+    if (_normFrase(frag).replace(/[^a-zñ]/g, "").length >= 8) out.push(frag);
+  }
+  return out;
+}
+// ¿Volvió a decir lo quitado con otras palabras? (≥ 70 % de sus palabras con contenido, si son 3 o más)
+function repiteLoQuitado(rep: string, quitadas: string[]): boolean {
+  const r = new Set(_normFrase(rep).split(" ").filter((w) => w.length >= 4));
+  return quitadas.some((q) => {
+    const ws = [...new Set(_normFrase(q).split(" ").filter((w) => w.length >= 4))];
+    return ws.length >= 3 ? ws.filter((w) => r.has(w)).length / ws.length >= 0.7 : r.has(ws.join(" ")) || ` ${_normFrase(rep)} `.includes(` ${_normFrase(q)} `);
+  });
+}
+async function repararMensajeCortado(db: SupabaseClient, run: any, ctx: any, final: string): Promise<string> {
+  const crudo = String(ctx?._iaCrudo ?? "");
+  const cfg = run?._iaCfg;
+  if (!crudo || !cfg?.apiKey || !String(final ?? "").trim() || !esDigital(ctx)) return final;
+  const quitadas = frasesQuitadas(crudo, final);
+  if (quitadas.join("").replace(/[^\p{L}]/gu, "").length < 15) return final;
+  let rep = "";
+  try {
+    rep = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: cfg.provider, apiKey: cfg.apiKey, model: cfg.model,
+      maxTokens: 400,
+      system: "Eres el vendedor de este negocio por WhatsApp (español de Perú, tuteo, cálido y breve). Arreglas un mensaje tuyo " +
+        "al que el sistema le quitó frases que NO pueden ir. Responde SOLO con el mensaje final, sin comillas ni explicaciones.",
+      content: `El cliente escribió: «${String(ctx?.last_input ?? "").slice(0, 400)}»\n\n` +
+        `Tu mensaje original era:\n«${crudo}»\n\n` +
+        `El sistema le quitó estas partes porque NO pueden ir:\n${quitadas.map((q) => `• «${q}»`).join("\n")}\n\n` +
+        `Y quedó así:\n«${final}»\n\n` +
+        "Puede haber quedado sin sentido, con una pregunta colgando («¿me la envías?» sin decir qué) o con ideas pegadas. " +
+        "Reescríbelo COMPLETO para que se lea natural y conteste lo que el cliente escribió:\n" +
+        "- Conserva TAL CUAL los precios, montos, listas, nombres y números que quedaron.\n" +
+        "- NO vuelvas a decir lo que se quitó, ni con otras palabras.\n" +
+        "- No agregues datos nuevos (precios, plazos, garantías, números de pago).\n" +
+        "- Termina con UNA pregunta corta que lo acerque a la compra, solo si viene al caso.",
+    });
+  } catch (_) { return final; }
+  rep = tomaMarcaDatosPago(null, String(rep ?? "")).replace(/^[«"“]+|[»"”]+$/g, "").trim();
+  // 🔒 Los candados de plata, por código: ante la duda, sale la versión del motor.
+  const motivo = (() => {
+    if (rep.replace(/[^\p{L}]/gu, "").length < 10) return "vacía";
+    // Plata = montos con S/ o $ y números largos (cuentas, Yape): ninguno se pierde. Y ninguna cifra que no estuviera ni en lo
+    // que quedó ni en lo que escribió la IA (una «garantía de 30 días» nueva).
+    const num = (x: string) => String(Number(x.replace(",", ".")));
+    const plata = (s: string) => [...sinFormato(s).matchAll(/(?:S\/|\$)\s?(\d+(?:[.,]\d+)?)|(\d[\d \t.-]{4,}\d)/g)]
+      .map((m) => m[1] ? num(m[1]) : m[2].replace(/\D/g, ""));
+    const todas = (s: string) => (sinFormato(s).match(/\d+(?:[.,]\d+)?/g) ?? []).map(num);
+    const repPlata = new Set(plata(rep)), repTodas = new Set(todas(rep));
+    if (plata(final).some((x) => !repPlata.has(x) && !repTodas.has(x))) return "perdió un monto o un número";
+    const conocidas = new Set([...todas(final), ...todas(crudo)]);
+    if (todas(rep).some((x) => !conocidas.has(x))) return "agregó una cifra";
+    if (repiteLoQuitado(rep, quitadas)) return "repitió lo quitado";
+    // (y las reglas que el revisor ya hace cumplir: la reescritura no puede traer una que el mensaje no tenía — prueba del
+    //  8-oct: metió «¿Quieres que te envíe los datos para el pago?» con los datos saliendo debajo)
+    const _rompe = (f: (t: string) => string) => f(rep) !== rep && f(final) === final;
+    if (_rompe(sinAnuncioDePago) || _rompe(sinPedirPermisoPago)) return "ofrecía los datos de pago";
+    if (_rompe(sinPreguntaDeRelleno)) return "pregunta de relleno";
+    if (_rompe(sinColetillaRiesgo)) return "«sin riesgo»";
+    if (!((ctx as any)?._datos_faltan ?? []).length && _rompe(sinPedirLosDatos)) return "pedía datos suyos";
+    const sinPedido = String(ctx?.pedido_creado ?? "") !== "si" && !run?.vars?._order_id;
+    if (sinPedido && promesasDeAcceso(rep, String(ctx?.last_input ?? "")).length) return "prometía el acceso";
+    if (String(ctx?.last_input_type ?? "text") !== "image" && afirmaPagoEnCurso(rep).length) return "daba un pago por recibido";
+    if (!run?._quiereComprarTurno && !run?._iaDatosPago && RE_PIDE_CAPTURA.test(sinFormato(rep)) && !RE_PIDE_CAPTURA.test(sinFormato(final))) return "pedía la captura";
+    return "";
+  })();
+  await logEvent(db, run.channel_id, run.contact_id, "nota",
+    motivo ? "🧠 La reescritura no pasó los candados" : "🧠 Mensaje recortado: la IA lo reescribió completo",
+    `Quitado: ${quitadas.map((q) => `«${q.slice(0, 90)}»`).join(" ")}\nQuedaba: «${String(final).slice(0, 300)}»\n` +
+      (motivo ? `Reescritura descartada (${motivo}): «${rep.slice(0, 300)}»` : `Sale: «${rep.slice(0, 400)}»`)).catch(() => {});
+  return motivo ? final : rep;
+}
+
 async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any): Promise<boolean> {
   // 🧠 La marca `[[datos_pago]]` nunca le llega al cliente, venga por donde venga (la venta ya la sacó al leerla).
   result = tomaMarcaDatosPago(null, result);
@@ -10116,6 +10211,8 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       }
       // (el «™» huérfano que deja un recorte a mitad de «EcoGuard™ Solar»: «…desde que sale. ™» — sim 2b-s12)
       result = result.replace(/(?<=[\s.!?…,;:]|^)™[ \t]*/gmu, "").replace(/[ \t]+\n/g, "\n").replace(/[ \t]+$/u, "");
+      // 🧠 Si los frenos se llevaron frases enteras, la IA lo reescribe completo (ver repararMensajeCortado). Una vez por turno.
+      if ((ctx as any)?._iaCrudo) { result = await repararMensajeCortado(db, run, ctx, result); delete (ctx as any)._iaCrudo; }
       let _antesSedes = "";
       {
         const _parsS = String(result ?? "").split(/\n{2,}/);
@@ -24135,7 +24232,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "lo diga: «yape será mi medio de pago», «hola plin», «num», «¿a quién yapeo?», «¿es a este mismo número?», «no me " +
             "deja yapear», «ya, lo quiero»—, termina tu mensaje con `[[datos_pago]]` (el cliente no lo ve): el sistema le manda " +
             "justo debajo el bloque con el monto y los números. Tú contesta lo suyo y, si ya decidió, invítalo a mandar la captura.\n" +
-            "No lo pongas si solo pregunta qué incluye, si es confiable o cómo funciona, ni si dice que no le interesa. Si ya " +
+            // (…y no a una PREGUNTA del producto: a «¿es para mayores de 50?» le salió el Yape — prueba del 8-oct)
+            "No lo pongas si su mensaje es una PREGUNTA sobre el producto (para quién es, qué incluye, cuánto dura, si es " +
+            "confiable, cómo funciona), aunque tú cierres invitándolo a empezar: primero contesta y que él diga que lo quiere. " +
+            "Tampoco si dice que no le interesa. Si ya " +
             "habló de pagar y dudas, ponlo: mandarle los datos a quien quiere pagar nunca sobra; dejarlo sin número es perder la venta.\n" +
             "⛔ Jamás le digas que pague «a este mismo número» o «al número de este chat»: este WhatsApp NO recibe pagos.\n" +
             "Y no le expliques qué es Yape o Plin: los conoce mejor que tú.\n"
@@ -24760,8 +24860,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // Tampoco PEDIR PERMISO para mandarlos: medido en digital, "¿Te paso los datos para que
       // puedas hacer el pago?" y el motor mandaba el Yape en la misma burbuja siguiente. La
       // pregunta queda de adorno (nadie esperó la respuesta) y encima suena a que el bot duda.
-      "   MAL: \"¿Te paso los datos para el pago?\" / \"¿Te mando el Yape?\" — no pidas permiso " +
-      "para algo que sale solo: si toca pagar, los datos ya van saliendo. Dilo afirmando o no lo digas.\n" +
+      // 🧠 (8-oct) Sin la frase MAL escrita: el modelo copiaba justo esa («¿Quieres que te envíe los datos para el pago?»
+      // salió en 5 de 6 pruebas — el ejemplo del prompt pesa más, ver [[ejemplo-del-prompt-pesa-mas]]).
+      "   Tampoco preguntes si quiere que le mandes los datos: " +
+      (esDigital(ctx)
+        ? "si ya quiere pagar, termina con [[datos_pago]] y salen; si todavía no, cierra con una pregunta sobre el producto o sobre empezar.\n"
+        : "si toca pagar, los datos ya van saliendo. Dilo afirmando o no lo digas.\n") +
       "   BIEN: \"Listo, queda confirmado tu pedido a nombre de Rosa, con recojo en la agencia de Cusco.\" (y cortas ahí)\n" +
       "3. No narres pasos que NO han pasado ni hables de \"el sistema\", \"un asesor\" o \"el área de pagos\" " +
       "en tercera persona. Habla del presente y de lo que le toca al cliente ahora. Tampoco te excuses con " +
@@ -24778,11 +24882,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       "automático— respóndela ahora, antes de seguir vendiendo. Revisa la conversación: si preguntó por garantía, " +
       "originalidad, materiales o envío y nunca se le contestó, contéstale con lo que tienes en esta ficha.\n" +
       "7. Cuando el cliente YA decidió (\"quiero el básico\", \"me llevo el premium\", \"ya, lo quiero\", \"sí, ese\"), " +
-      "NO le pidas permiso para cobrarle. Ya te dijo que sí: cierra y sigue. Preguntarle \"¿te paso los datos de pago?\" " +
+      "NO le pidas permiso para cobrarle. Ya te dijo que sí: cierra y sigue. Preguntarle si le pasas los datos " +
       "lo obliga a decir que sí DOS veces, y en ese paso de más es donde se enfrían las ventas.\n" +
-      "   MAL: \"Perfecto, el plan Básica cuesta S/ 99. ¿Quieres que te envíe los datos de pago?\"\n" +
-      "   MAL: \"El Premium es S/ 199. ¿Te paso los datos para que puedas hacer el pago?\"\n" +
-      "   BIEN: \"¡Perfecto! Te confirmo el plan Básica por S/ 99.\" (y cortas ahí — los datos de pago salen solos)\n" +
+      "   Lo correcto: confírmale en una frase afirmativa lo que eligió y su precio, y cortas ahí" +
+      (esDigital(ctx) ? ", terminando con [[datos_pago]] para que salgan los datos.\n" : " — los datos de pago salen solos.\n") +
       // 💻 La lista de datos y los ejemplos, según el tipo de venta. En digital no hay talla,
       // ni DNI, ni sede, ni recojo — y dejarle esos ejemplos delante es lo que hace que un
       // bot de PDFs mencione tallas. Ver la regla de que el ejemplo del prompt pesa más.
@@ -26992,6 +27095,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     }
 
     (run as any)._iaDatosPago = false;
+    if (op === "generar_texto") (run as any)._iaCfg = { provider, apiKey: ai.api_key, model };   // (para repararMensajeCortado; en el run, que no se guarda entero)
     let result = await runAI({ db, channelId: run.channel_id, origen: op === "analizar_imagen" ? "ocr" : "vender",
       provider, apiKey: ai.api_key, model, system, content, maxTokens,
       jsonSchema: op === "extraer" ? cfg.json_schema : undefined,
@@ -27049,6 +27153,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             }
             if ((run as any)._datosArriba && /\bte\s+(?:dejo|paso|mando|env[ií]o|comparto)\s+(?:los\s+|tus\s+)?datos|\bya\s+te\s+(?:dejo|paso)\s+los\s+datos/i.test(sinFormato(txt))) {
               v.push("Los datos de pago ya están arriba en el chat y no se vuelven a mandar: no digas que se los pasas; si hace falta, dile que están arriba.");
+            }
+            // ✂️→🧠 (8-oct) Los frenos que más cortaban en lo digital (traza de 4 días de chats reales), como DETECTORES: si
+            // la respuesta los pisa, la IA la reescribe entera y el recorte de más abajo ya no encuentra nada que cortar. Usan
+            // las MISMAS funciones del recorte, así que detectan exactamente lo que antes se cortaba.
+            if (sinAnuncioDePago(txt) !== txt || sinPedirPermisoPago(txt) !== txt) {
+              // (sin citar la frase mala: el modelo la copiaba también en la reescritura)
+              v.push("Borra la parte donde le ofreces, anuncias o preguntas si le mandas los datos de pago. Si ya quiere pagar, " +
+                "termina con [[datos_pago]] y salen solos; si todavía no, cierra con una pregunta sobre el producto o sobre empezar.");
+            }
+            if (sinPreguntaDeRelleno(txt) !== txt) {
+              v.push("Quita la pregunta de relleno que no pide nada concreto («¿quieres que te cuente más?», «¿te gustaría saber…?»): " +
+                "cierra con UNA pregunta que lo acerque a decidir.");
+            }
+            if (!((ctx as any)._datos_faltan ?? []).length && sinPedirLosDatos(txt) !== txt) {
+              v.push("No le pidas datos suyos (nombre, correo, dirección, DNI): en lo digital no hace falta ninguno, solo que pague.");
+            }
+            if (sinColetillaRiesgo(txt) !== txt) {
+              v.push("No digas «sin riesgo», «sin pagar nada antes» ni nada parecido: nombrar el riesgo se lo mete en la cabeza.");
             }
             if (!(run as any)._quiereComprarTurno && RE_PIDE_CAPTURA.test(sinFormato(txt))) {
               v.push("Todavía no dijo que lo quiere: no le pidas la captura ni que pague. Contesta lo que preguntó y, si viene al caso, " +
@@ -28093,7 +28215,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // la insistencia que apaga el chat (medido en R-pensar-1).
       _tr("🤫 …y nunca al que acaba de decir que lo va a pensar: pegarle la lista ·L27457");
       if (op === "generar_texto" && ctx._product_id && !RE_LO_PIENSA.test(String(ctx.last_input ?? ""))
-          && (RE_PROMETE_PRECIOS.test(sinFormato(salida)) || _pidioPrecio || _sinCifrasDebiendo)) {
+          && (RE_PROMETE_PRECIOS.test(sinFormato(salida)) || _pidioPrecio || _sinCifrasDebiendo)
+          // (digital de UN solo precio: una «lista» de un renglón no compara nada y el monto ya va en «Son *S/ X*» del bloque
+          //  de pago — «Única — *S/ 10*» salía pegado debajo de «los datos están arriba», prueba del 8-oct. Solo si lo pregunta.)
+          && !(esDigital(ctx) && _opsPre.length <= 1 && !_pidioPrecio)) {
         if (_opsPre.length) {
           const sym = simboloMoneda(ctx.moneda as string);
           const _pz = (v: unknown) => (_negOn ? `*${sym} ${v}*` : `${sym} ${v}`);
@@ -31665,7 +31790,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
         } catch (_) { /* sin dato → se manda como siempre */ }
       }
+      // 🧠 Lo que escribió la IA, para que emitIaText vea si los frenos le quitaron frases enteras (ver repararMensajeCortado).
+      if (op === "generar_texto") (ctx as any)._iaCrudo = String(result ?? "");
       const handoff = (_acuseDiferido || _turnoViejo) ? _cubiertaConBolsa : ((await emitIaText(db, run, salida, ctx)) || _cubiertaConBolsa);
+      delete (ctx as any)._iaCrudo;
       // 👤 El resumen para confirmar, en su burbuja y tal cual lo armó el motor (ver «EL RESUMEN PARA CONFIRMAR»).
       if ((ctx as any)._resumenBurbuja && !_turnoViejo && !handoff) {
         await emit(db, run, { text: String((ctx as any)._resumenBurbuja), _noTpl: true }, ctx);
