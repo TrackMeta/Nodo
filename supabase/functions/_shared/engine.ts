@@ -11502,7 +11502,19 @@ async function entregarMicroapp(db: SupabaseClient, run: Run, ctx: any): Promise
   if (!pid) return;
   const { nombre: app, cfg } = await productoMicroapp(db, pid);
   const prueba = !!(run.vars as any)._microapp_prueba;
-  const { tipo, meses } = prueba ? { tipo: "prueba" as const, meses: 0 } : modalidadDeOpcion(ctx._opcion);
+  // La opción COMPRADA es la del pedido (la que se dedujo por el monto puede no estar en ctx todavía).
+  let _opc: any = ctx._opcion;
+  try {
+    const _oid = (run.vars as any)._order_id;
+    if (_oid) {
+      const { data: _o } = await db.from("orders").select("version_id").eq("id", String(_oid)).maybeSingle();
+      if ((_o as any)?.version_id) {
+        const { data: _v } = await db.from("product_versions").select("id, nombre, config").eq("id", (_o as any).version_id).maybeSingle();
+        if (_v) _opc = _v;
+      }
+    }
+  } catch (_) { /* sin pedido legible → la opción del contexto */ }
+  const { tipo, meses } = prueba ? { tipo: "prueba" as const, meses: 0 } : modalidadDeOpcion(_opc);
   const horas = prueba ? Math.max(1, Number(cfg.prueba?.horas) || 24) : null;
   const { data: ent, error } = await db.from("microapp_entregas").insert({
     channel_id: run.channel_id, contact_id: run.contact_id, product_id: pid,
@@ -11565,7 +11577,9 @@ async function completarMicroapp(db: SupabaseClient, channelId: string, contactI
     }
     await db.from("microapp_entregas").update({ estado: "error", error: String(r?.error ?? "error"), proximo_aviso_at: null,
       correo: o.correo ?? null, telefono: o.telefono ?? null, updated_at: new Date().toISOString() }).eq("id", entregaId);
-    await deliverMessage(db, channelId, contactId, "¡Gracias! 🙌 Tu pago ya está registrado. En un momento te mando tu acceso por acá.").catch(() => {});
+    await deliverMessage(db, channelId, contactId, (e as any).tipo === "prueba"
+      ? "¡Gracias! 🙌 En un momento te mando el acceso a tu prueba por acá."
+      : "¡Gracias! 🙌 Tu pago ya está registrado. En un momento te mando tu acceso por acá.").catch(() => {});
     await pasarAHumano(db, channelId, contactId,
       `📱 Pagó «${app}» y dio ${o.correo ? `el correo ${o.correo}` : `el celular ${o.telefono}`}, pero la base de Apps no creó el acceso (${String(r?.error ?? "error")}). Dale el acceso desde Accesos.`,
       { aviso: "fuera" }).catch(() => {});
@@ -11632,7 +11646,8 @@ async function iaEsperandoCorreo(db: SupabaseClient, channelId: string, app: str
         "Acciones:\n- \"sin_correo\": dice que no tiene correo o no usa correo.\n- \"telefono\": te da un número de celular para su acceso (ponlo en \"telefono\").\n" +
         "- \"humano\": reclama, pide devolución, dice que pagó otra cosa o algo que no puedes resolver.\n" +
         "- \"responder\": cualquier otra cosa (una duda, un saludo). Escribe en \"respuesta\" una contestación corta (máx. 200 caracteres), " +
-        "en tuteo peruano, SIN inventar nada que no diga la ficha, y SIN volver a pedir el correo (eso lo agrega el sistema). Nunca pidas contraseñas.\n" +
+        "en tuteo peruano, sin saludar y sin cerrar con otra pregunta (el pedido del correo lo agrega el sistema). " +
+        "⛔ Solo lo que dice la ficha de abajo: si la ficha NO lo dice, contesta «Eso no lo tengo acá 🤔» y nada más — no lo deduzcas ni lo supongas. Nunca pidas contraseñas.\n" +
         (ficha ? `\nLo que sabes de la app:\n${ficha}\n` : "") +
         'JSON: {"accion":"responder|sin_correo|telefono|humano","telefono":"","respuesta":""}',
       content: `Mensaje del cliente:\n"""${txt.slice(0, 600)}"""` });
@@ -11769,9 +11784,11 @@ async function bloquesMicroappVenta(db: SupabaseClient, run: Run, ctx: any): Pro
       const horas = Math.max(1, Number(cfg.prueba?.horas) || 24);
       out.push("## ⚠️ Prueba gratis\n" +
         `A este cliente se le ofreció probar la app GRATIS por ${horas % 24 === 0 ? (horas === 24 ? "24 horas" : `${horas / 24} días`) : `${horas} horas`}. ` +
-        "Si dice que sí la quiere (o acepta probarla), dile con calidez que se la activas y escribe `[[prueba]]` al final " +
-        "(el cliente no lo ve; el sistema le pide su correo). Si prefiere comprar de una, véndele normal.");
+        "Si dice que sí la quiere (o acepta probarla): contesta SOLO una línea corta y cálida («¡Listo! Te la activo 🎁») y termina con `[[prueba]]` " +
+        "(el cliente no lo ve; el sistema le pide su correo y le manda su link). Sin la marca la prueba NO se activa. En ese mensaje no hables de precios. " +
+        "Si prefiere comprar de una, véndele normal.");
       ctx._pruebaOfrecible = true;
+      if (!(run.vars as any)._pruebaLog) { (run.vars as any)._pruebaLog = 1; await logEvent(db, run.channel_id, run.contact_id, "nota", "🎁 La IA puede activar la prueba gratis", "Se la ofreció el remarketing hace menos de 7 días").catch(() => {}); }
     }
   }
   return out;
@@ -16440,6 +16457,9 @@ const RE_PROMETE_PAGO =
 // cómo habla la gente, escribe `[[datos_pago]]` al final y el motor manda el bloque: el NÚMERO lo sigue poniendo el motor,
 // nunca la IA. Las listas de abajo quedan de respaldo.
 // 🎁 La IA acepta la prueba gratis de la micro app por el cliente (ver bloquesMicroappVenta).
+// Respaldo de [[prueba]]: el cliente acepta la oferta («sí», «dale», «quiero probarla») o la IA dice que se la activa.
+const RE_ACEPTA_PRUEBA = /(?:^|[^\p{L}])(?:s[ií]+|dale|ok|okey|ya|claro|acepto|me\s+animo|quiero\s+(?:probar\w*|la\s+prueba|eso)|prob[aá]ndol[oa]|prob(?:ar|emos|arla|arlo))(?![\p{L}])/iu;
+const RE_DICE_QUE_ACTIVA_PRUEBA = /(?:te\s+(?:la\s+)?activ\w*|activ[eéo]\w*\s+(?:tu|la)\s+prueba|te\s+dejo\s+(?:la\s+)?prueba|prueba\s+(?:gratis\s+)?(?:activada|lista))/i;
 const RE_MARCA_PRUEBA = /\[\[\s*prueba(?:[_ ]gratis)?\s*\]\]/i;
 const RE_MARCA_DATOS_PAGO = /\[\[\s*datos[_ ]?(?:de[_ ])?pago\s*\]\]/iu;
 function tomaMarcaDatosPago(run: any, txt: string): string {
@@ -21988,12 +22008,14 @@ function casiIgual(a: string, b: string): boolean {
   }
   return dif + (la - i) + (lb - j) <= 1;
 }
+const TOKENS_COMUNES = new Set(["pago", "pagos", "precio", "precios"]);
 function mencionaLaOpcion(texto: string, op: Opcion, todas: Opcion[]): boolean {
   const t = sinTildes(texto);
   if (!t.trim()) return false;
   // 1) Una palabra PROPIA del nombre: la que no comparten las demás. En
   //    "1 kit" vs "Pack 2 kits", "kit" no distingue nada; "pack" sí.
-  const tokens = (n: string) => sinTildes(n).split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+  // (sin «pago/precio»: «Pago único» de una micro app se «nombraba» con «¿cómo pago?» — 8-oct)
+  const tokens = (n: string) => sinTildes(n).split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !TOKENS_COMUNES.has(w));
   const ajenas = new Set(todas.filter((o) => o.id !== op.id).flatMap((o) => tokens(o.nombre)));
   // La palabra tiene que estar COMPLETA. Con `includes` a secas, "par" (de "1 par")
   // hacía match dentro de "pares" (de "Pack 2 pares"): un cliente que pedía el pack
@@ -27656,11 +27678,26 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       if (esMicroapp(ctx) && RE_MARCA_PRUEBA.test(result) && (ctx as any)._pruebaOfrecible) {
         result = result.replace(new RegExp(RE_MARCA_PRUEBA.source, "gi"), "").trim();
         (run as any)._iaPrueba = true;
+      } else if (esMicroapp(ctx) && (ctx as any)._pruebaOfrecible && (RE_DICE_QUE_ACTIVA_PRUEBA.test(result) || await (async () => {
+          // «sí / dale / quiero probarla» cuenta SOLO como respuesta a la oferta: el último mensaje nuestro habla de la
+          // prueba y el suyo no la rechaza ni la posterga («ya lo pensé, mejor no» no es aceptar).
+          const _in = String(ctx.last_input ?? "");
+          if (!RE_ACEPTA_PRUEBA.test(_in) || /(?:^|[^\p{L}])(?:no|nop|pensar\w*|despu[eé]s|luego|m[aá]s\s+tarde)(?![\p{L}])/iu.test(_in)) return false;
+          const { data: _ult } = await db.from("messages").select("content").eq("contact_id", run.contact_id).eq("direction", "out")
+            .order("ts", { ascending: false }).limit(1).maybeSingle();
+          return /prueba|gratis|probar/i.test(String((_ult as any)?.content?.text ?? ""));
+        })())) {
+        // Respaldo: la IA no siempre escribe la marca (igual que [[recompra]]). Si el cliente aceptó la oferta o
+        // la IA ya le dijo que se la activa, se activa de verdad — si no, le prometía una prueba que nunca llegaba.
+        (run as any)._iaPrueba = true;
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "🎁 Prueba aceptada (respaldo)", "La IA no escribió [[prueba]]: se activa porque el cliente aceptó o porque se lo prometió").catch(() => {});
       } else if (RE_MARCA_PRUEBA.test(result)) result = result.replace(new RegExp(RE_MARCA_PRUEBA.source, "gi"), "").trim();
       if (RE_MARCA_MI_ACCESO.test(result)) {   // 📱 ya tiene la app y pidió su link: lo reenvía el motor
         result = result.replace(new RegExp(RE_MARCA_MI_ACCESO.source, "gi"), "").trim();
         if (esMicroapp(ctx)) (run as any)._iaMiAcceso = true;
       }
+      // 🎁 Aceptó la prueba: el mensaje es del motor (corto, sin precios); lo que sigue es pedirle el correo.
+      if ((run as any)._iaPrueba) result = "¡Listo! Te activo tu prueba gratis 🎁";
       if ((run as any)._iaDatosPago) {
         (run as any)._quiereComprarTurno = true;
         await logEvent(db, run.channel_id, run.contact_id, "nota", "🧠 La IA decidió mandar los datos de pago",
@@ -27671,7 +27708,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // 🧭 Motor v2: el REVISOR. Si la respuesta rompe una regla del paso o no contesta lo que preguntó, se le pide
     // reescribirla UNA vez con la indicación exacta. Si la segunda tampoco pasa, se queda la segunda y vuelven las
     // tijeras de siempre (`_v2Fallo`).
-    if (((run as any)._v2Activo || (run as any)._revSolo) && !(run as any)._disputaPago && typeof result === "string" && result.trim() && typeof content === "string") {
+    if (((run as any)._v2Activo || (run as any)._revSolo) && !(run as any)._disputaPago && !(run as any)._iaPrueba && typeof result === "string" && result.trim() && typeof content === "string") {
       try {
         const _p = (run as any)._pasoV2 as PasoV2 | undefined;   // (sin paso en lo digital: solo el revisor IA)
         if (_p?.paso === "sede") result = sinPreguntaDeSedeV2(result) || result;
@@ -30629,7 +30666,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // completos este turno NO crea pedido, así que un "queda confirmado" acá es falso.
       // Se recorta esa frase (ver sinFalsoCierre); el resto del mensaje sale igual.
       _tr("Anunciar el cierre cuando el motor NO va a cerrar nada: mientras los d ·L29180");
-      if (op === "generar_texto" && ctx.datos_completos !== "si" && String(ctx.pedido_creado ?? "") !== "si") {
+      if (op === "generar_texto" && ctx.datos_completos !== "si" && String(ctx.pedido_creado ?? "") !== "si" && !(run as any)._iaPrueba) {   // (🎁 la prueba gratis no elige opción)
         // La frase de reemplazo tiene que PEDIR lo que falta, no solo sonar honesta. Medido:
         // una clienta mandó nombre + distrito + dirección y recibió "Con ese último dato te lo
         // dejo cerrado. 🙂" — una frase suelta que no pide nada, después de que ella diera

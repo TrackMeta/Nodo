@@ -485,6 +485,12 @@ Deno.serve(async (req) => {
           await db.from("messages").insert({ channel_id: channelId, contact_id: contactId, direction: "out", type: "text",
             content: { text: String(p.oferta.texto ?? "") }, status: "delivered" });
           tr.push({ c: "[secuencia con oferta S/ " + p.oferta.precio + "]", b: [String(p.oferta.texto ?? "")] });
+        } else if (p?.prueba_ofrecida) {
+          // {prueba_ofrecida:true, texto} = un paso del remarketing le ofreció la prueba gratis de la micro app.
+          await db.from("contacts").update({ prueba_ofrecida_at: new Date().toISOString() }).eq("id", contactId);
+          await db.from("messages").insert({ channel_id: channelId, contact_id: contactId, direction: "out", type: "text",
+            content: { text: String(p.texto ?? "") }, status: "delivered" });
+          tr.push({ c: "[remarketing: ofrece la prueba gratis]", b: [String(p.texto ?? "")] });
         } else if (typeof p?.rechazar === "string") {
           // {rechazar: "motivo"} = el dueño rechaza el pago parqueado desde el panel con «Que el bot le pida otro» (order-update).
           const t0 = new Date().toISOString();
