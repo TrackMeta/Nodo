@@ -46,7 +46,7 @@ export const CATALOGO = [
   },
   // ── Digital (Utility) ──
   {
-    folder: "Recomendadas · Digital", categoria: "UTILITY", name: "entrega_digital", language: "es",
+    grupo: "digital", folder: "Recomendadas · Digital", categoria: "UTILITY", name: "entrega_digital", language: "es",
     titulo: "Entrega digital (acceso)",
     body: "¡Gracias por tu compra, {{1}}! 🎉 Aquí tienes el acceso a tu {{2}}: {{3}}. Cualquier duda, escríbenos por aquí y te ayudamos. 😊",
     params: ["{{nombre}}", "{{producto_nombre}}", "{{link_entrega}}"],
@@ -54,14 +54,14 @@ export const CATALOGO = [
   },
   // ── Reenganche (Marketing) ──
   {
-    folder: "Recomendadas · Reenganche", categoria: "MARKETING", name: "interesado_seguimiento", language: "es",
+    grupo: "digital", folder: "Recomendadas · Reenganche", categoria: "MARKETING", name: "interesado_seguimiento", language: "es",
     titulo: "Seguimiento a interesado",
     body: "¡Hola {{1}}! 👋 Vimos que te interesó {{2}} pero no llegamos a cerrar tu pedido. ¿Te quedó alguna duda? Estamos aquí para ayudarte a completarlo cuando quieras. 😊",
     params: ["{{nombre}}", "{{producto_nombre}}"],
     ejemplos: ["María", "Zapatillas Runner"],
   },
   {
-    folder: "Recomendadas · Reenganche", categoria: "MARKETING", name: "promo_reactivacion", language: "es",
+    grupo: "digital", folder: "Recomendadas · Reenganche", categoria: "MARKETING", name: "promo_reactivacion", language: "es",
     titulo: "Promoción / reactivación",
     body: "¡Hola {{1}}! 🎉 Tenemos una promoción especial en {{2}}: {{3}}. Responde este mensaje y te damos todos los detalles. ✨",
     params: ["{{nombre}}", "{{producto_nombre}}", "{{oferta}}"],

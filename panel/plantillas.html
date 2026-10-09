@@ -209,7 +209,7 @@ async function loadList(){
   const { data }=await supa.from("wa_templates").select("*").eq("channel_id",forChannel).order("created_at");
   if(gen!==st.loadGen) return;
   st.list=data||[];
-  if(!Fbar){ Fbar=await mountFolders({ el:$("folders"), tipo:"template", table:"wa_templates", channelId:st.channelId, items:()=>st.list, onChange:()=>{ renderCards(); renderReco(); }, labelAll:"Todas", trailingTabs:()=>[{ v:"__reco", label:"Recomendadas físico", cls:"reco", count:()=>recoPend("__reco").length, icon:RECO_ICO }, { v:"__recoApps", label:"Recomendadas Mini Apps", cls:"reco", count:()=>recoPend("__recoApps").length, icon:RECO_ICO }] }); }
+  if(!Fbar){ Fbar=await mountFolders({ el:$("folders"), tipo:"template", table:"wa_templates", channelId:st.channelId, items:()=>st.list, onChange:()=>{ renderCards(); renderReco(); }, labelAll:"Todas", trailingTabs:()=>[{ v:"__reco", label:"Recomendadas físico", cls:"reco", count:()=>recoPend("__reco").length, icon:RECO_ICO }, { v:"__recoDig", label:"Recomendadas digital", cls:"reco", count:()=>recoPend("__recoDig").length, icon:RECO_ICO }, { v:"__recoApps", label:"Recomendadas Mini Apps", cls:"reco", count:()=>recoPend("__recoApps").length, icon:RECO_ICO }] }); }
   else if(Fbar.channelId()!==st.channelId){ await Fbar.setChannel(st.channelId); }
   else { await Fbar.reload(); }
   renderCards(); renderReco();
@@ -218,12 +218,13 @@ async function loadList(){
 // cuenta por defecto. Muestra solo las que aún no agregaste; un clic las copia a
 // tus plantillas y las manda a aprobar a Meta.
 // Catálogo curado que aún NO agregaste (las agregadas viven en tus plantillas).
-// Dos pestañas: «Recomendadas físico» (__reco: las de siempre) y «Recomendadas Mini Apps»
-// (__recoApps: las del catálogo con grupo:"apps").
+// Tres pestañas según el `grupo` del catálogo: «Recomendadas físico» (__reco: sin grupo),
+// «Recomendadas digital» (__recoDig: grupo "digital") y «Recomendadas Mini Apps» (__recoApps: grupo "apps").
 const RECO_ICO='<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" style="vertical-align:-2px;margin-right:2px"><path d="M12 2 13.8 9.2 21 11 13.8 12.8 12 20 10.2 12.8 3 11 10.2 9.2Z"/></svg>';
-const esReco=(v)=> v==="__reco" || v==="__recoApps";
-function recoPend(tab){ const apps=tab==="__recoApps";
-  return CATALOGO.filter(c=> (c.grupo==="apps")===apps && !st.list.some(t=>t.name===c.name)); }
+const RECO_GRUPO={ __reco:"", __recoDig:"digital", __recoApps:"apps" };
+const esReco=(v)=> Object.hasOwn(RECO_GRUPO, v||"");
+function recoPend(tab){ const g=RECO_GRUPO[tab]??"";
+  return CATALOGO.filter(c=> (c.grupo||"")===g && !st.list.some(t=>t.name===c.name)); }
 // El catálogo ahora vive en la carpeta "Recomendadas": solo se pinta cuando esa
 // carpeta está seleccionada (antes era un bloque fijo arriba de todo).
 function renderReco(){
