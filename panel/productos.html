@@ -328,6 +328,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
+import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
 // 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se pregunta a shell.js, pero SIN
 // importarlo estático: si el navegador tiene cacheado un shell.js viejo (sin ese export),
@@ -680,8 +681,8 @@ function renderCards(){
     el.innerHTML=`
       <div class="c-ic">${emIc}</div>
       <div class="c-tt">${esc(p.nombre)}</div>
-      <div class="c-sub">${esReg(p)?"Regalo · gratis con la compra":esEx(p)?"Complemento · para ventas extra":(p.tipo==="fisico"?"Producto físico":"Producto digital")}</div>
-      <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">${icon("gift")} Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">${icon("plus")} Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>`;
+      <div class="c-sub">${esReg(p)?"Regalo · gratis con la compra":esEx(p)?"Complemento · para ventas extra":(p.tipo==="fisico"?"Producto físico":p.tipo==="microapp"?"Micro app":"Producto digital")}</div>
+      <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">${icon("gift")} Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">${icon("plus")} Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":p.tipo==="microapp"?icon("phone")+"Micro app":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
     if(fslot && Fbar){
       const pk=Fbar.picker({ current:p.folder||null, onPick:async(v)=>{
@@ -727,6 +728,7 @@ function nuevoProductoModal(){
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         ${card("fisico",icon("box"),"Producto físico","Se envía: Lima contraentrega o provincia por agencia con adelanto. La logística la hereda de Negocio.")}
         ${card("digital",icon("file"),"Producto digital","Se entrega al instante por un link o archivo al confirmar el pago.")}
+        ${card("microapp",icon("phone"),"Micro app","Una app que se usa desde el celular. Nodo cobra, pide el correo, entrega el acceso y lo corta si no renueva.")}
       </div>
       <label style="display:block;font-size:11.5px;color:var(--muted);margin:18px 0 6px;font-weight:700">Nombre del producto</label>
       <input id="nptName" placeholder="Ej. Zapatillas Runner" style="width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:11px 13px;font-size:13.5px;outline:none;font-family:var(--font)"/>
@@ -877,6 +879,7 @@ function renderDetail(){
   // En físico la sección "producto" ya no tiene identidad (se edita en el
   // encabezado): solo variantes + stock, así que el breadcrumb lo refleja.
   if((st.prod.tipo||"digital")==="fisico") SEC.producto="Variantes y stock"; else SEC.producto="Detalles a preguntar";
+  if(st.prod.tipo==="microapp" && !esRegalo){ SEC.opciones="Cómo se cobra"; SEC.entrega="Correo, renovación y conexión"; }
   const CHEV='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
   const onHub = st.tab==="inicio";
   // "¿Lo armo por ti?" es este FAB de abajo a la derecha, visible en todo el editor.
@@ -1366,6 +1369,8 @@ function entregaPreviewHtml(hdr, entrega, una){
 }
 function renderEntrega(host){
   const b=host||$("tabBody");
+  // 📱 Micro app: no hay link que entregar — es correo + acceso (ver microapp-producto.js).
+  if(st.prod.tipo==="microapp" && st.prod.clase!=="regalo"){ renderConfigMicroapp(b, st, { onChange:()=>{ if(st._refreshRow) st._refreshRow("entrega"); if(st._refreshMeter) st._refreshMeter(); } }); return; }
   const c=st.prod.config=st.prod.config||{};
   const tipo=st.prod.tipo||"digital";
   if(tipo==="digital"){
@@ -2659,7 +2664,7 @@ async function renderInicio(){
       const active=(st.versions||[]).filter(v=>v.activo!==false); const priced=active.filter(v=>Number(v.precio)>0); const prices=priced.map(v=>Number(v.precio));
       const $s=curSym(st.prod&&st.prod.config); let msg; if(!priced.length) msg="Falta ponerle precio"; else if(active.length===1) msg=`${$s} ${prices[0]} · 1 presentación`; else msg=`${active.length} presentaciones · desde ${$s} ${Math.min(...prices)}`;
       return {ok:priced.length>0,msg}; }
-    if(t==="entrega"){ if(fisico) return {ok:true,msg:"Se envía (hereda de Negocio)"}; const ok=(st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()))||!!(c.link_entrega&&String(c.link_entrega).trim()); return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo"}; }
+    if(t==="entrega"){ if(st.prod.tipo==="microapp") return estadoConfigMicroapp(st); if(fisico) return {ok:true,msg:"Se envía (hereda de Negocio)"}; const ok=(st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim()))||!!(c.link_entrega&&String(c.link_entrega).trim()); return {ok,msg:ok?"Entrega configurada":"Falta el link o archivo"}; }
     if(t==="ia"){ const ok=!!(c.contexto_producto||(c.ia&&(c.ia.detalle||c.ia.resumen))); return {ok,msg:ok?"La IA sabe venderlo":"La IA aún no sabe venderlo"}; }
     if(t==="activacion"){ const ok=!!fIni && trigs.length>0; return {ok,msg:ok?"Palabra clave + mensajes listos":(fIni?"Faltan palabras clave":"Faltan mensajes iniciales")}; }
     if(t==="extras"){ const n=(c.extras||[]).length; return {ok:n>0,opt:true,msg:n>0?`${n} venta(s) extra`:"Sin ventas extra (opcional)"}; }
@@ -2684,7 +2689,7 @@ async function renderInicio(){
 
   // ── Cabecera: emoji + nombre + tipo + medidor ──────────────────────
   const tipoTxt = esRegalo ? "Regalo · gratis" : esExtra ? (fisico?"Complemento físico":"Complemento digital")
-    : fisico ? "Producto físico" : "Producto digital · entrega al instante";
+    : fisico ? "Producto físico" : st.prod.tipo==="microapp" ? "Micro app · acceso con correo" : "Producto digital · entrega al instante";
   // Emoji editable (botón) + popup del selector (reusa wireEmojiPicker).
   const emojiBox = `<div style="position:relative;flex:none">
       <button id="emojiBtn" class="emoji-head" title="Cambiar emoji" style="width:52px;height:52px;border-radius:14px;border:1px solid var(--border);box-shadow:0 1px 2px rgba(0,0,0,.05),0 5px 12px -5px rgba(0,0,0,.16);font-size:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0">${st.prod.emoji?esc(st.prod.emoji):icon("box")}</button>
@@ -2751,6 +2756,7 @@ async function renderInicio(){
   const qCuesta = rowHtml("opciones",{label:"¿Cuánto cuesta?",sub:precioSub,warn:precioWarn,ico:icon("dollar")});
   const qVar = fisico
     ? rowHtml("producto",{label:"Variantes y stock",sub:stockSub,ico:icon("productos"),opt:true,ok:(atrs>0||totStock>0)})
+    : st.prod.tipo==="microapp" ? rowHtml("entrega",{label:"Correo, renovación y conexión",sub:est("entrega").msg,warn:!est("entrega").ok,ico:icon("phone")})
     : rowHtml("entrega",{label:"¿Cómo se entrega?",sub:est("entrega").ok?"Entrega configurada":"Falta el link o archivo",warn:!est("entrega").ok});
   const rIA = rowHtml("ia",{label:"La IA sabe venderlo",sub:est("ia").ok?"La IA ya sabe venderlo":"Falta describir tu producto",warn:!est("ia").ok,tone:"ia"});
   const rAct = rowHtml("activacion",{label:"Cómo llegan los clientes",sub:est("activacion").msg,warn:!est("activacion").ok,tone:"ia"});
@@ -2942,7 +2948,9 @@ function renderSalud(ready){
   const errs=[], warns=[];
   if(!ops.length) errs.push("El producto no tiene ninguna presentación activa.");
   if(!conPrecio.length) errs.push("Ninguna presentación tiene precio: el validador no puede saber cuánto debe pagar el cliente.");
-  if(!fisico){
+  // 📱 Micro app: no entrega links, entrega un ACCESO — lo que no puede faltar es la conexión con la app.
+  if(st.prod.tipo==="microapp"){ if(!String(st.prod.config?.microapp?.conexion?.url||"").trim()) errs.push("La app no está conectada: pon su link en «Correo, renovación y conexión». El cliente pagaría y no tendría a dónde entrar."); }
+  else if(!fisico){
     // Cuenta solo los items con URL: una fila de entrega vacía no entrega nada.
     const sinEntrega=conPrecio.filter(v=>!(Array.isArray(v.entrega)&&v.entrega.some(it=>it&&String(it.url||"").trim())));
     if(sinEntrega.length) errs.push(`Con precio pero sin entrega: ${sinEntrega.map(v=>`"${esc(v.nombre||"—")}"`).join(", ")}. El cliente pagaría y no recibiría nada.`);
@@ -3797,6 +3805,8 @@ async function enlazarInicialesConVenta(flowId){
 // que el validador de pagos usa como MONTO ESPERADO. Ver migración 0029.
 function renderOpciones(host){
   const b=host||$("tabBody");
+  // 📱 Micro app: pago único / mensual / descuentos por meses (cada uno es una presentación).
+  if(st.prod.tipo==="microapp" && st.prod.clase!=="regalo" && st.prod.clase!=="extra"){ renderCobroMicroapp(b, st, { sym:curSym(st.prod.config), onChange:()=>{ if(st._refreshRow) st._refreshRow("opciones"); if(st._refreshMeter) st._refreshMeter(); } }); return; }
   st._opHost=b; // para re-dibujar la sección entera (ej. al borrar y volver a simple)
   const fisico=(st.prod.tipo||"digital")==="fisico";
   const cfg=st.prod.config=st.prod.config||{};
@@ -4761,7 +4771,8 @@ async function _saveProduct(){
   // guardaba el tipo original pero NUNCA se leía → el cambio pasaba sin advertencia y el
   // cliente lo sufría (le pedían dirección para un digital, o le mandaban link de un físico).
   if(st.prod.id && st.tipoGuardado && (st.prod.tipo||"digital")!==st.tipoGuardado){
-    const nuevo=(st.prod.tipo||"digital")==="fisico"?"Físico":"Digital", viejo=st.tipoGuardado==="fisico"?"Físico":"Digital";
+    const _nomT=(t)=>t==="fisico"?"Físico":t==="microapp"?"Micro app":"Digital";
+    const nuevo=_nomT(st.prod.tipo||"digital"), viejo=_nomT(st.tipoGuardado);
     const conEntrega=(st.prod.tipo||"digital")==="fisico" && (st.versions||[]).some(v=>Array.isArray(v.entrega)&&v.entrega.length);
     const ok=await confirmDialog({ title:"Cambiaste el tipo de producto",
       message:`Pasó de ${viejo} a ${nuevo}. Es el cambio más grande que hay: el flujo de venta se rehará entero al guardar (un ${nuevo.toLowerCase()} no se vende igual que un ${viejo.toLowerCase()}).${conEntrega?" Los links y archivos de entrega digital de sus presentaciones se quitarán (un físico no los usa).":""} ¿Guardar igual?`,
@@ -5131,7 +5142,7 @@ async function armAplicar(d){
   const presCuradas=(st.versions||[]).filter(v=> Number(v.precio)>0 || String(v.descripcion??"").trim() || (Number(v.cantidad)>1) || (String(v.nombre??"").trim() && String(v.nombre).trim().toLowerCase()!=="única"));
   const pisaPres=(Array.isArray(d.presentaciones)&&d.presentaciones.length) && presCuradas.length>0;
   const pisaNombre=!!(d.nombre && String(p.nombre??"").trim() && String(p.nombre).trim()!==String(d.nombre).trim());
-  const pisaTipo=!!((d.tipo==="fisico"||d.tipo==="digital") && p.tipo && p.tipo!==d.tipo); // digital↔físico reconfigura todo
+  const pisaTipo=!!((d.tipo==="fisico"||d.tipo==="digital") && p.tipo && p.tipo!=="microapp" && p.tipo!==d.tipo);   // (una micro app sigue siéndolo) // digital↔físico reconfigura todo
   let reemplazar=true;
   if(pisaAtr||pisaIa.length||pisaPres||pisaNombre||pisaTipo){
     const items=[pisaNombre?"el nombre":"", pisaTipo?"el tipo (físico/digital)":"", pisaPres?`tus ${presCuradas.length} presentaciones`:"", pisaAtr?`tus ${c.atributos.length} detalles a preguntar`:"", ...pisaIa.map(k=>IA_LBL[k]||k)].filter(Boolean);
@@ -5145,7 +5156,7 @@ async function armAplicar(d){
   }
   if(d.nombre && (reemplazar || !String(p.nombre??"").trim())) p.nombre=String(d.nombre);
   if(d.emoji && (reemplazar || !String(p.emoji??"").trim())) p.emoji=String(d.emoji);
-  if((d.tipo==="fisico"||d.tipo==="digital") && (reemplazar || !p.tipo)) p.tipo=d.tipo;
+  if((d.tipo==="fisico"||d.tipo==="digital") && (reemplazar || !p.tipo) && p.tipo!=="microapp") p.tipo=d.tipo;
   if(Array.isArray(d.atributos)&&d.atributos.length && (reemplazar || !pisaAtr)){
     c.atributos=d.atributos.filter(a=>a&&a.nombre).map(a=>({ nombre:String(a.nombre), clave:slugAttr(a.nombre), obligatorio:true, valores:a.valores?String(a.valores):"", ayuda:"", media:[] }));
   }

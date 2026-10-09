@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Accesos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --amber:#f0a92b; --red:#e2564a; --red-bg:#2c1615; --violet:#a855f7;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  button{font-family:inherit;cursor:pointer}
+  .in{height:38px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:0 12px;font-size:13.5px;outline:none;font-family:inherit}
+  .in:focus{border-color:var(--brand)}
+  .btn{height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:7px}
+  .btn:hover{border-color:var(--brand)}
+  .btn.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  .btn.danger{color:var(--red)}
+  .btn svg{width:15px;height:15px}
+  .btn:disabled{opacity:.5;cursor:default}
+  .grp-t{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:4px 2px 9px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:18px}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px}
+  .kpi .l{font-size:12px;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:7px}
+  .kpi .l svg{width:15px;height:15px}
+  .kpi .v{font-size:24px;font-weight:800;margin-top:4px;letter-spacing:-.3px}
+  .kpi .s{font-size:11.5px;color:var(--faint);margin-top:2px}
+  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:6px 0 12px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:20px;padding:6px 12px;font-size:12.5px;font-weight:700}
+  .chip.on{background:var(--brand-bg);border-color:var(--brand);color:var(--text)}
+  .chip .n{opacity:.7;margin-left:4px}
+  .tbl{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .tbl th{font-size:11.5px;color:var(--muted);text-align:left;font-weight:700;padding:10px 12px;border-bottom:1px solid var(--border);background:var(--surface-2)}
+  .tbl td{font-size:13px;padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+  .tbl tr.row{cursor:pointer}
+  .tbl tr.row:hover td{background:var(--surface-2)}
+  .tbl tr:last-child td{border-bottom:none}
+  .who b{display:block;font-weight:700}
+  .who span{font-size:11.5px;color:var(--faint)}
+  .pill{display:inline-flex;align-items:center;gap:5px;border-radius:20px;padding:3px 10px;font-size:11.5px;font-weight:700;white-space:nowrap}
+  .p-activo{background:rgba(34,192,121,.14);color:var(--green)}
+  .p-porvencer{background:rgba(240,169,43,.16);color:var(--amber)}
+  .p-vencido{background:rgba(226,86,74,.14);color:var(--red)}
+  .p-bloqueado{background:rgba(138,151,168,.18);color:var(--muted)}
+  .p-prueba{background:rgba(168,85,247,.15);color:var(--violet)}
+  .p-falta{background:rgba(43,127,255,.15);color:var(--brand)}
+  .tablewrap{overflow-x:auto}
+  .aviso{background:var(--surface);border:1px solid var(--amber);border-radius:14px;padding:16px 18px;margin-bottom:16px;font-size:13px;line-height:1.6}
+  .pend{background:var(--surface);border:1px solid var(--brand);border-radius:14px;padding:12px 16px;margin-bottom:16px}
+  .pend h4{margin:0 0 8px;font-size:13.5px}
+  .pend .it{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border);font-size:13px;flex-wrap:wrap}
+  .pend .it:first-of-type{border-top:none}
+  .ov{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px}
+  .ficha{background:var(--surface);border:1px solid var(--border);border-radius:18px;width:100%;max-width:640px;max-height:90vh;overflow:auto;padding:20px 22px}
+  .ficha h3{margin:0;font-size:18px}
+  .kv{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;font-size:13px;margin:14px 0}
+  .kv .k{color:var(--muted)}
+  .sub-t{font-size:12px;font-weight:700;color:var(--muted);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em}
+  .dev{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:10px;margin-bottom:6px;font-size:13px}
+  .ev{font-size:12.5px;color:var(--muted);padding:4px 0}
+  .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+  .empty{padding:40px 10px;text-align:center;color:var(--muted);font-size:13.5px}
+  .sel-all{width:16px;height:16px;accent-color:var(--brand)}
+  @media (max-width:720px){ .hide-m{display:none} .kv{grid-template-columns:110px 1fr} }
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="nodo-wrap" style="--nodo-max:var(--nodo-ancho)">
+    <div class="nodo-head">
+      <div class="grow">
+        <h1 class="nodo-title">Accesos</h1>
+        <p class="nodo-lead">Quién tiene acceso a tus micro apps, hasta cuándo y desde cuántos celulares. Extiende, bloquea o reenvía el acceso desde acá.</p>
+      </div>
+    </div>
+    <div id="body"><div class="empty">Cargando…</div></div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+const $=(id)=>document.getElementById(id);
+const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const DIA=86400000;
+const st={ channelId:null, apps:[], accesos:[], pendientes:[], precios:{}, filtro:"todos", app:"todas", q:"", sel:new Set(), loadGen:0 };
+
+const fecha=(iso)=> iso ? new Date(iso).toLocaleDateString("es-PE",{ day:"numeric", month:"short", year:"numeric" }) : "—";
+const hace=(iso)=>{ if(!iso) return "Nunca"; const d=Date.now()-new Date(iso).getTime(); const m=Math.round(d/60000);
+  if(m<60) return m<=1?"Ahora":`Hace ${m} min`; const h=Math.round(m/60); if(h<24) return `Hace ${h} h`; const dd=Math.round(h/24); return dd===1?"Ayer":`Hace ${dd} días`; };
+// Estado visible: el de la base + «por vencer» (mensual que vence en 7 días o menos).
+function estadoVis(a){
+  if(a.estado==="activo" && a.vence_at && new Date(a.vence_at).getTime()-Date.now()<7*DIA) return "porvencer";
+  return a.estado;
+}
+const ESTADO={ activo:["Activo","p-activo"], porvencer:["Por vencer","p-porvencer"], vencido:["Vencido","p-vencido"],
+  bloqueado:["Bloqueado","p-bloqueado"], prueba:["En prueba","p-prueba"], prueba_terminada:["Prueba terminada","p-bloqueado"], falta:["Falta correo","p-falta"] };
+const TIPO={ unico:"Pago único", mensual:"Mensual", prueba:"Prueba" };
+
+async function api(body){
+  const { data, error }=await supa.functions.invoke("microapps",{ body:{ channel_id:st.channelId, ...body } });
+  if(error){ let d=""; try{ d=(await error.context?.json?.())?.error||""; }catch(_){} return { ok:false, error:d||error.message }; }
+  return data||{ ok:false };
+}
+const ERR={ apps_sin_configurar:"Nodo todavía no está conectado con la base de Apps.", ventana_cerrada:"Pasaron más de 24 h desde su último mensaje: WhatsApp no deja escribirle sin plantilla. Pídele que te escriba «mi acceso».",
+  correo_invalido:"Ese correo no es válido.", app_no_conectada:"Esa app no está conectada (Productos → la app → Correo, renovación y conexión)." };
+const errTxt=(e)=>ERR[e]||e||"Algo falló";
+
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  const shell=await mountShell({ active:"accesos" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; st.sel.clear(); load(); });
+  await load();
+}
+
+async function load(){
+  const gen=++st.loadGen;
+  $("body").innerHTML=`<div class="empty">Cargando…</div>`;
+  const [r, prods]=await Promise.all([
+    api({ action:"listar" }),
+    supa.from("products").select("id, nombre, product_versions(precio, activo, config)").eq("channel_id",st.channelId).eq("tipo","microapp"),
+  ]);
+  if(gen!==st.loadGen) return;
+  st.precios={};
+  for(const p of (prods.data||[])){
+    const vs=(p.product_versions||[]).filter(v=>v.activo!==false);
+    const mes=vs.find(v=>v.config?.modalidad==="mensual" && (Number(v.config?.meses)||1)===1);
+    const uni=vs.find(v=>v.config?.modalidad!=="mensual");
+    st.precios[p.id]={ mes:Number(mes?.precio)||0, unico:Number(uni?.precio)||0, nombre:p.nombre };
+  }
+  if(!r.ok){
+    $("body").innerHTML = r.error==="apps_sin_configurar"
+      ? `<div class="aviso">${icon("alert")} <b>Falta conectar Nodo con la base de Apps.</b><br>Las micro apps guardan sus accesos en un proyecto aparte (para no llenar la base de Nodo). Cuando esté creado y conectado, aquí vas a ver a cada cliente con su acceso.${(prods.data||[]).length?"":"<br><br>Todavía no tienes productos de tipo <b>Micro app</b>: créalos en Productos → Nuevo producto → Micro app."}</div>`
+      : `<div class="aviso">${icon("alert")} No se pudieron cargar los accesos: ${esc(errTxt(r.error))}</div>`;
+    return;
+  }
+  st.apps=r.apps||[]; st.accesos=r.accesos||[]; st.pendientes=(r.pendientes||[]).filter(p=>["falta_correo","falta_telefono","error","a_humano"].includes(p.estado));
+  render();
+}
+
+function kpis(){
+  const ahora=Date.now();
+  const lista=st.app==="todas"?st.accesos:st.accesos.filter(a=>a.app_id===st.app);
+  const men=lista.filter(a=>a.tipo==="mensual"), uni=lista.filter(a=>a.tipo==="unico");
+  const vencenSemana=men.filter(a=>a.estado==="activo" && a.vence_at && new Date(a.vence_at).getTime()-ahora<7*DIA).length;
+  const vencidos=men.filter(a=>a.estado==="vencido").length;
+  const ingreso=men.filter(a=>a.estado==="activo").reduce((s,a)=>s+(st.precios[a.product_id]?.mes||0),0);
+  const viejos=men.filter(a=>ahora-new Date(a.creado_at).getTime()>30*DIA);
+  const renov=viejos.length?Math.round(viejos.filter(a=>a.estado==="activo").length/viejos.length*100):null;
+  const inicioMes=new Date(); inicioMes.setDate(1); inicioMes.setHours(0,0,0,0);
+  const uniMes=uni.filter(a=>new Date(a.creado_at)>=inicioMes);
+  const ingresoUni=uniMes.reduce((s,a)=>s+(st.precios[a.product_id]?.unico||0),0);
+  const usan=lista.filter(a=>a.ultimo_uso_at && ahora-new Date(a.ultimo_uso_at).getTime()<7*DIA).length;
+  const sinUsar=lista.filter(a=>!a.ultimo_uso_at && a.estado!=="bloqueado").length;
+  const k=(ic,l,v,s,c)=>`<div class="kpi"><div class="l" style="${c?`color:${c}`:""}">${icon(ic)}${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  const htmlMen = men.length ? `<div class="grp-t">Suscripción mensual</div><div class="kpis">
+      ${k("clock","Vencen esta semana",vencenSemana,"recibirán su recordatorio","var(--amber)")}
+      ${k("alert","Vencidos",vencidos,"la app está en pausa","var(--red)")}
+      ${k("dollar","Ingreso mensual fijo",`S/ ${ingreso.toLocaleString("es-PE")}`,"si todos los activos renuevan","var(--green)")}
+      ${k("refresh","Renovaron",renov==null?"—":renov+"%",renov==null?"aún no cumplen un mes":"de los que llevan más de un mes")}
+    </div>` : "";
+  const htmlUni = `<div class="grp-t">${men.length?"Pago único y uso":"Ventas y uso"}</div><div class="kpis">
+      ${k("users","Vendidas",uni.length,"accesos de pago único")}
+      ${k("dollar","Ingresos del mes",`S/ ${ingresoUni.toLocaleString("es-PE")}`,"pago único, este mes","var(--green)")}
+      ${k("activity","Usan la app",usan,"entraron en los últimos 7 días")}
+      ${k("eye","Sin usar",sinUsar,"nunca abrieron su link","var(--amber)")}
+    </div>`;
+  return htmlMen+htmlUni;
+}
+
+function filtrar(){
+  const q=st.q.trim().toLowerCase();
+  return st.accesos.filter(a=>{
+    if(st.app!=="todas" && a.app_id!==st.app) return false;
+    const e=estadoVis(a);
+    if(st.filtro==="activos" && !(e==="activo"||e==="porvencer")) return false;
+    if(st.filtro==="porvencer" && e!=="porvencer") return false;
+    if(st.filtro==="vencidos" && e!=="vencido") return false;
+    if(st.filtro==="prueba" && !(e==="prueba"||e==="prueba_terminada")) return false;
+    if(st.filtro==="bloqueados" && e!=="bloqueado") return false;
+    if(q && ![a.nombre,a.correo,a.telefono,a.wa_id,a.app].some(x=>String(x||"").toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function render(){
+  const lista=filtrar();
+  const cuenta=(f)=>st.accesos.filter(a=>{ const e=estadoVis(a); if(st.app!=="todas"&&a.app_id!==st.app) return false;
+    return f==="todos"||(f==="activos"&&(e==="activo"||e==="porvencer"))||(f==="porvencer"&&e==="porvencer")||(f==="vencidos"&&e==="vencido")||(f==="prueba"&&(e==="prueba"||e==="prueba_terminada"))||(f==="bloqueados"&&e==="bloqueado"); }).length;
+  const chips=[["todos","Todos"],["activos","Activos"],["porvencer","Por vencer"],["vencidos","Vencidos"],["prueba","En prueba"],["bloqueados","Bloqueados"]]
+    .map(([v,l])=>`<button class="chip ${st.filtro===v?"on":""}" data-f="${v}">${l}<span class="n">${cuenta(v)}</span></button>`).join("");
+  const appSel = st.apps.length>1 ? `<select class="in" id="appSel"><option value="todas">Todas las apps</option>${st.apps.map(a=>`<option value="${esc(a.id)}" ${st.app===a.id?"selected":""}>${esc(a.nombre)}</option>`).join("")}</select>` : "";
+  const pend = st.pendientes.length ? `<div class="pend"><h4>${icon("mail")} Pagaron y todavía no tienen acceso (${st.pendientes.length})</h4>
+      ${st.pendientes.map(p=>`<div class="it"><span class="pill p-falta">${p.estado==="falta_telefono"?"Falta celular":p.estado==="falta_correo"?"Falta correo":p.estado==="a_humano"?"Lo ve una persona":"Falló la entrega"}</span>
+        <span style="flex:1;min-width:160px"><b>${esc(p.contacts?.nombre||"Cliente")}</b> · ${esc(p.products?.nombre||"")} · ${esc(TIPO[p.tipo]||p.tipo)}${p.meses>1?` · ${p.meses} meses`:""} <span style="color:var(--faint)">· ${hace(p.created_at)}${p.recordatorios?` · ${p.recordatorios} recordatorio(s)`:""}</span></span>
+        <a class="btn" href="index.html?c=${encodeURIComponent(p.contact_id)}">${icon("inbox")} Chat</a>
+        <button class="btn primary" data-dar="${esc(p.id)}">${icon("key")} Dar acceso</button></div>`).join("")}</div>` : "";
+  const filas = lista.length ? lista.map(a=>{ const e=estadoVis(a); const [lb,cls]=ESTADO[e]||[e,"p-bloqueado"];
+      const app=st.apps.find(x=>x.id===a.app_id);
+      return `<tr class="row" data-id="${esc(a.id)}">
+        <td onclick="event.stopPropagation()"><input type="checkbox" class="sel-all" data-sel="${esc(a.id)}" ${st.sel.has(a.id)?"checked":""}></td>
+        <td class="who"><b>${esc(a.nombre||"Cliente")}</b><span>${esc(a.correo||(a.telefono?"Tel. "+a.telefono:"sin correo"))}</span></td>
+        <td class="hide-m">${esc(a.app)}</td><td class="hide-m">${esc(TIPO[a.tipo]||a.tipo)}</td>
+        <td><span class="pill ${cls}">${lb}</span></td>
+        <td>${a.tipo==="unico"?"De por vida":fecha(a.vence_at)}</td>
+        <td class="hide-m">${hace(a.ultimo_uso_at)}</td>
+        <td class="hide-m">${a.celulares}/${app?.max_celulares??2}</td></tr>`; }).join("")
+    : `<tr><td colspan="8"><div class="empty">${st.accesos.length?"Nada coincide con este filtro.":"Todavía nadie tiene acceso. Cuando alguien compre una micro app, aparece acá."}</div></td></tr>`;
+  $("body").innerHTML=`${kpis()}${pend}
+    <div class="bar"><div class="chips">${chips}</div><span style="flex:1"></span>${appSel}
+      <input class="in" id="q" placeholder="Buscar nombre, correo o número" value="${esc(st.q)}" style="min-width:220px"></div>
+    <div class="bar" id="bulk" style="${st.sel.size?"":"display:none"}"><b style="font-size:13px">${st.sel.size} seleccionado(s)</b>
+      <button class="btn" id="bExt">${icon("calendar")} Extender días</button><button class="btn" id="bLimpiar">Quitar selección</button></div>
+    <div class="tablewrap"><table class="tbl"><thead><tr><th><input type="checkbox" class="sel-all" id="selAll"></th><th>Cliente</th><th class="hide-m">App</th><th class="hide-m">Tipo</th><th>Estado</th><th>Vence</th><th class="hide-m">Último uso</th><th class="hide-m">Celulares</th></tr></thead>
+      <tbody>${filas}</tbody></table></div>`;
+  document.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{ st.filtro=b.dataset.f; render(); });
+  const as=$("appSel"); if(as) as.onchange=()=>{ st.app=as.value; render(); };
+  const q=$("q"); q.oninput=()=>{ st.q=q.value; const pos=q.selectionStart; render(); const q2=$("q"); q2.focus(); q2.setSelectionRange(pos,pos); };
+  document.querySelectorAll("tr.row").forEach(tr=>tr.onclick=()=>abrirFicha(tr.dataset.id));
+  document.querySelectorAll("[data-sel]").forEach(cb=>cb.onchange=()=>{ cb.checked?st.sel.add(cb.dataset.sel):st.sel.delete(cb.dataset.sel); render(); });
+  $("selAll").onchange=(e)=>{ lista.forEach(a=> e.target.checked?st.sel.add(a.id):st.sel.delete(a.id)); render(); };
+  const be=$("bExt"); if(be) be.onclick=()=>extender([...st.sel]);
+  const bl=$("bLimpiar"); if(bl) bl.onclick=()=>{ st.sel.clear(); render(); };
+  document.querySelectorAll("[data-dar]").forEach(b=>b.onclick=()=>darAcceso(st.pendientes.find(p=>p.id===b.dataset.dar)));
+}
+
+async function extender(ids){
+  if(!ids.length) return;
+  const v=await askText({ title:"Extender acceso", message:`Se suman días a ${ids.length===1?"este acceso":`${ids.length} accesos`} (desde su vencimiento, o desde hoy si ya venció). Los de por vida no cambian.`, label:"Días", value:"7", confirmText:"Extender" });
+  const dias=Math.round(Number(v)); if(!v||!dias) return;
+  const r=await api({ action:"extender", ids, dias });
+  if(!r.ok){ toast(errTxt(r.error),true); return; }
+  toast(`Listo: ${r.extendidos} acceso(s) extendido(s) ${dias} días`); st.sel.clear(); load();
+}
+
+async function darAcceso(p){
+  if(!p) return;
+  const correo=await askText({ title:"Dar acceso", message:`${p.contacts?.nombre||"El cliente"} pagó ${p.products?.nombre||"la app"} y no llegó a darte su correo. Si te lo pasó por otro lado, ponlo acá: se crea su acceso y, si su chat está abierto, le llega el link.`, label:"Correo del cliente", placeholder:"cliente@gmail.com", confirmText:"Dar acceso" });
+  if(!correo) return;
+  const r=await api({ action:"dar_acceso", product_id:p.product_id, contact_id:p.contact_id, correo, tipo:p.tipo, meses:p.meses, entrega_id:p.id });
+  if(!r.ok){ toast(errTxt(r.error),true); return; }
+  toast(r.enviado?"Acceso creado y link enviado":"Acceso creado. Su chat está cerrado: el link sale cuando te escriba (o reenvíalo desde su ficha)."); load();
+}
+
+async function abrirFicha(id){
+  const ov=document.createElement("div"); ov.className="ov";
+  ov.innerHTML=`<div class="ficha"><div class="empty">Cargando…</div></div>`;
+  ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
+  document.body.appendChild(ov);
+  const d=await api({ action:"detalle", id });
+  if(!d.ok){ ov.querySelector(".ficha").innerHTML=`<div class="empty">${esc(errTxt(d.error))}</div>`; return; }
+  const a=d.acceso, e=estadoVis(a), [lb,cls]=ESTADO[e]||[e,""];
+  const EV={ celular_nuevo:"📱 Entró desde un celular nuevo", desconectado_por_limite:"🔌 Se desconectó un celular (límite)", desconectado:"🔌 Celular desconectado desde el panel",
+    bloqueado:"⛔ Bloqueado", desbloqueado:"✅ Desbloqueado", extendido:"📅 Extendido", correo_cambiado:"✉️ Correo cambiado",
+    aviso_por_vencer:"🔔 Aviso de renovación", aviso_vencido:"🔔 Aviso de acceso vencido", aviso_prueba_terminada:"🔔 Aviso de fin de la prueba" };
+  ov.querySelector(".ficha").innerHTML=`
+    <div style="display:flex;align-items:center;gap:10px"><h3 style="flex:1">${esc(a.nombre||"Cliente")}</h3><span class="pill ${cls}">${lb}</span>
+      <button class="btn" id="fx" title="Cerrar">${icon("x")}</button></div>
+    <div class="kv">
+      <span class="k">App</span><span>${esc(a.app)}</span>
+      <span class="k">Tipo</span><span>${esc(TIPO[a.tipo]||a.tipo)}</span>
+      <span class="k">Vence</span><span>${a.tipo==="unico"?"De por vida (mientras la app exista)":fecha(a.vence_at)}</span>
+      <span class="k">Correo</span><span>${esc(a.correo||"—")}${a.promos===false?' <span style="color:var(--faint)">(no quiere novedades)</span>':""}</span>
+      <span class="k">Celular (llave)</span><span>${esc(a.telefono||"—")}</span>
+      <span class="k">WhatsApp</span><span>${esc(a.wa_id||"—")}</span>
+      <span class="k">Último uso</span><span>${hace(a.ultimo_uso_at)}</span>
+      <span class="k">Progreso guardado</span><span>${d.progreso_at?hace(d.progreso_at):"Todavía nada"}</span>
+      <span class="k">Link personal</span><span style="display:flex;gap:6px;align-items:center;min-width:0"><input class="in" readonly value="${esc(d.link)}" style="flex:1;min-width:0;height:32px;font-size:12px"><button class="btn" id="fcopy">${icon("copy")}</button></span>
+    </div>
+    <div class="sub-t">Celulares conectados (${d.sesiones.length}/${d.max_celulares})</div>
+    ${d.sesiones.length?d.sesiones.map(s=>`<div class="dev">${icon("phone")}<span style="flex:1">${esc(s.etiqueta||"Navegador")}<br><span style="font-size:11.5px;color:var(--faint)">Desde ${fecha(s.creado_at)} · usado ${hace(s.ultimo_uso_at).toLowerCase()}</span></span><button class="btn danger" data-desc="${esc(s.id)}">Desconectar</button></div>`).join(""):`<div class="ev">Todavía no entró desde ningún celular.</div>`}
+    <div class="sub-t">Historial</div>
+    ${d.eventos.length?d.eventos.slice(0,12).map(x=>`<div class="ev">${esc(EV[x.tipo]||x.tipo)}${x.detalle?` · ${esc(x.detalle)}`:""} <span style="color:var(--faint)">· ${hace(x.creado_at).toLowerCase()}</span></div>`).join(""):`<div class="ev">Sin movimientos.</div>`}
+    <div class="acts">
+      <button class="btn primary" id="fre">${icon("message")} Reenviar acceso</button>
+      ${a.tipo!=="unico"?`<button class="btn" id="fext">${icon("calendar")} Extender</button>`:""}
+      <button class="btn" id="fmail">${icon("mail")} Cambiar correo</button>
+      <button class="btn ${a.bloqueado?"":"danger"}" id="fblq">${a.bloqueado?icon("check")+" Desbloquear":icon("ban")+" Bloquear"}</button>
+      <a class="btn" href="index.html?c=${encodeURIComponent(a.contact_id)}">${icon("inbox")} Ver chat</a>
+    </div>`;
+  const f=ov.querySelector(".ficha");
+  f.querySelector("#fx").onclick=()=>ov.remove();
+  f.querySelector("#fcopy").onclick=()=>{ navigator.clipboard?.writeText(d.link); toast("Link copiado"); };
+  f.querySelector("#fre").onclick=async(ev)=>{ ev.currentTarget.disabled=true; const r=await api({ action:"reenviar", id }); ev.currentTarget.disabled=false; toast(r.ok?"Acceso reenviado por WhatsApp":errTxt(r.error), !r.ok); };
+  const fe=f.querySelector("#fext"); if(fe) fe.onclick=async()=>{ ov.remove(); await extender([id]); };
+  f.querySelector("#fmail").onclick=async()=>{
+    const c=await askText({ title:"Cambiar correo", label:"Correo nuevo", value:a.correo||"", placeholder:"cliente@gmail.com", confirmText:"Guardar" }); if(c==null) return;
+    const r=await api({ action:"cambiar_correo", id, correo:c }); if(!r.ok){ toast(errTxt(r.error),true); return; } toast("Correo cambiado"); ov.remove(); load(); };
+  f.querySelector("#fblq").onclick=async()=>{
+    if(!a.bloqueado && !await confirmDialog({ title:"Bloquear acceso", message:"La app le mostrará que su acceso está en pausa hasta que lo desbloquees. No se le avisa por WhatsApp.", confirmText:"Bloquear", danger:true })) return;
+    const r=await api({ action:"bloquear", id, bloqueado:!a.bloqueado }); if(!r.ok){ toast(errTxt(r.error),true); return; } toast(a.bloqueado?"Desbloqueado":"Bloqueado"); ov.remove(); load(); };
+  f.querySelectorAll("[data-desc]").forEach(b=>b.onclick=async()=>{
+    const r=await api({ action:"desconectar", sesion_id:b.dataset.desc }); if(!r.ok){ toast(errTxt(r.error),true); return; } toast("Celular desconectado"); ov.remove(); abrirFicha(id); });
+}
+
+boot();
+</script>
+</body>
+</html>

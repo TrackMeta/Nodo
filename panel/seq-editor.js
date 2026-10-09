@@ -550,7 +550,12 @@ export function mountStepsEditor(el, opts){
       </div>
       <div style="font-size:11px;color:var(--faint);margin-top:6px">Usa <b style="color:var(--brand)">{{precio}}</b> en el mensaje: saldrá rebajado. Si dejas 0, la oferta caduca en 72 h (no hay descuento permanente).</div>
       <div class="se-ofwarn" style="font-size:11.5px;color:var(--amber);margin-top:8px;font-weight:600">${ofWarn(paso)}</div>`
-      :`<div style="font-size:11.5px;color:var(--amber);margin-top:9px">Primero crea una opción de compra con precio para poder ofrecer un descuento.</div>`):""}`;
+      :`<div style="font-size:11.5px;color:var(--amber);margin-top:9px">Primero crea una opción de compra con precio para poder ofrecer un descuento.</div>`):""}
+      ${prod?.tipo==="microapp"?`<div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+        <div class="sw ${paso.ofrece_prueba?"on":""}" data-prtog></div>
+        <span style="font-size:12.5px;font-weight:600">🎁 Ofrece la prueba gratis</span></div>
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">${prod.prueba?"Si el cliente dice que sí en los 7 días siguientes, el bot le activa la prueba (con su correo).":"Primero enciende la prueba gratis en Productos → la app → Correo, renovación y conexión."}</div>`:""}`;
+    const prt=box.querySelector("[data-prtog]"); if(prt) prt.onclick=()=>{ if(paso.ofrece_prueba) delete paso.ofrece_prueba; else paso.ofrece_prueba=true; oferta(box,paso); };
     box.querySelector("[data-oftog]").onclick=()=>{
       if(paso.oferta){ delete paso.oferta; }
       // Por defecto, el producto de la secuencia (no el primero de la lista): el descuento

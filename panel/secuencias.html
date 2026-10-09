@@ -118,7 +118,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog, patchProductConfig } from "./shell.js";
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=13";
+import { mountStepsEditor, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=14";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
@@ -173,7 +173,7 @@ async function load(){
     supa.from("sequences").select("*").eq("channel_id",st.channelId).order("created_at"),
     supa.from("flows").select("id,nombre,role,kind,estado").eq("channel_id",st.channelId).order("nombre"),
     supa.from("wa_templates").select("id,name,language,activa,estado_meta,soporta_envio,body_preview").eq("channel_id",st.channelId).eq("activa",true).order("name"),
-    supa.from("products").select("id,nombre,emoji,config,product_versions(id,nombre,precio,activo)").eq("channel_id",st.channelId).order("nombre"),
+    supa.from("products").select("id,nombre,emoji,tipo,config,product_versions(id,nombre,precio,activo)").eq("channel_id",st.channelId).order("nombre"),
     supa.from("angulos").select("nombre,slug").eq("channel_id",st.channelId).order("orden"),
   ]);
   // Solo plantillas APROBADAS: un paso de secuencia con plantilla no aprobada
@@ -186,7 +186,7 @@ async function load(){
   // Sin tabla angulos (pre-0063) → angs null → lista vacía → el selector no aparece.
   { const seen=new Set(); st.angulos=(angs||[]).filter(a=>a&&a.slug&&!seen.has(a.slug)&&seen.add(a.slug)); }
   // Productos con sus opciones de compra (para el descuento por paso).
-  st.products=(prods||[]).map(p=>({ id:p.id, nombre:p.nombre, emoji:p.emoji,
+  st.products=(prods||[]).map(p=>({ id:p.id, nombre:p.nombre, emoji:p.emoji, tipo:p.tipo, prueba:!!p.config?.microapp?.prueba?.activa,
     opciones:(p.product_versions||[]).filter(v=>v.activo!==false && v.precio!=null && v.precio!=="").map(v=>({ id:v.id, nombre:v.nombre, precio:v.precio })) }))
     .filter(p=>p.opciones.length);
   // Todos los productos + su config (para vincular la secuencia a un producto/segmento).

@@ -16,6 +16,7 @@ import { construirResumen, localParts, localDayStartUTC, ymd } from "../_shared/
 import { enParalelo, repartoJusto } from "../_shared/concurrencia.ts";
 import { sondearNumero, aplicarVeredicto } from "../_shared/salud-wa.ts";
 import { timingSafeEqual } from "../_shared/crypto.ts";
+import { appsApi, appsConfigurada, cfgDe as cfgMicroapp, proximoRecordatorioMin, CORREO_RECORDAR_DEF, fechaLarga } from "../_shared/microapps.ts";
 
 const db = serviceClient();
 
@@ -306,6 +307,10 @@ Deno.serve(async (req) => {
   // aunque Meta no mande (o no llegue) el aviso. Pocos por tick para no comerse el minuto.
   try { await processSaludWA(now); }
   catch (e) { console.error("[scheduler] salud-wa:", (e as any)?.message ?? e); }
+
+  // ── 7b) Micro apps: correo pendiente, renovación y fin de la prueba ──
+  try { await processMicroapps(now); }
+  catch (e) { console.error("[scheduler] microapps:", (e as any)?.message ?? e); }
 
   // ── 8) Vigilante: cliente que escribió y nadie le contestó ─────────
   try { await processSinRespuesta(now); }
@@ -1339,6 +1344,11 @@ async function processSub(s: any, now: number): Promise<boolean> {
       }
     }
     if (toco) await marcarTocoMkt(s.contact_id);
+    // 🎁 Paso que OFRECE la prueba gratis de una micro app: desde ahora (7 días) la IA de venta puede
+    // activarla si el cliente dice que sí (ver bloquesMicroappVenta en engine.ts).
+    if (toco && (paso as any)?.ofrece_prueba) {
+      await db.from("contacts").update({ prueba_ofrecida_at: new Date().toISOString() }).eq("id", s.contact_id).then(() => {}, () => {});
+    }
     if (toco && _rebajarPedido) await _rebajarPedido();   // el cliente SÍ vio la oferta: ahora el pedido baja
     // 🔴 Descuento fantasma por la puerta de la plantilla: la oferta se graba ANTES de enviar
     // (`vaAEnviar` da por hecho que la plantilla sale), pero Meta puede rechazarla en firme
@@ -1475,5 +1485,102 @@ async function processSinRespuesta(now: number) {
     await pasarAHumano(db, c.channel_id, c.id,
       `El cliente escribió hace ${Math.round((now - tsIn) / 60_000)} min y el bot NO le respondió (se cortó a mitad de turno). Escríbele tú.`,
       { aviso: true }).catch(() => {});
+  }
+}
+
+// ── 📱 Micro apps (8-oct-2026) ──────────────────────────────────────
+// A) El correo que falta: el cliente pagó y no lo mandó → recordatorios (cuántos y cada cuánto, en
+//    el producto). Salen aunque el post-venta esté apagado: son parte de la venta (decisión de Rodrigo).
+// B) Renovación del plan mensual y fin de la prueba gratis: se le pide a la base de Apps quién toca y
+//    se avisa con la plantilla elegida en el producto (gratis como texto si la ventana está abierta).
+//    El aviso abre la «ventana de renovación» (7 días): con ella el motor valida su Yape aunque el
+//    post-venta esté apagado, y si el bot estaba apagado solo por la venta, se vuelve a encender.
+let _microUltimaVuelta = 0;
+async function processMicroapps(now: number) {
+  // A) recordatorios del correo (cada tick: es una consulta indexada y casi siempre vacía)
+  const { data: pend } = await db.from("microapp_entregas")
+    .select("id, channel_id, contact_id, product_id, recordatorios, estado")
+    .in("estado", ["falta_correo", "falta_telefono"]).not("proximo_aviso_at", "is", null)
+    .lte("proximo_aviso_at", new Date(now).toISOString()).limit(40);
+  for (const e of (pend ?? []) as any[]) {
+    try {
+      if (!(await canalActivo(db, e.channel_id)) || !(await botEncendido(db, e.channel_id))) {
+        await db.from("microapp_entregas").update({ proximo_aviso_at: new Date(now + 15 * 60_000).toISOString() }).eq("id", e.id); continue;
+      }
+      const { data: p } = await db.from("products").select("config").eq("id", e.product_id).maybeSingle();
+      const cfg = cfgMicroapp((p as any)?.config);
+      const n = Number(e.recordatorios) || 0;
+      if (await ventana24hAbierta(db, e.contact_id)) {
+        const txt = e.estado === "falta_telefono"
+          ? "Solo me falta tu número de celular para activar tu acceso 🙌"
+          : String(cfg.correo?.mensaje || CORREO_RECORDAR_DEF);
+        await deliverStep(db, e.channel_id, e.contact_id, { mensaje: txt });
+      }
+      const sig = proximoRecordatorioMin(cfg, n + 1);
+      await db.from("microapp_entregas").update({ recordatorios: n + 1,
+        proximo_aviso_at: sig ? new Date(now + sig * 60_000).toISOString() : null, updated_at: new Date().toISOString() }).eq("id", e.id);
+    } catch (err) { console.error("[microapps/correo]", (err as any)?.message ?? err); }
+  }
+
+  // B) renovación / prueba: cada 15 minutos basta (son avisos por día, no por minuto)
+  if (!appsConfigurada() || now - _microUltimaVuelta < 15 * 60_000) return;
+  _microUltimaVuelta = now;
+  const { data: prods } = await db.from("products").select("id, channel_id, nombre, config, product_versions(nombre, precio, activo, config)").eq("tipo", "microapp");
+  for (const p of (prods ?? []) as any[]) {
+    try {
+      if (!(await canalActivo(db, p.channel_id)) || !(await botEncendido(db, p.channel_id))) continue;
+      const cfg = cfgMicroapp(p.config);
+      const ren = cfg.renovacion ?? {};
+      const previo = ren.previo !== false, vencido = ren.vencido !== false, pruebaFin = !!cfg.prueba?.activa;
+      if (!previo && !vencido && !pruebaFin) continue;
+      const r = await appsApi("pendientes_aviso", { product_id: p.id, previo, dias_previo: Number(ren.dias ?? 3), vencido, prueba_fin: pruebaFin });
+      if (!r?.ok) continue;
+      const vers = ((p.product_versions ?? []) as any[]).filter((v) => v.activo !== false && v.config?.oculta !== true);
+      const { data: ch } = await db.from("channels").select("moneda").eq("id", p.channel_id).maybeSingle();
+      const sym = String((ch as any)?.moneda ?? "PEN").toUpperCase() === "PEN" ? "S/" : String((ch as any)?.moneda ?? "");
+      const mes = vers.find((v) => v.config?.modalidad === "mensual" && (Number(v.config?.meses) || 1) === 1);
+      const unico = vers.find((v) => v.config?.modalidad !== "mensual");
+      const precioRen = mes ? `${sym} ${mes.precio}` : "";
+      const precioApp = [unico ? `${sym} ${unico.precio} (pago único)` : "", mes ? `${sym} ${mes.precio} al mes` : ""].filter(Boolean).join(" o ");
+      const tandas: Array<[string, any[], string, (a: any) => string[], (a: any) => string]> = [
+        ["previo", r.previo ?? [], String(ren.plantilla_previo || "acceso_por_vencer"),
+          (a) => [a.nombre || "", p.nombre, fechaLarga(a.vence_at), precioRen || "-"],
+          (a) => `¡Hola${a.nombre ? " " + a.nombre : ""}! 📅 Tu acceso a ${p.nombre} vence el ${fechaLarga(a.vence_at)}. Para seguir usándola, renuévalo con ${precioRen}. Escríbeme por aquí y te paso los datos de pago 😊`],
+        ["vencido", r.vencido ?? [], String(ren.plantilla_vencido || "acceso_vencido"),
+          (a) => [a.nombre || "", p.nombre, precioRen || "-"],
+          (a) => `Hola${a.nombre ? " " + a.nombre : ""}, hoy venció tu acceso a ${p.nombre}. Tu progreso quedó guardado 💾 Renuévalo con ${precioRen} y sigues donde te quedaste. Escríbeme por aquí 🙌`],
+        ["prueba_fin", r.prueba_fin ?? [], String(cfg.prueba?.plantilla_fin || "prueba_terminada"),
+          (a) => [a.nombre || "", p.nombre, precioApp || "-"],
+          (a) => `¡Hola${a.nombre ? " " + a.nombre : ""}! 😊 Terminó tu prueba gratis de ${p.nombre} y tu progreso quedó guardado 💾 Para seguir usándola son ${precioApp}. Escríbeme por aquí y te paso los datos de pago.`],
+      ];
+      for (const [cual, lista, plantilla, params, textoLibre] of tandas) {
+        for (const a of lista.slice(0, 30)) {
+          const ct = String(a.nodo_contact_id);
+          let salio = false, motivo = "";
+          try {
+            const w = await sendTemplateToContact(db, p.channel_id, ct, { name: plantilla, params: params(a), preferirTexto: true });
+            salio = !!w;
+          } catch (err) {
+            motivo = String((err as any)?.message ?? err);
+            // Sin plantilla (o sin aprobar) pero con la ventana abierta: el mismo aviso como texto.
+            if (await ventana24hAbierta(db, ct)) salio = await deliverStep(db, p.channel_id, ct, { mensaje: textoLibre(a) });
+          }
+          await appsApi("marcar_aviso", { id: a.id, cual });
+          if (salio) {
+            // Ventana de renovación: el próximo Yape se valida aunque el post-venta esté apagado.
+            const { data: c } = await db.from("contacts").select("bot_activo").eq("id", ct).maybeSingle();
+            const { data: cv } = await db.from("conversations").select("requiere_humano").eq("contact_id", ct).maybeSingle();
+            const patch: Record<string, unknown> = { renovar_app_hasta: new Date(now + 7 * 86_400_000).toISOString(), renovar_app_product: p.id };
+            if ((c as any)?.bot_activo === false && (cv as any)?.requiere_humano !== true) patch.bot_activo = true;
+            await db.from("contacts").update(patch).eq("id", ct);
+          }
+          await db.from("contact_events").insert({ channel_id: p.channel_id, contact_id: ct, tipo: salio ? "nota" : "error",
+            titulo: salio ? `📱 Aviso de ${cual === "previo" ? "renovación" : cual === "vencido" ? "acceso vencido" : "fin de la prueba"} enviado`
+              : `📱 No salió el aviso de ${cual === "previo" ? "renovación" : cual === "vencido" ? "acceso vencido" : "fin de la prueba"}`,
+            detalle: salio ? `${p.nombre} · plantilla ${plantilla}` : `${p.nombre}: ${motivo || "sin envío"} — agrega y aprueba la plantilla «${plantilla}» en Plantillas`,
+          }).then(() => {}, () => {});
+        }
+      }
+    } catch (err) { console.error("[microapps/avisos]", (err as any)?.message ?? err); }
   }
 }

@@ -1,0 +1,11 @@
+# Base de Apps (proyecto Supabase «Nodo Apps», aparte de Nodo). Ver ../README.md.
+project_id = "nodo-apps"
+
+# kit: la llaman las micro apps desde el navegador (sin sesión). Se protege por el link
+# personal y la pulsera, no por JWT.
+[functions.kit]
+verify_jwt = false
+
+# nodo: solo la llama Nodo, con el header x-nodo-secret (secreto compartido).
+[functions.nodo]
+verify_jwt = false
