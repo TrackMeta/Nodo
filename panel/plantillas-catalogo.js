@@ -86,4 +86,13 @@ export const CATALOGO = [
     ejemplos: ["María", "Simulador de brevete", "S/ 12"],
     nota: "Pensada para las micro apps (todavía en diseño): Nodo la usará el día que vence el plan mensual.",
   },
+  {
+    // MARKETING y no UTILITY: ofrece comprar (Meta reclasifica o rechaza una «utility» que vende).
+    grupo: "apps", folder: "Recomendadas · Mini Apps", categoria: "MARKETING", name: "prueba_terminada", language: "es",
+    titulo: "Prueba gratis terminada",
+    body: "¡Hola {{1}}! 😊 Terminó tu prueba gratis de {{2}} y tu progreso quedó guardado 💾. Para seguir usándola son {{3}}. Escríbenos por aquí y te pasamos los datos de pago.",
+    params: ["{{nombre}}", "{{producto_nombre}}", "{{precio_app}}"],
+    ejemplos: ["María", "Simulador de brevete", "S/ 29 (pago único) o S/ 12 al mes"],
+    nota: "Pensada para las micro apps (todavía en diseño): Nodo la usará al terminar la prueba gratis si ya pasaron 24 h desde que el cliente escribió.",
+  },
 ];
