@@ -8916,8 +8916,13 @@ function instruccionV2(p: PasoV2, ctx: any): string {
   if (_mets.length && String(ctx?.zona_entrega ?? "") !== "lima"
       && /(?<![\p{L}])(?:adelanto|abono|separ(?:o|ar|arlo)|pag(?:o|ar|as|a)|cancel(?:o|ar)|dep[oó]sit\p{L}*|transfer\p{L}*|c[oó]mo\s+(?:te\s+)?(?:pago|abono))(?![\p{L}])/iu.test(li)) {
     const _lista = _mets.length > 1 ? `${_mets.slice(0, -1).join(", ")} o ${_mets[_mets.length - 1]}` : _mets[0];
+    // (🧠 8-oct: con la zona sabida, los datos los dispara la IA con la marca — antes «salen solos» y si la lista de frases
+    //  no reconocía la del cliente, no salían; ver tomaMarcaDatosPago)
     L.push(`💳 Te preguntó por el adelanto o el pago: además de lo que preguntó, dile con qué lo puede pagar (${_lista}). ` +
-      "Solo los nombres: el número y el titular salen solos en su propio mensaje cuando toca.");
+      "Solo los nombres: el número y el titular no los escribes tú." +
+      (String(ctx?.zona_entrega ?? "") === "provincia"
+        ? " Si quiere pagar ya (o te pide a qué número), termina tu mensaje con [[datos_pago]] y salen justo debajo, con el monto."
+        : ""));
   }
   // 🏷️ «Quiero la oferta» / «¿está en promoción?»: la oferta de este negocio es por CANTIDAD y la LISTA la pone el motor.
   // Antes la IA contestaba por su cuenta («¡Perfecto! Ya tienes la oferta a tu disposición…») y el motor le pegaba encima
@@ -19615,8 +19620,12 @@ Estas seis no las corrige nadie más. Si las rompes, salen tal cual.
   le sigas ofreciendo nada.
 
 4 ⛔ LAS LISTAS Y LOS COBROS LOS PONE EL SISTEMA. Las oficinas de la agencia, los datos de pago
-  y el monto salen SOLOS, pegados debajo de tu mensaje y al instante. Tú no los escribes ni
-  anuncias que van a llegar.
+  y el monto los escribe el sistema, pegados debajo de tu mensaje y al instante. Tú no los
+  escribes ni anuncias que van a llegar.
+  🔑 Los DATOS DE PAGO salen cuando TÚ terminas tu mensaje con [[datos_pago]] (el cliente no lo
+  ve). Ponlo cuando quiera pagar o pregunte cómo, dónde o a qué número pagar —lo diga como lo
+  diga: "a qué número te yapeo", "hola plin", "ya, mándame la cuenta"— y ya sepas de dónde es.
+  No lo pongas si solo pregunta por el producto o todavía no sabes su ciudad o distrito.
   MAL: "En Cusco tenemos: Tica Tica, Wanchaq, San Sebastián…" (salen dos listas)
   MAL: "Queda confirmado. En breve te llegan los datos del adelanto."
   BIEN: "En *Cusco* tenemos varias oficinas 📍 ¿cuál te queda más cerca?" (y cortas ahí)
@@ -19655,8 +19664,8 @@ Estas seis no las corrige nadie más. Si las rompes, salen tal cual.
 ═══ EL RESTO ═══
 Si algo de acá se te escapa, el sistema lo corrige antes de enviar. Igual respétalo.
 
-· Cierra afirmando ("listo, queda confirmado"), no preguntando "¿confirmo?" ni "¿te paso los
-  datos de pago?". Si ya decidió, cobrarle no necesita permiso: preguntarlo lo obliga a decir
+· Cierra afirmando ("listo, queda confirmado"), no preguntando "¿confirmo?" ni si le mandas
+  los datos de pago. Si ya decidió, cobrarle no necesita permiso: preguntarlo lo obliga a decir
   que sí dos veces, y en ese paso de más se enfrían las ventas.
 · Si vas a preguntar algo, no lo escribas como hecho antes: "¿te lo dejo en el pack de 2?" —
   nunca "ya te lo cambié", "listo, actualizado".
@@ -27132,6 +27141,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // Digital sin versión: anunciar los datos de pago es prometer algo que no sale (ver _revDigitalSinVersion).
           if ((run as any)._revDigitalSinVersion && /te\s+(?:paso|env[ií]o|mando|dejo)\s+(?:los\s+)?datos|datos\s+(?:de|para\s+el)\s+pago|te\s+llegan?\s+(?:los\s+)?datos/i.test(sinFormato(txt))) {
             v.push("Todavía no eligió la versión: no digas que le pasas los datos de pago (salen cuando elija). Contesta y pregúntale cuál prefiere.");
+          }
+          // 🧠 FÍSICO de provincia (8-oct): «Te paso el número para que hagas Yape 👇» en vez de la marca — la IA anunciaba y
+          // el número dependía de que la lista de frases reconociera al cliente. Se le pide reescribir con [[datos_pago]].
+          if (!esDigital(ctx) && String(ctx.zona_entrega ?? "") === "provincia"
+              && (sinAnuncioDePago(txt) !== txt || sinPedirPermisoPago(txt) !== txt)) {
+            v.push("Borra la parte donde le anuncias, ofreces o preguntas si le mandas los datos de pago. Si ya quiere pagar, " +
+              "termina con [[datos_pago]] y salen solos con el monto del adelanto; si todavía no, sigue sin nombrarlos.");
           }
           // 💻 DIGITAL: los frenos de plata que más cortaban respuestas buenas, como DETECTORES. Si la respuesta los pisa, se le
           // pide reescribirla con la regla dicha (sale entera y con sentido); el recorte de más abajo queda solo de respaldo

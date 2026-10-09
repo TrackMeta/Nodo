@@ -648,8 +648,25 @@ const cardHd=(ic,title,color)=>`<div class="chd" style="margin-bottom:6px"><span
 function renderEntregas(b){
   const e=st.channel.entregas;
   if(!e || !Array.isArray(e.zonas)){
+    // (8-oct) Los bots creados después de julio nacían sin zonas y acá decía «falta aplicar la migración 0032», que no
+    // le dice nada al dueño. Ahora: un botón que carga la lista base (64 distritos de Lima y Callao, adelanto S/ 20) —la
+    // misma con la que nace todo bot nuevo, `entregas_base()` en la base— y después se edita como siempre.
     b.innerHTML=`<div class="card"><h3>Entrega y logística</h3>
-      <p class="sub">Este bot todavía no tiene zonas de entrega cargadas (falta aplicar la migración 0032).</p></div>`;
+      <p class="sub">Este bot todavía no tiene zonas de entrega. Sin ellas, si vendes un producto <b>físico</b>, el bot no sabe qué distritos son <b>Lima</b> (entrega a domicilio y pago al recibir) y cuáles son <b>provincia</b> (agencia con adelanto). Para lo digital no hace falta.</p>
+      <p class="sub">Carga la lista base —los <b>64 distritos de Lima y Callao</b> y un adelanto de <b>S/ 20</b> para provincia— y después la ajustas a tu negocio.</p>
+      <div class="acts"><button class="btn primary" id="cargarZonas">Cargar zonas de Lima</button></div></div>`;
+    b.querySelector("#cargarZonas").onclick=async(ev)=>{
+      const btn=ev.currentTarget, cid=st.channelId;
+      btn.disabled=true; btn.textContent="Cargando…";
+      const { data:base, error:e1 }=await supa.rpc("entregas_base");
+      if(e1||!base||!Array.isArray(base.zonas)){ toast(e1?.message||"No se pudo cargar la lista base",true); btn.disabled=false; btn.textContent="Cargar zonas de Lima"; return; }
+      const { error:e2 }=await updateChannel(cid, { entregas:base });
+      if(e2){ toast(e2.message,true); btn.disabled=false; btn.textContent="Cargar zonas de Lima"; return; }
+      if(cid!==st.channelId) return;
+      st.channel.entregas=base;
+      toast("Zonas de Lima cargadas");
+      renderEntregas(b);
+    };
     return;
   }
   st.ent=JSON.parse(JSON.stringify(e));
