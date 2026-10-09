@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0e1116" />
+<title>Simulador (demo)</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icono.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icono.svg" />
+<style>
+  :root{ --bg:#0e1116; --card:#151a21; --line:#232b36; --text:#e7ecf2; --muted:#8a97a8; --brand:#2b7fff; --ok:#22c079 }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh}
+  header{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line)}
+  header h1{font-size:18px;margin:0;flex:1}
+  .vence{font-size:12px;color:var(--muted)}
+  main{max-width:520px;margin:0 auto;padding:22px 18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:14px}
+  .big{font-size:44px;font-weight:800;text-align:center;margin:8px 0}
+  button{background:var(--brand);color:#fff;border:none;border-radius:12px;padding:13px 18px;font-size:15px;font-weight:700;width:100%;cursor:pointer}
+  .muted{color:var(--muted);font-size:13.5px;line-height:1.55}
+  #app{display:none}
+  .cargando{text-align:center;color:var(--muted);padding:60px 20px}
+</style>
+</head>
+<body>
+  <div class="cargando" id="cargando">Cargando…</div>
+
+  <!-- 👇 Tu app va acá adentro. No se muestra hasta que el kit confirma el acceso (nivel reforzado). -->
+  <div id="app">
+    <header><h1>Simulador de Brevete (demo)</h1><span class="vence" id="vence"></span></header>
+    <main>
+      <div class="card">
+        <div style="font-size:15px;font-weight:700">¡Hola <span id="nombre"></span>! Tienes acceso ✅</div>
+        <p class="muted">Esta es la app de prueba de la plantilla. Cambia este contenido por el de tu app.</p>
+      </div>
+      <div class="card">
+        <p class="muted" style="margin-top:0">Ejemplo de <b>progreso guardado</b>: este contador vive en la base de Apps. Cambia de celular o renueva y sigue igual.</p>
+        <div class="big" id="cuenta">0</div>
+        <button id="sumar" type="button">Sumar 1</button>
+      </div>
+    </main>
+  </div>
+
+  <!-- El kit de Nodo: link personal, pulsera, «renueva para seguir» y progreso. -->
+  <script src="../nodo-apps.js"></script>
+  <script>
+    // 1) Pon acá la clave de tu app (Productos → tu app → Correo, renovación y conexión).
+    const CLAVE_APP = "app_naedssqAZe2FNw";   // app de prueba de Nodo (Guía Experta)
+
+    let progreso = { cuenta: 0 };
+    NodoApps.iniciar({
+      app: CLAVE_APP,
+      // Se llama SOLO cuando el cliente tiene acceso (activo o en prueba).
+      alEntrar: async (cliente) => {
+        document.getElementById("cargando").style.display = "none";
+        document.getElementById("app").style.display = "block";
+        document.getElementById("nombre").textContent = (cliente.nombre || "").split(" ")[0];
+        document.getElementById("vence").textContent = NodoApps.venceTexto();
+        progreso = Object.assign({ cuenta: 0 }, await NodoApps.leer());
+        pintar();
+      },
+    });
+    function pintar() { document.getElementById("cuenta").textContent = progreso.cuenta; }
+    document.getElementById("sumar").onclick = () => { progreso.cuenta++; pintar(); NodoApps.guardar(progreso); };
+
+    // Instalable como app (PWA): el service worker guarda los archivos de la app, no los datos.
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  </script>
+</body>
+</html>
