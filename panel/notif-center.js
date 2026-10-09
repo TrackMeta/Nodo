@@ -47,6 +47,8 @@ const TIPOS = {
   problema:             { g: "sistema",  lb: "Algo falló",                    ic: "alert",    crit: 1 },
   anuncio_sin_producto: { g: "sistema",  lb: "Anuncio sin producto",          ic: "megaphone" },
   stock_agotado:        { g: "sistema",  lb: "Stock agotado",                 ic: "box" },
+  microapp_sin_correo:  { g: "atencion", lb: "Pagó la app sin dar su correo", ic: "mail" },
+  cuenta_compartida:    { g: "sistema",  lb: "Cuenta compartida",             ic: "key" },
   stock_bajo:           { g: "sistema",  lb: "Stock bajo",                    ic: "box" },
   aviso:                { g: "sistema",  lb: "Otros avisos",                  ic: "bell" },
 };
@@ -768,6 +770,7 @@ function acciones(n) {
   }
   else if (["pedido_lima", "pedido_provincia", "venta_extra"].includes(t)) { if (ped) A.push(ped); if (chat) A.push(chat); }
   else if (t === "stock_agotado" || t === "stock_bajo") A.push({ k: "ir", href: "productos.html", lb: "Ver productos", ic: "productos" });
+  else if (t === "microapp_sin_correo" || t === "cuenta_compartida") A.push({ k: "ir", href: "accesos.html", lb: "Ver Accesos", ic: "key" });
   else if (t === "whatsapp_salud") A.push({ k: "ir", href: "canales.html", lb: "Ver mi WhatsApp", ic: "canales" });
   else if (t === "campana_detenida") A.push({ k: "ir", href: "campanas.html", lb: "Ver campañas", ic: "campanas" });
   else if (t === "anuncio_sin_producto") { A.push({ k: "ir", href: "productos.html", lb: "Asignar producto", ic: "productos" }); if (chat) A.push(chat); }

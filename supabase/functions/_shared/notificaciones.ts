@@ -48,6 +48,8 @@ const META: Record<string, Meta> = {
   mayorista:            { grupo: "atencion", prioridad: "importante", porAtender: true },
   entrega_pedida:       { grupo: "atencion", prioridad: "importante", porAtender: true },
   stock_agotado:        { grupo: "sistema",  prioridad: "importante", porAtender: false },
+  microapp_sin_correo:  { grupo: "atencion", prioridad: "importante", porAtender: true },   // 📱 pagó la app y no dio su correo
+  cuenta_compartida:    { grupo: "sistema",  prioridad: "importante", porAtender: false },  // 📱 >3 celulares nuevos en 7 días
   stock_bajo:           { grupo: "sistema",  prioridad: "info",       porAtender: false },
   problema:             { grupo: "sistema",  prioridad: "urgente",    porAtender: true },
   whatsapp_salud:       { grupo: "sistema",  prioridad: "urgente",    porAtender: true },

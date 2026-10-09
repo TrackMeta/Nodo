@@ -16,6 +16,7 @@ import { construirResumen, localParts, localDayStartUTC, ymd } from "../_shared/
 import { enParalelo, repartoJusto } from "../_shared/concurrencia.ts";
 import { sondearNumero, aplicarVeredicto } from "../_shared/salud-wa.ts";
 import { timingSafeEqual } from "../_shared/crypto.ts";
+import { registrarNotificacion } from "../_shared/notificaciones.ts";
 import { appsApi, appsConfigurada, cfgDe as cfgMicroapp, proximoRecordatorioMin, CORREO_RECORDAR_DEF, fechaLarga } from "../_shared/microapps.ts";
 
 const db = serviceClient();
@@ -1495,7 +1496,7 @@ async function processSinRespuesta(now: number) {
 //    se avisa con la plantilla elegida en el producto (gratis como texto si la ventana está abierta).
 //    El aviso abre la «ventana de renovación» (7 días): con ella el motor valida su Yape aunque el
 //    post-venta esté apagado, y si el bot estaba apagado solo por la venta, se vuelve a encender.
-let _microUltimaVuelta = 0;
+let _microUltimaVuelta = 0, _microAlertasDia = "";
 async function processMicroapps(now: number) {
   // A) recordatorios del correo (cada tick: es una consulta indexada y casi siempre vacía)
   const { data: pend } = await db.from("microapp_entregas")
@@ -1517,6 +1518,13 @@ async function processMicroapps(now: number) {
         await deliverStep(db, e.channel_id, e.contact_id, { mensaje: txt });
       }
       const sig = proximoRecordatorioMin(cfg, n + 1);
+      // Se acabaron los recordatorios y sigue sin correo: a la campanita, para que lo veas tú (Accesos → Dar acceso).
+      if (!sig) {
+        const { data: pr } = await db.from("products").select("nombre").eq("id", e.product_id).maybeSingle();
+        await registrarNotificacion(db, { channelId: e.channel_id, contactId: e.contact_id, tipo: "microapp_sin_correo",
+          titulo: "Pagó la app y no dio su correo", detalle: `${(pr as any)?.nombre ?? "La app"}: ya se le recordó ${n + 1} vez/veces. Dale el acceso desde Accesos.`,
+          dedupeKey: `microapp_sin_correo:${e.id}` }).catch(() => {});
+      }
       await db.from("microapp_entregas").update({ recordatorios: n + 1,
         proximo_aviso_at: sig ? new Date(now + sig * 60_000).toISOString() : null, updated_at: new Date().toISOString() }).eq("id", e.id);
     } catch (err) { console.error("[microapps/correo]", (err as any)?.message ?? err); }
@@ -1525,6 +1533,20 @@ async function processMicroapps(now: number) {
   // B) renovación / prueba: cada 15 minutos basta (son avisos por día, no por minuto)
   if (!appsConfigurada() || now - _microUltimaVuelta < 15 * 60_000) return;
   _microUltimaVuelta = now;
+  // Cuentas que parecen compartidas (más de 3 celulares nuevos en 7 días): una vez al día, a la campanita.
+  const hoy = new Date(now).toISOString().slice(0, 10);
+  if (_microAlertasDia !== hoy) {
+    _microAlertasDia = hoy;
+    const { data: chs } = await db.from("products").select("channel_id").eq("tipo", "microapp");
+    for (const chId of [...new Set(((chs ?? []) as any[]).map((x) => String(x.channel_id)))]) {
+      const a = await appsApi("alertas", { channel_id: chId });
+      for (const c of ((a?.compartidas ?? []) as any[]).slice(0, 20)) {
+        await registrarNotificacion(db, { channelId: chId, contactId: c.contact_id ?? null, tipo: "cuenta_compartida",
+          titulo: "Cuenta compartida (posible)", detalle: `${c.nombre || "Un cliente"} entró desde ${c.n} celulares nuevos en 7 días. Míralo en Accesos.`,
+          dedupeKey: `cuenta_compartida:${c.acceso_id}:${hoy}` }).catch(() => {});
+      }
+    }
+  }
   const { data: prods } = await db.from("products").select("id, channel_id, nombre, config, product_versions(nombre, precio, activo, config)").eq("tipo", "microapp");
   for (const p of (prods ?? []) as any[]) {
     try {
