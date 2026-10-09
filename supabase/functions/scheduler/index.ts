@@ -1497,6 +1497,8 @@ async function processSinRespuesta(now: number) {
 //    El aviso abre la «ventana de renovación» (7 días): con ella el motor valida su Yape aunque el
 //    post-venta esté apagado, y si el bot estaba apagado solo por la venta, se vuelve a encender.
 let _microUltimaVuelta = 0, _microAlertasDia = "";
+// Para {{1}} de las plantillas: el primer nombre, o un saludo neutro (vacío saldría «¡Hola -!»).
+const primerNombre = (n: unknown) => String(n ?? "").trim().split(/\s+/)[0] || "👋";
 async function processMicroapps(now: number) {
   // A) recordatorios del correo (cada tick: es una consulta indexada y casi siempre vacía)
   const { data: pend } = await db.from("microapp_entregas")
@@ -1566,13 +1568,13 @@ async function processMicroapps(now: number) {
       const precioApp = [unico ? `${sym} ${unico.precio} (pago único)` : "", mes ? `${sym} ${mes.precio} al mes` : ""].filter(Boolean).join(" o ");
       const tandas: Array<[string, any[], string, (a: any) => string[], (a: any) => string]> = [
         ["previo", r.previo ?? [], String(ren.plantilla_previo || "acceso_por_vencer"),
-          (a) => [a.nombre || "", p.nombre, fechaLarga(a.vence_at), precioRen || "-"],
+          (a) => [primerNombre(a.nombre), p.nombre, fechaLarga(a.vence_at), precioRen || "-"],
           (a) => `¡Hola${a.nombre ? " " + a.nombre : ""}! 📅 Tu acceso a ${p.nombre} vence el ${fechaLarga(a.vence_at)}. Para seguir usándola, renuévalo con ${precioRen}. Escríbeme por aquí y te paso los datos de pago 😊`],
         ["vencido", r.vencido ?? [], String(ren.plantilla_vencido || "acceso_vencido"),
-          (a) => [a.nombre || "", p.nombre, precioRen || "-"],
+          (a) => [primerNombre(a.nombre), p.nombre, precioRen || "-"],
           (a) => `Hola${a.nombre ? " " + a.nombre : ""}, hoy venció tu acceso a ${p.nombre}. Tu progreso quedó guardado 💾 Renuévalo con ${precioRen} y sigues donde te quedaste. Escríbeme por aquí 🙌`],
         ["prueba_fin", r.prueba_fin ?? [], String(cfg.prueba?.plantilla_fin || "prueba_terminada"),
-          (a) => [a.nombre || "", p.nombre, precioApp || "-"],
+          (a) => [primerNombre(a.nombre), p.nombre, precioApp || "-"],
           (a) => `¡Hola${a.nombre ? " " + a.nombre : ""}! 😊 Terminó tu prueba gratis de ${p.nombre} y tu progreso quedó guardado 💾 Para seguir usándola son ${precioApp}. Escríbeme por aquí y te paso los datos de pago.`],
       ];
       for (const [cual, lista, plantilla, params, textoLibre] of tandas) {
