@@ -1569,13 +1569,13 @@ async function processMicroapps(now: number) {
       const tandas: Array<[string, any[], string, (a: any) => string[], (a: any) => string]> = [
         ["previo", r.previo ?? [], String(ren.plantilla_previo || "acceso_por_vencer"),
           (a) => [primerNombre(a.nombre), p.nombre, fechaLarga(a.vence_at), precioRen || "-"],
-          (a) => `¡Hola${a.nombre ? " " + a.nombre : ""}! 📅 Tu acceso a ${p.nombre} vence el ${fechaLarga(a.vence_at)}. Para seguir usándola, renuévalo con ${precioRen}. Escríbeme por aquí y te paso los datos de pago 😊`],
+          (a) => `¡Hola${a.nombre ? " " + primerNombre(a.nombre) : ""}! 📅 Tu acceso a ${p.nombre} vence el ${fechaLarga(a.vence_at)}. Para seguir usándola, renuévalo con ${precioRen}. Escríbeme por aquí y te paso los datos de pago 😊`],
         ["vencido", r.vencido ?? [], String(ren.plantilla_vencido || "acceso_vencido"),
           (a) => [primerNombre(a.nombre), p.nombre, precioRen || "-"],
-          (a) => `Hola${a.nombre ? " " + a.nombre : ""}, hoy venció tu acceso a ${p.nombre}. Tu progreso quedó guardado 💾 Renuévalo con ${precioRen} y sigues donde te quedaste. Escríbeme por aquí 🙌`],
+          (a) => `Hola${a.nombre ? " " + primerNombre(a.nombre) : ""}, hoy venció tu acceso a ${p.nombre}. Tu progreso quedó guardado 💾 Renuévalo con ${precioRen} y sigues donde te quedaste. Escríbeme por aquí 🙌`],
         ["prueba_fin", r.prueba_fin ?? [], String(cfg.prueba?.plantilla_fin || "prueba_terminada"),
           (a) => [primerNombre(a.nombre), p.nombre, precioApp || "-"],
-          (a) => `¡Hola${a.nombre ? " " + a.nombre : ""}! 😊 Terminó tu prueba gratis de ${p.nombre} y tu progreso quedó guardado 💾 Para seguir usándola son ${precioApp}. Escríbeme por aquí y te paso los datos de pago.`],
+          (a) => `¡Hola${a.nombre ? " " + primerNombre(a.nombre) : ""}! 😊 Terminó tu prueba gratis de ${p.nombre} y tu progreso quedó guardado 💾 Para seguir usándola son ${precioApp}. Escríbeme por aquí y te paso los datos de pago.`],
       ];
       for (const [cual, lista, plantilla, params, textoLibre] of tandas) {
         for (const a of lista.slice(0, 30)) {
