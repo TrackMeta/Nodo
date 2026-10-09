@@ -4629,7 +4629,11 @@ async function runReception(db: SupabaseClient, channelId: string, contactId: st
     await logEvent(db, channelId, contactId, "nota", "🔬 Lo que escribió la IA antes de los retoques",
       `«${_crudoRecep.slice(0, 1500)}»\n→ salió: ${result ? `«${result.slice(0, 800)}»` : "NADA (vacío)"}\n⚙️ Pasos: Recepción`).catch(() => {});
   }
+  // 🧠 La red anti-cortes también acá (8-oct, Rodrigo): si los retoques se llevaron frases enteras, la IA reescribe el
+  // mensaje completo (ver repararMensajeCortado). Lo de plata lo siguen cuidando los candados.
+  if (result) conRedAntiCortes(run, ctx, ai, _crudoRecep, "recepcion");
   await emitIaText(db, run, result || "¡Hola! 👋 ¿Qué producto te interesa? Con gusto te ayudo a encontrar lo que buscas.", ctx);
+  delete (ctx as any)._iaCrudo;
   return { hecho: true };
 }
 
@@ -9934,8 +9938,17 @@ function repiteLoQuitado(rep: string, quitadas: string[]): boolean {
     return ws.length >= 3 ? ws.filter((w) => r.has(w)).length / ws.length >= 0.7 : r.has(ws.join(" ")) || ` ${_normFrase(rep)} `.includes(` ${_normFrase(q)} `);
   });
 }
+// Prepara la red para una salida de IA que no es la venta (Recepción, post-venta): qué escribió y con qué IA reescribir.
+function conRedAntiCortes(run: any, ctx: any, ai: any, crudo: string, modo: "recepcion" | "postventa") {
+  if (!String(crudo ?? "").trim() || !ai?.api_key) return;
+  ctx._iaCrudo = String(crudo);
+  ctx._reparoModo = modo;
+  run._iaCfg = { provider: ai.provider, apiKey: ai.api_key, model: ai.model };
+}
 async function repararMensajeCortado(db: SupabaseClient, run: any, ctx: any, final: string): Promise<string> {
-  const crudo = String(ctx?._iaCrudo ?? "");
+  // (los marcadores —[[humano]], [[recompra: …]], [[media:…]]— no son frases quitadas)
+  const crudo = String(ctx?._iaCrudo ?? "").replace(/\[\[[^\]]*\]\]/g, " ").trim();
+  const _modo = String(ctx?._reparoModo ?? "venta");
   const cfg = run?._iaCfg;
   // (8-oct: también FÍSICO — «…S/ 54.50 cada una 🔧\n\n🔧» quedó con el emoji suelto tras un corte. Lo que arma el motor
   //  —sedes 📍, datos 📌, precios 🔹⭐, medios ✅— tiene que salir intacto: ver el candado de renglones abajo.)
@@ -9944,7 +9957,14 @@ async function repararMensajeCortado(db: SupabaseClient, run: any, ctx: any, fin
   //  reescribir por eso metió «¿A qué número me haces el Yape?» a quien preguntaba a qué número yapear — prueba física 8-oct)
   const quitadas = frasesQuitadas(crudo, final)
     .filter((q) => !/^\s*📌/u.test(q) && !/\b(?:p[aá]same|m[aá]ndame|env[ií]ame)\s+(?:estos|tus|los)\s+datos\b|dejarlo\s+listo|dejar\s+todo/i.test(sinFormato(q)));
-  if (quitadas.join("").replace(/[^\p{L}]/gu, "").length < 15) return final;
+  const _letrasQuit = quitadas.join("").replace(/[^\p{L}]/gu, "").length;
+  if (_letrasQuit < 15) return final;
+  // Si lo único que se fue son PREGUNTAS (la de relleno del cierre), lo que queda está entero: reescribirlo solo cambiaba
+  // una pregunta por otra («¿te explico algo más?» → «¿te ayudo con el proceso?», Recepción 8-oct).
+  if (quitadas.every((q) => /\?[\s\p{Extended_Pictographic}\u{FE0F}]*$/u.test(q.trim()))) return final;
+  // Se fue CASI TODO lo de la IA: no es un recorte, es un REEMPLAZO deliberado del motor (la contraseña inventada → «ese
+  // dato lo confirma el equipo», la disputa de pago → texto fijo y a una persona). Eso no se reescribe.
+  if (_letrasQuit > 0.7 * crudo.replace(/[^\p{L}]/gu, "").length) return final;
   let rep = "";
   try {
     rep = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: cfg.provider, apiKey: cfg.apiKey, model: cfg.model,
@@ -9967,7 +9987,7 @@ async function repararMensajeCortado(db: SupabaseClient, run: any, ctx: any, fin
   } catch (_) { return final; }
   rep = tomaMarcaDatosPago(null, String(rep ?? "")).replace(/^[«"“]+|[»"”]+$/g, "").trim();
   // 🔒 Los candados de plata, por código: ante la duda, sale la versión del motor.
-  const motivo = (() => {
+  const evaluar = (rep: string): string => {
     if (rep.replace(/[^\p{L}]/gu, "").length < 10) return "vacía";
     // Los renglones que arma el MOTOR (sedes, datos que se piden, precios, medios) salen intactos o no sale la reescritura.
     const _armados = (s: string) => String(s).split("\n").map((l) => sinFormato(l).replace(/\s+/g, " ").trim())
@@ -9991,13 +10011,22 @@ async function repararMensajeCortado(db: SupabaseClient, run: any, ctx: any, fin
     if (_rompe(sinAnuncioDePago) || _rompe(sinPedirPermisoPago)) return "ofrecía los datos de pago";
     if (_rompe(sinPreguntaDeRelleno)) return "pregunta de relleno";
     if (_rompe(sinColetillaRiesgo)) return "«sin riesgo»";
-    if (!((ctx as any)?._datos_faltan ?? []).length && _rompe(sinPedirLosDatos)) return "pedía datos suyos";
+    // (en la post-venta pedir la captura del saldo o una dirección es lo normal: esos dos candados son de la venta)
+    if (_modo !== "postventa" && !((ctx as any)?._datos_faltan ?? []).length && _rompe(sinPedirLosDatos)) return "pedía datos suyos";
     const sinPedido = String(ctx?.pedido_creado ?? "") !== "si" && !run?.vars?._order_id;
     if (sinPedido && promesasDeAcceso(rep, String(ctx?.last_input ?? "")).length) return "prometía el acceso";
     if (String(ctx?.last_input_type ?? "text") !== "image" && afirmaPagoEnCurso(rep).length) return "daba un pago por recibido";
-    if (!run?._quiereComprarTurno && !run?._iaDatosPago && RE_PIDE_CAPTURA.test(sinFormato(rep)) && !RE_PIDE_CAPTURA.test(sinFormato(final))) return "pedía la captura";
+    if (_modo !== "postventa" && !run?._quiereComprarTurno && !run?._iaDatosPago && RE_PIDE_CAPTURA.test(sinFormato(rep)) && !RE_PIDE_CAPTURA.test(sinFormato(final))) return "pedía la captura";
     return "";
-  })();
+  };
+  let motivo = evaluar(rep);
+  // 🩹 Si solo falló por una regla de TEXTO (ofrecer los datos, la pregunta de relleno, «sin riesgo»), se le quita esa frase a
+  // la reescritura y se vuelve a revisar: «El pago es totalmente seguro. Apenas me mandes la captura… ¿Quieres que te envíe
+  // los datos?» se descartaba entera y se perdía la respuesta a «¿es seguro?» (Recepción, prueba del 8-oct).
+  if (/^(?:ofrecía los datos de pago|pregunta de relleno|«sin riesgo»)$/.test(motivo)) {
+    const rep2 = sinRestosDeRecorte(sinColetillaRiesgo(sinPreguntaDeRelleno(sinPedirPermisoPago(sinAnuncioDePago(rep))))).trim();
+    if (rep2 && rep2 !== rep && !evaluar(rep2)) { rep = rep2; motivo = ""; }
+  }
   await logEvent(db, run.channel_id, run.contact_id, "nota",
     motivo ? "🧠 La reescritura no pasó los candados" : "🧠 Mensaje recortado: la IA lo reescribió completo",
     `Quitado: ${quitadas.map((q) => `«${q.slice(0, 90)}»`).join(" ")}\nQuedaba: «${String(final).slice(0, 300)}»\n` +
@@ -10229,7 +10258,7 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       // (el «™» huérfano que deja un recorte a mitad de «EcoGuard™ Solar»: «…desde que sale. ™» — sim 2b-s12)
       result = result.replace(/(?<=[\s.!?…,;:]|^)™[ \t]*/gmu, "").replace(/[ \t]+\n/g, "\n").replace(/[ \t]+$/u, "");
       // 🧠 Si los frenos se llevaron frases enteras, la IA lo reescribe completo (ver repararMensajeCortado). Una vez por turno.
-      if ((ctx as any)?._iaCrudo) { result = await repararMensajeCortado(db, run, ctx, result); delete (ctx as any)._iaCrudo; }
+      if ((ctx as any)?._iaCrudo) { result = await repararMensajeCortado(db, run, ctx, result); delete (ctx as any)._iaCrudo; delete (ctx as any)._reparoModo; }
       // (y el párrafo final que quedó SOLO con emojis —«…cada una 🔧\n\n🔧», resto de un corte—: fuera)
       result = result.replace(/\n{2,}[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}\u{200D}][ \t]*)+$/u, "");
       let _antesSedes = "";
@@ -16676,7 +16705,9 @@ async function responderVerificando(db: SupabaseClient, run: Run, event: EngineE
     const content = `El cliente (con su pago en verificación) te escribe:\n"${event.text ?? ""}"` +
       (hist ? `\n\n## La conversación hasta ahora\n${hist}\n\nResponde SOLO a su último mensaje.` : "");
     const result = await runAI({ db, channelId: run.channel_id, origen: "vender", provider: ai.provider, apiKey: ai.api_key, model: ai.model, system: parts.join("\n\n"), content, maxTokens: 400 });
+    conRedAntiCortes(run, ctx, ai, result, "postventa");   // 🧠 (ver repararMensajeCortado)
     await emitIaText(db, run, result || fallback, ctx);
+    delete (ctx as any)._iaCrudo;
   } catch (e) {
     console.error("[responderVerificando]", (e as any)?.message ?? e);
     await deliverMessage(db, run.channel_id, run.contact_id, fallback).catch(() => {});
@@ -17133,7 +17164,9 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
       return true;
     }
     await logEvent(db, channelId, contactId, "nota", "💵 Esperando saldo (recordatorio)", (event.text ?? "").slice(0, 80)).catch(() => {});
+    conRedAntiCortes(run, ctx, ai, result, "postventa");   // 🧠 (ver repararMensajeCortado)
     await emitIaText(db, run, result || "¡Hola! 🙌 Para poder mandártelo y darte tu clave de recojo, aún falta el pago del saldo. Cuando lo hagas, mándame la captura y lo valido. 🙂", ctx);
+    delete (ctx as any)._iaCrudo;
     return true;
   }
 
@@ -17294,6 +17327,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
       }
     } catch (_) { /* el revisor nunca tumba la post-venta */ }
   }
+  const _crudoPv = String(result ?? "");   // 🧠 lo que escribió la IA (ya revisado), para la red anti-cortes del envío
 
   // 🔑 LA CONTRASEÑA INVENTADA. «El enlace está protegido por contraseña para tu seguridad. La
   // contraseña es: *tropa21*» (D9-kpostlink, 2026-09-24) — no existe ninguna contraseña en la ficha
@@ -17397,7 +17431,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
   const _mRec = /\[\[\s*recompra\s*(?::\s*([^\]]{2,80}))?\]\]/i.exec(result);
   if (_mRec) {
     result = result.replace(/\[\[\s*recompra[^\]]*\]\]/gi, "").trim();
-    if (result) await emitIaText(db, run, result, ctx);
+    if (result) { conRedAntiCortes(run, ctx, ai, _crudoPv, "postventa"); await emitIaText(db, run, result, ctx); delete (ctx as any)._iaCrudo; }
     const _nomRec = normalize(String(_mRec[1] ?? "")).trim();
     const _porNombre = _nomRec
       ? _otrosPv.find((p) => { const n = normalize(p.nombre); return n === _nomRec || n.includes(_nomRec) || _nomRec.includes(n); })
@@ -17412,7 +17446,9 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
     return true; // aunque no haya flujo para relanzar, ya respondió
   }
 
+  if (result) conRedAntiCortes(run, ctx, ai, _crudoPv, "postventa");   // 🧠 (ver repararMensajeCortado)
   await emitIaText(db, run, result || "¡Hola! 🙂 ¿En qué te ayudo con tu compra?", ctx);
+  delete (ctx as any)._iaCrudo;
   return true;
 }
 
