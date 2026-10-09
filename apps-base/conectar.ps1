@@ -50,6 +50,8 @@ $tok = $tok.Trim()
 # Token para el proyecto de Apps: su ranura propia («Supabase CLI:apps») si existe; si no, el de Nodo.
 # (El de Nodo puede estar limitado SOLO al proyecto Nodo: entonces hace falta uno que vea el nuevo.)
 $tokApps = [CredApps]::Get("Supabase CLI:apps")
+# Lo guardado tiene que parecer un token (sbp_…): un intento fallido de cmdkey dejaba un carácter suelto.
+if ($tokApps -and -not $tokApps.Trim().StartsWith("sbp_")) { $tokApps = $null }
 if (-not $tokApps) {
   # Se pide en pantalla (sale con asteriscos, no queda en el historial) y se guarda para la próxima vez.
   Write-Host "Pega el token de Supabase que ve el proyecto nuevo (empieza con sbp_) y presiona Enter." -ForegroundColor Cyan
