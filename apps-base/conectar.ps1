@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════════
 # Conecta la base de Apps con Nodo (se corre UNA vez, después de crear el proyecto
 # «Nodo Apps» en Supabase, en la MISMA organización que Nodo).
 #   1. Crea las tablas (migrations/0001_base.sql).
@@ -35,12 +35,16 @@ $tok = [CredApps]::Get("Supabase CLI:nodo")
 if (-not $tok) { $tok = [CredApps]::Get("Supabase CLI:supabase") }
 if (-not $tok) { Write-Host "No encontré el token de Supabase (Supabase CLI:nodo)." -ForegroundColor Red; exit 1 }
 $tok = $tok.Trim()
-$env:SUPABASE_ACCESS_TOKEN = $tok
-$H = @{ Authorization = "Bearer $tok" }
+# Token para el proyecto de Apps: su ranura propia («Supabase CLI:apps») si existe; si no, el de Nodo.
+# (El de Nodo puede estar limitado SOLO al proyecto Nodo: entonces hace falta uno que vea el nuevo.)
+$tokApps = [CredApps]::Get("Supabase CLI:apps")
+if ($tokApps) { $tokApps = $tokApps.Trim() } else { $tokApps = $tok }
+$env:SUPABASE_ACCESS_TOKEN = $tokApps
+$H = @{ Authorization = "Bearer $tokApps" }
 
 Write-Host "1/4 Revisando acceso al proyecto $Ref…"
 try { Invoke-WebRequest -Uri "https://api.supabase.com/v1/projects/$Ref" -Headers $H -UseBasicParsing | Out-Null }
-catch { Write-Host "El token de Nodo no ve el proyecto $Ref. Créalo en la MISMA organización que Nodo, o guarda un token que lo vea con: cmdkey /generic:`"Supabase CLI:nodo`" /user:supabase /pass:<tu token>" -ForegroundColor Red; exit 1 }
+catch { Write-Host "El token no ve el proyecto $Ref. Crea un token en supabase.com/dashboard/account/tokens y guardalo con: cmdkey /generic:`"Supabase CLI:apps`" /user:supabase /pass:<tu token>" -ForegroundColor Red; exit 1 }
 
 Write-Host "2/4 Creando las tablas…"
 $sql = [IO.File]::ReadAllText((Join-Path $PSScriptRoot "supabase\migrations\0001_base.sql"), (New-Object Text.UTF8Encoding $false))
@@ -54,7 +58,9 @@ foreach ($stmt in ($sql -split ";\s*(\r?\n|$)")) {
 Write-Host "3/4 Guardando el secreto compartido y desplegando…"
 $secreto = ([guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N"))
 & supabase secrets set "NODO_APPS_SECRET=$secreto" --project-ref $Ref | Out-Null
+$env:SUPABASE_ACCESS_TOKEN = $tok   # los secretos de NODO van con el token de Nodo
 & supabase secrets set "NODO_APPS_SECRET=$secreto" "NODO_APPS_URL=https://$Ref.supabase.co/functions/v1/nodo" --project-ref $NODO | Out-Null
+$env:SUPABASE_ACCESS_TOKEN = $tokApps
 Push-Location $PSScriptRoot
 foreach ($f in @("kit", "nodo")) {
   $r = (& supabase functions deploy $f --project-ref $Ref --no-verify-jwt 2>&1 | Select-Object -Last 3) -join " "
