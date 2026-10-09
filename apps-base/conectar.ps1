@@ -21,6 +21,18 @@ public class CredApps {
  struct CREDENTIAL { public uint Flags; public uint Type; public IntPtr TargetName; public IntPtr Comment;
    public long LastWritten; public uint CredentialBlobSize; public IntPtr CredentialBlob; public uint Persist;
    public uint AttributeCount; public IntPtr Attributes; public IntPtr TargetAlias; public IntPtr UserName; }
+ [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
+ static extern bool CredWrite(ref CREDENTIAL cred, uint flags);
+ // Guarda un token en el Administrador de credenciales de Windows (igual que cmdkey: UTF-16).
+ public static bool Set(string target, string user, string secret){
+   byte[] b=Encoding.Unicode.GetBytes(secret);
+   CREDENTIAL c=new CREDENTIAL(); c.Type=1; c.Persist=2;
+   c.TargetName=Marshal.StringToCoTaskMemUni(target); c.UserName=Marshal.StringToCoTaskMemUni(user);
+   c.CredentialBlobSize=(uint)b.Length; c.CredentialBlob=Marshal.AllocCoTaskMem(b.Length); Marshal.Copy(b,0,c.CredentialBlob,b.Length);
+   bool ok=CredWrite(ref c,0);
+   Marshal.FreeCoTaskMem(c.TargetName); Marshal.FreeCoTaskMem(c.UserName); Marshal.FreeCoTaskMem(c.CredentialBlob);
+   return ok;
+ }
  public static string Get(string target){
    IntPtr p; if(!CredRead(target,1,0,out p)) return null;
    CREDENTIAL c=(CREDENTIAL)Marshal.PtrToStructure(p,typeof(CREDENTIAL));
@@ -38,6 +50,18 @@ $tok = $tok.Trim()
 # Token para el proyecto de Apps: su ranura propia («Supabase CLI:apps») si existe; si no, el de Nodo.
 # (El de Nodo puede estar limitado SOLO al proyecto Nodo: entonces hace falta uno que vea el nuevo.)
 $tokApps = [CredApps]::Get("Supabase CLI:apps")
+if (-not $tokApps) {
+  # Se pide en pantalla (sale con asteriscos, no queda en el historial) y se guarda para la próxima vez.
+  Write-Host "Pega el token de Supabase que ve el proyecto nuevo (empieza con sbp_) y presiona Enter." -ForegroundColor Cyan
+  Write-Host "(Si lo dejas vacío, se intenta con el token de Nodo.)" -ForegroundColor DarkGray
+  $seguro = Read-Host "Token" -AsSecureString
+  $plano = [Runtime.InteropServices.Marshal]::PtrToStringBSTR([Runtime.InteropServices.Marshal]::SecureStringToBSTR($seguro))
+  if ($plano -and $plano.Trim()) {
+    $tokApps = $plano.Trim()
+    if ([CredApps]::Set("Supabase CLI:apps", "supabase", $tokApps)) { Write-Host "   Token guardado en Windows (Supabase CLI:apps)." -ForegroundColor DarkGray }
+  }
+  $plano = $null
+}
 if ($tokApps) { $tokApps = $tokApps.Trim() } else { $tokApps = $tok }
 $env:SUPABASE_ACCESS_TOKEN = $tokApps
 $H = @{ Authorization = "Bearer $tokApps" }
