@@ -1138,6 +1138,9 @@ async function load(){
   // en el periodo (primera vez que escribieron), y ÷ las que siguieron después de la palabra clave. División de totales, no
   // promedio de anuncios (un anuncio chico con 1 chat inflaba el promedio). El primero mide al ANUNCIO (qué tan barato trae
   // gente); el segundo, la CALIDAD de esa gente. Se llenan abajo, con dos conteos de contactos (ver «costosPorChat»).
+  // 💬 CHATS NUEVOS (8-oct, Rodrigo): todos los que escribieron por PRIMERA vez en el periodo (anuncio + orgánico), con el
+  // desglose. Se llena abajo junto con los costos (ver «chatsNuevos»).
+  K.push(`<div id="kpiChatsNuevos">${kpi("lead","#22c079","Chats nuevos","…","contando quién te escribió por primera vez")}</div>`);
   if(hasAds){
     K.push(`<div id="kpiCostoChat">${kpi("lead","#2b7fff","Costo por chat","…","contando los chats de tus anuncios")}</div>`);
     K.push(`<div id="kpiCostoInteresado">${kpi("users","#9b6cf0","Costo por interesado","…","contando los que siguieron conversando")}</div>`);
@@ -1231,6 +1234,26 @@ async function load(){
           inter ? `${inter} de ${chats} siguieron después de la palabra clave (${Math.round(inter/Math.max(chats,1)*100)}%)` : (chats ? "ninguno siguió después de la palabra clave" : "sin chats de anuncios en este período"));
       }
     }catch(_){ /* sin conteo → se quedan en «…» */ }
+  })();
+  // 💬 chatsNuevos: los de anuncio se clasifican Digital/Físico por el tipo del ANUNCIO (igual que «Costo por chat», así los
+  // dos números cuadran); los orgánicos (sin anuncio), por el tipo del producto del contacto. En «Todo» entran también los
+  // orgánicos sin producto.
+  if($("kpiChatsNuevos")) (async()=>{   // en paralelo, como los costos
+    try{
+      const baseC=(sel="id")=>supa.from("contacts").select(sel,{count:"exact",head:true}).eq("channel_id",channelId)
+        .or("source.is.null,source.neq.sim").neq("wa_id","webchat-test").gte("primera_interaccion",fromISO).lt("primera_interaccion",toISO);
+      const _ids = tipo==="todo" ? null : Object.keys(adTipo).filter(a=>adTipo[a]===tipo);
+      const qAd = _ids ? baseC().in("ad_id", _ids.length ? _ids : ["-"]) : baseC().not("ad_id","is",null);
+      const qOrg = tipo==="todo" ? baseC().is("ad_id",null)
+        : tipo==="fisico" ? baseC("id,product:products!inner(tipo)").is("ad_id",null).eq("product.tipo","fisico")
+        : baseC("id,product:products!inner(tipo)").is("ad_id",null).neq("product.tipo","fisico");
+      const [cAd,cOrg]=await Promise.all([qAd,qOrg]);
+      if(cid!==channelId || !$("kpiChatsNuevos") || cAd.error || cOrg.error) return;
+      const ad=cAd.count||0, org=cOrg.count||0, tot=ad+org;
+      $("kpiChatsNuevos").innerHTML = kpi("lead","#22c079","Chats nuevos", tot,
+        tot ? `${ad} por anuncio · ${org} ${org===1?"orgánico":"orgánicos"}` : "nadie te escribió por primera vez en este período");
+      animateNums($("kpiChatsNuevos"));
+    }catch(_){ /* sin conteo → se queda en «…» */ }
   })();
   renderFunnel(porStage);
   // ventasOk (excluye rechazado/no_recogido): el panel "Ventas confirmadas" y el desglose por
