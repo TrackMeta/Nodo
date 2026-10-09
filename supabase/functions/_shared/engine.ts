@@ -11514,6 +11514,21 @@ async function entregarMicroapp(db: SupabaseClient, run: Run, ctx: any): Promise
       }
     }
   } catch (_) { /* sin pedido legible → la opción del contexto */ }
+  // Sin opción en el pedido (una renovación por Yape suelto llega así): se deduce por el MONTO pagado.
+  // Sin esto caía en «pago único» por defecto y un S/ 12 de renovación volvía de por vida el acceso.
+  if (!prueba && !(_opc as any)?.config?.modalidad) {
+    try {
+      const _oid = (run.vars as any)._order_id;
+      const { data: _o } = _oid ? await db.from("orders").select("amount").eq("id", String(_oid)).maybeSingle() : { data: null };
+      const monto = Number((_o as any)?.amount ?? ctx.precio ?? 0);
+      const { data: _vs } = await db.from("product_versions").select("id, nombre, precio, config").eq("product_id", pid).eq("activo", true);
+      const igual = ((_vs ?? []) as any[]).filter((v) => monto > 0 && Math.abs(Number(v.precio) - monto) < 0.01);
+      if (igual.length === 1) {
+        _opc = igual[0];
+        await logEvent(db, run.channel_id, run.contact_id, "nota", "📱 Opción deducida por el monto", `${igual[0].nombre} (S/ ${monto})`).catch(() => {});
+      }
+    } catch (_) { /* sin datos → la de siempre */ }
+  }
   const { tipo, meses } = prueba ? { tipo: "prueba" as const, meses: 0 } : modalidadDeOpcion(_opc);
   const horas = prueba ? Math.max(1, Number(cfg.prueba?.horas) || 24) : null;
   const { data: ent, error } = await db.from("microapp_entregas").insert({
@@ -11738,7 +11753,20 @@ async function postventaMicroapp(db: SupabaseClient, channelId: string, contactI
     const rn = await abrirVentaEnCaptura(db, channelId, contactId, pidRen);
     if (rn) {
       await logEvent(db, channelId, contactId, "nota", "📱 Yape después de comprar: se valida como renovación/compra").catch(() => {});
-      if (await resumeRun(db, rn, event)) await execute(db, rn);
+      if (await resumeRun(db, rn, event)) {
+        // Lo mismo que hace runEngineInner con una imagen antes de ejecutar: sin esto el validador decía
+        // «no hay imagen para analizar» y el pago pasaba a una persona.
+        (rn.vars as any)._tipo_turno = "image"; (rn.vars as any)._tipo_turno_at = Date.now();
+        (rn.vars as any)._texto_turno = String(event.text ?? "");
+        const mref = String((event as any).mediaRef ?? "");
+        if (mref) {
+          const url = await ingestImage(db, channelId, contactId, mref).catch(() => null);
+          (rn.vars as any)._last_image = url || "";
+          (rn.vars as any)._media_ref = mref;
+          if (url) { (rn.vars as any).ultima_imagen = url; await setField(db, channelId, contactId, "ultima_imagen", url); }
+        }
+        await execute(db, rn);
+      }
       return { atendido: true, acceso: null };
     }
   }
