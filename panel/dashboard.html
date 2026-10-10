@@ -250,12 +250,9 @@
 
     <div class="kpis" id="kpis"></div>
 
-    <div class="viewseg" id="viewSeg">
-      <button data-v="dash" class="on">Dashboard</button>
-      <button data-v="bita">Bitácora</button>
-    </div>
-
-    <div id="bitaView" class="hidden">
+    <!-- (9-oct, Rodrigo) Sin pestañas: la Bitácora va siempre a la vista, y debajo Rendimiento por producto y Gastos extra.
+         Se quitaron Ventas confirmadas, el Embudo (tiene su propia sección) y Ventas extra. -->
+    <div id="bitaView">
       <div class="panel">
         <div class="bita-hd">
           <h3 id="bitaTitle">Profit diario</h3>
@@ -270,28 +267,11 @@
     </div>
 
     <div id="dashView">
-    <div class="cols">
-      <div class="panel">
-        <h3>Ventas confirmadas</h3><p class="ps" id="salesSum">—</p>
-        <div id="salesChart"></div>
-      </div>
-      <div class="panel">
-        <h3>Embudo</h3><p class="ps">Dónde está cada contacto en el camino de compra · en vivo · <a href="embudo.html" style="color:var(--brand)">ver detalle</a></p>
-        <div class="funnel" id="funnel"></div>
-        <div class="conv" id="conv"></div>
-      </div>
-    </div>
-
     <div class="panel">
       <h3>Rendimiento por producto</h3><p class="ps">Unidades, ingresos y <b>ganancia</b> (antes de publicidad) por producto y variante · qué se vende vs. qué deja</p>
       <div id="productPerf"></div>
     </div>
 
-    <div class="cols">
-      <div class="panel">
-        <h3>Ventas extra</h3><p class="ps">Productos vendidos junto al principal</p>
-        <div id="bumps"></div>
-      </div>
       <div class="panel">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
           <div><h3>Gastos extra</h3><p class="ps">Gastos operativos que registras tú (empaques, sueldos, local…) · se restan de tu ganancia</p></div>
@@ -300,7 +280,6 @@
         <div id="expForm" class="hidden"></div>
         <div id="expenses"></div>
       </div>
-    </div>
     </div><!-- /#dashView -->
   </div>
 </div>
@@ -690,7 +669,7 @@ async function boot(){
   $("subtitle").textContent="Rendimiento de "+(c?c.nombre:"tu bot");
   // La Bitácora se quedaba con el calendario del bot anterior al cambiar de bot (solo se
   // repintaba al tocar el toggle o las flechas de mes).
-  shell.onChannel(id=>{ channelId=id; const cc=shell.channels.find(x=>x.id===id); $("subtitle").textContent="Rendimiento de "+(cc?cc.nombre:"tu bot"); load(); if(!$("bitaView").classList.contains("hidden")) renderBitacora(); });
+  shell.onChannel(id=>{ channelId=id; const cc=shell.channels.find(x=>x.id===id); $("subtitle").textContent="Rendimiento de "+(cc?cc.nombre:"tu bot"); load(); renderBitacora(); });
   // Asesor IA flotante: el FAB lo abre; el ✕ del panel lo minimiza.
   // Se mueve al <body> porque .nodo-wrap tiene un transform (animación de
   // entrada) que atraparía el position:fixed y lo pegaría al fondo del documento.
@@ -699,7 +678,7 @@ async function boot(){
   $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{
     tipo=b.dataset.t;
     $("tipoSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
-    load();
+    load(); renderBitacora();   // (la Bitácora también filtra por tipo)
   });
   $("dfBtn").onclick=(e)=>{ e.stopPropagation(); if($("dfPop").classList.contains("open")) closePop(); else openPop(); };
   // Los clics DENTRO del picker no deben llegar al detector de "clic afuera":
@@ -708,18 +687,11 @@ async function boot(){
   // (que sí persiste entre re-render) lo evita de raíz.
   $("dfPop").addEventListener("click", (e)=> e.stopPropagation());
   $("addExpBtn").onclick=toggleExpForm;
-  // Toggle Dashboard / Bitácora
-  $("viewSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{
-    const v=b.dataset.v;
-    $("viewSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
-    $("dashView").classList.toggle("hidden", v!=="dash");
-    $("bitaView").classList.toggle("hidden", v!=="bita");
-    if(v==="bita") renderBitacora();
-  });
   $("bitaPrev").onclick=()=>{ bitaMonth=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()-1,1); renderBitacora(); };
   $("bitaNext").onclick=()=>{ bitaMonth=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()+1,1); renderBitacora(); };
   renderDatePop();
   load();
+  renderBitacora();
 }
 
 function kpi(icon, color, label, value, sub){
@@ -1283,14 +1255,11 @@ async function load(){
       $("kpiMaRenov").innerHTML=kpi("repeat","#2b7fff","Renovaron",renov==null?"—":renov+"%",renov==null?"aún nadie cumple un mes":`de ${viejos.length} que llevan más de un mes`);
     }catch(_){ /* sin base de Apps → se quedan en «…» */ }
   })();
-  renderFunnel(porStage);
   // ventasOk (excluye rechazado/no_recogido): el panel "Ventas confirmadas" y el desglose por
   // producto deben usar las ventas CERRADAS, no `orders` (que incluye los perdidos). Antes
   // el panel mostraba un "vendido" distinto al KPI y el share por producto pasaba de 100%
   // (numerador con perdidos, denominador `vendido` sin ellos).
-  renderSales(ventasOk, r, dailyMargin, dailySpend, dailyExpense, hasAds, sinCostoF);
   renderProducts(prods, ventasOk, vendido, ordersUnavailable, margenPorProd);
-  renderBumps(bumpMap, ingBump, ordersUnavailable);
   renderExpenses(expenses, tipo);
 
   // ── Asesor IA (Mide + Aconseja): resumen de los números reales para la IA ──
@@ -1471,70 +1440,7 @@ function renderMetricas(porStage, cohorte){
   // Primero la conversión total (todos, curiosos incluidos) y después la de cierre — orden pedido por Rodrigo (7-oct).
   el.innerHTML=`<div class="metricas">${convHtml}${efec}</div>`;
 }
-// Embudo de contactos por etapa (mismo que la sección Embudos): foto EN VIVO,
-// no filtrada por fecha. Sale de dashboard_stats.por_stage.
-function renderFunnel(porStage){
-  const c={}; STAGES.forEach(s=>c[s.k]=Number(porStage[s.k]||0));
-  if(porStage["null"]!=null) c.nuevo+=Number(porStage["null"]||0);   // sin etapa → nuevo
-  const total=STAGES.reduce((a,s)=>a+c[s.k],0);
-  const pct=(n)=> total?Math.round(n/total*100):0;
-  if(!total){ $("funnel").innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><h4>Aún sin contactos</h4>Cuando lleguen mensajes a este canal, verás el embudo llenarse acá.</div>`; $("conv").innerHTML=""; return; }
-  const max=Math.max(1,...STAGES.map(s=>c[s.k]));
-  $("funnel").innerHTML=STAGES.map(s=>{
-    const n=c[s.k];
-    return `<div class="frow" data-stage="${s.k}" style="cursor:pointer" title="Ver «${s.label}» en la Bandeja"><div class="flabel"><span style="width:9px;height:9px;border-radius:50%;background:${s.color};display:inline-block;flex:none"></span>${s.label}</div><div class="fbar"><span style="width:${Math.round(n/max*100)}%;background:${s.color}"></span></div><div class="fval">${n}<span style="color:var(--faint);font-weight:400;font-size:11px"> · ${pct(n)}%</span></div></div>`;
-  }).join("");
-  $("funnel").querySelectorAll("[data-stage]").forEach(b=> b.onclick=()=> location.href="index.html?stage="+b.dataset.stage);
-  const interes=c.interesado+c.caliente+c.confirmado+c.comprado;
-  $("conv").innerHTML=`<span class="convpill">Conversión a compra: <b>${pct(c.comprado)}%</b></span><span class="convpill">Mostraron interés: <b>${pct(interes)}%</b></span><span class="convpill">Se perdieron: <b>${pct(c.perdido)}%</b></span>`;
-}
 
-function renderSales(orders, r, dailyMargin, dailySpend, dailyExpense, hasAds, sinCostoF){
-  const days=[]; const ingMap={};
-  const anchor=r.toDay||startOfDay(new Date(r.to.getTime()-864e5));
-  const spanDays=Math.min(31,Math.max(1,Math.round((anchor-r.from)/864e5)+1));
-  const fmt=new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"2-digit"});
-  for(let i=spanDays-1;i>=0;i--){ const d=startOfDay(new Date(anchor.getTime()-i*864e5)); const k=ymd(d); ingMap[k]=0; days.push({k,label:fmt.format(d)}); }
-  let totalIng=0;
-  orders.forEach(o=>{ const k=ymdLima(o.created_at); let v=Number(o.amount||0); (o.order_bumps||[]).forEach(b=>v+=Number(b.precio||0)); if(k in ingMap) ingMap[k]+=v; totalIng+=v; });
-  const data=days.map(d=>({ label:d.label, ing:ingMap[d.k]||0, gan:(dailyMargin[d.k]||0)-(dailySpend[d.k]||0)-(dailyExpense[d.k]||0) }));
-  // La ganancia del RESUMEN cubre TODO el rango (igual que "vendido"/totalIng), aunque el
-  // CHART solo dibuje los últimos 31 días. Antes totalGan sumaba solo los días graficados →
-  // en un rango largo (ej. "Máximo") "vendido" era del rango completo y "ganancia en el
-  // periodo" solo del último mes: dos números incoherentes bajo la misma etiqueta.
-  let totalGan=0;
-  { const fromD=startOfDay(r.from); for(let d=new Date(anchor); d>=fromD; d=new Date(d.getTime()-864e5)){ const k=ymd(d); totalGan+=(dailyMargin[k]||0)-(dailySpend[k]||0)-(dailyExpense[k]||0); } }
-  const gl=hasAds?"ganancia neta":"ganancia";
-  $("salesSum").innerHTML = totalIng>0
-    // Si hay pedidos sin costo, esa "ganancia" solo cubre una parte de las ventas:
-    // decirlo, porque si no se lee como la ganancia de TODO lo vendido al lado.
-    ? `<b>${money(totalIng)}</b> vendido · <b style="color:${totalGan<0?'var(--red)':'var(--green)'}">${money(totalGan)}</b> de ${gl} en el periodo${sinCostoF?` <span style="color:var(--faint)">(sin ${sinCostoF} pedido${sinCostoF>1?"s":""} que aún no tiene${sinCostoF>1?"n":""} costo)</span>`:""}`
-    : "Sin ventas registradas en el periodo";
-  renderSalesChart(data, hasAds);
-}
-// Barras = vendido por día · línea = ganancia (neta si hay ads). Eje con 0 fijo
-// para que los días SIN ganancia (gasto > margen) se vean bajar bajo la línea.
-function renderSalesChart(data, hasAds){
-  const W=560,H=180,padL=22,padR=8,padT=12,padB=26;
-  const ings=data.map(d=>d.ing), gans=data.map(d=>d.gan);
-  const vMax=Math.max(1,...ings,...gans), vMin=Math.min(0,...gans);
-  const plotT=padT, plotB=H-padB;
-  const y=(v)=> plotB - (v-vMin)/(vMax-vMin)*(plotB-plotT);
-  const y0=y(0), bw=(W-padL-padR)/data.length, step=Math.ceil(data.length/8);
-  let bars="", labels="";
-  data.forEach((d,i)=>{
-    const x=padL+i*bw, top=y(d.ing);
-    bars+=`<rect x="${(x+bw*0.16).toFixed(1)}" y="${top.toFixed(1)}" width="${Math.max(2,bw*0.68).toFixed(1)}" height="${Math.max(0,y0-top).toFixed(1)}" rx="3" fill="url(#g)"><title>${esc(d.label)} · vendido ${money(d.ing)} · ${hasAds?'neta':'ganancia'} ${money(d.gan)}</title></rect>`;
-    if(i%step===0) labels+=`<text x="${(x+bw/2).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="9" fill="var(--faint)">${d.label}</text>`;
-  });
-  const pts=data.map((d,i)=>`${(padL+i*bw+bw/2).toFixed(1)},${y(d.gan).toFixed(1)}`).join(" ");
-  const dots=data.map((d,i)=>`<circle cx="${(padL+i*bw+bw/2).toFixed(1)}" cy="${y(d.gan).toFixed(1)}" r="2.3" fill="${d.gan<0?'var(--red)':'#f0a92b'}"/>`).join("");
-  const zero=vMin<0?`<line x1="${padL}" y1="${y0.toFixed(1)}" x2="${W-padR}" y2="${y0.toFixed(1)}" stroke="var(--border)" stroke-dasharray="3 3"/>`:"";
-  $("salesChart").innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet">
-    <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22c079"/><stop offset="1" stop-color="#22c07955"/></linearGradient></defs>
-    ${zero}${bars}<polyline points="${pts}" fill="none" stroke="#f0a92b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>${dots}${labels}</svg>
-    <div style="display:flex;gap:16px;font-size:11px;color:var(--muted);margin-top:6px"><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#22c079;vertical-align:-1px;margin-right:5px"></i>Vendido</span><span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f0a92b;vertical-align:-1px;margin-right:5px"></i>${hasAds?'Ganancia neta':'Ganancia'}</span></div>`;
-}
 
 // ── BITÁCORA: profit diario del mes (chart + calendario) ─────────────
 // Reusa el mismo criterio de profit que el Dashboard: margen (digital=cobrado,
@@ -1644,7 +1550,6 @@ async function renderBitacora(){
   cal.querySelectorAll("[data-day]").forEach(c=> c.onclick=()=>{
     const d=startOfDay(new Date(c.dataset.day+"T00:00:00"));
     range.preset=null; range.from=d; range.to=d;   // filtro de un solo día
-    $("viewSeg").querySelector('[data-v="dash"]').click(); // volver al Dashboard
     applyRange();
   });
 }
@@ -1733,15 +1638,6 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd){
   box.innerHTML=`<div style="overflow-x:auto"><table class="ptable"><thead><tr><th>Producto / variante</th><th class="r">Unidades</th><th class="r">Ingresos</th><th class="r">Ganancia</th><th class="r">Margen</th><th class="r">% del total</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
-function renderBumps(bumpMap, ingBump, unavailable){
-  const box=$("bumps");
-  if(unavailable){ box.innerHTML=`<div class="empty">Requiere la migración 0017.</div>`; return; }
-  const list=Object.entries(bumpMap).sort((a,b)=>b[1].ing-a[1].ing);
-  if(!list.length){ box.innerHTML=`<div class="empty">Sin ventas extra vendidas en el periodo.</div>`; return; }
-  let rows=list.map(([nombre,d])=>`<tr><td class="pname">${esc(nombre)}</td><td class="r">${d.n}</td><td class="r money">${money(d.ing)}</td></tr>`).join("");
-  rows+=`<tr class="total"><td>Total</td><td class="r">${list.reduce((a,[,d])=>a+d.n,0)}</td><td class="r money">${money(ingBump)}</td></tr>`;
-  box.innerHTML=`<table class="ptable"><thead><tr><th>Venta extra</th><th class="r">Vendidos</th><th class="r">Ingresos</th></tr></thead><tbody>${rows}</tbody></table>`;
-}
 
 boot();
 </script>
