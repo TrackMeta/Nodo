@@ -9699,9 +9699,13 @@ function conDatosDePago(texto: string, dp: string, nums: string[], titulares: st
   const t = String(texto ?? "");
   const soloDigitos = (x: string) => String(x ?? "").replace(/\D+/g, "");
   const delCliente = soloDigitos(dijoElCliente);
-  nums = nums.filter((n) => !(delCliente && delCliente.includes(soloDigitos(n))));
-  if (!dp || !nums.length || !nums.some((n) => t.includes(n))) return t;
-  const esDato = (x: string) => nums.some((n) => x.includes(n));
+  // 🔢 (9-oct) El Yape del negocio se escribe con espacios («931 934 092»): d{6,} solo veía la cuenta BCP, así que la línea
+  // del Yape que la IA copió del historial se quedaba y el bloque se pegaba igual → el número salió DOS veces (Flavio,
+  // 9-oct). Se comparan solo las cifras, con o sin espacios, puntos o guiones.
+  const _numsDp = (String(dp ?? "").match(/\d[\d .-]{4,}\d/g) ?? []).map(soloDigitos).filter((n) => n.length >= 6);
+  nums = [...new Set([...nums.map(soloDigitos), ..._numsDp])].filter((n) => n.length >= 6 && !(delCliente && delCliente.includes(n)));
+  if (!dp || !nums.length || !nums.some((n) => soloDigitos(t).includes(n))) return t;
+  const esDato = (x: string) => nums.some((n) => soloDigitos(x).includes(n));
   const soloTitular = (x: string) => {
     const l = x.trim();
     if (!l || l.length > 60) return false;
@@ -9801,7 +9805,12 @@ function sinFalsoCierre(texto: string, cierre: string): string {
   // Por oración… y también por emoji seguido de mayúscula, que es como este modelo separa
   // sus frases: sin eso, un mensaje sin puntos era UNA oración y se iba entero.
   const frases = t.split(/(?<=[.!?…])\s+|(?<=\p{Extended_Pictographic}️?)\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/u);
-  const limpio = frases.filter((f) => !RE_FALSO_CIERRE.test(f)).join(" ").replace(/\s+/g, " ").trim();
+  // (9-oct) «Mándame la captura apenas lo hagas y te dejo listo el acceso» NO es un falso cierre: el «te dejo listo» va
+  // CONDICIONADO al pago. Se cortaba entera y a Alfonso le llegó solo «Perfecto, el pago por Yape es S/ 10 🙌», sin
+  // decirle qué hacer. Una frase que pide la captura o pone la condición del pago se queda.
+  const _condicionada = (f: string) => RE_PIDE_CAPTURA.test(f) ||
+    /\b(?:apenas|cuando|en\s+cuanto|una\s+vez\s+que|ni\s+bien|si\s+me)\b[^.!?\n]{0,60}\b(?:pag\p{L}*|yape\p{L}*|plin\p{L}*|mand\p{L}*|env[ií]\p{L}*|transfier\p{L}*|captura|comprobante)/iu.test(f);
+  const limpio = frases.filter((f) => !RE_FALSO_CIERRE.test(f) || _condicionada(f)).join(" ").replace(/\s+/g, " ").trim();
   // Si al quitarlas casi no queda mensaje (a veces TODO el texto era el anuncio falso), se
   // cierra con la frase honesta que toca según el motivo: así el cliente no se queda sin
   // respuesta ni con la idea de que ya compró.
@@ -30264,13 +30273,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (comboDe(run).length > 0 || (!_preguntaCuantosAcc && !/\d|\b(?:dos|tres|cuatro|varios|varias|ambos|ambas|par\s+de|los\s+dos|las\s+dos)\b/i.test(String(ctx.last_input ?? "")))) {
             const _antesC2 = salida;
             _tr("(…y también SIN combo cuando nadie habló de cantidades: «Con uno te al ·L28705");
-            salida = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
-              .filter((f) => !/(?:un\s+solo|uno\s+solo|un\s+[uú]nico)\s+acceso|\b(?:con\s+)?un[oa]?\s+sol[oa]\b[^.!?\n]{0,30}\b(?:queda|basta|alcanza|sirve)|\bcon\s+un[oa]?\s+(?:sol[oa]\s+)?te\s+(?:basta|alcanza|sirve)\b|\buna\s+sola\s+compra\b|no\s+(?:hace\s+falta|necesitas|tienes\s+que)\s+(?:llevar\s+|comprar\s+|tener\s+|pagar\s+)?(?:dos|2)\b|con\s+una\s+(?:vez|sola)\s+te\s+alcanza|el\s+acceso\s+es\s+uno\s+solo|no\s+hay\s+que\s+comprar(?:lo)?\s+dos\s+veces/iu.test(sinFormato(f)))
-              .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim()
-              // (sin los emojis que la frase quitada dejó abriendo el mensaje: «👇🎓 Dime cuál prefieres…» — tercera relanzada)
-              .replace(/^[\s\p{Extended_Pictographic}\u{FE0F}]+(?=[\p{L}¿¡*])/u, "")
-              .replace(/^[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)+$/gmu, "").replace(/\n{3,}/g, "\n\n").trim();
-            if (salida !== _antesC2) await logEvent(db, run.channel_id, run.contact_id, "nota", "🛒 Fuera «un solo acceso»: está llevando dos productos", "").catch(() => {});
+            const _RE_UN_ACCESO = /(?:un\s+solo|uno\s+solo|un\s+[uú]nico)\s+acceso|\b(?:con\s+)?un[oa]?\s+sol[oa]\b[^.!?\n]{0,30}\b(?:queda|basta|alcanza|sirve)|\bcon\s+un[oa]?\s+(?:sol[oa]\s+)?te\s+(?:basta|alcanza|sirve)\b|\buna\s+sola\s+compra\b|no\s+(?:hace\s+falta|necesitas|tienes\s+que)\s+(?:llevar\s+|comprar\s+|tener\s+|pagar\s+)?(?:dos|2)\b|con\s+una\s+(?:vez|sola)\s+te\s+alcanza|el\s+acceso\s+es\s+uno\s+solo|no\s+hay\s+que\s+comprar(?:lo)?\s+dos\s+veces/iu;
+            // 🔴 (9-oct) La limpieza de emojis corre SOLO si de verdad se fue una frase. Antes corría siempre: «🎥 Son
+            // videos…» perdía el 🎥 sin que hubiera nada de «un solo acceso», y quedaba la nota falsa en la Timeline
+            // (5 de 31 respuestas de la IA en un día y medio — el recorte más frecuente de digital).
+            if (String(salida).split(/(?<=[.!?…])\s+|\n/u).some((f) => _RE_UN_ACCESO.test(sinFormato(f)))) {
+              salida = String(salida).split("\n").map((ln) => ln.split(/(?<=[.!?…])\s+/u)
+                .filter((f) => !_RE_UN_ACCESO.test(sinFormato(f)))
+                .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim()
+                // (sin los emojis que la frase quitada dejó abriendo el mensaje: «👇🎓 Dime cuál prefieres…» — tercera relanzada)
+                .replace(/^[\s\p{Extended_Pictographic}\u{FE0F}]+(?=[\p{L}¿¡*])/u, "")
+                .replace(/^[ \t]*(?:[\p{Extended_Pictographic}\u{FE0F}][ \t]*)+$/gmu, "").replace(/\n{3,}/g, "\n\n").trim();
+            }
+            if (salida !== _antesC2) await logEvent(db, run.channel_id, run.contact_id, "nota",
+              comboDe(run).length > 0 ? "🛒 Fuera «un solo acceso»: está llevando dos productos" : "🛒 Fuera «un solo acceso»: nadie preguntó cuántos necesita",
+              `«${_antesC2.slice(0, 140)}»`).catch(() => {});
           }
           if (!_listaProductos && !_variasPersonas && !_opsDig.some((o) => Number(o.cantidad ?? 0) > 1)) {
             const _preciosDig = _opsDig.map((o) => Number(o.precio)).filter((n) => Number.isFinite(n) && n > 0);
