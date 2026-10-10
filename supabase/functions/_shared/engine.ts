@@ -27789,6 +27789,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     }
 
     (run as any)._iaDatosPago = false;
+    (run as any)._detRelleno = false;   // (lo prende el revisor si en este turno el detector de relleno estuvo activo)
     if (op === "generar_texto") (run as any)._iaCfg = { provider, apiKey: ai.api_key, model };   // (para repararMensajeCortado; en el run, que no se guarda entero)
     let result = await runAI({ db, channelId: run.channel_id, origen: op === "analizar_imagen" ? "ocr" : "vender",
       provider, apiKey: ai.api_key, model, system, content, maxTokens,
@@ -27925,6 +27926,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               v.push("Borra la parte donde le ofreces, anuncias o preguntas si le mandas los datos de pago. Si ya quiere pagar, " +
                 "termina con [[datos_pago]] y salen solos; si todavía no, cierra con una pregunta sobre el producto o sobre empezar.");
             }
+            (run as any)._detRelleno = true;   // (con el detector activo, la tijera de abajo ya no corta — ver «🎈»)
             if (sinPreguntaDeRelleno(txt) !== txt) {
               v.push("Quita la pregunta de relleno que no pide nada concreto («¿quieres que te cuente más?», «¿te gustaría saber…?»): " +
                 "cierra con UNA pregunta que lo acerque a decidir.");
@@ -29479,7 +29481,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
         // 🎈 Y la pregunta de relleno, que no pide nada y le quitaba el sitio a la que sí.
         _tr("🎈 Y la pregunta de relleno, que no pide nada y le quitaba el sitio a  ·L27900");
-        salida = sinPreguntaDeRelleno(salida);
+        // ✂️→🧠 (10-oct, Rodrigo: «sácala como tijera, déjala solo como detector»): si el detector del revisor corrió en este
+        // turno (digital, sin pedido), la IA ya tuvo su oportunidad de reescribir; lo que quede sale como lo escribió. La
+        // tijera sigue solo donde no hay detector (físico, post-venta).
+        if (!(run as any)._detRelleno) salida = sinPreguntaDeRelleno(salida);
         // 🏷️ Y que la agencia salga CON NOMBRE, y que lo que se confirme sea la oficina.
         if (/\bagencia|\boficina/i.test(salida)) {
           try {
