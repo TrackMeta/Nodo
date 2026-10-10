@@ -2041,7 +2041,7 @@ function _sbAbrir(sel) {
   // Posición: debajo (o arriba si no entra), al menos tan ancha como la caja.
   const r = sel.getBoundingClientRect(), vw = innerWidth, vh = innerHeight;
   pop.style.minWidth = Math.max(180, r.width) + "px";
-  pop.style.maxWidth = Math.max(Math.min(380, vw - 16), r.width) + "px";
+  pop.style.maxWidth = Math.max(Math.min(460, vw - 16), r.width) + "px";
   const abajo = vh - r.bottom - 10, arriba = r.top - 10;
   const alto = Math.min(pop.scrollHeight, 360);
   const haciaArriba = abajo < Math.min(alto, 220) && arriba > abajo;
