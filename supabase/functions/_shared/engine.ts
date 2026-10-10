@@ -9346,6 +9346,9 @@ async function registrarPreguntasCliente(db: SupabaseClient, run: Run, ctx: any,
       // Precio, envío, pago, plazos y sedes los contesta el MOTOR con los datos del panel: no son preguntas para la ficha
       // (el revisor igual coló «¿cuánto demora a Tacna?» — prueba del 3-oct).
       if (/\b(?:demora|tarda|cu[aá]ndo\s+(?:me\s+)?llega|lleg[ao]\s+(?:a|en)|plazo|env[ií]o|env[ií]an|delivery|precio|cu[aá]nto\s+(?:cuesta|sale|es)|pag[oa]r?|yape|plin|adelanto|saldo|contra\s?entrega|sedes?|agencia|shalom|oferta|descuento|promoci[oó]n)\b/i.test(normalize(pregunta))) continue;
+      // «¿A qué número mando los 3 soles?» no trae ninguna palabra de la lista de arriba y se coló como pregunta del
+      // negocio (10-oct), pero el número de cobro lo da el motor solo (datos de pago). El mismo filtro que ya usa el revisor.
+      if (RE_PREGUNTA_A_DONDE_PAGO.test(pregunta)) continue;
       // En lo del negocio el bot no supone: lo que haya dicho no es una respuesta para aprobar, es el «no tengo el dato».
       // (y si el revisor copió el «ese dato no lo tengo» como respuesta, tampoco es una suposición)
       let respuesta = ambito === "negocio" ? "" : String(f?.respuesta ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
