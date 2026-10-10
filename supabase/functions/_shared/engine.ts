@@ -9393,7 +9393,7 @@ type FueraDeFicha = { pregunta: string; respuesta: string; ambito?: "producto" |
 // (cuotas, tarjeta o factura NO van acá: esas sí son condiciones del negocio)
 const RE_PREGUNTA_A_DONDE_PAGO = /a\s+qu[eé]\s+n[uú]mero|n[uú]mero\s+(?:de|del|para)\s+(?:yape|plin|cuenta|pag\p{L}*|dep[oó]sit\p{L}*|transfer\p{L}*|yape\p{L}*)|cuenta\s+(?:bancaria|bcp|bbva|interbank|scotiabank|de\s+(?:banco|ahorros?)|para\s+(?:pagar|depositar|transferir))|(?:^|[^\p{L}])(?:cci|yape\p{L}*|plin\p{L}*|transfer\p{L}*|dep[oó]sit\p{L}*)(?![\p{L}])|(?:c[oó]mo|d[oó]nde|a\s+d[oó]nde|a\s+qui[eé]n)\s+(?:te\s+|le\s+|se\s+|lo\s+)?(?:pago|pagar|pagas|pagamos|mando|env[ií]o|deposito|transfiero|yapeo|plineo)(?![\p{L}])|m[eé](?:dios?|todos?)\s+de\s+pago|datos\s+(?:de|para)\s+(?:pago|pagar)/iu;
 async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider, channelId: string, db: SupabaseClient,
-    opts: { suponer?: boolean; previas?: PreguntaCliente[]; negocio?: string; datosSiguen?: boolean } = {}): Promise<RevisionV2> {
+    opts: { suponer?: boolean; previas?: PreguntaCliente[]; negocio?: string; datosSiguen?: boolean; precios?: string } = {}): Promise<RevisionV2> {
   const colg = String(ctx?._colgadaV2 ?? "").trim();
   const ahora = String(ctx?.last_input ?? "").trim();
   // Con su primera pregunta pendiente, también tiene que quedar contestada (ver instruccionV2).
@@ -9431,7 +9431,12 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
         "aprendieron», «más de 500 clientes») y resultados prometidos como seguros («vas a evitar errores desde la primera " +
         "vez», «te garantizo que aprendes»). El entusiasmo de vendedor sin cifras ni garantías («te va a servir mucho») NO es " +
         "invento. Si la ficha dice «no usar cerca de mascotas» y el vendedor dice que no las " +
-        "afecta, CONTRADICE. NO cuentes: precios, envío, pago, frases de venta genéricas, lo que la ficha sí dice, ni lo que se " +
+        "afecta, CONTRADICE. " + (opts.precios
+          // 💰 (10-oct) Sin los precios, el revisor marcaba como invento el S/ 10 correcto («la ficha no menciona el precio» —
+          //  Victor) y dejaba pasar el S/ 99 inventado (Juan Valderrama): le faltaba el dato, no el criterio.
+          ? "PRECIOS: los de «PRECIOS REALES» son correctos (decirlos NO es invento); cualquier OTRO monto de plata para este " +
+            "producto («S/ 99», «antes S/ 50») ES invento grave. NO cuentes: envío, pago, frases de venta genéricas, lo que la ficha sí dice, ni lo que se "
+          : "NO cuentes: precios, envío, pago, frases de venta genéricas, lo que la ficha sí dice, ni lo que se ") +
         "deduce directo de ella (si la ficha dice que ahuyenta, decir que no mata está bien). Decir «ese dato no lo tengo» NO es invento. " +
         "Un ejemplo de una categoría que la ficha nombra tampoco (si la ficha dice «roedores», decir «ratas» está bien; «aves» → «palomas»).\n" +
         "Tampoco son invento: lo que repite la ficha con otras palabras («cubre un área moderada»), ni nada sobre CÓMO se " +
@@ -9469,7 +9474,7 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
         "Responde SOLO el JSON {\"contesta\": bool, \"falta\": \"qué quedó sin contestar (vacío si contestó)\", " +
         "\"inventos\": [{\"frase\": \"la frase del vendedor\", \"por_que\": \"qué dice la ficha\", \"grave\": bool}], " +
         "\"fuera_de_ficha\": [{\"pregunta\": \"¿…?\", \"respuesta\": \"…\", \"ambito\": \"producto|negocio\"}]}.",
-      content: `## FICHA\n${ficha}${bloquePrevias}\n\n## CLIENTE\n«${(pregunto ? li : ahora).slice(0, 500)}»\n\n## VENDEDOR\n«${String(texto ?? "").slice(0, 1500)}»`,
+      content: `## FICHA\n${ficha}${opts.precios ? `\n\n## PRECIOS REALES (del sistema)\n${opts.precios}` : ""}${bloquePrevias}\n\n## CLIENTE\n«${(pregunto ? li : ahora).slice(0, 500)}»\n\n## VENDEDOR\n«${String(texto ?? "").slice(0, 1500)}»`,
       jsonSchema: REVISOR_SCHEMA as unknown as Record<string, unknown>, jsonStrict: true,
     });
     const j = JSON.parse(raw);
@@ -27831,8 +27836,46 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // invento lo que ya se dijo, para cazar lo rechazado y para reusar el texto exacto de la pregunta.
         const _previas = await cargarPreguntasCliente(db, run, String(ctx._product_id ?? ""));
         let _fueraUltima: FueraDeFicha[] = [];
+        // 💰 PRECIOS REALES (10-oct, solo digital): la IA escribió «El precio es S/ 99» a Juan Valderrama (el producto vale
+        // S/ 10) y el revisor no lo vio porque no conocía el precio — y al revés, le hacía borrar el S/ 10 correcto a Victor.
+        // Con la lista del catálogo (también las presentaciones ocultas) + la oferta vigente del cliente, el revisor sabe
+        // cuál es cuál, y un monto que no está en la lista (ni la suma de dos, por un combo) se manda a reescribir.
+        let _preciosTxt = "";
+        const _preciosOk: number[] = [];
+        if (esDigital(ctx)) {
+          try {
+            const _sym = simboloMoneda(ctx.moneda as string);
+            const _catP = await catalogoDigital(db, run);
+            const _ofP = await ofertaActiva(db, run).catch(() => null);
+            for (const p of _catP) for (const v of p.versiones) _preciosOk.push(Number(v.precio));
+            if (Number(ctx.precio) > 0) _preciosOk.push(Number(ctx.precio));
+            if (_ofP && Number(_ofP.precio) > 0) _preciosOk.push(Number(_ofP.precio));
+            const _base = [...new Set(_preciosOk)];
+            for (const a of _base) for (const b of _base) _preciosOk.push(a + b);
+            _preciosTxt = _catP.map((p) => `- ${p.nombre}: ` + p.versiones.map((v) => `${v.nombre} ${_sym} ${v.precio}${v.oculta ? " (oculta: solo si pide más)" : ""}`).join(" · ")).join("\n") +
+              (_ofP && Number(_ofP.precio) > 0 ? `\n- Este cliente tiene una OFERTA vigente: ${_sym} ${Number(_ofP.precio)} (en vez del precio normal)` : "");
+          } catch (_) { _preciosTxt = ""; _preciosOk.length = 0; }
+        }
+        const _montosAjenos = (txt: string): number[] => {
+          if (!_preciosOk.length) return [];
+          const out: number[] = [];
+          const t = sinFormato(String(txt ?? ""));
+          for (const m of t.matchAll(/(?:S\/\.?|US\$|\$)\s*(\d{1,5}(?:[.,]\d{1,2})?)|(\d{1,5}(?:[.,]\d{1,2})?)\s*soles\b/gi)) {
+            const n = Number(String(m[1] ?? m[2]).replace(",", "."));
+            if (n > 0 && !_preciosOk.some((p) => Math.abs(p - n) < 0.01)) out.push(n);
+          }
+          return out;
+        };
         const revisar = async (txt: string) => {
           const v = _p ? violacionesV2(txt, _p, ctx) : [];
+          // 💰 Un monto que no es ningún precio real (ver _preciosOk): se reescribe con el precio que sí es.
+          const _ajenos = _montosAjenos(txt);
+          if (_ajenos.length) {
+            const _sym = simboloMoneda(ctx.moneda as string);
+            v.push(`No digas «${_sym} ${_ajenos[0]}»: ese precio no existe. ` +
+              (Number(ctx.precio) > 0 ? `El precio para este cliente es ${_sym} ${Number(ctx.precio)}. ` : "") +
+              "Usa solo los precios del sistema, o no nombres el monto (los datos de pago ya lo dicen).");
+          }
           // 🎯 La recomendación decidida antes (ver «LA RECOMENDACIÓN»): si no la dijo, que la reescriba antes de que el motor la pise.
           const _rpV = (run as any)._recPre as RecomendacionTurno | null | undefined;
           if (_rpV && !recomendacionDicha(txt, _rpV)) {
@@ -27894,7 +27937,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             }
           }
           const c = await revisorIAV2(txt, ctx, ai, provider, run.channel_id, db, { suponer: true, previas: _previas, negocio: String(info.negocio ?? ""),
-            datosSiguen: !!(run as any)._iaDatosPago });
+            datosSiguen: !!(run as any)._iaDatosPago, precios: _preciosTxt || undefined });
           (run as any)._revisorCorrio = !!c.corrio;
           _fueraUltima = c.fuera;
           // 🚫 La línea roja, por código (cifras, seguridad, interiores): no depende de que el revisor la vea.
@@ -27943,6 +27986,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               result = sinFrasesRojas(result, _fichaR);
               if (result !== _antesR) await logEvent(db, run.channel_id, run.contact_id, "nota", "🚫 Se quitó la frase de la línea roja",
                 `«${_antesR.slice(0, 200)}»`).catch(() => {});
+            }
+            // 💰 Tijera de PLATA (se queda a propósito): si la reescritura insiste con un precio que no existe, esa frase no sale.
+            // Mejor un mensaje sin el monto (los datos de pago ya lo dicen) que un «S/ 99» encima del bloque de S/ 10.
+            {
+              const _aj2 = _montosAjenos(result);
+              if (_aj2.length) {
+                const _antesP = result;
+                const _sinP = String(result).split(/(?<=[.!?…])\s+|\n+/u)
+                  .filter((fr) => !_montosAjenos(fr).length).join(" ").replace(/[ \t]{2,}/g, " ").trim();
+                if (_sinP.replace(/[^\p{L}]/gu, "").length >= 15) {
+                  result = _sinP;
+                  await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Se quitó un precio que no existe",
+                    `La IA insistió con ${_aj2.map((n) => "S/ " + n).join(", ")}: «${_antesP.slice(0, 200)}»`).catch(() => {});
+                }
+              }
             }
             if (_tijerasSirven) (run as any)._v2Fallo = true;
             await logEvent(db, run.channel_id, run.contact_id, "nota", "⚠️ Motor v2: la reescritura tampoco pasó",
