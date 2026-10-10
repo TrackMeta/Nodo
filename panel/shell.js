@@ -25,9 +25,12 @@ import { setTZ } from "./date-range.js";
 export const DS2 = (() => {
   try {
     const q = new URLSearchParams(location.search).get("ds");
-    if (q === "1") localStorage.setItem("nodo.ds", "1");
-    else if (q === "2") localStorage.removeItem("nodo.ds");
-    const on = localStorage.getItem("nodo.ds") !== "1";
+    // La preferencia se llama «nodo.ds.v2»: la vieja «nodo.ds» quedó en "1" en navegadores de los días de prueba y
+    // les seguía mostrando el diseño anterior aunque nadie lo pidiera. Se borra y no cuenta.
+    localStorage.removeItem("nodo.ds");
+    if (q === "1") localStorage.setItem("nodo.ds.v2", "anterior");
+    else if (q === "2") localStorage.removeItem("nodo.ds.v2");
+    const on = localStorage.getItem("nodo.ds.v2") !== "anterior";
     if (on) document.documentElement.removeAttribute("data-ds"); else document.documentElement.setAttribute("data-ds", "1");
     return on;
   } catch { return true; }
