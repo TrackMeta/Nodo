@@ -128,10 +128,8 @@
   html:not([data-ds="1"]) .met.mconv .mdesc,html:not([data-ds="1"]) .met.mconv .mbrk{color:var(--hero-muted)}
   html:not([data-ds="1"]) .met.mconv .mdesc b{color:var(--hero-text)}
   html:not([data-ds="1"]) .met.mconv .mtag{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.12);color:var(--hero-muted)}
-  /* Efectividad de cierre = lo que hace la IA: violeta liso */
-  html:not([data-ds="1"]) .met.mia{background:var(--surface);border-color:var(--border)}
-  html:not([data-ds="1"]) .met.mia .num{background:none;-webkit-text-fill-color:var(--violet);color:var(--violet)}
-  html:not([data-ds="1"]) .miabadge{background:var(--violet-bg);color:var(--violet-text);box-shadow:none}
+  /* Efectividad de cierre = lo que hace la IA: conserva su degradado violeta → rosado */
+  html:not([data-ds="1"]) .met.mia{border-color:rgba(168,85,247,.34);background:radial-gradient(130% 150% at 0% 0%,rgba(168,85,247,.14),transparent 55%),var(--surface)}
   html:not([data-ds="1"]) .panel{border-radius:12px}
   html:not([data-ds="1"]) .fbar2{border-radius:8px;height:50px}
   html:not([data-ds="1"]) .fbar2 .fl{font-weight:500}
