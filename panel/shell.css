@@ -1057,3 +1057,26 @@ html[data-ds="2"] .nu-av{width:30px;height:30px;border-radius:8px}
 .nodo-confpop[hidden]{display:none}
 .nodo-confpop .ncp-t{font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:#8C96A8;padding:6px 8px 4px}
 .nodo-nav.collapsed .nodo-confpop{left:64px;right:auto;width:200px;bottom:10px}
+
+/* ── Diseño 2 · Tipografía: Inter con techo de grosor 600 en TODO el panel ──
+   Medido 10-oct: 413 usos de 700, 125 de 800 y hasta 900 → todo gritaba y nada destacaba. En vez de tocar página por
+   página, la misma Inter se declara con su rango de pesos limitado a 400–600: el navegador lleva cualquier 700/800/900
+   al 600 más cercano. Mismo archivo, sin descarga extra. */
+@font-face{
+  font-family:'InterDS';
+  font-style:normal;
+  font-weight:400 600;
+  font-display:swap;
+  src:url("vendor/inter-latin.woff2") format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+html[data-ds="2"]{--font:"InterDS",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-synthesis-weight:none}
+html[data-ds="2"] .nodo-title{font-weight:600;letter-spacing:-.02em}
+
+/* ── Diseño 2 · Pie del menú: entra en 224 px (antes «Ro… Ad…») ── */
+html[data-ds="2"] .nodo-userrow{gap:2px}
+html[data-ds="2"] .nodo-user{gap:8px;padding:6px}
+html[data-ds="2"] .nu-meta small{display:none}
+html[data-ds="2"] .nu-meta b{font-size:12.5px;font-weight:500}
+html[data-ds="2"] .nodo-userrow .nodo-icnbtn,html[data-ds="2"] .nodo-bell{width:28px;height:28px}
+html[data-ds="2"] .nodo-userrow .nodo-icnbtn svg,html[data-ds="2"] .nodo-bell svg{width:15px;height:15px}

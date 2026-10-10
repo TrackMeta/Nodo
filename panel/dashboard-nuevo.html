@@ -216,12 +216,6 @@
   .aiact{margin-top:9px;height:32px;padding:0 13px;border:1px solid var(--border);border-radius:9px;background:transparent;color:var(--brand);font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
   .aiact:hover{border-color:var(--brand)}
   /* ═══ Dashboard nuevo (Diseño 2, 10-oct) ═══ */
-  .nd-hoy{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin:18px 0 0;font-size:13px;color:var(--muted)}
-  .nd-hoy b{color:var(--text);font-weight:600;margin-right:2px}
-  .nd-hoy a{color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
-  .nd-hoy a:hover{color:var(--text)}
-  .nd-pill{display:inline-grid;place-items:center;min-width:22px;height:20px;padding:0 7px;border-radius:99px;font-size:12px;font-weight:600}
-  .nd-pill.amb{background:var(--amber-bg);color:var(--amber)} .nd-pill.red{background:var(--red-bg);color:var(--red)} .nd-pill.blu{background:var(--brand-bg);color:var(--brand-2)}
   .nd-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0 16px}
   @media(max-width:900px){.nd-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
   .nd-kpi{display:flex;flex-direction:column;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0}
@@ -250,6 +244,16 @@
   /* lo viejo sigue calculándose (mismos números) pero no se muestra: [hidden] pierde contra .pband/.kpis{display:…} */
   #pband[hidden],#kpis[hidden],#efecPanel[hidden],#bitaCalWrap[hidden],#bitaChart[hidden]{display:none!important}
   html[data-ds="2"] .panel{border-radius:12px}
+  html[data-ds="2"] .bita-cell{border-radius:10px;box-shadow:none}
+  html[data-ds="2"] .bita-cell:hover{box-shadow:none;border-color:var(--border-strong)}
+  html[data-ds="2"] .bita-cell.alto{background:var(--green-bg);border-color:var(--green)}
+  html[data-ds="2"] .bita-cell.alto .amt,html[data-ds="2"] .bita-cell.pos .amt{color:var(--green)}
+  html[data-ds="2"] .bita-cell.pos{background:var(--surface);border-color:var(--border)}
+  html[data-ds="2"] .bita-cell.loss{background:var(--red-bg);border-color:var(--red)}
+  html[data-ds="2"] .bita-cell .amt{font-weight:600}
+  html[data-ds="2"] .bita-cell .dn,html[data-ds="2"] .bita-dow{font-weight:600}
+  html[data-ds="2"] .bita-nav .m{font-weight:600}
+  html[data-ds="2"] .bita-nav button{border-radius:8px}
 </style>
 </head>
 <body>
@@ -1626,24 +1630,28 @@ async function renderBitacora(){
   });
 }
 function renderBitaChart(series){
+  // (Diseño 2, 10-oct) Barras por día en vez de la línea con relleno: verde = ganaste, rojo = perdiste, hoy más claro
+  // (provisional), los días sin datos no se dibujan. Eje con 0 fijo y tres guías con su monto.
   const box=$("bitaChart");
   const vals=series.map(s=>s.profit==null?0:s.profit);
-  const W=760,H=200,padL=30,padR=10,padT=14,padB=24;
+  const W=760,H=210,padL=52,padR=8,padT=12,padB=24;
   const vMax=Math.max(1,...vals), vMin=Math.min(0,...vals);
-  const plotT=padT, plotB=H-padB;
-  const yf=(v)=> plotB-(v-vMin)/(vMax-vMin)*(plotB-plotT);
-  const n=series.length, dx=(W-padL-padR)/Math.max(1,n-1), xf=(i)=>padL+i*dx, y0=yf(0);
-  const linePts=series.map((s,i)=>`${xf(i).toFixed(1)},${yf(s.profit==null?0:s.profit).toFixed(1)}`).join(" ");
-  const areaPts=`${padL.toFixed(1)},${y0.toFixed(1)} `+linePts+` ${xf(n-1).toFixed(1)},${y0.toFixed(1)}`;
+  const yf=(v)=> padT+(vMax-v)/(vMax-vMin)*(H-padT-padB);
+  const n=series.length, bw=(W-padL-padR)/Math.max(1,n), y0=yf(0);
+  const todayK=ymdLima(new Date());
+  const ticks=[vMax, vMax/2, 0].concat(vMin<0?[vMin]:[]);
+  const grid=ticks.map(t=>`<line x1="${padL}" x2="${W-padR}" y1="${yf(t).toFixed(1)}" y2="${yf(t).toFixed(1)}" stroke="var(--border)" ${t===0?"":'stroke-dasharray="2 4"'}/>`+
+    `<text x="${padL-8}" y="${(yf(t)+3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--faint)">${moneyShort(t)}</text>`).join("");
   const step=Math.ceil(n/12);
-  const labels=series.map((s,i)=> i%step===0?`<text x="${xf(i).toFixed(1)}" y="${H-7}" text-anchor="middle" font-size="9" fill="var(--faint)">${String(s.dd).padStart(2,"0")}</text>`:"").join("");
-  const dots=series.map((s,i)=> s.profit==null?"":`<circle cx="${xf(i).toFixed(1)}" cy="${yf(s.profit).toFixed(1)}" r="2.4" fill="${s.profit<0?'var(--red)':'var(--brand)'}"><title>${s.k} · ${money(s.profit)}</title></circle>`).join("");
-  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet">
-    <defs><linearGradient id="bgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--brand)" stop-opacity=".28"/><stop offset="1" stop-color="var(--brand)" stop-opacity="0"/></linearGradient></defs>
-    <line x1="${padL}" y1="${y0.toFixed(1)}" x2="${W-padR}" y2="${y0.toFixed(1)}" stroke="var(--border)" stroke-dasharray="3 3"/>
-    <polygon points="${areaPts}" fill="url(#bgrad)"/>
-    <polyline points="${linePts}" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    ${dots}${labels}</svg>`;
+  const labels=series.map((s,i)=> i%step===0?`<text x="${(padL+i*bw+bw/2).toFixed(1)}" y="${H-7}" text-anchor="middle" font-size="10" fill="var(--faint)">${String(s.dd).padStart(2,"0")}</text>`:"").join("");
+  const bars=series.map((s,i)=>{
+    if(s.profit==null) return "";
+    const p=s.profit, y=Math.min(yf(p),y0), h=Math.max(1.5,Math.abs(yf(p)-y0));
+    const x=padL+i*bw+bw*0.18, w=Math.max(2,bw*0.64);
+    const op=s.k===todayK?0.45:0.9;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${p<0?"var(--red)":"var(--green)"}" fill-opacity="${op}"><title>${s.k}${s.k===todayK?" (provisional)":""} · ${money(p)}</title></rect>`;
+  }).join("");
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Profit de cada día del mes">${grid}${bars}${labels}</svg>`;
 }
 function renderProducts(prods, orders, vendido, unavailable, margenPorProd, gastoPorProd){
   const box=$("productPerf");
