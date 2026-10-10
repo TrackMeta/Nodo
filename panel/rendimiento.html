@@ -164,6 +164,22 @@
   .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
   svg.chart{width:100%;height:150px;display:block;overflow:visible}
   @media (max-width:760px){ .kpis{grid-template-columns:repeat(2,1fr)} .dgrid{grid-template-columns:1fr} .colbtn{margin-left:0} }
+  /* (10-oct) resumen en una línea, títulos de grupo, estado del anuncio y mensajes de Meta plegados */
+  .resumen{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:4px 0 14px;font-size:13.5px;color:var(--muted)}
+  .resumen b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums} .resumen b.pos{color:var(--green)} .resumen b.neg{color:var(--red)}
+  .resumen .sep{font-style:normal;color:var(--faint)}
+  tr.grp td{font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--faint);padding:14px 12px 6px;background:transparent;cursor:default}
+  tr.grp.sub td{padding-top:8px;padding-left:22px;text-transform:none;letter-spacing:0;font-size:11.5px}
+  .stdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--disabled,#98A2B3);margin-right:8px;vertical-align:2px;float:left;margin-top:6px}
+  .stdot.on{background:#12B76A}
+  .adctx{font-size:11px;color:var(--faint);margin-top:2px;padding-left:15px}
+  details.vdet{margin-top:18px;padding:0}
+  details.vdet>summary{list-style:none;cursor:pointer;padding:14px 18px;font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:8px}
+  details.vdet>summary::-webkit-details-marker{display:none}
+  details.vdet>summary .vsum{margin-left:auto;font-weight:500;color:var(--muted);font-size:12.5px}
+  details.vdet>summary::after{content:"›";color:var(--faint);font-size:16px;transition:transform .15s}
+  details.vdet[open]>summary::after{transform:rotate(90deg)}
+  details.vdet>.vent{padding:0 18px 16px}
 </style>
 </head>
 <body>
@@ -173,7 +189,6 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Rendimiento</h1>
-        <p class="nodo-lead" id="lead">El gasto de tus anuncios de Meta cruzado con la venta <b>real</b> de Nodo — tu CPA de confirmación, tu CPA real y tu ganancia neta, por anuncio y por producto. Toca un anuncio para ver su detalle día por día.</p>
       </div>
       <div class="nodo-actions" id="statusSlot"></div>
     </div>
@@ -244,13 +259,14 @@ async function loadData(){
     // ventas → un anuncio rentable se veía perdedor. Los dos errores empujan a la decisión
     // equivocada y ninguno avisaba. Orden estable + desempate para no repetir ni saltar filas.
     pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto,impresiones,alcance,clics,clics_wa").eq("channel_id",cid).gte("fecha",from).lte("fecha",to).order("fecha",{ascending:false}).order("ad_id").range(f,t)),
-    pageAll((f,t)=>supa.from("ads_meta").select("ad_id,ad_name,adset_name,campaign_name,account_id,account_currency").eq("channel_id",cid).order("ad_id").range(f,t)),
+    pageAll((f,t)=>supa.from("ads_meta").select("ad_id,ad_name,adset_name,campaign_name,account_id,account_currency,estado").eq("channel_id",cid).order("ad_id").range(f,t)),
     pageAll((f,t)=>supa.from("orders").select("contact_id,estado,amount,order_bumps,currency,shipping,product_id,version_id,created_at,product:product_id(nombre,emoji,tipo,config,product_versions(id,cantidad))").eq("channel_id",cid).not("shipping->>ad_id","is",null).gte("created_at",ordDesde).lte("created_at",ordHasta).order("created_at",{ascending:false}).order("id").range(f,t)),
   ]); }catch(_){ st.loaded=true; return; }
   // pageAll DEVUELVE el error en vez de lanzarlo, así que el catch de arriba ya no lo ve: sin
   // esto, una consulta que falla a media paginación se veía como un periodo con menos ventas
   // (o menos gasto) en vez de como un fallo, que es justo la lectura que hace apagar un anuncio.
   if(insR.error||metaR.error||ordR.error){ st.loaded=true; return; }
+  st.adEstado={}; (metaR.data||[]).forEach(m=>{ if(m.estado) st.adEstado[m.ad_id]=m.estado; });   // (0136) activo/pausado en Meta
   // Fuera los pedidos de los contactos de PRUEBA (Probar flujos y simulador): esta pantalla
   // no los excluía en ningún punto, y una tanda de simulaciones con ad_id inflaba las ventas,
   // el ROAS y el CPA de un anuncio real — justo la pantalla que decide qué anuncio se apaga.
@@ -408,25 +424,25 @@ const COLS=[
   {k:"cpc",    l:"CPC",           g:"Entrega",   cell:m=>`<td class="num">${oDash(m.cpc,money)}</td>`},
   {k:"clicsWA",l:"Clics a WhatsApp",g:"Entrega", cell:m=>`<td class="num">${nf(m.clicsWA)}</td>`},
   // 💬 Dentro de WhatsApp: los que llegaron por el anuncio en el periodo y hasta dónde avanzaron (etapa de hoy).
-  {k:"chats",  l:"Chats",         g:"WhatsApp",  fix:true,  t:"Clientes que escribieron por este anuncio en el periodo", cell:m=>`<td class="num">${nf(m.chats)}</td>`},
-  {k:"cpr",    l:"CPR",           g:"WhatsApp",  fix:true,  t:"Costo por chat: gasto ÷ chats", cell:m=>`<td class="num">${oDash(m.cpr,money)}</td>`},
+  {k:"chats",  l:"Chats",         g:"WhatsApp",  t:"Clientes que escribieron por este anuncio en el periodo", cell:m=>`<td class="num">${nf(m.chats)}</td>`},
+  {k:"cpr",    l:"Costo por chat", h:"Costo/chat", g:"WhatsApp",  t:"Costo por chat: gasto ÷ chats", cell:m=>`<td class="num">${oDash(m.cpr,money)}</td>`},
   {k:"interes",l:"Contestaron",   g:"WhatsApp",  t:"Escribieron algo más que la palabra clave (2+ mensajes). El % es sobre los chats", cell:m=>`<td class="num">${conPct(m.interes,m.pInteres)}</td>`},
   {k:"calientes",l:"Calientes",   g:"WhatsApp",  t:"Escribieron 4+ mensajes o ya avanzaron más. El % es sobre los chats", cell:m=>`<td class="num">${conPct(m.calientes,m.pCalientes)}</td>`},
-  {k:"conv",   l:"Conv%",         g:"WhatsApp",  fix:true,  t:"De los chats del periodo, cuántos ya compraron", cell:m=>`<td class="num" title="${m.compraron} de ${m.chats} chats ya compraron">${oDash(m.conv,pct)}</td>`},
-  {k:"efect",  l:"Efectividad del bot", h:`<span class="iab">${ROBOT}</span>Efect. bot`, g:"WhatsApp", fix:true, t:"Compras ÷ los que se interesaron de verdad (contestaron, incluidos los pedidos que se cayeron). Mide qué tan bien cierra el bot; el Conv% mide al anuncio", cell:m=>`<td class="num" title="${m.compraron} de ${m.baseEfect} interesados compraron">${m.efect==null?"—":`<span class="efb">${pct(m.efect)}</span>`}</td>`},
-  {k:"conf",   l:"Confirmaciones",g:"Ventas",    fix:true,  cell:m=>`<td class="num">${m.conf}</td>`},
-  {k:"cpaConf",l:"CPA conf.",     g:"Ventas",    fix:true,  cell:m=>`<td class="num">${oDash(m.cpaConf,money)}</td>`},
-  {k:"ventas", l:"Ventas reales", g:"Ventas",    fix:true,  cell:m=>`<td class="num">${m.ventas}</td>`},
+  {k:"conv",   l:"Conv%",         g:"WhatsApp",  t:"De los chats del periodo, cuántos ya compraron", cell:m=>`<td class="num" title="${m.compraron} de ${m.chats} chats ya compraron">${oDash(m.conv,pct)}</td>`},
+  {k:"efect",  l:"Efectividad del bot", h:`<span class="iab">${ROBOT}</span>Efect. bot`, g:"WhatsApp", t:"Compras ÷ los que se interesaron de verdad (contestaron, incluidos los pedidos que se cayeron). Mide qué tan bien cierra el bot; el Conv% mide al anuncio", cell:m=>`<td class="num" title="${m.compraron} de ${m.baseEfect} interesados compraron">${m.efect==null?"—":`<span class="efb">${pct(m.efect)}</span>`}</td>`},
+  {k:"conf",   l:"Confirmaciones",g:"Ventas",    cell:m=>`<td class="num">${m.conf}</td>`},
+  {k:"cpaConf",l:"CPA conf.",     g:"Ventas",    cell:m=>`<td class="num">${oDash(m.cpaConf,money)}</td>`},
+  {k:"ventas", l:"Ventas",        g:"Ventas",    t:"Ventas cobradas de verdad", cell:m=>`<td class="num">${m.ventas}</td>`},
   {k:"vDirectas",l:"Directas",    g:"Ventas",    t:"Compraron sin haber recibido ningún mensaje de remarketing", cell:m=>`<td class="num">${nf(m.vDirectas)}</td>`},
   {k:"vRemarketing",l:"Por remarketing",g:"Ventas", t:"Compraron después de recibir al menos un mensaje de remarketing", cell:m=>`<td class="num">${nf(m.vRemarketing)}</td>`},
-  {k:"cpaReal",l:"CPA real",      g:"Ventas",    fix:true,  t:"Verde: ganas con holgura · ámbar: cerca del máximo · rojo: pierdes plata en cada venta", cell:m=>{ const c=semCpa(m.cpaReal,m.cpaMax); return `<td class="num"${m.cpaMax!=null?` title="Máximo para no perder: ${money(m.cpaMax)}"`:""}>${m.cpaReal==null?"—":c?`<span class="roas ${c}"><span class="rd"></span>${money(m.cpaReal)}</span>`:money(m.cpaReal)}</td>`; }},
+  {k:"cpaReal",l:"CPA",           g:"Ventas",    t:"Verde: ganas con holgura · ámbar: cerca del máximo · rojo: pierdes plata en cada venta", cell:m=>{ const c=semCpa(m.cpaReal,m.cpaMax); return `<td class="num"${m.cpaMax!=null?` title="Máximo para no perder: ${money(m.cpaMax)}"`:""}>${m.cpaReal==null?"—":c?`<span class="roas ${c}"><span class="rd"></span>${money(m.cpaReal)}</span>`:money(m.cpaReal)}</td>`; }},
   {k:"cpaMax", l:"CPA máximo",    g:"Ventas",    t:"Lo que deja cada venta antes de pagar anuncios. Si el CPA real lo pasa, pierdes plata", cell:m=>`<td class="num">${oDash(m.cpaMax,money)}</td>`},
   {k:"ticket", l:"Ticket prom.",  g:"Dinero",    t:"Ingresos ÷ ventas reales", cell:m=>`<td class="num money">${oDash(m.ticket,money)}</td>`},
   {k:"ingresos",l:"Ingresos",     g:"Dinero",    cell:m=>`<td class="num money">${money0(m.ingresos)}</td>`},
-  {k:"neta",   l:"Ganancia neta", g:"Dinero",    fix:true,  cell:m=>m.neta==null?`<td class="num money" title="Hay ventas físicas sin costo o flete registrado: sin eso no se puede afirmar la ganancia">—</td>`:`<td class="num money ${m.neta<0?'neg':'pos'}">${money(m.neta)}</td>`},
-  {k:"roas",   l:"ROAS",          g:"Dinero",    fix:true,  cell:m=>{ if(m.roas==null) return `<td class="num">—</td>`; const c=m.roas>=2?'g':m.roas>=1?'a':'r'; return `<td class="num"><span class="roas ${c}"><span class="rd"></span>${nf(m.roas,2)}×</span></td>`; }},
+  {k:"roas",   l:"ROAS",          g:"Dinero",    cell:m=>{ if(m.roas==null) return `<td class="num">—</td>`; const c=m.roas>=2?'g':m.roas>=1?'a':'r'; return `<td class="num"><span class="roas ${c}"><span class="rd"></span>${nf(m.roas,2)}×</span></td>`; }},
+  {k:"neta",   l:"Ganancia neta", g:"Dinero",    cell:m=>m.neta==null?`<td class="num money" title="Hay ventas físicas sin costo o flete registrado: sin eso no se puede afirmar la ganancia">—</td>`:`<td class="num money ${m.neta<0?'neg':'pos'}">${money(m.neta)}</td>`},
 ];
-const DEFAULT_ON=new Set(["gasto","conf","cpaConf","ventas","cpaReal","neta","roas","interes","vRemarketing","cpaMax","ingresos"]);
+const DEFAULT_ON=new Set(["chats","cpr","ventas","cpaReal","roas","neta"]);   // (10-oct) tabla corta; el resto en «Columnas»
 
 function visibleCols(){ return COLS.filter(c=>c.fix||st.cols.has(c.k)); }
 function headRow(first){ return `<th>${first}</th>`+visibleCols().map(c=>`<th${c.t?` title="${esc(c.t)}"`:""}>${c.h||c.l}</th>`).join(""); }
@@ -554,8 +570,6 @@ function render(){
         <button class="${st.vista==='angulo'?'on':''}" data-v="angulo">${icon("compass")} Por ángulo</button>
         <button class="${st.vista==='copy'?'on':''}" data-v="copy">${icon("message")} Por copy</button>
       </div>
-      <span class="tlabel">Tipo</span>
-      <div class="chips" id="tipoChips">${[["all","Todos"],["digital","Digital"],["fisico","Físico"]].map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("")}</div>
       ${st.vista!=="copy"&&st.adAccounts.length>1?`<span class="tlabel">Cuenta</span>
       <div class="chips" id="acctChips"><button class="chip ${st.account==='all'?'on':''}" data-a="all">Todas</button>${st.adAccounts.map(a=>`<button class="chip ${st.account===a.account_id?'on':''}" data-a="${esc(a.account_id)}">${esc(a.nombre||a.account_id)}</button>`).join("")}</div>`:""}
       ${st.vista==="copy"?"":`<div class="colbtn"><button id="colBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="colPop"></div></div>`}
@@ -573,8 +587,8 @@ function render(){
   if(!st.loaded){ $("content").innerHTML=`<div class="nodo-empty" style="border:none;padding:52px 20px"><p>Cargando…</p></div>`; return; }
   // La tarjeta de mensajes cobrables va ARRIBA y en las tres vistas de anuncios, con o sin
   // Meta conectada: mide lo que manda el bot, no lo que gasta Meta.
-  if(!st.rows.length){ $("content").innerHTML=ventanaHtml()+emptyStateHtml(); wireVentana(); return; }
-  $("content").innerHTML=ventanaHtml()+`<div class="kpis" id="kpis"></div><div class="embudo" id="embudoAds"></div><div class="panel"><div class="scroll"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div></div>`;
+  if(!st.rows.length){ $("content").innerHTML=emptyStateHtml()+ventanaHtml(); wireVentana(); return; }
+  $("content").innerHTML=`<div class="resumen" id="kpis"></div><div class="panel"><div class="scroll"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div></div>`+ventanaHtml();
   renderKpis(); renderTable(); wireVentana();
 }
 // 💸 MENSAJES QUE META COBRA. Desde el 1-oct-2026 Meta cobra por mensaje lo que hoy es gratis:
@@ -595,15 +609,16 @@ function ventanaHtml(){
   // y hay tipo de cambio, se muestra también convertido. Sin tasa no se inventa.
   const usd=(x)=> x==null ? "—" : "US$ "+nf(x,2)+(CUR!=="USD"&&USD_RATE>0?` <span class="ml">≈ ${money(Number(x)*USD_RATE)}</span>`:"");
   const fila=(l,r)=>`<tr><td>${l}</td><td class="num">${nf(r.conversaciones)}</td><td class="num">${nf(r.msgs_gratis)}</td><td class="num">${nf(r.msgs_cobrables)}</td><td class="num">${usd(r.costo_usd)}</td></tr>`;
-  return `<div class="panel" style="margin-bottom:18px"><div class="vent">
-    <div class="vh"><div><h3>${icon("message")} Mensajes que Meta cobra</h3>
+  const abierto = Number(tot.costo_usd)>0;
+  return `<details class="panel vdet"${abierto?" open":""}><summary>${icon("message")} Mensajes que Meta cobra <span class="vsum">${nf(tot.msgs_cobrables)} cobrable${tot.msgs_cobrables==1?"":"s"}${tot.costo_usd!=null?" · "+usd(tot.costo_usd):""}</span></summary><div class="vent">
+    <div class="vh"><div>
       <p>Desde el <b>1 de octubre de 2026</b> Meta cobra cada mensaje del bot, salvo los que caen dentro de la ventana de un anuncio (hasta 7 días desde la primera respuesta). Se cuenta desde el 11 de septiembre de 2026 · ${esc(rangeLabel(st.range))}.</p></div>
       <div class="vt"><label for="tarifaMsg">Tarifa por mensaje (US$)</label><input id="tarifaMsg" type="number" step="0.0001" min="0" placeholder="Meta aún no publica la de Perú" value="${tarifa??""}"><button id="tarifaSave">Guardar</button></div></div>
     <div class="scroll"><table><thead><tr><th>Origen</th><th>Conversaciones</th><th>Mensajes gratis (ventana del anuncio)</th><th>Mensajes cobrables</th><th>Costo estimado</th></tr></thead>
     <tbody>${fila("Vinieron por anuncio",an)}${fila("Orgánicos",or)}</tbody>
     <tfoot><tr><td>Total</td><td class="num">${nf(tot.conversaciones)}</td><td class="num">${nf(tot.msgs_gratis)}</td><td class="num">${nf(tot.msgs_cobrables)}</td><td class="num">${usd(tot.costo_usd)}</td></tr></tfoot></table></div>
     ${tarifa?"":`<p class="vn">Sin tarifa no se estima el costo: por ahora solo los conteos. Cuando Meta publique la tarifa de tu país, ponla arriba y el costo aparece solo.</p>`}
-  </div></div>`;
+  </div></details>`;
 }
 function wireVentana(){
   const b=$("tarifaSave"); if(!b) return;
@@ -616,61 +631,49 @@ function wireVentana(){
     st.tarifaMsg=val; toast(val?"Tarifa guardada":"Tarifa borrada: solo conteos"); await reload();
   };
 }
+// (10-oct) Una línea en vez de 5 tarjetas (repetían el Dashboard) y del «Embudo de tus anuncios» (el Embudo ya
+// tiene su selector por anuncio y con los mismos 6 pasos; este era un segundo embudo con otros números).
 function renderKpis(){
   const m=metrics(sumAds(visibleRows()));
-  const K=[
-    ["Gasto en anuncios",money0(m.gasto),"var(--brand)",m.ventas+" ventas reales"],
-    ["Ventas reales",String(m.ventas),"var(--green)","cobradas de verdad"],
-    ["CPA real",oDash(m.cpaReal,money),"var(--amber)","costo por venta cobrada"],
-    ["Ganancia neta",m.neta==null?"—":money(m.neta),m.neta==null?"var(--muted)":m.neta<0?"var(--red)":"var(--green)",m.neta==null?"falta costo o flete en alguna venta física":"margen − gasto de ads"],
-    ["ROAS",oDash(m.roas,v=>nf(v,2)+"×"),"var(--green)",money0(m.ingresos)+" por "+money0(m.gasto)],
-  ];
-  $("kpis").innerHTML=K.map(([k,v,c,s])=>`<div class="kpi"><div class="k"><span class="kd" style="background:${c}"></span>${k}</div><div class="v num" style="color:${c}">${v}</div><div class="s">${s}</div></div>`).join("");
-  renderEmbudoAds(m);
-}
-// Embudo de los anuncios visibles: dónde se queda la gente entre el chat y la compra. Marca el PASO que más
-// pierde (la caída más grande entre dos escalones), que es por donde conviene empezar a mejorar.
-function renderEmbudoAds(m){
-  const el=$("embudoAds"); if(!el) return;
-  if(!m.chats){ el.innerHTML=""; return; }
-  const P=[
-    ["Chats",m.chats,null,"escribieron por tus anuncios"],
-    ["Contestaron",m.interes,m.chats,"más que la palabra clave"],
-    ["Calientes",m.calientes,m.interes,"4+ mensajes o más avanzados"],
-    ["Compraron",m.compraron,m.calientes,"ya pagaron"],
-  ];
-  // El paso que más pierde: la tasa más baja entre escalones (con al menos 5 personas arriba para no gritar por 1 de 2).
-  let fuga=-1, peor=2;
-  P.forEach(([,n,de],i)=>{ if(de && de>=5){ const r=n/de; if(r<peor){ peor=r; fuga=i; } } });
-  el.innerHTML=`<div class="eh"><b>Embudo de tus anuncios</b><span>${m.compraron} de ${m.chats} chats compraron (${pct(m.conv||0)})${m.cpr!=null?` · cada chat te cuesta ${money(m.cpr)}`:""}${m.efect!=null?` · <span class="iab">${ROBOT}</span>el bot cierra <b class="efb">${pct(m.efect)}</b> de los que se interesan`:""}${fuga>0?` · donde más se pierde: <b>${P[fuga-1][0]} → ${P[fuga][0]}</b>`:""}</span></div>
-    <div class="ep">${P.map(([l,n,de,s],i)=>`<div class="es${i===fuga?" fuga":""}" title="${esc(s)}"><div class="l">${l}</div><div class="n num">${nf(n)}</div><div class="p">${de==null?s:`${pct(de?n/de:0)} de ${P[i-1][0].toLowerCase()}`}</div><span class="bar" style="width:${Math.max(2,Math.round(n/m.chats*100))}%"></span></div>`).join("")}</div>`;
+  const it=(l,v,c="")=>`<span>${l} <b class="${c}">${v}</b></span>`;
+  $("kpis").innerHTML=[
+    it("En anuncios",money0(m.gasto)),
+    it("Ventas",nf(m.ventas)),
+    it("CPA",oDash(m.cpaReal,money)),
+    it("ROAS",oDash(m.roas,v=>nf(v,2)+"×")),
+    it("Ganancia neta",m.neta==null?"—":money(m.neta),m.neta==null?"":m.neta<0?"neg":"pos"),
+  ].join('<i class="sep">·</i>');
 }
 function renderTable(){
   const rows=visibleRows();
   $("thead").innerHTML=headRow(st.vista==="anuncio"?"Anuncio":st.vista==="angulo"?"Ángulo":"Producto");
   if(!rows.length){ $("tbody").innerHTML=`<tr><td colspan="${visibleCols().length+1}" style="text-align:center;color:var(--faint);padding:26px">Ningún anuncio de este tipo en el periodo.</td></tr>`; $("tfoot").innerHTML=""; return; }
   if(st.vista==="anuncio"){ renderAnuncio(); } else if(st.vista==="angulo"){ renderAngulo(); } else { renderProducto(); }
-  $("tfoot").innerHTML=`<tr><td>Total</td>${cells(metrics(sumAds(rows)))}</tr>`;
+  $("tfoot").innerHTML= rows.length>1 ? `<tr><td>Total</td>${cells(metrics(sumAds(rows)))}</tr>` : "";
 }
 function nameCell(name,tag,emoji,drill){
   return `<div class="nm">${emoji?`<span class="em">${esc(emoji)}</span>`:""}<span class="t1">${esc(name)}</span>${tag?`<span class="tag ${tag}">${TAGLBL[tag]}</span>`:""}${drill?`<span class="drill">${icon("chevronRight")||'›'}</span>`:""}</div>`;
 }
 function renderAnuncio(){
+  // (10-oct) Antes: fila de campaña + fila de conjunto + fila del anuncio + total, las cuatro iguales con un solo
+  // anuncio. Ahora la campaña y el conjunto son títulos chicos, y solo cuando agrupan a más de un anuncio.
   const rows=visibleRows();
+  const nCol=visibleCols().length+1;
   const camps=[...new Set(rows.map(a=>a.campaign))];
   let html="";
-  camps.forEach((camp,ci)=>{
+  camps.forEach(camp=>{
     const cads=rows.filter(a=>a.campaign===camp);
-    html+=`<tr class="camp" data-c="${ci}"><td><div class="nm"><span class="caret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span><span class="t1">${esc(camp)}</span></div></td>${cells(metrics(sumAds(cads)))}</tr>`;
+    if(cads.length>1) html+=`<tr class="grp"><td colspan="${nCol}">Campaña · ${esc(camp)}</td></tr>`;
     const asets=[...new Set(cads.map(a=>a.adset))];
     asets.forEach(aset=>{
       const aads=cads.filter(a=>a.adset===aset);
-      html+=`<tr class="adset kid k${ci}"><td><span class="adname">Conjunto · ${esc(aset)}</span></td>${cells(metrics(sumAds(aads)))}</tr>`;
-      aads.forEach(a=>{ const i=st.rows.indexOf(a); html+=`<tr class="ad kid k${ci}" data-ad="${i}"><td>${nameCell(a.name,a.tag,"",true)}</td>${cells(metrics(a))}</tr>`; });
+      if(aads.length>1) html+=`<tr class="grp sub"><td colspan="${nCol}">Conjunto · ${esc(aset)}</td></tr>`;
+      aads.forEach(a=>{ const i=st.rows.indexOf(a); const e=st.adEstado&&st.adEstado[a.ad_id];
+        const dot=e?`<span class="stdot${e==="ACTIVE"?" on":""}" title="${e==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}"></span>`:"";
+        html+=`<tr class="ad" data-ad="${i}"><td>${dot}${nameCell(a.name,a.tag,"",true)}${cads.length===1&&aads.length===1?`<div class="adctx">${esc(camp)}</div>`:""}</td>${cells(metrics(a))}</tr>`; });
     });
   });
   $("tbody").innerHTML=html;
-  $("tbody").querySelectorAll("tr.camp").forEach(tr=>tr.onclick=()=>{ tr.classList.toggle("closed"); $("tbody").querySelectorAll(".k"+tr.dataset.c).forEach(k=>k.classList.toggle("hide")); });
   $("tbody").querySelectorAll("tr.ad").forEach(tr=>tr.onclick=()=>{ st.sel=Number(tr.dataset.ad); render(); });
 }
 // ══════ POR COPY ══════════════════════════════════════════════════════
