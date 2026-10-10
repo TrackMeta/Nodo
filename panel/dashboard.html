@@ -1243,14 +1243,17 @@ async function load(){
   try{
     const base=(sel="id")=>supa.from("contacts").select(sel,{count:"exact",head:true}).eq("channel_id",channelId)
       .or("source.is.null,source.neq.sim").neq("wa_id","webchat-test").gte("primera_interaccion",fromISO).lt("primera_interaccion",toISO);
-    // (10-oct) «perdido» también es el lead que se enfrió sin pedir (0134): al cierre solo entra el perdido CON pedido.
-    const [tAll,tInt,tPerd,tBuy]=await Promise.all([
+    // (10-oct) «perdido» también es el lead que se enfrió (0134). Entra al cierre si se había interesado
+    // (etapa_previa, 0135) o si llegó a tener pedido (venta caída) — sin contarlo dos veces.
+    const INT=["interesado","caliente","confirmado"];
+    const [tAll,tInt,tPerdI,tPerdP,tBuy]=await Promise.all([
       base(),
-      base().in("stage",["interesado","caliente","confirmado","comprado"]),
-      base("id,orders!inner(id)").eq("stage","perdido"),
+      base().in("stage",[...INT,"comprado"]),
+      base().eq("stage","perdido").in("etapa_previa",INT),
+      base("id,orders!inner(id)").eq("stage","perdido").or("etapa_previa.is.null,etapa_previa.not.in.(interesado,caliente,confirmado)"),
       base().eq("stage","comprado"),
     ]);
-    if(!tAll.error&&!tInt.error&&!tPerd.error&&!tBuy.error) cohorte={ total:tAll.count||0, interes:(tInt.count||0)+(tPerd.count||0), compraron:tBuy.count||0, label:r.label };
+    if(![tAll,tInt,tPerdI,tPerdP,tBuy].some(x=>x.error)) cohorte={ total:tAll.count||0, interes:(tInt.count||0)+(tPerdI.count||0)+(tPerdP.count||0), compraron:tBuy.count||0, label:r.label };
   }catch(_){ cohorte=null; }
   if(cid!==channelId) return;
   renderMetricas(porStage, cohorte);

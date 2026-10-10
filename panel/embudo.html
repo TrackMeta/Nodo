@@ -285,7 +285,7 @@ async function load(){
   // el resto → efectividad, conversión y "plata en juego" se calculaban sobre un universo
   // truncado (numerador y denominador falseados). Orden estable con id de desempate.
   const [cR, oR, chR, adR] = await Promise.all([
-    pageAll((f,t)=>supa.from("contacts").select("id,nombre,wa_id,stage,product_id,ad_id,created_at,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim").order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    pageAll((f,t)=>supa.from("contacts").select("id,nombre,wa_id,stage,etapa_previa,product_id,ad_id,created_at,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim").order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     pageAll((f,t)=>supa.from("orders").select("contact_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     getChannel(st.channelId),
     // Nombres de los anuncios (ads-sync). Sin cuenta de Meta conectada viene vacío y se muestra el ID.
@@ -360,7 +360,11 @@ function funnelDe(cs){
   // (10-oct) Desde la 0134, «perdido» también es el lead que se enfrió (3 días sin escribir, sin comprar).
   // Para el CIERRE solo cuenta el perdido que llegó a tener pedido (la venta que se cayó): el que nunca
   // pidió no es una venta perdida, es un curioso que se fue.
-  const perdidoVenta=cs.filter(x=>x.stage==="perdido" && (st.ordersBy[x.id]||[]).length>0).length;
+  // El perdido SIN pedido (lead que se enfrió) cuenta en el escalón que alcanzó (etapa_previa, 0135): un interesado
+  // que se enfrió sigue siendo alguien que se interesó y no se cerró — igual que antes de la 0134.
+  const RANGO={curioso:1,interesado:2,caliente:3,confirmado:4};
+  let perdidoVenta=0; const lp=[0,0,0,0,0];
+  cs.forEach(x=>{ if(x.stage!=="perdido") return; if((st.ordersBy[x.id]||[]).length>0){ perdidoVenta++; return; } const r=RANGO[x.etapa_previa]||0; for(let i=1;i<=r;i++) lp[i]++; });
   // Acumulado: cada nivel = "esa etapa o MÁS adelante". Caliente va entre Interés y Confirmaron.
   // Los PERDIDOS son un desenlace terminal aparte (se muestran en su propio bucket): NO se
   // mezclan en los niveles. Antes se sumaban a curiosos/interes pero NO a calientes+, así que
@@ -368,12 +372,12 @@ function funnelDe(cs){
   // el "cuello de botella" señalaba el salto equivocado (un no_recojo/cancelado avanzado —
   // fuga POST-venta — aparecía como si fuera fuga de enganche inicial). Ahora todos los niveles
   // excluyen perdido → las tasas entre etapas son consistentes.
-  const curiosos=c.curioso+c.interesado+c.caliente+c.confirmado+c.comprado; // engancharon un producto (palabra clave)
-  const interes=c.interesado+c.caliente+c.confirmado+c.comprado;            // interactuaron de verdad (más que la keyword)
-  const calientes=c.caliente+c.confirmado+c.comprado;                       // volvieron 3+ veces (o ya avanzaron más)
-  const confirmaron=c.confirmado+c.comprado;
+  const curiosos=c.curioso+c.interesado+c.caliente+c.confirmado+c.comprado+lp[1]; // engancharon un producto (palabra clave)
+  const interes=c.interesado+c.caliente+c.confirmado+c.comprado+lp[2];            // interactuaron de verdad (más que la keyword)
+  const calientes=c.caliente+c.confirmado+c.comprado+lp[3];                       // volvieron 3+ veces (o ya avanzaron más)
+  const confirmaron=c.confirmado+c.comprado+lp[4];
   const compraron=c.comprado;
-  return { c, total, perdidoVenta,
+  return { c, total, perdidoVenta, perdidoConfirmado:lp[4],
     niveles:{ llegaron:total, curiosos, interes, calientes, confirmaron, compraron },
     paso:{ curiosos:pct(curiosos,total), interes:pct(interes,curiosos), caliente:pct(calientes,interes), confirmar:pct(confirmaron,calientes), comprar:pct(compraron,confirmaron) },
     // Efectividad de cierre: los PERDIDOS (pedido que se cayó: rechazo/cancelado/no recogido)
@@ -481,7 +485,8 @@ function fugas(F){
   ];
   saltos.forEach((s,i)=>{ s.i=i; s.drop=s.paso==null?null:100-s.paso; s.seCae=s.paso==null?0:Math.round(s.arriba*s.drop/100); });
   const cierre=saltos[4];
-  cierre.seCae=F.perdidoVenta; cierre.drop=cierre.arriba>0?Math.min(100,Math.round(F.perdidoVenta/(cierre.arriba+F.perdidoVenta)*100)):null;
+  const _caidos=F.perdidoVenta+F.perdidoConfirmado;
+  cierre.seCae=_caidos; cierre.drop=cierre.arriba>0?Math.min(100,Math.round(_caidos/(cierre.arriba+F.perdidoVenta)*100)):null;
   const validos=saltos.filter(s=>s.arriba>0 && s.drop!=null);
   const peor=validos.length ? validos.reduce((a,b)=>(b.seCae>a.seCae?b:a)) : null;
   // Fuga de verdad: se pierde más de un cuarto y al menos 2 personas.
