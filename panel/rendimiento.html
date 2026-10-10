@@ -173,6 +173,16 @@
   .stdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--disabled,#98A2B3);margin-right:8px;vertical-align:2px;float:left;margin-top:6px}
   .stdot.on{background:#12B76A}
   .adctx{font-size:11px;color:var(--faint);margin-top:2px;padding-left:15px}
+  .dnota{font-size:12px;color:var(--faint);margin:-4px 0 10px}
+  .dchart{padding:14px 18px 10px}
+  .dch-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+  .dch-sum{font-size:12.5px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap} .dch-sum b{color:var(--text);font-weight:600} .dch-sum b.pos{color:var(--green)} .dch-sum b.neg{color:var(--red)}
+  .dch-sum .lg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  .dch-wrap{position:relative} .dhit{cursor:default}
+  .bc-tip{position:absolute;z-index:5;pointer-events:none;min-width:190px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.22);padding:10px 12px;font-size:12.5px}
+  .bc-tip .t{font-weight:600;margin-bottom:6px;text-transform:capitalize}
+  .bc-tip .r{display:flex;justify-content:space-between;gap:16px;padding:2px 0;color:var(--muted)} .bc-tip .r b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+  .bc-tip .r.pos b{color:var(--green)} .bc-tip .r.neg b{color:var(--red)}
   details.vdet{margin-top:18px;padding:0}
   details.vdet>summary{list-style:none;cursor:pointer;padding:14px 18px;font-size:13.5px;font-weight:600;display:flex;align-items:center;gap:8px}
   details.vdet>summary::-webkit-details-marker{display:none}
@@ -454,7 +464,7 @@ function boot(){
     const shell=await mountShell({ active:"rendimiento" });
     st.channelId=shell.channelId;
     st.cols=new Set(DEFAULT_ON); st.range=computePreset("hoy");
-    shell.onChannel(id=>{ st.channelId=id; st.sel=null; loadAccount(); });
+    shell.onChannel(id=>{ st.channelId=id; st.sel=null; st.selId=null; st.rangoAntes=null; loadAccount(); });
     await loadAccount();
   });
 }
@@ -587,9 +597,9 @@ function render(){
   if(!st.loaded){ $("content").innerHTML=`<div class="nodo-empty" style="border:none;padding:52px 20px"><p>Cargando…</p></div>`; return; }
   // La tarjeta de mensajes cobrables va ARRIBA y en las tres vistas de anuncios, con o sin
   // Meta conectada: mide lo que manda el bot, no lo que gasta Meta.
-  if(!st.rows.length){ $("content").innerHTML=emptyStateHtml()+ventanaHtml(); wireVentana(); return; }
-  $("content").innerHTML=`<div class="resumen" id="kpis"></div><div class="panel"><div class="scroll"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div></div>`+ventanaHtml();
-  renderKpis(); renderTable(); wireVentana();
+  if(!st.rows.length){ $("content").innerHTML=emptyStateHtml(); return; }
+  $("content").innerHTML=`<div class="resumen" id="kpis"></div><div class="panel"><div class="scroll"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div></div>`;   // (10-oct) sin «Mensajes que Meta cobra» — Rodrigo
+  renderKpis(); renderTable();
 }
 // 💸 MENSAJES QUE META COBRA. Desde el 1-oct-2026 Meta cobra por mensaje lo que hoy es gratis:
 // todo lo que escribe el bot vendiendo, salvo lo que cae dentro de la ventana (hasta 7 días) de un clic en el
@@ -674,7 +684,7 @@ function renderAnuncio(){
     });
   });
   $("tbody").innerHTML=html;
-  $("tbody").querySelectorAll("tr.ad").forEach(tr=>tr.onclick=()=>{ st.sel=Number(tr.dataset.ad); render(); });
+  $("tbody").querySelectorAll("tr.ad").forEach(tr=>tr.onclick=()=>abrirDetalle(Number(tr.dataset.ad)));
 }
 // ══════ POR COPY ══════════════════════════════════════════════════════
 // Qué versión de los mensajes que manda el bot rinde mejor. Nada que ver con el gasto de
@@ -947,7 +957,7 @@ function renderAngulo(){
   });
   $("tbody").innerHTML=html;
   $("tbody").querySelectorAll("tr.camp").forEach(tr=>tr.onclick=()=>{ tr.classList.toggle("closed"); $("tbody").querySelectorAll(".k"+tr.dataset.c).forEach(k=>k.classList.toggle("hide")); });
-  $("tbody").querySelectorAll("tr.ad").forEach(tr=>tr.onclick=()=>{ st.sel=Number(tr.dataset.ad); render(); });
+  $("tbody").querySelectorAll("tr.ad").forEach(tr=>tr.onclick=()=>abrirDetalle(Number(tr.dataset.ad)));
 }
 function renderProducto(){
   const rows=visibleRows();
@@ -1004,65 +1014,128 @@ function serieReal(row){
   }
   return out;
 }
+// ── Detalle de un anuncio (10-oct, rehecho con Rodrigo: «los gráficos no me gustan y se salen de las tarjetas») ──
+// · Si el periodo es de UN día, el detalle se abre con los últimos 14 (un día = una sola barra, nada que comparar) y
+//   al volver se restaura el periodo que tenías. El detalle tiene su propio selector de fechas.
+// · Una línea de resumen (como la tabla) en vez de 5 tarjetas de colores.
+// · UN gráfico con selector de métrica: Ganancia · Gasto e ingresos · CPA · CTR. Barras con su monto encima, escala
+//   en números redondos, sin estirarse (antes preserveAspectRatio="none" deformaba y los puntos se salían).
+// · Tabla día por día con lo que sirve para decidir; «Confirm.» solo si alguna vez difiere de las ventas.
+let detMetrica=(()=>{ try{ return localStorage.getItem("nodo.rendMetrica")||"ganancia"; }catch{ return "ganancia"; } })();
+function abrirDetalle(i){
+  const a=st.rows[i]; if(!a) return;
+  st.sel=i; st.selId=a.ad_id;
+  const r=st.range;
+  const unDia = r && r.from && r.to && ymd(r.from)===ymd(r.to);
+  if(unDia){ st.rangoAntes=r; st.range=computePreset("14d"); reload(); }
+  else render();
+}
+function cerrarDetalle(){
+  st.sel=null; st.selId=null;
+  if(st.rangoAntes){ st.range=st.rangoAntes; st.rangoAntes=null; reload(); } else render();
+}
 function renderDetail(){
-  const a=st.rows[st.sel]; if(!a){ st.sel=null; return render(); }
-  const m=metrics(a); const S=serieReal(a);
-  const emoji=(a.prod||"").split(" ")[0]||"";
+  const a=(st.selId!=null && st.rows.find(r=>r.ad_id===st.selId)) || st.rows[st.sel];
   const v=$("view");
+  if(!a){
+    v.innerHTML=`<button class="back" id="back">${icon("chevronLeft")||'‹'} Volver a Rendimiento</button><div class="dhd"><div><h2>Sin datos de este anuncio en estas fechas</h2></div><div id="ddr" style="margin-left:auto"></div></div>`;
+    mountDateRange($("ddr"), { valor:st.range, onChange:(r)=>{ st.range=r; st.rangoAntes=null; reload(); } });
+    $("back").onclick=cerrarDetalle; return;
+  }
+  const m=metrics(a); const S=serieReal(a);
+  const e=st.adEstado&&st.adEstado[a.ad_id];
+  const it=(l,val,c="")=>`<span>${l} <b class="${c}">${val}</b></span>`;
+  const resumen=[
+    it("Gasto",money0(m.gasto)), it("Chats",nf(m.chats)), it("Costo/chat",oDash(m.cpr,money)),
+    it("Ventas",nf(m.ventas)), it("CPA",oDash(m.cpaReal,money)), it("ROAS",oDash(m.roas,x=>nf(x,2)+"×")),
+    it("Ganancia neta",m.neta==null?"—":money(m.neta),m.neta==null?"":m.neta<0?"neg":"pos"),
+  ].join('<i class="sep">·</i>');
+  const hayConf=S.some(d=>d.conf!==d.ventas);
+  const MET=[["ganancia","Ganancia"],["gastoing","Gasto e ingresos"],["cpa","CPA"],["ctr","CTR"]];
   v.innerHTML=`
     <button class="back" id="back">${icon("chevronLeft")||'‹'} Volver a Rendimiento</button>
     <div class="dhd">
-      ${/\p{Extended_Pictographic}/u.test(emoji)?`<span class="em">${esc(emoji)}</span>`:""}
-      <div><h2>${esc(a.name)}</h2><div class="ctx">${esc(a.campaign)} · Conjunto ${esc(a.adset)}${a.tag?` · <span class="tag ${a.tag}">${TAGLBL[a.tag]}</span>`:""}${a.prod?` · ${esc(a.prod)}`:""}</div></div>
-      <span class="okpill" style="margin-left:auto">${icon("megaphone")} ${esc(rangeLabel(st.range))}</span>
+      <div><h2>${e?`<span class="stdot${e==="ACTIVE"?" on":""}" title="${e==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}" style="float:none;margin:0 8px 0 0;vertical-align:4px"></span>`:""}${esc(a.name)}</h2>
+        <div class="ctx">${esc(a.campaign)} · Conjunto ${esc(a.adset)}${a.prod?` · ${esc(a.prod)}`:""}</div></div>
+      <div id="ddr" style="margin-left:auto"></div>
     </div>
-    <div class="kpis">
-      ${kpiMini("Gasto",money0(m.gasto),"var(--brand)")}
-      ${kpiMini("Ventas reales",m.ventas,"var(--green)")}
-      ${kpiMini("CPA real",oDash(m.cpaReal,money),"var(--amber)")}
-      ${kpiMini("Ganancia neta",m.neta==null?"—":money(m.neta),m.neta==null?"var(--muted)":m.neta<0?"var(--red)":"var(--green)")}
-      ${kpiMini("ROAS",oDash(m.roas,v=>nf(v,2)+"×"),"var(--green)")}
-    </div>
-    <div class="dgrid">
-      <div class="chartcard"><h3>Gasto vs. ingresos</h3><div class="cs">barras = gasto del día · línea = ingresos reales</div>${chartBarsLine(S,d=>d.gasto,d=>d.ingresos)}<div class="legend"><span><i style="background:var(--brand)"></i>Gasto</span><span><i style="background:var(--green)"></i>Ingresos</span></div></div>
-      <div class="chartcard"><h3>Confirmaciones vs. ventas reales</h3><div class="cs">cuántos se comprometen vs. cuántos pagan de verdad</div>${chartTwoLines(S,d=>d.conf,d=>d.ventas)}<div class="legend"><span><i style="background:var(--amber)"></i>Confirmaciones</span><span><i style="background:var(--green)"></i>Ventas reales</span></div></div>
+    ${st.rangoAntes?`<div class="dnota">Mostrando los últimos 14 días para ver la tendencia · al volver regresas a «${esc(rangeLabel(st.rangoAntes))}»</div>`:""}
+    <div class="resumen">${resumen}</div>
+    <div class="panel dchart">
+      <div class="dch-top"><div class="seg dmet">${MET.map(([k,l])=>`<button data-m="${k}" class="${detMetrica===k?"on":""}">${l}</button>`).join("")}</div><div class="dch-sum" id="dchSum"></div></div>
+      <div class="dch-wrap" id="dchWrap"></div>
     </div>
     <div class="panel"><div class="scroll"><table><thead><tr>
-      <th>Día</th><th>Gasto</th><th>Impresiones</th><th>Clics</th><th>Confirm.</th><th>Ventas</th><th>CPA real</th><th>Ingresos</th><th>ROAS</th>
-    </tr></thead><tbody>${S.map(d=>{
-      const roas=d.gasto?d.ingresos/d.gasto:0, rc=roas>=2?'g':roas>=1?'a':'r';
-      const cpaCell = d.ventas ? money(d.gasto/d.ventas) : '<span style="color:var(--faint)">—</span>';
-      // Sin gasto ese día no hay ROAS (no es «0.00×» en rojo: vendió gratis).
-      const roasCell = (d.ventas && d.gasto) ? `<span class="roas ${rc}"><span class="rd"></span>${nf(roas,2)}×</span>` : '<span style="color:var(--faint)">—</span>';
-      return `<tr><td>${d.fecha.toLocaleDateString("es-PE",{day:"2-digit",month:"short"})}</td><td class="num">${money(d.gasto)}</td><td class="num">${nf(d.impr)}</td><td class="num">${nf(d.clics)}</td><td class="num">${d.conf}</td><td class="num">${d.ventas}</td><td class="num">${cpaCell}</td><td class="num">${money(d.ingresos)}</td><td class="num">${roasCell}</td></tr>`;
+      <th>Día</th><th>Gasto</th><th>Impresiones</th><th>Clics</th><th>CTR</th>${hayConf?"<th>Confirm.</th>":""}<th>Ventas</th><th>CPA</th><th>Ingresos</th><th>Ganancia</th><th>ROAS</th>
+    </tr></thead><tbody>${S.slice().reverse().map(d=>{
+      const roas=d.gasto?d.ingresos/d.gasto:0, rc=roas>=2?'g':roas>=1?'a':'r', g=d.ingresos-d.gasto;
+      const dash='<span style="color:var(--faint)">—</span>';
+      return `<tr><td>${d.fecha.toLocaleDateString("es-PE",{weekday:"short",day:"numeric",month:"short"})}</td><td class="num">${money(d.gasto)}</td><td class="num">${nf(d.impr)}</td><td class="num">${nf(d.clics)}</td><td class="num">${d.impr?nf(d.clics/d.impr*100,2)+"%":dash}</td>${hayConf?`<td class="num">${d.conf}</td>`:""}<td class="num">${d.ventas}</td><td class="num">${d.ventas?money(d.gasto/d.ventas):dash}</td><td class="num">${money(d.ingresos)}</td><td class="num ${g<0?"neg":"pos"}">${(d.gasto||d.ingresos)?money(g):dash}</td><td class="num">${(d.ventas&&d.gasto)?`<span class="roas ${rc}"><span class="rd"></span>${nf(roas,2)}×</span>`:dash}</td></tr>`;
     }).join("")}</tbody></table></div></div>`;
-  $("back").onclick=()=>{ st.sel=null; render(); };
+  $("back").onclick=cerrarDetalle;
+  mountDateRange($("ddr"), { valor:st.range, onChange:(r)=>{ st.range=r; st.rangoAntes=null; reload(); } });
+  v.querySelectorAll(".dmet button").forEach(b=> b.onclick=()=>{ detMetrica=b.dataset.m; try{ localStorage.setItem("nodo.rendMetrica",detMetrica); }catch{} v.querySelectorAll(".dmet button").forEach(x=>x.classList.toggle("on",x===b)); pintarDetChart(S); });
+  pintarDetChart(S);
 }
-function kpiMini(k,v,c){ return `<div class="kpi"><div class="k"><span class="kd" style="background:${c}"></span>${k}</div><div class="v num" style="color:${c}">${v}</div></div>`; }
-
-// ── Gráficos SVG (sin librerías) ──
-const CW=440, CH=150, PX=6, PB=18;
-function xFor(i,n){ return PX + (CW-2*PX) * (n<=1?0.5:i/(n-1)); }
-// Serie vacía → lienzo vacío. Sin esta guarda, `S[S.length-1]` es `S[-1]` (undefined) y la
-// línea siguiente le pide una propiedad: revienta. Y como el gráfico se arma DENTRO del HTML
-// de la pantalla, esa excepción no rompe solo el dibujo — deja el detalle entero en blanco.
-// Hoy no se puede llegar acá desde la interfaz (el selector de fechas invierte el rango si
-// eliges el día final antes que el inicial), pero el costo de la guarda es una línea y el de
-// equivocarse es una pantalla vacía sin explicación.
-function chartBarsLine(S,fBar,fLine){
-  if(!S || !S.length) return `<svg class="chart" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none"><line x1="0" y1="${CH-PB}" x2="${CW}" y2="${CH-PB}" stroke="var(--border)"/></svg>`;
-  const n=S.length; const maxB=Math.max(...S.map(fBar),1), maxL=Math.max(...S.map(fLine),1);
-  const bw=(CW-2*PX)/n*0.6;
-  const bars=S.map((d,i)=>{ const h=(CH-PB)*(fBar(d)/maxB); const x=xFor(i,n)-bw/2; return `<rect x="${x.toFixed(1)}" y="${(CH-PB-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="var(--brand)" opacity=".85"/>`; }).join("");
-  const pts=S.map((d,i)=>`${xFor(i,n).toFixed(1)},${(CH-PB-(CH-PB)*(fLine(d)/maxL)).toFixed(1)}`).join(" ");
-  const last=S.length-1, lx=xFor(last,n), ly=CH-PB-(CH-PB)*(fLine(S[last])/maxL);
-  return `<svg class="chart" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none"><line x1="0" y1="${CH-PB}" x2="${CW}" y2="${CH-PB}" stroke="var(--border)"/>${bars}<polyline points="${pts}" fill="none" stroke="var(--green)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3.2" fill="var(--green)"/></svg>`;
-}
-function chartTwoLines(S,fA,fB){
-  if(!S || !S.length) return `<svg class="chart" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none"><line x1="0" y1="${CH-PB}" x2="${CW}" y2="${CH-PB}" stroke="var(--border)"/></svg>`; // ver chartBarsLine
-  const n=S.length; const mx=Math.max(...S.map(fA),...S.map(fB),1);
-  const line=(f,col)=>{ const pts=S.map((d,i)=>`${xFor(i,n).toFixed(1)},${(CH-PB-(CH-PB)*(f(d)/mx)).toFixed(1)}`).join(" "); const li=S.length-1; return `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${xFor(li,n).toFixed(1)}" cy="${(CH-PB-(CH-PB)*(f(S[li])/mx)).toFixed(1)}" r="3.2" fill="${col}"/>`; };
-  return `<svg class="chart" viewBox="0 0 ${CW} ${CH}" preserveAspectRatio="none"><line x1="0" y1="${CH-PB}" x2="${CW}" y2="${CH-PB}" stroke="var(--border)"/>${line(fA,"var(--amber)")}${line(fB,"var(--green)")}</svg>`;
+// Un gráfico de barras por día, en el estilo del Profit diario del Dashboard.
+function pintarDetChart(S){
+  const wrap=$("dchWrap"), sumEl=$("dchSum"); if(!wrap) return;
+  const fd=new Intl.DateTimeFormat("es-PE",{weekday:"short",day:"numeric",month:"short"});
+  const M=detMetrica;
+  // Valor(es) por día según la métrica. null = ese día no aplica (no se dibuja).
+  const val=(d)=> M==="ganancia" ? ((d.gasto||d.ingresos)?d.ingresos-d.gasto:null)
+    : M==="cpa" ? (d.ventas?d.gasto/d.ventas:null)
+    : M==="ctr" ? (d.impr?d.clics/d.impr*100:null) : null;
+  const fmt=(x)=> M==="ctr" ? nf(x,2)+"%" : M==="ganancia" ? (x<0?"−":"+")+nf(Math.abs(Math.round(x))) : nf(x, x<10?2:0);
+  const W=760,H=220,padL=46,padR=10,padT=20,padB=26;
+  const n=S.length||1, bw=(W-padL-padR)/n;
+  let vMax=0,vMin=0;
+  if(M==="gastoing"){ S.forEach(d=>{ vMax=Math.max(vMax,d.gasto,d.ingresos); }); }
+  else S.forEach(d=>{ const x=val(d); if(x==null) return; vMax=Math.max(vMax,x); vMin=Math.min(vMin,x); });
+  if(vMax===vMin) vMax=vMin+(M==="ctr"?1:10);
+  const paso=(()=>{ const r=(vMax-vMin)/3, p=Math.pow(10,Math.floor(Math.log10(r))); const q=r/p; return (q<=1?1:q<=2?2:q<=5?5:10)*p; })();
+  vMax=Math.ceil(vMax/paso)*paso; vMin=Math.floor(vMin/paso)*paso;
+  const yf=(x)=> padT+(vMax-x)/(vMax-vMin)*(H-padT-padB), y0=yf(0);
+  let grid="";
+  for(let t=vMin;t<=vMax+1e-9;t+=paso) grid+=`<line x1="${padL}" x2="${W-padR}" y1="${yf(t).toFixed(1)}" y2="${yf(t).toFixed(1)}" stroke="var(--border)"${Math.abs(t)<1e-9?' stroke-width="1.2"':' stroke-dasharray="2 4"'}/><text x="${padL-8}" y="${(yf(t)+3.5).toFixed(1)}" text-anchor="end" font-size="10.5" fill="var(--faint)">${M==="ctr"?nf(t,t<1?1:0)+"%":nf(Math.round(t))}</text>`;
+  const salto=Math.ceil(n/16), conMonto=bw>=28;
+  const xl=S.map((d,i)=> i%salto===0?`<text x="${(padL+i*bw+bw/2).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10.5" fill="var(--faint)">${d.fecha.getDate()}</text>`:"").join("");
+  let marks="";
+  S.forEach((d,i)=>{
+    const x=padL+i*bw;
+    if(M==="gastoing"){
+      const w=Math.max(2,bw*0.32);
+      [[d.gasto,"var(--muted)",x+bw*0.16],[d.ingresos,"var(--green)",x+bw*0.52]].forEach(([vv,c,xx])=>{ if(!vv) return; const y=yf(vv); marks+=`<rect x="${xx.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(2,y0-y).toFixed(1)}" rx="2" fill="${c}" fill-opacity="${c==="var(--muted)"?0.55:0.9}"/>`; });
+    } else {
+      const vv=val(d); if(vv==null) return;
+      const y=Math.min(yf(vv),y0), h=Math.max(2,Math.abs(yf(vv)-y0));
+      const col = M==="ganancia" ? (vv<0?"var(--red)":"var(--green)") : "var(--brand)";
+      marks+=`<rect x="${(x+bw*0.18).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(3,bw*0.64).toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${col}" fill-opacity=".9"/>`;
+      if(conMonto) marks+=`<text x="${(x+bw/2).toFixed(1)}" y="${(vv>=0?y-5:y+h+12).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="600" fill="var(--muted)">${fmt(vv)}</text>`;
+    }
+    marks+=`<rect class="dhit" data-i="${i}" x="${x.toFixed(1)}" y="${padT}" width="${bw.toFixed(1)}" height="${H-padT-padB}" fill="transparent"/>`;
+  });
+  // resumen de la métrica en el periodo
+  const T=S.reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; o.im+=d.impr; o.c+=d.clics; return o; },{g:0,i:0,v:0,im:0,c:0});
+  sumEl.innerHTML = M==="ganancia" ? `Ingresos − publicidad: <b class="${T.i-T.g<0?"neg":"pos"}">${money(T.i-T.g)}</b>`
+    : M==="gastoing" ? `<span class="lg"><i style="background:var(--muted);opacity:.55"></i>Gasto ${money0(T.g)}</span><span class="lg"><i style="background:var(--green)"></i>Ingresos ${money0(T.i)}</span>`
+    : M==="cpa" ? `CPA del periodo: <b>${T.v?money(T.g/T.v):"—"}</b>`
+    : `CTR del periodo: <b>${T.im?nf(T.c/T.im*100,2)+"%":"—"}</b>`;
+  wrap.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Detalle por día">${grid}${marks}${xl}</svg><div class="bc-tip" hidden></div>`;
+  const tip=wrap.querySelector(".bc-tip"), svg=wrap.querySelector("svg");
+  const fila=(l,x,c="")=>`<div class="r${c?" "+c:""}"><span>${l}</span><b>${x}</b></div>`;
+  wrap.querySelectorAll(".dhit").forEach(r=>{
+    r.addEventListener("mouseenter",()=>{
+      const d=S[+r.dataset.i], g=d.ingresos-d.gasto;
+      tip.innerHTML=`<div class="t">${esc(fd.format(d.fecha))}</div>`+fila("Gasto",money(d.gasto))+fila("Ingresos",money(d.ingresos))+fila("Ventas",nf(d.ventas))+fila("CPA",d.ventas?money(d.gasto/d.ventas):"—")+fila("CTR",d.impr?nf(d.clics/d.impr*100,2)+"%":"—")+fila("Ingresos − gasto",money(g),g<0?"neg":"pos");
+      tip.hidden=false;
+      const sr=svg.getBoundingClientRect(), wr=wrap.getBoundingClientRect(), k=sr.width/W;
+      const cx=(padL+(+r.dataset.i)*bw+bw/2)*k+(sr.left-wr.left), tw=tip.offsetWidth;
+      let left=cx+12; if(left+tw>wr.width) left=cx-12-tw;
+      tip.style.left=Math.max(0,left)+"px"; tip.style.top="6px";
+    });
+    r.addEventListener("mouseleave",()=>{ tip.hidden=true; });
+  });
 }
 
 boot();
