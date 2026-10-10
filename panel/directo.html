@@ -59,7 +59,8 @@
   .stat .sdot{width:8px;height:8px;border-radius:50%;flex:none}
 
   .table{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden}
-  .thead,.qrow{display:grid;grid-template-columns:1.9fr .8fr .82fr .9fr 1.25fr .85fr 120px;gap:12px;align-items:center;padding:12px 16px}
+  .thead,.qrow{display:grid;grid-template-columns:var(--dcols,2fr .9fr 1.1fr .9fr 190px);gap:12px;align-items:center;padding:12px 16px}
+  .table.team .thead,.table.team .qrow{--dcols:2fr .85fr 1.05fr .85fr .85fr 190px}
   .c-act{color:var(--muted);font-size:12px;white-space:nowrap}
   .thead{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;border-bottom:1px solid var(--border)}
   .qrow{border-bottom:1px solid var(--border)}
@@ -191,11 +192,28 @@
   .hitem{display:flex;gap:8px;font-size:12px;color:var(--muted);padding:4px 0}
   .hitem .he{font-size:14px} .hitem .ht{color:var(--faint);font-size:11px}
 
+  /* (10-oct) una línea de resumen en vez de 4 tarjetas de colores */
+  .stline{display:flex;flex-wrap:wrap;gap:6px 8px;margin:2px 0 14px}
+  .stline button{border:1px solid var(--border);background:var(--surface);color:var(--muted);font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;cursor:pointer}
+  .stline button b{color:var(--text);font-weight:600;margin-right:4px;font-variant-numeric:tabular-nums}
+  .stline button:hover{border-color:var(--brand)} .stline button.on{border-color:var(--brand);background:var(--brand-bg);color:var(--text)}
+  .stline .modo{margin-left:auto;align-self:center;font-size:12px;color:var(--faint);border:none;background:none;cursor:default;padding:0}
+  .ph .sin{color:var(--faint)}
+  .qrow.nophone .nm{color:var(--muted)}
+  .actline{font-size:12.5px;color:var(--muted)} .actline .seg2{display:block;font-size:11.5px;color:var(--faint);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .acts .bp{height:34px;padding:0 13px;border-radius:9px;border:none;background:var(--brand);color:#fff;font:inherit;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px;text-decoration:none;cursor:pointer;white-space:nowrap}
+  .acts .bp:hover{background:var(--brand-2)} .acts .bp svg{width:15px;height:15px}
+  .acts .bp.off{background:var(--surface-2);color:var(--faint);cursor:not-allowed;border:1px solid var(--border)}
+  .acts .mas{position:relative}
+  .dmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.25);padding:6px;display:none}
+  .dmenu.show{display:block}
+  .dmenu button,.dmenu a{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:var(--text);font:inherit;font-size:13px;padding:8px 10px;border-radius:8px;cursor:pointer;text-decoration:none}
+  .dmenu button:hover,.dmenu a:hover{background:var(--surface-2)} .dmenu svg{width:15px;height:15px;color:var(--muted)}
   @media(max-width:920px){
     .thead{display:none}
-    .qrow{grid-template-columns:1fr auto;grid-template-areas:"cli acts" "stg acts" "act acts" "ped acts" "seg acts" "asig acts";gap:7px 10px;padding:12px 14px}
+    .qrow{grid-template-columns:1fr auto;grid-template-areas:"cli acts" "stg acts" "act acts" "ped acts" "asig acts";gap:7px 10px;padding:12px 14px}
     .qrow>.c-cli{grid-area:cli} .qrow>.c-stg{grid-area:stg} .qrow>.c-act{grid-area:act} .qrow>.c-ped{grid-area:ped}
-    .qrow>.c-seg{grid-area:seg} .qrow>.c-asig{grid-area:asig} .qrow>.c-acts{grid-area:acts;align-self:center}
+    .qrow>.c-asig{grid-area:asig} .qrow>.c-acts{grid-area:acts;align-self:center}
     .acts{flex-direction:column}
     .reschoices{grid-template-columns:1fr}
   }
@@ -205,16 +223,15 @@
 <div class="app">
   <div class="wrap">
     <h1>Directo</h1>
-    <p class="sub" id="sub">Tu cola de llamadas. Filtra los leads por etapa o estado del pedido, llámalos para cerrar la venta y deja registrado cada intento — para que ninguno se pierda.</p>
 
-    <div class="stats" id="stats"></div>
+    <div class="stline" id="stats"></div>
 
     <div class="bar">
       <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="q" placeholder="Buscar por nombre o teléfono…"/></div>
       <select class="sel" id="fSort">
-        <option value="priority">Prioridad (a quién llamar ya)</option>
-        <option value="next">Próxima llamada</option>
+        <option value="priority">Prioridad</option>
+        <option value="next">Próximo contacto</option>
         <option value="intentos">Más intentos</option>
         <option value="activity">Última actividad</option>
       </select>
@@ -237,7 +254,7 @@
     </div>
 
     <div class="table">
-      <div class="thead"><div>Cliente</div><div>Etapa</div><div>Actividad</div><div>Pedido</div><div>Seguimiento</div><div>Asesora</div><div></div></div>
+      <div class="thead" id="thead"></div>
       <div id="rows"><div class="empty">Cargando…</div></div>
     </div>
     <div class="foot" id="foot"></div>
@@ -258,7 +275,7 @@
     <div class="lbl">¿Qué pasó?</div>
     <div class="reschoices" id="rRes"></div>
     <div class="rowin" id="rDateRow">
-      <div class="lbl" style="margin-top:0">¿Cuándo lo vuelves a llamar?</div>
+      <div class="lbl" style="margin-top:0">¿Cuándo lo vuelves a contactar?</div>
       <input class="in" type="date" id="rDate"/>
     </div>
     <div class="lbl">Nota (opcional)</div>
@@ -291,7 +308,11 @@ import { mountDateRange, computePreset, ymd, ymdLima } from "./date-range.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
 
-const st={ channelId:null, accountId:null, uid:null, myName:"", contacts:[], ordersBy:{}, members:[], visible:80, rt:null, reg:null };
+const st={ channelId:null, accountId:null, uid:null, myName:"", contacts:[], ordersBy:{}, members:[], visible:80, rt:null, reg:null, modo:"llamar" };
+// (10-oct) «escribir» = el bot solo vende digital/micro apps (llamar por S/ 10 no paga): la cola son los interesados que
+// el bot no cerró, para mandarles un mensaje tuyo desde la Bandeja. «llamar» = vende físico: la cola de llamadas de siempre.
+const esEquipo=()=> st.members.length>1;
+const escribir=()=> st.modo==="escribir";
 const f={ q:"", sort:"priority", stages:new Set(), mios:false, hoy:false, sincontacto:false, seguimiento:false, pedido:false, showDone:false, range:null };
 const STAGE=Object.fromEntries(EMBUDO_STAGES.map(s=>[s.k,s]));
 const STAGE_W={ caliente:6, confirmado:5, interesado:4, curioso:3, nuevo:2, comprado:1, perdido:0 };
@@ -337,7 +358,7 @@ async function boot(){
   st.channelId=shell.channelId;
   shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } });
   shell.onLeave?.(()=>recargarPronto.parar()); // sin recarga pendiente corriendo sobre la página nueva
-  shell.onChannel(id=>{ st.channelId=id; loadTeam(); subscribe(); load(); });
+  shell.onChannel(async id=>{ st.channelId=id; f.stages.clear(); await loadTeam(); await cargarModo(true); renderFilterChips(); subscribe(); load(); });
   $("q").addEventListener("input", e=>{ f.q=norm(e.target.value.trim()); st.visible=80; render(); });
   $("fSort").addEventListener("change", e=>{ f.sort=e.target.value; render(); });
   // Filtro de rango de fechas (por última actividad). "Máximo" = sin filtro (default).
@@ -353,10 +374,21 @@ async function boot(){
   const qStage=new URLSearchParams(location.search).get("stage");
   if(qStage && STAGE[qStage]){ f.stages=new Set([qStage]); $("filters").classList.add("show"); }
   await loadTeam();
+  await cargarModo(!qStage);
+  document.addEventListener("click",(e)=>{ if(!e.target.closest(".mas")) document.querySelectorAll(".dmenu.show").forEach(m=>m.classList.remove("show")); });
   subscribe();
   await load();
 }
 
+async function cargarModo(conFiltroPorDefecto){
+  let fisico=true;
+  try{ const { data }=await supa.from("products").select("tipo").eq("channel_id",st.channelId); const ps=data||[]; fisico = !ps.length || ps.some(p=>p.tipo==="fisico"); }catch(_){}
+  st.modo = fisico ? "llamar" : "escribir";
+  // En «escribir», la cola arranca con los que se interesaron de verdad (los curiosos que solo tiraron la palabra
+  // clave no se escriben a mano). Se puede cambiar en Filtros.
+  if(conFiltroPorDefecto && escribir() && !f.stages.size) f.stages=new Set(["caliente","interesado","confirmado"]);
+  $("q").placeholder = "Buscar por nombre o teléfono…";
+}
 async function loadTeam(){
   try{
     const ch=await getChannel(st.channelId);
@@ -479,7 +511,9 @@ function filtered(){
       if(m.cobro==="todo") return 0;                 // ya pagó todo
       return 1;
     };
+    const sinTel=(c)=> (!escribir() && !telDe(c)) ? 1 : 0;
     list.sort((a,b)=>{
+      const ta=sinTel(a), tb=sinTel(b); if(ta!==tb) return ta-tb;
       const da=due(a),db=due(b); if(da!==db) return da-db;
       const ua=urgencia(a), ub=urgencia(b); if(ua!==ub) return ub-ua;
       const wa=STAGE_W[a.stage||"nuevo"]??2, wb=STAGE_W[b.stage||"nuevo"]??2; if(wa!==wb) return wb-wa;
@@ -515,20 +549,24 @@ function updateCounts(){
 
 function renderStats(){
   const today=todayStr();
-  const live=st.contacts.filter(c=>!isArchived(c) && enColaActiva(c));
+  // Mismo universo que la lista (incluido el filtro de etapa), para que el número diga lo que vas a ver.
+  const live=st.contacts.filter(c=>!isArchived(c) && enColaActiva(c) && (!f.stages.size || f.stages.has(c.stage||"nuevo")));
   const stats=[
-    { k:"hoy",         v:live.filter(c=>{ const n=dirOf(c).next_call_at; return n&&n<=today; }).length, label:"Para hoy", color:"#e2564a" },
-    { k:"sincontacto", v:live.filter(c=>!(dirOf(c).intentos||[]).length).length, label:"Sin contactar", color:"#f0a92b" },
-    { k:"seguimiento", v:live.filter(c=>(dirOf(c).intentos||[]).length).length, label:"En seguimiento", color:"#18b7be" },
-    { k:"mios",        v:live.filter(c=>dirOf(c).assigned_to===st.uid).length, label:"Mis leads", color:"#2b7fff" },
+    { k:"hoy",         v:live.filter(c=>{ const n=dirOf(c).next_call_at; return n&&n<=today; }).length, label:"para hoy" },
+    { k:"sincontacto", v:live.filter(c=>!(dirOf(c).intentos||[]).length).length, label:"sin contactar" },
+    { k:"seguimiento", v:live.filter(c=>(dirOf(c).intentos||[]).length).length, label:"en seguimiento" },
   ];
-  $("stats").innerHTML=stats.map(s=>`<div class="stat${f[s.k]?" on":""}" data-stat="${s.k}"><div class="sv" style="color:${s.color}">${s.v}</div><div class="sl"><span class="sdot" style="background:${s.color}"></span>${s.label}</div></div>`).join("");
+  if(esEquipo()) stats.push({ k:"mios", v:live.filter(c=>dirOf(c).assigned_to===st.uid).length, label:"míos" });
+  $("stats").innerHTML=stats.map(x=>`<button class="${f[x.k]?"on":""}" data-stat="${x.k}"><b>${x.v}</b>${x.label}</button>`).join("")
+    +`<span class="modo">${escribir()?"Para escribirles a mano: los interesados que el bot no cerró":"Para llamar y cerrar la venta"}</span>`;
   $("stats").querySelectorAll("[data-stat]").forEach(el=> el.onclick=()=>{ const k=el.dataset.stat; f[k]=!f[k]; renderFilterChips(); render(); });
 }
 
 function render(){
   updateCounts();
   renderStats();
+  const tb=document.querySelector(".table"); if(tb) tb.classList.toggle("team",esEquipo());
+  $("thead").innerHTML=`<div>Cliente</div><div>Etapa</div><div>Actividad</div><div>Pedido</div>${esEquipo()?"<div>Asesora</div>":""}<div></div>`;
   const list=filtered();
   const box=$("rows");
   if(!list.length){
@@ -585,31 +623,38 @@ function rowEl(c){
     ? `<button class="asig has" data-asig title="Cambiar asesora"><span class="av" style="background:${avaColor(asName)}33;color:${avaColor(asName)}">${esc(ini(asName))}</span><span class="nn">${esc(asName)}</span></button>`
     : `<button class="asig" data-asig title="Asignar asesora">+ Asignar</button>`;
 
+  const tel=telDe(c);
+  if(!tel && !escribir()) el.classList.add("nophone");
+  const chatA=`<a class="bp" href="index.html?c=${esc(c.id)}" title="Abrir el chat en la Bandeja y escribirle">${CHAT_SVG} Escribir</a>`;
+  const callA= tel ? `<a class="bp" href="tel:+${esc(tel)}" title="Llamar">${PHONE_SVG} Llamar</a>` : `<span class="bp off" title="Llegó por usuario de WhatsApp sin compartir su número: pídeselo por el chat">${PHONE_SVG} Sin número</span>`;
+  const segLinea = ints.length ? (()=>{ const li=ints[ints.length-1], r=RES[li.resultado]; return `×${ints.length} · ${r?esc(r.label):"contactado"}`; })() : "";
   el.innerHTML=`
     <div class="c-cli cli">
-      <div class="ava" style="background:${avaC}22;color:${avaC}">${avaInner}</div>
+      <div class="ava" style="background:${avaC}22;color:${avaC}">${esc(ini(c.nombre||c.wa_id))}</div>
       <div class="cli-tx">
         <div class="nm">${esc(c.nombre||"Sin nombre")}</div>
-        <div class="ph">${telDe(c)?`${PHONE_SVG}+${esc(telDe(c))}`:`${PHONE_SVG}<span style="color:var(--amber)">sin número (llegó sin compartirlo)</span>`}</div>
-        <div class="org">${esc(org)}${c.product?.nombre?` · ${esc(c.product.nombre)}`:""}</div>
+        <div class="ph">${tel?`${PHONE_SVG}+${esc(tel)}`:`${PHONE_SVG}<span class="sin">sin teléfono</span>`}</div>
+        <div class="org">${esc(org)}</div>
       </div>
     </div>
     <div class="c-stg"><span class="stg" style="background:${sg.color}1c;color:${sg.color}"><span class="sd" style="background:${sg.color}"></span>${sg.label}</span></div>
-    <div class="c-act" title="Última vez que hubo actividad (su último mensaje)">${ago(c.ultimo_mensaje_at||c.created_at)}</div>
+    <div class="c-act actline" title="Su último mensaje">${ago(c.ultimo_mensaje_at||c.created_at)}${segLinea||nc?`<span class="seg2">${segLinea}${segLinea&&nc?" · ":""}${nc}</span>`:""}</div>
     <div class="c-ped">${pedHtml}</div>
-    <div class="c-seg"><div class="seg">${segHtml}${nc}</div></div>
-    <div class="c-asig">${asHtml}</div>
+    ${esEquipo()?`<div class="c-asig">${asHtml}</div>`:""}
     <div class="c-acts acts">
-      <button class="ico info" data-info title="Ver info del cliente (contexto para la llamada)">${INFO_SVG}</button>
-      ${telDe(c)?`<a class="ico call" href="tel:+${esc(telDe(c))}" title="Llamar">${PHONE_SVG}</a>`:`<span class="ico call" style="opacity:.35;cursor:not-allowed" title="Sin número: llegó por usuario de WhatsApp sin compartir su celular. Pídeselo por el chat.">${PHONE_SVG}</span>`}
-      <a class="ico chat" href="index.html?c=${esc(c.id)}" title="Abrir chat">${CHAT_SVG}</a>
-      <button class="ico reg" data-reg title="Registrar resultado">${REG_SVG}</button>
+      ${escribir() ? chatA : callA}
+      <div class="mas"><button class="ico" data-mas title="Más"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+        <div class="dmenu">
+          ${escribir() ? (tel?`<a href="tel:+${esc(tel)}">${PHONE_SVG} Llamar</a>`:"") : `<a href="index.html?c=${esc(c.id)}">${CHAT_SVG} Abrir chat</a>`}
+          <button data-info>${INFO_SVG} Ver info del cliente</button>
+          <button data-reg>${REG_SVG} Registrar resultado</button>
+          ${esEquipo()?`<button data-asig2>${icon("user")} Asignar asesora</button>`:""}
+        </div></div>
     </div>`;
   el.querySelector("[data-info]").onclick=(e)=>{ e.stopPropagation(); openInfo(c); };
   el.querySelector("[data-reg]").onclick=(e)=>{ e.stopPropagation(); openReg(c); };
-  el.querySelector("[data-asig]").onclick=(e)=>{ e.stopPropagation(); asignar(c); };
-  el.querySelector(".ico.call").onclick=(e)=>e.stopPropagation();
-  el.querySelector(".ico.chat").onclick=(e)=>e.stopPropagation();
+  el.querySelectorAll("[data-asig],[data-asig2]").forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); asignar(c); });
+  el.querySelector("[data-mas]").onclick=(e)=>{ e.stopPropagation(); const m=el.querySelector(".dmenu"); const ab=m.classList.contains("show"); document.querySelectorAll(".dmenu.show").forEach(x=>x.classList.remove("show")); if(!ab) m.classList.add("show"); };
   return el;
 }
 
