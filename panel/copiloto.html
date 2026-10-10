@@ -37,7 +37,7 @@
   .pill.ext{background:var(--green-bg);color:var(--green)}
   .pill.lima{background:color-mix(in srgb,#14b8a6 16%,transparent);color:#0f9e8f}
   .acard{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;display:flex;gap:16px;align-items:flex-start;margin-bottom:12px}
-  .thumb{width:120px;height:120px;border-radius:12px;object-fit:cover;flex:none;background:var(--surface-2);border:1px solid var(--border);cursor:zoom-in}
+  .thumb{width:130px;height:170px;border-radius:12px;object-fit:cover;object-position:center 32%;flex:none;background:var(--surface-2);border:1px solid var(--border);cursor:zoom-in}
   .thumb.none{display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:11px;text-align:center;padding:6px;cursor:default}
   .amt{font-size:20px;font-weight:800;letter-spacing:-.5px}
   .klbl{font-size:11px;color:var(--faint);font-weight:600}
@@ -57,6 +57,20 @@
   .stat .s-v{font-size:22px;font-weight:800;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
   .stat .s-l{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:5px;display:flex;align-items:center;gap:6px}
   .stat .sdot{width:8px;height:8px;border-radius:50%;flex:none}
+  /* (10-oct) resumen en una línea · píldora de tipo neutra · «Si apruebas» en una línea · Decididos hoy */
+  .stline{display:flex;flex-wrap:wrap;gap:6px 8px;margin:2px 0 16px}
+  .stline .pl{border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:13px;padding:6px 12px;border-radius:999px}
+  .stline .pl b{color:var(--text);font-weight:600;margin-right:4px;font-variant-numeric:tabular-nums}
+  .pill.neutra{background:var(--surface-2);color:var(--muted);border-color:var(--border)}
+  .sitel{color:var(--faint)}
+  .siapr{margin-top:10px;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .siapr b{color:var(--text)}
+  .hoy{margin-top:26px}
+  .hoy .hrow{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);margin-bottom:6px;font-size:13px}
+  .hoy .hrow .hd{font-weight:600;flex:none} .hoy .hrow .hd.ok{color:var(--green)} .hoy .hrow .hd.no{color:var(--red)}
+  .hoy .hrow .hn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hoy .hrow .ht{color:var(--faint);font-size:12px;flex:none}
+  .hoy .hrow a{color:var(--brand);font-size:12.5px;text-decoration:none;flex:none}
   .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;align-items:center;justify-content:center;z-index:100;padding:24px}
   .lightbox.show{display:flex} .lightbox img{max-width:92vw;max-height:92vh;border-radius:12px}
   .mrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
@@ -69,13 +83,13 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Pagos por validar</h1>
-        <p class="nodo-lead">Acá decides <b>una sola cosa: si aceptas un pago</b>. La IA deja el trabajo hecho —lee el comprobante, junta los datos— y tú apruebas o rechazas con un toque. Se actualiza sola: si entra un pago mientras miras, aparece acá.<br>
-        <span style="color:var(--faint)">Mover el pedido (enviar, avisar que llegó, entregar) es de <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>. Lo ya cobrado, de <a href="compras.html" style="color:var(--brand)">Compras</a>.</span></p>
+
       </div>
       <div class="nodo-actions"><button class="btn" id="reloadBtn" title="Actualizar ahora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg><span>Actualizar</span></button></div>
     </div>
-    <div class="stats" id="stats"></div>
+    <div class="stline" id="stats"></div>
     <div id="list"></div>
+    <div id="hoyBox"></div>
   </div>
 </div>
 <div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
@@ -152,7 +166,7 @@ const TODOS=[...new Set(ETAPAS.flatMap(e=>e.estados))];
 
 async function load(){
   const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
-  const sel="id,amount,currency,estado,shipping,order_bumps,contact_id,product_id,created_at,updated_at,contact:contact_id(nombre,wa_id,source),product:product_id(nombre,emoji)";
+  const sel="id,amount,currency,estado,shipping,order_bumps,contact_id,product_id,created_at,updated_at,contact:contact_id(nombre,wa_id,source,bot_activo),product:product_id(nombre,emoji)";
   // PAGINADO: `esperando_adelanto` se acumula para siempre (todo lead de provincia que dejó
   // sus datos y nunca pagó se queda ahí), así que esta cola cruza las 1000 filas donde
   // PostgREST corta. Y como el orden es ascendente, lo que quedaba afuera era justo lo MÁS
@@ -261,7 +275,10 @@ function render(){
   if(!groups.some(g=>g.items.length)){
     box.innerHTML=`<div class="nodo-empty"><div class="e-ic">${icon("check")}</div><h3>Nada que decidir</h3>
       <p>Cuando entre un comprobante que necesite tu visto bueno, aparece acá solo.
-      Para mover tus pedidos —despachar, avisar, entregar— anda a <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p></div>`;
+      ${document.documentElement.hasAttribute("data-bot-digital")
+        ? 'Lo ya cobrado está en <a href="compras.html" style="color:var(--brand)">Compras</a>.'
+        : 'Para mover tus pedidos —despachar, avisar, entregar— anda a <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.'}</p></div>`;
+    renderHoy();
     return;
   }
   box.innerHTML="";
@@ -276,6 +293,7 @@ function render(){
     box.appendChild(sub);
     items.forEach(o=>box.appendChild(card(o,et)));
   });
+  renderHoy();
 }
 
 // Resumen de la cola: cuántos pagos esperan, cuánta plata suman y hace cuánto
@@ -294,12 +312,11 @@ function renderStats(groups){
   const money2=(v)=>{ try{ return new Intl.NumberFormat("es-PE",{style:"currency",currency:cur}).format(v); }catch{ return "S/ "+Number(v).toFixed(2); } };
   const totalMoney=all.reduce((a,x)=>a+montoDe(x.o,x.et),0);
   const oldest=all.reduce((m,x)=>{ const t=new Date(x.o.created_at||Date.now()).getTime(); return t<m?t:m; }, Date.now());
-  const cards=[
-    { v:String(all.length), l:all.length===1?"pago esperando":"pagos esperando", color:"#2b7fff" },
-    { v:money2(totalMoney), l:"en validación", color:"#f0a92b" },
-    { v:agoTxt(oldest), l:"el más antiguo", color:"#18b7be" },
-  ];
-  box.innerHTML=cards.map(c=>`<div class="stat"><div class="s-v" style="color:${c.color}">${c.v}</div><div class="s-l"><span class="sdot" style="background:${c.color}"></span>${c.l}</div></div>`).join("");
+  box.innerHTML=[
+    `<span class="pl"><b>${all.length}</b>${all.length===1?"pago esperando":"pagos esperando"}</span>`,
+    `<span class="pl"><b>${money2(totalMoney)}</b>en validación</span>`,
+    `<span class="pl">el más antiguo <b style="margin:0 0 0 4px">${agoTxt(oldest)}</b></span>`,
+  ].join("");
 }
 
 // Resumen "si apruebas": cómo queda la venta y qué se manda a Meta. Le da al
@@ -312,21 +329,13 @@ function resumenAprobar(o){
   const ctwa=!!s.ctwa_clid; const leido=s.digital_monto_leido;
   const dif=(leido!=null&&leido!==""&&Math.abs(Number(leido)-Number(o.amount))>0.01);
   const sy=sym(o);
-  return `<div style="margin-top:11px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2,transparent)">
-    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px">Si apruebas</div>
-    <div style="font-size:12.5px;color:var(--text);line-height:1.75">
-      • Se le entrega el acceso/producto al cliente<br>
-      • Cuenta <b>${sy} ${esc(val)}</b> en tus números${pagos?` (producto + ${pagos} extra${pagos>1?"s":""})`:""}<br>
-      • Meta: ${ctwa?`<b>Purchase ${sy} ${esc(val)}</b> · venta de anuncio`:`<span style="color:var(--faint)">no aplica (venta orgánica)</span>`}
-    </div>
-    ${dif?`<div style="margin-top:8px;font-size:12px;color:#b45309;background:color-mix(in srgb,#f59e0b 13%,transparent);border-radius:7px;padding:6px 9px;line-height:1.5">${icon("alert")} El bot leyó <b>${sy} ${esc(leido)}</b>, pero el precio es <b>${sy} ${esc(o.amount)}</b>. El valor se <b>topa en el precio</b> — revisa el comprobante.</div>`:""}
-  </div>`;
+  return `<div class="siapr">Al aprobar: se le entrega el acceso · suma <b>${sy} ${esc(val)}</b>${pagos?` (producto + ${pagos} extra${pagos>1?"s":""})`:""} · ${ctwa?`Purchase <b>${sy} ${esc(val)}</b> a Meta`:"orgánica, no va a Meta"}</div>
+    ${dif?`<div style="margin-top:8px;font-size:12px;color:#b45309;background:color-mix(in srgb,#f59e0b 13%,transparent);border-radius:7px;padding:6px 9px;line-height:1.5">${icon("alert")} El bot leyó <b>${sy} ${esc(leido)}</b>, pero el precio es <b>${sy} ${esc(o.amount)}</b>. El valor se <b>topa en el precio</b> — revisa el comprobante.</div>`:""}`;
 }
 
 function card(o,et){
   const c=o.contact||{}, p=o.product||{}, s=o.shipping||{};
   const el=document.createElement("div"); el.className="acard";
-  el.style.boxShadow=`inset 3px 0 0 0 ${TYPE_COLOR[et.id]||"var(--border)"}`;
   const img = et.id==="adelanto" ? (s.adelanto_comprobante || st.imgs[o.contact_id])
             : et.id==="saldo"    ? s.saldo_comprobante
 
@@ -398,9 +407,9 @@ function card(o,et){
         :(et.id==="adelanto"||et.id==="saldo"||et.id==="lima")?`<div class="thumb none">Sin comprobante todavía</div>`:""}
     <div style="flex:1;min-width:0">
       <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
-        <span class="pill ${et.id==="digital"?"dig":et.id==="extra"?"ext":et.id==="adelanto"?"adel":et.id==="lima"?"lima":"saldo"}">${esc(et.titulo)}</span>
+        <span class="pill neutra">${esc(et.titulo)}</span>
         <span style="font-weight:700;font-size:15px">${p.emoji?esc(p.emoji)+" ":""}${esc(c.nombre||"Cliente")}</span>
-        <span style="font-size:12px;color:var(--faint)">${esc(c.wa_id||"")}</span>
+        <span style="font-size:12px;color:var(--faint)">${/^\d{9,15}$/.test(String(c.wa_id||"")) ? "+"+esc(c.wa_id) : '<span class="sitel">sin teléfono</span>'}${c.bot_activo===false?' · <span style="color:var(--amber)">bot en pausa</span>':""}</span>
       </div>
       <div style="display:flex;gap:22px;margin-top:11px;flex-wrap:wrap">
         <div><div class="klbl">${et.id==="adelanto"?"Adelanto":et.id==="lima"?"Pagó":et.id==="saldo"?"Saldo a cobrar":et.id==="extra"?esc(s.extra_label||"Venta extra"):"Total"}</div>
@@ -508,6 +517,7 @@ async function _aprobarLima(o){
   if(!(monto>0)){ toast("Escribe el monto en números",true); return; }
   const r=await updateOrder({ order_id:o.id, prepago_lima:"aprobar", monto });
   if(!r) return;
+  await anotarDecision(o,"ok","lima");
   const resto=Number(r.saldo);
   if(r.advertencia) toast(`Aprobado. ${r.advertencia}`,true);
   else if(r.aviso_error) toast(`Aprobado, pero ${r.aviso_error}. Escríbele tú.`,true);
@@ -520,9 +530,37 @@ async function _rechazarLima(o){
     message:`${c.nombre||"Cliente"} — se marca como no válido y el pedido sigue igual: el motorizado cobra ${sym(o)} ${porCobrarLima(o)} al entregar. El bot no le escribe; explícale tú por el chat.`,
     confirmText:"Rechazar", danger:true })) return;
   const r=await updateOrder({ order_id:o.id, prepago_lima:"rechazar", motivo:"Lo rechazaste tú" });
+  if(r) await anotarDecision(o,"no","lima");
   if(r){ toast(`Rechazado · el motorizado cobra ${sym(o)} ${porCobrarLima(o)} al entregar`); await load(); await ofrecerGuardarFraude(o,"lima"); }
 }
 
+// ── Decididos hoy (10-oct) ─────────────────────────────────────────
+// Cada aprobación o rechazo hecho acá deja una nota en la ficha del cliente («🧾 Pago aprobado / rechazado · Pagos por
+// validar»); abajo se listan las de HOY para que veas qué decidiste y abras el chat si te equivocaste.
+const TIT_DEC="· Pagos por validar";
+async function anotarDecision(o,dec,tipo){
+  try{
+    const c=o.contact||{};
+    let por=null; try{ const { data:{user} }=await supa.auth.getUser(); por=user?.email||null; }catch(_){}
+    await supa.from("contact_events").insert({ channel_id:st.channelId, contact_id:o.contact_id, tipo:"nota",
+      titulo:(dec==="ok"?"🧾 Pago aprobado ":"🧾 Pago rechazado ")+TIT_DEC,
+      detalle:`${tipo} · ${sym(o)} ${o.amount??""}${c.bot_activo===false&&dec==="no"?" · bot en pausa (no se le escribió)":""}`, meta:{ decision:dec, tipo, order_id:o.id, por } });
+  }catch(_){}
+}
+async function renderHoy(){
+  const box=$("hoyBox"); if(!box) return;
+  try{
+    const hoy=new Date(); hoy.setHours(0,0,0,0);
+    const { data }=await supa.from("contact_events").select("contact_id,titulo,detalle,created_at,contact:contacts(nombre)")
+      .eq("channel_id",st.channelId).ilike("titulo","%"+TIT_DEC).gte("created_at",hoy.toISOString()).order("created_at",{ascending:false}).limit(50);
+    if(!data||!data.length){ box.innerHTML=""; return; }
+    box.innerHTML=`<div class="hoy"><div class="sect" style="margin-top:0">Decididos hoy · ${data.length}</div>`+data.map(e=>{
+      const ok=/aprobado/.test(e.titulo);
+      const hora=new Date(e.created_at).toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"});
+      return `<div class="hrow"><span class="hd ${ok?"ok":"no"}">${ok?"✓ Aprobado":"✕ Rechazado"}</span><span class="hn">${esc((e.contact&&e.contact.nombre)||"Cliente")} · ${esc(e.detalle||"")}</span><span class="ht">${hora}</span><a href="index.html?c=${encodeURIComponent(e.contact_id)}">Abrir chat</a></div>`;
+    }).join("")+`</div>`;
+  }catch(_){ box.innerHTML=""; }
+}
 async function updateOrder(body){
   const { data,error }=await supa.functions.invoke("order-update",{ body });
   if(error){
@@ -542,6 +580,7 @@ async function _aprobar(o,nuevo,titulo,detalle,extraShip){
   const c=o.contact||{};
   if(!await confirmDialog({ title:titulo, message:`${c.nombre||"Cliente"} — ${detalle}`, confirmText:"Confirmar" })) return;
   const r=await updateOrder({ order_id:o.id, estado:nuevo, ...(extraShip?{shipping:extraShip}:{}) });
+  if(r) await anotarDecision(o,"ok",nuevo);
   if(r){ if(r.entrega_pendiente) toast("Aprobado, pero el producto NO se entregó solo (la conversación ya no lo esperaba): entrégale el acceso a mano desde el chat",true); else toast(r.flow_started?"Listo — el bot le está escribiendo":"Listo"); await load(); }
 }
 
@@ -554,6 +593,7 @@ async function _aprobarExtra(o){
     message:`${c.nombre||"Cliente"} — el bot le entrega el extra al instante y continúa.`, confirmText:"Confirmar" })) return;
   const r=await updateOrder({ order_id:o.id, resume:true,
     shipping:{ extra_pendiente:false, extra_aprobado_at:new Date().toISOString() } });
+  if(r) await anotarDecision(o,"ok","extra");
   if(r){ if(r.entrega_pendiente) toast("Aprobado, pero el extra NO se entregó solo: entrégaselo a mano desde el chat",true); else toast(r.resumed?"Extra entregado · el bot le está escribiendo":"Aprobado"); await load(); }
 }
 
@@ -566,7 +606,13 @@ async function _rechazar(o,tipo){
   const parqueado=tipo==="digital"||tipo==="extra";
   let quien="humano";
   const MOTIVO_DEF="No pude validar ese comprobante. ¿Me lo reenvías, por favor?"; let motivo=null;
-  if(parqueado){
+  // (10-oct, W. Rodriguez) Con el bot en PAUSA en ese chat no se ofrece «que el bot le pida otro»: no le va a
+  // escribir nada (el motor ya lo frena). Se dice tal cual y el rechazo solo queda anotado.
+  if(parqueado && c.bot_activo===false){
+    if(!await confirmDialog({ title:"Rechazar el comprobante",
+      message:`${c.nombre||"Cliente"} — el bot está en pausa en este chat: no se le escribirá nada. El rechazo solo queda anotado; escríbele tú si hace falta.`,
+      confirmText:"Rechazar", danger:true })) return;
+  } else if(parqueado){
     quien=await askChoice({ title:"Rechazar el comprobante",
       message:`${c.nombre||"Cliente"} — marcas el pago como no válido. ¿Y después?`,
       value:"bot", options:[
@@ -589,13 +635,15 @@ async function _rechazar(o,tipo){
               : { digital_rechazado_at:new Date().toISOString(), digital_revisar:"Lo rechazaste tú", digital_pendiente:false };
   const r=await updateOrder({ order_id:o.id, shipping:patch,
     ...(parqueado?{ reject:quien, reject_motivo:motivo||MOTIVO_DEF }:{}) });
-  const pausa=parqueado&&quien==="humano";
+  const yaPausado=c.bot_activo===false;
+  const pausa=parqueado&&quien==="humano"&&!yaPausado;
   let pausaOk=pausa;
   // Antes el catch tragaba el error y el toast decía «el bot quedó en pausa» igual: el operador
   // escribía a mano mientras el bot seguía contestando en paralelo.
   if(r && pausa){ const { error:ePausa }=await supa.from("contacts").update({ bot_activo:false }).eq("id",o.contact_id); if(ePausa){ pausaOk=false; toast("Rechazado, pero NO pude pausar el bot: "+ePausa.message+". Páusalo desde la Bandeja.",true); } }
   if(r){ if(pausa&&!pausaOk){ await load(); await ofrecerGuardarFraude(o,tipo); return; }
-    toast(pausa?"Rechazado · el bot quedó en pausa en ese chat"
+    await anotarDecision(o,"no",tipo);
+    toast(yaPausado?"Rechazado · no se le escribió (el bot está en pausa)":pausa?"Rechazado · el bot quedó en pausa en ese chat"
                     :(r.rejected?"Rechazado · el bot le está pidiendo otro comprobante":"Marcado como rechazado")); await load();
     await ofrecerGuardarFraude(o,tipo); } // #4: aprender del rechazo (si era un montaje, guardarlo como ejemplo)
 }
