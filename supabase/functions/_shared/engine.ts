@@ -40,6 +40,29 @@ export type EngineEvent =
   | { type: "button"; buttonId: string; title?: string }
   | { type: "resume" }; // despertar tras Esperar
 
+// ⏱️ CRONÓMETRO DEL ARRANQUE (9-oct, Rodrigo: «la idea es que salga instantáneo»): del mensaje del cliente a la 1.ª
+// burbuja de los mensajes iniciales tardaba ~8 s y no se sabía en qué. El webhook abre la cuenta por contacto (marca de
+// Meta, llegada, guardado) y el motor suma las suyas; el rotador deja UNA nota «⏱️ Arranque» con cada tramo al salir la
+// 1.ª burbuja. Turnos que no llegan al rotador no dejan nada (la próxima llegada reinicia la cuenta).
+const _crono = new Map<string, [string, number][]>();
+export function marcaArranque(contactId: string, etiqueta: string, o: { reset?: boolean; ms?: number } = {}) {
+  try {
+    if (o.reset) _crono.set(contactId, []);
+    const c = _crono.get(contactId);
+    const ms = Number.isFinite(o.ms) ? Number(o.ms) : Date.now();
+    if (c && c.length < 20) c.push([etiqueta, ms]);
+    if (_crono.size > 200) _crono.delete(_crono.keys().next().value as string);
+  } catch (_) { /* nunca frena un turno */ }
+}
+function cronoArranqueTexto(contactId: string): string | null {
+  const c = _crono.get(contactId);
+  _crono.delete(contactId);
+  if (!c || c.length < 3) return null;
+  let prev = c[0][1];
+  const tramos = c.slice(1).map(([e, ms]) => { const s = `${e} +${((ms - prev) / 1000).toFixed(2)}`; prev = ms; return s; });
+  return tramos.join(" · ") + ` · TOTAL ${((prev - c[0][1]) / 1000).toFixed(2)} s`;
+}
+
 const MAX_STEPS = 50; // tope de nodos por invocación (evita bucles infinitos)
 // Claves del contexto que ningún campo del bot (fijo) puede pisar: son del cliente/sistema.
 const VETO_CAMPOS_FIJOS = new Set(["nombre", "telefono", "wa_id", "username", "stage", "ad_id", "ctwa_clid", "origen", "source", "fecha", "hora", "fecha_hora", "sin_numero", "angulo", "angulo_gancho", "angulo_slug", "nombre_completo", "producto_nombre", "precio"]);
@@ -154,6 +177,7 @@ async function resolverAnguloContacto(db: SupabaseClient, channelId: string, con
 export async function runEngine(
   db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
 ) {
+  marcaArranque(contactId, "motor");
   if (!(await canalActivo(db, channelId))) return;   // bot archivado: no conversa
   // 🔌 Bot APAGADO: no contesta a nadie real. Probar flujos y el simulador sí (es como se prueba antes de prenderlo).
   if (!(await botEncendido(db, channelId))) {
@@ -205,6 +229,7 @@ export async function runEngine(
     return;
   }
   if (!locked) console.warn(`[runEngine] sin lock tras ~75s (contacto ${contactId}) — se procede igual`);
+  marcaArranque(contactId, "candado");
   // ⏱️ Cliente de ESTE turno: lecturas repetidas desde memoria y la hoja/Meta/avisos para después de responder (turno.ts).
   const dbT = clienteDeTurno(db);
   try {
@@ -1129,7 +1154,9 @@ async function runEngineInner(
     const _clicAd = _cAd?.fep_hasta ? Date.parse(_cAd.fep_hasta) - 72 * 3600_000 : NaN;
     const _adStored = _cAd?.ad_id && (!Number.isFinite(_clicAd) || Date.now() - _clicAd < 7 * 864e5) ? _cAd.ad_id : undefined;
     const adIdRuteo = event.adId ?? _adStored;
+    marcaArranque(contactId, "chequeos");
     let decision = await routeDecision(db, channelId, event.text, adIdRuteo);
+    marcaArranque(contactId, "ruteo");
     // 📣 Llegó por un anuncio que NO está asignado a ningún producto (ni banco ni ángulo): el lead cae
     // en la Recepción y el dueño no se entera de que tiene que asignarlo. Un aviso por anuncio al día.
     if (event.adId && decision.tier !== "anuncio" && decision.tier !== "referral") {
@@ -1550,7 +1577,9 @@ async function runEngineInner(
         }
       }
     } catch (_) { /* sin datos → como antes */ }
+    marcaArranque(contactId, "pre_run");
     run = await startRun(db, channelId, contactId, flow);
+    marcaArranque(contactId, "run");
     if (!run) {
       // Perdió la carrera del lock (dos webhooks casi simultáneos): otro run
       // ya está activo → entregar este evento a ese run como reanudación.
@@ -5037,10 +5066,18 @@ async function execute(db: SupabaseClient, run: Run) {
                   `No sale la pregunta del pie de la foto («${_cap.slice(_sinQ.length).trim().slice(0, 80)}»): la IA contesta la suya y pregunta ella.`).catch(() => {});
               }
             }
+            marcaArranque(run.contact_id, "rotador");
+            let _bIdx = 0;
             for (const _b0 of _bubs) {
               const b = _b0?.media_url ? { ..._b0, _textoEnHistorial: true } : _b0;
               if (await ritmo(db, run, b)) break;
+              if (_bIdx === 0) marcaArranque(run.contact_id, "preparar_1a");
               if ((await emit(db, run, b, ctx)) === false) salioOk = false;
+              if (_bIdx++ === 0) {
+                marcaArranque(run.contact_id, "envio_1a");
+                const _cr = cronoArranqueTexto(run.contact_id);
+                if (_cr) logEvent(db, run.channel_id, run.contact_id, "nota", "⏱️ Arranque", _cr).catch(() => {});
+              }
             }
             await logEvent(db, run.channel_id, run.contact_id, "nota", "🎲 Variante inicial",
               (chosen.nombre ?? "") + (delAngulo.length ? ` · ángulo ${slug}` : ""));

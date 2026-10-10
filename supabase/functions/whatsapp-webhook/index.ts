@@ -9,7 +9,7 @@ import { transcribeAudio } from "../_shared/ai.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
 import { urlArchivo } from "../_shared/archivo.ts";
 import { CAMPOS_SALUD, veredictoWebhook, aplicarVeredicto } from "../_shared/salud-wa.ts";
-import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, avisarEscribioEnPausa, arranqueSinEspera, botEncendido, type EngineEvent } from "../_shared/engine.ts";
+import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, avisarEscribioEnPausa, arranqueSinEspera, botEncendido, marcaArranque, type EngineEvent } from "../_shared/engine.ts";
 
 // Runtime de Supabase Edge: permite terminar trabajo DESPUÉS de responder
 // (Meta exige un 200 rápido; el motor puede tardar por el LLM).
@@ -232,6 +232,7 @@ async function processInbound(
   sender: { profileName?: string; phone?: string; bsuid?: string; username?: string },
 ) {
   const channelId = channel.id;
+  const _tLlego = Date.now();   // ⏱️ ver marcaArranque
   // Llave del contacto: el NÚMERO cuando el usuario lo comparte (compat con todos
   // los contactos existentes), el BSUID cuando usa username sin número, y msg.from
   // como respaldo legacy. Así los contactos de siempre no se re-keyan.
@@ -475,6 +476,10 @@ async function processInbound(
     if ((msgErr as any).code === "23505") return;
     throw new Error(`insert message: ${msgErr.message}`);
   }
+  // ⏱️ Cronómetro del arranque: Meta (hora del mensaje, al segundo) → llegó al webhook → guardado (ver marcaArranque).
+  marcaArranque(contact.id, "meta", { reset: true, ms: tsMetaMs });
+  marcaArranque(contact.id, "llego", { ms: _tLlego });
+  marcaArranque(contact.id, "guardado");
 
   // 📎 Foto / nota de voz / video / archivo / sticker: el mensaje quedó guardado con solo el
   // `media_id` de Meta, que el panel no puede abrir (hace falta el token del canal). La URL
@@ -627,6 +632,7 @@ async function processInbound(
       }
     } catch (e) { console.error("[webhook] fold texto→imagen:", (e as any)?.message ?? e); }
   }
+  marcaArranque(contact.id, "webhook_ok");
   const task = runEngineTask(channelId, contact.id, event, msg.id, debounce ? bufferSeg : 0);
   // Responder 200 a Meta ya; el motor sigue en segundo plano.
   if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(task);
