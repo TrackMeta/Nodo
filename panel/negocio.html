@@ -79,6 +79,18 @@
   .nq-prog .bar i{display:block;height:100%;border-radius:99px;background:var(--brand);transition:width .25s}
   .nq-prog.ok .bar i{background:var(--green)}
   .nq-prog b{color:var(--text)}
+  .nq-prog .okt{color:var(--green);font-weight:600}
+  /* (10-oct) «Listo» como ✓ verde, sin píldora */
+  .nq.lleno .nq-st{background:none!important;color:var(--green)!important;font-size:15px;padding:0 2px}
+  /* cuadros plegados cuando los 4 están completos */
+  .nq.plegado:not(.abierto){padding:12px 16px}
+  .nq.plegado:not(.abierto) .nq-va,.nq.plegado:not(.abierto) .nq-no,.nq.plegado:not(.abierto) label,
+  .nq.plegado:not(.abierto) input,.nq.plegado:not(.abierto) textarea,.nq.plegado:not(.abierto)>div[style*="height:10px"]{display:none}
+  .nq.plegado .nq-hd{cursor:pointer}
+  .nq.plegado.abierto .nq-res{display:none}
+  .nq-res{font-size:12.5px;color:var(--muted);margin:6px 0 0 47px;line-height:1.5}
+  .nq-chev{color:var(--faint);font-size:18px;line-height:1;transition:transform .15s;flex:none}
+  .nq.abierto .nq-chev{transform:rotate(90deg)}
   .nq{border:1px solid var(--border);border-radius:14px;padding:14px 16px 16px;margin-top:12px;background:var(--surface);transition:border-color .15s,box-shadow .15s}
   .nq:focus-within{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg)}
   .nq-hd{display:flex;align-items:center;gap:11px}
@@ -138,7 +150,6 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Negocio</h1>
-        <p class="nodo-lead">Todo lo que tu bot necesita <b>saber</b> de tu negocio. Se llena una vez y sirve para todos tus productos. (Cómo <b>habla</b> el bot va en la sección IA.)</p>
       </div>
     </div>
     <div class="tabs">
@@ -202,6 +213,15 @@ async function load(){
   if(error){ ({ data:ch }=await supa.from("channels").select("nombre,negocio,negocio_form,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
   if(gen!==st.gen) return;
   st.channel=ch||{}; st.snapPreBorrador=null;   // otro bot o recarga: el borrador de la IA no aplicado se descarta
+  // (10-oct) Entrega y logística es 100 % físico (zonas de Lima, agencias, adelanto): en un bot que solo vende digital no va.
+  try{ const { data:ps }=await supa.from("products").select("tipo").eq("channel_id",st.channelId);
+    if(gen!==st.gen) return;
+    st.soloDigital = (ps||[]).length>0 && !(ps||[]).some(p=>p.tipo==="fisico");
+  }catch(_){ st.soloDigital=false; }
+  { const te=$("tabEnt"); const bar=te&&te.parentElement;
+    if(te) te.style.display = st.soloDigital ? "none" : "";
+    if(bar && bar!==document.body) bar.style.display = st.soloDigital ? "none" : "";
+    if(st.soloDigital && st.tab!=="conocimiento"){ st.tab="conocimiento"; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t==="conocimiento")); } }
   markClean();
   render();
 }
@@ -379,18 +399,24 @@ function renderConocimiento(b){
       ? `<textarea class="in nq-ta" id="nf_${k}" rows="2" placeholder="${esc(ph)}">${esc(form[k]||"")}</textarea>`
       : `<input class="in" id="nf_${k}" value="${esc(form[k]||"")}" placeholder="${esc(ph)}"/>`}`;
   const lleno=(c)=>!!String(form[c.req]||"").trim();
-  const cuadro=(c)=>`<div class="nq${lleno(c)?" lleno":""}" data-req="${c.req}">
+  // (10-oct) Con los 4 completos, cada cuadro se muestra PLEGADO: título + ✓ + un resumen de lo que dice. Tocarlo lo abre.
+  // Los campos siguen en la página (ocultos), así Guardar lee todo como siempre.
+  const todoListo = NEG_CUADROS.every(lleno);
+  const resumen=(c)=>{ const t=String(form[c.req]||"").replace(/\s+/g," ").trim(); return t.length>110 ? t.slice(0,110)+"…" : t; };
+  const cuadro=(c)=>`<div class="nq${lleno(c)?" lleno":""}${todoListo?" plegado":""}" data-req="${c.req}">
       <div class="nq-hd"><span class="nq-ic">${NQ_ICO[c.ico]||""}<span class="n">${c.n}</span></span>
-        <span class="nq-tt">${c.titulo}</span><span class="nq-st">${lleno(c)?"Listo":"Falta"}</span></div>
+        <span class="nq-tt">${c.titulo}</span><span class="nq-st">${lleno(c)?"✓":"Falta"}</span>${todoListo?'<span class="nq-chev">›</span>':""}</div>
+      ${todoListo?`<div class="nq-res">${esc(resumen(c))}</div>`:""}
       <div class="nq-va">${c.va}</div>
       <div class="nq-no">${NQ_ICO.no}<span>No va aquí: ${c.no}</span></div>
       ${c.campos.map(field).join("")}</div>`;
   const nLlenos=()=>NEG_CUADROS.filter(lleno).length;
-  const progHtml=()=>`<div class="nq-prog${nLlenos()===NEG_CUADROS.length?" ok":""}" id="nqProg"><span class="bar"><i style="width:${Math.round(100*nLlenos()/NEG_CUADROS.length)}%"></i></span><span><b>${nLlenos()} de ${NEG_CUADROS.length}</b> listos${nLlenos()===NEG_CUADROS.length?" — el bot ya sabe lo esencial de tu negocio":""}</span></div>`;
+  const progHtml=()=> nLlenos()===NEG_CUADROS.length
+    ? `<div class="nq-prog ok" id="nqProg"><span class="okt">✓ El bot ya sabe lo esencial de tu negocio</span></div>`
+    : `<div class="nq-prog" id="nqProg"><span class="bar"><i style="width:${Math.round(100*nLlenos()/NEG_CUADROS.length)}%"></i></span><span><b>${nLlenos()} de ${NEG_CUADROS.length}</b> listos${nLlenos()===NEG_CUADROS.length?" — el bot ya sabe lo esencial de tu negocio":""}</span></div>`;
   const vacioNeg = !(form.rubro && String(form.rubro).trim());
   b.innerHTML=`
     <h2>Conocimiento del negocio</h2>
-    <p class="sub">Lo que vale para <b>todo</b> tu negocio: la IA lo usa en todas las conversaciones, también cuando todavía no sabe qué producto quiere el cliente. Escribe cada dato <b>una sola vez</b>: lo de cada producto va en su ficha de <b>Productos</b>, y el nombre y el tono del vendedor en <b>IA → Vendedor IA</b>.</p>
     <div id="negHuecos"></div>
     ${vacioNeg?`<div class="armhero">
       <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
@@ -426,12 +452,14 @@ function renderConocimiento(b){
   // pinta: lo que se guarda sigue saliendo de harvest() al tocar Guardar, como siempre.
   const crece=(ta)=>{ if(!ta.offsetParent) return; ta.style.height="auto"; ta.style.height=Math.min(ta.scrollHeight+2, 12*22+24)+"px"; };
   b.querySelectorAll(".nq-ta").forEach(ta=>{ crece(ta); requestAnimationFrame(()=>crece(ta)); ta.addEventListener("input",()=>crece(ta)); ta.addEventListener("focus",()=>crece(ta)); });
+  // abrir / cerrar un cuadro plegado (al abrirlo, sus textos se ajustan al alto del contenido)
+  b.querySelectorAll(".nq.plegado .nq-hd").forEach(hd=> hd.onclick=()=>{ const box=hd.closest(".nq"); box.classList.toggle("abierto"); if(box.classList.contains("abierto")) box.querySelectorAll(".nq-ta").forEach(ta=>crece(ta)); });
   b.querySelectorAll(".nq").forEach(box=>{
     const req=box.dataset.req, el=$("nf_"+req); if(!el) return;
     el.addEventListener("input",()=>{
       form[req]=el.value;
       const ok=!!el.value.trim(); box.classList.toggle("lleno",ok);
-      const stt=box.querySelector(".nq-st"); if(stt) stt.textContent=ok?"Listo":"Falta";
+      const stt=box.querySelector(".nq-st"); if(stt) stt.textContent=ok?"✓":"Falta";
       const pg=$("nqProg"); if(pg) pg.outerHTML=progHtml();
     });
   });
