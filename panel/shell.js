@@ -1355,6 +1355,7 @@ export async function mountShell({ active } = {}) {
   let saved = localStorage.getItem("nodo.channelId");
   if (!S.channels.find((c) => c.id === saved)) saved = S.channels[0]?.id || null;
   S.channelId = saved;
+  if (saved) marcarTipoBot(saved);
   // Zona horaria del NEGOCIO (la que se elige en Ajustes). El panel calculaba todas sus
   // fechas con Lima fija; el motor sí respeta esta columna, así que un negocio fuera de
   // Perú veía sus reportes cortados a una hora que no era la suya. Se publica acá para que
@@ -1452,6 +1453,7 @@ export async function mountShell({ active } = {}) {
       // los reportes del nuevo se cortarían con la zona del anterior. Va ANTES de avisar a las
       // pantallas (`S.subs`), que es cuando recargan sus datos con el rango recalculado.
       setTZ(S.channels.find((c) => c.id === id)?.timezone);
+      marcarTipoBot(id);
       paintBrand();
       pintarAlertaWA();
       if (!silent) S.subs.forEach((cb) => { try { cb(id); } catch (e) { console.error(e); } });
@@ -1958,6 +1960,22 @@ export async function getUsdRate(channelId) {
     const { data } = await supa.from("channels").select("usd_rate").eq("id", id).maybeSingle();
     return Number(data?.usd_rate) > 0 ? Number(data.usd_rate) : 0;
   } catch (_) { return 0; }
+}
+
+// ── Bot solo digital (10-oct-2026) ────────────────────────────────────
+// Pedidos es el tablero de logística FÍSICA (Lima/Provincia): en un bot que solo vende digital o micro apps está siempre
+// vacío y confunde, así que se esconde del menú (html[data-bot-digital], ver shell.css). Se aplica primero lo último que se
+// supo (localStorage, sin parpadeo) y se corrige al leer los productos del bot.
+function marcarTipoBot(id) {
+  const k = "nodo.botDigital." + id;
+  const aplicar = (v) => { if (v === "1") document.documentElement.setAttribute("data-bot-digital", ""); else document.documentElement.removeAttribute("data-bot-digital"); };
+  try { aplicar(localStorage.getItem(k)); } catch { /* sin storage: se espera a la consulta */ }
+  supa.from("products").select("tipo").eq("channel_id", id).then(({ data }) => {
+    const ps = data || [];
+    const v = (ps.length > 0 && !ps.some((p) => p.tipo === "fisico")) ? "1" : "0";
+    try { localStorage.setItem(k, v); } catch { /* */ }
+    if (S.channelId === id) aplicar(v);
+  }, () => {});
 }
 
 // ── Selector bonito, en TODO el panel (10-oct-2026) ──────────────────

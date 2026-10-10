@@ -29,7 +29,15 @@
      explícita, que no tiene ninguna, así que el mensaje caía dentro de una columna de
      300px, pegado a la izquierda y con el texto estrujado. */
   .kb.vacio{display:block}
-  .kb{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(258px,300px);gap:14px;overflow-x:auto;padding-bottom:14px;align-items:start}
+  .kb{display:grid;grid-template-columns:repeat(var(--kcols,4),minmax(200px,1fr));gap:14px;overflow-x:auto;padding-bottom:14px;align-items:start}
+  .kb.vacio{display:block}
+  .masw{position:relative}
+  .masmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:40;min-width:210px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.25);padding:6px;display:none}
+  .masmenu.show{display:block}
+  .masmenu .mi{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:var(--text);font:inherit;font-size:13px;padding:8px 10px;border-radius:8px;cursor:pointer;text-decoration:none;height:auto}
+  .masmenu .mi:hover{background:var(--surface-2)} .masmenu .mi svg{color:var(--muted)}
+  .bar{display:flex;gap:10px;align-items:center} .bar .search{flex:1}
+  .vsel{height:38px;max-width:280px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font:inherit;font-size:13px;font-weight:600;padding:0 12px}
   /* Cada columna tope su altura al viewport y hace scroll POR DENTRO: así el
      tablero cabe en pantalla aunque haya cientos de pedidos (no estira la página). */
   .kcol{background:var(--surface);border:1px solid var(--border);border-radius:16px;display:flex;flex-direction:column;min-height:120px;max-height:calc(100vh - 246px)}
@@ -169,24 +177,29 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Pedidos</h1>
-        <p class="nodo-lead">Acá <b>mueves el pedido</b>: confirmar, enviar, avisar que llegó, entregar. Lima y provincia son dos operaciones distintas, así que cada una tiene su tablero. Tú avanzas la tarjeta y el bot le escribe al cliente en cada paso.<br>
-        <span id="pedTrunc" style="display:none;color:var(--amber,#d97706);font-weight:700"></span>
-        <span style="color:var(--faint)">Aprobar o rechazar un comprobante es de <a href="copiloto.html" style="color:var(--brand)">Pagos por validar</a>. Lo ya cobrado, de <a href="compras.html" style="color:var(--brand)">Compras</a>.</span></p>
+
       </div>
       <div class="nodo-actions">
-        <button class="nodo-btn" id="rotBtn" title="Imprimir varias etiquetas de una vez (elige cuáles)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Imprimir rótulos</button>
+
         <div class="expwrap">
           <button class="nodo-btn primary" id="exportBtn" title="Exportar los pedidos por enviar al Excel de carga masiva del courier"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exportar <svg class="caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
           <div class="expmenu" id="exportMenu"></div>
         </div>
-        <a href="pagos.html" class="nodo-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:8px"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg> Pagos y avisos</a>
+        <div class="masw"><button class="nodo-btn" id="masBtn" title="Más" aria-label="Más"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+          <div class="masmenu" id="masMenu">
+            <button class="mi" id="rotBtn" title="Imprimir varias etiquetas de una vez (elige cuáles)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Imprimir rótulos</button>
+            <a href="pagos.html" class="mi"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg> Pagos y avisos</a>
+          </div></div>
       </div>
     </div>
 
     <div class="bar">
       <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="q" placeholder="Buscar por cliente o teléfono…" /></div>
+      <select class="sel vsel" id="vistaSel" style="display:none" title="Producto o anuncio"><option value="all">Todo</option></select>
     </div>
+    <span id="pedTrunc" style="display:none;font-size:12px;color:var(--amber,#d97706);font-weight:600;margin:-6px 0 10px"></span>
+    <div id="soloDigital" style="display:none" class="nodo-empty"></div>
 
     <!-- Fuera del grid .kb: ahí adentro se volvería una columna más. -->
     <div id="kbzona" style="display:flex;gap:8px;margin-bottom:14px"></div>
@@ -262,6 +275,8 @@ const TURNO_STATES=new Set(["esperando_adelanto","en_agencia"]);
 // había ningún pago. (En `en_agencia` esto ya se había corregido; faltaba el gemelo.)
 function hayPagoPorValidar(o){
   const s=o.shipping||{};
+  // (10-oct) Un pedido cancelado o ya cerrado no tiene nada que validar (salía «1 pago por validar» por un DEMO cancelado).
+  if(["cancelado","anulada","rechazado","no_recogido","devuelto","entregado_cobrado","recogido"].includes(String(o.estado))) return false;
   // Lima que pagó antes de recibir: el pedido sigue «confirmado», pero hasta validarlo el
   // Excel del courier y el rótulo le cobran TODO. Validarlo va ANTES de mandarlo a reparto.
   if(s.pago_adelantado_por_validar===true) return true;
@@ -292,15 +307,22 @@ function isFisico(o){ if(String((o.shipping&&o.shipping.zona)||"")==="digital") 
 const badgeClass=O.tono;
 const cap=(s)=>{ s=String(s||""); return s.charAt(0).toUpperCase()+s.slice(1); };
 
+function wireMas(){
+  const b=$("masBtn"), m=$("masMenu"); if(!b||!m) return;
+  b.onclick=(e)=>{ e.stopPropagation(); m.classList.toggle("show"); };
+  document.addEventListener("click",(e)=>{ const mm=$("masMenu"); if(mm && !e.target.closest(".masw")) mm.classList.remove("show"); });
+  const v=$("vistaSel"); if(v) v.addEventListener("change",(e)=>{ st.vista=e.target.value||"all"; render(); });
+}
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"pedidos" });
   st.channelId=shell.channelId;
   shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } clearTimeout(st.rtT); st.rtT=null; }); // no dejar la suscripción realtime (ni su recarga pendiente) viva al navegar (SPA)
-  shell.onChannel(id=>{ st.channelId=id; load(); wireRealtime(); });
+  shell.onChannel(id=>{ st.channelId=id; st.vista="all"; load(); wireRealtime(); });
   $("q").oninput=(e)=>{ st.q=norm(e.target.value.trim()); render(); };
   $("exportBtn").onclick=(ev)=>{ ev.stopPropagation(); toggleExportMenu(); };
-  $("rotBtn").onclick=()=>abrirImprimirRotulos();
+  $("rotBtn").onclick=()=>{ const m=$("masMenu"); if(m) m.classList.remove("show"); abrirImprimirRotulos(); };
+  wireMas();
   // Nombrado para quitarlo al salir: boot() corre en cada visita (SPA) y sumaba uno por vez.
   const cierraExport=(e)=>{ if(!e.target.closest(".expwrap")){ const m=$("exportMenu"); if(m) m.classList.remove("show"); } };
   document.addEventListener("click",cierraExport);
@@ -543,7 +565,7 @@ async function load(){
     st.entregas=data?.entregas||null; st.channelName=data?.nombre||"";
     st.remitente=(data?.negocio_form?.nombre || data?.nombre || "").trim();
   }).catch(()=>{});
-  const full="id,amount,currency,order_bumps,estado,order_id,created_at,updated_at,shipping,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id,telefono,user_id),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
+  const full="id,amount,currency,order_bumps,estado,order_id,created_at,updated_at,shipping,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id,telefono,user_id,source),product:product_id(nombre,emoji,tipo),version:version_id(nombre)";
   let { data, error }=await supa.from("orders").select(full).eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
   if(error){
     const r1=await supa.from("orders").select("id,amount,currency,order_bumps,estado,order_id,created_at,contact_id,product_id,version_id,contact:contact_id(nombre,wa_id,telefono,user_id),product:product_id(nombre,emoji),version:version_id(nombre)").eq("channel_id",st.channelId).order("created_at",{ascending:false}).limit(1000);
@@ -554,7 +576,18 @@ async function load(){
     } else data=r1.data;
   }
   if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó
-  st.list=(data||[]).filter(o=>((o.contact||{}).wa_id)!=="webchat-test"); render(); // sin los pedidos de Probar flujos
+  // (10-oct) Ni Probar flujos ni el SIMULADOR (source='sim'): la tarjeta «DEMO · Físico Lima» y su «1 pago por validar»
+  // eran de una tanda de prueba.
+  const esPrueba=(o)=>{ const c=o.contact||{}; return c.wa_id==="webchat-test" || c.source==="sim"; };
+  st.list=(data||[]).filter(o=>!esPrueba(o));
+  try{ const [{ data:am },{ data:ps }]=await Promise.all([
+      supa.from("ads_meta").select("ad_id,ad_name,estado").eq("channel_id",st.channelId),
+      supa.from("products").select("tipo").eq("channel_id",st.channelId) ]);
+    st.adNombre={}; st.adEstado={}; (am||[]).forEach(a=>{ if(!a.ad_id) return; st.adNombre[a.ad_id]=a.ad_name||""; if(a.estado) st.adEstado[a.ad_id]=a.estado; });
+    st.soloDigital = (ps||[]).length>0 && !(ps||[]).some(p=>p.tipo==="fisico") && !st.list.some(isFisico);
+  }catch(_){ st.soloDigital=false; }
+  if(gen!==st.loadGen) return;
+  render();
   // RESCATE de los pedidos en curso que quedaron fuera del corte por fecha. El tablero
   // trae los 1000 más recientes, y eso dejaba fuera justo los que más importa ver: el
   // pedido que se atascó (el que lleva 40 días "en agencia" porque el cliente no fue a
@@ -572,7 +605,7 @@ async function load(){
       if(gen!==st.loadGen) return;
       if(extra?.length){
         const vistos=new Set(st.list.map(o=>o.id));
-        st.list=[...st.list, ...extra.filter(o=>!vistos.has(o.id)&&((o.contact||{}).wa_id)!=="webchat-test")];
+        st.list=[...st.list, ...extra.filter(o=>!vistos.has(o.id)&&!esPrueba(o))];
         render();
       }
     }catch(_){ /* el tablero ya está pintado: el rescate es un extra, no puede tumbarlo */ }
@@ -591,8 +624,46 @@ async function load(){
   }catch(_){ /* el aviso es informativo: si el count falla, el tablero funciona igual */ }
 }
 
+// Producto/anuncio de un pedido: el producto del pedido y el anuncio que guardó al crearse (shipping.ad_id).
+const adDe=(o)=> (o.shipping&&o.shipping.ad_id) ? String(o.shipping.ad_id) : null;
+function enVista(o){ const v=st.vista||"all"; if(v==="all") return true; if(v==="none") return !adDe(o); if(v.startsWith("p:")) return o.product_id===v.slice(2); return adDe(o)===v.slice(2); }
+function fillVista(fis){
+  const sel=$("vistaSel"); if(!sel) return;
+  const FINv=new Set(["entregado_cobrado","recogido","rechazado","no_recogido","cancelado","anulada"]);
+  const act=fis.filter(o=>!FINv.has(o.estado));
+  const n={}; const sum=(k)=>{ n[k]=(n[k]||0)+1; };
+  act.forEach(o=>{ sum("all"); if(o.product_id) sum("p:"+o.product_id); const a=adDe(o); sum(a?"a:"+a:"none"); });
+  const prods=new Map(); fis.forEach(o=>{ if(o.product_id && o.product && !prods.has(o.product_id)) prods.set(o.product_id,o.product); });
+  const cnt={}; fis.forEach(o=>{ const a=adDe(o); if(!a) return; (cnt[a]||(cnt[a]={}))[o.product_id||""]=((cnt[a]||{})[o.product_id||""]||0)+1; });
+  const adsDe={}; Object.entries(cnt).forEach(([a,m])=>{ const p=Object.entries(m).sort((x,y)=>y[1]-x[1])[0][0]; (adsDe[p]||(adsDe[p]=[])).push(a); });
+  const nn=(k)=>String(n[k]||0);
+  const est=(a)=>{ const e=(st.adEstado||{})[a]; return e?` data-dot="${e==="ACTIVE"?"on":"off"}" data-titulo="${e==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}"`:""; };
+  let h=`<option value="all" data-ico="kanban" data-n="${nn("all")}">Todo</option>`, cuantos=0;
+  [...prods.keys()].sort((a,b)=>(n["p:"+b]||0)-(n["p:"+a]||0)).forEach(pid=>{
+    const p=prods.get(pid), ads=adsDe[pid]||[];
+    h+=`<optgroup label=""><option value="p:${esc(pid)}" data-ico="box" data-n="${nn("p:"+pid)}">${esc(p.nombre||"Producto")}</option>`;
+    if(ads.length>1){ h+=ads.map(a=>`<option value="a:${esc(a)}" data-ico="megaphone" data-sub="1"${est(a)} data-n="${nn("a:"+a)}">${esc((st.adNombre||{})[a]||("Anuncio …"+a.slice(-6)))}</option>`).join(""); cuantos+=ads.length; }
+    h+=`</optgroup>`; cuantos++;
+  });
+  if(fis.some(o=>!adDe(o))){ h+=`<optgroup label=""><option value="none" data-ico="user" data-n="${nn("none")}">Sin anuncio (orgánico)</option></optgroup>`; cuantos++; }
+  sel.innerHTML=h;
+  if(![...sel.options].some(o=>o.value===st.vista)) st.vista="all";
+  sel.value=st.vista||"all";
+  sel.style.display = cuantos>1 ? "" : "none";
+}
 function render(){
-  let list=st.list.filter(isFisico);
+  // (10-oct) Bot que solo vende digital: este tablero es de logística física y nunca tendría nada.
+  const sd=$("soloDigital");
+  if(sd){
+    const solo=!!st.soloDigital;
+    sd.style.display = solo ? "" : "none";
+    ["kbzona","kb"].forEach(id=>{ const e=$(id); if(e) e.style.display = solo ? "none" : ""; });
+    document.querySelectorAll(".bar,.nodo-actions").forEach(e=> e.style.display = solo ? "none" : "");
+    if(solo){ sd.innerHTML=`<h3>Este bot vende digital</h3><p>Pedidos es el tablero de entregas físicas (Lima y provincia). Tus ventas están en <a href="compras.html" style="color:var(--brand)">Compras</a> y los accesos entregados en <a href="accesos.html" style="color:var(--brand)">Accesos</a>.</p>`; return; }
+  }
+  const _fis=st.list.filter(isFisico);
+  fillVista(_fis);
+  let list=_fis.filter(enVista);
   // También por el nombre/DNI/guía del PEDIDO (shipping): el destinatario suele no ser el
   // contacto de WhatsApp («María» cuando el contacto es «Juan (esposo)»).
   if(st.q) list=list.filter(o=>{ const c=o.contact||{}, s=o.shipping||{}; const qd=st.q.replace(/\D/g,""); return norm(c.nombre).includes(st.q)||(c.wa_id||"").includes(st.q)||norm(s.cliente).includes(st.q)||(qd&&((s.dni||"").replace(/\D/g,"").includes(qd)||(s.guia||"").toString().replace(/\D/g,"").includes(qd)||(s.tel||"").replace(/\D/g,"").includes(qd))); });
@@ -642,6 +713,7 @@ function render(){
   const pb=$("kbParados"); if(pb) pb.onclick=()=>{ st.soloParados=!st.soloParados; render(); };
 
   box.innerHTML="";
+  box.style.setProperty("--kcols", String(cols.length));
   box.classList.toggle("vacio", !zList.length);
   if(!zList.length){
     const d=document.createElement("div");

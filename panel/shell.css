@@ -1075,3 +1075,6 @@ html:not([data-ds="1"]) .nu-meta small{display:none}
 html:not([data-ds="1"]) .nu-meta b{font-size:12.5px;font-weight:500}
 html:not([data-ds="1"]) .nodo-userrow .nodo-icnbtn,html:not([data-ds="1"]) .nodo-bell{width:28px;height:28px}
 html:not([data-ds="1"]) .nodo-userrow .nodo-icnbtn svg,html:not([data-ds="1"]) .nodo-bell svg{width:15px;height:15px}
+
+/* (10-oct) Bot que solo vende digital / micro apps: Pedidos (logística física) no va en el menú. Ver marcarTipoBot en shell.js */
+html[data-bot-digital] .nodo-link[data-nav="pedidos"]{display:none!important}
