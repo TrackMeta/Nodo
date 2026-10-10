@@ -150,6 +150,7 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Negocio</h1>
+        <p class="nodo-lead" style="margin-top:4px">Lo que tu bot sabe de tu negocio y usa en todas sus conversaciones. Lo de cada producto va en su ficha.</p>
       </div>
     </div>
     <div class="tabs">
@@ -416,7 +417,7 @@ function renderConocimiento(b){
     : `<div class="nq-prog" id="nqProg"><span class="bar"><i style="width:${Math.round(100*nLlenos()/NEG_CUADROS.length)}%"></i></span><span><b>${nLlenos()} de ${NEG_CUADROS.length}</b> listos${nLlenos()===NEG_CUADROS.length?" — el bot ya sabe lo esencial de tu negocio":""}</span></div>`;
   const vacioNeg = !(form.rubro && String(form.rubro).trim());
   b.innerHTML=`
-    <h2>Conocimiento del negocio</h2>
+    ${st.soloDigital?"":"<h2>Conocimiento del negocio</h2>"}
     <div id="negHuecos"></div>
     ${vacioNeg?`<div class="armhero">
       <span class="hg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
