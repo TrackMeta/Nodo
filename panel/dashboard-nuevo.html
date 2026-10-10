@@ -246,7 +246,9 @@
   .bita-seg button{border:none;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:500;padding:5px 11px;border-radius:7px;cursor:pointer}
   .bita-seg button.on{background:var(--surface);color:var(--text);box-shadow:0 0 0 1px var(--border)}
   .bita-tools{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
-  html[data-ds="2"] .aifab{background:var(--violet,#6941C6);box-shadow:none;font-weight:600}
+  html[data-ds="2"] .aifab{background:#6941C6;color:#fff;box-shadow:none;font-weight:600}
+  /* lo viejo sigue calculándose (mismos números) pero no se muestra: [hidden] pierde contra .pband/.kpis{display:…} */
+  #pband[hidden],#kpis[hidden],#efecPanel[hidden],#bitaCalWrap[hidden],#bitaChart[hidden]{display:none!important}
   html[data-ds="2"] .panel{border-radius:12px}
 </style>
 </head>
