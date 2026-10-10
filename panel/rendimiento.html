@@ -174,6 +174,7 @@
   .stdot.on{background:#12B76A}
   .adctx{font-size:11px;color:var(--faint);margin-top:2px;padding-left:15px}
   .dnota{font-size:12px;color:var(--faint);margin:-4px 0 10px}
+  tr.prenodo td{color:var(--faint)} tr.prenodo td.neg,tr.prenodo td.pos{color:var(--faint)}
   .dchart{padding:14px 18px 10px}
   .dch-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px}
   .dch-sum{font-size:12.5px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap} .dch-sum b{color:var(--text);font-weight:600} .dch-sum b.pos{color:var(--green)} .dch-sum b.neg{color:var(--red)}
@@ -1022,6 +1023,23 @@ function serieReal(row){
 //   en números redondos, sin estirarse (antes preserveAspectRatio="none" deformaba y los puntos se salían).
 // · Tabla día por día con lo que sirve para decidir; «Confirm.» solo si alguna vez difiere de las ventas.
 let detMetrica=(()=>{ try{ return localStorage.getItem("nodo.rendMetrica")||"ganancia"; }catch{ return "ganancia"; } })();
+// Día de la primera venta del bot EN NODO (sin contactos de prueba). Los días anteriores con gasto son de otro sistema
+// (en Prime Digital, ChatLevel): sus ventas no están acá y salían como pérdidas que hundían el resumen y la escala.
+const primeraK={};
+async function primeraVentaK(){
+  const cid=st.channelId; if(primeraK[cid]!==undefined) return primeraK[cid];
+  let k="";
+  try{
+    const [oR,pR]=await Promise.all([
+      supa.from("orders").select("contact_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id",cid).order("created_at",{ascending:true}).limit(200),
+      pageAll((f,t)=>supa.from("contacts").select("id").eq("channel_id",cid).or("wa_id.eq.webchat-test,source.eq.sim").order("id",{ascending:true}).range(f,t)),
+    ]);
+    const prueba=new Set(((pR&&pR.data)||[]).map(c=>c.id));
+    const o=((oR&&oR.data)||[]).find(x=>!prueba.has(x.contact_id) && O.esVenta(x));
+    if(o) k=ymdLima(o.created_at);
+  }catch(_){}
+  primeraK[cid]=k; return k;
+}
 function abrirDetalle(i){
   const a=st.rows[i]; if(!a) return;
   st.sel=i; st.selId=a.ad_id;
@@ -1034,7 +1052,8 @@ function cerrarDetalle(){
   st.sel=null; st.selId=null;
   if(st.rangoAntes){ st.range=st.rangoAntes; st.rangoAntes=null; reload(); } else render();
 }
-function renderDetail(){
+async function renderDetail(){
+  const primera=await primeraVentaK();
   const a=(st.selId!=null && st.rows.find(r=>r.ad_id===st.selId)) || st.rows[st.sel];
   const v=$("view");
   if(!a){
@@ -1043,6 +1062,8 @@ function renderDetail(){
     $("back").onclick=cerrarDetalle; return;
   }
   const m=metrics(a); const S=serieReal(a);
+  S.forEach(d=>{ d.pre = !!primera && ymd(d.fecha)<primera; });
+  const pre=S.filter(d=>d.pre), gastoPre=pre.reduce((x,d)=>x+d.gasto,0);
   const e=st.adEstado&&st.adEstado[a.ad_id];
   const it=(l,val,c="")=>`<span>${l} <b class="${c}">${val}</b></span>`;
   const resumen=[
@@ -1059,6 +1080,7 @@ function renderDetail(){
         <div class="ctx">${esc(a.campaign)} · Conjunto ${esc(a.adset)}${a.prod?` · ${esc(a.prod)}`:""}</div></div>
       <div id="ddr" style="margin-left:auto"></div>
     </div>
+    ${pre.length&&gastoPre>0?`<div class="dnota">Incluye ${pre.length} ${pre.length===1?"día":"días"} antes de la primera venta en Nodo (${money0(gastoPre)} de gasto; esas ventas se cerraban en otro sistema). En el gráfico van en gris y fuera de la escala.</div>`:""}
     ${st.rangoAntes?`<div class="dnota">Mostrando los últimos 14 días para ver la tendencia · al volver regresas a «${esc(rangeLabel(st.rangoAntes))}»</div>`:""}
     <div class="resumen">${resumen}</div>
     <div class="panel dchart">
@@ -1070,7 +1092,7 @@ function renderDetail(){
     </tr></thead><tbody>${S.slice().reverse().map(d=>{
       const roas=d.gasto?d.ingresos/d.gasto:0, rc=roas>=2?'g':roas>=1?'a':'r', g=d.ingresos-d.gasto;
       const dash='<span style="color:var(--faint)">—</span>';
-      return `<tr><td>${d.fecha.toLocaleDateString("es-PE",{weekday:"short",day:"numeric",month:"short"})}</td><td class="num">${money(d.gasto)}</td><td class="num">${nf(d.impr)}</td><td class="num">${nf(d.clics)}</td><td class="num">${d.impr?nf(d.clics/d.impr*100,2)+"%":dash}</td>${hayConf?`<td class="num">${d.conf}</td>`:""}<td class="num">${d.ventas}</td><td class="num">${d.ventas?money(d.gasto/d.ventas):dash}</td><td class="num">${money(d.ingresos)}</td><td class="num ${g<0?"neg":"pos"}">${(d.gasto||d.ingresos)?money(g):dash}</td><td class="num">${(d.ventas&&d.gasto)?`<span class="roas ${rc}"><span class="rd"></span>${nf(roas,2)}×</span>`:dash}</td></tr>`;
+      return `<tr${d.pre?' class="prenodo" title="Antes de la primera venta en Nodo"':""}><td>${d.fecha.toLocaleDateString("es-PE",{weekday:"short",day:"numeric",month:"short"})}</td><td class="num">${money(d.gasto)}</td><td class="num">${nf(d.impr)}</td><td class="num">${nf(d.clics)}</td><td class="num">${d.impr?nf(d.clics/d.impr*100,2)+"%":dash}</td>${hayConf?`<td class="num">${d.conf}</td>`:""}<td class="num">${d.ventas}</td><td class="num">${d.ventas?money(d.gasto/d.ventas):dash}</td><td class="num">${money(d.ingresos)}</td><td class="num ${g<0?"neg":"pos"}">${(d.gasto||d.ingresos)?money(g):dash}</td><td class="num">${(d.ventas&&d.gasto)?`<span class="roas ${rc}"><span class="rd"></span>${nf(roas,2)}×</span>`:dash}</td></tr>`;
     }).join("")}</tbody></table></div></div>`;
   $("back").onclick=cerrarDetalle;
   mountDateRange($("ddr"), { valor:st.range, onChange:(r)=>{ st.range=r; st.rangoAntes=null; reload(); } });
@@ -1090,8 +1112,8 @@ function pintarDetChart(S){
   const W=760,H=220,padL=46,padR=10,padT=20,padB=26;
   const n=S.length||1, bw=(W-padL-padR)/n;
   let vMax=0,vMin=0;
-  if(M==="gastoing"){ S.forEach(d=>{ vMax=Math.max(vMax,d.gasto,d.ingresos); }); }
-  else S.forEach(d=>{ const x=val(d); if(x==null) return; vMax=Math.max(vMax,x); vMin=Math.min(vMin,x); });
+  if(M==="gastoing"){ S.forEach(d=>{ if(d.pre) return; vMax=Math.max(vMax,d.gasto,d.ingresos); }); }
+  else S.forEach(d=>{ if(d.pre) return; const x=val(d); if(x==null) return; vMax=Math.max(vMax,x); vMin=Math.min(vMin,x); });
   if(vMax===vMin) vMax=vMin+(M==="ctr"?1:10);
   const paso=(()=>{ const r=(vMax-vMin)/3, p=Math.pow(10,Math.floor(Math.log10(r))); const q=r/p; return (q<=1?1:q<=2?2:q<=5?5:10)*p; })();
   vMax=Math.ceil(vMax/paso)*paso; vMin=Math.floor(vMin/paso)*paso;
@@ -1103,6 +1125,7 @@ function pintarDetChart(S){
   let marks="";
   S.forEach((d,i)=>{
     const x=padL+i*bw;
+    if(d.pre){ marks+=`<rect x="${(x+bw*0.2).toFixed(1)}" y="${(y0-3).toFixed(1)}" width="${Math.max(2,bw*0.6).toFixed(1)}" height="6" rx="2" fill="var(--border-strong,#D0D5DD)"/><rect class="dhit" data-i="${i}" x="${x.toFixed(1)}" y="${padT}" width="${bw.toFixed(1)}" height="${H-padT-padB}" fill="transparent"/>`; return; }
     if(M==="gastoing"){
       const w=Math.max(2,bw*0.32);
       [[d.gasto,"var(--muted)",x+bw*0.16],[d.ingresos,"var(--green)",x+bw*0.52]].forEach(([vv,c,xx])=>{ if(!vv) return; const y=yf(vv); marks+=`<rect x="${xx.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(2,y0-y).toFixed(1)}" rx="2" fill="${c}" fill-opacity="${c==="var(--muted)"?0.55:0.9}"/>`; });
@@ -1116,7 +1139,7 @@ function pintarDetChart(S){
     marks+=`<rect class="dhit" data-i="${i}" x="${x.toFixed(1)}" y="${padT}" width="${bw.toFixed(1)}" height="${H-padT-padB}" fill="transparent"/>`;
   });
   // resumen de la métrica en el periodo
-  const T=S.reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; o.im+=d.impr; o.c+=d.clics; return o; },{g:0,i:0,v:0,im:0,c:0});
+  const T=S.filter(d=>!d.pre).reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; o.im+=d.impr; o.c+=d.clics; return o; },{g:0,i:0,v:0,im:0,c:0});
   sumEl.innerHTML = M==="ganancia" ? `Ingresos − publicidad: <b class="${T.i-T.g<0?"neg":"pos"}">${money(T.i-T.g)}</b>`
     : M==="gastoing" ? `<span class="lg"><i style="background:var(--muted);opacity:.55"></i>Gasto ${money0(T.g)}</span><span class="lg"><i style="background:var(--green)"></i>Ingresos ${money0(T.i)}</span>`
     : M==="cpa" ? `CPA del periodo: <b>${T.v?money(T.g/T.v):"—"}</b>`
@@ -1127,6 +1150,7 @@ function pintarDetChart(S){
   wrap.querySelectorAll(".dhit").forEach(r=>{
     r.addEventListener("mouseenter",()=>{
       const d=S[+r.dataset.i], g=d.ingresos-d.gasto;
+      if(d.pre){ tip.innerHTML=`<div class="t">${esc(fd.format(d.fecha))}</div><div class="r"><span>Antes de la primera venta en Nodo</span></div>`+fila("Gasto",money(d.gasto)); tip.hidden=false; const sr=svg.getBoundingClientRect(), wr=wrap.getBoundingClientRect(), k=sr.width/W, cx=(padL+(+r.dataset.i)*bw+bw/2)*k+(sr.left-wr.left); tip.style.left=Math.max(0,Math.min(cx+12,wr.width-tip.offsetWidth))+"px"; tip.style.top="6px"; return; }
       tip.innerHTML=`<div class="t">${esc(fd.format(d.fecha))}</div>`+fila("Gasto",money(d.gasto))+fila("Ingresos",money(d.ingresos))+fila("Ventas",nf(d.ventas))+fila("CPA",d.ventas?money(d.gasto/d.ventas):"—")+fila("CTR",d.impr?nf(d.clics/d.impr*100,2)+"%":"—")+fila("Ingresos − gasto",money(g),g<0?"neg":"pos");
       tip.hidden=false;
       const sr=svg.getBoundingClientRect(), wr=wrap.getBoundingClientRect(), k=sr.width/W;
