@@ -75,6 +75,25 @@
   .pk.on{border-color:transparent}
   .warnbox{background:var(--amber-bg);border:1px solid var(--amber);color:var(--amber);border-radius:10px;padding:10px 12px;font-size:11.5px;margin-top:16px;line-height:1.5}
   .mfoot{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+  /* (10-oct) rediseño */
+  .pk .n{font-weight:500;opacity:.75;margin-left:4px}
+  .pk .d{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:1px}
+  .pk.on{background:var(--brand-bg)!important;color:var(--text)!important;border-color:var(--brand)!important}
+  .seg2{display:inline-flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:3px}
+  .seg2 button{border:none;background:none;color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:8px}
+  .seg2 button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+  .estq{background:none;border:1px solid var(--border);color:var(--muted);width:18px;height:18px;border-radius:50%;font-size:11px;font-weight:700;padding:0;line-height:16px;margin-left:4px;vertical-align:1px}
+  .estay{color:var(--faint);font-size:11.5px;margin-top:6px;line-height:1.5}
+  .est2{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
+  .est2 i{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .segchip .d{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px}
+  .masw{position:relative;margin-left:auto}
+  .masb{width:32px;height:32px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:16px;line-height:1;padding:0}
+  .masmenu{position:absolute;right:0;bottom:calc(100% + 6px);z-index:40;min-width:180px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.25);padding:6px;display:none}
+  .masmenu.show{display:block}
+  .masmenu button{display:flex;align-items:center;gap:10px;width:100%;border:none;background:none;color:var(--text);font:inherit;font-size:13px;padding:8px 10px;border-radius:8px;cursor:pointer;text-align:left}
+  .masmenu button:hover{background:var(--surface-2)} .masmenu .dang{color:var(--red)}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -83,13 +102,16 @@
     <div style="display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap;margin-bottom:4px">
       <div style="flex:1;min-width:220px">
         <h1>Campañas</h1>
-        <p class="sub">Envía mensajes masivos con <b>plantillas aprobadas</b>, segmentando por etiquetas y etapas. Organízalas por carpetas.</p>
+        <p class="sub">Escríbele a muchos clientes a la vez con una plantilla aprobada por Meta.</p>
       </div>
       <button class="btn primary" id="newBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva campaña</button>
     </div>
-    <div class="csearch" id="csearchWrap">
+    <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
+    <div class="csearch" id="csearchWrap" style="flex:1;min-width:200px">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
       <input id="cSearch" placeholder="Buscar por nombre o plantilla…" autocomplete="off"/>
+    </div>
+    <button class="btn" id="addFolderBtn" style="display:none;height:40px" title="Crear una carpeta para ordenar tus campañas">+ Carpeta</button>
     </div>
     <div class="folders" id="folders"></div>
     <div class="grid" id="grid"></div>
@@ -97,34 +119,36 @@
 </div>
 
 <div class="modal" id="modal"><div class="mbox">
-  <h3 id="mTitle">Nueva campaña</h3><p class="ms">Envía un mensaje masivo con una <b>plantilla de WhatsApp aprobada</b> a un grupo de contactos. Ideal para promos, recordatorios o novedades.</p>
+  <h3 id="mTitle">Nueva campaña</h3><p class="ms">Elige qué mensaje sale y a quién le llega.</p>
   <label>Nombre de la campaña</label><input class="in" id="m_nombre" placeholder="Ej. Promo de octubre"/>
   <label>Plantilla a enviar</label><select class="sel" id="m_tpl"></select>
-  <div style="font-size:11.5px;color:var(--faint);margin-top:5px">Solo aparecen tus plantillas aprobadas por Meta. Se gestionan en la sección <b>Plantillas</b>.</div>
+  <div style="font-size:11.5px;color:var(--faint);margin-top:5px">Solo salen las aprobadas por Meta (se crean en <a href="plantillas.html" style="color:var(--brand)">Plantillas</a>).</div>
   <div id="m_prev" style="margin-top:14px"></div>
 
   <div style="border:1px solid var(--border);border-radius:12px;padding:13px;margin-top:16px">
     <div style="font-weight:700;font-size:13px">¿A quién se le envía? <span style="color:var(--faint);font-weight:400">(segmento)</span></div>
     <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Deja todo vacío para enviar a <b>todos</b> los contactos del canal.</div>
-    <label>Con estas etiquetas</label><div class="tagpick" id="m_tags"></div>
-    <label>En estas etapas del embudo</label><div class="stagepick" id="m_stages"></div>
-    <label>En estas etapas de logística <span style="color:var(--faint);font-weight:400">(según el Kanban de Pedidos)</span></label><div class="stagepick" id="m_ostates"></div>
-    <label>Cómo combinar los filtros</label>
-    <select class="sel" id="m_modo"><option value="cualquiera">Cualquiera — contactos que cumplan al menos un filtro</option><option value="todas">Todas — contactos que cumplan todos los filtros</option></select>
+    <label>En estas etapas</label><div class="stagepick" id="m_stages"></div>
+    <div id="m_tagsWrap"><label>Con estas etiquetas</label><div class="tagpick" id="m_tags"></div></div>
+    <div id="m_ostWrap"><label>Con un pedido en <span style="color:var(--faint);font-weight:400">(según Pedidos)</span></label><div class="stagepick" id="m_ostates"></div></div>
+    <div id="m_modoWrap" style="display:none"><label>Cómo combinar los filtros</label>
+    <select class="sel" id="m_modo"><option value="cualquiera">Cualquiera — contactos que cumplan al menos un filtro</option><option value="todas">Todas — contactos que cumplan todos los filtros</option></select></div>
   </div>
 
-  <label style="margin-top:16px">Programar envío <span style="color:var(--faint);font-weight:400">(opcional — vacío = al guardar)</span></label><input class="in" id="m_prog" type="datetime-local"/>
+  <label style="margin-top:16px">Cuándo sale</label>
+  <div class="seg2" id="m_cuando"><button type="button" data-c="ya" class="on">Enviar al activar</button><button type="button" data-c="prog">Programar</button></div>
+  <input class="in" id="m_prog" type="datetime-local" style="display:none;margin-top:8px"/>
   <!-- Cuánta gente y hasta qué hora. Programar una campaña era a ciegas: no se decía a
        cuántos les llega ni cuánto tarda en salir, y a 25 envíos por minuto una lista de
        5.000 son más de 3 horas — así una campaña de las 9pm sigue disparando pasada la
        medianoche sin que nadie lo haya decidido. Es informativo: no bloquea nada. -->
   <div id="m_estim" style="margin-top:12px;font-size:12.5px;line-height:1.6;color:var(--muted)"></div>
-  <div class="warnbox" id="warnBox">Los envíos van con retraso aleatorio para reducir el riesgo de baneo. Úsalo solo con listas que dieron su consentimiento.</div>
+  <div class="warnbox" id="warnBox" style="display:none"></div>
   <div class="mfoot"><button class="btn" id="m_cancel">Cancelar</button><button class="btn primary" id="m_save">Guardar campaña</button></div>
 </div></div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, askChoice } from "./shell.js";
 import { instanteEn, getTZ, tzNombre } from "./date-range.js";
 import { mountFolders } from "./folder-bar.js";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=13";
@@ -136,6 +160,7 @@ const STAGES=[["nuevo","Nuevo"],["curioso","Curioso"],["interesado","Interesado"
 // Estados del Kanban de Pedidos (orders.estado) para segmentar por logística.
 const ORDER_STATES=[["confirmada","Confirmada (digital)"],["confirmado","Confirmado (Lima)"],["en_reparto","En reparto"],["reprogramado","Reprogramado"],["entregado_cobrado","Entregado y cobrado"],["esperando_adelanto","Esperando adelanto"],["adelanto_validado","Adelanto validado"],["por_despachar","Por enviar"],["despachado","Enviado"],["en_agencia","En agencia"],["saldo_pagado","Saldo pagado"],["recogido","Recogido"],["no_recogido","No recogido"],["rechazado","Rechazado"]];
 const STAGE_LBL=Object.fromEntries(STAGES);
+const EST_LBL={ borrador:["Borrador","var(--faint)"], programada:["Programada","var(--brand)"], enviando:["Enviando","var(--amber)"], completada:["Terminada","var(--green)"], cancelada:["Cancelada","var(--red)"] };
 const OSTATE_LBL=Object.fromEntries(ORDER_STATES);
 const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", localFolders:new Set(), editing:null, pickTags:new Set(), pickStages:new Set(), pickOStates:new Set() };
 let _campBrand={};
@@ -153,6 +178,8 @@ async function boot(){
   $("m_save").onclick=saveCampaign;
   $("cSearch").oninput=renderGrid;
   $("m_tpl").onchange=paintModalPreview;
+  $("m_cuando").querySelectorAll("button").forEach(b=> b.onclick=()=>ponCuando(b.dataset.c, true));
+  document.addEventListener("click",(e)=>{ if(!e.target.closest(".masw")) document.querySelectorAll(".masmenu.show").forEach(m=>m.classList.remove("show")); });
   seqBrand(st.channelId).then(b=>{ _campBrand=b; });
   await load();
 }
@@ -165,6 +192,10 @@ async function load(){
     // El horario de envío del negocio, para poder avisar si una campaña larga termina fuera de él.
     getChannel(st.channelId),
   ]);
+  // (10-oct) ¿El bot vende algo físico? Si no, la segmentación por logística (Lima, agencia, saldo…) no aplica.
+  try{ const { data:ps }=await supa.from("products").select("tipo").eq("channel_id",st.channelId);
+    st.soloDigital=(ps||[]).length>0 && !(ps||[]).some(p=>p.tipo==="fisico"); }catch(_){ st.soloDigital=false; }
+  st.conteos=null;   // cuánta gente hay en cada etapa / etiqueta: se cuenta al abrir el formulario
   if(gen!==st.loadGen) return; // cambiaste de bot mientras cargaba → no pintes lo del anterior
   st.remarketing=(ch&&ch.remarketing)||{};
   // Solo plantillas APROBADAS por Meta (el copy lo promete). Una activa pero
@@ -180,6 +211,13 @@ const TPL_ICON=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 function renderGrid(){
   const box=$("grid");
   const sw=$("csearchWrap"); if(sw) sw.style.display=st.camps.length?"":"none";
+  // (10-oct) Carpetas solo cuando creaste alguna; mientras tanto «+ Carpeta» chico al lado del buscador (solo con campañas).
+  { const hayCarp=!!(Fbar && Fbar.metas().length); const fb=$("folders"), ab=$("addFolderBtn");
+    if(fb) fb.style.display=(hayCarp && st.camps.length)?"":"none";
+    if(ab){ ab.style.display=(!hayCarp && st.camps.length)?"":"none"; ab.onclick=()=>{ const nb=document.querySelector('#folders [data-act="new"]'); if(nb) nb.click(); }; } }
+  // Sin plantilla aprobada no hay nada que enviar: «Nueva campaña» apagado y la pantalla vacía lo dice.
+  const sinTpl=!st.templates.length;
+  { const nb=$("newBtn"); nb.disabled=sinTpl; nb.title=sinTpl?"Primero necesitas una plantilla aprobada por Meta":""; }
   let list=st.camps;
   if(Fbar) list=Fbar.filter(list);
   const query=($("cSearch")?.value||"").trim().toLowerCase();
@@ -189,10 +227,11 @@ function renderGrid(){
     // GRILLA de tarjetas (auto-fill minmax(320px,1fr)), así que sin abarcar las
     // columnas el vacío caía dentro de UNA celda y salía chiquito y pegado a la
     // izquierda, en vez de centrado en el espacio libre.
-    const vTit = query ? "Sin resultados" : (st.camps.length ? "Nada en esta vista" : "Aún no hay campañas");
+    const vacioSinTpl = !query && !st.camps.length && sinTpl;
+    const vTit = query ? "Sin resultados" : (st.camps.length ? "Nada en esta vista" : (vacioSinTpl ? "Primero necesitas una plantilla aprobada por Meta" : "Aún no hay campañas"));
     const vTxt = query ? `Nada coincide con “${esc(query)}”.`
-      : (st.camps.length ? "Prueba con otro filtro o carpeta." : "Crea tu primera campaña para escribirle a varios clientes a la vez.");
-    box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></div><h3>${vTit}</h3><p>${vTxt}</p></div>`;
+      : (st.camps.length ? "Prueba con otro filtro o carpeta." : (vacioSinTpl ? "Una campaña envía una plantilla de WhatsApp. Créala en Plantillas y, cuando Meta la apruebe, vuelve aquí." : "Crea tu primera campaña para escribirle a varios clientes a la vez."));
+    box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg></div><h3>${vTit}</h3><p>${vTxt}</p>${vacioSinTpl?'<a class="btn primary" href="plantillas.html" style="margin-top:14px;text-decoration:none">Ir a Plantillas</a>':""}</div>`;
     return;
   }
   box.innerHTML="";
@@ -201,34 +240,41 @@ function renderGrid(){
     const seg=c.segmento||{}; const total=c.total||0, sent=c.enviados||0, fail=c.fallidos||0;
     const chips=[
       ...(seg.tags||[]).map(t=>{ const tg=st.tags.find(x=>x.nombre===t); const h=tagHex(tg?.color); return `<span class="segchip" style="background:${h}1f;color:${h};border-color:${h}44">${esc(t)}</span>`; }),
-      ...(seg.stage||[]).map(s=>`<span class="segchip">${esc(STAGE_LBL[s]||s)}</span>`),
+      ...(seg.stage||[]).map(s=>`<span class="segchip"><span class="d" style="background:var(--st-${esc(s)})"></span>${esc(STAGE_LBL[s]||s)}</span>`),
       ...(seg.order_estados||[]).map(s=>`<span class="segchip">${icon("box")} ${esc(OSTATE_LBL[s]||s)}</span>`),
     ];
     const segHtml=chips.length?`<div class="segchips">${chips.join("")}</div>`:`<div class="segall">${icon("users")} Todos los contactos del canal</div>`;
     const pct=total?Math.round(sent/total*100):0;
     const el=document.createElement("div"); el.className="cc";
     el.innerHTML=`
-      <div class="ch"><span class="cn">${esc(c.nombre)}</span><span class="est ${c.estado}">${(c.estado||"").replace(/^./,ch=>ch.toUpperCase())}</span></div>
+      <div class="ch"><span class="cn">${esc(c.nombre)}</span><span class="est2"><i style="background:${(EST_LBL[c.estado]||[])[1]||"var(--faint)"}"></i>${(EST_LBL[c.estado]||[])[0]||esc(c.estado||"")}</span></div>
       <div class="tplrow">${TPL_ICON}<b>${tpl?esc(tpl.name):"Sin plantilla"}</b></div>
       ${segHtml}
-      <div class="cstat" style="margin-top:8px">${c.programada_at?`${icon("clock")} Programada: <b>${fmt.format(new Date(c.programada_at))}</b>`:icon("sparkles")+" Envío inmediato al activar"}</div>
-      ${c.estado!=="borrador"?`<div class="cprog"><div class="bars" style="flex:1;margin:0"><span class="sent" style="width:${total?sent/total*100:0}%"></span><span class="fail" style="width:${total?fail/total*100:0}%"></span></div><span class="pct">${pct}%</span></div>
-        <div class="cstat">Enviados <b>${sent}</b> · Fallidos <b>${fail}</b> · Total <b>${total}</b></div>`:""}
+      ${(c.estado==="borrador"||c.estado==="programada")?`<div class="cstat" style="margin-top:8px">${c.programada_at?`${icon("clock")} Sale el <b>${fmt.format(new Date(c.programada_at))}</b>`:"Sale al activarla"}</div>`:""}
+      ${c.estado==="enviando"?`<div class="cprog"><div class="bars" style="flex:1;margin:0"><span class="sent" style="width:${total?sent/total*100:0}%"></span><span class="fail" style="width:${total?fail/total*100:0}%"></span></div><span class="pct">${pct}%</span></div>`:""}
+      ${(c.estado==="enviando"||c.estado==="completada"||(c.estado==="cancelada"&&total))?`<div class="cstat" style="margin-top:8px">Enviados <b>${sent}</b> de ${total}${fail?` · <span style="color:var(--red)">${fail} fallidos</span>`:""}</div>`:""}
       ${c.motivo?`<div class="cstat" style="margin-top:6px;color:var(--red)">${icon("alert")} Se detuvo: ${esc(c.motivo)}</div>`:""}
       <div class="cacts">
-        <span data-cardfolder></span>
         ${c.estado==="borrador"?`<button class="btn primary" data-a="activate">${icon("play")} Activar</button><button class="btn" data-a="edit">Editar</button>`:""}
+        ${c.estado==="programada"?`<button class="btn" data-a="edit">Editar</button>`:""}
         ${(c.estado==="programada"||c.estado==="enviando")?`<button class="btn danger" data-a="cancel">Cancelar</button>`:""}
-        <button class="btn danger" data-a="del" style="margin-left:auto">Eliminar</button>
+        <div class="masw"><button class="masb" data-mas title="Más">⋯</button><div class="masmenu">
+          ${(Fbar && Fbar.metas().length)?'<button data-a="folder">Mover a carpeta…</button>':""}
+          <button class="dang" data-a="del">Eliminar</button></div></div>
       </div>`;
-    el.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>action(b.dataset.a,c));
-    const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar){ const pk=Fbar.picker({ current:c.folder||null, onPick:async(v)=>{ const { error }=await supa.from("campaigns").update({ folder:v }).eq("id",c.id); if(error){ toast(error.message,true); return; } c.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderGrid(); } }); fslot.appendChild(pk); }
+    el.querySelectorAll("button[data-a]").forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); const m=b.closest(".masmenu"); if(m) m.classList.remove("show"); action(b.dataset.a,c); });
+    el.querySelector("[data-mas]").onclick=(e)=>{ e.stopPropagation(); const m=el.querySelector(".masmenu"); const ab=m.classList.contains("show"); document.querySelectorAll(".masmenu.show").forEach(x=>x.classList.remove("show")); if(!ab) m.classList.add("show"); };
     box.appendChild(el);
   });
 }
 async function action(a, c){
   if(a==="edit") return openModal(c);
+  if(a==="folder"){
+    const ops=[{ value:"__none", label:"Sin carpeta" }, ...Fbar.metas().map(m=>({ value:m.nombre, label:`${m.emoji?m.emoji+" ":""}${m.nombre}` }))];
+    const v=await askChoice({ title:"Mover a carpeta", options:ops, value:c.folder||"__none" }); if(v==null) return;
+    const folder=v==="__none"?null:v;
+    const { error }=await supa.from("campaigns").update({ folder }).eq("id",c.id); if(error){ toast(error.message,true); return; }
+    c.folder=folder; toast(folder?`Movida a «${folder}»`:"Quitada de la carpeta"); await Fbar.reload(); return renderGrid(); }
   if(a==="del"){ if(!await confirmDialog({title:"Eliminar campaña",message:"Esta acción no se puede deshacer.",confirmText:"Eliminar",danger:true})) return; const { error }=await supa.from("campaigns").delete().eq("id",c.id); if(error){ toast(error.message,true); return; } toast("Eliminada"); return load(); }
   if(a==="cancel"){
     // Cancelar es terminal (no se deshace) y antes iba sin confirmación, a un clic de «Activar».
@@ -270,22 +316,53 @@ function openModal(c){
   $("m_tpl").value=c?.template_id||"";
   const seg=c?.segmento||{};
   st.pickTags=new Set(seg.tags||[]); st.pickStages=new Set(seg.stage||[]); st.pickOStates=new Set(seg.order_estados||[]);
-  $("m_tags").innerHTML=st.tags.length?st.tags.map(t=>{const h=tagHex(t.color);return `<span class="pk ${st.pickTags.has(t.nombre)?'on':''}" data-t="${esc(t.nombre)}" style="${st.pickTags.has(t.nombre)?`background:${h}22;color:${h}`:''}">${esc(t.nombre)}</span>`;}).join(""):'<span style="color:var(--faint);font-size:12px">Sin etiquetas (crea en Etiquetas)</span>';
-  $("m_stages").innerHTML=STAGES.map(([s,l])=>`<span class="pk ${st.pickStages.has(s)?'on':''}" data-s="${s}" style="${st.pickStages.has(s)?'background:var(--brand-bg);color:var(--brand)':''}">${l}</span>`).join("");
-  $("m_tags").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const n=el.dataset.t; if(st.pickTags.has(n))st.pickTags.delete(n); else st.pickTags.add(n); estimarAudiencia(); const t=st.tags.find(x=>x.nombre===n),h=tagHex(t?.color); el.classList.toggle("on"); el.style.cssText=st.pickTags.has(n)?`background:${h}22;color:${h}`:''; });
-  $("m_stages").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const s=el.dataset.s; if(st.pickStages.has(s))st.pickStages.delete(s); else st.pickStages.add(s); estimarAudiencia(); el.classList.toggle("on"); el.style.cssText=st.pickStages.has(s)?'background:var(--brand-bg);color:var(--brand)':''; });
-  $("m_ostates").innerHTML=ORDER_STATES.map(([s,l])=>`<span class="pk ${st.pickOStates.has(s)?'on':''}" data-o="${s}" style="${st.pickOStates.has(s)?'background:var(--brand-bg);color:var(--brand)':''}">${l}</span>`).join("");
-  $("m_ostates").querySelectorAll(".pk").forEach(el=> el.onclick=()=>{ const s=el.dataset.o; if(st.pickOStates.has(s))st.pickOStates.delete(s); else st.pickOStates.add(s); estimarAudiencia(); el.classList.toggle("on"); el.style.cssText=st.pickOStates.has(s)?'background:var(--brand-bg);color:var(--brand)':''; });
+  pintaPicks();
+  if(!st.conteos) cargarConteos().then(()=>{ if($("modal").classList.contains("show")) pintaPicks(); });
   $("m_modo").value=seg.modo||"cualquiera";
   // datetime-local espera hora LOCAL. toISOString() daba dígitos UTC → mostraba la
   // hora corrida (5h en Lima) y al re-guardar la volvía a correr. Se arma con los
   // componentes locales. (El guardado ya convierte local→UTC con new Date(value).)
   $("m_prog").value=c?.programada_at?instanteAProg(c.programada_at):""; // mostrado en la zona del negocio
+  ponCuando(c?.programada_at?"prog":"ya", false);
   paintModalPreview();
   estimarAudiencia();                     // a cuánta gente le llega y hasta qué hora
   $("m_prog").oninput = estimarAudiencia;  // cambiar la hora cambia dónde termina
   $("m_modo").onchange = estimarAudiencia;
   $("modal").classList.add("show");
+}
+// (10-oct) Etapas y etiquetas con cuánta gente hay en cada una; las vacías no salen (salvo que ya estén elegidas).
+async function cargarConteos(){
+  const cid=st.channelId; const out={ stage:{}, tag:{} };
+  const cuenta=(q)=>q.then(r=>r.count||0).catch(()=>null);
+  await Promise.all([
+    ...STAGES.map(([k])=> cuenta(supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",cid).eq("stage",k)).then(n=>{ out.stage[k]=n; })),
+    ...st.tags.map(t=> cuenta(supa.from("contact_tags").select("contact_id",{count:"exact",head:true}).eq("tag_id",t.id)).then(n=>{ out.tag[t.nombre]=n; })),
+  ]);
+  if(cid===st.channelId) st.conteos=out;
+}
+function pintaPicks(){
+  const C=st.conteos; const n=(v)=> v==null?"":`<span class="n">${v}</span>`;
+  const visible=(v,on)=> on || !C || v==null || v>0;
+  $("m_stages").innerHTML=STAGES.filter(([s])=>visible(C?.stage[s],st.pickStages.has(s))).map(([s,l])=>`<span class="pk ${st.pickStages.has(s)?'on':''}" data-s="${s}"><span class="d" style="background:var(--st-${s})"></span>${l}${n(C?.stage[s])}</span>`).join("");
+  const tags=st.tags.filter(t=>visible(C?.tag[t.nombre],st.pickTags.has(t.nombre)));
+  $("m_tagsWrap").style.display=tags.length?"":"none";
+  $("m_tags").innerHTML=tags.map(t=>{const h=tagHex(t.color);return `<span class="pk ${st.pickTags.has(t.nombre)?'on':''}" data-t="${esc(t.nombre)}"><span class="d" style="background:${h}"></span>${esc(t.nombre)}${n(C?.tag[t.nombre])}</span>`;}).join("");
+  $("m_ostWrap").style.display=(st.soloDigital && !st.pickOStates.size)?"none":"";
+  $("m_ostates").innerHTML=ORDER_STATES.map(([s,l])=>`<span class="pk ${st.pickOStates.has(s)?'on':''}" data-o="${s}">${l}</span>`).join("");
+  const tog=(set,v)=>{ if(set.has(v)) set.delete(v); else set.add(v); estimarAudiencia(); pintaPicks(); };
+  $("m_stages").querySelectorAll(".pk").forEach(el=> el.onclick=()=>tog(st.pickStages,el.dataset.s));
+  $("m_tags").querySelectorAll(".pk").forEach(el=> el.onclick=()=>tog(st.pickTags,el.dataset.t));
+  $("m_ostates").querySelectorAll(".pk").forEach(el=> el.onclick=()=>tog(st.pickOStates,el.dataset.o));
+  // «Cómo combinar» solo tiene sentido con 2 o más filtros elegidos
+  $("m_modoWrap").style.display=(st.pickStages.size+st.pickTags.size+st.pickOStates.size)>=2?"":"none";
+}
+// «Enviar al activar» / «Programar»: la fecha aparece solo al programar (antes: «vacío = al guardar»).
+function ponCuando(modo, foco){
+  $("m_cuando").querySelectorAll("button").forEach(b=>b.classList.toggle("on",b.dataset.c===modo));
+  const inp=$("m_prog"); inp.style.display=modo==="prog"?"":"none";
+  if(modo==="ya") inp.value="";
+  else if(foco){ if(!inp.value){ const d=new Date(Date.now()+3600000); d.setMinutes(0,0,0); inp.value=instanteAProg(d.toISOString()); } try{ inp.focus(); }catch(_){} }
+  estimarAudiencia();
 }
 // ── Cuánta gente y hasta qué hora ──────────────────────────────────
 // El ritmo real lo DICE EL BACKEND junto con el total (es su BATCH, y el cron corre cada
@@ -325,10 +402,11 @@ function pintaEstimacion(total){
   // uno a uno porque WhatsApp mide cómo reacciona la gente, y una ráfaga masiva desde el mismo
   // número es lo que te baja la calidad o te lo banea. Sabiendo el porqué, el dueño puede
   // decidir de verdad (moverla, partirla) en vez de solo leer una cifra.
-  box.innerHTML = `Le llega a <b style="color:var(--text)">${total.toLocaleString("es-PE")}</b> ${total===1?"persona":"personas"}. `
-    + `Tarda <b style="color:var(--text)">${dur}</b> en salir toda: empezando ${hh(inicio)}, termina cerca de las <b style="color:var(--text)">${hh(fin)}</b>${otroDia?" del día siguiente":""}.`
-    + `<div style="color:var(--faint);font-size:11.5px;margin-top:4px">Salen de a <b>${ENVIOS_POR_MINUTO} por minuto</b>, espaciados a propósito: WhatsApp mide cómo reacciona la gente, y una ráfaga masiva desde el mismo número es lo que te baja la calidad o te lo banea.</div>`
+  // (10-oct) Una línea; el porqué del ritmo (y el aviso de consentimiento) detrás de un «?».
+  box.innerHTML = `Le llega a <b style="color:var(--text)">${total.toLocaleString("es-PE")}</b> ${total===1?"persona":"personas"} · sale en ~${dur} (${hh(inicio)} → <b style="color:var(--text)">${hh(fin)}</b>${otroDia?" del día siguiente":""})<button type="button" class="estq" title="¿Por qué tarda?">?</button>`
+    + `<div class="estay" style="display:none">Salen de a <b>${ENVIOS_POR_MINUTO} por minuto</b>, espaciados a propósito: WhatsApp mide cómo reacciona la gente, y una ráfaga masiva desde el mismo número es lo que te baja la calidad o te lo banea. Úsalo solo con clientes que te escribieron antes.</div>`
     + aviso;
+  { const q=box.querySelector(".estq"), ay=box.querySelector(".estay"); if(q&&ay) q.onclick=()=>{ ay.style.display=ay.style.display==="none"?"":"none"; }; }
 }
 // Conteo de audiencia de un segmento ya guardado (para la confirmación de «Activar»).
 async function contarAudiencia(segmento){
@@ -365,6 +443,7 @@ const enTZ=(d)=>new Date(new Date(d).toLocaleString("en-US",{timeZone:getTZ()}))
 async function _saveCampaign(){
   const nombre=$("m_nombre").value.trim();
   if(!nombre){ toast("Escribe un nombre",true); return; }
+  if($("m_cuando").querySelector('[data-c="prog"].on') && !$("m_prog").value){ toast("Elige la fecha y hora",true); return; }
   if($("m_prog").value){ const inst=progAInstante($("m_prog").value); if(inst && inst<new Date() && !await confirmDialog({title:"Esa fecha ya pasó",message:`Programaste ${fmtTZ(inst)} (hora de ${tzNombre()}). La campaña saldría apenas la actives. ¿Guardar igual?`,confirmText:"Guardar igual"})) return; }
   const segmento={ tags:[...st.pickTags], stage:[...st.pickStages], order_estados:[...st.pickOStates], modo:$("m_modo").value };
   const row={ channel_id:st.channelId, nombre, folder:(st.editing?st.editing.folder:((Fbar&&Fbar.current!=="__all"&&Fbar.current!=="__none")?Fbar.current:null))||null, template_id:$("m_tpl").value||null,
