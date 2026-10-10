@@ -1782,14 +1782,23 @@ async function ndHoy(s, porStage, cid){
   let pagos=0;
   try{
     const { data } = await supa.from("orders").select("id,estado,shipping,contact:contacts(wa_id,source)").eq("channel_id",channelId)
-      .or("estado.in.(pendiente,esperando_adelanto,en_agencia),shipping->>pago_adelantado_por_validar.eq.true").limit(500);
-    pagos=(data||[]).filter(o=>{ const c=o.contact||{}; return c.wa_id!=="webchat-test" && c.source!=="sim"; }).length;
+      .or("estado.in.(pendiente,esperando_adelanto,en_agencia),shipping->>pago_adelantado_por_validar.eq.true,shipping->>extra_pendiente.not.is.null").limit(500);
+    // MISMAS reglas que «Pagos por validar» (copiloto.html): solo lo que trae un comprobante esperando tu visto bueno.
+    // (10-oct: contaba cualquier pedido pendiente y salía «1 pago por validar» con la sección vacía — W. Rodriguez sin comprobante)
+    const rech=(sh,t)=>{ const rej=sh[t+"_rechazado_at"], rec=sh[t+"_recibido_at"]; return !!rej && (!rec || new Date(rej)>=new Date(rec)); };
+    pagos=(data||[]).filter(o=>{ const c=o.contact||{}; if(c.wa_id==="webchat-test" || c.source==="sim") return false;
+      const sh=o.shipping||{};
+      if(sh.pago_adelantado_por_validar===true || sh.extra_pendiente) return true;
+      if(o.estado==="pendiente") return !!sh.digital_pendiente;
+      if(o.estado==="esperando_adelanto") return !!(sh.adelanto_comprobante||sh.adelanto_recibido_at) && !rech(sh,"adelanto");
+      if(o.estado==="en_agencia") return !!(sh.saldo_comprobante||sh.saldo_recibido_at) && !rech(sh,"saldo");
+      return false; }).length;
   }catch(_){ pagos=0; }
   if(cid!==channelId) return;
   const humano=Number(s.requiere_humano||0), cal=Number(porStage.caliente||0);
   const it=[];
   if(pagos) it.push(`<a href="copiloto.html"><span class="nd-pill amb">${pagos}</span> ${pagos===1?"pago por validar":"pagos por validar"}</a>`);
-  if(humano) it.push(`<a href="index.html"><span class="nd-pill red">${humano}</span> ${humano===1?"pide una persona":"piden una persona"}</a>`);
+  if(humano) it.push(`<a href="index.html"><span class="nd-pill red">${humano}</span> ${humano===1?"espera tu respuesta":"esperan tu respuesta"}</a>`);
   if(cal) it.push(`<a href="index.html?stage=caliente"><span class="nd-pill blu">${cal}</span> ${cal===1?"caliente sin comprar":"calientes sin comprar"}</a>`);
   el.innerHTML = it.length ? `<div class="nd-hoy"><b>Para hoy</b>${it.join("")}</div>` : "";
 }
