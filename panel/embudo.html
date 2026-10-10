@@ -108,6 +108,40 @@
   .dkpi .dl{font-size:12px;color:var(--muted);margin-top:6px;font-weight:700}
   .dkpi .dd{font-size:11px;color:var(--faint);margin-top:3px;line-height:1.4}
   .dkpi.good .dv{color:var(--green)} .dkpi.warn .dv{color:var(--amber)} .dkpi.bad .dv{color:var(--red)}
+  /* ── Diseño 2 (10-oct): mismo dibujo y mismos 6 pasos; solo la paleta.
+     Etapas: gris (frío) → azul (se acerca) → verde (plata que entró). Provincia: ámbar = esperando validar. ── */
+  html:not([data-ds="1"])[data-theme="light"]{
+    --st-llegaron:#344054; --st-nuevo:#344054; --st-curioso:#4A5D82; --st-interesado:#3D68BD; --st-caliente:#1A5FD8;
+    --st-confirmado:#0B4FB8; --st-comprado:#067647; --st-perdido:#98A2B3; --st-resto:#E4E7EC;
+    --pv-1:#344054; --pv-2:#4A5D82; --pv-3:#3D68BD; --pv-4:#B54708; --pv-5:#0B63E5; --pv-6:#067647;
+  }
+  html:not([data-ds="1"]):not([data-theme="light"]){
+    --st-llegaron:#3A4558; --st-nuevo:#3A4558; --st-curioso:#3F5274; --st-interesado:#2F5DB0; --st-caliente:#2563EB;
+    --st-confirmado:#3B82F6; --st-comprado:#15803D; --st-perdido:#5D6B82; --st-resto:#263043;
+    --pv-1:#3A4558; --pv-2:#3F5274; --pv-3:#2F5DB0; --pv-4:#B45309; --pv-5:#2563EB; --pv-6:#15803D;
+  }
+  html:not([data-ds="1"]) .met{border:1px solid var(--border);border-radius:12px;box-shadow:none;background:var(--surface)}
+  html:not([data-ds="1"]) .met .num{font-weight:600;letter-spacing:-.03em;font-size:46px}
+  /* Conversión = el único número destacado (tarjeta tinta, como la Ganancia neta del Dashboard) */
+  html:not([data-ds="1"]) .met.mconv{background:var(--hero);border-color:var(--hero-border,transparent)}
+  html:not([data-ds="1"]) .met.mconv .num,html:not([data-ds="1"]) .met.mconv .mlbl{color:var(--hero-text)}
+  html:not([data-ds="1"]) .met.mconv .mdesc,html:not([data-ds="1"]) .met.mconv .mbrk{color:var(--hero-muted)}
+  html:not([data-ds="1"]) .met.mconv .mdesc b{color:var(--hero-text)}
+  html:not([data-ds="1"]) .met.mconv .mtag{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.12);color:var(--hero-muted)}
+  /* Efectividad de cierre = lo que hace la IA: violeta liso */
+  html:not([data-ds="1"]) .met.mia{background:var(--surface);border-color:var(--border)}
+  html:not([data-ds="1"]) .met.mia .num{background:none;-webkit-text-fill-color:var(--violet);color:var(--violet)}
+  html:not([data-ds="1"]) .miabadge{background:var(--violet-bg);color:var(--violet-text);box-shadow:none}
+  html:not([data-ds="1"]) .panel{border-radius:12px}
+  html:not([data-ds="1"]) .fbar2{border-radius:8px;height:50px}
+  html:not([data-ds="1"]) .fbar2 .fl{font-weight:500}
+  html:not([data-ds="1"]) .fbar2 .fr{font-weight:600;text-shadow:none;font-size:18px}
+  html:not([data-ds="1"]) .fstep{font-weight:500}
+  html:not([data-ds="1"]) .neck{background:var(--amber-bg);border-color:transparent}
+  html:not([data-ds="1"]) .neck.ok{background:var(--green-bg)}
+  html:not([data-ds="1"]) .dbarwrap{border-radius:6px} html:not([data-ds="1"]) .dbar{border-radius:6px}
+  html:not([data-ds="1"]) .react{box-shadow:none}
+  html:not([data-ds="1"]) .pcard,html:not([data-ds="1"]) .dkpi{border-radius:12px}
 </style>
 </head>
 <body>
@@ -197,7 +231,7 @@ function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<"
 const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
 let CUR="PEN"; const money=(n)=>(CUR_SYM[CUR]||CUR)+" "+Math.round(Number(n||0)).toLocaleString("es-PE");
 const stMap=Object.fromEntries(STAGES.map(s=>[s.k,s]));
-const col=(k)=>stMap[k]?.color||"#888";
+const col=(k)=>`var(--st-${k},${stMap[k]?.color||"#888"})`; // Diseño 2: la paleta la pone el CSS
 
 const st={ channelId:null, contacts:[], ordersBy:{}, zonaMap:{}, rt:null, tipo:"all", zona:"total", prod:"all", range:null, dr:null, loadGen:0 };
 
@@ -415,7 +449,7 @@ function renderFunnel(F){
   if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>${filt?`<h4>Nada coincide</h4>No hay contactos que coincidan con los filtros elegidos. Prueba con otro tipo, producto o rango de fechas.`:`<h4>Aún sin contactos</h4>Cuando lleguen mensajes a este canal, verás el embudo llenarse acá.`}</div>`; return; }
   const N=F.niveles;
   const niveles=[
-    { lbl:"Llegaron", n:N.llegaron, c:"#2b7fff" },
+    { lbl:"Llegaron", n:N.llegaron, c:"var(--st-llegaron,#2b7fff)" },
     { lbl:"Curiosos", n:N.curiosos, c:col("curioso") },
     { lbl:"Interés", n:N.interes, c:col("interesado") },
     { lbl:"Caliente", n:N.calientes, c:col("caliente") },
@@ -500,12 +534,12 @@ function renderEntrega(cs){
       <div class="dd">${noRecogido>0?`Llegaron pero nunca recogieron${fleteCaido>0?` · flete perdido ${money(fleteCaido)}`:""}`:"Nadie se cayó — excelente"}</div></div>`;
 
   const niveles=[
-    { lbl:"Con adelanto", n:conAdelanto,  c:"#8b5cf6" },
-    { lbl:"Enviados",  n:despachados,  c:"#3b82f6" },
-    { lbl:"En agencia",   n:enAgencia,    c:"#0ea5e9" },
-    { lbl:"Pagaron saldo",n:pagaronSaldo, c:"#f59e0b" },
-    { lbl:"Clave enviada",n:claveEnviada, c:"#10b981" },
-    { lbl:"Recogieron",   n:recogieron,   c:"#16a34a" },
+    { lbl:"Con adelanto", n:conAdelanto,  c:"var(--pv-1,#8b5cf6)" },
+    { lbl:"Enviados",  n:despachados,  c:"var(--pv-2,#3b82f6)" },
+    { lbl:"En agencia",   n:enAgencia,    c:"var(--pv-3,#0ea5e9)" },
+    { lbl:"Pagaron saldo",n:pagaronSaldo, c:"var(--pv-4,#f59e0b)" },
+    { lbl:"Clave enviada",n:claveEnviada, c:"var(--pv-5,#10b981)" },
+    { lbl:"Recogieron",   n:recogieron,   c:"var(--pv-6,#16a34a)" },
   ];
   const pasos=[pct(despachados,conAdelanto), pct(enAgencia,despachados), pct(pagaronSaldo,enAgencia), pct(claveEnviada,pagaronSaldo), pct(recogieron,claveEnviada)];
   const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
@@ -551,12 +585,12 @@ function renderProvinciaAhora(cs){
       else if(e==="recogido") recojo++;
     }); });
   const rows=[
-    { label:"Con adelanto",  desc:"Adelanto pagado; listos para enviar a la agencia", color:"#8b5cf6", n:conAdel },
-    { label:"Despachados",   desc:"Ya salieron; viajando a la agencia de destino",       color:"#3b82f6", n:desp },
-    { label:"En agencia",    desc:"Llegaron; esperando que paguen el saldo",             color:"#0ea5e9", n:enAg },
-    { label:"Pagaron saldo", desc:"Mandaron el comprobante del saldo — por validar",     color:"#f59e0b", n:pagoSaldo },
-    { label:"Clave enviada", desc:"Saldo aprobado; ya tienen su clave de recojo",        color:"#10b981", n:clave },
-    { label:"Recojo",        desc:"Recogieron su pedido — cerrado",                    color:"#16a34a", n:recojo },
+    { label:"Con adelanto",  desc:"Adelanto pagado; listos para enviar a la agencia", color:"var(--pv-1,#8b5cf6)", n:conAdel },
+    { label:"Despachados",   desc:"Ya salieron; viajando a la agencia de destino",       color:"var(--pv-2,#3b82f6)", n:desp },
+    { label:"En agencia",    desc:"Llegaron; esperando que paguen el saldo",             color:"var(--pv-3,#0ea5e9)", n:enAg },
+    { label:"Pagaron saldo", desc:"Mandaron el comprobante del saldo — por validar",     color:"var(--pv-4,#f59e0b)", n:pagoSaldo },
+    { label:"Clave enviada", desc:"Saldo aprobado; ya tienen su clave de recojo",        color:"var(--pv-5,#10b981)", n:clave },
+    { label:"Recojo",        desc:"Recogieron su pedido — cerrado",                    color:"var(--pv-6,#16a34a)", n:recojo },
   ];
   const total=rows.reduce((s,r)=>s+r.n,0);
   if(total===0){ panel.style.display="none"; return; }
@@ -607,8 +641,8 @@ function renderDist(F){
     const reactivable=(s.k==="curioso"||s.k==="interesado"||s.k==="caliente"||s.k==="confirmado") && n>0;
     const p=pct(n,F.total);
     return `<div class="drow">
-      <div class="dhead"><span class="ddot" style="background:${s.color}"></span><div><div class="dname">${esc(s.label)}</div><div class="dsub">${esc(s.desc||"")}</div></div></div>
-      <div class="dbarwrap"><div class="dbar" style="width:${Math.round(n/max*100)}%;background:${s.color}"></div></div>
+      <div class="dhead"><span class="ddot" style="background:${col(s.k)}"></span><div><div class="dname">${esc(s.label)}</div><div class="dsub">${esc(s.desc||"")}</div></div></div>
+      <div class="dbarwrap"><div class="dbar" style="width:${Math.round(n/max*100)}%;background:${col(s.k)}"></div></div>
       <div class="dn">${nf.format(n)}</div>
       <div class="dpct">${p!=null?p+"%":""}</div>
       ${reactivable?`<button class="react" data-k="${s.k}">Reactivar ${n} →</button>`:``}
@@ -638,7 +672,7 @@ function renderProductos(){
         <div class="pc-kpi"><div class="pc-kv ${cvC}">${F.conversion==null?"—":F.conversion+"%"}</div><div class="pc-kl">Conversión</div></div>
         <div class="pc-kpi"><div class="pc-kv ${efC}">${F.efectividad==null?"—":F.efectividad+"%"}</div><div class="pc-kl">Efectividad</div></div>
       </div>
-      <div class="pc-mini">${seg(N.compraron,col("comprado"))}${seg(N.confirmaron-N.compraron,col("confirmado"))}${seg(N.interes-N.confirmaron,col("interesado"))}${seg(N.llegaron-N.interes,"#3a4453")}</div>
+      <div class="pc-mini">${seg(N.compraron,col("comprado"))}${seg(N.confirmaron-N.compraron,col("confirmado"))}${seg(N.interes-N.confirmaron,col("interesado"))}${seg(N.llegaron-N.interes,"var(--st-resto,#3a4453)")}</div>
       <div class="pc-foot">${nf.format(N.compraron)} compraron · ${nf.format(N.llegaron)} contactos</div>
     </div>`;
   }).join("");
