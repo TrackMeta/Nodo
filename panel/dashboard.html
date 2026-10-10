@@ -239,6 +239,18 @@
   .bita-seg{display:inline-flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px}
   .bita-seg button{border:none;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:500;padding:5px 11px;border-radius:7px;cursor:pointer}
   .bita-seg button.on{background:var(--surface);color:var(--text);box-shadow:0 0 0 1px var(--border)}
+  .bc-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:2px 0 10px}
+  .bc-sum{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;font-size:12.5px;color:var(--muted)}
+  .bc-sum b{color:var(--text);font-weight:600} .bc-sum b.pos{color:var(--green)} .bc-sum b.neg{color:var(--red)}
+  .bc-pre{display:inline-flex;align-items:center;gap:6px;color:var(--faint)} .bc-pre i{width:12px;height:6px;border-radius:2px;background:var(--border-strong,#D0D5DD)}
+  .bc-wrap{position:relative} .bc-hit{cursor:pointer}
+  .bc-tip{position:absolute;z-index:5;pointer-events:none;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.22);padding:10px 12px;font-size:12.5px}
+  .bc-tip .t{font-weight:600;margin-bottom:6px;text-transform:capitalize}
+  .bc-tip .r{display:flex;justify-content:space-between;gap:16px;padding:2px 0;color:var(--muted)} .bc-tip .r b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+  .bc-tip .r.pos b{color:var(--green)} .bc-tip .r.neg b{color:var(--red)}
+  .bc-tip .r:has(+ .r.pos),.bc-tip .r:has(+ .r.neg){border-bottom:1px solid var(--border);padding-bottom:5px;margin-bottom:3px}
+  .bc-tip .nota{font-size:11.5px;color:var(--faint);margin-top:5px}
+  .bc-empty{color:var(--faint);font-size:13px;text-align:center;padding:40px 0}
   .bita-tools{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
   /* lo viejo sigue calculándose (mismos números) pero no se muestra: [hidden] pierde contra .pband/.kpis{display:…} */
   #pband[hidden],#kpis[hidden],#efecPanel[hidden],#bitaCalWrap[hidden],#bitaChart[hidden]{display:none!important}
@@ -733,7 +745,7 @@ async function boot(){
   // Gráfico · Calendario (un solo bloque — Rodrigo, 10-oct)
   $("bitaSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{
     $("bitaSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
-    $("bitaChart").hidden = b.dataset.b!=="chart"; $("bitaCalWrap").hidden = b.dataset.b!=="cal";
+    $("bitaChart").hidden = b.dataset.b!=="chart"; $("bitaCalWrap").hidden = b.dataset.b!=="cal"; bitaLabelNav();
   });
   $("bitaPrev").onclick=()=>{ bitaMonth=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()-1,1); renderBitacora(); };
   $("bitaNext").onclick=()=>{ bitaMonth=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()+1,1); renderBitacora(); };
@@ -1525,9 +1537,11 @@ function renderMetricas(porStage, cohorte){
 // Reusa el mismo criterio de profit que el Dashboard: margen (digital=cobrado,
 // físico=margen) − gasto de Meta − gastos extra, agregado por día.
 let bitaOtras={};
-async function loadBitacora(monthStart){
-  const from=new Date(monthStart.getFullYear(),monthStart.getMonth(),1);
-  const to=new Date(monthStart.getFullYear(),monthStart.getMonth()+1,1); // exclusivo
+function loadBitacora(monthStart){
+  return loadDias(new Date(monthStart.getFullYear(),monthStart.getMonth(),1), new Date(monthStart.getFullYear(),monthStart.getMonth()+1,1));
+}
+// Profit por día entre dos fechas-día (to exclusivo). El gráfico pide los últimos 14 días aunque crucen de mes.
+async function loadDias(from, to){
   const [ordR,prodR,insR,expR,iaR,admR2,wsB]=await Promise.all([
     // Paginado por lo mismo que arriba: un mes con más de 1000 pedidos (o el cruce de
     // anuncios × días de ads_insights) dejaba la Bitácora corta y sin avisar.
@@ -1602,7 +1616,7 @@ async function renderBitacora(){
   const todayK=ymdLima(new Date());
   const series=[];
   for(let dd=1;dd<=daysInMonth;dd++){ const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(dd).padStart(2,"0")}`; series.push({dd,k,profit:profitOf(k)}); }
-  renderBitaChart(series);
+  renderBitaChart(day);
   $("bitaLegend").innerHTML=`<span><i style="background:rgba(16,185,129,.7)"></i>alto</span><span><i style="background:rgba(16,185,129,.3)"></i>positivo</span><span><i style="background:rgba(239,68,68,.55)"></i>pérdida</span><span><i style="background:var(--surface-2);border:1px solid var(--border)"></i>sin datos</span><span>⏳ provisional</span>`;
   const maxP=Math.max(1,...series.map(s=>s.profit>0?s.profit:0));
   const dows=["L","M","X","J","V","S","D"];
@@ -1632,29 +1646,136 @@ async function renderBitacora(){
     applyRange();
   });
 }
-function renderBitaChart(series){
-  // (Diseño 2, 10-oct) Barras por día en vez de la línea con relleno: verde = ganaste, rojo = perdiste, hoy más claro
-  // (provisional), los días sin datos no se dibujan. Eje con 0 fijo y tres guías con su monto.
+// ── Gráfico del Profit diario (10-oct, rehecho con Rodrigo) ───────────
+// · Mes actual = los ÚLTIMOS 14 DÍAS (se corren solos; antes era el mes entero con 2/3 vacíos). Mes pasado = el mes.
+// · Monto sobre cada barra y una línea de resumen arriba: se lee sin pasar el mouse.
+// · Los días ANTES de la primera venta del bot en Nodo van en gris y fuera de la escala: en Prime Digital eran los días
+//   de ChatLevel (gasto sin ventas registradas) y salían como pérdidas enormes que aplastaban al resto.
+// · Al pasar el mouse: cómo se armó el día (ingresos, costo, publicidad, IA y otros, profit). Clic = filtra el Dashboard.
+// · «Diario · Acumulado»: el acumulado dice si en el periodo vas ganando o perdiendo.
+let bitaModo=(()=>{ try{ return localStorage.getItem("nodo.bitaModo")==="acum"?"acum":"diario"; }catch{ return "diario"; } })();
+const bitaPrimera={};   // channelId → día (YYYY-MM-DD) de la primera venta en Nodo, o "" si aún no hay
+async function primeraVentaK(){
+  if(bitaPrimera[channelId]!==undefined) return bitaPrimera[channelId];
+  let k="";
+  try{
+    const [oR,pR]=await Promise.all([
+      supa.from("orders").select("contact_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).order("created_at",{ascending:true}).limit(200),
+      pageAll((f,t)=>supa.from("contacts").select("id").eq("channel_id",channelId).or("wa_id.eq.webchat-test,source.eq.sim").order("id",{ascending:true}).range(f,t)),
+    ]);
+    const prueba=new Set(((pR&&pR.data)||[]).map(c=>c.id));
+    const o=((oR&&oR.data)||[]).find(x=>!prueba.has(x.contact_id) && O.esVenta(x));
+    if(o) k=ymdLima(o.created_at);
+  }catch(_){}
+  bitaPrimera[channelId]=k;
+  return k;
+}
+function bitaLabelNav(){
+  const enChart=!$("bitaChart").hidden;
+  const hoy=new Date(), esActual=bitaMonth.getFullYear()===hoy.getFullYear() && bitaMonth.getMonth()===hoy.getMonth();
+  const ms=new Intl.DateTimeFormat("es-PE",{month:"long",year:"numeric"}).format(bitaMonth);
+  $("bitaMonth").textContent = (enChart && esActual) ? "Últimos 14 días" : ms.charAt(0).toUpperCase()+ms.slice(1);
+}
+async function renderBitaChart(dayMes){
   const box=$("bitaChart");
-  const vals=series.map(s=>s.profit==null?0:s.profit);
-  const W=760,H=210,padL=52,padR=8,padT=12,padB=24;
-  const vMax=Math.max(1,...vals), vMin=Math.min(0,...vals);
+  const hoy=new Date(), todayK=ymdLima(hoy);
+  const esActual=bitaMonth.getFullYear()===hoy.getFullYear() && bitaMonth.getMonth()===hoy.getMonth();
+  let from, to;   // fechas-día locales; `to` exclusivo
+  if(esActual){ const t=startOfDay(hoy); from=new Date(t.getFullYear(),t.getMonth(),t.getDate()-13); to=new Date(t.getFullYear(),t.getMonth(),t.getDate()+1); }
+  else { from=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth(),1); to=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()+1,1); }
+  const day = (from>=bitaMonth) ? dayMes : await loadDias(from,to);
+  const primera=await primeraVentaK();
+  const fmtD=new Intl.DateTimeFormat("es-PE",{weekday:"short",day:"numeric",month:"short"});
+  const series=[];
+  for(let d=new Date(from); d<to; d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1)){
+    const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    if(k>todayK) break;
+    const dd=day[k]||null;
+    const profit=dd?(dd.margin-dd.spend-dd.exp):null;
+    series.push({ k, dd:d.getDate(), fecha:fmtD.format(d), d:dd, profit, pre: !!primera && k<primera, hoy:k===todayK });
+  }
+  bitaLabelNav();
+  const reales=series.filter(s=>!s.pre && s.profit!=null);
+  if(!series.length || (!reales.length && !series.some(s=>s.pre))){ box.innerHTML=`<div class="bc-empty">Sin movimientos en estas fechas.</div>`; return; }
+  const total=reales.reduce((a,s)=>a+s.profit,0);
+  const verdes=reales.filter(s=>s.profit>0).length;
+  const mejor=reales.length?reales.reduce((a,b)=>b.profit>a.profit?b:a):null;
+  const sg=(v)=> (v<0?"−":"+")+curSym()+" "+Math.abs(Math.round(v)).toLocaleString("es-PE");
+  const sgCorto=(v)=> (v<0?"−":"+")+Math.abs(Math.round(v)).toLocaleString("es-PE");
+  const periodo = esActual ? "Últimos 14 días" : $("bitaMonth").textContent;
+  const resumen = reales.length
+    ? `<span>${esc(periodo)} <b class="${total<0?"neg":"pos"}">${sg(total)}</b></span><span>${verdes} de ${reales.length} ${reales.length===1?"día":"días"} en verde</span>${mejor&&mejor.profit>0?`<span>Mejor: ${esc(mejor.fecha)} <b>${sg(mejor.profit)}</b></span>`:""}`
+    : `<span>${esc(periodo)}: aún sin ventas en Nodo</span>`;
+  const notaPre = series.some(s=>s.pre) ? `<span class="bc-pre"><i></i>Antes de la primera venta en Nodo</span>` : "";
+
+  // Escala: solo días reales (el gris no deforma). Guías en números redondos.
+  const W=760,H=220,padL=46,padR=10,padT=18,padB=26;
+  let vals;
+  if(bitaModo==="acum"){ let a=0; vals=series.map(s=>{ if(s.pre||s.profit==null) return null; a+=s.profit; return a; }); }
+  else vals=series.map(s=>s.pre?null:s.profit);
+  const nums=vals.filter(v=>v!=null);
+  let vMax=Math.max(0,...nums), vMin=Math.min(0,...nums);
+  if(vMax===vMin) vMax=vMin+10;
+  const paso=(()=>{ const r=(vMax-vMin)/3, p=Math.pow(10,Math.floor(Math.log10(r))); const m=r/p; return (m<=1?1:m<=2?2:m<=5?5:10)*p; })();
+  vMax=Math.ceil(vMax/paso)*paso; vMin=Math.floor(vMin/paso)*paso;
   const yf=(v)=> padT+(vMax-v)/(vMax-vMin)*(H-padT-padB);
   const n=series.length, bw=(W-padL-padR)/Math.max(1,n), y0=yf(0);
-  const todayK=ymdLima(new Date());
-  const ticks=[vMax, vMax/2, 0].concat(vMin<0?[vMin]:[]);
-  const grid=ticks.map(t=>`<line x1="${padL}" x2="${W-padR}" y1="${yf(t).toFixed(1)}" y2="${yf(t).toFixed(1)}" stroke="var(--border)" ${t===0?"":'stroke-dasharray="2 4"'}/>`+
-    `<text x="${padL-8}" y="${(yf(t)+3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--faint)">${moneyShort(t)}</text>`).join("");
-  const step=Math.ceil(n/12);
-  const labels=series.map((s,i)=> i%step===0?`<text x="${(padL+i*bw+bw/2).toFixed(1)}" y="${H-7}" text-anchor="middle" font-size="10" fill="var(--faint)">${String(s.dd).padStart(2,"0")}</text>`:"").join("");
-  const bars=series.map((s,i)=>{
-    if(s.profit==null) return "";
-    const p=s.profit, y=Math.min(yf(p),y0), h=Math.max(1.5,Math.abs(yf(p)-y0));
-    const x=padL+i*bw+bw*0.18, w=Math.max(2,bw*0.64);
-    const op=s.k===todayK?0.45:0.9;
-    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${p<0?"var(--red)":"var(--green)"}" fill-opacity="${op}"><title>${s.k}${s.k===todayK?" (provisional)":""} · ${money(p)}</title></rect>`;
-  }).join("");
-  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Profit de cada día del mes">${grid}${bars}${labels}</svg>`;
+  let grid="";
+  for(let t=vMin;t<=vMax+1e-9;t+=paso){ grid+=`<line x1="${padL}" x2="${W-padR}" y1="${yf(t).toFixed(1)}" y2="${yf(t).toFixed(1)}" stroke="var(--border)"${Math.abs(t)<1e-9?' stroke-width="1.2"':' stroke-dasharray="2 4"'}/><text x="${padL-8}" y="${(yf(t)+3.5).toFixed(1)}" text-anchor="end" font-size="10.5" fill="var(--faint)">${Math.round(t).toLocaleString("es-PE")}</text>`; }
+  const paso2=Math.ceil(n/16);
+  const xLbl=series.map((s,i)=> (i%paso2===0||s.hoy)?`<text x="${(padL+i*bw+bw/2).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10.5" fill="${s.hoy?"var(--text)":"var(--faint)"}"${s.hoy?' font-weight="600"':""}>${s.hoy?"hoy":s.dd}</text>`:"").join("");
+  const conMonto = bw>=26;
+  let marks="";
+  if(bitaModo==="acum"){
+    const pts=series.map((s,i)=>vals[i]==null?null:[padL+i*bw+bw/2, yf(vals[i])]).filter(Boolean);
+    if(pts.length){
+      const linea=pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");
+      const ult=nums[nums.length-1], col=ult<0?"var(--red)":"var(--green)";
+      marks+=`<path d="${linea} L${pts[pts.length-1][0].toFixed(1)} ${y0.toFixed(1)} L${pts[0][0].toFixed(1)} ${y0.toFixed(1)} Z" fill="${col}" fill-opacity=".10"/>`;
+      marks+=`<path d="${linea}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
+      const lp=pts[pts.length-1];
+      marks+=`<circle cx="${lp[0].toFixed(1)}" cy="${lp[1].toFixed(1)}" r="4.5" fill="${col}" stroke="var(--surface)" stroke-width="2"/>`;
+      marks+=`<text x="${Math.min(lp[0],W-padR-4).toFixed(1)}" y="${(lp[1]-10).toFixed(1)}" text-anchor="end" font-size="11.5" font-weight="600" fill="var(--text)">${sg(ult)}</text>`;
+    }
+  }
+  series.forEach((s,i)=>{
+    const x=padL+i*bw;
+    if(s.pre){
+      if(bitaModo==="diario") marks+=`<rect x="${(x+bw*0.2).toFixed(1)}" y="${(y0-3).toFixed(1)}" width="${Math.max(2,bw*0.6).toFixed(1)}" height="6" rx="2" fill="var(--border-strong,#D0D5DD)"/>`;
+    } else if(bitaModo==="diario" && s.profit!=null){
+      const p=s.profit, y=Math.min(yf(p),y0), h=Math.max(2,Math.abs(yf(p)-y0));
+      marks+=`<rect x="${(x+bw*0.18).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(3,bw*0.64).toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${p<0?"var(--red)":"var(--green)"}" fill-opacity="${s.hoy?0.5:0.92}"/>`;
+      if(conMonto) marks+=`<text x="${(x+bw/2).toFixed(1)}" y="${(p>=0?y-5:y+h+12).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="600" fill="var(--muted)">${sgCorto(p)}</text>`;
+    }
+    // zona invisible para el mouse (todo el alto de la columna)
+    marks+=`<rect class="bc-hit" data-i="${i}" x="${x.toFixed(1)}" y="${padT}" width="${bw.toFixed(1)}" height="${(H-padT-padB).toFixed(1)}" fill="transparent"/>`;
+  });
+  box.innerHTML=`<div class="bc-top"><div class="bc-sum">${resumen}${notaPre}</div><div class="bita-seg bc-modo"><button data-m="diario" class="${bitaModo==="diario"?"on":""}">Diario</button><button data-m="acum" class="${bitaModo==="acum"?"on":""}">Acumulado</button></div></div>`+
+    `<div class="bc-wrap"><svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Profit por día">${grid}${marks}${xLbl}</svg><div class="bc-tip" hidden></div></div>`;
+  box.querySelectorAll(".bc-modo button").forEach(b=> b.onclick=()=>{ bitaModo=b.dataset.m; try{ localStorage.setItem("nodo.bitaModo",bitaModo); }catch{} renderBitaChart(dayMes); });
+  const tip=box.querySelector(".bc-tip"), wrap=box.querySelector(".bc-wrap"), svg=box.querySelector("svg");
+  const fila=(l,v,c="")=>`<div class="r${c?" "+c:""}"><span>${l}</span><b>${v}</b></div>`;
+  box.querySelectorAll(".bc-hit").forEach(r=>{
+    r.addEventListener("mouseenter",()=>{
+      const s=series[+r.dataset.i]; let h=`<div class="t">${esc(s.fecha)}${s.hoy?" · provisional":""}</div>`;
+      if(s.pre){ h+=`<div class="nota">Antes de la primera venta en Nodo${s.d&&s.d.spend?` · ${moneyShort(s.d.spend)} en publicidad`:""}</div>`; }
+      else if(!s.d){ h+=`<div class="nota">Sin movimientos</div>`; }
+      else{
+        const d=s.d, costo=Math.max(0,d.rev-d.margin);
+        h+=fila("Ingresos",moneyShort(d.rev))+(costo>=1?fila("− Costo del producto",moneyShort(costo)):"")+fila("− Publicidad",moneyShort(d.spend))+(d.exp>=0.5?fila("− IA y otros gastos",moneyShort(d.exp)):"");
+        h+=fila("= Profit",sg(s.profit),s.profit<0?"neg":"pos");
+        if(bitaModo==="acum" && vals[+r.dataset.i]!=null) h+=fila("Acumulado",sg(vals[+r.dataset.i]));
+        h+=`<div class="nota">${d.sales} ${d.sales===1?"venta":"ventas"}${d.spend>0?` · ROAS ${(d.rev/d.spend).toFixed(2)}×`:""}</div>`;
+      }
+      tip.innerHTML=h; tip.hidden=false;
+      const sr=svg.getBoundingClientRect(), wr=wrap.getBoundingClientRect(), esc2=sr.width/W;
+      const cx=(padL+(+r.dataset.i)*bw+bw/2)*esc2+(sr.left-wr.left);
+      const tw=tip.offsetWidth; let left=cx+12; if(left+tw>wr.width) left=cx-12-tw;
+      tip.style.left=Math.max(0,left)+"px"; tip.style.top="8px";
+    });
+    r.addEventListener("mouseleave",()=>{ tip.hidden=true; });
+    r.addEventListener("click",()=>{ const s=series[+r.dataset.i]; const d=startOfDay(new Date(s.k+"T00:00:00")); range.preset=null; range.from=d; range.to=d; applyRange(); });
+  });
 }
 function renderProducts(prods, orders, vendido, unavailable, margenPorProd, gastoPorProd){
   const box=$("productPerf");
