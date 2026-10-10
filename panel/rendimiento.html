@@ -1089,7 +1089,15 @@ async function renderDetail(){
   const pre=S.filter(d=>d.pre), gastoPre=pre.reduce((x,d)=>x+d.gasto,0);
   const e=st.adEstado&&st.adEstado[a.ad_id];
   const it=(l,val,c="")=>`<span>${l} <b class="${c}">${val}</b></span>`;
-  const resumen=[
+  // (10-oct, «tiene mucha descripción») Si el rango toca días ANTES de la primera venta en Nodo, el resumen se calcula
+  // solo con los días de Nodo (sumando la serie diaria) en vez de explicarlo con una nota. Chats y costo por chat no
+  // existen por día, así que en ese caso no se muestran (estarían mezclados con los de antes).
+  let resumen;
+  if(pre.length){
+    const T=S.filter(d=>!d.pre).reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; return o; },{g:0,i:0,v:0});
+    resumen=[ it("Gasto",money0(T.g)), it("Ventas",nf(T.v)), it("CPA",T.v?money(T.g/T.v):"—"), it("ROAS",T.g?nf(T.i/T.g,2)+"×":"—"),
+      it("Ganancia",money(T.i-T.g),T.i-T.g<0?"neg":"pos") ].join('<i class="sep">·</i>');
+  } else resumen=[
     it("Gasto",money0(m.gasto)), it("Chats",nf(m.chats)), it("Costo/chat",oDash(m.cpr,money)),
     it("Ventas",nf(m.ventas)), it("CPA",oDash(m.cpaReal,money)), it("ROAS",oDash(m.roas,x=>nf(x,2)+"×")),
     it("Ganancia neta",m.neta==null?"—":money(m.neta),m.neta==null?"":m.neta<0?"neg":"pos"),
@@ -1099,11 +1107,9 @@ async function renderDetail(){
     <button class="back" id="back">${icon("chevronLeft")||'‹'} Volver a Rendimiento</button>
     <div class="dhd">
       <div><h2>${e?`<span class="stdot${e==="ACTIVE"?" on":""}" title="${e==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}" style="float:none;margin:0 8px 0 0;vertical-align:4px"></span>`:""}${esc(a.name)}</h2>
-        <div class="ctx">${esc(a.campaign)} · Conjunto ${esc(a.adset)}${a.prod?` · ${esc(a.prod)}`:""}</div></div>
+        <div class="ctx">${esc(a.campaign)} · ${esc(a.adset)}</div></div>
       <div id="ddr" style="margin-left:auto"></div>
     </div>
-    ${pre.length&&gastoPre>0?`<div class="dnota">Incluye ${pre.length} ${pre.length===1?"día":"días"} antes de la primera venta en Nodo (${money0(gastoPre)} de gasto; esas ventas se cerraban en otro sistema). En el gráfico van en gris y fuera de la escala.</div>`:""}
-    ${st.rangoAntes?`<div class="dnota">Mostrando los últimos 14 días para ver la tendencia · al volver regresas a «${esc(rangeLabel(st.rangoAntes))}»</div>`:""}
     <div class="resumen">${resumen}</div>
     <div class="panel dchart">
       <div class="dch-top"><div class="seg dmet">${MET.map(([k,l])=>`<button data-m="${k}" class="${detMetrica===k?"on":""}">${l}</button>`).join("")}</div><div class="dch-sum" id="dchSum"></div></div>
@@ -1167,6 +1173,7 @@ function pintarDetChart(S){
     : M==="gastoing" ? `<span class="lg"><i style="background:var(--muted);opacity:.55"></i>Gasto ${money0(T.g)}</span><span class="lg"><i style="background:var(--green)"></i>Ingresos ${money0(T.i)}</span>`
     : M==="cpa" ? `CPA del periodo: <b>${T.v?money(T.g/T.v):"—"}</b>`
     : `CTR del periodo: <b>${T.im?nf(T.c/T.im*100,2)+"%":"—"}</b>`;
+  if(S.some(d=>d.pre)) sumEl.innerHTML+=`<span class="lg"><i style="background:var(--border-strong,#D0D5DD);height:6px"></i>antes de Nodo</span>`;
   wrap.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Detalle por día">${grid}${marks}${xl}</svg><div class="bc-tip" hidden></div>`;
   const tip=wrap.querySelector(".bc-tip"), svg=wrap.querySelector("svg");
   const fila=(l,x,c="")=>`<div class="r${c?" "+c:""}"><span>${l}</span><b>${x}</b></div>`;
