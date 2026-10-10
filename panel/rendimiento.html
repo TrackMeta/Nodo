@@ -174,6 +174,8 @@
   .stdot.on{background:#12B76A}
   .adctx{font-size:11px;color:var(--faint);margin-top:2px;padding-left:15px}
   .dnota{font-size:12px;color:var(--faint);margin:-4px 0 10px}
+  .dtab-top{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 6px;font-size:13.5px;font-weight:600}
+  .dch-wrap svg{max-height:210px}
   tr.prenodo td{color:var(--faint)} tr.prenodo td.neg,tr.prenodo td.pos{color:var(--faint)}
   .dchart{padding:14px 18px 10px}
   .dch-top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px}
@@ -1022,6 +1024,27 @@ function serieReal(row){
 // · UN gráfico con selector de métrica: Ganancia · Gasto e ingresos · CPA · CTR. Barras con su monto encima, escala
 //   en números redondos, sin estirarse (antes preserveAspectRatio="none" deformaba y los puntos se salían).
 // · Tabla día por día con lo que sirve para decidir; «Confirm.» solo si alguna vez difiere de las ventas.
+const DASH='<span style="color:var(--faint)">—</span>';
+const DCOLS=[
+  {k:"gasto",   l:"Gasto",        c:d=>money(d.gasto)},
+  {k:"impr",    l:"Impresiones",  c:d=>nf(d.impr)},
+  {k:"clics",   l:"Clics",        c:d=>nf(d.clics)},
+  {k:"ctr",     l:"CTR",          c:d=>d.impr?nf(d.clics/d.impr*100,2)+"%":DASH},
+  {k:"cpm",     l:"CPM",          c:d=>d.impr?money(d.gasto/d.impr*1000):DASH},
+  {k:"cpc",     l:"CPC",          c:d=>d.clics?money(d.gasto/d.clics):DASH},
+  {k:"conf",    l:"Confirmaciones", h:"Confirm.", c:d=>nf(d.conf)},
+  {k:"ventas",  l:"Ventas",       c:d=>nf(d.ventas)},
+  {k:"cpa",     l:"CPA",          c:d=>d.ventas?money(d.gasto/d.ventas):DASH},
+  {k:"ingresos",l:"Ingresos",     c:d=>money(d.ingresos)},
+  {k:"ganancia",l:"Ganancia",     cls:d=>(d.ingresos-d.gasto)<0?"neg":"pos", c:d=>(d.gasto||d.ingresos)?money(d.ingresos-d.gasto):DASH},
+  {k:"roas",    l:"ROAS",         c:d=>{ const r=d.gasto?d.ingresos/d.gasto:0; return (d.ventas&&d.gasto)?`<span class="roas ${r>=2?'g':r>=1?'a':'r'}"><span class="rd"></span>${nf(r,2)}×</span>`:DASH; }},
+];
+let detCols=(()=>{ try{ const x=JSON.parse(localStorage.getItem("nodo.rendDetCols")||"null"); if(Array.isArray(x)&&x.length) return new Set(x); }catch{} return new Set(["gasto","impr","clics","ctr","ventas","cpa","ingresos","ganancia","roas"]); })();
+function detTabla(S){
+  const cols=DCOLS.filter(c=>detCols.has(c.k));
+  return `<table><thead><tr><th>Día</th>${cols.map(c=>`<th>${c.h||c.l}</th>`).join("")}</tr></thead><tbody>${S.slice().reverse().map(d=>
+    `<tr${d.pre?' class="prenodo" title="Antes de la primera venta en Nodo"':""}><td>${d.fecha.toLocaleDateString("es-PE",{weekday:"short",day:"numeric",month:"short"})}</td>${cols.map(c=>`<td class="num${c.cls?" "+c.cls(d):""}">${c.c(d)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
 let detMetrica=(()=>{ try{ return localStorage.getItem("nodo.rendMetrica")||"ganancia"; }catch{ return "ganancia"; } })();
 // Día de la primera venta del bot EN NODO (sin contactos de prueba). Los días anteriores con gasto son de otro sistema
 // (en Prime Digital, ChatLevel): sus ventas no están acá y salían como pérdidas que hundían el resumen y la escala.
@@ -1071,7 +1094,6 @@ async function renderDetail(){
     it("Ventas",nf(m.ventas)), it("CPA",oDash(m.cpaReal,money)), it("ROAS",oDash(m.roas,x=>nf(x,2)+"×")),
     it("Ganancia neta",m.neta==null?"—":money(m.neta),m.neta==null?"":m.neta<0?"neg":"pos"),
   ].join('<i class="sep">·</i>');
-  const hayConf=S.some(d=>d.conf!==d.ventas);
   const MET=[["ganancia","Ganancia"],["gastoing","Gasto e ingresos"],["cpa","CPA"],["ctr","CTR"]];
   v.innerHTML=`
     <button class="back" id="back">${icon("chevronLeft")||'‹'} Volver a Rendimiento</button>
@@ -1087,14 +1109,15 @@ async function renderDetail(){
       <div class="dch-top"><div class="seg dmet">${MET.map(([k,l])=>`<button data-m="${k}" class="${detMetrica===k?"on":""}">${l}</button>`).join("")}</div><div class="dch-sum" id="dchSum"></div></div>
       <div class="dch-wrap" id="dchWrap"></div>
     </div>
-    <div class="panel"><div class="scroll"><table><thead><tr>
-      <th>Día</th><th>Gasto</th><th>Impresiones</th><th>Clics</th><th>CTR</th>${hayConf?"<th>Confirm.</th>":""}<th>Ventas</th><th>CPA</th><th>Ingresos</th><th>Ganancia</th><th>ROAS</th>
-    </tr></thead><tbody>${S.slice().reverse().map(d=>{
-      const roas=d.gasto?d.ingresos/d.gasto:0, rc=roas>=2?'g':roas>=1?'a':'r', g=d.ingresos-d.gasto;
-      const dash='<span style="color:var(--faint)">—</span>';
-      return `<tr${d.pre?' class="prenodo" title="Antes de la primera venta en Nodo"':""}><td>${d.fecha.toLocaleDateString("es-PE",{weekday:"short",day:"numeric",month:"short"})}</td><td class="num">${money(d.gasto)}</td><td class="num">${nf(d.impr)}</td><td class="num">${nf(d.clics)}</td><td class="num">${d.impr?nf(d.clics/d.impr*100,2)+"%":dash}</td>${hayConf?`<td class="num">${d.conf}</td>`:""}<td class="num">${d.ventas}</td><td class="num">${d.ventas?money(d.gasto/d.ventas):dash}</td><td class="num">${money(d.ingresos)}</td><td class="num ${g<0?"neg":"pos"}">${(d.gasto||d.ingresos)?money(g):dash}</td><td class="num">${(d.ventas&&d.gasto)?`<span class="roas ${rc}"><span class="rd"></span>${nf(roas,2)}×</span>`:dash}</td></tr>`;
-    }).join("")}</tbody></table></div></div>`;
+    <div class="panel"><div class="dtab-top"><span>Día por día</span><div class="colbtn"><button id="dColBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="dColPop"></div></div></div><div class="scroll" id="dTabla">${detTabla(S)}</div></div>`;
   $("back").onclick=cerrarDetalle;
+  { const pop=$("dColPop");
+    pop.innerHTML=DCOLS.map(c=>`<label><input type="checkbox" data-dcol="${c.k}" ${detCols.has(c.k)?"checked":""}/> ${c.l}</label>`).join("");
+    $("dColBtn").onclick=(ev)=>{ ev.stopPropagation(); pop.classList.toggle("show"); };
+    pop.onclick=(ev)=>ev.stopPropagation();
+    pop.querySelectorAll("input[data-dcol]").forEach(inp=>inp.onchange=()=>{ inp.checked?detCols.add(inp.dataset.dcol):detCols.delete(inp.dataset.dcol); if(!detCols.size){ detCols.add("gasto"); } try{ localStorage.setItem("nodo.rendDetCols",JSON.stringify([...detCols])); }catch{} $("dTabla").innerHTML=detTabla(S); });
+    const cerrar=(ev)=>{ if(!$("dColPop")){ document.removeEventListener("click",cerrar); return; } if(!ev.target.closest(".colbtn")) $("dColPop").classList.remove("show"); };
+    document.addEventListener("click",cerrar); }
   mountDateRange($("ddr"), { valor:st.range, onChange:(r)=>{ st.range=r; st.rangoAntes=null; reload(); } });
   v.querySelectorAll(".dmet button").forEach(b=> b.onclick=()=>{ detMetrica=b.dataset.m; try{ localStorage.setItem("nodo.rendMetrica",detMetrica); }catch{} v.querySelectorAll(".dmet button").forEach(x=>x.classList.toggle("on",x===b)); pintarDetChart(S); });
   pintarDetChart(S);
@@ -1109,7 +1132,7 @@ function pintarDetChart(S){
     : M==="cpa" ? (d.ventas?d.gasto/d.ventas:null)
     : M==="ctr" ? (d.impr?d.clics/d.impr*100:null) : null;
   const fmt=(x)=> M==="ctr" ? nf(x,2)+"%" : M==="ganancia" ? (x<0?"−":"+")+nf(Math.abs(Math.round(x))) : nf(x, x<10?2:0);
-  const W=760,H=220,padL=46,padR=10,padT=20,padB=26;
+  const W=760,H=165,padL=46,padR=10,padT=18,padB=24;   // (10-oct) más bajo: «está muy grande»
   const n=S.length||1, bw=(W-padL-padR)/n;
   let vMax=0,vMin=0;
   if(M==="gastoing"){ S.forEach(d=>{ if(d.pre) return; vMax=Math.max(vMax,d.gasto,d.ingresos); }); }
