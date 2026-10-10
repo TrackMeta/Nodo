@@ -1104,6 +1104,7 @@ async function renderGastoIa(){
   const host=$("gastoIaDr");
   if(host) mountDateRange(host, { valor:gastoRango, nota:"Por día de consumo · hora de tu negocio",
     onChange:(r)=>{ gastoRango=r; renderGastoIa(); } });
+  ponerAyudas(box);   // la tarjeta se dibuja después del render: su «?» se pone acá
 }
 
 // ── Proveedores (API keys) ──────────────────────────────────────────
