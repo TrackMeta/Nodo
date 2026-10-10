@@ -179,9 +179,12 @@ export async function runEngine(
   db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
 ) {
   marcaArranque(contactId, "motor");
-  if (!(await canalActivo(db, channelId))) return;   // bot archivado: no conversa
+  // ⏱️ Cliente de ESTE turno (turno.ts) desde el principio: la fila del bot que leen canalActivo y botEncendido queda en
+  // memoria para todo lo que sigue (eran 3 lecturas de channels antes del ruteo).
+  const dbT = clienteDeTurno(db);
+  if (!(await canalActivo(dbT, channelId))) return;   // bot archivado: no conversa
   // 🔌 Bot APAGADO: no contesta a nadie real. Probar flujos y el simulador sí (es como se prueba antes de prenderlo).
-  if (!(await botEncendido(db, channelId))) {
+  if (!(await botEncendido(dbT, channelId))) {
     const { data: _ctOff } = await db.from("contacts").select("wa_id, source").eq("id", contactId).maybeSingle();
     if (!((_ctOff as any)?.wa_id === "webchat-test" || (_ctOff as any)?.source === "sim")) return;
   }
@@ -231,8 +234,7 @@ export async function runEngine(
   }
   if (!locked) console.warn(`[runEngine] sin lock tras ~75s (contacto ${contactId}) — se procede igual`);
   marcaArranque(contactId, "candado");
-  // ⏱️ Cliente de ESTE turno: lecturas repetidas desde memoria y la hoja/Meta/avisos para después de responder (turno.ts).
-  const dbT = clienteDeTurno(db);
+  // (dbT, el cliente de este turno, ya se creó arriba)
   try {
     // 🔁 DOBLE RESPUESTA a dos mensajes seguidos (medido en vivo el 2026-09-17: «No gracias»
     // y «Como estas» con 12 s de diferencia → dos «Estoy bien…»). El turno 1 arma su prompt
@@ -449,6 +451,9 @@ async function runEngineInner(
     } catch (_) { /* best-effort */ }
   }
 
+  // ⚡ Carril rápido (contacto nuevo que solo mandó la clave o la frase del anuncio): nada de lo de abajo —pedir humano,
+  // reclamos, cancelar, saldo, entrega, guía, vuelto, comprobantes— puede aplicarle; eran ~3 consultas de pedidos en fila.
+  if (!_rapido) {
   // ¿Pidió hablar con una persona? Se corta acá: el bot no sigue contestando
   // encima de alguien que ya pidió un humano. Le confirma que lo pasa (con la
   // expectativa según horario) para no dejarlo en el aire.
@@ -1007,6 +1012,7 @@ async function runEngineInner(
       if (await maybeAdelanto(db, channelId, contactId, event)) return;
     } catch (e) { console.error("[adelanto]", (e as any)?.message ?? e); }
   }
+  }   // (fin del «if (!_rapido)» del carril rápido)
 
   let run = _rapido ? null : await getActiveRun(db, contactId);
   // 📣 Tocó un anuncio de OTRO producto con una conversación vieja viva: manda el anuncio. Antes
@@ -1550,7 +1556,7 @@ async function runEngineInner(
       await setField(db, channelId, contactId, "_entrada_sin_clave", _sinKw.trim() || "-").catch(() => {});
       if (_sinKw !== String(event.text ?? "")) {
         event = { ...event, text: _sinKw };
-        await logEvent(db, channelId, contactId, "nota", "🔑 La palabra clave solo enruta",
+        void logEvent(db, channelId, contactId, "nota", "🔑 La palabra clave solo enruta",   // ⚡ sin esperar
           _sinKw ? `Queda lo suyo: "${_sinKw.slice(0, 90)}"` : "No escribió nada más").catch(() => {});
       }
     }
@@ -4702,7 +4708,8 @@ async function startRun(db: SupabaseClient, channelId: string, contactId: string
   }
   // Nombre + producto del flujo (para Timeline y atribución de producto).
   const { data: f } = await db.from("flows").select("nombre, product_id").eq("id", flow.id).maybeSingle();
-  await logEvent(db, channelId, contactId, "flujo_inicio", "Flujo iniciado", (f as any)?.nombre ?? null);
+  // ⚡ (sin esperar: la nota de la Timeline no frena los mensajes iniciales — logEvent nunca lanza)
+  void logEvent(db, channelId, contactId, "flujo_inicio", "Flujo iniciado", (f as any)?.nombre ?? null);
   await markProduct(db, contactId, (f as any)?.product_id);
   return data as Run;
 }
@@ -4897,7 +4904,7 @@ async function execute(db: SupabaseClient, run: Run) {
         "El flujo cambió mientras este cliente estaba a mitad de la conversación.", { aviso: true }).catch(() => {});
       break;
     }
-    await logEvent(db, run.channel_id, run.contact_id, "nodo", node.nombre || node.tipo, node.tipo);
+    void logEvent(db, run.channel_id, run.contact_id, "nodo", node.nombre || node.tipo, node.tipo);   // ⚡ sin esperar (nunca lanza)
 
     const ctx = await buildContext(db, run);
 
@@ -33014,6 +33021,14 @@ function normalizeAtributos(raw: any): Atributo[] {
 // igual, pero deja de estar a un clic). Las {{pedido_*}} y los campos del canal se
 // listan solos y no hace falta tocarlos.
 async function buildContext(db: SupabaseClient, run: Run) {
+  // ⚡ (9-oct) Las lecturas que NO dependen unas de otras salen JUNTAS, no en fila: campos del contacto, zona horaria,
+  // campos del bot y el producto del flujo. Eran ~5 consultas seguidas (~60 ms c/u) antes de cada nodo — también antes de
+  // la 1.ª burbuja de los mensajes iniciales. (Los builders de supabase no corren hasta un .then: por eso el .then.)
+  const _ya = <T,>(p: PromiseLike<T>) => Promise.resolve(p).catch((e) => ({ data: null, error: e } as any));
+  const _pFields = _ya(db.from("contact_field_values").select("value, custom_fields!inner(key)").eq("contact_id", run.contact_id));
+  const _pTz = tzDe(db, run).catch(() => "America/Lima");
+  const _pFixed = (run as any)._botFields ? null : _ya(db.from("custom_fields").select("key, valor").eq("channel_id", run.channel_id).eq("modo", "fijo"));
+  const _pFlow = (run as any)._flowProdDe === run.flow_id ? null : _ya(db.from("flows").select("product_id").eq("id", run.flow_id).maybeSingle());
   // Defensivo por las columnas de la 0062 (username/telefono): si aún no está la
   // migración, se relee sin ellas.
   let c: any = null, hasNewCols = true;
@@ -33029,12 +33044,11 @@ async function buildContext(db: SupabaseClient, run: Run) {
       c = r2.data;
     } else c = r.data;
   }
-  const { data: fields } = await db.from("contact_field_values")
-    .select("value, custom_fields!inner(key)").eq("contact_id", run.contact_id);
+  const { data: fields } = await _pFields;
   // Fecha/hora actuales en la zona del negocio (para {{fecha}}, {{fecha_hora}}). Zona del canal,
   // no Lima hardcodeada (un negocio de México/Argentina/España veía la fecha/hora corrida).
   const now = new Date();
-  const _tzCtx = await tzDe(db, run);
+  const _tzCtx = await _pTz;
   const fFecha = new Intl.DateTimeFormat("es-PE", { timeZone: _tzCtx, day: "2-digit", month: "2-digit", year: "numeric" }).format(now);
   const fHora = new Intl.DateTimeFormat("es-PE", { timeZone: _tzCtx, hour: "2-digit", minute: "2-digit" }).format(now);
   const ctx: any = {
@@ -33105,7 +33119,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
     let bf = (run as any)._botFields;
     if (!bf) {
       bf = {};
-      const { data: fixed } = await db.from("custom_fields")
+      const { data: fixed } = _pFixed ? await _pFixed : await db.from("custom_fields")
         .select("key, valor").eq("channel_id", run.channel_id).eq("modo", "fijo");
       for (const f of fixed ?? []) if ((f as any).valor != null) bf[(f as any).key] = (f as any).valor;
       (run as any)._botFields = bf;
@@ -33134,7 +33148,7 @@ async function buildContext(db: SupabaseClient, run: Run) {
       // el resto del turno cotizaba con el precio y la ficha del anterior.
       let fp = (run as any)._flowProdDe === run.flow_id ? (run as any)._flowProd : undefined;
       if (fp === undefined) {
-        const { data: fl } = await db.from("flows").select("product_id").eq("id", run.flow_id).maybeSingle();
+        const { data: fl } = _pFlow ? await _pFlow : await db.from("flows").select("product_id").eq("id", run.flow_id).maybeSingle();
         fp = (fl as any)?.product_id ?? null;
         (run as any)._flowProd = fp; (run as any)._flowProdDe = run.flow_id;
       }
