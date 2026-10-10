@@ -1960,92 +1960,122 @@ export async function getUsdRate(channelId) {
   } catch (_) { return 0; }
 }
 
-// ── Selector bonito (10-oct-2026) ────────────────────────────────────
-// Rodrigo: el <select> nativo «parece de Windows 98». Este lo reemplaza A LA VISTA sin tocar la lógica de la página:
-// el <select> sigue existiendo (oculto) y es la fuente de verdad — opciones, value y evento «change» siguen siendo
-// suyos. Se redibuja solo cuando cambian las opciones (MutationObserver) o su display; si la página cambia `value`
-// a mano, que llame `selectBonito(sel).sync()`. Soporta <optgroup> (títulos de grupo) y opciones con sangría
-// (data-sub="1"). Mismo estilo que el selector de fechas.
-let _sbCss = false;
-export function selectBonito(sel) {
-  if (!sel) return null;
-  if (sel._sb) return sel._sb;
-  if (!_sbCss) {
-    _sbCss = true;
-    const st = document.createElement("style");
-    st.textContent = `
-.sbw{position:relative;display:inline-flex}
-.sbt{height:34px;padding:0 10px 0 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;cursor:pointer;font-family:inherit;max-width:260px}
-.sbt:hover,.sbw.open .sbt{border-color:var(--brand)}
-.sbt .sbl{overflow:hidden;text-overflow:ellipsis}
-.sbt svg{width:14px;height:14px;color:var(--muted);flex:none;transition:transform .15s}
-.sbw.open .sbt svg{transform:rotate(180deg)}
-.sbp{position:absolute;top:calc(100% + 6px);right:0;z-index:2100;min-width:100%;width:max-content;max-width:340px;max-height:340px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.28);padding:6px;display:none}
-.sbw.open .sbp{display:block}
+// ── Selector bonito, en TODO el panel (10-oct-2026) ──────────────────
+// Rodrigo: el desplegable nativo «parece de Windows 98». No se reemplaza ningún <select>: la caja cerrada se queda
+// donde está, con el estilo de su página (ancho, alto, márgenes), y solo cambia (1) la flecha y (2) la LISTA que se
+// abre, que pasa a ser un menú propio con el estilo del selector de fechas. Va por delegación en el documento, así que
+// cubre también los <select> que aparecen después (modales, fichas, editores). El <select> sigue siendo la fuente de
+// verdad: elegir cambia su value y dispara «input» + «change» como siempre.
+// Opciones extra: <optgroup> = título de grupo · data-lista="…" = texto en la lista (si difiere del de la caja) ·
+// data-sub="1" = con sangría · data-n="…" = contador a la derecha. Quedan NATIVOS: [multiple], [size>1],
+// [data-nativo] y las pantallas táctiles (el selector del celular es mejor que cualquier menú).
+const _sbTactil = (() => { try { return matchMedia("(pointer:coarse)").matches; } catch { return false; } })();
+let _sbAbierto = null;
+function _sbCss() {
+  if (document.getElementById("sbCss")) return;
+  const st = document.createElement("style");
+  st.id = "sbCss";
+  const chev = encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#8C96A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>');
+  st.textContent = `
+select:not([multiple]):not([size]):not([data-nativo]){-webkit-appearance:none;appearance:none;cursor:pointer;
+  background-image:url("data:image/svg+xml,${chev}")!important;background-repeat:no-repeat!important;
+  background-position:right 10px center!important;background-size:14px 14px!important;padding-right:30px!important}
+select.sb-on{border-color:var(--brand)!important}
+.sbp{position:fixed;z-index:2300;background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  box-shadow:0 16px 40px rgba(0,0,0,.28);padding:6px;overflow:auto;font-family:var(--font,inherit)}
 .sbg{font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);padding:10px 10px 4px}
-.sbo{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:13px;font-weight:500;padding:8px 10px;border-radius:8px;cursor:pointer;font-family:inherit}
+.sbg:first-child{padding-top:4px}
+.sbo{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:13px;
+  font-weight:500;padding:8px 10px;border-radius:8px;cursor:pointer;font-family:inherit;line-height:1.3}
 .sbo:hover,.sbo.kb{background:var(--surface-2)}
-.sbo.sub{padding-left:24px}
+.sbo.sub{padding-left:26px}
+.sbo[disabled]{opacity:.45;cursor:default}
 .sbo .sbx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sbo .sbn{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums}
 .sbo .sbk{width:14px;height:14px;flex:none;color:var(--brand);visibility:hidden}
 .sbo.on{color:var(--brand);font-weight:600} .sbo.on .sbk{visibility:visible}`;
-    document.head.appendChild(st);
-  }
-  const chev = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
-  const check = `<svg class="sbk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
-  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const w = document.createElement("div");
-  w.className = "sbw";
-  w.innerHTML = `<button type="button" class="sbt" aria-haspopup="listbox"${sel.title ? ` title="${esc(sel.title)}"` : ""}><span class="sbl"></span>${chev}</button><div class="sbp" role="listbox"></div>`;
-  sel.insertAdjacentElement("afterend", w);
-  const btn = w.querySelector(".sbt"), lbl = w.querySelector(".sbl"), pop = w.querySelector(".sbp");
-  const vis = () => { w.style.display = sel.style.display === "none" ? "none" : ""; };
-  const sync = () => {
-    const o = sel.options[sel.selectedIndex];
-    lbl.textContent = o ? (o.dataset.corto || o.textContent) : "";
-    vis();
-  };
-  const pintar = () => {
-    let h = "";
-    for (const n of sel.children) {
-      if (n.tagName === "OPTGROUP") {
-        h += `<div class="sbg">${esc(n.label)}</div>`;
-        for (const o of n.children) h += opt(o);
-      } else h += opt(n);
-    }
-    pop.innerHTML = h;
-  };
-  const opt = (o) => `<button type="button" role="option" class="sbo${o.dataset.sub ? " sub" : ""}${o.value === sel.value ? " on" : ""}" data-v="${esc(o.value)}">${check}<span class="sbx">${esc(o.textContent)}</span>${o.dataset.n ? `<span class="sbn">${esc(o.dataset.n)}</span>` : ""}</button>`;
-  const cerrar = () => { w.classList.remove("open"); document.removeEventListener("click", fuera, true); document.removeEventListener("keydown", tecla); };
-  const fuera = (e) => { if (!w.contains(e.target)) cerrar(); };
-  const tecla = (e) => {
-    const its = [...pop.querySelectorAll(".sbo")]; if (!its.length) return;
-    let i = its.findIndex((x) => x.classList.contains("kb"));
-    if (e.key === "Escape") { cerrar(); btn.focus(); return; }
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault(); if (i < 0) i = its.findIndex((x) => x.classList.contains("on"));
-      its.forEach((x) => x.classList.remove("kb"));
-      i = e.key === "ArrowDown" ? Math.min(its.length - 1, i + 1) : Math.max(0, i - 1);
-      its[i].classList.add("kb"); its[i].scrollIntoView({ block: "nearest" });
-    } else if (e.key === "Enter" && i >= 0) { e.preventDefault(); its[i].click(); }
-  };
-  btn.onclick = () => {
-    if (w.classList.contains("open")) { cerrar(); return; }
-    pintar(); w.classList.add("open");
-    document.addEventListener("click", fuera, true); document.addEventListener("keydown", tecla);
-    pop.querySelector(".sbo.on")?.scrollIntoView({ block: "nearest" });
-  };
-  pop.onclick = (e) => {
-    const b = e.target.closest(".sbo"); if (!b) return;
-    cerrar();
-    if (sel.value !== b.dataset.v) { sel.value = b.dataset.v; sel.dispatchEvent(new Event("change", { bubbles: true })); }
-    sync();
-  };
-  sel.addEventListener("change", sync);
-  new MutationObserver(sync).observe(sel, { childList: true, subtree: true, attributes: true, attributeFilter: ["style"] });
-  sel.style.position = "absolute"; sel.style.opacity = "0"; sel.style.pointerEvents = "none"; sel.style.width = "1px"; sel.tabIndex = -1;
-  sync();
-  sel._sb = { sync, cerrar, el: w };
-  return sel._sb;
+  document.head.appendChild(st);
 }
+function _sbCerrar() {
+  if (!_sbAbierto) return;
+  const { pop, sel } = _sbAbierto;
+  _sbAbierto = null;
+  pop.remove(); sel.classList.remove("sb-on");
+  document.removeEventListener("mousedown", _sbFuera, true);
+  document.removeEventListener("keydown", _sbTecla, true);
+  window.removeEventListener("resize", _sbCerrar); window.removeEventListener("scroll", _sbScroll, true);
+}
+function _sbFuera(e) { if (_sbAbierto && !_sbAbierto.pop.contains(e.target) && e.target !== _sbAbierto.sel) _sbCerrar(); }
+function _sbScroll(e) { if (_sbAbierto && !_sbAbierto.pop.contains(e.target)) _sbCerrar(); }
+function _sbTecla(e) {
+  if (!_sbAbierto) return;
+  const { pop, sel } = _sbAbierto;
+  const its = [...pop.querySelectorAll(".sbo:not([disabled])")];
+  let i = its.findIndex((x) => x.classList.contains("kb"));
+  if (e.key === "Escape" || e.key === "Tab") { e.preventDefault(); _sbCerrar(); sel.focus(); return; }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault(); if (i < 0) i = its.findIndex((x) => x.classList.contains("on"));
+    its.forEach((x) => x.classList.remove("kb"));
+    i = e.key === "ArrowDown" ? Math.min(its.length - 1, i + 1) : Math.max(0, i - 1);
+    if (its[i]) { its[i].classList.add("kb"); its[i].scrollIntoView({ block: "nearest" }); }
+  } else if ((e.key === "Enter" || e.key === " ") && i >= 0) { e.preventDefault(); its[i].click(); }
+}
+function _sbAbrir(sel) {
+  _sbCss(); _sbCerrar();
+  const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const check = `<svg class="sbk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+  const opts = [...sel.options];
+  const opt = (o) => { const idx = opts.indexOf(o); return `<button type="button" role="option" class="sbo${o.dataset.sub ? " sub" : ""}${idx === sel.selectedIndex ? " on" : ""}" data-i="${idx}"${o.disabled ? " disabled" : ""}>${check}<span class="sbx">${esc(o.dataset.lista || o.textContent)}</span>${o.dataset.n ? `<span class="sbn">${esc(o.dataset.n)}</span>` : ""}</button>`; };
+  let h = "";
+  for (const n of sel.children) {
+    if (n.tagName === "OPTGROUP") { h += `<div class="sbg">${esc(n.label)}</div>`; for (const o of n.children) if (!o.hidden) h += opt(o); }
+    else if (n.tagName === "OPTION" && !n.hidden) h += opt(n);
+  }
+  const pop = document.createElement("div");
+  pop.className = "sbp"; pop.setAttribute("role", "listbox"); pop.innerHTML = h;
+  document.body.appendChild(pop);
+  // Posición: debajo (o arriba si no entra), al menos tan ancha como la caja.
+  const r = sel.getBoundingClientRect(), vw = innerWidth, vh = innerHeight;
+  pop.style.minWidth = Math.max(180, r.width) + "px";
+  pop.style.maxWidth = Math.max(Math.min(380, vw - 16), r.width) + "px";
+  const abajo = vh - r.bottom - 10, arriba = r.top - 10;
+  const alto = Math.min(pop.scrollHeight, 360);
+  const haciaArriba = abajo < Math.min(alto, 220) && arriba > abajo;
+  pop.style.maxHeight = Math.max(120, Math.min(360, haciaArriba ? arriba : abajo)) + "px";
+  const pw = pop.offsetWidth;
+  pop.style.left = Math.max(8, Math.min(r.left, vw - pw - 8)) + "px";
+  if (haciaArriba) pop.style.bottom = (vh - r.top + 6) + "px"; else pop.style.top = (r.bottom + 6) + "px";
+  pop.querySelector(".sbo.on")?.scrollIntoView({ block: "nearest" });
+  pop.addEventListener("mousedown", (e) => e.preventDefault()); // no robarle el foco a la caja
+  pop.onclick = (e) => {
+    const b = e.target.closest(".sbo"); if (!b || b.disabled) return;
+    const idx = +b.dataset.i;
+    _sbCerrar(); sel.focus();
+    if (idx !== sel.selectedIndex) {
+      sel.selectedIndex = idx;
+      sel.dispatchEvent(new Event("input", { bubbles: true }));
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  };
+  sel.classList.add("sb-on");
+  _sbAbierto = { pop, sel };
+  document.addEventListener("mousedown", _sbFuera, true);
+  document.addEventListener("keydown", _sbTecla, true);
+  window.addEventListener("resize", _sbCerrar); window.addEventListener("scroll", _sbScroll, true);
+}
+const _sbEs = (t) => t && t.tagName === "SELECT" && !t.multiple && !(t.size > 1) && !t.disabled && !("nativo" in t.dataset);
+if (!_sbTactil && typeof document !== "undefined" && !window.__sbDelegado) {
+  window.__sbDelegado = true;
+  _sbCss();
+  document.addEventListener("mousedown", (e) => {
+    const t = e.target; if (!_sbEs(t) || e.button !== 0) return;
+    e.preventDefault(); t.focus();
+    if (_sbAbierto && _sbAbierto.sel === t) _sbCerrar(); else _sbAbrir(t);
+  }, true);
+  document.addEventListener("keydown", (e) => {
+    const t = e.target; if (!_sbEs(t) || _sbAbierto) return;
+    if (e.key === "Enter" || e.key === " " || e.key === "F4" || (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp"))) { e.preventDefault(); _sbAbrir(t); }
+  }, true);
+}
+// Compatibilidad con la primera versión (Embudo): ya no hace falta envolver nada.
+export function selectBonito(sel) { return { sync() {}, cerrar: _sbCerrar, el: sel }; }
