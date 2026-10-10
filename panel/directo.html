@@ -76,8 +76,8 @@
   .cli .ph svg{width:13px;height:13px;color:var(--faint)}
   .cli .org{color:var(--faint);font-size:11.5px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-  .stg{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:20px}
-  .stg .sd{width:7px;height:7px;border-radius:50%}
+  .stg{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:20px;background:var(--surface-2);color:var(--text);border:1px solid var(--border)}
+  .stg .sd{width:8px;height:8px;border-radius:50%}
   .obadge{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:20px}
   .obadge.ok{background:var(--green-bg);color:var(--green)} .obadge.warn{background:var(--amber-bg);color:var(--amber)} .obadge.bad{background:var(--red-bg);color:var(--red)}
   .obadge.none{color:var(--faint);font-weight:600;padding-left:0}
@@ -317,6 +317,8 @@ function enVista(c){
   return String(c.ad_id||"")===v.slice(2);
 }
 const STAGE=Object.fromEntries(EMBUDO_STAGES.map(s=>[s.k,s]));
+// (10-oct) Color de cada etapa = el del Embudo (variables --st-* de shell.css), no el arcoíris de antes.
+const stCol=(k)=>`var(--st-${k||"nuevo"},${(STAGE[k]||STAGE.nuevo||{}).color||"#888"})`;
 const STAGE_W={ caliente:6, confirmado:5, interesado:4, curioso:3, nuevo:2, comprado:1, perdido:0 };
 
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -537,7 +539,7 @@ function renderFilterChips(){
   const box=$("fStages");
   box.style.display = f.verCerrados ? "none" : "";
   box.innerHTML=COLA.map(([k,l])=>{ const sg=STAGE[k]||{}; const n=base.filter(c=>(c.stage||"nuevo")===k).length; const on=f.stages.has(k);
-    return `<button class="ftog ${on?"on":""}" data-stage="${k}" type="button" style="${on?`color:${sg.color}`:""}"><span class="dot" style="background:${sg.color}"></span>${l} <span class="fc">${n}</span></button>`; }).join("");
+    return `<button class="ftog ${on?"on":""}" data-stage="${k}" type="button" ><span class="dot" style="background:${stCol(k)}"></span>${l} <span class="fc">${n}</span></button>`; }).join("");
   box.querySelectorAll("[data-stage]").forEach(b=> b.onclick=()=>{ const k=b.dataset.stage; f.stages.has(k)?f.stages.delete(k):f.stages.add(k); st.visible=80; render(); });
 }
 function updateCounts(){ renderFilterChips(); fillVistaDir(); }
@@ -660,7 +662,7 @@ function rowEl(c){
         <div class="org">${esc(org)}</div>
       </div>
     </div>
-    <div class="c-stg"><span class="stg" style="background:${sg.color}1c;color:${sg.color}"><span class="sd" style="background:${sg.color}"></span>${sg.label}</span></div>
+    <div class="c-stg"><span class="stg"><span class="sd" style="background:${stCol(c.stage)}"></span>${sg.label}</span></div>
     <div class="c-act actline" title="Su último mensaje">${ago(c.ultimo_mensaje_at||c.created_at)}${segLinea||nc?`<span class="seg2">${segLinea}${segLinea&&nc?" · ":""}${nc}</span>`:""}</div>
     <div class="c-ped">${pedHtml}</div>
     ${esEquipo()?`<div class="c-asig">${asHtml}</div>`:""}
@@ -839,7 +841,7 @@ async function openInfo(c){
 
   // ── Tira de datos clave (hero) ──
   const cells=[];
-  cells.push(`<div class="istat"><div class="k">Etapa</div><div class="v" style="color:${sg.color}"><span class="sd" style="background:${sg.color}"></span>${sg.label}</div></div>`);
+  cells.push(`<div class="istat"><div class="k">Etapa</div><div class="v"><span class="sd" style="background:${stCol(c.stage)}"></span>${sg.label}</div></div>`);
   cells.push(`<div class="istat${lastMsgAt&&(Date.now()-new Date(lastMsgAt).getTime())<3600000?" hot":""}"><div class="k">Último mensaje</div><div class="v">${CLK}${lastMsgAt?ago(lastMsgAt):"—"}</div></div>`);
   cells.push(`<div class="istat"><div class="k">Origen</div><div class="v">${esc(org)}</div></div>`);
   if(o){ const m=O.EST[o.estado]||{}; const tono=m.tono==="ok"?"var(--green)":m.tono==="bad"?"var(--red)":"var(--amber)"; cells.push(`<div class="istat"><div class="k">Pedido</div><div class="v" style="color:${tono}">${esc(O.label(o.estado))} · ${esc(money(O.total(o),o.currency))}</div></div>`); }
