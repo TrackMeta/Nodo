@@ -1740,6 +1740,20 @@ export async function rejectDigitalPending(
   delete (run.vars as any)._pago_manual_pendiente;
   delete (run.vars as any)._extra_manual_pendiente;
 
+  // 🔌 Bot en PAUSA en este chat (10-oct, W. Rodriguez): el dueño lo pausó para atenderlo él —le mandó el acceso a
+  // mano— y en el mismo minuto rechazó el comprobante; el flujo siguió por «pago inválido» y el bot le escribió «No
+  // pude validar ese comprobante, ¿me lo reenvías?» encima del acceso. Con el bot en pausa el rechazo solo queda
+  // anotado y el flujo se cierra callado (como «Transferir a humano»): nada pendiente que salga al reactivarlo.
+  const { data: _ctB } = await db.from("contacts").select("bot_activo").eq("id", contactId).maybeSingle();
+  if ((_ctB as any)?.bot_activo === false) {
+    delete (run.vars as any)._await;
+    run.estado = "completado";
+    run.wake_at = null;
+    await saveRun(db, run);
+    await logEvent(db, channelId, contactId, "nota", "❌ Pago rechazado · bot en pausa: no se le escribió al cliente").catch(() => {});
+    return true;
+  }
+
   run.current_node_id = await salidaOcr(db, run.flow_id, aw.node_id);
   delete (run.vars as any)._await;
   run.estado = "activo";
