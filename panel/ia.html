@@ -119,22 +119,39 @@
   .modelpick .mp-tx b{font-size:14px;font-weight:650}
   .modelpick .mp-tx small{font-size:11.5px;color:var(--faint);font-family:monospace}
   .modelpick svg{width:18px;height:18px;color:var(--muted);flex:none}
+  /* (10-oct) cabecera compacta, chip de gasto, ayudas «?» y filas de Modelos */
+  .ia-top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:6px 0 14px;margin-bottom:14px;border-bottom:1px solid var(--border);position:relative}
+  .ia-top::before{content:"";position:absolute;left:0;top:-2px;width:64px;height:3px;border-radius:3px;background:linear-gradient(90deg,#a855f7,#ec4899)}
+  .ia-tt{margin:0;font-size:26px;font-weight:700;letter-spacing:-.4px;background:linear-gradient(90deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .ia-top p{margin:4px 0 0;color:var(--muted);font-size:13.5px}
+  .ia-chip{border:1px solid var(--ia-border,rgba(168,85,247,.35));background:var(--surface);color:var(--muted);font:inherit;font-size:12.5px;padding:7px 12px;border-radius:999px;cursor:pointer}
+  .ia-chip b{color:var(--text);font-weight:600} .ia-chip:hover{border-color:#a855f7}
+  .card:not(.ver-ayuda) .ay{display:none}
+  .qm{margin-left:auto;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);font:inherit;font-size:12px;font-weight:700;cursor:pointer;flex:none;display:inline-flex;align-items:center;justify-content:center}
+  .qm:hover,.qm.on{border-color:#a855f7;color:#a855f7}
+  .qm-l{color:#a855f7;cursor:help;border-bottom:1px dotted currentColor;white-space:nowrap}
+  .sub{margin-bottom:16px}
+  .pf-row{display:flex;align-items:center;gap:14px;padding:12px 0;border-top:1px solid var(--border);flex-wrap:wrap}
+  .pf-row:first-of-type{border-top:none}
+  .pf-n{flex:1 1 200px;font-weight:600;font-size:13.5px;min-width:0}
+  .pf-c{display:flex;gap:8px;flex:1 1 360px;align-items:center}
+  .pf-c .f{flex:1;min-width:0;margin:0} .pf-c .modelpick{padding:8px 12px}
 </style>
 </head>
 <body>
 <div class="nodo-page">
   <div class="nodo-wrap" style="--nodo-max:var(--nodo-form)">
-    <div class="ia-hero">
-      <span class="glow"></span>
-      <span class="ia-badge" id="iaBadge"></span>
-      <h1>Inteligencia Artificial</h1>
-      <p>Cómo <b>actúa</b> tu bot: la personalidad del <b>Vendedor IA</b>, qué <b>modelo</b> resuelve cada tarea, cómo <b>valida los comprobantes</b> y las <b>cuentas de IA</b> conectadas. (Lo que el bot <b>sabe</b> de tu negocio va en la sección <b>Negocio</b>.)</p>
+    <div class="ia-top">
+      <div style="min-width:0"><h1 class="ia-tt">IA</h1>
+        <p>Cómo habla y atiende tu bot, cómo revisa los pagos y cuánto gasta su IA.</p></div>
+      <button class="ia-chip" id="iaGastoHoy" type="button" style="display:none" title="Ver el detalle en Cuentas y gasto"></button>
     </div>
+    <span id="iaBadge" hidden></span>
     <div class="tabs">
       <button class="tab active" data-t="vendedor" id="tabVend"></button>
       <button class="tab" data-t="atencion" id="tabAten"></button>
-      <button class="tab" data-t="perfiles" id="tabPerf"></button>
       <button class="tab" data-t="validador" id="tabVal"></button>
+      <button class="tab" data-t="perfiles" id="tabPerf"></button>
       <button class="tab" data-t="proveedores" id="tabProv"></button>
     </div>
     <div id="body"></div>
@@ -253,11 +270,12 @@ async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
   if(!session){ location.href="index.html"; return; }
   $("iaBadge").innerHTML=IC.robot+"<span>Centro de IA</span>";
-  $("tabVend").innerHTML=IC.robot+"<span>Vendedor IA</span>";
+  $("tabVend").innerHTML=IC.robot+"<span>Vendedor</span>";
   $("tabAten").innerHTML=IC.agent+"<span>Atención</span>";
-  $("tabPerf").innerHTML=IC.sliders+"<span>Perfiles</span>";
-  $("tabVal").innerHTML=IC.shield+"<span>Validador</span>";
-  $("tabProv").innerHTML=IC.spark+"<span>Proveedores</span>";
+  $("tabVal").innerHTML=IC.shield+"<span>Validador de pagos</span>";
+  $("tabPerf").innerHTML=IC.sliders+"<span>Modelos</span>";
+  $("tabProv").innerHTML=IC.spark+"<span>Cuentas y gasto</span>";
+  $("iaGastoHoy").onclick=()=>goTab("proveedores");
   // Cambiar de pestaña rehace el formulario desde el snapshot: si hay cambios sin guardar, se pregunta.
   document.querySelectorAll(".tab").forEach(b=> b.onclick=async()=>{ if(st.tab===b.dataset.t) return; if(!await confirmDescartar()) return; st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"ia" });
@@ -282,6 +300,24 @@ async function loadCfg(){
   st.cfg = {}; (rows||[]).forEach(r=> st.cfg[r.provider] = { model:r.model, updated_at:r.updated_at });
   markClean();
   render();
+  pintaGastoHoy(gen);
+}
+// (10-oct) El gasto de HOY, a la vista arriba (antes solo en la última pestaña, junto a las claves).
+async function pintaGastoHoy(gen){
+  const el=$("iaGastoHoy"); if(!el) return;
+  try{
+    const hoy=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Lima"}).format(new Date());
+    const [{ data:u },{ data:ch }]=await Promise.all([
+      supa.from("ai_usage").select("costo_usd,llamadas").eq("channel_id",st.channelId).eq("dia",hoy),
+      supa.from("channels").select("usd_rate").eq("id",st.channelId).maybeSingle() ]);
+    if(gen!==st.gen) return;
+    const usdV=(u||[]).reduce((a,r)=>a+Number(r.costo_usd||0),0), ll=(u||[]).reduce((a,r)=>a+Number(r.llamadas||0),0);
+    if(!(usdV>0||ll>0)){ el.style.display="none"; return; }
+    const rate=Number(ch&&ch.usd_rate)||0;
+    const usdTxt="US$ "+usdV.toLocaleString("es-PE",{minimumFractionDigits:usdV<1?3:2,maximumFractionDigits:usdV<1?3:2});
+    el.innerHTML=`<b>${usdTxt}</b> hoy${rate>0?` <span>(≈ S/ ${(usdV*rate).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2})})</span>`:""} · ${ll.toLocaleString("es-PE")} llamadas`;
+    el.style.display="";
+  }catch(_){ el.style.display="none"; }
 }
 // Antes de escribir negocio_form ENTERO se re-lee lo fresco y solo se pisa lo que ESTA
 // página cambió respecto de su snapshot (Negocio escribe la misma columna desde otro
@@ -314,6 +350,17 @@ function render(){
   else if(st.tab==="perfiles") renderPerfiles(b);
   else if(st.tab==="validador") renderValidador(b);
   else renderProveedores(b);
+  ponerAyudas(b);
+}
+// (10-oct) Cada tarjeta con explicaciones largas (.ay) las esconde detrás de un «?» en su título.
+function ponerAyudas(root){
+  root.querySelectorAll(".card").forEach(card=>{
+    if(!card.querySelector(".ay") || card.querySelector(".qm")) return;
+    const hd=card.querySelector(".chd"); if(!hd) return;
+    const q=document.createElement("button"); q.type="button"; q.className="qm"; q.textContent="?"; q.title="Ver la explicación";
+    q.onclick=(e)=>{ e.stopPropagation(); card.classList.toggle("ver-ayuda"); q.classList.toggle("on",card.classList.contains("ver-ayuda")); };
+    hd.appendChild(q);
+  });
 }
 function goTab(name){ st.tab=name; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t===name)); render(); }
 
@@ -334,28 +381,27 @@ function renderAtencion(b){
   };
   const ta=(v,ph,rows)=>`<textarea class="in" rows="${rows||4}" style="min-height:${(rows||4)*24+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(v||"")}</textarea>`;
   b.innerHTML=`
-    <h2>Atención al cliente</h2>
-    <p class="sub">Cómo atiende tu bot la conversación: cuándo le pasa el chat a un asesor y cómo trata a quien <b>ya compró</b>. La validación de pagos y los avisos del pedido están en <a href="pagos.html" style="color:var(--brand)">Pagos y avisos</a>.</p>
+    <p class="sub">Cuándo le pasa el chat a una persona y cómo atiende a quien ya compró.</p>
 
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.agent}</span><span class="nm">Cuándo pasar a un asesor</span></div>
-      <div class="desc">El bot atiende <b>toda</b> la conversación por defecto. Solo te pasa el chat en pocos casos y <b>nunca deja al cliente en el aire</b>: le dice que un asesor lo verá (y cuándo, si defines tu horario). El bot ya escala solo cuando el cliente <b>pide una persona</b> o cuando la IA no puede resolverlo.</div>
+      <div class="desc ay">El bot atiende <b>toda</b> la conversación por defecto. Solo te pasa el chat en pocos casos y <b>nunca deja al cliente en el aire</b>: le dice que un asesor lo verá (y cuándo, si defines tu horario). El bot ya escala solo cuando el cliente <b>pide una persona</b> o cuando la IA no puede resolverlo.</div>
 
       <div id="huRecRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
         <span><span style="font-weight:600;font-size:13px">Pasar a un asesor si el cliente reclama o está molesto</span>
-        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Ante enojo o disputa fuerte (estafa, denuncia, exige devolución) el bot deja de responder y te lo pasa, para que no discuta por su cuenta. Lo sutil lo sigue detectando la IA.</div></span>
+        <div class="ay" style="font-size:11.5px;color:var(--faint);margin-top:2px">Ante enojo o disputa fuerte (estafa, denuncia, exige devolución) el bot deja de responder y te lo pasa, para que no discuta por su cuenta. Lo sutil lo sigue detectando la IA.</div></span>
         <span class="sw ${p.humano.reclamos!==false?'on':''}" id="huRecSw" style="flex:none"></span>
       </div>
 
       <div id="huVentaRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
         <span><span style="font-weight:600;font-size:13px">Pasar a un asesor cuando se concreta la venta</span>
-        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Apenas el bot cierra la venta (pedido confirmado en un físico, o pago validado en un digital) le manda el mensaje de abajo, deja de responder y te cede el chat, para que tú hagas el cierre/seguimiento a mano. El soporte post-venta automático no corre en ese contacto. Apagado = el bot sigue atendiendo (soporte).</div></span>
+        <div class="ay" style="font-size:11.5px;color:var(--faint);margin-top:2px">Apenas el bot cierra la venta (pedido confirmado en un físico, o pago validado en un digital) le manda el mensaje de abajo, deja de responder y te cede el chat, para que tú hagas el cierre/seguimiento a mano. El soporte post-venta automático no corre en ese contacto. Apagado = el bot sigue atendiendo (soporte).</div></span>
         <span class="sw ${p.humano.al_vender?'on':''}" id="huVentaSw" style="flex:none"></span>
       </div>
       <div id="huVentaBox" style="display:${p.humano.al_vender?'block':'none'}">
         <div id="huSilRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
           <span><span style="font-weight:600;font-size:13px">Sin mensaje</span>
-          <div style="font-size:11.5px;color:var(--faint);margin-top:2px">El cliente recibe solo el mensaje de la entrega (o la confirmación del pedido) y el bot se apaga en ese chat sin decirle nada más.</div></span>
+          <div class="ay" style="font-size:11.5px;color:var(--faint);margin-top:2px">El cliente recibe solo el mensaje de la entrega (o la confirmación del pedido) y el bot se apaga en ese chat sin decirle nada más.</div></span>
           <span class="sw ${p.humano.aviso_venta_silencio?'on':''}" id="huSilSw" style="flex:none"></span>
         </div>
         <div id="huVentaMsg" style="display:${p.humano.aviso_venta_silencio?'none':'block'}">
@@ -367,7 +413,7 @@ function renderAtencion(b){
 
       <div id="huHorRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
         <span><span style="font-weight:600;font-size:13px">Definir un horario de atención</span>
-        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Dentro del horario el bot dice “en un momento te atiende un asesor”. Fuera, le dice cuándo vuelves (ej. “mañana a las 9:00 a.m.”), sin dejarlo esperando en silencio. Apagado = siempre “en un momento”.</div></span>
+        <div class="ay" style="font-size:11.5px;color:var(--faint);margin-top:2px">Dentro del horario el bot dice “en un momento te atiende un asesor”. Fuera, le dice cuándo vuelves (ej. “mañana a las 9:00 a.m.”), sin dejarlo esperando en silencio. Apagado = siempre “en un momento”.</div></span>
         <span class="sw ${p.humano.horario.activo?'on':''}" id="huHorSw" style="flex:none"></span>
       </div>
 
@@ -394,7 +440,8 @@ function renderAtencion(b){
 
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.support}</span><span class="nm">Atención post-venta</span></div>
-      <div class="desc">Cuando un cliente que <b>ya compró</b> vuelve a escribir, el bot lo atiende como <b>soporte</b> (reenvía su acceso/link, le da el estado de su pedido, lo ayuda a usarlo o con un cambio) en vez de re-venderle lo mismo. Si quiere <b>comprar de nuevo</b> o más unidades, el bot le arma un pedido nuevo automáticamente.</div>
+      <div class="desc" style="margin-top:6px">Al cliente que ya compró lo atiende como soporte, sin volver a venderle.</div>
+      <div class="desc ay">Cuando un cliente que <b>ya compró</b> vuelve a escribir, el bot lo atiende como <b>soporte</b> (reenvía su acceso/link, le da el estado de su pedido, lo ayuda a usarlo o con un cambio) en vez de re-venderle lo mismo. Si quiere <b>comprar de nuevo</b> o más unidades, el bot le arma un pedido nuevo automáticamente.</div>
 
       <div style="display:flex;gap:9px;align-items:flex-start;margin-top:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px">
         <span style="color:var(--ia);flex:none;margin-top:1px;line-height:0"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></span>
@@ -403,7 +450,7 @@ function renderAtencion(b){
 
       <div id="pvRow2" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
         <span><span style="font-weight:600;font-size:13px">Activar el modo soporte post-venta</span>
-        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Apagado = tras la compra el bot vuelve a su modo normal (puede re-ofrecer el producto).</div></span>
+        <div class="ay" style="font-size:11.5px;color:var(--faint);margin-top:2px">Apagado = tras la compra el bot vuelve a su modo normal (puede re-ofrecer el producto).</div></span>
         <span class="sw ${p.postventa.activo!==false?'on':''}" id="pvSw2" style="flex:none"></span>
       </div>
 
@@ -578,8 +625,7 @@ function renderVendedor(b){
   const form=seedForm();
   const retraso=st.retraso;
   b.innerHTML=`
-    <h2>Vendedor IA</h2>
-    <p class="sub">Define <b>quién</b> es tu vendedor y <b>cómo</b> habla: su nombre, tono, uso de negritas y emojis. Aplica a <b>todas</b> las conversaciones.</p>
+    <p class="sub">Quién es tu vendedor y cómo habla en todas las conversaciones.</p>
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.robot}</span><span class="nm">Personalidad del bot (vendedor IA)</span></div>
       <label style="margin-top:6px">Nombre de la IA — cómo se llama tu vendedor</label>
@@ -598,7 +644,8 @@ function renderVendedor(b){
     </div>
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.sliders}</span><span class="nm">Espera antes de responder</span></div>
-      <div class="desc">Cuando llega un mensaje, el bot espera este tiempo por si el cliente sigue escribiendo en ráfaga, y le pasa a la IA todos los textos juntos como una sola pregunta («hola» + «cuánto cuesta» = una respuesta que saluda y da el precio). No es lo que tarda en responder: es una espera que se <b>suma</b> a los segundos que la IA usa para escribir. Si un mensaje llega después de esta espera, mientras el bot está escribiendo, no recibe dos respuestas: la que ya estaba en camino no se manda (quedó vieja) y el bot contesta todo junto, lo de antes y lo nuevo. <b>0</b> = sin espera; cada mensaje va solo a la IA. Solo en conversaciones individuales.</div>
+      <div class="desc" style="margin-top:6px">Junta los mensajes que llegan seguidos y responde una sola vez.</div>
+      <div class="desc ay">Cuando llega un mensaje, el bot espera este tiempo por si el cliente sigue escribiendo en ráfaga, y le pasa a la IA todos los textos juntos como una sola pregunta («hola» + «cuánto cuesta» = una respuesta que saluda y da el precio). No es lo que tarda en responder: es una espera que se <b>suma</b> a los segundos que la IA usa para escribir. Si un mensaje llega después de esta espera, mientras el bot está escribiendo, no recibe dos respuestas: la que ya estaba en camino no se manda (quedó vieja) y el bot contesta todo junto, lo de antes y lo nuevo. <b>0</b> = sin espera; cada mensaje va solo a la IA. Solo en conversaciones individuales.</div>
       <label>Segundos</label>
       <input class="in" id="pf_retraso" type="number" min="0" max="60" value="${Number(retraso)}" style="max-width:140px"/>
     </div>
@@ -625,25 +672,20 @@ function renderPerfiles(b){
   // Sincroniza el estado local de modelos con lo guardado la 1ª vez.
   PERFILES.forEach(([k])=>{ if(st.perfMod[k]===undefined) st.perfMod[k]=(perf[k]||{}).modelo||""; });
   b.innerHTML=`
-    <h2>Perfiles por tarea</h2>
-    <p class="sub">Qué proveedor y modelo usa cada <b>tipo de trabajo</b>. Cambiarlo aquí actualiza todos los flujos de una vez; un nodo IA puede seguir forzando su propio modelo si lo necesitas.</p>
+    <p class="sub">Qué modelo de IA hace cada tarea. Lo normal es dejarlo todo en «Por defecto».</p>
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.sliders}</span><span class="nm">Modelo por tipo de tarea</span></div>
       ${PERFILES.map(([k,nm,d])=>{
         const v=perf[k]||{}; const mod=st.perfMod[k]||"";
-        return `<div style="border-top:1px solid var(--border);padding:14px 0 2px;margin-top:12px">
-          <div style="font-weight:700;font-size:13.5px">${nm}</div>
-          <div style="font-size:12px;color:var(--faint);margin:2px 0 8px">${d}</div>
-          ${k==="ocr"?`<button class="btn ia goval" style="height:32px;margin:0 0 10px">${IC.shield} Configurar Validador de comprobantes →</button>`:""}
-          <div class="row">
-            <div class="f"><label style="margin-top:0">Proveedor</label>
-              <select class="in" id="pf_prov_${k}">
+        return `<div class="pf-row">
+          <div class="pf-n">${nm}<div class="ay" style="font-size:11.5px;color:var(--faint);font-weight:400;margin-top:2px">${d}</div></div>
+          <div class="pf-c">
+            <div class="f"><select class="in" id="pf_prov_${k}" title="Proveedor">
                 <option value="" ${!v.proveedor?"selected":""}>Por defecto del bot</option>
                 <option value="anthropic" ${v.proveedor==="anthropic"?"selected":""}>Claude (Anthropic)</option>
                 <option value="openai" ${v.proveedor==="openai"?"selected":""}>ChatGPT (OpenAI)</option>
               </select></div>
-            <div class="f"><label style="margin-top:0">Modelo</label>
-              <button class="modelpick" data-pm="${k}">
+            <div class="f"><button class="modelpick" data-pm="${k}" title="Modelo">
                 <span class="mp-tx"><b>${mod?esc(modelName("",mod)):"Por defecto del proveedor"}</b>${mod?`<small>${esc(mod)}</small>`:""}</span>
                 ${icon("chevron")}
               </button></div>
@@ -781,12 +823,7 @@ function renderValidador(b){
   const o=st.ocr, r=o.reglas;
   const chk=(key,label,desc)=>`<label class="ocrchk"><input type="checkbox" data-r="${key}" ${r[key]?"checked":""}/> <span><b>${label}</b><small>${desc}</small></span></label>`;
   b.innerHTML=`
-    <h2>Validador de comprobantes</h2>
-    <p class="sub">Dale a la IA el criterio de tu negocio para <b>reconocer y validar pagos</b> (Yape, Plin, transferencias). Se inyecta solo a los nodos ${icon("robot")} IA de tipo <b>“analizar imagen”</b> (OCR) — no repites nada en cada flujo.</p>
-    <div class="ia-hero2">
-      <span class="ia-badge2">${IC.shield}<span>Cómo funciona</span></span>
-      <p>Cuando llega una captura de pago, la IA la lee y verifica que el <b>destinatario</b> sea uno de tus métodos válidos, que el <b>monto</b>, la <b>fecha</b> y el <b>nº de operación</b> tengan sentido, y detecta <b>montajes/ediciones</b>. Devuelve una conclusión (válido/ inválido + motivo) que tus flujos usan para aprobar o rechazar automáticamente.</p>
-    </div>
+    <p class="sub">Cómo revisa la IA las capturas de pago: a qué número debe llegar, el monto, la fecha y si está editada. <span class="qm-l" title="Cuando llega una captura de pago, la IA la lee y verifica que el destinatario sea uno de tus métodos válidos, que el monto, la fecha y el nº de operación tengan sentido, y detecta montajes o ediciones. Devuelve válido / inválido con el motivo, y con eso el bot aprueba o te lo pasa a Pagos por validar.">¿Cómo funciona?</span></p>
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.shield}</span><span class="nm">Validador inteligente</span>
         <div class="sw ${o.activo!==false?'on':''}" id="ocrSw" title="Activar/desactivar" style="margin-left:auto"></div></div>
@@ -1044,7 +1081,7 @@ async function renderGastoIa(){
     <div class="card">
       <div class="chd"><span class="nm">Lo que gasta tu IA</span>
         <span id="gastoIaDr" style="margin-left:auto"></span></div>
-      <div class="desc">Lo que llevas consumido con tu propia cuenta de IA. El cobro real siempre lo manda tu proveedor; esto es para que no tengas que salir de acá para saber cómo vas.</div>
+      <div class="desc ay">Lo que llevas consumido con tu propia cuenta de IA. El cobro real siempre lo manda tu proveedor; esto es para que no tengas que salir de acá para saber cómo vas.</div>
       <div style="display:flex;gap:26px;flex-wrap:wrap;margin:14px 0 4px">
         <div><div style="font-size:11.5px;color:var(--muted);font-weight:700">GASTO</div>
              <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${usd(totalMes)}</div></div>
@@ -1072,8 +1109,7 @@ async function renderGastoIa(){
 // ── Proveedores (API keys) ──────────────────────────────────────────
 function renderProveedores(box){
   box.innerHTML=`
-    <h2>Proveedores de IA</h2>
-    <p class="sub">Cada bot usa su propia cuenta de IA. Pega la API key del proveedor que prefieras y quedará habilitado para los nodos ${icon("robot")} IA de tus flujos.</p>
+    <p class="sub">Lo que gasta la IA de este bot y las cuentas (API keys) con las que trabaja.</p>
     <div id="gastoIa"></div>
     <div id="cards"></div>`;
   renderGastoIa();
