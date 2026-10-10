@@ -95,6 +95,20 @@
   .l-ico:hover{border-color:var(--brand);color:var(--brand)}
   .l-ico.dang:hover{border-color:var(--red);color:var(--red);background:var(--red-bg)}
   @media(max-width:640px){ .lrow{flex-wrap:wrap} .l-sub{white-space:normal} }
+  /* (10-oct) resumen en una línea, selector, ⋯, oferta, sin teléfono */
+  .stline{display:flex;flex-wrap:wrap;gap:6px 8px;margin:2px 0 16px}
+  .stline .pl{border:1px solid var(--border);background:var(--surface);color:var(--muted);font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;cursor:default}
+  .stline .pl b{color:var(--text);font-weight:600;margin-right:4px;font-variant-numeric:tabular-nums}
+  .stline button.pl{cursor:pointer} .stline button.pl:hover{border-color:var(--brand)} .stline button.pl.on{border-color:var(--brand);background:var(--brand-bg);color:var(--text)}
+  .vsel{height:40px;max-width:280px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font:inherit;font-size:13px;font-weight:600;padding:0 12px}
+  .oferta{font-size:10px;font-weight:700;letter-spacing:.2px;padding:2px 7px;border-radius:10px;background:var(--amber-bg);color:var(--amber);white-space:nowrap;flex:none}
+  .sintel{color:var(--faint)}
+  .masw{position:relative;flex:none}
+  .masmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.25);padding:6px;display:none}
+  .masmenu.show{display:block}
+  .masmenu button,.masmenu a{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:var(--text);font:inherit;font-size:13px;padding:8px 10px;border-radius:8px;cursor:pointer;text-decoration:none}
+  .masmenu button:hover,.masmenu a:hover{background:var(--surface-2)} .masmenu svg{width:15px;height:15px;color:var(--muted)}
+  .masmenu .dang:hover{color:var(--red)} .masmenu .dang:hover svg{color:var(--red)}
   .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;align-items:center;justify-content:center;z-index:100;padding:24px}
   .lightbox.show{display:flex} .lightbox img{max-width:92vw;max-height:92vh;border-radius:12px}
 </style>
@@ -105,17 +119,17 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Compras</h1>
-        <p class="nodo-lead">Tu <b>archivo de ventas cerradas</b> al 100% — el cliente ya pagó todo. Cada tarjeta trae el comprobante, un botón para volver a su chat y otro para anular la venta si el pago resultó falso.<br>
-        <span style="color:var(--faint)">Lo que todavía está en camino es de <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>. Los comprobantes que esperan tu visto bueno, de <a href="copiloto.html" style="color:var(--brand)">Pagos por validar</a>.</span></p>
+
       </div>
       <div class="nodo-actions"><a class="nodo-btn" href="conciliar.html" style="text-decoration:none;display:inline-flex;align-items:center;gap:8px" title="Cruzar tus ventas con el reporte del banco"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg> Conciliar pagos</a><button class="nodo-btn" id="reloadBtn" title="Actualizar ahora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg><span>Actualizar</span></button></div>
     </div>
 
-    <div class="stats" id="stats"></div>
+    <div class="stline" id="stats"></div>
 
     <div class="bar">
       <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="q" placeholder="Buscar por cliente, teléfono o nº de operación…" /></div>
+      <select class="vsel" id="vistaSel" style="display:none" title="Producto o anuncio"><option value="all">Todo</option></select>
       <div class="chips" id="tipoChips"></div>
       <div id="dr"></div>
       <div class="vseg" id="vistaSeg">
@@ -138,7 +152,8 @@ const $=(id)=>document.getElementById(id);
 // entrar — Compras es el archivo y el buscador por nº de operación no debe
 // quedar tapado por una ventana corta. El picker deja acotar cuando haga falta.
 const st={ channelId:null, list:[], imgs:{}, q:"", tipo:"all", rango:computePreset("hoy"),   // (Hoy por defecto — Rodrigo, 10-oct)
-           vista:(()=>{ try{ return localStorage.getItem("nodo.compras.vista")||"cards"; }catch(_){ return "cards"; } })() };
+           vista:(()=>{ try{ return localStorage.getItem("nodo.compras.vista2")||"lista"; }catch(_){ return "lista"; } })(),   // (10-oct) Lista por defecto
+           vistaP:"all", sinVerif:false, adNombre:{}, adEstado:{}, normal:{} };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function money(v,cur){ try{ return new Intl.NumberFormat("es-PE",{style:"currency",currency:cur||"PEN"}).format(Number(v||0)); }catch{ return (cur||"PEN")+" "+Number(v||0).toFixed(2); } }
 function fecha(iso){ if(!iso) return "—"; const d=new Date(iso); return d.toLocaleDateString("es-PE",{day:"2-digit",month:"short"})+" · "+d.toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"}); }
@@ -227,13 +242,15 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"compras" });
   st.channelId=shell.channelId;
-  shell.onChannel(id=>{ st.channelId=id; load(); });
+  shell.onChannel(id=>{ st.channelId=id; st.vistaP="all"; st.sinVerif=false; load(); });
   $("q").oninput=(e)=>{ st.q=norm(e.target.value.trim()); render(); };
   $("reloadBtn").onclick=async()=>{ const b=$("reloadBtn"); b.classList.add("spin"); try{ await load(); } finally{ setTimeout(()=>b.classList.remove("spin"),450); } };
   $("lightbox").onclick=()=>$("lightbox").classList.remove("show");
   mountDateRange($("dr"), { valor:st.rango, onChange:(r)=>{ st.rango=r; render(); } });
-  $("vistaSeg").querySelectorAll("[data-v]").forEach(b=> b.onclick=()=>{ st.vista=b.dataset.v; try{ localStorage.setItem("nodo.compras.vista",st.vista); }catch(_){}; render(); });
+  $("vistaSeg").querySelectorAll("[data-v]").forEach(b=> b.onclick=()=>{ st.vista=b.dataset.v; try{ localStorage.setItem("nodo.compras.vista2",st.vista); }catch(_){}; render(); });
   renderChips();
+  $("vistaSel").addEventListener("change",(e)=>{ st.vistaP=e.target.value||"all"; render(); });
+  document.addEventListener("click",(e)=>{ if(!e.target.closest(".masw")) document.querySelectorAll(".masmenu.show").forEach(m=>m.classList.remove("show")); });
   await load();
 }
 
@@ -248,6 +265,10 @@ async function load(){
   if(error){ ({ data }=await pageAll((f,t)=>supa.from("orders").select("id,amount,currency,order_bumps,estado,created_at,shipping,contact_id,product_id,contact:contact_id(nombre,wa_id,source),product:product_id(nombre,emoji)")
     .eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t))); }
   st.list=(data||[]).filter(esCerrada).filter(o=>{ const c=o.contact||{}; return c.wa_id!=="webchat-test" && c.source!=="sim"; }); // sin ventas de Probar flujos ni simuladas
+  // (10-oct) Precio normal de cada producto = el más alto al que se vendió; lo de abajo salió de una oferta.
+  st.normal={}; st.list.forEach(o=>{ const k=o.product_id||""; st.normal[k]=Math.max(st.normal[k]||0, Number(o.amount||0)); });
+  try{ const { data:am }=await supa.from("ads_meta").select("ad_id,ad_name,estado").eq("channel_id",st.channelId);
+    st.adNombre={}; st.adEstado={}; (am||[]).forEach(a=>{ if(!a.ad_id) return; st.adNombre[a.ad_id]=a.ad_name||""; if(a.estado) st.adEstado[a.ad_id]=a.estado; }); }catch(_){}
 
   // Último comprobante entrante por contacto — respaldo cuando el pedido no lo
   // guardó en shipping (típico en digital, donde el pago valida y sigue).
@@ -285,7 +306,9 @@ async function load(){
 }
 
 const TIPOS=[["all","Todas"],["digital","Digital"],["lima","Lima"],["provincia","Provincia"]];
+const hayFisico=()=> st.list.some(o=>tipoDe(o)!=="digital");
 function renderChips(){
+  $("tipoChips").style.display = hayFisico() ? "" : "none";
   $("tipoChips").innerHTML=TIPOS.map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("");
   $("tipoChips").querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{ st.tipo=b.dataset.t; renderChips(); render(); });
 }
@@ -319,8 +342,12 @@ function matchBusqueda(o,q){
   return false;
 }
 
-function filtered(){
+const adDe=(o)=> (o.shipping&&o.shipping.ad_id) ? String(o.shipping.ad_id) : null;
+function enVistaP(o){ const v=st.vistaP; if(v==="all") return true; if(v==="none") return !adDe(o); if(v.startsWith("p:")) return o.product_id===v.slice(2); return adDe(o)===v.slice(2); }
+function filtered({ sinVerif=true, vista=true }={}){
   return st.list.filter(o=>{
+    if(vista && !enVistaP(o)) return false;
+    if(sinVerif && st.sinVerif){ const vd=verifDe(o); if(vd&&vd.full) return false; }
     if(st.tipo!=="all" && tipoDe(o)!==st.tipo) return false;
     if(!enRango(o)) return false;
     if(st.q && !matchBusqueda(o,st.q)) return false;
@@ -362,8 +389,33 @@ async function buscarOperacionUsada(q){
   </div>`;
 }
 
+function fillVistaP(){
+  const sel=$("vistaSel"); if(!sel) return;
+  const base=filtered({ sinVerif:false, vista:false });
+  const n={}; const sum=(k)=>{ n[k]=(n[k]||0)+1; };
+  base.forEach(o=>{ sum("all"); if(o.product_id) sum("p:"+o.product_id); const a=adDe(o); sum(a?"a:"+a:"none"); });
+  const prods=new Map(); st.list.forEach(o=>{ if(o.product_id && o.product && !prods.has(o.product_id)) prods.set(o.product_id,o.product); });
+  const cnt={}; st.list.forEach(o=>{ const a=adDe(o); if(!a) return; (cnt[a]||(cnt[a]={}))[o.product_id||""]=((cnt[a]||{})[o.product_id||""]||0)+1; });
+  const adsDe={}; Object.entries(cnt).forEach(([a,m])=>{ const p=Object.entries(m).sort((x,y)=>y[1]-x[1])[0][0]; (adsDe[p]||(adsDe[p]=[])).push(a); });
+  const nn=(k)=>{ const x=n[k]||0; return x===1?"1 compra":x+" compras"; };
+  const est=(a)=>{ const e=st.adEstado[a]; return e?` data-dot="${e==="ACTIVE"?"on":"off"}" data-titulo="${e==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}"`:""; };
+  let h=`<option value="all" data-ico="pedidos" data-n="${nn("all")}">Todo</option>`, cuantos=0;
+  [...prods.keys()].sort((a,b)=>(n["p:"+b]||0)-(n["p:"+a]||0)).forEach(pid=>{
+    const p=prods.get(pid), ads=adsDe[pid]||[];
+    h+=`<optgroup label=""><option value="p:${esc(pid)}" data-ico="box" data-n="${nn("p:"+pid)}">${esc(p.nombre||"Producto")}</option>`;
+    if(ads.length>1){ h+=ads.map(a=>`<option value="a:${esc(a)}" data-ico="megaphone" data-sub="1"${est(a)} data-n="${nn("a:"+a)}">${esc(st.adNombre[a]||("Anuncio …"+a.slice(-6)))}</option>`).join(""); cuantos+=ads.length; }
+    h+=`</optgroup>`; cuantos++;
+  });
+  if(st.list.some(o=>!adDe(o))){ h+=`<optgroup label=""><option value="none" data-ico="user" data-n="${nn("none")}">Sin anuncio (orgánico)</option></optgroup>`; cuantos++; }
+  sel.innerHTML=h;
+  if(![...sel.options].some(o=>o.value===st.vistaP)) st.vistaP="all";
+  sel.value=st.vistaP;
+  sel.style.display = cuantos>1 ? "" : "none";
+}
 function render(){
   if(!$("grid")) return;   // load() terminó después de salir de la sección por SPA
+  renderChips();
+  fillVistaP();
   renderStats();
   $("vistaSeg").querySelectorAll("[data-v]").forEach(b=>b.classList.toggle("on",b.dataset.v===st.vista));
   const lista = st.vista==="lista";
@@ -392,15 +444,19 @@ function renderStats(){
     ? Object.entries(porMoneda).sort((a,b)=>b[1]-a[1]).map(([c,v])=>money(v,c)).join(" · ")
     : money(0,"PEN");
   const porTipo=(t)=>list.filter(o=>tipoDe(o)===t).length;
-  const verif=list.filter(o=>{ const vd=verifDe(o); return vd&&vd.full; }).length;
-  const S=[
-    [String(list.length),"compras cerradas","#2b7fff"],
-    [cobradoStr,"cobrado en total","#22c079"],
-    [`${verif}/${list.length}`,"verificadas","#18b7be"],
-    [String(porTipo("digital")),"digitales","#8b5cf6"],
-    [String(porTipo("lima")+porTipo("provincia")),"físicas","#f0a92b"],
+  // (10-oct) Una línea en vez de 5 tarjetas de colores. «verificadas» se toca para ver solo las que faltan revisar
+  // (cuenta sobre las compras de la vista, sin el propio filtro de «sin verificar»).
+  const base=filtered({ sinVerif:false });
+  const verif=base.filter(o=>{ const vd=verifDe(o); return vd&&vd.full; }).length;
+  const pills=[
+    `<span class="pl"><b>${list.length}</b>${list.length===1?"compra":"compras"}</span>`,
+    `<span class="pl"><b>${cobradoStr}</b>cobrado</span>`,
+    `<button class="pl ${st.sinVerif?"on":""}" id="plVerif" title="Ver solo las que faltan verificar con el banco"><b>${verif} de ${base.length}</b>verificadas con el banco</button>`,
   ];
-  $("stats").innerHTML=S.map(([v,l,color])=>`<div class="stat"><div class="s-v" style="color:${color}">${v}</div><div class="s-l"><span class="sdot" style="background:${color}"></span>${l}</div></div>`).join("");
+  const fis=porTipo("lima")+porTipo("provincia");
+  if(fis && porTipo("digital")) pills.push(`<span class="pl"><b>${porTipo("digital")}</b>digitales</span>`, `<span class="pl"><b>${fis}</b>físicas</span>`);
+  $("stats").innerHTML=pills.join("");
+  const pv=$("plVerif"); if(pv) pv.onclick=()=>{ st.sinVerif=!st.sinVerif; render(); };
 }
 
 // Comprobantes por tipo: provincia = adelanto + saldo (2); digital = 1 (el que
@@ -420,11 +476,32 @@ function shots(o,tipo){
   return img ? [[img,"PAGO"]] : [];
 }
 
+// Teléfono de verdad: el «wa_id» de quien llegó por usuario de WhatsApp (BSUID) no es un número.
+const telDe=(c)=>{ const w=String((c&&c.wa_id)||""); return /^\d{9,15}$/.test(w) ? "+"+w : null; };
+const telHtml=(c)=>{ const t=telDe(c); return t?esc(t):'<span class="sintel">sin teléfono</span>'; };
+// Método y nº de operación del pago (lo que sirve para cuadrar con el banco).
+function pagoDe(o){
+  const s=o.shipping||{};
+  const met=s.digital_metodo||s.adelanto_metodo||s.metodo_pago||s.metodo||"";
+  const op=s.digital_operacion||s.adelanto_operacion||s.adelanto_operacion_leida||s.saldo_operacion||"";
+  return [met?cap(met):"", op?"op. "+op:""].filter(Boolean).join(" · ");
+}
+const esOferta=(o)=> Number(o.amount||0) < (st.normal[o.product_id||""]||0) - 0.009;
+const unProducto=()=> new Set(st.list.map(o=>o.product_id||"")).size<=1;
+function masMenu(o){
+  const sh=shots(o,tipoDe(o));
+  return `<div class="masw"><button class="l-ico" data-mas title="Más"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+    <div class="masmenu">${sh.length?`<button data-ver>${icon("image")} Ver comprobante</button>`:""}<button class="dang" data-anular>${icon("ban")} Anular venta</button></div></div>`;
+}
+function wireMas(el,o){
+  const b=el.querySelector("[data-mas]"); if(b) b.onclick=(e)=>{ e.stopPropagation(); const m=el.querySelector(".masmenu"); const ab=m.classList.contains("show"); document.querySelectorAll(".masmenu.show").forEach(x=>x.classList.remove("show")); if(!ab) m.classList.add("show"); };
+  const v=el.querySelector("[data-ver]"); if(v) v.onclick=()=>{ const u=shots(o,tipoDe(o))[0][0]; if(/\.pdf(\?|#|$)/i.test(String(u))) window.open(u,"_blank","noopener"); else { $("lightImg").src=u; $("lightbox").classList.add("show"); } };
+  const a=el.querySelector("[data-anular]"); if(a) a.onclick=()=>anular(o);
+}
 function card(o){
   const c=o.contact||{}, p=o.product||{}, v=o.version||{}, s=o.shipping||{};
   const tipo=tipoDe(o);
   const el=document.createElement("div"); el.className="pcard";
-  el.style.boxShadow=`inset 3px 0 0 0 ${TIPO_COLOR[tipo]||"var(--border)"}`;
   // Solo las ventas EXTRA: los regalos también viven en order_bumps (precio 0) y
   // contarlos hacía que una compra sin ningún upsell mostrara "+1 extra" por la
   // gorra de regalo (mismo error que el KPI "Ventas extra" del Dashboard).
@@ -454,11 +531,11 @@ function card(o){
     <div class="pc-top">
       <span class="pc-em">${p.emoji?esc(p.emoji):icon("box")}</span>
       <div class="pc-id"><div class="pc-nm">${esc(c.nombre||s.cliente||"Sin nombre")}</div>
-        <div class="pc-ph">${c.wa_id?"+"+esc(c.wa_id):"—"} · ${fecha(cuando(o))}</div></div>
-      <span class="ttag ${tipo}">${tipo==="digital"?"DIGITAL":tipo==="lima"?"LIMA":"PROVINCIA"}</span>
+        <div class="pc-ph">${telHtml(c)} · ${fecha(cuando(o))}</div></div>
+      ${esOferta(o)?'<span class="oferta">oferta</span>':""}${hayFisico()?`<span class="ttag ${tipo}">${tipo==="digital"?"DIGITAL":tipo==="lima"?"LIMA":"PROVINCIA"}</span>`:""}
     </div>
     <div class="pc-row">
-      <div class="pc-prod">${esc(p.nombre||"—")}${v.nombre?` <span class="vv">· ${esc(v.nombre)}</span>`:""}</div>
+      <div class="pc-prod">${unProducto() ? esc(pagoDe(o)||"—") : esc(p.nombre||"—")+(v.nombre?` <span class="vv">· ${esc(v.nombre)}</span>`:"")}</div>
       <div class="pc-amt-side">${verifChip(o)}<div class="pc-amt">${money(O.total(o),o.currency)}${bumps?`<span class="bump">+${bumps} extra${bumps>1?"s":""}</span>`:""}</div></div>
     </div>
     ${meta.length?`<div class="pc-meta">${meta.join("<br>")}</div>`:""}
@@ -466,10 +543,10 @@ function card(o){
     ${shotsHtml}
     <div class="pc-foot">
       <a class="gobtn" href="index.html?c=${encodeURIComponent(o.contact_id||"")}">${icon("inbox")} Abrir chat</a>
-      <button class="anularbtn" data-anular title="Anular esta venta (pago falso / no real)">${icon("ban")} Anular</button>
+      ${masMenu(o)}
     </div>`;
   el.querySelectorAll(".shot img[data-full]").forEach(t=>t.onclick=()=>{ $("lightImg").src=t.dataset.full; $("lightbox").classList.add("show"); });
-  el.querySelector("[data-anular]").onclick=()=>anular(o);
+  wireMas(el,o);
   const vb=el.querySelector("[data-verif]"); if(vb) vb.onclick=()=>marcarVerificada(o);
   const ub=el.querySelector("[data-unverif]"); if(ub) ub.onclick=()=>quitarVerificada(o);
   return el;
@@ -481,19 +558,20 @@ function row(o){
   const c=o.contact||{}, p=o.product||{}, v=o.version||{}, s=o.shipping||{};
   const tipo=tipoDe(o);
   const el=document.createElement("div"); el.className="lrow";
-  el.style.boxShadow=`inset 3px 0 0 0 ${TIPO_COLOR[tipo]||"var(--border)"}`;
   const nombre=c.nombre||s.cliente||"Sin nombre";
-  const prod=[esc(p.nombre||"—"), v.nombre?esc(v.nombre):""].filter(Boolean).join(" · ");
+  // (10-oct) Abajo del nombre lo que sirve para revisar un pago: método y nº de operación, teléfono y hora.
+  // El producto solo si el bot vende más de uno; la etiqueta de tipo solo si también vende físico.
+  const sub=[ unProducto()?"":[esc(p.nombre||"—"), v.nombre?esc(v.nombre):""].filter(Boolean).join(" · "), esc(pagoDe(o)), telHtml(c), fecha(cuando(o)) ].filter(Boolean).join(" · ");
   el.innerHTML=`
     <span class="l-em">${p.emoji?esc(p.emoji):icon("box")}</span>
     <div class="l-id">
-      <div class="l-nm"><span class="nmtxt">${esc(nombre)}</span><span class="ttag ${tipo}">${tipo==="digital"?"DIGITAL":tipo==="lima"?"LIMA":"PROVINCIA"}</span></div>
-      <div class="l-sub">${prod} · ${fecha(cuando(o))}</div>
+      <div class="l-nm"><span class="nmtxt">${esc(nombre)}</span>${esOferta(o)?'<span class="oferta">oferta</span>':""}${hayFisico()?`<span class="ttag ${tipo}">${tipo==="digital"?"DIGITAL":tipo==="lima"?"LIMA":"PROVINCIA"}</span>`:""}</div>
+      <div class="l-sub">${sub}</div>
     </div>
     <div class="l-amt-side">${verifChip(o)}<span class="l-amt">${money(O.total(o),o.currency)}</span></div>
     <a class="l-ico" href="index.html?c=${encodeURIComponent(o.contact_id||"")}" title="Abrir chat">${icon("inbox")}</a>
-    <button class="l-ico dang" data-anular title="Anular esta venta">${icon("ban")}</button>`;
-  el.querySelector("[data-anular]").onclick=()=>anular(o);
+    ${masMenu(o)}`;
+  wireMas(el,o);
   const vb=el.querySelector("[data-verif]"); if(vb) vb.onclick=()=>marcarVerificada(o);
   const ub=el.querySelector("[data-unverif]"); if(ub) ub.onclick=()=>quitarVerificada(o);
   return el;
