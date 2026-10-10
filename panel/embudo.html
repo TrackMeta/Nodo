@@ -357,6 +357,10 @@ function funnelDe(cs){
   const c={nuevo:0,curioso:0,interesado:0,caliente:0,confirmado:0,comprado:0,perdido:0};
   cs.forEach(x=>{ const k=(x.stage||"nuevo"); if(k in c) c[k]++; else c.nuevo++; });
   const total=cs.length;
+  // (10-oct) Desde la 0134, «perdido» también es el lead que se enfrió (3 días sin escribir, sin comprar).
+  // Para el CIERRE solo cuenta el perdido que llegó a tener pedido (la venta que se cayó): el que nunca
+  // pidió no es una venta perdida, es un curioso que se fue.
+  const perdidoVenta=cs.filter(x=>x.stage==="perdido" && (st.ordersBy[x.id]||[]).length>0).length;
   // Acumulado: cada nivel = "esa etapa o MÁS adelante". Caliente va entre Interés y Confirmaron.
   // Los PERDIDOS son un desenlace terminal aparte (se muestran en su propio bucket): NO se
   // mezclan en los niveles. Antes se sumaban a curiosos/interes pero NO a calientes+, así que
@@ -369,7 +373,7 @@ function funnelDe(cs){
   const calientes=c.caliente+c.confirmado+c.comprado;                       // volvieron 3+ veces (o ya avanzaron más)
   const confirmaron=c.confirmado+c.comprado;
   const compraron=c.comprado;
-  return { c, total,
+  return { c, total, perdidoVenta,
     niveles:{ llegaron:total, curiosos, interes, calientes, confirmaron, compraron },
     paso:{ curiosos:pct(curiosos,total), interes:pct(interes,curiosos), caliente:pct(calientes,interes), confirmar:pct(confirmaron,calientes), comprar:pct(compraron,confirmaron) },
     // Efectividad de cierre: los PERDIDOS (pedido que se cayó: rechazo/cancelado/no recogido)
@@ -377,7 +381,7 @@ function funnelDe(cs){
     // Excluirlos escondía las ventas caídas e inflaba la efectividad. Las BARRAS del embudo sí
     // los excluyen a propósito (fuga post-venta ≠ fuga de enganche); solo este número los suma,
     // para que coincida con el Dashboard y sea honesto.
-    efectividad: pct(compraron, interes + c.perdido),   // de los que se interesaron de verdad (incl. los que se cayeron), cuántos cerraste
+    efectividad: pct(compraron, interes + perdidoVenta),   // de los que se interesaron de verdad (incl. los que se cayeron), cuántos cerraste
     conversion: pct(compraron, total) };    // de todos los contactos, cuántos compran
 }
 
@@ -445,7 +449,7 @@ function renderMetricas(F, cmp){
     </div></div>
     <div class="met ${eCls}"><div class="num">${ef==null?"—":ef+"%"}</div><div class="mtxt">
       <div class="mlbl"><span class="miabadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>Efectividad de cierre</div>
-      <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes + F.c.perdido} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}</div>
+      <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes + F.perdidoVenta} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}</div>
     </div></div>`;
   igualarAlto(el);
 }
@@ -477,7 +481,7 @@ function fugas(F){
   ];
   saltos.forEach((s,i)=>{ s.i=i; s.drop=s.paso==null?null:100-s.paso; s.seCae=s.paso==null?0:Math.round(s.arriba*s.drop/100); });
   const cierre=saltos[4];
-  cierre.seCae=F.c.perdido; cierre.drop=cierre.arriba>0?Math.round(F.c.perdido/cierre.arriba*100):null;
+  cierre.seCae=F.perdidoVenta; cierre.drop=cierre.arriba>0?Math.min(100,Math.round(F.perdidoVenta/(cierre.arriba+F.perdidoVenta)*100)):null;
   const validos=saltos.filter(s=>s.arriba>0 && s.drop!=null);
   const peor=validos.length ? validos.reduce((a,b)=>(b.seCae>a.seCae?b:a)) : null;
   // Fuga de verdad: se pierde más de un cuarto y al menos 2 personas.
