@@ -519,7 +519,7 @@ function renderFunnel(F){
       const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
       // (10-oct) Solo cuánto se cae; en rojo únicamente la mayor fuga.
       html+= sa.drop==null ? `<div class="fstep">${arrow}—</div>`
-        : `<div class="fstep${peor&&peor.i===i?" peor":""}" title="Pasa el ${100-sa.drop}% · se van ${sa.seCae}">${arrow}<span class="fdrop">−${sa.drop}%</span></div>`;
+        : `<div class="fstep${peor&&peor.i===i?" peor":""}" title="Pasa el ${100-sa.drop}% · se van ${sa.seCae}">${arrow}<span class="fdrop">${sa.drop>0?"−"+sa.drop+"%":"sin caída"}</span></div>`;
     }
   });
   el.innerHTML=html;
