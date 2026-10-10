@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
     for (const acct of cuentas) {
       try {
         const n = await syncCuenta(channelId, acct, token, since, until);
-        resumen.push({ channelId, acct, filas: n });
+        resumen.push({ channelId, acct, filas: n, estados: ultimoEstados });
       } catch (e) {
         const msg = String((e as any)?.message ?? e);
         resumen.push({ channelId, acct, error: msg });
@@ -199,5 +199,33 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
     const { error } = await db.from("ads_insights").upsert(insightRows.slice(i, i + 500), { onConflict: "channel_id,ad_id,fecha" });
     if (error) throw new Error("ads_insights upsert: " + error.message);
   }
+  ultimoEstados = await syncEstados(channelId, acctId, authH);
   return insightRows.length;
+}
+
+// (10-oct) Estado de cada anuncio en Meta (ACTIVE, PAUSED, CAMPAIGN_PAUSED…), para el punto verde/gris del Embudo.
+// De TODOS los anuncios conocidos de la cuenta, no solo los que gastaron en el rango: uno pausado hace semanas no
+// sale en los insights y quedaría «activo» para siempre. Best-effort: si Meta falla, se queda el estado anterior.
+let ultimoEstados = "";
+async function syncEstados(channelId: string, acctId: string, authH: Record<string, string>): Promise<string> {
+  try {
+    const { data } = await db.from("ads_meta").select("ad_id").eq("channel_id", channelId).eq("account_id", acctId);
+    const ids = (data ?? []).map((r: any) => String(r.ad_id)).filter(Boolean);
+    const filas: any[] = [];
+    // Meta ya no acepta ?ids= (v26+): se lee la lista de anuncios de la cuenta (paginada) y se cruza con los conocidos.
+    const conocidos = new Set(ids);
+    let url = `${GRAPH}/${acctId}/ads?fields=id,effective_status&limit=500`, vueltas = 0;
+    while (url && vueltas++ < 20) {
+      const res = await fetchConTimeout(url, { headers: authH }, 30_000);
+      const body = await res.json();
+      if (!res.ok || body?.error) return "error Meta: " + JSON.stringify(body?.error ?? res.status).slice(0, 300);
+      for (const a of body.data ?? []) {
+        const id = String(a.id);
+        if (conocidos.has(id) && a.effective_status) filas.push({ channel_id: channelId, account_id: acctId, ad_id: id, estado: String(a.effective_status) });
+      }
+      url = String(body.paging?.next ?? "").replace(/([?&])access_token=[^&]*&?/g, "$1").replace(/[?&]$/, "");
+    }
+    if (filas.length) { const { error } = await db.from("ads_meta").upsert(filas, { onConflict: "channel_id,ad_id" }); if (error) return "upsert: " + error.message; }
+    return filas.length + " de " + ids.length;
+  } catch (e) { return "excepción: " + String((e as any)?.message ?? e).slice(0, 300); }
 }
