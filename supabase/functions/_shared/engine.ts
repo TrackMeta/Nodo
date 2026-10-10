@@ -36,7 +36,8 @@ export type EngineEvent =
   // adId: source_id del referral CTWA (solo primer mensaje desde un anuncio).
   // msgTs: hora (ISO) del mensaje del cliente según Meta. Sirve para saber si un turno
   // anterior ya lo tenía a la vista al contestar (ver yaCubiertoPorTurnoAnterior).
-  | { type: "message"; text: string; msgType?: string; mediaRef?: string; adId?: string; msgTs?: string }
+  // rapido: contacto NUEVO que escribió solo la palabra clave / la frase del anuncio (ver arranqueInfo)
+  | { type: "message"; text: string; msgType?: string; mediaRef?: string; adId?: string; msgTs?: string; rapido?: boolean }
   | { type: "button"; buttonId: string; title?: string }
   | { type: "resume" }; // despertar tras Esperar
 
@@ -281,7 +282,7 @@ export async function runEngine(
         }
       } catch (_) { /* sin dato → se contesta como siempre */ }
     }
-    if (event.type === "message" && event.msgTs && _soloTexto && await yaCubiertoPorTurnoAnterior(db, contactId, event.msgTs)) {
+    if (event.type === "message" && !event.rapido && event.msgTs && _soloTexto && await yaCubiertoPorTurnoAnterior(db, contactId, event.msgTs)) {
       await logEvent(db, channelId, contactId, "nota", "🔁 Ya contestado por el turno anterior", String(event.text ?? "").slice(0, 80)).catch(() => {});
       return;
     }
@@ -358,7 +359,9 @@ async function runEngineInner(
   // 📊 Contestó: se marca la variante de copy que le habíamos mandado (la del saludo
   // inicial o la del último paso de remarketing). Es la métrica que de verdad mide el
   // copy — que conteste es efecto suyo; que compre depende de toda la conversación.
-  if (event.type === "message") await marcarVarianteRespuesta(db, contactId);
+  // ⚡ Carril rápido (ver arranqueInfo): nada de lo de cliente antiguo aplica; se salta y va directo al ruteo.
+  const _rapido = event.type === "message" && event.rapido === true && !event.mediaRef;
+  if (event.type === "message" && !_rapido) await marcarVarianteRespuesta(db, contactId);
 
   // Congela el ángulo del creativo (por su ad_id) para mensajes iniciales / IA /
   // reportes / remarketing. Idempotente y defensivo.
@@ -424,7 +427,7 @@ async function runEngineInner(
   // enrolarSegmento no degrada (a un provincia/comprador ni lo toca) ni corre si
   // no hay secuencia "interactuo". No aplica si justo pidió opt-out (sus subs se
   // acaban de cancelar y re-enrolarlo sería contradictorio).
-  if (event.type === "message" && !esOptOut(event.text)) {
+  if (event.type === "message" && !_rapido && !esOptOut(event.text)) {   // (rápido = su 1.er mensaje: n=1, no gradúa)
     try {
       // Una sola lectura de los mensajes entrantes sirve para las dos graduaciones:
       // "interesado" (2+ mensajes) y "caliente" (4+ mensajes = súper enganchado).
@@ -745,7 +748,7 @@ async function runEngineInner(
   // Una venta digital YA PAGADA (`confirmada`) no es un pedido en curso que el cliente pueda estar
   // abandonando: sin esta excepción, a quien alguna vez compró un digital esta rama no le
   // corría nunca.
-  const _vivoArr = event.type === "message" ? await tienePedidoVivo(db, contactId) : null;
+  const _vivoArr = event.type === "message" && !_rapido ? await tienePedidoVivo(db, contactId) : null;
   // 💻 …pero si esa compra digital pagada es RECIENTE (menos de 48 h), «ya no me interesa / olvídalo» es arrepentirse
   // de lo que acaba de pagar: se le decía «no queda nada pendiente» y nadie se enteraba (auditoría 2026-09-30). Va
   // como la cancelación de una compra digital: la verdad al cliente y el aviso al dueño, que decide si devuelve.
@@ -1005,7 +1008,7 @@ async function runEngineInner(
     } catch (e) { console.error("[adelanto]", (e as any)?.message ?? e); }
   }
 
-  let run = await getActiveRun(db, contactId);
+  let run = _rapido ? null : await getActiveRun(db, contactId);
   // 📣 Tocó un anuncio de OTRO producto con una conversación vieja viva: manda el anuncio. Antes
   // el referral solo se miraba sin run, y un lead que habló de A hace semanas tocaba el anuncio
   // de B y la IA de A le seguía vendiendo A. Si el pedido de A ya existe y sigue vivo, se respeta
@@ -1121,9 +1124,9 @@ async function runEngineInner(
     // así que sin esta excepción el clic de anuncio se respondía como soporte del producto anterior
     // (venta perdida + sin atribución). Se deja pasar al ruteo por anuncio de abajo.
     // 📱 Pagó una micro app y todavía no dio su correo (el run ya no lo espera): se atiende primero.
-    try { if (await correoPendienteSinRun(db, channelId, contactId, event)) return; }
+    if (!_rapido) try { if (await correoPendienteSinRun(db, channelId, contactId, event)) return; }
     catch (e) { console.error("[microapp/correo sin run]", (e as any)?.message ?? e); }
-    if (!event.adId) {
+    if (!event.adId && !_rapido) {
       try { if (await maybePostventa(db, channelId, contactId, event)) return; }
       catch (e) { console.error("[postventa]", (e as any)?.message ?? e); }
       // Reclama por una compra que NO figura a su nombre. `maybePostventa` exige un pedido
@@ -1150,7 +1153,7 @@ async function runEngineInner(
     // …pero con VENCIMIENTO: el anuncio guardado solo manda si el clic fue en los últimos 7 días
     // (fep_hasta = clic + 72 h). Antes valía para siempre: un lead de hace meses que escribía por su
     // cuenta «¿tienen para manchas?» iba al producto de aquel anuncio y el IA Router ni se consultaba.
-    const _cAd = (await db.from("contacts").select("ad_id, fep_hasta").eq("id", contactId).maybeSingle()).data as any;
+    const _cAd = event.adId ? null : (await db.from("contacts").select("ad_id, fep_hasta").eq("id", contactId).maybeSingle()).data as any;   // (con referral fresco no se usa)
     const _clicAd = _cAd?.fep_hasta ? Date.parse(_cAd.fep_hasta) - 72 * 3600_000 : NaN;
     const _adStored = _cAd?.ad_id && (!Number.isFinite(_clicAd) || Date.now() - _clicAd < 7 * 864e5) ? _cAd.ad_id : undefined;
     const adIdRuteo = event.adId ?? _adStored;
@@ -1557,7 +1560,7 @@ async function runEngineInner(
     // daba todos sus datos y el pedido de B NO nacía nunca; y se llevaba la opción, la talla, la
     // oferta y la bolsa de pagos de A. Solo se respeta si su último pedido está VIVO y es de este
     // mismo producto (está a mitad de esa compra).
-    try {
+    if (!_rapido) try {   // (rápido: contacto nuevo, sin compra anterior que limpiar)
       const { data: _fl } = await db.from("flows").select("product_id, role").eq("id", flow.id).maybeSingle();
       const _pidN = (_fl as any)?.product_id ? String((_fl as any).product_id) : "";
       if (_pidN && String((_fl as any)?.role ?? "venta") !== "postventa") {   // también «mensajes iniciales»: anuncios y palabras clave entran por ahí y el rotador salta a la venta sin pasar por acá
@@ -3662,6 +3665,21 @@ export async function arranqueSinEspera(
     const r = await matchTrigger(db, channelId, String(text ?? ""), adId);
     return r.tier === "keyword" || r.tier === "referral";
   } catch (_) { return false; }   // ante la duda, se espera como siempre
+}
+
+// ⚡ CARRIL RÁPIDO (9-oct, Rodrigo: «la idea es que salga instantáneo»). Un contacto NUEVO (su fila no existía antes de
+// este mensaje) que escribe SOLO la palabra clave o la frase del anuncio no puede tener pedido, run, compra, reclamo,
+// saldo ni correo pendiente: las ~10 consultas de cliente antiguo que el motor hace antes del ruteo le sobran (medido con
+// ⏱️ Arranque y los logs REST: ~1 s de los ~4 s de Nodo hasta la 1.ª burbuja). `rapido` en el evento las salta.
+export async function arranqueInfo(
+  db: SupabaseClient, channelId: string, contactId: string, text: string, adId: string | undefined, nuevo: boolean,
+): Promise<{ sinEspera: boolean; rapido: boolean }> {
+  try {
+    if (!nuevo) return { sinEspera: await arranqueSinEspera(db, channelId, contactId, text, adId), rapido: false };
+    const r = await matchTrigger(db, channelId, String(text ?? ""), adId);   // (nuevo: no tiene runs, no hace falta mirarlos)
+    const sinEspera = r.tier === "keyword" || r.tier === "referral";
+    return { sinEspera, rapido: sinEspera && soloTextoDeEntrada(text, r) };
+  } catch (_) { return { sinEspera: false, rapido: false }; }
 }
 
 // Nivel 3: IA Router. Cuando ningún trigger determinista matchea, la IA lee

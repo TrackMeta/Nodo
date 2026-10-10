@@ -9,7 +9,7 @@ import { transcribeAudio } from "../_shared/ai.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
 import { urlArchivo } from "../_shared/archivo.ts";
 import { CAMPOS_SALUD, veredictoWebhook, aplicarVeredicto } from "../_shared/salud-wa.ts";
-import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, avisarEscribioEnPausa, arranqueSinEspera, botEncendido, marcaArranque, type EngineEvent } from "../_shared/engine.ts";
+import { runEngine, avisarEnvioFallido, pasarAHumano, esAlucinacionSTT, esOptOut, aplicarOptOut, avisarEscribioEnPausa, arranqueInfo, botEncendido, marcaArranque, type EngineEvent } from "../_shared/engine.ts";
 
 // Runtime de Supabase Edge: permite terminar trabajo DESPUÉS de responder
 // (Meta exige un 200 rápido; el motor puede tardar por el LLM).
@@ -404,9 +404,11 @@ async function processInbound(
   // vieja —la ventana de 24 h quedaba cerrada para el panel y el motor aunque el cliente acababa
   // de escribir— y `last_input` con un texto que ya no es lo último que dijo.
   let _prevClienteMs = 0;
+  let _contactoNuevo = false;   // ⚡ su fila no existía antes de este mensaje (ver arranqueInfo)
   try {
-    const { data: prevC } = await db.from("contacts").select("ultimo_mensaje_cliente_at")
+    const { data: prevC, error: ePrevC } = await db.from("contacts").select("ultimo_mensaje_cliente_at")
       .eq("channel_id", channelId).eq("wa_id", waId).maybeSingle();
+    _contactoNuevo = !ePrevC && !prevC;
     _prevClienteMs = (prevC as any)?.ultimo_mensaje_cliente_at ? new Date((prevC as any).ultimo_mensaje_cliente_at).getTime() : 0;
   } catch { /* sin lectura: se sigue como antes */ }
   if (_prevClienteMs > new Date(tsCliente).getTime()) {
@@ -610,7 +612,12 @@ async function processInbound(
   let bufferSeg = Math.min(Math.max(Number(channel.buffer_default_seg ?? 4) || 0, 0), MAX_BUFFER_SEG);
   // ⚡ Palabra clave / anuncio sin conversación en curso → los mensajes iniciales salen sin
   // esperar (ver arranqueSinEspera). Un 2.º mensaje suyo sigue su camino normal con espera.
-  if (debounce && bufferSeg > 0 && await arranqueSinEspera(db, channelId, contact.id, String(text ?? ""), adId)) bufferSeg = 0;
+  // ⚡ …y si además es un contacto NUEVO que solo mandó la clave/la frase del anuncio, el motor va por el carril rápido.
+  if (debounce) {
+    const _ai = await arranqueInfo(db, channelId, contact.id, String(text ?? ""), adId, _contactoNuevo);
+    if (_ai.sinEspera) bufferSeg = 0;
+    if (_ai.rapido && event.type === "message") event = { ...event, rapido: true };
+  }
   // 📎 TEXTO seguido de IMAGEN/AUDIO: el texto (con buffer) cede el turno a la imagen (más
   // nueva, sin buffer) y su intento SE PERDÍA (el motor solo veía la foto). Si justo antes
   // llegó texto del cliente dentro de la ventana del buffer, se ANTEPONE al evento de la
