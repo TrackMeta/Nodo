@@ -70,6 +70,11 @@
   .empty{padding:40px 10px;text-align:center;color:var(--muted);font-size:13.5px}
   .sel-all{width:16px;height:16px;accent-color:var(--brand)}
   @media (max-width:720px){ .hide-m{display:none} .kv{grid-template-columns:110px 1fr} }
+  .stline{display:flex;flex-wrap:wrap;gap:6px 8px;margin:2px 0 12px;align-items:center}
+  .stline .stt{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);margin-right:4px}
+  .stline .pl{border:1px solid var(--border);background:var(--surface);color:var(--muted);font:inherit;font-size:13px;padding:6px 12px;border-radius:999px}
+  .stline .pl b{color:var(--text);font-weight:600;margin-right:4px;font-variant-numeric:tabular-nums}
+  .stline button.pl{cursor:pointer} .stline button.pl:hover{border-color:var(--brand)} .stline button.pl.on{border-color:var(--brand);background:var(--brand-bg);color:var(--text)}
 </style>
 </head>
 <body>
@@ -78,7 +83,6 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Accesos</h1>
-        <p class="nodo-lead">Quién tiene acceso a tus micro apps, hasta cuándo y desde cuántos celulares. Extiende, bloquea o reenvía el acceso desde acá.</p>
       </div>
     </div>
     <div id="body"><div class="empty">Cargando…</div></div>
@@ -129,6 +133,8 @@ async function load(){
     supa.from("products").select("id, nombre, product_versions(precio, activo, config)").eq("channel_id",st.channelId).eq("tipo","microapp"),
   ]);
   if(gen!==st.loadGen) return;
+  // (10-oct) Este bot no vende micro apps: la página no tiene nada que mostrar (y no sale en el menú).
+  if(!(prods.data||[]).length){ $("body").innerHTML=`<div class="nodo-empty" style="border:none"><h3>Este bot no vende micro apps</h3><p>Accesos es para las micro apps: quién tiene acceso, hasta cuándo y desde cuántos celulares. Tus ventas están en <a href="compras.html" style="color:var(--brand)">Compras</a>.</p></div>`; return; }
   st.precios={};
   for(const p of (prods.data||[])){
     const vs=(p.product_versions||[]).filter(v=>v.activo!==false);
@@ -160,18 +166,19 @@ function kpis(){
   const ingresoUni=uniMes.reduce((s,a)=>s+(st.precios[a.product_id]?.unico||0),0);
   const usan=lista.filter(a=>a.ultimo_uso_at && ahora-new Date(a.ultimo_uso_at).getTime()<7*DIA).length;
   const sinUsar=lista.filter(a=>!a.ultimo_uso_at && a.estado!=="bloqueado").length;
-  const k=(ic,l,v,s,c)=>`<div class="kpi"><div class="l" style="${c?`color:${c}`:""}">${icon(ic)}${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
-  const htmlMen = men.length ? `<div class="grp-t">Suscripción mensual</div><div class="kpis">
+  // (10-oct) Una línea de píldoras en vez de 4-8 tarjetas con íconos de color. «sin usar» filtra la tabla.
+  const k=(ic,l,v,s,c,f)=>`<${f?"button":"span"} class="pl${f&&st.filtro===f?" on":""}"${f?` data-f="${f}"`:""} title="${esc(s)}"><b>${v}</b>${esc(l.toLowerCase())}</${f?"button":"span"}>`;
+  const htmlMen = men.length ? `<div class="stline"><span class="stt">Mensual</span>
       ${k("clock","Vencen esta semana",vencenSemana,"recibirán su recordatorio","var(--amber)")}
       ${k("alert","Vencidos",vencidos,"la app está en pausa","var(--red)")}
       ${k("dollar","Ingreso mensual fijo",`S/ ${ingreso.toLocaleString("es-PE")}`,"si todos los activos renuevan","var(--green)")}
       ${k("refresh","Renovaron",renov==null?"—":renov+"%",renov==null?"aún no cumplen un mes":"de los que llevan más de un mes")}
     </div>` : "";
-  const htmlUni = `<div class="grp-t">${men.length?"Pago único y uso":"Ventas y uso"}</div><div class="kpis">
+  const htmlUni = `<div class="stline">${men.length?'<span class="stt">Pago único</span>':""}
       ${k("users","Vendidas",uni.length,"accesos de pago único")}
       ${k("dollar","Ingresos del mes",`S/ ${ingresoUni.toLocaleString("es-PE")}`,"pago único, este mes","var(--green)")}
       ${k("activity","Usan la app",usan,"entraron en los últimos 7 días")}
-      ${k("eye","Sin usar",sinUsar,"nunca abrieron su link","var(--amber)")}
+      ${k("eye","Sin usar",sinUsar,"nunca abrieron su link: conviene escribirles","var(--amber)","sinusar")}
     </div>`;
   return htmlMen+htmlUni;
 }
@@ -186,6 +193,7 @@ function filtrar(){
     if(st.filtro==="vencidos" && e!=="vencido") return false;
     if(st.filtro==="prueba" && !(e==="prueba"||e==="prueba_terminada")) return false;
     if(st.filtro==="bloqueados" && e!=="bloqueado") return false;
+    if(st.filtro==="sinusar" && (a.ultimo_uso_at || e==="bloqueado")) return false;
     if(q && ![a.nombre,a.correo,a.telefono,a.wa_id,a.app].some(x=>String(x||"").toLowerCase().includes(q))) return false;
     return true;
   });
@@ -196,8 +204,9 @@ function render(){
   const cuenta=(f)=>st.accesos.filter(a=>{ const e=estadoVis(a); if(st.app!=="todas"&&a.app_id!==st.app) return false;
     return f==="todos"||(f==="activos"&&(e==="activo"||e==="porvencer"))||(f==="porvencer"&&e==="porvencer")||(f==="vencidos"&&e==="vencido")||(f==="prueba"&&(e==="prueba"||e==="prueba_terminada"))||(f==="bloqueados"&&e==="bloqueado"); }).length;
   const chips=[["todos","Todos"],["activos","Activos"],["porvencer","Por vencer"],["vencidos","Vencidos"],["prueba","En prueba"],["bloqueados","Bloqueados"]]
+    .filter(([v])=> v==="todos" || st.filtro===v || cuenta(v)>0)   // (10-oct) sin seis botones en 0
     .map(([v,l])=>`<button class="chip ${st.filtro===v?"on":""}" data-f="${v}">${l}<span class="n">${cuenta(v)}</span></button>`).join("");
-  const appSel = st.apps.length>1 ? `<select class="in" id="appSel"><option value="todas">Todas las apps</option>${st.apps.map(a=>`<option value="${esc(a.id)}" ${st.app===a.id?"selected":""}>${esc(a.nombre)}</option>`).join("")}</select>` : "";
+  const appSel = st.apps.length>1 ? `<select class="in" id="appSel"><option value="todas" data-ico="box" data-n="${st.accesos.length}">Todas las apps</option>${st.apps.map(a=>`<option value="${esc(a.id)}" data-ico="box" data-n="${st.accesos.filter(x=>x.app_id===a.id).length}" ${st.app===a.id?"selected":""}>${esc(a.nombre)}</option>`).join("")}</select>` : "";
   const pend = st.pendientes.length ? `<div class="pend"><h4>${icon("mail")} Pagaron y todavía no tienen acceso (${st.pendientes.length})</h4>
       ${st.pendientes.map(p=>`<div class="it"><span class="pill p-falta">${p.estado==="falta_telefono"?"Falta celular":p.estado==="falta_correo"?"Falta correo":p.estado==="a_humano"?"Lo ve una persona":"Falló la entrega"}</span>
         <span style="flex:1;min-width:160px"><b>${esc(p.contacts?.nombre||"Cliente")}</b> · ${esc(p.products?.nombre||"")} · ${esc(TIPO[p.tipo]||p.tipo)}${p.meses>1?` · ${p.meses} meses`:""} <span style="color:var(--faint)">· ${hace(p.created_at)}${p.recordatorios?` · ${p.recordatorios} recordatorio(s)`:""}</span></span>

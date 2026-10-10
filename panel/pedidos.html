@@ -659,7 +659,7 @@ function render(){
     sd.style.display = solo ? "" : "none";
     ["kbzona","kb"].forEach(id=>{ const e=$(id); if(e) e.style.display = solo ? "none" : ""; });
     document.querySelectorAll(".bar,.nodo-actions").forEach(e=> e.style.display = solo ? "none" : "");
-    if(solo){ sd.innerHTML=`<h3>Este bot vende digital</h3><p>Pedidos es el tablero de entregas físicas (Lima y provincia). Tus ventas están en <a href="compras.html" style="color:var(--brand)">Compras</a> y los accesos entregados en <a href="accesos.html" style="color:var(--brand)">Accesos</a>.</p>`; return; }
+    if(solo){ sd.innerHTML=`<h3>Este bot vende digital</h3><p>Pedidos es el tablero de entregas físicas (Lima y provincia). Tus ventas, con su comprobante, están en <a href="compras.html" style="color:var(--brand)">Compras</a>.</p>`; return; }
   }
   const _fis=st.list.filter(isFisico);
   fillVista(_fis);

@@ -1966,15 +1966,17 @@ export async function getUsdRate(channelId) {
 // Pedidos es el tablero de logística FÍSICA (Lima/Provincia): en un bot que solo vende digital o micro apps está siempre
 // vacío y confunde, así que se esconde del menú (html[data-bot-digital], ver shell.css). Se aplica primero lo último que se
 // supo (localStorage, sin parpadeo) y se corrige al leer los productos del bot.
+// Accesos es solo de MICRO APPS: sin productos micro app también se esconde (html[data-bot-sin-microapps]).
 function marcarTipoBot(id) {
-  const k = "nodo.botDigital." + id;
-  const aplicar = (v) => { if (v === "1") document.documentElement.setAttribute("data-bot-digital", ""); else document.documentElement.removeAttribute("data-bot-digital"); };
-  try { aplicar(localStorage.getItem(k)); } catch { /* sin storage: se espera a la consulta */ }
+  const k = "nodo.botDigital." + id, km = "nodo.botSinMicro." + id;
+  const flag = (attr, v) => { if (v === "1") document.documentElement.setAttribute(attr, ""); else document.documentElement.removeAttribute(attr); };
+  try { flag("data-bot-digital", localStorage.getItem(k)); flag("data-bot-sin-microapps", localStorage.getItem(km)); } catch { /* sin storage: se espera a la consulta */ }
   supa.from("products").select("tipo").eq("channel_id", id).then(({ data }) => {
     const ps = data || [];
     const v = (ps.length > 0 && !ps.some((p) => p.tipo === "fisico")) ? "1" : "0";
-    try { localStorage.setItem(k, v); } catch { /* */ }
-    if (S.channelId === id) aplicar(v);
+    const vm = ps.some((p) => p.tipo === "microapp") ? "0" : "1";
+    try { localStorage.setItem(k, v); localStorage.setItem(km, vm); } catch { /* */ }
+    if (S.channelId === id) { flag("data-bot-digital", v); flag("data-bot-sin-microapps", vm); }
   }, () => {});
 }
 
