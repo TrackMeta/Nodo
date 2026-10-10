@@ -1358,11 +1358,9 @@ async function load(){
   const ps=porStage;
   const comprado=Number(ps.comprado)||0;
   const interesadosSinComprar=(Number(ps.interesado)||0)+(Number(ps.caliente)||0)+(Number(ps.confirmado)||0);
-  // Efectividad de cierre: MISMO denominador que ve el dueño en pantalla (interesado+caliente+
-  // confirmado+comprado+PERDIDO). Antes el feed de la IA excluía `perdido` → un % inflado (los
-  // deals caídos desaparecían) que ni coincidía con la tarjeta "Efectividad de cierre" ni con la
-  // "Conversión total" → la IA aconsejaba con un número que el dueño no ve.
-  const baseEfec=interesadosSinComprar+comprado+(Number(ps.perdido)||0);
+  // (10-oct) La efectividad que lee el Asesor es la MISMA «Cierre del bot» que ve el dueño en pantalla (la cohorte
+  // del periodo, con la regla de la 0135). Antes la armaba con por_stage de todo el tiempo sumando TODO «perdido», y
+  // desde la 0134 «perdido» también es el lead que se enfrió sin pedir: la IA veía una efectividad hundida.
   asesorResumen={
     periodo: ($("dfLabel")?$("dfLabel").textContent:"")||"el periodo",
     tipo_filtro: tipo,
@@ -1370,6 +1368,7 @@ async function load(){
     // Asesor IA no reporte un número que no cuadra con el Dashboard. Antes usaba
     // O.margen para todos (excluía el digital sin costo) y divergía de `bruta`.
     ganancia: Math.round(bruta), ingresos: Math.round(vendido), ventas: compras,
+    cierre_del_bot: cohorte && cohorte.interes ? { nota:"de los que llegaron en el periodo y se interesaron, cuántos compraron (lo que ve el dueño como «Cierre del bot»)", interesados:cohorte.interes, compraron:cohorte.compraron, pct:Math.round(cohorte.compraron/cohorte.interes*100) } : null,
     ticket_promedio: Math.round(ticket), pedidos_perdidos: perdidosTodos,
     interesados_sin_comprar: interesadosSinComprar,
     producto_estrella: rank[0]||null,
@@ -1384,8 +1383,8 @@ async function load(){
     embudo_en_vivo_todo_el_tiempo: {
       nota: "acumulado de TODO el tiempo, NO del periodo elegido",
       por_etapa: ps,
+      nota_perdido: "«perdido» incluye a los que se enfriaron sin comprar (3 días sin escribir tras el remarketing): NO son ventas caídas; las ventas caídas son pedidos_perdidos",
       interesados_sin_comprar: interesadosSinComprar,
-      efectividad_cierre_pct: baseEfec>0 ? Math.round(comprado/baseEfec*100) : null,
       en_remarketing_ahora: s.subs_activas??0,
     },
   };

@@ -240,7 +240,7 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, pageAll, recargaConFreno } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, pageAll, recargaConFreno, selectBonito } from "./shell.js";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, ymd, startOfDayLima, endOfDayLima, tzNombre } from "./date-range.js";
@@ -270,6 +270,7 @@ async function boot(){
   $("zonaSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{ st.zona=b.dataset.z; $("zonaSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); render(); });
   $("prodSel").onchange=(e)=>{ st.prod=e.target.value; render(); };
   $("adSel").onchange=(e)=>{ st.ad=e.target.value; render(); };
+  selectBonito($("prodSel")); selectBonito($("adSel"));   // (10-oct) fuera el desplegable «de Windows 98»
   $("reloadBtn").onclick=async()=>{ const b=$("reloadBtn"); b.classList.add("spin"); try{ await load(); } finally{ setTimeout(()=>b.classList.remove("spin"),450); } };
   $("helpBtn").onclick=(e)=>{ e.stopPropagation(); const d=$("dateHelp"); d.hidden=!d.hidden; $("helpBtn").classList.toggle("on",!d.hidden); };
   const closeHelp=(e)=>{ if(!e.target.closest(".helpwrap")){ const d=$("dateHelp"); if(d&&!d.hidden){ d.hidden=true; $("helpBtn").classList.remove("on"); } } };
@@ -708,7 +709,7 @@ function renderAnuncios(){
   }).sort((a,b)=> (a.k==="none")-(b.k==="none") || b.n-a.n);
   tbl.innerHTML=`<thead><tr><th>Anuncio</th><th>Llegaron</th><th>Compraron</th><th>Conversión</th><th>Ventas</th></tr></thead><tbody>`+
     filas.map(f=>`<tr data-ad="${esc(f.k)}" class="${st.ad===f.k?"on":""}" title="Ver el embudo de este anuncio"><td class="adn">${esc(adNombre(f.k))}</td><td>${nf.format(f.n)}</td><td>${nf.format(f.compraron)}</td><td class="adcv">${f.cv==null?"—":f.cv+"%"}</td><td>${money(f.plata)}</td></tr>`).join("")+`</tbody>`;
-  tbl.querySelectorAll("tr[data-ad]").forEach(tr=> tr.onclick=()=>{ const k=tr.dataset.ad; st.ad= st.ad===k ? "all" : k; const sel=$("adSel"); if(sel){ if(![...sel.options].some(o=>o.value===st.ad)) st.ad="all"; sel.value=st.ad; } render(); });
+  tbl.querySelectorAll("tr[data-ad]").forEach(tr=> tr.onclick=()=>{ const k=tr.dataset.ad; st.ad= st.ad===k ? "all" : k; const sel=$("adSel"); if(sel){ if(![...sel.options].some(o=>o.value===st.ad)) st.ad="all"; sel.value=st.ad; selectBonito(sel).sync(); } render(); });
 }
 
 function renderDist(F){

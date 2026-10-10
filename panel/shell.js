@@ -1959,3 +1959,93 @@ export async function getUsdRate(channelId) {
     return Number(data?.usd_rate) > 0 ? Number(data.usd_rate) : 0;
   } catch (_) { return 0; }
 }
+
+// ── Selector bonito (10-oct-2026) ────────────────────────────────────
+// Rodrigo: el <select> nativo «parece de Windows 98». Este lo reemplaza A LA VISTA sin tocar la lógica de la página:
+// el <select> sigue existiendo (oculto) y es la fuente de verdad — opciones, value y evento «change» siguen siendo
+// suyos. Se redibuja solo cuando cambian las opciones (MutationObserver) o su display; si la página cambia `value`
+// a mano, que llame `selectBonito(sel).sync()`. Soporta <optgroup> (títulos de grupo) y opciones con sangría
+// (data-sub="1"). Mismo estilo que el selector de fechas.
+let _sbCss = false;
+export function selectBonito(sel) {
+  if (!sel) return null;
+  if (sel._sb) return sel._sb;
+  if (!_sbCss) {
+    _sbCss = true;
+    const st = document.createElement("style");
+    st.textContent = `
+.sbw{position:relative;display:inline-flex}
+.sbt{height:34px;padding:0 10px 0 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;cursor:pointer;font-family:inherit;max-width:260px}
+.sbt:hover,.sbw.open .sbt{border-color:var(--brand)}
+.sbt .sbl{overflow:hidden;text-overflow:ellipsis}
+.sbt svg{width:14px;height:14px;color:var(--muted);flex:none;transition:transform .15s}
+.sbw.open .sbt svg{transform:rotate(180deg)}
+.sbp{position:absolute;top:calc(100% + 6px);right:0;z-index:2100;min-width:100%;width:max-content;max-width:340px;max-height:340px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.28);padding:6px;display:none}
+.sbw.open .sbp{display:block}
+.sbg{font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);padding:10px 10px 4px}
+.sbo{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:13px;font-weight:500;padding:8px 10px;border-radius:8px;cursor:pointer;font-family:inherit}
+.sbo:hover,.sbo.kb{background:var(--surface-2)}
+.sbo.sub{padding-left:24px}
+.sbo .sbx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sbo .sbn{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+.sbo .sbk{width:14px;height:14px;flex:none;color:var(--brand);visibility:hidden}
+.sbo.on{color:var(--brand);font-weight:600} .sbo.on .sbk{visibility:visible}`;
+    document.head.appendChild(st);
+  }
+  const chev = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
+  const check = `<svg class="sbk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const w = document.createElement("div");
+  w.className = "sbw";
+  w.innerHTML = `<button type="button" class="sbt" aria-haspopup="listbox"${sel.title ? ` title="${esc(sel.title)}"` : ""}><span class="sbl"></span>${chev}</button><div class="sbp" role="listbox"></div>`;
+  sel.insertAdjacentElement("afterend", w);
+  const btn = w.querySelector(".sbt"), lbl = w.querySelector(".sbl"), pop = w.querySelector(".sbp");
+  const vis = () => { w.style.display = sel.style.display === "none" ? "none" : ""; };
+  const sync = () => {
+    const o = sel.options[sel.selectedIndex];
+    lbl.textContent = o ? (o.dataset.corto || o.textContent) : "";
+    vis();
+  };
+  const pintar = () => {
+    let h = "";
+    for (const n of sel.children) {
+      if (n.tagName === "OPTGROUP") {
+        h += `<div class="sbg">${esc(n.label)}</div>`;
+        for (const o of n.children) h += opt(o);
+      } else h += opt(n);
+    }
+    pop.innerHTML = h;
+  };
+  const opt = (o) => `<button type="button" role="option" class="sbo${o.dataset.sub ? " sub" : ""}${o.value === sel.value ? " on" : ""}" data-v="${esc(o.value)}">${check}<span class="sbx">${esc(o.textContent)}</span>${o.dataset.n ? `<span class="sbn">${esc(o.dataset.n)}</span>` : ""}</button>`;
+  const cerrar = () => { w.classList.remove("open"); document.removeEventListener("click", fuera, true); document.removeEventListener("keydown", tecla); };
+  const fuera = (e) => { if (!w.contains(e.target)) cerrar(); };
+  const tecla = (e) => {
+    const its = [...pop.querySelectorAll(".sbo")]; if (!its.length) return;
+    let i = its.findIndex((x) => x.classList.contains("kb"));
+    if (e.key === "Escape") { cerrar(); btn.focus(); return; }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault(); if (i < 0) i = its.findIndex((x) => x.classList.contains("on"));
+      its.forEach((x) => x.classList.remove("kb"));
+      i = e.key === "ArrowDown" ? Math.min(its.length - 1, i + 1) : Math.max(0, i - 1);
+      its[i].classList.add("kb"); its[i].scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter" && i >= 0) { e.preventDefault(); its[i].click(); }
+  };
+  btn.onclick = () => {
+    if (w.classList.contains("open")) { cerrar(); return; }
+    pintar(); w.classList.add("open");
+    document.addEventListener("click", fuera, true); document.addEventListener("keydown", tecla);
+    pop.querySelector(".sbo.on")?.scrollIntoView({ block: "nearest" });
+  };
+  pop.onclick = (e) => {
+    const b = e.target.closest(".sbo"); if (!b) return;
+    cerrar();
+    if (sel.value !== b.dataset.v) { sel.value = b.dataset.v; sel.dispatchEvent(new Event("change", { bubbles: true })); }
+    sync();
+  };
+  sel.addEventListener("change", sync);
+  new MutationObserver(sync).observe(sel, { childList: true, subtree: true, attributes: true, attributeFilter: ["style"] });
+  sel.style.position = "absolute"; sel.style.opacity = "0"; sel.style.pointerEvents = "none"; sel.style.width = "1px"; sel.tabIndex = -1;
+  sync();
+  sel._sb = { sync, cerrar, el: w };
+  return sel._sb;
+}
