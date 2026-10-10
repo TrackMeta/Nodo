@@ -120,12 +120,12 @@
   .modelpick .mp-tx small{font-size:11.5px;color:var(--faint);font-family:monospace}
   .modelpick svg{width:18px;height:18px;color:var(--muted);flex:none}
   /* (10-oct) cabecera compacta, chip de gasto, ayudas «?» y filas de Modelos */
-  .ia-top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:6px 0 14px;margin-bottom:14px;border-bottom:1px solid var(--border);position:relative}
-  .ia-top::before{content:"";position:absolute;left:0;top:-2px;width:64px;height:3px;border-radius:3px;background:linear-gradient(90deg,#a855f7,#ec4899)}
-  .ia-tt{margin:0;font-size:26px;font-weight:700;letter-spacing:-.4px;background:linear-gradient(90deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .ia-top{display:flex;align-items:center;gap:16px;padding:4px 0 18px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+  .ia-ic{width:56px;height:56px;border-radius:16px;flex:none;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,#a855f7,#ec4899);box-shadow:0 8px 22px -10px rgba(168,85,247,.7)}
+  .ia-ic svg{width:28px;height:28px}
+  .ia-k{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:linear-gradient(90deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:2px}
+  .ia-tt{margin:0;font-size:26px;font-weight:700;letter-spacing:-.4px;color:var(--text)}
   .ia-top p{margin:4px 0 0;color:var(--muted);font-size:13.5px}
-  .ia-chip{border:1px solid var(--ia-border,rgba(168,85,247,.35));background:var(--surface);color:var(--muted);font:inherit;font-size:12.5px;padding:7px 12px;border-radius:999px;cursor:pointer}
-  .ia-chip b{color:var(--text);font-weight:600} .ia-chip:hover{border-color:#a855f7}
   .card:not(.ver-ayuda) .ay{display:none}
   .qm{margin-left:auto;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);font:inherit;font-size:12px;font-weight:700;cursor:pointer;flex:none;display:inline-flex;align-items:center;justify-content:center}
   .qm:hover,.qm.on{border-color:#a855f7;color:#a855f7}
@@ -142,9 +142,9 @@
 <div class="nodo-page">
   <div class="nodo-wrap" style="--nodo-max:var(--nodo-form)">
     <div class="ia-top">
-      <div style="min-width:0"><h1 class="ia-tt">IA</h1>
+      <span class="ia-ic" id="iaIc"></span>
+      <div style="min-width:0"><div class="ia-k">Centro de IA</div><h1 class="ia-tt">Inteligencia Artificial</h1>
         <p>Cómo habla y atiende tu bot, cómo revisa los pagos y cuánto gasta su IA.</p></div>
-      <button class="ia-chip" id="iaGastoHoy" type="button" style="display:none" title="Ver el detalle en Cuentas y gasto"></button>
     </div>
     <span id="iaBadge" hidden></span>
     <div class="tabs">
@@ -275,7 +275,7 @@ async function boot(){
   $("tabVal").innerHTML=IC.shield+"<span>Validador de pagos</span>";
   $("tabPerf").innerHTML=IC.sliders+"<span>Modelos</span>";
   $("tabProv").innerHTML=IC.spark+"<span>Cuentas y gasto</span>";
-  $("iaGastoHoy").onclick=()=>goTab("proveedores");
+  $("iaIc").innerHTML=IC.robot;
   // Cambiar de pestaña rehace el formulario desde el snapshot: si hay cambios sin guardar, se pregunta.
   document.querySelectorAll(".tab").forEach(b=> b.onclick=async()=>{ if(st.tab===b.dataset.t) return; if(!await confirmDescartar()) return; st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"ia" });
@@ -300,7 +300,6 @@ async function loadCfg(){
   st.cfg = {}; (rows||[]).forEach(r=> st.cfg[r.provider] = { model:r.model, updated_at:r.updated_at });
   markClean();
   render();
-  pintaGastoHoy(gen);
 }
 // (10-oct) El gasto de HOY, a la vista arriba (antes solo en la última pestaña, junto a las claves).
 async function pintaGastoHoy(gen){
