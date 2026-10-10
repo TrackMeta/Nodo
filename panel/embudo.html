@@ -38,7 +38,7 @@
   @keyframes rspin{to{transform:rotate(360deg)}}
   /* KPIs grandes: Efectividad + Conversión (con explicación completa) */
   .mets{display:flex;gap:14px;margin:6px 0 18px;align-items:stretch}
-  .met{flex:1 1 0;min-width:0;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:20px 22px;display:flex;gap:20px;align-items:flex-start;align-self:stretch}
+  .met{flex:1 1 0;min-width:0;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:20px 22px;display:flex;gap:20px;align-items:center;align-self:stretch}
   .met.mid{border-left-color:var(--amber)} .met.low{border-left-color:var(--border)} .met.mconv{border-left-color:var(--brand)}
   .met.mia{border-left-color:#a855f7;border-color:rgba(168,85,247,.34);background:radial-gradient(130% 150% at 0% 0%,rgba(168,85,247,.14),transparent 55%),var(--surface);box-shadow:0 10px 34px -14px rgba(168,85,247,.55)}
   .met .num{font-size:52px;font-weight:750;letter-spacing:-2px;line-height:.9;color:var(--green);flex:none;min-width:96px;text-align:center}
@@ -50,7 +50,7 @@
   .met .mlbl{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .met .mtag{font-size:10px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 9px;white-space:nowrap}
   .met .mdesc{font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.5}
-  .met .mbrk{font-size:11.5px;color:var(--faint);margin-top:9px}
+  .met .mbrk{font-size:12.5px;color:var(--muted);margin-top:6px}
   @media(max-width:720px){ .mets{flex-direction:column} .met .num{font-size:42px;min-width:76px} }
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px 22px;margin-bottom:16px}
   .panel h3{margin:0 0 2px;font-size:16px;font-weight:650;letter-spacing:-.2px}
@@ -75,15 +75,30 @@
   /* Distribución actual + reactivar */
   .dist{display:flex;flex-direction:column;gap:9px}
   .drow{display:flex;align-items:center;gap:13px;position:relative}
-  .dhead{width:158px;flex:none;display:flex;align-items:center;gap:9px}
+  .dhead{width:130px;flex:none;display:flex;align-items:center;gap:9px}
   .ddot{width:11px;height:11px;border-radius:50%;flex:none}
   .dname{font-size:13.5px;font-weight:600} .dsub{font-size:10.5px;color:var(--faint)}
   .dbarwrap{flex:1;height:26px;background:var(--surface-2);border-radius:8px;overflow:hidden}
   .dbar{height:100%;border-radius:8px;min-width:3px;transition:width .5s}
   .dn{width:46px;flex:none;text-align:right;font-size:15px;font-weight:700}
   .dpct{width:44px;flex:none;text-align:right;font-size:11px;color:var(--faint)}
-  .react{position:absolute;right:0;top:50%;transform:translateY(-50%);border:1px solid var(--border);background:var(--surface-2);color:var(--brand);border-radius:8px;font-size:11.5px;font-weight:700;padding:6px 11px;white-space:nowrap;visibility:hidden;box-shadow:0 3px 10px rgba(0,0,0,.35)}
-  .drow:hover .react{visibility:visible} .react:hover{border-color:var(--brand)}
+  .react{flex:none;width:118px;border:1px solid var(--border);background:var(--surface-2);color:var(--brand);border-radius:8px;font-size:11.5px;font-weight:600;padding:6px 10px;white-space:nowrap;text-align:center}
+  .react:hover{border-color:var(--brand)} .reactsp{flex:none;width:118px}
+  .dmoney{width:74px;flex:none;text-align:right;font-size:13px;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}
+  .osum{font-size:12.5px;color:var(--muted);margin:2px 0 14px} .osum b{color:var(--text)}
+  .fstep .fdrop{color:var(--faint)} .fstep.peor .fdrop{color:var(--red);font-weight:600}
+  .mcmp{font-size:12px;margin-top:6px;color:var(--muted)} .mcmp .up{color:var(--green);font-weight:600} .mcmp .down{color:var(--red);font-weight:600}
+  .met.mconv .mcmp .up{color:#5FD39A} .met.mconv .mcmp .down{color:#FF8A80}
+  /* Por anuncio */
+  .adtbl{width:100%;border-collapse:collapse;font-size:13px}
+  .adtbl th{font-size:11px;font-weight:600;color:var(--muted);text-align:right;padding:0 10px 8px;white-space:nowrap}
+  .adtbl th:first-child,.adtbl td:first-child{text-align:left;padding-left:0}
+  .adtbl td{padding:9px 10px;border-top:1px solid var(--border);text-align:right;font-variant-numeric:tabular-nums}
+  .adtbl tr[data-ad]{cursor:pointer} .adtbl tr[data-ad]:hover td{background:var(--surface-2)}
+  .adtbl .adn{max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+  .adtbl .adcv{font-weight:600}
+  .adtbl tr.on td{background:var(--brand-bg)}
+  .adwrap{overflow-x:auto}
   /* Embudo por producto */
   .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
   .pcard{background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:15px 16px}
@@ -153,11 +168,16 @@
         <div class="dseg" id="tipoSeg" style="display:none"><button data-t="all" class="on">Todo</button><button data-t="digital">Digital</button><button data-t="fisico">Físico</button><button data-t="microapp">Micro apps</button></div>
         <div class="dseg" id="zonaSeg" style="display:none"><button data-z="total" class="on">Total</button><button data-z="lima">Lima</button><button data-z="provincia">Provincia</button></div>
         <select class="selp" id="prodSel" style="display:none"><option value="all">Todos los productos</option></select>
+        <select class="selp" id="adSel" style="display:none" title="Ver el embudo de un anuncio"><option value="all">Todos los anuncios</option></select>
         <div id="dateHost"></div>
         <span class="helpwrap">
           <button class="helpbtn" id="helpBtn" type="button" title="¿Cómo lee las fechas?" aria-label="¿Cómo lee las fechas?"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
           <div id="dateHelp" class="datehelp" hidden>
-            <h4>Cómo lee las fechas este embudo</h4>
+            <h4>Cómo leer el embudo</h4>
+            <b>Conversión total:</b> de todos los que te escriben (curiosos incluidos), cuántos compran. Es todo el embudo junto: enganchar + cerrar.<br>
+            <b>Efectividad de cierre:</b> de los que se interesaron de verdad, cuántos cierra el bot. No cuenta a los curiosos que solo saludan.<br>
+            <b>Comparación:</b> contra el período anterior del mismo largo y «a la misma altura» (ej. con «Hoy», ayer hasta esta misma hora), para que sea justo.
+            <h4 style="margin-top:14px">Las fechas</h4>
             Las fechas van por <b>cuándo LLEGÓ cada contacto</b> (cuándo te escribió por primera vez), <b>no</b> por cuándo compró.
             <div class="ej">Ejemplo: si un cliente <b>llega hoy y compra mañana</b>, su compra se cuenta en <b>HOY</b> — el día que llegó. Nunca aparece en mañana.</div>
             <ul>
@@ -176,20 +196,24 @@
 
     <div class="panel">
       <h3>Cómo avanzan</h3>
-      <p class="ps">De cada nivel, cuántos pasan al siguiente. Lo importante no es el número de cada etapa, sino <b>dónde se caen</b>.</p>
-      <div id="neck"></div>
+            <div id="neck"></div>
       <div class="fun" id="fun"></div>
       <div id="plata"></div>
     </div>
 
     <div class="panel" id="origenPanel" style="display:none">
       <h3>De dónde salen las ventas</h3>
-      <p class="ps">Las ventas de estos contactos, separadas por el precio al que compraron: el normal y cada oferta del remarketing.</p>
+      <div class="osum" id="origenSum"></div>
       <div id="origen"></div>
+    </div>
+
+    <div class="panel" id="adPanel" style="display:none">
+      <h3>Por anuncio</h3>
+      <div class="adwrap"><table class="adtbl" id="adTbl"></table></div>
     </div>
     <div class="panel" id="entregaPanel" style="display:none">
       <h3>Embudo de entrega · Provincia</h3>
-      <p class="ps">Lo que pasa <b>después</b> de la venta: de los que ya pagaron el adelanto, cuántos llegan a <b>recoger</b> en la agencia. Aquí es donde provincia se sangra (el no-recojo). Es la foto de los <b>pedidos</b>, no de las personas.</p>
+      <p class="ps">De los pedidos con adelanto, cuántos llegan a recoger en la agencia.</p>
       <div class="dkpis" id="entregaKpis"></div>
       <div class="fun" id="entregaFun"></div>
       <div id="entregaFuga"></div>
@@ -197,20 +221,18 @@
 
     <div class="panel" id="distPanel">
       <h3>Dónde están ahora</h3>
-      <p class="ps">Cuántos contactos hay en cada etapa en este momento. Pasa el mouse para reactivarlos.</p>
-      <div class="dist" id="dist"></div>
+            <div class="dist" id="dist"></div>
     </div>
 
     <div class="panel" id="provAhoraPanel" style="display:none">
       <h3>Dónde están tus pedidos de provincia · ahora</h3>
-      <p class="ps">Después de confirmar, en qué paso del envío está cada pedido de provincia <b>en este momento</b>. Los que se te quedan en "por cobrar saldo" son la plata que falta cerrar.</p>
+      <p class="ps">En qué paso del envío está cada pedido ahora.</p>
       <div class="dist" id="provAhora"></div>
     </div>
 
     <div class="panel" id="prodPanel" style="display:none">
       <h3>Embudo por producto</h3>
-      <p class="ps">Qué producto convierte mejor. Cada uno con su Efectividad (de sus conversaciones de venta, cuántas cierran) y su Conversión (de sus contactos, cuántos compran).</p>
-      <div class="pgrid" id="prodFunnels"></div>
+            <div class="pgrid" id="prodFunnels"></div>
     </div>
 
     <div class="hint" id="dateNote"></div>
@@ -231,7 +253,7 @@ let CUR="PEN"; const money=(n)=>(CUR_SYM[CUR]||CUR)+" "+Math.round(Number(n||0))
 const stMap=Object.fromEntries(STAGES.map(s=>[s.k,s]));
 const col=(k)=>`var(--st-${k},${stMap[k]?.color||"#888"})`; // Diseño 2: la paleta la pone el CSS
 
-const st={ channelId:null, contacts:[], ordersBy:{}, zonaMap:{}, rt:null, tipo:"all", zona:"total", prod:"all", range:null, dr:null, loadGen:0 };
+const st={ channelId:null, contacts:[], ordersBy:{}, zonaMap:{}, adNames:{}, rt:null, tipo:"all", zona:"total", prod:"all", ad:"all", range:null, dr:null, loadGen:0 };
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
@@ -247,6 +269,7 @@ async function boot(){
   $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{ st.tipo=b.dataset.t; $("tipoSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); st.prod="all"; st.zona="total"; $("zonaSeg").style.display= st.tipo==="fisico"?"":"none"; $("zonaSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.z==="total")); fillProdSel(); render(); });
   $("zonaSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{ st.zona=b.dataset.z; $("zonaSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); render(); });
   $("prodSel").onchange=(e)=>{ st.prod=e.target.value; render(); };
+  $("adSel").onchange=(e)=>{ st.ad=e.target.value; render(); };
   $("reloadBtn").onclick=async()=>{ const b=$("reloadBtn"); b.classList.add("spin"); try{ await load(); } finally{ setTimeout(()=>b.classList.remove("spin"),450); } };
   $("helpBtn").onclick=(e)=>{ e.stopPropagation(); const d=$("dateHelp"); d.hidden=!d.hidden; $("helpBtn").classList.toggle("on",!d.hidden); };
   const closeHelp=(e)=>{ if(!e.target.closest(".helpwrap")){ const d=$("dateHelp"); if(d&&!d.hidden){ d.hidden=true; $("helpBtn").classList.remove("on"); } } };
@@ -261,13 +284,16 @@ async function load(){
   // Paginado (TODOS los contactos y pedidos): antes .limit(5000)/.limit(8000) sin traer
   // el resto → efectividad, conversión y "plata en juego" se calculaban sobre un universo
   // truncado (numerador y denominador falseados). Orden estable con id de desempate.
-  const [cR, oR, chR] = await Promise.all([
-    pageAll((f,t)=>supa.from("contacts").select("id,nombre,wa_id,stage,product_id,created_at,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim").order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+  const [cR, oR, chR, adR] = await Promise.all([
+    pageAll((f,t)=>supa.from("contacts").select("id,nombre,wa_id,stage,product_id,ad_id,created_at,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim").order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     pageAll((f,t)=>supa.from("orders").select("contact_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     getChannel(st.channelId),
+    // Nombres de los anuncios (ads-sync). Sin cuenta de Meta conectada viene vacío y se muestra el ID.
+    supa.from("ads_meta").select("ad_id,ad_name").eq("channel_id",st.channelId).then(r=>r,()=>({data:[]})),
   ]);
   if(gen!==st.loadGen) return;
   st.contacts=cR.data||[];
+  st.adNames={}; (adR&&adR.data||[]).forEach(a=>{ if(a.ad_id) st.adNames[a.ad_id]=a.ad_name||""; });
   st.ordersBy={};
   (oR.data||[]).forEach(o=>{ if(!o.contact_id) return; (st.ordersBy[o.contact_id]||(st.ordersBy[o.contact_id]=[])).push(o); });
   CUR=(chR&&chR.moneda)||"PEN";
@@ -288,6 +314,7 @@ async function load(){
   }catch(_){}
   if(gen!==st.loadGen) return;
   fillProdSel();
+  fillAdSel();
   render();
 }
 
@@ -297,7 +324,20 @@ function tipoDe(c){ const t=c.product&&c.product.tipo; return t==="fisico"?"fisi
 // del último pedido físico. null = todavía no dijo de dónde es (solo va en "Total").
 function zonaDeContacto(c){ const z=st.zonaMap[c.id]; if(z) return z; for(const o of (st.ordersBy[c.id]||[])){ if(O.esFisico(o)){ const zz=O.zonaDe(o); if(zz==="lima"||zz==="provincia") return zz; } } return null; }
 function enRango(c){ if(!st.range) return true; if(!c.created_at) return true; /* sin fecha → se muestra (no lo escondemos en silencio, como en Compras) */ const d=new Date(c.created_at); const from=startOfDayLima(st.range.from), to=endOfDayLima(st.range.to); /* corte en hora de Lima */ return d>=from && d<=to; }
-function filtrados(){ return st.contacts.filter(c=> (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.zona==="total"||zonaDeContacto(c)===st.zona) && (st.prod==="all"||c.product_id===st.prod) && enRango(c) ); }
+function deAnuncio(c,ad){ return ad==="all" || (ad==="none" ? !c.ad_id : c.ad_id===ad); }
+function pasaFiltros(c,{conAd=true}={}){ return (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.zona==="total"||zonaDeContacto(c)===st.zona) && (st.prod==="all"||c.product_id===st.prod) && (!conAd||deAnuncio(c,st.ad)); }
+function filtrados(){ return st.contacts.filter(c=> pasaFiltros(c) && enRango(c) ); }
+// (10-oct) Nombre corto de un anuncio: el de Meta, o el final del ID si la cuenta no está conectada.
+const adNombre=(id)=> id==="none" ? "Sin anuncio (orgánico)" : (st.adNames[id] || ("Anuncio …"+String(id).slice(-6)));
+function fillAdSel(){
+  const sel=$("adSel"); if(!sel) return;
+  const n=new Map(); let sin=0;
+  st.contacts.forEach(c=>{ if(c.ad_id) n.set(c.ad_id,(n.get(c.ad_id)||0)+1); else sin++; });
+  const ads=[...n.entries()].sort((a,b)=>b[1]-a[1]);
+  sel.innerHTML=`<option value="all">Todos los anuncios</option>`+ads.map(([id])=>`<option value="${esc(id)}">${esc(adNombre(id))}</option>`).join("")+(sin?`<option value="none">Sin anuncio (orgánico)</option>`:"");
+  const ok=st.ad==="all"||(st.ad==="none"&&sin)||n.has(st.ad); if(!ok) st.ad="all"; sel.value=st.ad;
+  sel.style.display = (ads.length + (sin?1:0)) > 1 ? "" : "none";
+}
 
 function fillProdSel(){
   const sel=$("prodSel"); if(!sel) return;
@@ -344,21 +384,42 @@ function funnelDe(cs){
 function render(){
   const cs=filtrados();
   const F=funnelDe(cs);
-  renderMetricas(F);
+  renderMetricas(F, comparar());
   renderNeck(F);
   renderFunnel(F);
   renderPlata(cs);
   renderOrigen(cs);
+  renderAnuncios();
   renderEntrega(cs);
   renderProvinciaAhora(cs);
   renderDist(F);
   renderProductos();
-  const rl=rangeLabel(st.range);
-  $("dateNote").innerHTML= F.total===0 ? "" :
-    `<span style="flex:none">ℹ️</span> <span><b>${nf.format(F.total)} contactos</b> que llegaron en «${esc(rl)}». Foto en vivo, se actualiza sola. <b>Ojo:</b> un período reciente se ve más bajo de lo real — los que acaban de llegar todavía están en camino de comprar.</span>`;
+  $("dateNote").innerHTML="";   // (10-oct) la explicación vive en el «?» de arriba
 }
 
-function renderMetricas(F){
+// ── B · Comparar con el período anterior, «a la misma altura» ─────────
+// Mismo largo, justo antes; y si el período llega hasta ahora, el anterior se corta a la misma
+// hora (con «Hoy» = ayer hasta esta hora) y sus compras también: así ninguno tuvo más tiempo para
+// madurar. Para el anterior se cuenta compra = pedido de venta creado antes del corte.
+const DIA=86400000;
+function comparar(){
+  if(!st.range || st.range.preset==="max") return null;
+  const dias=Math.round((st.range.to-st.range.from)/DIA)+1; if(!(dias>0) || dias>400) return null;
+  const ahora=Date.now();
+  const ini=startOfDayLima(st.range.from).getTime(), fin=Math.min(endOfDayLima(st.range.to).getTime(), ahora);
+  const desfase=dias*DIA, pIni=ini-desfase, pFin=fin-desfase, corte=ahora-desfase;
+  const prev=st.contacts.filter(c=>{ if(!c.created_at||!pasaFiltros(c)) return false; const t=new Date(c.created_at).getTime(); return t>=pIni && t<=pFin; });
+  if(!prev.length) return null;
+  const compro=prev.filter(c=>(st.ordersBy[c.id]||[]).some(o=>O.esVenta(o) && !O.esPerdido(o) && new Date(o.created_at).getTime()<=corte)).length;
+  const conCorte = fin>=ahora-60000;   // el período llega hasta ahora
+  const lbl = st.range.preset==="hoy" ? "ayer a esta hora"
+    : st.range.preset==="ayer" ? "anteayer"
+    : dias===1 ? "el día anterior"
+    : `los ${dias} días anteriores${conCorte?" (a la misma altura)":""}`;
+  return { cv:pct(compro,prev.length), compro, total:prev.length, lbl };
+}
+
+function renderMetricas(F, cmp){
   const el=$("metPanel");
   if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="met low" style="flex:1 1 100%"><div class="num">—</div><div class="mtxt"><div class="mlbl">${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</div><div class="mdesc">${filt?"Ningún contacto coincide con el tipo, producto o rango de fechas elegido — ajusta los filtros de arriba.":"Cuando lleguen clientes por WhatsApp verás aquí tu efectividad y tu conversión."}</div></div></div>`; return; }
   const ef=F.efectividad, cv=F.conversion;
@@ -371,17 +432,19 @@ function renderMetricas(F){
   const zonaNom = st.zona==="lima" ? "Lima" : "provincia";
   const eCls = "mia"; // violeta fijo (tema IA), por elección de Rodrigo — ya no semáforo
   // Primero la Conversión total y después la Efectividad de cierre — igual que el Dashboard (Rodrigo, 9-oct).
+  let cmpHtml="";
+  if(cmp && cmp.cv!=null && cv!=null){
+    const d=cv-cmp.cv;
+    cmpHtml=`<div class="mcmp">${d===0?"igual":`<span class="${d>0?"up":"down"}">${d>0?"▲":"▼"} ${Math.abs(d)} pts</span>`} vs ${esc(cmp.lbl)} (${cmp.cv}%)</div>`;
+  }
   el.innerHTML=`
     <div class="met ${F.total?"mconv":"low"}"><div class="num">${cv==null?"—":cv+"%"}</div><div class="mtxt">
-      <div class="mlbl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"} <span class="mtag">base: ${zonaSub?`contactos de ${zonaNom}`:"todos los contactos"}</span></div>
-      <div class="mdesc">${zonaSub
-        ? `De los contactos que <b>ya dijeron ser de ${zonaNom}</b>, cuántos compran. Los que aún no dicen su ciudad NO entran en esta base, así que esta cifra <b>no es comparable</b> con la de "Total".`
-        : `De <b>todos los que te escriben</b> (curiosos incluidos), cuántos llegan a comprar. Es todo el embudo junto: <b>enganchar + cerrar</b>.`}</div>
-      <div class="mbrk">${F.niveles.compraron} compraron de ${F.total} contactos${zonaSub?` de ${zonaNom}`:""}</div>
+      <div class="mlbl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"}</div>
+      <div class="mbrk">${F.niveles.compraron} compraron de ${F.total} contactos${zonaSub?` que ya dijeron ser de ${zonaNom}`:""}</div>
+      ${cmpHtml}
     </div></div>
     <div class="met ${eCls}"><div class="num">${ef==null?"—":ef+"%"}</div><div class="mtxt">
-      <div class="mlbl"><span class="miabadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>Efectividad de cierre <span class="mtag">base: interesados</span></div>
-      <div class="mdesc">De los que <b>se interesaron</b> de verdad, cuántos terminas <b>cerrando</b>. Mide qué tan bueno es el bot vendiendo — no cuenta a los curiosos que solo saludan.</div>
+      <div class="mlbl"><span class="miabadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>Efectividad de cierre</div>
       <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes + F.c.perdido} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}</div>
     </div></div>`;
   igualarAlto(el);
@@ -401,45 +464,36 @@ function igualarAlto(el){
   });
 }
 
+// Los 5 saltos con cuánta gente se pierde en cada uno. El último (confirmados → comprar) solo
+// cuenta a los PERDIDOS: un pedido confirmado que sigue en curso no es fuga, está en camino.
+function fugas(F){
+  const N=F.niveles;
+  const saltos=[
+    { de:"Llegaron", a:"Curiosos", arriba:N.llegaron, paso:F.paso.curiosos, tip:"Mejora el anuncio y la palabra clave." },
+    { de:"Curiosos", a:"Interés", arriba:N.curiosos, paso:F.paso.interes, tip:"Mejora el mensaje inicial." },
+    { de:"Interés", a:"Caliente", arriba:N.interes, paso:F.paso.caliente, tip:"Mejora el seguimiento." },
+    { de:"Caliente", a:"Confirmaron", arriba:N.calientes, paso:F.paso.confirmar, tip:"Trabaja precio y objeciones." },
+    { de:"Confirmaron", a:"Compraron", arriba:N.confirmaron, paso:F.paso.comprar, tip:"Revisa el cobro y la entrega." },
+  ];
+  saltos.forEach((s,i)=>{ s.i=i; s.drop=s.paso==null?null:100-s.paso; s.seCae=s.paso==null?0:Math.round(s.arriba*s.drop/100); });
+  const cierre=saltos[4];
+  cierre.seCae=F.c.perdido; cierre.drop=cierre.arriba>0?Math.round(F.c.perdido/cierre.arriba*100):null;
+  const validos=saltos.filter(s=>s.arriba>0 && s.drop!=null);
+  const peor=validos.length ? validos.reduce((a,b)=>(b.seCae>a.seCae?b:a)) : null;
+  // Fuga de verdad: se pierde más de un cuarto y al menos 2 personas.
+  return { saltos, peor: (peor && peor.drop>25 && peor.seCae>=2) ? peor : null, enCurso:F.c.confirmado };
+}
+
 function renderNeck(F){
   const el=$("neck");
   if(F.total===0){ el.innerHTML=""; return; }
-  // Los 3 saltos y su caída (100 - % que pasa). Solo se evalúan los que tienen gente arriba.
-  const saltos=[
-    { de:"que lleguen", a:"que enganchen un producto", arriba:F.niveles.llegaron, paso:F.paso.curiosos, tip:"el gancho: el anuncio y la palabra clave" },
-    { de:"curiosos", a:"que se interesen", arriba:F.niveles.curiosos, paso:F.paso.interes, tip:"el mensaje inicial: que respondan, no que solo miren" },
-    { de:"interesados", a:"que vuelvan (calientes)", arriba:F.niveles.interes, paso:F.paso.caliente, tip:"el seguimiento y el reenganche: que insistan y regresen" },
-    { de:"calientes", a:"confirmar", arriba:F.niveles.calientes, paso:F.paso.confirmar, tip:"la venta: precio, confianza, objeciones" },
-    { de:"confirmados", a:"comprar", arriba:F.niveles.confirmaron, paso:F.paso.comprar, tip:"el cierre: cobro, adelanto, entrega" },
-  ].filter(s=> s.arriba>0 && s.paso!=null);
-  if(!saltos.length){ el.innerHTML=""; return; }
-  // Se elige la fuga por PERSONAS perdidas (absoluto), no por %: un salto con
-  // pocos arriba (ej. 3 confirmados sin pagar aún) da 100% engañoso; lo que de
-  // verdad duele es dónde pierdes más gente.
-  saltos.forEach(s=>{ s.drop=100-s.paso; s.seCae=Math.round(s.arriba*s.drop/100); });
-  // El último salto (confirmados → comprar) NO es una fuga cuando los que faltan
-  // siguen EN CURSO. Un pedido confirmado hoy, o en reparto, o despachado a la
-  // agencia, todavía no se cayó: está en camino. Los que de verdad se perdieron
-  // salen de "confirmado" y pasan a la etapa `perdido`. Sin esta distinción, y con
-  // entrega a 1-2 días, SIEMPRE hay pedidos en tránsito, así que el embudo acusaba
-  // al cierre como "tu mayor fuga" aunque el cierre fuera perfecto (con 13 ventas
-  // sanas y CERO caídas decía "se cae el 62%, 8 personas").
-  const cierre=saltos.find(s=>s.a==="comprar");
-  const enCurso=cierre ? F.c.confirmado : 0;
-  if(cierre){
-    cierre.seCae=F.c.perdido;                                             // fuga REAL
-    cierre.drop=cierre.arriba>0 ? Math.round(F.c.perdido/cierre.arriba*100) : 0;
-  }
+  const { peor, enCurso }=fugas(F);
   const enCursoTxt=enCurso>0
-    ? `<div class="neck ok" style="margin-top:8px">${icon("truck")||icon("check")}<div><b>${nf.format(enCurso)}</b> ${enCurso===1?"venta confirmada sigue":"ventas confirmadas siguen"} en curso (aún sin cobrar del todo). No ${enCurso===1?"es":"son"} fuga: ${enCurso===1?"está":"están"} en camino — ${enCurso===1?"míralo":"míralas"} en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</div></div>`
+    ? `<div class="neck ok" style="margin-top:8px">${icon("truck")||icon("check")}<div>${nf.format(enCurso)} ${enCurso===1?"venta confirmada sigue":"ventas confirmadas siguen"} en curso · <a href="pedidos.html" style="color:var(--brand)">ver en Pedidos</a></div></div>`
     : "";
-  const peor=saltos.reduce((a,b)=> (b.seCae>a.seCae?b:a));
-  const drop=peor.drop, seCae=peor.seCae;
-  if(drop<=25 || seCae<2){
-    el.innerHTML=`<div class="neck ok">${icon("check")}<div>Tu embudo fluye bien: el mayor salto (<b>de ${peor.de} a ${peor.a}</b>) conserva el <b>${peor.paso}%</b>. Sigue así.</div></div>`+enCursoTxt;
-    return;
-  }
-  el.innerHTML=`<div class="neck"><span class="ni">${icon("alert")}</span><div><b>Tu mayor fuga:</b> de ${peor.de} a ${peor.a} se cae el <b>${drop}%</b> (${nf.format(seCae)} personas). Ahí está ${peor.tip}. Es donde más ganarías mejorando.</div></div>`+enCursoTxt;
+  el.innerHTML=(peor
+    ? `<div class="neck"><span class="ni">${icon("alert")}</span><div><b>Mayor fuga:</b> ${peor.de} → ${peor.a}, se van ${nf.format(peor.seCae)} (${peor.drop}%). ${peor.tip}</div></div>`
+    : `<div class="neck ok">${icon("check")}<div>Tu embudo fluye bien.</div></div>`)+enCursoTxt;
 }
 
 function renderFunnel(F){
@@ -454,17 +508,18 @@ function renderFunnel(F){
     { lbl:"Confirmaron", n:N.confirmaron, c:col("confirmado") },
     { lbl:"Compraron", n:N.compraron, c:col("comprado") },
   ];
-  const pasos=[F.paso.curiosos, F.paso.interes, F.paso.caliente, F.paso.confirmar, F.paso.comprar];
+  const { saltos, peor }=fugas(F);
   let html="";
   niveles.forEach((lv,i)=>{
     const w= N.llegaron>0 ? Math.max(12, Math.round(lv.n/N.llegaron*100)) : 12;
     const pc= pct(lv.n,N.llegaron);
     html+=`<div class="flvl"><div class="fbar2" style="width:${w}%;background:${lv.c}"><span class="fl">${lv.lbl}</span><span class="fr">${nf.format(lv.n)}${pc!=null?` · ${pc}%`:""}</span></div></div>`;
     if(i<niveles.length-1){
-      const p=pasos[i];
+      const sa=saltos[i];
       const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
-      html+= p==null ? `<div class="fstep">${arrow}—</div>`
-        : `<div class="fstep">${arrow}<span class="keep">pasa el ${p}%</span> · <span class="drop">se cae el ${100-p}%</span></div>`;
+      // (10-oct) Solo cuánto se cae; en rojo únicamente la mayor fuga.
+      html+= sa.drop==null ? `<div class="fstep">${arrow}—</div>`
+        : `<div class="fstep${peor&&peor.i===i?" peor":""}" title="Pasa el ${100-sa.drop}% · se van ${sa.seCae}">${arrow}<span class="fdrop">−${sa.drop}%</span></div>`;
     }
   });
   el.innerHTML=html;
@@ -597,7 +652,7 @@ function renderProvinciaAhora(cs){
   // Se muestran TODAS las barras (los 6 pasos), aunque estén en 0: así ves de un
   // vistazo dónde están tus pedidos y qué pasos están vacíos.
   el.innerHTML=rows.map(r=>`<div class="drow">
-    <div class="dhead"><span class="ddot" style="background:${r.color}"></span><div><div class="dname">${esc(r.label)}</div><div class="dsub">${esc(r.desc)}</div></div></div>
+    <div class="dhead" title="${esc(r.desc)}"><span class="ddot" style="background:${r.color}"></span><div class="dname">${esc(r.label)}</div></div>
     <div class="dbarwrap"><div class="dbar" style="width:${Math.round(r.n/max*100)}%;background:${r.color}"></div></div>
     <div class="dn">${nf.format(r.n)}</div>
     <div class="dpct">${pct(r.n,total)!=null?pct(r.n,total)+"%":""}</div>
@@ -617,13 +672,34 @@ function renderOrigen(cs){
   if(!porPrecio.size){ panel.style.display="none"; el.innerHTML=""; return; }
   panel.style.display="";
   const filas=[...porPrecio.entries()].sort((a,b)=>b[0]-a[0]);
-  const tot=filas.reduce((a,[,g])=>a+g.n,0), max=Math.max(...filas.map(([,g])=>g.n));
+  const max=Math.max(...filas.map(([,g])=>g.n));
+  const plata=filas.reduce((a,[,g])=>a+g.sum,0), deOfertas=filas.slice(1).reduce((a,[,g])=>a+g.sum,0);
+  $("origenSum").innerHTML= filas.length>1 && plata>0
+    ? `Las ofertas trajeron <b>${money(deOfertas)}</b> · ${Math.round(deOfertas/plata*100)}% de los ${money(plata)} vendidos`
+    : `<b>${money(plata)}</b> vendidos, todos a precio normal`;
   el.innerHTML=filas.map(([p,g],i)=>`<div class="drow">
       <div class="dhead"><span class="ddot" style="background:${i===0?"var(--green)":"var(--amber)"}"></span><div><div class="dname">${money(p)}</div><div class="dsub">${i===0?"Precio normal":"Oferta"}</div></div></div>
       <div class="dbarwrap"><div class="dbar" style="width:${Math.round(g.n/max*100)}%;background:${i===0?"var(--green)":"var(--amber)"}"></div></div>
       <div class="dn">${nf.format(g.n)}</div>
-      <div class="dpct">${Math.round(g.n/tot*100)}%</div>
+      <div class="dmoney">${money(g.sum)}</div>
     </div>`).join("");
+}
+
+function renderAnuncios(){
+  const panel=$("adPanel"), tbl=$("adTbl"); if(!panel||!tbl) return;
+  const base=st.contacts.filter(c=> pasaFiltros(c,{conAd:false}) && enRango(c));
+  const g=new Map();
+  base.forEach(c=>{ const k=c.ad_id||"none"; (g.get(k)||g.set(k,[]).get(k)).push(c); });
+  if(g.size<2){ panel.style.display="none"; tbl.innerHTML=""; return; }
+  panel.style.display="";
+  const filas=[...g.entries()].map(([k,cs])=>{
+    const F=funnelDe(cs);
+    let plata=0; cs.forEach(c=>(st.ordersBy[c.id]||[]).forEach(o=>{ if(O.esVenta(o)&&!O.esPerdido(o)&&enMoneda(o)) plata+=O.total(o); }));
+    return { k, n:F.total, compraron:F.niveles.compraron, cv:F.conversion, plata };
+  }).sort((a,b)=> (a.k==="none")-(b.k==="none") || b.n-a.n);
+  tbl.innerHTML=`<thead><tr><th>Anuncio</th><th>Llegaron</th><th>Compraron</th><th>Conversión</th><th>Ventas</th></tr></thead><tbody>`+
+    filas.map(f=>`<tr data-ad="${esc(f.k)}" class="${st.ad===f.k?"on":""}" title="Ver el embudo de este anuncio"><td class="adn">${esc(adNombre(f.k))}</td><td>${nf.format(f.n)}</td><td>${nf.format(f.compraron)}</td><td class="adcv">${f.cv==null?"—":f.cv+"%"}</td><td>${money(f.plata)}</td></tr>`).join("")+`</tbody>`;
+  tbl.querySelectorAll("tr[data-ad]").forEach(tr=> tr.onclick=()=>{ const k=tr.dataset.ad; st.ad= st.ad===k ? "all" : k; const sel=$("adSel"); if(sel){ if(![...sel.options].some(o=>o.value===st.ad)) st.ad="all"; sel.value=st.ad; } render(); });
 }
 
 function renderDist(F){
@@ -634,16 +710,16 @@ function renderDist(F){
   if(F.total===0){ el.innerHTML=""; if(panel) panel.style.display="none"; return; }
   if(panel) panel.style.display="";
   const c=F.c, max=Math.max(1,...STAGES.map(s=>c[s.k]||0));
-  el.innerHTML=STAGES.map(s=>{
+  el.innerHTML=STAGES.filter(s=>(c[s.k]||0)>0).map(s=>{
     const n=c[s.k]||0;
-    const reactivable=(s.k==="curioso"||s.k==="interesado"||s.k==="caliente"||s.k==="confirmado") && n>0;
+    const reactivable=(s.k==="curioso"||s.k==="interesado"||s.k==="caliente"||s.k==="confirmado");
     const p=pct(n,F.total);
     return `<div class="drow">
-      <div class="dhead"><span class="ddot" style="background:${col(s.k)}"></span><div><div class="dname">${esc(s.label)}</div><div class="dsub">${esc(s.desc||"")}</div></div></div>
+      <div class="dhead"><span class="ddot" style="background:${col(s.k)}"></span><div class="dname">${esc(s.label)}</div></div>
       <div class="dbarwrap"><div class="dbar" style="width:${Math.round(n/max*100)}%;background:${col(s.k)}"></div></div>
       <div class="dn">${nf.format(n)}</div>
       <div class="dpct">${p!=null?p+"%":""}</div>
-      ${reactivable?`<button class="react" data-k="${s.k}">Reactivar ${n} →</button>`:``}
+      ${reactivable?`<button class="react" data-k="${s.k}">Reactivar ${n} →</button>`:`<span class="reactsp"></span>`}
     </div>`;
   }).join("");
   el.querySelectorAll("[data-k]").forEach(b=> b.onclick=()=> location.href="contactos.html?stage="+b.dataset.k);
