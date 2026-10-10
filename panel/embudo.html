@@ -97,6 +97,7 @@
   .adtbl tr[data-ad]{cursor:pointer} .adtbl tr[data-ad]:hover td{background:var(--surface-2)}
   .adtbl .adn{max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
   .adtbl .adcv{font-weight:600}
+  .addot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--disabled,#98A2B3);margin-right:8px;vertical-align:1px} .addot.on{background:#12B76A}
   .adtbl tr.on td{background:var(--brand-bg)}
   .adwrap{overflow-x:auto}
   /* Embudo por producto */
@@ -252,7 +253,7 @@ let CUR="PEN"; const money=(n)=>(CUR_SYM[CUR]||CUR)+" "+Math.round(Number(n||0))
 const stMap=Object.fromEntries(STAGES.map(s=>[s.k,s]));
 const col=(k)=>`var(--st-${k},${stMap[k]?.color||"#888"})`; // Diseño 2: la paleta la pone el CSS
 
-const st={ channelId:null, contacts:[], ordersBy:{}, zonaMap:{}, adNames:{}, adProd:{}, rt:null, tipo:"all", zona:"total", prod:"all", ad:"all", vista:"all", range:null, dr:null, loadGen:0 };
+const st={ channelId:null, contacts:[], ordersBy:{}, zonaMap:{}, adNames:{}, adEstado:{}, adProd:{}, rt:null, tipo:"all", zona:"total", prod:"all", ad:"all", vista:"all", range:null, dr:null, loadGen:0 };
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
@@ -287,11 +288,11 @@ async function load(){
     pageAll((f,t)=>supa.from("orders").select("contact_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     getChannel(st.channelId),
     // Nombres de los anuncios (ads-sync). Sin cuenta de Meta conectada viene vacío y se muestra el ID.
-    supa.from("ads_meta").select("ad_id,ad_name").eq("channel_id",st.channelId).then(r=>r,()=>({data:[]})),
+    supa.from("ads_meta").select("ad_id,ad_name,estado").eq("channel_id",st.channelId).then(r=>r,()=>({data:[]})),
   ]);
   if(gen!==st.loadGen) return;
   st.contacts=cR.data||[];
-  st.adNames={}; (adR&&adR.data||[]).forEach(a=>{ if(a.ad_id) st.adNames[a.ad_id]=a.ad_name||""; });
+  st.adNames={}; st.adEstado={}; (adR&&adR.data||[]).forEach(a=>{ if(a.ad_id){ st.adNames[a.ad_id]=a.ad_name||""; if(a.estado) st.adEstado[a.ad_id]=a.estado; } });
   st.ordersBy={};
   (oR.data||[]).forEach(o=>{ if(!o.contact_id) return; (st.ordersBy[o.contact_id]||(st.ordersBy[o.contact_id]=[])).push(o); });
   CUR=(chR&&chR.moneda)||"PEN";
@@ -341,32 +342,38 @@ function ponerVista(v){
 }
 function fillVista(){
   const sel=$("vistaSel"); if(!sel) return;
-  // Cuántos llegaron en las fechas elegidas (respeta tipo/zona; no el propio selector).
+  // (10-oct, Rodrigo) Cada fila dice cuántos llegaron en las fechas elegidas y qué conversión tuvieron, para ver qué
+  // rinde antes de elegirlo. Respeta tipo/zona; no el propio selector.
   const enFecha=st.contacts.filter(c=>(st.tipo==="all"||tipoDe(c)===st.tipo) && (st.zona==="total"||zonaDeContacto(c)===st.zona) && enRango(c));
-  const nProd={}, nAd={}; let nSin=0;
-  enFecha.forEach(c=>{ const p=c.product_id||""; nProd[p]=(nProd[p]||0)+1; if(c.ad_id) nAd[c.ad_id]=(nAd[c.ad_id]||0)+1; else nSin++; });
+  const cuenta={}; const sum=(k,c)=>{ const x=cuenta[k]||(cuenta[k]={n:0,b:0}); x.n++; if(c.stage==="comprado") x.b++; };
+  enFecha.forEach(c=>{ sum("all",c); sum("p:"+(c.product_id||""),c); sum(c.ad_id?"a:"+c.ad_id:"none",c); });
+  const nTxt=(k)=>{ const x=cuenta[k]; if(!x||!x.n) return "0"; return `${x.n} · ${Math.round(x.b/x.n*100)}%`; };
   const prods=new Map(); st.contacts.forEach(c=>{ if(c.product_id&&c.product&&(st.tipo==="all"||tipoDe(c)===st.tipo)&&!prods.has(c.product_id)) prods.set(c.product_id,c.product); });
   const adsDe={}; Object.keys(st.adProd).forEach(ad=>{ const p=st.adProd[ad]; (adsDe[p]||(adsDe[p]=[])).push(ad); });
-  const orden=[...prods.keys()].sort((a,b)=>(nProd[b]||0)-(nProd[a]||0) || (prods.get(a).nombre||"").localeCompare(prods.get(b).nombre||""));
-  const n=(x)=>x?` data-n="${x}"`:"";
-  let h=`<option value="all" data-lista="Todo (todos los productos y anuncios)">Todo</option>`;
+  const nOf=(k)=>(cuenta[k]&&cuenta[k].n)||0;
+  const orden=[...prods.keys()].sort((a,b)=>nOf("p:"+b)-nOf("p:"+a) || (prods.get(a).nombre||"").localeCompare(prods.get(b).nombre||""));
+  const est=(ad)=>{ const e=st.adEstado[ad]; return e ? ` data-dot="${e==="ACTIVE"?"on":"off"}" data-titulo="${e==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}"` : ""; };
+  const adOpt=(ad,sub)=>`<option value="a:${esc(ad)}" data-ico="megaphone"${sub?` data-sub="1"`:""}${est(ad)} data-n="${nTxt("a:"+ad)}">${esc(adNombre(ad))}</option>`;
+  let h=`<option value="all" data-ico="embudo" data-n="${nTxt("all")}">Todo</option>`;
   let cuantos=0;
   orden.forEach(pid=>{
-    const p=prods.get(pid), nom=(p.emoji?p.emoji+" ":"")+(p.nombre||"Producto");
-    const ads=(adsDe[pid]||[]).sort((a,b)=>(nAd[b]||0)-(nAd[a]||0));
-    h+=`<optgroup label="${esc(p.nombre||"Producto")}"><option value="p:${esc(pid)}" data-lista="Todo el producto"${n(nProd[pid])}>${esc(nom)}</option>`+
-       ads.map(ad=>`<option value="a:${esc(ad)}"${n(nAd[ad])}>${esc(adNombre(ad))}</option>`).join("")+`</optgroup>`;
-    cuantos+=1+ads.length;
+    const p=prods.get(pid);
+    // Activos primero, después por gente que trajeron.
+    const ads=(adsDe[pid]||[]).sort((a,b)=>((st.adEstado[b]==="ACTIVE")-(st.adEstado[a]==="ACTIVE")) || nOf("a:"+b)-nOf("a:"+a));
+    h+=`<optgroup label=""><option value="p:${esc(pid)}" data-ico="box" data-n="${nTxt("p:"+pid)}">${esc(p.nombre||"Producto")}</option>`;
+    // Con un solo anuncio, su fila repetiría la del producto: solo se listan cuando hay 2 o más.
+    if(ads.length>1){ h+=ads.map(ad=>adOpt(ad,true)).join(""); cuantos+=ads.length; }
+    h+=`</optgroup>`; cuantos++;
   });
   const sueltos=(adsDe[""]||[]);   // anuncios cuyos contactos no entraron a ningún producto
-  if(sueltos.length){ h+=`<optgroup label="Sin producto">`+sueltos.map(ad=>`<option value="a:${esc(ad)}"${n(nAd[ad])}>${esc(adNombre(ad))}</option>`).join("")+`</optgroup>`; cuantos+=sueltos.length; }
-  const haySin=st.contacts.some(c=>!c.ad_id);
-  if(haySin){ h+=`<optgroup label="Orgánico"><option value="none"${n(nSin)}>Sin anuncio (orgánico)</option></optgroup>`; cuantos++; }
+  if(sueltos.length){ h+=`<optgroup label="">`+sueltos.map(ad=>adOpt(ad,false)).join("")+`</optgroup>`; cuantos+=sueltos.length; }
+  if(st.contacts.some(c=>!c.ad_id)){ h+=`<optgroup label=""><option value="none" data-ico="user" data-n="${nTxt("none")}">Sin anuncio (orgánico)</option></optgroup>`; cuantos++; }
+  // Un anuncio elegido que ya no se lista (producto con un solo anuncio) se muestra como su producto.
+  if(st.vista.startsWith("a:") && !h.includes(`value="a:${esc(st.vista.slice(2))}"`)){ const p=st.adProd[st.vista.slice(2)]; ponerVista(p?"p:"+p:"all"); }
   sel.innerHTML=h;
   if(![...sel.options].some(o=>o.value===st.vista)) ponerVista("all");
   sel.value=st.vista;
-  // Con un solo producto y un solo anuncio no hay nada que elegir.
-  sel.style.display = (prods.size>1 || cuantos>2) ? "" : "none";
+  sel.style.display = cuantos>1 ? "" : "none";
   const zs=$("zonaSeg"); if(zs) zs.style.display = st.contacts.some(c=>tipoDe(c)==="fisico") ? "" : "none";
 }
 
@@ -729,7 +736,7 @@ function renderAnuncios(){
     return { k, n:F.total, compraron:F.niveles.compraron, cv:F.conversion, plata };
   }).sort((a,b)=> (a.k==="none")-(b.k==="none") || b.n-a.n);
   tbl.innerHTML=`<thead><tr><th>Anuncio</th><th>Llegaron</th><th>Compraron</th><th>Conversión</th><th>Ventas</th></tr></thead><tbody>`+
-    filas.map(f=>`<tr data-ad="${esc(f.k)}" class="${st.ad===f.k?"on":""}" title="Ver el embudo de este anuncio"><td class="adn">${esc(adNombre(f.k))}</td><td>${nf.format(f.n)}</td><td>${nf.format(f.compraron)}</td><td class="adcv">${f.cv==null?"—":f.cv+"%"}</td><td>${money(f.plata)}</td></tr>`).join("")+`</tbody>`;
+    filas.map(f=>`<tr data-ad="${esc(f.k)}" class="${st.ad===f.k?"on":""}" title="Ver el embudo de este anuncio"><td class="adn">${st.adEstado[f.k]?`<span class="addot${st.adEstado[f.k]==="ACTIVE"?" on":""}" title="${st.adEstado[f.k]==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}"></span>`:""}${esc(adNombre(f.k))}</td><td>${nf.format(f.n)}</td><td>${nf.format(f.compraron)}</td><td class="adcv">${f.cv==null?"—":f.cv+"%"}</td><td>${money(f.plata)}</td></tr>`).join("")+`</tbody>`;
   tbl.querySelectorAll("tr[data-ad]").forEach(tr=> tr.onclick=()=>{ const k=tr.dataset.ad, v= k==="none" ? "none" : "a:"+k;
     ponerVista(st.vista===v ? (pt==="all" ? "all" : "p:"+pt) : v); render(); });
 }

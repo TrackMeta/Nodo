@@ -1967,7 +1967,8 @@ export async function getUsdRate(channelId) {
 // cubre también los <select> que aparecen después (modales, fichas, editores). El <select> sigue siendo la fuente de
 // verdad: elegir cambia su value y dispara «input» + «change» como siempre.
 // Opciones extra: <optgroup> = título de grupo · data-lista="…" = texto en la lista (si difiere del de la caja) ·
-// data-sub="1" = con sangría · data-n="…" = contador a la derecha. Quedan NATIVOS: [multiple], [size>1],
+// data-sub="1" = con sangría · data-n="…" = contador a la derecha · data-ico="box" = ícono (de los de icon()) ·
+// data-dot="on|off" = punto verde/gris (ej. anuncio activo/pausado) · <optgroup label=""> = solo una línea separadora. Quedan NATIVOS: [multiple], [size>1],
 // [data-nativo] y las pantallas táctiles (el selector del celular es mejor que cualquier menú).
 const _sbTactil = (() => { try { return matchMedia("(pointer:coarse)").matches; } catch { return false; } })();
 let _sbAbierto = null;
@@ -1993,7 +1994,10 @@ select.sb-on{border-color:var(--brand)!important}
 .sbo .sbx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sbo .sbn{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums}
 .sbo .sbk{width:14px;height:14px;flex:none;color:var(--brand);visibility:hidden}
-.sbo.on{color:var(--brand);font-weight:600} .sbo.on .sbk{visibility:visible}`;
+.sbo.on{color:var(--brand);font-weight:600} .sbo.on .sbk{visibility:visible}
+.sbo .sbi{width:15px;height:15px;flex:none;color:var(--muted)} .sbo.on .sbi{color:var(--brand)}
+.sbo .sbd{width:7px;height:7px;border-radius:50%;flex:none;background:var(--disabled,#98A2B3)} .sbo .sbd.on{background:#12B76A}
+.sbsep{height:1px;background:var(--border);margin:5px 4px}`;
   document.head.appendChild(st);
 }
 function _sbCerrar() {
@@ -2025,10 +2029,10 @@ function _sbAbrir(sel) {
   const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const check = `<svg class="sbk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
   const opts = [...sel.options];
-  const opt = (o) => { const idx = opts.indexOf(o); return `<button type="button" role="option" class="sbo${o.dataset.sub ? " sub" : ""}${idx === sel.selectedIndex ? " on" : ""}" data-i="${idx}"${o.disabled ? " disabled" : ""}>${check}<span class="sbx">${esc(o.dataset.lista || o.textContent)}</span>${o.dataset.n ? `<span class="sbn">${esc(o.dataset.n)}</span>` : ""}</button>`; };
+  const opt = (o) => { const idx = opts.indexOf(o), d = o.dataset; return `<button type="button" role="option" class="sbo${d.sub ? " sub" : ""}${idx === sel.selectedIndex ? " on" : ""}" data-i="${idx}"${o.disabled ? " disabled" : ""}${d.titulo ? ` title="${esc(d.titulo)}"` : ""}>${check}${d.ico ? icon(d.ico, "sbi") : ""}<span class="sbx">${esc(d.lista || o.textContent)}</span>${d.dot ? `<span class="sbd${d.dot === "on" ? " on" : ""}"></span>` : ""}${d.n != null && d.n !== "" ? `<span class="sbn">${esc(d.n)}</span>` : ""}</button>`; };
   let h = "";
   for (const n of sel.children) {
-    if (n.tagName === "OPTGROUP") { h += `<div class="sbg">${esc(n.label)}</div>`; for (const o of n.children) if (!o.hidden) h += opt(o); }
+    if (n.tagName === "OPTGROUP") { h += n.label ? `<div class="sbg">${esc(n.label)}</div>` : (h ? `<div class="sbsep"></div>` : ""); for (const o of n.children) if (!o.hidden) h += opt(o); }
     else if (n.tagName === "OPTION" && !n.hidden) h += opt(n);
   }
   const pop = document.createElement("div");
