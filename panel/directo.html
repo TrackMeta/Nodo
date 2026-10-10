@@ -193,11 +193,16 @@
   .hitem .he{font-size:14px} .hitem .ht{color:var(--faint);font-size:11px}
 
   /* (10-oct) una línea de resumen en vez de 4 tarjetas de colores */
-  .stline{display:flex;flex-wrap:wrap;gap:6px 8px;margin:2px 0 14px}
+  .frow{display:flex;align-items:center;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;margin:0 0 12px}
+  .stchips{display:flex;gap:8px;flex-wrap:wrap}
+  .stchips .ftog .fc{color:var(--faint);font-weight:500}
+  .stline{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center}
+  .foot{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .foot .lnk{background:none;border:none;color:var(--brand);font:inherit;font-size:12.5px;cursor:pointer;padding:0}
   .stline button{border:1px solid var(--border);background:var(--surface);color:var(--muted);font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;cursor:pointer}
   .stline button b{color:var(--text);font-weight:600;margin-right:4px;font-variant-numeric:tabular-nums}
   .stline button:hover{border-color:var(--brand)} .stline button.on{border-color:var(--brand);background:var(--brand-bg);color:var(--text)}
-  .stline .modo{margin-left:auto;align-self:center;font-size:12px;color:var(--faint);border:none;background:none;cursor:default;padding:0}
+  .stline .modo{display:none}
   .ph .sin{color:var(--faint)}
   .qrow.nophone .nm{color:var(--muted)}
   .actline{font-size:12.5px;color:var(--muted)} .actline .seg2{display:block;font-size:11.5px;color:var(--faint);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -224,11 +229,11 @@
   <div class="wrap">
     <h1>Directo</h1>
 
-    <div class="stline" id="stats"></div>
 
     <div class="bar">
       <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="q" placeholder="Buscar por nombre o teléfono…"/></div>
+      <select class="sel" id="vistaSel" style="display:none" title="Producto o anuncio"><option value="all">Todo</option></select>
       <select class="sel" id="fSort">
         <option value="priority">Prioridad</option>
         <option value="next">Próximo contacto</option>
@@ -236,28 +241,15 @@
         <option value="activity">Última actividad</option>
       </select>
       <div id="dateRange"></div>
-      <button class="btn" id="filtBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg> Filtros <span class="cnt" id="filtCnt" style="display:none">0</span></button>
     </div>
 
-    <div class="filters" id="filters">
-      <div class="fgrp">
-        <span class="fglabel">Rápidos</span>
-        <button class="ftog" data-quick="mios" type="button"><span class="dot" style="background:#2b7fff"></span>Mis leads <span class="fc" data-qc="mios"></span></button>
-        <button class="ftog" data-quick="hoy" type="button"><span class="dot" style="background:#e2564a"></span>Para hoy <span class="fc" data-qc="hoy"></span></button>
-        <button class="ftog" data-quick="sincontacto" type="button"><span class="dot" style="background:#f0a92b"></span>Sin contactar <span class="fc" data-qc="sincontacto"></span></button>
-        <button class="ftog" data-quick="seguimiento" type="button"><span class="dot" style="background:#18b7be"></span>En seguimiento <span class="fc" data-qc="seguimiento"></span></button>
-        <button class="ftog" data-quick="pedido" type="button"><span class="dot" style="background:#9b6cf0"></span>Con pedido en curso <span class="fc" data-qc="pedido"></span></button>
-        <button class="ftog" data-quick="showDone" type="button"><span class="dot" style="background:#5c6675"></span>Ver cerrados/descartados <span class="fc" data-qc="showDone"></span></button>
-        <button class="fclear" id="fClear" type="button">Limpiar filtros</button>
-      </div>
-      <div class="fgrp"><span class="fglabel">Etapa</span><span id="fStages" style="display:flex;gap:8px;flex-wrap:wrap"></span></div>
-    </div>
+    <div class="frow"><div class="stchips" id="fStages"></div><div class="stline" id="stats"></div></div>
 
     <div class="table">
       <div class="thead" id="thead"></div>
       <div id="rows"><div class="empty">Cargando…</div></div>
     </div>
-    <div class="foot" id="foot"></div>
+    <div class="foot"><span id="foot"></span><button class="lnk" id="verCerr" type="button"></button></div>
   </div>
 </div>
 
@@ -313,7 +305,17 @@ const st={ channelId:null, accountId:null, uid:null, myName:"", contacts:[], ord
 // el bot no cerró, para mandarles un mensaje tuyo desde la Bandeja. «llamar» = vende físico: la cola de llamadas de siempre.
 const esEquipo=()=> st.members.length>1;
 const escribir=()=> st.modo==="escribir";
-const f={ q:"", sort:"priority", stages:new Set(), mios:false, hoy:false, sincontacto:false, seguimiento:false, pedido:false, showDone:false, range:null };
+const f={ q:"", sort:"priority", stages:new Set(), mios:false, hoy:false, sincontacto:false, seguimiento:false, pedido:false, verCerrados:false, range:null, vista:"all" };
+// (10-oct) Etapas que tienen sentido en la cola (Nuevo nunca se usa; Comprado y Perdido van en «Ver los que ya compraron…»).
+const COLA=[["curioso","Curiosos"],["interesado","Interesados"],["caliente","Calientes"],["confirmado","Confirmados"]];
+// Producto / anuncio (mismo selector que el Embudo y el Dashboard)
+const adsDir={ prod:{}, nombre:{}, estado:{} };
+function enVista(c){
+  const v=f.vista; if(v==="all") return true;
+  if(v==="none") return !c.ad_id;
+  if(v.startsWith("p:")) return c.product_id===v.slice(2);
+  return String(c.ad_id||"")===v.slice(2);
+}
 const STAGE=Object.fromEntries(EMBUDO_STAGES.map(s=>[s.k,s]));
 const STAGE_W={ caliente:6, confirmado:5, interesado:4, curioso:3, nuevo:2, comprado:1, perdido:0 };
 
@@ -358,13 +360,13 @@ async function boot(){
   st.channelId=shell.channelId;
   shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } });
   shell.onLeave?.(()=>recargarPronto.parar()); // sin recarga pendiente corriendo sobre la página nueva
-  shell.onChannel(async id=>{ st.channelId=id; f.stages.clear(); await loadTeam(); await cargarModo(true); renderFilterChips(); subscribe(); load(); });
+  shell.onChannel(async id=>{ st.channelId=id; f.stages.clear(); f.vista="all"; f.verCerrados=false; await loadTeam(); await cargarModo(true); renderFilterChips(); subscribe(); load(); });
   $("q").addEventListener("input", e=>{ f.q=norm(e.target.value.trim()); st.visible=80; render(); });
   $("fSort").addEventListener("change", e=>{ f.sort=e.target.value; render(); });
   // Filtro de rango de fechas (por última actividad). "Máximo" = sin filtro (default).
   st.dr = mountDateRange($("dateRange"), { valor: computePreset("max"), nota:"Por última actividad · Hora de Lima", onChange:(r)=>{ f.range = (r.preset==="max") ? null : r; render(); } });
-  $("filtBtn").onclick=()=>$("filters").classList.toggle("show");
-  $("fClear").onclick=clearFilters;
+  $("vistaSel").addEventListener("change", e=>{ f.vista=e.target.value||"all"; st.visible=80; render(); });
+  $("verCerr").onclick=()=>{ f.verCerrados=!f.verCerrados; st.visible=80; render(); };
   // Modal registrar
   $("rCancel").onclick=()=>$("regModal").classList.remove("show");
   $("rSave").onclick=saveReg;
@@ -372,7 +374,7 @@ async function boot(){
   $("iClose").onclick=()=>$("infoModal").classList.remove("show");
   // Deep-link ?stage=<k> (desde el Embudo)
   const qStage=new URLSearchParams(location.search).get("stage");
-  if(qStage && STAGE[qStage]){ f.stages=new Set([qStage]); $("filters").classList.add("show"); }
+  if(qStage && STAGE[qStage]){ if(qStage==="comprado"||qStage==="perdido") f.verCerrados=true; else f.stages=new Set([qStage]); }
   await loadTeam();
   await cargarModo(!qStage);
   document.addEventListener("click",(e)=>{ if(!e.target.closest(".mas")) document.querySelectorAll(".dmenu.show").forEach(m=>m.classList.remove("show")); });
@@ -441,9 +443,13 @@ async function load(){
       (conSeg||[]).forEach(c=>{ if(!vistos.has(c.id)){ vistos.add(c.id); cs.push(c); } });
     }catch(_){ /* sin la 2ª consulta se sigue con las 2000 */ }
   }
+  try{ const { data:am }=await supa.from("ads_meta").select("ad_id,ad_name,estado").eq("channel_id",forChannel);
+    adsDir.nombre={}; adsDir.estado={}; (am||[]).forEach(a=>{ if(!a.ad_id) return; adsDir.nombre[a.ad_id]=a.ad_name||""; if(a.estado) adsDir.estado[a.ad_id]=a.estado; }); }catch(_){}
   const { data:os }=await pageAll((f,t)=>supa.from("orders").select("contact_id,estado,amount,order_bumps,shipping,currency,created_at").eq("channel_id",forChannel).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t));
   if(gen!==st.loadGen) return;
-  st.contacts=(cs||[]).filter(c=>c.wa_id!=="webchat-test" && c.source!=="sim");   // ni prueba ni simulados: inflaban la cola y el botón llamaba a números inventados
+  st.contacts=(cs||[]).filter(c=>c.wa_id!=="webchat-test" && c.source!=="sim");
+  { const m={}; st.contacts.forEach(c=>{ if(!c.ad_id) return; const k=c.product_id||""; (m[c.ad_id]||(m[c.ad_id]={}))[k]=((m[c.ad_id]||{})[k]||0)+1; });
+    adsDir.prod={}; Object.entries(m).forEach(([a,cnt])=>{ adsDir.prod[a]=Object.entries(cnt).sort((x,y)=>y[1]-x[1])[0][0]; }); }   // ni prueba ni simulados: inflaban la cola y el botón llamaba a números inventados
   st.ordersBy={};
   (os||[]).forEach(o=>{ if(!o.contact_id) return; (st.ordersBy[o.contact_id]||(st.ordersBy[o.contact_id]=[])).push(o); });
   // último pedido por contacto (por fecha)
@@ -464,18 +470,20 @@ function isDone(c){ const d=dirOf(c); return c.stage==="comprado" || d.estado===
 // así que un lead puede quedar perdido con un next_call_at de hoy). La LISTA lo esconde salvo con
 // el chip perdido → los CONTADORES deben usar el MISMO universo, si no el badge "Para hoy: 3"
 // miente (2 visibles) y ese callback de un lead ya perdido nunca se hace = venta perdida muda.
-function enColaActiva(c){ return !isDone(c) && !(c.stage==="perdido" && !f.stages.has("perdido")); }
+function enColaActiva(c){ return !isDone(c) && c.stage!=="perdido"; }
+const cerradoOPerdido=(c)=> isDone(c) || c.stage==="perdido";
 
 function filtered(){
   const today=todayStr();
   let list=st.contacts.filter(c=>{
     if(isArchived(c)) return false;
     const d=dirOf(c);
-    if(!f.showDone && !enColaActiva(c)) return false;
+    if(f.verCerrados ? !cerradoOPerdido(c) : !enColaActiva(c)) return false;
+    if(!enVista(c)) return false;
     if(f.q){ if(!(norm(c.nombre).includes(f.q) || (c.wa_id||"").includes(f.q))) return false; }
     // Rango de fechas por última actividad (su último mensaje).
     if(f.range && c.ultimo_mensaje_at){ const dd=ymdLima(c.ultimo_mensaje_at); if(dd < ymd(f.range.from) || dd > ymd(f.range.to)) return false; }
-    if(f.stages.size && !f.stages.has(c.stage||"nuevo")) return false;
+    if(!f.verCerrados && f.stages.size && !f.stages.has(c.stage||"nuevo")) return false;
     if(f.mios && d.assigned_to!==st.uid) return false;
     if(f.hoy && !(d.next_call_at && d.next_call_at<=today)) return false;
     if(f.sincontacto && (d.intentos||[]).length) return false;
@@ -524,39 +532,52 @@ function filtered(){
 }
 
 function renderFilterChips(){
-  $("fStages").innerHTML=EMBUDO_STAGES.map(s=>`<button class="ftog ${f.stages.has(s.k)?"on":""}" data-stage="${s.k}" type="button" style="${f.stages.has(s.k)?`color:${s.color}`:""}"><span class="dot" style="background:${s.color}"></span>${s.label} <span class="fc" data-sc="${s.k}"></span></button>`).join("");
-  $("fStages").querySelectorAll("[data-stage]").forEach(b=> b.onclick=()=>{ const k=b.dataset.stage; f.stages.has(k)?f.stages.delete(k):f.stages.add(k); renderFilterChips(); render(); });
-  $("filters").querySelectorAll("[data-quick]").forEach(b=>{ const k=b.dataset.quick; b.classList.toggle("on",f[k]); b.onclick=()=>{ f[k]=!f[k]; renderFilterChips(); render(); }; });
+  // Cuántos hay en cada etapa con el producto/anuncio elegido (sin contar el propio filtro de etapa).
+  const base=st.contacts.filter(c=>!isArchived(c) && enColaActiva(c) && enVista(c));
+  const box=$("fStages");
+  box.style.display = f.verCerrados ? "none" : "";
+  box.innerHTML=COLA.map(([k,l])=>{ const sg=STAGE[k]||{}; const n=base.filter(c=>(c.stage||"nuevo")===k).length; const on=f.stages.has(k);
+    return `<button class="ftog ${on?"on":""}" data-stage="${k}" type="button" style="${on?`color:${sg.color}`:""}"><span class="dot" style="background:${sg.color}"></span>${l} <span class="fc">${n}</span></button>`; }).join("");
+  box.querySelectorAll("[data-stage]").forEach(b=> b.onclick=()=>{ const k=b.dataset.stage; f.stages.has(k)?f.stages.delete(k):f.stages.add(k); st.visible=80; render(); });
 }
-
-function updateCounts(){
-  const today=todayStr();
-  const all=st.contacts.filter(c=>!isArchived(c));
-  const live=all.filter(enColaActiva); // MISMO universo que la lista (excluye perdido oculto) → los contadores cuadran
-  EMBUDO_STAGES.forEach(s=>{ const el=$("fStages").querySelector(`[data-sc="${s.k}"]`); if(el) el.textContent=all.filter(c=>(c.stage||"nuevo")===s.k).length||""; });
-  const q={
-    mios:live.filter(c=>dirOf(c).assigned_to===st.uid).length,
-    hoy:live.filter(c=>{ const n=dirOf(c).next_call_at; return n&&n<=today; }).length,
-    sincontacto:live.filter(c=>!(dirOf(c).intentos||[]).length).length,
-    seguimiento:live.filter(c=>(dirOf(c).intentos||[]).length).length,
-    pedido:live.filter(pedidoEnCurso).length,
-    showDone:all.filter(isDone).length,
-  };
-  Object.entries(q).forEach(([k,v])=>{ const el=document.querySelector(`[data-qc="${k}"]`); if(el) el.textContent=v||""; });
-  const active=f.stages.size+(f.mios?1:0)+(f.hoy?1:0)+(f.sincontacto?1:0)+(f.seguimiento?1:0)+(f.pedido?1:0)+(f.showDone?1:0);
-  const cnt=$("filtCnt"); cnt.textContent=active; cnt.style.display=active?"":"none"; $("filtBtn").classList.toggle("on",!!active);
+function updateCounts(){ renderFilterChips(); fillVistaDir(); }
+function fillVistaDir(){
+  const sel=$("vistaSel"); if(!sel) return;
+  // Contador = cuántos hay en la cola (etapas elegidas) por producto / anuncio.
+  const cola=st.contacts.filter(c=>!isArchived(c) && enColaActiva(c) && (!f.stages.size || f.stages.has(c.stage||"nuevo")));
+  const n={}; const sum=(k)=>{ n[k]=(n[k]||0)+1; };
+  cola.forEach(c=>{ sum("all"); if(c.product_id) sum("p:"+c.product_id); sum(c.ad_id?"a:"+c.ad_id:"none"); });
+  const prods=new Map(); st.contacts.forEach(c=>{ if(c.product_id && c.product && !prods.has(c.product_id)) prods.set(c.product_id,c.product); });
+  const adsDe={}; Object.entries(adsDir.prod).forEach(([a,p])=>{ (adsDe[p]||(adsDe[p]=[])).push(a); });
+  const nn=(k)=>String(n[k]||0);
+  const est=(a)=>{ const e=adsDir.estado[a]; return e?` data-dot="${e==="ACTIVE"?"on":"off"}" data-titulo="${e==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}"`:""; };
+  const adOpt=(a,sub)=>`<option value="a:${esc(a)}" data-ico="megaphone"${sub?' data-sub="1"':""}${est(a)} data-n="${nn("a:"+a)}">${esc(adsDir.nombre[a]||("Anuncio …"+String(a).slice(-6)))}</option>`;
+  let h=`<option value="all" data-ico="directo" data-n="${nn("all")}">Todo</option>`, cuantos=0;
+  [...prods.keys()].sort((a,b)=>(n["p:"+b]||0)-(n["p:"+a]||0)).forEach(pid=>{
+    const p=prods.get(pid), ads=(adsDe[pid]||[]).sort((a,b)=>((adsDir.estado[b]==="ACTIVE")-(adsDir.estado[a]==="ACTIVE")) || (n["a:"+b]||0)-(n["a:"+a]||0));
+    h+=`<optgroup label=""><option value="p:${esc(pid)}" data-ico="box" data-n="${nn("p:"+pid)}">${esc(p.nombre||"Producto")}</option>`;
+    if(ads.length>1){ h+=ads.map(a=>adOpt(a,true)).join(""); cuantos+=ads.length; }
+    h+=`</optgroup>`; cuantos++;
+  });
+  if(st.contacts.some(c=>!c.ad_id)){ h+=`<optgroup label=""><option value="none" data-ico="user" data-n="${nn("none")}">Sin anuncio (orgánico)</option></optgroup>`; cuantos++; }
+  sel.innerHTML=h;
+  if(![...sel.options].some(o=>o.value===f.vista)) f.vista="all";
+  sel.value=f.vista;
+  sel.style.display = cuantos>1 ? "" : "none";
 }
 
 function renderStats(){
   const today=todayStr();
   // Mismo universo que la lista (incluido el filtro de etapa), para que el número diga lo que vas a ver.
-  const live=st.contacts.filter(c=>!isArchived(c) && enColaActiva(c) && (!f.stages.size || f.stages.has(c.stage||"nuevo")));
+  const live=st.contacts.filter(c=>!isArchived(c) && enColaActiva(c) && enVista(c) && (!f.stages.size || f.stages.has(c.stage||"nuevo")));
   const stats=[
     { k:"hoy",         v:live.filter(c=>{ const n=dirOf(c).next_call_at; return n&&n<=today; }).length, label:"para hoy" },
     { k:"sincontacto", v:live.filter(c=>!(dirOf(c).intentos||[]).length).length, label:"sin contactar" },
     { k:"seguimiento", v:live.filter(c=>(dirOf(c).intentos||[]).length).length, label:"en seguimiento" },
   ];
   if(esEquipo()) stats.push({ k:"mios", v:live.filter(c=>dirOf(c).assigned_to===st.uid).length, label:"míos" });
+  if(!escribir()) stats.push({ k:"pedido", v:live.filter(pedidoEnCurso).length, label:"con pedido en curso" });
+  $("stats").style.display = f.verCerrados ? "none" : "";
   $("stats").innerHTML=stats.map(x=>`<button class="${f[x.k]?"on":""}" data-stat="${x.k}"><b>${x.v}</b>${x.label}</button>`).join("")
     +`<span class="modo">${escribir()?"Para escribirles a mano: los interesados que el bot no cerró":"Para llamar y cerrar la venta"}</span>`;
   $("stats").querySelectorAll("[data-stat]").forEach(el=> el.onclick=()=>{ const k=el.dataset.stat; f[k]=!f[k]; renderFilterChips(); render(); });
@@ -569,8 +590,10 @@ function render(){
   $("thead").innerHTML=`<div>Cliente</div><div>Etapa</div><div>Actividad</div><div>Pedido</div>${esEquipo()?"<div>Asesora</div>":""}<div></div>`;
   const list=filtered();
   const box=$("rows");
+  { const nCerr=st.contacts.filter(c=>!isArchived(c) && cerradoOPerdido(c) && enVista(c)).length;
+    $("verCerr").textContent = f.verCerrados ? "← Volver a la cola" : (nCerr ? `Ver los que ya compraron o se perdieron (${nCerr})` : ""); }
   if(!list.length){
-    box.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg><h3>Nada en la cola</h3><p>No hay leads con estos filtros. Prueba quitar filtros, o revisa el Embudo para ver quién está listo para una llamada.</p></div>`;
+    box.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg><h3>${f.verCerrados?"Nadie todavía":"Nada en la cola"}</h3><p>${f.verCerrados?"Aún no hay clientes que hayan comprado o se hayan perdido con este filtro.":"No hay nadie con estas etapas. Prende otra etapa arriba o cambia el producto."}</p></div>`;
     $("foot").textContent=""; return;
   }
   const show=list.slice(0,st.visible);
@@ -863,7 +886,7 @@ async function openInfo(c){
 }
 
 function clearFilters(){
-  f.q=""; f.stages.clear(); f.mios=f.hoy=f.sincontacto=f.seguimiento=f.pedido=f.showDone=false;
+  f.q=""; f.stages.clear(); f.mios=f.hoy=f.sincontacto=f.seguimiento=f.pedido=f.verCerrados=false; f.vista="all";
   f.range=null; if(st.dr) st.dr.set(computePreset("max"));
   $("q").value=""; renderFilterChips(); render();
 }
