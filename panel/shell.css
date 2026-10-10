@@ -961,3 +961,99 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-visor-x:hover{background:rgba(255,255,255,.25)}
 .nn-visor-link{color:#fff;opacity:.75;font-size:12.5px;text-decoration:underline}
 .nn-visor-link:hover{opacity:1}
+
+/* ═══════════════════════════════════════════════════════════════════
+   DISEÑO 2 · «Tinta + Azul Nodo + Violeta IA» (10-oct-2026, decidido con Rodrigo)
+   Se activa con html[data-ds="2"] (modo de prueba: ?ds=2 en cualquier página; ?ds=1 lo apaga — ver shell.js).
+   Reglas: cada color significa algo y el 90 % de la pantalla es gris/blanco.
+     · Tinta  = menú + el ÚNICO número destacado de la pantalla
+     · Azul   = SOLO acciones (botón, sección activa, enlace)
+     · Violeta= SOLO lo que hace la IA
+     · Verde = plata que entró · Ámbar = esperando · Rojo = plata perdida
+   Sin degradados, brillos ni sombras. Contraste medido: todo ≥ AA.
+   ═══════════════════════════════════════════════════════════════════ */
+html[data-ds="2"][data-theme="light"]{
+  --bg:#F6F7F9; --surface-1:#FFFFFF; --surface:#FFFFFF; --surface-2:#F2F4F7;
+  --border:#E4E7EC; --border-strong:#D0D5DD;
+  --text:#101828; --muted:#475467; --faint:#5F6B7D; --disabled:#98A2B3;
+  --brand:#0B63E5; --brand-2:#0B4FB8; --brand-3:#0A4AA8;
+  --brand-bg:#EAF2FF; --brand-border:#B8D3FB;
+  --green:#067647;  --green-bg:#E8F7EE;
+  --amber:#B54708;  --amber-bg:#FEF4E2;
+  --red:#B42318;    --red-bg:#FEEDEB;
+  --info:#0B63E5;   --info-bg:#EAF2FF;
+  --purple:#6941C6; --violet:#6941C6; --violet-bg:#F1ECFE; --violet-text:#5B34C2;
+  --ink:#0F1523; --ink-border:rgba(255,255,255,.06);
+  --hero:#0F1523; --hero-border:transparent; --hero-text:#FFFFFF; --hero-muted:#98A2B3;
+  --shadow-1:none; --shadow-2:0 8px 24px rgba(16,24,40,.10); --shadow-3:0 16px 48px rgba(16,24,40,.14);
+  --glass:#FFFFFF; --glass-nav:#0F1523; --glass-brd:#E4E7EC;
+}
+html[data-ds="2"]:not([data-theme="light"]){
+  --bg:#0B0F17; --surface-1:#131A26; --surface:#131A26; --surface-2:#1A2232;
+  --border:rgba(255,255,255,.07); --border-strong:rgba(255,255,255,.12);
+  --text:#E6E9EF; --muted:#98A2B3; --faint:#8C96A8; --disabled:#475467;
+  --brand:#2563EB; --brand-2:#6EA8FF; --brand-3:#1D4ED8;
+  --brand-bg:rgba(37,99,235,.16); --brand-border:rgba(110,168,255,.35);
+  --green:#5FD39A;  --green-bg:#12291F;
+  --amber:#F7C063;  --amber-bg:#2E2412;
+  --red:#FF8A80;    --red-bg:#2F1A1A;
+  --info:#6EA8FF;   --info-bg:rgba(37,99,235,.16);
+  --purple:#B9A3FB; --violet:#B9A3FB; --violet-bg:#2A2246; --violet-text:#B9A3FB;
+  --ink:#070A10; --ink-border:rgba(255,255,255,.06);
+  --hero:#1B2538; --hero-border:#2A3650; --hero-text:#FFFFFF; --hero-muted:#98A2B3;
+  --shadow-1:none; --shadow-2:0 8px 24px rgba(0,0,0,.40); --shadow-3:0 16px 48px rgba(0,0,0,.50);
+  --glass:#131A26; --glass-nav:#070A10; --glass-brd:rgba(255,255,255,.07);
+}
+/* Plano: sin aurora, nebulosa ni vidrio. Las tarjetas son sólidas. */
+html[data-ds="2"] .nfx-aurora,html[data-ds="2"] .nodo-nebula{display:none!important}
+html[data-ds="2"] body.nodo-shelled{background:var(--bg)}
+html[data-ds="2"] body.nodo-shelled :is(.card,.dcard,.panel,.kpi,.tbl,.nodo-card){
+  background:var(--surface)!important;border-color:var(--border)!important;box-shadow:none!important;
+  backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+html[data-ds="2"] body.nodo-shelled{font-variant-numeric:tabular-nums}
+
+/* ── Menú: color propio (tinta) en los dos temas, más compacto, sin barra de scroll ── */
+html[data-ds="2"] .nodo-nav{
+  /* El menú es SIEMPRE oscuro: sus tokens se redefinen acá adentro (como un tema propio). */
+  --text:#E6E9EF; --muted:#98A2B3; --faint:#8C96A8;
+  --surface:#131A26; --surface-1:#131A26; --surface-2:rgba(255,255,255,.06);
+  --border:rgba(255,255,255,.07); --border-strong:rgba(255,255,255,.12);
+  --brand:#4C8DFF; --brand-2:#6EA8FF; --brand-bg:rgba(255,255,255,.08); --brand-border:rgba(110,168,255,.35);
+  width:224px;padding:10px;background:var(--ink)!important;border-right:1px solid var(--ink-border);
+  backdrop-filter:none!important;-webkit-backdrop-filter:none!important;color:var(--text);
+}
+html[data-ds="2"] .nodo-nav.collapsed{width:64px}
+html[data-ds="2"] .nodo-links{gap:2px;scrollbar-width:none}
+html[data-ds="2"] .nodo-links::-webkit-scrollbar{width:0;height:0}
+html[data-ds="2"] .nodo-primary{gap:2px}
+html[data-ds="2"] .nodo-group .nodo-gitems{gap:2px}
+html[data-ds="2"] .nodo-sec{margin:16px 0 6px;padding:0 10px;font-size:11px;font-weight:500;letter-spacing:.06em;color:var(--faint)}
+html[data-ds="2"] .nodo-sec:hover{color:var(--text)}
+html[data-ds="2"] .nodo-link{height:32px;gap:10px;padding:0 10px;font-size:13px;font-weight:500;color:var(--muted);border-radius:7px}
+html[data-ds="2"] .nodo-link svg{width:16px;height:16px}
+html[data-ds="2"] .nodo-link:hover{background:rgba(255,255,255,.06);color:#fff}
+html[data-ds="2"] .nodo-link.active{background:rgba(255,255,255,.08);color:#fff;font-weight:500}
+html[data-ds="2"] .nodo-link.active::before{width:2px;height:14px;background:#4C8DFF}
+/* La Bandeja: primer ítem del menú, sin relleno, brillo ni animación. */
+html[data-ds="2"] .nodo-link.nodo-cta{height:34px;margin:2px 0 2px;font-size:13px;font-weight:500;color:#fff;letter-spacing:0;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.08);box-shadow:none;animation:none}
+html[data-ds="2"] .nodo-link.nodo-cta:hover{filter:none;background:rgba(255,255,255,.11)}
+html[data-ds="2"] .nodo-link.nodo-cta svg{width:16px;height:16px;stroke-width:2;color:#6EA8FF}
+html[data-ds="2"] .nodo-link.nodo-cta .cta-in{display:none}
+html[data-ds="2"] .nodo-link.nodo-cta .cta-dot{width:7px;height:7px;background:#4C8DFF;animation:none;box-shadow:none}
+html[data-ds="2"] .nodo-link.nodo-cta.active::before{display:block}
+/* IA: violeta liso, sin degradado. */
+html[data-ds="2"] .nodo-link.nodo-link-ia .nodo-lbl{background:none;-webkit-text-fill-color:currentColor;font-weight:500}
+html[data-ds="2"] .nodo-link.nodo-link-ia svg{color:#B9A3FB}
+html[data-ds="2"] .nodo-link.nodo-link-ia:hover{background:rgba(185,163,251,.10)}
+html[data-ds="2"] .nodo-link.nodo-link-ia.active{background:rgba(185,163,251,.14)}
+html[data-ds="2"] .nodo-link.nodo-link-ia.active::before{background:#B9A3FB!important}
+html[data-ds="2"] .nodo-botsel{height:40px}
+html[data-ds="2"] .nodo-foot{border-top:1px solid var(--ink-border);padding-top:8px}
+html[data-ds="2"] .nu-av{width:30px;height:30px;border-radius:8px}
+/* Configuración en el menú del usuario (ver shell.js: botón ⚙ del pie). */
+.nodo-confpop{position:absolute;left:10px;right:10px;bottom:58px;z-index:40;display:flex;flex-direction:column;gap:2px;
+  background:#131A26;border:1px solid rgba(255,255,255,.10);border-radius:10px;padding:5px;box-shadow:0 12px 32px rgba(0,0,0,.45)}
+.nodo-confpop[hidden]{display:none}
+.nodo-confpop .ncp-t{font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:#8C96A8;padding:6px 8px 4px}
+.nodo-nav.collapsed .nodo-confpop{left:64px;right:auto;width:200px;bottom:10px}

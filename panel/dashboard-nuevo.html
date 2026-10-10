@@ -1,0 +1,1798 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Dashboard</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f; --green:#22c079; --green-bg:#10281d;
+    --amber:#f0a92b; --amber-bg:#2c2311; --red:#e2564a; --purple:#9b6cf0;
+    --font:"Inter",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  /* KPIs */
+  /* Banda de rentabilidad: ganancia bruta − publicidad = ganancia neta */
+  .pband{display:flex;align-items:stretch;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:16px 6px;margin:22px 0 0}
+  .pband:empty{display:none}
+  .pb-step{flex:1;min-width:150px;padding:6px 18px;display:flex;flex-direction:column;gap:3px;justify-content:center}
+  .pb-l{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+  .pb-v{font-size:24px;font-weight:800;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+  .pb-v.big{font-size:30px}
+  .pb-v.amber{color:var(--amber)} .pb-v.green{color:var(--green)} .pb-v.red{color:var(--red)}
+  .pb-s{font-size:11.5px;color:var(--faint);line-height:1.4}
+  .pb-op{display:flex;align-items:center;font-size:22px;color:var(--faint);font-weight:300;padding:0 2px}
+  .pb-step.net{background:var(--surface-2);border-radius:14px}
+  .pb-cta{flex:1.4;min-width:230px;display:flex;align-items:center;padding:6px 18px;font-size:12.5px;color:var(--muted);line-height:1.55;border-left:1px solid var(--border)}
+  .pb-cta a{color:var(--brand);font-weight:700;text-decoration:none} .pb-cta b{color:var(--text)}
+  @media(max-width:640px){ .pband{flex-direction:column} .pb-op{display:none;transform:rotate(90deg)} .pb-step.net{margin-top:8px} .pb-cta{border-left:none;border-top:1px solid var(--border)} }
+  .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin:16px 0 22px}
+  .kpi{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px}
+  .kpi .h{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12.5px;font-weight:600}
+  .kpi .ic{width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex:none}
+  .kpi .ic svg{width:18px;height:18px}
+  .kpi .v{font-size:27px;font-weight:650;margin-top:12px;letter-spacing:-.5px}
+  .kpi .d{font-size:12px;color:var(--faint);margin-top:3px;font-weight:400}
+  /* Métricas de conversión: Efectividad de venta + Conversión a compra.
+     Fila sin wrap en desktop → ambas en la MISMA línea flex → align-items
+     (stretch por defecto) las deja del mismo alto. En móvil se apilan. */
+  .metricas{display:flex;gap:14px;margin:22px 0 0}
+  #efecPanel:empty{display:none}
+  .metric{flex:1 1 0;min-width:0;box-sizing:border-box;display:flex;gap:18px;align-items:center;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:20px 22px}
+  .metric.mid{border-left-color:var(--amber)} .metric.low{border-left-color:var(--border)} .metric.mconv{border-left-color:var(--brand)}
+  .metric.mia{border-left-color:#a855f7;border-color:rgba(168,85,247,.34);background:radial-gradient(130% 150% at 0% 0%,rgba(168,85,247,.13),transparent 55%),var(--surface);box-shadow:0 8px 26px -12px rgba(168,85,247,.5)}
+  .metric .num{font-size:42px;font-weight:750;letter-spacing:-1.5px;line-height:1;color:var(--green);flex:none;min-width:78px;text-align:center}
+  .metric.mid .num{color:var(--amber)} .metric.low .num{color:var(--muted)} .metric.mconv .num{color:var(--brand)}
+  .metric.mia .num{background:linear-gradient(120deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+  .metric .miabadge{width:24px;height:24px;border-radius:7px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex:none;box-shadow:0 3px 9px rgba(168,85,247,.45)}
+  .metric .miabadge svg{width:14px;height:14px}
+  .metric .mtxt{flex:1;min-width:0}
+  .metric .mlbl{font-size:15px;font-weight:700;color:var(--text);display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .metric .mtag{font-size:9.5px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 8px;white-space:nowrap}
+  .metric .mdesc{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.4}
+  .metric .mbrk{font-size:11px;color:var(--faint);margin-top:8px}
+  /* Desktop: alto FIJO idéntico (el stretch del flex no las igualaba por un
+     quirk del render con la animación de entrada); así quedan perfectas. */
+  @media(min-width:641px){ .metric{height:112px} }
+  @media(max-width:640px){ .metricas{flex-direction:column} .metric{min-height:104px} .metric .num{font-size:36px;min-width:62px} }
+  .cols{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-bottom:16px}
+  @media(max-width:860px){.cols{grid-template-columns:1fr}}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px 22px;margin-bottom:16px}
+  .panel h3{margin:0 0 2px;font-size:16px;font-weight:650;letter-spacing:-.2px}
+  .panel .ps{color:var(--muted);font-size:12.5px;margin:0 0 16px}
+  .funnel .frow{display:flex;align-items:center;gap:12px;margin-bottom:13px}
+  .funnel .flabel{width:120px;flex:none;font-size:13px;color:var(--muted);font-weight:500;display:flex;align-items:center;gap:7px}
+  .funnel .fbar{flex:1;height:28px;background:var(--surface-2);border-radius:8px;overflow:hidden}
+  .funnel .fbar span{display:block;height:100%;border-radius:8px;min-width:2px;transition:width .4s}
+  .funnel .fval{width:64px;flex:none;text-align:right;font-weight:650;font-size:14px}
+  .funnel .frow[data-stage]:hover .fbar{outline:1px solid var(--border-strong,#2b3644)}
+  /* Gastos extra */
+  .expbtn{height:34px;padding:0 13px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:12.5px;font-weight:700;flex:none;white-space:nowrap}
+  .expbtn:hover{border-color:var(--brand)}
+  .expbtn.primary{background:var(--brand);border-color:transparent;color:#fff} .expbtn.primary:hover{background:var(--brand-2)}
+  .expbtn.ghost{background:transparent}
+  .expform{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:13px;margin:12px 0;display:flex;flex-direction:column;gap:9px}
+  .expform .ef-row{display:flex;gap:9px} .expform .ef-row .ef-in{flex:1}
+  .ef-in{height:38px;background:var(--surface);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 11px;font-size:13.5px;outline:none;font-family:inherit;width:100%}
+  .ef-in:focus{border-color:var(--brand)}
+  .ef-acts{display:flex;justify-content:flex-end;gap:8px}
+  .expdel{background:none;border:none;color:var(--faint);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:6px}
+  .expdel:hover{color:var(--red);background:var(--red-bg,#2c1615)}
+  .hidden{display:none}
+  .conv{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+  .convpill{font-size:11.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:5px 11px;color:var(--muted)}
+  .convpill b{color:var(--text)}
+  .stages{display:flex;flex-direction:column;gap:10px}
+  .srow{display:flex;align-items:center;gap:12px}
+  .srow .sl{width:100px;flex:none;font-size:12.5px;color:var(--muted);text-transform:capitalize;font-weight:500}
+  .srow .sbar{flex:1;height:22px;background:var(--surface-2);border-radius:7px;overflow:hidden}
+  .srow .sbar span{display:block;height:100%;background:var(--brand);border-radius:7px;min-width:2px}
+  .srow .sv{width:40px;text-align:right;font-weight:650;font-size:13px}
+  .empty{color:var(--faint);text-align:center;padding:34px 0;line-height:1.6}
+  .empty svg.eic{width:38px;height:38px;opacity:.55;margin-bottom:12px;color:var(--faint)}
+  .empty h4{margin:0 0 5px;font-size:15px;color:var(--text);font-weight:700}
+  /* Tablas de producto */
+  .ptable{width:100%;border-collapse:collapse}
+  .ptable th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;padding:0 12px 10px;border-bottom:1px solid var(--border)}
+  .ptable th.r,.ptable td.r{text-align:right}
+  .ptable td{padding:13px 12px;border-bottom:1px solid var(--border);font-size:13.5px;vertical-align:middle}
+  .ptable tr:last-child td{border-bottom:none}
+  .ptable .pname{font-weight:600}
+  .ptable .vname{font-size:12px;color:var(--muted);padding-left:18px;font-weight:500}
+  .ptable .money{font-weight:650;font-variant-numeric:tabular-nums}
+  .ptable tr.total td{border-top:2px solid var(--border);font-weight:650;font-size:14px;background:var(--surface-2)}
+  .bar-mini{height:6px;border-radius:4px;background:var(--brand);display:inline-block;vertical-align:middle;margin-right:8px;min-width:3px}
+  /* Filtro de fechas */
+  /* Selector Todo/Digital/Físico. Prefijo `d` a propósito: `.seg` es genérico y
+     las clases sueltas ya chocaron antes con las del sidebar. */
+  .dseg{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px;gap:2px}
+  .dseg button{border:none;background:transparent;color:var(--muted);font-size:13px;font-weight:700;padding:7px 14px;border-radius:8px;font-family:inherit;cursor:pointer}
+  .dseg button.on{background:var(--brand);color:#fff}
+  .datefilter{position:relative}
+  .df-btn{height:40px;padding:0 15px;border-radius:11px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:9px}
+  .df-btn:hover{border-color:var(--brand)} .df-btn svg{width:16px;height:16px;color:var(--muted)}
+  .df-btn .cur{color:var(--brand)}
+  /* Date-range picker: presets + dos meses de calendario + rango */
+  .df-pop{position:absolute;top:48px;right:0;z-index:40;background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    box-shadow:0 16px 44px rgba(0,0,0,.4);width:600px;max-width:92vw;display:none;overflow:hidden}
+  .df-pop.open{display:block}
+  .dfp-body{display:flex}
+  .dfp-presets{width:172px;flex:none;border-right:1px solid var(--border);padding:8px;display:flex;flex-direction:column;gap:2px;max-height:342px;overflow:auto}
+  .dfp-presets button{display:flex;align-items:center;gap:9px;height:33px;padding:0 10px;border-radius:8px;border:none;background:transparent;color:var(--text);font-size:13px;font-weight:600;text-align:left;cursor:pointer}
+  .dfp-presets button:hover{background:var(--surface-2)}
+  .dfp-presets button.on{background:var(--brand-bg);color:var(--brand)}
+  .dfp-presets .rd{width:15px;height:15px;border-radius:50%;border:2px solid var(--faint);flex:none;position:relative}
+  .dfp-presets button.on .rd{border-color:var(--brand)}
+  .dfp-presets button.on .rd::after{content:"";position:absolute;inset:3px;border-radius:50%;background:var(--brand)}
+  .dfp-cal{flex:1;padding:12px 14px;min-width:0}
+  .dfp-months{display:flex;gap:20px}
+  .dfp-mo{flex:1;min-width:0}
+  .dfp-mo-h{display:flex;align-items:center;justify-content:center;height:28px;font-size:13px;font-weight:700;position:relative}
+  .dfp-nav{position:absolute;top:1px;width:26px;height:26px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;line-height:1}
+  .dfp-nav:hover{border-color:var(--brand);color:var(--brand)}
+  .dfp-nav.prev{left:0} .dfp-nav.next{right:0}
+  .dfp-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-top:8px}
+  .dfp-dow{font-size:10px;color:var(--faint);text-align:center;font-weight:700;height:20px;line-height:20px}
+  .dfp-day{height:31px;border:none;background:transparent;color:var(--text);font-size:12px;border-radius:7px;cursor:pointer;padding:0}
+  .dfp-day:hover{background:var(--surface-2)}
+  .dfp-day.out{color:var(--faint);opacity:.35}
+  .dfp-day.inrange{background:var(--brand-bg);border-radius:0;color:var(--brand)}
+  .dfp-day.end1{background:var(--brand);color:#fff;border-top-right-radius:0;border-bottom-right-radius:0}
+  .dfp-day.end2{background:var(--brand);color:#fff;border-top-left-radius:0;border-bottom-left-radius:0}
+  .dfp-day.single{background:var(--brand);color:#fff}
+  .dfp-foot{display:flex;align-items:center;gap:10px;border-top:1px solid var(--border);padding:11px 14px}
+  .dfp-rt{flex:1;font-size:13.5px;font-weight:600;min-width:0}
+  .dfp-rt small{display:block;color:var(--faint);font-size:11px;font-weight:400;margin-top:2px}
+  .dfp-btn{height:36px;padding:0 16px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-weight:600;font-size:13px;cursor:pointer}
+  .dfp-btn:hover{border-color:var(--brand)}
+  .dfp-btn.pri{background:var(--brand);border:none;color:#fff}
+  .dfp-btn.pri:hover{background:var(--brand-2)}
+  @media(max-width:560px){ .dfp-body{flex-direction:column} .dfp-presets{width:auto;border-right:none;border-bottom:1px solid var(--border);flex-direction:row;flex-wrap:wrap;max-height:none} .dfp-presets button{height:30px} }
+  /* ── Toggle Dashboard / Bitácora ── */
+  .viewseg{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:3px;gap:2px;margin:2px 0 20px}
+  .viewseg button{border:none;background:transparent;color:var(--muted);font:inherit;font-size:13.5px;font-weight:600;padding:8px 20px;border-radius:9px;cursor:pointer}
+  .viewseg button.on{background:var(--brand);color:#fff}
+  /* ── Bitácora ── */
+  .bita-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+  .bita-nav{display:inline-flex;align-items:center;gap:8px}
+  .bita-nav button{width:30px;height:30px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font-size:16px;line-height:1;cursor:pointer}
+  .bita-nav button:hover{border-color:var(--brand);color:var(--brand)}
+  .bita-nav .m{font-weight:700;font-size:14px;min-width:132px;text-align:center}
+  .bita-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+  .bita-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:4px}
+  .bita-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:7px}
+  .bita-dow{font-size:11px;font-weight:700;color:var(--faint);text-align:center;padding:2px 0;text-transform:uppercase;letter-spacing:.5px}
+  .bita-cell{border:1px solid var(--border);border-radius:12px;padding:8px 9px 9px;min-height:84px;position:relative;cursor:pointer;transition:transform .1s,box-shadow .1s;background:var(--surface)}
+  .bita-cell:hover{transform:translateY(-1px);box-shadow:0 5px 16px rgba(0,0,0,.14)}
+  .bita-cell.void{background:transparent;border:none;cursor:default;pointer-events:none}
+  .bita-cell .dn{position:absolute;top:7px;left:9px;font-size:11px;font-weight:700;color:var(--muted)}
+  .bita-cell .flag{position:absolute;top:6px;right:8px;font-size:12px;line-height:1}
+  .bita-cell .amt{text-align:center;font-size:16px;font-weight:750;margin-top:17px;letter-spacing:-.3px}
+  .bita-cell .sub{text-align:center;font-size:10px;color:var(--faint);margin-top:1px}
+  .bita-cell .mt{display:flex;justify-content:center;gap:9px;font-size:9.5px;margin-top:5px;font-variant-numeric:tabular-nums}
+  .bita-cell .up{color:var(--green)} .bita-cell .dn2{color:var(--red)}
+  .bita-cell .roas{text-align:center;font-size:9.5px;color:var(--faint);margin-top:2px}
+  .bita-cell.alto{background:rgba(16,185,129,.17);border-color:rgba(16,185,129,.55)}
+  .bita-cell.alto .amt{color:#0e9f6e}
+  .bita-cell.pos{background:rgba(16,185,129,.07);border-color:rgba(16,185,129,.3)}
+  .bita-cell.pos .amt{color:#12b981}
+  .bita-cell.loss{background:rgba(239,68,68,.09);border-color:rgba(239,68,68,.5)}
+  .bita-cell.loss .amt{color:var(--red)}
+  .bita-cell.nodata{background:var(--surface-2);opacity:.55}
+  .bita-cell.nodata .amt{color:var(--faint);font-size:13px;font-weight:600}
+  .bita-cell.prov{border-style:dashed}
+  /* Asesor IA (Mide + Aconseja) */
+  .aiadv{border:1px solid rgba(168,85,247,.4);background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.1),transparent 60%),var(--surface);border-radius:14px;padding:14px 16px;margin-bottom:16px}
+  .aiadv-hd{display:flex;align-items:center;gap:10px}
+  .aiadv-hd .g{width:30px;height:30px;flex:none;border-radius:8px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center}
+  .aiadv-hd .g svg{width:17px;height:17px}
+  .aiadv-tt{font-weight:700;font-size:15px}
+  .aibtn{border:none;border-radius:10px;cursor:pointer;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-weight:700;font-size:13px;padding:9px 15px}
+  .aibtn:hover{filter:brightness(1.06)}
+  /* Asesor IA flotante (abajo a la derecha, colapsable) */
+  .aifloat{position:fixed;right:20px;bottom:20px;z-index:60;display:flex;flex-direction:column;align-items:flex-end;gap:12px}
+  .aipop{width:min(384px,92vw);max-height:72vh;overflow:auto}
+  .aipop .aiadv{margin:0;box-shadow:0 14px 44px rgba(0,0,0,.28)}
+  .aifloat.collapsed .aipop{display:none}
+  .aifab{position:relative;border:none;cursor:pointer;border-radius:24px;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-weight:700;font-size:13.5px;padding:12px 18px;display:inline-flex;align-items:center;gap:9px;box-shadow:0 8px 24px rgba(168,85,247,.4)}
+  .aifab:hover{filter:brightness(1.06)}
+  .aifab svg{width:18px;height:18px}
+  .aifloat:not(.collapsed) .aifab{display:none}
+  .fabdot{position:absolute;top:-3px;right:-3px;width:12px;height:12px;border-radius:50%;background:#22c079;border:2px solid var(--surface)}
+  .aiclose{border:none;background:var(--surface-2);color:var(--muted);border-radius:8px;width:26px;height:26px;cursor:pointer;font-size:14px;flex:none}
+  .aiclose:hover{color:var(--text)}
+  .airec{background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:12px 14px;margin-top:10px;display:flex;gap:10px;align-items:flex-start}
+  .aipri{font-size:10.5px;font-weight:700;border-radius:20px;padding:3px 9px;flex:none;text-transform:uppercase;letter-spacing:.3px;margin-top:1px}
+  .aipri.alta{color:#e2564a;background:rgba(226,86,74,.13)}
+  .aipri.media{color:#c8891a;background:rgba(240,169,43,.15)}
+  .aipri.idea{color:var(--muted);background:var(--surface-2)}
+  .aiact{margin-top:9px;height:32px;padding:0 13px;border:1px solid var(--border);border-radius:9px;background:transparent;color:var(--brand);font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+  .aiact:hover{border-color:var(--brand)}
+  /* ═══ Dashboard nuevo (Diseño 2, 10-oct) ═══ */
+  .nd-hoy{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin:18px 0 0;font-size:13px;color:var(--muted)}
+  .nd-hoy b{color:var(--text);font-weight:600;margin-right:2px}
+  .nd-hoy a{color:var(--muted);text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+  .nd-hoy a:hover{color:var(--text)}
+  .nd-pill{display:inline-grid;place-items:center;min-width:22px;height:20px;padding:0 7px;border-radius:99px;font-size:12px;font-weight:600}
+  .nd-pill.amb{background:var(--amber-bg);color:var(--amber)} .nd-pill.red{background:var(--red-bg);color:var(--red)} .nd-pill.blu{background:var(--brand-bg);color:var(--brand-2)}
+  .nd-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0 16px}
+  @media(max-width:900px){.nd-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .nd-kpi{display:flex;flex-direction:column;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0}
+  .nd-kpi .l{font-size:12px;color:var(--muted);font-weight:500}
+  .nd-kpi .n{font-size:28px;line-height:1.15;font-weight:600;letter-spacing:-.02em;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nd-kpi .s{font-size:12px;color:var(--muted)} .nd-kpi .s.ok{color:var(--green)} .nd-kpi .s.bad{color:var(--red)}
+  .nd-kpi.hero{background:var(--hero,#0F1523);border-color:var(--hero-border,transparent)}
+  .nd-kpi.hero .l,.nd-kpi.hero .s{color:var(--hero-muted,#98A2B3)} .nd-kpi.hero .n{color:var(--hero-text,#fff)}
+  .nd-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 16px}
+  @media(max-width:900px){.nd-groups{grid-template-columns:1fr}}
+  .nd-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px}
+  .nd-card h4{margin:2px 0 6px;font-size:14px;font-weight:600;color:var(--text)}
+  .nd-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:7px 0;font-size:13px;color:var(--muted);border-top:1px solid var(--border)}
+  .nd-card h4 + .nd-row{border-top:none}
+  .nd-row b{font-weight:500;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .nd-row.tot{color:var(--text);font-weight:600} .nd-row.tot b{font-weight:600}
+  .nd-row b.neg{color:var(--red)} .nd-row b.pos{color:var(--green)}
+  .nd-ia{display:inline-block;margin-left:5px;padding:0 6px;border-radius:99px;font-size:11px;font-weight:600;background:var(--violet-bg,#F1ECFE);color:var(--violet-text,#5B34C2);vertical-align:1px}
+  .nd-note{font-size:12px;color:var(--muted);padding:6px 0 2px}
+  .nd-note a{color:var(--brand-2)}
+  .bita-seg{display:inline-flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px}
+  .bita-seg button{border:none;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:500;padding:5px 11px;border-radius:7px;cursor:pointer}
+  .bita-seg button.on{background:var(--surface);color:var(--text);box-shadow:0 0 0 1px var(--border)}
+  .bita-tools{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
+  html[data-ds="2"] .aifab{background:var(--violet,#6941C6);box-shadow:none;font-weight:600}
+  html[data-ds="2"] .panel{border-radius:12px}
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="nodo-wrap">
+    <div class="nodo-head">
+      <div class="grow">
+        <h1 class="nodo-title" id="ndTitle">Dashboard</h1>
+        <p class="nodo-lead" id="subtitle">Tu negocio de un vistazo</p>
+      </div>
+      <div class="nodo-actions">
+        <div class="dseg" id="tipoSeg" style="display:none">
+          <button data-t="todo" class="on">Todo</button>
+          <button data-t="digital">Digital</button>
+          <button data-t="fisico">Físico</button>
+          <button data-t="microapp">Micro apps</button>
+        </div>
+        <div class="datefilter">
+          <button class="df-btn" id="dfBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> <span class="cur" id="dfLabel">Hoy</span></button>
+          <div class="df-pop" id="dfPop"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="efecPanel" hidden></div>
+
+    <div id="aiFloat" class="aifloat collapsed">
+      <div id="asesorPanel" class="aipop"></div>
+      <button id="aiFab" class="aifab" title="Abrir el Asesor IA"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg><span>Asesor IA</span><span class="fabdot" id="aiDot" hidden></span></button>
+    </div>
+
+    <div class="pband" id="pband" hidden></div>
+    <div class="kpis" id="kpis" hidden></div>
+
+    <div id="ndHoy"></div>
+    <div class="nd-kpis" id="ndKpis"></div>
+
+    <!-- (9-oct, Rodrigo) Sin pestañas: la Bitácora va siempre a la vista, y debajo Rendimiento por producto y Gastos extra.
+         Se quitaron Ventas confirmadas, el Embudo (tiene su propia sección) y Ventas extra. -->
+    <div id="bitaView">
+      <div class="panel">
+        <div class="bita-hd">
+          <h3 id="bitaTitle">Profit diario</h3>
+          <div class="bita-tools">
+            <div class="bita-seg" id="bitaSeg"><button data-b="chart" class="on">Gráfico</button><button data-b="cal">Calendario</button></div>
+            <div class="bita-nav"><button id="bitaPrev" title="Mes anterior">‹</button><span class="m" id="bitaMonth">—</span><button id="bitaNext" title="Mes siguiente">›</button></div>
+          </div>
+        </div>
+        <div id="bitaChart"></div>
+        <div id="bitaCalWrap" hidden>
+          <div class="bita-legend" id="bitaLegend" style="margin:0 0 8px"></div>
+          <div class="bita-cal" id="bitaCal"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="nd-groups" id="ndGroups"></div>
+
+    <div id="dashView">
+    <div class="panel">
+      <h3>Rendimiento por producto</h3><p class="ps">Unidades, ingresos, <b>publicidad</b> y <b>ganancia neta</b> por producto y variante · en las fechas de arriba · los gastos extra se restan solo en la franja</p>
+      <div id="productPerf"></div>
+    </div>
+
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div><h3>Gastos extra</h3><p class="ps">Gastos operativos que registras tú (empaques, sueldos, local…) · se restan de tu ganancia</p></div>
+          <button class="expbtn primary" id="addExpBtn">+ Registrar</button>
+        </div>
+        <div id="expForm" class="hidden"></div>
+        <div id="expenses"></div>
+      </div>
+    </div><!-- /#dashView -->
+  </div>
+</div>
+
+<script type="module">
+import { supa, getChannel, mountShell, toast, icon, confirmDialog, pageAll, patchProductConfig, factorAds, getUsdRate, adsDeCuentasQuitadas } from "./shell.js";
+// 🔐 ¿La cuenta ve «Avanzado» (Flujos y Campos)? Decide a dónde apunta el checklist.
+let AV = false;
+import * as O from "./orders.js";
+import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
+import { ymdTZ, startOfDayTZ, endOfDayTZ, tzNombre } from "./date-range.js";
+const $=(id)=>document.getElementById(id);
+// 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se pregunta a shell.js, pero SIN
+// importarlo estático: si el navegador tiene cacheado un shell.js viejo (sin ese export),
+// un `import { avanzadoPermitido }` deja la página EN BLANCO — el módulo entero no carga y
+// no arranca nada. Medido el 2026-09-19 con el panel ya desplegado. Con el import dinámico,
+// un shell.js viejo solo hace que caiga al valor cacheado, y la pantalla sigue viva.
+async function avPermitido(){
+  let ok = (()=>{ try{ return localStorage.getItem("nodo.avanzado")==="1"; }catch(_){ return false; } })();
+  try{ const m = await import("./shell.js"); if(typeof m.avanzadoPermitido==="function") ok = await m.avanzadoPermitido(); }catch(_){}
+  return ok;
+}
+// Moneda del canal (se carga de channels.moneda; símbolo por código ISO).
+const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
+let CUR="PEN";
+const curSym=()=>CUR_SYM[CUR]||CUR;
+// Cuánto vale un dólar en la moneda del negocio (Ajustes › General). Sin esto, el
+// gasto de IA —que el proveedor cobra en dólares— no se puede sumar a una ganancia
+// en soles sin mentir: se muestra aparte y en dólares hasta que lo configuren.
+let USD_RATE=0;
+async function loadCurrency(){
+  const ch=await getChannel(channelId);
+  CUR=(ch&&ch.moneda)||"PEN";
+  USD_RATE = CUR==="USD" ? 1 : await getUsdRate(channelId);
+}
+const money=(n)=>curSym()+" "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
+// Saca de `ordR.data` los pedidos cuya moneda NO es la del negocio y devuelve el
+// resumen por moneda ({USD:{n,cobrado}}) para avisarlo. Muta ordR.data a propósito.
+function apartarOtrasMonedas(ordR){
+  const otras={};
+  if(ordR.error) return otras;
+  ordR.data=(ordR.data||[]).filter(o=>{
+    const c=String(o.currency||"PEN").toUpperCase();
+    if(c===CUR) return true;
+    const k=otras[c]||(otras[c]={n:0,cobrado:0}); k.n++; k.cobrado+=O.cobrado(o); return false;
+  });
+  return otras;
+}
+const otrasMonedasTxt=(otras)=>Object.entries(otras||{}).sort((a,b)=>b[1].n-a[1].n)
+  .map(([c,k])=>`${k.n} pedido${k.n>1?"s":""} en ${c} (${(CUR_SYM[c]||c)+" "+k.cobrado.toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2})} cobrados)`).join(" · ");
+const avisoOtrasMonedas=(otras)=>Object.keys(otras||{}).length
+  ? `<div style="grid-column:1/-1;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">${icon("alert")} ${esc(otrasMonedasTxt(otras))} <b>${Object.values(otras).reduce((a,k)=>a+k.n,0)>1?"no entran":"no entra"}</b> en estos números: el negocio ahora factura en <b>${esc(CUR)}</b> y no hay cómo convertirlos sin inventar una tasa. Los ves, con su moneda, en Compras y Pedidos.</div>`
+  : "";
+// Versión corta (sin decimales) para el calendario de la Bitácora.
+// Ojo con el CERO NEGATIVO: Math.round(-0.21) da -0 y se imprime "S/ -0", que en el
+// calendario de la Bitácora se lee como un día en pérdida. Pasa con cualquier importe
+// que redondee a cero — el costo de IA de un día sin ventas, por ejemplo.
+const moneyShort=(n)=>{ const r=Math.round(Number(n||0)); return curSym()+" "+(Object.is(r,-0)?0:r).toLocaleString("es-PE"); };
+// Anima los números de los KPIs (0 → valor) al cargar. Genérico: separa prefijo
+// ("S/ "), número y sufijo, y re-formatea cada frame conservando los decimales.
+function animateNums(scope){
+  if(!scope||matchMedia("(prefers-reduced-motion:reduce)").matches) return;
+  scope.querySelectorAll(".kpi .v").forEach(el=>{
+    const txt=el.textContent.trim();
+    const m=txt.match(/^([^\d-]*)(-?[\d.,]+)(.*)$/); if(!m) return;
+    const pre=m[1], numStr=m[2], suf=m[3];
+    const target=parseFloat(numStr.replace(/,/g,"")); if(!isFinite(target)) return;
+    const dec=(numStr.split(".")[1]||"").length;
+    const fmt=(v)=>pre+v.toLocaleString("es-PE",{minimumFractionDigits:dec,maximumFractionDigits:dec})+suf;
+    const dur=680, t0=performance.now();
+    const step=(now)=>{ const p=Math.min(1,(now-t0)/dur), e=1-Math.pow(1-p,3);
+      el.textContent=fmt(target*e); if(p<1) requestAnimationFrame(step); else el.textContent=txt; };
+    requestAnimationFrame(step);
+  });
+}
+const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let channelId=null;
+let asesorResumen=null;
+// ── Asesor IA (Mide + Aconseja): panel arriba del Dashboard ──
+const ASECC={ campanas:"campanas.html", productos:"productos.html", remarketing:"productos.html", pedidos:"pedidos.html", negocio:"negocio.html", ia:"ia.html", rendimiento:"rendimiento.html" };
+const AI_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>';
+function renderAsesor(){
+  const box=$("asesorPanel"); if(!box) return;
+  const R=asesorResumen||{};
+  const oport=[];
+  if(R.interesados_sin_comprar>0) oport.push(`${R.interesados_sin_comprar} interesados sin comprar`);
+  const h=R.huecos||{};
+  const nMudo=(h.flujo_en_borrador_o_sin_flujo||[]).length, nRem=(h.sin_remarketing||[]).length;
+  if(nMudo) oport.push(`${nMudo} producto(s) sin vender aún`);
+  if(nRem) oport.push(`${nRem} sin remarketing`);
+  const teaser = oport.length ? `Detecté <b>${oport.join(" · ")}</b>.` : "Revisemos tus números y busquemos oportunidades.";
+  box.innerHTML=`
+    <div class="aiadv">
+      <div class="aiadv-hd">
+        <span class="g">${AI_SPARK}</span>
+        <div style="flex:1;min-width:0"><div class="aiadv-tt">Asesor IA</div><div style="font-size:12.5px;color:var(--muted);margin-top:1px">${teaser}</div></div>
+        <button class="aibtn" id="aiGo">Pedir consejo</button>
+        <button class="aiclose" id="aiClose" title="Minimizar"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div id="aiRecs"></div>
+      <div style="border-top:1px solid var(--border);margin-top:14px;padding-top:12px">
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:7px">O dime qué hacer y lo hago (siempre te pido confirmar): <span style="color:var(--faint)">"sube el Premium a 160" · "pon a vender el curso" · "baja el adelanto de X a 15"</span></div>
+        <div style="display:flex;gap:8px">
+          <input id="opCmd" placeholder="Escribe una orden…" style="flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px;font-size:13.5px;outline:none;font-family:inherit"/>
+          <button class="aibtn" id="opGo" style="flex:none">Hacer</button>
+        </div>
+        <div id="opMsg" style="margin-top:9px"></div>
+      </div>
+    </div>`;
+  $("aiGo").onclick=pedirConsejo;
+  $("opGo").onclick=operaComando;
+  $("opCmd").onkeydown=(e)=>{ if(e.key==="Enter") operaComando(); };
+  const cl=$("aiClose"); if(cl) cl.onclick=()=>$("aiFloat")?.classList.add("collapsed");
+  const dot=$("aiDot"); if(dot) dot.hidden=!oport.length; // punto verde en el FAB si hay oportunidades
+}
+async function operaComando(){
+  const cmd=($("opCmd")?$("opCmd").value:"").trim();
+  if(cmd.length<3){ return; }
+  const btn=$("opGo"); if(btn){ btn.disabled=true; btn.textContent="…"; }
+  let data,error;
+  try{ ({ data, error } = await supa.functions.invoke("opera-parse",{ body:{ channel_id:channelId, comando:cmd } })); }
+  catch(e){ error=e; }
+  if(btn){ btn.disabled=false; btn.textContent="Hacer"; }
+  const msg=$("opMsg"); if(!msg) return;
+  if(error || !data || !data.ok || !data.action){ msg.innerHTML=`<span style="color:#e2564a;font-size:12.5px">${esc((data&&data.error)||(error&&error.message)||"No se pudo procesar.")}</span>`; return; }
+  const act=data.action;
+  if(act.tipo==="none"){ msg.innerHTML=`<span style="color:var(--muted);font-size:12.5px">${esc(act.mensaje||"No pude convertir eso en una acción.")}</span>`; return; }
+  msg.innerHTML="";
+  if(!await confirmDialog({ title:"Confirmar", message:act.resumen+" ¿Lo hago?", confirmText:"Sí, hazlo" })) return;
+  try{
+    const undo=await operaExec(act);
+    if($("opCmd")) $("opCmd").value="";
+    // 🔴 El «Deshacer» va DESPUÉS de refrescar, y sobre el nodo nuevo. Antes se pintaba aquí y
+    // enseguida se llamaba a `load()`, que termina en `renderAsesor()` → reescribe el panel
+    // entero y se lleva el #opMsg recién puesto. Medido (2026-09-14, comando «pon el precio de
+    // la faja en 89»): el cambio se aplicó bien pero el «Deshacer» duró lo que tardó el
+    // refresco; en el DOM no quedaba ni rastro. Una red de seguridad que se borra sola no es
+    // una red: es justo lo que hace que uno no se anime a usar el copiloto.
+    await load();
+    const msg2=$("opMsg");   // tras el repintado, `msg` es un nodo huérfano
+    if(msg2){
+      msg2.innerHTML=`<div style="display:flex;align-items:center;gap:12px;font-size:12.5px"><span style="color:var(--green,#22c079);font-weight:700">${icon("check")} Hecho.</span><a href="#" id="opUndo" style="color:var(--brand)">Deshacer</a></div>`;
+      const un=$("opUndo");
+      if(un) un.onclick=async(e)=>{ e.preventDefault(); un.textContent="Deshaciendo…";
+        try{ await undo(); toast("Deshecho"); await load(); const m3=$("opMsg"); if(m3) m3.innerHTML=""; }
+        catch(_){ toast("No se pudo deshacer",true); } };
+    }
+  }catch(e){ msg.innerHTML=`<span style="color:#e2564a;font-size:12.5px">No se pudo ejecutar: ${esc(String((e&&e.message)||e))}</span>`; }
+}
+async function operaExec(a){
+  if(a.tipo==="precio"){
+    const { error }=await supa.from("product_versions").update({ precio:a.valor }).eq("id",a.version_id); if(error) throw error;
+    return async()=>{ const { error:e2 }=await supa.from("product_versions").update({ precio:a.actual }).eq("id",a.version_id); if(e2) throw e2; };
+  }
+  if(a.tipo==="estado_venta"){
+    const nuevo=a.valor?"activo":"borrador", viejo=a.actual?"activo":"borrador";
+    const { error }=await supa.from("flows").update({ estado:nuevo }).eq("id",a.flow_id); if(error) throw error;
+    return async()=>{ const { error:e2 }=await supa.from("flows").update({ estado:viejo }).eq("id",a.flow_id); if(e2) throw e2; };
+  }
+  if(a.tipo==="adelanto"){
+    // Los dos pasos releen el config fresco y tocan SOLO adelanto_override. El "deshacer"
+    // reescribía el config que se había leído ANTES del cambio: si entremedio entraba una
+    // venta, deshacer el adelanto revertía también el stock descontado. Ahora deshacer
+    // deshace solo lo que se hizo. (patchProductConfig, shell.js.)
+    const { data }=await supa.from("products").select("config").eq("id",a.product_id).maybeSingle();
+    const viejo=((data&&data.config)||{}).adelanto_override;
+    const r=await patchProductConfig(a.product_id,(cfg)=>{ cfg.adelanto_override=a.valor; });
+    if(!r.ok) throw (r.error||new Error("no se pudo guardar el adelanto"));
+    return async()=>{
+      const r2=await patchProductConfig(a.product_id,(cfg)=>{
+        if(viejo==null) delete cfg.adelanto_override; else cfg.adelanto_override=viejo;
+      });
+      if(!r2.ok) throw (r2.error||new Error("no se pudo deshacer"));
+    };
+  }
+  throw new Error("acción no soportada");
+}
+async function pedirConsejo(){
+  const btn=$("aiGo"); if(btn){ btn.disabled=true; btn.textContent="Analizando…"; }
+  let data,error;
+  try{ ({ data, error } = await supa.functions.invoke("asesor-ia",{ body:{ channel_id:channelId, resumen:asesorResumen } })); }
+  catch(e){ error=e; }
+  if(btn){ btn.disabled=false; btn.textContent="Pedir consejo"; }
+  if(error || !data?.ok || !Array.isArray(data?.recomendaciones)){
+    toast(data?.error||error?.message||"No se pudo generar el consejo. Intenta de nuevo.",true); return;
+  }
+  const recs=data.recomendaciones;
+  const box=$("aiRecs"); if(!box) return;
+  if(!recs.length){ box.innerHTML=`<div style="font-size:12.5px;color:var(--muted);margin-top:10px">Todo se ve bien por ahora — no encontré nada urgente.</div>`; return; }
+  box.innerHTML=recs.map(r=>{
+    const pri=(r.prioridad==="alta"||r.prioridad==="media"||r.prioridad==="idea")?r.prioridad:"idea";
+    const priTx={alta:"Prioridad alta",media:"Media",idea:"Idea"}[pri];
+    const a=r.accion||{}; const href=ASECC[a.seccion]||null;
+    const btn=(a.texto&&href)?`<a class="aiact" href="${href}">${esc(a.texto)} →</a>`:"";
+    return `<div class="airec">
+      <span class="aipri ${pri}">${priTx}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700">${esc(r.titulo||"")}</div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.55;margin-top:3px">${esc(r.por_que||"")}</div>
+        ${btn}
+      </div>
+    </div>`;
+  }).join("");
+}
+const IC={
+  robot:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>',
+  users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  money:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+  cart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>',
+  lead:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+  ticket:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 0 0 6v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-4a2 2 0 0 0 0-6z"/><path d="M13 5v2M13 17v2M13 11v2"/></svg>',
+  bump:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/><circle cx="12" cy="12" r="10"/></svg>',
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
+  repeat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+  truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
+  alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  ban:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>',
+  chart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>',
+  megaphone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>',
+  receipt:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg>',
+  wallet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-2"/><path d="M21 12a2 2 0 0 0-2-2h-4a2 2 0 0 0 0 4h4a2 2 0 0 0 2-2Z"/></svg>',
+  box:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.8 10A10 10 0 1 1 17 3.3"/><path d="m9 11 3 3L22 4"/></svg>',
+  target:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+  trending:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg>',
+};
+
+// ── Filtro de fechas (date-range picker: presets + 2 meses) ─────────
+const PRESETS=[["hoy","Hoy"],["ayer","Ayer"],["7d","Últimos 7 días"],["14d","Últimos 14 días"],
+  ["28d","Últimos 28 días"],["30d","Últimos 30 días"],["estaSemana","Esta semana"],
+  ["semanaPasada","La semana pasada"],["esteMes","Este mes"],["mesPasado","El mes pasado"],["maximo","Máximo"]];
+const PRESET_LABEL=Object.fromEntries(PRESETS);
+const MESES=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+const MES_ABBR=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+const DOW=["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"];
+const range={ preset:"hoy", from:null, to:null };   // (por defecto HOY — pedido de Rodrigo, 7-oct)
+let dfDraft=null; // estado del picker mientras está abierto (se aplica con "Actualizar")
+// Qué operación estás mirando: todo | digital | fisico.
+let tipo="todo";
+// 📱 Tipo de cada producto (para separar las micro apps de los digitales: el pedido solo dice si es físico).
+let TIPO_PROD={};
+const claseDe=(o)=> O.esFisico(o) ? "fisico" : (TIPO_PROD[o.product_id]==="microapp" ? "microapp" : "digital");
+// Bitácora: mes que se muestra en el calendario (arranca en el mes actual).
+let bitaMonth=(()=>{ const d=new Date(); return new Date(d.getFullYear(),d.getMonth(),1); })();
+function startOfDay(d){ const x=new Date(d); x.setHours(0,0,0,0); return x; }
+function ymd(d){ const x=new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`; }
+// Día calendario de un INSTANTE, en hora del negocio (Lima). `ymd` usa los getters
+// LOCALES, o sea la zona del navegador: una venta de las 21:30 de Lima se guarda como
+// 02:30 UTC del día SIGUIENTE, así que desde cualquier zona al este de Lima caía en el
+// día equivocado — el gráfico, el calendario de profit y el profit diario mostraban las
+// ventas corridas un día, y no coincidían con el Embudo (que sí corta en hora de Lima).
+// Para el EJE de días se sigue usando `ymd`, porque ahí las fechas ya son días
+// calendario elegidos en el selector, no instantes.
+// El día calendario de un instante, en la zona del NEGOCIO (no Lima fija: la elige el
+// dueño en Ajustes y el motor ya la respeta). Vive en date-range.js para no tener dos
+// definiciones que puedan divergir.
+const ymdLima = ymdTZ;
+function addDays(base,n){ const x=new Date(base); x.setDate(x.getDate()+n); return x; }
+// «Hoy» = el día calendario en la zona del NEGOCIO (como día local a las 00:00, para que la
+// aritmética de días siga igual). Antes salía del navegador: un negocio en México mirado
+// desde Lima a las 23:30 cortaba el rango en otro día que el de los buckets (ymdTZ) → barras
+// que no sumaban lo que decía el total, y «Hoy» distinto al del Embudo/Rendimiento.
+function hoyNegocio(){ const [Y,M,D]=ymdTZ(Date.now()).split("-").map(Number); return new Date(Y,M-1,D); }
+
+// Un preset → {from, toDay} (Date a las 00:00). null = selección manual del calendario.
+function presetRango(p){
+  const today=hoyNegocio();
+  switch(p){
+    case "hoy": return { from:today, toDay:today };
+    case "ayer": return { from:addDays(today,-1), toDay:addDays(today,-1) };
+    case "7d": return { from:addDays(today,-6), toDay:today };
+    case "14d": return { from:addDays(today,-13), toDay:today };
+    case "28d": return { from:addDays(today,-27), toDay:today };
+    case "30d": return { from:addDays(today,-29), toDay:today };
+    case "estaSemana":{ const dow=(today.getDay()+6)%7; return { from:addDays(today,-dow), toDay:today }; }
+    case "semanaPasada":{ const dow=(today.getDay()+6)%7; const lun=addDays(today,-dow); return { from:addDays(lun,-7), toDay:addDays(lun,-1) }; }
+    case "esteMes": return { from:new Date(today.getFullYear(),today.getMonth(),1), toDay:today };
+    case "mesPasado":{ const f=new Date(today.getFullYear(),today.getMonth()-1,1); const t=addDays(new Date(today.getFullYear(),today.getMonth(),1),-1); return { from:f, toDay:t }; }
+    case "maximo": return { from:new Date(2020,0,1), toDay:today };
+    default: return null;
+  }
+}
+// Resuelve un objeto {preset,from,to} a {from, toDay} (días inclusivos).
+function resolveRange(o){
+  const p=presetRango(o.preset);
+  if(p) return p;
+  const today=hoyNegocio();
+  let f=startOfDay(o.from||today), t=startOfDay(o.to||o.from||today);
+  if(f>t){ const x=f; f=t; t=x; }
+  return { from:f, toDay:t };
+}
+// Contrato para load()/renderSales: from (inicio), to (EXCLUSIVO), toDay (último día inclusivo).
+function computeRange(){
+  const { from, toDay }=resolveRange(range);
+  return { from, to:addDays(toDay,1), toDay, label: range.preset ? PRESET_LABEL[range.preset] : fmtRangoCorto(from,toDay) };
+}
+const cap=(s)=>s.charAt(0).toUpperCase()+s.slice(1);
+function fmtRangoCorto(a,b){ const s=`${a.getDate()} ${MES_ABBR[a.getMonth()]}`, e=`${b.getDate()} ${MES_ABBR[b.getMonth()]}`; return s===e?s:`${s} – ${e}`; }
+function fmtFechaLarga(d){ return `${d.getDate()} ${MES_ABBR[d.getMonth()]} ${d.getFullYear()}`; }
+
+function openPop(){
+  const { from, toDay }=resolveRange(range);
+  dfDraft={ preset:range.preset, from, to:toDay, picking:false, cal:new Date(from.getFullYear(),from.getMonth(),1) };
+  $("dfPop").classList.add("open");
+  renderDatePop();
+}
+function closePop(){ $("dfPop")?.classList.remove("open"); dfDraft=null; }
+function applyRange(){ const r=computeRange(); $("dfLabel").textContent=r.label; load(); }
+function onDocClickDF(e){ if(!e.target.closest(".datefilter")) closePop(); }
+
+function renderMonth(y,m,fT,tT,navL,navR){
+  const startDow=(new Date(y,m,1).getDay()+6)%7;   // lunes=0
+  const daysIn=new Date(y,m+1,0).getDate(), prevDays=new Date(y,m,0).getDate();
+  const cell=(dd,mm,out)=>{
+    const dt=new Date(y,mm,dd), g=dt.getTime();
+    let cls="dfp-day"+(out?" out":"");
+    if(g===fT&&g===tT) cls+=" single";
+    else if(g===fT) cls+=" end1";
+    else if(g===tT) cls+=" end2";
+    else if(g>fT&&g<tT) cls+=" inrange";
+    return `<button class="${cls}" data-d="${ymd(dt)}">${dd}</button>`;
+  };
+  let cells=DOW.map(d=>`<div class="dfp-dow">${d}</div>`).join("");
+  for(let i=0;i<startDow;i++) cells+=cell(prevDays-startDow+1+i, m-1, true);
+  for(let dd=1;dd<=daysIn;dd++) cells+=cell(dd, m, false);
+  const trail=(7-((startDow+daysIn)%7))%7;
+  for(let i=1;i<=trail;i++) cells+=cell(i, m+1, true);
+  const nav=(navL?`<span class="dfp-nav prev">‹</span>`:"")+(navR?`<span class="dfp-nav next">›</span>`:"");
+  return `<div class="dfp-mo"><div class="dfp-mo-h">${nav}${cap(MESES[m])} ${y}</div><div class="dfp-grid">${cells}</div></div>`;
+}
+function renderDatePop(){
+  const pop=$("dfPop"); if(!dfDraft) return;
+  const { from, toDay }=resolveRange(dfDraft);
+  const fT=from.getTime(), tT=toDay.getTime();
+  const cal=dfDraft.cal, c2=new Date(cal.getFullYear(),cal.getMonth()+1,1);
+  const presets=PRESETS.map(([v,l])=>`<button data-p="${v}" class="${dfDraft.preset===v?'on':''}"><span class="rd"></span>${l}</button>`).join("");
+  const rt = fT===tT ? fmtFechaLarga(from) : `${fmtFechaLarga(from)} – ${fmtFechaLarga(toDay)}`;
+  pop.innerHTML=`
+    <div class="dfp-body">
+      <div class="dfp-presets">${presets}</div>
+      <div class="dfp-cal"><div class="dfp-months">
+        ${renderMonth(cal.getFullYear(),cal.getMonth(),fT,tT,true,false)}
+        ${renderMonth(c2.getFullYear(),c2.getMonth(),fT,tT,false,true)}
+      </div></div>
+    </div>
+    <div class="dfp-foot">
+      <div class="dfp-rt">${rt}<small>Las fechas se muestran en la hora de ${esc(tzNombre())}</small></div>
+      <button class="dfp-btn" id="dfCancel">Cancelar</button>
+      <button class="dfp-btn pri" id="dfApply">Actualizar</button>
+    </div>`;
+  pop.querySelectorAll(".dfp-presets button").forEach(b=> b.onclick=()=>{
+    const r=presetRango(b.dataset.p);
+    dfDraft.preset=b.dataset.p; dfDraft.from=r.from; dfDraft.to=r.toDay; dfDraft.picking=false;
+    dfDraft.cal=new Date(r.from.getFullYear(),r.from.getMonth(),1);
+    renderDatePop();
+  });
+  pop.querySelectorAll(".dfp-nav").forEach(b=> b.onclick=()=>{
+    const delta=b.classList.contains("next")?1:-1;
+    dfDraft.cal=new Date(cal.getFullYear(),cal.getMonth()+delta,1); renderDatePop();
+  });
+  pop.querySelectorAll(".dfp-day[data-d]").forEach(b=> b.onclick=()=>onDayClick(b.dataset.d));
+  $("dfCancel").onclick=closePop;
+  $("dfApply").onclick=()=>{ range.preset=dfDraft.preset; range.from=dfDraft.from; range.to=dfDraft.to; closePop(); applyRange(); };
+}
+function onDayClick(s){
+  const d=startOfDay(new Date(s+"T00:00:00"));
+  if(!dfDraft.picking){                      // primer clic → arranca un rango nuevo
+    dfDraft.preset=null; dfDraft.from=d; dfDraft.to=d; dfDraft.picking=true;
+  } else {                                    // segundo clic → fija el fin (ordena)
+    let a=dfDraft.from, b=d; if(b<a){ const x=a; a=b; b=x; }
+    dfDraft.preset=null; dfDraft.from=a; dfDraft.to=b; dfDraft.picking=false;
+  }
+  renderDatePop();
+}
+
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  const shell=await mountShell({ active:"dashboard" });
+  AV = await avPermitido();
+  document.addEventListener("click",onDocClickDF);
+  // Al salir, además de quitar el listener, se invalida `channelId`: un load() en vuelo que
+  // termine después ve `cid!==channelId` y no pinta sobre la sección nueva.
+  shell.onLeave?.(()=>{ document.removeEventListener("click",onDocClickDF); channelId=null; });
+  channelId=shell.channelId;
+  const c=shell.channels.find(x=>x.id===channelId);
+  $("ndTitle").textContent="Hola, "+(c?c.nombre:"tu bot");
+  // La Bitácora se quedaba con el calendario del bot anterior al cambiar de bot (solo se
+  // repintaba al tocar el toggle o las flechas de mes).
+  shell.onChannel(id=>{ channelId=id; const cc=shell.channels.find(x=>x.id===id); $("ndTitle").textContent="Hola, "+(cc?cc.nombre:"tu bot"); load(); renderBitacora(); });
+  // Asesor IA flotante: el FAB lo abre; el ✕ del panel lo minimiza.
+  // Se mueve al <body> porque .nodo-wrap tiene un transform (animación de
+  // entrada) que atraparía el position:fixed y lo pegaría al fondo del documento.
+  const flo=$("aiFloat"); if(flo && flo.parentElement!==document.body) document.body.appendChild(flo);
+  const fab=$("aiFab"); if(fab) fab.onclick=()=>$("aiFloat")?.classList.remove("collapsed");
+  $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{
+    tipo=b.dataset.t;
+    $("tipoSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+    load(); renderBitacora();   // (la Bitácora también filtra por tipo)
+  });
+  $("dfBtn").onclick=(e)=>{ e.stopPropagation(); if($("dfPop").classList.contains("open")) closePop(); else openPop(); };
+  // Los clics DENTRO del picker no deben llegar al detector de "clic afuera":
+  // al re-dibujarse, el elemento tocado queda desprendido del DOM y closest()
+  // daría null → se cerraría solo. Frenar la propagación en el contenedor
+  // (que sí persiste entre re-render) lo evita de raíz.
+  $("dfPop").addEventListener("click", (e)=> e.stopPropagation());
+  $("addExpBtn").onclick=toggleExpForm;
+  // Gráfico · Calendario (un solo bloque — Rodrigo, 10-oct)
+  $("bitaSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{
+    $("bitaSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
+    $("bitaChart").hidden = b.dataset.b!=="chart"; $("bitaCalWrap").hidden = b.dataset.b!=="cal";
+  });
+  $("bitaPrev").onclick=()=>{ bitaMonth=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()-1,1); renderBitacora(); };
+  $("bitaNext").onclick=()=>{ bitaMonth=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()+1,1); renderBitacora(); };
+  renderDatePop();
+  load();
+  renderBitacora();
+}
+
+function kpi(icon, color, label, value, sub){
+  return `<div class="kpi"><div class="h"><span class="ic" style="background:${color}22;color:${color}">${IC[icon]}</span>${esc(label)}</div>
+    <div class="v">${value}</div>${sub?`<div class="d">${esc(sub)}</div>`:""}</div>`;
+}
+
+// ── Primeros pasos (onboarding) ─────────────────────────────────────
+// Checklist de puesta en marcha: guía a un dueño nuevo en el ORDEN de config
+// (Negocio → Producto → Flujo → IA → WhatsApp), que antes no estaba en ningún
+// lado. Cubre además el aviso de "falta API key de IA" (paso IA). Todas las
+// señales son legibles por el panel (columnas de channels + conteos). Se oculta
+// solo cuando está TODO listo, o si el dueño lo descarta (por canal).
+async function renderOnboarding(cid){
+  const box=$("onbPanel"); if(!box || !cid) return;
+  if(localStorage.getItem("nodo.onb.done."+cid)==="1"){ box.innerHTML=""; return; }
+  const [ch, prod, ai, flows] = await Promise.all([
+    supa.from("channels").select("negocio,phone_number_id").eq("id",cid).maybeSingle(),
+    supa.from("products").select("id",{count:"exact",head:true}).eq("channel_id",cid),
+    supa.from("channel_ai").select("provider",{count:"exact",head:true}).eq("channel_id",cid),
+    supa.from("flows").select("id",{count:"exact",head:true}).eq("channel_id",cid).eq("estado","activo"),
+  ]);
+  const cd=ch.data||{};
+  const pasos=[
+    { ok:!!(cd.negocio&&String(cd.negocio).trim()), t:"Cuéntale a la IA de tu negocio", h:"negocio.html", d:"Qué vendes, a quién, cómo hablas" },
+    { ok:(prod.count||0)>0, t:"Crea tu primer producto", h:"productos.html", d:"Con su precio, entrega y presentaciones" },
+    // 🔐 Sin «Avanzado» el editor de flujos no existe para esta cuenta: el paso se cumple
+    // igual (el flujo lo genera el producto), así que el atajo lleva a Productos.
+    { ok:(flows.count||0)>0, t:"Activa un flujo de venta", h:AV?"editor.html":"productos.html", d:"La conversación que vende ese producto" },
+    { ok:(ai.count||0)>0, t:"Conecta la IA (API key)", h:"ia.html", d:"Sin esto el vendedor IA no puede responder" },
+    { ok:!!cd.phone_number_id, t:"Conecta tu WhatsApp", h:"canales.html", d:"El último paso para salir a clientes reales" },
+  ];
+  const hechos=pasos.filter(p=>p.ok).length;
+  if(hechos===pasos.length){ localStorage.setItem("nodo.onb.done."+cid,"1"); box.innerHTML=""; return; }
+  const pct=Math.round(hechos/pasos.length*100);
+  box.innerHTML=`<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 18px 14px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:4px">
+      <div style="font-weight:800;font-size:15px">Primeros pasos <span style="color:var(--faint);font-weight:600;font-size:13px">· ${hechos} de ${pasos.length}</span></div>
+      <button id="onbSkip" style="background:none;border:none;color:var(--faint);font-size:12px;cursor:pointer">Ocultar</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px">Deja tu bot listo para vender. Puedes hacerlos en cualquier orden.</div>
+    <div style="height:6px;background:var(--surface-2);border-radius:99px;overflow:hidden;margin-bottom:14px"><span style="display:block;height:100%;width:${pct}%;background:linear-gradient(90deg,#a855f7,#ec4899);transition:width .4s"></span></div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${pasos.map(p=>`<a href="${p.h}" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:11px;text-decoration:none;background:${p.ok?"transparent":"var(--surface-2)"};border:1px solid ${p.ok?"transparent":"var(--border)"}">
+        <span style="flex:0 0 auto;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;${p.ok?"background:#22c07922;color:#22c079":"background:var(--surface);border:1.5px solid var(--border);color:var(--faint)"}">${p.ok?icon("check"):""}</span>
+        <span style="flex:1;min-width:0">
+          <span style="display:block;font-weight:700;font-size:13.5px;color:${p.ok?"var(--faint)":"var(--text)"};${p.ok?"text-decoration:line-through":""}">${esc(p.t)}</span>
+          <span style="display:block;font-size:11.5px;color:var(--faint)">${esc(p.d)}</span>
+        </span>
+        ${p.ok?"":`<span style="flex:0 0 auto;color:var(--brand);font-size:12px;font-weight:700">Ir →</span>`}
+      </a>`).join("")}
+    </div>
+  </div>`;
+  const skip=$("onbSkip"); if(skip) skip.onclick=()=>{ localStorage.setItem("nodo.onb.done."+cid,"1"); box.innerHTML=""; };
+}
+
+async function load(){
+  const cid=channelId; // anti-carrera: si cambias de bot a media carga, esta se descarta
+  await loadCurrency();
+  const r=computeRange();
+  // Los días elegidos → instantes en la zona del NEGOCIO (no medianoche del navegador).
+  const fromISO=startOfDayTZ(r.from).toISOString(), toISO=new Date(endOfDayTZ(r.toDay).getTime()+1).toISOString();
+  // Live totals + eventos + órdenes en paralelo.
+  // El RPC dashboard_stats cuenta el contacto de prueba (webchat-test); la
+  // sección Contactos lo excluye, así que los dos números no cuadraban. Se
+  // corrige acá con el mismo criterio (no se toca el RPC: la Management API no
+  // deja reemplazar funciones a mano). head:true trae solo el count, sin filas.
+  //
+  // Va DENTRO del Promise.all a propósito. Antes se lanzaba suelto y parcheaba
+  // el DOM en un .then(): si el count llegaba antes de que el KPI existiera, el
+  // `if(el)` no encontraba nada y se perdía sin decir nada. Salía bien o mal
+  // según quién ganara la carrera — y el día que se probó, ganó el bueno.
+  const [stats, evR, ordR, prodR, contR, insR, expR, flowR, wsR, admR, iaR] = await Promise.all([
+    supa.rpc("dashboard_stats",{ p_channel_id:channelId }),
+    // Solo se usa para CONTAR los Lead. Traer las filas era doblemente malo: PostgREST
+    // corta en 1000 y, sin .order(), esas 1000 son arbitrarias — el KPI no se quedaba
+    // "corto pero estable", salía caprichoso (podía decir 300 con 900 reales). Se cuenta
+    // en la base con head:true: exacto, sin tope y sin traer una sola fila.
+    supa.from("capi_events").select("id",{count:"exact",head:true}).eq("channel_id",channelId).eq("event_name","Lead").eq("estado","enviado").gte("created_at",fromISO).lt("created_at",toISO),
+    // PAGINADO, no una sola request: PostgREST corta en 1000 filas y no avisa. Un rango con
+    // más de 1000 pedidos dejaba TODOS los KPIs cortos (ventas, ganancia, ROAS, ROI) sin que
+    // nada lo dijera. `ads_insights` es peor todavía: es una fila por anuncio Y por día, así
+    // que 15 anuncios × 90 días ya pasa el tope → el gasto salía corto y el ROAS inflado.
+    // Mismo arreglo que ya llevaban Compras y Embudo. Orden estable (fecha + id) para no
+    // repetir ni saltarse filas entre páginas.
+    pageAll((f,t)=>supa.from("orders").select("contact_id,product_id,version_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    supa.from("products").select("id,nombre,clase,tipo,config,product_versions(id,nombre,cantidad)").eq("channel_id",channelId),
+    supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId).neq("wa_id","webchat-test"),
+    pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.toDay)).order("fecha",{ascending:false}).order("ad_id",{ascending:false}).range(f,t)),
+    pageAll((f,t)=>supa.from("manual_expenses").select("id,fecha,monto,descripcion,categoria").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.toDay)).order("fecha",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    supa.from("flows").select("product_id,role,estado").eq("channel_id",channelId),
+    // El RPC dashboard_stats cuenta el contacto de prueba (webchat-test) también
+    // en por_stage, así que el embudo del Dashboard daba 1 de más que la sección
+    // Embudo (que lo excluye). Traemos su etapa para descontarlo del mismo bucket.
+    // TODOS los contactos de prueba: el de Probar flujos (webchat-test) y los del simulador
+    // (source = 'sim', cualquier wa_id). Antes solo se descontaba el primero y los pedidos de
+    // una tanda de simulaciones contaban como plata real (el Embudo y el RPC ya los excluyen).
+    // 🔢 PAGINADO, y no es un detalle: esta es la lista de a quién NO contar. Una tanda de
+    // simulaciones deja cientos de contactos 'sim' (y «Probar flujos» va sumando), así que
+    // pasar de 1000 es normal — y truncada, los que quedan fuera de la lista vuelven a contar
+    // como plata real. El corte de PostgREST hacía fallar justo la defensa que evita eso.
+    pageAll((f,t)=>supa.from("contacts").select("id,stage").eq("channel_id",channelId).or("wa_id.eq.webchat-test,source.eq.sim").order("id",{ascending:true}).range(f,t)),
+    supa.from("ads_meta").select("account_currency").eq("channel_id",channelId),
+    // Lo que costó la IA en el periodo. Viene acumulado por día (ai_usage), siempre
+    // en dólares —que es como lo factura el proveedor— y se convierte más abajo.
+    // Paginado: ai_usage tiene una fila por (día, proveedor, modelo, origen) ≈ 20/día; con
+    // «Máximo» sobre meses de uso pasaba de 1000 y el costo de IA salía corto (ganancia inflada).
+    pageAll((f,t)=>supa.from("ai_usage").select("dia,costo_usd").eq("channel_id",channelId).gte("dia",ymd(r.from)).lte("dia",ymd(r.toDay)).order("dia",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+  ]);
+  if(cid!==channelId) return; // cambiaste de bot mientras cargaba → no pintes los números del anterior
+  // Los pedidos del contacto de PRUEBA (Probar flujos) contaban como plata real: «Ventas
+  // confirmadas: 1 · S/129» por una venta que no existe (el Embudo, que sí excluye al contacto,
+  // decía 0 → las dos pantallas se contradecían).
+  const pruebaIds=new Set(((wsR&&!wsR.error&&wsR.data)||[]).map(c=>c.id));
+  if(!ordR.error && pruebaIds.size) ordR.data=(ordR.data||[]).filter(o=>!pruebaIds.has(o.contact_id));
+  // Pedidos en OTRA moneda (el negocio cambió de moneda en Ajustes y los pedidos viejos
+  // conservan la suya): se sumaban como si fueran de la actual → S/ y US$ mezclados en un
+  // mismo total. Quedan FUERA de estos números (no hay cómo convertirlos sin inventar una
+  // tasa) y se avisa cuántos son y cuánto suman; Compras y Pedidos los muestran por moneda.
+  const otrasMonedas=apartarOtrasMonedas(ordR);
+  const s=stats.data||{};
+  // `contactos` y `por_stage` vienen del RPC ya SIN los contactos de prueba (migración 0099):
+  // pisarlos con un conteo propio que solo excluía a webchat-test los volvía a contar, y
+  // restar 1 «a mano» de la etapa del contacto de prueba restaba de más.
+  const porStage={...(s.por_stage||{})};
+  let leadsCount=(evR&&!evR.error&&typeof evR.count==="number")?evR.count:0;
+  // Los Lead de los contactos de prueba tampoco cuentan (mismo criterio que los pedidos).
+  if(leadsCount>0 && pruebaIds.size){
+    try{
+      // Por trozos de 300: con cientos de ids el `.in()` pasa el largo de URL y el servidor da
+      // 400 (sin mirar el error, se quedaba el conteo sin descontar los de prueba).
+      const ids=[...pruebaIds]; let cPrueba=0, ok=true;
+      for(let i=0;i<ids.length;i+=300){
+        const { count, error }=await supa.from("capi_events").select("id",{count:"exact",head:true}).eq("channel_id",channelId).eq("event_name","Lead").eq("estado","enviado").gte("created_at",fromISO).lt("created_at",toISO).in("contact_id",ids.slice(i,i+300));
+        if(error||typeof count!=="number"){ ok=false; break; } cPrueba+=count;
+      }
+      if(ok) leadsCount=Math.max(0, leadsCount-cPrueba);
+    }catch(_){ /* se queda el conteo bruto */ }
+    if(cid!==channelId) return;
+  }
+  // Ventas CERRADAS del periodo (no "solo las digitales", que era el bug: se
+  // filtraba estado==="confirmada" y las de Lima nacen como "confirmado").
+  const prods=prodR.error?[]:(prodR.data||[]);
+  const ordersUnavailable = !!ordR.error;
+  // Digital y físico son dos negocios distintos: en digital no existe la
+  // logística y sus KPIs quedarían en cero para siempre (puro ruido).
+  const delTipo=(o)=> tipo==="todo" || claseDe(o)===tipo;
+  const todas=(ordR.error?[]:(ordR.data||[])).filter(delTipo);
+  const orders=todas.filter(O.esVenta);
+  // Ventas CERRADAS de verdad: rechazado (Lima) y no_recogido (provincia) son venta+perdido
+  // a la vez → NO deben contar como "Ventas confirmadas" ni sumar a los ingresos/ticket (antes
+  // el mismo pedido salía en "Ventas confirmadas" Y en "Perdidos", y su valor completo inflaba
+  // el vendido). Se usan para las métricas de éxito; los conteos de dinero real (cobrado/por
+  // cobrar) siguen sobre `orders` porque un adelanto ya cobrado es plata en mano.
+  const ventasOk=orders.filter(o=>!O.esPerdido(o));
+  // Costo de la mercadería: el del producto es por unidad, así que hay que saber
+  // cuántas trae la opción que compró.
+  const prodPorId={}, cantPorVersion={};
+  prods.forEach(p=>{ prodPorId[p.id]=p; TIPO_PROD[p.id]=p.tipo; (p.product_versions||[]).forEach(v=>{ cantPorVersion[v.id]=v.cantidad??1; }); });
+
+  // Dinero: lo COBRADO de verdad vs lo comprometido que falta entrar. El
+  // adelanto de provincia cuenta como cobro parcial (ver orders.js).
+  let cobrado=0, porCobrar=0, ingBump=0, bumpUnits=0;
+  const bumpMap={};
+  // Dinero COBRADO/POR COBRAR: sobre `orders` (incluye perdidos) — el adelanto ya
+  // cobrado de un no_recogido es plata en mano, real.
+  orders.forEach(o=>{ cobrado+=O.cobrado(o); porCobrar+=O.porCobrar(o); });
+  // "Ventas extra": solo de ventas NO perdidas (un extra de un pedido rechazado/
+  // no_recogido nunca se cobró → no debe inflar el conteo ni los ingresos de extras).
+  ventasOk.forEach(o=>{
+    // Los REGALOS también viven en order_bumps (a precio 0), así que contarlos acá
+    // inflaba "Ventas extra": con 14 gorras de regalo y 3 extras vendidos, el KPI
+    // decía 16 ventas extra (el ingreso sí era correcto). Un regalo no es una venta.
+    (o.order_bumps||[]).forEach(b=>{ const p=Number(b.precio||0);
+      if(b.regalo || p<=0) return;
+      ingBump+=p; bumpUnits++;
+      const k=b.nombre||"Venta extra"; if(!bumpMap[k]) bumpMap[k]={n:0,ing:0}; bumpMap[k].n++; bumpMap[k].ing+=p; });
+  });
+  const vendido=ventasOk.reduce((a,o)=>a+O.total(o),0);
+  const vueltoTotal=ventasOk.reduce((a,o)=>a+(Number((o.shipping||{}).vuelto)||0),0);
+  const compras=ventasOk.length;
+  // Cuántas de esas ventas ya están COBRADAS al 100% (lo que Compras y el Embudo
+  // llaman "cerradas"). Es el puente entre las tres pantallas.
+  const cobradasFull=ventasOk.filter(O.esCerrado).length;
+  const ticket=compras?vendido/compras:0;
+  const leads=leadsCount;
+  // "En la calle" es lo ya despachado sin cobrar: va como DESGLOSE de Por cobrar,
+  // no como KPI aparte — está dentro de él y dos números que se solapan sin
+  // decirlo confunden.
+  const calle=orders.filter(O.enLaCalle).reduce((a,o)=>a+O.porCobrar(o),0);
+  const espAdel=todas.filter(o=>o.estado==="esperando_adelanto");
+  // (el conteo de perdidos se hace más abajo sobre `todas`, para incluir las
+  // anulaciones/cancelaciones que `orders` deja fuera por no ser `venta:true`)
+
+  // ── Banda de rentabilidad: cuánto GANASTE de verdad (con el gasto de Meta) ──
+  // Sin el gasto de cuentas publicitarias ya quitadas de este bot (ver adsDeCuentasQuitadas).
+  const _adsFuera = await adsDeCuentasQuitadas(channelId);
+  const ins = (insR.error ? [] : (insR.data||[])).filter(i=>!_adsFuera.has(String(i.ad_id)));
+  const hasAds = ins.length>0;
+  // Mapa ad_id → tipo (dominante) desde TODOS los pedidos con ad_id del rango,
+  // para atribuir el gasto por tipo cuando el filtro Digital/Físico está activo.
+  // Tipo DOMINANTE por anuncio (no el "primero visto"): un anuncio que trae 1 digital
+  // y 5 físicos es físico. Antes ganaba el primer pedido iterado (orden arbitrario, sin
+  // ORDER BY) → en la vista Físico/Digital el gasto de ese anuncio caía en el tipo
+  // equivocado y la ganancia neta / ROAS de ese segmento salían mal.
+  const adCnt={};
+  (ordR.error?[]:(ordR.data||[])).forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(!a) return; (adCnt[a]||(adCnt[a]={fisico:0,digital:0,microapp:0}))[claseDe(o)]++; });
+  const adTipo={};
+  Object.keys(adCnt).forEach(a=>{ const c=adCnt[a]; adTipo[a]=c.microapp>Math.max(c.fisico,c.digital)?"microapp":(c.fisico>=c.digital?"fisico":"digital"); });
+  // Un anuncio SIN ventas en el rango no tenía tipo → su gasto no caía ni en Físico ni en Digital
+  // (Físico + Digital ≠ Todo) y el ROAS de cada vista salía inflado justo por el anuncio que habría
+  // que apagar. Se toma el tipo del producto al que está vinculado (ángulos del banco de anuncios).
+  if(tipo!=="todo"){
+    try{
+      const { data:angs }=await supa.from("angulos").select("ad_ids, product:product_id(tipo)").eq("channel_id",cid);
+      (angs||[]).forEach(g=>{ const t=g.product&&g.product.tipo==="fisico"?"fisico":g.product&&g.product.tipo==="microapp"?"microapp":(g.product?"digital":null); if(!t) return;
+        (g.ad_ids||[]).forEach(a=>{ if(!adTipo[String(a)]) adTipo[String(a)]=t; }); });
+    }catch(_){ /* sin ángulos → como antes */ }
+  }
+  // ⚠ Moneda: el gasto de Meta viene en la moneda de la CUENTA de ads, que puede no ser
+  // la del negocio. Sin convertir, neta/ROAS/%ads salen inflados (~3.75× con USD/PEN).
+  // Ahora se convierte cuando se puede y se sigue avisando cuando no (ver factorAds).
+  const _admRows = admR.error ? [] : (admR.data||[]);
+  const _ads = factorAds(_admRows, CUR, USD_RATE);
+  let gastoAds=0;
+  ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo) gastoAds+=Number(i.gasto||0)*_ads.factor; });
+  const monedaAdsRara = gastoAds>0 && !!_ads.aviso;
+  const avisoAds = _ads.aviso;
+  // Ganancia BRUTA del negocio (respeta el tipo): digital = cobrado (sin COGS);
+  // físico = margen (los que tienen costo registrado).
+  // `cogsBruta` = lo que COSTÓ producir/entregar exactamente los pedidos que sí
+  // entraron en `bruta` (mercadería + flete + empaque). Se acumula acá, y no con el
+  // total de "Costo de productos", para que ganancia e inversión hablen del MISMO
+  // universo: un físico sin flete no aporta margen, así que tampoco debe aportar
+  // costo — si no, el ROI mezclaría el costo de 13 pedidos con la ganancia de 3.
+  // `conMargen` = cuántas ventas SÍ pudieron calcular su ganancia. Si son cero y hay
+  // pedidos sin costo, la ganancia no es CERO: es DESCONOCIDA, y mostrar "S/ 0.00" es
+  // afirmar algo falso ("tu negocio físico no gana nada") cuando lo cierto es que
+  // falta un dato. Mismo criterio que ya se aplicó a "Rendimiento por producto".
+  let bruta=0, sinCostoF=0, sinFlete=0, sinCogs=0, cogsBruta=0, conMargen=0, porCobrarN=0;
+  // Ganancia sobre ventasOk (SIN perdidos): un rechazado/no_recogido resta su COGS
+  // como si la mercadería se hubiera perdido, pero el paquete VUELVE (solo se pierde
+  // el flete). El digest (order-stats.ts:131) ya excluye perdidos de la ganancia; el
+  // Dashboard debe hacer lo mismo o reportan ganancias distintas para el mismo periodo.
+  ventasOk.forEach(o=>{
+    if(!O.esFisico(o)){
+      // Digital = cobrado MENOS su costo si lo tiene (sin costo → solo cobrado).
+      // Antes sumaba solo cobrado y el costo digital salía en el COGS pero nunca
+      // se restaba → la neta quedaba inflada.
+      const cd=O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
+      bruta+=O.cobrado(o)-(cd||0); cogsBruta+=(cd||0); conMargen++; return;
+    }
+    // Todavía NO se cobró todo (Lima confirmado, provincia con solo el adelanto): su ganancia no
+    // existe aún. Antes caía como «falta el flete» y mandaba a registrar un flete que ya estaba.
+    if(O.cobrado(o) < O.total(o) - 0.009){ porCobrarN++; return; }
+    const m=O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
+    // cobrado − margen = todo lo que costó ese pedido (mercadería + flete + empaque),
+    // sin volver a sumarlo pieza por pieza.
+    if(m==null){
+      // "Faltan N costos" no decía QUÉ falta ni dónde ponerlo. Casi siempre es el
+      // FLETE (la mercadería viene del snapshot al crear el pedido), así que se
+      // separan los dos motivos para poder nombrarlos.
+      sinCostoF++;
+      if(O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1)==null) sinCogs++; else sinFlete++;
+    } else { bruta+=m; cogsBruta+=O.cobrado(o)-m; conMargen++; }
+  });
+  // El FLETE de los perdidos (rechazado / no recogido): el paquete fue y volvió, ese envío se pagó
+  // igual. No se restaba en ningún lado y la ganancia salía de más (el digest ya lo resta igual).
+  const fletePerdidos=orders.filter(O.esPerdido).reduce((a,o)=>a+(O.flete(o)||0),0);
+  if(fletePerdidos>0){ bruta-=fletePerdidos; cogsBruta+=fletePerdidos; }
+  // …y lo que SÍ se cobró de un perdido se queda: el adelanto de un no_recogido es el seguro del
+  // flete (decisión de Rodrigo 30-sep). Restar el flete sin sumar el adelanto bajaba la ganancia
+  // S/15 en vez de subirla S/5 (adelanto 20, flete 15). Rechazado y cancelado cobran 0. Mismo
+  // criterio que el resumen de Telegram (order-stats.ts).
+  const cobradoPerdidos=orders.filter(O.esPerdido).reduce((a,o)=>a+O.cobrado(o),0);
+  if(cobradoPerdidos>0) bruta+=cobradoPerdidos;
+  // Ninguna venta pudo calcular su ganancia → el número no existe, no es cero.
+  const brutaDesconocida = conMargen===0 && sinCostoF>0;
+  // Texto compartido por el KPI y la banda: dice qué falta exactamente.
+  const _faltaCostos = !sinCostoF ? ""
+    : sinFlete && !sinCogs ? `falta el flete de ${sinFlete} pedido${sinFlete>1?"s":""}`
+    : sinCogs && !sinFlete ? `falta el costo de mercadería de ${sinCogs} pedido${sinCogs>1?"s":""}`
+    : `faltan costos en ${sinCostoF} pedidos`;
+  // Los que faltan COBRAR: el gasto de anuncios ya se restó entero, así que la neta sale más baja
+  // de lo que será. Se dice, en vez de dejar un «−S/250» sin explicación.
+  const faltaTxt = [_faltaCostos, porCobrarN ? `${porCobrarN} pedido${porCobrarN>1?"s":""} aún por cobrar (su ganancia entra al cobrarse)` : ""].filter(Boolean).join(" · ");
+  // Gastos extra (operativos, registrados a mano). Son overhead del negocio,
+  // así que solo se restan en la vista general ("Todo"), no por segmento.
+  const expenses = expR.error ? [] : (expR.data||[]);
+  const gastosExtra = tipo==="todo" ? expenses.reduce((a,e)=>a+Number(e.monto||0),0) : 0;
+  // ── Lo que costó la IA en el periodo ──────────────────────────────
+  // Es un costo operativo como cualquier otro: si no se resta, la "ganancia real"
+  // no es real. Se guarda en dólares (así lo factura el proveedor) y solo entra a
+  // la cuenta si hay tipo de cambio configurado — convertir con una tasa inventada
+  // sería peor que no convertir. Sin tasa se sigue viendo, aparte y en su moneda.
+  // Como los gastos extra, es overhead del negocio: no se reparte por segmento.
+  const iaUsd = (iaR&&!iaR.error?(iaR.data||[]):[]).reduce((a,x)=>a+Number(x.costo_usd||0),0);
+  const gastoIa = (tipo==="todo" && USD_RATE>0) ? iaUsd*USD_RATE : 0;
+  const iaSinConvertir = tipo==="todo" && USD_RATE<=0 && iaUsd>0;
+  const neta = bruta - gastoAds - gastosExtra - gastoIa;
+  const roas = gastoAds>0 ? cobrado/gastoAds : 0;
+  const pctAds = cobrado>0 ? Math.round(gastoAds/cobrado*100) : 0;
+  // ROI ≠ ROAS. El ROAS mide FACTURACIÓN por sol de ANUNCIOS; el ROI mide GANANCIA
+  // por sol invertido en TODO. La inversión no son solo los anuncios: la mercadería,
+  // el flete y el empaque también son plata que pusiste, y suelen ser la mayor parte.
+  // (Primera versión de esto solo dividía entre ads + gastos extra, lo que inflaba el
+  // ROI muchísimo: con S/665 de mercadería fuera de la cuenta, el número no significaba
+  // nada. Lo cazó Rodrigo.)
+  const inversion = cogsBruta + gastoAds + gastosExtra + gastoIa;
+  // Si la ganancia bruta NO se puede calcular (ninguna venta tiene sus costos), la neta
+  // tampoco, y el ROI menos: `neta` vale entonces 0 − gastos, o sea el ROI sale −100%
+  // ("perdiste todo lo que invertiste") cuando en realidad no se sabe. La neta ya
+  // muestra "—" en ese caso; el ROI tiene que hacer lo mismo.
+  // Se veía poco porque hacía falta tener ads o gastos extra registrados; al empezar a
+  // restar el costo de IA la inversión ya nunca es cero y el −100% salía siempre.
+  const roiPct = (inversion>0 && !brutaDesconocida) ? Math.round(neta/inversion*100) : null;
+
+  // Margen (ganancia bruta) por PRODUCTO + agregados DIARIOS para el gráfico.
+  // Mismo criterio que la banda: digital = cobrado (sin COGS), físico = margen.
+  const margenPorProd={}, dailyMargin={}, dailySpend={};
+  ventasOk.forEach(o=>{   // sin perdidos (mismo criterio que la banda de ganancia y el digest)
+    const k=ymdLima(o.created_at);
+    const m = !O.esFisico(o)
+      ? O.cobrado(o)-(O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1)||0)
+      : O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
+    if(m!=null){ const pid=o.product_id||"_none"; margenPorProd[pid]=(margenPorProd[pid]||0)+m; dailyMargin[k]=(dailyMargin[k]||0)+m; }
+  });
+  ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo){ dailySpend[i.fecha]=(dailySpend[i.fecha]||0)+Number(i.gasto||0)*_ads.factor; } });
+  const dailyExpense={};
+  if(tipo==="todo") expenses.forEach(e=>{ dailyExpense[e.fecha]=(dailyExpense[e.fecha]||0)+Number(e.monto||0); });
+  // La IA y el flete de los perdidos también van al día: la banda de arriba los resta, y el
+  // resumen del gráfico («S/ X de ganancia neta en el periodo») no — dos «ganancia neta»
+  // distintas en la misma pantalla (margen 1000, flete perdidos 30, ads 300, IA 20 → 650 vs 700).
+  if(tipo==="todo" && USD_RATE>0) (iaR&&!iaR.error?(iaR.data||[]):[]).forEach(x=>{ dailyExpense[x.dia]=(dailyExpense[x.dia]||0)+Number(x.costo_usd||0)*USD_RATE; });
+  orders.filter(O.esPerdido).forEach(o=>{ const fl=O.flete(o)||0; if(fl>0){ const k=ymdLima(o.created_at); dailyExpense[k]=(dailyExpense[k]||0)+fl; } });
+  orders.filter(O.esPerdido).forEach(o=>{ const c=O.cobrado(o); if(c>0){ const k=ymdLima(o.created_at); dailyMargin[k]=(dailyMargin[k]||0)+c; } });   // el adelanto que se quedó
+
+  const K=[
+    kpi("money","#22c079","Cobrado", money(cobrado), `plata que ya entró, de ${money(vendido)} vendidos`),
+  ];
+  // "Por cobrar" solo existe en físico: en digital el cliente paga por adelantado
+  // —si no paga, no hay venta— así que sería S/ 0.00 para siempre. Mismo criterio
+  // que los KPIs de logística de abajo.
+  if(!["digital","microapp"].includes(tipo)){
+    K.push(kpi("clock","#f0a92b","Por cobrar", money(porCobrar),
+      calle?`te deben · ${money(calle)} ya va en camino`:"vendido, todavía sin pagar"));
+  }
+  K.push(
+    // "Cerrada" ya significa PAGADA AL 100% en Compras ("el cliente ya pagó todo") y
+    // en el Embudo ("cuántos terminas cerrando"). Acá se usaba para las CONFIRMADAS,
+    // así que la misma palabra daba dos números distintos en dos pantallas (13 vs 5) y
+    // parecía un error de cuentas. Este KPI son las confirmadas — se dice así, y se
+    // muestra cuántas ya se cobraron para que el puente con las otras pantallas se vea.
+    kpi("cart","#22c079","Ventas confirmadas", compras, "el cliente ya dijo que sí"),
+    // Las CERRADAS (cobradas al 100%) son su propio número: es el mismo criterio de
+    // Compras y del Embudo, así que tener las dos cifras juntas evita el "13 acá y 5
+    // allá" que parecía un descuadre. El resto está en curso, no perdido.
+    kpi("check","#22c079","Ventas cerradas", cobradasFull,
+      compras>cobradasFull
+        ? `cobradas al 100% · ${compras-cobradasFull} en curso`
+        : (cobradasFull?"cobradas al 100%":"ninguna cobrada del todo aún")),
+    // "cuánto DEJA cada venta" se lee como ganancia. Es el ingreso promedio: con
+    // ticket S/151.92 y margen real ~S/73, el texto prometía el doble de lo que deja.
+    kpi("ticket","#2b7fff","Ticket promedio", money(ticket), "cuánto vale cada venta, en promedio"),
+    kpi("bump","#f0a92b","Ventas extra", bumpUnits, `${money(ingBump)} en ingresos`),
+    kpi("lead","#2b7fff","Leads", leads, "eventos a Meta"),
+  );
+  // Costos de la mercadería y de los envíos (informativos; ya están restados
+  // dentro de la ganancia bruta). Se muestran para ver a dónde se va la plata.
+  let costoProdTotal=0, fleteTotal=0;
+  // OJO al universo: este costo cubre TODAS las ventas vivas (cobradas o no), mientras
+  // que la ganancia bruta solo suma los pedidos con margen calculable (un físico sin
+  // flete registrado no entra). Por eso "Cobrado − Costo de productos" NO da la bruta,
+  // y el subtítulo dice sobre cuántas ventas es, para no invitar a esa resta.
+  ventasOk.forEach(o=>{
+    const cp=O.costoProducto(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
+    if(cp!=null) costoProdTotal+=cp;
+    if(O.esFisico(o)){ const f=O.flete(o); if(f!=null) fleteTotal+=f; }
+  });
+  K.push(kpi("box","#f0a92b","Costo de productos", money(costoProdTotal), `mercadería de ${ventasOk.length} ${ventasOk.length===1?"venta":"ventas"} · cobradas o no`));
+  if(!["digital","microapp"].includes(tipo)) K.push(kpi("truck","#f0a92b","Gasto de envíos", money(fleteTotal), "fletes que registraste"));
+  // Ganancia como tarjetas KPI (además de la banda de arriba). Mismos números:
+  // bruta − anuncios − gastos extra = neta. Pedido de Rodrigo para tenerlas a la vista.
+  const brutaSub = ["digital","microapp"].includes(tipo) ? "ingresos digitales (sin costo)"
+    : (sinCostoF ? `tras mercadería y envío · ${faltaTxt}` : "tras mercadería y envío");
+  K.push(kpi("chart", brutaDesconocida?"#6d8ea0":"#22c079", "Ganancia bruta",
+    brutaDesconocida?"—":money(bruta),
+    brutaDesconocida?`no se puede calcular todavía · ${faltaTxt}`:brutaSub));
+  K.push(kpi("megaphone","#f0a92b","Gasto en anuncios", money(gastoAds),
+    (hasAds ? `${pctAds}% de lo cobrado` : "conecta Meta en Ajustes") + (monedaAdsRara?" · "+avisoAds:"")));
+  // ROAS con tarjeta propia (antes solo vivía como cola del texto de "Gasto en
+  // anuncios"). Es el número por el que se decide subir o bajar la inversión, así que
+  // merece verse solo. Sin gasto cargado NO se inventa un número: se dice qué falta.
+  // Va sobre lo COBRADO, no lo vendido: mide plata que entró contra plata que salió.
+  K.push(kpi("target", roas>=2?"#22c079":roas>0?"#f0a92b":"#6d8ea0", "ROAS",
+    (hasAds && roas>0) ? roas.toFixed(1)+"×" : "—",
+    !hasAds ? "conecta Meta para verlo"
+      : roas>0 ? `${money(cobrado)} cobrados por ${money(gastoAds)} de anuncios${monedaAdsRara?" · "+avisoAds:""}`
+      : "aún sin cobrar nada en este período"));
+  // 🎯 CPA REAL (8-oct, Rodrigo): cuánto te cuesta en anuncios cada venta COBRADA que vino de un anuncio. Mismo criterio
+  // que Rendimiento (ventas reales con shipping.ad_id, cobradas del todo) y el mismo color contra el CPA máximo — lo que
+  // deja en promedio cada una de esas ventas antes de pagar anuncios: pagar más que eso por venta es perder plata.
+  // Respeta el filtro Digital/Físico (el gasto y las ventas ya vienen filtrados).
+  {
+    const _vAd = ventasOk.filter(o => o.shipping && o.shipping.ad_id && (O.EST[o.estado]||{}).cobro==="todo");
+    const cpaReal = _vAd.length && gastoAds>0 ? gastoAds/_vAd.length : null;
+    let _mg=0, _sinMg=false;
+    _vAd.forEach(o=>{ const cant=cantPorVersion[o.version_id]??1;
+      const m = !O.esFisico(o) ? O.cobrado(o)-(O.costoProducto(o, prodPorId[o.product_id], cant)||0) : O.margen(o, prodPorId[o.product_id], cant);
+      if(m==null) _sinMg=true; else _mg+=m; });
+    const cpaMax = _vAd.length && !_sinMg ? _mg/_vAd.length : null;
+    const _col = cpaReal==null||cpaMax==null ? "#6d8ea0" : cpaMax<=0 ? "#e2564a" : cpaReal<=cpaMax*0.8 ? "#22c079" : cpaReal<=cpaMax ? "#f0a92b" : "#e2564a";
+    K.push(kpi("cart", _col, "CPA real",
+      cpaReal==null ? "—" : money(cpaReal),
+      !hasAds ? "conecta Meta para verlo"
+        : !_vAd.length ? (gastoAds>0 ? `gastaste ${money(gastoAds)} y ninguna venta de anuncio cobrada aún` : "sin gasto en este período")
+        : `cada venta cobrada de tus anuncios (${_vAd.length})` + (cpaMax!=null ? ` · máximo para no perder: ${money(cpaMax)}` : " · falta el costo o flete de alguna para saber tu máximo")));
+  }
+  // 💬 COSTO POR CHAT y POR INTERESADO (8-oct, Rodrigo): gasto de anuncios ÷ TOTAL de personas que llegaron por un anuncio
+  // en el periodo (primera vez que escribieron), y ÷ las que siguieron después de la palabra clave. División de totales, no
+  // promedio de anuncios (un anuncio chico con 1 chat inflaba el promedio). El primero mide al ANUNCIO (qué tan barato trae
+  // gente); el segundo, la CALIDAD de esa gente. Se llenan abajo, con dos conteos de contactos (ver «costosPorChat»).
+  // 💬 CHATS NUEVOS (8-oct, Rodrigo): todos los que escribieron por PRIMERA vez en el periodo (anuncio + orgánico), con el
+  // desglose. Se llena abajo junto con los costos (ver «chatsNuevos»).
+  // 📱 Micro apps: lo propio de una suscripción (vive en la base de Apps; se llena abajo sin frenar el tablero).
+  if(tipo==="microapp"){
+    K.push(`<div id="kpiMaIngreso">${kpi("wallet","#22c079","Ingreso mensual fijo","…","si todos los activos renuevan")}</div>`);
+    K.push(`<div id="kpiMaVencen">${kpi("alert","#f0a92b","Vencen esta semana","…","recibirán su recordatorio")}</div>`);
+    K.push(`<div id="kpiMaRenov">${kpi("repeat","#2b7fff","Renovaron","…","de los que llevan más de un mes")}</div>`);
+  }
+  K.push(`<div id="kpiChatsNuevos">${kpi("lead","#22c079","Chats nuevos","…","contando quién te escribió por primera vez")}</div>`);
+  if(hasAds){
+    K.push(`<div id="kpiCostoChat">${kpi("lead","#2b7fff","Costo por chat","…","contando los chats de tus anuncios")}</div>`);
+    K.push(`<div id="kpiCostoInteresado">${kpi("users","#9b6cf0","Costo por interesado","…","contando los que siguieron conversando")}</div>`);
+  }
+  // ROI al lado del ROAS a propósito: juntos cuentan la historia completa (cuánto
+  // facturas por sol de ads vs. cuánto GANAS). Si faltan costos, la neta no es
+  // confiable y el ROI tampoco — se dice, en vez de mostrar un número bonito.
+  K.push(kpi("trending", roiPct==null?"#6d8ea0":roiPct>=0?"#22c079":"#e2564a", "ROI",
+    roiPct==null ? "—" : (roiPct>0?"+":"")+roiPct+"%",
+    roiPct==null ? (brutaDesconocida ? `${faltaTxt} — se registra al mover el pedido en Pedidos`
+                                     : "registra costos, anuncios o gastos para verlo")
+      : sinCostoF ? `${faltaTxt} — cifra incompleta`
+      : `ganas ${money(neta)} por ${money(inversion)} invertidos (mercadería, envío, anuncios y gastos)`));
+  if(tipo==="todo") K.push(kpi("receipt","#f0a92b","Gastos extra", money(gastosExtra), "operativos que registraste"));
+  // Lo que costó la IA. Sin tipo de cambio se muestra igual —en dólares, que es como
+  // llega la factura— pero fuera de la ganancia, y el pie dice qué falta para incluirlo.
+  if(tipo==="todo" && (gastoIa>0 || iaSinConvertir))
+    K.push(kpi("robot","#a855f7","Tu IA",
+      iaSinConvertir ? "$"+iaUsd.toFixed(2) : money(gastoIa),
+      iaSinConvertir ? "pon el valor del dólar en Ajustes para restarlo"
+        : `$${iaUsd.toFixed(2)} de tu proveedor · ya restado de tu ganancia`));
+  // La neta sale de la bruta: si la bruta no se puede calcular, la neta tampoco.
+  K.push(kpi("wallet", brutaDesconocida?"#6d8ea0":neta<0?"#e2564a":"#22c079", "Ganancia neta",
+    brutaDesconocida?"—":money(neta),
+    brutaDesconocida ? `no se puede calcular todavía · ${faltaTxt}`
+      : monedaAdsRara?("el gasto de ads no está en tu moneda: "+avisoAds+" — cifra no confiable"):"lo que ganaste de verdad, tras todo"));
+  // Vuelto: clientes que pagaron de más (saldo a favor de ellos). Solo si existe.
+  if(vueltoTotal>0){
+    K.push(kpi("alert","#f0a92b","Vuelto por devolver", money(vueltoTotal),
+      "saldo a favor de clientes que pagaron de más"));
+  }
+  // La ganancia (bruta y neta) ahora vive en la BANDA DE RENTABILIDAD de arriba,
+  // que sí incluye el gasto de publicidad. Ver renderBand.
+  // Logística: en digital no existe nada de esto.
+  if(!["digital","microapp"].includes(tipo)){
+    K.push(kpi("alert","#e2564a","Esperando adelanto", espAdel.length,
+      `dieron sus datos y no pagaron la seña · ${money(espAdel.reduce((a,o)=>a+O.total(o),0))}`));
+  }
+  // "Perdidos" NO es solo logística: una venta DIGITAL anulada (pago falso, botón
+  // Anular de Compras) también es una pérdida, y en la vista Digital este KPI ni
+  // se mostraba — anulabas una venta y no aparecía en ningún número. Se muestra
+  // siempre, y cuenta también anuladas/canceladas, que `orders` dejaba fuera por
+  // no ser `venta:true`.
+  const perdidosTodos = todas.filter(O.esPerdido).length;
+  if(!["digital","microapp"].includes(tipo) || perdidosTodos>0){
+    K.push(kpi("ban","#e2564a","Perdidos", perdidosTodos,
+      ["digital","microapp"].includes(tipo) ? "ventas anuladas o canceladas" : "rechazos, no recogidos y anulaciones"));
+  }
+  // Estos tres son del BOT entero: ni el filtro de fechas ni el de operación los
+  // tocan (salen de dashboard_stats, que cuenta en vivo). Se dice en el subtítulo
+  // para que no se lean como "contactos digitales" al filtrar.
+  K.push(kpi("users","#9b6cf0","Contactos", s.contactos??0, "en todo el bot, ahora mismo"));
+  K.push(kpi("repeat","#f0a92b","En remarketing", s.subs_activas??0, "en todo el bot, ahora mismo"));
+  K.push(kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0, "en todo el bot, ahora mismo"));
+  $("kpis").innerHTML=avisoOtrasMonedas(otrasMonedas)+K.join("");
+  animateNums($("kpis"));
+  renderBand({ bruta, gastoAds, gastosExtra, gastoIa, iaUsd, iaSinConvertir, neta, roas, pctAds, hasAds, sinCostoF, faltaTxt, brutaDesconocida, tipo });
+  {
+    const _vAdN = ventasOk.filter(o => o.shipping && o.shipping.ad_id && (O.EST[o.estado]||{}).cobro==="todo").length;
+    const vendeFisico = prods.some(p=>p.tipo==="fisico") || ventasOk.some(O.esFisico);
+    renderND({ bruta, gastoAds, gastosExtra, gastoIa, iaSinConvertir, neta, roas, hasAds, brutaDesconocida, cobrado, vendido,
+      compras, ticket, porCobrar, espAdel:espAdel.length, vendeFisico, cpa: _vAdN && gastoAds>0 ? gastoAds/_vAdN : null });
+    ndHoy(s, porStage, cid);
+    ndChats({ fromISO, toISO, gastoAds, hasAds, cid });
+  }
+
+  // 📈 Efectividad DEL PERIODO (7-oct, pedido de Rodrigo): los que te escribieron por PRIMERA vez en las fechas elegidas
+  // y cuántos de ellos compraron. Antes las dos tarjetas eran «todo el tiempo» y en Prime Digital sumaban a los ~90 que
+  // escribió ChatLevel (5 de 115 = 4 %), un número que no decía nada del bot. Tres conteos con head:true: sin tope de filas.
+  let cohorte=null;
+  try{
+    const base=()=>supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId)
+      .or("source.is.null,source.neq.sim").neq("wa_id","webchat-test").gte("primera_interaccion",fromISO).lt("primera_interaccion",toISO);
+    const [tAll,tInt,tBuy]=await Promise.all([
+      base(),
+      base().in("stage",["interesado","caliente","confirmado","comprado","perdido"]),
+      base().eq("stage","comprado"),
+    ]);
+    if(!tAll.error&&!tInt.error&&!tBuy.error) cohorte={ total:tAll.count||0, interes:tInt.count||0, compraron:tBuy.count||0, label:r.label };
+  }catch(_){ cohorte=null; }
+  if(cid!==channelId) return;
+  renderMetricas(porStage, cohorte);
+  ndCierre(cohorte);
+  // 💬 costosPorChat: los que llegaron por un anuncio en el periodo (con el filtro Digital/Físico por el tipo del anuncio,
+  // igual que el gasto) y cuántos siguieron después de la palabra clave (etapa Interesado o más, o un pedido que se cayó).
+  if(hasAds && $("kpiCostoChat")) (async()=>{   // en paralelo: no frena el resto del tablero
+    try{
+      const _ids = tipo==="todo" ? null : Object.keys(adTipo).filter(a=>adTipo[a]===tipo);
+      const baseAd=()=>{ let q=supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId)
+        .or("source.is.null,source.neq.sim").neq("wa_id","webchat-test").gte("primera_interaccion",fromISO).lt("primera_interaccion",toISO);
+        return _ids ? q.in("ad_id", _ids.length ? _ids : ["-"]) : q.not("ad_id","is",null); };
+      const [cA,cI]=await Promise.all([ baseAd(), baseAd().in("stage",["interesado","caliente","confirmado","comprado","perdido"]) ]);
+      if(cid===channelId && $("kpiCostoChat") && !cA.error && !cI.error){
+        const chats=cA.count||0, inter=cI.count||0;
+        $("kpiCostoChat").innerHTML = kpi("lead","#2b7fff","Costo por chat",
+          chats ? money(gastoAds/chats) : "—",
+          chats ? `${chats} ${chats===1?"persona te escribió":"personas te escribieron"} por tus anuncios` : "nadie escribió por tus anuncios en este período");
+        $("kpiCostoInteresado").innerHTML = kpi("users","#9b6cf0","Costo por interesado",
+          inter ? money(gastoAds/inter) : "—",
+          inter ? `${inter} de ${chats} siguieron después de la palabra clave (${Math.round(inter/Math.max(chats,1)*100)}%)` : (chats ? "ninguno siguió después de la palabra clave" : "sin chats de anuncios en este período"));
+      }
+    }catch(_){ /* sin conteo → se quedan en «…» */ }
+  })();
+  // 💬 chatsNuevos: los de anuncio se clasifican Digital/Físico por el tipo del ANUNCIO (igual que «Costo por chat», así los
+  // dos números cuadran); los orgánicos (sin anuncio), por el tipo del producto del contacto. En «Todo» entran también los
+  // orgánicos sin producto.
+  if($("kpiChatsNuevos")) (async()=>{   // en paralelo, como los costos
+    try{
+      const baseC=(sel="id")=>supa.from("contacts").select(sel,{count:"exact",head:true}).eq("channel_id",channelId)
+        .or("source.is.null,source.neq.sim").neq("wa_id","webchat-test").gte("primera_interaccion",fromISO).lt("primera_interaccion",toISO);
+      const _ids = tipo==="todo" ? null : Object.keys(adTipo).filter(a=>adTipo[a]===tipo);
+      const qAd = _ids ? baseC().in("ad_id", _ids.length ? _ids : ["-"]) : baseC().not("ad_id","is",null);
+      const qOrg = tipo==="todo" ? baseC().is("ad_id",null)
+        : baseC("id,product:products!inner(tipo)").is("ad_id",null).eq("product.tipo",tipo);
+      const [cAd,cOrg]=await Promise.all([qAd,qOrg]);
+      if(cid!==channelId || !$("kpiChatsNuevos") || cAd.error || cOrg.error) return;
+      const ad=cAd.count||0, org=cOrg.count||0, tot=ad+org;
+      $("kpiChatsNuevos").innerHTML = kpi("lead","#22c079","Chats nuevos", tot,
+        tot ? `${ad} por anuncio · ${org} ${org===1?"orgánico":"orgánicos"}` : "nadie te escribió por primera vez en este período");
+      animateNums($("kpiChatsNuevos"));
+    }catch(_){ /* sin conteo → se queda en «…» */ }
+  })();
+  if(tipo==="microapp" && $("kpiMaIngreso")) (async()=>{   // en paralelo, como los conteos de chats
+    try{
+      const { data:r }=await supa.functions.invoke("microapps",{ body:{ channel_id:channelId, action:"listar" } });
+      if(cid!==channelId || !$("kpiMaIngreso")) return;
+      if(!r?.ok){ const m=r?.error==="apps_sin_configurar"?"falta conectar la base de Apps":"no se pudo leer"; ["kpiMaIngreso","kpiMaVencen","kpiMaRenov"].forEach(id=>{ const el=$(id); if(el) el.querySelector(".s, .sub, small")?.replaceChildren(document.createTextNode(m)); }); return; }
+      const D=86400000, ahora=Date.now(), acc=r.accesos||[];
+      const mesP={}; prods.forEach(p=>{ if(p.tipo!=="microapp") return; const v=(p.product_versions||[]); mesP[p.id]=0; });
+      const { data:vers }=await supa.from("product_versions").select("product_id,precio,activo,config").in("product_id",Object.keys(mesP).length?Object.keys(mesP):["-"]);
+      (vers||[]).forEach(v=>{ if(v.activo!==false && v.config?.modalidad==="mensual" && (Number(v.config?.meses)||1)===1) mesP[v.product_id]=Number(v.precio)||0; });
+      const men=acc.filter(a=>a.tipo==="mensual");
+      const ingreso=men.filter(a=>a.estado==="activo").reduce((s,a)=>s+(mesP[a.product_id]||0),0);
+      const vencen=men.filter(a=>a.estado==="activo"&&a.vence_at&&new Date(a.vence_at).getTime()-ahora<7*D).length;
+      const viejos=men.filter(a=>ahora-new Date(a.creado_at).getTime()>30*D);
+      const renov=viejos.length?Math.round(viejos.filter(a=>a.estado==="activo").length/viejos.length*100):null;
+      $("kpiMaIngreso").innerHTML=kpi("wallet","#22c079","Ingreso mensual fijo",money(ingreso),`${men.filter(a=>a.estado==="activo").length} suscripciones activas`);
+      $("kpiMaVencen").innerHTML=kpi("alert","#f0a92b","Vencen esta semana",vencen,`${men.filter(a=>a.estado==="vencido").length} ya vencidos (app en pausa)`);
+      $("kpiMaRenov").innerHTML=kpi("repeat","#2b7fff","Renovaron",renov==null?"—":renov+"%",renov==null?"aún nadie cumple un mes":`de ${viejos.length} que llevan más de un mes`);
+    }catch(_){ /* sin base de Apps → se quedan en «…» */ }
+  })();
+  // ventasOk (excluye rechazado/no_recogido): el panel "Ventas confirmadas" y el desglose por
+  // producto deben usar las ventas CERRADAS, no `orders` (que incluye los perdidos). Antes
+  // el panel mostraba un "vendido" distinto al KPI y el share por producto pasaba de 100%
+  // (numerador con perdidos, denominador `vendido` sin ellos).
+  // 📣 (9-oct, Rodrigo) Publicidad por PRODUCTO, en el mismo rango y con el mismo filtro de tipo que la franja. A qué producto
+  // va cada anuncio: 1) el banco de anuncios del producto (config.ad_bank) o sus ángulos — lo que rutea el motor —; 2) si no
+  // está enlazado, el producto que más vendió ese anuncio (pedidos con su ad_id). Lo que no se puede atribuir va aparte.
+  const gastoPorProd={};
+  if(hasAds){
+    const adProd={};
+    prods.forEach(p=>{ ((p.config&&p.config.ad_bank)||[]).forEach(a=>{ adProd[String(a)]=p.id; }); });
+    try{
+      const { data:angsP }=await supa.from("angulos").select("ad_ids, product_id").eq("channel_id",channelId);
+      (angsP||[]).forEach(g=>{ if(g.product_id) (g.ad_ids||[]).forEach(a=>{ if(!adProd[String(a)]) adProd[String(a)]=g.product_id; }); });
+    }catch(_){ /* sin ángulos → solo banco y pedidos */ }
+    const adVentas={};
+    (ordR.error?[]:(ordR.data||[])).forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(!a||!o.product_id) return;
+      const m=(adVentas[a]||(adVentas[a]={})); m[o.product_id]=(m[o.product_id]||0)+1; });
+    Object.keys(adVentas).forEach(a=>{ if(!adProd[a]) adProd[a]=Object.entries(adVentas[a]).sort((x,y)=>y[1]-x[1])[0][0]; });
+    ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo){
+      const pid=adProd[String(i.ad_id)]||"_ads";
+      gastoPorProd[pid]=(gastoPorProd[pid]||0)+Number(i.gasto||0)*_ads.factor; } });
+  }
+  renderProducts(prods, ventasOk, vendido, ordersUnavailable, margenPorProd, hasAds?gastoPorProd:null);
+  renderExpenses(expenses, tipo);
+
+  // ── Asesor IA (Mide + Aconseja): resumen de los números reales para la IA ──
+  const flows = flowR&&!flowR.error ? (flowR.data||[]) : [];
+  const ventaFlow={}; flows.forEach(f=>{ if(f.role==="venta") ventaFlow[f.product_id]=f.estado; });
+  const sinRem=[], sinCon=[], mudo=[];
+  prods.forEach(p=>{
+    if(p.clase==="extra") return; // los extra se venden enganchados a un principal
+    const cfg=p.config||{};
+    if(!cfg.remarketing_seq_id) sinRem.push(p.nombre);
+    if(!cfg.contexto_producto) sinCon.push(p.nombre);
+    const vf=ventaFlow[p.id]; if(!vf || vf!=="activo") mudo.push(p.nombre);
+  });
+  const rank=Object.entries(margenPorProd).map(([pid,g])=>({nombre:prodPorId[pid]?prodPorId[pid].nombre:"—", ganancia:Math.round(Number(g)||0)})).filter(x=>x.nombre!=="—");
+  rank.sort((a,b)=>b.ganancia-a.ganancia);
+  const ps=porStage;
+  const comprado=Number(ps.comprado)||0;
+  const interesadosSinComprar=(Number(ps.interesado)||0)+(Number(ps.caliente)||0)+(Number(ps.confirmado)||0);
+  // Efectividad de cierre: MISMO denominador que ve el dueño en pantalla (interesado+caliente+
+  // confirmado+comprado+PERDIDO). Antes el feed de la IA excluía `perdido` → un % inflado (los
+  // deals caídos desaparecían) que ni coincidía con la tarjeta "Efectividad de cierre" ni con la
+  // "Conversión total" → la IA aconsejaba con un número que el dueño no ve.
+  const baseEfec=interesadosSinComprar+comprado+(Number(ps.perdido)||0);
+  asesorResumen={
+    periodo: ($("dfLabel")?$("dfLabel").textContent:"")||"el periodo",
+    tipo_filtro: tipo,
+    // La MISMA ganancia bruta que ve en pantalla (banda + KPI), para que el
+    // Asesor IA no reporte un número que no cuadra con el Dashboard. Antes usaba
+    // O.margen para todos (excluía el digital sin costo) y divergía de `bruta`.
+    ganancia: Math.round(bruta), ingresos: Math.round(vendido), ventas: compras,
+    ticket_promedio: Math.round(ticket), pedidos_perdidos: perdidosTodos,
+    interesados_sin_comprar: interesadosSinComprar,
+    producto_estrella: rank[0]||null,
+    producto_mas_flojo: rank.length>1?rank[rank.length-1]:null,
+    productos_por_ganancia: rank.slice(0,6),
+    huecos: { sin_remarketing:sinRem, sin_conocimiento_ia:sinCon, flujo_en_borrador_o_sin_flujo:mudo },
+    // ⚠ Embudo/efectividad/remarketing son EN VIVO = acumulado de TODO EL TIEMPO (dashboard_stats
+    // ignora el filtro de fechas). Se agrupan y etiquetan aparte para que el Asesor IA NO los
+    // confunda con las métricas de plata del periodo elegido (ganancia/ventas/ticket, que SÍ son
+    // del periodo). Antes iban mezclados al mismo nivel bajo `periodo` → la IA razonaba sobre una
+    // mezcla incoherente (ganancia de hoy + embudo de toda la vida).
+    embudo_en_vivo_todo_el_tiempo: {
+      nota: "acumulado de TODO el tiempo, NO del periodo elegido",
+      por_etapa: ps,
+      interesados_sin_comprar: interesadosSinComprar,
+      efectividad_cierre_pct: baseEfec>0 ? Math.round(comprado/baseEfec*100) : null,
+      en_remarketing_ahora: s.subs_activas??0,
+    },
+  };
+  renderAsesor();
+}
+
+// ── Gastos extra (manuales) ────────────────────────────────────────
+function renderExpenses(list, tipo){
+  const box=$("expenses"); if(!box) return;
+  if(!list.length){ box.innerHTML=`<div class="empty" style="padding:14px 0">Sin gastos extra en el periodo. Toca “+ Registrar” para agregar uno.</div>`; return; }
+  const total=list.reduce((a,e)=>a+Number(e.monto||0),0);
+  // Los gastos extra son overhead del negocio → solo se restan en la vista "Todo".
+  // En Digital/Físico mostramos el total pero avisamos que NO se descuenta ahí, para
+  // no dar a entender que la ganancia neta de ese segmento ya lo restó.
+  if(tipo && tipo!=="todo"){
+    box.innerHTML=`<div class="empty" style="padding:14px 0;line-height:1.55">Tienes ${money(total)} en gastos extra este periodo, pero son gastos de todo el negocio: se restan de tu ganancia solo en la vista <b>Todo</b>, no en ${["digital","microapp"].includes(tipo)?"Digital":"Físico"}.</div>`;
+    return;
+  }
+  const fmt=new Intl.DateTimeFormat("es-PE",{day:"2-digit",month:"short"});
+  let rows=list.map(e=>`<tr><td style="white-space:nowrap">${fmt.format(new Date(e.fecha+"T00:00:00"))}</td><td class="pname">${esc(e.descripcion)}${e.categoria?` <span style="color:var(--faint);font-size:11px">· ${esc(e.categoria)}</span>`:""}</td><td class="r money">${money(e.monto)}</td><td class="r"><button class="expdel" data-id="${e.id}" title="Eliminar"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></td></tr>`).join("");
+  rows+=`<tr class="total"><td colspan="2">Total</td><td class="r money">${money(total)}</td><td></td></tr>`;
+  box.innerHTML=`<div style="overflow-x:auto"><table class="ptable"><thead><tr><th>Fecha</th><th>Descripción</th><th class="r">Monto</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  box.querySelectorAll(".expdel").forEach(b=> b.onclick=()=>delExpense(b.dataset.id));
+}
+function toggleExpForm(){
+  const f=$("expForm");
+  if(!f.classList.contains("hidden")){ f.classList.add("hidden"); f.innerHTML=""; $("addExpBtn").textContent="+ Registrar"; return; }
+  // Fecha LOCAL (no toISOString, que da UTC → después de las 7pm en Lima proponía
+  // mañana). El gasto se atribuye al día en que lo registras.
+  const _n=new Date(), _p=x=>String(x).padStart(2,"0");
+  const today=`${_n.getFullYear()}-${_p(_n.getMonth()+1)}-${_p(_n.getDate())}`;
+  f.innerHTML=`<div class="expform">
+    <div class="ef-row"><input class="ef-in" id="ef_monto" type="number" min="0" step="0.01" placeholder="Monto (${curSym()})"/><input class="ef-in" id="ef_fecha" type="date" value="${today}"/></div>
+    <input class="ef-in" id="ef_desc" placeholder="Descripción (ej. Empaques, Sueldo asistente)"/>
+    <select class="ef-in" id="ef_cat"><option value="">Categoría (opcional)</option><option>Operativo</option><option>Personal</option><option>Local</option><option>Marketing</option><option>Otro</option></select>
+    <div class="ef-acts"><button class="expbtn ghost" id="ef_cancel">Cancelar</button><button class="expbtn primary" id="ef_save">Guardar gasto</button></div>
+  </div>`;
+  f.classList.remove("hidden"); $("addExpBtn").textContent="Cerrar";
+  $("ef_cancel").onclick=toggleExpForm;
+  $("ef_save").onclick=saveExpense;
+  $("ef_desc").addEventListener("keydown",(e)=>{ if(e.key==="Enter") saveExpense(); });
+  setTimeout(()=>$("ef_monto").focus(),30);
+}
+let _savingExp=false;
+async function saveExpense(){
+  if(_savingExp) return; // evita doble insert por doble clic o Enter+clic
+  const monto=Number($("ef_monto").value), desc=$("ef_desc").value.trim();
+  if(!(monto>0)){ toast("Escribe un monto mayor a 0",true); $("ef_monto").focus(); return; }
+  if(!desc){ toast("Escribe una descripción",true); $("ef_desc").focus(); return; }
+  _savingExp=true; const btn=$("ef_save"); if(btn){ btn.disabled=true; btn.textContent="Guardando…"; }
+  // Fecha local (no dejar que la BD ponga current_date en UTC → de noche en Lima adelanta un día)
+  const _n=new Date(), _p=x=>String(x).padStart(2,"0");
+  const fechaLocal=`${_n.getFullYear()}-${_p(_n.getMonth()+1)}-${_p(_n.getDate())}`;
+  const { error }=await supa.from("manual_expenses").insert({ channel_id:channelId, monto, descripcion:desc, categoria:$("ef_cat").value||null, fecha:$("ef_fecha").value||fechaLocal });
+  _savingExp=false;
+  if(error){ if(btn){ btn.disabled=false; btn.textContent="Guardar gasto"; } toast(error.message,true); return; }
+  toast("Gasto registrado"); toggleExpForm(); load();
+}
+async function delExpense(id){
+  if(!await confirmDialog({ title:"Eliminar gasto", message:"¿Quitar este gasto? Volverá a sumar a tu ganancia.", confirmText:"Eliminar", danger:true })) return;
+  const { error }=await supa.from("manual_expenses").delete().eq("id",id);
+  if(error){ toast(error.message,true); return; }
+  toast("Gasto eliminado"); load();
+}
+
+function renderBand(b){
+  const box=$("pband"); if(!box) return;
+  const brutaS = ["digital","microapp"].includes(b.tipo)
+    ? ""
+    // La banda tiene espacio: además de QUÉ falta, se dice DÓNDE ponerlo. Antes
+    // decía "faltan costos en N pedidos" y no había forma de saber cuál costo era
+    // ni dónde registrarlo — el dato se pide al mover el pedido en el tablero.
+    : b.brutaDesconocida ? `${b.faltaTxt} — se registra al mover el pedido en Pedidos`
+    : (b.sinCostoF?`tras mercadería y envío · ${b.faltaTxt} — se registra al mover el pedido en Pedidos`:"tras mercadería y envío");
+  const brutaSub = brutaS?`<span class="pb-s">${brutaS}</span>`:"";
+  // Sin ninguna venta con costo completo, la ganancia no es 0: no se sabe. Mostrar
+  // "S/ 0.00" en la banda principal es decirle al usuario que su negocio no gana nada.
+  const brutaTxt = b.brutaDesconocida ? "—" : money(b.bruta);
+  const netaTxt  = b.brutaDesconocida ? "—" : money(b.neta);
+  const hasExtra = b.gastosExtra>0;
+  const hasIa = b.gastoIa>0;
+  if(!b.hasAds && !hasExtra && !hasIa){
+    box.innerHTML=`
+      <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v ${b.brutaDesconocida?"":"green"}">${brutaTxt}</span>${brutaSub}</div>
+      <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="config.html">Ajustes → Meta</a> (o registra un gasto extra abajo) y aquí verás tu <b>ganancia NETA</b> después de todo.</div></div>`;
+    return;
+  }
+  const netaCls = b.neta<0?"red":"green";
+  const roasTxt = b.roas>0?`ROAS ${b.roas.toFixed(1)}× · `:"";
+  const steps=[`<div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v">${brutaTxt}</span>${brutaSub}</div>`];
+  if(b.hasAds) steps.push(`<span class="pb-op">−</span><div class="pb-step"><span class="pb-l">Publicidad (Meta)</span><span class="pb-v amber">${money(b.gastoAds)}</span><span class="pb-s">${b.pctAds}% de lo cobrado</span></div>`);
+  if(hasExtra) steps.push(`<span class="pb-op">−</span><div class="pb-step"><span class="pb-l">Gastos extra</span><span class="pb-v amber">${money(b.gastosExtra)}</span><span class="pb-s">operativos que registraste</span></div>`);
+  if(hasIa) steps.push(`<span class="pb-op">−</span><div class="pb-step"><span class="pb-l">Tu IA</span><span class="pb-v amber">${money(b.gastoIa)}</span><span class="pb-s">$${b.iaUsd.toFixed(2)} de tu proveedor</span></div>`);
+  steps.push(`<span class="pb-op">=</span><div class="pb-step net"><span class="pb-l">Ganancia neta</span><span class="pb-v big ${b.brutaDesconocida?"":netaCls}">${netaTxt}</span><span class="pb-s">${roasTxt}lo que ganaste de verdad</span></div>`);
+  box.innerHTML=steps.join("");
+}
+// Dos métricas de conversión, foto EN VIVO (misma fuente que el Embudo):
+//  • Efectividad de venta = compras ÷ conversaciones de venta reales
+//    (interesado+caliente+confirmado+comprado+perdido). Mide qué tan bien CIERRA el bot;
+//    no cuenta a quien escribió y nunca entró a comprar ("nuevo").
+//  • Conversión a compra = compras ÷ TODOS los contactos (incluye "nuevo").
+//    Mide la conversión total del embudo (engancha + cierra).
+function renderMetricas(porStage, cohorte){
+  const el=$("efecPanel"); if(!el) return;
+  const c={}; STAGES.forEach(s=>c[s.k]=Number(porStage[s.k]||0));
+  if(porStage["null"]!=null) c.nuevo+=Number(porStage["null"]||0);   // sin etapa → nuevo
+  // Con el conteo del PERIODO (los que escribieron por primera vez en las fechas elegidas), las dos tarjetas
+  // miden ese grupo; sin él (falló la consulta) quedan como antes: todo el tiempo.
+  const porFecha=!!cohorte;
+  const total=porFecha?cohorte.total:STAGES.reduce((a,s)=>a+c[s.k],0);
+  const conv=porFecha?cohorte.interes:c.interesado+c.caliente+c.confirmado+c.comprado+c.perdido;
+  const comprado=porFecha?cohorte.compraron:c.comprado;
+  const cuando=porFecha?`escribieron por primera vez · ${esc(String(cohorte.label||"").toLowerCase())}`:"en vivo · todo el tiempo (no filtra por fecha)";
+  // Efectividad (semáforo: cierra bien / regular / flojo)
+  const eP = conv? Math.round(comprado/conv*100) : null;
+  const eCls = "mia"; // violeta fijo (tema IA), por elección de Rodrigo — ya no semáforo
+  const tEfec="Compras ÷ los que se interesaron de verdad (interesado, caliente, confirmado, comprado y perdido). No cuenta a los curiosos que solo escribieron. Mide qué tan bien cierra el bot.";
+  const efec=`<div class="metric ${eCls}" title="${tEfec}"><div class="num">${eP==null?"—":eP+"%"}</div><div class="mtxt">`+
+    `<div class="mlbl"><span class="miabadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>Efectividad de cierre <span class="mtag">base: interesados</span></div>`+
+    `<div class="mdesc">De los que se interesaron, cuántos terminas cerrando.</div>`+
+    `<div class="mbrk">${eP==null?"Aún sin interesados":comprado+" de "+conv+(conv===1?" interesado":" interesados")} · ${cuando}</div>`+
+    `</div></div>`;
+  // Conversión a compra (informativa, color marca)
+  const cP = total? Math.round(comprado/total*100) : null;
+  const cCls = total ? "mconv" : "low"; // OJO: no usar "conv" — colisiona con .conv (píldoras del embudo, margin-top:16px)
+  const tConv="Compras ÷ TODOS los que te escribieron en el periodo, incluidos los curiosos que solo escribieron. Es todo el embudo junto: engancha + cierra.";
+  const convHtml=`<div class="metric ${cCls}" title="${tConv}"><div class="num">${cP==null?"—":cP+"%"}</div><div class="mtxt">`+
+    `<div class="mlbl">Conversión total <span class="mtag">base: todos los que escribieron</span></div>`+
+    `<div class="mdesc">De todos los que te escriben, cuántos compraron.</div>`+
+    `<div class="mbrk">${cP==null?"Aún sin contactos":comprado+" de "+total+(porFecha?(total===1?" que te escribió":" que te escribieron"):(total===1?" contacto":" contactos"))} · ${cuando}</div>`+
+    `</div></div>`;
+  // Primero la conversión total (todos, curiosos incluidos) y después la de cierre — orden pedido por Rodrigo (7-oct).
+  el.innerHTML=`<div class="metricas">${convHtml}${efec}</div>`;
+}
+
+
+// ── BITÁCORA: profit diario del mes (chart + calendario) ─────────────
+// Reusa el mismo criterio de profit que el Dashboard: margen (digital=cobrado,
+// físico=margen) − gasto de Meta − gastos extra, agregado por día.
+let bitaOtras={};
+async function loadBitacora(monthStart){
+  const from=new Date(monthStart.getFullYear(),monthStart.getMonth(),1);
+  const to=new Date(monthStart.getFullYear(),monthStart.getMonth()+1,1); // exclusivo
+  const [ordR,prodR,insR,expR,iaR,admR2,wsB]=await Promise.all([
+    // Paginado por lo mismo que arriba: un mes con más de 1000 pedidos (o el cruce de
+    // anuncios × días de ads_insights) dejaba la Bitácora corta y sin avisar.
+    pageAll((f,t)=>supa.from("orders").select("contact_id,product_id,version_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",startOfDayTZ(from).toISOString()).lt("created_at",startOfDayTZ(to).toISOString()).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    supa.from("products").select("id,tipo,config,product_versions(id,cantidad)").eq("channel_id",channelId),
+    pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(from)).lt("fecha",ymd(to)).order("fecha",{ascending:false}).order("ad_id",{ascending:false}).range(f,t)),
+    pageAll((f,t)=>supa.from("manual_expenses").select("fecha,monto").eq("channel_id",channelId).gte("fecha",ymd(from)).lt("fecha",ymd(to)).order("fecha",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    // El costo de la IA, por día. Va acá también y no solo en la banda de arriba: la
+    // Bitácora dice ser "el mismo criterio de profit que el Dashboard", y un costo que
+    // solo resta en uno de los dos deja dos ganancias distintas para el mismo día.
+    pageAll((f,t)=>supa.from("ai_usage").select("dia,costo_usd").eq("channel_id",channelId).gte("dia",ymd(from)).lt("dia",ymd(to)).order("dia",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    // La moneda de las cuentas de ads, por lo mismo: si arriba el gasto de Meta se
+    // convierte y acá no, el profit del día no coincide con el del periodo.
+    supa.from("ads_meta").select("account_currency").eq("channel_id",channelId),
+    // Paginado por lo mismo que arriba: truncar la lista de contactos de prueba hace que los
+    // que se caen del corte cuenten como ventas reales en la bitácora del día.
+    pageAll((f,t)=>supa.from("contacts").select("id").eq("channel_id",channelId).or("wa_id.eq.webchat-test,source.eq.sim").order("id",{ascending:true}).range(f,t)),
+  ]);
+  // Fuera los pedidos de TODOS los contactos de prueba (Probar flujos y simulador), como arriba.
+  { const _pr=new Set(((wsB&&!wsB.error&&wsB.data)||[]).map(c=>c.id)); if(!ordR.error && _pr.size) ordR.data=(ordR.data||[]).filter(o=>!_pr.has(o.contact_id)); }
+  // Y fuera los pedidos en otra moneda, como arriba (se avisa en el título del calendario).
+  bitaOtras=apartarOtrasMonedas(ordR);
+  const prods=prodR.error?[]:(prodR.data||[]);
+  const prodPorId={},cantPorVersion={};
+  prods.forEach(p=>{ prodPorId[p.id]=p; TIPO_PROD[p.id]=p.tipo; (p.product_versions||[]).forEach(v=>{ cantPorVersion[v.id]=v.cantidad??1; }); });
+  const delTipo=(o)=> tipo==="todo"||claseDe(o)===tipo;
+  const allOrd=(ordR.error?[]:(ordR.data||[])); // ya sin los pedidos de los contactos de prueba (filtrados arriba)
+  // Sin los PERDIDOS, igual que la banda de arriba: un no_recogido con costo y flete registrados
+  // sumaba a la ganancia del calendario y contaba como venta → el mes de la Bitácora no cuadraba
+  // con la «Ganancia bruta» del mismo periodo.
+  const orders=allOrd.filter(delTipo).filter(o=>O.esVenta(o)&&!O.esPerdido(o));
+  // Tipo del anuncio por MAYORÍA de sus pedidos (no "primero visto": el orden es arbitrario
+  // sin ORDER BY → mandaba el gasto de un anuncio mixto al segmento equivocado, y el profit
+  // diario de la Bitácora no cuadraba con el del Dashboard, que ya usa la mayoría).
+  const adCnt={}; allOrd.forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(!a) return; (adCnt[a]||(adCnt[a]={fisico:0,digital:0,microapp:0}))[claseDe(o)]++; });
+  const adTipo={}; Object.keys(adCnt).forEach(a=>{ const c=adCnt[a]; adTipo[a]=c.microapp>Math.max(c.fisico,c.digital)?"microapp":(c.fisico>=c.digital?"fisico":"digital"); });
+  const day={}; const D=(k)=> day[k]||(day[k]={margin:0,rev:0,spend:0,exp:0,sales:0});
+  orders.forEach(o=>{
+    const k=ymdLima(o.created_at);
+    // Digital = cobrado − COGS (producto digital + regalos + extras pagados), IGUAL que la banda
+    // del Dashboard (:805/824) y el digest (order-stats.ts): antes usaba cobrado a secas → la
+    // ganancia diaria de la Bitácora salía inflada y no cuadraba con el resto para el mismo periodo.
+    const m=!O.esFisico(o)
+      ? O.cobrado(o)-(O.costoProducto(o,prodPorId[o.product_id],cantPorVersion[o.version_id]??1)||0)
+      : O.margen(o,prodPorId[o.product_id],cantPorVersion[o.version_id]??1);
+    const d=D(k); if(m!=null) d.margin+=m; d.rev+=O.cobrado(o); d.sales++;
+  });
+  // Mismo factor de moneda que la banda de arriba, o el profit del día y el del
+  // periodo dirían cosas distintas para los mismos anuncios.
+  const _adsB = factorAds(admR2&&!admR2.error?(admR2.data||[]):[], CUR, USD_RATE);
+  const _adsFueraB=await adsDeCuentasQuitadas(channelId);
+  (insR.error?[]:(insR.data||[])).filter(i=>!_adsFueraB.has(String(i.ad_id))).forEach(i=>{ if(tipo==="todo"||adTipo[i.ad_id]===tipo){ D(i.fecha).spend+=Number(i.gasto||0)*_adsB.factor; } });
+  if(tipo==="todo") (expR.error?[]:(expR.data||[])).forEach(e=>{ D(e.fecha).exp+=Number(e.monto||0); });
+  // Mismo trato que arriba: solo entra convertido a tu moneda (si no, no se puede
+  // restar de una ganancia en soles sin inventar una tasa).
+  if(tipo==="todo" && USD_RATE>0) (iaR&&!iaR.error?(iaR.data||[]):[]).forEach(x=>{ D(x.dia).exp+=Number(x.costo_usd||0)*USD_RATE; });
+  // El flete de los perdidos (fue y volvió, ese envío se pagó igual): la banda lo resta, y
+  // sin esto el mes de la Bitácora no cuadraba con ella.
+  allOrd.filter(delTipo).filter(o=>O.esVenta(o)&&O.esPerdido(o)).forEach(o=>{ const fl=O.flete(o)||0; if(fl>0) D(ymdLima(o.created_at)).exp+=fl; const c=O.cobrado(o); if(c>0) D(ymdLima(o.created_at)).margin+=c; });   // flete que se perdió y adelanto que se quedó
+  return day;
+}
+async function renderBitacora(){
+  const cal=$("bitaCal");
+  cal.innerHTML=`<div style="grid-column:1/-1;text-align:center;color:var(--faint);padding:24px">Cargando…</div>`;
+  { const ms=new Intl.DateTimeFormat("es-PE",{month:"long",year:"numeric"}).format(bitaMonth); $("bitaMonth").textContent=ms.charAt(0).toUpperCase()+ms.slice(1); }
+  $("bitaTitle").textContent=`Profit diario (${CUR})`;
+  const day=await loadBitacora(bitaMonth);
+  if(Object.keys(bitaOtras).length) $("bitaTitle").textContent=`Profit diario (${CUR}) · fuera: ${otrasMonedasTxt(bitaOtras)}`;
+  const profitOf=(k)=>{ const d=day[k]; return d?(d.margin-d.spend-d.exp):null; };
+  const y=bitaMonth.getFullYear(), mo=bitaMonth.getMonth();
+  const daysInMonth=new Date(y,mo+1,0).getDate();
+  const todayK=ymdLima(new Date());
+  const series=[];
+  for(let dd=1;dd<=daysInMonth;dd++){ const k=`${y}-${String(mo+1).padStart(2,"0")}-${String(dd).padStart(2,"0")}`; series.push({dd,k,profit:profitOf(k)}); }
+  renderBitaChart(series);
+  $("bitaLegend").innerHTML=`<span><i style="background:rgba(16,185,129,.7)"></i>alto</span><span><i style="background:rgba(16,185,129,.3)"></i>positivo</span><span><i style="background:rgba(239,68,68,.55)"></i>pérdida</span><span><i style="background:var(--surface-2);border:1px solid var(--border)"></i>sin datos</span><span>⏳ provisional</span>`;
+  const maxP=Math.max(1,...series.map(s=>s.profit>0?s.profit:0));
+  const dows=["L","M","X","J","V","S","D"];
+  let html=dows.map(d=>`<div class="bita-dow">${d}</div>`).join("");
+  const firstDow=(new Date(y,mo,1).getDay()+6)%7; // L=0 … D=6
+  for(let i=0;i<firstDow;i++) html+=`<div class="bita-cell void"></div>`;
+  series.forEach(s=>{
+    const p=s.profit, d=day[s.k];
+    const isToday=s.k===todayK, isFuture=s.k>todayK;
+    let cls, body;
+    if(p==null){ cls="nodata"+(isToday?" prov":""); body=`<div class="amt">${isFuture?"—":"sin datos"}</div>`; }
+    else{
+      cls = p<0 ? "loss" : (p>=maxP*0.66 ? "alto" : "pos");
+      if(isToday) cls+=" prov";
+      const roas=d.spend>0?(d.rev/d.spend):0;
+      body=`<div class="amt">${moneyShort(p)}</div>`
+        +`<div class="mt"><span class="up">▲${Math.round(d.rev)}</span><span class="dn2">▼${Math.round(d.spend)}</span></div>`
+        +`<div class="roas">${roas>0?roas.toFixed(2)+"x · ":""}${d.sales}v</div>`;
+    }
+    const flag=isToday?`<span class="flag" title="Provisional — el día no terminó">${icon("clock")}</span>`:(p!=null&&p<0?`<span class="flag">${icon("alert")}</span>`:"");
+    html+=`<div class="bita-cell ${cls}" data-day="${s.k}" title="${s.k}"><span class="dn">${s.dd}</span>${flag}${body}</div>`;
+  });
+  cal.innerHTML=html;
+  cal.querySelectorAll("[data-day]").forEach(c=> c.onclick=()=>{
+    const d=startOfDay(new Date(c.dataset.day+"T00:00:00"));
+    range.preset=null; range.from=d; range.to=d;   // filtro de un solo día
+    applyRange();
+  });
+}
+function renderBitaChart(series){
+  const box=$("bitaChart");
+  const vals=series.map(s=>s.profit==null?0:s.profit);
+  const W=760,H=200,padL=30,padR=10,padT=14,padB=24;
+  const vMax=Math.max(1,...vals), vMin=Math.min(0,...vals);
+  const plotT=padT, plotB=H-padB;
+  const yf=(v)=> plotB-(v-vMin)/(vMax-vMin)*(plotB-plotT);
+  const n=series.length, dx=(W-padL-padR)/Math.max(1,n-1), xf=(i)=>padL+i*dx, y0=yf(0);
+  const linePts=series.map((s,i)=>`${xf(i).toFixed(1)},${yf(s.profit==null?0:s.profit).toFixed(1)}`).join(" ");
+  const areaPts=`${padL.toFixed(1)},${y0.toFixed(1)} `+linePts+` ${xf(n-1).toFixed(1)},${y0.toFixed(1)}`;
+  const step=Math.ceil(n/12);
+  const labels=series.map((s,i)=> i%step===0?`<text x="${xf(i).toFixed(1)}" y="${H-7}" text-anchor="middle" font-size="9" fill="var(--faint)">${String(s.dd).padStart(2,"0")}</text>`:"").join("");
+  const dots=series.map((s,i)=> s.profit==null?"":`<circle cx="${xf(i).toFixed(1)}" cy="${yf(s.profit).toFixed(1)}" r="2.4" fill="${s.profit<0?'var(--red)':'var(--brand)'}"><title>${s.k} · ${money(s.profit)}</title></circle>`).join("");
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet">
+    <defs><linearGradient id="bgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--brand)" stop-opacity=".28"/><stop offset="1" stop-color="var(--brand)" stop-opacity="0"/></linearGradient></defs>
+    <line x1="${padL}" y1="${y0.toFixed(1)}" x2="${W-padR}" y2="${y0.toFixed(1)}" stroke="var(--border)" stroke-dasharray="3 3"/>
+    <polygon points="${areaPts}" fill="url(#bgrad)"/>
+    <polyline points="${linePts}" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    ${dots}${labels}</svg>`;
+}
+function renderProducts(prods, orders, vendido, unavailable, margenPorProd, gastoPorProd){
+  const box=$("productPerf");
+  if(unavailable){ box.innerHTML=`<div class="empty">Aplica la migración <b>0017_orders</b> para ver el rendimiento por producto.</div>`; return; }
+  // Agregar por producto y versión.
+  const pmap={};
+  prods.forEach(p=>{ pmap[p.id]={ id:p.id, nombre:p.nombre, units:0, ing:0, versions:{} };
+    (p.product_versions||[]).forEach(v=> pmap[p.id].versions[v.id]={ nombre:v.nombre, units:0, ing:0, cant:Number(v.cantidad)||1 }); });
+  let sinProd={ units:0, ing:0 };
+  orders.forEach(o=>{
+    // UNIDADES de verdad (un Pack ×3 son 3, «2 del Estándar» son 2), no pedidos. Un upgrade no suma
+    // unidades (ya las tenía). Y cada venta extra se le suma a SU producto, no al principal.
+    const s=o.shipping||{};
+    let v=Number(o.amount||0);
+    (o.order_bumps||[]).forEach(b=>{ const bp=b&&b.product_id&&pmap[b.product_id];
+      if(bp && b.product_id!==o.product_id){ bp.ing+=Number(b.precio||0); if(Number(b.precio)>0) bp.units++; } else v+=Number(b.precio||0); });
+    const p=o.product_id&&pmap[o.product_id];
+    const ver=p&&o.version_id&&p.versions[o.version_id];
+    const uds=s.upgrade?0:(ver?ver.cant:1)*(Number(s.cantidad)>1?Number(s.cantidad):1);
+    if(!p){ sinProd.units+=uds||1; sinProd.ing+=v; return; }
+    p.units+=uds; p.ing+=v;
+    if(ver){ ver.units+=uds; ver.ing+=v; }
+  });
+  const GP=gastoPorProd||null;
+  // (con publicidad, también el producto que GASTÓ sin vender en el rango: es justo el que hay que mirar)
+  const list=Object.values(pmap).filter(p=>p.units>0 || (GP && GP[p.id]>0));
+  if(sinProd.units) list.push({ id:"_none", nombre:"Sin producto asignado", units:sinProd.units, ing:sinProd.ing, versions:{} });
+  if(GP && GP._ads>0) list.push({ id:"_ads", nombre:"Anuncios sin producto (sin enlazar ni ventas)", units:0, ing:0, versions:{}, soloAds:true });
+  if(!list.length){ box.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg><h4>Sin ventas todavía</h4>Aún no hay ventas confirmadas en este período. Cuando cierres una, verás aquí el desempeño por producto.</div>`; return; }
+  const MG=margenPorProd||{};
+  list.forEach(p=>{ p.margen = p.soloAds ? 0 : (MG[p.id]==null ? (p.units>0 ? null : 0) : MG[p.id]); p.ads = GP ? (GP[p.id]||0) : 0; });
+  list.sort((a,b)=>b.ing-a.ing);
+  const maxIng=Math.max(...list.map(p=>p.ing),1);
+  // Margen DESCONOCIDO ≠ margen cero. Un pedido físico sin flete registrado no tiene
+  // margen calculable (orders.js devuelve null a propósito: mejor nada que un número
+  // inventado), pero acá ese null se volvía 0 y la tabla mostraba "S/ 0.00 · 0%" —
+  // se lee como "este producto no deja nada" cuando en realidad falta un dato. Con
+  // 10 ventas de zapatillas a S/129 y costo 45, decía margen 0%.
+  const mCol=(m,pct)=>{
+    if(m==null) return `<td class="r" style="color:var(--faint)" title="Falta registrar el flete de estos pedidos">—</td><td class="r" style="color:var(--faint)">—</td>`;
+    const c=m<0?"var(--red)":m>0?"var(--green)":"var(--faint)";
+    return `<td class="r money" style="color:${c}">${money(m)}</td><td class="r" style="color:${c}">${pct}%</td>`;
+  };
+  // Publicidad + ganancia neta (= ganancia − publicidad). Sin ads conectados, la tabla queda como antes.
+  const adsCols=(p)=>{
+    if(!GP) return "";
+    const neta=p.margen==null?null:p.margen-p.ads;
+    const c=neta==null?"var(--faint)":neta<0?"var(--red)":neta>0?"var(--green)":"var(--faint)";
+    return `<td class="r money" style="color:${p.ads>0?"var(--amber,#d97706)":"var(--faint)"}">${p.ads>0?money(p.ads):"—"}</td>`+
+      `<td class="r money" style="color:${c};font-weight:600">${neta==null?"—":money(neta)}</td>`;
+  };
+  const vacias=GP?`<td class="r"></td><td class="r"></td>`:"";
+  let rows="";
+  list.forEach(p=>{
+    const share=vendido?Math.round(p.ing/vendido*100):0;
+    const mpct=(p.margen!=null&&p.ing>0)?Math.round(p.margen/p.ing*100):0;
+    rows+=`<tr><td class="pname"><span class="bar-mini" style="width:${Math.round(p.ing/maxIng*44)}px"></span>${esc(p.nombre)}</td>
+      <td class="r">${p.units}</td><td class="r money">${money(p.ing)}</td>${mCol(p.margen,mpct)}${adsCols(p)}<td class="r">${share}%</td></tr>`;
+    Object.values(p.versions).filter(v=>v.units>0).forEach(v=>{
+      rows+=`<tr><td class="vname">↳ ${esc(v.nombre)}</td><td class="r" style="color:var(--muted)">${v.units}</td><td class="r" style="color:var(--muted)">${money(v.ing)}</td><td class="r"></td><td class="r"></td>${vacias}<td class="r"></td></tr>`;
+    });
+  });
+  const totU=list.reduce((a,p)=>a+p.units,0), totI=list.reduce((a,p)=>a+p.ing,0);
+  // Si NINGÚN producto tiene margen calculable, el total también es desconocido (no 0).
+  const conMargen=list.filter(p=>p.margen!=null);
+  const totM=conMargen.length?conMargen.reduce((a,p)=>a+p.margen,0):null;
+  // El margen del TOTAL va sobre los ingresos de los productos que SÍ tienen ganancia
+  // conocida, no sobre todos. Dividir entre el total reintroducía por la puerta de
+  // atrás el error que la fila ya evita: con S/546 de ganancia conocida y S/1,975 de
+  // ingresos (S/1,429 de ellos con margen desconocido) mostraba "28%", como si las
+  // zapatillas no dejaran nada. Ahora es 100% sobre lo medible, y se avisa que es parcial.
+  const ingConMargen=conMargen.reduce((a,p)=>a+p.ing,0);
+  const totMpct=(totM!=null&&ingConMargen>0)?Math.round(totM/ingConMargen*100):0;
+  const parcial = totM!=null && conMargen.length<list.length;
+  const totAds=list.reduce((a,p)=>a+(p.ads||0),0);
+  rows+=`<tr class="total"><td>Total${parcial?` <span style="font-weight:400;color:var(--faint)">· margen solo de ${conMargen.length} de ${list.length} productos</span>`:""}</td><td class="r">${totU}</td><td class="r money">${money(totI)}</td>${mCol(totM,totMpct)}${GP?adsCols({margen:totM,ads:totAds}):""}<td class="r">100%</td></tr>`;
+  const thAds=GP?`<th class="r" title="Gasto en Meta de los anuncios de este producto, en las fechas de arriba">Publicidad</th><th class="r" title="Ganancia − publicidad">Ganancia neta</th>`:"";
+  box.innerHTML=`<div style="overflow-x:auto"><table class="ptable"><thead><tr><th>Producto / variante</th><th class="r">Unidades</th><th class="r">Ingresos</th><th class="r">Ganancia${GP?" bruta":""}</th><th class="r">Margen</th>${thAds}<th class="r">% del total</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+
+// ═══ Dashboard nuevo (Diseño 2, 10-oct) — mismos números que el de siempre, ordenados ═══
+function ndRow(lbl,val,cls=""){ return `<div class="nd-row"><span>${lbl}</span><b class="${cls}">${val}</b></div>`; }
+function renderND(v){
+  const el=$("ndKpis"); if(!el) return;
+  const pctCob = v.vendido>0 ? Math.round(v.cobrado/v.vendido*100) : null;
+  el.innerHTML=
+    `<div class="nd-kpi hero"><span class="l">Ganancia neta</span><span class="n">${v.brutaDesconocida?"—":money(v.neta)}</span>`+
+      `<span class="s">${v.brutaDesconocida?"falta registrar algún costo":(v.hasAds?"tras publicidad, IA y gastos":"aún sin restar publicidad")}</span></div>`+
+    `<div class="nd-kpi"><span class="l">Ventas</span><span class="n">${v.compras}</span><span class="s">${v.compras?"ticket "+money(v.ticket):"sin ventas en estas fechas"}</span></div>`+
+    `<div class="nd-kpi"><span class="l">Ingresos</span><span class="n">${money(v.vendido)}</span><span class="s ${pctCob===100?"ok":""}">${pctCob==null?"sin ventas":"cobrado "+pctCob+"%"}</span></div>`+
+    `<div class="nd-kpi"><span class="l">ROAS</span><span class="n">${v.hasAds&&v.roas>0?v.roas.toFixed(2)+"×":"—"}</span><span class="s">${v.hasAds?money(v.gastoAds)+" en Meta":"conecta Meta en Ajustes"}</span></div>`;
+  const g=$("ndGroups"); if(!g) return;
+  const ventas = `<div class="nd-card"><h4>Ventas</h4>`+
+    ndRow("Chats nuevos",`<span id="ndChats">…</span>`)+
+    ndRow(`Cierre del bot<span class="nd-ia">IA</span>`,`<span id="ndCierre">…</span>`)+
+    ndRow("Ticket promedio", v.compras?money(v.ticket):"—")+
+    (v.vendeFisico ? ndRow("Por cobrar", money(v.porCobrar)) + ndRow("Esperando adelanto", v.espAdel) : "")+
+    `</div>`;
+  const pub = `<div class="nd-card"><h4>Publicidad</h4>`+
+    (v.hasAds
+      ? ndRow("Gasto en Meta", money(v.gastoAds)) + ndRow("Costo por chat",`<span id="ndCpc">…</span>`) + ndRow("Costo por venta", v.cpa==null?"—":money(v.cpa))
+      : `<div class="nd-note">Conecta tus anuncios en <a href="config.html">Ajustes → Meta</a> para ver cuánto te cuesta cada chat y cada venta.</div>`)+
+    `</div>`;
+  const r = `<div class="nd-card"><h4>Rentabilidad</h4>`+
+    ndRow(v.vendeFisico?"Ganancia bruta":"Ingresos cobrados", v.brutaDesconocida?"—":money(v.bruta))+
+    (v.hasAds ? ndRow("− Publicidad", money(v.gastoAds), "neg") : "")+
+    (v.gastoIa>0 ? ndRow("− IA", money(v.gastoIa), "neg") : "")+
+    (v.gastosExtra>0 ? ndRow("− Gastos extra", money(v.gastosExtra), "neg") : "")+
+    `<div class="nd-row tot"><span>= Ganancia neta</span><b class="${v.neta<0?"neg":"pos"}">${v.brutaDesconocida?"—":money(v.neta)}</b></div>`+
+    `</div>`;
+  g.innerHTML = ventas + pub + r;
+}
+function ndCierre(c){
+  const el=$("ndCierre"); if(!el) return;
+  el.textContent = c && c.interes ? Math.round(c.compraron/c.interes*100)+"%" : "—";
+  if(c && c.interes) el.title = `${c.compraron} compraron de ${c.interes} que conversaron`;
+}
+async function ndChats({ fromISO, toISO, gastoAds, hasAds, cid }){
+  try{
+    const base=()=>supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId)
+      .or("source.is.null,source.neq.sim").neq("wa_id","webchat-test").gte("primera_interaccion",fromISO).lt("primera_interaccion",toISO);
+    const [all,ad]=await Promise.all([ base(), base().not("ad_id","is",null) ]);
+    if(cid!==channelId || all.error || ad.error) return;
+    const tot=all.count||0, deAd=ad.count||0;
+    if($("ndChats")){ $("ndChats").textContent=tot; $("ndChats").title=`${deAd} por anuncio · ${tot-deAd} orgánicos`; }
+    if($("ndCpc")) $("ndCpc").textContent = hasAds && deAd ? money(gastoAds/deAd) : "—";
+  }catch(_){ /* sin conteo → se queda en «…» */ }
+}
+// «Para hoy»: lo que necesita una acción tuya, con el enlace a donde se resuelve. Si no hay nada, no aparece.
+async function ndHoy(s, porStage, cid){
+  const el=$("ndHoy"); if(!el) return;
+  let pagos=0;
+  try{
+    const { data } = await supa.from("orders").select("id,estado,shipping,contact:contacts(wa_id,source)").eq("channel_id",channelId)
+      .or("estado.in.(pendiente,esperando_adelanto,en_agencia),shipping->>pago_adelantado_por_validar.eq.true").limit(500);
+    pagos=(data||[]).filter(o=>{ const c=o.contact||{}; return c.wa_id!=="webchat-test" && c.source!=="sim"; }).length;
+  }catch(_){ pagos=0; }
+  if(cid!==channelId) return;
+  const humano=Number(s.requiere_humano||0), cal=Number(porStage.caliente||0);
+  const it=[];
+  if(pagos) it.push(`<a href="copiloto.html"><span class="nd-pill amb">${pagos}</span> ${pagos===1?"pago por validar":"pagos por validar"}</a>`);
+  if(humano) it.push(`<a href="index.html"><span class="nd-pill red">${humano}</span> ${humano===1?"pide una persona":"piden una persona"}</a>`);
+  if(cal) it.push(`<a href="index.html?stage=caliente"><span class="nd-pill blu">${cal}</span> ${cal===1?"caliente sin comprar":"calientes sin comprar"}</a>`);
+  el.innerHTML = it.length ? `<div class="nd-hoy"><b>Para hoy</b>${it.join("")}</div>` : "";
+}
+
+boot();
+</script>
+</body>
+</html>

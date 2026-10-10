@@ -18,6 +18,20 @@ import { createClient } from "./vendor/supabase.min.js";
 // solo se publica al cargar el canal activo. date-range NO importa shell, así que no hay ciclo.
 import { setTZ } from "./date-range.js";
 
+// 🎨 DISEÑO 2 en prueba (10-oct-2026, paleta «Tinta + Azul Nodo + Violeta IA»): `?ds=2` en cualquier página lo enciende
+// para ESTE navegador (queda guardado) y `?ds=1` lo apaga. Así se ve el diseño nuevo con datos reales sin cambiarle el panel
+// a nadie más. Los estilos viven en shell.css bajo html[data-ds="2"].
+export const DS2 = (() => {
+  try {
+    const q = new URLSearchParams(location.search).get("ds");
+    if (q === "2") localStorage.setItem("nodo.ds", "2");
+    else if (q === "1") localStorage.removeItem("nodo.ds");
+    const on = localStorage.getItem("nodo.ds") === "2";
+    if (on) document.documentElement.setAttribute("data-ds", "2"); else document.documentElement.removeAttribute("data-ds");
+    return on;
+  } catch { return false; }
+})();
+
 export const SUPABASE_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co";
 export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFob3hkeWZmYndqbHNobWRlendpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMwNDU4MTksImV4cCI6MjA5ODYyMTgxOX0.4iY3gl1ZhxILv1kPF8-NYd4a0_MeAZmkyLqxx2BMW-Q";
 
@@ -1193,9 +1207,11 @@ export async function mountShell({ active } = {}) {
   nav.className = "nodo-nav" + (startCollapsed ? " collapsed" : "");
   // Ítems: el grupo primario (Bandeja/Dashboard/Pedidos) va FIJO fuera del
   // scroll; los demás grupos van dentro del área scrolleable.
+  // (Diseño 2: el Dashboard en prueba es dashboard-nuevo.html)
+  const hrefDe = (it) => (DS2 && it.id === "dashboard") ? "dashboard-nuevo.html" : it.href;
   const itemHTML = (it) => it.cta
-    ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}"><span class="cta-in"></span>${svg(it.icon)}<span class="nodo-lbl">${it.label}</span><span class="cta-dot"></span></a>`
-    : `<a class="nodo-link${it.special ? " nodo-link-" + it.special : ""}${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${it.href}" title="${it.label}">${svg(it.icon)}<span class="nodo-lbl">${it.label}</span></a>`;
+    ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${hrefDe(it)}" title="${it.label}"><span class="cta-in"></span>${svg(it.icon)}<span class="nodo-lbl">${it.label}</span><span class="cta-dot"></span></a>`
+    : `<a class="nodo-link${it.special ? " nodo-link-" + it.special : ""}${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${hrefDe(it)}" title="${it.label}">${svg(it.icon)}<span class="nodo-lbl">${it.label}</span></a>`;
   const topGroup = NAV_GROUPS.find((g) => !g.sec);
   const primaryHTML = (topGroup ? topGroup.items : []).map(itemHTML).join("");
   const grupoHTML = (g) => {
@@ -1206,7 +1222,15 @@ export async function mountShell({ active } = {}) {
   // «Avanzado» solo si la cuenta lo tiene (ver avanzadoPermitido). Acá se usa lo último que
   // se supo, porque el menú se pinta antes de poder preguntar; se corrige abajo al saberlo.
   const _avAlPintar = avanzadoCache();
-  const groupsHTML = NAV_GROUPS.filter((g) => g.sec && (g.key !== "avanzado" || _avAlPintar)).map(grupoHTML).join("");
+  // (Diseño 2: «Configuración» —Canales, Cuenta y equipo, Ajustes— se toca una vez al mes: va al botón ⚙ del pie, no al menú)
+  const groupsHTML = NAV_GROUPS.filter((g) => g.sec && (g.key !== "avanzado" || _avAlPintar) && !(DS2 && g.key === "conf")).map(grupoHTML).join("");
+  const _confG = NAV_GROUPS.find((g) => g.key === "conf");
+  const confHTML = DS2 && _confG
+    ? `<button class="nodo-icnbtn" id="nodoConf" type="button" title="Configuración" aria-label="Configuración">${svg("config")}</button>`
+    : "";
+  const confPopHTML = DS2 && _confG
+    ? `<div class="nodo-confpop" id="nodoConfPop" hidden><div class="ncp-t">Configuración</div>${_confG.items.map(itemHTML).join("")}</div>`
+    : "";
   nav.innerHTML = `
     <div class="nodo-brand">
       <button class="nodo-botsel" id="nodoBotBtn" type="button" title="Cambiar de bot">
@@ -1225,14 +1249,24 @@ export async function mountShell({ active } = {}) {
           <span class="nu-meta"><b id="nodoUserName">Perfil</b><small id="nodoUserRole">Mi cuenta</small></span>
         </a>
         <button class="nodo-bell" id="nodoBell" type="button" title="Notificaciones" aria-label="Notificaciones">${svg("bell")}<span class="nn-badge" hidden></span></button>
+        ${confHTML}
         <button class="nodo-icnbtn" id="nodoTheme" title="Cambiar tema"></button>
       </div>
+      ${confPopHTML}
     </div>`;
   document.body.classList.add("nodo-shelled");
   document.querySelectorAll(".nodo-nav").forEach((n) => n.remove()); // sin sidebars duplicados
   document.body.insertBefore(nav, document.body.firstChild);
   S.nav = nav;
   revelaActivo();
+
+  // ⚙ Configuración (Diseño 2): abre/cierra su menú; se cierra al elegir o al tocar afuera.
+  const confBtn = nav.querySelector("#nodoConf"), confPop = nav.querySelector("#nodoConfPop");
+  if (confBtn && confPop) {
+    confBtn.onclick = (e) => { e.stopPropagation(); confPop.hidden = !confPop.hidden; };
+    confPop.addEventListener("click", (e) => { if (e.target.closest("a")) confPop.hidden = true; });
+    document.addEventListener("click", (e) => { if (!confPop.hidden && !e.target.closest("#nodoConfPop,#nodoConf")) confPop.hidden = true; });
+  }
 
   // Tema toggle
   const themeBtn = nav.querySelector("#nodoTheme");
