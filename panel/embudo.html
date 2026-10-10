@@ -430,7 +430,7 @@ function comparar(){
 
 function renderMetricas(F, cmp){
   const el=$("metPanel");
-  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="met low" style="flex:1 1 100%"><div class="num">—</div><div class="mtxt"><div class="mlbl">${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</div><div class="mdesc">${filt?"Ningún contacto coincide con el tipo, producto o rango de fechas elegido — ajusta los filtros de arriba.":"Cuando lleguen clientes por WhatsApp verás aquí tu efectividad y tu conversión."}</div></div></div>`; return; }
+  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="met low" style="flex:1 1 100%"><div class="num">—</div><div class="mtxt"><div class="mlbl">${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</div><div class="mdesc">${filt?"Prueba con otro anuncio, producto o fecha.":"Cuando lleguen clientes por WhatsApp verás aquí tu efectividad y tu conversión."}</div></div></div>`; return; }
   const ef=F.efectividad, cv=F.conversion;
   // En subvista por ZONA (Lima/Provincia) la base NO son "todos": los leads que aún no
   // dijeron su ciudad quedan fuera, y como TODOS los compradores tienen zona, la
@@ -508,7 +508,7 @@ function renderNeck(F){
 
 function renderFunnel(F){
   const el=$("fun");
-  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>${filt?`<h4>Nada coincide</h4>No hay contactos que coincidan con los filtros elegidos. Prueba con otro tipo, producto o rango de fechas.`:`<h4>Aún sin contactos</h4>Cuando lleguen mensajes a este canal, verás el embudo llenarse acá.`}</div>`; return; }
+  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>${filt?`<h4>Nada coincide</h4>Prueba con otro anuncio, producto o fecha.`:`<h4>Aún sin contactos</h4>Cuando lleguen mensajes a este canal, verás el embudo llenarse acá.`}</div>`; return; }
   const N=F.niveles;
   const niveles=[
     { lbl:"Llegaron", n:N.llegaron, c:"var(--st-llegaron,#2b7fff)" },
