@@ -16,7 +16,7 @@
 > | Lienzo / tarjeta | `#F6F7F9` / `#FFFFFF` | `#0B0F17` / `#131A26` |
 > | Texto / secundario / borde | `#101828` / `#475467` / `#E4E7EC` | `#E6E9EF` / `#98A2B3` |
 > | Azul Nodo — SOLO acciones (botón, activo, enlace) | `#0B63E5` | botón `#2563EB`, enlace `#6EA8FF` |
-> | Violeta — SOLO lo que hace la IA | `#6941C6` | `#B9A3FB` |
+> | IA — degradado violeta → rosado, SOLO lo que hace la IA (única excepción a «sin degradados», Rodrigo 10-oct) | `#a855f7` → `#ec4899` | igual |
 > | Verde = plata que entró · Ámbar = esperando · Rojo = plata perdida | `#067647` · `#B54708` · `#B42318` | `#5FD39A` · `#F7C063` · `#FF8A80` |
 >
 > Reglas: sin degradados, brillos ni sombras; íconos de tarjeta en gris; estados en pastel; un solo número destacado.
