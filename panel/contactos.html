@@ -137,6 +137,21 @@
     .trow>.tagscell{grid-area:tags} .trow>.ltvcell{grid-area:ltv} .trow>.stcellwrap{grid-area:st;align-self:start}
     .trow>.actcell,.trow>.actionscell{display:none}
   }
+  /* (10-oct) resumen en una línea, selector, menús «⋯», estado solo cuando importa */
+  .stline{display:flex;flex-wrap:wrap;gap:6px 8px;margin:2px 0 14px}
+  .stline button{border:1px solid var(--border);background:var(--surface);color:var(--muted);font:inherit;font-size:13px;padding:6px 12px;border-radius:999px;cursor:pointer}
+  .stline button b{color:var(--text);font-weight:600;margin-right:4px;font-variant-numeric:tabular-nums}
+  .stline button:hover{border-color:var(--brand)} .stline button.on{border-color:var(--brand);background:var(--brand-bg);color:var(--text)}
+  .vsel{max-width:260px}
+  .masw{position:relative}
+  .masmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:40;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.25);padding:6px;display:none}
+  .masmenu.show{display:block}
+  .masmenu .btn,.masmenu button{display:flex;align-items:center;gap:10px;width:100%;justify-content:flex-start;border:none;background:none;color:var(--text);font:inherit;font-size:13px;padding:8px 10px;border-radius:8px;cursor:pointer;height:auto}
+  .masmenu .btn:hover,.masmenu button:hover{background:var(--surface-2)} .masmenu svg{width:15px;height:15px;color:var(--muted)}
+  .masmenu .dang:hover{color:var(--red)}
+  .sintel{color:var(--faint)}
+  .pill.pausa{background:var(--amber-bg,#2c2311);color:var(--amber,#f0a92b);border-color:transparent}
+  .pill.bloq{background:var(--red-bg,#2c1615);color:var(--red,#e2564a);border-color:transparent}
 </style>
 </head>
 <body>
@@ -145,12 +160,13 @@
     <h1>Contactos</h1>
     <p class="sub" id="sub">Tu base de clientes en un solo lugar: organiza, etiqueta y reactiva ventas.</p>
 
-    <div class="stats" id="stats"></div>
+    <div class="stline" id="stats"></div>
 
     <div class="bar">
       <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="q" placeholder="Buscar por nombre, teléfono o etiqueta…"/></div>
-      <select class="sel" id="fSource"></select>
+      <select class="sel" id="fSource" style="display:none"></select>
+      <select class="sel vsel" id="vistaSel" style="display:none" title="Producto o anuncio"><option value="all">Todo</option></select>
       <select class="sel" id="fSort">
         <option value="activity">Última actividad</option>
         <option value="recent">Más recientes</option>
@@ -159,9 +175,12 @@
         <option value="spend">Mayor gasto</option>
       </select>
       <button class="btn" id="filtBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg> Filtros <span class="cnt" id="filtCnt" style="display:none">0</span></button>
+      <div class="masw" id="masW"><button class="btn" id="masBtn" title="Importar o exportar" aria-label="Más"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+      <div class="masmenu" id="masMenu">
       <button class="btn" id="importBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg> Importar</button>
       <input type="file" id="importFile" accept=".csv,text/csv" hidden/>
       <button class="btn" id="exportBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg> Exportar</button>
+      </div></div>
       <button class="btn primary" id="newBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nuevo</button>
     </div>
 
@@ -257,14 +276,17 @@ async function boot(){
   shell.onChannel(id=>{ st.channelId=id; st.sel.clear(); subscribe(); load(); });
   $("q").addEventListener("input", e=>{ f.q=norm(e.target.value.trim()); st.visible=120; render(); });
   $("fSource").addEventListener("change", e=>{ f.source=e.target.value; render(); });
+  $("vistaSel").addEventListener("change", e=>{ f.vista=e.target.value||"all"; st.visible=120; render(); });
+  $("masBtn").onclick=(e)=>{ e.stopPropagation(); $("masMenu").classList.toggle("show"); };
+  document.addEventListener("click",(e)=>{ if(!e.target.closest(".masw")) document.querySelectorAll(".masmenu.show").forEach(m=>m.classList.remove("show")); });
   $("fSort").addEventListener("change", e=>{ f.sort=e.target.value; render(); });
   $("filtBtn").onclick=()=>$("filters").classList.toggle("show");
   $("fClear").onclick=clearFilters;
   $("newBtn").onclick=()=>openModal(null);
   $("cCancel").onclick=()=>$("modal").classList.remove("show");
   $("cSave").onclick=saveContact;
-  $("exportBtn").onclick=()=>exportCsv(filtered());
-  $("importBtn").onclick=()=>$("importFile").click();
+  $("exportBtn").onclick=()=>{ $("masMenu").classList.remove("show"); exportCsv(filtered()); };
+  $("importBtn").onclick=()=>{ $("masMenu").classList.remove("show"); $("importFile").click(); };
   $("importFile").onchange=(e)=>{ const file=e.target.files[0]; e.target.value=""; if(file) importCsv(file); };
   $("ckAll").onchange=(e)=>{ const list=filtered(); if(e.target.checked) list.forEach(c=>st.sel.add(c.id)); else list.forEach(c=>st.sel.delete(c.id)); render(); };
   $("bulkClear").onclick=()=>{ st.sel.clear(); render(); };
@@ -310,6 +332,9 @@ async function load(){
   st.truncado=!!topeCs && st.total>(cs||[]).length;
   st.contacts=(cs||[]).filter(c=>c.wa_id!=="webchat-test"&&c.source!=="sim");   // ni el de prueba ni los simulados (tmp-sim)
   st.tags=tg||[];
+  try{ const { data:am }=await supa.from("ads_meta").select("ad_id,ad_name,estado").eq("channel_id",forChannel);
+    st.adNombre={}; st.adEstado={}; (am||[]).forEach(a=>{ if(!a.ad_id) return; st.adNombre[a.ad_id]=a.ad_name||""; if(a.estado) st.adEstado[a.ad_id]=a.estado; }); }catch(_){}
+  if(gen!==st.loadGen) return;
   st.ordersBy={}; _ltvCache={};
   (os||[]).forEach(o=>{ if(!o.contact_id) return; (st.ordersBy[o.contact_id]||(st.ordersBy[o.contact_id]=[])).push(o); });
   // Origen (con etiqueta legible).
@@ -323,6 +348,32 @@ async function load(){
 function isAd(c){ return !!(c.ad_id || c.ctwa_clid || /ctwa|anuncio|ad/i.test(c.source||"")); }
 function isArchived(c){ const cv=Array.isArray(c.conv)?c.conv[0]:c.conv; return !!cv?.archivada; }
 
+// (10-oct) Producto → sus anuncios → orgánico (mismo selector que Embudo, Dashboard, Directo…)
+function enVista(c){ const v=f.vista||"all"; if(v==="all") return true; if(v==="none") return !c.ad_id; if(v.startsWith("p:")) return c.product_id===v.slice(2); return String(c.ad_id||"")===v.slice(2); }
+const unProducto=()=> new Set(st.contacts.map(c=>c.product_id).filter(Boolean)).size<=1;
+function fillVista(){
+  const sel=$("vistaSel"); if(!sel) return;
+  const vivos=st.contacts.filter(c=>!isArchived(c));
+  const n={}; const sum=(k)=>{ n[k]=(n[k]||0)+1; };
+  vivos.forEach(c=>{ sum("all"); if(c.product_id) sum("p:"+c.product_id); sum(c.ad_id?"a:"+c.ad_id:"none"); });
+  const prods=new Map(); st.contacts.forEach(c=>{ if(c.product_id && c.product && !prods.has(c.product_id)) prods.set(c.product_id,c.product); });
+  const cnt={}; st.contacts.forEach(c=>{ if(!c.ad_id) return; (cnt[c.ad_id]||(cnt[c.ad_id]={}))[c.product_id||""]=((cnt[c.ad_id]||{})[c.product_id||""]||0)+1; });
+  const adsDe={}; Object.entries(cnt).forEach(([a,m])=>{ const p=Object.entries(m).sort((x,y)=>y[1]-x[1])[0][0]; (adsDe[p]||(adsDe[p]=[])).push(a); });
+  const nn=(k)=>String(n[k]||0);
+  const est=(a)=>{ const e=(st.adEstado||{})[a]; return e?` data-dot="${e==="ACTIVE"?"on":"off"}" data-titulo="${e==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}"`:""; };
+  let h=`<option value="all" data-ico="contactos" data-n="${nn("all")}">Todo</option>`, cuantos=0;
+  [...prods.keys()].sort((a,b)=>(n["p:"+b]||0)-(n["p:"+a]||0)).forEach(pid=>{
+    const p=prods.get(pid), ads=adsDe[pid]||[];
+    h+=`<optgroup label=""><option value="p:${esc(pid)}" data-ico="box" data-n="${nn("p:"+pid)}">${esc(p.nombre||"Producto")}</option>`;
+    if(ads.length>1){ h+=ads.map(a=>`<option value="a:${esc(a)}" data-ico="megaphone" data-sub="1"${est(a)} data-n="${nn("a:"+a)}">${esc((st.adNombre||{})[a]||("Anuncio …"+String(a).slice(-6)))}</option>`).join(""); cuantos+=ads.length; }
+    h+=`</optgroup>`; cuantos++;
+  });
+  if(st.contacts.some(c=>!c.ad_id)){ h+=`<optgroup label=""><option value="none" data-ico="user" data-n="${nn("none")}">Sin anuncio (orgánico)</option></optgroup>`; cuantos++; }
+  sel.innerHTML=h;
+  if(![...sel.options].some(o=>o.value===(f.vista||"all"))) f.vista="all";
+  sel.value=f.vista||"all";
+  sel.style.display = cuantos>1 ? "" : "none";
+}
 function filtered(){
   let list=st.contacts.filter(c=>{
     // Los archivados se ocultan por defecto; el filtro "Archivados" los aísla.
@@ -332,6 +383,7 @@ function filtered(){
       if(!(norm(c.nombre).includes(f.q) || (c.wa_id||"").includes(f.q) || tagNames.includes(f.q))) return false;
     }
     if(f.source && c.source!==f.source) return false;
+    if(!enVista(c)) return false;
     if(f.stages.size && !f.stages.has(c.stage||"nuevo")) return false;
     if(f.tags.size){ const ids=(c.contact_tags||[]).map(x=>x.tag_id); if(![...f.tags].some(id=>ids.includes(id))) return false; }
     if(f.compro && !(ltvOf(c.id).count>0)) return false;
@@ -378,13 +430,15 @@ function renderStats(){
   // Sobre el universo VISIBLE (los archivados se ocultan de la lista) → las tarjetas
   // cuadran con lo que ves al tocarlas. Antes contaban también archivados que nunca salen.
   const all=st.contacts.filter(c=>!isArchived(c));
+  // (10-oct) Una línea en vez de 4 tarjetas de colores; «bloqueados» solo si hay alguno. Cada número filtra.
+  const nBloq=all.filter(c=>c.bloqueado).length;
   const stats=[
-    { k:"total", v:all.length, label:"Contactos", color:"#2b7fff" },
-    { k:"compro", v:all.filter(c=>ltvOf(c.id).count>0).length, label:"Compraron", color:"#22c079" },
-    { k:"anuncio", v:all.filter(isAd).length, label:"Por anuncio", color:"#9b6cf0" },
-    { k:"bloqueado", v:all.filter(c=>c.bloqueado).length, label:"Bloqueados", color:"#e2564a" },
+    { k:"total", v:all.length, label:"contactos" },
+    { k:"compro", v:all.filter(c=>ltvOf(c.id).count>0).length, label:"compraron" },
+    { k:"anuncio", v:all.filter(isAd).length, label:"por anuncio" },
+    ...(nBloq?[{ k:"bloqueado", v:nBloq, label:"bloqueados" }]:[]),
   ];
-  box.innerHTML=stats.map(s=>`<div class="stat${(s.k!=="total"&&f[s.k])?" on":""}" data-stat="${s.k}"><div class="sv" style="color:${s.color}">${s.v}</div><div class="sl"><span class="sdot" style="background:${s.color}"></span>${s.label}</div></div>`).join("");
+  box.innerHTML=stats.map(s=>`<button class="${(s.k!=="total"&&f[s.k])?"on":""}" data-stat="${s.k}"><b>${s.v}</b>${s.label}</button>`).join("");
   box.querySelectorAll("[data-stat]").forEach(el=> el.onclick=()=>{
     const k=el.dataset.stat;
     if(k==="total"){ clearFilters(); return; }
@@ -392,6 +446,7 @@ function renderStats(){
   });
 }
 function render(){
+  fillVista();
   const list=filtered();
   // 🛡️ La selección sigue a lo FILTRADO: al cambiar filtro/búsqueda/orden se descartan
   // los seleccionados que ya no matchean, para que una acción en lote (Eliminar/Bloquear/
@@ -433,7 +488,7 @@ function rowEl(c){
   const el=document.createElement("div"); el.className="trow"+(arch?" arch":"");
   const sg=STAGE[c.stage||"nuevo"]||STAGE.nuevo;
   const lv=ltvOf(c.id);
-  const ltvHtml = lv.count? `<span class="ltv paid">${money(lv.paid,lv.cur)} <span class="u">· ${lv.count} compra${lv.count>1?"s":""}</span></span>`
+  const ltvHtml = lv.count? `<span class="ltv paid">${money(lv.paid,lv.cur)}${lv.count>1?` <span class="u">· ${lv.count}</span>`:""}</span>`
     : lv.proc? `<span class="ltv proc">En proceso</span>` : `<span class="ltv none">—</span>`;
   const org=origenLabel(c.source);
   const avaC=avaColor(c.nombre||c.wa_id);
@@ -444,8 +499,8 @@ function rowEl(c){
       <div class="ava" style="background:${avaC}22;color:${avaC}">${avaInner}</div>
       <div class="cli-tx">
         <div class="nm">${esc(c.nombre||"Sin nombre")}</div>
-        <div class="ph">${PHONE}+${esc(c.wa_id)}</div>
-        <div class="org">${esc(org)}${c.product?.nombre?` · ${esc(c.product.nombre)}`:""}</div>
+        <div class="ph">${PHONE}${/^\d{9,15}$/.test(String(c.wa_id||""))?"+"+esc(c.wa_id):'<span class="sintel">sin teléfono</span>'}</div>
+        <div class="org">${esc(isAd(c)?"Anuncio":org)}${(!unProducto()&&c.product?.nombre)?` · ${esc(c.product.nombre)}`:""}</div>
       </div>
     </div>
     <div class="etapacell"><span class="stg" style="background:${sg.color}1c;color:${sg.color}"><span class="sd" style="background:${sg.color}"></span>${sg.label}</span></div>
@@ -453,22 +508,26 @@ function rowEl(c){
     <div class="ltvcell">${ltvHtml}</div>
     <div class="act actcell">${ago(c.ultimo_mensaje_at||c.created_at)}</div>
     <div class="stcell stcellwrap">
-      <span class="pill ${c.bot_activo?'':'off'}" title="Toca para ${c.bot_activo?'pausar':'activar'} el bot">${c.bot_activo?'Activo':'Pausado'}</span>
-      ${c.bloqueado?`<span class="mini lock" title="Bloqueado">${LOCK}</span>`:""}
+      ${c.bot_activo===false?`<span class="pill pausa" title="Toca para que el bot vuelva a atenderlo">Bot en pausa</span>`:""}
+      ${c.bloqueado?`<span class="pill bloq" title="Bloqueado">Bloqueado</span>`:""}
       ${c.no_remarketing?`<button class="mini bell" data-nomk title="Fuera del remarketing — toca para reactivar" style="border:none;cursor:pointer;padding:0">${BELL}</button>`:""}
     </div>
-    <div class="actionscell"><button class="icobtn arch${arch?" on":""}" data-a="arch" title="${arch?"Desarchivar":"Archivar"}">${ARCH}</button><button class="icobtn" data-a="del" title="Eliminar">${TRASH}</button></div>`;
+    <div class="actionscell"><div class="masw"><button class="icobtn" data-mas title="Más"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+      <div class="masmenu"><button data-a="bot">${c.bot_activo===false?"Activar el bot":"Pausar el bot"}</button><button data-a="arch">${ARCH} ${arch?"Desarchivar":"Archivar"}</button><button class="dang" data-a="del">${TRASH} Eliminar</button></div></div></div>`;
   renderTags(el.querySelector(".tagscell"), c);
   // Checkbox de selección.
   const rowck=el.querySelector(".rowck");
   rowck.onclick=(e)=>e.stopPropagation();
   rowck.onchange=()=>{ rowck.checked?st.sel.add(c.id):st.sel.delete(c.id); render(); };
   // Toggle del bot.
-  el.querySelector(".pill").onclick=(e)=>{ e.stopPropagation(); toggleBot(c); };
+  const pz=el.querySelector(".pill.pausa"); if(pz) pz.onclick=(e)=>{ e.stopPropagation(); toggleBot(c); };
+  el.querySelector("[data-mas]").onclick=(e)=>{ e.stopPropagation(); const m=el.querySelector(".masmenu"); const ab=m.classList.contains("show"); document.querySelectorAll(".masmenu.show").forEach(x=>x.classList.remove("show")); if(!ab) m.classList.add("show"); };
+  el.querySelector(".actionscell").onclick=(e)=>e.stopPropagation();
+  el.querySelector('[data-a="bot"]').onclick=(e)=>{ e.stopPropagation(); el.querySelector(".masmenu").classList.remove("show"); toggleBot(c); };
   el.querySelector(".ckcell").onclick=(e)=>e.stopPropagation();
   el.querySelector(".stcell").onclick=(e)=>e.stopPropagation();
-  el.querySelector('[data-a="arch"]').onclick=(e)=>{ e.stopPropagation(); setArchived([c.id], !arch); };
-  el.querySelector('[data-a="del"]').onclick=(e)=>{ e.stopPropagation(); removeContact(c); };
+  el.querySelector('[data-a="arch"]').onclick=(e)=>{ e.stopPropagation(); el.querySelector(".masmenu").classList.remove("show"); setArchived([c.id], !arch); };
+  el.querySelector('[data-a="del"]').onclick=(e)=>{ e.stopPropagation(); el.querySelector(".masmenu").classList.remove("show"); removeContact(c); };
   const nmk=el.querySelector("[data-nomk]"); if(nmk) nmk.onclick=(e)=>{ e.stopPropagation(); setNoRemarketing([c.id], false); };
   // Click en la fila → abre el chat (deep-link de la Bandeja).
   el.onclick=(e)=>{ if(e.target.closest(".tagscell")||e.target.closest(".rowck")) return; location.href="index.html?c="+c.id; };
@@ -714,6 +773,7 @@ async function bulk(act){
 }
 
 function clearFilters(){
+  f.vista="all";
   f.q=""; f.source=""; f.stages.clear(); f.tags.clear(); f.compro=f.anuncio=f.organico=f.sinprod=f.conimg=f.bloqueado=f.noremk=f.archivado=false;
   $("q").value=""; $("fSource").value=""; renderFilterChips(); render();
 }
