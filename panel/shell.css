@@ -964,7 +964,7 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 
 /* ═══════════════════════════════════════════════════════════════════
    DISEÑO 2 · «Tinta + Azul Nodo + Violeta IA» (10-oct-2026, decidido con Rodrigo)
-   Se activa con html[data-ds="2"] (modo de prueba: ?ds=2 en cualquier página; ?ds=1 lo apaga — ver shell.js).
+   Se activa con html:not([data-ds="1"]) (modo de prueba: ?ds=2 en cualquier página; ?ds=1 lo apaga — ver shell.js).
    Reglas: cada color significa algo y el 90 % de la pantalla es gris/blanco.
      · Tinta  = menú + el ÚNICO número destacado de la pantalla
      · Azul   = SOLO acciones (botón, sección activa, enlace)
@@ -972,7 +972,7 @@ body.nodo-shelled > #app{flex:1;min-width:0}
      · Verde = plata que entró · Ámbar = esperando · Rojo = plata perdida
    Sin degradados, brillos ni sombras. Contraste medido: todo ≥ AA.
    ═══════════════════════════════════════════════════════════════════ */
-html[data-ds="2"][data-theme="light"]{
+html:not([data-ds="1"])[data-theme="light"]{
   --bg:#F6F7F9; --surface-1:#FFFFFF; --surface:#FFFFFF; --surface-2:#F2F4F7;
   --border:#E4E7EC; --border-strong:#D0D5DD;
   --text:#101828; --muted:#475467; --faint:#5F6B7D; --disabled:#98A2B3;
@@ -988,7 +988,7 @@ html[data-ds="2"][data-theme="light"]{
   --shadow-1:none; --shadow-2:0 8px 24px rgba(16,24,40,.10); --shadow-3:0 16px 48px rgba(16,24,40,.14);
   --glass:#FFFFFF; --glass-nav:#0F1523; --glass-brd:#E4E7EC;
 }
-html[data-ds="2"]:not([data-theme="light"]){
+html:not([data-ds="1"]):not([data-theme="light"]){
   --bg:#0B0F17; --surface-1:#131A26; --surface:#131A26; --surface-2:#1A2232;
   --border:rgba(255,255,255,.07); --border-strong:rgba(255,255,255,.12);
   --text:#E6E9EF; --muted:#98A2B3; --faint:#8C96A8; --disabled:#475467;
@@ -1005,15 +1005,15 @@ html[data-ds="2"]:not([data-theme="light"]){
   --glass:#131A26; --glass-nav:#070A10; --glass-brd:rgba(255,255,255,.07);
 }
 /* Plano: sin aurora, nebulosa ni vidrio. Las tarjetas son sólidas. */
-html[data-ds="2"] .nfx-aurora,html[data-ds="2"] .nodo-nebula{display:none!important}
-html[data-ds="2"] body.nodo-shelled{background:var(--bg)}
-html[data-ds="2"] body.nodo-shelled :is(.card,.dcard,.panel,.kpi,.tbl,.nodo-card){
+html:not([data-ds="1"]) .nfx-aurora,html:not([data-ds="1"]) .nodo-nebula{display:none!important}
+html:not([data-ds="1"]) body.nodo-shelled{background:var(--bg)}
+html:not([data-ds="1"]) body.nodo-shelled :is(.card,.dcard,.panel,.kpi,.tbl,.nodo-card){
   background:var(--surface)!important;border-color:var(--border)!important;box-shadow:none!important;
   backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
-html[data-ds="2"] body.nodo-shelled{font-variant-numeric:tabular-nums}
+html:not([data-ds="1"]) body.nodo-shelled{font-variant-numeric:tabular-nums}
 
 /* ── Menú: color propio (tinta) en los dos temas, más compacto, sin barra de scroll ── */
-html[data-ds="2"] .nodo-nav{
+html:not([data-ds="1"]) .nodo-nav{
   /* El menú es SIEMPRE oscuro: sus tokens se redefinen acá adentro (como un tema propio). */
   --text:#E6E9EF; --muted:#98A2B3; --faint:#8C96A8;
   --surface:#131A26; --surface-1:#131A26; --surface-2:rgba(255,255,255,.06);
@@ -1022,35 +1022,35 @@ html[data-ds="2"] .nodo-nav{
   width:224px;padding:10px;background:var(--ink)!important;border-right:1px solid var(--ink-border);
   backdrop-filter:none!important;-webkit-backdrop-filter:none!important;color:var(--text);
 }
-html[data-ds="2"] .nodo-nav.collapsed{width:64px}
-html[data-ds="2"] .nodo-links{gap:2px;scrollbar-width:none}
-html[data-ds="2"] .nodo-links::-webkit-scrollbar{width:0;height:0}
-html[data-ds="2"] .nodo-primary{gap:2px}
-html[data-ds="2"] .nodo-group .nodo-gitems{gap:2px}
-html[data-ds="2"] .nodo-sec{margin:16px 0 6px;padding:0 10px;font-size:11px;font-weight:500;letter-spacing:.06em;color:var(--faint)}
-html[data-ds="2"] .nodo-sec:hover{color:var(--text)}
-html[data-ds="2"] .nodo-link{height:32px;gap:10px;padding:0 10px;font-size:13px;font-weight:500;color:var(--muted);border-radius:7px}
-html[data-ds="2"] .nodo-link svg{width:16px;height:16px}
-html[data-ds="2"] .nodo-link:hover{background:rgba(255,255,255,.06);color:#fff}
-html[data-ds="2"] .nodo-link.active{background:rgba(255,255,255,.08);color:#fff;font-weight:500}
-html[data-ds="2"] .nodo-link.active::before{width:2px;height:14px;background:#4C8DFF}
+html:not([data-ds="1"]) .nodo-nav.collapsed{width:64px}
+html:not([data-ds="1"]) .nodo-links{gap:2px;scrollbar-width:none}
+html:not([data-ds="1"]) .nodo-links::-webkit-scrollbar{width:0;height:0}
+html:not([data-ds="1"]) .nodo-primary{gap:2px}
+html:not([data-ds="1"]) .nodo-group .nodo-gitems{gap:2px}
+html:not([data-ds="1"]) .nodo-sec{margin:16px 0 6px;padding:0 10px;font-size:11px;font-weight:500;letter-spacing:.06em;color:var(--faint)}
+html:not([data-ds="1"]) .nodo-sec:hover{color:var(--text)}
+html:not([data-ds="1"]) .nodo-link{height:32px;gap:10px;padding:0 10px;font-size:13px;font-weight:500;color:var(--muted);border-radius:7px}
+html:not([data-ds="1"]) .nodo-link svg{width:16px;height:16px}
+html:not([data-ds="1"]) .nodo-link:hover{background:rgba(255,255,255,.06);color:#fff}
+html:not([data-ds="1"]) .nodo-link.active{background:rgba(255,255,255,.08);color:#fff;font-weight:500}
+html:not([data-ds="1"]) .nodo-link.active::before{width:2px;height:14px;background:#4C8DFF}
 /* La Bandeja: primer ítem del menú, sin relleno, brillo ni animación. */
-html[data-ds="2"] .nodo-link.nodo-cta{height:34px;margin:2px 0 2px;font-size:13px;font-weight:500;color:#fff;letter-spacing:0;
+html:not([data-ds="1"]) .nodo-link.nodo-cta{height:34px;margin:2px 0 2px;font-size:13px;font-weight:500;color:#fff;letter-spacing:0;
   background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.08);box-shadow:none;animation:none}
-html[data-ds="2"] .nodo-link.nodo-cta:hover{filter:none;background:rgba(255,255,255,.11)}
-html[data-ds="2"] .nodo-link.nodo-cta svg{width:16px;height:16px;stroke-width:2;color:#6EA8FF}
-html[data-ds="2"] .nodo-link.nodo-cta .cta-in{display:none}
-html[data-ds="2"] .nodo-link.nodo-cta .cta-dot{width:7px;height:7px;background:#4C8DFF;animation:none;box-shadow:none}
-html[data-ds="2"] .nodo-link.nodo-cta.active::before{display:block}
+html:not([data-ds="1"]) .nodo-link.nodo-cta:hover{filter:none;background:rgba(255,255,255,.11)}
+html:not([data-ds="1"]) .nodo-link.nodo-cta svg{width:16px;height:16px;stroke-width:2;color:#6EA8FF}
+html:not([data-ds="1"]) .nodo-link.nodo-cta .cta-in{display:none}
+html:not([data-ds="1"]) .nodo-link.nodo-cta .cta-dot{width:7px;height:7px;background:#4C8DFF;animation:none;box-shadow:none}
+html:not([data-ds="1"]) .nodo-link.nodo-cta.active::before{display:block}
 /* IA: violeta liso, sin degradado. */
-html[data-ds="2"] .nodo-link.nodo-link-ia .nodo-lbl{background:none;-webkit-text-fill-color:currentColor;font-weight:500}
-html[data-ds="2"] .nodo-link.nodo-link-ia svg{color:#B9A3FB}
-html[data-ds="2"] .nodo-link.nodo-link-ia:hover{background:rgba(185,163,251,.10)}
-html[data-ds="2"] .nodo-link.nodo-link-ia.active{background:rgba(185,163,251,.14)}
-html[data-ds="2"] .nodo-link.nodo-link-ia.active::before{background:#B9A3FB!important}
-html[data-ds="2"] .nodo-botsel{height:40px}
-html[data-ds="2"] .nodo-foot{border-top:1px solid var(--ink-border);padding-top:8px}
-html[data-ds="2"] .nu-av{width:30px;height:30px;border-radius:8px}
+html:not([data-ds="1"]) .nodo-link.nodo-link-ia .nodo-lbl{background:none;-webkit-text-fill-color:currentColor;font-weight:500}
+html:not([data-ds="1"]) .nodo-link.nodo-link-ia svg{color:#B9A3FB}
+html:not([data-ds="1"]) .nodo-link.nodo-link-ia:hover{background:rgba(185,163,251,.10)}
+html:not([data-ds="1"]) .nodo-link.nodo-link-ia.active{background:rgba(185,163,251,.14)}
+html:not([data-ds="1"]) .nodo-link.nodo-link-ia.active::before{background:#B9A3FB!important}
+html:not([data-ds="1"]) .nodo-botsel{height:40px}
+html:not([data-ds="1"]) .nodo-foot{border-top:1px solid var(--ink-border);padding-top:8px}
+html:not([data-ds="1"]) .nu-av{width:30px;height:30px;border-radius:8px}
 /* Configuración en el menú del usuario (ver shell.js: botón ⚙ del pie). */
 .nodo-confpop{position:absolute;left:10px;right:10px;bottom:58px;z-index:40;display:flex;flex-direction:column;gap:2px;
   background:#131A26;border:1px solid rgba(255,255,255,.10);border-radius:10px;padding:5px;box-shadow:0 12px 32px rgba(0,0,0,.45)}
@@ -1070,13 +1070,13 @@ html[data-ds="2"] .nu-av{width:30px;height:30px;border-radius:8px}
   src:url("vendor/inter-latin.woff2") format('woff2');
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
 }
-html[data-ds="2"]{--font:"InterDS",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-synthesis-weight:none}
-html[data-ds="2"] .nodo-title{font-weight:600;letter-spacing:-.02em}
+html:not([data-ds="1"]){--font:"InterDS",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-synthesis-weight:none}
+html:not([data-ds="1"]) .nodo-title{font-weight:600;letter-spacing:-.02em}
 
 /* ── Diseño 2 · Pie del menú: entra en 224 px (antes «Ro… Ad…») ── */
-html[data-ds="2"] .nodo-userrow{gap:2px}
-html[data-ds="2"] .nodo-user{gap:8px;padding:6px}
-html[data-ds="2"] .nu-meta small{display:none}
-html[data-ds="2"] .nu-meta b{font-size:12.5px;font-weight:500}
-html[data-ds="2"] .nodo-userrow .nodo-icnbtn,html[data-ds="2"] .nodo-bell{width:28px;height:28px}
-html[data-ds="2"] .nodo-userrow .nodo-icnbtn svg,html[data-ds="2"] .nodo-bell svg{width:15px;height:15px}
+html:not([data-ds="1"]) .nodo-userrow{gap:2px}
+html:not([data-ds="1"]) .nodo-user{gap:8px;padding:6px}
+html:not([data-ds="1"]) .nu-meta small{display:none}
+html:not([data-ds="1"]) .nu-meta b{font-size:12.5px;font-weight:500}
+html:not([data-ds="1"]) .nodo-userrow .nodo-icnbtn,html:not([data-ds="1"]) .nodo-bell{width:28px;height:28px}
+html:not([data-ds="1"]) .nodo-userrow .nodo-icnbtn svg,html:not([data-ds="1"]) .nodo-bell svg{width:15px;height:15px}

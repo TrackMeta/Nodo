@@ -18,18 +18,19 @@ import { createClient } from "./vendor/supabase.min.js";
 // solo se publica al cargar el canal activo. date-range NO importa shell, así que no hay ciclo.
 import { setTZ } from "./date-range.js";
 
-// 🎨 DISEÑO 2 en prueba (10-oct-2026, paleta «Tinta + Azul Nodo + Violeta IA»): `?ds=2` en cualquier página lo enciende
-// para ESTE navegador (queda guardado) y `?ds=1` lo apaga. Así se ve el diseño nuevo con datos reales sin cambiarle el panel
-// a nadie más. Los estilos viven en shell.css bajo html[data-ds="2"].
+// 🎨 DISEÑO 2 (10-oct-2026, paleta «Tinta + Azul Nodo + Violeta IA») — es el diseño de TODOS desde el 10-oct.
+// Los estilos viven en shell.css bajo html:not([data-ds="1"]), así que pinta sin esperar a este script (sin parpadeo).
+// Salida de emergencia por navegador: `?ds=1` vuelve al diseño anterior (queda guardado) y `?ds=2` lo quita.
+// Con el diseño anterior el Dashboard es dashboard-clasico.html.
 export const DS2 = (() => {
   try {
     const q = new URLSearchParams(location.search).get("ds");
-    if (q === "2") localStorage.setItem("nodo.ds", "2");
-    else if (q === "1") localStorage.removeItem("nodo.ds");
-    const on = localStorage.getItem("nodo.ds") === "2";
-    if (on) document.documentElement.setAttribute("data-ds", "2"); else document.documentElement.removeAttribute("data-ds");
+    if (q === "1") localStorage.setItem("nodo.ds", "1");
+    else if (q === "2") localStorage.removeItem("nodo.ds");
+    const on = localStorage.getItem("nodo.ds") !== "1";
+    if (on) document.documentElement.removeAttribute("data-ds"); else document.documentElement.setAttribute("data-ds", "1");
     return on;
-  } catch { return false; }
+  } catch { return true; }
 })();
 
 export const SUPABASE_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co";
@@ -1207,8 +1208,8 @@ export async function mountShell({ active } = {}) {
   nav.className = "nodo-nav" + (startCollapsed ? " collapsed" : "");
   // Ítems: el grupo primario (Bandeja/Dashboard/Pedidos) va FIJO fuera del
   // scroll; los demás grupos van dentro del área scrolleable.
-  // (Diseño 2: el Dashboard en prueba es dashboard-nuevo.html)
-  const hrefDe = (it) => (DS2 && it.id === "dashboard") ? "dashboard-nuevo.html" : it.href;
+  // (con el diseño anterior —?ds=1— el Dashboard es el clásico)
+  const hrefDe = (it) => (!DS2 && it.id === "dashboard") ? "dashboard-clasico.html" : it.href;
   const itemHTML = (it) => it.cta
     ? `<a class="nodo-link nodo-cta${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${hrefDe(it)}" title="${it.label}"><span class="cta-in"></span>${svg(it.icon)}<span class="nodo-lbl">${it.label}</span><span class="cta-dot"></span></a>`
     : `<a class="nodo-link${it.special ? " nodo-link-" + it.special : ""}${it.id === active ? " active" : ""}" data-nav="${it.id}" href="${hrefDe(it)}" title="${it.label}">${svg(it.icon)}<span class="nodo-lbl">${it.label}</span></a>`;

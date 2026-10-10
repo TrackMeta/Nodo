@@ -4,6 +4,30 @@
 >
 > **Fecha:** 2026-07-10 · **Estado:** Aprobado como dirección — pendiente de implementación en `shell.css`.
 
+> ## ⚠️ Diseño 2 (10-oct-2026) — MANDA sobre las secciones 3, 4, 7 y 14 de abajo
+>
+> Paleta **«Tinta + Azul Nodo + Violeta IA»**, aplicada a TODOS desde el 10-oct. Vive al final de `panel/shell.css` bajo
+> `html:not([data-ds="1"])` (`?ds=1` en la URL vuelve al diseño anterior en ese navegador; `?ds=2` lo quita).
+>
+> **Cada color significa algo; el 90 % de la pantalla es gris/blanco:**
+> | Rol | Claro | Oscuro |
+> |---|---|---|
+> | Tinta (menú + el ÚNICO número destacado por pantalla) | `#0F1523` | menú `#070A10`, destacado `#1B2538` |
+> | Lienzo / tarjeta | `#F6F7F9` / `#FFFFFF` | `#0B0F17` / `#131A26` |
+> | Texto / secundario / borde | `#101828` / `#475467` / `#E4E7EC` | `#E6E9EF` / `#98A2B3` |
+> | Azul Nodo — SOLO acciones (botón, activo, enlace) | `#0B63E5` | botón `#2563EB`, enlace `#6EA8FF` |
+> | Violeta — SOLO lo que hace la IA | `#6941C6` | `#B9A3FB` |
+> | Verde = plata que entró · Ámbar = esperando · Rojo = plata perdida | `#067647` · `#B54708` · `#B42318` | `#5FD39A` · `#F7C063` · `#FF8A80` |
+>
+> Reglas: sin degradados, brillos ni sombras; íconos de tarjeta en gris; estados en pastel; un solo número destacado.
+> **Tipografía:** Inter; pesos 400/500/600 (la fuente `InterDS` declara el rango 400–600, así un 700/800 viejo se ve 600);
+> cifras tabulares en plata. **Menú:** 224 px, tinta en los dos temas, filas de 32 px, ícono 16, sin barra de scroll visible;
+> Canales / Cuenta y equipo / Ajustes van al botón ⚙ del pie. **Fechas:** las páginas de métricas (Dashboard, Embudo,
+> Rendimiento, gasto de IA, Conciliar, Compras) abren en «Hoy»; las listas de trabajo (Bandeja, Directo) en «todas».
+> **Dashboard:** nombre del bot + fechas · 4 KPIs (Ganancia neta en tinta, Ventas, Ingresos, ROAS) · Bitácora (Gráfico de
+> barras ⇄ Calendario) · Ventas / Publicidad / Rentabilidad en filas · Por producto. Sin selector de tipo. El anterior quedó en
+> `dashboard-clasico.html`.
+
 ---
 
 ## 1. Filosofía visual

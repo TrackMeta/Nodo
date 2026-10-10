@@ -215,6 +215,45 @@
   .aipri.idea{color:var(--muted);background:var(--surface-2)}
   .aiact{margin-top:9px;height:32px;padding:0 13px;border:1px solid var(--border);border-radius:9px;background:transparent;color:var(--brand);font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
   .aiact:hover{border-color:var(--brand)}
+  /* ═══ Dashboard nuevo (Diseño 2, 10-oct) ═══ */
+  .nd-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0 16px}
+  @media(max-width:900px){.nd-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .nd-kpi{display:flex;flex-direction:column;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0}
+  .nd-kpi .l{font-size:12px;color:var(--muted);font-weight:500}
+  .nd-kpi .n{font-size:28px;line-height:1.15;font-weight:600;letter-spacing:-.02em;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nd-kpi .s{font-size:12px;color:var(--muted)} .nd-kpi .s.ok{color:var(--green)} .nd-kpi .s.bad{color:var(--red)}
+  .nd-kpi.hero{background:var(--hero,#0F1523);border-color:var(--hero-border,transparent)}
+  .nd-kpi.hero .l,.nd-kpi.hero .s{color:var(--hero-muted,#98A2B3)} .nd-kpi.hero .n{color:var(--hero-text,#fff)}
+  .nd-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 16px}
+  @media(max-width:900px){.nd-groups{grid-template-columns:1fr}}
+  .nd-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px}
+  .nd-card h4{margin:2px 0 6px;font-size:14px;font-weight:600;color:var(--text)}
+  .nd-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:7px 0;font-size:13px;color:var(--muted);border-top:1px solid var(--border)}
+  .nd-card h4 + .nd-row{border-top:none}
+  .nd-row b{font-weight:500;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .nd-row.tot{color:var(--text);font-weight:600} .nd-row.tot b{font-weight:600}
+  .nd-row b.neg{color:var(--red)} .nd-row b.pos{color:var(--green)}
+  .nd-ia{display:inline-block;margin-left:5px;padding:0 6px;border-radius:99px;font-size:11px;font-weight:600;background:var(--violet-bg,#F1ECFE);color:var(--violet-text,#5B34C2);vertical-align:1px}
+  .nd-note{font-size:12px;color:var(--muted);padding:6px 0 2px}
+  .nd-note a{color:var(--brand-2)}
+  .bita-seg{display:inline-flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px}
+  .bita-seg button{border:none;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:500;padding:5px 11px;border-radius:7px;cursor:pointer}
+  .bita-seg button.on{background:var(--surface);color:var(--text);box-shadow:0 0 0 1px var(--border)}
+  .bita-tools{display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap}
+  html:not([data-ds="1"]) .aifab{background:#6941C6;color:#fff;box-shadow:none;font-weight:600}
+  /* lo viejo sigue calculándose (mismos números) pero no se muestra: [hidden] pierde contra .pband/.kpis{display:…} */
+  #pband[hidden],#kpis[hidden],#efecPanel[hidden],#bitaCalWrap[hidden],#bitaChart[hidden]{display:none!important}
+  html:not([data-ds="1"]) .panel{border-radius:12px}
+  html:not([data-ds="1"]) .bita-cell{border-radius:10px;box-shadow:none}
+  html:not([data-ds="1"]) .bita-cell:hover{box-shadow:none;border-color:var(--border-strong)}
+  html:not([data-ds="1"]) .bita-cell.alto{background:var(--green-bg);border-color:var(--green)}
+  html:not([data-ds="1"]) .bita-cell.alto .amt,html:not([data-ds="1"]) .bita-cell.pos .amt{color:var(--green)}
+  html:not([data-ds="1"]) .bita-cell.pos{background:var(--surface);border-color:var(--border)}
+  html:not([data-ds="1"]) .bita-cell.loss{background:var(--red-bg);border-color:var(--red)}
+  html:not([data-ds="1"]) .bita-cell .amt{font-weight:600}
+  html:not([data-ds="1"]) .bita-cell .dn,html:not([data-ds="1"]) .bita-dow{font-weight:600}
+  html:not([data-ds="1"]) .bita-nav .m{font-weight:600}
+  html:not([data-ds="1"]) .bita-nav button{border-radius:8px}
 </style>
 </head>
 <body>
@@ -222,11 +261,10 @@
   <div class="nodo-wrap">
     <div class="nodo-head">
       <div class="grow">
-        <h1 class="nodo-title">Dashboard</h1>
-        <p class="nodo-lead" id="subtitle">Rendimiento del bot</p>
+        <h1 class="nodo-title" id="ndTitle">Dashboard</h1>
       </div>
       <div class="nodo-actions">
-        <div class="dseg" id="tipoSeg">
+        <div class="dseg" id="tipoSeg" style="display:none">
           <button data-t="todo" class="on">Todo</button>
           <button data-t="digital">Digital</button>
           <button data-t="fisico">Físico</button>
@@ -239,16 +277,17 @@
       </div>
     </div>
 
-    <div id="efecPanel"></div>
+    <div id="efecPanel" hidden></div>
 
     <div id="aiFloat" class="aifloat collapsed">
       <div id="asesorPanel" class="aipop"></div>
       <button id="aiFab" class="aifab" title="Abrir el Asesor IA"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg><span>Asesor IA</span><span class="fabdot" id="aiDot" hidden></span></button>
     </div>
 
-    <div class="pband" id="pband"></div>
+    <div class="pband" id="pband" hidden></div>
+    <div class="kpis" id="kpis" hidden></div>
 
-    <div class="kpis" id="kpis"></div>
+    <div class="nd-kpis" id="ndKpis"></div>
 
     <!-- (9-oct, Rodrigo) Sin pestañas: la Bitácora va siempre a la vista, y debajo Rendimiento por producto y Gastos extra.
          Se quitaron Ventas confirmadas, el Embudo (tiene su propia sección) y Ventas extra. -->
@@ -256,15 +295,20 @@
       <div class="panel">
         <div class="bita-hd">
           <h3 id="bitaTitle">Profit diario</h3>
-          <div class="bita-nav"><button id="bitaPrev" title="Mes anterior">‹</button><span class="m" id="bitaMonth">—</span><button id="bitaNext" title="Mes siguiente">›</button></div>
+          <div class="bita-tools">
+            <div class="bita-seg" id="bitaSeg"><button data-b="chart" class="on">Gráfico</button><button data-b="cal">Calendario</button></div>
+            <div class="bita-nav"><button id="bitaPrev" title="Mes anterior">‹</button><span class="m" id="bitaMonth">—</span><button id="bitaNext" title="Mes siguiente">›</button></div>
+          </div>
         </div>
         <div id="bitaChart"></div>
-      </div>
-      <div class="panel">
-        <div class="bita-hd"><h3>Calendario de profit</h3><div class="bita-legend" id="bitaLegend"></div></div>
-        <div class="bita-cal" id="bitaCal"></div>
+        <div id="bitaCalWrap" hidden>
+          <div class="bita-legend" id="bitaLegend" style="margin:0 0 8px"></div>
+          <div class="bita-cal" id="bitaCal"></div>
+        </div>
       </div>
     </div>
+
+    <div class="nd-groups" id="ndGroups"></div>
 
     <div id="dashView">
     <div class="panel">
@@ -666,10 +710,10 @@ async function boot(){
   shell.onLeave?.(()=>{ document.removeEventListener("click",onDocClickDF); channelId=null; });
   channelId=shell.channelId;
   const c=shell.channels.find(x=>x.id===channelId);
-  $("subtitle").textContent="Rendimiento de "+(c?c.nombre:"tu bot");
+  $("ndTitle").textContent=(c?c.nombre:"tu bot");
   // La Bitácora se quedaba con el calendario del bot anterior al cambiar de bot (solo se
   // repintaba al tocar el toggle o las flechas de mes).
-  shell.onChannel(id=>{ channelId=id; const cc=shell.channels.find(x=>x.id===id); $("subtitle").textContent="Rendimiento de "+(cc?cc.nombre:"tu bot"); load(); renderBitacora(); });
+  shell.onChannel(id=>{ channelId=id; const cc=shell.channels.find(x=>x.id===id); $("ndTitle").textContent=(cc?cc.nombre:"tu bot"); load(); renderBitacora(); });
   // Asesor IA flotante: el FAB lo abre; el ✕ del panel lo minimiza.
   // Se mueve al <body> porque .nodo-wrap tiene un transform (animación de
   // entrada) que atraparía el position:fixed y lo pegaría al fondo del documento.
@@ -687,6 +731,11 @@ async function boot(){
   // (que sí persiste entre re-render) lo evita de raíz.
   $("dfPop").addEventListener("click", (e)=> e.stopPropagation());
   $("addExpBtn").onclick=toggleExpForm;
+  // Gráfico · Calendario (un solo bloque — Rodrigo, 10-oct)
+  $("bitaSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{
+    $("bitaSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b));
+    $("bitaChart").hidden = b.dataset.b!=="chart"; $("bitaCalWrap").hidden = b.dataset.b!=="cal";
+  });
   $("bitaPrev").onclick=()=>{ bitaMonth=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()-1,1); renderBitacora(); };
   $("bitaNext").onclick=()=>{ bitaMonth=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()+1,1); renderBitacora(); };
   renderDatePop();
@@ -1180,6 +1229,13 @@ async function load(){
   $("kpis").innerHTML=avisoOtrasMonedas(otrasMonedas)+K.join("");
   animateNums($("kpis"));
   renderBand({ bruta, gastoAds, gastosExtra, gastoIa, iaUsd, iaSinConvertir, neta, roas, pctAds, hasAds, sinCostoF, faltaTxt, brutaDesconocida, tipo });
+  {
+    const _vAdN = ventasOk.filter(o => o.shipping && o.shipping.ad_id && (O.EST[o.estado]||{}).cobro==="todo").length;
+    const vendeFisico = prods.some(p=>p.tipo==="fisico") || ventasOk.some(O.esFisico);
+    renderND({ bruta, gastoAds, gastosExtra, gastoIa, iaSinConvertir, neta, roas, hasAds, brutaDesconocida, cobrado, vendido,
+      compras, ticket, porCobrar, espAdel:espAdel.length, vendeFisico, cpa: _vAdN && gastoAds>0 ? gastoAds/_vAdN : null });
+    ndChats({ fromISO, toISO, gastoAds, hasAds, cid });
+  }
 
   // 📈 Efectividad DEL PERIODO (7-oct, pedido de Rodrigo): los que te escribieron por PRIMERA vez en las fechas elegidas
   // y cuántos de ellos compraron. Antes las dos tarjetas eran «todo el tiempo» y en Prime Digital sumaban a los ~90 que
@@ -1197,6 +1253,7 @@ async function load(){
   }catch(_){ cohorte=null; }
   if(cid!==channelId) return;
   renderMetricas(porStage, cohorte);
+  ndCierre(cohorte);
   // 💬 costosPorChat: los que llegaron por un anuncio en el periodo (con el filtro Digital/Físico por el tipo del anuncio,
   // igual que el gasto) y cuántos siguieron después de la palabra clave (etapa Interesado o más, o un pedido que se cayó).
   if(hasAds && $("kpiCostoChat")) (async()=>{   // en paralelo: no frena el resto del tablero
@@ -1573,24 +1630,28 @@ async function renderBitacora(){
   });
 }
 function renderBitaChart(series){
+  // (Diseño 2, 10-oct) Barras por día en vez de la línea con relleno: verde = ganaste, rojo = perdiste, hoy más claro
+  // (provisional), los días sin datos no se dibujan. Eje con 0 fijo y tres guías con su monto.
   const box=$("bitaChart");
   const vals=series.map(s=>s.profit==null?0:s.profit);
-  const W=760,H=200,padL=30,padR=10,padT=14,padB=24;
+  const W=760,H=210,padL=52,padR=8,padT=12,padB=24;
   const vMax=Math.max(1,...vals), vMin=Math.min(0,...vals);
-  const plotT=padT, plotB=H-padB;
-  const yf=(v)=> plotB-(v-vMin)/(vMax-vMin)*(plotB-plotT);
-  const n=series.length, dx=(W-padL-padR)/Math.max(1,n-1), xf=(i)=>padL+i*dx, y0=yf(0);
-  const linePts=series.map((s,i)=>`${xf(i).toFixed(1)},${yf(s.profit==null?0:s.profit).toFixed(1)}`).join(" ");
-  const areaPts=`${padL.toFixed(1)},${y0.toFixed(1)} `+linePts+` ${xf(n-1).toFixed(1)},${y0.toFixed(1)}`;
+  const yf=(v)=> padT+(vMax-v)/(vMax-vMin)*(H-padT-padB);
+  const n=series.length, bw=(W-padL-padR)/Math.max(1,n), y0=yf(0);
+  const todayK=ymdLima(new Date());
+  const ticks=[vMax, vMax/2, 0].concat(vMin<0?[vMin]:[]);
+  const grid=ticks.map(t=>`<line x1="${padL}" x2="${W-padR}" y1="${yf(t).toFixed(1)}" y2="${yf(t).toFixed(1)}" stroke="var(--border)" ${t===0?"":'stroke-dasharray="2 4"'}/>`+
+    `<text x="${padL-8}" y="${(yf(t)+3).toFixed(1)}" text-anchor="end" font-size="10" fill="var(--faint)">${moneyShort(t)}</text>`).join("");
   const step=Math.ceil(n/12);
-  const labels=series.map((s,i)=> i%step===0?`<text x="${xf(i).toFixed(1)}" y="${H-7}" text-anchor="middle" font-size="9" fill="var(--faint)">${String(s.dd).padStart(2,"0")}</text>`:"").join("");
-  const dots=series.map((s,i)=> s.profit==null?"":`<circle cx="${xf(i).toFixed(1)}" cy="${yf(s.profit).toFixed(1)}" r="2.4" fill="${s.profit<0?'var(--red)':'var(--brand)'}"><title>${s.k} · ${money(s.profit)}</title></circle>`).join("");
-  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet">
-    <defs><linearGradient id="bgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--brand)" stop-opacity=".28"/><stop offset="1" stop-color="var(--brand)" stop-opacity="0"/></linearGradient></defs>
-    <line x1="${padL}" y1="${y0.toFixed(1)}" x2="${W-padR}" y2="${y0.toFixed(1)}" stroke="var(--border)" stroke-dasharray="3 3"/>
-    <polygon points="${areaPts}" fill="url(#bgrad)"/>
-    <polyline points="${linePts}" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-    ${dots}${labels}</svg>`;
+  const labels=series.map((s,i)=> i%step===0?`<text x="${(padL+i*bw+bw/2).toFixed(1)}" y="${H-7}" text-anchor="middle" font-size="10" fill="var(--faint)">${String(s.dd).padStart(2,"0")}</text>`:"").join("");
+  const bars=series.map((s,i)=>{
+    if(s.profit==null) return "";
+    const p=s.profit, y=Math.min(yf(p),y0), h=Math.max(1.5,Math.abs(yf(p)-y0));
+    const x=padL+i*bw+bw*0.18, w=Math.max(2,bw*0.64);
+    const op=s.k===todayK?0.45:0.9;
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${p<0?"var(--red)":"var(--green)"}" fill-opacity="${op}"><title>${s.k}${s.k===todayK?" (provisional)":""} · ${money(p)}</title></rect>`;
+  }).join("");
+  box.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Profit de cada día del mes">${grid}${bars}${labels}</svg>`;
 }
 function renderProducts(prods, orders, vendido, unavailable, margenPorProd, gastoPorProd){
   const box=$("productPerf");
@@ -1671,6 +1732,55 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd, gast
   box.innerHTML=`<div style="overflow-x:auto"><table class="ptable"><thead><tr><th>Producto / variante</th><th class="r">Unidades</th><th class="r">Ingresos</th><th class="r">Ganancia${GP?" bruta":""}</th><th class="r">Margen</th>${thAds}<th class="r">% del total</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+
+// ═══ Dashboard nuevo (Diseño 2, 10-oct) — mismos números que el de siempre, ordenados ═══
+function ndRow(lbl,val,cls=""){ return `<div class="nd-row"><span>${lbl}</span><b class="${cls}">${val}</b></div>`; }
+function renderND(v){
+  const el=$("ndKpis"); if(!el) return;
+  const pctCob = v.vendido>0 ? Math.round(v.cobrado/v.vendido*100) : null;
+  el.innerHTML=
+    `<div class="nd-kpi hero"><span class="l">Ganancia neta</span><span class="n">${v.brutaDesconocida?"—":money(v.neta)}</span>`+
+      `<span class="s">${v.brutaDesconocida?"falta registrar algún costo":(v.hasAds?"tras publicidad, IA y gastos":"aún sin restar publicidad")}</span></div>`+
+    `<div class="nd-kpi"><span class="l">Ventas</span><span class="n">${v.compras}</span><span class="s">${v.compras?"ticket "+money(v.ticket):"sin ventas en estas fechas"}</span></div>`+
+    `<div class="nd-kpi"><span class="l">Ingresos</span><span class="n">${money(v.vendido)}</span><span class="s ${pctCob===100?"ok":""}">${pctCob==null?"sin ventas":"cobrado "+pctCob+"%"}</span></div>`+
+    `<div class="nd-kpi"><span class="l">ROAS</span><span class="n">${v.hasAds&&v.roas>0?v.roas.toFixed(2)+"×":"—"}</span><span class="s">${v.hasAds?money(v.gastoAds)+" en Meta":"conecta Meta en Ajustes"}</span></div>`;
+  const g=$("ndGroups"); if(!g) return;
+  const ventas = `<div class="nd-card"><h4>Ventas</h4>`+
+    ndRow("Chats nuevos",`<span id="ndChats">…</span>`)+
+    ndRow(`Cierre del bot<span class="nd-ia">IA</span>`,`<span id="ndCierre">…</span>`)+
+    ndRow("Ticket promedio", v.compras?money(v.ticket):"—")+
+    (v.vendeFisico ? ndRow("Por cobrar", money(v.porCobrar)) + ndRow("Esperando adelanto", v.espAdel) : "")+
+    `</div>`;
+  const pub = `<div class="nd-card"><h4>Publicidad</h4>`+
+    (v.hasAds
+      ? ndRow("Gasto en Meta", money(v.gastoAds)) + ndRow("Costo por chat",`<span id="ndCpc">…</span>`) + ndRow("Costo por venta", v.cpa==null?"—":money(v.cpa))
+      : `<div class="nd-note">Conecta tus anuncios en <a href="config.html">Ajustes → Meta</a> para ver cuánto te cuesta cada chat y cada venta.</div>`)+
+    `</div>`;
+  const r = `<div class="nd-card"><h4>Rentabilidad</h4>`+
+    ndRow(v.vendeFisico?"Ganancia bruta":"Ingresos cobrados", v.brutaDesconocida?"—":money(v.bruta))+
+    (v.hasAds ? ndRow("− Publicidad", money(v.gastoAds), "neg") : "")+
+    (v.gastoIa>0 ? ndRow("− IA", money(v.gastoIa), "neg") : "")+
+    (v.gastosExtra>0 ? ndRow("− Gastos extra", money(v.gastosExtra), "neg") : "")+
+    `<div class="nd-row tot"><span>= Ganancia neta</span><b class="${v.neta<0?"neg":"pos"}">${v.brutaDesconocida?"—":money(v.neta)}</b></div>`+
+    `</div>`;
+  g.innerHTML = ventas + pub + r;
+}
+function ndCierre(c){
+  const el=$("ndCierre"); if(!el) return;
+  el.textContent = c && c.interes ? Math.round(c.compraron/c.interes*100)+"%" : "—";
+  if(c && c.interes) el.title = `${c.compraron} compraron de ${c.interes} que conversaron`;
+}
+async function ndChats({ fromISO, toISO, gastoAds, hasAds, cid }){
+  try{
+    const base=()=>supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId)
+      .or("source.is.null,source.neq.sim").neq("wa_id","webchat-test").gte("primera_interaccion",fromISO).lt("primera_interaccion",toISO);
+    const [all,ad]=await Promise.all([ base(), base().not("ad_id","is",null) ]);
+    if(cid!==channelId || all.error || ad.error) return;
+    const tot=all.count||0, deAd=ad.count||0;
+    if($("ndChats")){ $("ndChats").textContent=tot; $("ndChats").title=`${deAd} por anuncio · ${tot-deAd} orgánicos`; }
+    if($("ndCpc")) $("ndCpc").textContent = hasAds && deAd ? money(gastoAds/deAd) : "—";
+  }catch(_){ /* sin conteo → se queda en «…» */ }
+}
 
 boot();
 </script>
