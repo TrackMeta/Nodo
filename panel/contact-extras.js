@@ -26,14 +26,16 @@ export function money(v, cur) {
 
 // Las etapas del embudo — FUENTE ÚNICA (la Bandeja, la ficha y la sección Embudo
 // la importan). value=lo que se guarda · label=lo que se muestra · color/desc.
+// (10-oct, Rodrigo eligió «temperatura»): de frío a caliente — gris · azul · NARANJA (caliente) · amarillo
+// (confirmado) · verde (compró) · rojo (se perdió). Los mismos colores viven como --st-* en shell.css (Embudo, Directo).
 export const EMBUDO_STAGES = [
-  { k: "nuevo",      label: "Nuevo",      color: "#378ADD", desc: "Llegó, aún genérico" },
-  { k: "curioso",    label: "Curioso",    color: "#29B6D8", desc: "Solo tiró la palabra clave" },
-  { k: "interesado", label: "Interesado", color: "#EF9F27", desc: "Interactuó, quiere más" },
-  { k: "caliente",   label: "Caliente",   color: "#F0612B", desc: "Escribió 4+ mensajes sin comprar — súper enganchado" },
-  { k: "confirmado", label: "Confirmado", color: "#8b5cf6", desc: "Confirmó recibir / adelanto validado" },
-  { k: "comprado",   label: "Comprado",   color: "#1D9E75", desc: "Venta cerrada, plata dentro" },
-  { k: "perdido",    label: "Perdido",    color: "#888780", desc: "Se cayó / no compró" },
+  { k: "nuevo",      label: "Nuevo",      color: "#667085", desc: "Llegó, aún genérico" },
+  { k: "curioso",    label: "Curioso",    color: "#667085", desc: "Solo tiró la palabra clave" },
+  { k: "interesado", label: "Interesado", color: "#2563EB", desc: "Interactuó, quiere más" },
+  { k: "caliente",   label: "Caliente",   color: "#EA580C", desc: "Escribió 4+ mensajes sin comprar — súper enganchado" },
+  { k: "confirmado", label: "Confirmado", color: "#CA8A04", desc: "Confirmó recibir / adelanto validado" },
+  { k: "comprado",   label: "Comprado",   color: "#16A34A", desc: "Venta cerrada, plata dentro" },
+  { k: "perdido",    label: "Perdido",    color: "#DC2626", desc: "Se cayó / no compró" },
 ];
 
 // Selector de etapa bonito para la ficha: píldoras con el color de cada etapa,

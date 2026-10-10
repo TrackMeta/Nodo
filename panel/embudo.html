@@ -532,7 +532,7 @@ function renderFunnel(F){
     { lbl:"Curiosos", n:N.curiosos, c:col("curioso") },
     { lbl:"Interés", n:N.interes, c:col("interesado") },
     { lbl:"Caliente", n:N.calientes, c:col("caliente") },
-    { lbl:"Confirmaron", n:N.confirmaron, c:col("confirmado") },
+    { lbl:"Confirmaron", n:N.confirmaron, c:col("confirmado"), t:"#1F2937" },   // amarillo: texto oscuro
     { lbl:"Compraron", n:N.compraron, c:col("comprado") },
   ];
   const { saltos, peor }=fugas(F);
@@ -540,7 +540,7 @@ function renderFunnel(F){
   niveles.forEach((lv,i)=>{
     const w= N.llegaron>0 ? Math.max(12, Math.round(lv.n/N.llegaron*100)) : 12;
     const pc= pct(lv.n,N.llegaron);
-    html+=`<div class="flvl"><div class="fbar2" style="width:${w}%;background:${lv.c}"><span class="fl">${lv.lbl}</span><span class="fr">${nf.format(lv.n)}${pc!=null?` · ${pc}%`:""}</span></div></div>`;
+    html+=`<div class="flvl"><div class="fbar2" style="width:${w}%;background:${lv.c}${lv.t?";color:"+lv.t:""}"><span class="fl">${lv.lbl}</span><span class="fr">${nf.format(lv.n)}${pc!=null?` · ${pc}%`:""}</span></div></div>`;
     if(i<niveles.length-1){
       const sa=saltos[i];
       const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
