@@ -799,7 +799,7 @@ async function load(){
     // en dólares —que es como lo factura el proveedor— y se convierte más abajo.
     // Paginado: ai_usage tiene una fila por (día, proveedor, modelo, origen) ≈ 20/día; con
     // «Máximo» sobre meses de uso pasaba de 1000 y el costo de IA salía corto (ganancia inflada).
-    pageAll((f,t)=>supa.from("ai_usage").select("dia,costo_usd").eq("channel_id",channelId).gte("dia",ymd(r.from)).lte("dia",ymd(r.toDay)).order("dia",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    pageAll((f,t)=>supa.from("ai_usage").select("dia,costo_usd").eq("channel_id",channelId).gte("dia",ymd(r.from)).lte("dia",ymd(r.toDay)).order("dia",{ascending:false}).order("provider").order("model").order("origen").range(f,t)),
   ]);
   if(cid!==channelId) return; // cambiaste de bot mientras cargaba → no pintes los números del anterior
   // Los pedidos del contacto de PRUEBA (Probar flujos) contaban como plata real: «Ventas
@@ -1478,7 +1478,7 @@ async function loadBitacora(monthStart){
     // El costo de la IA, por día. Va acá también y no solo en la banda de arriba: la
     // Bitácora dice ser "el mismo criterio de profit que el Dashboard", y un costo que
     // solo resta en uno de los dos deja dos ganancias distintas para el mismo día.
-    pageAll((f,t)=>supa.from("ai_usage").select("dia,costo_usd").eq("channel_id",channelId).gte("dia",ymd(from)).lt("dia",ymd(to)).order("dia",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    pageAll((f,t)=>supa.from("ai_usage").select("dia,costo_usd").eq("channel_id",channelId).gte("dia",ymd(from)).lt("dia",ymd(to)).order("dia",{ascending:false}).order("provider").order("model").order("origen").range(f,t)),
     // La moneda de las cuentas de ads, por lo mismo: si arriba el gasto de Meta se
     // convierte y acá no, el profit del día no coincide con el del periodo.
     supa.from("ads_meta").select("account_currency").eq("channel_id",channelId),
