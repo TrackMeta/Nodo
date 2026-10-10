@@ -268,7 +268,7 @@
 
     <div id="dashView">
     <div class="panel">
-      <h3>Rendimiento por producto</h3><p class="ps">Unidades, ingresos y <b>ganancia</b> (antes de publicidad) por producto y variante · qué se vende vs. qué deja</p>
+      <h3>Rendimiento por producto</h3><p class="ps">Unidades, ingresos, <b>publicidad</b> y <b>ganancia neta</b> por producto y variante · en las fechas de arriba · los gastos extra se restan solo en la franja</p>
       <div id="productPerf"></div>
     </div>
 
@@ -1259,7 +1259,26 @@ async function load(){
   // producto deben usar las ventas CERRADAS, no `orders` (que incluye los perdidos). Antes
   // el panel mostraba un "vendido" distinto al KPI y el share por producto pasaba de 100%
   // (numerador con perdidos, denominador `vendido` sin ellos).
-  renderProducts(prods, ventasOk, vendido, ordersUnavailable, margenPorProd);
+  // 📣 (9-oct, Rodrigo) Publicidad por PRODUCTO, en el mismo rango y con el mismo filtro de tipo que la franja. A qué producto
+  // va cada anuncio: 1) el banco de anuncios del producto (config.ad_bank) o sus ángulos — lo que rutea el motor —; 2) si no
+  // está enlazado, el producto que más vendió ese anuncio (pedidos con su ad_id). Lo que no se puede atribuir va aparte.
+  const gastoPorProd={};
+  if(hasAds){
+    const adProd={};
+    prods.forEach(p=>{ ((p.config&&p.config.ad_bank)||[]).forEach(a=>{ adProd[String(a)]=p.id; }); });
+    try{
+      const { data:angsP }=await supa.from("angulos").select("ad_ids, product_id").eq("channel_id",channelId);
+      (angsP||[]).forEach(g=>{ if(g.product_id) (g.ad_ids||[]).forEach(a=>{ if(!adProd[String(a)]) adProd[String(a)]=g.product_id; }); });
+    }catch(_){ /* sin ángulos → solo banco y pedidos */ }
+    const adVentas={};
+    (ordR.error?[]:(ordR.data||[])).forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(!a||!o.product_id) return;
+      const m=(adVentas[a]||(adVentas[a]={})); m[o.product_id]=(m[o.product_id]||0)+1; });
+    Object.keys(adVentas).forEach(a=>{ if(!adProd[a]) adProd[a]=Object.entries(adVentas[a]).sort((x,y)=>y[1]-x[1])[0][0]; });
+    ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo){
+      const pid=adProd[String(i.ad_id)]||"_ads";
+      gastoPorProd[pid]=(gastoPorProd[pid]||0)+Number(i.gasto||0)*_ads.factor; } });
+  }
+  renderProducts(prods, ventasOk, vendido, ordersUnavailable, margenPorProd, hasAds?gastoPorProd:null);
   renderExpenses(expenses, tipo);
 
   // ── Asesor IA (Mide + Aconseja): resumen de los números reales para la IA ──
@@ -1573,7 +1592,7 @@ function renderBitaChart(series){
     <polyline points="${linePts}" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     ${dots}${labels}</svg>`;
 }
-function renderProducts(prods, orders, vendido, unavailable, margenPorProd){
+function renderProducts(prods, orders, vendido, unavailable, margenPorProd, gastoPorProd){
   const box=$("productPerf");
   if(unavailable){ box.innerHTML=`<div class="empty">Aplica la migración <b>0017_orders</b> para ver el rendimiento por producto.</div>`; return; }
   // Agregar por producto y versión.
@@ -1595,11 +1614,14 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd){
     p.units+=uds; p.ing+=v;
     if(ver){ ver.units+=uds; ver.ing+=v; }
   });
-  const list=Object.values(pmap).filter(p=>p.units>0);
+  const GP=gastoPorProd||null;
+  // (con publicidad, también el producto que GASTÓ sin vender en el rango: es justo el que hay que mirar)
+  const list=Object.values(pmap).filter(p=>p.units>0 || (GP && GP[p.id]>0));
   if(sinProd.units) list.push({ id:"_none", nombre:"Sin producto asignado", units:sinProd.units, ing:sinProd.ing, versions:{} });
+  if(GP && GP._ads>0) list.push({ id:"_ads", nombre:"Anuncios sin producto (sin enlazar ni ventas)", units:0, ing:0, versions:{}, soloAds:true });
   if(!list.length){ box.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg><h4>Sin ventas todavía</h4>Aún no hay ventas confirmadas en este período. Cuando cierres una, verás aquí el desempeño por producto.</div>`; return; }
   const MG=margenPorProd||{};
-  list.forEach(p=>{ p.margen = MG[p.id]==null ? null : MG[p.id]; });
+  list.forEach(p=>{ p.margen = p.soloAds ? 0 : (MG[p.id]==null ? (p.units>0 ? null : 0) : MG[p.id]); p.ads = GP ? (GP[p.id]||0) : 0; });
   list.sort((a,b)=>b.ing-a.ing);
   const maxIng=Math.max(...list.map(p=>p.ing),1);
   // Margen DESCONOCIDO ≠ margen cero. Un pedido físico sin flete registrado no tiene
@@ -1612,14 +1634,23 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd){
     const c=m<0?"var(--red)":m>0?"var(--green)":"var(--faint)";
     return `<td class="r money" style="color:${c}">${money(m)}</td><td class="r" style="color:${c}">${pct}%</td>`;
   };
+  // Publicidad + ganancia neta (= ganancia − publicidad). Sin ads conectados, la tabla queda como antes.
+  const adsCols=(p)=>{
+    if(!GP) return "";
+    const neta=p.margen==null?null:p.margen-p.ads;
+    const c=neta==null?"var(--faint)":neta<0?"var(--red)":neta>0?"var(--green)":"var(--faint)";
+    return `<td class="r money" style="color:${p.ads>0?"var(--amber,#d97706)":"var(--faint)"}">${p.ads>0?money(p.ads):"—"}</td>`+
+      `<td class="r money" style="color:${c};font-weight:600">${neta==null?"—":money(neta)}</td>`;
+  };
+  const vacias=GP?`<td class="r"></td><td class="r"></td>`:"";
   let rows="";
   list.forEach(p=>{
     const share=vendido?Math.round(p.ing/vendido*100):0;
     const mpct=(p.margen!=null&&p.ing>0)?Math.round(p.margen/p.ing*100):0;
     rows+=`<tr><td class="pname"><span class="bar-mini" style="width:${Math.round(p.ing/maxIng*44)}px"></span>${esc(p.nombre)}</td>
-      <td class="r">${p.units}</td><td class="r money">${money(p.ing)}</td>${mCol(p.margen,mpct)}<td class="r">${share}%</td></tr>`;
+      <td class="r">${p.units}</td><td class="r money">${money(p.ing)}</td>${mCol(p.margen,mpct)}${adsCols(p)}<td class="r">${share}%</td></tr>`;
     Object.values(p.versions).filter(v=>v.units>0).forEach(v=>{
-      rows+=`<tr><td class="vname">↳ ${esc(v.nombre)}</td><td class="r" style="color:var(--muted)">${v.units}</td><td class="r" style="color:var(--muted)">${money(v.ing)}</td><td class="r"></td><td class="r"></td><td class="r"></td></tr>`;
+      rows+=`<tr><td class="vname">↳ ${esc(v.nombre)}</td><td class="r" style="color:var(--muted)">${v.units}</td><td class="r" style="color:var(--muted)">${money(v.ing)}</td><td class="r"></td><td class="r"></td>${vacias}<td class="r"></td></tr>`;
     });
   });
   const totU=list.reduce((a,p)=>a+p.units,0), totI=list.reduce((a,p)=>a+p.ing,0);
@@ -1634,8 +1665,10 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd){
   const ingConMargen=conMargen.reduce((a,p)=>a+p.ing,0);
   const totMpct=(totM!=null&&ingConMargen>0)?Math.round(totM/ingConMargen*100):0;
   const parcial = totM!=null && conMargen.length<list.length;
-  rows+=`<tr class="total"><td>Total${parcial?` <span style="font-weight:400;color:var(--faint)">· margen solo de ${conMargen.length} de ${list.length} productos</span>`:""}</td><td class="r">${totU}</td><td class="r money">${money(totI)}</td>${mCol(totM,totMpct)}<td class="r">100%</td></tr>`;
-  box.innerHTML=`<div style="overflow-x:auto"><table class="ptable"><thead><tr><th>Producto / variante</th><th class="r">Unidades</th><th class="r">Ingresos</th><th class="r">Ganancia</th><th class="r">Margen</th><th class="r">% del total</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const totAds=list.reduce((a,p)=>a+(p.ads||0),0);
+  rows+=`<tr class="total"><td>Total${parcial?` <span style="font-weight:400;color:var(--faint)">· margen solo de ${conMargen.length} de ${list.length} productos</span>`:""}</td><td class="r">${totU}</td><td class="r money">${money(totI)}</td>${mCol(totM,totMpct)}${GP?adsCols({margen:totM,ads:totAds}):""}<td class="r">100%</td></tr>`;
+  const thAds=GP?`<th class="r" title="Gasto en Meta de los anuncios de este producto, en las fechas de arriba">Publicidad</th><th class="r" title="Ganancia − publicidad">Ganancia neta</th>`:"";
+  box.innerHTML=`<div style="overflow-x:auto"><table class="ptable"><thead><tr><th>Producto / variante</th><th class="r">Unidades</th><th class="r">Ingresos</th><th class="r">Ganancia${GP?" bruta":""}</th><th class="r">Margen</th>${thAds}<th class="r">% del total</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 
