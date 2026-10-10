@@ -142,6 +142,10 @@
   .pc-done a{color:var(--brand);font-weight:600}
   .pc-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted)}
   .pc-link{background:none;border:none;padding:0;color:var(--brand);font-weight:600;font-size:12.5px;cursor:pointer}
+  .neg-id{display:flex;align-items:center;gap:14px}
+  .neg-id img{width:52px;height:52px;border-radius:14px;object-fit:cover;border:1px solid var(--border);background:var(--surface-2);flex:none}
+  .neg-k{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);margin-bottom:2px}
+  .neg-id .nodo-title{margin:0}
 </style>
 </head>
 <body>
@@ -149,8 +153,8 @@
   <div class="nodo-wrap" style="--nodo-max:var(--nodo-form)">
     <div class="nodo-head">
       <div class="grow">
-        <h1 class="nodo-title">Negocio</h1>
-        <p class="nodo-lead" style="margin-top:4px">Lo que tu bot sabe de tu negocio y usa en todas sus conversaciones. Lo de cada producto va en su ficha.</p>
+        <div class="neg-id"><img id="negLogo" alt="" style="display:none"/><div style="min-width:0"><div class="neg-k">Negocio</div><h1 class="nodo-title" id="negNombre">Negocio</h1></div></div>
+        <p class="nodo-lead" style="margin-top:8px">Lo que tu bot sabe de tu negocio y usa en todas sus conversaciones. Lo de cada producto va en su ficha.</p>
       </div>
     </div>
     <div class="tabs">
@@ -194,6 +198,7 @@ async function boot(){
   // Cambiar de pestaña rehace el formulario desde el snapshot: si hay cambios sin guardar, se pregunta.
   document.querySelectorAll(".tab").forEach(b=> b.onclick=async()=>{ if(st.tab===b.dataset.t) return; if(!await confirmDescartar()) return; st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
   const shell=await mountShell({ active:"negocio" });
+  st.shell=shell;
   st.channelId=shell.channelId;
   guardUnsaved(".nodo-page"); // avisa si sales con el formulario a medio editar
   shell.onChannel(id=>{ st.channelId=id; load(); });
@@ -204,6 +209,14 @@ async function boot(){
   try{ const qp=new URLSearchParams(location.search); if(qp.get("preguntas")==="1"){ st._abrirPreguntas=true; history.replaceState(null,"",location.pathname); } }catch(_){}
   if(st.channelId) await load();
 }
+// (10-oct, Rodrigo) Arriba, la foto y el nombre del negocio (el del bot), como el Dashboard. La foto se cambia en Ajustes → Marca.
+function pintaIdentidad(){
+  const c=(st.shell&&st.shell.channels||[]).find(x=>x.id===st.channelId)||{};
+  const nf=(st.channel&&st.channel.negocio_form&&typeof st.channel.negocio_form==="object")?st.channel.negocio_form:{};
+  const nom=String(nf.nombre||st.channel.nombre||c.nombre||"Negocio").trim();
+  const n=$("negNombre"); if(n) n.textContent=nom;
+  const img=$("negLogo"); if(img){ if(c.logo_url){ img.src=c.logo_url; img.style.display=""; img.title="La foto se cambia en Ajustes → Marca"; } else img.style.display="none"; }
+}
 async function load(){
   // Anti-carrera al cambiar de bot: si la respuesta del bot ANTERIOR llegaba después, la
   // pantalla mostraba su conocimiento/entregas con st.channelId ya apuntando al nuevo, y al
@@ -213,7 +226,8 @@ async function load(){
     .select("nombre,negocio,negocio_form,buffer_default_seg,entregas").eq("id",st.channelId).maybeSingle();
   if(error){ ({ data:ch }=await supa.from("channels").select("nombre,negocio,negocio_form,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
   if(gen!==st.gen) return;
-  st.channel=ch||{}; st.snapPreBorrador=null;   // otro bot o recarga: el borrador de la IA no aplicado se descarta
+  st.channel=ch||{}; st.snapPreBorrador=null;
+  pintaIdentidad();   // otro bot o recarga: el borrador de la IA no aplicado se descarta
   // (10-oct) Entrega y logística es 100 % físico (zonas de Lima, agencias, adelanto): en un bot que solo vende digital no va.
   try{ const { data:ps }=await supa.from("products").select("tipo").eq("channel_id",st.channelId);
     if(gen!==st.gen) return;
