@@ -52,6 +52,19 @@
      Tu producto = verde · Tu venta = violeta IA · Opcionales = dorado.
      Base = tema OSCURO (tinte + aro interior de color + glow para que resalte
      sobre la superficie oscura). El tema claro lo suaviza más abajo. */
+  /* (10-oct) Filas completas en gris claro con un ✓ (violeta solo en «La IA sabe venderlo»). Las reglas de abajo quedan
+     de respaldo para el diseño anterior (?ds=1). */
+  html:not([data-ds="1"]) .ini-item.ok-green,html:not([data-ds="1"]) .ini-item.ok-gold{background:var(--surface)!important;box-shadow:inset 0 0 0 1px var(--border)!important}
+  html:not([data-ds="1"]) .ini-item.ok-green:hover,html:not([data-ds="1"]) .ini-item.ok-gold:hover{background:var(--surface-2)!important}
+  html:not([data-ds="1"]) .ini-item.ok-ia{box-shadow:inset 0 0 0 1px rgba(168,85,247,.30)!important}
+  .ini-item[class*="ok-"] .ini-item-nm::after{content:" ✓";color:var(--green);font-weight:700}
+  .ini-item.ok-ia .ini-item-nm::after{color:var(--violet,#a855f7)}
+  .c-est{font-size:12px;color:var(--muted);margin-top:10px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .c-est b{color:var(--text);font-weight:600}
+  .c-est .dot,.vend .dot{width:8px;height:8px;border-radius:50%;background:var(--disabled,#98A2B3);flex:none}
+  .c-est .dot.on,.vend.on .dot{background:#12B76A} .c-est .dot.warn,.vend.warn .dot{background:var(--amber)}
+  .vend{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface-2);color:var(--text)}
+  .vend.off{color:var(--muted)}
   .ini-item.ok-green{background:rgba(34,192,121,.15);box-shadow:inset 0 0 0 1px rgba(34,192,121,.30),0 0 16px -5px rgba(34,192,121,.60)}
   .ini-item.ok-green:hover{background:rgba(34,192,121,.22)}
   .ini-item.ok-ia{background:rgba(168,85,247,.17);box-shadow:inset 0 0 0 1px rgba(168,85,247,.34),0 0 16px -5px rgba(168,85,247,.65)}
@@ -279,16 +292,18 @@
       <div class="nodo-head">
         <div class="grow">
           <h1 class="nodo-title">Productos</h1>
-          <p class="nodo-lead">Tu catálogo de productos digitales y físicos. Cada producto define sus versiones, precios, entrega o envío, y los flujos que lo venden.</p>
         </div>
         <div class="nodo-actions">
           <button class="nodo-btn primary" id="addProduct"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nuevo producto</button>
         </div>
       </div>
       <div id="gvToggle" style="display:inline-flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px;margin:0 0 16px"></div>
-      <div id="pSearchWrap" style="position:relative;max-width:340px;margin:0 0 13px">
+      <div style="display:flex;gap:8px;align-items:center;margin:0 0 13px;flex-wrap:wrap">
+      <div id="pSearchWrap" style="position:relative;max-width:340px;flex:1;min-width:200px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--faint);pointer-events:none"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="pSearch" placeholder="Buscar producto…" autocomplete="off" style="width:100%;height:40px;background:var(--surface);border:1px solid var(--border);border-radius:11px;color:var(--text);padding:0 12px 0 36px;font-size:13.5px;outline:none;font-family:inherit"/>
+      </div>
+      <button class="nodo-btn" id="addFolderBtn" style="display:none;height:40px" title="Crear una carpeta para ordenar tus productos">+ Carpeta</button>
       </div>
       <div id="claseSeg" style="display:inline-flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px;margin:0 0 14px"></div>
       <div class="nodo-folders" id="folders"></div>
@@ -328,6 +343,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
+import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
 // 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se pregunta a shell.js, pero SIN
@@ -627,6 +643,19 @@ async function loadProducts(){
   if(error){ ({ data } = await supa.from("products").select("id,nombre,config").eq("channel_id",st.channelId).order("created_at")); }
   if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó
   st.list=data||[]; st.hub=null; // los productos cambiaron → recargar el hub de ángulos
+  // (10-oct) Cómo le va a cada producto, en su tarjeta: si está vendiendo y cuánto vendió en 7 días.
+  st.estadoVenta={}; st.ventas7={};
+  try{
+    const desde=new Date(Date.now()-7*86400000).toISOString();
+    const [fR,oR]=await Promise.all([
+      supa.from("flows").select("product_id,role,estado").eq("channel_id",st.channelId).eq("role","venta"),
+      pageAll((f,t)=>supa.from("orders").select("product_id,amount,order_bumps,estado,shipping,currency,contact:contact_id(wa_id,source)").eq("channel_id",st.channelId).gte("created_at",desde).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    ]);
+    (fR.data||[]).forEach(f=>{ if(f.product_id) st.estadoVenta[f.product_id]=f.estado; });
+    ((oR&&oR.data)||[]).forEach(o=>{ const c=o.contact||{}; if(c.wa_id==="webchat-test"||c.source==="sim") return; if(!O.esVenta(o)||O.esPerdido(o)) return;
+      const k=o.product_id||""; const x=st.ventas7[k]||(st.ventas7[k]={n:0,plata:0}); x.n++; x.plata+=O.total(o); });
+  }catch(_){}
+  if(gen!==st.loadGen) return;
   if(!Fbar){
     Fbar=await mountFolders({ el:$("folders"), tipo:"product", table:"products", channelId:st.channelId, items:()=>st.list, onChange:renderCards });
   } else if(Fbar.channelId()!==st.channelId){
@@ -649,9 +678,16 @@ function renderCards(){
   if(segEl){
     const seg=(v,l)=>`<button data-clase="${v}" style="border:none;background:${st.claseFilter===v?'var(--brand)':'transparent'};color:${st.claseFilter===v?'#fff':'var(--muted)'};font:inherit;font-size:12.5px;font-weight:600;padding:6px 14px;border-radius:8px;cursor:pointer">${l} <span style="opacity:.7">${counts[v]}</span></button>`;
     segEl.innerHTML=seg("todos","Todos")+seg("principal","Principales")+seg("extra","Extras")+(counts.regalo?seg("regalo","Regalos"):"");
+    // (10-oct) Sin productos extra ni regalos, este control no filtra nada.
+    segEl.style.display = (counts.extra||counts.regalo) ? "inline-flex" : "none";
+    if(!(counts.extra||counts.regalo)) st.claseFilter="todos";
     segEl.querySelectorAll("[data-clase]").forEach(b=> b.onclick=()=>{ st.claseFilter=b.dataset.clase; renderCards(); });
   }
   const sw=$("pSearchWrap"); if(sw) sw.style.display=st.list.length?"":"none";
+  // (10-oct) La fila de carpetas solo cuando creaste alguna; mientras tanto, «+ Carpeta» chico al lado del buscador.
+  { const hayCarp = !!(Fbar && Fbar.metas().length); const fb=$("folders"), ab=$("addFolderBtn");
+    if(fb) fb.style.display = hayCarp ? "" : "none";
+    if(ab){ ab.style.display = (!hayCarp && st.list.length) ? "" : "none"; ab.onclick=()=>{ const nb=document.querySelector('#folders [data-act="new"]'); if(nb) nb.click(); }; } }
   let list=st.list;
   if(st.claseFilter==="principal") list=list.filter(esPrin);
   else if(st.claseFilter==="extra") list=list.filter(esEx);
@@ -678,11 +714,15 @@ function renderCards(){
       : (p.config&&p.config.precio?`${$s} ${esc(p.config.precio)}`:"");
     const multi=ops.length>1;
     const emIc = p.emoji ? `<span style="font-size:24px;line-height:1">${esc(p.emoji)}</span>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`;
+    const _ev=st.estadoVenta[p.id], _v=st.ventas7[p.id];
+    const estadoHtml = (esReg(p)||esEx(p)) ? "" : `<div class="c-est">${_ev==="activo"
+        ? `<span class="dot on"></span>Vendiendo${_v&&_v.n?` · <b>${_v.n}</b> ${_v.n===1?"venta":"ventas"} · <b>${$s} ${Math.round(_v.plata).toLocaleString("es-PE")}</b> en 7 días`:" · sin ventas en 7 días"}`
+        : _ev ? `<span class="dot"></span>En pausa` : `<span class="dot warn"></span>Todavía no está a la venta`}</div>`;
     el.innerHTML=`
       <div class="c-ic">${emIc}</div>
       <div class="c-tt">${esc(p.nombre)}</div>
       <div class="c-sub">${esReg(p)?"Regalo · gratis con la compra":esEx(p)?"Complemento · para ventas extra":(p.tipo==="fisico"?"Producto físico":p.tipo==="microapp"?"Micro app":"Producto digital")}</div>
-      <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">${icon("gift")} Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">${icon("plus")} Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":p.tipo==="microapp"?icon("phone")+"Micro app":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>`;
+      <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">${icon("gift")} Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">${icon("plus")} Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":p.tipo==="microapp"?icon("phone")+"Micro app":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>${estadoHtml}`;
     const fslot=el.querySelector("[data-cardfolder]");
     if(fslot && Fbar){
       const pk=Fbar.picker({ current:p.folder||null, onPick:async(v)=>{
@@ -695,9 +735,7 @@ function renderCards(){
     }
     el.onclick=()=>openProduct(p.id); box.appendChild(el);
   });
-  const add=document.createElement("div"); add.className="nodo-card new";
-  add.innerHTML=`<div class="c-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="c-tt" style="font-size:14px;font-weight:700">Nuevo producto</div>`;
-  add.onclick=createProduct; box.appendChild(add);
+  // (10-oct) Sin la tarjeta vacía «Nuevo producto»: ya está el botón de arriba.
 }
 // Modal de creación: primero ELIGES qué vendes (físico o digital) — es lo que
 // decide cómo se ve toda la ficha —, luego el nombre. Devuelve {tipo,nombre} o null.
@@ -2705,19 +2743,27 @@ async function renderInicio(){
     </div>`;
   const PENCIL='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
   const badge = esRegalo?`<span class="pdet-xbadge" style="background:rgba(168,85,247,.14);color:#a855f7">${icon("gift")} Regalo · gratis</span>`:esExtra?`<span class="pdet-xbadge">Extra · complemento</span>`:"";
-  const bannerTop = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:${esRegalo?"0":"14px"}">
+  // (10-oct) Producto ya a la venta y completo: arriba a la derecha va SU ESTADO (y Pausar), no un 100 % que ya no dice
+  // nada; la barra solo mientras falte algo. El bloque de abajo que repetía «Tu bot ya vende… Activo» se fue.
+  const _llega = est("activacion").ok;
+  const estadoArriba = (!esRegalo && !esExtra && fVenta && pct>=100)
+    ? (fVenta.estado==="activo"
+        ? `<div style="flex:none;display:flex;align-items:center;gap:10px"><span class="vend ${_llega?"on":"warn"}" title="${_llega?"El bot lo está vendiendo":esc("Activo, pero todavía nadie llega: "+(est("activacion").msg||"faltan palabras clave"))}"><span class="dot"></span>${_llega?"Vendiendo":"Activo · nadie llega"}</span><button class="btn" id="pausarVenta" style="height:32px;padding:0 12px;font-size:12.5px">Pausar</button></div>`
+        : `<div style="flex:none"><span class="vend off"><span class="dot"></span>En pausa</span></div>`)
+    : "";
+  const bannerTop = `<div style="display:flex;align-items:center;gap:14px;margin-bottom:${(esRegalo||estadoArriba)?"0":"14px"}">
       ${emojiBox}
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:22px;font-weight:800;letter-spacing:-.3px"><span id="hdrName" class="hdr-name" title="Clic para renombrar">${esc(st.prod.nombre||"Producto")}</span><span id="hdrEdit" title="Renombrar" style="cursor:pointer;color:var(--faint);display:inline-flex">${PENCIL}</span>${badge}</div>
         <div style="font-size:12.5px;color:var(--muted);margin-top:2px">${tipoTxt}</div>
       </div>
-      ${esRegalo?"":`<div style="text-align:right;flex:none"><div style="font-size:12px;color:var(--muted);font-weight:600">Listo para vender</div><div id="hubPct" style="font-size:28px;font-weight:800;background:${grad};-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;line-height:1.15">${pct}%</div></div>`}
+      ${esRegalo?"":estadoArriba ? estadoArriba : `<div style="text-align:right;flex:none"><div style="font-size:12px;color:var(--muted);font-weight:600">Listo para vender</div><div id="hubPct" style="font-size:28px;font-weight:800;background:${grad};-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;line-height:1.15">${pct}%</div></div>`}
     </div>`;
   const headCard = esRegalo
     ? `<div style="margin-bottom:16px">${bannerTop}</div>`
     : `<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:16px">
         ${bannerTop}
-        <div style="height:10px;border-radius:20px;background:var(--surface-2);overflow:hidden;margin:4px 0 2px;border:1px solid var(--border)"><div id="hubBar" style="width:${pct}%;height:100%;background:${grad};box-shadow:0 0 12px -1px ${gradGlow};border-radius:20px;transition:width .45s ease,background .3s ease"></div></div>
+        ${estadoArriba ? "" : `<div style="height:10px;border-radius:20px;background:var(--surface-2);overflow:hidden;margin:4px 0 2px;border:1px solid var(--border)"><div id="hubBar" style="width:${pct}%;height:100%;background:${grad};box-shadow:0 0 12px -1px ${gradGlow};border-radius:20px;transition:width .45s ease,background .3s ease"></div></div>`}
       </div>`;
 
   // "¿Lo armo por ti?" vive en el FAB flotante de abajo a la derecha (armFab),
@@ -2772,7 +2818,7 @@ async function renderInicio(){
     : st.prod.tipo==="microapp" ? rowHtml("entrega",{label:"Correo, renovación y conexión",sub:est("entrega").msg,warn:!est("entrega").ok,ico:icon("phone")})
     : rowHtml("entrega",{label:"¿Cómo se entrega?",sub:est("entrega").ok?"Entrega configurada":"Falta el link o archivo",warn:!est("entrega").ok});
   const rIA = rowHtml("ia",{label:"La IA sabe venderlo",sub:est("ia").ok?"La IA ya sabe venderlo":"Falta describir tu producto",warn:!est("ia").ok,tone:"ia"});
-  const rAct = rowHtml("activacion",{label:"Cómo llegan los clientes",sub:est("activacion").msg,warn:!est("activacion").ok,tone:"ia"});
+  const rAct = rowHtml("activacion",{label:"Cómo llegan los clientes",sub:est("activacion").msg,warn:!est("activacion").ok,tone:"green"});   // (10-oct) violeta solo para la IA
 
   // Poner a vender
   // Con el flujo ya creado, «Regenerar» dejó de ser algo que tengas que decidir tú: Guardar
@@ -2782,7 +2828,7 @@ async function renderInicio(){
     ? "Tu bot ya vende este producto. Lo que guardes acá se aplica solo — no tienes que rehacer nada."
     : (pct>=100 ? "Todo listo — tócalo y tu bot empieza a vender. Guarda tus cambios solo."
                 : "Guarda tus cambios y genera el flujo de venta con IA: vende, toma los datos conversando y crea el pedido.");
-  const sellCard = `<div class="card sell-card" style="margin-bottom:0">
+  const sellCard = (fVenta && fVenta.estado==="activo" && estadoArriba) ? `<div id="saludBox"></div>` : `<div class="card sell-card" style="margin-bottom:0">
       <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${sellTxt}</div>
       <div id="saludBox"></div>
       ${fVenta ? "" : `<button class="btn primary" id="genFlow" style="height:46px;font-size:14px;width:100%;margin-top:12px">Poner a vender</button>`}
