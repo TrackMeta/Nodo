@@ -113,7 +113,7 @@ async function boot(){
   const shell=await mountShell({ active:"compras" });
   st.channelId=shell.channelId;
   shell.onChannel(id=>{ st.channelId=id; st.rep=null; st.res=null; render(); });
-  st.rango=computePreset("30d");
+  st.rango=computePreset("hoy");
   render();
 }
 
@@ -158,7 +158,7 @@ async function conciliar(){
   }catch(e){ toast(e.message||"No pude leer el archivo",true); b.disabled=false; b.textContent="Conciliar"; return; }
 
   b.textContent="Cruzando…";
-  const r0=st.rango||computePreset("30d");
+  const r0=st.rango||computePreset("hoy");
   const desde=startOfDayLima(r0.from); // corte del día en hora de Lima (no del navegador)
   const hasta=endOfDayLima(r0.to);
   // Ventas cobradas al 100% del rango (mismo criterio que Compras).

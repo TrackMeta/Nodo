@@ -216,7 +216,7 @@ async function loadData(){
   st.rows=[]; st.loaded=false;
   const cid=st.channelId; if(!cid){ st.loaded=true; return; }
   const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot/cuenta
-  const r=st.range||computePreset("30d"); const from=ymd(r.from), to=ymd(r.to);
+  const r=st.range||computePreset("hoy"); const from=ymd(r.from), to=ymd(r.to);
   // Los pedidos van por created_at (timestamptz): hay que comparar contra el
   // INSTANTE UTC real del día LOCAL (Lima), no contra la fecha naive que la
   // sesión UTC de Postgres leería corrida ~5h → así se perdían las ventas de la
@@ -437,7 +437,7 @@ function boot(){
     if(!session){ location.href="index.html"; return; }
     const shell=await mountShell({ active:"rendimiento" });
     st.channelId=shell.channelId;
-    st.cols=new Set(DEFAULT_ON); st.range=computePreset("30d");
+    st.cols=new Set(DEFAULT_ON); st.range=computePreset("hoy");
     shell.onChannel(id=>{ st.channelId=id; st.sel=null; loadAccount(); });
     await loadAccount();
   });
@@ -752,7 +752,7 @@ async function productoPorRef(){
   return map;
 }
 async function cargaCopys(){
-  const r=st.range||computePreset("30d");
+  const r=st.range||computePreset("hoy");
   // ⚠️ `r.to` es la MEDIANOCHE del último día (su instante de inicio), no su final: usarlo
   // tal cual como tope dejaba fuera todo lo de hoy — medido, con envíos de las 00:28 de Lima
   // la vista salía vacía teniendo 320 filas. Se toma el fin del día en la zona del negocio.
@@ -987,7 +987,7 @@ function wireToolbar(){
 // Serie diaria REAL: recorre cada día del periodo y toma lo que ads-sync +
 // orders dejaron en row.daily (0 si ese día no hubo nada).
 function serieReal(row){
-  const r=st.range||computePreset("30d"); const out=[]; let d=new Date(r.from); const end=new Date(r.to);
+  const r=st.range||computePreset("hoy"); const out=[]; let d=new Date(r.from); const end=new Date(r.to);
   // Con «Máximo» (desde 2020) el tope de 400 días se comía desde el PRINCIPIO: la serie
   // mostraba 2020 en cero y nunca llegaba a los días con datos. Se arranca en el primer día
   // con datos del anuncio y, si aun así pasa de 400, se quedan los ÚLTIMOS 400.

@@ -116,15 +116,14 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Embudo</h1>
-        <p class="nodo-lead">El camino de tus clientes de <b>llegar</b> a <b>comprar</b>, en vivo. Mira dónde se te caen y actúa. Es la foto de las <b>personas</b>; para el detalle de ventas está <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</p>
       </div>
       <div class="nodo-actions" style="flex-wrap:wrap;gap:8px">
-        <div class="dseg" id="tipoSeg"><button data-t="all" class="on">Todo</button><button data-t="digital">Digital</button><button data-t="fisico">Físico</button><button data-t="microapp">Micro apps</button></div>
+        <div class="dseg" id="tipoSeg" style="display:none"><button data-t="all" class="on">Todo</button><button data-t="digital">Digital</button><button data-t="fisico">Físico</button><button data-t="microapp">Micro apps</button></div>
         <div class="dseg" id="zonaSeg" style="display:none"><button data-z="total" class="on">Total</button><button data-z="lima">Lima</button><button data-z="provincia">Provincia</button></div>
-        <select class="selp" id="prodSel"><option value="all">Todos los productos</option></select>
+        <select class="selp" id="prodSel" style="display:none"><option value="all">Todos los productos</option></select>
         <div id="dateHost"></div>
         <span class="helpwrap">
-          <button class="helpbtn" id="helpBtn" type="button"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>¿Cómo lee las fechas?</button>
+          <button class="helpbtn" id="helpBtn" type="button" title="¿Cómo lee las fechas?" aria-label="¿Cómo lee las fechas?"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
           <div id="dateHelp" class="datehelp" hidden>
             <h4>Cómo lee las fechas este embudo</h4>
             Las fechas van por <b>cuándo LLEGÓ cada contacto</b> (cuándo te escribió por primera vez), <b>no</b> por cuándo compró.
@@ -136,8 +135,8 @@
             </ul>
           </div>
         </span>
-        <span class="live"><span class="pulse"></span>En vivo</span>
-        <button class="nodo-btn" id="reloadBtn" title="Actualizar ahora"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg><span>Actualizar</span></button>
+        <span class="live" style="display:none"><span class="pulse"></span>En vivo</span>
+        <button class="nodo-btn" id="reloadBtn" title="Actualizar ahora" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg><span>Actualizar</span></button>
       </div>
     </div>
 
@@ -151,6 +150,11 @@
       <div id="plata"></div>
     </div>
 
+    <div class="panel" id="origenPanel" style="display:none">
+      <h3>De dónde salen las ventas</h3>
+      <p class="ps">Las ventas de estos contactos, separadas por el precio al que compraron: el normal y cada oferta del remarketing.</p>
+      <div id="origen"></div>
+    </div>
     <div class="panel" id="entregaPanel" style="display:none">
       <h3>Embudo de entrega · Provincia</h3>
       <p class="ps">Lo que pasa <b>después</b> de la venta: de los que ya pagaron el adelanto, cuántos llegan a <b>recoger</b> en la agencia. Aquí es donde provincia se sangra (el no-recojo). Es la foto de los <b>pedidos</b>, no de las personas.</p>
@@ -201,7 +205,7 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"embudo" });
   st.channelId=shell.channelId;
-  st.range=computePreset("max");
+  st.range=computePreset("hoy");   // (todas las fechas arrancan en Hoy — Rodrigo, 10-oct)
   shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } });
   shell.onLeave?.(()=>recargarPronto.parar()); // sin recarga pendiente corriendo sobre la página nueva
   const onResize=()=>igualarAlto($("metPanel")); window.addEventListener("resize",onResize);
@@ -261,7 +265,7 @@ function tipoDe(c){ const t=c.product&&c.product.tipo; return t==="fisico"?"fisi
 // del último pedido físico. null = todavía no dijo de dónde es (solo va en "Total").
 function zonaDeContacto(c){ const z=st.zonaMap[c.id]; if(z) return z; for(const o of (st.ordersBy[c.id]||[])){ if(O.esFisico(o)){ const zz=O.zonaDe(o); if(zz==="lima"||zz==="provincia") return zz; } } return null; }
 function enRango(c){ if(!st.range) return true; if(!c.created_at) return true; /* sin fecha → se muestra (no lo escondemos en silencio, como en Compras) */ const d=new Date(c.created_at); const from=startOfDayLima(st.range.from), to=endOfDayLima(st.range.to); /* corte en hora de Lima */ return d>=from && d<=to; }
-function filtrados(){ return st.contacts.filter(c=> (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.tipo!=="fisico"||st.zona==="total"||zonaDeContacto(c)===st.zona) && (st.prod==="all"||c.product_id===st.prod) && enRango(c) ); }
+function filtrados(){ return st.contacts.filter(c=> (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.zona==="total"||zonaDeContacto(c)===st.zona) && (st.prod==="all"||c.product_id===st.prod) && enRango(c) ); }
 
 function fillProdSel(){
   const sel=$("prodSel"); if(!sel) return;
@@ -271,6 +275,8 @@ function fillProdSel(){
   const cur=st.prod;
   sel.innerHTML=`<option value="all">Todos los productos</option>`+prods.map(([id,p])=>`<option value="${esc(id)}">${p.emoji?esc(p.emoji)+" ":""}${esc(p.nombre||"Producto")}</option>`).join("");
   sel.value=prods.some(([id])=>id===cur)?cur:"all"; if(sel.value!==cur) st.prod=sel.value;
+  sel.style.display = prods.length>1 ? "" : "none";
+  const zs=$("zonaSeg"); if(zs) zs.style.display = st.contacts.some(c=>tipoDe(c)==="fisico") ? "" : "none";
 }
 
 // ── El cálculo del embudo para un subconjunto de contactos ────────────
@@ -310,6 +316,7 @@ function render(){
   renderNeck(F);
   renderFunnel(F);
   renderPlata(cs);
+  renderOrigen(cs);
   renderEntrega(cs);
   renderProvinciaAhora(cs);
   renderDist(F);
@@ -565,6 +572,28 @@ function renderProvinciaAhora(cs){
   </div>`).join("");
 }
 
+// 💸 (10-oct, Rodrigo) Por precio de compra: el más alto es el normal; los demás salen de las ofertas (remarketing).
+// Medido el 9-oct en Prime Digital: S/ 10 → 21 · S/ 7 → 2 · S/ 5 → 0 · S/ 3 → 8 (el escalón de S/ 5 no vendía nada).
+function renderOrigen(cs){
+  const panel=$("origenPanel"), el=$("origen"); if(!panel||!el) return;
+  const porPrecio=new Map();
+  cs.forEach(c=> (st.ordersBy[c.id]||[]).forEach(o=>{
+    if(!O.esVenta(o) || O.esPerdido(o)) return;
+    const p=Math.round(Number(o.amount||0)*100)/100; if(!(p>0)) return;
+    const g=porPrecio.get(p)||{ n:0, sum:0 }; g.n++; g.sum+=O.total(o); porPrecio.set(p,g);
+  }));
+  if(!porPrecio.size){ panel.style.display="none"; el.innerHTML=""; return; }
+  panel.style.display="";
+  const filas=[...porPrecio.entries()].sort((a,b)=>b[0]-a[0]);
+  const tot=filas.reduce((a,[,g])=>a+g.n,0), max=Math.max(...filas.map(([,g])=>g.n));
+  el.innerHTML=filas.map(([p,g],i)=>`<div class="drow">
+      <div class="dhead"><span class="ddot" style="background:${i===0?"var(--green)":"var(--amber)"}"></span><div><div class="dname">${money(p)}</div><div class="dsub">${i===0?"Precio normal":"Oferta"}</div></div></div>
+      <div class="dbarwrap"><div class="dbar" style="width:${Math.round(g.n/max*100)}%;background:${i===0?"var(--green)":"var(--amber)"}"></div></div>
+      <div class="dn">${nf.format(g.n)}</div>
+      <div class="dpct">${Math.round(g.n/tot*100)}%</div>
+    </div>`).join("");
+}
+
 function renderDist(F){
   const panel=$("distPanel"), el=$("dist");
   // Sin contactos se oculta el panel ENTERO, como ya hacen sus tres hermanos
@@ -575,7 +604,7 @@ function renderDist(F){
   const c=F.c, max=Math.max(1,...STAGES.map(s=>c[s.k]||0));
   el.innerHTML=STAGES.map(s=>{
     const n=c[s.k]||0;
-    const reactivable=(s.k==="curioso"||s.k==="interesado"||s.k==="confirmado") && n>0;
+    const reactivable=(s.k==="curioso"||s.k==="interesado"||s.k==="caliente"||s.k==="confirmado") && n>0;
     const p=pct(n,F.total);
     return `<div class="drow">
       <div class="dhead"><span class="ddot" style="background:${s.color}"></span><div><div class="dname">${esc(s.label)}</div><div class="dsub">${esc(s.desc||"")}</div></div></div>

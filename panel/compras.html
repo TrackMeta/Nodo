@@ -137,7 +137,7 @@ const $=(id)=>document.getElementById(id);
 // El rango arranca en "Máximo" (últimos 365 días) para no esconder ventas al
 // entrar — Compras es el archivo y el buscador por nº de operación no debe
 // quedar tapado por una ventana corta. El picker deja acotar cuando haga falta.
-const st={ channelId:null, list:[], imgs:{}, q:"", tipo:"all", rango:computePreset("max"),
+const st={ channelId:null, list:[], imgs:{}, q:"", tipo:"all", rango:computePreset("hoy"),   // (Hoy por defecto — Rodrigo, 10-oct)
            vista:(()=>{ try{ return localStorage.getItem("nodo.compras.vista")||"cards"; }catch(_){ return "cards"; } })() };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function money(v,cur){ try{ return new Intl.NumberFormat("es-PE",{style:"currency",currency:cur||"PEN"}).format(Number(v||0)); }catch{ return (cur||"PEN")+" "+Number(v||0).toFixed(2); } }
