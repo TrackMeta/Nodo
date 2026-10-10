@@ -187,14 +187,14 @@
     <div class="filters" id="filters">
       <div class="fgrp">
         <span class="fglabel">Rápidos</span>
-        <button class="ftog" data-quick="compro" type="button"><span class="dot" style="background:var(--green)"></span>Compró <span class="fc" data-qc="compro"></span></button>
-        <button class="ftog" data-quick="anuncio" type="button"><span class="dot" style="background:var(--purple)"></span>Llegó por anuncio <span class="fc" data-qc="anuncio"></span></button>
-        <button class="ftog" data-quick="organico" type="button"><span class="dot" style="background:var(--green)"></span>Orgánico <span class="fc" data-qc="organico"></span></button>
-        <button class="ftog" data-quick="sinprod" type="button"><span class="dot" style="background:var(--amber)"></span>Sin producto aún <span class="fc" data-qc="sinprod"></span></button>
-        <button class="ftog" data-quick="conimg" type="button"><span class="dot" style="background:#0ea5e9"></span>Envió imagen <span class="fc" data-qc="conimg"></span></button>
-        <button class="ftog" data-quick="bloqueado" type="button"><span class="dot" style="background:var(--red)"></span>Bloqueados <span class="fc" data-qc="bloqueado"></span></button>
-        <button class="ftog" data-quick="noremk" type="button"><span class="dot" style="background:var(--muted)"></span>No remarketing <span class="fc" data-qc="noremk"></span></button>
-        <button class="ftog" data-quick="archivado" type="button"><span class="dot" style="background:var(--faint)"></span>Archivados <span class="fc" data-qc="archivado"></span></button>
+        <button class="ftog" data-quick="compro" type="button" style="display:none">Compró <span class="fc" data-qc="compro"></span></button>
+        <button class="ftog" data-quick="anuncio" type="button" style="display:none">Llegó por anuncio <span class="fc" data-qc="anuncio"></span></button>
+        <button class="ftog" data-quick="organico" type="button" style="display:none">Orgánico <span class="fc" data-qc="organico"></span></button>
+        <button class="ftog" data-quick="sinprod" type="button">Sin producto aún <span class="fc" data-qc="sinprod"></span></button>
+        <button class="ftog" data-quick="conimg" type="button">Envió imagen <span class="fc" data-qc="conimg"></span></button>
+        <button class="ftog" data-quick="bloqueado" type="button">Bloqueados <span class="fc" data-qc="bloqueado"></span></button>
+        <button class="ftog" data-quick="noremk" type="button">Fuera del remarketing <span class="fc" data-qc="noremk"></span></button>
+        <button class="ftog" data-quick="archivado" type="button">Archivados <span class="fc" data-qc="archivado"></span></button>
         <button class="fclear" id="fClear" type="button">Limpiar filtros</button>
       </div>
       <div class="fgrp"><span class="fglabel">Etapa</span><span id="fStages" style="display:flex;gap:8px;flex-wrap:wrap"></span></div>
@@ -349,13 +349,13 @@ function isAd(c){ return !!(c.ad_id || c.ctwa_clid || /ctwa|anuncio|ad/i.test(c.
 function isArchived(c){ const cv=Array.isArray(c.conv)?c.conv[0]:c.conv; return !!cv?.archivada; }
 
 // (10-oct) Producto → sus anuncios → orgánico (mismo selector que Embudo, Dashboard, Directo…)
-function enVista(c){ const v=f.vista||"all"; if(v==="all") return true; if(v==="none") return !c.ad_id; if(v.startsWith("p:")) return c.product_id===v.slice(2); return String(c.ad_id||"")===v.slice(2); }
+function enVista(c){ const v=f.vista||"all"; if(v==="all") return true; if(v==="none") return !isAd(c); /* mismo criterio que «por anuncio» */ if(v.startsWith("p:")) return c.product_id===v.slice(2); return String(c.ad_id||"")===v.slice(2); }
 const unProducto=()=> new Set(st.contacts.map(c=>c.product_id).filter(Boolean)).size<=1;
 function fillVista(){
   const sel=$("vistaSel"); if(!sel) return;
   const vivos=st.contacts.filter(c=>!isArchived(c));
   const n={}; const sum=(k)=>{ n[k]=(n[k]||0)+1; };
-  vivos.forEach(c=>{ sum("all"); if(c.product_id) sum("p:"+c.product_id); sum(c.ad_id?"a:"+c.ad_id:"none"); });
+  vivos.forEach(c=>{ sum("all"); if(c.product_id) sum("p:"+c.product_id); if(c.ad_id) sum("a:"+c.ad_id); else if(!isAd(c)) sum("none"); });
   const prods=new Map(); st.contacts.forEach(c=>{ if(c.product_id && c.product && !prods.has(c.product_id)) prods.set(c.product_id,c.product); });
   const cnt={}; st.contacts.forEach(c=>{ if(!c.ad_id) return; (cnt[c.ad_id]||(cnt[c.ad_id]={}))[c.product_id||""]=((cnt[c.ad_id]||{})[c.product_id||""]||0)+1; });
   const adsDe={}; Object.entries(cnt).forEach(([a,m])=>{ const p=Object.entries(m).sort((x,y)=>y[1]-x[1])[0][0]; (adsDe[p]||(adsDe[p]=[])).push(a); });
@@ -368,7 +368,7 @@ function fillVista(){
     if(ads.length>1){ h+=ads.map(a=>`<option value="a:${esc(a)}" data-ico="megaphone" data-sub="1"${est(a)} data-n="${nn("a:"+a)}">${esc((st.adNombre||{})[a]||("Anuncio …"+String(a).slice(-6)))}</option>`).join(""); cuantos+=ads.length; }
     h+=`</optgroup>`; cuantos++;
   });
-  if(st.contacts.some(c=>!c.ad_id)){ h+=`<optgroup label=""><option value="none" data-ico="user" data-n="${nn("none")}">Sin anuncio (orgánico)</option></optgroup>`; cuantos++; }
+  if(st.contacts.some(c=>!isAd(c))){ h+=`<optgroup label=""><option value="none" data-ico="user" data-n="${nn("none")}">Sin anuncio (orgánico)</option></optgroup>`; cuantos++; }
   sel.innerHTML=h;
   if(![...sel.options].some(o=>o.value===(f.vista||"all"))) f.vista="all";
   sel.value=f.vista||"all";
@@ -420,7 +420,12 @@ function updateFilterCounts(){
   EMBUDO_STAGES.forEach(s=>{ const el=$("fStages").querySelector(`[data-sc="${s.k}"]`); if(el) el.textContent=all.filter(c=>(c.stage||"nuevo")===s.k).length||""; });
   st.tags.forEach(t=>{ const el=$("fTags").querySelector(`[data-tc="${t.id}"]`); if(el) el.textContent=all.filter(c=>(c.contact_tags||[]).some(x=>x.tag_id===t.id)).length||""; });
   const q={ compro:all.filter(c=>ltvOf(c.id).count>0).length, anuncio:all.filter(isAd).length, organico:all.filter(c=>!isAd(c)).length, sinprod:all.filter(c=>!c.product_id && c.stage!=="comprado" && c.stage!=="confirmado").length, conimg:all.filter(c=>!!c.ultima_imagen_at).length, bloqueado:all.filter(c=>c.bloqueado).length, noremk:all.filter(c=>c.no_remarketing).length, archivado:st.contacts.filter(isArchived).length };
-  Object.entries(q).forEach(([k,v])=>{ const el=document.querySelector(`[data-qc="${k}"]`); if(el) el.textContent=v||""; });
+  Object.entries(q).forEach(([k,v])=>{ const el=document.querySelector(`[data-qc="${k}"]`); if(el) el.textContent=v||"";
+    // (10-oct) Bloqueados / Archivados solo si hay alguno (o si el filtro está prendido)
+    if(el && ["bloqueado","archivado"].includes(k)){ const b=el.closest(".ftog"); if(b) b.style.display=(v||f[k])?"":"none"; } });
+  // Etapas y etiquetas sin gente tampoco se muestran
+  EMBUDO_STAGES.forEach(s=>{ const b=$("fStages").querySelector(`[data-stage="${s.k}"]`); if(b) b.style.display=(all.some(c=>(c.stage||"nuevo")===s.k)||f.stages.has(s.k))?"":"none"; });
+  st.tags.forEach(t=>{ const b=$("fTags").querySelector(`[data-tag="${t.id}"]`); if(b) b.style.display=(all.some(c=>(c.contact_tags||[]).some(x=>x.tag_id===t.id))||f.tags.has(t.id))?"":"none"; });
   const active=f.stages.size+f.tags.size+(f.compro?1:0)+(f.anuncio?1:0)+(f.organico?1:0)+(f.sinprod?1:0)+(f.conimg?1:0)+(f.bloqueado?1:0)+(f.noremk?1:0)+(f.archivado?1:0)+(f.source?1:0);
   const cnt=$("filtCnt"); cnt.textContent=active; cnt.style.display=active?"":"none"; $("filtBtn").classList.toggle("on",!!active);
 }
