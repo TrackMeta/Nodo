@@ -30496,6 +30496,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (_esDigital && !cierre && !_yaPago && !_pideCaptura &&
               !dudaDeSalud(_li) && !RE_QUEJA_SUAVE.test(_li) && !RE_PIDE_DEVOLUCION.test(_li) &&
               !/\b(no me interesa|no gracias|no,? gracias|chau|adi[oó]s|hasta luego|nos vemos)\b/i.test(_li) &&
+              // 🙋 (9-oct, decisión de Rodrigo) Solo ANUNCIA que va a preguntar («Una pregunta», «tengo una consulta»): la
+              // pregunta todavía no llegó. «Dime nomás…» + «¿Con qué lo pagas?» se sentía apurado (Cris, 9-oct). Si la pregunta
+              // viene en el mismo mensaje («una pregunta, ¿son videos?»), esto no aplica y el cierre al pago sigue igual.
+              !/^[\s¡!¿.,]*(?:hola[\s,!.]*)?(?:(?:una|otra|tengo(?:\s+(?:unas?|algunas))?|te\s+hago\s+una|le\s+hago\s+una|quiero\s+hacer(?:te|le)?\s+una|puedo\s+hacer(?:te|le)?\s+una|una\s+peque[ñn]a)\s+)?(?:pregunta|preguntita|consulta|consultita|duda)s?(?:\s+(?:por\s+favor|porfa|amigo|amiga|hermano|bro))?[\s.,!?¿¡:…\p{Extended_Pictographic}\u{FE0F}]*$/iu.test(_li.trim()) &&
               // «ok mañana te escribo» → «¡Nos vemos mañana!» + «¿Lo pagas por Yape…?» (D17-pmanana): ya dijo cuándo.
               !/(?:^|[^\p{L}])(?:ma[ñn]ana|luego|m[aá]s\s+tarde|despu[eé]s|en\s+la\s+noche|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo))\s+(?:te\s+)?(?:escribo|pago|aviso|yapeo|deposito|transfiero|confirmo|mando)|(?:te\s+)?(?:escribo|pago|aviso|yapeo)\s+(?:ma[ñn]ana|luego|m[aá]s\s+tarde|despu[eé]s)(?![\p{L}])/iu.test(_li) &&
               !comboDe(run).some((i) => !i.version_id)) {
