@@ -630,7 +630,7 @@ function rowEl(c){
   const segLinea = ints.length ? (()=>{ const li=ints[ints.length-1], r=RES[li.resultado]; return `×${ints.length} · ${r?esc(r.label):"contactado"}`; })() : "";
   el.innerHTML=`
     <div class="c-cli cli">
-      <div class="ava" style="background:${avaC}22;color:${avaC}">${esc(ini(c.nombre||c.wa_id))}</div>
+      <div class="ava" style="background:${avaC}22;color:${avaC}">${avaInner}</div>
       <div class="cli-tx">
         <div class="nm">${esc(c.nombre||"Sin nombre")}</div>
         <div class="ph">${tel?`${PHONE_SVG}+${esc(tel)}`:`${PHONE_SVG}<span class="sin">sin teléfono</span>`}</div>
