@@ -10321,7 +10321,11 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
           const _sin = sinRestosDeRecorte((result.slice(0, _ini) + " " + result.slice(_fin)).replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim());
           // («Por acá no tengo una foto» a quien preguntó «¿es seguro?» sonaba de la nada — R1P-miedo, 2026-10-01: se dice qué
           //  foto SÍ llega, que es lo que da confianza)
-          const _honesto = "Fotos de otros pedidos no mando por acá 🙏 Lo que sí: apenas te mande el tuyo te paso la *foto de la guía* y lo recoges con tu clave.";
+          // (10-oct) En DIGITAL no hay guía ni clave de recojo: a santama, que pidió «¿me puedes enviar tu video?» para un curso,
+          //  le llegó «te paso la foto de la guía para que la recojas con tu clave». Cada tipo con su verdad.
+          const _honesto = esDigital(ctx)
+            ? "Muestras no mando por acá 🙏 Lo que sí: apenas pagues, te llega todo el contenido completo por este chat."
+            : "Fotos de otros pedidos no mando por acá 🙏 Lo que sí: apenas te mande el tuyo te paso la *foto de la guía* y lo recoges con tu clave.";
           result = (_sin.replace(/[\s\p{P}\p{S}]/gu, "").length >= 10 ? `${_honesto}\n\n${_sin}` : _honesto);
         }
       }
