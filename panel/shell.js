@@ -1970,14 +1970,19 @@ export async function getUsdRate(channelId) {
 function marcarTipoBot(id) {
   const k = "nodo.botDigital." + id, km = "nodo.botSinMicro." + id;
   const flag = (attr, v) => { if (v === "1") document.documentElement.setAttribute(attr, ""); else document.documentElement.removeAttribute(attr); };
-  try { flag("data-bot-digital", localStorage.getItem(k)); flag("data-bot-sin-microapps", localStorage.getItem(km)); } catch { /* sin storage: se espera a la consulta */ }
+  // (10-oct) Sin lo guardado de una visita anterior, Pedidos y Accesos se esconden MIENTRAS se pregunta
+  // (antes aparecían medio segundo y desaparecían: es mejor que aparezcan tarde que que parpadeen).
+  let sabido = false;
+  try { const a = localStorage.getItem(k), b = localStorage.getItem(km); sabido = a != null && b != null; flag("data-bot-digital", a); flag("data-bot-sin-microapps", b); } catch { /* sin storage: se espera a la consulta */ }
+  if (!sabido) document.documentElement.setAttribute("data-bot-tipo-pend", "");
   supa.from("products").select("tipo").eq("channel_id", id).then(({ data }) => {
     const ps = data || [];
     const v = (ps.length > 0 && !ps.some((p) => p.tipo === "fisico")) ? "1" : "0";
     const vm = ps.some((p) => p.tipo === "microapp") ? "0" : "1";
     try { localStorage.setItem(k, v); localStorage.setItem(km, vm); } catch { /* */ }
     if (S.channelId === id) { flag("data-bot-digital", v); flag("data-bot-sin-microapps", vm); }
-  }, () => {});
+    document.documentElement.removeAttribute("data-bot-tipo-pend");
+  }, () => { document.documentElement.removeAttribute("data-bot-tipo-pend"); });
 }
 
 // ── Selector bonito, en TODO el panel (10-oct-2026) ──────────────────

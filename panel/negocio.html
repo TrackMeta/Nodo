@@ -162,6 +162,7 @@
       <button class="tab" data-t="entrega" id="tabEnt"></button>
     </div>
     <div id="body"></div>
+    <div id="fisLink" style="display:none;margin:18px 2px 0;font-size:12.5px;color:var(--muted)">¿Vas a vender productos físicos? <a href="#" style="color:var(--brand);text-decoration:none;font-weight:600">Configura la entrega y logística</a></div>
   </div>
 </div>
 
@@ -236,6 +237,8 @@ async function load(){
   { const te=$("tabEnt"); const bar=te&&te.parentElement;
     if(te) te.style.display = st.soloDigital ? "none" : "";
     if(bar && bar!==document.body) bar.style.display = st.soloDigital ? "none" : "";
+    // (10-oct) Bot solo digital: la logística queda a un enlace, por si empieza a vender físico.
+    { const fl=$("fisLink"); if(fl){ fl.style.display=st.soloDigital?"":"none"; const a=fl.querySelector("a"); a.onclick=(e)=>{ e.preventDefault(); if(bar && bar!==document.body) bar.style.display=""; if(te){ te.style.display=""; te.click(); } fl.style.display="none"; window.scrollTo(0,0); }; } }
     if(st.soloDigital && st.tab!=="conocimiento"){ st.tab="conocimiento"; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t==="conocimiento")); } }
   markClean();
   render();

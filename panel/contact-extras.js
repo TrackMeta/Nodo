@@ -492,14 +492,13 @@ export const EXTRAS_CSS = `
   /* Acento IA (violeta/fucsia) para la Memoria IA — disponible donde se inyecte */
   :root{--ia:#a855f7;--ia-2:#ec4899;--ia-bg:rgba(168,85,247,.12);--ia-border:rgba(168,85,247,.4)}
   /* ── Memoria IA (piel de la sección IA) ── */
-  .cpanel .mia{position:relative;overflow:hidden;border:1px solid var(--ia-border);border-radius:16px;padding:15px 14px 12px;margin:14px 0 6px;
-    background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.22),transparent 55%),radial-gradient(120% 140% at 100% 100%,rgba(236,72,153,.16),transparent 55%),var(--surface-2)}
-  .cpanel .mia::after{content:"";position:absolute;right:-42px;top:-42px;width:160px;height:160px;border-radius:50%;background:radial-gradient(circle,rgba(168,85,247,.34),transparent 70%);filter:blur(22px);pointer-events:none}
-  .cpanel .mia-hd{position:relative;display:flex;align-items:center;gap:10px;margin-bottom:15px}
-  .cpanel .mia-ico{width:32px;height:32px;flex:none;border-radius:9px;background:linear-gradient(135deg,var(--ia),var(--ia-2));color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(168,85,247,.4)}
-  .cpanel .mia-ico svg{width:17px;height:17px}
+  .cpanel .mia{position:relative;overflow:hidden;border:1px solid var(--ia-border);border-radius:14px;padding:12px 12px 4px;margin:14px 0 6px;background:var(--ia-bg)}   /* (10-oct) plana: sin resplandores */
+  .cpanel .mia::after{display:none}
+  .cpanel .mia-hd{position:relative;display:flex;align-items:center;gap:9px;margin-bottom:11px}
+  .cpanel .mia-ico{width:26px;height:26px;flex:none;border-radius:8px;background:linear-gradient(135deg,var(--ia),var(--ia-2));color:#fff;display:flex;align-items:center;justify-content:center}
+  .cpanel .mia-ico svg{width:15px;height:15px}
   .cpanel .mia-htx{display:flex;flex-direction:column;min-width:0}
-  .cpanel .mia-title{font-size:15.5px;font-weight:800;letter-spacing:-.2px;line-height:1.1;background:linear-gradient(90deg,var(--ia),var(--ia-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .cpanel .mia-title{font-size:14px;font-weight:800;letter-spacing:-.2px;line-height:1.1;background:linear-gradient(90deg,var(--ia),var(--ia-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
   /* Estos cinco llevan --muted y no --faint a proposito. Medido en modo claro:
      --faint (#8A94A8) sobre --surface-2 da 2,7 a 1 y el minimo legible es 4,5; con
      --muted sube a 5,4. Es texto INFORMATIVO ("Aun sin datos", "Toca un chip para
@@ -512,7 +511,7 @@ export const EXTRAS_CSS = `
   .cpanel .mia-lyr{position:relative;display:flex;align-items:center;gap:6px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#c9b6e8;font-weight:700;margin:0 0 6px}
   .cpanel .mia-lyr::before{content:"";width:6px;height:6px;border-radius:50%;background:linear-gradient(135deg,var(--ia),var(--ia-2));flex:none}
   .cpanel .mia-lyr .mia-sub{color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400}
-  .cpanel .mia-chips{position:relative;display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px}
+  .cpanel .mia-chips{position:relative;display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
   .cpanel .mia-chip{font-size:12px;padding:5px 11px;border-radius:999px;border:1px solid transparent;line-height:1;font-family:inherit}
   .cpanel .mia-chip.sell{background:rgba(168,85,247,.18);border-color:rgba(168,85,247,.5);color:#e9d5ff;cursor:pointer}
   .cpanel .mia-chip.ghost{background:rgba(168,85,247,.06);border:1px dashed var(--ia-border);color:var(--muted);cursor:pointer}
@@ -522,7 +521,7 @@ export const EXTRAS_CSS = `
   .cpanel .mia-chip svg{width:11px;height:11px;vertical-align:-1px;opacity:.7}
   .cpanel .mia-none{font-size:11.5px;color:var(--muted)}
   .cpanel .mia-edit{font-size:12px;height:28px;border-radius:999px;background:var(--surface);border:1px solid var(--ia);color:var(--text);padding:0 11px;outline:none;min-width:90px;font-family:inherit}
-  .cpanel .mia-foot{position:relative;display:flex;align-items:center;justify-content:space-between;margin-top:2px;padding-top:10px;border-top:1px solid rgba(168,85,247,.18)}
+  .cpanel .mia-foot{display:none!important;position:relative;align-items:center;justify-content:space-between;margin-top:2px;padding-top:10px;border-top:1px solid rgba(168,85,247,.18)}
   .cpanel .mia-hint{font-size:10.5px;color:var(--muted)}
   .cpanel .mia-mini{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin:10px 0 2px}
   .cpanel .mia-mini:first-child{margin-top:0}
@@ -543,14 +542,14 @@ export const EXTRAS_CSS = `
   .cpanel .cx-sec[open]>summary .cx-sec-ar{transform:rotate(45deg)}
   .cpanel .cx-sec-body{padding:2px 0 14px}
   /* Selector de etapa (píldoras bonitas, reemplaza el <select>) */
-  .cpanel .cx-stagepick{display:flex;flex-direction:column;gap:6px}
-  .cpanel .cx-stagechip{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:11px;border:1px solid var(--border);
-    background:var(--surface-2);color:var(--muted);font-size:12.5px;font-family:inherit;cursor:pointer;text-align:left;width:100%;
+  .cpanel .cx-stagepick{display:grid;grid-template-columns:1fr 1fr;gap:5px}   /* (10-oct) dos columnas, más bajas */
+  .cpanel .cx-stagechip{display:flex;align-items:center;gap:7px;padding:6px 9px;border-radius:9px;border:1px solid var(--border);
+    background:var(--surface-2);color:var(--muted);font-size:12px;font-family:inherit;cursor:pointer;text-align:left;width:100%;
     transition:border-color .14s,background .14s,transform .05s}
   .cpanel .cx-stagechip:hover{border-color:var(--faint)}
   .cpanel .cx-stagechip:active{transform:scale(.99)}
   .cpanel .cx-stagechip.on{font-weight:700;box-shadow:0 1px 6px rgba(0,0,0,.06)}
-  .cpanel .cx-stagechip .cx-sd{width:10px;height:10px;border-radius:50%;flex:none}
+  .cpanel .cx-stagechip .cx-sd{width:8px;height:8px;border-radius:50%;flex:none}
   .cpanel .cx-stagechip .cx-sl{flex:1}
   .cpanel .cx-stagechip .cx-sck{font-size:13px;font-weight:800;flex:none;margin-left:1px;display:inline-flex}
   /* Colapso explícito (no depender del user-agent para ocultar el cuerpo) */

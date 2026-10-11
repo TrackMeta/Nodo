@@ -1078,7 +1078,8 @@ html:not([data-ds="1"]) .nodo-userrow .nodo-icnbtn svg,html:not([data-ds="1"]) .
 
 /* (10-oct) Bot que solo vende digital / micro apps: Pedidos (logística física) no va en el menú. Ver marcarTipoBot en shell.js */
 html[data-bot-digital] .nodo-link[data-nav="pedidos"]{display:none!important}
-html[data-bot-sin-microapps] .nodo-link[data-nav="accesos"]{display:none!important}   /* Accesos = solo micro apps */
+html[data-bot-sin-microapps] .nodo-link[data-nav="accesos"]{display:none!important}
+html[data-bot-tipo-pend] .nodo-link[data-nav="pedidos"],html[data-bot-tipo-pend] .nodo-link[data-nav="accesos"]{display:none!important}   /* Accesos = solo micro apps */
 
 /* (10-oct) Colores de ETAPA del embudo, compartidos por todo el panel (antes solo en embudo.html).
    Temperatura (Rodrigo, 10-oct): gris (frío) · azul (interesado) · naranja (caliente) · amarillo (confirmado) ·
