@@ -266,13 +266,15 @@ function renderDetail(){
   // (10-oct) 6 puntitos + «sin color». Un color viejo fuera de la paleta se muestra como uno más (no se pierde).
   const cols=(cur && !PALETTE.includes(cur)) ? [...PALETTE, cur] : PALETTE;
   pal.innerHTML=`<span class="qsw2 none qClearC${cur?'':' on'}" title="Sin color">×</span>`
-    + cols.map(c=>`<span class="qsw2 qsw${cur===c?' on':''}" data-c="${c}" style="background:${c}"></span>`).join("");
+    + cols.map(c=>`<span class="qsw2 qsw${cur===c?' on':''}" data-c="${c}" style="background:${c}"></span>`).join("")
+    + `<label class="qsw2 none" title="Otro color" style="position:relative;margin:0">+<input type="color" id="q_colorCustom" value="${qrColor(cur)}" style="position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer;padding:0;border:none"/></label>`;
   // Título/atajo se preservan al re-renderizar por color; las burbujas ya se
   // actualizan en vivo (oninput), así que no hace falta cosecharlas.
   const harvest=()=>{ st.qr.titulo=$("q_titulo").value; st.qr.atajo=$("q_atajo").value?("/"+$("q_atajo").value.replace(/^\/+/,"")):""; };
   const setColor=(c)=>{ harvest(); q.color=c||null; renderDetail(); };
   pal.querySelectorAll(".qsw").forEach(s=> s.onclick=()=>setColor(s.dataset.c));
   pal.querySelector(".qClearC").onclick=()=>setColor(null);
+  $("q_colorCustom").onchange=(e)=>setColor(e.target.value);   // «+» = cualquier color
   // el atajo siempre empieza con «/» (el «/» ya está dibujado: si lo escribes, se quita)
   $("q_atajo").oninput=(e)=>{ const v=e.target.value.replace(/^\/+/,"").replace(/\s+/g,""); if(v!==e.target.value) e.target.value=v; };
   // ── Vista previa en vivo tipo WhatsApp (misma pantalla que el resto del panel) ──
