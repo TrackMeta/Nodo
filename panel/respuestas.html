@@ -51,6 +51,19 @@
   .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
   .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
   .btn.danger{color:var(--red);border-color:transparent}
+  /* (10-oct) editor más limpio */
+  .qtitle{font-size:23px;font-weight:700;letter-spacing:-.4px;background:none;border:1px solid transparent;border-radius:10px;color:var(--text);padding:4px 8px;margin-left:-9px;font-family:inherit;outline:none;min-width:0;flex:1}
+  .qtitle:hover{border-color:var(--border)} .qtitle:focus{border-color:var(--brand);background:var(--surface-2)}
+  .atin{display:inline-flex;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;height:34px;padding:0 4px 0 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:var(--muted)}
+  .atin input{background:none;border:none;outline:none;color:var(--text);font:inherit;width:130px;padding:0 4px}
+  .atin:focus-within{border-color:var(--brand)}
+  .qsw2{width:20px;height:20px;border-radius:50%;cursor:pointer;border:2px solid transparent;box-shadow:0 0 0 1px var(--border);flex:none}
+  .qsw2.on{border-color:var(--text)}
+  .qsw2.none{background:var(--surface-2);display:inline-flex;align-items:center;justify-content:center;color:var(--faint);font-size:12px}
+  .bubtools{display:flex;gap:2px}
+  .bubtools button{width:26px;height:26px;border-radius:7px;border:none;background:none;color:var(--faint);display:inline-flex;align-items:center;justify-content:center;padding:0}
+  .bubtools button:hover{background:var(--surface);color:var(--text)} .bubtools .qbDel:hover{color:var(--red)}
+  .bubtools svg{width:14px;height:14px}
   .qdetail{display:grid;grid-template-columns:minmax(0,1fr) minmax(210px,260px);gap:20px;align-items:start}
   .qprevcol{position:sticky;top:16px}
   @media(max-width:820px){ .qdetail{grid-template-columns:1fr} .qprevcol{position:static;max-width:300px} }
@@ -63,15 +76,18 @@
       <div class="nodo-head">
         <div class="grow">
           <h1 class="nodo-title">Respuestas rápidas</h1>
-          <p class="nodo-lead">Mensajes predefinidos que el operador envía al cliente con un clic desde la Bandeja. Organízalas por carpetas y dales un atajo (ej. <b>/precio</b>).</p>
+          <p class="nodo-lead">Mensajes listos para mandar con un clic desde la Bandeja. En el chat, escribe <b>/</b> para buscarlos.</p>
         </div>
         <div class="nodo-actions">
           <button class="nodo-btn primary" id="addBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva respuesta</button>
         </div>
       </div>
-      <div class="qsearch" id="qsearchWrap">
+      <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">
+      <div class="qsearch" id="qsearchWrap" style="flex:1;min-width:200px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="qSearch" placeholder="Buscar por título, atajo o texto…" autocomplete="off"/>
+      </div>
+      <button class="nodo-btn" id="addFolderBtn" style="display:none;height:40px" title="Crear una carpeta para ordenar tus respuestas">+ Carpeta</button>
       </div>
       <div class="nodo-folders" id="folders"></div>
       <div class="nodo-cards" id="cards"></div>
@@ -98,15 +114,16 @@ const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], qr:null, folder:"__all", localFolders:new Set() };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 // Paleta para identificar cada respuesta con un color (como Etiquetas).
-const PALETTE=["#2b7fff","#22c079","#f0a92b","#e2564a","#a855f7","#18b7be","#e264a8","#8a97a8","#ef4444","#f97316","#84cc16","#06b6d4"];
+const PALETTE=["#2563EB","#16A34A","#CA8A04","#EA580C","#DC2626","#7C3AED"];
 function qrColor(c){ return c && /^#[0-9a-f]{3,8}$/i.test(c) ? c : "#2b7fff"; }   // solo hex real: va a innerHTML
 // Sube un archivo y lo agrega a st.qr.media (multimedia que se envía con la
 // respuesta). Reusa la Edge Function media-upload.
 function pickQrMedia(kind, onDone){
-  const accept={image:"image/*",video:"video/*",audio:"audio/*",document:"*/*"}[kind]||"*/*";
+  const accept={image:"image/*",video:"video/*",audio:"audio/*",document:"*/*",file:"image/*,video/*,audio/*,application/pdf,*/*"}[kind]||"*/*";
   const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
   inp.onchange=async()=>{
     const file=inp.files&&inp.files[0]; if(!file) return;
+    if(kind==="file"){ const t=file.type||""; kind=t.startsWith("image/")?"image":t.startsWith("video/")?"video":t.startsWith("audio/")?"audio":"document"; }
     if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
     toast("Subiendo…");
     try{
@@ -150,6 +167,11 @@ function renderCards(){
   const box=$("cards");
   // El buscador solo tiene sentido si ya hay respuestas.
   const sw=$("qsearchWrap"); if(sw) sw.style.display=st.list.length?"":"none";
+  // (10-oct) Carpetas solo cuando creaste alguna; mientras tanto «+ Carpeta» chico al lado del buscador.
+  const hayCarp=!!(Fbar && Fbar.metas().length);
+  { const fb=$("folders"), ab=$("addFolderBtn");
+    if(fb) fb.style.display=(hayCarp && st.list.length)?"":"none";
+    if(ab){ ab.style.display=(!hayCarp && st.list.length)?"":"none"; ab.onclick=()=>{ const nb=document.querySelector('#folders [data-act="new"]'); if(nb) nb.click(); }; } }
   if(!st.list.length){
     box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg></div><h3>Aún no hay respuestas rápidas</h3><p>Crea mensajes predefinidos para responder al instante desde la Bandeja.</p></div>`;
     return;
@@ -165,7 +187,6 @@ function renderCards(){
   box.innerHTML="";
   list.forEach(q=>{
     const el=document.createElement("div"); el.className="nodo-card qcard";
-    if(q.color){ el.style.borderLeft=`4px solid ${qrColor(q.color)}`; }
     const media=(Array.isArray(q.media)?q.media:[]).filter(m=>m&&m.media_url);
     const thumbs=media.length?`<div class="c-media">${media.slice(0,4).map(m=>
         m.media_kind==="image" ? `<img class="c-th" src="${esc(m.media_url)}" alt=""/>`
@@ -180,7 +201,7 @@ function renderCards(){
       ${thumbs}
       <div class="c-foot"><span data-cardfolder></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar){ const pk=Fbar.picker({ current:q.folder||null, onPick:async(v)=>{ const { error }=await supa.from("quick_replies").update({ folder:v }).eq("id",q.id); if(error){ toast(error.message,true); return; } q.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
+    if(fslot && Fbar && hayCarp){ const pk=Fbar.picker({ current:q.folder||null, onPick:async(v)=>{ const { error }=await supa.from("quick_replies").update({ folder:v }).eq("id",q.id); if(error){ toast(error.message,true); return; } q.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openQR(q.id); box.appendChild(el);
   });
 }
@@ -213,51 +234,44 @@ async function openQR(id){
 function renderDetail(){
   const q=st.qr; if(!q) return;
   $("detail").innerHTML=`
-    <div style="display:flex;align-items:center;gap:11px;margin:0 0 16px;flex-wrap:wrap">
-      ${q.color?`<span style="width:14px;height:14px;border-radius:50%;background:${qrColor(q.color)};flex:none"></span>`:''}
-      <h1 style="margin:0;font-size:23px;font-weight:700;letter-spacing:-.4px">${esc(q.titulo)}</h1>
-      ${q.atajo?`<span class="atajo" style="font-size:12px">${esc(q.atajo)}</span>`:''}
+    <div style="display:flex;align-items:center;gap:10px;margin:0 0 14px;flex-wrap:wrap">
+      <input class="qtitle" id="q_titulo" value="${esc(q.titulo)}" placeholder="Título de la respuesta" title="Toca para cambiar el título"/>
     </div>
     <div class="qdetail">
     <div class="dcard" style="max-width:none">
-      <div class="row">
-        <div class="f"><label>Título</label><input class="in" id="q_titulo" value="${esc(q.titulo)}"/></div>
-        <div class="f"><label>Atajo (opcional)</label><input class="in" id="q_atajo" value="${esc(q.atajo||'')}" placeholder="/precio"/></div>
+      <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;color:var(--muted);font-weight:600">Atajo</span>
+          <span class="atin">/<input id="q_atajo" value="${esc(String(q.atajo||'').replace(/^\/+/,''))}" placeholder="precio" autocomplete="off"/></span></div>
+        <div style="display:flex;align-items:center;gap:7px"><span style="font-size:12px;color:var(--muted);font-weight:600">Color</span><span id="q_palette" style="display:flex;gap:6px;align-items:center"></span></div>
       </div>
-      <label>Color identificador</label>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap" id="q_palette"></div>
-      <div class="hint">Para reconocer la respuesta de un vistazo al buscarla en la Bandeja y en Probar flujos.</div>
       <label>Mensaje</label>
-      <div class="hint" style="margin-top:0;margin-bottom:8px">Arma el mensaje con <b>burbujas</b>: texto e imágenes/archivos (con su texto). Se envían en orden. Usa <b>{{nombre}}</b> para el nombre del cliente.</div>
+      <div class="hint" style="margin-top:0;margin-bottom:8px">Se envían en orden · <b>{{nombre}}</b> = nombre del cliente</div>
       <div id="q_bubbles"></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">
         <button class="btn qbAdd" data-k="text" style="height:34px">+ Texto</button>
-        <button class="btn qbAdd" data-k="image" style="height:34px">+ Imagen</button>
-        <button class="btn qbAdd" data-k="video" style="height:34px">+ Video</button>
-        <button class="btn qbAdd" data-k="audio" style="height:34px">+ Audio</button>
-        <button class="btn qbAdd" data-k="document" style="height:34px">+ Archivo</button>
+        <button class="btn qbAdd" data-k="file" style="height:34px">+ Imagen o archivo</button>
       </div>
     </div>
     <div class="qprevcol">
       <div style="font-size:11.5px;color:var(--muted);margin-bottom:7px;font-weight:700">Así le llega al cliente</div>
       <div id="q_prev"></div>
-      <div class="hint" style="margin-top:9px">Vista previa. El nombre se reemplaza por el del cliente al enviar.</div>
     </div>
     </div>`;
   // Paleta de color
   const cur=q.color||null;
   const pal=$("q_palette");
-  pal.innerHTML=PALETTE.map(c=>`<span class="qsw" data-c="${c}" style="width:26px;height:26px;border-radius:50%;background:${c};cursor:pointer;border:2px solid ${cur===c?'var(--text)':'transparent'};box-shadow:0 0 0 1px var(--border)"></span>`).join("")
-    +`<label style="margin:0;display:inline-flex;align-items:center;gap:6px;cursor:pointer"><span style="width:26px;height:26px;border-radius:50%;background:${cur&&!PALETTE.includes(cur)?cur:'var(--surface-2)'};border:2px solid ${cur&&!PALETTE.includes(cur)?'var(--text)':'var(--border)'};display:inline-flex;align-items:center;justify-content:center;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><input type="color" id="q_colorCustom" value="${qrColor(cur)}" style="width:0;height:0;opacity:0;position:absolute"/></label>`
-    +`<button class="btn qClearC" style="height:30px;padding:0 10px;font-size:12px">Sin color</button>`;
+  // (10-oct) 6 puntitos + «sin color». Un color viejo fuera de la paleta se muestra como uno más (no se pierde).
+  const cols=(cur && !PALETTE.includes(cur)) ? [...PALETTE, cur] : PALETTE;
+  pal.innerHTML=`<span class="qsw2 none qClearC${cur?'':' on'}" title="Sin color">×</span>`
+    + cols.map(c=>`<span class="qsw2 qsw${cur===c?' on':''}" data-c="${c}" style="background:${c}"></span>`).join("");
   // Título/atajo se preservan al re-renderizar por color; las burbujas ya se
   // actualizan en vivo (oninput), así que no hace falta cosecharlas.
-  const harvest=()=>{ st.qr.titulo=$("q_titulo").value; st.qr.atajo=$("q_atajo").value; };
+  const harvest=()=>{ st.qr.titulo=$("q_titulo").value; st.qr.atajo=$("q_atajo").value?("/"+$("q_atajo").value.replace(/^\/+/,"")):""; };
   const setColor=(c)=>{ harvest(); q.color=c||null; renderDetail(); };
   pal.querySelectorAll(".qsw").forEach(s=> s.onclick=()=>setColor(s.dataset.c));
-  $("q_colorCustom").oninput=(e)=>{ q.color=e.target.value; };
-  $("q_colorCustom").onchange=(e)=>setColor(e.target.value);
   pal.querySelector(".qClearC").onclick=()=>setColor(null);
+  // el atajo siempre empieza con «/» (el «/» ya está dibujado: si lo escribes, se quita)
+  $("q_atajo").oninput=(e)=>{ const v=e.target.value.replace(/^\/+/,"").replace(/\s+/g,""); if(v!==e.target.value) e.target.value=v; };
   // ── Vista previa en vivo tipo WhatsApp (misma pantalla que el resto del panel) ──
   // El envío de respuestas rápidas (index.html applyVars) SOLO resuelve {{nombre}}.
   // El preview debe reflejar exactamente eso: resolvemos {{nombre}} y dejamos cualquier
@@ -286,16 +300,17 @@ function renderDetail(){
       const label=b.media_url?(kind.charAt(0).toUpperCase()+kind.slice(1)):"Texto";
       el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
           <span style="font-size:11px;color:var(--muted);font-weight:600;flex:1">${label}</span>
-          <button class="iconbtn qbUp" title="Subir">▲</button><button class="iconbtn qbDown" title="Bajar">▼</button><button class="iconbtn qbDel" title="Quitar">${icon("trash")}</button>
+          ${bubs.length>1?`<span class="bubtools">${i>0?`<button class="qbUp" title="Subir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg></button>`:""}${i<bubs.length-1?`<button class="qbDown" title="Bajar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>`:""}<button class="qbDel" title="Quitar">${icon("trash")}</button></span>`:(b.media_url?`<span class="bubtools"><button class="qbDel" title="Quitar">${icon("trash")}</button></span>`:"")}
         </div>${media}${b.media_url
           ? (kind!=="audio"?`<input class="in qbcap" placeholder="Texto sobre la imagen (opcional) — usa {{nombre}}" value="${esc(b.caption||"")}"/>`:"")
           : `<textarea class="ta qbtext" style="min-height:70px" placeholder="Escribe el mensaje… usa {{nombre}}">${esc(b.text||"")}</textarea>`}`;
       box.appendChild(el);
       const tx=el.querySelector(".qbtext"); if(tx) tx.oninput=e=>{ b.text=e.target.value; paintPreview(); };
       const cp=el.querySelector(".qbcap"); if(cp) cp.oninput=e=>{ b.caption=e.target.value; paintPreview(); };
-      el.querySelector(".qbDel").onclick=()=>{ bubs.splice(i,1); if(!bubs.length) bubs.push({text:""}); paintBubbles(); paintPreview(); };
-      el.querySelector(".qbUp").onclick=()=>{ if(i===0)return; [bubs[i-1],bubs[i]]=[bubs[i],bubs[i-1]]; paintBubbles(); paintPreview(); };
-      el.querySelector(".qbDown").onclick=()=>{ if(i>=bubs.length-1)return; [bubs[i+1],bubs[i]]=[bubs[i],bubs[i+1]]; paintBubbles(); paintPreview(); };
+      const _d=el.querySelector(".qbDel"), _u=el.querySelector(".qbUp"), _w=el.querySelector(".qbDown");
+      if(_d) _d.onclick=()=>{ bubs.splice(i,1); if(!bubs.length) bubs.push({text:""}); paintBubbles(); paintPreview(); };
+      if(_u) _u.onclick=()=>{ if(i===0)return; [bubs[i-1],bubs[i]]=[bubs[i],bubs[i-1]]; paintBubbles(); paintPreview(); };
+      if(_w) _w.onclick=()=>{ if(i>=bubs.length-1)return; [bubs[i+1],bubs[i]]=[bubs[i],bubs[i+1]]; paintBubbles(); paintPreview(); };
     });
     paintPreview();
   }
@@ -313,7 +328,8 @@ async function saveQR(){
   // `cuerpo` = textos/captions unidos (para búsqueda y compat con la Bandeja vieja).
   const bubs=(st.qr.bubbles||[]).filter(b=> b.media_url || (b.text&&String(b.text).trim()));
   const cuerpo=bubs.map(b=> b.text||b.caption||"").filter(s=>s&&String(s).trim()).join("\n\n");
-  const patch={ titulo:$("q_titulo").value.trim(), atajo:$("q_atajo").value.trim()||null, folder:st.qr.folder||null, cuerpo, color:st.qr.color||null, media:bubs.length?bubs:null };
+  const _at=$("q_atajo").value.trim().replace(/^\/+/,"");
+  const patch={ titulo:$("q_titulo").value.trim(), atajo:_at?("/"+_at):null, folder:st.qr.folder||null, cuerpo, color:st.qr.color||null, media:bubs.length?bubs:null };
   if(!patch.titulo){ toast("El título no puede estar vacío",true); return; }
   // Atajo repetido: dos respuestas con «/precio» y cuál sale en la Bandeja dependía del orden
   // de la consulta. Se avisa antes de guardar.

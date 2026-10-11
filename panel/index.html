@@ -1147,7 +1147,19 @@ function applyVars(text){
   const nom = String(state.contactNombreReal||"").trim().split(/\s+/)[0] || "";
   return (text||"").replace(/[ \t]*\{\{\s*nombre\s*\}\}/gi, nom ? " "+nom : "").replace(/^ /gm, "");
 }
+// (10-oct) Escribir «/» en el chat abre las respuestas rápidas; «/precio» filtra por el atajo.
+// Enter manda la primera, Esc cierra. Al elegir una, el «/…» escrito se borra.
+let _qrSlash=false;
+function qrSlashCheck(){
+  const pop=$("qrPop"); if(!pop) return;
+  const m=/^\/(\S*)$/.exec($("msgInput").value||"");
+  if(!m || !state.contactId || !(state.quickReplies||[]).length){ if(_qrSlash){ pop.classList.add("hidden"); _qrSlash=false; } return; }
+  _qrSlash=true; $("emojiPop")?.classList.add("hidden");
+  pop.innerHTML=`<div class="qlist" id="qrList"></div>`;
+  renderQrList(m[1]); pop.classList.remove("hidden");
+}
 function toggleQrPop(){
+  _qrSlash=false;
   const pop=$("qrPop"); const willOpen=pop.classList.contains("hidden");
   $("emojiPop").classList.add("hidden");
   if(!willOpen){ pop.classList.add("hidden"); return; }
@@ -1174,6 +1186,7 @@ function renderQrList(q){
   box.querySelectorAll(".qritem").forEach(it=> it.onclick=()=>{
     const r=state.quickReplies.find(x=>x.id===it.dataset.id); if(!r) return;
     $("qrPop").classList.add("hidden");
+    if(_qrSlash){ $("msgInput").value=""; autoGrow(); _qrSlash=false; }
     openQrSend(r);
   });
 }
@@ -2643,6 +2656,10 @@ $("sendBtn").addEventListener("click", sendMsg);
 // nada y encima MANDABA el mensaje a medias. `isComposing` respeta a quien escribe con
 // teclado de acentos/IME: ahí el Enter cierra la palabra, no envía.
 $("msgInput").addEventListener("keydown", (e) => {
+  if (_qrSlash && !$("qrPop").classList.contains("hidden")) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("qrList")?.querySelector(".qritem")?.click(); return; }
+    if (e.key === "Escape") { $("qrPop").classList.add("hidden"); _qrSlash = false; return; }
+  }
   if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
   if (e.shiftKey || e.altKey) return;   // salto de línea: lo escribe el navegador
   e.preventDefault();
@@ -2653,6 +2670,7 @@ $("msgInput").addEventListener("keydown", (e) => {
 //  desplazamiento con una sola línea. La barra solo cuando el texto pasa del tope.)
 function autoGrow(){ const t = $("msgInput"); if(!t) return; t.style.height = "auto"; const h = t.scrollHeight + (t.offsetHeight - t.clientHeight); t.style.height = Math.min(h, 148) + "px"; t.style.overflowY = h > 148 ? "auto" : "hidden"; }
 $("msgInput").addEventListener("input", autoGrow);
+$("msgInput").addEventListener("input", qrSlashCheck);
 $("tplSendBtn").addEventListener("click", openTplPicker);
 $("tbIc").innerHTML = icon("lock");
 $("tbBtnIc").innerHTML = icon("message");
