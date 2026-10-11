@@ -161,7 +161,7 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Ajustes</h1>
-        <p class="nodo-lead">Marca, comportamiento e integraciones de este bot. Cada canal guarda sus propios ajustes.</p>
+        <p class="nodo-lead">Lo de este bot: marca, zona horaria, Meta y Google Sheets.</p>
       </div>
     </div>
     <div class="tabs">
@@ -252,7 +252,7 @@ function drawUso(){
       ${usoBar("Base de datos", _usoData.db_bytes, L.db)}
       ${usoBar("Almacenamiento", _usoData.storage_bytes, L.st)}
     </div>
-    <div class="uso-foot">${Number(_usoData.storage_files||0).toLocaleString("es-PE")} archivo(s) guardados. Mide toda la base y el almacenamiento del proyecto (lo mismo que cuenta Supabase para sus límites). No incluye red ni ejecuciones del motor — esos se ven en el panel de Supabase.</div>
+    <div class="uso-foot">${Number(_usoData.storage_files||0).toLocaleString("es-PE")} archivo(s) guardados.</div>
   </div>`;
   box.querySelectorAll(".uso-plan button").forEach(b=> b.onclick=()=>{ localStorage.setItem("nodo.supaplan", b.dataset.p); drawUso(); });
 }
@@ -345,7 +345,7 @@ function renderApariencia(b){
   const sw=(bg,surf,brand)=>
     `<div class="swatch" style="background:${bg}"><i style="width:34%;background:${surf}"></i><i style="width:18%;background:${brand}"></i><i style="width:12%;background:${surf};opacity:.6"></i></div>`;
   b.innerHTML=`
-    <h2>Apariencia</h2><p class="sub">Cómo se ve el panel. Se guarda en este navegador y se aplica al instante — no afecta a los demás usuarios ni al bot.</p>
+    <h2>Apariencia</h2><p class="sub">Cómo ves el panel en este navegador. No afecta a nadie más ni al bot.</p>
 
     <div class="card">
       <div class="chd"><span class="ico" style="background:var(--brand-bg);color:var(--brand)">${icon("sparkles")}</span><span class="nm">Tema</span></div>
@@ -358,7 +358,7 @@ function renderApariencia(b){
 
     <div class="card">
       <div class="chd"><span class="ico" style="background:var(--purple-bg,rgba(139,92,246,.13));color:var(--purple)">${IC.monitor}</span><span class="nm">Fondo animado</span></div>
-      <div class="desc">Una aurora y una red de <b>nodos con señales que fluyen</b> por las conexiones: el concepto de Nodo llevado al fondo. Se <b>pausa solo</b> cuando cambias de pestaña y respeta el “reducir movimiento” del sistema.</div>
+      <div class="desc">Una red de nodos animada de fondo. Se pausa sola al cambiar de pestaña.</div>
       <label>Intensidad</label>
       <div class="opts" id="fxLevel">
         ${opt(fx.level==="off",'data-lv="off"',"Apagado","Fondo quieto. Lo más liviano.")}
@@ -408,13 +408,13 @@ function renderGeneral(b){
     <div id="usoPanel"></div>
     <div class="card">
       <div class="chd"><span class="ico" style="background:var(--brand-bg);color:var(--brand)">${IC.target}</span><span class="nm">Zona horaria</span></div>
-      <div class="desc">Define cuándo empieza y termina el día para <b>todas las métricas</b>: leads por día, resúmenes, reportes, campañas programadas, automatizaciones y conversiones.</div>
+      <div class="desc">Define cuándo empieza y termina el día en todas las métricas, reportes y campañas programadas.</div>
       <label>País / zona horaria</label>
       <select class="in" id="g_tz" style="max-width:340px">${TIMEZONES.map(([v,l])=>`<option value="${v}" ${v===tz?"selected":""}>${l}</option>`).join("")}</select>
     </div>
     <div class="card">
       <div class="chd"><span class="ico" style="background:var(--green-bg);color:var(--green)">${icon("dollar")}</span><span class="nm">Moneda</span></div>
-      <div class="desc">La moneda en la que ves los importes del <b>Dashboard</b> (ventas, ganancia, ticket…) y la Bitácora. Elige la moneda con la que operas tu negocio.</div>
+      <div class="desc">La moneda de los importes del panel.</div>
       <label>Moneda del negocio</label>
       <select class="in" id="g_moneda" style="max-width:340px">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${cd===mon?"selected":""}>${sy} · ${nm} (${cd})</option>`).join("")}</select>
       <div id="g_tcBox" style="margin-top:16px;${mon==="USD"?"display:none":""}">
@@ -535,16 +535,13 @@ function renderGsOauth(box, g){
              style="flex:none;display:inline-flex;align-items:center;gap:7px;text-decoration:none">${icon("link")} Abrir</a>`:""}
         </div>
         <div style="border:1px solid var(--border);border-radius:11px;padding:12px 13px;margin-top:14px;font-size:12.5px;color:var(--muted);line-height:1.6">
-          <b style="color:var(--text)">No tienes que preparar nada.</b> Nodo mantiene tres pestañas dentro de tu hoja,
-          una por tipo de operación — mezclarlas la haría ilegible:
+          <b style="color:var(--text)">No tienes que preparar nada.</b> Nodo usa tres pestañas en tu hoja:
           <div class="tabpills">
             <span class="tabpill"><i style="background:#8c5cb3"></i>Digital</span>
             <span class="tabpill"><i style="background:#2b80ff"></i>Lima</span>
             <span class="tabpill"><i style="background:#1c9e75"></i>Provincia</span>
           </div>
-          Se escribe <b>una fila por venta cerrada</b>, cuando ya cobraste: digital pagado, Lima entregado
-          y cobrado, provincia recogido o con el saldo pagado. Lo que está en proceso o se cayó <b>no</b>
-          entra — así la hoja es un registro limpio de ventas reales.
+          Una fila por <b>venta cobrada</b>; lo que está en proceso o se cayó no entra.
         </div>
         <div class="acts" style="margin-top:14px">
           <button class="btn primary" id="gsoSave">Guardar hoja</button>
@@ -864,14 +861,14 @@ function renderPixel(box){
   const adsOn=!!s.ads_token, capiOn=!!(c.pixel_id&&(s.capi_token||s.access_token));   // (el token de WhatsApp también sirve para las ventas — 7-oct)
   box.innerHTML=`
     <h2>Meta</h2>
-    <p class="sub">Dos conexiones que van en sentidos contrarios: una <b>trae</b> de Meta el gasto de tus anuncios, para que Rendimiento sepa cuánto te costó cada venta. La otra <b>le manda</b> a Meta tus ventas reales, para que su algoritmo aprenda a quién mostrarte. Son independientes: puedes tener una sin la otra.</p>
+    <p class="sub">Dos conexiones independientes: el gasto de tus anuncios entra a Nodo, y tus ventas reales salen a Meta.</p>
     <div class="card${adsOn?" on":""}">
       <div class="chd">
         <span class="ico"><img src="${LOGO.meta}" alt="Meta"/></span>
         <div><div class="nm">Gasto de anuncios</div><div class="sub2">Meta &#8594; Nodo</div></div>
         <span class="badge${adsOn?" on":""}" id="adsBadge">${adsOn?"Conectado":"Sin conectar"}</span>
       </div>
-      <div class="desc">Trae lo que gastaste en cada anuncio y lo pone al lado de tus ventas reales en <b>Rendimiento</b>: CPA de confirmación, CPA real, ganancia neta y ROAS. Sin esto, Rendimiento te muestra las ventas pero no lo que te costaron — y la ganancia sale inflada.</div>
+      <div class="desc">Trae lo que gastaste en cada anuncio para calcular en <b>Rendimiento</b> cuánto te costó cada venta y tu ganancia real.</div>
 
       ${c.ads_sync_error?`<div style="display:flex;gap:10px;align-items:flex-start;background:var(--red-bg,#2c1615);border:1px solid var(--red);border-radius:11px;padding:11px 13px;margin:12px 0;font-size:12.5px;line-height:1.5;color:var(--text)"><span style="color:var(--red);font-weight:800;flex:none">${icon("alert")}</span><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(c.ads_sync_error)}<br>Genera un token nuevo y pégalo abajo para reconectar.</div></div>`:""}
 
@@ -924,7 +921,7 @@ function renderPixel(box){
         <div><div class="nm">Ventas a Meta</div><div class="sub2">Nodo &#8594; Meta</div></div>
         <span class="badge${capiOn?" on":""}" id="vmBadge">${capiOn?"Conectado":"Sin conectar"}</span>
       </div>
-      <div class="desc">Cada venta que vino de un anuncio se le cuenta a Meta con el clic que la trajo y su monto. Eso le enseña a su algoritmo a quién mostrarte. Sin esto tu bot vende igual, pero <b>Meta optimiza a ciegas</b>: no sabe cuáles de tus clics terminaron en plata.</div>
+      <div class="desc">Le cuenta a Meta cada venta que vino de un anuncio, para que aprenda a quién mostrarte.</div>
 
       <div id="vmEstado" style="margin-top:12px"><span style="color:var(--faint);font-size:12.5px">Revisando…</span></div>
 
