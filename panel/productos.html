@@ -164,6 +164,7 @@
   .sw.on{background:var(--green,var(--green));border-color:var(--green,var(--green))}
   .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}
   .sw.on::after{transform:translateX(16px)}
+  .cierre-alt{border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:12px 0 0;background:var(--surface)}
   .iconbtn{width:30px;height:30px;flex:none;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);font-size:13px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
   .iconbtn:hover{color:var(--text);border-color:var(--brand)}
   .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600}
@@ -1061,6 +1062,10 @@ function compileProductoIA(c,tipo){
   const add=(t,v)=>{ if(v&&String(v).trim()) L.push(`## ${t}\n${String(v).trim()}`); };
   const cv=[];
   if(ia.estilo_venta&&ESTILOS_VENTA[ia.estilo_venta]) cv.push("Estilo de venta: "+ESTILOS_VENTA[ia.estilo_venta]+".");
+  // (11-oct) «Cerrar preguntando cómo paga» — el cierre de ChatLevel, con la pregunta que el dueño escriba (Yape no existe
+  //  fuera de Perú). Solo digital: en lo físico el cierre es la ciudad / cuántas / los datos.
+  if(tipo!=="fisico" && ia.cierre_alt==="1" && String(ia.cierre_alt_txt||"").trim())
+    cv.push("Cierre alternativo (regla de oro): cuando resuelvas una duda o muestre interés, no le preguntes si quiere comprar ni si lo empieza hoy: pregúntale cómo lo paga, «"+String(ia.cierre_alt_txt).trim()+"». Cuando ya eligió el medio, dice que lo quiere o pregunta cómo pagar, dale el siguiente paso: los datos de pago y que te mande la captura.");
   if(ia.proceso&&ia.proceso.trim()) cv.push("Proceso de venta:\n"+ia.proceso.trim());
   if(ia.tecnicas&&ia.tecnicas.trim()) cv.push("Técnicas de venta:\n"+ia.tecnicas.trim());
   if(cv.length) L.push("## Cómo vender este producto\n"+cv.join("\n\n"));
@@ -1624,6 +1629,19 @@ function renderProductoIA(host){
       ${caja(3,"chat","Lo que te preguntan → tu respuesta","Las dudas y las pegas en una sola lista: lo que dice el cliente y cómo le contestas.",
         "pasos de cobro («pásale el Yape», «pregúntale cómo paga»): Nodo manda los datos de pago solo.",
         `<div id="faqList"></div><button class="btn" id="faqAdd" style="margin-top:6px;height:34px">+ Agregar</button>`)}
+      ${fisico?"":`<div class="cierre-alt">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13.5px;font-weight:600">Cerrar preguntando cómo paga</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px;line-height:1.45">Después de cada duda, en vez de «¿te animas?», el bot pregunta cómo lo paga: el siguiente paso ya es pagar.</div>
+          </div>
+          <span class="sw ${ia.cierre_alt==="1"?"on":""}" id="cierreAltSw" role="switch" title="Prender / apagar"></span>
+        </div>
+        <div id="cierreAltBox" style="display:${ia.cierre_alt==="1"?"":"none"};margin-top:10px">
+          <input class="in ia-f" data-k="cierre_alt_txt" value="${esc(ia.cierre_alt_txt||"")}" placeholder="Ej. ¿Lo pagas por Yape 💚 o transferencia 🏦?" style="width:100%"/>
+          <div style="font-size:11px;color:var(--faint);margin-top:5px">Escribe la pregunta con los medios de pago que aceptas (en otros países: transferencia, Nequi, tarjeta…).</div>
+        </div>
+      </div>`}
       <details class="pq-adv">
         <summary><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>Avanzado <span>— opcional, casi nunca hace falta</span></summary>
         <div style="padding-bottom:13px">
@@ -1685,6 +1703,19 @@ function renderProductoIA(host){
   b.querySelectorAll(".pq-ta").forEach(ta=>{ crece(ta); requestAnimationFrame(()=>crece(ta)); ta.addEventListener("input",()=>crece(ta)); ta.addEventListener("focus",()=>crece(ta)); });
   b.querySelectorAll(".ia-f").forEach(el=>{ el.oninput=el.onchange=()=>{ const v=el.value; if(v==null||v==="") delete ia[el.dataset.k]; else ia[el.dataset.k]=v; prodSync(); refrescaPq(); }; });
   const goOp=$("goOpciones"); if(goOp) goOp.onclick=(e)=>{ e.preventDefault(); accOpen("opciones"); };
+  { const sw=$("cierreAltSw"), box=$("cierreAltBox");
+    if(sw) sw.onclick=()=>{
+      const on=ia.cierre_alt!=="1";
+      if(on) ia.cierre_alt="1"; else delete ia.cierre_alt;
+      sw.classList.toggle("on",on); if(box) box.style.display=on?"":"none";
+      const inp=box&&box.querySelector("input");
+      if(on && inp && !inp.value.trim()){
+        inp.value = ((c.moneda||"PEN")==="PEN") ? "¿Lo pagas por Yape 💚 o transferencia 🏦?" : "¿Lo pagas por transferencia o con tarjeta?";
+        ia.cierre_alt_txt=inp.value;
+      }
+      if(on && inp) setTimeout(()=>inp.focus(),30);
+      prodSync(); };
+  }
   const paintEj=()=>{
     const box=$("ejList"); box.innerHTML="";
     if(!ia.ejemplos.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin ejemplos.</div>`; }
