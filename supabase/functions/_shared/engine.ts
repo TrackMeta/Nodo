@@ -9942,8 +9942,18 @@ const RE_PROMETE_ARCHIVO =
   // cliente que las pidió se queda mirando el chat. Para él es la misma promesa.
   // (+ en PASADO, y con el sustantivo delante: «tenemos imágenes actualizadas que te acabo de enviar» sin
   //  mandar nada — F9b-fotos. Decir que ya lo mandó es peor que prometerlo: el cliente lo busca y no está.)
-  /\b(te\s+(?:la\s+|lo\s+|los\s+|las\s+)?(?:paso|mando|env[íi]o|comparto|adjunto|dejo)|te\s+puedo\s+(?:pasar|mandar|enviar|compartir|adjuntar)|ac[áa]\s+te\s+(?:va|dejo|paso)|te\s+voy\s+a\s+(?:pasar|mandar|enviar)|te\s+(?:las?\s+|los?\s+)?acabo\s+de\s+(?:pasar|mandar|enviar|compartir)|te\s+(?:las?\s+|los?\s+)?(?:envi[eé]|mand[eé]|pas[eé]|compart[ií]))\b[^.!?\n]{0,60}\b(fotos?|im[áa]genes?|imagen|videos?|cat[áa]logo|archivos?)\b|\b(fotos?|im[áa]genes?|imagen|videos?)\b[^.!?\n]{0,60}\bte\s+(?:las?\s+|los?\s+)?(?:acabo\s+de\s+(?:pasar|mandar|enviar|compartir)|envi[eé]|mand[eé]|pas[eé]|paso|mando|env[ií]o|comparto|voy\s+a\s+(?:pasar|mandar|enviar))\b/i;
+  /\b(te\s+(?:la\s+|lo\s+|los\s+|las\s+)?(?:paso|mando|env[íi]o|comparto|adjunto|dejo)|te\s+puedo\s+(?:pasar|mandar|enviar|compartir|adjuntar)|ac[áa]\s+te\s+(?:va|dejo|paso)|te\s+voy\s+a\s+(?:pasar|mandar|enviar)|te\s+(?:las?\s+|los?\s+)?acabo\s+de\s+(?:pasar|mandar|enviar|compartir)|te\s+(?:las?\s+|los?\s+)?(?:envi[eé]|mand[eé]|pas[eé]|compart[ií]))\b[^.!?\n]{0,60}\b(fotos?|im[áa]genes?|imagen|videos?|cat[áa]logo|archivos?)\b|\b(fotos?|im[áa]genes?|imagen|videos?)\b[^.!?\n]{0,60}\bte\s+(?:las?\s+|los?\s+)?(?:acabo\s+de\s+(?:pasar|mandar|enviar|compartir)|envi[eé]|mand[eé]|pas[eé]|paso|mando|env[ií]o|comparto|voy\s+a\s+(?:pasar|mandar|enviar))\b|\b(?:aqu[ií]|ac[aá])\s+(?:tienes|est[aá]n?|va|van|te\s+dejo)(?=\s)[^.!?\n]{0,30}\b(fotos?|im[áa]genes?|imagen|videos?)\b|\b(fotos?|im[áa]genes?|imagen|videos?)\b[^.!?\n]{0,50}\b(?:est[aá]n?|lo\s+tienes|la\s+tienes|lo\s+ves|la\s+ves|puedes\s+verl[oa])(?=\s)[^.!?\n]{0,40}\b(?:mensaje\s+anterior|m[aá]s\s+arriba|arriba|en\s+este\s+chat|que\s+te\s+(?:envi[eé]|mand[eé]|pas[eé]))/i;
 // (el presente con el sustantivo delante: «Sobre las fotos reales, ahora mismo te las paso» — F9c-fotos)
+
+// El archivo del catálogo que cumple lo prometido: si prometió un VIDEO, solo un video (antes se mandaba la
+// primera foto del producto y el cliente respondía «esta es una foto, no un video»). Sin uno que cumpla → null,
+// y la promesa se cambia por la frase honesta.
+function archivoQueCumple(catalog: any[], frase: string | undefined): any | null {
+  const conUrl = (catalog || []).filter((a) => a && a.media_url);
+  if (!conUrl.length) return null;
+  if (/\bvideos?\b/i.test(String(frase ?? ""))) return conUrl.find((a) => a.media_kind === "video") ?? null;
+  return conUrl[0];
+}
 
 const RE_LINK_FANTASMA =
   /[^.!?…¿¡\n\p{Extended_Pictographic}]*(\[[^\]\n]{0,60}(enlace|link|url|aqu[ií]|insertar|colocar|texto)[^\]\n]{0,60}\]|\((?:enlace|link|url)[^)\n]{0,40}\)|<(?:enlace|link|url)[^>\n]{0,40}>)[^.!?…\n\p{Extended_Pictographic}]*[.!?…]?/giu;
@@ -10322,8 +10332,9 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       // respuesta (D12-lfoto, 2026-09-25). Un cliente que pide una foto está comprando: se le dice
       // la verdad y se sigue. El dueño se entera por el evento, para que suba fotos.
       const _mProm0 = RE_PROMETE_ARCHIVO.exec(result);
-      const _esLaEntrega0 = !!_mProm0 && /\b(acceso|link|enlace|plataforma|aula|curso)\b/i.test(_mProm0[0]);
-      const _hayArchivo0 = catalog.length > 0 && !!catalog[0]?.media_url;
+      // («aquí tienes rutinas EN VIDEO» describe el producto, no adjunta nada)
+      const _esLaEntrega0 = !!_mProm0 && /\b(acceso|link|enlace|plataforma|aula|curso|rutinas?|clases?|ejercicios?)\b|\ben\s+videos?\b/i.test(_mProm0[0]);
+      const _hayArchivo0 = !!archivoQueCumple(catalog, _mProm0?.[0]);
       if (_mProm0 && !_esLaEntrega0 && !_hayArchivo0) {
         const _i0 = _mProm0.index ?? 0;
         const _cortes = [...result.slice(0, _i0).matchAll(/[.!?…\n]|\p{Extended_Pictographic}/gu)].map((m) => (m.index ?? 0) + m[0].length);
@@ -10431,10 +10442,11 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       // Se mira el TROZO que hizo match, no el mensaje completo: si ahí mismo habla del
       // acceso/link/plataforma, está describiendo la entrega, no ofreciendo un adjunto.
       const _mProm = RE_PROMETE_ARCHIVO.exec(result);
-      const _esLaEntrega = !!_mProm && /\b(acceso|link|enlace|plataforma|aula|curso)\b/i.test(_mProm[0]);
+      const _esLaEntrega = !!_mProm && /\b(acceso|link|enlace|plataforma|aula|curso|rutinas?|clases?|ejercicios?)\b|\ben\s+videos?\b/i.test(_mProm[0]);
       if (_mProm && !_esLaEntrega) {
-        if (catalog.length && catalog[0]?.media_url) {
-          const a = catalog[0];
+        const _cumple = archivoQueCumple(catalog, _mProm[0]);
+        if (_cumple) {
+          const a = _cumple;
           await emit(db, run, { media_kind: a.media_kind, media_url: a.media_url, mime: a.mime, filename: a.filename, caption: "" }, ctx);
           await logEvent(db, run.channel_id, run.contact_id, "nota", "📷 Prometió una foto sin el marcador",
             "Se envió igual el archivo del producto.").catch(() => {});
@@ -31627,8 +31639,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // no hable de la compra (elegir, pagar, datos), promete la asesoría que la ficha excluye.
           _s = _s.replace(/[^.!?\n]*[^.!?\n]*/g, (m) =>
             /(?:^|[^\p{L}])(aqu[ií]|ac[aá]|en\s+el\s+chat|por\s+este\s+chat|por\s+whatsapp)(?![\p{L}])/iu.test(m) &&
-            /\b(ayud\w*|respond\w*|resuelv\w*|explic\w*|gu[ií][oaá]\w*|acompa\w*|asesor\w*|oriento)\b/i.test(m) &&
-            /\b(duda|dudas|trab\w*|ator\w*|claro|complic\w*|problema|usar|uses|usarla|usarlo|necesites|avances)\b/i.test(m) &&
+            // (11-oct) «guía» como SUSTANTIVO («rutinas en video y guía para entrenar») y el «Claro,» con que arranca
+            //  media respuesta disparaban esto: al cliente que dijo «a ver» se le borró justo la descripción del plan
+            //  (8a09f788), y a un «Hola» le llegó «La asesoría personalizada no viene incluida 🙏 ?» (0f6c869a).
+            //  Ahora el verbo tiene que ser de ayuda («te guío», «guiarte») y «claro» solo cuenta como «no te queda claro».
+            /\b(ayud\w*|respond\w*|resuelv\w*|explic\w*|gu[ií]o|guiar\w*|gui[aá]ndote|acompa\w*|asesor\w*|oriento)\b/i.test(m) &&
+            /\b(duda|dudas|trab\w*|ator\w*|complic\w*|problema|usar|uses|usarla|usarlo|necesites|avances)\b|no\s+(?:te\s+)?(?:queda|qued[oó]|est[aá])\s+claro/i.test(m) &&
+            // …y tiene que ser de verdad la promesa de acompañar el USO: ya es post-venta, habla de trabarse o de cuando
+            //  lo use, o el cliente preguntó por ayuda / asesoría. «acá para ayudarte con lo que necesites sobre el
+            //  Protocolo, ¿te cuento cómo empezar la primera rutina?» es una bienvenida de venta, no asesoría prometida.
+            (String(ctx.pedido_creado ?? "") === "si"
+              || /\b(trab\w*|ator\w*|complic\w*|problema)\b|cuando\s+(?:lo|la)\s+(?:uses|tengas|empieces)|mientras\s+(?:entrenas|avanzas|lo\s+usas)|durante\s+(?:el|los|las)\s+(?:plan|programa|\d+)/i.test(m)
+              || /asesor|ayud|acompa|duda|soporte|consult|coach|entrenador|profe|personaliz/i.test(String(ctx.last_input ?? ""))) &&
             !/\b(elegir|escoger|decidir|comprar|pag[oa]r?|pago|captura|datos|versi[oó]n|link|acceso)\b/i.test(m) &&
             !_dudaDeCompra(m)
               ? " La asesoría personalizada no viene incluida 🙏 " : m);
