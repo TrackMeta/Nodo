@@ -1474,7 +1474,8 @@ function renderConversations(){
     // mentir — el motor exime a quien tiene un flujo vivo (no se abandona una venta a medias)
     // y el panel no puede saber eso sin una consulta por fila. Panel y motor no pueden decir
     // cosas distintas: ante la duda, el panel muestra el estado, no su interpretación.
-    const dots = `${bot?'<span class="idot bot">● Bot activo</span>':'<span class="idot human">● Humano</span>'}`
+    // (10-oct) «● Bot activo» salía en TODAS las filas de la pestaña Bot: se dice solo lo que se sale de lo normal.
+    const dots = `${bot?'':'<span class="idot human">● Humano</span>'}`
       + (fepViva?`<span class="idot fep" title="Llegó por un anuncio: si le respondieron en sus primeras 24 h, Meta no cobra los mensajes hasta ${FEP_DIAS} días desde esa respuesta. Lo exacto lo ves al abrir el chat.">${icon("megaphone")} Anuncio · ${fepDias} ${fepDias === 1 ? "día" : "días"}</span>`:(c.source?`<span class="idot ad">${icon("megaphone")} Anuncio</span>`:''))
       + (cv.requiere_humano?`<span class="idot paused">${icon("clock")} Seguimiento</span>`:'')
       + (bought?`<span class="idot bought">${icon("star")} Compró</span>`:'')
