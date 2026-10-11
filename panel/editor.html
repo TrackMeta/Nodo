@@ -170,7 +170,7 @@
       <div class="nodo-head">
         <div class="grow">
           <h1 class="nodo-title">Flujos</h1>
-          <p class="nodo-lead">Conversaciones automáticas con nodos visuales. Los <b>esqueletos</b> son plantillas reutilizables; los <b>flujos de producto</b> son copias ligadas a un producto.</p>
+          <p class="nodo-lead">Las conversaciones automáticas de cada producto. Se arman solas al crear el producto; aquí las ajustas.</p>
         </div>
         <div class="nodo-actions">
           <button class="nodo-btn primary" id="addFlow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nuevo flujo</button>
@@ -628,7 +628,7 @@ async function loadFlows(){
   if(error){ ({ data } = await supa.from("flows").select("id,nombre,role,estado,kind,product_id,products(nombre)").eq("channel_id", st.channelId).order("created_at")); }
   st.flows=data||[];
   if(!Fbar){ Fbar=await mountFolders({ el:$("folders"), tipo:"flow", table:"flows", channelId:st.channelId, items:()=>st.flows, onChange:renderFlowCards, labelAll:"Todos",
-    extraTabs:()=>[{ v:"__skeleton", label:"Esqueletos", count:()=>st.flows.filter(f=>f.kind==="skeleton").length }] }); }
+    extraTabs:()=>[{ v:"__skeleton", label:"Esqueletos", count:()=>st.flows.filter(f=>f.kind==="skeleton").length }].filter(t=> (Fbar&&Fbar.current===t.v) || st.flows.some(f=>f.kind==="skeleton")) }); }
   else if(Fbar.channelId()!==st.channelId){ await Fbar.setChannel(st.channelId); }
   else { await Fbar.reload(); }
   renderFlowCards();
@@ -646,20 +646,20 @@ function renderFlowCards(){
   box.innerHTML="";
   list.forEach(f=>{
     const isSk=f.kind==="skeleton"; const on=f.estado==="activo";
-    const prod = f.products?.nombre ? `${icon("box")} ${esc(f.products.nombre)}` : (isSk?`${icon("plantillas")} Esqueleto reutilizable`:"Sin producto");
+    // (10-oct) El producto ya va en el nombre («Venta · Calistenia») y en la carpeta: abajo solo si el nombre no lo dice.
+    const pn=f.products?.nombre||"";
+    const prod = pn ? (String(f.nombre||"").includes(pn) ? "" : `${icon("box")} ${esc(pn)}`) : (isSk?`${icon("plantillas")} Esqueleto reutilizable`:"Sin producto");
+    const ROL={ mensajes_iniciales:"Saludo inicial", venta:"Venta", postventa:"Post-venta", recompra:"Recompra" };
     const el=document.createElement("div"); el.className="nodo-card fcard";
     el.innerHTML=`
       <div class="c-ic" style="${isSk?'background:var(--amber-bg);color:var(--amber)':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg></div>
       <div class="c-tt">${esc(f.nombre)}</div>
-      <div class="c-sub">${isSk?"esqueleto":esc(f.role||"flujo")}</div>
-      <div class="c-foot"><span class="nodo-pill ${on?'on':'neutral'}">${on?'Activo':esc((f.estado||"").replace(/^./,c=>c.toUpperCase()))}</span><span style="font-size:11.5px;color:var(--faint)">${prod}</span><span data-cardfolder style="margin-left:auto"></span></div>`;
+      <div class="c-sub">${isSk?"Esqueleto":esc(ROL[f.role]||f.role||"Flujo")}</div>
+      <div class="c-foot"><span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted)"><i style="width:8px;height:8px;border-radius:50%;background:${on?'var(--green)':'var(--faint)'}"></i>${on?'Activo':esc((f.estado||"").replace(/^./,c=>c.toUpperCase()))}</span>${prod?`<span style="font-size:11.5px;color:var(--faint)">${prod}</span>`:""}<span data-cardfolder style="margin-left:auto"></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar){ const pk=Fbar.picker({ current:f.folder||null, onPick:async(v)=>{ const { error }=await supa.from("flows").update({ folder:v }).eq("id",f.id); if(error){ toast(error.message,true); return; } f.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderFlowCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
+    if(fslot && Fbar && Fbar.metas().length>1){ const pk=Fbar.picker({ current:f.folder||null, onPick:async(v)=>{ const { error }=await supa.from("flows").update({ folder:v }).eq("id",f.id); if(error){ toast(error.message,true); return; } f.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderFlowCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openFlow(f.id); box.appendChild(el);
   });
-  const add=document.createElement("div"); add.className="nodo-card new";
-  add.innerHTML=`<div class="c-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="c-tt" style="font-size:14px;font-weight:700">Nuevo flujo</div>`;
-  add.onclick=createFlow; box.appendChild(add);
 }
 
 async function openFlow(flowId){
