@@ -413,9 +413,7 @@ async function renderArchivo(){
     <div class="card" style="border-color:rgba(240,71,71,.28)">
       <div class="chd"><span class="ico solo" style="color:#f04747">${icon("alert")}</span>
         <div><div class="nm">Dar de baja este bot</div><div class="sub2">Se apaga, no se borra</div></div></div>
-      <div class="desc">Archivar <b>${esc(st.channelNombre||"este bot")}</b> lo deja fuera de servicio: deja de responder,
-        de gastar y de aparecer en el selector. <b>No se borra nada</b> — contactos, conversaciones, pedidos, productos y
-        flujos quedan tal cual, y puedes reactivarlo cuando quieras desde esta misma lista.</div>
+      <div class="desc">Archivar <b>${esc(st.channelNombre||"este bot")}</b> deja de responder y de gastar. <b>No se borra nada</b> y puedes reactivarlo cuando quieras.</div>
       <div class="acts"><button class="btn danger" id="archBtn">Archivar este bot</button></div>
       ${arch.length?`
         <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
