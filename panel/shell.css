@@ -1093,3 +1093,8 @@ html:not([data-ds="1"]):not([data-theme="light"]){
   --st-confirmado:#EAB308; --st-comprado:#16A34A; --st-perdido:#EF4444; --st-resto:#263043;
   --pv-1:#3A4558; --pv-2:#3F5274; --pv-3:#2F5DB0; --pv-4:#B45309; --pv-5:#2563EB; --pv-6:#15803D;
 }
+
+/* (10-oct) Eliminar en el detalle (Productos, Respuestas rápidas, Secuencias): tacho gris que se pone rojo al pasar el mouse */
+.del-btn{width:40px;height:40px;flex:none;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--faint);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s;padding:0}
+.del-btn:hover{color:var(--red,#e2564a);border-color:var(--red,#e2564a);background:rgba(226,86,74,.09)}
+.del-btn svg{width:17px;height:17px}
