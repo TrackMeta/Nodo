@@ -67,6 +67,20 @@
   .btn.primary{background:var(--brand);border:none;color:#fff}.btn.primary:hover{background:var(--brand-2)}
   .iconbtn{width:30px;height:30px;flex:none;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--muted);display:inline-flex;align-items:center;justify-content:center}
   .iconbtn:hover{color:var(--text);border-color:var(--brand)} .iconbtn svg{width:15px;height:15px}
+  /* (10-oct) tarjeta más útil */
+  .sq-pub{font-size:12.5px;color:var(--muted);margin:-4px 0 12px;display:flex;align-items:center;gap:6px;min-width:0}
+  .sq-pub span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sq-tl{display:flex;align-items:center;flex-wrap:wrap;gap:4px;font-size:12px;font-weight:600;color:var(--text)}
+  .sq-tl .t{background:var(--surface-2);border:1px solid var(--border);border-radius:7px;padding:3px 8px}
+  .sq-tl .a{color:var(--faint);font-weight:400}
+  .sq-foot{margin-top:12px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+  .sq-foot b{color:var(--text)}
+  .sq-est{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap;flex:none}
+  .sq-est i{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .sq-sel3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 14px}
+  @media(max-width:900px){ .sq-sel3{grid-template-columns:1fr} }
+  .sq-sel3 label{margin:0 0 5px!important}
+  .sq-sel3 .sel{width:100%;min-width:0!important}
 </style>
 </head>
 <body>
@@ -77,13 +91,13 @@
       <div class="nodo-head">
         <div class="grow">
           <h1 class="nodo-title">Secuencias</h1>
-          <p class="nodo-lead">Series de mensajes automáticos (drip) que reenganchan al cliente tras un tiempo de silencio. Si responde, el temporizador se reinicia solo. Cada paso puede enviar multimedia y rotar versiones del copy.</p>
+          <p class="nodo-lead">Mensajes automáticos que reenganchan al cliente que se quedó callado. <a href="#" id="exTog" style="color:var(--brand);text-decoration:none;font-weight:600">¿Cuándo se detienen?</a></p>
         </div>
         <div class="nodo-actions">
           <button class="nodo-btn primary" id="addSeq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg> Nueva secuencia</button>
         </div>
       </div>
-      <div class="explain">
+      <div class="explain" id="explain" style="display:none">
         <div class="ex-hd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>Cómo trabajan tus secuencias</div>
         <p class="ex-lead">Reenganchan solas al cliente que se quedó callado, paso a paso: tú defines cada mensaje y <b style="color:var(--text)">cuánto esperar</b> entre uno y el siguiente, y el bot hace el resto. Si el cliente responde, el temporizador se reinicia. Puedes rebajar el precio en un paso (el sistema valida ese descuento al pagar).</p>
         <div class="ex-title">Se detienen solas cuando el cliente…</div>
@@ -118,7 +132,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog, patchProductConfig } from "./shell.js";
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=14";
+import { mountStepsEditor, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=15";
 import { mountFolders } from "./folder-bar.js";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
@@ -126,6 +140,7 @@ const st={ channelId:null, seq:null, seqs:[], flows:[], templates:[], angulos:[]
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
 // ¿A quién va dirigida la secuencia? El motor mete a cada cliente en la del
 // segmento que le corresponde según qué tan lejos llegó (ver "Cómo trabajan").
+// [valor, nombre, explicación larga (ya no se pinta), subtítulo corto del selector]
 const SEGMENTOS=[
   ["general","Todos los interesados (general)","Cualquiera que mostró interés en un producto. Es la red de seguridad para quien no calce en un segmento específico."],
   ["solo_inicio","Solo curiosos","Escribieron la palabra clave y no volvieron a interactuar (no dejaron ningún dato). Un reenganche suave para reavivarlos."],
@@ -135,6 +150,11 @@ const SEGMENTOS=[
 ];
 const segLabel=(v)=>(SEGMENTOS.find(s=>s[0]===v)||SEGMENTOS[0])[1];
 const segDesc=(v)=>(SEGMENTOS.find(s=>s[0]===v)||SEGMENTOS[0])[2];
+const SEG_SUB={ general:"Red de seguridad para cualquiera que mostró interés", solo_inicio:"Solo escribieron la palabra clave", interactuo:"Conversaron o dejaron algún dato, sin pedido", caliente:"Escribieron 4+ mensajes y no compraron", provincia_sin_adelanto:"Dejaron sus datos y no pagaron el adelanto" };
+const MODO_SUB={ reenganche:"Espera el silencio; si responde, el reloj se reinicia", goteo:"Calendario fijo · pasadas las 24 h necesita plantilla" };
+// Tiempo acumulado desde que arranca, redondeado como en el recorrido del editor: «5 min», «3 h», «2 días».
+const cumTxt=(sec)=>{ sec=Number(sec||0); if(sec<3600) return Math.max(1,Math.round(sec/60))+" min"; if(sec<86400){ const h=Math.round(sec/3600*10)/10; return String(h).replace(".",",")+" h"; } const d=Math.round(sec/86400*10)/10; return String(d).replace(".",",")+(d===1?" día":" días"); };
+const SEG_CORTO={ general:"Todos los interesados", solo_inicio:"Solo curiosos", interactuo:"Interesados activos", caliente:"Calientes", provincia_sin_adelanto:"Provincia sin adelanto" };
 // ¿Cómo se dispara? Reenganche (espera el silencio, se reinicia si responde) vs
 // Goteo (calendario fijo desde el primer contacto, ignora el silencio).
 const MODOS=[
@@ -160,6 +180,7 @@ async function boot(){
   ["input","change","click"].forEach(ev=> $("detailView").addEventListener(ev,(e)=>{ if(st.seq && !(e.target&&e.target.closest&&e.target.closest("#saveBtn,#backBtn,#delBtn"))) st.dirty=true; }));
   shell.onChannel(async id=>{ if(!await okDescartar()) return; st.dirty=false; st.channelId=id; st.seq=null; showGrid(); load(); });
   $("addSeq").onclick=createSeq; $("saveBtn").onclick=saveSeq;
+  $("exTog").onclick=(e)=>{ e.preventDefault(); const x=$("explain"); x.style.display=x.style.display==="none"?"":"none"; };
   $("delBtn").onclick=deleteSeq;
   $("backBtn").onclick=async()=>{ if(!await okDescartar()) return; st.dirty=false; st.seq=null; showGrid(); load(); };
   await load();
@@ -180,7 +201,12 @@ async function load(){
   // lanza throw, el try/catch del scheduler lo traga y AVANZA → el toque se pierde
   // en silencio. null = legacy sin sync → se trata como aprobada.
   if(gen!==st.loadGen) return; // cambiaste de bot mientras cargaba
-  st.seqs=seqs||[]; st.flows=flows||[]; st.templates=(tpl||[]).filter(x=>(x.estado_meta??"aprobada")==="aprobada" && x.soporta_envio!==false);
+  st.seqs=seqs||[]; st.flows=flows||[];
+  // (10-oct) Cuánta gente la está recibiendo ahora (suscripciones activas), una cuenta por secuencia.
+  st.enCurso={};
+  await Promise.all(st.seqs.map(q=> supa.from("sequence_subscriptions").select("id",{count:"exact",head:true}).eq("sequence_id",q.id).eq("estado","activa")
+    .then(r=>{ st.enCurso[q.id]=r.count||0; }, ()=>{})));
+  if(gen!==st.loadGen) return; st.templates=(tpl||[]).filter(x=>(x.estado_meta??"aprobada")==="aprobada" && x.soporta_envio!==false);
   // Ángulos del canal (para el selector "Responde al ángulo" por variante). Dedupe
   // por slug — dos productos pueden compartir un slug; el match del motor es por slug.
   // Sin tabla angulos (pre-0063) → angs null → lista vacía → el selector no aparece.
@@ -241,10 +267,8 @@ function renderCards(){
     return;
   }
   box.innerHTML="";
-  const add=document.createElement("div"); add.className="nodo-card new";
-  add.innerHTML=`<div class="c-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div><div class="c-tt" style="font-size:14px;font-weight:700">Nueva secuencia</div>`;
-  add.onclick=createSeq;
-  if(!list.length){ box.appendChild(add); const e=document.createElement("div"); e.className="nodo-empty"; e.style.gridColumn="1/-1"; e.innerHTML="<p>Sin secuencias en esta vista.</p>"; box.appendChild(e); return; }
+  // (10-oct) Sin la tarjeta fantasma «Nueva secuencia»: ya está el botón de arriba.
+  if(!list.length){ const e=document.createElement("div"); e.className="nodo-empty"; e.style.gridColumn="1/-1"; e.innerHTML="<p>Sin secuencias en esta vista.</p>"; box.appendChild(e); return; }
   list.forEach(s=>{
     const on=s.activo!==false; const n=(s.pasos||[]).length;
     // "Activa" sin más era mentira en dos casos que se ven idénticos a una secuencia sana:
@@ -255,17 +279,21 @@ function renderCards(){
       (n===0 ? "Activa, pero sin pasos: todavía no envía nada."
       : (!findSeqLink(s.id) ? "Activa, pero no está enlazada a ningún producto: solo llega si un flujo la activa." : ""));
     const el=document.createElement("div"); el.className="nodo-card qcard"+(on?"":" paused");
+    // (10-oct) Producto + a quién le llega · los tiempos de cada paso · cuántos la reciben ahora.
+    const lk=findSeqLink(s.id); const pr=lk && (st.allProducts||[]).find(p=>p.id===lk.productId);
+    const pub=`${pr?`${pr.emoji?esc(pr.emoji)+" ":""}${esc(pr.nombre)} · `:""}${esc(SEG_CORTO[s.segmento||"general"]||segLabel(s.segmento))}`;
+    const tl=(s.pasos||[]).length ? `<div class="sq-tl">${(()=>{ let acc=0; return (s.pasos||[]).map(p=>(acc+=Number(p.umbral_silencio_seg||0))); })().slice(0,6).map((cum,i)=>`${i?'<span class="a">→</span>':''}<span class="t">${cumTxt(cum)}</span>`).join("")}${n>6?`<span class="a">+${n-6}</span>`:""}</div>` : `<div class="sq-tl"><span class="a">Sin pasos aún</span></div>`;
+    const nc=st.enCurso?.[s.id]||0;
     el.innerHTML=`
-      <div class="c-top"><span class="c-tt">${esc(s.nombre)}</span><span class="nodo-pill ${on?'on':'off'}">${on?'Activa':'Pausada'}</span></div>
-      <div class="c-sub">${n} paso${n===1?'':'s'} · ${s.modo==="goteo"?"goteo (calendario fijo)":"reenganche por silencio"}</div>
-      ${aviso?`<div style="font-size:11.5px;color:var(--amber);background:var(--amber-bg);border-radius:9px;padding:8px 10px;margin:-6px 0 12px;line-height:1.45">${esc(aviso)}</div>`:""}
-      ${miniTimeline(s.pasos)}
-      <div class="c-foot">${s.segmento&&s.segmento!=="general"?`<span style="color:var(--amber)">${esc(segLabel(s.segmento).replace(/·.*/,"").trim())}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>`;
+      <div class="c-top"><span class="c-tt">${esc(s.nombre)}</span><span class="sq-est"><i style="background:${on?'var(--green)':'var(--faint)'}"></i>${on?'Activa':'Pausada'}</span></div>
+      <div class="sq-pub"><span>${pub}</span></div>
+      ${aviso?`<div style="font-size:11.5px;color:var(--amber);background:var(--amber-bg);border-radius:9px;padding:8px 10px;margin:-4px 0 12px;line-height:1.45">${esc(aviso)}</div>`:""}
+      ${tl}
+      <div class="sq-foot"><span>${nc?`<b>${nc}</b> en curso`:"Nadie la está recibiendo ahora"} · ${s.modo==="goteo"?"goteo":"reenganche"}</span><span data-cardfolder style="margin-left:auto"></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar){ const pk=Fbar.picker({ current:s.folder||null, onPick:async(v)=>{ const { error }=await supa.from("sequences").update({ folder:v }).eq("id",s.id); if(error){ toast(error.message,true); return; } s.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
+    if(fslot && Fbar && Fbar.metas().length>1){ const pk=Fbar.picker({ current:s.folder||null, onPick:async(v)=>{ const { error }=await supa.from("sequences").update({ folder:v }).eq("id",s.id); if(error){ toast(error.message,true); return; } s.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openSeq(s.id); box.appendChild(el);
   });
-  box.appendChild(add);
 }
 async function createSeq(){
   const nombre=await askText({title:"Nueva secuencia",label:"Nombre de la secuencia",placeholder:"Ej. Remarketing pago pendiente",confirmText:"Crear"}); if(!nombre) return;
@@ -339,27 +367,23 @@ function renderDetail(){
       <input id="s_nombre" value="${esc(s.nombre||"")}" placeholder="Nombre de la secuencia"/>
       <div class="toggle"><span id="s_state">${s.activo!==false?"Activa":"Pausada"}</span><div class="sw ${s.activo!==false?'on':''}" id="s_toggle"></div></div>
     </div>
-    <div class="toolbar" style="align-items:flex-start">
-      <div><label style="margin:0 0 4px">¿De qué producto?</label>
-        <select class="sel" id="s_producto" style="min-width:230px">
-          <option value="">— Ninguno (lo vinculo luego) —</option>
+    <div class="sq-sel3">
+      <div><label>Producto</label>
+        <select class="sel" id="s_producto">
+          <option value="" data-sub="La enlazas después">Ninguno</option>
           ${st.allProducts.map(p=>`<option value="${p.id}" ${curLink&&curLink.productId===p.id?"selected":""}>${p.emoji?esc(p.emoji)+" ":""}${esc(p.nombre)}</option>`).join("")}
-        </select>
-        <div style="font-size:11.5px;color:var(--faint);margin-top:6px;max-width:280px;line-height:1.5">Al guardar, se enlaza a ese producto para el público de abajo.</div></div>
-      <div><label style="margin:0 0 4px">¿A quién va dirigida?</label>
-        <select class="sel" id="s_segmento" style="min-width:260px">${SEGMENTOS.map(([v,l])=>`<option value="${v}" ${(s.segmento||"general")===v?"selected":""}>${esc(l)}</option>`).join("")}</select>
-        <div id="s_segdesc" style="font-size:11.5px;color:var(--faint);margin-top:6px;max-width:360px;line-height:1.5">${esc(segDesc(s.segmento||"general"))}</div></div>
-      <div><label style="margin:0 0 4px">¿Cómo se envía?</label>
-        <select class="sel" id="s_modo" style="min-width:240px">${MODOS.map(([v,l])=>`<option value="${v}" ${(s.modo||"reenganche")===v?"selected":""}>${esc(l)}</option>`).join("")}</select>
-        <div id="s_mododesc" style="font-size:11.5px;color:var(--faint);margin-top:6px;max-width:360px;line-height:1.5">${esc(modoDesc(s.modo||"reenganche"))}</div></div>
+        </select></div>
+      <div><label>A quién le llega</label>
+        <select class="sel" id="s_segmento">${SEGMENTOS.map(([v,l])=>`<option value="${v}" data-sub="${esc(SEG_SUB[v]||"")}" ${(s.segmento||"general")===v?"selected":""}>${esc(SEG_CORTO[v]||l)}</option>`).join("")}</select></div>
+      <div><label>Cómo se envía</label>
+        <select class="sel" id="s_modo">${MODOS.map(([v,l])=>`<option value="${v}" data-sub="${esc(MODO_SUB[v]||"")}" ${(s.modo||"reenganche")===v?"selected":""}>${esc(l.replace(/\s*\(.*\)$/,""))}</option>`).join("")}</select></div>
     </div>
-    <div class="banner" id="s_banner">${bannerModo(s.modo||"reenganche")}</div>
     <div class="editwrap">
       <div id="steps"></div>
     </div>`;
   $("s_nombre").oninput=(e)=>s.nombre=e.target.value;
-  $("s_segmento").onchange=(e)=>{ s.segmento=e.target.value; $("s_segdesc").textContent=segDesc(s.segmento); };
-  $("s_modo").onchange=(e)=>{ s.modo=e.target.value; $("s_mododesc").textContent=modoDesc(s.modo); $("s_banner").innerHTML=bannerModo(s.modo); };
+  $("s_segmento").onchange=(e)=>{ s.segmento=e.target.value; };
+  $("s_modo").onchange=(e)=>{ s.modo=e.target.value; };
   // Al cambiar de producto hay que repintar el paso: el aviso de "este descuento es de otro
   // producto" depende de esta elección.
   $("s_producto").onchange=(e)=>{ st.seqProduct=e.target.value; st.stepsEd?.repaint?.(); };

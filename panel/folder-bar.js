@@ -150,7 +150,7 @@ export async function mountFolders(opts){
     const trailing = (opts.trailingTabs ? (opts.trailingTabs()||[]) : []);
     const chips = [ chip("__all", opts.labelAll||"Todos", null),
       ...extra.map(extraChip),
-      chip("__none", opts.labelNone||"Sin carpeta", null),
+      ...((S.current==="__none" || count("__none")>0) ? [chip("__none", opts.labelNone||"Sin carpeta", null)] : []),   // (10-oct) «Sin carpeta 0» no se muestra
       ...S.metas.map(m=> chip(m.nombre, m.nombre, m)),
       ...trailing.map(extraChip) ];
     S.el.innerHTML = chips.join("")

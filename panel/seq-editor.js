@@ -260,9 +260,9 @@ export function mountStepsEditor(el, opts){
       </div>` : ``}
       ${actions.enabled?`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Acción</div>
         <select class="sel se-act" style="width:100%;height:36px">
-          <option value="mensaje" ${mode==="mensaje"?"selected":""}>Enviar mensaje (texto/multimedia, dentro de 24h)</option>
-          <option value="plantilla" ${mode==="plantilla"?"selected":""}>Enviar una plantilla (fuera de 24h)</option>
-          <option value="flow" ${mode==="flow"?"selected":""}>Iniciar un flujo</option>
+          <option value="mensaje" data-sub="Texto, fotos o archivos · dentro de las 24 h" ${mode==="mensaje"?"selected":""}>Enviar un mensaje</option>
+          <option value="plantilla" data-sub="Para escribirle pasadas las 24 h" ${mode==="plantilla"?"selected":""}>Enviar una plantilla</option>
+          <option value="flow" data-sub="Arranca uno de tus flujos" ${mode==="flow"?"selected":""}>Iniciar un flujo</option>
         </select></div>`:``}
       <div class="se-actbody"></div>
       <div class="se-ofer" style="margin-top:11px;border-top:1px dashed var(--border);padding-top:11px"></div>`;
@@ -454,7 +454,8 @@ export function mountStepsEditor(el, opts){
     });
   }
 
-  function addBtns(){ return ["text","image","video","audio","document"].map(k=>`<button class="btn" data-addb="${k}" style="height:30px;padding:0 10px;font-size:12px">+ ${({text:"Texto",image:"Imagen",video:"Video",audio:"Audio",document:"Archivo"})[k]}</button>`).join(""); }
+  // (10-oct) Dos botones: el tipo (imagen/video/audio/archivo) se saca del archivo elegido.
+  function addBtns(){ return ["text","file"].map(k=>`<button class="btn" data-addb="${k}" style="height:30px;padding:0 10px;font-size:12px">+ ${({text:"Texto",file:"Imagen o archivo"})[k]}</button>`).join(""); }
 
   function bubbleEl(box,paso,v,bub,bi){
     const el3=document.createElement("div");
@@ -469,9 +470,9 @@ export function mountStepsEditor(el, opts){
     el3.innerHTML=`
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:7px">
         <span style="flex:1;font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--muted)">${icon(tIco)} ${kind==="text"?"Texto":kind.charAt(0).toUpperCase()+kind.slice(1)}</span>
-        <button class="iconbtn se-bup" title="Subir">▲</button>
-        <button class="iconbtn se-bdown" title="Bajar">▼</button>
-        <button class="iconbtn se-bdel" title="Quitar">${icon("trash")}</button>
+        ${bi>0?`<button class="iconbtn se-bup" title="Subir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg></button>`:""}
+        ${bi<v.bubbles.length-1?`<button class="iconbtn se-bdown" title="Bajar"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>`:""}
+        ${(v.bubbles.length>1||bub.media_url)?`<button class="iconbtn se-bdel" title="Quitar">${icon("trash")}</button>`:""}
       </div>
       ${prev}
       ${kind==="text"
@@ -480,17 +481,19 @@ export function mountStepsEditor(el, opts){
     if(kind==="text") wireBotones(el3,bub,()=>composer(box,paso));
     const tx=el3.querySelector(".se-btext"); if(tx) tx.oninput=(e)=>bub.text=e.target.value;
     const cp=el3.querySelector(".se-bcap"); if(cp) cp.oninput=(e)=>bub.caption=e.target.value;
-    el3.querySelector(".se-bdel").onclick=()=>{ v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); composer(box,paso); };
-    el3.querySelector(".se-bup").onclick=()=>{ if(bi===0)return; [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; composer(box,paso); };
-    el3.querySelector(".se-bdown").onclick=()=>{ if(bi>=v.bubbles.length-1)return; [v.bubbles[bi+1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi+1]]; composer(box,paso); };
+    const _bd=el3.querySelector(".se-bdel"), _bu=el3.querySelector(".se-bup"), _bw=el3.querySelector(".se-bdown");
+    if(_bd) _bd.onclick=()=>{ v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); composer(box,paso); };
+    if(_bu) _bu.onclick=()=>{ if(bi===0)return; [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; composer(box,paso); };
+    if(_bw) _bw.onclick=()=>{ if(bi>=v.bubbles.length-1)return; [v.bubbles[bi+1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi+1]]; composer(box,paso); };
     return el3;
   }
 
   function pickMedia(box,paso,v,kind){
-    const accept={image:"image/*",video:"video/*",audio:"audio/*"}[kind]||"*/*";
+    const accept={image:"image/*",video:"video/*",audio:"audio/*",file:"image/*,video/*,audio/*,application/pdf,*/*"}[kind]||"*/*";
     const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
     inp.onchange=async()=>{
       const file=inp.files&&inp.files[0]; if(!file) return;
+      if(kind==="file"){ const t=file.type||""; kind=t.startsWith("image/")?"image":t.startsWith("video/")?"video":t.startsWith("audio/")?"audio":"document"; }
       if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
       toast("Subiendo…");
       try{

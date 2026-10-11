@@ -61,7 +61,7 @@ export function botonesHtml(bub) {
   return `
     <div class="bb-wrap" style="margin-top:9px;padding-top:9px;border-top:1px dashed var(--border)">
       <div style="font-size:11px;color:var(--muted);font-weight:700;margin-bottom:${bs.length ? "7px" : "6px"}">
-        Botones <span style="font-weight:400;color:var(--faint)">— atajos para tocar. Al tocarlo es como si el cliente lo escribiera, así que si prefiere escribir funciona igual.</span>
+        Botones <span style="font-weight:400;color:var(--faint)">— opcional; tocarlo es como escribirlo</span>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px">${filas}</div>
       ${bs.length < MAX_BOTONES
