@@ -2012,6 +2012,7 @@ select.sb-on{border-color:var(--brand)!important}
 .sbo.sub{padding-left:26px}
 .sbo[disabled]{opacity:.45;cursor:default}
 .sbo .sbx{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sbo .sbxt{display:block;overflow:hidden;text-overflow:ellipsis} .sbo .sbds{display:block;font-size:11.5px;font-weight:400;color:var(--muted);margin-top:1px;white-space:normal;line-height:1.35}
 .sbo .sbn{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums}
 .sbo .sbk{width:14px;height:14px;flex:none;color:var(--brand);visibility:hidden}
 .sbo.on{color:var(--brand);font-weight:600} .sbo.on .sbk{visibility:visible}
@@ -2049,7 +2050,7 @@ function _sbAbrir(sel) {
   const esc = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const check = `<svg class="sbk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
   const opts = [...sel.options];
-  const opt = (o) => { const idx = opts.indexOf(o), d = o.dataset; return `<button type="button" role="option" class="sbo${d.sub ? " sub" : ""}${idx === sel.selectedIndex ? " on" : ""}" data-i="${idx}"${o.disabled ? " disabled" : ""}${d.titulo ? ` title="${esc(d.titulo)}"` : ""}>${check}${d.ico ? icon(d.ico, "sbi") : ""}<span class="sbx">${esc(d.lista || o.textContent)}</span>${d.dot ? `<span class="sbd${d.dot === "on" ? " on" : ""}"></span>` : ""}${d.n != null && d.n !== "" ? `<span class="sbn">${esc(d.n)}</span>` : ""}</button>`; };
+  const opt = (o) => { const idx = opts.indexOf(o), d = o.dataset; return `<button type="button" role="option" class="sbo${d.sub ? " sub" : ""}${idx === sel.selectedIndex ? " on" : ""}" data-i="${idx}"${o.disabled ? " disabled" : ""}${d.titulo ? ` title="${esc(d.titulo)}"` : ""}>${check}${d.ico ? icon(d.ico, "sbi") : ""}${d.desc ? `<span class="sbx"><span class="sbxt">${esc(d.lista || o.textContent)}</span><span class="sbds">${esc(d.desc)}</span></span>` : `<span class="sbx">${esc(d.lista || o.textContent)}</span>`}${d.dot ? `<span class="sbd${d.dot === "on" ? " on" : ""}"></span>` : ""}${d.n != null && d.n !== "" ? `<span class="sbn">${esc(d.n)}</span>` : ""}</button>`; };
   let h = "";
   for (const n of sel.children) {
     if (n.tagName === "OPTGROUP") { h += n.label ? `<div class="sbg">${esc(n.label)}</div>` : (h ? `<div class="sbsep"></div>` : ""); for (const o of n.children) if (!o.hidden) h += opt(o); }

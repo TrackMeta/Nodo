@@ -260,9 +260,9 @@ export function mountStepsEditor(el, opts){
       </div>` : ``}
       ${actions.enabled?`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Acción</div>
         <select class="sel se-act" style="width:100%;height:36px">
-          <option value="mensaje" data-sub="Texto, fotos o archivos · dentro de las 24 h" ${mode==="mensaje"?"selected":""}>Enviar un mensaje</option>
-          <option value="plantilla" data-sub="Para escribirle pasadas las 24 h" ${mode==="plantilla"?"selected":""}>Enviar una plantilla</option>
-          <option value="flow" data-sub="Arranca uno de tus flujos" ${mode==="flow"?"selected":""}>Iniciar un flujo</option>
+          <option value="mensaje" data-desc="Texto, fotos o archivos · dentro de las 24 h" ${mode==="mensaje"?"selected":""}>Enviar un mensaje</option>
+          <option value="plantilla" data-desc="Para escribirle pasadas las 24 h" ${mode==="plantilla"?"selected":""}>Enviar una plantilla</option>
+          <option value="flow" data-desc="Arranca uno de tus flujos" ${mode==="flow"?"selected":""}>Iniciar un flujo</option>
         </select></div>`:``}
       <div class="se-actbody"></div>
       <div class="se-ofer" style="margin-top:11px;border-top:1px dashed var(--border);padding-top:11px"></div>`;
