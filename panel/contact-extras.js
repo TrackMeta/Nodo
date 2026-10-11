@@ -542,14 +542,16 @@ export const EXTRAS_CSS = `
   .cpanel .cx-sec[open]>summary .cx-sec-ar{transform:rotate(45deg)}
   .cpanel .cx-sec-body{padding:2px 0 14px}
   /* Selector de etapa (píldoras bonitas, reemplaza el <select>) */
-  .cpanel .cx-stagepick{display:grid;grid-template-columns:1fr 1fr;gap:5px}   /* (10-oct) dos columnas, más bajas */
+  /* (10-oct) Una columna, como un recorrido: una línea une los puntos de Nuevo a Perdido; filas bajas */
+  .cpanel .cx-stagepick{display:flex;flex-direction:column;gap:2px;position:relative}
+  .cpanel .cx-stagepick::before{content:"";position:absolute;left:14px;top:14px;bottom:14px;width:2px;border-radius:2px;background:var(--border)}
   .cpanel .cx-stagechip{display:flex;align-items:center;gap:7px;padding:6px 9px;border-radius:9px;border:1px solid var(--border);
-    background:var(--surface-2);color:var(--muted);font-size:12px;font-family:inherit;cursor:pointer;text-align:left;width:100%;
+    background:transparent;border-color:transparent;color:var(--muted);font-size:12px;position:relative;font-family:inherit;cursor:pointer;text-align:left;width:100%;
     transition:border-color .14s,background .14s,transform .05s}
-  .cpanel .cx-stagechip:hover{border-color:var(--faint)}
+  .cpanel .cx-stagechip:hover{background:var(--surface-2)}
   .cpanel .cx-stagechip:active{transform:scale(.99)}
   .cpanel .cx-stagechip.on{font-weight:700;box-shadow:0 1px 6px rgba(0,0,0,.06)}
-  .cpanel .cx-stagechip .cx-sd{width:8px;height:8px;border-radius:50%;flex:none}
+  .cpanel .cx-stagechip .cx-sd{width:10px;height:10px;border-radius:50%;flex:none;box-shadow:0 0 0 3px var(--surface);position:relative;z-index:1}
   .cpanel .cx-stagechip .cx-sl{flex:1}
   .cpanel .cx-stagechip .cx-sck{font-size:13px;font-weight:800;flex:none;margin-left:1px;display:inline-flex}
   /* Colapso explícito (no depender del user-agent para ocultar el cuerpo) */
