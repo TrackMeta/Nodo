@@ -6227,7 +6227,7 @@ const RE_PREGUNTA_MEDIO_PAGO =
   // el verbo era «hacer», y venía en la misma burbuja que «¿me mandas tu celular de nuevo?».
   // 🔴 El literal de la regex va en UNA línea: un comentario en medio partió el literal y las 14 funciones
   // fallaron al empaquetar (el deploy sí lo rechazó: producción se quedó con la versión anterior).
-  /(?:[¿]?\s*(?:(?:con\s+)?(?:qu[eé]|cu[aá]l)\s+(?:forma|medio|m[eé]todo)(?:\s+de\s+pago)?\s+(?:prefieres|quieres|deseas|te\s+(?:conviene|acomoda|queda\s+mejor)|usar[aá]s|vas\s+a\s+(?:usar|pagar|hacer(?:lo)?)|pagar[aá]s|pagas|eliges|usas)|c[oó]mo\s+(?:prefieres|quieres|deseas|te\s+gustar[ií]a|vas\s+a)\s+pagar)[^?¿.!\n]*\?|[¿]?\s*(?:(?:me\s+dices\s+si\s+)?(?:lo\s+)?(?:haces|har[aá]s|vas\s+a\s+hacer(?:lo)?)|vas\s+a\s+(?:usar|pagar)|vas|pagas|pagar[aá]s|prefieres(?:\s+pagar)?|quieres\s+pagar)\s+(?:por\s+|con\s+)?\**(?:yape|plin|bcp|transferencia|interbank)\b[^?¿.!\n]*\?)/giu;
+  /(?:[¿]?\s*(?:(?:con\s+)?(?:qu[eé]|cu[aá]l)\s+(?:forma|medio|m[eé]todo)(?:\s+de\s+pago)?\s+(?:prefieres|quieres|deseas|te\s+(?:conviene|acomoda|queda\s+mejor)|usar[aá]s|vas\s+a\s+(?:usar|pagar|hacer(?:lo)?)|pagar[aá]s|pagas|eliges|usas)|c[oó]mo\s+(?:prefieres|quieres|deseas|te\s+gustar[ií]a|vas\s+a)\s+pagar)[^?¿.!\n]*\?|[¿]?\s*(?:lo\s+|la\s+)?(?:(?:me\s+dices\s+si\s+)?(?:lo\s+)?(?:haces|har[aá]s|vas\s+a\s+hacer(?:lo)?)|vas\s+a\s+(?:usar|pagar)|vas|pagas|pagar[aá]s|prefieres(?:\s+pagar)?|quieres\s+pagar)\s+(?:por\s+|con\s+)?\**(?:yape|plin|bcp|transferencia|interbank)\b[^?¿.!\n]*\?)/giu;
 // ↑ La cola no cruza punto ni otro «¿»: «Si prefieres pagar por Yape antes, sí puedes hacerlo. ¿A qué dirección te lo
 //   llevo?» se iba entera y quedaba «Si 📍» (F12R-prepagolima, 2026-09-29).
 // ↑ «¿Vas con *Yape*, *Plin* o *Transferencia*?» (D15-preuso): «vas con» a secas y el medio en negrita.
@@ -16804,6 +16804,11 @@ async function maybeDatosPago(
     // la lista real de medios en el prompt (ver el bloque «Te preguntó si aceptas…»).
     if (soloPorMetodo && aceptaMetodo(dp, metodoPreg) !== true) return;
     const nums = dp.match(/\d{6,}/g) ?? [];
+    // (11-oct) Los números del bloque comparados SIN espacios: el Yape «931 934 092» también cuenta.
+    const _numsBloque = (dp.match(/\d[\d \t.-]{4,}\d/g) ?? []).map((x) => x.replace(/\D/g, "")).filter((x) => x.length >= 6);
+    const _tieneNum = (tx: unknown) => _numsBloque.length
+      ? _numsBloque.some((n) => String(tx ?? "").replace(/\D/g, "").includes(n))
+      : /yape|plin|cuenta|cci/i.test(String(tx ?? ""));
     const { data: outs } = await db.from("messages").select("content, ts")
       .eq("contact_id", contactId).eq("direction", "out").order("ts", { ascending: false }).limit(15);
     const dicho = (outs ?? []).map((m: any) => String(m.content?.text ?? "")).join(" ");
@@ -16813,7 +16818,7 @@ async function maybeDatosPago(
     // «¿a nombre de quién sale el yape?» → la IA dijo el nombre Y el motor volvió a pegar los tres medios; y a
     // «yape» otra vez los tres. Solo si PIDE el número de forma explícita («¿cuál es el número?», «pásame el
     // yape») se le vuelve a poner a la vista.
-    const _idxRec = (outs ?? []).findIndex((m: any) => nums.length ? nums.some((n) => String(m.content?.text ?? "").includes(n)) : /yape|plin|cuenta|cci/i.test(String(m.content?.text ?? "")));
+    const _idxRec = (outs ?? []).findIndex((m: any) => _tieneNum(m.content?.text));
     const _recienSalieron = _idxRec >= 0 && _idxRec <= 2
       && (Date.now() - new Date(String((outs ?? [])[_idxRec]?.ts ?? 0)).getTime()) < 15 * 60 * 1000;
     const _iaRespuesta = String(respuestaIa ?? "");
@@ -16835,12 +16840,12 @@ async function maybeDatosPago(
     // quedaba como última instrucción después de «mejor la premium». Medido 2 de 2: la IA
     // decía S/79 en su texto y el número con S/39 seguía siendo lo último que se leía. Con
     // monto nuevo se reenvían; sin cambio, se respeta la regla de no repetirlos.
-    const _yaSalieron = nums.length ? nums.some((n) => dicho.includes(n)) : /yape|plin|cuenta|cci/i.test(dicho);
+    const _yaSalieron = (outs ?? []).some((m: any) => _tieneNum(m.content?.text));
     let _montoCambio = false;
     if (_esDigital && _yaSalieron) {
       const _mNuevo = Number(digital?.monto);
       const _ultCab = (outs ?? []).map((m: any) => String(m.content?.text ?? ""))
-        .find((tx) => nums.some((n) => tx.includes(n)) && /Son \*/.test(tx)) ?? "";
+        .find((tx) => _tieneNum(tx) && /Son \*/.test(tx)) ?? "";
       const _mPrev = Number((_ultCab.match(/Son \*[^\d]*(\d+(?:[.,]\d+)?)\*/) ?? [])[1]?.replace(",", "."));
       _montoCambio = Number.isFinite(_mNuevo) && _mNuevo > 0 && Number.isFinite(_mPrev) && _mPrev !== _mNuevo;
     }
@@ -20149,7 +20154,7 @@ Si algo de acá se te escapa, el sistema lo corrige antes de enviar. Igual resp�
 · Elegir una presentación YA es decidir comprar: no le preguntes otra vez si lo quiere.
 · La captura se pide recién cuando YA dijo que lo quiere (o preguntó cómo pagar). Si solo pregunta
   qué es, cuánto cuesta o tiene una duda, contéstale y cierra con una pregunta que lo acerque
-  ("¿lo empiezas hoy?"), sin pedirle todavía la captura: pedírsela le manda los datos de pago a
+  (si la ficha dice cómo cerrar, cierra así), sin pedirle todavía la captura: pedírsela le manda los datos de pago a
   alguien que solo estaba preguntando.
 · No ofrezcas descuentos ni presiones con escasez inventada: un digital no se agota.
 · No puedes cancelar ni anular un pedido. Si te lo piden, escribe [[humano]].
@@ -27946,6 +27951,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             }
             if ((run as any)._datosArriba && /\bte\s+(?:dejo|paso|mando|env[ií]o|comparto)\s+(?:los\s+|tus\s+)?datos|\bya\s+te\s+(?:dejo|paso)\s+los\s+datos/i.test(sinFormato(txt))) {
               v.push("Los datos de pago ya están arriba en el chat y no se vuelven a mandar: no digas que se los pasas; si hace falta, dile que están arriba.");
+            }
+            // 📸 (11-oct, como ChatLevel) Con los datos de pago ya en el chat —o saliendo en este turno— lo siguiente es
+            // pagar: la captura ES el llamado a la acción. «¿Lo haces ahora?», «¿lo mandas ahora o te aviso?» después de
+            // los datos distraen justo cuando tiene que ir a yapear.
+            {
+              const _mandaDatos = (run as any)._datosArriba || /\[\[datos_pago\]\]/i.test(String(txt ?? ""));
+              const _sinMarcas = sinFormato(String(txt ?? "")).replace(/\[\[[^\]]*\]\]/g, " ").trim();
+              if (_mandaDatos && /\?[\s\p{Extended_Pictographic}\uFE0F\u200D!.]*$/u.test(_sinMarcas)) {
+                v.push("Ya tiene (o le llegan ahora) los datos de pago: no termines con una pregunta. Cierra pidiéndole la foto " +
+                  "del comprobante para mandarle el acceso apenas llegue (📸), y nada después.");
+              }
             }
             // ✂️→🧠 (8-oct) Los frenos que más cortaban en lo digital (traza de 4 días de chats reales), como DETECTORES: si
             // la respuesta los pisa, la IA la reescribe entera y el recorte de más abajo ya no encuentra nada que cortar. Usan
