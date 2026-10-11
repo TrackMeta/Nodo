@@ -2001,7 +2001,7 @@ async function renderRemarketing(host){
 
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px;margin:0 0 4px">${icon("secuencias")} Secuencias por audiencia</h4>
-      <p class="hint" style="margin:0 0 4px">Cada tipo de cliente puede tener su propia secuencia de reenganche. Lo que dejes vacío usa la <b>General</b> (y si no hay general, ese caso no recibe remarketing).</p>
+      <p class="hint" style="margin:0 0 4px">Cada tipo de cliente puede tener su propia secuencia. Lo que dejes vacío usa la <b>General</b>.</p>
       <div id="remSlots"></div>
       <div style="font-size:11px;color:var(--faint);margin-top:12px">Los pasos de cada secuencia se editan en <a href="secuencias.html" style="color:var(--brand)">Secuencias</a>. Recuerda <b>Guardar</b> el producto para fijar los enlaces.</div>
     </div>`;
@@ -2046,12 +2046,14 @@ async function renderRemarketing(host){
   // adelanto). En digital no existe (se entrega al instante) → no se muestra.
   const fisicoRem=(st.prod.tipo||"digital")==="fisico";
   const REM_SEG=[
-    ["general","General (comodín)","La red de seguridad: le llega a cualquier lead (curioso, interactuó, etc.) cuyo segmento de abajo esté vacío. Los que sí configures usan su propia secuencia; el resto cae aquí."],
-    ["solo_inicio","Curioso","Solo tiró la palabra clave y no volvió."],
-    ["interactuo","Interactuó","Conversó o dejó un dato, pero no compró."],
-    ["caliente","Caliente","Escribió 4+ mensajes y no compró — el más enganchado. Ve al grano, con más urgencia."],
-    ...(fisicoRem ? [["provincia_sin_adelanto","Provincia sin adelanto","Se activa apenas el cliente da su DNI (aunque todavía no complete el pedido): así también persigues al que se va antes de dar la sede. No le escribe mientras siga conversando, y sale solo apenas paga el adelanto."]] : []),
+    // (10-oct) Mismos nombres que el embudo y que la sección Secuencias.
+    ["general","General","Todos los que aún no compraron, salvo los que tengan su propia secuencia abajo"],
+    ["solo_inicio","Curiosos","Solo escribieron la palabra clave"],
+    ["interactuo","Interesados","Escribieron 2+ mensajes o dejaron un dato"],
+    ["caliente","Calientes","Escribieron 4+ mensajes y no compraron"],
+    ...(fisicoRem ? [["provincia_sin_adelanto","Provincia sin adelanto","Dejaron su DNI y no pagaron el adelanto"]] : []),
   ];
+  const REM_ETAPA={ solo_inicio:"curioso", interactuo:"interesado", caliente:"caliente" };   // color del puntito
   const remMap=()=>{ c.remarketing_seqs=(c.remarketing_seqs&&typeof c.remarketing_seqs==="object")?c.remarketing_seqs:{}; return c.remarketing_seqs; };
   // Compat: la general vieja vivía en remarketing_seq_id.
   const seqSlot=(k)=>{ const m=remMap(); const id = k==="general" ? (m.general||c.remarketing_seq_id) : m[k]; return id ? (list.find(s=>s.id===id)||{id,nombre:"(secuencia)"}) : null; };
@@ -2086,7 +2088,7 @@ async function renderRemarketing(host){
            ${list.length?`<select class="sel" data-link="${k}" style="height:30px;font-size:12px;min-width:150px"><option value="">vincular…</option>${list.map(x=>`<option value="${x.id}">${esc(x.nombre||"(sin nombre)")}</option>`).join("")}</select>`:""}`;
       return `<div style="padding:12px 0;border-top:1px solid var(--border)">
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <div style="flex:1;min-width:170px"><div style="font-size:13px;font-weight:600">${label}</div><div style="font-size:11px;color:var(--faint);margin-top:1px;line-height:1.4">${desc}</div></div>
+          <div style="flex:1;min-width:170px"><div style="font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px">${REM_ETAPA[k]?`<i style="width:8px;height:8px;border-radius:50%;background:var(--st-${REM_ETAPA[k]});flex:none"></i>`:""}${label}</div><div style="font-size:11px;color:var(--faint);margin-top:1px;line-height:1.4">${desc}</div></div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">${right}</div>
         </div>
         ${s&&abierto===k?`<div class="remEd" data-ed="${k}" style="margin-top:12px;background:var(--surface-2,#1b222c);border:1px solid var(--border);border-radius:12px;padding:14px"></div>`:""}

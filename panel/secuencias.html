@@ -150,11 +150,13 @@ const SEGMENTOS=[
 ];
 const segLabel=(v)=>(SEGMENTOS.find(s=>s[0]===v)||SEGMENTOS[0])[1];
 const segDesc=(v)=>(SEGMENTOS.find(s=>s[0]===v)||SEGMENTOS[0])[2];
-const SEG_SUB={ general:"Todos los que aún no compraron", solo_inicio:"Solo escribieron la palabra clave", interactuo:"Conversaron o dejaron algún dato, sin pedido", caliente:"Escribieron 4+ mensajes y no compraron", provincia_sin_adelanto:"Dejaron sus datos y no pagaron el adelanto" };
+const SEG_SUB={general:"Todos los que aún no compraron",solo_inicio:"Solo escribieron la palabra clave",interactuo:"Escribieron 2+ mensajes o dejaron un dato",caliente:"Escribieron 4+ mensajes y no compraron",provincia_sin_adelanto:"Dejaron su DNI y no pagaron el adelanto"};
 const MODO_SUB={ reenganche:"Espera el silencio; si responde, el reloj se reinicia", goteo:"Calendario fijo · pasadas las 24 h necesita plantilla" };
 // Tiempo acumulado desde que arranca, con la MISMA etiqueta que el recorrido del editor (jLabel): «5 min», «3 h», «Día 2».
 const cumTxt=(s)=>{ s=Number(s||0); if(s>=86400){ const d=s/86400; return "Día "+(Number.isInteger(d)?d:Math.round(d)); } if(s>=3600) return Math.round(s/3600)+" h"; return Math.max(1,Math.round(s/60))+" min"; };   // = jLabel del editor
-const SEG_CORTO={ general:"General", solo_inicio:"Solo curiosos", interactuo:"Interesados activos", caliente:"Calientes", provincia_sin_adelanto:"Provincia sin adelanto" };
+// (10-oct) Los mismos nombres que el embudo (curioso / interesado / caliente) y que Productos → Reenganche.
+const SEG_CORTO={general:"General",solo_inicio:"Curiosos",interactuo:"Interesados",caliente:"Calientes",provincia_sin_adelanto:"Provincia sin adelanto"};
+const SEG_ETAPA={ solo_inicio:"curioso", interactuo:"interesado", caliente:"caliente" };   // color del puntito
 // ¿Cómo se dispara? Reenganche (espera el silencio, se reinicia si responde) vs
 // Goteo (calendario fijo desde el primer contacto, ignora el silencio).
 const MODOS=[
@@ -216,7 +218,7 @@ async function load(){
     opciones:(p.product_versions||[]).filter(v=>v.activo!==false && v.precio!=null && v.precio!=="").map(v=>({ id:v.id, nombre:v.nombre, precio:v.precio })) }))
     .filter(p=>p.opciones.length);
   // Todos los productos + su config (para vincular la secuencia a un producto/segmento).
-  st.allProducts=(prods||[]).map(p=>({ id:p.id, nombre:p.nombre, emoji:p.emoji }));
+  st.allProducts=(prods||[]).map(p=>({ id:p.id, nombre:p.nombre, emoji:p.emoji, tipo:p.tipo }));
   st.prodConfig=new Map((prods||[]).map(p=>[p.id, (p.config&&typeof p.config==="object")?p.config:{}]));
   if(!Fbar){
     Fbar=await mountFolders({ el:$("folders"), tipo:"sequence", table:"sequences", channelId:st.channelId, items:()=>st.seqs, onChange:renderCards, labelAll:"Todas" });
@@ -281,7 +283,8 @@ function renderCards(){
     const el=document.createElement("div"); el.className="nodo-card qcard"+(on?"":" paused");
     // (10-oct) Producto + a quién le llega · los tiempos de cada paso · cuántos la reciben ahora.
     const lk=findSeqLink(s.id); const pr=lk && (st.allProducts||[]).find(p=>p.id===lk.productId);
-    const pub=`${pr?`${pr.emoji?esc(pr.emoji)+" ":""}${esc(pr.nombre)} · `:""}${esc(SEG_CORTO[s.segmento||"general"]||segLabel(s.segmento))}`;
+    const _et=SEG_ETAPA[s.segmento||"general"];
+    const pub=`${pr?`${pr.emoji?esc(pr.emoji)+" ":""}${esc(pr.nombre)} · `:""}${_et?`<i style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--st-${_et});margin-right:5px;vertical-align:1px"></i>`:""}${esc(SEG_CORTO[s.segmento||"general"]||segLabel(s.segmento))}`;
     const tl=(s.pasos||[]).length ? `<div class="sq-tl">${(()=>{ let acc=0; return (s.pasos||[]).map(p=>(acc+=Number(p.umbral_silencio_seg||0))); })().slice(0,6).map((cum,i)=>`${i?'<span class="a">→</span>':''}<span class="t">${cumTxt(cum)}</span>`).join("")}${n>6?`<span class="a">+${n-6}</span>`:""}</div>` : `<div class="sq-tl"><span class="a">Sin pasos aún</span></div>`;
     const nc=st.enCurso?.[s.id]||0;
     el.innerHTML=`
@@ -374,7 +377,7 @@ function renderDetail(){
           ${st.allProducts.map(p=>`<option value="${p.id}" ${curLink&&curLink.productId===p.id?"selected":""}>${p.emoji?esc(p.emoji)+" ":""}${esc(p.nombre)}</option>`).join("")}
         </select></div>
       <div><label>A quién le llega</label>
-        <select class="sel" id="s_segmento">${SEGMENTOS.map(([v,l])=>`<option value="${v}" data-desc="${esc(SEG_SUB[v]||"")}" ${(s.segmento||"general")===v?"selected":""}>${esc(SEG_CORTO[v]||l)}</option>`).join("")}</select></div>
+        <select class="sel" id="s_segmento">${SEGMENTOS.filter(([v])=> v!=="provincia_sin_adelanto" || (st.allProducts||[]).some(p=>p.tipo==="fisico") || s.segmento===v).map(([v,l])=>`<option value="${v}" data-desc="${esc(SEG_SUB[v]||"")}" ${(s.segmento||"general")===v?"selected":""}>${esc(SEG_CORTO[v]||l)}</option>`).join("")}</select></div>
       <div><label>Cómo se envía</label>
         <select class="sel" id="s_modo">${MODOS.map(([v,l])=>`<option value="${v}" data-desc="${esc(MODO_SUB[v]||"")}" ${(s.modo||"reenganche")===v?"selected":""}>${esc(l.replace(/\s*\(.*\)$/,""))}</option>`).join("")}</select></div>
     </div>
