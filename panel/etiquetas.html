@@ -76,6 +76,11 @@
     box-shadow:0 16px 48px rgba(0,0,0,.45);padding:14px;width:262px}
   .cpop .palette{gap:8px}
   .cpop .sw{width:26px;height:26px}
+  /* (10-oct) crear en una fila */
+  .newrow{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:10px 12px;margin:0 0 22px;max-width:620px}
+  .newrow .in{flex:1;min-width:0;height:40px}
+  .newrow .swatch{width:26px;height:26px;border-radius:50%;flex:none;cursor:pointer;box-shadow:0 0 0 1px var(--border)}
+  .tcount{font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -84,19 +89,17 @@
     <div class="nodo-head">
       <div class="grow">
         <h1 class="nodo-title">Etiquetas</h1>
-        <p class="nodo-lead">Segmenta contactos y úsalas en flujos (añadir/quitar etiqueta) y campañas. Elige uno de los colores o crea el tuyo propio.</p>
+        <p class="nodo-lead">Para agrupar contactos y usarlas en filtros, flujos y campañas.</p>
       </div>
     </div>
 
-    <div class="panel">
-      <h3>Nueva etiqueta</h3>
-      <p class="h-sub">Ponle un nombre y un color. Respeta las mayúsculas y minúsculas que escribas.</p>
-      <div class="createrow">
-        <div class="fname"><label>Nombre</label><input class="in" id="nName" placeholder="Ej. Cliente VIP"/></div>
-        <div><label>Vista previa</label><span class="chip" id="nPrev"><span class="dot"></span>Cliente VIP</span></div>
-        <button class="btn" id="createBtn"><span id="plusIc"></span> Crear etiqueta</button>
-      </div>
-      <label style="margin-top:18px">Color</label>
+    <div class="newrow">
+      <span class="swatch" id="nSwatch" title="Elegir color"></span>
+      <input class="in" id="nName" placeholder="Nueva etiqueta, ej. Cliente VIP"/>
+      <button class="btn" id="createBtn"><span id="plusIc"></span> Crear</button>
+      <span class="chip" id="nPrev" style="display:none"><span class="dot"></span>Cliente VIP</span>
+    </div>
+    <div style="display:none">
       <div class="palette" id="nPalette"></div>
       <div class="hexbox">
         <span style="font-size:12px;color:var(--muted)">o código exacto:</span>
@@ -150,6 +153,8 @@ async function boot(){
   $("nName").oninput=updatePreview;
   $("nHex").oninput=(e)=>{ const h=normHex(e.target.value); if(h){ st.newColor=h; renderNewPalette(); } };
   $("createBtn").onclick=create;
+  $("nName").onkeydown=(e)=>{ if(e.key==="Enter"){ e.preventDefault(); create(); } };
+  $("nSwatch").onclick=(e)=>openColorPopover(e.currentTarget, st.newColor, (col)=>{ st.newColor=col; renderNewPalette(); });
   await load();
 }
 function renderNewPalette(){
@@ -169,6 +174,7 @@ function renderNewPalette(){
   updatePreview();
 }
 function updatePreview(){
+  { const sw=$("nSwatch"); if(sw) sw.style.background=st.newColor; }
   const name=$("nName").value.trim()||"Cliente VIP"; const c=st.newColor;
   const p=$("nPrev"); p.style.background=c+"22"; p.style.color=c; p.style.borderColor=c+"55";
   p.innerHTML=`<span class="dot"></span>${esc(name)}`;
@@ -177,12 +183,17 @@ async function load(){
   const gen=(st.loadGen=(st.loadGen||0)+1), forChannel=st.channelId; // anti-carrera al cambiar de bot
   const { data }=await supa.from("tags").select("*").eq("channel_id",forChannel).order("nombre");
   if(gen!==st.loadGen) return;
-  st.tags=data||[]; render();
+  st.tags=data||[];
+  // (10-oct) Cuántos contactos tiene cada una.
+  st.nTag={};
+  await Promise.all(st.tags.map(t=> supa.from("contact_tags").select("contact_id",{count:"exact",head:true}).eq("tag_id",t.id).then(r=>{ st.nTag[t.id]=r.count||0; },()=>{})));
+  if(gen!==st.loadGen) return;
+  render();
 }
 function render(){
   const box=$("list");
   $("tagCount").textContent=st.tags.length?`${st.tags.length} etiqueta${st.tags.length===1?"":"s"}`:"";
-  if(!st.tags.length){ box.innerHTML=`<div class="empty" style="grid-column:1/-1">Aún no hay etiquetas. Crea la primera arriba.</div>`; return; }
+  if(!st.tags.length){ box.innerHTML=`<div class="empty" style="grid-column:1/-1">Aún no hay etiquetas. Escribe el nombre arriba y toca Crear.</div>`; return; }
   box.innerHTML="";
   st.tags.forEach(t=>{
     const c=hex(t.color);
@@ -193,7 +204,7 @@ function render(){
         <input class="name" value="${esc(t.nombre)}"/>
         <button class="iconbtn" title="Eliminar">${TRASH}</button>
       </div>
-      <div class="preview"><span class="chip" style="background:${c}22;color:${c};border-color:${c}55"><span class="dot"></span>${esc(t.nombre)}</span></div>`;
+      <div class="preview"><span class="tcount">${(st.nTag&&st.nTag[t.id]!=null)?`${st.nTag[t.id]} contacto${st.nTag[t.id]===1?"":"s"}`:""}</span><span class="chip" style="display:none"></span></div>`;
     const chip=el.querySelector(".chip");
     const nameInp=el.querySelector(".name");
     // El chip se actualiza SOLO si el server confirmó el rename (antes se pintaba el nombre
