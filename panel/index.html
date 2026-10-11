@@ -1175,7 +1175,7 @@ function renderQrList(q){
   const folders={}; list.forEach(r=>{ const f=r.folder||"__none"; (folders[f]=folders[f]||[]).push(r); });
   let body="";
   Object.keys(folders).sort((a,b)=>a==="__none"?1:(b==="__none"?-1:a.localeCompare(b))).forEach(f=>{
-    body+=`<div class="qrfold">${f==="__none"?"Sin carpeta":esc(f)}</div>`;
+    if(Object.keys(folders).length>1 || f!=="__none") body+=`<div class="qrfold">${f==="__none"?"Sin carpeta":esc(f)}</div>`;   // sin carpetas, sin rótulo
     folders[f].forEach(r=>{
       const col=r.color&&/^#[0-9a-f]{3,8}$/i.test(r.color)?r.color:null;
       const nM=(Array.isArray(r.media)?r.media:[]).filter(m=>m&&m.media_url).length;
