@@ -931,28 +931,36 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-vol output{min-width:40px;text-align:right;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
 .nn-psec.off .nn-tonos,.nn-psec.off .nn-vol{opacity:.45;pointer-events:none}
 
-/* Tarjetas en vivo (lo urgente que llega con el panel abierto) */
-#nodoNotifToasts{position:fixed;right:24px;bottom:24px;z-index:99990;display:flex;flex-direction:column;gap:10px;
-  width:min(380px,calc(100vw - 32px));pointer-events:none;font-family:var(--font)}
-.nn-toast{pointer-events:auto;position:relative;overflow:hidden;display:flex;gap:12px;padding:14px 12px 16px 14px;border-radius:14px;
-  background:var(--surface);border:1px solid var(--border-strong);box-shadow:var(--shadow-3);color:var(--text);
-  animation:nnIn .38s cubic-bezier(.34,1.56,.64,1)}
+/* Tarjetas en vivo (11-oct, como Vendia): arriba al centro, compactas, apiladas como mazo */
+#nodoNotifToasts{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99990;width:min(380px,calc(100vw - 24px));
+  height:var(--hc,0px);transition:height .3s ease;font-family:var(--font)}
+#nodoNotifToasts.exp{height:var(--he,0px)}
+.nn-toast{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:11px;padding:10px 10px 10px 11px;border-radius:14px;
+  background:var(--surface);border:1px solid var(--border-strong);box-shadow:0 10px 30px rgba(15,23,42,.14),0 2px 6px rgba(15,23,42,.08);color:var(--text);
+  transform:translateX(var(--sx,0px)) translateY(var(--yc,0px)) scale(var(--sc,1));transform-origin:50% 0;
+  transition:transform .38s cubic-bezier(.21,1.02,.73,1),opacity .3s ease,height .3s ease;touch-action:pan-y;user-select:none;cursor:grab}
 .nn-toast,.nn-toast *{box-sizing:border-box}
-.nn-toast.out{opacity:0;transform:translateX(24px);transition:opacity .2s ease,transform .2s ease}
-.nn-toast .nn-ic{background:var(--pcb);color:var(--pc)}
-.nn-tb{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
-.nn-tb b{font-size:13.5px;font-weight:750;line-height:1.3}
-.nn-tb span{font-size:12.5px;color:var(--muted);line-height:1.4}
-.nn-tb small{font-size:11.5px;color:var(--faint);margin-top:1px}
-.nn-tb .nn-acts{margin-top:8px}
-.nn-tx{flex:none;align-self:flex-start;width:26px;height:26px;margin:-4px -2px 0 0;border:none;border-radius:8px;background:transparent;color:var(--faint);display:grid;place-items:center;cursor:pointer;padding:0}
-.nn-tx:hover{background:var(--surface-2);color:var(--text)}
-.nn-tx svg{width:15px;height:15px}
-.nn-bar{position:absolute;left:0;bottom:0;height:3px;width:100%;background:var(--pc);opacity:.85;animation:nnBar 6s linear forwards}
-.nn-toast:hover .nn-bar{animation-play-state:paused}
-@keyframes nnBar{from{width:100%}to{width:0}}
-@keyframes nnIn{from{opacity:0;transform:translateY(16px) scale(.96)}to{opacity:1;transform:none}}
-@media (prefers-reduced-motion:reduce){.nodo-bell.ring svg,.nn-toast{animation:none}.nn-drawer{transition:none}}
+#nodoNotifToasts.exp .nn-toast{transform:translateX(var(--sx,0px)) translateY(var(--ye,0px)) scale(1)}
+.nn-toast.atras{height:var(--hf);overflow:hidden}
+#nodoNotifToasts.exp .nn-toast.atras{height:auto}
+.nn-toast.atras>*{opacity:0;transition:opacity .2s ease}
+#nodoNotifToasts.exp .nn-toast.atras>*{opacity:1}
+.nn-toast.nuevo{opacity:0;transform:translateY(-110%) scale(.96)}
+.nn-toast.out{opacity:0;transform:translateX(var(--sx,0px)) translateY(calc(var(--yc,0px) - 24px)) scale(.96)}
+.nn-toast.arrastra{transition:none;cursor:grabbing}
+.nn-toast .nn-ic{width:34px;height:34px;border-radius:10px;background:var(--pcb);color:var(--pc)}
+.nn-toast .nn-ic svg{width:17px;height:17px}
+.nn-tb{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.nn-tb b{font-size:13.5px;font-weight:650;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nn-tb span{font-size:12.5px;color:var(--muted);line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nn-ver{flex:none;height:30px;padding:0 13px;border-radius:9px;border:none;background:var(--text);color:var(--surface);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer}
+.nn-ver:hover{opacity:.88}
+.nn-toast .nn-tx{position:absolute;top:-7px;left:-7px;width:22px;height:22px;margin:0;border-radius:50%;border:1px solid var(--border-strong);
+  background:var(--surface);color:var(--muted);display:grid;place-items:center;cursor:pointer;padding:0;opacity:0;transition:opacity .15s;box-shadow:0 2px 6px rgba(15,23,42,.12)}
+.nn-toast:hover .nn-tx{opacity:1}
+.nn-toast .nn-tx:hover{color:var(--text)}
+.nn-toast .nn-tx svg{width:12px;height:12px}
+@media (prefers-reduced-motion:reduce){.nodo-bell.ring svg{animation:none}.nn-toast,#nodoNotifToasts{transition:none}.nn-drawer{transition:none}}
 /* 🖼️ Visor de la foto del comprobante (campanita): encima del cajón */
 .nn-visor{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px;cursor:zoom-out}
 .nn-visor img{max-width:min(92vw,560px);max-height:82vh;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5);cursor:default;background:#fff}
