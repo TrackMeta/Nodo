@@ -1318,7 +1318,7 @@ async function load(){
     const vendeFisico = prods.some(p=>p.tipo==="fisico") || ventasOk.some(O.esFisico);
     renderND({ bruta, gastoAds, gastosExtra, gastoIa, iaSinConvertir, neta, roas, hasAds, brutaDesconocida, cobrado, vendido,
       compras, ticket, porCobrar, espAdel:espAdel.length, vendeFisico, cpa: _vAdN && gastoAds>0 ? gastoAds/_vAdN : null });
-    ndChats({ fromISO, toISO, gastoAds, hasAds, cid });
+    ndChats({ fromISO, toISO, gastoAds, hasAds, cid, compras });
   }
 
   // 📈 Efectividad DEL PERIODO (7-oct, pedido de Rodrigo): los que te escribieron por PRIMERA vez en las fechas elegidas
@@ -1944,6 +1944,9 @@ function renderND(v){
   const g=$("ndGroups"); if(!g) return;
   const ventas = `<div class="nd-card"><h4>Ventas</h4>`+
     ndRow("Chats nuevos",`<span id="ndChats">…</span>`)+
+    // (11-oct) Conversión total = ventas de estas fechas ÷ chats nuevos de estas fechas: la misma cuenta que Meta y Trakker
+    //  («chat → venta»). Distinta del «Cierre del bot», que sigue a cada cliente que conversó hasta ver si compró.
+    ndRow("Conversión total",`<span id="ndConv">…</span>`)+
     ndRow(`Cierre del bot<span class="nd-ia">IA</span>`,`<span id="ndCierre">…</span>`)+
     ndRow("Ticket promedio", v.compras?money(v.ticket):"—")+
     (v.vendeFisico ? ndRow("Por cobrar", money(v.porCobrar)) + ndRow("Esperando adelanto", v.espAdel) : "")+
@@ -1967,7 +1970,7 @@ function ndCierre(c){
   el.textContent = c && c.interes ? Math.round(c.compraron/c.interes*100)+"%" : "—";
   if(c && c.interes) el.title = `${c.compraron} compraron de ${c.interes} que conversaron`;
 }
-async function ndChats({ fromISO, toISO, gastoAds, hasAds, cid }){
+async function ndChats({ fromISO, toISO, gastoAds, hasAds, cid, compras }){
   try{
     const base=()=>conVistaContactos(supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId)
       .or("source.is.null,source.neq.sim").neq("wa_id","webchat-test").gte("primera_interaccion",fromISO).lt("primera_interaccion",toISO));
@@ -1976,6 +1979,7 @@ async function ndChats({ fromISO, toISO, gastoAds, hasAds, cid }){
     const tot=all.count||0, deAd=ad.count||0;
     if($("ndChats")){ $("ndChats").textContent=tot; $("ndChats").title=`${deAd} por anuncio · ${tot-deAd} orgánicos`; }
     if($("ndCpc")) $("ndCpc").textContent = hasAds && deAd ? money(gastoAds/deAd) : "—";
+    { const e=$("ndConv"); if(e){ e.textContent = tot ? Math.round((compras||0)/tot*100)+"%" : "—"; e.title = tot ? `${compras||0} ventas de ${tot} chats nuevos en estas fechas (como Meta y Trakker)` : ""; } }
   }catch(_){ /* sin conteo → se queda en «…» */ }
 }
 
