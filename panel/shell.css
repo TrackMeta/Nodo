@@ -942,9 +942,10 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-toast,.nn-toast *{box-sizing:border-box}
 #nodoNotifToasts.exp .nn-toast{transform:translateX(var(--sx,0px)) translateY(var(--ye,0px)) scale(1)}
 .nn-toast.atras{height:var(--hf);overflow:hidden}
-#nodoNotifToasts.exp .nn-toast.atras{height:auto}
+#nodoNotifToasts.exp .nn-toast.atras{height:auto;overflow:visible}
 .nn-toast.atras>*{opacity:0;transition:opacity .2s ease}
-#nodoNotifToasts.exp .nn-toast.atras>*{opacity:1}
+#nodoNotifToasts.exp .nn-toast.atras>*:not(.nn-tx){opacity:1}
+#nodoNotifToasts.exp .nn-toast.atras:hover>.nn-tx{opacity:1}
 .nn-toast.nuevo{opacity:0;transform:translateY(-110%) scale(.96)}
 .nn-toast.out{opacity:0;transform:translateX(var(--sx,0px)) translateY(calc(var(--yc,0px) - 24px)) scale(.96)}
 .nn-toast.arrastra{transition:none;cursor:grabbing}

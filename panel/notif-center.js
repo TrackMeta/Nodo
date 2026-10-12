@@ -457,7 +457,7 @@ function tarjeta(n) {
   box.prepend(el);
   [...box.children].slice(MAZO.max).forEach((x) => x._quitar ? x._quitar() : x.remove());   // como mucho 3 a la vista
   acomodarMazo(box);
-  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("nuevo")));
+  setTimeout(() => el.classList.remove("nuevo"), 30);   // (no rAF: con la pestaña en segundo plano no corre y la tarjeta quedaba invisible)
   if (!box.classList.contains("exp")) correr(el);
 }
 function correr(el) { clearTimeout(el._t); el._ini = Date.now(); el._t = setTimeout(() => el._quitar && el._quitar(), Math.max(800, el._resta)); }
