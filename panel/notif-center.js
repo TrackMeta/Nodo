@@ -83,6 +83,8 @@ const oculta = (n) => quitada(n) || (!critico(n) && (N.prefs.ocultos || []).incl
 // Lo ya resuelto no cuenta como «sin leer»: no queda nada que hacer con eso (se ve igual en «Todas»).
 const noLeida = (n) => !n.resuelta_at && new Date(n.created_at).getTime() > N.hasta && !N.leidas.has(n.id);
 const pendiente = (n) => n.por_atender && !n.resuelta_at;
+// (11-oct) Las ventas se ven en el Historial pero no cuentan como «sin leer»: son muchas y tapaban lo importante.
+const cuentaSinLeer = (n) => noLeida(n) && (n.grupo || tipoDe(n).g) !== "ventas";
 const canal = (id) => (N.ctx.S.channels || []).find((c) => c.id === id);
 const I = (n) => N.ctx.svg(n);
 
@@ -511,14 +513,19 @@ function deslizable(el, quitar) {
 // ── Campanita (insignia) ────────────────────────────────────────────
 function pintarCampana() {
   if (!N.bell) return;
-  const vis = [...N.rows.values()].filter((n) => !oculta(n) && noLeida(n));
+  // (11-oct) El número es lo PENDIENTE (lo mismo que la pestaña que se abre); si no hay nada pendiente pero sí algo
+  //  sin leer, un puntito. Antes contaba lo sin leer y adentro decía «Todo al día».
+  const vivas = [...N.rows.values()].filter((n) => !oculta(n));
+  const pend = vivas.filter(pendiente), sinLeer = vivas.filter(cuentaSinLeer).length;
   const b = N.bell.querySelector(".nn-badge");
-  const k = vis.length;
-  b.hidden = !k;
-  b.textContent = k > 99 ? "99+" : String(k);
-  b.classList.toggle("urg", vis.some((n) => n.prioridad === "urgente" && pendiente(n)));
-  N.bell.setAttribute("aria-label", k ? `Notificaciones: ${k} sin leer` : "Notificaciones");
-  N.bell.title = k ? `Notificaciones · ${k} sin leer` : "Notificaciones";
+  const k = pend.length;
+  b.hidden = !k && !sinLeer;
+  b.textContent = k ? (k > 99 ? "99+" : String(k)) : "";
+  b.classList.toggle("dot", !k && !!sinLeer);
+  b.classList.toggle("urg", pend.some((n) => n.prioridad === "urgente"));
+  const lbl = k ? `${k} pendiente${k === 1 ? "" : "s"}` : sinLeer ? `${sinLeer} sin leer` : "";
+  N.bell.setAttribute("aria-label", lbl ? `Notificaciones: ${lbl}` : "Notificaciones");
+  N.bell.title = lbl ? `Notificaciones · ${lbl}` : "Notificaciones";
   // El selector de bots del menú lateral muestra cuánto espera en cada uno (lo lee al abrirse).
   N.ctx.S.notifPorBot = conteoPorBot();
   try { N.ctx.onConteo?.(); } catch (_) {}   // el puntito rojo del selector de bot (otro bot te necesita)
@@ -531,7 +538,7 @@ function conteoPorBot() {
     if (oculta(n)) continue;
     const c = m[n.channel_id] || (m[n.channel_id] = { pend: 0, urg: false, noLeidas: 0 });
     if (pendiente(n)) { c.pend++; if (n.prioridad === "urgente") c.urg = true; }
-    if (noLeida(n)) c.noLeidas++;
+    if (cuentaSinLeer(n)) c.noLeidas++;   // (las ventas no suman, igual que en el Historial)
   }
   return m;
 }
@@ -615,7 +622,7 @@ function pintar() {
   if (N.vista === "prefs") { pintarPrefs(d); return; }
   const chs = N.ctx.S.channels || [];
   const pend = [...N.rows.values()].filter((n) => pendiente(n) && !oculta(n) && (N.bot === "todos" || n.channel_id === N.bot));
-  const nNo = [...N.rows.values()].filter((n) => noLeida(n) && !oculta(n) && (N.bot === "todos" || n.channel_id === N.bot)).length;
+  const nNo = [...N.rows.values()].filter((n) => cuentaSinLeer(n) && !oculta(n) && (N.bot === "todos" || n.channel_id === N.bot)).length;
   const nNoTodo = [...N.rows.values()].filter((n) => noLeida(n) && !oculta(n)).length;
   // Un bot que se archivó mientras estaba elegido: vuelve a «Todos».
   if (N.bot !== "todos" && !chs.some((c) => c.id === N.bot)) N.bot = "todos";
@@ -627,14 +634,15 @@ function pintar() {
         ${chs.length > 1 ? selectorBot(chs) : ""}
       </div>
       <button class="nn-ib" data-a="leer-todo" title="Marcar todo como leído (todos los bots)"${nNoTodo ? "" : " disabled"}>${I("checkAll")}</button>
-      <button class="nn-ib" data-a="limpiar" title="Limpiar: quitar de tu campanita lo ya leído y lo resuelto"${limpiables().length ? "" : " disabled"}>${I("eraser")}</button>
+      <button class="nn-ib" data-a="limpiar" title="Limpiar: quitar de tu campanita todo lo que no es pendiente (leído o no)"${limpiables().length ? "" : " disabled"}>${I("eraser")}</button>
       <button class="nn-ib" data-a="prefs" title="Preferencias">${I("config")}</button>
       <button class="nn-ib" data-a="cerrar" title="Cerrar (Esc)">${I("x")}</button>
     </header>
     <div class="nn-tabs" role="tablist">
-      <button class="nn-tab${N.tab === "atender" ? " on" : ""}" data-tab="atender" role="tab">Por atender${pend.length ? `<b class="${pend.some((n) => n.prioridad === "urgente") ? "urg" : ""}">${pend.length}</b>` : ""}</button>
-      <button class="nn-tab${N.tab === "todas" ? " on" : ""}" data-tab="todas" role="tab">Todas${nNo ? `<b class="soft">${nNo > 99 ? "99+" : nNo}</b>` : ""}</button>
+      <button class="nn-tab${N.tab === "atender" ? " on" : ""}" data-tab="atender" role="tab">Pendientes${pend.length ? `<b class="${pend.some((n) => n.prioridad === "urgente") ? "urg" : ""}">${pend.length}</b>` : ""}</button>
+      <button class="nn-tab${N.tab === "todas" ? " on" : ""}" data-tab="todas" role="tab">Historial${nNo ? `<b class="soft">${nNo > 99 ? "99+" : nNo}</b>` : ""}</button>
     </div>
+    <p class="nn-tabsub">${N.tab === "atender" ? "Lo que espera que hagas algo. Se va cuando lo resuelves." : "Todo lo que pasó en tus bots, por día."}</p>
     <div class="nn-filt"></div>
     ${bannerNavegador()}
     <div class="nn-list"></div>`;
@@ -689,7 +697,7 @@ function pintarLista() {
     if (k !== dia) { dia = k; html += `<div class="nn-day">${esc(k)}</div>`; }
     html += item(n, false);
   }
-  box.innerHTML = html + `<p class="nn-foot">Lo leído y lo resuelto se limpia solo a los 7 días (o antes, con la × o «Limpiar»). Lo que espera una acción se queda hasta que se resuelva.</p>`;
+  box.innerHTML = html + `<p class="nn-foot">Lo leído y lo resuelto se borra solo a los 7 días; antes, con la × o «Limpiar». Lo pendiente se queda hasta que lo resuelvas.</p>`;
 }
 
 function vacio() {
@@ -697,7 +705,7 @@ function vacio() {
   if (N.tab === "atender") return `<div class="nn-empty">
       <span class="nn-empty-ic ok">${I("check")}</span>
       <b>${filtrado ? "Nada por atender acá" : "Todo al día"}</b>
-      <p>${filtrado ? "Prueba con otro filtro o mira la pestaña «Todas»." : "No hay pagos esperando ni clientes pidiendo una persona. Cuando algo te necesite, aparece acá y suena."}</p>
+      <p>${filtrado ? "Prueba con otro filtro o mira el «Historial»." : "No hay pagos esperando ni clientes pidiendo una persona. Cuando algo te necesite, aparece acá y suena."}</p>
     </div>`;
   return `<div class="nn-empty">
       <span class="nn-empty-ic">${I("bell")}</span>
@@ -726,7 +734,7 @@ function item(n, conDia) {
           + (tags.length ? `<div class="nn-meta">${tags.join("")}</div>` : "");
         return foto ? `<div class="nn-fila"><div class="nn-fila-tx">${txt}</div>${foto}</div>` : txt;
       })()}
-      ${acc.length ? `<div class="nn-acts">${acc.map((a, i) => `<button class="nn-btn${a.ghost ? " ghost" : i === 0 && !res ? " pri" : ""}" data-act="${a.k}"${a.href ? ` data-href="${a.href}"` : ""}${a.k === "resolver" ? ' title="Marcar como atendido: sale de «Por atender» para todo el equipo"' : a.tt ? ` title="${esc(a.tt)}"` : ""}>${I(a.ic)}${esc(a.lb)}</button>`).join("")}</div>` : ""}
+      ${acc.length ? `<div class="nn-acts">${acc.map((a, i) => `<button class="nn-btn${a.ghost ? " ghost" : i === 0 && !res ? " pri" : ""}" data-act="${a.k}"${a.href ? ` data-href="${a.href}"` : ""}${a.k === "resolver" ? ' title="Marcar como atendido: sale de «Pendientes» para todo el equipo"' : a.tt ? ` title="${esc(a.tt)}"` : ""}>${I(a.ic)}${esc(a.lb)}</button>`).join("")}</div>` : ""}
     </div>
   </article>`;
 }
@@ -875,14 +883,15 @@ async function quitar(ids) {
 
 // Lo que «Limpiar» quitaría: lo que ya leíste o ya se resolvió, del bot que estás mirando. Nunca lo
 // que espera una acción (un pago por validar, un cliente esperando): eso se va al resolverse.
-const limpiables = () => [...N.rows.values()].filter((n) => !oculta(n) && !pendiente(n) && !noLeida(n)
+// (11-oct) Leído o no: antes las no leídas no se iban y había que «marcar todo como leído» primero.
+const limpiables = () => [...N.rows.values()].filter((n) => !oculta(n) && !pendiente(n)
   && (N.bot === "todos" || n.channel_id === N.bot));
 
 async function limpiar() {
   const lista = limpiables();
   if (!lista.length) return;
-  const msg = `Se quitan de tu campanita ${lista.length} notificaci${lista.length === 1 ? "ón" : "ones"} ya leída${lista.length === 1 ? "" : "s"} o resuelta${lista.length === 1 ? "" : "s"}. ` +
-    "Lo que todavía espera una acción se queda. Al resto del equipo no se le quita nada.";
+  const msg = `Se quitan de tu campanita ${lista.length} notificaci${lista.length === 1 ? "ón" : "ones"} (leída${lista.length === 1 ? "" : "s"} o no). ` +
+    "Lo pendiente se queda hasta que lo resuelvas. Al resto del equipo no se le quita nada.";
   const ok = N.ctx.confirmDialog
     ? await N.ctx.confirmDialog({ title: "Limpiar la campanita", message: msg, confirmText: "Limpiar", cancelText: "Cancelar" })
     : window.confirm(msg);
