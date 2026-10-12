@@ -470,28 +470,92 @@ function toggleGroup(key, closed) {
 // ── toast global (DS §12: esquina inferior derecha, nivel 2) ────────
 const TOAST_OK = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
 const TOAST_ERR = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
-export function toast(msg, err) {
-  let t = document.getElementById("nodo-toast");
-  if (!t) {
-    t = document.createElement("div"); t.id = "nodo-toast";
-    t.style.cssText = "position:fixed;bottom:24px;right:24px;display:flex;align-items:center;gap:11px;padding:12px 17px 12px 12px;border-radius:14px;font-size:13.5px;font-weight:600;letter-spacing:-.1px;opacity:0;transform:translateY(14px) scale(.94);transition:opacity .22s ease,transform .34s cubic-bezier(.34,1.56,.64,1);pointer-events:none;z-index:99999;border:1px solid var(--glass-brd,rgba(255,255,255,.08));background:var(--surface,#151E32);color:var(--text,#F1F5F9);box-shadow:0 14px 38px rgba(0,0,0,.34),0 2px 8px rgba(0,0,0,.2);max-width:min(440px,calc(100vw - 48px))";
-    t.innerHTML = '<span id="nodo-toast-ic" style="width:27px;height:27px;border-radius:9px;flex:none;display:flex;align-items:center;justify-content:center"></span><span id="nodo-toast-msg" style="line-height:1.35"></span>';
-    document.body.appendChild(t);
+// ── El mazo de arriba al centro (11-oct, como Vendia) ─────────────────
+// Lo comparten los avisos chicos (toast: «Guardado», «No se pudo…») y las alertas de la campanita. Cada tarjeta entra
+// adelante; las anteriores asoman detrás, un poco más chicas. Con el mouse encima se despliegan y el tiempo se
+// detiene; se cierran deslizándolas a un lado o con la × que aparece al pasar el mouse.
+const MAZO = { max: 4, gap: 8, asoma: 9 };
+export function mazo(el, ms = 4000) {
+  let box = document.getElementById("nodoNotifToasts");
+  if (!box) {
+    box = document.createElement("div"); box.id = "nodoNotifToasts"; document.body.appendChild(box);
+    box.addEventListener("mouseenter", () => { box.classList.add("exp"); _mazoPausa(box, true); });
+    box.addEventListener("mouseleave", () => { box.classList.remove("exp"); _mazoPausa(box, false); });
   }
-  const ic = t.querySelector("#nodo-toast-ic");
-  ic.innerHTML = err ? TOAST_ERR : TOAST_OK;
-  ic.style.background = err ? "rgba(226,86,74,.16)" : "rgba(34,192,121,.16)";
-  ic.style.color = err ? "var(--red,#e2564a)" : "var(--green,#22c079)";
-  ic.style.boxShadow = `0 0 0 1px ${err ? "rgba(226,86,74,.28)" : "rgba(34,192,121,.28)"} inset`;
-  // El check ya vive en el badge de la izquierda → quitamos cualquier ✓/✔ del
-  // texto para no repetirlo (ej. "Guardado ✓" → "Guardado") y limpiamos espacios
-  // o separadores "·" que queden sueltos.
+  el.classList.add("nn-toast", "nuevo");
+  el._resta = ms;
+  el._quitar = (lado) => {
+    if (el._fuera) return; el._fuera = true; clearTimeout(el._t);
+    el.style.setProperty("--sx", (lado || 0) * 420 + "px");
+    el.classList.add("out");
+    setTimeout(() => { el.remove(); _mazoAcomodar(box); }, 260);
+  };
+  _mazoDeslizable(el);
+  box.prepend(el);
+  [...box.children].filter((x) => !x._fuera).slice(MAZO.max).forEach((x) => (x._quitar ? x._quitar() : x.remove()));
+  _mazoAcomodar(box);
+  setTimeout(() => el.classList.remove("nuevo"), 30);   // (no rAF: con la pestaña en segundo plano no corre)
+  if (!box.classList.contains("exp")) _mazoCorrer(el);
+  return el._quitar;
+}
+function _mazoCorrer(el) { clearTimeout(el._t); el._ini = Date.now(); el._t = setTimeout(() => el._quitar && el._quitar(), Math.max(800, el._resta)); }
+function _mazoPausa(box, pausa) {
+  for (const el of box.children) {
+    if (el._fuera) continue;
+    if (pausa) { clearTimeout(el._t); el._resta -= Date.now() - (el._ini || Date.now()); }
+    else _mazoCorrer(el);
+  }
+}
+function _mazoAcomodar(box) {
+  const els = [...box.children].filter((x) => !x._fuera);
+  const hs = els.map((x) => x.offsetHeight || 48);
+  let y = 0;
+  els.forEach((x, i) => {
+    x.style.setProperty("--yc", i * MAZO.asoma + "px");
+    x.style.setProperty("--sc", String(1 - i * 0.05));
+    x.style.setProperty("--ye", y + "px");
+    x.style.zIndex = String(10 - i);
+    x.classList.toggle("atras", i > 0);
+    y += hs[i] + MAZO.gap;
+  });
+  box.style.setProperty("--hc", (hs[0] || 0) + Math.max(0, els.length - 1) * MAZO.asoma + "px");
+  box.style.setProperty("--he", Math.max(0, y - MAZO.gap) + "px");
+  box.style.setProperty("--hf", (hs[0] || 48) + "px");
+}
+function _mazoDeslizable(el) {
+  let x0 = null, dx = 0;
+  el.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button,a")) return;
+    x0 = e.clientX; dx = 0; el.classList.add("arrastra");
+    try { el.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (x0 == null) return;
+    dx = e.clientX - x0; el.style.setProperty("--sx", dx + "px");
+    el.style.opacity = String(Math.max(0.2, 1 - Math.abs(dx) / 260));
+  });
+  const soltar = () => {
+    if (x0 == null) return;
+    x0 = null; el.classList.remove("arrastra"); el.style.opacity = "";
+    if (Math.abs(dx) > 70) el._quitar(Math.sign(dx)); else el.style.setProperty("--sx", "0px");
+  };
+  el.addEventListener("pointerup", soltar);
+  el.addEventListener("pointercancel", soltar);
+}
+
+// Aviso chico («Guardado», «No se pudo guardar…»): una tarjeta del mazo, solo el texto (sin ✓ ni ✕, pedido de
+// Rodrigo). El error se distingue por el color de la tarjeta.
+export function toast(msg, err) {
   const clean = String(msg == null ? "" : msg)
-    .replace(/[✓✔]/gu, " ").replace(/\s{2,}/g, " ").replace(/^[\s·]+|[\s·]+$/g, "").trim();
-  t.querySelector("#nodo-toast-msg").textContent = clean;
-  t.style.opacity = "1"; t.style.transform = "translateY(0) scale(1)";
-  clearTimeout(t._h);
-  t._h = setTimeout(() => { t.style.opacity = "0"; t.style.transform = "translateY(14px) scale(.94)"; }, 3800);
+    .replace(/[✓✔✕✖]/gu, " ").replace(/\s{2,}/g, " ").replace(/^[\s·]+|[\s·]+$/g, "").trim();
+  if (!clean) return;
+  const el = document.createElement("div");
+  el.className = "nn-simple" + (err ? " err" : "");
+  el.setAttribute("role", err ? "alert" : "status");
+  el.innerHTML = `<div class="nn-tb"><b></b></div><button class="nn-tx" type="button" title="Cerrar" aria-label="Cerrar">${svg("x")}</button>`;
+  el.querySelector("b").textContent = clean;
+  el.querySelector(".nn-tx").onclick = (e) => { e.stopPropagation(); el._quitar && el._quitar(); };
+  mazo(el, err ? 6000 : 3500);
 }
 
 // ── tema ────────────────────────────────────────────────────────────
@@ -1501,7 +1565,7 @@ export async function mountShell({ active } = {}) {
   // 🔔 Campanita: módulo aparte que baja en paralelo (el menú no la espera). Recibe lo que usa
   // del shell por parámetro para no importar shell.js de vuelta.
   if (S.channels.length) import("./notif-center.js").then((m) => m.montar({
-    supa, S, svg, toast, confirmDialog, logoFallback: FALLBACK_LOGO,
+    supa, S, svg, toast, mazo, confirmDialog, logoFallback: FALLBACK_LOGO,
     onConteo: pintarPuntoBots,   // la campanita avisa cuando cambian los conteos por bot
     // Ir a una sección desde un aviso. El chat y el pedido se buscan en el bot ACTIVO, así que
     // si el aviso es de otro bot se cambia primero — después de preguntar por cambios sin guardar.

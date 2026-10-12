@@ -421,93 +421,27 @@ function avisoNavegador(n) {
 // Arriba al centro, como las notificaciones del celular. Compacta: ícono, título, UNA línea de detalle y «Ver».
 // Varias seguidas se apilan como un mazo (la más nueva adelante); con el mouse encima se despliegan todas y el
 // tiempo se detiene. Se cierran deslizándolas a un lado (o con la × que aparece al pasar el mouse).
-const MAZO = { max: 3, gap: 8, asoma: 9 };
 function tarjeta(n) {
-  let box = document.getElementById("nodoNotifToasts");
-  if (!box) {
-    box = document.createElement("div"); box.id = "nodoNotifToasts"; document.body.appendChild(box);
-    box.addEventListener("mouseenter", () => { box.classList.add("exp"); pausarMazo(box, true); });
-    box.addEventListener("mouseleave", () => { box.classList.remove("exp"); pausarMazo(box, false); });
-  }
   const t = tipoDe(n), c = canal(n.channel_id);
   const acc = acciones(n).filter((a) => a.k !== "resolver" && a.k !== "aprobar")[0] || null;   // (aprobar, solo mirando la foto en el cajón)
   const bot = c && N.ctx.S.channels.length > 1 ? c.nombre : "";
   const linea = [bot, n.detalle].filter(Boolean).join(" · ");
   const el = document.createElement("div");
-  el.className = "nn-toast pr-" + n.prioridad + " nuevo";
+  el.className = "pr-" + n.prioridad;
   el.setAttribute("role", "alert");
   el.innerHTML = `
     <span class="nn-ic">${I(t.ic)}</span>
     <div class="nn-tb"><b>${esc(n.titulo)}</b>${linea ? `<span>${esc(linea)}</span>` : ""}</div>
     <button class="nn-ver" type="button" title="${esc(acc ? acc.lb : "Ver notificaciones")}">Ver</button>
     <button class="nn-tx" type="button" title="Cerrar" aria-label="Cerrar">${I("x")}</button>`;
-  el._resta = TOAST_MS;
-  const quitar = (lado) => {
-    if (el._fuera) return; el._fuera = true; clearTimeout(el._t);
-    el.style.setProperty("--sx", (lado || 0) * 420 + "px");
-    el.classList.add("out");
-    setTimeout(() => { el.remove(); acomodarMazo(box); }, 260);
-  };
-  el._quitar = quitar;
-  el.querySelector(".nn-tx").onclick = (e) => { e.stopPropagation(); quitar(); };
+  el.querySelector(".nn-tx").onclick = (e) => { e.stopPropagation(); el._quitar && el._quitar(); };
   el.querySelector(".nn-ver").onclick = (e) => {
-    e.stopPropagation(); quitar();
+    e.stopPropagation(); el._quitar && el._quitar();
     if (!acc) { abrir(); return; }
     marcarLeida(n); ejecutar(n, acc);
   };
-  deslizable(el, quitar);
-  box.prepend(el);
-  [...box.children].slice(MAZO.max).forEach((x) => x._quitar ? x._quitar() : x.remove());   // como mucho 3 a la vista
-  acomodarMazo(box);
-  setTimeout(() => el.classList.remove("nuevo"), 30);   // (no rAF: con la pestaña en segundo plano no corre y la tarjeta quedaba invisible)
-  if (!box.classList.contains("exp")) correr(el);
-}
-function correr(el) { clearTimeout(el._t); el._ini = Date.now(); el._t = setTimeout(() => el._quitar && el._quitar(), Math.max(800, el._resta)); }
-function pausarMazo(box, pausa) {
-  for (const el of box.children) {
-    if (el._fuera) continue;
-    if (pausa) { clearTimeout(el._t); el._resta -= Date.now() - (el._ini || Date.now()); }
-    else correr(el);
-  }
-}
-// Cada tarjeta sabe dónde va: plegada (asoma unos px detrás de la de adelante, un poco más chica) o desplegada.
-function acomodarMazo(box) {
-  const els = [...box.children].filter((x) => !x._fuera);
-  const hs = els.map((x) => x.offsetHeight || 64);
-  let y = 0;
-  els.forEach((x, i) => {
-    x.style.setProperty("--i", i);
-    x.style.setProperty("--yc", i * MAZO.asoma + "px");
-    x.style.setProperty("--sc", String(1 - i * 0.05));
-    x.style.setProperty("--ye", y + "px");
-    x.style.zIndex = String(10 - i);
-    x.classList.toggle("atras", i > 0);
-    y += hs[i] + MAZO.gap;
-  });
-  box.style.setProperty("--hc", (hs[0] || 0) + Math.max(0, els.length - 1) * MAZO.asoma + "px");
-  box.style.setProperty("--he", Math.max(0, y - MAZO.gap) + "px");
-  box.style.setProperty("--hf", (hs[0] || 64) + "px");
-}
-// Deslizar a un lado para cerrar (mouse o dedo). Menos de 70 px vuelve a su sitio.
-function deslizable(el, quitar) {
-  let x0 = null, dx = 0;
-  el.addEventListener("pointerdown", (e) => {
-    if (e.target.closest("button")) return;
-    x0 = e.clientX; dx = 0; el.classList.add("arrastra");
-    try { el.setPointerCapture(e.pointerId); } catch (_) {}
-  });
-  el.addEventListener("pointermove", (e) => {
-    if (x0 == null) return;
-    dx = e.clientX - x0; el.style.setProperty("--sx", dx + "px");
-    el.style.opacity = String(Math.max(0.2, 1 - Math.abs(dx) / 260));
-  });
-  const soltar = () => {
-    if (x0 == null) return;
-    x0 = null; el.classList.remove("arrastra"); el.style.opacity = "";
-    if (Math.abs(dx) > 70) quitar(Math.sign(dx)); else el.style.setProperty("--sx", "0px");
-  };
-  el.addEventListener("pointerup", soltar);
-  el.addEventListener("pointercancel", soltar);
+  // El mazo vive en el shell (lo comparten «Guardado» y estas alertas): arriba al centro, apilado, se desliza para cerrar.
+  if (N.ctx.mazo) N.ctx.mazo(el, TOAST_MS);
 }
 
 // ── Campanita (insignia) ────────────────────────────────────────────

@@ -936,7 +936,7 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-psec.off .nn-tonos,.nn-psec.off .nn-vol{opacity:.45;pointer-events:none}
 
 /* Tarjetas en vivo (11-oct, como Vendia): arriba al centro, compactas, apiladas como mazo */
-#nodoNotifToasts{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:99990;width:min(380px,calc(100vw - 24px));
+#nodoNotifToasts{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:100001;width:min(380px,calc(100vw - 24px));
   height:var(--hc,0px);transition:height .3s ease;font-family:var(--font)}
 #nodoNotifToasts.exp{height:var(--he,0px)}
 .nn-toast{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:11px;padding:10px 10px 10px 11px;border-radius:14px;
@@ -954,6 +954,11 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-toast.out{opacity:0;transform:translateX(var(--sx,0px)) translateY(calc(var(--yc,0px) - 24px)) scale(.96)}
 .nn-toast.arrastra{transition:none;cursor:grabbing}
 .nn-toast .nn-ic{width:34px;height:34px;border-radius:10px;background:var(--pcb);color:var(--pc)}
+/* aviso chico («Guardado»): solo el texto; el error, con la tarjeta en rojo suave */
+.nn-toast.nn-simple{padding:11px 14px}
+.nn-toast.nn-simple .nn-tb b{font-weight:600;white-space:normal}
+.nn-toast.nn-simple.err{background:color-mix(in srgb,var(--red) 10%,var(--surface));border-color:color-mix(in srgb,var(--red) 40%,var(--border-strong))}
+.nn-toast.nn-simple.err .nn-tb b{color:var(--red)}
 .nn-toast .nn-ic svg{width:17px;height:17px}
 .nn-tb{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .nn-tb b{font-size:13.5px;font-weight:650;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
