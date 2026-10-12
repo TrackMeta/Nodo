@@ -479,7 +479,8 @@ export function mazo(el, ms = 4000) {
   let box = document.getElementById("nodoNotifToasts");
   if (!box) {
     box = document.createElement("div"); box.id = "nodoNotifToasts"; document.body.appendChild(box);
-    box.addEventListener("mouseenter", () => { box.classList.add("exp"); _mazoPausa(box, true); });
+    // (se vuelve a medir al desplegar: la primera tarjeta tras cargar la página podía medirse antes de que llegara la fuente)
+    box.addEventListener("mouseenter", () => { _mazoAcomodar(box); box.classList.add("exp"); _mazoPausa(box, true); });
     box.addEventListener("mouseleave", () => { box.classList.remove("exp"); _mazoPausa(box, false); });
   }
   el.classList.add("nn-toast", "nuevo");
