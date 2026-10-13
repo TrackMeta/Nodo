@@ -34,12 +34,30 @@ export function pintaIconos(root = document) { $$("[data-ic]", root).forEach((e)
 // ── Estado compartido ──
 export const A = {
   uid: null, email: "", nombre: "",
-  channels: [], ch: null, tipo: "digital", tieneApps: false,
+  channels: [], ch: null, tipo: "digital", tieneApps: false, logos: {},
   tab: "chats",
 };
 const BUS = new Map();
 export const on = (ev, fn) => { if (!BUS.has(ev)) BUS.set(ev, new Set()); BUS.get(ev).add(fn); };
 export const emit = (ev, d) => (BUS.get(ev) || []).forEach((fn) => { try { fn(d); } catch (e) { console.error(ev, e); } });
+
+// ── Tema: «Automático» sigue al celular (claro u oscuro); también se puede fijar. No toca el tema del panel. ──
+const TEMA_KEY = "nodo.app.tema";
+export const temaPref = () => { try { return localStorage.getItem(TEMA_KEY) || "auto"; } catch (_) { return "auto"; } };
+const _mqClaro = matchMedia("(prefers-color-scheme: light)");
+export function aplicarTema() {
+  const p = temaPref(), t = p === "auto" ? (_mqClaro.matches ? "light" : "dark") : p;
+  document.documentElement.dataset.theme = t;
+  const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = t === "light" ? "#FFFFFF" : "#131A26";
+  emit("tema", t);
+}
+export function ponerTema(p) { try { localStorage.setItem(TEMA_KEY, p); } catch (_) { /* */ } aplicarTema(); }
+aplicarTema();
+_mqClaro.addEventListener?.("change", () => { if (temaPref() === "auto") aplicarTema(); });
+
+// Logos de los bots (channels.logo_url); sin logo, el de Nodo (como el panel)
+export const NODO_LOGO = "../../assets/logo-128.png";
+export const logoDe = (id) => (A.logos && A.logos[id]) || NODO_LOGO;
 
 // Funciones edge con la sesión del usuario (igual que callFn de la Bandeja).
 export async function callFn(name, body) {
@@ -156,7 +174,7 @@ export function cerrarHoja() {
   quitarCentinela();
 }
 export function hoja(titulo, ops, alElegir, lead) {
-  abrirHoja(`<h3>${esc(titulo)}</h3>${lead ? `<p class="lead">${esc(lead)}</p>` : ""}` + ops.map((o, i) => `<button type="button" class="opt${o.on ? " on" : ""}" data-i="${i}">${o.icono ? ic(o.icono) : ""}${o.dot ? `<span class="dot" style="background:${o.dot}"></span>` : ""}${esc(o.t)}${o.on ? " " + ic("check") : ""}${o.small ? `<small>${esc(o.small)}</small>` : ""}</button>`).join(""),
+  abrirHoja(`<h3>${esc(titulo)}</h3>${lead ? `<p class="lead">${esc(lead)}</p>` : ""}` + ops.map((o, i) => `<button type="button" class="opt${o.on ? " on" : ""}" data-i="${i}">${o.img ? `<img class="oimg" src="${esc(o.img)}" alt="">` : ""}${o.icono ? ic(o.icono) : ""}${o.dot ? `<span class="dot" style="background:${o.dot}"></span>` : ""}${esc(o.t)}${o.on ? " " + ic("check") : ""}${o.small ? `<small>${esc(o.small)}</small>` : ""}</button>`).join(""),
     (sh, cerrar) => sh.querySelectorAll(".opt").forEach((b) => (b.onclick = () => { cerrar(); alElegir && setTimeout(() => alElegir(ops[+b.dataset.i]), 200); })));
 }
 // Confirmación en la hoja (las acciones con plata o con aviso al cliente se confirman)
@@ -216,6 +234,8 @@ async function empezar() {
   ]);
   if (error) { toast("No se pudieron cargar tus bots: " + error.message, true); }
   A.channels = chs || []; A.nombre = perfil?.nombre || A.email.split("@")[0];
+  // Los logos van aparte: cada uno pesa ~27 KB (data URI) y no deben frenar el arranque
+  if (A.channels.length) supa.from("channels").select("id,logo_url").in("id", A.channels.map((c) => c.id)).then(({ data }) => { (data || []).forEach((c) => { if (c.logo_url) A.logos[c.id] = c.logo_url; }); pintaBot(); emit("logos"); }, () => {});
   if (!A.channels.length) {
     $("#boot").hidden = true; $("#app").hidden = false;
     $("#chatlist").innerHTML = `<div class="empty"><b>${ic("inbox")}</b>Todavía no tienes ningún bot. Créalo desde el panel de la compu.</div>`;
@@ -252,6 +272,7 @@ const T4 = { digital: ["Ventas", "party"], fisico: ["Pedidos", "pedidos"], apps:
 export function pintaBot() {
   const ch = A.channels.find((c) => c.id === A.ch) || {};
   $("#botname").textContent = ch.nombre || "Bot";
+  $("#botlogo").src = logoDe(A.ch);
   $("#bottipo").textContent = TIPO_LBL[A.tipo];
   $("#botstate").textContent = ch.bot_apagado ? "Bot apagado · contestan ustedes" : "Bot encendido";
   $("#botsel").classList.toggle("off", !!ch.bot_apagado);
@@ -260,7 +281,7 @@ export function pintaBot() {
 }
 $("#botsel").onclick = () => {
   if (A.channels.length < 2) { toast("Solo tienes un bot"); return; }
-  hoja("Elegir bot", A.channels.map((c) => ({ t: c.nombre, small: c.bot_apagado ? "apagado" : "", on: c.id === A.ch, v: c.id })), (o) => cambiarBot(o.v));
+  hoja("Elegir bot", A.channels.map((c) => ({ t: c.nombre, img: logoDe(c.id), small: c.bot_apagado ? "apagado" : "", on: c.id === A.ch, v: c.id })), (o) => cambiarBot(o.v));
 };
 $("#bellbtn").onclick = () => emit("abrirNotif");
 

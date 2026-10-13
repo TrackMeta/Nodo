@@ -1,6 +1,6 @@
 // Notificaciones de la app: las mismas de la campanita del panel (notificaciones + lecturas por persona), en una
 // pantalla propia con Pendientes / Historial, filtro por bot, Limpiar y «Marcar todo como leído».
-import { A, $, esc, ic, on, emit, supa, abrirCapa, capaAbierta, cambiarBot, ir, toast, fmtHora } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, abrirCapa, capaAbierta, cambiarBot, ir, toast, fmtHora, logoDe } from "./app.js";
 import { mazo } from "../shell.js";
 
 // Catálogo (notif-center.js TIPOS)
@@ -32,6 +32,7 @@ export function init() {
   on("listo", () => { cargar(); suscribir(); });
   on("abrirNotif", () => { pintar(); abrirCapa("notif"); });
   on("resync", () => cargar());
+  on("logos", () => { if (capaAbierta("notif")) pintar(); });
   $("#ntabs").addEventListener("click", (e) => { const b = e.target.closest("[data-t]"); if (b) { N.tab = b.dataset.t; pintar(); } });
   $("#nbody").addEventListener("click", clic);
   setInterval(() => { if (!document.hidden) cargar(); }, 5 * 60_000);
@@ -95,10 +96,10 @@ function pintar() {
   const vivas = [...N.rows.values()].filter((n) => !oculta(n) && (N.bot === "todos" || n.channel_id === N.bot)).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const pend = vivas.filter(pendiente), hist = vivas, sinLeer = hist.filter(cuentaSinLeer).length;
   $("#ntabs").innerHTML = `<button type="button" class="ntab${N.tab === "pend" ? " on" : ""}" data-t="pend">Pendientes${pend.length ? ` <b>${pend.length}</b>` : ""}</button><button type="button" class="ntab${N.tab === "hist" ? " on" : ""}" data-t="hist">Historial${sinLeer ? ` <b class="soft">${sinLeer}</b>` : ""}</button>`;
-  const chips = A.channels.length > 1 ? `<div class="chips">${[["todos", "Todos los bots"], ...A.channels.map((c) => [c.id, c.nombre])].map(([k, l]) => `<button type="button" class="chip${N.bot === k ? " on" : ""}" data-b="${k}">${esc(l)}</button>`).join("")}</div>` : "";
+  const chips = A.channels.length > 1 ? `<div class="chips">${[["todos", "Todos los bots"], ...A.channels.map((c) => [c.id, c.nombre])].map(([k, l]) => `<button type="button" class="chip${N.bot === k ? " on" : ""}" data-b="${k}">${k !== "todos" ? `<img src="${esc(logoDe(k))}" alt="">` : ""}${esc(l)}</button>`).join("")}</div>` : "";
   const fila = (n) => `<button type="button" class="notif${noLeida(n) ? " nu" : ""}" data-n="${n.id}">
     <span class="ico${pendiente(n) && critico(n) ? " urg" : ""}">${ic(icDe(n))}</span>
-    <span class="rmid"><b>${esc(n.titulo)}${n.repeticiones > 1 ? ` <span class="nbot">×${n.repeticiones}</span>` : ""}</b><span>${esc([n.contact?.nombre, n.detalle].filter(Boolean).join(" · "))}</span>${A.channels.length > 1 && N.bot === "todos" ? `<span class="nbot">${esc(nomBot(n.channel_id))}</span>` : ""}</span>
+    <span class="rmid"><b>${esc(n.titulo)}${n.repeticiones > 1 ? ` <span class="nbot">×${n.repeticiones}</span>` : ""}</b><span>${esc([n.contact?.nombre, n.detalle].filter(Boolean).join(" · "))}</span>${A.channels.length > 1 && N.bot === "todos" ? `<span class="nbot"><img src="${esc(logoDe(n.channel_id))}" alt="">${esc(nomBot(n.channel_id))}</span>` : ""}</span>
     <time>${fmtHora(n.created_at)}</time></button>`;
   let body;
   if (N.tab === "pend") {

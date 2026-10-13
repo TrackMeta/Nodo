@@ -19,6 +19,13 @@ body.app [hidden]{display:none!important}
 .boot{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:200}
 .logo{width:30px;height:30px;border-radius:9px;background:var(--brand);display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;flex:none}
 .logo.lg{width:56px;height:56px;border-radius:16px;font-size:26px}
+.logo-img.lg{width:64px;height:64px;border-radius:18px;display:block}
+/* logos de los bots */
+.blogo{width:34px;height:34px;border-radius:10px;object-fit:cover;flex:none;background:var(--surface-2)}
+.oimg{width:28px;height:28px;border-radius:8px;object-fit:cover;flex:none}
+.ico img{width:100%;height:100%;border-radius:10px;object-fit:cover}
+.nbot img{width:14px;height:14px;border-radius:4px;object-fit:cover;vertical-align:-2px;margin-right:4px}
+.chip img{width:18px;height:18px;border-radius:5px;object-fit:cover}
 
 /* entrar */
 .login{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg)}

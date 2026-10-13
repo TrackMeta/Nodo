@@ -2,6 +2,15 @@
 // no hace nada. El celular se registra en `push_dispositivos` y la función edge `push` le manda cada notificación
 // que nace en Nodo, respetando «Qué avisos me llegan».
 import { A, on, emit, supa, callFn, toast, cambiarBot, ir } from "./app.js";
+
+// Barra del celular (hora, señal, batería): del mismo color que la cabecera y con los íconos legibles.
+function barra(t) {
+  const SB = window.Capacitor?.Plugins?.StatusBar; if (!SB) return;
+  const claro = t === "light";
+  SB.setOverlaysWebView?.({ overlay: false }).catch?.(() => {});
+  SB.setStyle?.({ style: claro ? "LIGHT" : "DARK" }).catch?.(() => {});
+  SB.setBackgroundColor?.({ color: claro ? "#FFFFFF" : "#131A26" }).catch?.(() => {});
+}
 import { SONIDOS } from "./mas.js";
 
 const cap = () => window.Capacitor;
@@ -12,6 +21,8 @@ let TOKEN = null;
 export function init() {
   window.NODO_APP_VERSION = "1.0";
   if (!nativo()) { on("pushPrueba", () => toast("Los avisos con la app cerrada llegan en la app del celular (APK). Aquí, en el navegador, solo los ves con la app abierta.")); return; }
+  barra(document.documentElement.dataset.theme);
+  on("tema", barra);
   on("listo", registrar);
   on("pushPrueba", probar);
   on("salir", olvidar);

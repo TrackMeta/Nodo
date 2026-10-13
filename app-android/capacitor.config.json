@@ -9,9 +9,21 @@
   },
   "android": {
     "allowMixedContent": false,
-    "backgroundColor": "#0B0F17"
+    "backgroundColor": "#0B0F17",
+    "adjustMarginsForEdgeToEdge": "force"
   },
   "plugins": {
-    "PushNotifications": { "presentationOptions": ["badge", "sound", "alert"] }
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    },
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "DARK",
+      "backgroundColor": "#131A26"
+    }
   }
 }

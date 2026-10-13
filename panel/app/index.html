@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="theme-color" content="#0B0F17">
+<meta name="theme-color" content="#131A26">
 <meta name="mobile-web-app-capable" content="yes">
 <title>Nodo</title>
 <link rel="manifest" href="manifest.webmanifest">
@@ -16,7 +16,7 @@
 <!-- Entrar -->
 <section id="login" class="login" hidden>
   <form id="loginForm" class="login-box" autocomplete="on">
-    <div class="logo lg">N</div>
+    <img class="logo-img lg" src="../../assets/logo-128.png" alt="Nodo">
     <h1>Nodo</h1>
     <p>Entra con la misma cuenta del panel.</p>
     <label for="lEmail">Correo</label>
@@ -31,7 +31,7 @@
 <!-- App -->
 <div id="app" class="shell" hidden>
   <header class="top">
-    <div class="logo">N</div>
+    <img class="blogo" id="botlogo" src="../../assets/logo-128.png" alt="">
     <button class="botsel" id="botsel" type="button" aria-label="Elegir bot">
       <b><em id="botname"></em><i class="tipo" id="bottipo"></i><span class="chev" data-ic="chevronDown"></span></b>
       <span id="botstate"></span>
@@ -116,7 +116,7 @@
 <div class="sheetbg" id="sheetbg"></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
 <div class="viewer" id="viewer" hidden></div>
-<div class="boot" id="boot"><div class="logo lg">N</div></div>
+<div class="boot" id="boot"><img class="logo-img lg" src="../../assets/logo-128.png" alt="Nodo"></div>
 
 <script type="module" src="app.js"></script>
 </body>
