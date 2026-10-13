@@ -108,6 +108,7 @@ export function cerrarCapa(id) {
   quitarCentinela();
 }
 export const capaAbierta = (id) => PILA.some((p) => p.id === id);
+export const cerrarTodo = () => { if (PILA.length) cerrarCapa(PILA[0].id); };
 function cerrarLoDeArriba() {
   if (!$("#viewer").hidden) { $("#viewer").hidden = true; return; }
   if (_hoja) { _hoja = null; $("#sheet").classList.remove("on"); $("#sheetbg").classList.remove("on"); return; }

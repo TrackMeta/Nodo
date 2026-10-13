@@ -1,6 +1,6 @@
 // Chat abierto: hilo, enviar (texto, archivos, nota de voz, respuestas rápidas, plantillas), sugerencias de la IA,
 // tomar/devolver al bot y la ventana de 24 h. Mismas funciones edge y reglas que la Bandeja.
-import { A, $, $$, esc, ic, on, emit, supa, callFn, invoke, avatar, quienDe, whoTxt, hhmm, fmtDiaLargo, abrirCapa, capaAbierta, cerrarCapa, ir, abrirHoja, cerrarHoja, hoja, confirmar, toast, verFoto, TZ } from "./app.js";
+import { A, $, $$, esc, ic, on, emit, supa, callFn, invoke, avatar, quienDe, whoTxt, hhmm, fmtDiaLargo, abrirCapa, capaAbierta, cerrarCapa, cerrarTodo, ir, abrirHoja, cerrarHoja, hoja, confirmar, toast, verFoto, TZ } from "./app.js";
 import { CHATS } from "./chats.js";
 import { copilotoEtapa, MEDIA_LABEL } from "./comun.js";
 
@@ -32,7 +32,8 @@ export function init() {
 
 // ═════════ Abrir ═════════
 async function abrir(cid) {
-  if (A.tab !== "chats") ir("chats");
+  // Lo que esté abierto encima (notificaciones, un acceso…) se cierra: el chat va debajo de esas capas.
+  if (A.tab !== "chats") ir("chats"); else cerrarTodo();
   C.cid = cid; C.msgs = []; C.orden = null;
   const cv = CHATS.convs.find((x) => x.contact_id === cid) || CHATS.buscados?.find((x) => x.contact_id === cid);
   C.conv = cv ? { requiere_humano: cv.requiere_humano, archivada: cv.archivada } : { requiere_humano: false };

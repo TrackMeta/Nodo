@@ -43,3 +43,6 @@ app-android/android/app/google-services.json
 app-android/android/app/build/
 app-android/android/.gradle/
 app-android/android/build/
+
+# Llave de firma del APK y sus datos (solo en esta compu; ver LEEME dentro)
+.llaves-app/

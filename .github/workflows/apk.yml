@@ -21,10 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with: { node-version: 20 }
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with: { distribution: temurin, java-version: 21 }
       - name: Dependencias
         working-directory: app-android
@@ -39,7 +39,7 @@ jobs:
           if [ -n "$KS" ]; then echo "$KS" | base64 -d > "$RUNNER_TEMP/nodo.keystore"; echo "NODO_KEYSTORE=$RUNNER_TEMP/nodo.keystore" >> "$GITHUB_ENV"; echo "con firma propia"; else echo "sin llave: APK de prueba (firma de depuración)"; fi
       - name: Sincronizar Capacitor
         working-directory: app-android
-        run: npx cap sync android
+        run: npx cap sync android 2>&1 | tee $RUNNER_TEMP/sync.log; test ${PIPESTATUS[0]} -eq 0 || { tail -25 $RUNNER_TEMP/sync.log | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
       - name: Compilar
         working-directory: app-android/android
         env:
@@ -50,8 +50,10 @@ jobs:
           NODO_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
         run: |
           chmod +x gradlew
-          if [ -n "$NODO_KEYSTORE" ]; then ./gradlew --no-daemon assembleRelease; cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Nodo-1.0.${{ github.run_number }}.apk"
-          else ./gradlew --no-daemon assembleDebug; cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/Nodo-1.0.${{ github.run_number }}-prueba.apk"; fi
+          # Si falla, las líneas del error salen como anotaciones (se ven sin iniciar sesión en GitHub)
+          falla() { grep -E "error|What went wrong|FAILURE|e: |Could not|> " "$RUNNER_TEMP/gradle.log" | tail -30 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+          if [ -n "$NODO_KEYSTORE" ]; then ./gradlew --no-daemon assembleRelease > "$RUNNER_TEMP/gradle.log" 2>&1 || falla; cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Nodo-1.0.${{ github.run_number }}.apk"
+          else ./gradlew --no-daemon assembleDebug > "$RUNNER_TEMP/gradle.log" 2>&1 || falla; cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/Nodo-1.0.${{ github.run_number }}-prueba.apk"; fi
       - uses: actions/upload-artifact@v4
         with:
           name: Nodo-APK-1.0.${{ github.run_number }}

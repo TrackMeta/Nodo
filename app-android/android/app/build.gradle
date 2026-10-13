@@ -2,6 +2,8 @@ apply plugin: 'com.android.application'
 
 android {
     namespace "pe.nodo.app"
+    // BuildConfig lo usa NodoNativoPlugin (versión del APK); en AGP 8 viene apagado
+    buildFeatures { buildConfig true }
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
         applicationId "pe.nodo.app"
@@ -23,6 +25,7 @@ android {
             def ks = System.getenv("NODO_KEYSTORE")
             if (ks && file(ks).exists()) {
                 storeFile file(ks)
+                storeType "pkcs12"
                 storePassword System.getenv("NODO_KEYSTORE_PASS")
                 keyAlias System.getenv("NODO_KEY_ALIAS")
                 keyPassword System.getenv("NODO_KEY_PASS")
