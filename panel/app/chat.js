@@ -46,7 +46,7 @@ async function abrir(cid) {
   if (cv) cv.no_leidos = 0;
   supa.from("conversations").update({ no_leidos: 0 }).eq("contact_id", cid).then(() => emit("conv", { contact_id: cid, no_leidos: 0 }), () => {});
   const [ct, hilo, cvr] = await Promise.all([
-    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,ad_id,ad_ref,memoria_ia,ultimo_mensaje_cliente_at,product_id,primera_interaccion,created_at,channel_id").eq("id", cid).maybeSingle(),
+    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,ad_id,ad_ref,memoria_ia,ultimo_mensaje_cliente_at,product_id,primera_interaccion,created_at,channel_id,product:products(emoji)").eq("id", cid).maybeSingle(),
     supa.from("messages").select("*").eq("contact_id", cid).order("ts", { ascending: false }).order("id", { ascending: false }).limit(150),
     supa.from("conversations").select("requiere_humano,archivada").eq("contact_id", cid).maybeSingle(),
     cargarAgentes(),
@@ -77,7 +77,7 @@ async function cargarOrden() {
 function pintaCabecera() {
   const c = C.contacto || {};
   const w = quienDe({ bot_activo: c.bot_activo, requiere_humano: C.conv?.requiere_humano });
-  $("#cavbox").innerHTML = avatar(c.id || C.cid, c.nombre, c.wa_id, w);
+  $("#cavbox").innerHTML = avatar(c.id || C.cid, c.nombre, c.wa_id, w, c.product?.emoji);
   $("#cname").textContent = c.nombre || (c.wa_id ? "+" + c.wa_id : "Cliente");
   $("#cinfo").textContent = c.wa_id && /^\d+$/.test(c.wa_id) ? "+" + c.wa_id : whoTxt(w);
   pintaBotbar();

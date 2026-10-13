@@ -57,7 +57,7 @@ function pintar() {
   const ref = c.ad_ref && String(c.ad_ref.source_id || "") === String(c.ad_id || "") ? c.ad_ref : null;
   const esAd = !!(c.ad_id || /^(ad|ctwa)$/i.test(c.source || ""));
   $("#fibody").innerHTML = `
-    <div class="fhead">${avatar(c.id, c.nombre, c.wa_id, w)}<b>${esc(c.nombre || "Cliente")}</b><span>${/^\d+$/.test(c.wa_id || "") ? "+" + esc(c.wa_id) : "Sin número visible"}</span><span>${whoTxt(w)}${c.product ? ` · ${c.product.emoji ? esc(c.product.emoji) + " " : ""}${esc(c.product.nombre)}` : ""}</span></div>
+    <div class="fhead">${avatar(c.id, c.nombre, c.wa_id, w, c.product?.emoji)}<b>${esc(c.nombre || "Cliente")}</b><span>${/^\d+$/.test(c.wa_id || "") ? "+" + esc(c.wa_id) : "Sin número visible"}</span><span>${whoTxt(w)}${c.product ? ` · ${c.product.emoji ? esc(c.product.emoji) + " " : ""}${esc(c.product.nombre)}` : ""}</span></div>
     <div class="fsec"><h4>${A.tipo === "fisico" ? "Pedido" : "Compra"}</h4>${pedidoHtml(F.orden)}</div>
     ${quien.length || trato.length || F.vender.length ? `<div class="fsec mia"><h4>Memoria IA</h4>
       ${quien.length ? `<p><b>Quién es</b></p><ul>${quien.map((x) => `<li>${esc(typeof x === "string" ? x : x?.texto || x?.t || "")}</li>`).join("")}</ul>` : ""}

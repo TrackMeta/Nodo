@@ -68,8 +68,10 @@ export const colorDe = (id) => { let h = 0; for (const c of String(id)) h = (h *
 const WHO = { bot: ["robot", "Lo atiende el bot"], yo: ["user", "Lo atiende una persona"], espera: ["clock", "Espera que alguien lo tome"] };
 export const quienDe = (c) => (c?.bot_activo !== false ? "bot" : c?.requiere_humano ? "espera" : "yo");
 export const whoTxt = (w) => WHO[w][1];
-export function avatar(id, nombre, wa, who) {
-  return `<span class="av" style="background:${colorDe(id)}">${esc(iniciales(nombre, wa))}${who ? `<span class="who ${who}" title="${WHO[who][1]}">${ic(WHO[who][0])}</span>` : ""}</span>`;
+// Esquina de la foto: el emoji del producto que le interesa (como la Bandeja); si no hay, quién atiende el chat.
+export function avatar(id, nombre, wa, who, emoji) {
+  const esquina = emoji ? `<span class="av-emoji">${esc(emoji)}</span>` : who ? `<span class="who ${who}" title="${WHO[who][1]}">${ic(WHO[who][0])}</span>` : "";
+  return `<span class="av" style="background:${colorDe(id)}">${esc(iniciales(nombre, wa))}${esquina}</span>`;
 }
 export const TZ = () => A.channels.find((c) => c.id === A.ch)?.timezone || "America/Lima";
 export function fmtHora(ts) {

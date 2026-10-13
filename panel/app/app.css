@@ -110,6 +110,9 @@ html:not([data-theme="light"]) .btn.main{color:#06210f}
 .av{width:46px;height:46px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:700;font-size:15px;color:#fff;position:relative}
 .av .who{position:absolute;right:-2px;bottom:-2px;width:19px;height:19px;border-radius:50%;display:grid;place-items:center;border:2px solid var(--surface);color:#fff}
 .av .who .i{width:10px;height:10px}
+.av-emoji{position:absolute;right:-4px;bottom:-3px;width:22px;height:22px;border-radius:50%;background:var(--surface);display:grid;place-items:center;font-size:13px;line-height:1;box-shadow:0 0 0 2px var(--surface)}
+.fhead .av .av-emoji{width:30px;height:30px;font-size:18px}
+.chead .av .av-emoji{width:19px;height:19px;font-size:11px}
 .who.bot{background:linear-gradient(135deg,var(--ia-a),var(--ia-b))}
 .who.yo{background:var(--amber)}
 .who.espera{background:var(--red)}

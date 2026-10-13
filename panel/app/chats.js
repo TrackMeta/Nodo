@@ -43,7 +43,7 @@ export async function cargar() {
   const ch = A.ch; if (!ch || L.cargando) { if (L.cargando) cargarPronto(); return; }
   L.cargando = true;
   if (!L.convs.length) $("#chatlist").innerHTML = `<div class="cargando">Cargando chats…</div>`;
-  const sel = "contact_id,no_leidos,updated_at,expira_at,requiere_humano,archivada,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage,source,fep_hasta,product_id,ultima_imagen_at,contact_tags(tag_id),bloqueado)";
+  const sel = "contact_id,no_leidos,updated_at,expira_at,requiere_humano,archivada,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage,source,fep_hasta,product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado)";
   try {
     const [r, tg, pr] = await Promise.all([
       supa.from("conversations").select(sel).eq("channel_id", ch).order("updated_at", { ascending: false }).limit(1000),
@@ -104,7 +104,7 @@ async function extras(ch) {
 }
 async function buscarServidor() {
   const q = Q, ch = A.ch; const dig = q.replace(/\D/g, "");
-  const sel = "contact_id,no_leidos,updated_at,expira_at,requiere_humano,archivada,contact:contacts!inner(id,nombre,wa_id,last_input,bot_activo,stage,source,fep_hasta,product_id,ultima_imagen_at,contact_tags(tag_id),bloqueado)";
+  const sel = "contact_id,no_leidos,updated_at,expira_at,requiere_humano,archivada,contact:contacts!inner(id,nombre,wa_id,last_input,bot_activo,stage,source,fep_hasta,product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado)";
   const or = [`nombre.ilike.*${q.replace(/[,()*]/g, " ")}*`]; if (dig.length >= 3) or.push(`wa_id.ilike.*${dig}*`);
   const [r, ops] = await Promise.all([
     supa.from("conversations").select(sel).eq("channel_id", ch).or(or.join(","), { referencedTable: "contacts" }).order("updated_at", { ascending: false }).limit(30),
@@ -184,7 +184,7 @@ function fila(cv) {
   const st = ETAPA[c.stage || "nuevo"] || ETAPA.nuevo;
   const flag = w === "espera" ? `<span class="flag hum">Pide humano</span>` : cv.requiere_humano ? `<span class="flag seg">Seguimiento</span>` : c.stage === "comprado" ? (L.recompra.has(c.id) ? `<span class="flag pago">Recomprando</span>` : `<span class="flag ok">Compró</span>`) : "";
   return `<button class="row" type="button" data-id="${c.id}">
-    ${avatar(c.id, c.nombre, c.wa_id, w)}
+    ${avatar(c.id, c.nombre, c.wa_id, null, c.product?.emoji)}
     <span class="rmid"><b><span class="stage-dot" style="background:${st.color}" title="${st.label}"></span>${esc(c.nombre || "+" + c.wa_id)}${flag}</b><span>${previewHtml(c)}</span></span>
     <span class="rend${cv.no_leidos ? " new" : ""}"><time>${fmtHora(cv.updated_at)}</time>${cv.no_leidos ? `<span class="unread">${cv.no_leidos > 99 ? "99+" : cv.no_leidos}</span>` : ""}</span>
   </button>`;
