@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0B0F17">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Nodo</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="../../assets/logo-128.png">
+<link rel="stylesheet" href="../shell.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body class="app">
+
+<!-- Entrar -->
+<section id="login" class="login" hidden>
+  <form id="loginForm" class="login-box" autocomplete="on">
+    <div class="logo lg">N</div>
+    <h1>Nodo</h1>
+    <p>Entra con la misma cuenta del panel.</p>
+    <label for="lEmail">Correo</label>
+    <input id="lEmail" type="email" autocomplete="username" required>
+    <label for="lPass">Contraseña</label>
+    <input id="lPass" type="password" autocomplete="current-password" required>
+    <button class="btn blue" id="lGo" type="submit">Entrar</button>
+    <p class="lerr" id="lErr" hidden></p>
+  </form>
+</section>
+
+<!-- App -->
+<div id="app" class="shell" hidden>
+  <header class="top">
+    <div class="logo">N</div>
+    <button class="botsel" id="botsel" type="button" aria-label="Elegir bot">
+      <b><em id="botname"></em><i class="tipo" id="bottipo"></i><span class="chev" data-ic="chevronDown"></span></b>
+      <span id="botstate"></span>
+    </button>
+    <button class="iconbtn" type="button" id="bellbtn" aria-label="Notificaciones"><span data-ic="bell"></span><span class="badge" id="bellbadge" hidden></span></button>
+  </header>
+  <div class="conex" id="conex" hidden></div>
+
+  <div class="views">
+    <section class="view" id="v-chats"><div class="pad" id="chatsPad">
+      <div class="ctop"><div class="seg" id="modeseg"></div><button type="button" class="fbtn" id="fbtn"><span data-ic="filter"></span>Filtros<b id="fbadge" hidden></b></button></div>
+      <label class="search"><span data-ic="search"></span><input id="q" type="search" placeholder="Nombre, teléfono o nº de operación…" autocomplete="off" aria-label="Buscar chats"></label>
+      <div class="chips" id="fchips" hidden></div>
+      <div class="list" id="chatlist"></div>
+      <p class="note" id="chatsNota" hidden></p>
+    </div></section>
+    <section class="view" id="v-pagos" hidden><div class="pad" id="pagosPad"></div></section>
+    <section class="view" id="v-t4" hidden><div class="pad" id="t4Pad"></div></section>
+    <section class="view" id="v-hoy" hidden><div class="pad" id="hoyPad"></div></section>
+    <section class="view" id="v-mas" hidden><div class="pad" id="masPad"></div></section>
+
+    <!-- Chat abierto -->
+    <section class="view chatv away" id="v-chat" aria-hidden="true">
+      <div class="chead">
+        <button class="iconbtn" type="button" data-back aria-label="Volver"><span data-ic="chevronLeft"></span></button>
+        <span id="cavbox"></span>
+        <button class="rmid" type="button" id="cinfoBtn" aria-label="Ver la ficha del cliente"><b id="cname"></b><span id="cinfo"></span></button>
+        <button class="iconbtn" type="button" id="fichabtn" aria-label="Ficha del cliente"><span data-ic="contactos"></span></button>
+      </div>
+      <div class="botbar" id="botbar"><p id="botbartxt"></p><button type="button" id="takebtn"></button></div>
+      <div class="msgs" id="msgs"></div>
+      <div class="winbar" id="winbar" hidden><p><b>La ventana para escribir se cerró</b>WhatsApp solo permite retomar con una plantilla aprobada. Cuando el cliente responda, la ventana se abre de nuevo.</p><button type="button" class="btn blue" id="tplbtn">Enviar plantilla…</button></div>
+      <div class="comp" id="comp">
+        <div class="qr" id="qr" hidden></div>
+        <div class="rec" id="rec" hidden><span class="rdot"></span><span class="num" id="rect">0:00</span><span class="rech">Suelta para enviar · desliza a la izquierda para cancelar</span></div>
+        <div class="field">
+          <button class="iconbtn ctool-ia" type="button" id="copibtn" aria-label="Sugerencias de respuesta (IA)"><span data-ic="robot"></span></button>
+          <button class="iconbtn" type="button" id="qrbtn" aria-label="Respuestas rápidas"><span data-ic="qr"></span></button>
+          <textarea id="inp" rows="1" placeholder="Escribe un mensaje…" autocomplete="off"></textarea>
+          <button class="iconbtn" type="button" id="attbtn" aria-label="Adjuntar imagen, audio o archivo"><span data-ic="clip"></span></button>
+        </div>
+        <button class="send" type="button" id="sendbtn" aria-label="Enviar" hidden><span data-ic="send"></span></button>
+        <button class="send mic" type="button" id="micbtn" aria-label="Mantén apretado para grabar una nota de voz"><span data-ic="mic"></span></button>
+        <input type="file" id="fileInput" accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" hidden>
+      </div>
+    </section>
+
+    <!-- Pantallas que se abren encima -->
+    <section class="view overv away" id="v-ficha" aria-hidden="true">
+      <div class="ohead"><button class="iconbtn" type="button" data-back aria-label="Volver"><span data-ic="chevronLeft"></span></button><h2>Ficha del cliente</h2></div>
+      <div class="nbody" id="fibody"></div>
+    </section>
+    <section class="view overv away" id="v-filtros" aria-hidden="true">
+      <div class="ohead"><button class="iconbtn" type="button" data-back aria-label="Volver"><span data-ic="chevronLeft"></span></button><h2>Filtros</h2></div>
+      <div class="nbody" id="filbody"></div>
+      <div class="ffoot"><button type="button" class="btn soft" id="fclear">Limpiar</button><button type="button" class="btn blue" id="fver">Ver chats</button></div>
+    </section>
+    <section class="view overv away" id="v-notif" aria-hidden="true">
+      <div class="ohead"><button class="iconbtn" type="button" data-back aria-label="Volver"><span data-ic="chevronLeft"></span></button><h2>Notificaciones</h2></div>
+      <div class="ntabs" id="ntabs"></div>
+      <div class="nbody" id="nbody"></div>
+    </section>
+    <section class="view overv away" id="v-avisos" aria-hidden="true">
+      <div class="ohead"><button class="iconbtn" type="button" data-back aria-label="Volver"><span data-ic="chevronLeft"></span></button><h2>Qué avisos me llegan</h2></div>
+      <div class="nbody" id="avbody"></div>
+    </section>
+    <section class="view overv away" id="v-acceso" aria-hidden="true">
+      <div class="ohead"><button class="iconbtn" type="button" data-back aria-label="Volver"><span data-ic="chevronLeft"></span></button><h2 id="accTitle">Acceso</h2></div>
+      <div class="nbody" id="accbody"></div>
+    </section>
+  </div>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab on" type="button" data-tab="chats"><span class="pill" data-ic="message"></span>Chats<span class="badge urg" id="tb-chats" hidden></span></button>
+    <button class="tab" type="button" data-tab="pagos"><span class="pill" data-ic="banknote"></span>Pagos<span class="badge" id="tb-pagos" hidden></span></button>
+    <button class="tab" type="button" data-tab="t4"><span class="pill" id="t4ico"></span><span id="t4lbl">Ventas</span><span class="badge" id="tb-t4" hidden></span></button>
+    <button class="tab" type="button" data-tab="hoy"><span class="pill" data-ic="dashboard"></span>Hoy</button>
+    <button class="tab" type="button" data-tab="mas"><span class="pill" data-ic="menu"></span>Más</button>
+  </nav>
+</div>
+
+<div class="sheetbg" id="sheetbg"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+<div class="viewer" id="viewer" hidden></div>
+<div class="boot" id="boot"><div class="logo lg">N</div></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

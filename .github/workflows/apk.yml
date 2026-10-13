@@ -1,0 +1,59 @@
+# Arma el APK de Nodo (Android) en la nube. Se corre a mano (Actions → «APK de Nodo» → Run workflow)
+# o solo cuando cambia algo de app-android/. La app web (panel/app) NO necesita un APK nuevo: se
+# actualiza sola con cada push a main, porque el APK la carga desde GitHub Pages.
+#
+# Secretos (Settings → Secrets and variables → Actions), todos opcionales:
+#   GOOGLE_SERVICES_JSON  → contenido de google-services.json de Firebase (activa los avisos con la app cerrada)
+#   ANDROID_KEYSTORE_B64  → la llave de firma en base64 (sin ella sale un APK de prueba, que para actualizar
+#   ANDROID_KEYSTORE_PASS    hay que desinstalar el anterior)
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASS
+name: APK de Nodo
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["app-android/**", ".github/workflows/apk.yml"]
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - name: Dependencias
+        working-directory: app-android
+        run: npm ci
+      - name: Firebase (si está el secreto)
+        env: { GSJ: "${{ secrets.GOOGLE_SERVICES_JSON }}" }
+        run: |
+          if [ -n "$GSJ" ]; then printf '%s' "$GSJ" > app-android/android/app/google-services.json; echo "con Firebase"; else echo "sin Firebase: los avisos con la app cerrada quedan apagados"; fi
+      - name: Llave de firma (si está el secreto)
+        env: { KS: "${{ secrets.ANDROID_KEYSTORE_B64 }}" }
+        run: |
+          if [ -n "$KS" ]; then echo "$KS" | base64 -d > "$RUNNER_TEMP/nodo.keystore"; echo "NODO_KEYSTORE=$RUNNER_TEMP/nodo.keystore" >> "$GITHUB_ENV"; echo "con firma propia"; else echo "sin llave: APK de prueba (firma de depuración)"; fi
+      - name: Sincronizar Capacitor
+        working-directory: app-android
+        run: npx cap sync android
+      - name: Compilar
+        working-directory: app-android/android
+        env:
+          NODO_VERSION_CODE: ${{ github.run_number }}
+          NODO_VERSION_NAME: 1.0.${{ github.run_number }}
+          NODO_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          NODO_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          NODO_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: |
+          chmod +x gradlew
+          if [ -n "$NODO_KEYSTORE" ]; then ./gradlew --no-daemon assembleRelease; cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Nodo-1.0.${{ github.run_number }}.apk"
+          else ./gradlew --no-daemon assembleDebug; cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/Nodo-1.0.${{ github.run_number }}-prueba.apk"; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nodo-APK-1.0.${{ github.run_number }}
+          path: ${{ runner.temp }}/Nodo-*.apk
+          retention-days: 30

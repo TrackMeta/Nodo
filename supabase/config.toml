@@ -126,3 +126,6 @@ verify_jwt = false
 
 [functions.microapps]
 verify_jwt = true
+
+[functions.push]
+verify_jwt = false

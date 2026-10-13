@@ -1,0 +1,17 @@
+{
+  "appId": "pe.nodo.app",
+  "appName": "Nodo",
+  "webDir": "www",
+  "server": {
+    "url": "https://trackmeta.github.io/Nodo/panel/app/",
+    "androidScheme": "https",
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#0B0F17"
+  },
+  "plugins": {
+    "PushNotifications": { "presentationOptions": ["badge", "sound", "alert"] }
+  }
+}

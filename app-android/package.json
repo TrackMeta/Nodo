@@ -1,0 +1,18 @@
+{
+  "name": "nodo-app-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "APK de Nodo: envoltorio Capacitor que carga la app web (panel/app) desde GitHub Pages",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.6.9",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/core": "^7.6.9",
+    "@capacitor/push-notifications": "^7.0.7"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.6.9"
+  }
+}

@@ -35,3 +35,11 @@ supabase/functions/tmp-sim/
 
 # Respaldos locales de datos (nunca al repo)
 .respaldos/
+
+# App de celular (APK): llaves y config de Firebase NUNCA en el repo (es público)
+app-android/android/app/google-services.json
+*.keystore
+*.jks
+app-android/android/app/build/
+app-android/android/.gradle/
+app-android/android/build/
