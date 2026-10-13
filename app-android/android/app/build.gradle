@@ -10,7 +10,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // La versión la pone GitHub Actions (número de corrida); a mano queda 1 / 1.0
-        versionCode (System.getenv("NODO_VERSION_CODE") ?: "1").toInteger()
+        versionCode Integer.parseInt(System.getenv("NODO_VERSION_CODE") ?: "1")
         versionName System.getenv("NODO_VERSION_NAME") ?: "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
