@@ -77,7 +77,7 @@ async function enviar(sa: any, token: string, msg: { titulo: string; cuerpo: str
       token,
       notification: { title: msg.titulo.slice(0, 120), body: msg.cuerpo.slice(0, 240) },
       data: msg.data,
-      android: { priority: "HIGH", ttl: "86400s", notification: { channel_id: msg.canal, tag: msg.tag, default_vibrate_timings: true, notification_priority: "PRIORITY_MAX", visibility: "PRIVATE" } },
+      android: { priority: "HIGH", ttl: "86400s", notification: { channel_id: msg.canal, tag: msg.tag, icon: "ic_stat_nodo", color: "#0B63E5", default_vibrate_timings: true, notification_priority: "PRIORITY_MAX", visibility: "PRIVATE" } },
     } }),
   });
   if (r.ok) return "ok";

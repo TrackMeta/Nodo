@@ -24,6 +24,11 @@
 
         </activity>
 
+        <!-- Avisos (Firebase): ícono chico blanco de Nodo y color de acento -->
+        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_nodo" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/nodo_azul" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="nodo_normal" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
