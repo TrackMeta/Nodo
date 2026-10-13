@@ -16855,7 +16855,10 @@ async function maybeDatosPago(
     // («plineo», «ahora yapeo» es AVISAR que va a pagar, no pedir el número: con los datos recién mandados no se repiten —
     //  marescx16 replay, 8-oct: «Ok ahora plineo» repetía el bloque que acababa de salir)
     const _anunciaConVerbo = /(?:yap|plin)e(?:o|ar[eé]?)(?![\p{L}])/iu.test(String(texto ?? ""));
-    const _unMetodo = !!soloMetodo && !_anunciaConVerbo && dp.split(/\n\s*\n/).filter((b) => b.trim()).length > 1;
+    // (12-oct) Si los datos salieron hace menos de un minuto, su «Yape» lo escribió sin haberlos visto (contestaba la
+    //  pregunta de antes): no se le vuelve a mandar el bloque. Junior recibió los dos medios y 10 s después el Yape otra vez.
+    const _hace1min = _idxRec >= 0 && (Date.now() - new Date(String((outs ?? [])[_idxRec]?.ts ?? 0)).getTime()) < 60_000;
+    const _unMetodo = !!soloMetodo && !_anunciaConVerbo && !_hace1min && dp.split(/\n\s*\n/).filter((b) => b.trim()).length > 1;
     // (Si la IA ya escribió el NÚMERO en este mismo turno, no se pega otra vez aunque haya dicho «yape» o lo pida: lo
     //  acaba de leer dos segundos antes. Así salió «Aquí están los datos… 931 934 092…» y debajo «Son S/ 10 👇 Yape…
     //  931 934 092» — Probar flujos, 6-oct.)
@@ -30161,6 +30164,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         try { _opsDig = ctx._product_id ? await loadOpciones(db, run, String(ctx._product_id)) : []; } catch (_) { _opsDig = []; }
         // 🧠 La IA decidió que salen los datos: emitIaText no anda buscando promesas colgadas (los datos van detrás).
         if ((run as any)._iaDatosPago) (ctx as any)._datosSiguen = true;
+        // 🛟 (12-oct) …y lo mismo si los va a mandar la RED DE SEGURIDAD de maybeDatosPago (habla de pagar y en el chat todavía
+        //  no están): misma condición, calculada antes de emitir. Junior: «¿a q nombre sale el yapeo?» → «¿Lo haces por Yape o
+        //  transferencia?» y debajo, al toque, los dos medios: la pregunta ya se estaba contestando sola.
+        if (!(ctx as any)._datosSiguen) {
+          const _liR = String(ctx.last_input ?? "");
+          if (RE_HABLA_DE_PAGAR.test(_liR) && !RE_NO_QUIERE_PAGAR.test(_liR)) {
+            try {
+              const { data: _oR } = await db.from("messages").select("content").eq("contact_id", run.contact_id)
+                .eq("direction", "out").order("ts", { ascending: false }).limit(40);
+              const _yaR = ((_oR ?? []) as any[]).some((m) => { const x = String(m?.content?.text ?? "");
+                return /^Son \*/.test(x) && /\d{3}[\s.-]?\d{3}[\s.-]?\d{3}/.test(x); });
+              if (!_yaR) (ctx as any)._datosSiguen = true;
+            } catch (_) { /* sin historial → como antes */ }
+          }
+        }
         // 🎚️ Con UNA sola presentación no hay «¿Básica o Premium?» que preguntar: eran las
         // versiones de OTRO producto del catálogo (D13-dempresa, 2026-09-25) y la regla del
         // prompt no lo frenó. Fuera la frase que ofrece elegir entre versiones ajenas — en
