@@ -29,9 +29,10 @@ async function cargar() {
 async function badge() {
   if (A.tipo === "fisico") { if (!T.pedidos.length) { try { await cargarPedidos(true); } catch (_) { /* */ } } }
   else if (A.tipo === "apps") { if (!T.accesos.length) { try { await cargarAccesos(true); } catch (_) { /* */ } } }
-  else { $("#tb-t4").hidden = true; return; }
+  else { $("#tb-t4").hidden = true; emit("pendientesT4", 0); return; }
   const n = A.tipo === "fisico" ? T.pedidos.filter(parado).length : T.accesos.filter((a) => estadoVis(a) === "porvencer").length;
   $("#tb-t4").hidden = !n; $("#tb-t4").textContent = n;
+  emit("pendientesT4", n);
 }
 const seg = (opts, sel) => `<div class="seg" data-seg>${opts.map(([k, l]) => `<button type="button" data-f="${k}" class="${k === sel ? "on" : ""}">${l}</button>`).join("")}</div>`;
 

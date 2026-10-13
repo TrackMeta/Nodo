@@ -262,6 +262,34 @@ html:not([data-theme="light"]) .send.mic{color:#06210f}
 .hero small{font-size:12px;color:var(--hero-muted);font-weight:600}
 .hero .big{font-size:34px;font-weight:700;letter-spacing:-.03em;line-height:1.1}
 .hero .row2{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--hero-muted)}
+/* Resumen */
+.espera{display:flex;flex-direction:column;gap:6px}
+.espera.ok{flex-direction:row;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;background:var(--green-bg);color:var(--green);font-size:13px;font-weight:600}
+.esp{display:flex;align-items:center;gap:8px;padding:11px 12px;border-radius:12px;background:var(--amber-bg);color:var(--text);font-size:13.5px;text-align:left}
+.esp .i{width:18px;height:18px;color:var(--amber)}
+.esp.urg{background:var(--red-bg)}
+.esp.urg .i{color:var(--red)}
+.esp b{font-size:15px}
+.kpi.gan{width:100%}
+.kpi.gan small{display:flex;align-items:center;gap:4px}
+.kpi.gan b{font-size:24px}
+.graf{margin-top:8px}
+.graf svg{display:block}
+.graf.vacio{font-size:12px;color:var(--hero-muted);padding:10px 0 2px}
+.graf-ejes{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;color:var(--hero-muted);margin-top:4px}
+.graf-ejes span:nth-child(2){color:var(--hero-text);font-weight:600}
+.emb{display:grid;grid-template-columns:110px 1fr auto;gap:10px;align-items:center;padding:7px 14px;font-size:13px}
+.emb-bar{height:8px;border-radius:8px;background:var(--surface-2);overflow:hidden}
+.emb-bar i{display:block;height:100%;border-radius:8px;background:var(--brand)}
+.emb b{font-size:12.5px}
+.li.ad .rmid > span{white-space:normal}
+.li .rend b{font-size:13.5px}
+.gcuenta{display:flex;flex-direction:column;margin:0 4px 12px;border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.gfila{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 12px;border-top:1px solid var(--border);font-size:14px}
+.gfila:first-child{border-top:0}
+.gfila small{display:block;font-size:11.5px;color:var(--faint)}
+.gfila.total{background:var(--surface-2);font-weight:700}
+.gfila.total b{font-size:17px}
 .dsel{align-self:flex-start;display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:12px;border:1px solid var(--border-strong);background:var(--surface);text-align:left}
 .dsel .i{width:18px;height:18px;color:var(--brand)}
 .dsel b{font-size:14px;font-weight:600;display:block}

@@ -20,6 +20,7 @@ export function init() {
   on("contacto", (c) => { const cv = L.convs.find((x) => x.contact_id === c.id); if (cv) { Object.assign(cv.contact, c); pintar(); } });
   on("resync", () => cargar());
   on("refrescarChats", () => pintar());
+  on("verHumano", () => { MODO = "humano"; pintar(); });
   $("#modeseg").addEventListener("click", (e) => { const b = e.target.closest("[data-m]"); if (b) { MODO = b.dataset.m; pintar(); } });
   $("#fchips").addEventListener("click", (e) => {
     const b = e.target.closest("[data-q]"); if (!b) return;
