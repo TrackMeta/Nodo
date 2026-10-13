@@ -238,7 +238,7 @@ async function empezar() {
   if (A.channels.length) supa.from("channels").select("id,logo_url").in("id", A.channels.map((c) => c.id)).then(({ data }) => { (data || []).forEach((c) => { if (c.logo_url) A.logos[c.id] = c.logo_url; }); pintaBot(); emit("logos"); }, () => {});
   if (!A.channels.length) {
     $("#boot").hidden = true; $("#app").hidden = false;
-    $("#chatlist").innerHTML = `<div class="empty"><b>${ic("inbox")}</b>Todavía no tienes ningún bot. Créalo desde el panel de la compu.</div>`;
+    $("#chatlist").innerHTML = `<div class="empty"><b>${ic("inbox")}</b>Todavía no tienes ningún bot. Créalo desde el panel web de Nodo.</div>`;
     return;
   }
   let guardado = null; try { guardado = localStorage.getItem("nodo.channelId"); } catch (_) { /* */ }

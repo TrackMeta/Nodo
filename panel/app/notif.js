@@ -1,6 +1,6 @@
 // Notificaciones de la app: las mismas de la campanita del panel (notificaciones + lecturas por persona), en una
 // pantalla propia con Pendientes / Historial, filtro por bot, Limpiar y «Marcar todo como leído».
-import { A, $, esc, ic, on, emit, supa, abrirCapa, capaAbierta, cambiarBot, ir, toast, fmtHora, logoDe } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, abrirCapa, capaAbierta, cambiarBot, ir, toast, fmtHora, logoDe, confirmar } from "./app.js";
 import { mazo } from "../shell.js";
 
 // Catálogo (notif-center.js TIPOS)
@@ -97,17 +97,17 @@ function pintar() {
   const pend = vivas.filter(pendiente), hist = vivas, sinLeer = hist.filter(cuentaSinLeer).length;
   $("#ntabs").innerHTML = `<button type="button" class="ntab${N.tab === "pend" ? " on" : ""}" data-t="pend">Pendientes${pend.length ? ` <b>${pend.length}</b>` : ""}</button><button type="button" class="ntab${N.tab === "hist" ? " on" : ""}" data-t="hist">Historial${sinLeer ? ` <b class="soft">${sinLeer}</b>` : ""}</button>`;
   const chips = A.channels.length > 1 ? `<div class="chips">${[["todos", "Todos los bots"], ...A.channels.map((c) => [c.id, c.nombre])].map(([k, l]) => `<button type="button" class="chip${N.bot === k ? " on" : ""}" data-b="${k}">${k !== "todos" ? `<img src="${esc(logoDe(k))}" alt="">` : ""}${esc(l)}</button>`).join("")}</div>` : "";
-  const fila = (n) => `<button type="button" class="notif${noLeida(n) ? " nu" : ""}" data-n="${n.id}">
+  const fila = (n) => `<div role="button" tabindex="0" class="notif${noLeida(n) ? " nu" : ""}" data-n="${n.id}">
     <span class="ico${pendiente(n) && critico(n) ? " urg" : ""}">${ic(icDe(n))}</span>
     <span class="rmid"><b>${esc(n.titulo)}${n.repeticiones > 1 ? ` <span class="nbot">×${n.repeticiones}</span>` : ""}</b><span>${esc([n.contact?.nombre, n.detalle].filter(Boolean).join(" · "))}</span>${A.channels.length > 1 && N.bot === "todos" ? `<span class="nbot"><img src="${esc(logoDe(n.channel_id))}" alt="">${esc(nomBot(n.channel_id))}</span>` : ""}</span>
-    <time>${fmtHora(n.created_at)}</time></button>`;
+    <span class="nend"><time>${fmtHora(n.created_at)}</time>${pendiente(n) ? `<button type="button" class="btn soft sm" data-res="${n.id}">Atendido</button>` : `<button type="button" class="iconbtn nx" data-quitar="${n.id}" aria-label="Quitar">${ic("x")}</button>`}</span></div>`;
   let body;
   if (N.tab === "pend") {
-    body = `<p class="nsub">Lo que espera que hagas algo. Se va solo cuando lo resuelves.</p>${chips}` + (pend.length ? `<div class="card">${pend.map(fila).join("")}</div>` : `<div class="empty"><b>${ic("check")}</b>Todo al día.<br>Nada espera por ustedes.</div>`);
+    body = `<p class="nsub">Lo que espera que hagas algo. Se va solo cuando lo resuelves, o con «Atendido» si ya lo viste.</p>${chips}` + (pend.length ? `<div class="card">${pend.map(fila).join("")}</div>` : `<div class="empty"><b>${ic("check")}</b>Todo al día.<br>Nada espera por ustedes.</div>`);
   } else {
     const grupos = new Map();
     hist.forEach((n) => { const d = fmtDia(n.created_at); if (!grupos.has(d)) grupos.set(d, []); grupos.get(d).push(n); });
-    body = `<p class="nsub">Todo lo que pasó en tus bots, por día. Lo leído se limpia solo a los 7 días.</p>${chips}
+    body = `<p class="nsub">Todo lo que pasó en tus bots, por día. «Limpiar» quita todo menos lo pendiente; lo leído se limpia solo a los 7 días.</p>${chips}
       <div class="nacts"><button type="button" class="btn soft sm" id="nleer"${sinLeer ? "" : " disabled"}>Marcar todo como leído</button><button type="button" class="btn soft sm" id="nlimpiar">Limpiar</button></div>` +
       (hist.length ? [...grupos].map(([d, ns]) => `<div class="nday">${esc(d)}</div><div class="card">${ns.map(fila).join("")}</div>`).join("") : `<div class="empty"><b>${ic("archive")}</b>El historial está limpio.</div>`);
   }
@@ -131,7 +131,7 @@ async function abrirN(n) {
   if (["pedido_lima", "pedido_provincia", "cambio_tras_despacho", "entrega_pedida"].includes(n.tipo) && A.tipo === "fisico") { ir("t4"); return; }
   if (["microapp_sin_correo", "cuenta_compartida"].includes(n.tipo)) { ir("t4"); return; }
   if (n.contact_id) { emit("abrirChat", n.contact_id); return; }
-  toast("Esto se revisa en el panel de la compu");
+  toast("Este aviso se gestiona desde el panel web de Nodo.");
 }
 async function clic(e) {
   const ch = e.target.closest("[data-b]"); if (ch) { N.bot = ch.dataset.b; pintar(); return; }
@@ -143,11 +143,28 @@ async function clic(e) {
   }
   if (e.target.closest("#nlimpiar")) {
     const lista = [...N.rows.values()].filter((n) => !oculta(n) && !pendiente(n) && (N.bot === "todos" || n.channel_id === N.bot)).map((n) => n.id);
-    if (!lista.length) { toast("No hay nada que limpiar"); return; }
+    if (!lista.length) { toast("No hay nada que limpiar. Lo pendiente se quita con «Atendido» o al resolverlo."); return; }
     lista.forEach((id) => N.quitadas.add(id)); campana(); pintar();
     const { error } = await supa.rpc("notif_quitar", { p_ids: lista });
     if (error) { lista.forEach((id) => N.quitadas.delete(id)); campana(); pintar(); toast("No se pudo limpiar", true); return; }
-    toast(`Se quitaron ${lista.length} notificaci${lista.length === 1 ? "ón" : "ones"}. Lo pendiente se queda.`); return;
+    const quedan = [...N.rows.values()].filter((n) => !oculta(n) && pendiente(n) && (N.bot === "todos" || n.channel_id === N.bot)).length;
+    toast(`Se quitaron ${lista.length} notificaci${lista.length === 1 ? "ón" : "ones"}.` + (quedan ? ` Quedan ${quedan} pendiente${quedan === 1 ? "" : "s"}: se van cuando las resuelves o tocas «Atendido».` : "")); return;
+  }
+  const qx = e.target.closest("[data-quitar]");
+  if (qx) {
+    const id = qx.dataset.quitar; N.quitadas.add(id); campana(); pintar();
+    const { error } = await supa.rpc("notif_quitar", { p_ids: [id] });
+    if (error) { N.quitadas.delete(id); campana(); pintar(); toast("No se pudo quitar", true); }
+    return;
+  }
+  const rs = e.target.closest("[data-res]");
+  if (rs) {
+    const n = N.rows.get(rs.dataset.res); if (!n) return;
+    if (VALIDAR.has(n.tipo) && !(await confirmar("Marcar como atendido", "Esto solo quita el aviso. Si el pago sigue sin validar, todavía lo vas a ver en la pestaña Pagos.", { si: "Marcar atendido" }))) return;
+    n.resuelta_at = new Date().toISOString(); N.leidas.add(n.id); campana(); pintar();
+    const { data, error } = await supa.rpc("notif_resolver", { p_id: n.id, p_por: null });
+    if (error || data === false) { n.resuelta_at = null; campana(); pintar(); toast("No se pudo marcar como atendido", true); return; }
+    toast("Marcado como atendido"); return;
   }
   const it = e.target.closest("[data-n]"); if (!it) return;
   const n = N.rows.get(it.dataset.n); if (n) abrirN(n);

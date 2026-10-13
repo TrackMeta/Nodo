@@ -303,7 +303,11 @@ html:not([data-theme="light"]) .send.mic{color:#06210f}
 .notif.nu .rmid b{font-weight:700}
 .notif.nu .rmid b::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--brand);flex:none}
 .notif .rmid > span{white-space:normal;font-size:12px}
+.notif{cursor:pointer;align-items:flex-start}
+.notif .nend{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none}
 .notif time{font-size:11px;color:var(--faint);flex:none}
+.notif .nx{width:30px;height:30px;color:var(--faint)}
+.notif .nx .i{width:16px;height:16px}
 .notif .ico.urg{background:var(--red-bg);color:var(--red)}
 .nbot{font-size:10.5px;font-weight:600;color:var(--faint)}
 

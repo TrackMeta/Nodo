@@ -57,7 +57,7 @@ async function clic(e) {
   const k = g.dataset.go;
   if (k === "notif") emit("abrirNotif");
   else if (k === "avisos") { pintaAvisos(); abrirCapa("avisos"); }
-  else if (k === "accesos") toast("Cambia a un bot de micro apps o ábrelo en el panel");
+  else if (k === "accesos") toast("Para ver los accesos, elige un bot de micro apps o ábrelos desde el panel web de Nodo.");
   else if (k === "tema") hoja("Tema", [{ t: "Automático (como el celular)", v: "auto", on: temaPref() === "auto" }, { t: "Claro", v: "light", on: temaPref() === "light" }, { t: "Oscuro", v: "dark", on: temaPref() === "dark" }], (o) => { ponerTema(o.v); pintar(); });
   else if (k === "salir") { if (await confirmar("Cerrar sesión", "Tendrás que volver a entrar con tu correo y contraseña. Este celular dejará de recibir avisos.", { si: "Cerrar sesión", peligro: true })) { emit("salir"); setTimeout(() => supa.auth.signOut(), 400); } }
 }

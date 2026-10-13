@@ -85,7 +85,7 @@ function pintaPedidos() {
     ${seg([["lima", `Lima ${lima.length}`], ["prov", `Provincia ${prov.length}`], ["espera", `Por pagar ${espera.length}`], ["parados", `Parados ${par.length}`]], f)}
     ${f === "espera" ? `<p class="sub" style="margin:0 2px">Se les pidió el adelanto y todavía no pagan.</p>` : ""}
     <div class="stack">${vis.slice(0, 150).map(tarjetaPedido).join("") || `<div class="empty"><b>${ic("box")}</b>Ningún pedido aquí.</div>`}</div>
-    <p class="note">El Excel del courier, la edición completa y el stock están en el panel de la compu.</p>`;
+    <p class="note">El Excel del courier, la edición completa y el stock se gestionan desde el panel web de Nodo.</p>`;
 }
 const TONO = { ok: "var(--green)", warn: "var(--amber)", info: "var(--brand)", bad: "var(--red)" };
 function tarjetaPedido(o) {
