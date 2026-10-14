@@ -4,14 +4,19 @@
 import { A, on, emit, supa, callFn, toast, cambiarBot, ir } from "./app.js";
 
 // Barra del celular (hora, señal, batería): del mismo color que la cabecera y con los íconos legibles.
+// En Android 15 la barra ya no se pinta: se ve el fondo de la ventana. NodoNativo.barras pinta ese fondo
+// y elige íconos claros u oscuros; StatusBar queda de respaldo para celulares más viejos.
 function barra(t) {
+  const claro = t === "light", color = claro ? "#FFFFFF" : "#131A26";
+  window.Capacitor?.Plugins?.NodoNativo?.barras?.({ color, claro }).catch?.(() => {});
   const SB = window.Capacitor?.Plugins?.StatusBar; if (!SB) return;
-  const claro = t === "light";
-  SB.setOverlaysWebView?.({ overlay: false }).catch?.(() => {});
   SB.setStyle?.({ style: claro ? "LIGHT" : "DARK" }).catch?.(() => {});
-  SB.setBackgroundColor?.({ color: claro ? "#FFFFFF" : "#131A26" }).catch?.(() => {});
+  SB.setBackgroundColor?.({ color }).catch?.(() => {});
 }
-import { SONIDOS } from "./mas.js";
+// Canales de Android: uno por sonido (los mismos de la campanita web). El sonido de un canal no se puede
+// cambiar después de creado: por eso llevan versión (nodo2_*) y los viejos se borran.
+const CANALES = [["suave", "Urgente · Suave"], ["alerta", "Urgente · Alerta"], ["timbre", "Urgente · Timbre"], ["caja", "Venta · Caja"], ["monedas", "Venta · Monedas"], ["campana", "Venta · Campanita"], ["silencio", "Sin sonido"]];
+const VIEJOS = ["nodo_alarma", "nodo_campana", "nodo_caja", "nodo_normal", "nodo_silencio"];
 
 const cap = () => window.Capacitor;
 const nativo = () => !!cap()?.isNativePlatform?.();
@@ -37,8 +42,12 @@ async function registrar() {
     window.NODO_APP_VERSION = info?.version || "1.0";
     if (!info?.firebase) { console.warn("[push] APK sin Firebase: los avisos con la app cerrada no están activos todavía"); return; }
     // Un canal de Android por sonido (el sonido de un canal no se puede cambiar después de crearlo).
-    for (const [k, l] of SONIDOS) {
-      await PN.createChannel({ id: "nodo_" + k, name: l, description: "Avisos de Nodo · " + l, importance: k === "silencio" ? 2 : 5, visibility: 1, vibration: k !== "silencio", lights: true, sound: ["alarma", "campana", "caja"].includes(k) ? k : undefined }).catch(() => {});
+    // Los sonidos nuevos (los de la web) vienen desde el APK n.º 7: en uno más viejo los .wav no existen y el
+    // canal quedaría mudo para siempre. Ahí se dejan los canales que ya tenía.
+    if (Number(info.build) < 7) { console.warn("[push] APK viejo: se mantienen los sonidos anteriores"); }
+    else for (const id of VIEJOS) await PN.deleteChannel({ id }).catch(() => {});
+    if (Number(info.build) >= 7) for (const [k, l] of CANALES) {
+      await PN.createChannel({ id: "nodo2_" + k, name: l, description: "Avisos de Nodo · " + l, importance: k === "silencio" ? 2 : 5, visibility: 1, vibration: k !== "silencio", lights: true, sound: k !== "silencio" ? k : undefined }).catch(() => {});
     }
     let p = await PN.checkPermissions();
     if (p.receive === "prompt" || p.receive === "prompt-with-rationale") p = await PN.requestPermissions();

@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="nodo_azul">#0B63E5</color>
+    <color name="nodo_fondo">#131A26</color>
 </resources>

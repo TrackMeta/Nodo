@@ -1,20 +1,20 @@
 // «Más»: notificaciones, tus bots (encender/apagar, como Canales), qué avisos me llegan (se guardan en
-// notificacion_usuario.prefs.app y los usa la función `push`), tema, panel completo y cerrar sesión.
+// notificacion_usuario.prefs: los sonidos se COMPARTEN con la campanita web; lo propio del celular en prefs.app),
+// tema, panel completo y cerrar sesión.
 import { A, $, esc, ic, on, emit, supa, abrirCapa, hoja, confirmar, toast, pintaBot, logoDe, temaPref, ponerTema } from "./app.js";
 import { updateChannel } from "../shell.js";
 import { N } from "./notif.js";
+import { TONOS_URGENTE, TONOS_VENTA, escuchar } from "./sonidos.js";
 
-// Tipos de aviso que puede silenciar cada persona en su celular. Lo urgente (pagos por validar, pide humano,
-// WhatsApp en riesgo) se puede bajar de volumen pero nunca apagar del todo (igual que en la campanita).
+// Tipos de aviso que puede apagar cada persona en su celular (igual siguen en la campanita).
 export const AV_TIPOS = [
-  { k: "pagos", lb: "Pagos por validar", d: "Ventas, adelantos, saldos y prepagos de Lima", ic: "banknote", urg: true, son: "alarma" },
-  { k: "humano", lb: "Cliente pide una persona", d: "Cuando el bot se pausa y espera que alguien tome el chat", ic: "user", urg: true, son: "alarma" },
-  { k: "ventas", lb: "Ventas y pedidos nuevos", d: "Cada venta que cierra el bot", ic: "party", son: "caja" },
-  { k: "atencion", lb: "Otros avisos de clientes", d: "Mayoristas, cambios de entrega, preguntas, vuelto…", ic: "message", son: "campana" },
-  { k: "sistema", lb: "Tu WhatsApp y el sistema", d: "Restricción de Meta, campañas detenidas, stock", ic: "shield", urg: true, son: "alarma" },
+  { k: "pagos", lb: "Pagos por validar", d: "Ventas, adelantos, saldos y prepagos de Lima", ic: "banknote", urg: true },
+  { k: "humano", lb: "Cliente pide una persona", d: "Cuando el bot se pausa y espera que alguien tome el chat", ic: "user", urg: true },
+  { k: "ventas", lb: "Ventas y pedidos nuevos", d: "Cada venta que cierra el bot", ic: "party" },
+  { k: "atencion", lb: "Otros avisos de clientes", d: "Mayoristas, cambios de entrega, preguntas, vuelto…", ic: "message" },
+  { k: "sistema", lb: "Tu WhatsApp y el sistema", d: "Restricción de Meta, campañas detenidas, stock", ic: "shield", urg: true },
 ];
-export const SONIDOS = [["alarma", "Alarma insistente"], ["campana", "Campana"], ["caja", "Caja registradora"], ["normal", "Sonido del celular"], ["silencio", "Sin sonido (solo aparece)"]];
-const defApp = () => ({ tipos: Object.fromEntries(AV_TIPOS.map((t) => [t.k, true])), sonidos: Object.fromEntries(AV_TIPOS.map((t) => [t.k, t.son])), bots: {}, dnd: { on: false, desde: "23:00", hasta: "07:00", urg: true } });
+const defApp = () => ({ tipos: Object.fromEntries(AV_TIPOS.map((t) => [t.k, true])), otros: "suave", bots: {}, dnd: { on: false, desde: "23:00", hasta: "07:00", urg: true } });
 let APP = defApp();
 
 export function init() {
@@ -31,7 +31,7 @@ function pintar() {
   const tema = temaPref(), TEMA_LBL = { auto: "Automático (como el celular)", light: "Claro", dark: "Oscuro" };
   $("#masPad").innerHTML = `<h2 class="h">Más</h2>
     <div class="card"><button type="button" class="li" data-go="notif"><span class="ico">${ic("bell")}</span><span class="rmid"><b>Notificaciones</b><span>${vivas ? `${vivas} pendiente${vivas === 1 ? "" : "s"}` : "Todo al día"}</span></span>${ic("chevronRight")}</button>
-      <button type="button" class="li" data-go="avisos"><span class="ico">${ic("config")}</span><span class="rmid"><b>Qué avisos me llegan</b><span>Por tipo, por bot, sonido y No molestar</span></span>${ic("chevronRight")}</button>
+      <button type="button" class="li" data-go="avisos"><span class="ico">${ic("config")}</span><span class="rmid"><b>Qué avisos me llegan</b><span>Sonidos, por tipo, por bot y No molestar</span></span>${ic("chevronRight")}</button>
       ${A.tieneApps && A.tipo !== "apps" ? `<button type="button" class="li" data-go="accesos"><span class="ico">${ic("key")}</span><span class="rmid"><b>Accesos de micro apps</b><span>Este bot también vende apps</span></span>${ic("chevronRight")}</button>` : ""}</div>
     <div class="card"><div class="ttl">Tus bots</div>${A.channels.map((c) => `<div class="li"><span class="ico"><img src="${esc(logoDe(c.id))}" alt=""></span><span class="rmid"><b>${esc(c.nombre)}</b><span>${c.bot_apagado ? "Apagado · el bot no contesta" : "Encendido"}${c.id === A.ch ? " · el que estás viendo" : ""}</span></span><button type="button" class="sw${c.bot_apagado ? "" : " on"}" data-sw="${c.id}" aria-label="Encender o apagar ${esc(c.nombre)}"></button></div>`).join("")}</div>
     <div class="card"><div class="ttl">Pantalla</div>
@@ -63,13 +63,25 @@ async function clic(e) {
 }
 
 // ═════════ Qué avisos me llegan ═════════
+// Los sonidos son LOS MISMOS de la campanita web y se comparten con ella (prefs.sonido, prefs.tonoUrgente,
+// prefs.venta): si los cambias aquí, cambian en el panel, y al revés.
+const P = () => N.prefs || {};
+const tonoU = () => (TONOS_URGENTE.some((t) => t[0] === P().tonoUrgente) ? P().tonoUrgente : "suave");
+const venta = () => ({ sonido: true, tono: "caja", volumen: 70, ...(P().venta || {}) });
+const tonos = (lista, actual, attr, off) => `<div class="tonos${off ? " off" : ""}">${lista.map(([k, l, d]) => `<button type="button" class="tono${actual === k ? " on" : ""}" ${attr}="${k}" title="${esc(d)}">${ic(actual === k ? "check" : "play")}<span>${l}</span></button>`).join("")}</div>`;
 function pintaAvisos() {
-  const d = APP.dnd;
+  const d = APP.dnd, v = venta();
   $("#avbody").innerHTML = `
-    <p class="nsub">Esto es solo para este usuario y su celular. Lo que apagues no suena, pero sigue apareciendo en la campanita.</p>
-    <div class="card"><div class="ttl">Por tipo</div>${AV_TIPOS.map((t) => `
-      <div class="arow"><span class="ico">${ic(t.ic)}</span>
-        <button type="button" class="rmid" data-son="${t.k}"><b>${t.lb} ${t.urg ? '<span class="urgtag">Urgente</span>' : ""}</b><span>${t.d}</span><span style="color:var(--brand)">Sonido: ${esc((SONIDOS.find((s) => s[0] === APP.sonidos[t.k]) || SONIDOS[3])[1])}</span></button>
+    <p class="nsub">Solo para tu usuario. Lo que apagues no suena, pero sigue apareciendo en la campanita. Los sonidos son los mismos del panel web: si los cambias aquí, cambian allá también.</p>
+    <div class="card"><div class="ttl">Sonidos</div>
+      <div class="arow"><span class="ico">${ic("alert")}</span><span class="rmid"><b>Lo urgente</b><span>Pagos por validar, cliente que pide una persona, tu WhatsApp en riesgo</span></span><button type="button" class="sw${P().sonido !== false ? " on" : ""}" id="swUrg" aria-label="Sonido de lo urgente"></button></div>
+      ${tonos(TONOS_URGENTE, tonoU(), "data-tu", P().sonido === false)}
+      <div class="arow"><span class="ico">${ic("banknote")}</span><span class="rmid"><b>Las ventas</b><span>Plata que entró o una venta ya comprometida</span></span><button type="button" class="sw${v.sonido !== false ? " on" : ""}" id="swVenta" aria-label="Sonido de las ventas"></button></div>
+      ${tonos(TONOS_VENTA, v.tono, "data-tv", v.sonido === false)}
+      <div class="arow"><span class="ico">${ic("message")}</span><span class="rmid"><b>Los demás avisos</b><span>Mayoristas, preguntas, cambios de entrega… (con el sonido suave)</span></span><button type="button" class="sw${APP.otros !== "silencio" ? " on" : ""}" id="swOtros" aria-label="Sonido de los demás avisos"></button></div>
+      <p class="nsub" style="padding:0 14px 12px">Toca un sonido para escucharlo. El volumen lo pone el celular.</p></div>
+    <div class="card"><div class="ttl">Qué avisos me llegan</div>${AV_TIPOS.map((t) => `
+      <div class="arow"><span class="ico">${ic(t.ic)}</span><span class="rmid"><b>${t.lb} ${t.urg ? '<span class="urgtag">Urgente</span>' : ""}</b><span>${t.d}</span></span>
         <button type="button" class="sw${APP.tipos[t.k] !== false ? " on" : ""}" data-tipo="${t.k}" aria-label="Avisar: ${t.lb}"></button></div>`).join("")}</div>
     ${A.channels.length > 1 ? `<div class="card"><div class="ttl">Por bot</div>${A.channels.map((c) => `<div class="arow"><span class="ico"><img src="${esc(logoDe(c.id))}" alt=""></span><span class="rmid"><b>${esc(c.nombre)}</b></span><button type="button" class="sw${APP.bots[c.id] !== false ? " on" : ""}" data-avbot="${c.id}" aria-label="Avisos de ${esc(c.nombre)}"></button></div>`).join("")}</div>` : ""}
     <div class="card"><div class="ttl">No molestar</div>
@@ -80,9 +92,21 @@ function pintaAvisos() {
 }
 async function clicAvisos(e) {
   const b = e.target.closest("button"); if (!b) return;
-  if (b.dataset.tipo) { const t = AV_TIPOS.find((x) => x.k === b.dataset.tipo); if (t.urg && APP.tipos[t.k] !== false && !(await confirmar("Apagar un aviso urgente", `Si apagas «${t.lb}» no te sonará el celular cuando pase. Igual lo verás en la campanita.`, { si: "Apagar igual", peligro: true }))) return; APP.tipos[t.k] = APP.tipos[t.k] === false; }
+  const pr = { ...P() };
+  if (b.dataset.tu) { escuchar(b.dataset.tu); pr.tonoUrgente = b.dataset.tu; pr.sonido = true; N.prefs = pr; }
+  else if (b.dataset.tv) { escuchar(b.dataset.tv); pr.venta = { ...venta(), tono: b.dataset.tv, sonido: true }; N.prefs = pr; }
+  else if (b.id === "swUrg") {
+    if (pr.sonido !== false && !(await confirmar("Silenciar lo urgente", "Los pagos por validar y los clientes que piden una persona llegarán sin sonido (en el celular y en el panel).", { si: "Silenciar igual", peligro: true }))) return;
+    pr.sonido = pr.sonido === false; N.prefs = pr;
+  }
+  else if (b.id === "swVenta") { pr.venta = { ...venta(), sonido: venta().sonido === false }; N.prefs = pr; }
+  else if (b.id === "swOtros") APP.otros = APP.otros === "silencio" ? "suave" : "silencio";
+  else if (b.dataset.tipo) {
+    const t = AV_TIPOS.find((x) => x.k === b.dataset.tipo);
+    if (t.urg && APP.tipos[t.k] !== false && !(await confirmar("Apagar un aviso urgente", `Si apagas «${t.lb}» no te llegará al celular cuando pase. Igual lo verás en la campanita.`, { si: "Apagar igual", peligro: true }))) return;
+    APP.tipos[t.k] = APP.tipos[t.k] === false;
+  }
   else if (b.dataset.avbot) APP.bots[b.dataset.avbot] = APP.bots[b.dataset.avbot] === false;
-  else if (b.dataset.son) { const t = AV_TIPOS.find((x) => x.k === b.dataset.son); hoja(`Sonido · ${t.lb}`, SONIDOS.map(([k, l]) => ({ t: l, v: k, on: APP.sonidos[t.k] === k })), (o) => { APP.sonidos[t.k] = o.v; guardar(); pintaAvisos(); }); return; }
   else if (b.id === "dndsw") APP.dnd.on = !APP.dnd.on;
   else if (b.id === "dndurg") APP.dnd.urg = !APP.dnd.urg;
   else if (b.id === "avProbar") { emit("pushPrueba"); return; }

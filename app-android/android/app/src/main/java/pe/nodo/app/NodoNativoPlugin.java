@@ -9,6 +9,30 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 // Datos del APK para la app web: si trae Firebase (avisos con la app cerrada) y su versión.
 @CapacitorPlugin(name = "NodoNativo")
 public class NodoNativoPlugin extends Plugin {
+    // Barras del celular (arriba: hora/señal; abajo: navegación). Con Android 15 la app va de borde a borde y
+    // el color de la barra ya no se puede pintar: lo que se ve detrás es el fondo de la ventana. Se pinta ese
+    // fondo del color de la cabecera y se eligen íconos claros u oscuros según el tema.
+    @PluginMethod
+    public void barras(PluginCall call) {
+        final String color = call.getString("color", "#131A26");
+        final boolean claro = Boolean.TRUE.equals(call.getBoolean("claro", false));
+        getActivity().runOnUiThread(() -> {
+            try {
+                android.view.Window w = getActivity().getWindow();
+                int c = android.graphics.Color.parseColor(color);
+                w.getDecorView().setBackgroundColor(c);
+                w.setStatusBarColor(c);
+                w.setNavigationBarColor(c);
+                androidx.core.view.WindowInsetsControllerCompat ic = androidx.core.view.WindowCompat.getInsetsController(w, w.getDecorView());
+                ic.setAppearanceLightStatusBars(claro);
+                ic.setAppearanceLightNavigationBars(claro);
+                call.resolve();
+            } catch (Throwable t) {
+                call.reject(String.valueOf(t.getMessage()));
+            }
+        });
+    }
+
     @PluginMethod
     public void info(PluginCall call) {
         JSObject r = new JSObject();

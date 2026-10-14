@@ -13,6 +13,8 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- Detrás de la barra del celular, antes de que cargue la app: el oscuro de la cabecera -->
+        <item name="android:windowBackground">@color/nodo_fondo</item>
     </style>
 
 

@@ -311,6 +311,12 @@ html:not([data-theme="light"]) .send.mic{color:#06210f}
 .arow{display:flex;align-items:center;gap:12px;padding:11px 14px;border-top:1px solid var(--border);width:100%;text-align:left}
 .arow .rmid b{font-size:14px;white-space:normal;flex-wrap:wrap}
 .arow .rmid > span{font-size:12px;white-space:normal}
+/* sonidos (como la barra de tonos de la campanita web) */
+.tonos{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 14px 12px}
+.tonos.off{opacity:.45;pointer-events:none}
+.tono{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 6px;border-radius:12px;border:1px solid var(--border-strong)!important;font-size:13px;font-weight:600;color:var(--muted)}
+.tono .i{width:15px;height:15px}
+.tono.on{border-color:var(--brand)!important;background:var(--brand-bg);color:var(--brand)}
 .urgtag{font-size:10px;font-weight:600;color:var(--red);background:var(--red-bg);padding:1px 6px;border-radius:999px}
 .horas{display:flex;gap:10px;padding:4px 14px 12px;align-items:center;font-size:13px;color:var(--muted)}
 .horas input{font:inherit;font-size:14px;padding:8px 10px;border-radius:10px;border:1px solid var(--border-strong);background:var(--surface-2);color:var(--text)}

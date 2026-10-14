@@ -14,8 +14,12 @@ import { serviceClient, userClient } from "../_shared/db.ts";
 
 const db = serviceClient();
 const VALIDAR = new Set(["adelanto_validar", "saldo_validar", "pago_digital_validar", "pago_extra_validar", "prepago_lima_validar", "entrega_fallida"]);
-const SONIDOS = new Set(["alarma", "campana", "caja", "normal", "silencio"]);
-const DEF_SONIDO: Record<string, string> = { pagos: "alarma", humano: "alarma", ventas: "caja", atencion: "campana", sistema: "alarma" };
+// Sonidos = los de la campanita web (prefs.tonoUrgente / prefs.venta.tono, compartidos con el panel).
+const TONOS_URG = new Set(["suave", "alerta", "timbre"]), TONOS_VENTA = new Set(["caja", "monedas", "campana"]);
+// APK viejo (antes del n.º 7) tiene otros canales: se les manda al más parecido
+const LEGADO: Record<string, string> = { suave: "nodo_alarma", alerta: "nodo_alarma", timbre: "nodo_alarma", caja: "nodo_caja", monedas: "nodo_caja", campana: "nodo_campana", silencio: "nodo_silencio" };
+const buildDe = (v: string | null) => Number(String(v ?? "").split(".").pop()) || 0;
+const canalPara = (tono: string, appVersion: string | null) => (buildDe(appVersion) >= 7 ? "nodo2_" + tono : LEGADO[tono] ?? "nodo_campana");
 
 function categoria(n: any): string {
   if (VALIDAR.has(n.tipo)) return "pagos";
@@ -99,10 +103,12 @@ Deno.serve(async (req) => {
     const { data: u } = await userClient(req.headers.get("Authorization") ?? "").auth.getUser();
     const uid = u?.user?.id; if (!uid) return json({ error: "no_auth" }, 401);
     if (!sa) return json({ ok: false, motivo: "sin_fcm" });
-    const { data: devs } = await db.from("push_dispositivos").select("token").eq("user_id", uid);
+    const { data: devs } = await db.from("push_dispositivos").select("token,app_version").eq("user_id", uid);
+    const { data: up } = await db.from("notificacion_usuario").select("prefs").eq("user_id", uid).maybeSingle();
+    const pp: any = (up as any)?.prefs || {}; const tPrueba = TONOS_URG.has(pp.tonoUrgente) ? pp.tonoUrgente : "suave";
     let enviados = 0;
     for (const d of devs ?? []) {
-      const r = await enviar(sa, (d as any).token, { titulo: "Aviso de prueba de Nodo", cuerpo: "Si ves esto con la app cerrada, los avisos funcionan.", data: { ir: "notif" }, canal: "nodo_campana", tag: "prueba" });
+      const r = await enviar(sa, (d as any).token, { titulo: "Aviso de prueba de Nodo", cuerpo: "Si ves esto con la app cerrada, los avisos funcionan.", data: { ir: "notif" }, canal: canalPara(tPrueba, (d as any).app_version), tag: "prueba" });
       if (r === "ok") enviados++; else if (r === "borrar") await db.from("push_dispositivos").delete().eq("token", (d as any).token);
     }
     return json({ ok: enviados > 0, enviados, motivo: devs?.length ? undefined : "sin_dispositivos" });
@@ -125,7 +131,7 @@ Deno.serve(async (req) => {
   const uids = (mem ?? []).map((m: any) => m.user_id);
   if (!uids.length) return json({ ok: true, omitido: "sin_miembros" });
   const [{ data: devs }, { data: prefs }, { data: chs }] = await Promise.all([
-    db.from("push_dispositivos").select("token,user_id").in("user_id", uids),
+    db.from("push_dispositivos").select("token,user_id,app_version").in("user_id", uids),
     db.from("notificacion_usuario").select("user_id,prefs").in("user_id", uids),
     db.from("channels").select("id").eq("account_id", (ch as any).account_id).eq("activo", true),
   ]);
@@ -142,12 +148,17 @@ Deno.serve(async (req) => {
     if (!urgente && Array.isArray(p.ocultos) && p.ocultos.includes(nn.tipo)) { saltados++; continue; }
     if (app.tipos && app.tipos[cat] === false) { saltados++; continue; }
     if (app.bots && app.bots[nn.channel_id] === false) { saltados++; continue; }
-    let son = String(app.sonidos?.[cat] ?? DEF_SONIDO[cat] ?? "normal"); if (!SONIDOS.has(son)) son = "normal";
+    // Mismo criterio que la campanita web: lo urgente con su tono (o mudo si apagaste el sonido de lo urgente),
+    // las ventas con el suyo, y lo demás con el suave salvo que lo hayas silenciado en el celular.
+    let son: string;
+    if (urgente) son = p.sonido === false ? "silencio" : TONOS_URG.has(p.tonoUrgente) ? p.tonoUrgente : "suave";
+    else if (cat === "ventas") { const v = p.venta || {}; son = v.sonido === false ? "silencio" : TONOS_VENTA.has(v.tono) ? v.tono : "caja"; }
+    else son = app.otros === "silencio" ? "silencio" : "suave";
     if (enNoMolestar(app.dnd, (ch as any).timezone || "America/Lima") && !(app.dnd?.urg !== false && urgente)) son = "silencio";
     const r = await enviar(sa, d.token, {
       titulo: nn.titulo + (nn.repeticiones > 1 ? ` (×${nn.repeticiones})` : ""), cuerpo,
       data: { notificacion_id: nn.id, channel_id: nn.channel_id, contact_id: nn.contact_id ?? "", order_id: nn.order_id ? String(nn.order_id) : "", tipo: nn.tipo, ir },
-      canal: "nodo_" + son, tag: nn.id,
+      canal: canalPara(son, d.app_version), tag: nn.id,
     });
     if (r === "ok") enviados++;
     else if (r === "borrar") await db.from("push_dispositivos").delete().eq("token", d.token);
