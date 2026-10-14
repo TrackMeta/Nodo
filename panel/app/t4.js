@@ -5,8 +5,9 @@ import { pageAll } from "../shell.js";
 import { computePreset, startOfDayTZ, endOfDayTZ } from "../date-range.js";
 import * as O from "../orders.js";
 import { esPrueba } from "./comun.js";
+import { botonFechas, elegirFechas } from "./fechas.js";
 
-const T = { seg: { digital: "hoy", fisico: "lima", apps: "todos" }, ventas: [], pedidos: [], entregas: null, accesos: [], pend: [], apps: [], cargando: false };
+const T = { rango: computePreset("hoy"), seg: { fisico: "lima", apps: "todos" }, ventas: [], pedidos: [], entregas: null, accesos: [], pend: [], apps: [], cargando: false };
 export function init() {
   on("bot", () => { T.ventas = []; T.pedidos = []; T.accesos = []; T.entregas = null; if (A.tab === "t4") cargar(); else badge(); });
   on("orden", () => { if (A.tab === "t4" && A.tipo !== "apps") cargarPronto(); });
@@ -38,14 +39,14 @@ const seg = (opts, sel) => `<div class="seg" data-seg>${opts.map(([k, l]) => `<b
 
 // ═════════ Ventas (digital) ═════════
 async function cargarVentas() {
-  const k = T.seg.digital, r = computePreset(k === "7d" ? "7d" : k);
+  const r = T.rango;   // (13-oct) el mismo selector de fechas que Hoy
   const desde = startOfDayTZ(r.from).toISOString(), hasta = new Date(endOfDayTZ(r.to).getTime() + 1).toISOString();
   if (!T.ventas.length) $("#t4Pad").innerHTML = `<div class="cargando">Cargando ventas…</div>`;
   const rows = await todo((f, h) => supa.from("orders").select("id,amount,currency,order_bumps,estado,created_at,confirmed_at,shipping,contact_id,contact:contact_id(nombre,wa_id,source),product:product_id(nombre,emoji)").eq("channel_id", A.ch).eq("estado", "confirmada").gte("created_at", desde).lt("created_at", hasta).order("created_at", { ascending: false }).order("id").range(f, h));
   T.ventas = rows.filter((o) => !esPrueba(o.contact));
   const total = T.ventas.reduce((s, o) => s + O.cobrado(o), 0);
   $("#t4Pad").innerHTML = `<h2 class="h">Ventas</h2><p class="sub">Ventas digitales cobradas (confirmadas).</p>
-    ${seg([["hoy", "Hoy"], ["ayer", "Ayer"], ["7d", "7 días"]], k)}
+    ${botonFechas(r)}
     <div class="kpis"><div class="kpi"><small>Ventas</small><b class="num">${T.ventas.length}</b></div><div class="kpi"><small>Cobrado</small><b class="num">${sol(total)}</b></div></div>
     <div class="list">${T.ventas.map((o) => { const c = o.contact || {}; return `<button type="button" class="row" data-chat="${o.contact_id}">
       ${avatar(o.contact_id, c.nombre, c.wa_id)}
@@ -259,6 +260,7 @@ async function abrirAcceso(id) {
 
 // ── Clics de la pestaña ──
 function clic(e) {
+  if (e.target.closest("[data-dsel]")) { elegirFechas(T.rango, (r) => { T.rango = r; T.ventas = []; cargar(); }); return; }
   const sg = e.target.closest("[data-seg] button, .kpi.tap");
   if (sg) { T.seg[A.tipo] = sg.dataset.f; if (A.tipo === "fisico") pintaPedidos(); else if (A.tipo === "apps") pintaAccesos(); else cargar(); return; }
   const ch = e.target.closest("[data-chat]"); if (ch && ch.dataset.chat) { emit("abrirChat", ch.dataset.chat); return; }

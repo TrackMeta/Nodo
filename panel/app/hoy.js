@@ -1,10 +1,11 @@
 // «Hoy» (Resumen) en el celular: lo que espera por ti, lo cobrado y la ganancia (con su detalle), el gráfico de
 // ventas, los números del Dashboard con flechas contra el período anterior, horarios, «Cómo avanzan», anuncios y un bloque
 // según el tipo de bot. Mismas consultas y la misma cuenta que dashboard.html (vista «Todo»). Se pone al día solo.
-import { A, $, esc, ic, on, emit, supa, invoke, abrirHoja, hoja, toast, sol, ir } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, invoke, abrirHoja, sol, ir } from "./app.js";
 import { pageAll, getChannel, getUsdRate, factorAds, adsDeCuentasQuitadas } from "../shell.js";
-import { PRESETS, computePreset, startOfDayTZ, endOfDayTZ, ymd, ymdTZ, getTZ } from "../date-range.js";
+import { computePreset, startOfDayTZ, endOfDayTZ, ymd, ymdTZ, getTZ } from "../date-range.js";
 import * as O from "../orders.js";
+import { fDia, fRango, lblDe, botonFechas, elegirFechas } from "./fechas.js";
 
 let R = computePreset("hoy");
 let _gen = 0, ULT = null;
@@ -20,10 +21,6 @@ export function init() {
   on("pendientesT4", (n) => { PEND.t4 = n; pintaEspera(); });
   $("#hoyPad").addEventListener("click", clic);
 }
-const MES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-const fDia = (d) => `${d.getDate()} ${MES[d.getMonth()]}`;
-const fRango = (r) => (ymd(r.from) === ymd(r.to) ? fDia(r.to) : `${fDia(r.from)} – ${fDia(r.to)}`);
-const lblDe = (r) => (r.preset === "custom" ? "Personalizado" : (PRESETS.find((p) => p[0] === r.preset) || [, "Período"])[1]);
 const todo = async (mk) => (await pageAll(mk)).data || [];
 const unDia = (r) => ymd(r.from) === ymd(r.to);
 const horaTZ = (ts) => Number(new Intl.DateTimeFormat("en-GB", { timeZone: getTZ(), hour: "2-digit", hour12: false }).format(new Date(ts))) % 24;
@@ -247,31 +244,12 @@ function detalleGanancia() {
     ${n.sinCosto ? `<p class="alert">A ${n.sinCosto} pedido${n.sinCosto === 1 ? "" : "s"} le falta el costo del producto o el flete: no suman a la ganancia hasta cargarlos en el panel.</p>` : ""}`);
 }
 function clic(e) {
-  if (e.target.closest("#dsel")) { elegirFechas(); return; }
+  if (e.target.closest("[data-dsel]")) { elegirFechas(R, (r) => { R = r; cargar(); }); return; }
   if (e.target.closest("#verGanancia")) { detalleGanancia(); return; }
   const b = e.target.closest("[data-ir]"); if (!b) return;
   const d = b.dataset.ir;
   if (d === "humano") { ir("chats"); emit("verHumano"); } else ir(d);
 }
 function cabecera(r) {
-  return `<h2 class="h">Resumen</h2><button type="button" class="dsel" id="dsel">${ic("calendar")}<span><b>${esc(lblDe(r))}</b><small>${fRango(r)}</small></span>${ic("chevronDown")}</button>`;
-}
-function elegirFechas() {
-  const ops = PRESETS.map((p) => { const r = computePreset(p[0]); return { t: p[1], small: p[0] === "max" ? "desde el inicio" : fRango(r), on: R.preset === p[0], v: p[0] }; });
-  ops.push({ t: "Personalizado…", small: R.preset === "custom" ? fRango(R) : "elige desde y hasta", on: R.preset === "custom", v: "custom" });
-  hoja("Ver datos de", ops, (o) => {
-    if (o.v !== "custom") { R = computePreset(o.v); cargar(); return; }
-    const hoyR = computePreset("hoy"), d7 = computePreset("7d");
-    abrirHoja(`<h3>Personalizado</h3><p class="lead">Elige el primer y el último día (hora del negocio).</p>
-      <div class="grid2" style="margin-bottom:10px"><label class="flabel" style="margin:0">Desde<input class="inpt" type="date" id="dd1" max="${ymd(hoyR.to)}" value="${ymd(R.preset === "custom" ? R.from : d7.from)}"></label><label class="flabel" style="margin:0">Hasta<input class="inpt" type="date" id="dd2" max="${ymd(hoyR.to)}" value="${ymd(R.preset === "custom" ? R.to : hoyR.to)}"></label></div>
-      <button type="button" class="btn blue" style="width:100%" id="ddgo">Ver estos días</button>`, (sh, cerrar) => {
-      $("#ddgo", sh).onclick = () => {
-        const p = (v) => { const [y, mo, d] = String(v).split("-").map(Number); return new Date(y, mo - 1, d); };
-        let a = p($("#dd1", sh).value), b = p($("#dd2", sh).value);
-        if (isNaN(a) || isNaN(b)) { toast("Elige las dos fechas", true); return; }
-        if (a > b) [a, b] = [b, a];
-        R = { from: a, to: b, preset: "custom" }; cerrar(); cargar();
-      };
-    });
-  });
+  return `<h2 class="h">Resumen</h2>${botonFechas(r)}`;
 }
