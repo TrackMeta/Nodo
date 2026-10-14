@@ -159,6 +159,7 @@ $("#tabs").addEventListener("click", (e) => { const b = e.target.closest(".tab")
 let _hoja = null;
 export function abrirHoja(html, bind) {
   const sh = $("#sheet"), bg = $("#sheetbg");
+  sh.classList.remove("arriba");
   sh.innerHTML = `<div class="grab"></div>` + html;
   pintaIconos(sh);
   _hoja = { abierta: true };
@@ -173,6 +174,20 @@ export function cerrarHoja() {
   _hoja = null; $("#sheet").classList.remove("on"); $("#sheetbg").classList.remove("on");
   quitarCentinela();
 }
+// Teclado sobre una hoja con casillas: si la pantalla no se achicó al abrirse el teclado (APK de antes del 14-oct, que
+// no le dejaba lugar), la hoja se pasa ARRIBA mientras escribes para que el teclado no la tape.
+let ALTO = innerHeight;
+const escribiendo = () => !!document.activeElement?.matches?.("input:not([type=checkbox]):not([type=radio]),textarea,select");
+addEventListener("resize", () => { if (!escribiendo()) ALTO = Math.max(innerHeight, window.visualViewport?.height || 0); });
+document.addEventListener("focusin", (e) => {
+  const sh = e.target.closest?.("#sheet"); if (!sh || !escribiendo()) return;
+  setTimeout(() => {
+    if (!_hoja || document.activeElement !== e.target) return;
+    const alto = Math.min(innerHeight, window.visualViewport?.height || innerHeight);
+    if (alto > ALTO - 120) sh.classList.add("arriba");   // la pantalla no se achicó: el teclado está encima
+    e.target.scrollIntoView({ block: "nearest" });
+  }, 450);
+});
 export function hoja(titulo, ops, alElegir, lead) {
   abrirHoja(`<h3>${esc(titulo)}</h3>${lead ? `<p class="lead">${esc(lead)}</p>` : ""}` + ops.map((o, i) => `<button type="button" class="opt${o.on ? " on" : ""}" data-i="${i}">${o.img ? `<img class="oimg" src="${esc(o.img)}" alt="">` : ""}${o.icono ? ic(o.icono) : ""}${o.dot ? `<span class="dot" style="background:${o.dot}"></span>` : ""}${esc(o.t)}${o.on ? " " + ic("check") : ""}${o.small ? `<small>${esc(o.small)}</small>` : ""}</button>`).join(""),
     (sh, cerrar) => sh.querySelectorAll(".opt").forEach((b) => (b.onclick = () => { cerrar(); alElegir && setTimeout(() => alElegir(ops[+b.dataset.i]), 200); })));

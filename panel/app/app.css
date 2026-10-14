@@ -457,3 +457,7 @@ textarea.inpt{min-height:80px;resize:vertical}
 .waal-it{border-left:4px solid var(--red);background:var(--red-bg);border-radius:10px;padding:10px 12px;margin-bottom:8px}
 .waal-it.ama{border-left-color:var(--amber);background:var(--amber-bg)}
 .waal-it p{margin:4px 0 0;font-size:13px;line-height:1.45}
+/* Hoja con casillas mientras se escribe, en celulares donde el teclado no achica la pantalla: va arriba */
+.sheet.arriba{top:0;bottom:auto;max-height:55%;border-radius:0 0 22px 22px;padding-top:calc(10px + env(safe-area-inset-top,0px));padding-bottom:16px;transform:translateY(-105%)}
+.sheet.arriba.on{transform:none}
+.sheet.arriba .grab{display:none}
