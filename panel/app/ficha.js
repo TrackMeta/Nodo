@@ -1,6 +1,6 @@
 // Ficha del cliente (loadContactPanel de la Bandeja, en una columna): pedido, Memoria IA, etapa del embudo,
 // origen del lead, etiquetas y medios. Cambia etapa y etiquetas igual que el panel.
-import { A, $, esc, ic, on, emit, supa, avatar, quienDe, whoTxt, abrirCapa, capaAbierta, toast, verFoto, sol, fmtHora } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, avatar, quienDe, whoTxt, abrirCapa, capaAbierta, cerrarCapa, confirmar, toast, verFoto, sol, fmtHora } from "./app.js";
 import { STAGES, ETAPA } from "./comun.js";
 import { tagHex } from "./chats.js";
 import { CHAT } from "./chat.js";
@@ -20,7 +20,7 @@ async function abrir(cid) {
   $("#fibody").innerHTML = `<div class="cargando">Cargando ficha…</div>`;
   abrirCapa("ficha", () => { F = null; });
   const [ct, tags, asig, campos, vals, media, ord, conv] = await Promise.all([
-    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,source,ad_id,ad_ref,memoria_ia,primera_interaccion,ultimo_mensaje_cliente_at,created_at,product:products(nombre,emoji)").eq("id", cid).maybeSingle(),
+    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,bloqueado,source,ad_id,ad_ref,memoria_ia,primera_interaccion,ultimo_mensaje_cliente_at,created_at,product:products(nombre,emoji)").eq("id", cid).maybeSingle(),
     supa.from("tags").select("id,nombre,color").eq("channel_id", A.ch).order("nombre"),
     supa.from("contact_tags").select("tag_id").eq("contact_id", cid),
     supa.from("custom_fields").select("id,nombre,key").eq("channel_id", A.ch),
@@ -77,6 +77,7 @@ function pintar() {
     <div class="card"><div class="ttl">Acciones</div>
       <button type="button" class="li" data-acc="seg"><span class="ico">${ic("clock")}</span><span class="rmid"><b>${F.conv.requiere_humano ? "Quitar de Seguimiento" : "Marcar Seguimiento"}</b><span>Para acordarte de volver a este chat</span></span></button>
       <button type="button" class="li" data-acc="arch"><span class="ico">${ic("archive")}</span><span class="rmid"><b>${F.conv.archivada ? "Sacar de archivados" : "Archivar chat"}</b><span>Se esconde de la lista (no se borra)</span></span></button>
+      <button type="button" class="li${c.bloqueado ? "" : " peligro"}" data-blq><span class="ico">${ic(c.bloqueado ? "lock" : "ban")}</span><span class="rmid"><b>${c.bloqueado ? "Desbloquear contacto" : "Bloquear contacto"}</b><span>${c.bloqueado ? "Vuelve a la lista y el bot le contesta de nuevo" : "El bot deja de responderle y sale de la lista"}</span></span></button>
     </div>`;
 }
 async function evento(tipo, titulo, detalle) { try { await supa.from("contact_events").insert({ channel_id: A.ch, contact_id: F.c.id, tipo, titulo, detalle: detalle || null, meta: { por: A.nombre, desde: "app" } }); } catch (_) { /* */ } }
@@ -100,6 +101,19 @@ async function clic(e) {
     tenia ? F.asig.delete(id) : F.asig.add(id);
     evento(tenia ? "etiqueta_del" : "etiqueta_add", `${tenia ? "Quitó" : "Puso"} la etiqueta «${t?.nombre}»`);
     pintar(); emit("conv", { contact_id: F.c.id }); return;
+  }
+  // Bloquear / desbloquear: igual que el menú del chat en la Bandeja (bloqueado + bot apagado, y al revés)
+  if (e.target.closest("[data-blq]")) {
+    const blq = !F.c.bloqueado;
+    if (blq && !(await confirmar("Bloquear contacto", "El bot dejará de responderle y saldrá de la lista de chats. Puedes desbloquearlo después desde su ficha (búscalo por nombre o número).", { si: "Bloquear", peligro: true }))) return;
+    const { error } = await supa.from("contacts").update({ bloqueado: blq, bot_activo: !blq }).eq("id", F.c.id);
+    if (error) { toast("No se pudo: " + error.message, true); return; }
+    evento("nota", blq ? "Contacto bloqueado" : "Contacto desbloqueado");
+    F.c.bloqueado = blq; F.c.bot_activo = !blq;
+    emit("bloqueo", { id: F.c.id, bloqueado: blq }); emit("contacto", { id: F.c.id, bot_activo: !blq, bloqueado: blq });
+    toast(blq ? "Contacto bloqueado" : "Contacto desbloqueado");
+    if (blq) { const id = F.c.id; if (CHAT.cid === id && capaAbierta("chat")) cerrarCapa("chat"); else cerrarCapa("ficha"); } else pintar();
+    return;
   }
   const ac = e.target.closest("[data-acc]");
   if (ac) {

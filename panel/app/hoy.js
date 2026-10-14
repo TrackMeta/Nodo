@@ -1,5 +1,5 @@
 // «Hoy» (Resumen) en el celular: lo que espera por ti, lo cobrado y la ganancia (con su detalle), el gráfico de
-// ventas, los números del Dashboard con flechas contra el período anterior, horarios, «Cómo avanzan», anuncios y un bloque
+// ventas, los números del Dashboard (Ventas, Publicidad y Rentabilidad), horarios, «Cómo avanzan», anuncios y un bloque
 // según el tipo de bot. Mismas consultas y la misma cuenta que dashboard.html (vista «Todo»). Se pone al día solo.
 import { A, $, esc, ic, on, emit, supa, invoke, abrirHoja, sol, ir } from "./app.js";
 import { pageAll, getChannel, getUsdRate, factorAds, adsDeCuentasQuitadas } from "../shell.js";
@@ -70,7 +70,11 @@ async function calcular(r, ligero) {
   const neta = bruta - gasto - extra - iaC;
   const chatsAd = cAd.count || 0, chatsOrg = cOrg.count || 0;
   const vendido = ventasOk.reduce((a, o) => a + O.total(o), 0);   // «Ingresos» del Dashboard
-  const res = { CUR, cobrado, porCobrar, vendido, fromISO, toISO, ventasOk, conts, ventas: ventasOk.length, gasto, bruta, cogs, extra, iaC, neta, pendCobro, sinCosto, roas: gasto > 0 ? cobrado / gasto : 0, chatsAd, chatsOrg, cpc: chatsAd ? gasto / chatsAd : 0 };
+  // Lo del Dashboard (renderND): costo por venta = gasto ÷ ventas de anuncio cobradas del todo; esperando adelanto
+  const vAd = ventasOk.filter((o) => o.shipping?.ad_id && (O.EST[o.estado] || {}).cobro === "todo").length;
+  const espAdel = todas.filter((o) => o.estado === "esperando_adelanto").length;
+  const vendeFisico = A.tipo === "fisico" || ventasOk.some(O.esFisico);
+  const res = { CUR, cobrado, cpa: vAd && gasto > 0 ? gasto / vAd : null, espAdel, vendeFisico, porCobrar, vendido, fromISO, toISO, ventasOk, conts, ventas: ventasOk.length, gasto, bruta, cogs, extra, iaC, neta, pendCobro, sinCosto, roas: gasto > 0 ? cobrado / gasto : 0, chatsAd, chatsOrg, cpc: chatsAd ? gasto / chatsAd : 0 };
   if (ligero) return res;
   // Gráfico: cobrado por hora (un día) o por día
   const serie = new Map();
@@ -80,12 +84,15 @@ async function calcular(r, ligero) {
   res.serie = [...serie];
   // «Cómo avanzan» (la misma cuenta que funnelDe de embudo.html): el perdido CON pedido es una venta caída; el
   // perdido sin pedido cuenta en el escalón que alcanzó (etapa_previa)
-  const perdidos = llegaron.filter((c) => c.stage === "perdido").map((c) => c.id), conPedido = new Set();
+  const perdidos = [...new Set([...llegaron, ...conts].filter((c) => c.stage === "perdido").map((c) => c.id))], conPedido = new Set();
   for (let i = 0; i < perdidos.length; i += 150) {
     const { data } = await supa.from("orders").select("contact_id").in("contact_id", perdidos.slice(i, i + 150));
     (data || []).forEach((o) => conPedido.add(o.contact_id));
   }
   res.funnel = funnelDe(llegaron, conPedido);
+  // Cierre del bot (ndCierre del Dashboard): de los chats nuevos que conversaron de verdad, cuántos compraron
+  const INT = ["interesado", "caliente", "confirmado"];
+  res.cierre = { interes: conts.filter((c) => [...INT, "comprado"].includes(c.stage) || (c.stage === "perdido" && (INT.includes(c.etapa_previa) || conPedido.has(c.id)))).length, compraron: conts.filter((c) => c.stage === "comprado").length };
   // Anuncios: gasto, chats, costo por chat, ventas y cobrado de cada uno
   const nom = new Map((adsM.data || []).map((a) => [String(a.ad_id), a]));
   const ads = new Map();
@@ -144,14 +151,6 @@ function comoAvanzan(F) {
   return `<div class="card"><div class="ttl">Cómo avanzan</div><div class="fwrap">${aviso}${curso}<div class="fun">${fun}</div><p class="nsub">Los que llegaron en estas fechas, como en la página Embudo.</p></div></div>`;
 }
 
-// Período anterior del mismo largo
-function anterior(r) { const n = Math.round((r.to - r.from) / 864e5) + 1; const to = new Date(r.from); to.setDate(to.getDate() - 1); const from = new Date(to); from.setDate(from.getDate() - (n - 1)); return { from, to, preset: "prev" }; }
-const flecha = (act, prev, inv) => {
-  if (!prev || !isFinite(prev) || prev === 0) return `<span class="mutc">sin dato anterior</span>`;
-  const d = (act - prev) / Math.abs(prev); if (Math.abs(d) < 0.005) return `<span class="mutc">igual que antes</span>`;
-  return `<span class="${(d > 0) !== !!inv ? "up" : "down"}">${d > 0 ? "▲" : "▼"} ${Math.round(Math.abs(d) * 100)}% vs antes</span>`;
-};
-
 // ── «Lo que espera por ti» (se pinta con los números que ya tienen las otras pestañas) ──
 function pintaEspera() {
   const box = $("#hoyEspera"); if (!box) return;
@@ -167,13 +166,13 @@ export async function cargar(silencioso) {
   const g = ++_gen, r = R;
   if (!silencioso || !ULT) $("#hoyPad").innerHTML = cabecera(r) + `<div class="cargando">Calculando…</div>`;
   try {
-    const [n, p] = await Promise.all([calcular(r), calcular(anterior(r), true)]);
+    const n = await calcular(r);
     if (g !== _gen) return;
     ULT = n;
     let apps = null;
     if (A.tipo === "apps") { const x = await invoke("microapps", { channel_id: A.ch, action: "listar" }); if (x.ok) apps = x.data?.accesos || []; }
     if (g !== _gen) return;
-    pintar(r, n, p, apps);
+    pintar(r, n, apps);
   } catch (e) { console.error(e); if (g === _gen) $("#hoyPad").innerHTML = cabecera(r) + `<div class="empty"><b>${ic("alert")}</b>No se pudo calcular.<br>${esc(e.message || e)}</div>`; }
 }
 function grafico(n, r) {
@@ -186,8 +185,8 @@ function grafico(n, r) {
   const pico = unDia(r) ? `Tu mejor hora: ${top[0]}:00 – ${top[0] + 1}:00` : `Tu mejor día: ${fDia(new Date(top[0] + "T12:00"))}`;
   return `<div class="graf"><svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" aria-label="Cobrado ${unDia(r) ? "por hora" : "por día"}">${barras}</svg><div class="graf-ejes"><span>${ini}</span><span>${esc(pico)}</span><span>${fin}</span></div></div>`;
 }
-function pintar(r, n, p, apps) {
-  const m = (x) => sol(x, n.CUR), chats = n.chatsAd + n.chatsOrg, chatsP = p.chatsAd + p.chatsOrg;
+function pintar(r, n, apps) {
+  const m = (x) => sol(x, n.CUR);
   let tipoHtml = "";
   if (A.tipo === "fisico") {
     const z = n.zona;
@@ -210,15 +209,14 @@ function pintar(r, n, p, apps) {
   const pctCob = n.vendido > 0 ? Math.round((n.cobrado / n.vendido) * 100) : null;
   $("#hoyPad").innerHTML = cabecera(r) + `<div id="hoyEspera"></div>
     <button type="button" class="hero gan" id="verGanancia"><small>Ganancia neta ${ic("help")}</small><div class="big num">${m(n.neta)}</div>
-      <div class="row2"><span>tras publicidad, IA y gastos · toca para ver de dónde sale</span></div>${flecha(n.neta, p.neta)}</button>
+      <div class="row2"><span>tras publicidad, IA y gastos · toca para ver de dónde sale</span></div></button>
     <div class="kpis">
-      <div class="kpi"><small>Ventas</small><b class="num">${n.ventas}</b><span class="mutc">${n.ventas ? "ticket " + m(n.vendido / n.ventas) : "sin ventas en estas fechas"}</span>${flecha(n.ventas, p.ventas)}</div>
-      <div class="kpi"><small>Ingresos</small><b class="num">${m(n.vendido)}</b><span class="${pctCob === 100 ? "up" : "mutc"}">${pctCob == null ? "sin ventas" : "cobrado " + pctCob + "%"}</span>${flecha(n.vendido, p.vendido)}</div>
-      <div class="kpi"><small>Chats nuevos</small><b class="num">${chats}</b><span class="mutc">${n.chatsAd} por anuncio · ${n.chatsOrg} orgánico${n.chatsOrg === 1 ? "" : "s"}</span>${flecha(chats, chatsP)}</div>
-      <div class="kpi"><small>Costo por chat</small><b class="num">${n.chatsAd ? m(n.cpc) : "—"}</b>${flecha(n.cpc, p.cpc, true)}</div>
-      <div class="kpi"><small>ROAS</small><b class="num">${n.gasto > 0 ? n.roas.toFixed(2) : "—"}</b>${flecha(n.roas, p.roas)}</div>
-      <div class="kpi"><small>Gasto en Meta</small><b class="num">${m(n.gasto)}</b>${flecha(n.gasto, p.gasto, true)}</div>
+      <div class="kpi"><small>Ventas</small><b class="num">${n.ventas}</b><span class="mutc">${n.ventas ? "ticket " + m(n.vendido / n.ventas) : "sin ventas en estas fechas"}</span></div>
+      <div class="kpi"><small>Ingresos</small><b class="num">${m(n.vendido)}</b><span class="${pctCob === 100 ? "up" : "mutc"}">${pctCob == null ? "sin ventas" : "cobrado " + pctCob + "%"}</span></div>
+      <div class="kpi"><small>ROAS</small><b class="num">${n.gasto > 0 && n.roas > 0 ? n.roas.toFixed(2) + "×" : "—"}</b><span class="mutc">${n.gasto > 0 ? m(n.gasto) + " en Meta" : "sin gasto en Meta"}</span></div>
+      <div class="kpi"><small>Costo por chat</small><b class="num">${n.chatsAd && n.gasto > 0 ? m(n.cpc) : "—"}</b><span class="mutc">${n.chatsAd} chat${n.chatsAd === 1 ? "" : "s"} de anuncio</span></div>
     </div>
+    ${tablero(n, m)}
     <div class="card"><div class="ttl">Ingresos ${unDia(r) ? "por hora" : "por día"}</div><div style="padding:0 14px 12px">${grafico(n, r)}</div></div>
     <div class="card"><div style="padding:12px 14px" id="hoyHorarios"></div></div>
     ${comoAvanzan(n.funnel)}
@@ -226,6 +224,27 @@ function pintar(r, n, p, apps) {
     <p class="note">Mismo cálculo que el Dashboard del panel (vista Todo) · hora del negocio · se actualiza solo.</p>`;
   pintaEspera();
   import("../horarios.js").then((mod) => mod.montarHorarios($("#hoyHorarios"), { supa, channelId: A.ch, fromISO: n.fromISO, toISO: n.toISO, ventas: n.ventasOk, chats: n.conts, money: m, h: "h4", plegable: "nodo.app.horarios" })).catch(() => {});
+}
+// Las tres tarjetas del Dashboard (renderND): Ventas, Publicidad y Rentabilidad
+function tablero(n, m) {
+  const fila = (l, v, cls = "") => `<div class="nrow"><span>${l}</span><b class="num ${cls}">${v}</b></div>`;
+  const chats = n.chatsAd + n.chatsOrg, ci = n.cierre || { interes: 0, compraron: 0 };
+  const ventas = `<div class="card"><div class="ttl">Ventas</div>` +
+    fila("Chats nuevos", `${chats}<small>${n.chatsAd} anuncio · ${n.chatsOrg} orgánico${n.chatsOrg === 1 ? "" : "s"}</small>`) +
+    fila("Conversión total", chats ? Math.round((n.ventas / chats) * 100) + "%" : "—") +
+    fila(`Cierre del bot <i class="nia">IA</i>`, ci.interes ? `${Math.round((ci.compraron / ci.interes) * 100)}%<small>${ci.compraron} de ${ci.interes} que conversaron</small>` : "—") +
+    fila("Ticket promedio", n.ventas ? m(n.vendido / n.ventas) : "—") +
+    (n.vendeFisico ? fila("Por cobrar", m(n.porCobrar)) + fila("Esperando adelanto", n.espAdel) : "") + `</div>`;
+  const pub = `<div class="card"><div class="ttl">Publicidad</div>` + (n.gasto > 0
+    ? fila("Gasto en Meta", m(n.gasto)) + fila("Costo por chat", n.chatsAd ? m(n.cpc) : "—") + fila("Costo por venta", n.cpa == null ? "—" : m(n.cpa)) + fila("ROAS", n.roas > 0 ? n.roas.toFixed(2) + "×" : "—")
+    : `<p class="nsub" style="padding:4px 14px 12px">Sin gasto de anuncios en estas fechas. Conecta tus anuncios en el panel (Ajustes → Meta) para ver cuánto te cuesta cada chat y cada venta.</p>`) + `</div>`;
+  const rent = `<div class="card"><div class="ttl">Rentabilidad</div>` +
+    fila(n.vendeFisico ? "Ganancia bruta" : "Ingresos cobrados", m(n.bruta)) +
+    (n.gasto > 0 ? fila("− Publicidad", m(n.gasto), "down") : "") +
+    (n.iaC > 0.009 ? fila("− IA", m(n.iaC), "down") : "") +
+    (n.extra > 0.009 ? fila("− Gastos extra", m(n.extra), "down") : "") +
+    `<div class="nrow tot"><span>= Ganancia neta</span><b class="num ${n.neta < 0 ? "down" : "up"}">${m(n.neta)}</b></div></div>`;
+  return ventas + pub + rent;
 }
 function detalleGanancia() {
   const n = ULT; if (!n) return;

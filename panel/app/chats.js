@@ -1,6 +1,6 @@
 // Chats: la lista de la Bandeja en el celular — modo Humano/Bot, buscador, filtros (los mismos grupos que el
 // cajón de la Bandeja), filtros guardados y tiempo real. Las consultas son las de loadConversations().
-import { A, $, $$, esc, ic, on, emit, supa, avatar, quienDe, fmtHora, abrirCapa, cerrarCapa, abrirHoja, toast, pedirTexto } from "./app.js";
+import { A, $, $$, esc, ic, on, emit, supa, avatar, quienDe, fmtHora, abrirCapa, cerrarCapa, abrirHoja, confirmar, toast, pedirTexto } from "./app.js";
 import { pageAll, enTrozos, norm } from "../shell.js";
 import { computePreset, startOfDayTZ, endOfDayTZ } from "../date-range.js";
 import { STAGES, ETAPA, ENTREGA_PROV, ENTREGA_ESTADO_K, RECOMPRA_ESTADOS, previewHtml, esPrueba } from "./comun.js";
@@ -19,6 +19,7 @@ export function init() {
   on("msg:ins", () => cargarPronto());
   on("contacto", (c) => { const cv = L.convs.find((x) => x.contact_id === c.id); if (cv) { Object.assign(cv.contact, c); pintar(); } });
   on("resync", () => cargar());
+  on("bloqueo", ({ id, bloqueado }) => { const cv = L.convs.find((x) => x.contact_id === id) || L.buscados.find((x) => x.contact_id === id); if (cv) cv.contact.bloqueado = bloqueado; if (bloqueado) L.convs = L.convs.filter((x) => x.contact_id !== id); else cargarPronto(); pintar(); });
   on("refrescarChats", () => pintar());
   on("verHumano", () => { MODO = "humano"; pintar(); });
   $("#modeseg").addEventListener("click", (e) => { const b = e.target.closest("[data-m]"); if (b) { MODO = b.dataset.m; pintar(); } });
@@ -31,6 +32,7 @@ export function init() {
   $("#q").addEventListener("input", (e) => { Q = e.target.value.trim(); pintar(); clearTimeout(tq); if (Q.length >= 3) tq = setTimeout(buscarServidor, 350); else L.buscados = []; });
   $("#chatlist").addEventListener("click", (e) => { const r = e.target.closest(".row"); if (r) emit("abrirChat", r.dataset.id); });
   $("#fbtn").onclick = () => { pintaFiltros(); abrirCapa("filtros"); };
+  $("#nuevobtn").onclick = nuevoContacto;
   $("#fclear").onclick = () => { F = vacio(); pintaFiltros(); pintar(); };
   $("#fver").onclick = () => cerrarCapa("filtros");
   $("#filbody").addEventListener("click", clicFiltro);
@@ -118,6 +120,31 @@ async function buscarServidor() {
   pintar();
 }
 
+// ── Nuevo contacto (como «Nuevo contacto» de Contactos en el panel): se crea y se abre su chat para escribirle.
+// Sin ventana de 24 h abierta, el chat ofrece mandarle una plantilla aprobada (WhatsApp no deja otra cosa).
+function nuevoContacto() {
+  abrirHoja(`<h3>Nuevo contacto</h3><p class="lead">Con el código de país y sin «+» (ej. 51 para Perú). Al crearlo se abre su chat.</p>
+    <label class="flabel">Nombre<input class="inpt" id="ncNom" placeholder="Nombre del cliente" autocomplete="off"></label>
+    <label class="flabel">Teléfono de WhatsApp<input class="inpt" id="ncTel" type="tel" inputmode="numeric" placeholder="51999888777" autocomplete="off"></label>
+    <button type="button" class="btn blue" style="width:100%" id="ncGo">Crear y abrir el chat</button>`, (sh, cerrar) => {
+    $("#ncGo", sh).onclick = async () => {
+      const nombre = $("#ncNom", sh).value.trim(), wa = $("#ncTel", sh).value.replace(/D/g, "");
+      if (!wa) { toast("Escribe el teléfono", true); return; }
+      if (wa.length < 10 && !(await confirmar("¿Falta el código de país?", `«${wa}» parece no tener el código de país. El número de WhatsApp lo lleva siempre (ej. 51${wa}).`, { si: "Guardar igual" }))) return;
+      const btn = $("#ncGo", sh); btn.disabled = true;
+      try {
+        // No se pisa a uno que ya existe (el upsert le borraría el nombre): se abre su chat
+        const { data: ya } = await supa.from("contacts").select("id,nombre,bloqueado").eq("channel_id", A.ch).eq("wa_id", wa).maybeSingle();
+        if (ya) { cerrar(); toast(ya.bloqueado ? `${ya.nombre || "Ese número"} está bloqueado: desbloquéalo desde su ficha` : `Ya tenías a ${ya.nombre || "ese número"}: te abro su chat`); emit("abrirChat", ya.id); return; }
+        const { data, error } = await supa.from("contacts").insert({ channel_id: A.ch, wa_id: wa, nombre: nombre || null }).select("id").single();
+        if (error) { toast("No se pudo crear: " + error.message, true); btn.disabled = false; return; }
+        cerrar(); toast("Contacto creado"); emit("abrirChat", data.id);
+      } catch (e) { toast("No se pudo crear: " + (e.message || e), true); btn.disabled = false; }
+    };
+    setTimeout(() => $("#ncNom", sh)?.focus(), 250);
+  });
+}
+
 // ── Filtros ──
 const esBot = (cv) => cv.contact.bot_activo !== false;
 const enModo = (cv) => (MODO === "bot" ? esBot(cv) : !esBot(cv));
@@ -183,7 +210,7 @@ export function pintar() {
 function fila(cv) {
   const c = cv.contact, w = quienDe({ bot_activo: c.bot_activo, requiere_humano: cv.requiere_humano });
   const st = ETAPA[c.stage || "nuevo"] || ETAPA.nuevo;
-  const flag = w === "espera" ? `<span class="flag hum">Pide humano</span>` : cv.requiere_humano ? `<span class="flag seg">Seguimiento</span>` : c.stage === "comprado" ? (L.recompra.has(c.id) ? `<span class="flag pago">Recomprando</span>` : `<span class="flag ok">Compró</span>`) : "";
+  const flag = c.bloqueado ? `<span class="flag blq">Bloqueado</span>` : w === "espera" ? `<span class="flag hum">Pide humano</span>` : cv.requiere_humano ? `<span class="flag seg">Seguimiento</span>` : c.stage === "comprado" ? (L.recompra.has(c.id) ? `<span class="flag pago">Recomprando</span>` : `<span class="flag ok">Compró</span>`) : "";
   return `<button class="row" type="button" data-id="${c.id}">
     ${avatar(c.id, c.nombre, c.wa_id, null, c.product?.emoji)}
     <span class="rmid"><b><span class="stage-dot" style="background:${st.color}" title="${st.label}"></span>${esc(c.nombre || "+" + c.wa_id)}${flag}</b><span>${previewHtml(c)}</span></span>

@@ -1,7 +1,7 @@
 // «Más»: notificaciones, tus bots (encender/apagar, como Canales), qué avisos me llegan (se guardan en
 // notificacion_usuario.prefs: los sonidos se COMPARTEN con la campanita web; lo propio del celular en prefs.app),
 // tema, panel completo y cerrar sesión.
-import { A, $, esc, ic, on, emit, supa, abrirCapa, hoja, confirmar, toast, pintaBot, logoDe, temaPref, ponerTema } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, invoke, abrirCapa, hoja, confirmar, toast, pintaBot, logoDe, temaPref, ponerTema } from "./app.js";
 import { updateChannel } from "../shell.js";
 import { N } from "./notif.js";
 import { TONOS_URGENTE, TONOS_VENTA, escuchar } from "./sonidos.js";
@@ -26,13 +26,33 @@ export function init() {
   $("#avbody").addEventListener("click", clicAvisos);
   $("#avbody").addEventListener("change", (e) => { if (e.target.id === "dnd1") { APP.dnd.desde = e.target.value; guardar(); } if (e.target.id === "dnd2") { APP.dnd.hasta = e.target.value; guardar(); } });
 }
+// Número de WhatsApp (API) del bot que estás viendo: lo pregunta a Meta (channel-config · whatsapp_test, solo lectura)
+const NUM = new Map();   // canal → { telefono, nombre, calidad } | { error }
+const CALIDAD = { GREEN: ["alta", "up"], YELLOW: ["media", "warnc"], RED: ["baja", "down"] };
+async function cargarNumero(ch) {
+  if (NUM.has(ch)) return;
+  NUM.set(ch, null);
+  const x = await invoke("channel-config", { action: "whatsapp_test", channel_id: ch });
+  const d = x.data || {};
+  NUM.set(ch, d.numero?.telefono ? d.numero : { error: d.configurado === false ? "Este bot todavía no tiene un número de WhatsApp conectado." : d.numero_error || "No se pudo consultar a Meta." });
+  if (A.tab === "mas" && A.ch === ch) pintar();
+}
+function numeroHtml() {
+  const n = NUM.get(A.ch);
+  if (!n) return `<div class="li"><span class="ico">${ic("phone")}</span><span class="rmid"><b>Número del bot</b><span>Consultando a Meta…</span></span></div>`;
+  if (n.error) return `<div class="li"><span class="ico">${ic("phone")}</span><span class="rmid"><b>Número del bot</b><span>${esc(n.error)}</span></span></div>`;
+  const q = CALIDAD[n.calidad];
+  return `<button type="button" class="li" data-go="copiarNum"><span class="ico">${ic("phone")}</span><span class="rmid"><b>${esc(n.telefono)}</b><span>${esc(n.nombre || "Número del bot")}${q ? ` · calidad <b class="${q[1]}">${q[0]}</b>` : ""} · toca para copiar</span></span>${ic("copy")}</button>`;
+}
 function pintar() {
+  cargarNumero(A.ch);
   const vivas = [...N.rows.values()].filter((n) => n.por_atender && !n.resuelta_at).length;
   const tema = temaPref(), TEMA_LBL = { auto: "Automático (como el celular)", light: "Claro", dark: "Oscuro" };
   $("#masPad").innerHTML = `<h2 class="h">Más</h2>
     <div class="card"><button type="button" class="li" data-go="notif"><span class="ico">${ic("bell")}</span><span class="rmid"><b>Notificaciones</b><span>${vivas ? `${vivas} pendiente${vivas === 1 ? "" : "s"}` : "Todo al día"}</span></span>${ic("chevronRight")}</button>
       <button type="button" class="li" data-go="avisos"><span class="ico">${ic("config")}</span><span class="rmid"><b>Qué avisos me llegan</b><span>Sonidos, por tipo, por bot y No molestar</span></span>${ic("chevronRight")}</button>
       ${A.tieneApps && A.tipo !== "apps" ? `<button type="button" class="li" data-go="accesos"><span class="ico">${ic("key")}</span><span class="rmid"><b>Accesos de micro apps</b><span>Este bot también vende apps</span></span>${ic("chevronRight")}</button>` : ""}</div>
+    <div class="card"><div class="ttl">WhatsApp de ${esc(A.channels.find((c) => c.id === A.ch)?.nombre || "este bot")}</div>${numeroHtml()}</div>
     <div class="card"><div class="ttl">Tus bots</div>${A.channels.map((c) => `<div class="li"><span class="ico"><img src="${esc(logoDe(c.id))}" alt=""></span><span class="rmid"><b>${esc(c.nombre)}</b><span>${c.bot_apagado ? "Apagado · el bot no contesta" : "Encendido"}${c.id === A.ch ? " · el que estás viendo" : ""}</span></span><button type="button" class="sw${c.bot_apagado ? "" : " on"}" data-sw="${c.id}" aria-label="Encender o apagar ${esc(c.nombre)}"></button></div>`).join("")}</div>
     <div class="card"><div class="ttl">Pantalla</div>
       <button type="button" class="li" data-go="tema"><span class="ico">${ic(tema === "light" ? "sun" : "moon")}</span><span class="rmid"><b>Tema</b><span>${TEMA_LBL[tema] || TEMA_LBL.auto}</span></span>${ic("chevronRight")}</button></div>
@@ -57,6 +77,7 @@ async function clic(e) {
   const k = g.dataset.go;
   if (k === "notif") emit("abrirNotif");
   else if (k === "avisos") { pintaAvisos(); abrirCapa("avisos"); }
+  else if (k === "copiarNum") { const t = NUM.get(A.ch)?.telefono || ""; try { await navigator.clipboard.writeText(t.replace(/[^\d+]/g, "")); toast("Número copiado"); } catch (_) { toast(t); } }
   else if (k === "accesos") toast("Para ver los accesos, elige un bot de micro apps o ábrelos desde el panel web de Nodo.");
   else if (k === "tema") hoja("Tema", [{ t: "Automático (como el celular)", v: "auto", on: temaPref() === "auto" }, { t: "Claro", v: "light", on: temaPref() === "light" }, { t: "Oscuro", v: "dark", on: temaPref() === "dark" }], (o) => { ponerTema(o.v); pintar(); });
   else if (k === "salir") { if (await confirmar("Cerrar sesión", "Tendrás que volver a entrar con tu correo y contraseña. Este celular dejará de recibir avisos.", { si: "Cerrar sesión", peligro: true })) { emit("salir"); setTimeout(() => supa.auth.signOut(), 400); } }
