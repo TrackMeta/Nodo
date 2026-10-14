@@ -43,7 +43,7 @@ async function calcular(r, ligero) {
     ligero ? [] : todo((f, t) => supa.from("manual_expenses").select("id,monto").eq("channel_id", ch).gte("fecha", ymd(r.from)).lte("fecha", ymd(r.to)).order("fecha").order("id").range(f, t)),
     ligero ? [] : todo((f, t) => supa.from("ai_usage").select("dia,costo_usd").eq("channel_id", ch).gte("dia", ymd(r.from)).lte("dia", ymd(r.to)).order("dia").order("provider").order("model").order("origen").range(f, t)),
     // Los chats nuevos del período (para el embudo y los chats por anuncio)
-    ligero ? [] : todo((f, t) => supa.from("contacts").select("id,ad_id,stage,etapa_previa").eq("channel_id", ch).or("source.is.null,source.neq.sim").neq("wa_id", "webchat-test").gte("primera_interaccion", fromISO).lt("primera_interaccion", toISO).order("id").range(f, t)),
+    ligero ? [] : todo((f, t) => supa.from("contacts").select("id,ad_id,stage,etapa_previa,primera_interaccion").eq("channel_id", ch).or("source.is.null,source.neq.sim").neq("wa_id", "webchat-test").gte("primera_interaccion", fromISO).lt("primera_interaccion", toISO).order("id").range(f, t)),
     ligero ? { data: [] } : supa.from("ads_meta").select("ad_id,ad_name,campaign_name").eq("channel_id", ch),
   ]);
   const pruebaIds = new Set(prueba.map((c) => c.id));
@@ -70,13 +70,14 @@ async function calcular(r, ligero) {
   const extra = exp.reduce((a, e) => a + Number(e.monto || 0), 0), iaC = USD > 0 ? ia.reduce((a, x) => a + Number(x.costo_usd || 0), 0) * USD : 0;
   const neta = bruta - gasto - extra - iaC;
   const chatsAd = cAd.count || 0, chatsOrg = cOrg.count || 0;
-  const res = { CUR, cobrado, porCobrar, ventas: ventasOk.length, gasto, bruta, cogs, extra, iaC, neta, pendCobro, sinCosto, roas: gasto > 0 ? cobrado / gasto : 0, chatsAd, chatsOrg, cpc: chatsAd ? gasto / chatsAd : 0 };
+  const vendido = ventasOk.reduce((a, o) => a + O.total(o), 0);   // «Ingresos» del Dashboard
+  const res = { CUR, cobrado, porCobrar, vendido, fromISO, toISO, ventasOk, conts, ventas: ventasOk.length, gasto, bruta, cogs, extra, iaC, neta, pendCobro, sinCosto, roas: gasto > 0 ? cobrado / gasto : 0, chatsAd, chatsOrg, cpc: chatsAd ? gasto / chatsAd : 0 };
   if (ligero) return res;
   // Gráfico: cobrado por hora (un día) o por día
   const serie = new Map();
   if (unDia(r)) for (let h = 0; h < 24; h++) serie.set(h, 0);
   else { const d = new Date(r.from); while (d <= r.to) { serie.set(ymd(d), 0); d.setDate(d.getDate() + 1); } }
-  ventasOk.forEach((o) => { const k = unDia(r) ? horaTZ(o.created_at) : ymdTZ(o.created_at); if (serie.has(k)) serie.set(k, serie.get(k) + O.cobrado(o)); });
+  ventasOk.forEach((o) => { const k = unDia(r) ? horaTZ(o.created_at) : ymdTZ(o.created_at); if (serie.has(k)) serie.set(k, serie.get(k) + O.total(o)); });
   res.serie = [...serie];
   // Embudo (cohorte de los chats nuevos, como renderMetricas del Dashboard)
   const INT = ["interesado", "caliente", "confirmado"], conOrden = new Set(todas.map((o) => o.contact_id));
@@ -163,23 +164,28 @@ function pintar(r, n, p, apps) {
     const tono = roas == null ? "" : roas >= 1.5 ? "up" : roas >= 1 ? "warnc" : "down";
     return `<div class="li ad"><span class="rmid"><b>${esc(a.nombre)}</b><span>${a.campana ? esc(a.campana) + " · " : ""}gasto ${m(a.gasto)} · ${a.chats} chat${a.chats === 1 ? "" : "s"}${cpc != null ? ` · ${m(cpc)} por chat` : ""}</span></span><span class="rend"><b class="num">${a.ventas} venta${a.ventas === 1 ? "" : "s"}</b>${roas != null ? `<span class="${tono}" style="font-size:11.5px;font-weight:600">ROAS ${roas.toFixed(2)}</span>` : ""}</span></div>`;
   }).join("") : `<p class="nsub" style="padding:6px 14px 12px">Sin gasto de anuncios en este período.</p>`}</div>`;
+  // Igual que el Dashboard: la Ganancia neta va destacada (tarjeta de tinta) y Ventas, Ingresos y ROAS en blanco
+  const pctCob = n.vendido > 0 ? Math.round((n.cobrado / n.vendido) * 100) : null;
   $("#hoyPad").innerHTML = cabecera(r) + `<div id="hoyEspera"></div>
-    <div class="hero"><small>Cobrado · ${esc(lblDe(r).toLowerCase())}</small><div class="big num">${m(n.cobrado)}</div>
-      <div class="row2 num"><span>${n.ventas} venta${n.ventas === 1 ? "" : "s"}</span>${n.ventas ? `<span>Ticket ${m(n.cobrado / Math.max(1, n.ventas))}</span>` : ""}${n.porCobrar > 0.009 ? `<span>Por cobrar ${m(n.porCobrar)}</span>` : ""}</div>
-      ${grafico(n, r)}</div>
-    <button type="button" class="kpi gan" id="verGanancia"><small>Ganancia ${ic("help")}</small><b class="num ${n.neta >= 0 ? "up" : "down"}">${m(n.neta)}</b>${flecha(n.neta, p.neta)}<span class="mutc">Toca para ver de dónde sale</span></button>
+    <button type="button" class="hero gan" id="verGanancia"><small>Ganancia neta ${ic("help")}</small><div class="big num">${m(n.neta)}</div>
+      <div class="row2"><span>tras publicidad, IA y gastos · toca para ver de dónde sale</span></div>${flecha(n.neta, p.neta)}</button>
     <div class="kpis">
+      <div class="kpi"><small>Ventas</small><b class="num">${n.ventas}</b><span class="mutc">${n.ventas ? "ticket " + m(n.vendido / n.ventas) : "sin ventas en estas fechas"}</span>${flecha(n.ventas, p.ventas)}</div>
+      <div class="kpi"><small>Ingresos</small><b class="num">${m(n.vendido)}</b><span class="${pctCob === 100 ? "up" : "mutc"}">${pctCob == null ? "sin ventas" : "cobrado " + pctCob + "%"}</span>${flecha(n.vendido, p.vendido)}</div>
       <div class="kpi"><small>Chats nuevos</small><b class="num">${chats}</b><span class="mutc">${n.chatsAd} por anuncio · ${n.chatsOrg} orgánico${n.chatsOrg === 1 ? "" : "s"}</span>${flecha(chats, chatsP)}</div>
       <div class="kpi"><small>Costo por chat</small><b class="num">${n.chatsAd ? m(n.cpc) : "—"}</b>${flecha(n.cpc, p.cpc, true)}</div>
       <div class="kpi"><small>ROAS</small><b class="num">${n.gasto > 0 ? n.roas.toFixed(2) : "—"}</b>${flecha(n.roas, p.roas)}</div>
       <div class="kpi"><small>Gasto en Meta</small><b class="num">${m(n.gasto)}</b>${flecha(n.gasto, p.gasto, true)}</div>
     </div>
+    <div class="card"><div class="ttl">Ingresos ${unDia(r) ? "por hora" : "por día"}</div><div style="padding:0 14px 12px">${grafico(n, r)}</div></div>
+    <div class="card"><div style="padding:12px 14px" id="hoyHorarios"></div></div>
     <div class="card embudo"><div class="ttl">Embudo de los chats nuevos</div>
       ${[["Chats nuevos", e.total, 100], ["Se interesaron", e.interes, pct(e.interes, e.total)], ["Compraron", e.compraron, pct(e.compraron, e.total)]].map(([l, v, p2]) => `<div class="emb"><span>${l}</span><div class="emb-bar"><i style="width:${Math.max(p2, v ? 3 : 0)}%"></i></div><b class="num">${v}${l !== "Chats nuevos" ? ` · ${p2}%` : ""}</b></div>`).join("")}
       <p class="nsub" style="padding:2px 14px 12px">De los que escribieron por primera vez en este período${e.interes ? ` · cierre: ${pct(e.compraron, e.interes)}% de los interesados` : ""}.</p></div>
     ${adsHtml}${tipoHtml}${prodHtml}
     <p class="note">Mismo cálculo que el Dashboard del panel (vista Todo) · hora del negocio · se actualiza solo.</p>`;
   pintaEspera();
+  import("../horarios.js").then((mod) => mod.montarHorarios($("#hoyHorarios"), { supa, channelId: A.ch, fromISO: n.fromISO, toISO: n.toISO, ventas: n.ventasOk, chats: n.conts, money: m, h: "h4" })).catch(() => {});
 }
 function detalleGanancia() {
   const n = ULT; if (!n) return;

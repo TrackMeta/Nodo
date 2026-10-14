@@ -270,6 +270,13 @@ html:not([data-theme="light"]) .send.mic{color:#06210f}
 .esp.urg{background:var(--red-bg)}
 .esp.urg .i{color:var(--red)}
 .esp b{font-size:15px}
+.hero.gan{width:100%;text-align:left;cursor:pointer;font:inherit}
+.hero.gan small{display:flex;align-items:center;gap:5px}
+.hero.gan .row2{font-size:12px}
+.hero.gan > span{font-size:12px;font-weight:600}
+.card .graf{margin-top:0}
+.card .graf-ejes{color:var(--faint)}
+.card .graf-ejes span:nth-child(2){color:var(--text)}
 .kpi.gan{width:100%}
 .kpi.gan small{display:flex;align-items:center;gap:4px}
 .kpi.gan b{font-size:24px}
