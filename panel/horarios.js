@@ -49,7 +49,23 @@ function css() {
   .hv-it:first-of-type{border-top:0}
   .hv-it b{font-weight:600}
   .hv-it span{color:var(--muted);text-align:right}
-  .hv-vacio{font-size:13px;color:var(--muted);padding:6px 0}`;
+  .hv-vacio{font-size:13px;color:var(--muted);padding:6px 0}
+  .hv-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .hv-bars{position:relative;display:grid;grid-template-columns:34px 1fr;gap:6px}
+  .hv-yax{position:relative;height:220px}
+  .hv-yax span{position:absolute;right:0;white-space:nowrap;transform:translateY(50%);font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums}
+  .hv-plot{position:relative;height:220px;display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:4px;align-items:end;border-bottom:1px solid var(--border)}
+  .hv-grid{position:absolute;left:0;right:0;border-top:1px dashed var(--border);pointer-events:none}
+  .hv-b{position:relative;border:0;padding:0;border-radius:5px 5px 0 0;cursor:pointer;min-width:0;width:100%;transition:opacity .15s}
+  .hv-b:hover,.hv-b.sel{opacity:.82;outline:2px solid var(--text);outline-offset:1px}
+  .hv-b.top{background:color-mix(in srgb,var(--green) 78%,var(--surface))}
+  .hv-b.med{background:color-mix(in srgb,var(--brand) 62%,var(--surface))}
+  .hv-b.baja{background:color-mix(in srgb,var(--amber) 60%,var(--surface))}
+  .hv-b.min{background:var(--border-strong)}
+  .hv-xax{display:grid;grid-template-columns:34px repeat(24,minmax(0,1fr));gap:0 4px;margin-top:4px}
+  .hv-xax span{font-size:10px;color:var(--faint);text-align:center;white-space:nowrap}
+  @media(max-width:560px){.hv-xax span:nth-child(2n+1):not(:first-child){visibility:hidden}.hv-plot{gap:2px}.hv-xax{gap:0 2px}.hv-yax,.hv-plot{height:170px}}
+  .hv-ley i.top{background:color-mix(in srgb,var(--green) 78%,var(--surface))}.hv-ley i.med{background:color-mix(in srgb,var(--brand) 62%,var(--surface))}.hv-ley i.baja{background:color-mix(in srgb,var(--amber) 60%,var(--surface))}.hv-ley i.min{background:var(--border-strong)}`;
   document.head.appendChild(s);
 }
 
@@ -67,12 +83,27 @@ export async function montarHorarios(host, { supa, channelId, fromISO, toISO, ve
   const V = matriz(), I = matriz(), C = matriz(), B = matriz();
   (ventas || []).filter((o) => !O.esPerdido(o)).forEach((o) => { const [d, hh] = diaHora(o.created_at); V[d][hh]++; I[d][hh] += O.total(o); });
   chats.forEach((c) => { if (!c.primera_interaccion) return; const [d, hh] = diaHora(c.primera_interaccion); C[d][hh]++; if (c.stage === "comprado") B[d][hh]++; });
-  const st = { m: "ventas", sel: null };
+  const st = { vista: "barras", bm: "ventas", m: "ventas", sel: null, selH: null };
   const totH = (M) => Array.from({ length: 24 }, (_, hh) => M.reduce((a, fila) => a + fila[hh], 0));
   const vH = totH(V), iH = totH(I), cH = totH(C), bH = totH(B);
   const vD = V.map((f) => f.reduce((a, x) => a + x, 0)), iD = I.map((f) => f.reduce((a, x) => a + x, 0));
   const totalV = vH.reduce((a, x) => a + x, 0), totalC = cH.reduce((a, x) => a + x, 0);
   const valor = (d, hh) => (st.m === "ventas" ? V[d][hh] : st.m === "chats" ? C[d][hh] : C[d][hh] >= 2 ? B[d][hh] / C[d][hh] : null);
+  // Barras «Ventas por hora del día (0–23 h)» de todas las fechas elegidas: las 3 mejores en verde, las flojas en
+  // ámbar y las casi vacías en gris (como el gráfico que mandó Rodrigo).
+  function barras(m) {
+    const vals = st.bm === "ventas" ? vH : iH, max = Math.max(0, ...vals);
+    if (!max) return `<div class="hv-vacio">Sin ventas en estas fechas.</div>`;
+    const paso = (() => { const crudo = max / 5, p10 = Math.pow(10, Math.floor(Math.log10(crudo))); return [1, 2, 2.5, 5, 10].map((k) => k * p10).find((k) => k >= crudo) || crudo; })();
+    const tope = Math.ceil(max / paso) * paso, marcas = []; for (let v = 0; v <= tope + 1e-9; v += paso) marcas.push(v);
+    const top3 = [...vals].map((v, hh) => [v, hh]).filter(([v]) => v > 0).sort((a, b) => b[0] - a[0]).slice(0, 3).map(([, hh]) => hh);
+    const clase = (v, hh) => (top3.includes(hh) ? "top" : v <= max * 0.15 ? "min" : v <= max * 0.45 ? "baja" : "med");
+    const etq = (v) => (v >= 10000 ? (v / 1000).toLocaleString("es-PE", { maximumFractionDigits: 1 }) + "k" : Math.round(v).toLocaleString("es-PE"));   // (en ingresos, sin el «S/»: va en la leyenda)
+    return `<div class="hv-bars"><div class="hv-yax">${marcas.map((v) => `<span style="bottom:${(v / tope) * 100}%">${esc(etq(v))}</span>`).join("")}</div>
+      <div class="hv-plot">${marcas.slice(1).map((v) => `<i class="hv-grid" style="bottom:${(v / tope) * 100}%"></i>`).join("")}${vals.map((v, hh) => `<button type="button" class="hv-b ${clase(v, hh)}${st.selH === hh ? " sel" : ""}" data-hb="${hh}" style="height:${Math.max(v ? 1.5 : 0.6, (v / tope) * 100)}%" title="${esc(franja(hh))}: ${vH[hh]} venta${vH[hh] === 1 ? "" : "s"} · ${esc(m(iH[hh]))}" aria-label="${esc(franja(hh))}: ${vH[hh]} ventas"></button>`).join("")}</div></div>
+      <div class="hv-xax"><span></span>${vals.map((_, hh) => `<span>${String(hh).padStart(2, "0")}h</span>`).join("")}</div>
+      <div class="hv-ley">${st.bm === "ingresos" ? "<span>Montos en " + esc(String(m(0)).split(" ")[0]) + " ·</span>" : ""}<i class="top"></i><span>mejores horas</span><i class="med"></i><span>normal</span><i class="baja"></i><span>flojas</span><i class="min"></i><span>casi nada</span></div>`;
+  }
   function pintar() {
     let max = 0; for (let d = 0; d < 7; d++) for (let hh = 0; hh < 24; hh++) { const v = valor(d, hh); if (v != null && v > max) max = v; }
     const color = (v) => (v == null || v === 0 || !max ? "var(--surface-2)" : `color-mix(in srgb, var(--brand) ${Math.round(18 + 82 * (v / max))}%, var(--surface-2))`);
@@ -94,9 +125,10 @@ export async function montarHorarios(host, { supa, channelId, fromISO, toISO, ve
     const m = money || ((x) => "S/ " + Math.round(x));
     host.innerHTML = `<div class="hv">
       <div class="hv-hd"><div><${h}>${esc(titulo)}</${h}><p>${totalV} venta${totalV === 1 ? "" : "s"} y ${totalC} chat${totalC === 1 ? "" : "s"} nuevos en estas fechas · hora del negocio</p></div>
-        <div class="hv-seg" role="tablist">${[["ventas", "Ventas"], ["chats", "Chats"], ["conv", "Conversión"]].map(([k, l]) => `<button type="button" data-m="${k}" class="${st.m === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
-      ${totalV || totalC ? `<div class="hv-mapa">${celdas}</div>
-      <div class="hv-ley"><span>menos</span><i style="background:var(--surface-2)"></i><i style="background:color-mix(in srgb, var(--brand) 40%, var(--surface-2))"></i><i style="background:color-mix(in srgb, var(--brand) 70%, var(--surface-2))"></i><i style="background:var(--brand)"></i><span>más</span>${st.m === "conv" ? "<span>· conversión = de los que escribieron a esa hora, cuántos compraron</span>" : ""}</div>
+        <div class="hv-tools"><div class="hv-seg" role="tablist" aria-label="Gráfico">${[["barras", "Por hora"], ["mapa", "Día y hora"]].map(([k, l]) => `<button type="button" data-v="${k}" class="${st.vista === k ? "on" : ""}">${l}</button>`).join("")}</div>
+          <div class="hv-seg" role="tablist" aria-label="Qué mostrar">${(st.vista === "barras" ? [["ventas", "Ventas"], ["ingresos", "Ingresos"]] : [["ventas", "Ventas"], ["chats", "Chats"], ["conv", "Conversión"]]).map(([k, l]) => `<button type="button" data-m="${k}" class="${(st.vista === "barras" ? st.bm : st.m) === k ? "on" : ""}">${l}</button>`).join("")}</div></div></div>
+      ${totalV || totalC ? (st.vista === "barras" ? barras(m) : `<div class="hv-mapa">${celdas}</div>
+      <div class="hv-ley"><span>menos</span><i style="background:var(--surface-2)"></i><i style="background:color-mix(in srgb, var(--brand) 40%, var(--surface-2))"></i><i style="background:color-mix(in srgb, var(--brand) 70%, var(--surface-2))"></i><i style="background:var(--brand)"></i><span>más</span>${st.m === "conv" ? "<span>· conversión = de los que escribieron a esa hora, cuántos compraron</span>" : ""}</div>`) + `
       <div class="hv-det" id="hvDet">${detalle()}</div>
       <div class="hv-cols">
         <div class="hv-box"><h5>Tus mejores horas</h5>${mejores.length ? mejores.map((x) => `<div class="hv-it"><b>${franja(x.hh)}</b><span>${x.v} venta${x.v === 1 ? "" : "s"} · ${m(x.i)}${x.c ? ` · ${pct(x.b, x.c)}% compró` : ""}</span></div>`).join("") : `<div class="hv-vacio">Sin ventas en estas fechas.</div>`}
@@ -106,12 +138,19 @@ export async function montarHorarios(host, { supa, channelId, fromISO, toISO, ve
     </div>`;
   }
   function detalle() {
+    if (st.vista === "barras") {
+      if (st.selH == null) return "Toca una barra para ver esa hora.";
+      const hh = st.selH, mm = money || ((x) => "S/ " + Math.round(x));
+      return `<b>De ${franja(hh)}</b>: ${vH[hh]} venta${vH[hh] === 1 ? "" : "s"} · ${mm(iH[hh])} · ${cH[hh]} chat${cH[hh] === 1 ? "" : "s"} nuevo${cH[hh] === 1 ? "" : "s"}${cH[hh] ? ` · ${pct(bH[hh], cH[hh])}% de ellos compró` : ""}`;
+    }
     if (!st.sel) return "Toca un cuadrito para ver ese día y esa hora.";
     const [d, hh] = st.sel, c = C[d][hh], v = V[d][hh];
     return `<b>Los ${DIAS_L[d]} de ${franja(hh)}</b>: ${v} venta${v === 1 ? "" : "s"}${v ? ` (${(money || ((x) => "S/ " + Math.round(x)))(I[d][hh])})` : ""} · ${c} chat${c === 1 ? "" : "s"} nuevo${c === 1 ? "" : "s"}${c ? ` · ${pct(B[d][hh], c)}% de ellos compró` : ""}`;
   }
   host.onclick = (e) => {
-    const b = e.target.closest("[data-m]"); if (b) { st.m = b.dataset.m; pintar(); return; }
+    const v = e.target.closest("[data-v]"); if (v) { st.vista = v.dataset.v; pintar(); return; }
+    const b = e.target.closest("[data-m]"); if (b) { if (st.vista === "barras") st.bm = b.dataset.m; else st.m = b.dataset.m; pintar(); return; }
+    const hb = e.target.closest("[data-hb]"); if (hb) { st.selH = Number(hb.dataset.hb); host.querySelectorAll(".hv-b.sel").forEach((x) => x.classList.remove("sel")); hb.classList.add("sel"); const det = host.querySelector("#hvDet"); if (det) det.innerHTML = detalle(); return; }
     const c = e.target.closest(".hv-c"); if (c) { st.sel = [Number(c.dataset.d), Number(c.dataset.h)]; host.querySelectorAll(".hv-c.sel").forEach((x) => x.classList.remove("sel")); c.classList.add("sel"); const det = host.querySelector("#hvDet"); if (det) det.innerHTML = detalle(); }
   };
   pintar();
