@@ -69,6 +69,7 @@ function suscribir() {
     N.rows.set(n.id, { ...(antes || {}), ...n });
     if (nueva) { N.leidas.delete(n.id); N.quitadas.delete(n.id); if (!document.hidden && (critico(n) || (TIPOS[n.tipo]?.[0] === "ventas"))) tarjeta(N.rows.get(n.id)); }
     campana(); if (capaAbierta("notif")) pintar();
+    if (n.tipo === "whatsapp_salud") emit("waSalud");
     if (n.contact_id && !n.contact) cargarPronto();
   }).subscribe();
 }

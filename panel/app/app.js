@@ -247,6 +247,7 @@ async function empezar() {
   mods.forEach((m) => m.init && m.init());
   await cambiarBot(A.ch, true);
   $("#boot").hidden = true; $("#app").hidden = false;
+  pintaAlertaWA().catch(() => {});
   history.replaceState({ base: 1 }, "");
   emit("listo");
 }
@@ -299,7 +300,57 @@ function suscribir() {
 }
 let _rtVeces = 0;
 // Al volver a la app (estaba en segundo plano) se pone todo al día.
-document.addEventListener("visibilitychange", () => { if (!document.hidden && A.ch) emit("resync"); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { versionNueva(); if (A.ch) emit("resync"); } });
+
+// ═════════ 🚨 Franja roja: Meta restringió o baneó un número (channels.wa_alerta) ═════════
+// La llenan el webhook de Meta y el sondeo del scheduler cada 3 h (_shared/salud-wa.ts), y se borra sola cuando Meta
+// lo levanta. Se queda arriba mientras dure; «Ocultar» la esconde solo hasta que vuelvas a abrir la app.
+const OCULTA = (a) => "nodo.app.waOculta." + (a.at || a.texto);
+export async function pintaAlertaWA() {
+  const box = $("#waal"); if (!box || !A.channels.length) return;
+  const { data } = await supa.from("channels").select("id,nombre,wa_alerta").in("id", A.channels.map((c) => c.id));
+  let vistas = {}; try { vistas = JSON.parse(sessionStorage.getItem("nodo.app.waOcultas") || "{}"); } catch (_) { /* */ }
+  const con = (data || []).filter((c) => c.wa_alerta?.texto && !vistas[OCULTA(c.wa_alerta)])
+    .sort((a, b) => (b.id === A.ch) - (a.id === A.ch) || (a.wa_alerta.nivel === "amarillo") - (b.wa_alerta.nivel === "amarillo"));
+  if (!con.length) { box.hidden = true; box.innerHTML = ""; return; }
+  const c = con[0], a = c.wa_alerta, rojo = a.nivel !== "amarillo", varios = A.channels.length > 1;
+  box.className = "waal" + (rojo ? "" : " ama");
+  box.innerHTML = `<button type="button" class="waal-b" id="waalVer">${ic("alert")}<span><b>${rojo ? "WhatsApp con problemas" : "Atención con tu WhatsApp"}${varios ? " · " + esc(c.nombre) : ""}</b><small>${esc(a.texto)}</small></span>${ic("chevronRight")}</button>${con.length > 1 ? `<small class="waal-mas">y ${con.length - 1} bot${con.length === 2 ? "" : "s"} más con avisos de Meta</small>` : ""}`;
+  box.hidden = false;
+  $("#waalVer").onclick = () => abrirHoja(`<h3>${rojo ? "Meta restringió tu número" : "Atención con tu número"}</h3><p class="lead">${esc(c.nombre)}${a.at ? " · " + esc(fmtHora(a.at)) : ""}</p>
+    ${con.map((x) => `<div class="waal-it${x.wa_alerta.nivel === "amarillo" ? " ama" : ""}"><b>${esc(x.nombre)}</b><p>${esc(x.wa_alerta.texto)}</p></div>`).join("")}
+    <p class="nsub">Revísalo en el Administrador de WhatsApp de Meta (business.facebook.com → WhatsApp Manager). La franja se quita sola cuando Meta levanta la restricción.</p>
+    <button type="button" class="btn ghost" style="width:100%" id="waalOk">Ocultar hasta que vuelva a abrir la app</button>`, (sh, cerrar) => {
+    $("#waalOk", sh).onclick = () => { con.forEach((x) => { vistas[OCULTA(x.wa_alerta)] = 1; }); try { sessionStorage.setItem("nodo.app.waOcultas", JSON.stringify(vistas)); } catch (_) { /* */ } cerrar(); pintaAlertaWA(); };
+  });
+}
+on("resync", () => pintaAlertaWA().catch(() => {}));
+on("waSalud", () => pintaAlertaWA().catch(() => {}));
+setInterval(() => { if (!document.hidden && A.ch) pintaAlertaWA().catch(() => {}); }, 5 * 60e3);
+
+// ═════════ Ponerse al día solo cuando se publica una versión nueva de la app ═════════
+// La app carga la web publicada (GitHub Pages guarda cada archivo 10 min en el celular). Al abrirla o volver a ella se
+// mira la fecha de publicación de index.html; si cambió, se bajan de nuevo TODOS los archivos que usa la app (así el
+// caché del celular queda al día) y se recarga una sola vez.
+const VER_KEY = "nodo.app.publicada";
+async function versionNueva() {
+  try {
+    const r = await fetch("index.html", { method: "HEAD", cache: "no-store" });
+    const v = r.headers.get("last-modified") || r.headers.get("etag"); if (!r.ok || !v) return;
+    let antes = null; try { antes = localStorage.getItem(VER_KEY); } catch (_) { /* */ }
+    if (antes === v) return;
+    try { localStorage.setItem(VER_KEY, v); } catch (_) { /* */ }
+    if (sessionStorage.getItem("nodo.app.recargo") === v) return;   // ya se recargó por esta versión: no dar vueltas
+    sessionStorage.setItem("nodo.app.recargo", v);
+    const mios = performance.getEntriesByType("resource").map((e) => e.name).filter((u) => u.startsWith(location.origin) && /\.(js|css|webmanifest)(\?|$)/.test(u));
+    const fijos = ["app.js", "app.css", "chats.js", "chat.js", "ficha.js", "pagos.js", "t4.js", "hoy.js", "mas.js", "notif.js", "push.js", "comun.js", "fechas.js", "sonidos.js",
+      "../shell.js", "../shell.css", "../date-range.js", "../orders.js", "../horarios.js"].map((f) => new URL(f, location.href).href);
+    await Promise.all([...new Set([location.href.split("#")[0], ...fijos, ...mios])].map((u) => fetch(u, { cache: "reload" }).catch(() => null)));
+    if (_hoja || PILA.length) { toast("Hay una versión nueva de la app: se verá la próxima vez que la abras"); return; }
+    location.reload();
+  } catch (_) { /* sin red: se intenta la próxima vez */ }
+}
+versionNueva();
 addEventListener("online", () => A.ch && emit("resync"));
 
 boot().catch((e) => { console.error(e); $("#boot").hidden = true; toast("No se pudo abrir la app: " + (e?.message || e), true); });
