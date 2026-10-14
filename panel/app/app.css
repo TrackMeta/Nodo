@@ -28,14 +28,33 @@ body.app [hidden]{display:none!important}
 .chip img{width:18px;height:18px;border-radius:5px;object-fit:cover}
 
 /* entrar */
-.login{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg)}
-.login-box{width:100%;max-width:360px;display:flex;flex-direction:column;gap:8px}
-.login-box h1{margin:10px 0 0;font-size:26px}
-.login-box p{margin:0 0 10px;color:var(--muted);font-size:14px}
-.login-box label{font-size:12.5px;font-weight:600;color:var(--muted);margin-top:6px}
-.login-box input{font:inherit;font-size:16px;padding:13px 14px;border-radius:12px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text)}
-.login-box .btn{margin-top:14px}
-.lerr{color:var(--red)!important;font-size:13px!important}
+/* Entrar: la misma pantalla del panel web (index.html #login), adaptada al celular */
+.login{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg);overflow-y:auto}
+.login::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(520px 420px at 10% 4%,rgba(0,125,253,.20),transparent 60%),radial-gradient(480px 400px at 92% 96%,rgba(168,85,247,.17),transparent 60%)}
+.lg-card{position:relative;z-index:1;width:100%;max-width:400px;background:var(--surface);border:1px solid var(--border-strong);border-radius:22px;padding:30px 22px 22px;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;margin:auto}
+.lg-card::before{content:"";position:absolute;left:0;right:0;top:0;height:4px;background:linear-gradient(90deg,#007dfd,#a855f7,#ec4899)}
+.lg-brand{display:flex;align-items:center;gap:13px}
+.lg-badge{width:52px;height:52px;border-radius:15px;flex:none;display:grid;place-items:center;background:linear-gradient(135deg,rgba(0,125,253,.16),rgba(168,85,247,.18));box-shadow:0 0 0 1px var(--border) inset}
+.lg-badge img{width:34px;height:34px;border-radius:9px}
+.lg-brand h1{font-size:21px;font-weight:750;margin:0;letter-spacing:-.02em}
+.lg-brand span{color:var(--muted);font-size:12.5px}
+.lg-head{margin:22px 0 4px}
+.lg-head h2{font-size:18px;font-weight:700;margin:0 0 5px;letter-spacing:-.02em}
+.lg-head p{color:var(--muted);font-size:13px;margin:0;line-height:1.5}
+.lg-card label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:16px 0 7px}
+.lg-in{position:relative;display:flex;align-items:center}
+.lg-in > svg{position:absolute;left:14px;width:17px;height:17px;color:var(--faint);pointer-events:none}
+.lg-in input{width:100%;height:48px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:0 14px 0 42px;font:inherit;font-size:16px;outline:none;transition:border .15s,box-shadow .15s}
+.lg-in input#lPass{padding-right:48px}
+.lg-in input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg)}
+.lg-ojo{position:absolute;right:4px;top:4px;bottom:4px;width:40px;display:grid;place-items:center;border-radius:9px;color:var(--muted)}
+.lg-ojo svg{width:19px;height:19px}
+.lg-btn{width:100%;height:48px;color:#fff;border-radius:12px;font-weight:700;font-size:15px;margin-top:24px;letter-spacing:-.01em;background:linear-gradient(135deg,#007dfd,#4b6fff);box-shadow:0 8px 22px rgba(0,125,253,.30)}
+.lg-btn:active{transform:scale(.99)}
+.lg-btn:disabled{opacity:.6}
+.lg-card .lerr{color:var(--red);font-size:13px;margin:14px 0 0;line-height:1.45}
+.lg-card .lerr.ok{color:var(--green)}
+.lg-olvide{display:block;margin:12px auto 0;color:var(--muted);font-size:12.5px;text-decoration:underline;padding:6px}
 
 /* esqueleto */
 .shell{position:fixed;inset:0;display:flex;flex-direction:column}

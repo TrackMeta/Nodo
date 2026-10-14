@@ -15,16 +15,23 @@
 
 <!-- Entrar -->
 <section id="login" class="login" hidden>
-  <form id="loginForm" class="login-box" autocomplete="on">
-    <img class="logo-img lg" src="../../assets/logo-128.png" alt="Nodo">
-    <h1>Nodo</h1>
-    <p>Entra con la misma cuenta del panel.</p>
+  <form id="loginForm" class="lg-card" autocomplete="on">
+    <div class="lg-brand">
+      <div class="lg-badge"><img src="../../assets/logo-128.png" alt="Nodo"></div>
+      <div><h1>Nodo</h1><span>Tu WhatsApp con IA</span></div>
+    </div>
+    <div class="lg-head">
+      <h2>Bienvenido</h2>
+      <p>Inicia sesión para gestionar tus ventas y conversaciones.</p>
+    </div>
     <label for="lEmail">Correo</label>
-    <input id="lEmail" type="email" autocomplete="username" required>
+    <div class="lg-in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg><input id="lEmail" type="email" autocomplete="username" placeholder="tucorreo@ejemplo.com" required></div>
     <label for="lPass">Contraseña</label>
-    <input id="lPass" type="password" autocomplete="current-password" required>
-    <button class="btn blue" id="lGo" type="submit">Entrar</button>
+    <div class="lg-in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><input id="lPass" type="password" autocomplete="current-password" placeholder="••••••••" required>
+      <button type="button" class="lg-ojo" id="lOjo" aria-label="Mostrar la contraseña"></button></div>
+    <button class="lg-btn" id="lGo" type="submit">Ingresar</button>
     <p class="lerr" id="lErr" hidden></p>
+    <button type="button" class="lg-olvide" id="lOlvide">¿Olvidaste tu contraseña?</button>
   </form>
 </section>
 

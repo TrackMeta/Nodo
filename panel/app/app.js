@@ -229,15 +229,30 @@ async function boot() {
   A.uid = session.user.id; A.email = session.user.email || "";
   await empezar();
 }
+// Pantalla de entrar: la misma del panel web (tarjeta, íconos, «¿Olvidaste tu contraseña?») + el ojito
+const OJO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const OJO_NO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2A10.4 10.4 0 0 1 12 4c6.5 0 10 8 10 8a17.6 17.6 0 0 1-2.2 3.2M6.6 6.6A17.4 17.4 0 0 0 2 12s3.5 8 10 8a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="m2 2 20 20"/></svg>';
 function mostrarLogin() {
   $("#boot").hidden = true; $("#app").hidden = true; $("#login").hidden = false;
+  const msg = (t, ok) => { $("#lErr").textContent = t; $("#lErr").classList.toggle("ok", !!ok); $("#lErr").hidden = !t; };
+  const ojo = $("#lOjo"), pass = $("#lPass");
+  const pintaOjo = () => { const ver = pass.type === "text"; ojo.innerHTML = ver ? OJO_NO : OJO; ojo.setAttribute("aria-label", ver ? "Ocultar la contraseña" : "Mostrar la contraseña"); };
+  pintaOjo();
+  ojo.onclick = () => { pass.type = pass.type === "password" ? "text" : "password"; pintaOjo(); pass.focus(); };
   $("#loginForm").onsubmit = async (e) => {
     e.preventDefault();
-    $("#lErr").hidden = true; $("#lGo").disabled = true; $("#lGo").textContent = "Entrando…";
-    const { error } = await supa.auth.signInWithPassword({ email: $("#lEmail").value.trim(), password: $("#lPass").value });
-    $("#lGo").disabled = false; $("#lGo").textContent = "Entrar";
-    if (error) { $("#lErr").textContent = /invalid/i.test(error.message) ? "Correo o contraseña incorrectos." : "No se pudo entrar: " + error.message; $("#lErr").hidden = false; return; }
+    msg(""); $("#lGo").disabled = true; $("#lGo").textContent = "Ingresando…";
+    const { error } = await supa.auth.signInWithPassword({ email: $("#lEmail").value.trim(), password: pass.value });
+    $("#lGo").disabled = false; $("#lGo").textContent = "Ingresar";
+    if (error) { msg(/invalid/i.test(error.message) ? "Credenciales inválidas" : "No se pudo entrar: " + error.message); return; }
     location.reload();
+  };
+  // Igual que el panel: llega un correo con un enlace que abre el panel web para crear la contraseña nueva
+  $("#lOlvide").onclick = async () => {
+    const email = $("#lEmail").value.trim();
+    if (!email) { msg("Escribe tu correo arriba y vuelve a tocar «¿Olvidaste tu contraseña?»"); return; }
+    const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: new URL("../index.html", location.href).href });
+    msg(error ? "No se pudo enviar: " + error.message : "Listo: si ese correo tiene cuenta, te llegó un enlace para crear una contraseña nueva (revisa también spam).", !error);
   };
 }
 supa.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") { try { localStorage.removeItem("nodo.channelId"); } catch (_) { /* */ } location.reload(); } });
