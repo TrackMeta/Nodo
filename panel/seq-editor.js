@@ -547,11 +547,17 @@ export function mountStepsEditor(el, opts){
         <select class="in" data-ofopt style="min-width:140px">${ops.map(o=>`<option value="${o.id}" ${paso.oferta?.version_id===o.id?"selected":""}>${esc(o.nombre)} (S/ ${esc(o.precio)})</option>`).join("")}</select>
         <span style="font-size:12px;color:var(--muted)">a S/</span>
         <input class="in" data-ofprecio type="number" min="0" step="0.5" value="${esc(paso.oferta.precio??"")}" style="width:100px" placeholder="precio"/>
-        <span style="font-size:12px;color:var(--muted)">· vence en</span>
+        ${paso.oferta.no_caduca ? "" : `<span style="font-size:12px;color:var(--muted)">· vence en</span>
         <input class="in" data-ofvence type="number" min="0" step="1" value="${esc(paso.oferta.vence_horas??48)}" style="width:70px"/>
-        <span style="font-size:12px;color:var(--muted)">horas</span>
+        <span style="font-size:12px;color:var(--muted)">horas</span>`}
       </div>
-      <div style="font-size:11px;color:var(--faint);margin-top:6px">Usa <b style="color:var(--brand)">{{precio}}</b> en el mensaje: saldrá rebajado. Si dejas 0, la oferta caduca en 72 h (no hay descuento permanente).</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+        <div class="sw ${paso.oferta.no_caduca?"on":""}" data-ofnocad></div>
+        <span style="font-size:12.5px;font-weight:600">No caduca</span>
+      </div>
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">${paso.oferta.no_caduca
+        ? "El cliente puede pagar este precio cuando quiera. Por seguridad se borra sola a los 90 días (para que no quede pegada en compras futuras), o antes si le llega otra oferta."
+        : "Si dejas 0, la oferta caduca en 72 h."} Usa <b style="color:var(--brand)">{{precio}}</b> en el mensaje: saldrá rebajado.</div>
       <div class="se-ofwarn" style="font-size:11.5px;color:var(--amber);margin-top:8px;font-weight:600">${ofWarn(paso)}</div>`
       :`<div style="font-size:11.5px;color:var(--amber);margin-top:9px">Primero crea una opción de compra con precio para poder ofrecer un descuento.</div>`):""}
       ${prod?.tipo==="microapp"?`<div style="display:flex;align-items:center;gap:10px;margin-top:12px">
@@ -570,6 +576,9 @@ export function mountStepsEditor(el, opts){
     const so=box.querySelector("[data-ofopt]"); if(so) so.onchange=(e)=>{ paso.oferta.version_id=e.target.value; };
     const sp=box.querySelector("[data-ofprecio]"); if(sp) sp.oninput=(e)=>{ paso.oferta.precio=e.target.value===""?"":Number(e.target.value); const w=box.querySelector(".se-ofwarn"); if(w) w.textContent=ofWarn(paso); };
     const sv=box.querySelector("[data-ofvence]"); if(sv) sv.oninput=(e)=>{ paso.oferta.vence_horas=Math.max(0,Number(e.target.value)||0); };
+    // «No caduca» (13-oct, Rodrigo): en el motor dura 90 días, no para siempre (un descuento eterno se quedaba pegado
+    // en las recompras). Al apagarlo vuelve a 48 h.
+    const nc=box.querySelector("[data-ofnocad]"); if(nc) nc.onclick=()=>{ if(paso.oferta.no_caduca){ delete paso.oferta.no_caduca; paso.oferta.vence_horas=48; } else { paso.oferta.no_caduca=true; paso.oferta.vence_horas=2160; } oferta(box,paso); };
   }
 
   function normalize(){

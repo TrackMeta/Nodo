@@ -1126,7 +1126,8 @@ async function processSub(s: any, now: number): Promise<boolean> {
       // quedaba `vence=null` = descuento ETERNO → el validador aceptaba el precio rebajado
       // para siempre (y en recompras/extras de esa misma versión). Default de 72h.
       const venceH = Number(paso.oferta.vence_horas);
-      const vh = Number.isFinite(venceH) && venceH > 0 ? venceH : 72;
+      // «No caduca» (panel, 13-oct) = 90 días: largo, pero nunca eterno.
+      const vh = paso.oferta.no_caduca ? 90 * 24 : Number.isFinite(venceH) && venceH > 0 ? venceH : 72;
       const vence = new Date(now + vh * 3600 * 1000).toISOString();
       await db.from("contacts").update({
         oferta_activa: { opcion_id: paso.oferta.version_id, precio: Number(paso.oferta.precio), vence, origen: "remarketing" },
