@@ -285,10 +285,22 @@ html:not([data-theme="light"]) .send.mic{color:#06210f}
 .graf.vacio{font-size:12px;color:var(--hero-muted);padding:10px 0 2px}
 .graf-ejes{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;color:var(--hero-muted);margin-top:4px}
 .graf-ejes span:nth-child(2){color:var(--hero-text);font-weight:600}
-.emb{display:grid;grid-template-columns:110px 1fr auto;gap:10px;align-items:center;padding:7px 14px;font-size:13px}
-.emb-bar{height:8px;border-radius:8px;background:var(--surface-2);overflow:hidden}
-.emb-bar i{display:block;height:100%;border-radius:8px;background:var(--brand)}
-.emb b{font-size:12.5px}
+/* «Cómo avanzan» (el embudo de la página Embudo): niveles que se angostan, con su caída y la mayor fuga */
+.fwrap{padding:4px 14px 12px;display:flex;flex-direction:column;gap:8px}
+.fneck{display:flex;align-items:flex-start;gap:9px;background:var(--amber-bg);color:var(--text);border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.45}
+.fneck.ok{background:var(--green-bg)}
+.fneck svg{flex:none;width:16px;height:16px;margin-top:1px}
+.fun{display:flex;flex-direction:column;align-items:center}
+.fbar{height:42px;border-radius:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 13px;color:#fff;font-size:13px;font-weight:700;min-width:0}
+.fbar span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.fbar b{flex:none;font-size:15px;font-weight:800;white-space:nowrap}
+.fbar.f-llegaron{background:var(--st-llegaron,#344054)} .fbar.f-curioso{background:var(--st-curioso,#667085)}
+.fbar.f-interesado{background:var(--st-interesado,#2563EB)} .fbar.f-caliente{background:var(--st-caliente,#EA580C)}
+.fbar.f-confirmado{background:var(--st-confirmado,#CA8A04);color:#1F2937} .fbar.f-comprado{background:var(--st-comprado,#16A34A)}
+.fpaso{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;color:var(--faint);padding:4px 0}
+.fpaso svg{width:12px;height:12px}
+.fpaso.peor{color:var(--red)}
+.fwrap .nsub{margin:2px 0 0;text-align:center}
 .li.ad .rmid > span{white-space:normal}
 .li .rend b{font-size:13.5px}
 .gcuenta{display:flex;flex-direction:column;margin:0 4px 12px;border:1px solid var(--border);border-radius:14px;overflow:hidden}

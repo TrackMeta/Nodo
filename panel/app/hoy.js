@@ -1,5 +1,5 @@
 // «Hoy» (Resumen) en el celular: lo que espera por ti, lo cobrado y la ganancia (con su detalle), el gráfico de
-// ventas, los números del Dashboard con flechas contra el período anterior, el embudo, tus anuncios y un bloque
+// ventas, los números del Dashboard con flechas contra el período anterior, horarios, «Cómo avanzan», anuncios y un bloque
 // según el tipo de bot. Mismas consultas y la misma cuenta que dashboard.html (vista «Todo»). Se pone al día solo.
 import { A, $, esc, ic, on, emit, supa, invoke, abrirHoja, hoja, toast, sol, ir } from "./app.js";
 import { pageAll, getChannel, getUsdRate, factorAds, adsDeCuentasQuitadas } from "../shell.js";
@@ -32,7 +32,7 @@ async function calcular(r, ligero) {
   const ch = A.ch, fromISO = startOfDayTZ(r.from).toISOString(), toISO = new Date(endOfDayTZ(r.to).getTime() + 1).toISOString();
   const chan = await getChannel(ch); const CUR = chan?.moneda || "PEN"; const USD = CUR === "USD" ? 1 : await getUsdRate(ch);
   const baseC = () => supa.from("contacts").select("id", { count: "exact", head: true }).eq("channel_id", ch).or("source.is.null,source.neq.sim").neq("wa_id", "webchat-test").gte("primera_interaccion", fromISO).lt("primera_interaccion", toISO);
-  const [ords, prods, ins, adm, prueba, cAd, cOrg, exp, ia, conts, adsM] = await Promise.all([
+  const [ords, prods, ins, adm, prueba, cAd, cOrg, exp, ia, conts, adsM, llegaron] = await Promise.all([
     todo((f, t) => supa.from("orders").select("contact_id,product_id,version_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id", ch).gte("created_at", fromISO).lt("created_at", toISO).order("created_at", { ascending: false }).order("id").range(f, t)),
     supa.from("products").select("id,nombre,emoji,clase,tipo,config,product_versions(id,nombre,cantidad)").eq("channel_id", ch),
     todo((f, t) => supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id", ch).gte("fecha", ymd(r.from)).lte("fecha", ymd(r.to)).order("fecha", { ascending: false }).order("ad_id", { ascending: false }).range(f, t)),
@@ -45,6 +45,8 @@ async function calcular(r, ligero) {
     // Los chats nuevos del período (para el embudo y los chats por anuncio)
     ligero ? [] : todo((f, t) => supa.from("contacts").select("id,ad_id,stage,etapa_previa,primera_interaccion").eq("channel_id", ch).or("source.is.null,source.neq.sim").neq("wa_id", "webchat-test").gte("primera_interaccion", fromISO).lt("primera_interaccion", toISO).order("id").range(f, t)),
     ligero ? { data: [] } : supa.from("ads_meta").select("ad_id,ad_name,campaign_name").eq("channel_id", ch),
+    // «Cómo avanzan»: los contactos que llegaron en estas fechas, como la página Embudo (por created_at)
+    ligero ? [] : todo((f, t) => supa.from("contacts").select("id,stage,etapa_previa").eq("channel_id", ch).or("source.is.null,source.neq.sim").neq("wa_id", "webchat-test").gte("created_at", fromISO).lt("created_at", toISO).order("id").range(f, t)),
   ]);
   const pruebaIds = new Set(prueba.map((c) => c.id));
   const todas = ords.filter((o) => !pruebaIds.has(o.contact_id) && String(o.currency || "PEN").toUpperCase() === CUR.toUpperCase());
@@ -79,9 +81,14 @@ async function calcular(r, ligero) {
   else { const d = new Date(r.from); while (d <= r.to) { serie.set(ymd(d), 0); d.setDate(d.getDate() + 1); } }
   ventasOk.forEach((o) => { const k = unDia(r) ? horaTZ(o.created_at) : ymdTZ(o.created_at); if (serie.has(k)) serie.set(k, serie.get(k) + O.total(o)); });
   res.serie = [...serie];
-  // Embudo (cohorte de los chats nuevos, como renderMetricas del Dashboard)
-  const INT = ["interesado", "caliente", "confirmado"], conOrden = new Set(todas.map((o) => o.contact_id));
-  res.embudo = { total: conts.length, interes: conts.filter((c) => [...INT, "comprado"].includes(c.stage) || (c.stage === "perdido" && (INT.includes(c.etapa_previa) || conOrden.has(c.id)))).length, compraron: conts.filter((c) => c.stage === "comprado").length };
+  // «Cómo avanzan» (la misma cuenta que funnelDe de embudo.html): el perdido CON pedido es una venta caída; el
+  // perdido sin pedido cuenta en el escalón que alcanzó (etapa_previa)
+  const perdidos = llegaron.filter((c) => c.stage === "perdido").map((c) => c.id), conPedido = new Set();
+  for (let i = 0; i < perdidos.length; i += 150) {
+    const { data } = await supa.from("orders").select("contact_id").in("contact_id", perdidos.slice(i, i + 150));
+    (data || []).forEach((o) => conPedido.add(o.contact_id));
+  }
+  res.funnel = funnelDe(llegaron, conPedido);
   // Anuncios: gasto, chats, costo por chat, ventas y cobrado de cada uno
   const nom = new Map((adsM.data || []).map((a) => [String(a.ad_id), a]));
   const ads = new Map();
@@ -100,6 +107,46 @@ async function calcular(r, ligero) {
   res.zona = zona;
   return res;
 }
+// ── «Cómo avanzan»: el embudo de la página Embudo (funnelDe + fugas de embudo.html, vista Todo) ──
+const pctN = (a, b) => (b > 0 ? Math.round((a / b) * 100) : null);
+function funnelDe(cs, conPedido) {
+  const c = { nuevo: 0, curioso: 0, interesado: 0, caliente: 0, confirmado: 0, comprado: 0, perdido: 0 };
+  cs.forEach((x) => { const k = x.stage || "nuevo"; if (k in c) c[k]++; else c.nuevo++; });
+  const RANGO = { curioso: 1, interesado: 2, caliente: 3, confirmado: 4 };
+  let perdidoVenta = 0; const lp = [0, 0, 0, 0, 0];
+  cs.forEach((x) => { if (x.stage !== "perdido") return; if (conPedido.has(x.id)) { perdidoVenta++; return; } const r = RANGO[x.etapa_previa] || 0; for (let i = 1; i <= r; i++) lp[i]++; });
+  const N = { llegaron: cs.length, curiosos: c.curioso + c.interesado + c.caliente + c.confirmado + c.comprado + lp[1], interes: c.interesado + c.caliente + c.confirmado + c.comprado + lp[2], calientes: c.caliente + c.confirmado + c.comprado + lp[3], confirmaron: c.confirmado + c.comprado + lp[4], compraron: c.comprado };
+  const saltos = [
+    { de: "Llegaron", a: "Curiosos", arriba: N.llegaron, paso: pctN(N.curiosos, N.llegaron), tip: "Mejora el anuncio y la palabra clave." },
+    { de: "Curiosos", a: "Interés", arriba: N.curiosos, paso: pctN(N.interes, N.curiosos), tip: "Mejora el mensaje inicial." },
+    { de: "Interés", a: "Caliente", arriba: N.interes, paso: pctN(N.calientes, N.interes), tip: "Mejora el seguimiento." },
+    { de: "Caliente", a: "Confirmaron", arriba: N.calientes, paso: pctN(N.confirmaron, N.calientes), tip: "Trabaja precio y objeciones." },
+    { de: "Confirmaron", a: "Compraron", arriba: N.confirmaron, paso: pctN(N.compraron, N.confirmaron), tip: "Revisa el cobro y la entrega." },
+  ];
+  saltos.forEach((s, i) => { s.i = i; s.drop = s.paso == null ? null : 100 - s.paso; s.seCae = s.paso == null ? 0 : Math.round((s.arriba * s.drop) / 100); });
+  // El último salto solo cuenta a los que se cayeron: un confirmado en curso no es fuga, está en camino
+  const cierre = saltos[4], caidos = perdidoVenta + lp[4];
+  cierre.seCae = caidos; cierre.drop = cierre.arriba > 0 ? Math.min(100, Math.round((caidos / (cierre.arriba + perdidoVenta)) * 100)) : null;
+  const validos = saltos.filter((s) => s.arriba > 0 && s.drop != null);
+  const peor = validos.length ? validos.reduce((a, b) => (b.seCae > a.seCae ? b : a)) : null;
+  return { N, saltos, peor: peor && peor.drop > 25 && peor.seCae >= 2 ? peor : null, enCurso: c.confirmado };
+}
+function comoAvanzan(F) {
+  if (!F || !F.N.llegaron) return `<div class="card"><div class="ttl">Cómo avanzan</div><p class="nsub" style="padding:6px 14px 12px">Nadie llegó en estas fechas.</p></div>`;
+  const { N, saltos, peor, enCurso } = F;
+  const niveles = [["Llegaron", N.llegaron, "llegaron"], ["Curiosos", N.curiosos, "curioso"], ["Interés", N.interes, "interesado"], ["Caliente", N.calientes, "caliente"], ["Confirmaron", N.confirmaron, "confirmado"], ["Compraron", N.compraron, "comprado"]];
+  const flecha = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
+  let fun = "";
+  niveles.forEach(([l, n, k], i) => {
+    fun += `<div class="fbar f-${k}" style="width:${Math.max(66, Math.round((n / N.llegaron) * 100))}%"><span>${l}</span><b class="num">${n} · ${pctN(n, N.llegaron)}%</b></div>`;
+    if (i < niveles.length - 1) { const s = saltos[i]; fun += `<div class="fpaso${peor && peor.i === i ? " peor" : ""}">${flecha}<span>${s.drop == null ? "—" : s.drop > 0 ? "−" + s.drop + "%" : "sin caída"}</span></div>`; }
+  });
+  const aviso = peor ? `<div class="fneck">${ic("alert")}<div><b>Mayor fuga:</b> ${peor.de} → ${peor.a}, se van ${peor.seCae} (${peor.drop}%). ${peor.tip}</div></div>`
+    : `<div class="fneck ok">${ic("check")}<div>Tu embudo fluye bien.</div></div>`;
+  const curso = enCurso > 0 ? `<div class="fneck ok">${ic("truck")}<div>${enCurso} ${enCurso === 1 ? "venta confirmada sigue" : "ventas confirmadas siguen"} en curso.</div></div>` : "";
+  return `<div class="card"><div class="ttl">Cómo avanzan</div><div class="fwrap">${aviso}${curso}<div class="fun">${fun}</div><p class="nsub">Los que llegaron en estas fechas, como en la página Embudo.</p></div></div>`;
+}
+
 // Período anterior del mismo largo
 function anterior(r) { const n = Math.round((r.to - r.from) / 864e5) + 1; const to = new Date(r.from); to.setDate(to.getDate() - 1); const from = new Date(to); from.setDate(from.getDate() - (n - 1)); return { from, to, preset: "prev" }; }
 const flecha = (act, prev, inv) => {
@@ -114,7 +161,6 @@ function pintaEspera() {
   const t4lbl = A.tipo === "fisico" ? "pedidos parados" : A.tipo === "apps" ? "accesos por vencer" : "";
   const items = [
     PEND.pagos ? `<button type="button" class="esp urg" data-ir="pagos">${ic("banknote")}<b>${PEND.pagos}</b> pago${PEND.pagos === 1 ? "" : "s"} por validar</button>` : "",
-    PEND.chats ? `<button type="button" class="esp urg" data-ir="humano">${ic("user")}<b>${PEND.chats}</b> ${PEND.chats === 1 ? "pide" : "piden"} una persona</button>` : "",
     PEND.t4 && t4lbl ? `<button type="button" class="esp" data-ir="t4">${ic("clock")}<b>${PEND.t4}</b> ${t4lbl}</button>` : "",
   ].filter(Boolean);
   box.innerHTML = items.length ? `<div class="espera">${items.join("")}</div>` : `<div class="espera ok">${ic("check")} Nada espera por ustedes ahora</div>`;
@@ -144,8 +190,7 @@ function grafico(n, r) {
   return `<div class="graf"><svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" aria-label="Cobrado ${unDia(r) ? "por hora" : "por día"}">${barras}</svg><div class="graf-ejes"><span>${ini}</span><span>${esc(pico)}</span><span>${fin}</span></div></div>`;
 }
 function pintar(r, n, p, apps) {
-  const m = (x) => sol(x, n.CUR), chats = n.chatsAd + n.chatsOrg, chatsP = p.chatsAd + p.chatsOrg, e = n.embudo;
-  const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+  const m = (x) => sol(x, n.CUR), chats = n.chatsAd + n.chatsOrg, chatsP = p.chatsAd + p.chatsOrg;
   let tipoHtml = "";
   if (A.tipo === "fisico") {
     const z = n.zona;
@@ -179,13 +224,11 @@ function pintar(r, n, p, apps) {
     </div>
     <div class="card"><div class="ttl">Ingresos ${unDia(r) ? "por hora" : "por día"}</div><div style="padding:0 14px 12px">${grafico(n, r)}</div></div>
     <div class="card"><div style="padding:12px 14px" id="hoyHorarios"></div></div>
-    <div class="card embudo"><div class="ttl">Embudo de los chats nuevos</div>
-      ${[["Chats nuevos", e.total, 100], ["Se interesaron", e.interes, pct(e.interes, e.total)], ["Compraron", e.compraron, pct(e.compraron, e.total)]].map(([l, v, p2]) => `<div class="emb"><span>${l}</span><div class="emb-bar"><i style="width:${Math.max(p2, v ? 3 : 0)}%"></i></div><b class="num">${v}${l !== "Chats nuevos" ? ` · ${p2}%` : ""}</b></div>`).join("")}
-      <p class="nsub" style="padding:2px 14px 12px">De los que escribieron por primera vez en este período${e.interes ? ` · cierre: ${pct(e.compraron, e.interes)}% de los interesados` : ""}.</p></div>
+    ${comoAvanzan(n.funnel)}
     ${adsHtml}${tipoHtml}${prodHtml}
     <p class="note">Mismo cálculo que el Dashboard del panel (vista Todo) · hora del negocio · se actualiza solo.</p>`;
   pintaEspera();
-  import("../horarios.js").then((mod) => mod.montarHorarios($("#hoyHorarios"), { supa, channelId: A.ch, fromISO: n.fromISO, toISO: n.toISO, ventas: n.ventasOk, chats: n.conts, money: m, h: "h4" })).catch(() => {});
+  import("../horarios.js").then((mod) => mod.montarHorarios($("#hoyHorarios"), { supa, channelId: A.ch, fromISO: n.fromISO, toISO: n.toISO, ventas: n.ventasOk, chats: n.conts, money: m, h: "h4", plegable: "nodo.app.horarios" })).catch(() => {});
 }
 function detalleGanancia() {
   const n = ULT; if (!n) return;
