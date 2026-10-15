@@ -24,9 +24,9 @@ body.app [hidden]{display:none!important}
 .boot.bt-salir{animation:btFuera .4s ease var(--fd,0ms) forwards;pointer-events:none}
 @keyframes btFuera{to{opacity:0}}
 /* El logo queda en el centro exacto de la pantalla (donde Android deja la N); los textos van debajo, aparte */
-.bt-centro{position:relative}
+.bt-centro{position:relative;transform:translate(var(--ldx,0px),var(--ldy,0px))}
 .bt-textos{position:absolute;top:calc(100% + 16px);left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:4px;white-space:nowrap}
-.bt-logo{position:relative;width:104px;height:104px;display:grid;place-items:center}
+.bt-logo{position:relative;width:104px;height:104px;display:grid;place-items:center;transform:scale(var(--les,1))}
 .bt-cuadro{position:absolute;inset:0;border-radius:15px;background:linear-gradient(90deg,#0044FE,#01AFFE);box-shadow:0 14px 34px rgba(0,70,255,.28);transform:scale(.4);opacity:0;will-change:transform,opacity}
 .bt-anima .bt-cuadro{animation:btCuadro .5s cubic-bezier(.3,1.3,.5,1) var(--d,0ms) both}
 @keyframes btCuadro{from{transform:scale(.4);opacity:0}60%{opacity:1}to{transform:scale(1);opacity:1}}

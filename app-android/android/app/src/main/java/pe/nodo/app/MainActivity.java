@@ -37,6 +37,34 @@ public class MainActivity extends BridgeActivity {
         h.postDelayed(this::quitarInicioSiToca, 30);
     }
 
+    // Dónde está (y de qué tamaño) el logo de la pantalla de Android, medido respecto del centro de la página, en dp
+    // (= px de la página): la carga web pone el suyo en ese mismo punto. Android lo centra en la pantalla ENTERA y la
+    // página va entre la barra de arriba y la de abajo (que no miden lo mismo): sin esto el logo saltaba unos píxeles.
+    // Devuelve {dx, dy, escala} o null. Llamar en el hilo de la pantalla.
+    float[] ajusteLogo() {
+        try {
+            WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+            if (wv == null || wv.getHeight() == 0) return null;
+            float d = getResources().getDisplayMetrics().density;
+            int[] w = new int[2]; wv.getLocationOnScreen(w);
+            float webCx = w[0] + wv.getWidth() / 2f, webCy = w[1] + wv.getHeight() / 2f;
+            android.view.View icono = null;
+            if (android.os.Build.VERSION.SDK_INT >= 31 && pantallaInicio instanceof android.window.SplashScreenView)
+                icono = ((android.window.SplashScreenView) pantallaInicio).getIconView();
+            float icCx, icCy, escala = 1f;
+            if (icono != null && icono.getWidth() > 0) {
+                int[] i = new int[2]; icono.getLocationOnScreen(i);
+                icCx = i[0] + icono.getWidth() / 2f; icCy = i[1] + icono.getHeight() / 2f;
+                escala = icono.getWidth() / (288f * d);   // el dibujo se pensó para un ícono de 288 dp
+                if (escala < 0.6f || escala > 1.6f) escala = 1f;
+            } else {
+                android.view.View deco = getWindow().getDecorView(); int[] dd = new int[2]; deco.getLocationOnScreen(dd);
+                icCx = dd[0] + deco.getWidth() / 2f; icCy = dd[1] + deco.getHeight() / 2f;
+            }
+            return new float[] { (icCx - webCx) / d, (icCy - webCy) / d, escala };
+        } catch (Throwable t) { return null; }
+    }
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         t0 = android.os.SystemClock.uptimeMillis();

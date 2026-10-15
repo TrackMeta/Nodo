@@ -44,14 +44,20 @@ public class NodoNativoPlugin extends Plugin {
     // cuántos ms faltan para que se vea la página, así la carga arma el logo justo cuando aparece y no detrás.
     @PluginMethod
     public void bootListo(PluginCall call) {
-        MainActivity.bootListoEn = android.os.SystemClock.uptimeMillis();
-        MainActivity.bootListo = true;
         long e = android.os.SystemClock.uptimeMillis() - MainActivity.t0;
-        JSObject r = new JSObject();
+        final JSObject r = new JSObject();
         r.put("espera", Math.max(0, MainActivity.N_COMPLETA - e));
         // v2 (APK 1.0.13+): la pantalla de Android ya trae el cuadro armado y la N blanca; la carga web sigue quieta
         r.put("v", 3);   // 3 (1.0.14+): además la pantalla de Android queda encima hasta que la carga web está dibujada
-        call.resolve(r);
+        // 1.0.15+: dónde poner el logo para que calce con el de Android (medido en este celular)
+        getActivity().runOnUiThread(() -> {
+            float[] a = (getActivity() instanceof MainActivity) ? ((MainActivity) getActivity()).ajusteLogo() : null;
+            if (a != null) { r.put("dx", a[0]); r.put("dy", a[1]); r.put("escala", a[2]); }
+            // Desde que la página tiene la respuesta corre el margen para que ponga el logo armado y lo dibuje
+            MainActivity.bootListoEn = android.os.SystemClock.uptimeMillis();
+            MainActivity.bootListo = true;
+            call.resolve(r);
+        });
     }
 
     @PluginMethod
