@@ -140,6 +140,19 @@ const CSS = `
 .drtrigger svg{width:14px;height:14px;color:var(--muted);flex:none}
 .drpop{position:fixed;z-index:2200;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 18px 48px rgba(0,0,0,.45);display:none}
 .drpop.show{display:flex}
+/* (15-oct) Animación: se despliega desde el botón (fundido + leve desplazamiento), las opciones entran en cascada y el
+   calendario aparece suave; al cerrar se recoge. La flechita del botón gira mientras está abierto. */
+.drpop.entrando{animation:drAbre .2s cubic-bezier(.2,.8,.2,1) both;transform-origin:var(--dr-origen,top left)}
+.drpop.entrando .drpreset{animation:drItem .26s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 16ms + 40ms)}
+.drpop.entrando .drright{animation:drItem .3s ease both;animation-delay:70ms}
+.drpop.cerrando{animation:drCierra .14s ease-in both;transform-origin:var(--dr-origen,top left);pointer-events:none}
+@keyframes drAbre{from{opacity:0;transform:translateY(var(--dr-dy,-6px)) scale(.98)}to{opacity:1;transform:none}}
+@keyframes drCierra{to{opacity:0;transform:translateY(var(--dr-dy,-6px)) scale(.98)}}
+@keyframes drItem{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.drtrigger > svg:last-child{transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.drpicker.abierto .drtrigger{border-color:var(--brand)}
+.drpicker.abierto .drtrigger > svg:last-child{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){.drpop.entrando,.drpop.entrando .drpreset,.drpop.entrando .drright,.drpop.cerrando{animation:none}}
 .drpresets{width:186px;border-right:1px solid var(--border);padding:8px;display:flex;flex-direction:column;gap:1px;max-height:392px;overflow:auto}
 .drpreset{display:flex;align-items:center;gap:10px;text-align:left;background:none;border:none;color:var(--text);font-size:12.5px;font-weight:600;padding:8px 10px;border-radius:8px;cursor:pointer;font-family:inherit}
 .drpreset:hover{background:var(--surface-2)}
@@ -180,6 +193,13 @@ const ICO_DOWN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const ICO_L = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`;
 const ICO_R = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>`;
 
+// Cierra un selector con su animación de recogerse y lo devuelve a su lugar
+function cerrarPop(pop) {
+  if (!pop.classList.contains("show") || pop.classList.contains("cerrando")) return;
+  if (pop._home) pop._home.classList.remove("abierto");
+  pop.classList.remove("entrando"); pop.classList.add("cerrando");
+  setTimeout(() => { pop.classList.remove("show", "cerrando"); if (pop._home && pop.parentNode !== pop._home) pop._home.appendChild(pop); }, 140);
+}
 export function mountDateRange(host, { valor = null, onChange = null, nota = `Las fechas se muestran en la hora de ${tzNombre()}` } = {}) {
   ponerCss();
   let rango = valor || computePreset("30d");
@@ -190,7 +210,7 @@ export function mountDateRange(host, { valor = null, onChange = null, nota = `La
   const label = host.querySelector(".drlabel");
   const pop = host.querySelector(".drpop");
   pop._home = host; // para re-anclarlo al cerrar (se portaliza a <body> al abrir)
-  const cerrar = () => { pop.classList.remove("show"); if (pop.parentNode !== host) host.appendChild(pop); };
+  const cerrar = () => cerrarPop(pop);
   // Los clics DENTRO del popover no deben llegar al detector global de "clic
   // afuera": al re-dibujarse (pinta()), el elemento tocado queda desprendido del
   // DOM y su closest(".drpicker") daría null → el picker se cerraría en cada
@@ -258,20 +278,26 @@ export function mountDateRange(host, { valor = null, onChange = null, nota = `La
     pinta();
     // Portal a <body> + posición FIJA anclada al botón: así NINGÚN contenedor con
     // overflow/transform (p.ej. el drawer de filtros de la Bandeja) lo recorta.
-    document.body.appendChild(pop); pop.classList.add("show");
+    document.body.appendChild(pop); pop.classList.remove("cerrando"); pop.classList.add("show", "entrando"); host.classList.add("abierto");
+    pop.querySelectorAll(".drpreset").forEach((b, i) => b.style.setProperty("--i", i));
+    clearTimeout(pop._tEntra); pop._tEntra = setTimeout(() => pop.classList.remove("entrando"), 650);   // los re-dibujos (elegir días) ya no se animan
     const r = trigger.getBoundingClientRect();
     pop.style.top = (r.bottom + 6) + "px"; pop.style.bottom = "auto";
     pop.style.left = r.left + "px"; pop.style.right = "auto";
     const pr = pop.getBoundingClientRect();
     if (pr.right > window.innerWidth - 8) { pop.style.left = "auto"; pop.style.right = Math.max(8, window.innerWidth - r.right) + "px"; }
     if (pr.bottom > window.innerHeight - 8 && r.top > window.innerHeight - r.bottom) { pop.style.top = "auto"; pop.style.bottom = (window.innerHeight - r.top + 6) + "px"; }
+    // Que se despliegue desde el lado del botón (arriba o abajo, izquierda o derecha)
+    const deArriba = pop.style.top === "auto", deDer = pop.style.left === "auto";
+    pop.style.setProperty("--dr-origen", (deArriba ? "bottom " : "top ") + (deDer ? "right" : "left"));
+    pop.style.setProperty("--dr-dy", deArriba ? "6px" : "-6px");
   };
   // Un solo listener global para todos los selectores de la página.
   if (!window.__drDocWired) {
     window.__drDocWired = true;
     document.addEventListener("click", (e) => {
       if (e.target.closest(".drpicker") || e.target.closest(".drpop")) return;
-      document.querySelectorAll(".drpop.show").forEach((p) => { p.classList.remove("show"); if (p._home && p.parentNode !== p._home) p._home.appendChild(p); });
+      document.querySelectorAll(".drpop.show").forEach(cerrarPop);
     });
   }
   pintaLabel();
