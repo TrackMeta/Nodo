@@ -172,16 +172,27 @@ try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" 
 // a Android que la carga ya está en pantalla (NodoNativo.bootListo) y contesta cuánto falta para soltar su pantalla:
 // el cuadro se arma justo cuando aparece, no detrás. En el navegador la N se dibuja entera.
 // window.NODO_BOOT_LISTO = desde cuándo se puede pasar a la app sin cortar la animación.
+// 🔬 Diagnóstico del arranque (temporal, 15-oct): marcas de cada paso, cuadros perdidos y tareas largas de los
+// primeros 4 s. Se guarda en el celular (nodo.app.diag) y se ve en Más → Diagnóstico de arranque.
+(function () { var D = window.NODO_DIAG = { ini: Math.round(performance.now()), apk: !!window.Capacitor, sw: !!(navigator.serviceWorker && navigator.serviceWorker.controller), marcas: [], saltos: [], largas: [] };
+  window.NODO_MARCA = function (n) { D.marcas.push([n, Math.round(performance.now())]); };
+  var prev = performance.now(), fin = prev + 4000;
+  (function cuadro(t) { if (t - prev > 34) D.saltos.push([Math.round(prev), Math.round(t - prev)]); prev = t; if (t < fin) requestAnimationFrame(cuadro); })(prev);
+  try { new PerformanceObserver(function (l) { l.getEntries().forEach(function (e) { D.largas.push([Math.round(e.startTime), Math.round(e.duration)]); }); }).observe({ type: "longtask", buffered: true }); } catch (e) {}
+  setTimeout(function () { try { var v = JSON.parse(localStorage.getItem("nodo.app.diag") || "[]"); v.unshift(D); localStorage.setItem("nodo.app.diag", JSON.stringify(v.slice(0, 3))); } catch (e) {} }, 4500);
+})();
 (function () { var b = document.getElementById("boot"), apk = !!window.Capacitor;
   b.classList.add(apk ? "bt-ya" : "bt-dibuja");
   window.NODO_BOOT_LISTO = performance.now() + 2600;   // por si nunca arranca
   function arrancar(forma) {
     window.NODO_BOOT_LISTO = performance.now() + forma + 520;
-    setTimeout(function () { b.classList.add("bt-forma"); }, forma);
-    setTimeout(function () { b.classList.add("bt-ver"); }, forma + 260);
+    NODO_MARCA("arranca(" + Math.round(forma) + ")");
+    setTimeout(function () { b.classList.add("bt-forma"); NODO_MARCA("cuadro"); }, forma);
+    setTimeout(function () { b.classList.add("bt-ver"); NODO_MARCA("textos"); }, forma + 260);
   }
   var NN = apk && window.Capacitor.Plugins && window.Capacitor.Plugins.NodoNativo;
-  if (NN && NN.bootListo) NN.bootListo().then(function (r) { arrancar(((r && r.espera) || 0) + 120); }, function () { arrancar(80); });
+  NODO_MARCA("carga en pantalla");
+  if (NN && NN.bootListo) NN.bootListo().then(function (r) { NODO_MARCA("android espera " + ((r && r.espera) || 0)); arrancar(((r && r.espera) || 0) + 120); }, function () { arrancar(80); });
   else arrancar(apk ? 80 : 900); })();
 </script>
 

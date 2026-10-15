@@ -44,6 +44,19 @@ function numeroHtml() {
   const q = CALIDAD[n.calidad];
   return `<button type="button" class="li" data-go="copiarNum"><span class="ico">${ic("phone")}</span><span class="rmid"><b>${esc(n.telefono)}</b><span>${esc(n.nombre || "Número del bot")}${q ? ` · calidad <b class="${q[1]}">${q[0]}</b>` : ""} · toca para copiar</span></span>${ic("copy")}</button>`;
 }
+// 🔬 Diagnóstico del arranque (temporal): lo que midió index.html en las últimas aperturas
+function diagHtml() {
+  let v = []; try { v = JSON.parse(localStorage.getItem("nodo.app.diag") || "[]"); } catch (_) { /* */ }
+  if (!v.length) return "";
+  const s = (ms) => (ms / 1000).toFixed(2) + " s";
+  return `<div class="card"><div class="ttl">Diagnóstico de arranque</div>${v.map((d, i) => {
+    const saltos = d.saltos || [], mayor = saltos.reduce((a, x) => (x[1] > a[1] ? x : a), [0, 0]);
+    return `<div class="li" style="display:block"><b style="font-size:13px">${i === 0 ? "Última apertura" : "Antes"} · ${d.apk ? "APK" : "navegador"}${d.sw ? " · copia guardada" : ""}</b>
+      <span style="display:block;font-size:12px;color:var(--muted);margin-top:4px;line-height:1.6">página: ${s(d.ini)} · ${(d.marcas || []).map((m) => esc(m[0]) + " " + s(m[1])).join(" · ")}</span>
+      <span style="display:block;font-size:12px;margin-top:4px;line-height:1.6">Cuadros perdidos: <b>${saltos.length}</b>${saltos.length ? ` · el peor: ${mayor[1]} ms a los ${s(mayor[0])}` : ""}${saltos.length ? ` · ${saltos.slice(0, 8).map((x) => x[1] + "ms@" + s(x[0])).join(", ")}` : ""}</span>
+      <span style="display:block;font-size:12px;margin-top:2px;line-height:1.6">Tareas largas: <b>${(d.largas || []).length}</b>${(d.largas || []).length ? " · " + d.largas.slice(0, 8).map((x) => x[1] + "ms@" + s(x[0])).join(", ") : ""}</span></div>`;
+  }).join("")}</div>`;
+}
 function pintar() {
   cargarNumero(A.ch);
   const vivas = [...N.rows.values()].filter((n) => n.por_atender && !n.resuelta_at).length;
@@ -59,6 +72,7 @@ function pintar() {
     <div class="card"><div class="ttl">Cuenta</div>
       <a class="li" href="../index.html" style="color:inherit;text-decoration:none"><span class="ico">${ic("panel")}</span><span class="rmid"><b>Abrir el panel completo</b><span>Productos, flujos, campañas y ajustes</span></span>${ic("chevronRight")}</a>
       <button type="button" class="li" data-go="salir"><span class="ico">${ic("logout")}</span><span class="rmid"><b>Cerrar sesión</b><span>${esc(A.email)}</span></span></button></div>
+    ${diagHtml()}
     <p class="note">Nodo · app ${esc(window.NODO_APP_VERSION || "1.0")}</p>`;
 }
 async function clic(e) {

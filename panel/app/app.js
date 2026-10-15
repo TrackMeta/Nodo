@@ -241,11 +241,11 @@ let _saliendo = false;
 function quitarBoot(mostrar) {
   const b = $("#boot");
   if (!b || b.hidden || _saliendo) { mostrar && mostrar(); return; }
-  _saliendo = true;
+  _saliendo = true; window.NODO_MARCA?.("app lista");
   // Se vuelve a mirar la hora límite en cada vuelta: la carga la corre cuando Android avisa cuánto falta
   const esperar = () => { const falta = (window.NODO_BOOT_LISTO || 0) - performance.now(); if (falta > 0) { setTimeout(esperar, Math.min(falta, 120)); return; }
-    mostrar && mostrar();
-    let ya = false; const fundir = () => { if (ya) return; ya = true; b.classList.add("bt-fuera"); setTimeout(() => { b.hidden = true; }, 420); };
+    mostrar && mostrar(); window.NODO_MARCA?.("app visible");
+    let ya = false; const fundir = () => { if (ya) return; ya = true; window.NODO_MARCA?.("fundido"); b.classList.add("bt-fuera"); setTimeout(() => { b.hidden = true; }, 420); };
     requestAnimationFrame(() => requestAnimationFrame(fundir)); setTimeout(fundir, 120); };   // (sin cuadros, p. ej. pantalla apagada: igual sale)
   esperar();
 }
@@ -303,7 +303,7 @@ async function empezar() {
   }
   let elegido = null; try { elegido = localStorage.getItem("nodo.channelId"); } catch (_) { /* */ }
   A.ch = A.channels.some((c) => c.id === elegido) ? elegido : A.channels[0].id;
-  const mods = await _mods;
+  const mods = await _mods; window.NODO_MARCA?.("módulos");
   mods.forEach((m) => m.init && m.init());
   await cambiarBot(A.ch, true);
   quitarBoot(() => { $("#app").hidden = false; });
