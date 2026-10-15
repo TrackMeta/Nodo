@@ -8,14 +8,22 @@ import * as O from "../orders.js";
 import { fDia, fRango, lblDe, botonFechas, elegirFechas } from "./fechas.js";
 
 let R = computePreset("hoy");
-let _gen = 0, ULT = null;
+let _gen = 0, ULT = null, ULT_KEY = "";
+// ⚡ (14-oct) Lo último calculado se guarda (en memoria y en el celular, por bot y fechas): al entrar a Hoy se ve al
+// toque y se recalcula por detrás. Sin la lista de pedidos ni de chats (pesan): Horarios espera al cálculo fresco.
+const CACHE = new Map();
+const clave = (r) => `${A.ch}|${ymd(r.from)}|${ymd(r.to)}|${r.preset}`;
+const GKEY = () => `nodo.app.hoy.${A.uid}.${A.ch}`;
+function leerGuardado(key) { try { const x = JSON.parse(localStorage.getItem(GKEY()) || "null"); return x && x.key === key ? { n: x.n, apps: x.apps, at: 0 } : null; } catch (_) { return null; } }
+function guardar(key, n, apps) { const { ventasOk, conts, ...liviano } = n; try { localStorage.setItem(GKEY(), JSON.stringify({ key, n: liviano, apps })); } catch (_) { /* */ } }
 const PEND = { pagos: 0, chats: 0, t4: 0 };
 export function init() {
   on("tab", (t) => { if (t === "hoy") cargar(); });
-  on("bot", () => { if (A.tab === "hoy") cargar(); });
+  on("bot", () => { if (A.tab === "hoy") cargar(); else precalentar(); });
+  on("listo", () => precalentar());
   on("resync", () => { if (A.tab === "hoy") cargar(); });
   // Se pone al día solo cuando entra una venta o cambia un pedido (con un respiro para juntar ráfagas)
-  let t = null; on("orden", () => { if (A.tab !== "hoy") return; clearTimeout(t); t = setTimeout(() => cargar(true), 4000); });
+  let t = null; on("orden", () => { CACHE.forEach((c) => { c.at = 0; }); if (A.tab !== "hoy") return; clearTimeout(t); t = setTimeout(() => cargar(true), 4000); });
   on("pendientesPagos", (n) => { PEND.pagos = n; pintaEspera(); });
   on("pendientesChats", (n) => { PEND.chats = n; pintaEspera(); });
   on("pendientesT4", (n) => { PEND.t4 = n; pintaEspera(); });
@@ -27,7 +35,9 @@ const horaTZ = (ts) => Number(new Intl.DateTimeFormat("en-GB", { timeZone: getTZ
 
 async function calcular(r, ligero) {
   const ch = A.ch, fromISO = startOfDayTZ(r.from).toISOString(), toISO = new Date(endOfDayTZ(r.to).getTime() + 1).toISOString();
-  const chan = await getChannel(ch); const CUR = chan?.moneda || "PEN"; const USD = CUR === "USD" ? 1 : await getUsdRate(ch);
+  // Moneda, tipo de cambio y cuentas de anuncios quitadas van a la par de las consultas (antes, una tras otra)
+  const pFuera = adsDeCuentasQuitadas(ch);
+  const chan = await getChannel(ch); const CUR = chan?.moneda || "PEN"; const pUsd = CUR === "USD" ? Promise.resolve(1) : getUsdRate(ch);
   const baseC = () => supa.from("contacts").select("id", { count: "exact", head: true }).eq("channel_id", ch).or("source.is.null,source.neq.sim").neq("wa_id", "webchat-test").gte("primera_interaccion", fromISO).lt("primera_interaccion", toISO);
   const [ords, prods, ins, adm, prueba, cAd, cOrg, exp, ia, conts, adsM, llegaron] = await Promise.all([
     todo((f, t) => supa.from("orders").select("contact_id,product_id,version_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id", ch).gte("created_at", fromISO).lt("created_at", toISO).order("created_at", { ascending: false }).order("id").range(f, t)),
@@ -51,7 +61,7 @@ async function calcular(r, ligero) {
   let cobrado = 0, porCobrar = 0; orders.forEach((o) => { cobrado += O.cobrado(o); porCobrar += O.porCobrar(o); });
   const prodPorId = {}, cant = {};
   (prods.data || []).forEach((p) => { prodPorId[p.id] = p; (p.product_versions || []).forEach((v) => { cant[v.id] = v.cantidad ?? 1; }); });
-  const fuera = await adsDeCuentasQuitadas(ch);
+  const [fuera, USD] = await Promise.all([pFuera, pUsd]);
   const f = factorAds(adm.data || [], CUR, USD);
   const insOk = ins.filter((i) => !fuera.has(String(i.ad_id)));
   const gasto = insOk.reduce((a, i) => a + Number(i.gasto || 0) * f.factor, 0);
@@ -162,18 +172,24 @@ function pintaEspera() {
   box.innerHTML = items.length ? `<div class="espera">${items.join("")}</div>` : "";   // (14-oct) sin pendientes no se muestra nada
 }
 
+// Unos segundos después de abrir la app (o de cambiar de bot) Hoy se calcula por detrás: la primera visita ya es al toque
+let _pc = null;
+function precalentar() { clearTimeout(_pc); _pc = setTimeout(() => { if (A.tab !== "hoy" && !CACHE.has(clave(R))) cargar(true); }, 2500); }
 export async function cargar(silencioso) {
-  const g = ++_gen, r = R;
-  if (!silencioso || !ULT) $("#hoyPad").innerHTML = cabecera(r) + `<div class="cargando">Calculando…</div>`;
+  const g = ++_gen, r = R, key = clave(r);
+  const c = CACHE.get(key) || leerGuardado(key);
+  if (c) {
+    if (ULT_KEY !== key || !silencioso) { ULT = c.n; ULT_KEY = key; pintar(r, c.n, c.apps); }
+    if (!silencioso && Date.now() - c.at < 20e3) return;   // recién calculado: no se repite
+  } else if (!silencioso || ULT_KEY !== key) { ULT_KEY = ""; $("#hoyPad").innerHTML = cabecera(r) + `<div class="cargando">Calculando…</div>`; }
   try {
-    const n = await calcular(r);
+    const [n, apps] = await Promise.all([calcular(r),
+      A.tipo === "apps" ? invoke("microapps", { channel_id: A.ch, action: "listar" }).then((x) => (x.ok ? x.data?.accesos || [] : null)) : null]);
     if (g !== _gen) return;
-    ULT = n;
-    let apps = null;
-    if (A.tipo === "apps") { const x = await invoke("microapps", { channel_id: A.ch, action: "listar" }); if (x.ok) apps = x.data?.accesos || []; }
-    if (g !== _gen) return;
+    ULT = n; ULT_KEY = key;
+    CACHE.set(key, { n, apps, at: Date.now() }); guardar(key, n, apps);
     pintar(r, n, apps);
-  } catch (e) { console.error(e); if (g === _gen) $("#hoyPad").innerHTML = cabecera(r) + `<div class="empty"><b>${ic("alert")}</b>No se pudo calcular.<br>${esc(e.message || e)}</div>`; }
+  } catch (e) { console.error(e); if (g === _gen && !c) $("#hoyPad").innerHTML = cabecera(r) + `<div class="empty"><b>${ic("alert")}</b>No se pudo calcular.<br>${esc(e.message || e)}</div>`; }
 }
 function grafico(n, r) {
   const s = n.serie || [], max = Math.max(1, ...s.map((x) => x[1])), W = 300, H = 70, bw = W / Math.max(1, s.length);
@@ -223,7 +239,8 @@ function pintar(r, n, apps) {
     ${adsHtml}${tipoHtml}${prodHtml}
     <p class="note">Mismo cálculo que el Dashboard del panel (vista Todo) · hora del negocio · se actualiza solo.</p>`;
   pintaEspera();
-  import("../horarios.js").then((mod) => mod.montarHorarios($("#hoyHorarios"), { supa, channelId: A.ch, fromISO: n.fromISO, toISO: n.toISO, ventas: n.ventasOk, chats: n.conts, money: m, h: "h4", plegable: "nodo.app.horarios" })).catch(() => {});
+  if (!n.ventasOk) { const hh = $("#hoyHorarios"); if (hh) hh.innerHTML = `<p class="nsub" style="margin:0">Horarios de venta · actualizando…</p>`; }
+  else import("../horarios.js").then((mod) => mod.montarHorarios($("#hoyHorarios"), { supa, channelId: A.ch, fromISO: n.fromISO, toISO: n.toISO, ventas: n.ventasOk, chats: n.conts, money: m, h: "h4", plegable: "nodo.app.horarios" })).catch(() => {});
 }
 // Las tres tarjetas del Dashboard (renderND): Ventas, Publicidad y Rentabilidad
 function tablero(n, m) {

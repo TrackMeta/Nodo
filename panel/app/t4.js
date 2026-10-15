@@ -30,7 +30,7 @@ async function cargar() {
 async function badge() {
   if (A.tipo === "fisico") { if (!T.pedidos.length) { try { await cargarPedidos(true); } catch (_) { /* */ } } }
   else if (A.tipo === "apps") { if (!T.accesos.length) { try { await cargarAccesos(true); } catch (_) { /* */ } } }
-  else { $("#tb-t4").hidden = true; emit("pendientesT4", 0); return; }
+  else { $("#tb-t4").hidden = true; emit("pendientesT4", 0); if (A.tipo === "digital" && A.tab !== "t4") setTimeout(() => { if (A.tab !== "t4" && !T.cargando) cargar(); }, 1500); return; }
   const n = A.tipo === "fisico" ? T.pedidos.filter(parado).length : T.accesos.filter((a) => estadoVis(a) === "porvencer").length;
   $("#tb-t4").hidden = !n; $("#tb-t4").textContent = n;
   emit("pendientesT4", n);
@@ -38,13 +38,25 @@ async function badge() {
 const seg = (opts, sel) => `<div class="seg" data-seg>${opts.map(([k, l]) => `<button type="button" data-f="${k}" class="${k === sel ? "on" : ""}">${l}</button>`).join("")}</div>`;
 
 // ═════════ Ventas (digital) ═════════
+// ⚡ (14-oct) La última lista de ventas queda guardada (por bot y fechas): al entrar se ve al toque y se pone al día
+const VKEY = () => `nodo.app.ventas.${A.uid}.${A.ch}`;
+const vclave = (r) => `${r.preset}|${r.from?.getTime?.() ?? ""}|${r.to?.getTime?.() ?? ""}`;
 async function cargarVentas() {
-  const r = T.rango;   // (13-oct) el mismo selector de fechas que Hoy
+  const r = T.rango, k = vclave(r);
   const desde = startOfDayTZ(r.from).toISOString(), hasta = new Date(endOfDayTZ(r.to).getTime() + 1).toISOString();
-  if (!T.ventas.length) $("#t4Pad").innerHTML = `<div class="cargando">Cargando ventas…</div>`;
+  if (!T.ventas.length) {
+    let g = null; try { g = JSON.parse(localStorage.getItem(VKEY()) || "null"); } catch (_) { /* */ }
+    if (g && g.k === k && Array.isArray(g.ventas)) { T.ventas = g.ventas; pintaVentas(); }
+    else $("#t4Pad").innerHTML = `<div class="cargando">Cargando ventas…</div>`;
+  }
   const rows = await todo((f, h) => supa.from("orders").select("id,amount,currency,order_bumps,estado,created_at,confirmed_at,shipping,contact_id,contact:contact_id(nombre,wa_id,source),product:product_id(nombre,emoji)").eq("channel_id", A.ch).eq("estado", "confirmada").gte("created_at", desde).lt("created_at", hasta).order("created_at", { ascending: false }).order("id").range(f, h));
+  if (T.rango !== r) return;
   T.ventas = rows.filter((o) => !esPrueba(o.contact));
-  const total = T.ventas.reduce((s, o) => s + O.cobrado(o), 0);
+  try { localStorage.setItem(VKEY(), JSON.stringify({ k, ventas: T.ventas.slice(0, 300) })); } catch (_) { /* */ }
+  pintaVentas();
+}
+function pintaVentas() {
+  const r = T.rango, total = T.ventas.reduce((s, o) => s + O.cobrado(o), 0);
   $("#t4Pad").innerHTML = `<h2 class="h">Ventas</h2><p class="sub">Ventas digitales cobradas (confirmadas).</p>
     ${botonFechas(r)}
     <div class="kpis"><div class="kpi"><small>Ventas</small><b class="num">${T.ventas.length}</b></div><div class="kpi"><small>Cobrado</small><b class="num">${sol(total)}</b></div></div>
