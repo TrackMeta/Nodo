@@ -235,16 +235,22 @@ async function boot() {
 const OJO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const OJO_NO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2A10.4 10.4 0 0 1 12 4c6.5 0 10 8 10 8a17.6 17.6 0 0 1-2.2 3.2M6.6 6.6A17.4 17.4 0 0 0 2 12s3.5 8 10 8a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="m2 2 20 20"/></svg>';
 // La pantalla de carga se va con un fundido, recién cuando su animación llegó al logo armado
+// La pantalla de lo de abajo (app o entrar) se muestra RECIÉN al final: mientras se arma el logo no se dibuja nada detrás
+// (antes la lista de chats se dibujaba a la par y la animación se trababa). Se muestra un cuadro antes del fundido.
 let _saliendo = false;
-function quitarBoot() {
-  const b = $("#boot"); if (!b || b.hidden || _saliendo) return; _saliendo = true;
+function quitarBoot(mostrar) {
+  const b = $("#boot");
+  if (!b || b.hidden || _saliendo) { mostrar && mostrar(); return; }
+  _saliendo = true;
   // Se vuelve a mirar la hora límite en cada vuelta: la carga la corre cuando Android avisa cuánto falta
   const esperar = () => { const falta = (window.NODO_BOOT_LISTO || 0) - performance.now(); if (falta > 0) { setTimeout(esperar, Math.min(falta, 120)); return; }
-    b.classList.add("bt-fuera"); setTimeout(() => { b.hidden = true; }, 420); };
+    mostrar && mostrar();
+    let ya = false; const fundir = () => { if (ya) return; ya = true; b.classList.add("bt-fuera"); setTimeout(() => { b.hidden = true; }, 420); };
+    requestAnimationFrame(() => requestAnimationFrame(fundir)); setTimeout(fundir, 120); };   // (sin cuadros, p. ej. pantalla apagada: igual sale)
   esperar();
 }
 function mostrarLogin() {
-  quitarBoot(); $("#app").hidden = true; $("#login").hidden = false;
+  $("#app").hidden = true; quitarBoot(() => { $("#login").hidden = false; });
   const msg = (t, ok) => { $("#lErr").textContent = t; $("#lErr").classList.toggle("ok", !!ok); $("#lErr").hidden = !t; };
   const ojo = $("#lOjo"), pass = $("#lPass");
   const pintaOjo = () => { const ver = pass.type === "text"; ojo.innerHTML = ver ? OJO_NO : OJO; ojo.setAttribute("aria-label", ver ? "Ocultar la contraseña" : "Mostrar la contraseña"); };
@@ -291,7 +297,7 @@ async function empezar() {
   if (guardado?.channels?.length) { A.channels = guardado.channels; A.nombre = guardado.nombre || A.email.split("@")[0]; }
   else aplicar(await fresco);
   if (!A.channels.length) {
-    quitarBoot(); $("#app").hidden = false;
+    quitarBoot(() => { $("#app").hidden = false; });
     $("#chatlist").innerHTML = `<div class="empty"><b>${ic("inbox")}</b>Todavía no tienes ningún bot. Créalo desde el panel web de Nodo.</div>`;
     return;
   }
@@ -300,7 +306,7 @@ async function empezar() {
   const mods = await _mods;
   mods.forEach((m) => m.init && m.init());
   await cambiarBot(A.ch, true);
-  quitarBoot(); $("#app").hidden = false;
+  quitarBoot(() => { $("#app").hidden = false; });
   history.replaceState({ base: 1 }, "");
   emit("listo");
   pintaAlertaWA().catch(() => {});

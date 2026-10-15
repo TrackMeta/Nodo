@@ -1,42 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Pantalla de inicio de Android (12+): la «Red de nodos». Aparecen los 5 nodos y se unen con líneas en degradado
      azul → violeta; después la carga de la app (misma N, mismo tamaño y lugar) arma el cuadro azul del logo. 1 s.
-     Generado: escala para que la N mida lo mismo que en panel/app (88 px de caja) con el ícono a 288 dp. -->
+     Medidas del logo original (assets/logo-512.png), escaladas para que la N mida lo mismo que en panel/app
+     (caja de 104 px) con el ícono a 288 dp. -->
 <animated-vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt">
   <aapt:attr name="android:drawable">
     <vector android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-      <path android:name="l0" android:pathData="M46.78,45.75 L46.78,62.25" android:strokeWidth="2.06" android:strokeLineCap="round" android:trimPathEnd="0">
-        <aapt:attr name="android:strokeColor"><gradient android:type="linear" android:startX="44.46" android:startY="43.43" android:endX="63.54" android:endY="64.57" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
+      <path android:name="l0" android:pathData="M45.39,43.72 L45.39,61.46" android:strokeWidth="1.98" android:strokeLineCap="round" android:trimPathEnd="0">
+        <aapt:attr name="android:strokeColor"><gradient android:type="linear" android:startX="40.59" android:startY="40.59" android:endX="67.41" android:endY="67.41" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
       </path>
-      <path android:name="l1" android:pathData="M46.78,45.75 L61.22,62.25" android:strokeWidth="2.06" android:strokeLineCap="round" android:trimPathEnd="0">
-        <aapt:attr name="android:strokeColor"><gradient android:type="linear" android:startX="44.46" android:startY="43.43" android:endX="63.54" android:endY="64.57" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
+      <path android:name="l1" android:pathData="M45.62,43.72 L61.69,64.59" android:strokeWidth="1.98" android:strokeLineCap="round" android:trimPathEnd="0">
+        <aapt:attr name="android:strokeColor"><gradient android:type="linear" android:startX="40.59" android:startY="40.59" android:endX="67.41" android:endY="67.41" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
       </path>
-      <path android:name="l2" android:pathData="M61.22,46.78 L61.22,62.25" android:strokeWidth="2.06" android:strokeLineCap="round" android:trimPathEnd="0">
-        <aapt:attr name="android:strokeColor"><gradient android:type="linear" android:startX="44.46" android:startY="43.43" android:endX="63.54" android:endY="64.57" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
+      <path android:name="l2" android:pathData="M61.69,47.14 L61.69,64.59" android:strokeWidth="1.98" android:strokeLineCap="round" android:trimPathEnd="0">
+        <aapt:attr name="android:strokeColor"><gradient android:type="linear" android:startX="40.59" android:startY="40.59" android:endX="67.41" android:endY="67.41" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
       </path>
-      <group android:name="n0" android:pivotX="46.78" android:pivotY="45.75" android:scaleX="0" android:scaleY="0">
-        <path android:pathData="M44.46,45.75 a2.32,2.32 0 1,0 4.64,0 a2.32,2.32 0 1,0 -4.64,0">
-          <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="44.46" android:startY="43.43" android:endX="63.54" android:endY="64.57" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
+      <group android:name="n0" android:pivotX="45.62" android:pivotY="43.72" android:scaleX="0" android:scaleY="0">
+        <path android:pathData="M42.57,43.72 a3.05,3.05 0 1,0 6.10,0 a3.05,3.05 0 1,0 -6.10,0">
+          <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="40.59" android:startY="40.59" android:endX="67.41" android:endY="67.41" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
         </path>
       </group>
-      <group android:name="n1" android:pivotX="54" android:pivotY="54" android:scaleX="0" android:scaleY="0">
-        <path android:pathData="M51.68,54 a2.32,2.32 0 1,0 4.64,0 a2.32,2.32 0 1,0 -4.64,0">
-          <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="44.46" android:startY="43.43" android:endX="63.54" android:endY="64.57" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
+      <group android:name="n1" android:pivotX="53.77" android:pivotY="54.08" android:scaleX="0" android:scaleY="0">
+        <path android:pathData="M51.24,54.08 a2.53,2.53 0 1,0 5.06,0 a2.53,2.53 0 1,0 -5.06,0">
+          <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="40.59" android:startY="40.59" android:endX="67.41" android:endY="67.41" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
         </path>
       </group>
-      <group android:name="n2" android:pivotX="61.22" android:pivotY="46.78" android:scaleX="0" android:scaleY="0">
-        <path android:pathData="M58.90,46.78 a2.32,2.32 0 1,0 4.64,0 a2.32,2.32 0 1,0 -4.64,0">
-          <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="44.46" android:startY="43.43" android:endX="63.54" android:endY="64.57" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
+      <group android:name="n2" android:pivotX="61.77" android:pivotY="47.14" android:scaleX="0" android:scaleY="0">
+        <path android:pathData="M59.15,47.14 a2.62,2.62 0 1,0 5.24,0 a2.62,2.62 0 1,0 -5.24,0">
+          <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="40.59" android:startY="40.59" android:endX="67.41" android:endY="67.41" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
         </path>
       </group>
-      <group android:name="n3" android:pivotX="46.78" android:pivotY="62.25" android:scaleX="0" android:scaleY="0">
-        <path android:pathData="M44.46,62.25 a2.32,2.32 0 1,0 4.64,0 a2.32,2.32 0 1,0 -4.64,0">
-          <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="44.46" android:startY="43.43" android:endX="63.54" android:endY="64.57" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
+      <group android:name="n3" android:pivotX="45.39" android:pivotY="61.46" android:scaleX="0" android:scaleY="0">
+        <path android:pathData="M42.65,61.46 a2.74,2.74 0 1,0 5.48,0 a2.74,2.74 0 1,0 -5.48,0">
+          <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="40.59" android:startY="40.59" android:endX="67.41" android:endY="67.41" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
         </path>
       </group>
-      <group android:name="n4" android:pivotX="61.22" android:pivotY="62.25" android:scaleX="0" android:scaleY="0">
-        <path android:pathData="M58.90,62.25 a2.32,2.32 0 1,0 4.64,0 a2.32,2.32 0 1,0 -4.64,0">
-          <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="44.46" android:startY="43.43" android:endX="63.54" android:endY="64.57" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
+      <group android:name="n4" android:pivotX="61.69" android:pivotY="64.59" android:scaleX="0" android:scaleY="0">
+        <path android:pathData="M58.64,64.59 a3.05,3.05 0 1,0 6.10,0 a3.05,3.05 0 1,0 -6.10,0">
+          <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="40.59" android:startY="40.59" android:endX="67.41" android:endY="67.41" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
         </path>
       </group>
     </vector>
