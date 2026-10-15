@@ -12,8 +12,8 @@ public class MainActivity extends BridgeActivity {
     static final String PREFS = "nodo";
     // Relevo sin salto entre la pantalla de inicio de Android y la carga de la app: Android la quitaba apenas la app
     // dibujaba algo, a veces con la N a medio dibujar y antes de que apareciera la carga web. Ahora se queda hasta que
-    // la página avisa que su carga ya está (NodoNativo.bootListo) y la N terminó (0,95 s); como mucho 2,5 s.
-    static final long N_COMPLETA = 950, TOPE = 2500;
+    // la página avisa que su carga ya está (NodoNativo.bootListo) y la animación terminó (1,45 s: N + cuadro); como mucho 2,8 s.
+    static final long N_COMPLETA = 1450, TOPE = 2800;
     static volatile boolean bootListo = false;
     static volatile long t0 = 0;
 

@@ -48,6 +48,8 @@ public class NodoNativoPlugin extends Plugin {
         long e = android.os.SystemClock.uptimeMillis() - MainActivity.t0;
         JSObject r = new JSObject();
         r.put("espera", Math.max(0, MainActivity.N_COMPLETA - e));
+        // v2 (APK 1.0.13+): la pantalla de Android ya trae el cuadro armado y la N blanca; la carga web sigue quieta
+        r.put("v", 2);
         call.resolve(r);
     }
 

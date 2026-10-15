@@ -51,6 +51,10 @@ body.app [hidden]{display:none!important}
 .bt-lema{font-size:12px;font-weight:500;color:var(--muted)}
 .bt-marca,.bt-lema,.bt-puntos{opacity:0;transform:translateY(6px);will-change:transform,opacity}
 .bt-anima .bt-marca,.bt-anima .bt-lema,.bt-anima .bt-puntos{animation:btTexto .4s ease calc(var(--d,0ms) + 260ms) both}
+/* APK 1.0.13+: Android ya dibujó el cuadro y la N blanca; la carga arranca así, quieta, y solo entran los textos */
+.bt-armado .bt-cuadro{opacity:1;transform:none;box-shadow:none}
+.bt-armado .bt-blanca{opacity:1}
+.bt-anima-textos .bt-marca,.bt-anima-textos .bt-lema,.bt-anima-textos .bt-puntos{animation:btTexto .4s ease var(--d,0ms) both}
 @keyframes btTexto{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .bt-puntos{display:flex;gap:6px;margin-top:12px}
 .bt-puntos i{width:6px;height:6px;border-radius:50%;background:#0046FF;animation:btSalta 1s ease-in-out infinite;will-change:transform,opacity}

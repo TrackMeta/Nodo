@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Pantalla de inicio de Android (12+): la «Red de nodos». Aparecen los 5 nodos y se unen con líneas en degradado
-     azul → violeta; después la carga de la app (misma N, mismo tamaño y lugar) arma el cuadro azul del logo. 1 s.
-     Medidas del logo original (assets/logo-512.png), escaladas para que la N mida lo mismo que en panel/app
-     (caja de 104 px) con el ícono a 288 dp. -->
+<!-- Pantalla de inicio de Android (12+): la carga ENTERA la dibuja el sistema (aparte de la app, nunca se traba).
+     0–0,9 s: aparecen los 5 nodos y se unen con líneas en degradado azul → violeta.
+     0,9–1,4 s: detrás se arma el cuadro azul del logo y la N pasa a blanca.
+     La carga de la app sigue con ese mismo cuadro, quieto, en el mismo tamaño y lugar, y agrega los textos.
+     Medidas del logo original (assets/logo-512.png): N en caja de 104 px como el cuadro, ícono a 288 dp. -->
 <animated-vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt">
   <aapt:attr name="android:drawable">
     <vector android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+      <group android:name="cuadro" android:pivotX="54" android:pivotY="54" android:scaleX="0.4" android:scaleY="0.4">
+        <path android:name="fondo" android:pathData="M40.13,34.5 H67.87 A5.63,5.63 0 0 1 73.5,40.13 V67.87 A5.63,5.63 0 0 1 67.87,73.5 H40.13 A5.63,5.63 0 0 1 34.5,67.87 V40.13 A5.63,5.63 0 0 1 40.13,34.5 Z" android:fillAlpha="0">
+          <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="34.5" android:startY="54" android:endX="73.5" android:endY="54" android:startColor="#0044FE" android:endColor="#01AFFE"/></aapt:attr>
+        </path>
+      </group>
       <path android:name="l0" android:pathData="M45.39,43.72 L45.39,61.46" android:strokeWidth="1.98" android:strokeLineCap="round" android:trimPathEnd="0">
         <aapt:attr name="android:strokeColor"><gradient android:type="linear" android:startX="40.59" android:startY="40.59" android:endX="67.41" android:endY="67.41" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
       </path>
@@ -40,46 +46,39 @@
           <aapt:attr name="android:fillColor"><gradient android:type="linear" android:startX="40.59" android:startY="40.59" android:endX="67.41" android:endY="67.41" android:startColor="#0046FF" android:endColor="#8B5CF6"/></aapt:attr>
         </path>
       </group>
+      <path android:name="b0" android:pathData="M45.39,43.72 L45.39,61.46" android:strokeWidth="1.98" android:strokeLineCap="round" android:strokeColor="#FFFFFF" android:strokeAlpha="0"></path>
+      <path android:name="b1" android:pathData="M45.62,43.72 L61.69,64.59" android:strokeWidth="1.98" android:strokeLineCap="round" android:strokeColor="#FFFFFF" android:strokeAlpha="0"></path>
+      <path android:name="b2" android:pathData="M61.69,47.14 L61.69,64.59" android:strokeWidth="1.98" android:strokeLineCap="round" android:strokeColor="#FFFFFF" android:strokeAlpha="0"></path>
+      <path android:name="bc0" android:pathData="M42.57,43.72 a3.05,3.05 0 1,0 6.10,0 a3.05,3.05 0 1,0 -6.10,0" android:fillColor="#FFFFFF" android:fillAlpha="0"/>
+      <path android:name="bc1" android:pathData="M51.24,54.08 a2.53,2.53 0 1,0 5.06,0 a2.53,2.53 0 1,0 -5.06,0" android:fillColor="#FFFFFF" android:fillAlpha="0"/>
+      <path android:name="bc2" android:pathData="M59.15,47.14 a2.62,2.62 0 1,0 5.24,0 a2.62,2.62 0 1,0 -5.24,0" android:fillColor="#FFFFFF" android:fillAlpha="0"/>
+      <path android:name="bc3" android:pathData="M42.65,61.46 a2.74,2.74 0 1,0 5.48,0 a2.74,2.74 0 1,0 -5.48,0" android:fillColor="#FFFFFF" android:fillAlpha="0"/>
+      <path android:name="bc4" android:pathData="M58.64,64.59 a3.05,3.05 0 1,0 6.10,0 a3.05,3.05 0 1,0 -6.10,0" android:fillColor="#FFFFFF" android:fillAlpha="0"/>
     </vector>
   </aapt:attr>
   <target android:name="n0">
     <aapt:attr name="android:animation">
-      <set>
-        <objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="0" android:interpolator="@android:interpolator/overshoot"/>
-        <objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="0" android:interpolator="@android:interpolator/overshoot"/>
-      </set>
+      <set><objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="0" android:interpolator="@android:interpolator/overshoot"/><objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="0" android:interpolator="@android:interpolator/overshoot"/></set>
     </aapt:attr>
   </target>
   <target android:name="n1">
     <aapt:attr name="android:animation">
-      <set>
-        <objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="80" android:interpolator="@android:interpolator/overshoot"/>
-        <objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="80" android:interpolator="@android:interpolator/overshoot"/>
-      </set>
+      <set><objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="80" android:interpolator="@android:interpolator/overshoot"/><objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="80" android:interpolator="@android:interpolator/overshoot"/></set>
     </aapt:attr>
   </target>
   <target android:name="n2">
     <aapt:attr name="android:animation">
-      <set>
-        <objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="160" android:interpolator="@android:interpolator/overshoot"/>
-        <objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="160" android:interpolator="@android:interpolator/overshoot"/>
-      </set>
+      <set><objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="160" android:interpolator="@android:interpolator/overshoot"/><objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="160" android:interpolator="@android:interpolator/overshoot"/></set>
     </aapt:attr>
   </target>
   <target android:name="n3">
     <aapt:attr name="android:animation">
-      <set>
-        <objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="240" android:interpolator="@android:interpolator/overshoot"/>
-        <objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="240" android:interpolator="@android:interpolator/overshoot"/>
-      </set>
+      <set><objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="240" android:interpolator="@android:interpolator/overshoot"/><objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="240" android:interpolator="@android:interpolator/overshoot"/></set>
     </aapt:attr>
   </target>
   <target android:name="n4">
     <aapt:attr name="android:animation">
-      <set>
-        <objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="320" android:interpolator="@android:interpolator/overshoot"/>
-        <objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="320" android:interpolator="@android:interpolator/overshoot"/>
-      </set>
+      <set><objectAnimator android:propertyName="scaleX" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="320" android:interpolator="@android:interpolator/overshoot"/><objectAnimator android:propertyName="scaleY" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="260" android:startOffset="320" android:interpolator="@android:interpolator/overshoot"/></set>
     </aapt:attr>
   </target>
   <target android:name="l0">
@@ -95,6 +94,56 @@
   <target android:name="l2">
     <aapt:attr name="android:animation">
       <objectAnimator android:propertyName="trimPathEnd" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="380" android:startOffset="540" android:interpolator="@android:interpolator/fast_out_slow_in"/>
+    </aapt:attr>
+  </target>
+  <target android:name="cuadro">
+    <aapt:attr name="android:animation">
+      <set><objectAnimator android:propertyName="scaleX" android:valueFrom="0.4" android:valueTo="1" android:valueType="floatType" android:duration="500" android:startOffset="900" android:interpolator="@android:interpolator/overshoot"/><objectAnimator android:propertyName="scaleY" android:valueFrom="0.4" android:valueTo="1" android:valueType="floatType" android:duration="500" android:startOffset="900" android:interpolator="@android:interpolator/overshoot"/></set>
+    </aapt:attr>
+  </target>
+  <target android:name="fondo">
+    <aapt:attr name="android:animation">
+      <objectAnimator android:propertyName="fillAlpha" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="300" android:startOffset="900" android:interpolator="@android:interpolator/fast_out_slow_in"/>
+    </aapt:attr>
+  </target>
+  <target android:name="b0">
+    <aapt:attr name="android:animation">
+      <objectAnimator android:propertyName="strokeAlpha" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="300" android:startOffset="1000" android:interpolator="@android:interpolator/fast_out_slow_in"/>
+    </aapt:attr>
+  </target>
+  <target android:name="b1">
+    <aapt:attr name="android:animation">
+      <objectAnimator android:propertyName="strokeAlpha" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="300" android:startOffset="1000" android:interpolator="@android:interpolator/fast_out_slow_in"/>
+    </aapt:attr>
+  </target>
+  <target android:name="b2">
+    <aapt:attr name="android:animation">
+      <objectAnimator android:propertyName="strokeAlpha" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="300" android:startOffset="1000" android:interpolator="@android:interpolator/fast_out_slow_in"/>
+    </aapt:attr>
+  </target>
+  <target android:name="bc0">
+    <aapt:attr name="android:animation">
+      <objectAnimator android:propertyName="fillAlpha" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="300" android:startOffset="1000" android:interpolator="@android:interpolator/fast_out_slow_in"/>
+    </aapt:attr>
+  </target>
+  <target android:name="bc1">
+    <aapt:attr name="android:animation">
+      <objectAnimator android:propertyName="fillAlpha" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="300" android:startOffset="1000" android:interpolator="@android:interpolator/fast_out_slow_in"/>
+    </aapt:attr>
+  </target>
+  <target android:name="bc2">
+    <aapt:attr name="android:animation">
+      <objectAnimator android:propertyName="fillAlpha" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="300" android:startOffset="1000" android:interpolator="@android:interpolator/fast_out_slow_in"/>
+    </aapt:attr>
+  </target>
+  <target android:name="bc3">
+    <aapt:attr name="android:animation">
+      <objectAnimator android:propertyName="fillAlpha" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="300" android:startOffset="1000" android:interpolator="@android:interpolator/fast_out_slow_in"/>
+    </aapt:attr>
+  </target>
+  <target android:name="bc4">
+    <aapt:attr name="android:animation">
+      <objectAnimator android:propertyName="fillAlpha" android:valueFrom="0" android:valueTo="1" android:valueType="floatType" android:duration="300" android:startOffset="1000" android:interpolator="@android:interpolator/fast_out_slow_in"/>
     </aapt:attr>
   </target>
 </animated-vector>
