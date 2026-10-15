@@ -203,8 +203,9 @@ try { localStorage.removeItem("nodo.app.diag"); } catch (e) {}
   function avisar(cb) {
     // APK 1.0.13+ (v 2): la pantalla de Android ya armó el cuadro y puso la N blanca → aquí se arranca igual, quieto
     if (NN && NN.bootListo) NN.bootListo().then(function (r) { var e = (r && r.espera) || 0; if (r && r.v >= 2) { armado = true; b.classList.add("bt-armado"); } if (r && r.v >= 3) encima = true;
-      // APK 1.0.15+: el logo va en el punto exacto (y tamaño) del de Android, medido en este celular
-      if (r && typeof r.dy === "number") { b.style.setProperty("--ldx", (r.dx || 0) + "px"); b.style.setProperty("--ldy", r.dy + "px"); b.style.setProperty("--les", r.escala || 1); }
+      // APK 1.0.15+: el logo va en el punto exacto del de Android, medido en este celular. El TAMAÑO no se toca: lo que
+      // mide Android es el círculo del ícono (192 dp), no el dibujo (288 dp), y achicaba el logo a 2/3 (un «zoom atrás»)
+      if (r && typeof r.dy === "number") { b.style.setProperty("--ldx", (r.dx || 0) + "px"); b.style.setProperty("--ldy", r.dy + "px"); }
       cb(e); }, function () { cb(0); });
     else cb(apk ? 0 : Math.max(0, 950 - (performance.now() - t0)));
   }
