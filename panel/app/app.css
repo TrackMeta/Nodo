@@ -529,3 +529,15 @@ textarea.inpt{min-height:80px;resize:vertical}
 /* Listas largas: el celular solo dibuja las filas que se ven (las demás guardan su lugar). Con 300 chats, dibujarlos
    todos al abrir trababa la app ~0,4 s */
 #chatlist > .row,.list > .row,.stack > *,.notif{content-visibility:auto;contain-intrinsic-size:auto 64px}
+
+/* Selector de fechas: botón que se hunde al tocarlo y flechita que gira con la hoja abierta; la hoja sube con un rebote
+   corto y las opciones entran en cascada */
+.dsel{transition:transform .12s ease,border-color .2s}
+.dsel:active{transform:scale(.97)}
+.dsel > .i:last-child{transition:transform .28s cubic-bezier(.2,.8,.2,1)}
+.dsel.abierto{border-color:var(--brand)}
+.dsel.abierto > .i:last-child{transform:rotate(180deg)}
+.sheet.hoja-fechas{transition:transform .42s cubic-bezier(.22,1.18,.36,1)}
+.sheet.hoja-fechas.on .opt,.sheet.hoja-fechas.on .grid2,.sheet.hoja-fechas.on .btn{animation:optEntra .34s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 32ms + 90ms)}
+.sheet.hoja-fechas.on h3,.sheet.hoja-fechas.on .lead{animation:optEntra .3s ease both;animation-delay:50ms}
+@keyframes optEntra{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}

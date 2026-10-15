@@ -159,7 +159,7 @@ $("#tabs").addEventListener("click", (e) => { const b = e.target.closest(".tab")
 let _hoja = null;
 export function abrirHoja(html, bind) {
   const sh = $("#sheet"), bg = $("#sheetbg");
-  sh.classList.remove("arriba");
+  sh.classList.remove("arriba", "hoja-fechas");
   sh.innerHTML = `<div class="grab"></div>` + html;
   pintaIconos(sh);
   _hoja = { abierta: true };
@@ -188,9 +188,9 @@ document.addEventListener("focusin", (e) => {
     e.target.scrollIntoView({ block: "nearest" });
   }, 450);
 });
-export function hoja(titulo, ops, alElegir, lead) {
+export function hoja(titulo, ops, alElegir, lead, alAbrir) {
   abrirHoja(`<h3>${esc(titulo)}</h3>${lead ? `<p class="lead">${esc(lead)}</p>` : ""}` + ops.map((o, i) => `<button type="button" class="opt${o.on ? " on" : ""}" data-i="${i}">${o.img ? `<img class="oimg" src="${esc(o.img)}" alt="">` : ""}${o.icono ? ic(o.icono) : ""}${o.dot ? `<span class="dot" style="background:${o.dot}"></span>` : ""}${esc(o.t)}${o.on ? " " + ic("check") : ""}${o.small ? `<small>${esc(o.small)}</small>` : ""}</button>`).join(""),
-    (sh, cerrar) => sh.querySelectorAll(".opt").forEach((b) => (b.onclick = () => { cerrar(); alElegir && setTimeout(() => alElegir(ops[+b.dataset.i]), 200); })));
+    (sh, cerrar) => { sh.querySelectorAll(".opt").forEach((b) => (b.onclick = () => { cerrar(); alElegir && setTimeout(() => alElegir(ops[+b.dataset.i]), 200); })); alAbrir && alAbrir(sh); });
 }
 // Confirmación en la hoja (las acciones con plata o con aviso al cliente se confirman)
 export function confirmar(titulo, texto, { si = "Sí", no = "Cancelar", peligro = false } = {}) {

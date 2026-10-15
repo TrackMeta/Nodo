@@ -12,6 +12,16 @@ export const lblDe = (r) => (r.preset === "custom" ? "Personalizado" : (PRESETS.
 export const botonFechas = (r) => `<button type="button" class="dsel" data-dsel>${ic("calendar")}<span><b>${esc(lblDe(r))}</b><small>${fRango(r)}</small></span>${ic("chevronDown")}</button>`;
 
 // Abre la hoja con el período actual `R`; `listo(nuevoR)` recibe el período elegido
+// Animación al abrir (15-oct): la hoja sube con un rebote corto y las opciones entran en cascada; la flechita del
+// botón gira mientras está abierta
+// (se llama ANTES de que la hoja empiece a subir, desde su preparación)
+function animarHoja(sh) {
+  sh.classList.add("hoja-fechas");
+  sh.querySelectorAll(".opt, .grid2, .btn").forEach((o, i) => o.style.setProperty("--i", i));
+  const btn = document.querySelector(".view:not([hidden]) [data-dsel]"); if (!btn) return;
+  btn.classList.add("abierto");
+  const t = setInterval(() => { if (!sh.classList.contains("on")) { clearInterval(t); btn.classList.remove("abierto"); } }, 120);
+}
 export function elegirFechas(R, listo) {
   const ops = PRESETS.map((p) => { const r = computePreset(p[0]); return { t: p[1], small: p[0] === "max" ? "desde el inicio" : fRango(r), on: R.preset === p[0], v: p[0] }; });
   ops.push({ t: "Personalizado…", small: R.preset === "custom" ? fRango(R) : "elige desde y hasta", on: R.preset === "custom", v: "custom" });
@@ -21,6 +31,7 @@ export function elegirFechas(R, listo) {
     abrirHoja(`<h3>Personalizado</h3><p class="lead">Elige el primer y el último día (hora del negocio).</p>
       <div class="grid2" style="margin-bottom:10px"><label class="flabel" style="margin:0">Desde<input class="inpt" type="date" id="dd1" max="${ymd(hoyR.to)}" value="${ymd(R.preset === "custom" ? R.from : d7.from)}"></label><label class="flabel" style="margin:0">Hasta<input class="inpt" type="date" id="dd2" max="${ymd(hoyR.to)}" value="${ymd(R.preset === "custom" ? R.to : hoyR.to)}"></label></div>
       <button type="button" class="btn blue" style="width:100%" id="ddgo">Ver estos días</button>`, (sh, cerrar) => {
+      animarHoja(sh);
       $("#ddgo", sh).onclick = () => {
         const p = (v) => { const [y, mo, d] = String(v).split("-").map(Number); return new Date(y, mo - 1, d); };
         let a = p($("#dd1", sh).value), b = p($("#dd2", sh).value);
@@ -29,5 +40,5 @@ export function elegirFechas(R, listo) {
         cerrar(); listo({ from: a, to: b, preset: "custom" });
       };
     });
-  });
+  }, undefined, animarHoja);
 }
