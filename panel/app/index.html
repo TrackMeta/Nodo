@@ -213,7 +213,7 @@ try { localStorage.removeItem("nodo.app.diag"); } catch (e) {}
     else cb(apk ? 0 : Math.max(0, 950 - (performance.now() - t0)));
   }
   function animar(d) { retraso = d; inicioAnima = performance.now(); b.style.setProperty("--d", d + "ms");
-    if (armado) { SALIDA = 760; b.classList.add("bt-anima-textos"); } else b.classList.add("bt-anima");   // con el logo ya armado, solo entran los textos
+    if (armado) { SALIDA = 1100; b.classList.add("bt-anima-textos"); }   // (1,1 s: que los brillos alcancen a encenderse suave) else b.classList.add("bt-anima");   // con el logo ya armado, solo entran los textos
     estado = "anima"; NODO_MARCA("anima(" + Math.round(d) + ")"); }
   function salir(fd) { if (estado === "fuera") return; estado = "fuera"; b.style.setProperty("--fd", Math.round(fd) + "ms"); b.classList.add("bt-salir"); NODO_MARCA("salida(" + Math.round(fd) + ")");
     setTimeout(function () { b.hidden = true; NODO_MARCA("fin"); finar(); }, fd + 450); }

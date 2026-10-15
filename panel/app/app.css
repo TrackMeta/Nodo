@@ -23,7 +23,7 @@ body.app [hidden]{display:none!important}
    setTimeout y, con la app trabajando, el fundido salía 1 s tarde y los puntos se quedaban quietos. */
 .boot::before{will-change:opacity}
 .bt-sin-brillo::before{opacity:0}
-.bt-sin-brillo.bt-anima::before,.bt-sin-brillo.bt-anima-textos::before{animation:btBrillo .7s ease var(--d,0ms) both}
+.bt-sin-brillo.bt-anima::before,.bt-sin-brillo.bt-anima-textos::before{animation:btBrillo 1.2s cubic-bezier(.45,0,.25,1) var(--d,0ms) both}
 @keyframes btBrillo{from{opacity:0}to{opacity:1}}
 .boot.bt-salir{animation:btFuera .4s ease var(--fd,0ms) forwards;pointer-events:none}
 @keyframes btFuera{to{opacity:0}}
