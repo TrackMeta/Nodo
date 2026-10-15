@@ -1,7 +1,7 @@
 // «Hoy» (Resumen) en el celular: lo que espera por ti, lo cobrado y la ganancia (con su detalle), el gráfico de
 // ventas, los números del Dashboard (Ventas, Publicidad y Rentabilidad), horarios, «Cómo avanzan», anuncios y un bloque
 // según el tipo de bot. Mismas consultas y la misma cuenta que dashboard.html (vista «Todo»). Se pone al día solo.
-import { A, $, esc, ic, on, emit, supa, invoke, abrirHoja, sol, ir } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, invoke, abrirHoja, sol, ir, enReposo } from "./app.js";
 import { pageAll, getChannel, getUsdRate, factorAds, adsDeCuentasQuitadas } from "../shell.js";
 import { computePreset, startOfDayTZ, endOfDayTZ, ymd, ymdTZ, getTZ } from "../date-range.js";
 import * as O from "../orders.js";
@@ -174,7 +174,7 @@ function pintaEspera() {
 
 // Unos segundos después de abrir la app (o de cambiar de bot) Hoy se calcula por detrás: la primera visita ya es al toque
 let _pc = null;
-function precalentar() { clearTimeout(_pc); _pc = setTimeout(() => { if (A.tab !== "hoy" && !CACHE.has(clave(R))) cargar(true); }, 2500); }
+function precalentar() { clearTimeout(_pc); _pc = enReposo(() => { if (A.tab !== "hoy" && !CACHE.has(clave(R))) cargar(true); }, 5000); }
 export async function cargar(silencioso) {
   const g = ++_gen, r = R, key = clave(r);
   const c = CACHE.get(key) || leerGuardado(key);

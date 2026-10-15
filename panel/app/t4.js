@@ -1,6 +1,6 @@
 // 4.ª pestaña según el tipo de bot: Ventas (digital), Pedidos (físico, como pedidos.html) o Accesos (micro apps,
 // por la función edge `microapps`). Los cambios de estado van por order-update, igual que en el panel.
-import { A, $, esc, ic, on, emit, supa, invoke, avatar, abrirCapa, abrirHoja, confirmar, pedirTexto, hoja, toast, fmtHora, sol, ir } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, invoke, avatar, abrirCapa, abrirHoja, confirmar, pedirTexto, hoja, toast, fmtHora, sol, ir, enReposo } from "./app.js";
 import { pageAll } from "../shell.js";
 import { computePreset, startOfDayTZ, endOfDayTZ } from "../date-range.js";
 import * as O from "../orders.js";
@@ -30,7 +30,7 @@ async function cargar() {
 async function badge() {
   if (A.tipo === "fisico") { if (!T.pedidos.length) { try { await cargarPedidos(true); } catch (_) { /* */ } } }
   else if (A.tipo === "apps") { if (!T.accesos.length) { try { await cargarAccesos(true); } catch (_) { /* */ } } }
-  else { $("#tb-t4").hidden = true; emit("pendientesT4", 0); if (A.tipo === "digital" && A.tab !== "t4") setTimeout(() => { if (A.tab !== "t4" && !T.cargando) cargar(); }, 1500); return; }
+  else { $("#tb-t4").hidden = true; emit("pendientesT4", 0); if (A.tipo === "digital" && A.tab !== "t4") enReposo(() => { if (A.tab !== "t4" && !T.cargando) cargar(); }, 4000); return; }
   const n = A.tipo === "fisico" ? T.pedidos.filter(parado).length : T.accesos.filter((a) => estadoVis(a) === "porvencer").length;
   $("#tb-t4").hidden = !n; $("#tb-t4").textContent = n;
   emit("pendientesT4", n);

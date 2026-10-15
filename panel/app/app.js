@@ -237,7 +237,18 @@ const OJO_NO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 // La pantalla de carga se va con un fundido, recién cuando su animación llegó al logo armado
 // Lo que llega de internet al abrir se dibuja recién cuando terminó la animación de carga (index.html resuelve esta
 // promesa al final, o a los 5 s): dibujarlo a la mitad la trababa (541 ms medidos en el celular de Rodrigo).
-export const trasArranque = () => window.NODO_BOOT_FIN || Promise.resolve();
+// Y de a UNO, con un respiro entre cada uno: si chats, pagos y avisos se dibujaban juntos al terminar la carga, la app
+// recién aparecida no respondía ~0,4 s (medido). Pasado el arranque, ya no espera nada.
+let _cola = Promise.resolve(), _arranqueHecho = false;
+export const trasArranque = () => {
+  if (_arranqueHecho) return Promise.resolve();
+  const turno = _cola.then(() => window.NODO_BOOT_FIN || null).then(() => new Promise((r) => setTimeout(r, 140)));
+  _cola = turno; turno.then(() => setTimeout(() => { if (_cola === turno) _arranqueHecho = true; }, 0));
+  return turno;
+};
+// Trabajo de fondo que puede esperar (precalcular Hoy, precargar Ventas): cuando la app está quieta, nunca encima
+// de un toque o un deslizamiento
+export const enReposo = (fn, minimo = 0) => setTimeout(() => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 10000 }) : fn()), minimo);
 // La pantalla de abajo (app o entrar) se muestra y se dibuja DETRÁS de la carga; un par de cuadros después (ya
 // dibujada) se lanza la salida (index.html: avisa a Android y arranca cuadro → textos → fundido de una vez).
 let _saliendo = false;

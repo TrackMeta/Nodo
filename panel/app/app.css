@@ -521,3 +521,7 @@ textarea.inpt{min-height:80px;resize:vertical}
 .sheet.arriba.on{transform:none}
 .sheet.arriba .grab{display:none}
 #hoyEspera:empty{display:none}
+
+/* Listas largas: el celular solo dibuja las filas que se ven (las demás guardan su lugar). Con 300 chats, dibujarlos
+   todos al abrir trababa la app ~0,4 s */
+#chatlist > .row,.list > .row,.stack > *,.notif{content-visibility:auto;contain-intrinsic-size:auto 64px}

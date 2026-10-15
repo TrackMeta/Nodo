@@ -202,6 +202,7 @@ const tagHex = (c) => { const N = { blue: "#2b7fff", green: "#22c079", amber: "#
 export { tagHex };
 
 // ── Pintar ──
+let _pintado = 0;
 export function pintar() {
   const base = L.convs.filter((cv) => pasa(cv) && buscar(cv));
   const nH = base.filter((c) => !esBot(c)).length, nB = base.length - nH;
@@ -214,7 +215,14 @@ export function pintar() {
   $("#fchips").innerHTML = act.map(([l], i) => `<button type="button" class="fchip" data-q="${i}">${esc(l)} ${ic("x")}</button>`).join("") + (act.length > 1 ? `<button type="button" class="fchip clear" data-q="todo">Limpiar</button>` : "");
   const vis = base.filter(enModo).concat(Q ? L.buscados.filter((cv) => enModo(cv)) : []);
   const vacioTxt = Q ? `Ningún chat coincide con «${esc(Q)}».` : act.length ? "Ningún chat coincide con estos filtros." : MODO === "humano" ? "Nadie espera por ustedes: el bot atiende todo." : "Todavía no hay chats.";
-  $("#chatlist").innerHTML = vis.length ? vis.slice(0, 300).map(fila).join("") : `<div class="empty"><b>${ic("inbox")}</b>${vacioTxt}</div>`;
+  // Primero los que entran en pantalla; el resto se agrega de a 40 cuando la app está libre (300 de golpe = ~0,5 s
+  // con la app quieta en el celular)
+  const lista = vis.slice(0, 300), turno = ++_pintado;
+  $("#chatlist").innerHTML = lista.length ? lista.slice(0, 25).map(fila).join("") : `<div class="empty"><b>${ic("inbox")}</b>${vacioTxt}</div>`;
+  const resto = (i) => { if (turno !== _pintado || i >= lista.length) return;
+    $("#chatlist").insertAdjacentHTML("beforeend", lista.slice(i, i + 40).map(fila).join(""));
+    (window.requestIdleCallback || ((f) => setTimeout(f, 16)))(() => resto(i + 40), { timeout: 300 }); };
+  if (lista.length > 25) (window.requestIdleCallback || ((f) => setTimeout(f, 16)))(() => resto(25), { timeout: 300 });
   $("#chatsNota").hidden = !(L.tope || vis.length > 300);
   $("#chatsNota").textContent = vis.length > 300 ? `Se muestran 300 de ${vis.length}. Usa el buscador o los filtros para ver el resto.` : "Se cargaron los 1000 chats más recientes (y todos los que esperan a alguien).";
   const nEsperan = L.convs.filter((c) => !esBot(c) && c.requiere_humano && !c.archivada).length;
