@@ -16,15 +16,11 @@ body.app [hidden]{display:none!important}
 .i{width:1em;height:1em;vertical-align:-.15em;flex:none}
 
 /* arranque */
+/* Fondo liso, igual al de la pantalla de inicio de Android (los brillos se quitaron el 15-oct: aparecían de golpe) */
 .boot{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:200;transition:opacity .4s ease;will-change:opacity}
-.boot::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(70% 45% at 15% 12%,rgba(0,70,255,.16),transparent 70%),radial-gradient(70% 45% at 88% 90%,rgba(139,92,246,.16),transparent 70%)}
 /* ⚡ (15-oct) Cuadro, textos y fundido van como UNA secuencia de animaciones con retraso (--d, --fd), lanzada de una
    vez: el celular la corre aparte (solo transform/opacity) aunque la app esté ocupada. Antes cada paso esperaba un
    setTimeout y, con la app trabajando, el fundido salía 1 s tarde y los puntos se quedaban quietos. */
-.boot::before{will-change:opacity}
-.bt-sin-brillo::before{opacity:0}
-.bt-sin-brillo.bt-anima::before,.bt-sin-brillo.bt-anima-textos::before{animation:btBrillo 1.2s cubic-bezier(.45,0,.25,1) var(--d,0ms) both}
-@keyframes btBrillo{from{opacity:0}to{opacity:1}}
 .boot.bt-salir{animation:btFuera .4s ease var(--fd,0ms) forwards;pointer-events:none}
 @keyframes btFuera{to{opacity:0}}
 /* El logo queda en el centro exacto de la pantalla (donde Android deja la N); los textos van debajo, aparte */
