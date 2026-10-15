@@ -1,6 +1,6 @@
 // Notificaciones de la app: las mismas de la campanita del panel (notificaciones + lecturas por persona), en una
 // pantalla propia con Pendientes / Historial, filtro por bot, Limpiar y «Marcar todo como leído».
-import { A, $, esc, ic, on, emit, supa, abrirCapa, capaAbierta, cambiarBot, ir, toast, fmtHora, logoDe, confirmar } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, abrirCapa, capaAbierta, cambiarBot, ir, toast, fmtHora, logoDe, confirmar, trasArranque } from "./app.js";
 import { mazo } from "../shell.js";
 
 // Catálogo (notif-center.js TIPOS)
@@ -55,6 +55,7 @@ export async function cargar() {
     N.leidas = new Set(lect.map((r) => r.notificacion_id)); N.quitadas = new Set(lect.filter((r) => r.quitada_at).map((r) => r.notificacion_id));
     if (yo.data) { N.hasta = new Date(yo.data.leidas_hasta).getTime(); N.prefs = yo.data.prefs || {}; }
     else if (!yo.error) { const corte = new Date(Date.now() - 864e5).toISOString(); N.hasta = Date.parse(corte); supa.from("notificacion_usuario").insert({ user_id: A.uid, leidas_hasta: corte }).then(() => {}, () => {}); }
+    await trasArranque();
     campana(); if (capaAbierta("notif")) pintar();
     emit("notifPrefs", N.prefs);
   })().catch(() => {}).finally(() => { N.cargando = null; });

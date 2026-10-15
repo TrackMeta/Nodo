@@ -186,6 +186,10 @@ try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" 
 (function () { var b = document.getElementById("boot"), apk = !!window.Capacitor, t0 = performance.now();
   var NN = apk && window.Capacitor.Plugins && window.Capacitor.Plugins.NodoNativo;
   var estado = "quieto", inicioAnima = 0, retraso = 0, SALIDA = 1050;
+  // Lo que llega de internet se dibuja recién al terminar (app.js: trasArranque); así no se cruza con la animación
+  var finar; window.NODO_BOOT_FIN = new Promise(function (r) { finar = r; }); setTimeout(function () { finar(); }, 5000);
+  // En el APK, el primer dibujo completo tras soltar Android la pantalla demora (~0,3 s): el cuadro empieza después
+  var PRIMER_DIBUJO = apk ? 350 : 60;
   b.classList.add(apk ? "bt-ya" : "bt-dibuja");
   NODO_MARCA("carga en pantalla");
   function avisar(cb) {
@@ -194,11 +198,11 @@ try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" 
   }
   function animar(d) { retraso = d; inicioAnima = performance.now(); b.style.setProperty("--d", d + "ms"); b.classList.add("bt-anima"); estado = "anima"; NODO_MARCA("anima(" + Math.round(d) + ")"); }
   function salir(fd) { if (estado === "fuera") return; estado = "fuera"; b.style.setProperty("--fd", Math.round(fd) + "ms"); b.classList.add("bt-salir"); NODO_MARCA("salida(" + Math.round(fd) + ")");
-    setTimeout(function () { b.hidden = true; NODO_MARCA("fin"); }, fd + 450); }
-  var lento = setTimeout(function () { if (estado === "quieto") { estado = "avisando"; avisar(function (e) { animar(e + 60); }); } }, 2000);
+    setTimeout(function () { b.hidden = true; NODO_MARCA("fin"); finar(); }, fd + 450); }
+  var lento = setTimeout(function () { if (estado === "quieto") { estado = "avisando"; avisar(function (e) { animar(e + PRIMER_DIBUJO); }); } }, 2000);
   window.NODO_BOOT_SALIR = function () {
     clearTimeout(lento);
-    if (estado === "quieto") { estado = "avisando"; avisar(function (e) { animar(e + 60); salir(retraso + SALIDA); }); }
+    if (estado === "quieto") { estado = "avisando"; avisar(function (e) { animar(e + PRIMER_DIBUJO); salir(retraso + SALIDA); }); }
     else if (estado === "anima") salir(Math.max(0, inicioAnima + retraso + SALIDA - performance.now()));
     else if (estado === "avisando") { var t = setInterval(function () { if (estado === "anima") { clearInterval(t); salir(Math.max(0, inicioAnima + retraso + SALIDA - performance.now())); } }, 50); }
   };

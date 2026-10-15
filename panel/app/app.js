@@ -235,6 +235,9 @@ async function boot() {
 const OJO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const OJO_NO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2A10.4 10.4 0 0 1 12 4c6.5 0 10 8 10 8a17.6 17.6 0 0 1-2.2 3.2M6.6 6.6A17.4 17.4 0 0 0 2 12s3.5 8 10 8a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="m2 2 20 20"/></svg>';
 // La pantalla de carga se va con un fundido, recién cuando su animación llegó al logo armado
+// Lo que llega de internet al abrir se dibuja recién cuando terminó la animación de carga (index.html resuelve esta
+// promesa al final, o a los 5 s): dibujarlo a la mitad la trababa (541 ms medidos en el celular de Rodrigo).
+export const trasArranque = () => window.NODO_BOOT_FIN || Promise.resolve();
 // La pantalla de abajo (app o entrar) se muestra y se dibuja DETRÁS de la carga; un par de cuadros después (ya
 // dibujada) se lanza la salida (index.html: avisa a Android y arranca cuadro → textos → fundido de una vez).
 let _saliendo = false;

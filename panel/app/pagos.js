@@ -1,6 +1,6 @@
 // Pagos por validar (copiloto.html en el celular): la misma cola, los mismos tipos y la misma función order-update
 // para aprobar o rechazar. Lo que la IA leyó del comprobante va en chips; la foto se amplía al tocarla.
-import { A, $, esc, ic, on, emit, supa, invoke, avatar, abrirHoja, confirmar, pedirTexto, hoja, toast, verFoto, fmtHora } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, invoke, avatar, abrirHoja, confirmar, pedirTexto, hoja, toast, verFoto, fmtHora, trasArranque } from "./app.js";
 import { pageAll, enTrozos } from "../shell.js";
 import * as O from "../orders.js";
 import { esPrueba } from "./comun.js";
@@ -59,6 +59,7 @@ export async function cargar() {
       const { data } = await supa.from("contact_field_values").select("contact_id,value,custom_fields!inner(key)").in("contact_id", t);
       (data || []).forEach((f) => { const k = f.custom_fields?.key; if (k && k.startsWith("_duda_") && f.value) (dudas[f.contact_id] = dudas[f.contact_id] || []).push(f.value); });
     }
+    await trasArranque();
     if (ch !== A.ch) return;
     P.lista = lista; P.imgs = imgs; P.dudas = dudas;
     pintar();

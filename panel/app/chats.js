@@ -1,6 +1,6 @@
 // Chats: la lista de la Bandeja en el celular — modo Humano/Bot, buscador, filtros (los mismos grupos que el
 // cajón de la Bandeja), filtros guardados y tiempo real. Las consultas son las de loadConversations().
-import { A, $, $$, esc, ic, on, emit, supa, avatar, quienDe, fmtHora, abrirCapa, cerrarCapa, abrirHoja, confirmar, toast, pedirTexto } from "./app.js";
+import { A, $, $, esc, ic, on, emit, supa, avatar, quienDe, fmtHora, abrirCapa, cerrarCapa, abrirHoja, confirmar, toast, pedirTexto, trasArranque } from "./app.js";
 import { pageAll, enTrozos, norm } from "../shell.js";
 import { computePreset, startOfDayTZ, endOfDayTZ } from "../date-range.js";
 import { STAGES, ETAPA, ENTREGA_PROV, ENTREGA_ESTADO_K, RECOMPRA_ESTADOS, previewHtml, esPrueba } from "./comun.js";
@@ -65,6 +65,7 @@ export async function cargar() {
       supa.from("tags").select("id,nombre,color").eq("channel_id", ch).order("nombre"),
       supa.from("products").select("id,nombre,emoji,tipo").eq("channel_id", ch).order("nombre"),
     ]);
+    await trasArranque();
     if (ch !== A.ch) return;
     if (r.error) throw r.error;
     let convs = r.data || [];
