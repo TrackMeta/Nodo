@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Pantalla de inicio de Android (12+) del color de TU tema. NodoNativo.barras la elige con setSplashScreenTheme
+     (Android 13+), y Android la recuerda para la próxima vez que abras la app. -->
+<resources>
+    <style name="NodoInicioClaro" parent="AppTheme.NoActionBar">
+        <item name="android:windowSplashScreenBackground">#FFFFFF</item>
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+    <style name="NodoInicioOscuro" parent="AppTheme.NoActionBar">
+        <item name="android:windowSplashScreenBackground">@color/nodo_fondo</item>
+        <item name="android:windowBackground">@color/nodo_fondo</item>
+    </style>
+</resources>

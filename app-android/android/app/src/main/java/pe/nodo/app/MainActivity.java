@@ -9,15 +9,34 @@ import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
+    static final String PREFS = "nodo";
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         // Plugin propio: le dice a la app web si este APK trae Firebase (sin él, registrar avisos cerraría la app).
         registerPlugin(NodoNativoPlugin.class);
         super.onCreate(savedInstanceState);
+        WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+        // El tema que elegiste (lo guarda NodoNativo.barras): fondo de la ventana, de la página y barras de tu color
+        // desde el primer instante, antes de que cargue la app.
+        android.content.SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (sp.contains("fondo")) {
+            try {
+                int c = sp.getInt("fondo", 0xFF131A26);
+                boolean claro = sp.getBoolean("claro", false);
+                android.view.Window w = getWindow();
+                w.getDecorView().setBackgroundColor(c);
+                w.setStatusBarColor(c);
+                w.setNavigationBarColor(c);
+                androidx.core.view.WindowInsetsControllerCompat ic = androidx.core.view.WindowCompat.getInsetsController(w, w.getDecorView());
+                ic.setAppearanceLightStatusBars(claro);
+                ic.setAppearanceLightNavigationBars(claro);
+                if (wv != null) wv.setBackgroundColor(c);
+            } catch (Throwable t) { /* sin tema guardado: el oscuro de siempre */ }
+        }
         // Teclado: Capacitor deja márgenes para las barras del sistema (adjustMarginsForEdgeToEdge) pero no para el
         // teclado, y con Android 15 el teclado tapaba la hoja de abajo y la caja de escribir. Mismo cálculo + el teclado:
         // abajo se deja lo que sea más alto, la barra de navegación o el teclado, y la página se achica por encima.
-        WebView wv = getBridge() != null ? getBridge().getWebView() : null;
         if (wv != null) {
             ViewCompat.setOnApplyWindowInsetsListener(wv, (v, wi) -> {
                 Insets bars = wi.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());

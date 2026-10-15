@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#131A26">
+<script>
+// Tu tema ANTES de pintar nada: si no, la pantalla de carga salía oscura (el modo base) y después saltaba a claro
+try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" ? (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : p;
+  document.documentElement.dataset.theme = t; document.querySelector('meta[name="theme-color"]').content = t === "light" ? "#FFFFFF" : "#131A26"; } catch (e) {}
+</script>
 <meta name="mobile-web-app-capable" content="yes">
 <title>Nodo</title>
 <link rel="manifest" href="manifest.webmanifest">

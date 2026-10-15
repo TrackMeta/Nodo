@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Versión base (Android de antes del 12): solo el fondo. La de values-v31 agrega la pantalla de inicio. -->
+<resources>
+    <style name="NodoInicioClaro" parent="AppTheme.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+    <style name="NodoInicioOscuro" parent="AppTheme.NoActionBar">
+        <item name="android:windowBackground">@color/nodo_fondo</item>
+    </style>
+</resources>

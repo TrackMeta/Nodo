@@ -26,6 +26,13 @@ public class NodoNativoPlugin extends Plugin {
                 androidx.core.view.WindowInsetsControllerCompat ic = androidx.core.view.WindowCompat.getInsetsController(w, w.getDecorView());
                 ic.setAppearanceLightStatusBars(claro);
                 ic.setAppearanceLightNavigationBars(claro);
+                // Se recuerda el tema: la próxima vez que abras la app, el fondo nativo (y la pantalla de inicio de
+                // Android 13+) ya sale de tu color, sin el destello oscuro antes de que cargue la página.
+                getContext().getSharedPreferences(MainActivity.PREFS, android.content.Context.MODE_PRIVATE).edit()
+                    .putInt("fondo", c).putBoolean("claro", claro).apply();
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    getActivity().getSplashScreen().setSplashScreenTheme(claro ? R.style.NodoInicioClaro : R.style.NodoInicioOscuro);
+                }
                 call.resolve();
             } catch (Throwable t) {
                 call.reject(String.valueOf(t.getMessage()));
