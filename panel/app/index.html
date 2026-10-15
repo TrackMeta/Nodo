@@ -188,8 +188,19 @@ try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" 
   var estado = "quieto", inicioAnima = 0, retraso = 0, SALIDA = 1050;
   // Lo que llega de internet se dibuja recién al terminar (app.js: trasArranque); así no se cruza con la animación
   var finar; window.NODO_BOOT_FIN = new Promise(function (r) { finar = r; }); setTimeout(function () { finar(); }, 5000);
-  // En el APK, el primer dibujo completo tras soltar Android la pantalla demora (~0,3 s): el cuadro empieza después
-  var PRIMER_DIBUJO = apk ? 350 : 60;
+  // En el APK, el primer dibujo completo tras soltar Android su pantalla es un tirón (medido: 230–480 ms). En vez de
+  // una espera fija, se mira cuadro a cuadro: apenas pasa ese tirón (un cuadro de más de 120 ms) arranca el cuadro
+  // azul. Si no se ve ningún tirón en 0,8 s, arranca igual.
+  function trasPrimerDibujo(espera, cb) {
+    if (!apk) { setTimeout(function () { cb(60); }, espera); return; }
+    setTimeout(function () {
+      var t0 = performance.now(), prev = t0, listo = false;
+      function fin(m) { if (listo) return; listo = true; NODO_MARCA(m); cb(40); }
+      (function mira(t) { if (listo) return; if (t - prev > 120) { fin("tirón " + Math.round(t - prev)); return; } prev = t;
+        if (t - t0 > 800) { fin("sin tirón"); return; } requestAnimationFrame(mira); })(t0);
+      setTimeout(function () { fin("sin cuadros"); }, 1200);
+    }, espera);
+  }
   b.classList.add(apk ? "bt-ya" : "bt-dibuja");
   NODO_MARCA("carga en pantalla");
   function avisar(cb) {
@@ -199,10 +210,10 @@ try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" 
   function animar(d) { retraso = d; inicioAnima = performance.now(); b.style.setProperty("--d", d + "ms"); b.classList.add("bt-anima"); estado = "anima"; NODO_MARCA("anima(" + Math.round(d) + ")"); }
   function salir(fd) { if (estado === "fuera") return; estado = "fuera"; b.style.setProperty("--fd", Math.round(fd) + "ms"); b.classList.add("bt-salir"); NODO_MARCA("salida(" + Math.round(fd) + ")");
     setTimeout(function () { b.hidden = true; NODO_MARCA("fin"); finar(); }, fd + 450); }
-  var lento = setTimeout(function () { if (estado === "quieto") { estado = "avisando"; avisar(function (e) { animar(e + PRIMER_DIBUJO); }); } }, 2000);
+  var lento = setTimeout(function () { if (estado === "quieto") { estado = "avisando"; avisar(function (e) { trasPrimerDibujo(e, animar); }); } }, 2000);
   window.NODO_BOOT_SALIR = function () {
     clearTimeout(lento);
-    if (estado === "quieto") { estado = "avisando"; avisar(function (e) { animar(e + PRIMER_DIBUJO); salir(retraso + SALIDA); }); }
+    if (estado === "quieto") { estado = "avisando"; avisar(function (e) { trasPrimerDibujo(e, function (d) { animar(d); salir(retraso + SALIDA); }); }); }
     else if (estado === "anima") salir(Math.max(0, inicioAnima + retraso + SALIDA - performance.now()));
     else if (estado === "avisando") { var t = setInterval(function () { if (estado === "anima") { clearInterval(t); salir(Math.max(0, inicioAnima + retraso + SALIDA - performance.now())); } }, 50); }
   };
