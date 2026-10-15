@@ -10,12 +10,32 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     static final String PREFS = "nodo";
-    // Relevo sin salto entre la pantalla de inicio de Android y la carga de la app: Android la quitaba apenas la app
-    // dibujaba algo, a veces con la N a medio dibujar y antes de que apareciera la carga web. Ahora se queda hasta que
-    // la página avisa que su carga ya está (NodoNativo.bootListo) y la animación terminó (1,45 s: N + cuadro); como mucho 2,8 s.
+    // Relevo sin parpadeo entre la pantalla de inicio de Android y la carga de la app. Antes Android la quitaba sola y,
+    // como la página todavía no había dibujado su primer cuadro (~0,4 s), por un instante no había nada debajo: destello.
+    // Ahora Android le ENTREGA su pantalla a la app (setOnExitAnimationListener) y la app la deja encima mientras la
+    // página dibuja la carga debajo; se quita recién cuando la página avisa que ya está en pantalla
+    // (NodoNativo.bootListo) y la animación terminó (1,45 s: N + cuadro). Como mucho 2,8 s.
     static final long N_COMPLETA = 1450, TOPE = 2800;
     static volatile boolean bootListo = false;
     static volatile long t0 = 0;
+    static volatile long bootListoEn = 0;   // la página recibe la respuesta, pone el logo armado y lo dibuja: 0,15 s de margen
+    private android.view.View pantallaInicio = null;
+    private final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    private void quitarInicioSiToca() {
+        if (pantallaInicio == null) return;
+        long e = android.os.SystemClock.uptimeMillis() - t0;
+        long ahora = android.os.SystemClock.uptimeMillis();
+        if ((bootListo && e >= N_COMPLETA && ahora - bootListoEn >= 150) || e >= TOPE) {
+            final android.view.View v = pantallaInicio; pantallaInicio = null;
+            // Debajo ya está el mismo logo en el mismo lugar: un fundido corto basta
+            v.animate().alpha(0f).setDuration(120).withEndAction(() -> {
+                if (android.os.Build.VERSION.SDK_INT >= 31 && v instanceof android.window.SplashScreenView) ((android.window.SplashScreenView) v).remove();
+            }).start();
+            return;
+        }
+        h.postDelayed(this::quitarInicioSiToca, 30);
+    }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -25,18 +45,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NodoNativoPlugin.class);
         super.onCreate(savedInstanceState);
         if (android.os.Build.VERSION.SDK_INT >= 31) {
-            final android.view.View content = findViewById(android.R.id.content);
-            content.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
-                @Override
-                public boolean onPreDraw() {
-                    long e = android.os.SystemClock.uptimeMillis() - t0;
-                    if ((bootListo && e >= N_COMPLETA) || e >= TOPE) {
-                        content.getViewTreeObserver().removeOnPreDrawListener(this);
-                        return true;
-                    }
-                    return false;   // todavía no: Android sigue mostrando su pantalla de inicio
-                }
-            });
+            getSplashScreen().setOnExitAnimationListener(vista -> { pantallaInicio = vista; quitarInicioSiToca(); });
         }
         WebView wv = getBridge() != null ? getBridge().getWebView() : null;
         // El tema que elegiste (lo guarda NodoNativo.barras): fondo de la ventana, de la página y barras de tu color
