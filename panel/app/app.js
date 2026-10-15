@@ -397,6 +397,8 @@ setInterval(() => { if (!document.hidden && A.ch) pintaAlertaWA().catch(() => {}
 // caché del celular queda al día) y se recarga una sola vez.
 const VER_KEY = "nodo.app.publicada";
 async function versionNueva() {
+  // Con el service worker (sw.js) es él quien mira y baja la versión nueva: aquí solo se le avisa
+  if (navigator.serviceWorker?.controller) { navigator.serviceWorker.controller.postMessage({ tipo: "revisar" }); return; }
   try {
     const r = await fetch("index.html", { method: "HEAD", cache: "no-store" });
     const v = r.headers.get("last-modified") || r.headers.get("etag"); if (!r.ok || !v) return;
@@ -414,6 +416,34 @@ async function versionNueva() {
   } catch (_) { /* sin red: se intenta la próxima vez */ }
 }
 versionNueva();
+
+// ═════════ ⚡ Service worker: la app abre desde la copia guardada en el celular (sw.js) ═════════
+// Freno de seguridad: dentro del APK (WebView: «; wv)» en el navegador) Capacitor tiene que estar; si falta, la copia
+// guardada perdió el puente con el celular (avisos, barras): se apaga el service worker para siempre en este celular
+// y se recarga desde internet como antes.
+const SIN_SW = "nodo.app.sinSW";
+(async () => {
+  if (!("serviceWorker" in navigator)) return;
+  let apagado = false; try { apagado = localStorage.getItem(SIN_SW) === "1"; } catch (_) { /* */ }
+  const enApk = /; wv\)/.test(navigator.userAgent);
+  if (apagado || (enApk && !window.Capacitor)) {
+    const regs = await navigator.serviceWorker.getRegistrations().catch(() => []);
+    if (regs.length) {
+      try { localStorage.setItem(SIN_SW, "1"); } catch (_) { /* */ }
+      await Promise.all(regs.map((r) => r.unregister()));
+      try { for (const k of await caches.keys()) await caches.delete(k); } catch (_) { /* */ }
+      if (!sessionStorage.getItem("nodo.app.swFuera")) { sessionStorage.setItem("nodo.app.swFuera", "1"); location.reload(); }
+    }
+    return;
+  }
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+  // Versión nueva ya guardada: se recarga sola si no estás en medio de algo; si no, se ve la próxima vez
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data?.tipo !== "nueva") return;
+    if (_hoja || PILA.length || escribiendo()) return;
+    location.reload();
+  });
+})();
 addEventListener("online", () => A.ch && emit("resync"));
 
 boot().catch((e) => { console.error(e); $("#boot").hidden = true; toast("No se pudo abrir la app: " + (e?.message || e), true); });
