@@ -9740,8 +9740,12 @@ function conDatosDePago(texto: string, dp: string, nums: string[], titulares: st
   // dos veces y un «✅ BCP» colgando al final). Medido al cambiar de Básica a Premium.
   const _limpia = (x: string) => x.replace(/[*_~✅•·-]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
   const etiquetas = new Set(dp.split(/\n\s*\n/).map((b) => _limpia(b.split("\n")[0] ?? "")).filter((e) => e.length >= 3));
+  // (15-oct) Cualquier renglón que YA está en el bloque real (el titular de la cuenta BCP «*Percy Flores*», que no es el
+  //  titular del Yape que miran `titulares`) sobra una vez pegado el bloque: salía DOS veces (Sergio 13-oct, guion 15-oct).
+  const lineasDp = new Set(dp.split("\n").map(_limpia).filter((e) => e.length >= 3));
   for (const linea of t.split("\n")) {
     if (etiquetas.has(_limpia(linea))) continue;
+    if (puesto && lineasDp.has(_limpia(linea))) continue;
     if (esDato(linea)) {
       // Se salvan las frases de esa línea que NO llevan el dato ("Perfecto, el costo es S/ 10.")
       const resto = linea.split(/(?<=[.!?…])\s+/).filter((o) => !esDato(o)).join(" ").trim();
@@ -10099,7 +10103,10 @@ async function repararMensajeCortado(db: SupabaseClient, run: any, ctx: any, fin
   if (_letrasQuit < 15) return final;
   // Si lo único que se fue son PREGUNTAS (la de relleno del cierre), lo que queda está entero: reescribirlo solo cambiaba
   // una pregunta por otra («¿te explico algo más?» → «¿te ayudo con el proceso?», Recepción 8-oct).
-  if (quitadas.every((q) => /\?[\s\p{Extended_Pictographic}\u{FE0F}]*$/u.test(q.trim()))) return final;
+  // (15-oct: también las que llegan SIN el «?» —frasesQuitadas corta el trozo exacto—: «¿Lo pagas por Yape o transferencia»
+  //  la quitó a propósito el freno de la pregunta de pago repetida, y reescribir por eso inventó «¿cuándo te gustaría
+  //  coordinar la entrega?» y «¿quieres que te reserve tu lugar?» en un producto digital — chats del 14-oct.)
+  if (quitadas.every((q) => /\?[\s\p{Extended_Pictographic}\u{FE0F}]*$/u.test(q.trim()) || /^[\s\p{Extended_Pictographic}\u{FE0F}]*¿/u.test(q))) return final;
   // Se fue CASI TODO lo de la IA: no es un recorte, es un REEMPLAZO deliberado del motor (la contraseña inventada → «ese
   // dato lo confirma el equipo», la disputa de pago → texto fijo y a una persona). Eso no se reescribe.
   if (_letrasQuit > 0.7 * crudo.replace(/[^\p{L}]/gu, "").length) return final;
@@ -10120,7 +10127,9 @@ async function repararMensajeCortado(db: SupabaseClient, run: any, ctx: any, fin
         "- NO vuelvas a decir lo que se quitó, ni con otras palabras.\n" +
         "- No agregues datos nuevos (precios, plazos, garantías, números de pago).\n" +
         "- Si lo que quedó ya trae una pregunta, no agregues otra. Si no trae y tu original sí terminaba preguntando, cierra " +
-        "con UNA pregunta corta con sentido. Nunca le preguntes a él por un número, una cuenta o un dato nuestro.",
+        "con UNA pregunta corta con sentido. Nunca le preguntes a él por un número, una cuenta o un dato nuestro." +
+        (esDigital(ctx) ? "\n- Es un producto DIGITAL: el acceso llega por este chat al validar el pago. No hay entrega que coordinar, " +
+          "envío, cupos ni lugares que reservar: no hables de nada de eso." : ""),
     });
   } catch (_) { return final; }
   rep = tomaMarcaDatosPago(null, String(rep ?? "")).replace(/^[«"“]+|[»"”]+$/g, "").trim();
@@ -16623,7 +16632,7 @@ function tomaMarcaDatosPago(run: any, txt: string): string {
 async function maybeDatosPago(
   db: SupabaseClient, channelId: string, contactId: string, texto: string, respuestaIa = "",
   yaEligio = false, fisico?: { zona?: string; adelanto?: number | null; sym?: string; total?: number | null; forzar?: boolean },
-  digital?: { monto?: number | null; sym?: string; pedirElegir?: string; unico?: boolean },
+  digital?: { monto?: number | null; sym?: string; pedirElegir?: string; unico?: boolean; reenviar?: boolean },
 ): Promise<boolean | "suma" | void> {   // true = mandó los datos (el nodo de venta decide con eso si manda la pregunta en espera); "suma" = solo la línea del combo
   try {
     // Dispara si lo pidió en ESTE mensaje, si lo pidió antes (su primer mensaje lo atiende
@@ -16849,7 +16858,10 @@ async function maybeDatosPago(
       const _mPrev = Number((_ultCab.match(/Son \*[^\d]*(\d+(?:[.,]\d+)?)\*/) ?? [])[1]?.replace(",", "."));
       _montoCambio = Number.isFinite(_mNuevo) && _mNuevo > 0 && Number.isFinite(_mPrev) && _mPrev !== _mNuevo;
     }
-    if (!loPide && _yaSalieron && !_montoCambio) return;
+    // (15-oct) …o la IA decidió reenviarlos porque los pidió (ver `reenviar`): sin esto la marca no hacía nada y la IA
+    //  contestaba «el número está arriba en el chat» (Luis, Sergio — 13-oct).
+    const _iaReenvia0 = !!digital?.reenviar;
+    if (!loPide && !_iaReenvia0 && _yaSalieron && !_montoCambio) return;
     // («yape» a secas tras los tres medios ES pedir ese número: se le manda SOLO ese bloque — Rodrigo, Probar flujos
     //  2026-10-02: «no le envió el número de yape nuevamente». Lo que molestaba el 1-oct era recibir los TRES otra vez.)
     // («plineo», «ahora yapeo» es AVISAR que va a pagar, no pedir el número: con los datos recién mandados no se repiten —
@@ -16862,7 +16874,10 @@ async function maybeDatosPago(
     // (Si la IA ya escribió el NÚMERO en este mismo turno, no se pega otra vez aunque haya dicho «yape» o lo pida: lo
     //  acaba de leer dos segundos antes. Así salió «Aquí están los datos… 931 934 092…» y debajo «Son S/ 10 👇 Yape…
     //  931 934 092» — Probar flujos, 6-oct.)
-    if (_yaSalieron && !_montoCambio && (((_recienSalieron || _iaYaLoDijo) && !_pideElNumero && !_unMetodo) || _iaDioElNumero)) {
+    // (solo si los datos son lo ÚLTIMO que le mandamos y hace < 1 min: no los vio todavía. Si después ya hubo otro mensaje
+    //  nuestro, sí los vio pasar y los está pidiendo: van otra vez)
+    const _iaReenvia = _iaReenvia0 && !(_hace1min && _idxRec === 0);
+    if (_yaSalieron && !_montoCambio && (((_recienSalieron || _iaYaLoDijo) && !_pideElNumero && !_unMetodo && !_iaReenvia) || _iaDioElNumero)) {
       await logEvent(db, channelId, contactId, "nota", "💳 Datos de pago NO repetidos",
         _iaYaLoDijo ? "La IA ya contestó con el dato en su texto" : "Acaban de salir (últimos mensajes); solo se repiten si pide el número").catch(() => {});
       return;
@@ -20121,6 +20136,8 @@ Estas cinco no las corrige nadie más. Si las rompes, salen tal cual.
   uno solo y le queda de por vida: díselo con calidez. NUNCA multipliques el precio.
   MAL: "3 accesos serían S/ 30"
   BIEN: "Con uno te alcanza, te queda de por vida 🙌" (y si hay varias presentaciones, le preguntas cuál)
+  ⛔ Si en los precios de abajo hay UNA sola presentación, NO existen versiones: no hables de
+  «básica», «completa», «premium» ni «planes», ni le preguntes cuál quiere — hay una sola.
 
 4 ⛔ UN PAGO QUE NO VISTE NO ES UN PAGO. "Ya te yapeé" es una intención, no un pago. Pídele la
   captura y espera. Quien confirma el dinero es el sistema, no tú.
@@ -20134,9 +20151,9 @@ Estas cinco no las corrige nadie más. Si las rompes, salen tal cual.
   están: exactas, sin ampliarlas — el negocio queda OBLIGADO a cumplir lo que prometas.
   ✅ Si la ficha trae una sección «Límites», eso SÍ lo sabes: es lo que NO incluye ni hace.
   Dilo de frente y sin vueltas ("No, no entrega certificado 🙂") y sigue vendiendo.
-  ⛔ Tampoco SUMES ni calcules lo que la ficha no da: si dice "8 videos, 2 horas" para una
-  presentación y nada de las clases extra de la otra, la otra no "dura unas 4 horas". Di lo
-  que hay ("los 8 videos suman 2 horas; de las clases extra no tengo la duración").
+  ⛔ Tampoco SUMES ni calcules lo que la ficha no da: si dice "8 videos" y no dice cuánto dura
+  cada uno, no digas "son unas 2 horas". Di lo que hay ("son 8 videos; cuánto dura cada uno
+  no lo tengo acá").
   MAL: "Sí, viene en inglés y español."   (la ficha no habla del idioma)
   MAL: "Del idioma te confirmo y te aviso."   (nadie va a volver — ver abajo)
   BIEN: "Del idioma no tengo el dato acá 🤔 Lo que sí te digo es que…"  (y sigues vendiendo)
@@ -27799,10 +27816,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // (2) DATOS ARRIBA: el bloque «Son *S/…» con el número salió hace menos de una hora → no se anuncia de nuevo.
         if (_txtsP.some((t) => /^Son \*/.test(t.trim()) && /\d{3}[\s-]?\d{3}[\s-]?\d{3}|\d{9,}/.test(t))) {
           (run as any)._datosArriba = true;
+          // (15-oct, Rodrigo: «a veces responde "el número está arriba en el chat" en vez de volver a mandarlo» — Luis «Me
+          //  puede enviar su número», Sergio. Si los PIDE, se le vuelven a poner a la vista con la marca.)
           content += "\n\n## 💳 Los datos de pago ya están arriba\nYa se los pasaste en este chat hace un rato. ⛔ NO digas que se " +
-            "los pasas, que se los dejas ni «te dejo los datos»: si los pide o pregunta a dónde pagar, dile que están arriba en el " +
-            "chat. Y ⛔ no digas que estás revisando o validando su pago ni que su acceso está listo: eso pasa recién cuando " +
-            "manda la captura y se valida.";
+            "los pasas, que se los dejas ni «te dejo los datos»: no se repiten solos. PERO si te PIDE el número, la cuenta o a dónde " +
+            "pagar («me envías el número», «pásame el yape», «a qué cuenta»), vuélveselos a mandar: contesta corto y termina con " +
+            "[[datos_pago]] (salen solos debajo). ⛔ Nunca le digas que «están arriba en el chat». Y ⛔ no digas que estás " +
+            "revisando o validando su pago ni que su acceso está listo: eso pasa recién cuando manda la captura y se valida.";
         }
       } catch (_) { /* sin historial → como siempre */ }
       // Sin versión elegida, los datos de pago NO salen: si la IA los anuncia («te paso los datos para el pago 👇»), un freno
@@ -27918,6 +27938,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               (Number(ctx.precio) > 0 ? `El precio para este cliente es ${_sym} ${Number(ctx.precio)}. ` : "") +
               "Usa solo los precios del sistema, o no nombres el monto (los datos de pago ya lo dicen).");
           }
+          // 💰 (15-oct, David) «Perfecto, Son 👊 Solo elige cómo pagar»: imitó la cabecera «Son *S/ 10* 👇» del bloque de pago
+          // pero sin el monto. Ningún monto es ajeno (no hay monto), así que el de arriba no lo veía. Se reescribe.
+          {
+            const _mHueco = sinFormato(txt).replace(/\*/g, "").match(/\b(son|cuesta|vale|ser[ií]an|el\s+precio\s+es|el\s+total\s+es)\s*(?=[\p{Extended_Pictographic}\u{FE0F}.,;:!?]|$)/iu);
+            if (_mHueco && esDigital(ctx)) {
+              const _sym = simboloMoneda(ctx.moneda as string);
+              v.push(`Quedó «${_mHueco[1]}» sin el monto. ` + (Number(ctx.precio) > 0 ? `Di el precio exacto (${_sym} ${Number(ctx.precio)}) ` : "Di el precio exacto ") +
+                "o quita esa palabra: los datos de pago ya dicen cuánto es.");
+            }
+          }
           // 🎯 La recomendación decidida antes (ver «LA RECOMENDACIÓN»): si no la dijo, que la reescriba antes de que el motor la pise.
           const _rpV = (run as any)._recPre as RecomendacionTurno | null | undefined;
           if (_rpV && !recomendacionDicha(txt, _rpV)) {
@@ -27953,7 +27983,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               }
             }
             if ((run as any)._datosArriba && /\bte\s+(?:dejo|paso|mando|env[ií]o|comparto)\s+(?:los\s+|tus\s+)?datos|\bya\s+te\s+(?:dejo|paso)\s+los\s+datos/i.test(sinFormato(txt))) {
-              v.push("Los datos de pago ya están arriba en el chat y no se vuelven a mandar: no digas que se los pasas; si hace falta, dile que están arriba.");
+              v.push("No digas que le pasas los datos de pago: no salen solos. Si te los está pidiendo, termina con [[datos_pago]] y se los vuelvo a mandar debajo.");
+            }
+            // (15-oct) «El número de Yape está arriba en el chat» en vez de mandárselo: si los pide, van otra vez.
+            if (/\b(?:est[aá]n?|te\s+(?:los\s+)?(?:dej[eé]|pas[eé]|mand[eé]))\s+(?:m[aá]s\s+)?arriba\b|\barriba\s+en\s+(?:el|este)\s+chat\b/i.test(sinFormato(txt))) {
+              v.push("No le digas que los datos o el número están arriba en el chat: si los pide, contesta corto y termina con [[datos_pago]] " +
+                "(se los vuelvo a mandar debajo); si no los pidió, no los menciones.");
             }
             // 📸 (11-oct, como ChatLevel) Con los datos de pago ya en el chat —o saliendo en este turno— lo siguiente es
             // pagar: la captura ES el llamado a la acción. «¿Lo haces ahora?», «¿lo mandas ahora o te aviso?» después de
@@ -32869,6 +32904,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           {
             monto: _montoDig, sym: simboloMoneda(ctx.moneda as string),
             unico: _opsProd.length <= 1,
+            // 🔁 (15-oct) La IA decidió mandarlos ([[datos_pago]]) aunque ya hayan salido: se los pidió («me envías el
+            //  número») y el prompt le dice que los reenvíe en vez de «están arriba en el chat».
+            reenviar: !!(run as any)._iaDatosPago,
             // Si no hay monto resuelto, lo que le toca es elegir: esa pregunta va en vez del
             // número. Vacía si el propio mensaje ya se la hizo (no se repite en dos burbujas).
             // (con un combo al que le falta la versión de OTRO producto, la pregunta la hace la IA con el
