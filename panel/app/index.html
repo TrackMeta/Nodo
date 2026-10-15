@@ -199,6 +199,9 @@ try { localStorage.removeItem("nodo.app.diag"); } catch (e) {}
     }, espera);
   }
   b.classList.add(apk ? "bt-ya" : "bt-dibuja");
+  // En el APK la pantalla de Android es de un color liso: los brillos del fondo arrancan apagados y se encienden suave
+  // junto con los textos (si no, aparecían de golpe al pasar a esta pantalla)
+  if (apk) b.classList.add("bt-sin-brillo");
   NODO_MARCA("carga en pantalla");
   function avisar(cb) {
     // APK 1.0.13+ (v 2): la pantalla de Android ya armó el cuadro y puso la N blanca → aquí se arranca igual, quieto
