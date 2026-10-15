@@ -168,10 +168,7 @@ try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" 
   </div>
 </div>
 <script>
-// En el APK la N ya se dibujó en la pantalla de inicio de Android: aquí sigue desde ahí (se arma el cuadro). Se le avisa
-// a Android que la carga ya está en pantalla (NodoNativo.bootListo) y contesta cuánto falta para soltar su pantalla:
-// el cuadro se arma justo cuando aparece, no detrás. En el navegador la N se dibuja entera.
-// window.NODO_BOOT_LISTO = desde cuándo se puede pasar a la app sin cortar la animación.
+// En el APK la N ya se dibujó en la pantalla de inicio de Android: aquí sigue desde ahí. En el navegador se dibuja entera.
 // 🔬 Diagnóstico del arranque (temporal, 15-oct): marcas de cada paso, cuadros perdidos y tareas largas de los
 // primeros 4 s. Se guarda en el celular (nodo.app.diag) y se ve en Más → Diagnóstico de arranque.
 (function () { var D = window.NODO_DIAG = { ini: Math.round(performance.now()), apk: !!window.Capacitor, sw: !!(navigator.serviceWorker && navigator.serviceWorker.controller), marcas: [], saltos: [], largas: [] };
@@ -181,19 +178,31 @@ try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" 
   try { new PerformanceObserver(function (l) { l.getEntries().forEach(function (e) { D.largas.push([Math.round(e.startTime), Math.round(e.duration)]); }); }).observe({ type: "longtask", buffered: true }); } catch (e) {}
   setTimeout(function () { try { var v = JSON.parse(localStorage.getItem("nodo.app.diag") || "[]"); v.unshift(D); localStorage.setItem("nodo.app.diag", JSON.stringify(v.slice(0, 3))); } catch (e) {} }, 4500);
 })();
-(function () { var b = document.getElementById("boot"), apk = !!window.Capacitor;
-  b.classList.add(apk ? "bt-ya" : "bt-dibuja");
-  window.NODO_BOOT_LISTO = performance.now() + 2600;   // por si nunca arranca
-  function arrancar(forma) {
-    window.NODO_BOOT_LISTO = performance.now() + forma + 520;
-    NODO_MARCA("arranca(" + Math.round(forma) + ")");
-    setTimeout(function () { b.classList.add("bt-forma"); NODO_MARCA("cuadro"); }, forma);
-    setTimeout(function () { b.classList.add("bt-ver"); NODO_MARCA("textos"); }, forma + 260);
-  }
+// ⚡ (15-oct) La app hace su trabajo pesado TAPADA (Android sigue con su pantalla; en el navegador, la N dibujándose)
+// y recién cuando ya está dibujada por detrás llama a NODO_BOOT_SALIR: ahí se avisa a Android (NodoNativo.bootListo,
+// que contesta cuánto falta para que termine su N) y se lanza de una vez la secuencia cuadro → textos → fundido.
+// Si la app tarda (red lenta, primera vez), a los 2 s la carga sigue sola (cuadro + textos + puntos) y el fundido
+// sale cuando la app esté.
+(function () { var b = document.getElementById("boot"), apk = !!window.Capacitor, t0 = performance.now();
   var NN = apk && window.Capacitor.Plugins && window.Capacitor.Plugins.NodoNativo;
+  var estado = "quieto", inicioAnima = 0, retraso = 0, SALIDA = 1050;
+  b.classList.add(apk ? "bt-ya" : "bt-dibuja");
   NODO_MARCA("carga en pantalla");
-  if (NN && NN.bootListo) NN.bootListo().then(function (r) { NODO_MARCA("android espera " + ((r && r.espera) || 0)); arrancar(((r && r.espera) || 0) + 120); }, function () { arrancar(80); });
-  else arrancar(apk ? 80 : 900); })();
+  function avisar(cb) {
+    if (NN && NN.bootListo) NN.bootListo().then(function (r) { var e = (r && r.espera) || 0; NODO_MARCA("android espera " + e); cb(e); }, function () { cb(0); });
+    else cb(apk ? 0 : Math.max(0, 950 - (performance.now() - t0)));
+  }
+  function animar(d) { retraso = d; inicioAnima = performance.now(); b.style.setProperty("--d", d + "ms"); b.classList.add("bt-anima"); estado = "anima"; NODO_MARCA("anima(" + Math.round(d) + ")"); }
+  function salir(fd) { if (estado === "fuera") return; estado = "fuera"; b.style.setProperty("--fd", Math.round(fd) + "ms"); b.classList.add("bt-salir"); NODO_MARCA("salida(" + Math.round(fd) + ")");
+    setTimeout(function () { b.hidden = true; NODO_MARCA("fin"); }, fd + 450); }
+  var lento = setTimeout(function () { if (estado === "quieto") { estado = "avisando"; avisar(function (e) { animar(e + 60); }); } }, 2000);
+  window.NODO_BOOT_SALIR = function () {
+    clearTimeout(lento);
+    if (estado === "quieto") { estado = "avisando"; avisar(function (e) { animar(e + 60); salir(retraso + SALIDA); }); }
+    else if (estado === "anima") salir(Math.max(0, inicioAnima + retraso + SALIDA - performance.now()));
+    else if (estado === "avisando") { var t = setInterval(function () { if (estado === "anima") { clearInterval(t); salir(Math.max(0, inicioAnima + retraso + SALIDA - performance.now())); } }, 50); }
+  };
+})();
 </script>
 
 <script type="module" src="app.js"></script>

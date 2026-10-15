@@ -18,18 +18,25 @@ body.app [hidden]{display:none!important}
 /* arranque */
 .boot{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:200;transition:opacity .4s ease;will-change:opacity}
 .boot::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(70% 45% at 15% 12%,rgba(0,70,255,.16),transparent 70%),radial-gradient(70% 45% at 88% 90%,rgba(139,92,246,.16),transparent 70%)}
-.boot.bt-fuera{opacity:0;pointer-events:none}
+/* ⚡ (15-oct) Cuadro, textos y fundido van como UNA secuencia de animaciones con retraso (--d, --fd), lanzada de una
+   vez: el celular la corre aparte (solo transform/opacity) aunque la app esté ocupada. Antes cada paso esperaba un
+   setTimeout y, con la app trabajando, el fundido salía 1 s tarde y los puntos se quedaban quietos. */
+.boot.bt-salir{animation:btFuera .4s ease var(--fd,0ms) forwards;pointer-events:none}
+@keyframes btFuera{to{opacity:0}}
 /* El logo queda en el centro exacto de la pantalla (donde Android deja la N); los textos van debajo, aparte */
 .bt-centro{position:relative}
 .bt-textos{position:absolute;top:calc(100% + 16px);left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:4px;white-space:nowrap}
 .bt-logo{position:relative;width:104px;height:104px;display:grid;place-items:center}
-.bt-cuadro{position:absolute;inset:0;border-radius:15px;background:linear-gradient(90deg,#0044FE,#01AFFE);box-shadow:0 14px 34px rgba(0,70,255,.28);transform:scale(.4);opacity:0;transition:transform .5s cubic-bezier(.3,1.3,.5,1),opacity .3s;will-change:transform,opacity}
+.bt-cuadro{position:absolute;inset:0;border-radius:15px;background:linear-gradient(90deg,#0044FE,#01AFFE);box-shadow:0 14px 34px rgba(0,70,255,.28);transform:scale(.4);opacity:0;will-change:transform,opacity}
+.bt-anima .bt-cuadro{animation:btCuadro .5s cubic-bezier(.3,1.3,.5,1) var(--d,0ms) both}
+@keyframes btCuadro{from{transform:scale(.4);opacity:0}60%{opacity:1}to{transform:scale(1);opacity:1}}
 .bt-n{position:relative;width:104px;height:104px;grid-area:1/1}
 /* La N blanca va encima de la de degradado y aparece con un fundido (solo opacidad: no se repinta nada) */
 .bt-logo > .bt-n{grid-area:1/1}
-.bt-blanca{opacity:0;transition:opacity .3s ease;will-change:opacity}
+.bt-blanca{opacity:0;will-change:opacity}
+.bt-anima .bt-blanca{animation:btAparece .3s ease calc(var(--d,0ms) + 100ms) both}
+@keyframes btAparece{from{opacity:0}to{opacity:1}}
 .bt-blanca line{stroke:#fff!important} .bt-blanca circle{fill:#fff!important}
-.bt-forma .bt-blanca{opacity:1}
 .bt-n line{stroke:url(#btg);stroke-width:6.5;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:100}
 .bt-n circle{fill:url(#btg);transform-box:fill-box;transform-origin:center;transform:scale(0)}
 .bt-ya .bt-n line{stroke-dashoffset:0} .bt-ya .bt-n circle{transform:none}
@@ -39,12 +46,12 @@ body.app [hidden]{display:none!important}
 .bt-dibuja .bt-n circle:nth-of-type(2){animation-delay:.08s}.bt-dibuja .bt-n circle:nth-of-type(3){animation-delay:.16s}.bt-dibuja .bt-n circle:nth-of-type(4){animation-delay:.24s}.bt-dibuja .bt-n circle:nth-of-type(5){animation-delay:.32s}
 @keyframes btTrazo{to{stroke-dashoffset:0}}
 @keyframes btNodo{to{transform:scale(1)}}
-.bt-forma .bt-cuadro{transform:scale(1);opacity:1}
 
 .bt-marca{font-size:22px;font-weight:750;letter-spacing:-.02em;color:var(--text)}
 .bt-lema{font-size:12px;font-weight:500;color:var(--muted)}
-.bt-marca,.bt-lema,.bt-puntos{opacity:0;transform:translateY(6px);transition:opacity .4s ease,transform .4s ease}
-.bt-ver .bt-marca,.bt-ver .bt-lema,.bt-ver .bt-puntos{opacity:1;transform:none}
+.bt-marca,.bt-lema,.bt-puntos{opacity:0;transform:translateY(6px);will-change:transform,opacity}
+.bt-anima .bt-marca,.bt-anima .bt-lema,.bt-anima .bt-puntos{animation:btTexto .4s ease calc(var(--d,0ms) + 260ms) both}
+@keyframes btTexto{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .bt-puntos{display:flex;gap:6px;margin-top:12px}
 .bt-puntos i{width:6px;height:6px;border-radius:50%;background:#0046FF;animation:btSalta 1s ease-in-out infinite;will-change:transform,opacity}
 .bt-puntos i:nth-child(2){animation-delay:.15s;background:#3B7BFF}.bt-puntos i:nth-child(3){animation-delay:.3s;background:#8B5CF6}

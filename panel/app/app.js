@@ -235,19 +235,15 @@ async function boot() {
 const OJO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const OJO_NO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2A10.4 10.4 0 0 1 12 4c6.5 0 10 8 10 8a17.6 17.6 0 0 1-2.2 3.2M6.6 6.6A17.4 17.4 0 0 0 2 12s3.5 8 10 8a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="m2 2 20 20"/></svg>';
 // La pantalla de carga se va con un fundido, recién cuando su animación llegó al logo armado
-// La pantalla de lo de abajo (app o entrar) se muestra RECIÉN al final: mientras se arma el logo no se dibuja nada detrás
-// (antes la lista de chats se dibujaba a la par y la animación se trababa). Se muestra un cuadro antes del fundido.
+// La pantalla de abajo (app o entrar) se muestra y se dibuja DETRÁS de la carga; un par de cuadros después (ya
+// dibujada) se lanza la salida (index.html: avisa a Android y arranca cuadro → textos → fundido de una vez).
 let _saliendo = false;
 function quitarBoot(mostrar) {
-  const b = $("#boot");
-  if (!b || b.hidden || _saliendo) { mostrar && mostrar(); return; }
-  _saliendo = true; window.NODO_MARCA?.("app lista");
-  // Se vuelve a mirar la hora límite en cada vuelta: la carga la corre cuando Android avisa cuánto falta
-  const esperar = () => { const falta = (window.NODO_BOOT_LISTO || 0) - performance.now(); if (falta > 0) { setTimeout(esperar, Math.min(falta, 120)); return; }
-    mostrar && mostrar(); window.NODO_MARCA?.("app visible");
-    let ya = false; const fundir = () => { if (ya) return; ya = true; window.NODO_MARCA?.("fundido"); b.classList.add("bt-fuera"); setTimeout(() => { b.hidden = true; }, 420); };
-    requestAnimationFrame(() => requestAnimationFrame(fundir)); setTimeout(fundir, 120); };   // (sin cuadros, p. ej. pantalla apagada: igual sale)
-  esperar();
+  mostrar && mostrar();
+  if (_saliendo) return; _saliendo = true; window.NODO_MARCA?.("app lista");
+  let ya = false; const salir = () => { if (ya) return; ya = true; window.NODO_MARCA?.("app dibujada");
+    if (window.NODO_BOOT_SALIR) window.NODO_BOOT_SALIR(); else { const b = $("#boot"); if (b) b.hidden = true; } };
+  requestAnimationFrame(() => requestAnimationFrame(salir)); setTimeout(salir, 250);   // (sin cuadros, p. ej. pantalla apagada: igual sale)
 }
 function mostrarLogin() {
   $("#app").hidden = true; quitarBoot(() => { $("#login").hidden = false; });
