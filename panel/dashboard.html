@@ -123,6 +123,19 @@
   .df-pop{position:absolute;top:48px;right:0;z-index:40;background:var(--surface);border:1px solid var(--border);border-radius:14px;
     box-shadow:0 16px 44px rgba(0,0,0,.4);width:600px;max-width:92vw;display:none;overflow:hidden}
   .df-pop.open{display:block}
+  /* (15-oct) Animación, igual que el selector del resto del panel: se despliega desde el botón, las opciones entran en
+     cascada, el calendario aparece suave y al cerrar se recoge; la flechita gira mientras está abierto */
+  .df-pop.entrando{animation:dfAbre .2s cubic-bezier(.2,.8,.2,1) both;transform-origin:top right}
+  .df-pop.entrando .dfp-presets button{animation:dfItem .26s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 16ms + 40ms)}
+  .df-pop.entrando .dfp-cal,.df-pop.entrando .dfp-foot{animation:dfItem .3s ease both;animation-delay:70ms}
+  .df-pop.cerrando{animation:dfCierra .14s ease-in both;transform-origin:top right;pointer-events:none}
+  @keyframes dfAbre{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}
+  @keyframes dfCierra{to{opacity:0;transform:translateY(-6px) scale(.98)}}
+  @keyframes dfItem{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  .df-btn .df-chev{width:14px;height:14px;color:var(--muted);transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+  .df-btn.abierto{border-color:var(--brand)}
+  .df-btn.abierto .df-chev{transform:rotate(180deg)}
+  @media (prefers-reduced-motion:reduce){.df-pop.entrando,.df-pop.entrando *,.df-pop.cerrando{animation:none!important}}
   .dfp-body{display:flex}
   .dfp-presets{width:172px;flex:none;border-right:1px solid var(--border);padding:8px;display:flex;flex-direction:column;gap:2px;max-height:342px;overflow:auto}
   .dfp-presets button{display:flex;align-items:center;gap:9px;height:33px;padding:0 10px;border-radius:8px;border:none;background:transparent;color:var(--text);font-size:13px;font-weight:600;text-align:left;cursor:pointer}
@@ -285,7 +298,7 @@
         </div>
         <select class="vsel" id="vistaSel" style="display:none" title="Ver la plata de un producto o de uno de sus anuncios"><option value="all">Todo</option></select>
         <div class="datefilter">
-          <button class="df-btn" id="dfBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> <span class="cur" id="dfLabel">Hoy</span></button>
+          <button class="df-btn" id="dfBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> <span class="cur" id="dfLabel">Hoy</span><svg class="df-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
           <div class="df-pop" id="dfPop"></div>
         </div>
       </div>
@@ -711,10 +724,16 @@ function fmtFechaLarga(d){ return `${d.getDate()} ${MES_ABBR[d.getMonth()]} ${d.
 function openPop(){
   const { from, toDay }=resolveRange(range);
   dfDraft={ preset:range.preset, from, to:toDay, picking:false, cal:new Date(from.getFullYear(),from.getMonth(),1) };
-  $("dfPop").classList.add("open");
+  const pop=$("dfPop"); pop.classList.remove("cerrando"); pop.classList.add("open","entrando"); $("dfBtn")?.classList.add("abierto");
   renderDatePop();
+  pop.querySelectorAll(".dfp-presets button").forEach((b,i)=>b.style.setProperty("--i",i));
+  clearTimeout(pop._tEntra); pop._tEntra=setTimeout(()=>pop.classList.remove("entrando"),650);   // los re-dibujos (elegir días) ya no se animan
 }
-function closePop(){ $("dfPop")?.classList.remove("open"); dfDraft=null; }
+function closePop(){
+  const pop=$("dfPop"); dfDraft=null; if(!pop||!pop.classList.contains("open")||pop.classList.contains("cerrando")) return;
+  $("dfBtn")?.classList.remove("abierto"); pop.classList.remove("entrando"); pop.classList.add("cerrando");
+  setTimeout(()=>pop.classList.remove("open","cerrando"),140);
+}
 function applyRange(){ const r=computeRange(); $("dfLabel").textContent=r.label; load(); }
 function onDocClickDF(e){ if(!e.target.closest(".datefilter")) closePop(); }
 
