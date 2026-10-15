@@ -169,15 +169,9 @@ try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" 
 </div>
 <script>
 // En el APK la N ya se dibujó en la pantalla de inicio de Android: aquí sigue desde ahí. En el navegador se dibuja entera.
-// 🔬 Diagnóstico del arranque (temporal, 15-oct): marcas de cada paso, cuadros perdidos y tareas largas de los
-// primeros 4 s. Se guarda en el celular (nodo.app.diag) y se ve en Más → Diagnóstico de arranque.
-(function () { var D = window.NODO_DIAG = { ini: Math.round(performance.now()), apk: !!window.Capacitor, sw: !!(navigator.serviceWorker && navigator.serviceWorker.controller), marcas: [], saltos: [], largas: [] };
-  window.NODO_MARCA = function (n) { D.marcas.push([n, Math.round(performance.now())]); };
-  var prev = performance.now(), fin = prev + 4000;
-  (function cuadro(t) { if (t - prev > 34) D.saltos.push([Math.round(prev), Math.round(t - prev)]); prev = t; if (t < fin) requestAnimationFrame(cuadro); })(prev);
-  try { new PerformanceObserver(function (l) { l.getEntries().forEach(function (e) { D.largas.push([Math.round(e.startTime), Math.round(e.duration)]); }); }).observe({ type: "longtask", buffered: true }); } catch (e) {}
-  setTimeout(function () { try { var v = JSON.parse(localStorage.getItem("nodo.app.diag") || "[]"); v.unshift(D); localStorage.setItem("nodo.app.diag", JSON.stringify(v.slice(0, 3))); } catch (e) {} }, 4500);
-})();
+// Marcas del arranque: el diagnóstico ya se quitó (15-oct, la carga quedó sin traba); queda la función vacía
+window.NODO_MARCA = function () {};
+try { localStorage.removeItem("nodo.app.diag"); } catch (e) {}
 // ⚡ (15-oct) La app hace su trabajo pesado TAPADA (Android sigue con su pantalla; en el navegador, la N dibujándose)
 // y recién cuando ya está dibujada por detrás llama a NODO_BOOT_SALIR: ahí se avisa a Android (NodoNativo.bootListo,
 // que contesta cuánto falta para que termine su N) y se lanza de una vez la secuencia cuadro → textos → fundido.
