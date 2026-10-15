@@ -10,12 +10,34 @@ import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     static final String PREFS = "nodo";
+    // Relevo sin salto entre la pantalla de inicio de Android y la carga de la app: Android la quitaba apenas la app
+    // dibujaba algo, a veces con la N a medio dibujar y antes de que apareciera la carga web. Ahora se queda hasta que
+    // la página avisa que su carga ya está (NodoNativo.bootListo) y la N terminó (0,95 s); como mucho 2,5 s.
+    static final long N_COMPLETA = 950, TOPE = 2500;
+    static volatile boolean bootListo = false;
+    static volatile long t0 = 0;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        t0 = android.os.SystemClock.uptimeMillis();
+        bootListo = false;
         // Plugin propio: le dice a la app web si este APK trae Firebase (sin él, registrar avisos cerraría la app).
         registerPlugin(NodoNativoPlugin.class);
         super.onCreate(savedInstanceState);
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            final android.view.View content = findViewById(android.R.id.content);
+            content.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+                @Override
+                public boolean onPreDraw() {
+                    long e = android.os.SystemClock.uptimeMillis() - t0;
+                    if ((bootListo && e >= N_COMPLETA) || e >= TOPE) {
+                        content.getViewTreeObserver().removeOnPreDrawListener(this);
+                        return true;
+                    }
+                    return false;   // todavía no: Android sigue mostrando su pantalla de inicio
+                }
+            });
+        }
         WebView wv = getBridge() != null ? getBridge().getWebView() : null;
         // El tema que elegiste (lo guarda NodoNativo.barras): fondo de la ventana, de la página y barras de tu color
         // desde el primer instante, antes de que cargue la app.

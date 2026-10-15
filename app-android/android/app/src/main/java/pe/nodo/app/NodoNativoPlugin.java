@@ -40,6 +40,17 @@ public class NodoNativoPlugin extends Plugin {
         });
     }
 
+    // La carga web ya está en pantalla: Android puede soltar su pantalla de inicio (cuando la N terminó). Devuelve
+    // cuántos ms faltan para que se vea la página, así la carga arma el logo justo cuando aparece y no detrás.
+    @PluginMethod
+    public void bootListo(PluginCall call) {
+        MainActivity.bootListo = true;
+        long e = android.os.SystemClock.uptimeMillis() - MainActivity.t0;
+        JSObject r = new JSObject();
+        r.put("espera", Math.max(0, MainActivity.N_COMPLETA - e));
+        call.resolve(r);
+    }
+
     @PluginMethod
     public void info(PluginCall call) {
         JSObject r = new JSObject();
