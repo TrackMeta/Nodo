@@ -480,3 +480,4 @@ textarea.inpt{min-height:80px;resize:vertical}
 .sheet.arriba{top:0;bottom:auto;max-height:55%;border-radius:0 0 22px 22px;padding-top:calc(10px + env(safe-area-inset-top,0px));padding-bottom:16px;transform:translateY(-105%)}
 .sheet.arriba.on{transform:none}
 .sheet.arriba .grab{display:none}
+#hoyEspera:empty{display:none}

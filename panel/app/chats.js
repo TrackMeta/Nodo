@@ -14,7 +14,7 @@ const RANGOS = [["hoy", "Hoy"], ["ayer", "Ayer"], ["7d", "Últimos 7 días"], ["
 const ESTADO_F = [["sinResp", "Sin responder"], ["seg", "Seguimiento", "clock"], ["anuncio", "Llegó por anuncio", "megaphone"], ["organico", "Orgánico"], ["sinprod", "Sin producto aún"], ["img", "Envió imagen", "image"], ["recompra", "Recomprando", "refresh"], ["arch", "Archivados", "archive"]];
 
 export function init() {
-  on("bot", () => { F = vacio(); Q = ""; $("#q").value = ""; MODO = "bot"; cargar(); });
+  on("bot", () => { F = vacio(); Q = ""; $("#q").value = ""; MODO = "bot"; L.convs = []; L.buscados = []; cargar(); });
   on("conv", () => cargarPronto());
   on("msg:ins", () => cargarPronto());
   on("contacto", (c) => { const cv = L.convs.find((x) => x.contact_id === c.id); if (cv) { Object.assign(cv.contact, c); pintar(); } });
@@ -42,10 +42,22 @@ export function init() {
 // ── Carga (loadConversations de la Bandeja) ──
 let _tc = null;
 function cargarPronto() { clearTimeout(_tc); _tc = setTimeout(cargar, 450); }
+// ⚡ Los últimos chats quedan guardados en el celular (por usuario y bot): al abrir la app se ven al toque y la
+// consulta los pone al día por detrás. Se borran al cerrar sesión.
+const GUARDA = () => `nodo.app.chats.${A.uid}.${A.ch}`;
+function leerChatsGuardados() { try { const x = JSON.parse(localStorage.getItem(GUARDA()) || "null"); return x && Array.isArray(x.convs) ? x : null; } catch (_) { return null; } }
+function guardarChats() {
+  const convs = L.convs.slice(0, 300).map((c) => ({ ...c, contact: { ...c.contact, last_input: typeof c.contact.last_input === "string" ? c.contact.last_input.slice(0, 160) : c.contact.last_input } }));
+  try { localStorage.setItem(GUARDA(), JSON.stringify({ convs, tags: L.tags, prods: L.prods })); } catch (_) { /* lleno: no pasa nada */ }
+}
 export async function cargar() {
   const ch = A.ch; if (!ch || L.cargando) { if (L.cargando) cargarPronto(); return; }
   L.cargando = true;
-  if (!L.convs.length) $("#chatlist").innerHTML = `<div class="cargando">Cargando chats…</div>`;
+  if (!L.convs.length) {
+    const g = leerChatsGuardados();
+    if (g && g.convs.length) { L.convs = g.convs; L.tags = g.tags || []; L.prods = g.prods || []; pintar(); }
+    else $("#chatlist").innerHTML = `<div class="cargando">Cargando chats…</div>`;
+  }
   const sel = "contact_id,no_leidos,updated_at,expira_at,requiere_humano,archivada,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage,source,fep_hasta,product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado)";
   try {
     const [r, tg, pr] = await Promise.all([
@@ -66,6 +78,7 @@ export async function cargar() {
     L.tags = tg.data || []; L.prods = pr.data || [];
     pintar();
     emit("convs", L.convs);
+    guardarChats();
     extras(ch);   // recompra, entrega y Meta: después, sin frenar la lista
   } catch (e) {
     console.error(e);

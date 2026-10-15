@@ -227,6 +227,8 @@ async function boot() {
   const { data: { session } } = await supa.auth.getSession();
   if (!session) return mostrarLogin();
   A.uid = session.user.id; A.email = session.user.email || "";
+  // Las pantallas se piden YA, a la par de las consultas (antes esperaban a que llegaran los bots)
+  _mods = Promise.all(MODULOS.map((m) => import(`./${m}.js`)));
   await empezar();
 }
 // Pantalla de entrar: la misma del panel web (tarjeta, íconos, «¿Olvidaste tu contraseña?») + el ojito
@@ -255,31 +257,54 @@ function mostrarLogin() {
     msg(error ? "No se pudo enviar: " + error.message : "Listo: si ese correo tiene cuenta, te llegó un enlace para crear una contraseña nueva (revisa también spam).", !error);
   };
 }
-supa.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") { try { localStorage.removeItem("nodo.channelId"); } catch (_) { /* */ } location.reload(); } });
+supa.auth.onAuthStateChange((ev) => { if (ev === "SIGNED_OUT") { try { localStorage.removeItem("nodo.channelId"); localStorage.removeItem("nodo.app.arranque"); Object.keys(localStorage).filter((k) => k.startsWith("nodo.app.chats.")).forEach((k) => localStorage.removeItem(k)); } catch (_) { /* */ } location.reload(); } });
+
+// ⚡ Arranque rápido (14-oct): la lista de bots, tu nombre y el tipo de cada bot quedan guardados en el celular. Al abrir,
+// la app se muestra con eso al toque y lo pone al día por detrás (si algo cambió, se repinta solo).
+const MODULOS = ["chats", "chat", "ficha", "pagos", "t4", "hoy", "mas", "notif", "push"];
+let _mods = null;
+const ARR_KEY = "nodo.app.arranque";
+function leerArranque() { try { const x = JSON.parse(localStorage.getItem(ARR_KEY) || "null"); return x && x.uid === A.uid && Array.isArray(x.channels) ? x : null; } catch (_) { return null; } }
+function guardarArranque() { try { const x = leerArranque() || { uid: A.uid, tipos: {} }; localStorage.setItem(ARR_KEY, JSON.stringify({ ...x, uid: A.uid, channels: A.channels, nombre: A.nombre })); } catch (_) { /* */ } }
+function guardarTipo(id, tipo, tieneApps) { try { const x = leerArranque(); if (!x) return; x.tipos = { ...(x.tipos || {}), [id]: { tipo, tieneApps } }; localStorage.setItem(ARR_KEY, JSON.stringify(x)); } catch (_) { /* */ } }
+const firmaBots = (l) => (l || []).map((c) => [c.id, c.nombre, c.timezone, !!c.bot_apagado].join("|")).join(";");
 
 async function empezar() {
-  const [{ data: chs, error }, { data: perfil }] = await Promise.all([
+  const guardado = leerArranque();
+  const fresco = Promise.all([
     supa.from("channels").select("id,nombre,timezone,bot_apagado").eq("activo", true).order("nombre"),
     supa.from("app_users").select("nombre").eq("id", A.uid).maybeSingle(),
   ]);
-  if (error) { toast("No se pudieron cargar tus bots: " + error.message, true); }
-  A.channels = chs || []; A.nombre = perfil?.nombre || A.email.split("@")[0];
-  // Los logos van aparte: cada uno pesa ~27 KB (data URI) y no deben frenar el arranque
-  if (A.channels.length) supa.from("channels").select("id,logo_url").in("id", A.channels.map((c) => c.id)).then(({ data }) => { (data || []).forEach((c) => { if (c.logo_url) A.logos[c.id] = c.logo_url; }); pintaBot(); emit("logos"); }, () => {});
+  const aplicar = ([{ data: chs, error }, { data: perfil }]) => {
+    if (error) { toast("No se pudieron cargar tus bots: " + error.message, true); return false; }
+    A.channels = chs || []; A.nombre = perfil?.nombre || A.email.split("@")[0]; guardarArranque(); return true;
+  };
+  if (guardado?.channels?.length) { A.channels = guardado.channels; A.nombre = guardado.nombre || A.email.split("@")[0]; }
+  else aplicar(await fresco);
   if (!A.channels.length) {
     $("#boot").hidden = true; $("#app").hidden = false;
     $("#chatlist").innerHTML = `<div class="empty"><b>${ic("inbox")}</b>Todavía no tienes ningún bot. Créalo desde el panel web de Nodo.</div>`;
     return;
   }
-  let guardado = null; try { guardado = localStorage.getItem("nodo.channelId"); } catch (_) { /* */ }
-  A.ch = A.channels.some((c) => c.id === guardado) ? guardado : A.channels[0].id;
-  const mods = await Promise.all(["chats", "chat", "ficha", "pagos", "t4", "hoy", "mas", "notif", "push"].map((m) => import(`./${m}.js`)));
+  let elegido = null; try { elegido = localStorage.getItem("nodo.channelId"); } catch (_) { /* */ }
+  A.ch = A.channels.some((c) => c.id === elegido) ? elegido : A.channels[0].id;
+  const mods = await _mods;
   mods.forEach((m) => m.init && m.init());
   await cambiarBot(A.ch, true);
   $("#boot").hidden = true; $("#app").hidden = false;
-  pintaAlertaWA().catch(() => {});
   history.replaceState({ base: 1 }, "");
   emit("listo");
+  pintaAlertaWA().catch(() => {});
+  // Los logos van aparte: cada uno pesa ~27 KB (data URI) y no deben frenar el arranque
+  supa.from("channels").select("id,logo_url").in("id", A.channels.map((c) => c.id)).then(({ data }) => { (data || []).forEach((c) => { if (c.logo_url) A.logos[c.id] = c.logo_url; }); pintaBot(); emit("logos"); }, () => {});
+  // Con lo guardado se mostró al toque: ahora se confirma con la base
+  if (guardado?.channels?.length) {
+    const antes = firmaBots(A.channels);
+    if (aplicar(await fresco) && firmaBots(A.channels) !== antes) {
+      if (!A.channels.length || !A.channels.some((c) => c.id === A.ch)) { location.reload(); return; }
+      setTZ(A.channels.find((c) => c.id === A.ch)?.timezone); pintaBot(); emit("logos");
+    }
+  }
 }
 
 // ── Bot activo ──
@@ -289,10 +314,18 @@ export async function cambiarBot(id, primera) {
   const ch = A.channels.find((c) => c.id === id);
   setTZ(ch?.timezone);
   // Tipo de bot por sus productos (como marcarTipoBot del panel): con físicos → Pedidos; con micro apps → Accesos; si no, Ventas.
-  const { data: ps } = await supa.from("products").select("tipo").eq("channel_id", id);
-  const tipos = new Set((ps || []).map((p) => p.tipo));
-  A.tipo = tipos.has("fisico") ? "fisico" : tipos.has("microapp") ? "apps" : "digital";
-  A.tieneApps = tipos.has("microapp");
+  // Si ya se conoce (guardado en el celular) se usa al toque y se confirma por detrás.
+  const tipoDe = async () => {
+    const { data: ps, error } = await supa.from("products").select("tipo").eq("channel_id", id);
+    if (error) return null;
+    const tipos = new Set((ps || []).map((p) => p.tipo));
+    const t = { tipo: tipos.has("fisico") ? "fisico" : tipos.has("microapp") ? "apps" : "digital", tieneApps: tipos.has("microapp") };
+    guardarTipo(id, t.tipo, t.tieneApps); return t;
+  };
+  const sabido = leerArranque()?.tipos?.[id];
+  const t = sabido || (await tipoDe()) || { tipo: "digital", tieneApps: false };
+  A.tipo = t.tipo; A.tieneApps = t.tieneApps;
+  if (sabido) tipoDe().then((n) => { if (n && A.ch === id && (n.tipo !== A.tipo || n.tieneApps !== A.tieneApps)) { A.tipo = n.tipo; A.tieneApps = n.tieneApps; pintaBot(); emit("bot", id); } }).catch(() => {});
   pintaBot();
   suscribir();
   if (!primera) { if (PILA.length) cerrarCapa(PILA[0].id); }

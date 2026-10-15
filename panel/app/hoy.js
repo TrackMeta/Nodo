@@ -159,7 +159,7 @@ function pintaEspera() {
     PEND.pagos ? `<button type="button" class="esp urg" data-ir="pagos">${ic("banknote")}<b>${PEND.pagos}</b> pago${PEND.pagos === 1 ? "" : "s"} por validar</button>` : "",
     PEND.t4 && t4lbl ? `<button type="button" class="esp" data-ir="t4">${ic("clock")}<b>${PEND.t4}</b> ${t4lbl}</button>` : "",
   ].filter(Boolean);
-  box.innerHTML = items.length ? `<div class="espera">${items.join("")}</div>` : `<div class="espera ok">${ic("check")} Nada espera por ustedes ahora</div>`;
+  box.innerHTML = items.length ? `<div class="espera">${items.join("")}</div>` : "";   // (14-oct) sin pendientes no se muestra nada
 }
 
 export async function cargar(silencioso) {
