@@ -234,8 +234,14 @@ async function boot() {
 // Pantalla de entrar: la misma del panel web (tarjeta, íconos, «¿Olvidaste tu contraseña?») + el ojito
 const OJO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const OJO_NO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2A10.4 10.4 0 0 1 12 4c6.5 0 10 8 10 8a17.6 17.6 0 0 1-2.2 3.2M6.6 6.6A17.4 17.4 0 0 0 2 12s3.5 8 10 8a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="m2 2 20 20"/></svg>';
+// La pantalla de carga se va con un fundido, recién cuando su animación llegó al logo armado
+function quitarBoot() {
+  const b = $("#boot"); if (!b || b.hidden || b.classList.contains("bt-fuera")) return;
+  const falta = Math.max(0, (window.NODO_BOOT_LISTO || 0) - performance.now());
+  setTimeout(() => { b.classList.add("bt-fuera"); setTimeout(() => { b.hidden = true; }, 420); }, falta);
+}
 function mostrarLogin() {
-  $("#boot").hidden = true; $("#app").hidden = true; $("#login").hidden = false;
+  quitarBoot(); $("#app").hidden = true; $("#login").hidden = false;
   const msg = (t, ok) => { $("#lErr").textContent = t; $("#lErr").classList.toggle("ok", !!ok); $("#lErr").hidden = !t; };
   const ojo = $("#lOjo"), pass = $("#lPass");
   const pintaOjo = () => { const ver = pass.type === "text"; ojo.innerHTML = ver ? OJO_NO : OJO; ojo.setAttribute("aria-label", ver ? "Ocultar la contraseña" : "Mostrar la contraseña"); };
@@ -282,7 +288,7 @@ async function empezar() {
   if (guardado?.channels?.length) { A.channels = guardado.channels; A.nombre = guardado.nombre || A.email.split("@")[0]; }
   else aplicar(await fresco);
   if (!A.channels.length) {
-    $("#boot").hidden = true; $("#app").hidden = false;
+    quitarBoot(); $("#app").hidden = false;
     $("#chatlist").innerHTML = `<div class="empty"><b>${ic("inbox")}</b>Todavía no tienes ningún bot. Créalo desde el panel web de Nodo.</div>`;
     return;
   }
@@ -291,7 +297,7 @@ async function empezar() {
   const mods = await _mods;
   mods.forEach((m) => m.init && m.init());
   await cambiarBot(A.ch, true);
-  $("#boot").hidden = true; $("#app").hidden = false;
+  quitarBoot(); $("#app").hidden = false;
   history.replaceState({ base: 1 }, "");
   emit("listo");
   pintaAlertaWA().catch(() => {});
@@ -446,4 +452,4 @@ const SIN_SW = "nodo.app.sinSW";
 })();
 addEventListener("online", () => A.ch && emit("resync"));
 
-boot().catch((e) => { console.error(e); $("#boot").hidden = true; toast("No se pudo abrir la app: " + (e?.message || e), true); });
+boot().catch((e) => { console.error(e); quitarBoot(); toast("No se pudo abrir la app: " + (e?.message || e), true); });

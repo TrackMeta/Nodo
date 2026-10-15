@@ -16,7 +16,35 @@ body.app [hidden]{display:none!important}
 .i{width:1em;height:1em;vertical-align:-.15em;flex:none}
 
 /* arranque */
-.boot{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:200}
+.boot{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:200;transition:opacity .4s ease}
+.boot::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(70% 45% at 15% 12%,rgba(0,70,255,.16),transparent 70%),radial-gradient(70% 45% at 88% 90%,rgba(139,92,246,.16),transparent 70%)}
+.boot.bt-fuera{opacity:0;pointer-events:none}
+/* El logo queda en el centro exacto de la pantalla (donde Android deja la N); los textos van debajo, aparte */
+.bt-centro{position:relative}
+.bt-textos{position:absolute;top:calc(100% + 16px);left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:4px;white-space:nowrap}
+.bt-logo{position:relative;width:104px;height:104px;display:grid;place-items:center}
+.bt-cuadro{position:absolute;inset:0;border-radius:30px;background:linear-gradient(135deg,#0046FF,#1E9BFF);box-shadow:0 14px 34px rgba(0,70,255,.28);transform:scale(.4);opacity:0;transition:transform .5s cubic-bezier(.3,1.3,.5,1),opacity .3s}
+.bt-n{position:relative;width:88px;height:88px}
+.bt-n line{stroke:url(#btg);stroke-width:8;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:100;transition:stroke .3s}
+.bt-n circle{fill:url(#btg);transform-box:fill-box;transform-origin:center;transform:scale(0);transition:fill .3s}
+.bt-ya .bt-n line{stroke-dashoffset:0} .bt-ya .bt-n circle{transform:none}
+.bt-dibuja .bt-n line{animation:btTrazo .55s cubic-bezier(.6,0,.2,1) forwards}
+.bt-dibuja .bt-n line:nth-of-type(1){animation-delay:.3s}.bt-dibuja .bt-n line:nth-of-type(2){animation-delay:.42s}.bt-dibuja .bt-n line:nth-of-type(3){animation-delay:.54s}
+.bt-dibuja .bt-n circle{animation:btNodo .38s cubic-bezier(.3,1.6,.5,1) forwards}
+.bt-dibuja .bt-n circle:nth-of-type(2){animation-delay:.08s}.bt-dibuja .bt-n circle:nth-of-type(3){animation-delay:.16s}.bt-dibuja .bt-n circle:nth-of-type(4){animation-delay:.24s}.bt-dibuja .bt-n circle:nth-of-type(5){animation-delay:.32s}
+@keyframes btTrazo{to{stroke-dashoffset:0}}
+@keyframes btNodo{to{transform:scale(1)}}
+.bt-forma .bt-cuadro{transform:scale(1);opacity:1}
+.bt-forma .bt-n line{stroke:#fff} .bt-forma .bt-n circle{fill:#fff}
+.bt-marca{font-size:22px;font-weight:750;letter-spacing:-.02em;color:var(--text)}
+.bt-lema{font-size:12px;font-weight:500;color:var(--muted)}
+.bt-marca,.bt-lema,.bt-puntos{opacity:0;transform:translateY(6px);transition:opacity .4s ease,transform .4s ease}
+.bt-ver .bt-marca,.bt-ver .bt-lema,.bt-ver .bt-puntos{opacity:1;transform:none}
+.bt-puntos{display:flex;gap:6px;margin-top:12px}
+.bt-puntos i{width:6px;height:6px;border-radius:50%;background:#0046FF;animation:btSalta 1s ease-in-out infinite}
+.bt-puntos i:nth-child(2){animation-delay:.15s;background:#3B7BFF}.bt-puntos i:nth-child(3){animation-delay:.3s;background:#8B5CF6}
+@keyframes btSalta{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(-5px);opacity:1}}
+@media (prefers-reduced-motion:reduce){.bt-n line{stroke-dashoffset:0}.bt-n circle{transform:none}.bt-puntos i{animation:none}}
 .logo{width:30px;height:30px;border-radius:9px;background:var(--brand);display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;flex:none}
 .logo.lg{width:56px;height:56px;border-radius:16px;font-size:26px}
 .logo-img.lg{width:64px;height:64px;border-radius:18px;display:block}
