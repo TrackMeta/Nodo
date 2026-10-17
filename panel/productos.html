@@ -2191,13 +2191,21 @@ async function renderRemarketing(host){
     // reescritos sin reiniciar su medición: los resultados del texto viejo se seguían
     // sumando con los del nuevo, que es justo lo que el `rev` viene a evitar.
     const fotoVars = fotoVariantes(seq.pasos||[]);
+    // 💾 «Guardar cambios» (arriba) también guarda estos pasos (17-oct): Rodrigo prendió «No caduca» en las 3 ofertas,
+    // apretó el botón de arriba y no se grabó nada — solo lo hacía «Guardar pasos», acá abajo. Cada secuencia que se
+    // abre queda anotada con su foto; al guardar el producto se graban las que cambiaron.
+    const reg = registroRemarketing();
+    if(!reg.has(seq.id)) reg.set(seq.id, { seq, ed, fotoVars, foto: JSON.stringify(seq.pasos||[]) });
+    else Object.assign(reg.get(seq.id), { seq, ed });
+    // …y cambiar algo acá marca la página con cambios sin guardar (avisa al salir y prende el botón de arriba)
+    const mount=wrap.querySelector(".se-mount");
+    const revisa=()=>setTimeout(()=>{ const r=reg.get(seq.id); if(r && JSON.stringify(seq.pasos||[])!==r.foto) markDirty(); },0);
+    ["click","input","change"].forEach(ev=>mount.addEventListener(ev, revisa));
     wrap.querySelector("[data-remsave]").onclick=async(e)=>{
-      ed.normalize();
-      subeRevSiCambio(seq.pasos||[], fotoVars);
       const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-      const { error }=await supa.from("sequences").update({ pasos:seq.pasos }).eq("id",seq.id);
+      const err=await guardarUnaSecuencia(reg.get(seq.id));
       btn.disabled=false; btn.textContent=old;
-      if(error){ toast(error.message,true); return; }
+      if(err){ toast(err,true); return; }
       toast("Pasos guardados");
     };
   };
@@ -4841,6 +4849,30 @@ async function saveTrigger(tipo, key, config){
 
 // Un guardado a la vez: con doble clic, `v.id` recién se llena al volver el upsert y una presentación
 // nueva se insertaba DOS veces (y corrían dos sincronizarFlujo intercalando nodos).
+// Remarketing abierto en la ficha (ver paintEditor): por producto, una entrada por secuencia que se abrió.
+function registroRemarketing(){
+  const pid=st.prod&&st.prod.id;
+  if(!st._remReg || st._remReg.pid!==pid) st._remReg={ pid, map:new Map() };
+  return st._remReg.map;
+}
+async function guardarUnaSecuencia(r){
+  if(!r) return null;
+  r.ed.normalize();
+  subeRevSiCambio(r.seq.pasos||[], r.fotoVars);
+  const { error }=await supa.from("sequences").update({ pasos:r.seq.pasos }).eq("id",r.seq.id);
+  if(error) return error.message;
+  r.foto=JSON.stringify(r.seq.pasos||[]);
+  return null;
+}
+// Las que cambiaron desde que se abrieron (o desde el último guardado). Devuelve el error como texto, o null.
+async function guardarRemarketingAbierto(){
+  if(!st._remReg || !st.prod || st._remReg.pid!==st.prod.id) return null;
+  for(const r of st._remReg.map.values()){
+    if(JSON.stringify(r.seq.pasos||[])===r.foto) continue;
+    const e=await guardarUnaSecuencia(r); if(e) return e;
+  }
+  return null;
+}
 async function saveProduct(){
   if(st._guardando){ toast("Espera: se está guardando"); return; }
   st._guardando=true;
@@ -5121,8 +5153,11 @@ async function _saveProduct(){
   // del error quedaba tapado por el «Guardado» de abajo y al salir no se avisaba nada.
   let eAct=null;
   if(actRenderizada()){ try{ eAct=await saveActivacion(); }catch(e){ eAct=(e&&e.message)||"error inesperado"; } }
+  let eRem=null;
+  try{ eRem=await guardarRemarketingAbierto(); }catch(e){ eRem=(e&&e.message)||"error inesperado"; }
   st._verOrig=Object.fromEntries((st.versions||[]).filter(v=>v.id).map(v=>[v.id,{ precio:v.precio, costo:v.costo }]));   // nueva foto
   if(eAct) toast("Se guardó el producto, pero no «Cómo llegan los clientes» ("+eAct+"). Vuelve a guardar.",true);
+  else if(eRem) toast("Se guardó el producto, pero no los pasos del remarketing ("+eRem+"). Vuelve a guardar.",true);
   else { markClean(); const av=st._avisoStock; st._avisoStock=null; toast(av?"Guardado. "+av:"Guardado", !!av); }
   loadProducts();
   // 💲 Un EXTRA: su precio vive COPIADO en el flujo de cada principal que lo ofrece (el generador
