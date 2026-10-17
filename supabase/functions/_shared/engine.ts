@@ -9349,6 +9349,11 @@ async function registrarPreguntasCliente(db: SupabaseClient, run: Run, ctx: any,
       // «¿A qué número mando los 3 soles?» no trae ninguna palabra de la lista de arriba y se coló como pregunta del
       // negocio (10-oct), pero el número de cobro lo da el motor solo (datos de pago). El mismo filtro que ya usa el revisor.
       if (RE_PREGUNTA_A_DONDE_PAGO.test(pregunta)) continue;
+      // …y el revisor a veces la RESUME sin la palabra que la delataba: «El pago se hace a través de yape??? Que número
+      // por favor» llegó como «¿Qué número por favor?» (Fernando, 17-oct). Si pregunta por un número o una cuenta y el
+      // mensaje del cliente habla de pagar, es el número de cobro.
+      if (/\bn[uú]mero\b|\bcuenta\b/i.test(pregunta) &&
+          (RE_PREGUNTA_A_DONDE_PAGO.test(cita) || /\b(?:pag[oa]r?|pagos?|yape\p{L}*|plin\p{L}*|transfer\p{L}*|dep[oó]sit\p{L}*)\b/iu.test(normalize(cita)))) continue;
       // En lo del negocio el bot no supone: lo que haya dicho no es una respuesta para aprobar, es el «no tengo el dato».
       // (y si el revisor copió el «ese dato no lo tengo» como respuesta, tampoco es una suposición)
       let respuesta = ambito === "negocio" ? "" : String(f?.respuesta ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
