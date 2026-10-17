@@ -273,6 +273,8 @@
   .pc-acts{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
   .pc-acts .btn{height:32px;padding:0 12px;font-size:12.5px;display:inline-flex;align-items:center;gap:6px}
   .pc-acts .btn svg{width:14px;height:14px}
+  .pc-acts a.btn{text-decoration:none;color:var(--text)}
+  .pc-cita a{color:var(--brand);text-decoration:none;font-weight:600}
   .pc-acts .btn.ok{border-color:rgba(34,192,121,.45);color:var(--green)}
   .pc-acts .btn.no{border-color:rgba(239,68,68,.4);color:var(--red)}
   .pc-edit{width:100%;min-height:62px;margin-top:8px;padding:8px 10px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit;font-size:13px;line-height:1.5;resize:vertical}
@@ -1836,6 +1838,21 @@ function renderPreguntasClientes(){
   }
   host.onclick=onClickPregunta;
 }
+// 💬 El chat de quien preguntó (17-oct, Rodrigo): un botón al último cliente que la hizo y, si fueron varios, los
+// demás como enlaces bajo la cita. `clientes` viene del más nuevo al más viejo.
+function chatsDePregunta(cli){
+  const vistos=new Set();
+  return (Array.isArray(cli)?cli:[]).filter(x=>x&&x.contact_id&&!vistos.has(x.contact_id)&&vistos.add(x.contact_id));
+}
+const hrefChat=(x)=>`index.html?c=${encodeURIComponent(x.contact_id)}`;
+function botonChatPregunta(cli){
+  const c=chatsDePregunta(cli)[0]; if(!c) return "";
+  return `<a class="btn" href="${hrefChat(c)}" title="Abrir el chat de ${esc(c.nombre||"este cliente")}">${icon("inbox")} Ver chat</a>`;
+}
+function otrosChatsPregunta(cli){
+  const c=chatsDePregunta(cli).slice(1, 9); if(!c.length) return "";
+  return `<div class="pc-cita">También la hicieron: ${c.map(x=>`<a href="${hrefChat(x)}">${esc(x.nombre||"Cliente sin nombre")}</a>`).join(", ")}</div>`;
+}
 function itemPregunta(r){
   const id=esc(r.id);
   const veces=Number(r.veces)||1;
@@ -1860,7 +1877,8 @@ function itemPregunta(r){
   const resp=sup
     ? `<div class="pc-lbl">Lo que respondió el bot</div><div class="pc-a">${esc(r.respuesta)}</div>`
     : `<div class="pc-lbl">El bot no lo respondió</div><div class="pc-a vacia">No tenía el dato y no lo supuso (es un tema delicado, o la pregunta es de antes). Escribe la respuesta y queda en la ficha.</div>`;
-  const citaH=cita?`<div class="pc-cita">Así lo preguntó: “${esc(cita.slice(0,140))}”</div>`:"";
+  const citaH=(cita?`<div class="pc-cita">Así lo preguntó: “${esc(cita.slice(0,140))}”</div>`:"")+otrosChatsPregunta(cli);
+  const chatB=botonChatPregunta(cli);
   let acts;
   if(PC.editando===r.id){
     acts=`<textarea class="pc-edit" id="pcEdit" placeholder="La respuesta correcta, como te salga (el bot la redacta con su tono)">${esc(sup?r.respuesta:"")}</textarea>
@@ -1870,11 +1888,11 @@ function itemPregunta(r){
     acts=`<div class="pc-acts">
       <button class="btn ok" data-pc="aprobar" data-id="${id}">${icon("check")} Agregar a la ficha</button>
       <button class="btn" data-pc="editar" data-id="${id}">${icon("edit")} Corregir</button>
-      <button class="btn no" data-pc="rechazar" data-id="${id}">${icon("x")} Rechazar</button></div>`;
+      <button class="btn no" data-pc="rechazar" data-id="${id}">${icon("x")} Rechazar</button>${chatB}</div>`;
   } else {
     acts=`<div class="pc-acts">
       <button class="btn primary" data-pc="editar" data-id="${id}">${icon("edit")} Escribir la respuesta</button>
-      <button class="btn" data-pc="rechazar" data-id="${id}">Descartar</button></div>`;
+      <button class="btn" data-pc="rechazar" data-id="${id}">Descartar</button>${chatB}</div>`;
   }
   return `<div class="pc-item"><div class="pc-q">${esc(r.pregunta)}</div>${meta}${resp}${citaH}${acts}</div>`;
 }
