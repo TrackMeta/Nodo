@@ -25,6 +25,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      # Corrector (auditoría 18-oct): si algún .js o <script> del panel o de la app no compila, NO se publica y
+      # queda lo que ya estaba. Antes se publicaba sin mirar: el 15-oct un «$$» dejó la app sin abrir.
+      - name: Corrector del panel y la app
+        run: node tools/revisar-panel.mjs
       - name: Configurar Pages
         uses: actions/configure-pages@v5
       # SOLO el sitio: antes se publicaba el repo ENTERO (path: "."), o sea también

@@ -46,3 +46,8 @@ app-android/android/build/
 
 # Llave de firma del APK y sus datos (solo en esta compu; ver LEEME dentro)
 .llaves-app/
+
+# Despliegue (tools/desplegar.ps1): último commit desplegado, propio de cada PC
+tools/.ultimo-despliegue
+# Carpetas temporales del CLI de Supabase en cualquier subcarpeta (apps-base/supabase/.temp, etc.)
+**/supabase/.temp

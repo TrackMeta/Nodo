@@ -1,0 +1,27 @@
+name: Corrector del bot (Edge Functions)
+
+# Auditoría 18-oct: el bot se despliega a mano (tools/desplegar.ps1, que ya corre este mismo corrector antes de subir).
+# Esto lo repite en GitHub con cada cambio del motor, para que un error grave (constante repetida = bot mudo,
+# nombre o import que no existe, sintaxis) aparezca en rojo y llegue el correo de GitHub aunque nadie despliegue.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/functions/**"
+      - "tools/revisar-funciones.mjs"
+      - "tools/funciones-afectadas.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: deno check (solo frenan los errores que tumban el bot)
+        run: node tools/revisar-funciones.mjs

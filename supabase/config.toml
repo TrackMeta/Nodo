@@ -39,19 +39,19 @@ verify_jwt = false
 
 # whatsapp-send requiere usuario autenticado (JWT del panel).
 [functions.whatsapp-send]
-verify_jwt = true
+verify_jwt = false   # = producción (18-oct); la función valida la sesión por su cuenta (getUser)
 
 # webchat (banco de pruebas) también requiere usuario autenticado.
 [functions.webchat]
-verify_jwt = true
+verify_jwt = false   # = producción (18-oct); la función valida la sesión por su cuenta (getUser)
 
 # ai-config gestiona las API keys de IA por canal desde el panel.
 [functions.ai-config]
-verify_jwt = true
+verify_jwt = false   # = producción (18-oct); la función valida la sesión por su cuenta (getUser)
 
 # channel-config gestiona datos y secretos del canal (WhatsApp/Meta + Telegram).
 [functions.channel-config]
-verify_jwt = true
+verify_jwt = false   # = producción (18-oct); la función valida la sesión por su cuenta (getUser)
 
 # signup: registro POR INVITACIÓN (crea usuario + aplica invitación). PÚBLICA:
 # no lleva JWT (el que se registra aún no tiene sesión). Se protege exigiendo
@@ -70,7 +70,7 @@ verify_jwt = true
 
 # flow-start: inicia manualmente un flujo sobre un contacto real (Bandeja).
 [functions.flow-start]
-verify_jwt = true
+verify_jwt = false   # = producción (18-oct); la función valida la sesión por su cuenta (getUser)
 
 # scheduler: tick interno (lo llama el cron). Protegido por x-scheduler-secret.
 [functions.scheduler]
@@ -85,19 +85,19 @@ verify_jwt = false
 
 # order-update: el Kanban de Pedidos avanza estados y dispara flujos pedido_estado.
 [functions.order-update]
-verify_jwt = true
+verify_jwt = false   # = producción (18-oct); la función valida la sesión por su cuenta (getUser)
 
 # reply-suggest: sugerencias de respuesta (botón IA del compositor).
 [functions.reply-suggest]
-verify_jwt = true
+verify_jwt = false   # = producción (18-oct); la función valida la sesión por su cuenta (getUser)
 
 # gsheets-test: escribe una fila de prueba en la app web de Apps Script del usuario.
 [functions.gsheets-test]
-verify_jwt = true
+verify_jwt = false   # = producción (18-oct); la función valida la sesión por su cuenta (getUser)
 
 # gsheets-connect: devuelve la URL de "Acceder con Google" (OAuth) para Sheets.
 [functions.gsheets-connect]
-verify_jwt = true
+verify_jwt = false   # = producción (18-oct); la función valida la sesión por su cuenta (getUser)
 
 # gsheets-callback: Google redirige aquí tras el consentimiento (PÚBLICA).
 [functions.gsheets-callback]
@@ -105,7 +105,7 @@ verify_jwt = false
 
 # route-test: simulador de Palabras Clave (qué flujo se activa y por qué).
 [functions.route-test]
-verify_jwt = true
+verify_jwt = false   # = producción (18-oct); la función valida la sesión por su cuenta (getUser)
 
 # telegram-webhook: el Copiloto en el celular. Telegram no manda JWT — se
 # protege con el secret_token del header + que quien toca el botón esté en
@@ -125,7 +125,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.microapps]
-verify_jwt = true
+verify_jwt = false   # = producción (18-oct); la función valida la sesión por su cuenta (getUser)
 
 [functions.push]
 verify_jwt = false
