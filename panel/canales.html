@@ -31,6 +31,9 @@
      recuadro tintado se lee como dos formas, una dentro de otra. Solo el triángulo. */
   .chd .ico.solo{width:auto;height:auto;background:transparent;border:none;border-radius:0}
   .chd .ico.solo svg{width:30px;height:30px}
+  /* «Dar de baja este bot»: cápsula del mismo tamaño que las de WhatsApp/Telegram, en rojo suave (18-oct: el
+     triángulo heredaba fondo y borde de .ico y se veía como una caja torcida). El svg va sin clase: icon(n, ""). */
+  .chd .ico.baja{background:rgba(240,71,71,.09);border-color:rgba(240,71,71,.22);color:#e5484d}
   .chd .nm{font-weight:700;font-size:17px;letter-spacing:-.2px}
   .chd .sub2{font-size:12.5px;color:var(--muted);margin-top:2px}
   .chd .st{margin-left:auto;font-size:11px;padding:5px 12px;border-radius:20px;font-weight:700;background:var(--surface-2);border:1px solid var(--border);color:var(--muted)}
@@ -411,7 +414,7 @@ async function renderArchivo(){
   if(!$("archCard")) return;  // te fuiste de la pantalla mientras cargaba
   box.innerHTML=`
     <div class="card" style="border-color:rgba(240,71,71,.28)">
-      <div class="chd"><span class="ico solo" style="color:#f04747">${icon("alert")}</span>
+      <div class="chd"><span class="ico baja">${icon("archive", "")}</span>
         <div><div class="nm">Dar de baja este bot</div><div class="sub2">Se apaga, no se borra</div></div></div>
       <div class="desc">Archivar <b>${esc(st.channelNombre||"este bot")}</b> deja de responder y de gastar. <b>No se borra nada</b> y puedes reactivarlo cuando quieras.</div>
       <div class="acts"><button class="btn danger" id="archBtn">Archivar este bot</button></div>
