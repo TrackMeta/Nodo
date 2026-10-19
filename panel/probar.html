@@ -143,6 +143,10 @@
   @keyframes sgspin{to{transform:rotate(360deg)}}
   .sg-item{display:block;width:100%;text-align:left;padding:11px 13px;background:transparent;border:none;border-bottom:1px solid var(--border);color:var(--text);font-size:13px;line-height:1.5;cursor:pointer;font-family:inherit}
   .sg-item:last-child{border-bottom:none}
+  /* 19-oct: las sugerencias largas no entraban (qrpop tope 360px + overflow hidden) → lista con scroll y recuadro más alto si hay lugar */
+  #suggestPop{max-height:min(520px,calc(100vh - 170px))}
+  #suggestPop .sg-hd{flex:none}
+  .sg-list{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain}
   .sg-item:hover{background:linear-gradient(90deg,rgba(168,85,247,.12),rgba(236,72,153,.07))}
   .sg-empty{padding:16px 14px;font-size:12.5px;color:var(--muted);line-height:1.5}
   .pop{position:absolute;bottom:60px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 16px 44px rgba(0,0,0,.45);z-index:40;overflow:hidden}
@@ -766,7 +770,7 @@ async function openSuggest(){
       return;
     }
     pop.innerHTML=`<div class="sg-hd">${SG_SPARK}<span class="sgt">SUGERENCIAS DE LA IA</span><span class="sg-sub">toca una para escribirla</span></div>`+
-      sug.map(s=>`<button class="sg-item" type="button">${esc(s)}</button>`).join("");
+      `<div class="sg-list">`+sug.map(s=>`<button class="sg-item" type="button">${esc(s)}</button>`).join("")+`</div>`;
     pop.querySelectorAll(".sg-item").forEach((b,i)=> b.onclick=()=>{ const inp=$("msgInput"); inp.value=sug[i]; autoGrow(); inp.focus(); pop.classList.add("hidden"); });
   }catch{ if(!pop.classList.contains("hidden")) pop.innerHTML=`<div class="sg-empty">Error de red. Intenta de nuevo.</div>`; }
 }
