@@ -345,7 +345,7 @@
 </div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll, usuarioActual } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
@@ -1927,7 +1927,7 @@ async function decidirPregunta(r, accion, texto, btn){
       if(!c.faq_items.some(x=>x&&x.q===r.pregunta&&x.a===a)) c.faq_items.push({q:r.pregunta,a});
       c.faq=compileFaq(c.faq_items);
     }
-    let quien=null; try{ const { data:{ user } }=await supa.auth.getUser(); quien=user&&user.email||null; }catch(_){}
+    let quien=null; try{ const user=await usuarioActual(); quien=user&&user.email||null; }catch(_){}
     const upd={ estado:accion==="aprobar"?"aprobada":"rechazada", respuesta_final:accion==="aprobar"?a:null,
       decidida_at:new Date().toISOString(), decidida_por:quien };
     const { error }=await supa.from("preguntas_clientes").update(upd).eq("id",r.id);

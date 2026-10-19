@@ -154,7 +154,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, askChoice, confirmDialog, SUPABASE_URL, updateChannel } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, askChoice, confirmDialog, SUPABASE_URL, updateChannel, usuarioActual } from "./shell.js";
 // Con la región fija (São Paulo, junto a la base): sin ella el bot corría en EE. UU. y cada
 // respuesta tardaba ~12 s más. Ver WEBHOOK_CALLBACK en channel-config.
 const WEBHOOK_URL = `${SUPABASE_URL}/functions/v1/whatsapp-webhook?forceFunctionRegion=sa-east-1`;
@@ -963,7 +963,7 @@ async function vincularTelegram(){
   try{
     const { data:chA }=await supa.from("channels").select("account_id").eq("id",st.channelId).maybeSingle();
     const { data:ms }=chA?.account_id ? await supa.from("account_members").select("user_id,role,app_users(nombre)").eq("account_id",chA.account_id).eq("activo",true) : { data:[] };
-    const yo=(await supa.auth.getUser()).data.user?.id;
+    const yo=(await usuarioActual())?.id;
     if((ms||[]).length>1){
       const ROL={admin:"Administrador",operador:"Operador"};
       const opts=[...ms].sort((a,b)=>(a.user_id===yo?-1:b.user_id===yo?1:0)).map(m=>({ value:m.user_id,

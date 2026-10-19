@@ -62,7 +62,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog, askChoice } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog, askChoice, usuarioActual } from "./shell.js";
 const $ = (id) => document.getElementById(id);
 const st = { uid:null, me:null, accounts:[] };
 const esc = (s) => (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -75,7 +75,7 @@ async function boot(){
 }
 
 async function load(){
-  st.uid = (await supa.auth.getUser()).data.user?.id;
+  st.uid = (await usuarioActual())?.id;
   const { data: me } = await supa.from("app_users").select("id,nombre,platform_admin").eq("id",st.uid).maybeSingle();
   st.me = me || {};
   const { data: mems } = await supa.from("account_members")

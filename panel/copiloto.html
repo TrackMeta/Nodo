@@ -95,7 +95,7 @@
 <div class="lightbox" id="lightbox"><img id="lightImg" src=""/></div>
 
 <script type="module">
-import { supa, getChannel, mountShell, toast, icon, confirmDialog, askChoice, askText, enTrozos, pageAll, updateChannel } from "./shell.js";
+import { supa, getChannel, mountShell, toast, icon, confirmDialog, askChoice, askText, enTrozos, pageAll, updateChannel, usuarioActual } from "./shell.js";
 import * as O from "./orders.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], imgs:{}, dudas:{}, rt:null };
@@ -541,7 +541,7 @@ const TIT_DEC="· Pagos por validar";
 async function anotarDecision(o,dec,tipo){
   try{
     const c=o.contact||{};
-    let por=null; try{ const { data:{user} }=await supa.auth.getUser(); por=user?.email||null; }catch(_){}
+    let por=null; try{ const user=await usuarioActual(); por=user?.email||null; }catch(_){}
     await supa.from("contact_events").insert({ channel_id:st.channelId, contact_id:o.contact_id, tipo:"nota",
       titulo:(dec==="ok"?"🧾 Pago aprobado ":"🧾 Pago rechazado ")+TIT_DEC,
       detalle:`${tipo} · ${sym(o)} ${o.amount??""}${c.bot_activo===false&&dec==="no"?" · bot en pausa (no se le escribió)":""}`, meta:{ decision:dec, tipo, order_id:o.id, por } });

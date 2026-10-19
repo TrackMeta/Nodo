@@ -154,6 +154,22 @@ export function conRegion(url) {
   return u + (u.includes("?") ? "&" : "?") + "forceFunctionRegion=" + FN_REGION;
 }
 
+// 🔐 Auth con tope de espera (19-oct): el servicio de Auth de Supabase a ratos deja una petición colgada 40 s o más
+// (medido desde la PC de Rodrigo: 1 de cada ~12). supabase-js toma un candado mientras renueva o consulta la sesión, y
+// TODAS las lecturas de la página esperan detrás → «las secciones demoran muchísimo» solo con sesión iniciada. Se corta
+// a los 8 s y se reintenta una vez: un cuelgue cuesta segundos, no un minuto.
+async function fetchAuthConTope(input, init) {
+  const propia = init && init.signal;
+  for (let intento = 0; ; intento++) {
+    const corte = new AbortController();
+    const t = setTimeout(() => corte.abort(), 8000);
+    const señal = !propia ? corte.signal
+      : (typeof AbortSignal.any === "function" ? AbortSignal.any([propia, corte.signal]) : propia);
+    try { return await fetch(input, { ...(init || {}), signal: señal }); }
+    catch (e) { if ((propia && propia.aborted) || intento >= 1 || !corte.signal.aborted) throw e; }
+    finally { clearTimeout(t); }
+  }
+}
 async function fetchVigilado(input, init) {
   if (typeof input === "string" || input instanceof URL) input = conRegion(input);   // supabase-js manda la URL como texto
   const url = String((input && input.url) || input || "");
@@ -170,6 +186,7 @@ async function fetchVigilado(input, init) {
       : (typeof AbortSignal.any === "function" ? AbortSignal.any([propia, _corte.signal]) : propia);
     init = { ...(init || {}), signal: señal };
   }
+  if (esAuth) return fetchAuthConTope(input, init);
   let r;
   try {
     r = await fetch(input, init);
@@ -208,6 +225,12 @@ async function fetchVigilado(input, init) {
 export const supa = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   global: { fetch: (i, o) => fetchVigilado(i, o) },
 });
+// El usuario de la sesión guardada en este navegador, SIN preguntarle al servidor de Auth (19-oct). `getUser()` hacía
+// una llamada de red en cada sección y, con el candado de supabase-js, frenaba todas las lecturas cuando Auth tardaba.
+// Para la interfaz (quién soy, mi correo, ¿soy admin?) alcanza con la sesión: lo que protege los datos es la RLS.
+export async function usuarioActual() {
+  try { const { data: { session } } = await supa.auth.getSession(); return session?.user ?? null; } catch { return null; }
+}
 // ── Ficha del bot, una sola vez por sesión ───────────────────────────
 // Casi todas las secciones piden UNA rebanada de la MISMA fila de `channels`
 // (moneda, entregas, remarketing, account_id, ocr_config…) y varias lo hacen
@@ -430,8 +453,7 @@ export function avanzadoCache() { try { return localStorage.getItem(AV_KEY) === 
 export async function avanzadoPermitido() {
   if (_avSabido !== null) return _avSabido;
   try {
-    const { data: u } = await supa.auth.getUser();
-    const uid = u?.user?.id;
+    const uid = (await usuarioActual())?.id;
     let ok = false;
     if (uid) {
       const { data: me } = await supa.from("app_users").select("platform_admin").eq("id", uid).maybeSingle();
