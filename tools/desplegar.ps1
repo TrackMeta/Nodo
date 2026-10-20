@@ -37,7 +37,8 @@ try {
     $desde = if (Test-Path $MARCA) { (Get-Content $MARCA -Raw).Trim() } else { $null }
     if (-not $desde) { "No hay registro del último despliegue: se suben TODAS."; $FN = $todasLas }
     else {
-      $cambiados = @(& git diff --name-only $desde -- supabase/functions) + @(& git diff --name-only HEAD -- supabase/functions) | Sort-Object -Unique
+      # (@(…) por fuera: con UN solo archivo Sort-Object devuelve un string y @cambiados lo repartía letra por letra)
+      $cambiados = @(@(& git diff --name-only $desde -- supabase/functions) + @(& git diff --name-only HEAD -- supabase/functions) | Sort-Object -Unique)
       $FN = if ($cambiados.Count) { & node tools/funciones-afectadas.mjs @cambiados } else { @() }
       "Cambios desde $($desde.Substring(0,7)): $($cambiados.Count) archivo(s)."
     }

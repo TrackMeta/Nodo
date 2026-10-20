@@ -28409,7 +28409,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const _tolUp = Number((info as any)?.pedidos?.digital?.tolerancia ?? 1) || 0;
             if (Number.isFinite(_pagoUp) && _espUp > 0 && _pagoUp > _espUp + _tolUp && !comboDe(run).length && ctx._product_id) {
               const _opsUp = await loadOpciones(db, run, String(ctx._product_id));
-              const _calzan = _opsUp.filter((o) => Number(o.precio) > _espUp && Math.abs(Number(o.precio) - _pagoUp) <= Math.max(0.5, _tolUp));
+              // …OTRA versión: nunca la que ya tiene elegida. Con una oferta de remarketing activa el precio esperado es el
+              // rebajado (S/7) y la MISMA versión a precio de lista (S/10) calzaba como «más cara»: a Alarcón y Silvestre
+              // (19-oct) les llegó «Me llegó S/10, que es justo el precio de la Única, así que te la dejo en Única». Ese
+              // pago es un sobrepago chico de la misma versión (lo resuelve margenSobrepago: cuenta como venta).
+              const _yaElegida = String(ctx.opcion_id ?? run.vars.opcion_id ?? "");
+              const _calzan = _opsUp.length < 2 ? [] : _opsUp.filter((o) => String(o.id) !== _yaElegida &&
+                Number(o.precio) > _espUp && Math.abs(Number(o.precio) - _pagoUp) <= Math.max(0.5, _tolUp));
               if (_calzan.length === 1) {
                 const _up = _calzan[0], _antes = String(ctx.opcion ?? "");
                 run.vars.opcion_id = _up.id; ctx.opcion_id = _up.id;
