@@ -29,22 +29,27 @@ import com.getcapacitor.WebViewListener;
 public class MainActivity extends BridgeActivity {
     static final String PREFS = "nodo";
     // ── Pantalla de inicio NATIVA (APK 1.0.16, 20-oct, como Vendia) ──────────────────────────────────────────────
-    // Antes la carga se repartía: Android dibujaba la «Red de nodos» en su pantalla de inicio y se la pasaba a la
-    // página, que seguía con su copia del logo, los textos y el fundido MIENTRAS cargaba la app → tirones. Ahora la
-    // pantalla del sistema es solo el fondo, y la animación entera vive en una capa nativa encima de la app:
-    //   1) la «Red de nodos» (drawable/splash_n, animated-vector: la dibuja el hilo de render, nunca se traba),
-    //   2) el logo late suave mientras la app termina de cargar debajo,
-    //   3) cuando la página avisa que ya se ve (NodoNativo.bootListo) crece un poco y la capa se desvanece.
-    // La página sabe que no debe animar nada por la marca «NodoInicioNativo/1» del user agent (capacitor.config.json).
-    static final long N_COMPLETA = 1450;   // la «Red de nodos» + el cuadro + la N blanca
+    // La pantalla del sistema es solo el fondo; la animación entera vive en una capa nativa encima de la app:
+    //   1) la «Red de nodos» (drawable/splash_n, animated-vector),
+    //   2) si la app todavía no está, el logo late suave,
+    //   3) la página se muestra DEBAJO con el logo quieto, y cuando ya se dibujó, el logo crece y la capa se desvanece.
+    // 1.0.18 (21-oct, medido con el diagnóstico en el Xiaomi de Rodrigo): la página y la animación comparten el hilo de
+    // render de Android, y el PRIMER dibujo de la página (toda la app con sus listas) lo ocupaba 200–630 ms justo cuando
+    // la N se terminaba de armar → la traba. Ahora la página queda INVISIBLE mientras se arma el logo (invisible = no se
+    // dibuja), se hace visible recién con el logo completo y quieto (ese dibujo pesado ya no se nota), y la salida
+    // arranca cuando WebView avisa que ya tiene la app en pantalla (postVisualStateCallback) + 2 cuadros.
+    // La página sabe que no debe animar nada por la marca «NodoInicioNativo/1» del user agent (capacitor.config.json) y
+    // pinta lo de internet cuando Android le avisa que la capa se fue (evento «nodoInicioFin»).
+    static final long N_COMPLETA = 1450;   // la «Red de nodos» + el cuadro + la N blanca, desde su primer cuadro
     static final long TOPE = 10000;        // nunca se queda pegada
     static volatile long t0 = 0;
     private final Handler h = new Handler(Looper.getMainLooper());
-    private final Handler hDiag = new Handler(Looper.getMainLooper());   // (aparte: cerrarInicio vacía h)
+    private final Handler hDiag = new Handler(Looper.getMainLooper());   // (aparte: la salida vacía h)
     private FrameLayout inicio;
     private ImageView inicioLogo;
+    private WebView web;
     private ObjectAnimator latido;
-    private boolean appLista = false, cerrando = false;
+    private boolean appLista = false, logoCompleto = false, mostrandoWeb = false, cerrando = false;
 
     private int dp(float v) {
         return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics()));
@@ -61,21 +66,34 @@ public class MainActivity extends BridgeActivity {
         inicio.addView(inicioLogo, new FrameLayout.LayoutParams(dp(288), dp(288), Gravity.CENTER));
         ((ViewGroup) getWindow().getDecorView()).addView(inicio,
             new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        DiagInicio.marca("capa de carga puesta");
-        // primer cuadro de la capa en pantalla (se avisa una sola vez)
+        // La página no se dibuja mientras se arma el logo (ver arriba)
+        if (web != null) web.setVisibility(View.INVISIBLE);
+        DiagInicio.marca("capa de carga puesta (página oculta)");
+        // La N arranca en el PRIMER cuadro de la capa (no al llamar start()): desde ahí se cuenta cuándo termina
         final android.view.ViewTreeObserver.OnDrawListener[] od = new android.view.ViewTreeObserver.OnDrawListener[1];
-        od[0] = () -> { DiagInicio.marca("primer cuadro de la capa dibujado"); hDiag.post(() -> { try { inicio.getViewTreeObserver().removeOnDrawListener(od[0]); } catch (Throwable t) { } }); };
-        inicio.getViewTreeObserver().addOnDrawListener(od[0]);
+        od[0] = () -> {
+            if (od[0] == null) return;
+            final android.view.ViewTreeObserver.OnDrawListener este = od[0];
+            od[0] = null;
+            DiagInicio.marca("primer cuadro de la capa dibujado");
+            h.postDelayed(this::alCompletarLogo, N_COMPLETA);
+            hDiag.post(() -> { try { getWindow().getDecorView().getViewTreeObserver().removeOnDrawListener(este); } catch (Throwable t) { } });
+        };
+        getWindow().getDecorView().getViewTreeObserver().addOnDrawListener(od[0]);
         if (n instanceof Animatable) ((Animatable) n).start();
         DiagInicio.fase("logo armándose (Red de nodos)");
-        h.postDelayed(this::latir, N_COMPLETA);
-        h.postDelayed(() -> cerrarInicio(true), TOPE);
+        h.postDelayed(() -> salir(true), TOPE);
     }
 
-    // 2) Mientras carga: late suave (como la V de Vendia)
-    private void latir() {
+    private void alCompletarLogo() {
         if (cerrando || inicioLogo == null) return;
-        if (appLista) { cerrarInicio(false); return; }
+        logoCompleto = true;
+        if (appLista) mostrarWeb(); else latir();
+    }
+
+    // 2) La app todavía no está: late suave (como la V de Vendia)
+    private void latir() {
+        if (cerrando || inicioLogo == null || mostrandoWeb) return;
         DiagInicio.fase("latido (esperando la app)");
         latido = ObjectAnimator.ofPropertyValuesHolder(inicioLogo,
             PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.06f),
@@ -87,24 +105,53 @@ public class MainActivity extends BridgeActivity {
         latido.start();
     }
 
-    // La página avisa que la app ya se ve (NodoNativo.bootListo): se cierra apenas terminó la «Red de nodos»
+    // La página avisa que la app ya está armada (NodoNativo.bootListo)
     void appLista() {
         runOnUiThread(() -> {
             DiagInicio.marca("la página avisó: app lista");
             appLista = true;
-            if (SystemClock.uptimeMillis() - t0 >= N_COMPLETA) cerrarInicio(false);
-            // si la N todavía se está armando, latir() la cierra al terminar (sin latido)
+            if (logoCompleto) mostrarWeb();   // si la N todavía se arma, alCompletarLogo sigue desde ahí
         });
     }
 
-    // 3) Crece un poco y la capa se desvanece hacia la app
-    private void cerrarInicio(boolean forzado) {
+    // 3a) Logo quieto (si latía, vuelve suave a su tamaño) → la página se hace visible debajo y se espera su dibujo
+    private void mostrarWeb() {
+        if (cerrando || mostrandoWeb || inicio == null) return;
+        mostrandoWeb = true;
+        final Runnable seguir = () -> {
+            DiagInicio.fase("página visible debajo (logo quieto)");
+            if (web == null) { salir(false); return; }
+            web.setVisibility(View.VISIBLE);
+            final boolean[] hecho = { false };
+            final Runnable trasDibujo = () -> {
+                if (hecho[0]) return;
+                hecho[0] = true;
+                DiagInicio.marca("WebView: la app ya está en pantalla");
+                // dos cuadros más: que el dibujo pesado ya haya pasado antes de mover nada
+                android.view.Choreographer.getInstance().postFrameCallback(f1 ->
+                    android.view.Choreographer.getInstance().postFrameCallback(f2 -> salir(false)));
+            };
+            try {
+                web.postVisualStateCallback(1, new WebView.VisualStateCallback() {
+                    @Override public void onComplete(long id) { runOnUiThread(trasDibujo); }
+                });
+            } catch (Throwable t) { h.postDelayed(trasDibujo, 300); }
+            h.postDelayed(trasDibujo, 1200);   // respaldo
+        };
+        if (latido != null && latido.isRunning()) {
+            latido.cancel();
+            inicioLogo.animate().scaleX(1f).scaleY(1f).setDuration(160).withEndAction(seguir).start();
+        } else seguir.run();
+    }
+
+    // 3b) Crece un poco y la capa se desvanece hacia la app
+    private void salir(boolean forzado) {
         if (inicio == null || cerrando) return;
-        if (!forzado && SystemClock.uptimeMillis() - t0 < N_COMPLETA) return;
         cerrando = true;
-        DiagInicio.fase(forzado ? "salida (por tiempo: la página no avisó)" : "salida (crece y se desvanece)");
+        DiagInicio.fase(forzado ? "salida (por tiempo)" : "salida (crece y se desvanece)");
         h.removeCallbacksAndMessages(null);
         if (latido != null) latido.cancel();
+        if (web != null && web.getVisibility() != View.VISIBLE) web.setVisibility(View.VISIBLE);
         final FrameLayout capa = inicio;
         inicioLogo.animate().scaleX(1.35f).scaleY(1.35f).setDuration(380).setInterpolator(new AccelerateInterpolator()).withLayer().start();
         capa.animate().alpha(0f).setDuration(380).withLayer().withEndAction(() -> {
@@ -113,6 +160,8 @@ public class MainActivity extends BridgeActivity {
             inicio = null;
             inicioLogo = null;
             DiagInicio.fase("app a la vista");
+            // la página pinta lo de internet recién ahora (ver panel/app/index.html)
+            try { if (getBridge() != null) getBridge().triggerWindowJSEvent("nodoInicioFin"); } catch (Throwable t) { }
             hDiag.postDelayed(() -> DiagInicio.terminar(this), 2500);
         }).start();
     }
@@ -146,6 +195,7 @@ public class MainActivity extends BridgeActivity {
             } catch (Throwable t) { /* sin tema guardado: el oscuro de siempre */ }
         }
         // Al girar el celular o si Android recrea la pantalla, no se repite
+        web = wv;
         if (savedInstanceState == null) mostrarInicio(fondo);
         // Respaldo si la página no avisa (sin internet, página de error, una versión vieja en caché)
         if (getBridge() != null) {
@@ -153,9 +203,9 @@ public class MainActivity extends BridgeActivity {
                 @Override
                 public void onPageStarted(WebView webView) { DiagInicio.marca("página: empezó a cargar"); }
                 @Override
-                public void onPageLoaded(WebView webView) { DiagInicio.marca("página: cargó (HTML + scripts)"); h.postDelayed(() -> cerrarInicio(true), 6000); }
+                public void onPageLoaded(WebView webView) { DiagInicio.marca("página: cargó (HTML + scripts)"); h.postDelayed(() -> salir(true), 6000); }
                 @Override
-                public void onReceivedError(WebView webView) { h.postDelayed(() -> cerrarInicio(true), 1500); }
+                public void onReceivedError(WebView webView) { h.postDelayed(() -> salir(true), 1500); }
             });
         }
         // Teclado: Capacitor deja márgenes para las barras del sistema (adjustMarginsForEdgeToEdge) pero no para el

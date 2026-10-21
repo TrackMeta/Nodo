@@ -192,7 +192,10 @@ try { localStorage.removeItem("nodo.app.diag"); } catch (e) {}
     NODO_MARCA("HTML leído");
     window.NODO_BOOT_SALIR = function () {
       if (window.NODO_BOOT_SALIR.ya) return; window.NODO_BOOT_SALIR.ya = true;
-      var fin = function (r) { setTimeout(function () { finar(); }, Math.min(2500, ((r && r.espera) || 0) + 80)); };
+      // 1.0.18+ (v 5): Android avisa con el evento «nodoInicioFin» cuando su capa ya se fue; antes se estimaba con `espera`
+      window.addEventListener("nodoInicioFin", function () { finar(); });
+      var fin = function (r) { if (r && r.v >= 5) { setTimeout(function () { finar(); }, 4000); return; }
+        setTimeout(function () { finar(); }, Math.min(2500, ((r && r.espera) || 0) + 80)); };
       if (NN && NN.bootListo) NN.bootListo().then(fin, function () { fin(null); }); else fin(null);
     };
     return;

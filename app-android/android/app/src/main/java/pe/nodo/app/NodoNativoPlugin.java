@@ -48,7 +48,7 @@ public class NodoNativoPlugin extends Plugin {
         long e = android.os.SystemClock.uptimeMillis() - MainActivity.t0;
         JSObject r = new JSObject();
         r.put("espera", Math.max(0, MainActivity.N_COMPLETA - e) + 380);
-        r.put("v", 4);
+        r.put("v", 5);   // 5 (1.0.18+): la página queda oculta mientras se arma el logo y Android avisa «nodoInicioFin» al irse la capa
         if (getActivity() instanceof MainActivity) ((MainActivity) getActivity()).appLista();
         call.resolve(r);
     }

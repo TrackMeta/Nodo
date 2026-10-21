@@ -486,6 +486,10 @@ const SIN_SW = "nodo.app.sinSW";
   navigator.serviceWorker.addEventListener("message", (e) => {
     if (e.data?.tipo !== "nueva") return;
     if (_hoja || PILA.length || escribiendo()) return;
+    // En los primeros segundos (la capa de carga saliendo, la app recién dibujada) recargar entera era otra traba
+    // (medido 21-oct: la página se recargaba justo en la salida del logo). La versión nueva ya quedó guardada: se usa
+    // la próxima vez que abras.
+    if (performance.now() < 9000) return;
     location.reload();
   });
 })();
