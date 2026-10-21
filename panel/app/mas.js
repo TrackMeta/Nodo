@@ -1,7 +1,7 @@
 // «Más»: notificaciones, tus bots (encender/apagar, como Canales), qué avisos me llegan (se guardan en
 // notificacion_usuario.prefs: los sonidos se COMPARTEN con la campanita web; lo propio del celular en prefs.app),
 // tema, panel completo y cerrar sesión.
-import { A, $, esc, ic, on, emit, supa, invoke, abrirCapa, hoja, confirmar, toast, pintaBot, logoDe, temaPref, ponerTema } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, invoke, abrirCapa, hoja, abrirHoja, confirmar, toast, pintaBot, logoDe, temaPref, ponerTema } from "./app.js";
 import { updateChannel } from "../shell.js";
 import { N } from "./notif.js";
 import { TONOS_URGENTE, TONOS_VENTA, escuchar } from "./sonidos.js";
@@ -55,7 +55,8 @@ function pintar() {
     <div class="card"><div class="ttl">WhatsApp de ${esc(A.channels.find((c) => c.id === A.ch)?.nombre || "este bot")}</div>${numeroHtml()}</div>
     <div class="card"><div class="ttl">Tus bots</div>${A.channels.map((c) => `<div class="li"><span class="ico"><img src="${esc(logoDe(c.id))}" alt=""></span><span class="rmid"><b>${esc(c.nombre)}</b><span>${c.bot_apagado ? "Apagado · el bot no contesta" : "Encendido"}${c.id === A.ch ? " · el que estás viendo" : ""}</span></span><button type="button" class="sw${c.bot_apagado ? "" : " on"}" data-sw="${c.id}" aria-label="Encender o apagar ${esc(c.nombre)}"></button></div>`).join("")}</div>
     <div class="card"><div class="ttl">Pantalla</div>
-      <button type="button" class="li" data-go="tema"><span class="ico">${ic(tema === "light" ? "sun" : "moon")}</span><span class="rmid"><b>Tema</b><span>${TEMA_LBL[tema] || TEMA_LBL.auto}</span></span>${ic("chevronRight")}</button></div>
+      <button type="button" class="li" data-go="tema"><span class="ico">${ic(tema === "light" ? "sun" : "moon")}</span><span class="rmid"><b>Tema</b><span>${TEMA_LBL[tema] || TEMA_LBL.auto}</span></span>${ic("chevronRight")}</button>
+      ${window.Capacitor ? `<button type="button" class="li" data-go="diag"><span class="ico">${ic("dashboard")}</span><span class="rmid"><b>Diagnóstico de la carga</b><span>Dónde se traba la animación al abrir la app</span></span>${ic("chevronRight")}</button>` : ""}</div>
     <div class="card"><div class="ttl">Cuenta</div>
       <a class="li" href="../index.html" style="color:inherit;text-decoration:none"><span class="ico">${ic("panel")}</span><span class="rmid"><b>Abrir el panel completo</b><span>Productos, flujos, campañas y ajustes</span></span>${ic("chevronRight")}</a>
       <button type="button" class="li" data-go="salir"><span class="ico">${ic("logout")}</span><span class="rmid"><b>Cerrar sesión</b><span>${esc(A.email)}</span></span></button></div>
@@ -80,7 +81,26 @@ async function clic(e) {
   else if (k === "copiarNum") { const t = NUM.get(A.ch)?.telefono || ""; try { await navigator.clipboard.writeText(t.replace(/[^\d+]/g, "")); toast("Número copiado"); } catch (_) { toast(t); } }
   else if (k === "accesos") toast("Para ver los accesos, elige un bot de micro apps o ábrelos desde el panel web de Nodo.");
   else if (k === "tema") hoja("Tema", [{ t: "Automático (como el celular)", v: "auto", on: temaPref() === "auto" }, { t: "Claro", v: "light", on: temaPref() === "light" }, { t: "Oscuro", v: "dark", on: temaPref() === "dark" }], (o) => { ponerTema(o.v); pintar(); });
+  else if (k === "diag") verDiag();
   else if (k === "salir") { if (await confirmar("Cerrar sesión", "Tendrás que volver a entrar con tu correo y contraseña. Este celular dejará de recibir avisos.", { si: "Cerrar sesión", peligro: true })) { emit("salir"); setTimeout(() => supa.auth.signOut(), 400); } }
+}
+
+// Diagnóstico de la carga (APK 1.0.17, 20-oct): lo que midió Android en los últimos 5 arranques (DiagInicio.java).
+// Rodrigo le saca captura y así se ve QUÉ trababa la animación y en qué momento.
+async function verDiag() {
+  const NN = window.Capacitor?.Plugins?.NodoNativo;
+  let lista = [];
+  try { const r = await NN.diagInicio(); lista = JSON.parse(r?.datos || "[]"); }
+  catch (_) { toast("Este diagnóstico necesita la app 1.0.17 o más nueva", true); return; }
+  if (!lista.length) { toast("Todavía no hay datos: cierra la app del todo, ábrela y vuelve aquí"); return; }
+  const fila = (x) => `<div style="font:11.5px/1.45 ui-monospace,monospace;padding:2px 0;border-bottom:1px dashed var(--border)">${esc(x)}</div>`;
+  abrirHoja(`<h3>Diagnóstico de la carga</h3><p class="lead">Últimos ${lista.length} arranques. Sácale captura y mándasela a Claude.</p>
+    <div style="max-height:62vh;overflow:auto">${lista.map((a, i) => `<div class="card" style="margin-bottom:10px">
+      <div class="ttl">${i === 0 ? "Último arranque" : "Arranque " + (i + 1)} · ${esc(a.fecha || "")}</div>
+      <p style="margin:2px 0 8px;font-size:12px;color:var(--muted)">${esc(a.celular || "")} · ${a.cuadros || 0} cuadros · <b>${(a.tirones || []).length} tirones</b></p>
+      <b style="font-size:12px">Tirones</b>${(a.tirones || []).length ? (a.tirones || []).map(fila).join("") : fila("ninguno 🎉")}
+      <b style="font-size:12px;display:block;margin-top:8px">Momentos de la carga</b>${(a.eventos || []).map(fila).join("")}
+    </div>`).join("")}</div>`);
 }
 
 // ═════════ Qué avisos me llegan ═════════

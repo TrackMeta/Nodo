@@ -53,6 +53,20 @@ public class NodoNativoPlugin extends Plugin {
         call.resolve(r);
     }
 
+    // Diagnóstico de la carga (1.0.17): la web marca sus pasos y lee los últimos 5 arranques (Más → Diagnóstico)
+    @PluginMethod
+    public void marcaDiag(PluginCall call) {
+        DiagInicio.marca("web: " + call.getString("t", ""));
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void diagInicio(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("datos", DiagInicio.leer(getContext()));
+        call.resolve(r);
+    }
+
     @PluginMethod
     public void info(PluginCall call) {
         JSObject r = new JSObject();

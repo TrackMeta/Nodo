@@ -40,6 +40,7 @@ public class MainActivity extends BridgeActivity {
     static final long TOPE = 10000;        // nunca se queda pegada
     static volatile long t0 = 0;
     private final Handler h = new Handler(Looper.getMainLooper());
+    private final Handler hDiag = new Handler(Looper.getMainLooper());   // (aparte: cerrarInicio vacía h)
     private FrameLayout inicio;
     private ImageView inicioLogo;
     private ObjectAnimator latido;
@@ -60,7 +61,13 @@ public class MainActivity extends BridgeActivity {
         inicio.addView(inicioLogo, new FrameLayout.LayoutParams(dp(288), dp(288), Gravity.CENTER));
         ((ViewGroup) getWindow().getDecorView()).addView(inicio,
             new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        DiagInicio.marca("capa de carga puesta");
+        // primer cuadro de la capa en pantalla (se avisa una sola vez)
+        final android.view.ViewTreeObserver.OnDrawListener[] od = new android.view.ViewTreeObserver.OnDrawListener[1];
+        od[0] = () -> { DiagInicio.marca("primer cuadro de la capa dibujado"); hDiag.post(() -> { try { inicio.getViewTreeObserver().removeOnDrawListener(od[0]); } catch (Throwable t) { } }); };
+        inicio.getViewTreeObserver().addOnDrawListener(od[0]);
         if (n instanceof Animatable) ((Animatable) n).start();
+        DiagInicio.fase("logo armándose (Red de nodos)");
         h.postDelayed(this::latir, N_COMPLETA);
         h.postDelayed(() -> cerrarInicio(true), TOPE);
     }
@@ -69,6 +76,7 @@ public class MainActivity extends BridgeActivity {
     private void latir() {
         if (cerrando || inicioLogo == null) return;
         if (appLista) { cerrarInicio(false); return; }
+        DiagInicio.fase("latido (esperando la app)");
         latido = ObjectAnimator.ofPropertyValuesHolder(inicioLogo,
             PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.06f),
             PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.06f));
@@ -82,6 +90,7 @@ public class MainActivity extends BridgeActivity {
     // La página avisa que la app ya se ve (NodoNativo.bootListo): se cierra apenas terminó la «Red de nodos»
     void appLista() {
         runOnUiThread(() -> {
+            DiagInicio.marca("la página avisó: app lista");
             appLista = true;
             if (SystemClock.uptimeMillis() - t0 >= N_COMPLETA) cerrarInicio(false);
             // si la N todavía se está armando, latir() la cierra al terminar (sin latido)
@@ -93,6 +102,7 @@ public class MainActivity extends BridgeActivity {
         if (inicio == null || cerrando) return;
         if (!forzado && SystemClock.uptimeMillis() - t0 < N_COMPLETA) return;
         cerrando = true;
+        DiagInicio.fase(forzado ? "salida (por tiempo: la página no avisó)" : "salida (crece y se desvanece)");
         h.removeCallbacksAndMessages(null);
         if (latido != null) latido.cancel();
         final FrameLayout capa = inicio;
@@ -102,15 +112,19 @@ public class MainActivity extends BridgeActivity {
             if (padre != null) padre.removeView(capa);
             inicio = null;
             inicioLogo = null;
+            DiagInicio.fase("app a la vista");
+            hDiag.postDelayed(() -> DiagInicio.terminar(this), 2500);
         }).start();
     }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         t0 = SystemClock.uptimeMillis();
+        if (savedInstanceState == null) DiagInicio.empezar(this, t0);
         // Plugin propio: le dice a la app web si este APK trae Firebase (sin él, registrar avisos cerraría la app).
         registerPlugin(NodoNativoPlugin.class);
         super.onCreate(savedInstanceState);
+        DiagInicio.marca("Capacitor y WebView creados");
         WebView wv = getBridge() != null ? getBridge().getWebView() : null;
         // El tema que elegiste (lo guarda NodoNativo.barras): fondo de la ventana, de la página, de la carga y barras de
         // tu color desde el primer instante, antes de que cargue la app.
@@ -137,7 +151,9 @@ public class MainActivity extends BridgeActivity {
         if (getBridge() != null) {
             getBridge().addWebViewListener(new WebViewListener() {
                 @Override
-                public void onPageLoaded(WebView webView) { h.postDelayed(() -> cerrarInicio(true), 6000); }
+                public void onPageStarted(WebView webView) { DiagInicio.marca("página: empezó a cargar"); }
+                @Override
+                public void onPageLoaded(WebView webView) { DiagInicio.marca("página: cargó (HTML + scripts)"); h.postDelayed(() -> cerrarInicio(true), 6000); }
                 @Override
                 public void onReceivedError(WebView webView) { h.postDelayed(() -> cerrarInicio(true), 1500); }
             });

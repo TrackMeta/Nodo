@@ -187,6 +187,9 @@ try { localStorage.removeItem("nodo.app.diag"); } catch (e) {}
   // (NodoNativo.bootListo) para que su capa crezca y se desvanezca. Lo de internet se pinta cuando la capa ya se fue.
   if (apk && /NodoInicioNativo\/\d/.test(navigator.userAgent || "")) {
     b.hidden = true;
+    // Diagnóstico (APK 1.0.17): los pasos de la página van al registro nativo de la carga (Más → Diagnóstico)
+    window.NODO_MARCA = function (m) { try { if (NN && NN.marcaDiag) NN.marcaDiag({ t: String(m) }).catch(function () {}); } catch (e) {} };
+    NODO_MARCA("HTML leído");
     window.NODO_BOOT_SALIR = function () {
       if (window.NODO_BOOT_SALIR.ya) return; window.NODO_BOOT_SALIR.ya = true;
       var fin = function (r) { setTimeout(function () { finar(); }, Math.min(2500, ((r && r.espera) || 0) + 80)); };

@@ -224,6 +224,7 @@ export function verFoto(url) {
 // ═════════ Arranque ═════════
 pintaIconos();
 async function boot() {
+  window.NODO_MARCA?.("app.js arrancó (módulos cargados)");
   const { data: { session } } = await supa.auth.getSession();
   if (!session) return mostrarLogin();
   A.uid = session.user.id; A.email = session.user.email || "";
@@ -242,7 +243,7 @@ const OJO_NO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 let _cola = Promise.resolve(), _arranqueHecho = false;
 export const trasArranque = () => {
   if (_arranqueHecho) return Promise.resolve();
-  const turno = _cola.then(() => window.NODO_BOOT_FIN || null).then(() => new Promise((r) => setTimeout(r, 140)));
+  const turno = _cola.then(() => window.NODO_BOOT_FIN || null).then(() => new Promise((r) => setTimeout(r, 140))).then(() => { window.NODO_MARCA?.("pinta datos de internet"); });
   _cola = turno; turno.then(() => setTimeout(() => { if (_cola === turno) _arranqueHecho = true; }, 0));
   return turno;
 };
