@@ -182,6 +182,18 @@ try { localStorage.removeItem("nodo.app.diag"); } catch (e) {}
   var estado = "quieto", inicioAnima = 0, retraso = 0, SALIDA = 1050, armado = false, encima = false;
   // Lo que llega de internet se dibuja recién al terminar (app.js: trasArranque); así no se cruza con la animación
   var finar; window.NODO_BOOT_FIN = new Promise(function (r) { finar = r; }); setTimeout(function () { finar(); }, 5000);
+  // APK 1.0.16+ (20-oct): la carga ENTERA la anima Android en una capa nativa encima de la página (como Vendia), así que
+  // aquí no se dibuja ni se anima nada: la app carga tranquila debajo y, cuando ya está dibujada, se le avisa a Android
+  // (NodoNativo.bootListo) para que su capa crezca y se desvanezca. Lo de internet se pinta cuando la capa ya se fue.
+  if (apk && /NodoInicioNativo\/\d/.test(navigator.userAgent || "")) {
+    b.hidden = true;
+    window.NODO_BOOT_SALIR = function () {
+      if (window.NODO_BOOT_SALIR.ya) return; window.NODO_BOOT_SALIR.ya = true;
+      var fin = function (r) { setTimeout(function () { finar(); }, Math.min(2500, ((r && r.espera) || 0) + 80)); };
+      if (NN && NN.bootListo) NN.bootListo().then(fin, function () { fin(null); }); else fin(null);
+    };
+    return;
+  }
   // En el APK, el primer dibujo completo tras soltar Android su pantalla es un tirón (medido: 230–480 ms). En vez de
   // una espera fija, se mira cuadro a cuadro: apenas pasa ese tirón (un cuadro de más de 120 ms) arranca el cuadro
   // azul. Si no se ve ningún tirón en 0,8 s, arranca igual.

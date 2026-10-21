@@ -19,10 +19,10 @@
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
-        <!-- Android 12+: la N de nodos que se dibuja sola (0,9 s) -->
-        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_n</item>
-        <item name="windowSplashScreenAnimationDuration">1000</item>
+        <item name="android:background">@color/nodo_fondo</item>
+        <item name="windowSplashScreenBackground">@color/nodo_fondo</item>
+        <!-- Android 12+: solo el fondo (ícono vacío). La «Red de nodos» la anima MainActivity en una capa nativa -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_vacio</item>
         <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

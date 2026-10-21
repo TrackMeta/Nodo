@@ -25,5 +25,6 @@
       "style": "DARK",
       "backgroundColor": "#131A26"
     }
-  }
+  },
+  "appendUserAgent": "NodoInicioNativo/1"
 }

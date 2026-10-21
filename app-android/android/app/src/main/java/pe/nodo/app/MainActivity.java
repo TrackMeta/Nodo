@@ -1,88 +1,126 @@
 package pe.nodo.app;
 
+import android.animation.ObjectAnimator;
+import android.animation.PropertyValuesHolder;
+import android.animation.ValueAnimator;
+import android.graphics.drawable.Animatable;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewGroup.MarginLayoutParams;
+import android.view.animation.AccelerateDecelerateInterpolator;
+import android.view.animation.AccelerateInterpolator;
 import android.webkit.WebView;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
     static final String PREFS = "nodo";
-    // Relevo sin parpadeo entre la pantalla de inicio de Android y la carga de la app. Antes Android la quitaba sola y,
-    // como la página todavía no había dibujado su primer cuadro (~0,4 s), por un instante no había nada debajo: destello.
-    // Ahora Android le ENTREGA su pantalla a la app (setOnExitAnimationListener) y la app la deja encima mientras la
-    // página dibuja la carga debajo; se quita recién cuando la página avisa que ya está en pantalla
-    // (NodoNativo.bootListo) y la animación terminó (1,45 s: N + cuadro). Como mucho 2,8 s.
-    static final long N_COMPLETA = 1450, TOPE = 2800;
-    static volatile boolean bootListo = false;
+    // ── Pantalla de inicio NATIVA (APK 1.0.16, 20-oct, como Vendia) ──────────────────────────────────────────────
+    // Antes la carga se repartía: Android dibujaba la «Red de nodos» en su pantalla de inicio y se la pasaba a la
+    // página, que seguía con su copia del logo, los textos y el fundido MIENTRAS cargaba la app → tirones. Ahora la
+    // pantalla del sistema es solo el fondo, y la animación entera vive en una capa nativa encima de la app:
+    //   1) la «Red de nodos» (drawable/splash_n, animated-vector: la dibuja el hilo de render, nunca se traba),
+    //   2) el logo late suave mientras la app termina de cargar debajo,
+    //   3) cuando la página avisa que ya se ve (NodoNativo.bootListo) crece un poco y la capa se desvanece.
+    // La página sabe que no debe animar nada por la marca «NodoInicioNativo/1» del user agent (capacitor.config.json).
+    static final long N_COMPLETA = 1450;   // la «Red de nodos» + el cuadro + la N blanca
+    static final long TOPE = 10000;        // nunca se queda pegada
     static volatile long t0 = 0;
-    static volatile long bootListoEn = 0;   // la página recibe la respuesta, pone el logo armado y lo dibuja: 0,15 s de margen
-    private android.view.View pantallaInicio = null;
-    private final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Handler h = new Handler(Looper.getMainLooper());
+    private FrameLayout inicio;
+    private ImageView inicioLogo;
+    private ObjectAnimator latido;
+    private boolean appLista = false, cerrando = false;
 
-    private void quitarInicioSiToca() {
-        if (pantallaInicio == null) return;
-        long e = android.os.SystemClock.uptimeMillis() - t0;
-        long ahora = android.os.SystemClock.uptimeMillis();
-        if ((bootListo && e >= N_COMPLETA && ahora - bootListoEn >= 150) || e >= TOPE) {
-            final android.view.View v = pantallaInicio; pantallaInicio = null;
-            // Debajo ya está el mismo logo en el mismo lugar: un fundido corto basta
-            v.animate().alpha(0f).setDuration(120).withEndAction(() -> {
-                if (android.os.Build.VERSION.SDK_INT >= 31 && v instanceof android.window.SplashScreenView) ((android.window.SplashScreenView) v).remove();
-            }).start();
-            return;
-        }
-        h.postDelayed(this::quitarInicioSiToca, 30);
+    private int dp(float v) {
+        return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics()));
     }
 
-    // Dónde está (y de qué tamaño) el logo de la pantalla de Android, medido respecto del centro de la página, en dp
-    // (= px de la página): la carga web pone el suyo en ese mismo punto. Android lo centra en la pantalla ENTERA y la
-    // página va entre la barra de arriba y la de abajo (que no miden lo mismo): sin esto el logo saltaba unos píxeles.
-    // Devuelve {dx, dy, escala} o null. Llamar en el hilo de la pantalla.
-    float[] ajusteLogo() {
-        try {
-            WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-            if (wv == null || wv.getHeight() == 0) return null;
-            float d = getResources().getDisplayMetrics().density;
-            int[] w = new int[2]; wv.getLocationOnScreen(w);
-            float webCx = w[0] + wv.getWidth() / 2f, webCy = w[1] + wv.getHeight() / 2f;
-            android.view.View icono = null;
-            if (android.os.Build.VERSION.SDK_INT >= 31 && pantallaInicio instanceof android.window.SplashScreenView)
-                icono = ((android.window.SplashScreenView) pantallaInicio).getIconView();
-            float icCx, icCy, escala = 1f;
-            if (icono != null && icono.getWidth() > 0) {
-                int[] i = new int[2]; icono.getLocationOnScreen(i);
-                icCx = i[0] + icono.getWidth() / 2f; icCy = i[1] + icono.getHeight() / 2f;
-                escala = icono.getWidth() / (288f * d);   // el dibujo se pensó para un ícono de 288 dp
-                if (escala < 0.6f || escala > 1.6f) escala = 1f;
-            } else {
-                android.view.View deco = getWindow().getDecorView(); int[] dd = new int[2]; deco.getLocationOnScreen(dd);
-                icCx = dd[0] + deco.getWidth() / 2f; icCy = dd[1] + deco.getHeight() / 2f;
-            }
-            return new float[] { (icCx - webCx) / d, (icCy - webCy) / d, escala };
-        } catch (Throwable t) { return null; }
+    private void mostrarInicio(int fondo) {
+        inicio = new FrameLayout(this);
+        inicio.setBackgroundColor(fondo);
+        inicio.setClickable(true);   // nada se toca por debajo mientras carga
+        inicioLogo = new ImageView(this);
+        Drawable n = ContextCompat.getDrawable(this, R.drawable.splash_n);
+        inicioLogo.setImageDrawable(n);
+        // 288 dp: el tamaño del ícono de la pantalla de inicio de Android para el que se dibujó (logo de ~104 dp)
+        inicio.addView(inicioLogo, new FrameLayout.LayoutParams(dp(288), dp(288), Gravity.CENTER));
+        ((ViewGroup) getWindow().getDecorView()).addView(inicio,
+            new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        if (n instanceof Animatable) ((Animatable) n).start();
+        h.postDelayed(this::latir, N_COMPLETA);
+        h.postDelayed(() -> cerrarInicio(true), TOPE);
+    }
+
+    // 2) Mientras carga: late suave (como la V de Vendia)
+    private void latir() {
+        if (cerrando || inicioLogo == null) return;
+        if (appLista) { cerrarInicio(false); return; }
+        latido = ObjectAnimator.ofPropertyValuesHolder(inicioLogo,
+            PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.06f),
+            PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.06f));
+        latido.setDuration(560);
+        latido.setRepeatCount(ValueAnimator.INFINITE);
+        latido.setRepeatMode(ValueAnimator.REVERSE);
+        latido.setInterpolator(new AccelerateDecelerateInterpolator());
+        latido.start();
+    }
+
+    // La página avisa que la app ya se ve (NodoNativo.bootListo): se cierra apenas terminó la «Red de nodos»
+    void appLista() {
+        runOnUiThread(() -> {
+            appLista = true;
+            if (SystemClock.uptimeMillis() - t0 >= N_COMPLETA) cerrarInicio(false);
+            // si la N todavía se está armando, latir() la cierra al terminar (sin latido)
+        });
+    }
+
+    // 3) Crece un poco y la capa se desvanece hacia la app
+    private void cerrarInicio(boolean forzado) {
+        if (inicio == null || cerrando) return;
+        if (!forzado && SystemClock.uptimeMillis() - t0 < N_COMPLETA) return;
+        cerrando = true;
+        h.removeCallbacksAndMessages(null);
+        if (latido != null) latido.cancel();
+        final FrameLayout capa = inicio;
+        inicioLogo.animate().scaleX(1.35f).scaleY(1.35f).setDuration(380).setInterpolator(new AccelerateInterpolator()).withLayer().start();
+        capa.animate().alpha(0f).setDuration(380).withLayer().withEndAction(() -> {
+            ViewGroup padre = (ViewGroup) capa.getParent();
+            if (padre != null) padre.removeView(capa);
+            inicio = null;
+            inicioLogo = null;
+        }).start();
     }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        t0 = android.os.SystemClock.uptimeMillis();
-        bootListo = false;
+        t0 = SystemClock.uptimeMillis();
         // Plugin propio: le dice a la app web si este APK trae Firebase (sin él, registrar avisos cerraría la app).
         registerPlugin(NodoNativoPlugin.class);
         super.onCreate(savedInstanceState);
-        if (android.os.Build.VERSION.SDK_INT >= 31) {
-            getSplashScreen().setOnExitAnimationListener(vista -> { pantallaInicio = vista; quitarInicioSiToca(); });
-        }
         WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-        // El tema que elegiste (lo guarda NodoNativo.barras): fondo de la ventana, de la página y barras de tu color
-        // desde el primer instante, antes de que cargue la app.
+        // El tema que elegiste (lo guarda NodoNativo.barras): fondo de la ventana, de la página, de la carga y barras de
+        // tu color desde el primer instante, antes de que cargue la app.
+        int fondo = ContextCompat.getColor(this, R.color.nodo_fondo);
         android.content.SharedPreferences sp = getSharedPreferences(PREFS, MODE_PRIVATE);
         if (sp.contains("fondo")) {
             try {
                 int c = sp.getInt("fondo", 0xFF131A26);
                 boolean claro = sp.getBoolean("claro", false);
+                fondo = c;
                 android.view.Window w = getWindow();
                 w.getDecorView().setBackgroundColor(c);
                 w.setStatusBarColor(c);
@@ -92,6 +130,17 @@ public class MainActivity extends BridgeActivity {
                 ic.setAppearanceLightNavigationBars(claro);
                 if (wv != null) wv.setBackgroundColor(c);
             } catch (Throwable t) { /* sin tema guardado: el oscuro de siempre */ }
+        }
+        // Al girar el celular o si Android recrea la pantalla, no se repite
+        if (savedInstanceState == null) mostrarInicio(fondo);
+        // Respaldo si la página no avisa (sin internet, página de error, una versión vieja en caché)
+        if (getBridge() != null) {
+            getBridge().addWebViewListener(new WebViewListener() {
+                @Override
+                public void onPageLoaded(WebView webView) { h.postDelayed(() -> cerrarInicio(true), 6000); }
+                @Override
+                public void onReceivedError(WebView webView) { h.postDelayed(() -> cerrarInicio(true), 1500); }
+            });
         }
         // Teclado: Capacitor deja márgenes para las barras del sistema (adjustMarginsForEdgeToEdge) pero no para el
         // teclado, y con Android 15 el teclado tapaba la hoja de abajo y la caja de escribir. Mismo cálculo + el teclado:

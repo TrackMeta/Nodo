@@ -3,14 +3,12 @@
      (Android 13+), y Android la recuerda para la próxima vez que abras la app. -->
 <resources>
     <style name="NodoInicioClaro" parent="AppTheme.NoActionBar">
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_n</item>
-        <item name="android:windowSplashScreenAnimationDuration">1000</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_vacio</item>
         <item name="android:windowSplashScreenBackground">#FFFFFF</item>
         <item name="android:windowBackground">@android:color/white</item>
     </style>
     <style name="NodoInicioOscuro" parent="AppTheme.NoActionBar">
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_n</item>
-        <item name="android:windowSplashScreenAnimationDuration">1000</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_vacio</item>
         <item name="android:windowSplashScreenBackground">@color/nodo_fondo</item>
         <item name="android:windowBackground">@color/nodo_fondo</item>
     </style>
