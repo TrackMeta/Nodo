@@ -250,22 +250,17 @@ export const trasArranque = () => {
 // Trabajo de fondo que puede esperar (precalcular Hoy, precargar Ventas): cuando la app está quieta, nunca encima
 // de un toque o un deslizamiento
 export const enReposo = (fn, minimo = 0) => setTimeout(() => (window.requestIdleCallback ? requestIdleCallback(fn, { timeout: 10000 }) : fn()), minimo);
-// Diagnóstico de la carga (APK 1.0.17, 20-oct, TEMPORAL mientras se afina la animación): Android guarda en el celular
-// lo que midió en los últimos 5 arranques; aquí se sube a notificacion_usuario.prefs.diag_inicio (fila propia del
-// usuario, ya escribible por RLS) para que Claude lo lea por SQL sin pedir capturas. Se lee la fila fresca y solo se
-// agrega esa clave. 9 s después de abrir: Android cierra el diagnóstico 2,5 s después de que se fue la capa de carga.
-function subirDiagInicio() {
-  const NN = window.Capacitor?.Plugins?.NodoNativo;
-  if (!NN?.diagInicio || !A.uid) return;
+// Diagnóstico de la carga: se usó del 20 al 21-oct para afinar la animación y ya se quitó (Rodrigo, 21-oct). Esto solo
+// borra lo que alcanzó a subirse a notificacion_usuario.prefs.diag_inicio (una vez; si no está, no hace nada).
+function limpiarDiagInicio() {
+  if (!A.uid) return;
   setTimeout(async () => {
     try {
-      const r = await NN.diagInicio();
-      const d = JSON.parse(r?.datos || "[]");
-      if (!Array.isArray(d) || !d.length) return;
       const { data } = await supa.from("notificacion_usuario").select("prefs").eq("user_id", A.uid).maybeSingle();
-      const prefs = { ...(data?.prefs || {}), diag_inicio: { subido: new Date().toISOString(), app: window.NODO_APP_VERSION || null, arranques: d.slice(0, 5) } };
+      if (!data?.prefs || !("diag_inicio" in data.prefs)) return;
+      const { diag_inicio, ...prefs } = data.prefs;
       await supa.from("notificacion_usuario").update({ prefs }).eq("user_id", A.uid);
-    } catch (_) { /* es solo diagnóstico */ }
+    } catch (_) { /* da igual */ }
   }, 9000);
 }
 // La pantalla de abajo (app o entrar) se muestra y se dibuja DETRÁS de la carga; un par de cuadros después (ya
@@ -338,7 +333,7 @@ async function empezar() {
   quitarBoot(() => { $("#app").hidden = false; });
   history.replaceState({ base: 1 }, "");
   emit("listo");
-  subirDiagInicio();
+  limpiarDiagInicio();
   pintaAlertaWA().catch(() => {});
   // Los logos van aparte: cada uno pesa ~27 KB (data URI) y no deben frenar el arranque
   supa.from("channels").select("id,logo_url").in("id", A.channels.map((c) => c.id)).then(({ data }) => { (data || []).forEach((c) => { if (c.logo_url) A.logos[c.id] = c.logo_url; }); pintaBot(); emit("logos"); }, () => {});
