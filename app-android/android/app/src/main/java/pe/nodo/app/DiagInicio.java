@@ -121,16 +121,8 @@ final class DiagInicio {
             if (Build.VERSION.SDK_INT >= 24 && escucha != null) a.getWindow().removeOnFrameMetricsAvailableListener(escucha);
             if (hilo != null) hilo.quitSafely();
         } catch (Throwable t) { /* nada */ }
-        try {
-            android.content.SharedPreferences sp = a.getSharedPreferences(MainActivity.PREFS, Context.MODE_PRIVATE);
-            JSONArray viejos = new JSONArray(sp.getString(KEY, "[]")), nuevos = new JSONArray();
-            nuevos.put(r);
-            for (int i = 0; i < viejos.length() && nuevos.length() < 5; i++) nuevos.put(viejos.get(i));
-            sp.edit().putString(KEY, nuevos.toString()).apply();
-        } catch (Throwable t) { /* nada */ }
+        // (1.0.22) ya no se guarda nada: el diagnóstico se quitó; se borra lo que quedó de antes
+        try { a.getSharedPreferences(MainActivity.PREFS, Context.MODE_PRIVATE).edit().remove(KEY).apply(); } catch (Throwable t) { /* nada */ }
     }
 
-    static String leer(Context c) {
-        return c.getSharedPreferences(MainActivity.PREFS, Context.MODE_PRIVATE).getString(KEY, "[]");
-    }
 }

@@ -196,10 +196,13 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         t0 = SystemClock.uptimeMillis();
-        if (savedInstanceState == null) DiagInicio.empezar(this, t0);
         // Plugin propio: le dice a la app web si este APK trae Firebase (sin él, registrar avisos cerraría la app).
         registerPlugin(NodoNativoPlugin.class);
         super.onCreate(savedInstanceState);
+        // 1.0.22: el medidor de cuadros se engancha DESPUÉS de super.onCreate. Antes (1.0.17–1.0.21) iba primero y
+        // addOnFrameMetricsAvailableListener creaba la ventana con el tema de la pantalla de inicio, antes de que
+        // Capacitor pusiera el de la app (NoActionBar): aparecía la barra de título de Android («Nodo» en una franja oscura).
+        if (savedInstanceState == null) DiagInicio.empezar(this, t0);
         DiagInicio.marca("Capacitor y WebView creados");
         WebView wv = getBridge() != null ? getBridge().getWebView() : null;
         // El tema que elegiste (lo guarda NodoNativo.barras): fondo de la ventana, de la página, de la carga y barras de
