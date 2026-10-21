@@ -135,6 +135,14 @@ public class MainActivity extends BridgeActivity {
             final int[] cuadros = { 0 }, normalesTrasHueco = { 0 };
             final boolean[] hueco = { false }, hecho = { false };
             final Runnable listo = () -> { if (hecho[0]) return; hecho[0] = true; salir(false); };
+            // 1.0.21 (medido con la 1.0.20): con el logo quieto el primer dibujo de la página es LIVIANO (~60 ms, a los
+            // 0,7–0,95 s de mostrarla) y no deja hueco en el hilo principal, así que se esperaba siempre el tope. Ahora
+            // ese primer cuadro de más de 40 ms (FrameMetrics, vía DiagInicio) cuenta como «ya se dibujó».
+            DiagInicio.alCuadroLento = () -> {
+                if (hecho[0] || hueco[0]) return;
+                hueco[0] = true; normalesTrasHueco[0] = 0;
+                DiagInicio.marca("primer dibujo de la página (cuadro lento, logo quieto)");
+            };
             android.view.Choreographer.getInstance().postFrameCallback(new android.view.Choreographer.FrameCallback() {
                 @Override public void doFrame(long ns) {
                     if (hecho[0] || cerrando) return;
@@ -152,8 +160,8 @@ public class MainActivity extends BridgeActivity {
             });
             // 1.0.20 (medido con la 1.0.19): el dibujo pesado NO llega en los primeros cuadros tras mostrar la página sino
             // 0,3–1 s después (la página primero rasteriza y recién entonces entrega su cuadro): esperar «10 cuadros sin
-            // hueco» (a 120 Hz, 0,08 s) salía antes de tiempo. Ahora se espera el hueco; si no aparece en 1,5 s, se sale.
-            h.postDelayed(() -> { if (!hueco[0]) { DiagInicio.marca("sin dibujo pesado en 1,5 s: sale igual"); listo.run(); } }, 1500);
+            // hueco» (a 120 Hz, 0,08 s) salía antes de tiempo. Ahora se espera el hueco; si no aparece en 1,2 s (1.0.21), se sale.
+            h.postDelayed(() -> { if (!hueco[0]) { DiagInicio.marca("sin primer dibujo en 1,2 s: sale igual"); listo.run(); } }, 1200);
             h.postDelayed(listo, 2800);   // respaldo final
         };
         if (latido != null && latido.isRunning()) {
@@ -166,6 +174,7 @@ public class MainActivity extends BridgeActivity {
     private void salir(boolean forzado) {
         if (inicio == null || cerrando) return;
         cerrando = true;
+        DiagInicio.alCuadroLento = null;
         DiagInicio.fase(forzado ? "salida (por tiempo)" : "salida (crece y se desvanece)");
         h.removeCallbacksAndMessages(null);
         if (latido != null) latido.cancel();
@@ -219,6 +228,9 @@ public class MainActivity extends BridgeActivity {
         if (wv != null && android.os.Build.VERSION.SDK_INT >= 26) {
             try { wv.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false); } catch (Throwable t) { }
         }
+        // 1.0.21: que la página vaya preparando su imagen aunque no se vea (más memoria, pero su primer dibujo al
+        // mostrarla llega antes)
+        if (wv != null) { try { wv.getSettings().setOffscreenPreRaster(true); } catch (Throwable t) { } }
         if (savedInstanceState == null) mostrarInicio(fondo);
         // Respaldo si la página no avisa (sin internet, página de error, una versión vieja en caché)
         if (getBridge() != null) {

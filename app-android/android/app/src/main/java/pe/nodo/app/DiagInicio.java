@@ -30,6 +30,10 @@ final class DiagInicio {
     private static int cuadros = 0, lentos = 0;
     private static HandlerThread hilo;
     private static Window.OnFrameMetricsAvailableListener escucha;
+    // 1.0.21: MainActivity escucha el PRIMER cuadro de más de 40 ms tras mostrar la página (su primer dibujo, ~60 ms
+    // medido) para soltar el logo apenas pasa. Se llama en el hilo principal.
+    static volatile Runnable alCuadroLento = null;
+    private static final Handler principal = new Handler(android.os.Looper.getMainLooper());
 
     static long ms() { return SystemClock.uptimeMillis() - t0; }
 
@@ -80,6 +84,8 @@ final class DiagInicio {
     private static void cuadro(FrameMetrics m) {
         if (Build.VERSION.SDK_INT < 24 || !activo) return;
         long total = m.getMetric(FrameMetrics.TOTAL_DURATION) / 1_000_000L;
+        final Runnable aviso = alCuadroLento;
+        if (aviso != null && total > 40) { alCuadroLento = null; principal.post(aviso); }
         if (total <= 32) return;
         synchronized (LOCK) { lentos++; }
         long anim = m.getMetric(FrameMetrics.ANIMATION_DURATION) / 1_000_000L;
