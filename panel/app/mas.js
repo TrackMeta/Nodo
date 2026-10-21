@@ -1,7 +1,7 @@
 // «Más»: notificaciones, tus bots (encender/apagar, como Canales), qué avisos me llegan (se guardan en
 // notificacion_usuario.prefs: los sonidos se COMPARTEN con la campanita web; lo propio del celular en prefs.app),
 // tema, panel completo y cerrar sesión.
-import { A, $, esc, ic, on, emit, supa, invoke, abrirCapa, hoja, confirmar, toast, pintaBot, logoDe, temaPref, ponerTema } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, invoke, abrirCapa, confirmar, toast, pintaBot, logoDe, temaPref, ponerTema, cambiarBot, iniciales } from "./app.js";
 import { updateChannel } from "../shell.js";
 import { N } from "./notif.js";
 import { TONOS_URGENTE, TONOS_VENTA, escuchar } from "./sonidos.js";
@@ -39,26 +39,42 @@ async function cargarNumero(ch) {
 }
 function numeroHtml() {
   const n = NUM.get(A.ch);
-  if (!n) return `<div class="li"><span class="ico">${ic("phone")}</span><span class="rmid"><b>Número del bot</b><span>Consultando a Meta…</span></span></div>`;
-  if (n.error) return `<div class="li"><span class="ico">${ic("phone")}</span><span class="rmid"><b>Número del bot</b><span>${esc(n.error)}</span></span></div>`;
+  if (!n) return `<div class="li"><span class="ico">${ic("phone")}</span><span class="rmid"><b>Número de WhatsApp</b><span>Consultando a Meta…</span></span></div>`;
+  if (n.error) return `<div class="li"><span class="ico">${ic("phone")}</span><span class="rmid"><b>Número de WhatsApp</b><span>${esc(n.error)}</span></span></div>`;
   const q = CALIDAD[n.calidad];
-  return `<button type="button" class="li" data-go="copiarNum"><span class="ico">${ic("phone")}</span><span class="rmid"><b>${esc(n.telefono)}</b><span>${esc(n.nombre || "Número del bot")}${q ? ` · calidad <b class="${q[1]}">${q[0]}</b>` : ""} · toca para copiar</span></span>${ic("copy")}</button>`;
+  return `<button type="button" class="li" data-go="copiarNum"><span class="ico">${ic("phone")}</span><span class="rmid"><b>${esc(n.telefono)}</b><span>${esc(n.nombre || "Número de WhatsApp")}${q ? ` · calidad <b class="${q[1]}">${q[0]}</b>` : ""}</span></span><span class="mcopy">${ic("copy")}Copiar</span></button>`;
 }
+// «Más», reordenado (21-oct, «me parece un poco confuso»): quién eres → el bot que estás viendo (encendido + su
+// número) → tus otros bots (tocar = verlo) → avisos → apariencia (tema en el momento) → cerrar sesión.
+// Se quitó «Abrir el panel completo».
+const TEMAS = [["auto", "Automático"], ["light", "Claro"], ["dark", "Oscuro"]];
 function pintar() {
   cargarNumero(A.ch);
   const vivas = [...N.rows.values()].filter((n) => n.por_atender && !n.resuelta_at).length;
-  const tema = temaPref(), TEMA_LBL = { auto: "Automático (como el celular)", light: "Claro", dark: "Oscuro" };
+  const tema = temaPref(), ch = A.channels.find((c) => c.id === A.ch) || {}, otros = A.channels.filter((c) => c.id !== A.ch);
+  const estado = (c) => c.bot_apagado ? "Apagado · no contesta a nadie" : "Encendido · contesta solo";
   $("#masPad").innerHTML = `<h2 class="h">Más</h2>
-    <div class="card"><button type="button" class="li" data-go="notif"><span class="ico">${ic("bell")}</span><span class="rmid"><b>Notificaciones</b><span>${vivas ? `${vivas} pendiente${vivas === 1 ? "" : "s"}` : "Todo al día"}</span></span>${ic("chevronRight")}</button>
+    <div class="mperfil"><span class="mav">${esc(iniciales(A.nombre, A.email))}</span><span class="rmid"><b>${esc(A.nombre || "Tu cuenta")}</b><span>${esc(A.email)}</span></span></div>
+
+    <div class="card"><div class="ttl">Bot que estás viendo</div>
+      <div class="li mbot"><span class="ico"><img src="${esc(logoDe(ch.id))}" alt=""></span><span class="rmid"><b>${esc(ch.nombre || "Bot")}</b><span class="${ch.bot_apagado ? "mutc" : "up"}">${estado(ch)}</span></span><button type="button" class="sw${ch.bot_apagado ? "" : " on"}" data-sw="${esc(ch.id)}" aria-label="Encender o apagar ${esc(ch.nombre || "el bot")}"></button></div>
+      ${numeroHtml()}
+      ${A.tieneApps && A.tipo !== "apps" ? `<button type="button" class="li" data-go="accesos"><span class="ico">${ic("key")}</span><span class="rmid"><b>Accesos de micro apps</b><span>Este bot también vende apps</span></span>${ic("chevronRight")}</button>` : ""}
+    </div>
+
+    ${otros.length ? `<div class="card"><div class="ttl">Tus otros bots</div>${otros.map((c) => `<div class="li"><button type="button" class="mver" data-ver="${esc(c.id)}"><span class="ico"><img src="${esc(logoDe(c.id))}" alt=""></span><span class="rmid"><b>${esc(c.nombre)}</b><span>${estado(c)} · toca para verlo</span></span></button><button type="button" class="sw${c.bot_apagado ? "" : " on"}" data-sw="${esc(c.id)}" aria-label="Encender o apagar ${esc(c.nombre)}"></button></div>`).join("")}</div>` : ""}
+
+    <div class="card"><div class="ttl">Avisos</div>
+      <button type="button" class="li" data-go="notif"><span class="ico">${ic("bell")}</span><span class="rmid"><b>Notificaciones</b><span>${vivas ? `${vivas} por atender` : "Todo al día"}</span></span>${vivas ? `<span class="mnum">${vivas > 99 ? "99+" : vivas}</span>` : ic("chevronRight")}</button>
       <button type="button" class="li" data-go="avisos"><span class="ico">${ic("config")}</span><span class="rmid"><b>Qué avisos me llegan</b><span>Sonidos, por tipo, por bot y No molestar</span></span>${ic("chevronRight")}</button>
-      ${A.tieneApps && A.tipo !== "apps" ? `<button type="button" class="li" data-go="accesos"><span class="ico">${ic("key")}</span><span class="rmid"><b>Accesos de micro apps</b><span>Este bot también vende apps</span></span>${ic("chevronRight")}</button>` : ""}</div>
-    <div class="card"><div class="ttl">WhatsApp de ${esc(A.channels.find((c) => c.id === A.ch)?.nombre || "este bot")}</div>${numeroHtml()}</div>
-    <div class="card"><div class="ttl">Tus bots</div>${A.channels.map((c) => `<div class="li"><span class="ico"><img src="${esc(logoDe(c.id))}" alt=""></span><span class="rmid"><b>${esc(c.nombre)}</b><span>${c.bot_apagado ? "Apagado · el bot no contesta" : "Encendido"}${c.id === A.ch ? " · el que estás viendo" : ""}</span></span><button type="button" class="sw${c.bot_apagado ? "" : " on"}" data-sw="${c.id}" aria-label="Encender o apagar ${esc(c.nombre)}"></button></div>`).join("")}</div>
-    <div class="card"><div class="ttl">Pantalla</div>
-      <button type="button" class="li" data-go="tema"><span class="ico">${ic(tema === "light" ? "sun" : "moon")}</span><span class="rmid"><b>Tema</b><span>${TEMA_LBL[tema] || TEMA_LBL.auto}</span></span>${ic("chevronRight")}</button></div>
-    <div class="card"><div class="ttl">Cuenta</div>
-      <a class="li" href="../index.html" style="color:inherit;text-decoration:none"><span class="ico">${ic("panel")}</span><span class="rmid"><b>Abrir el panel completo</b><span>Productos, flujos, campañas y ajustes</span></span>${ic("chevronRight")}</a>
-      <button type="button" class="li" data-go="salir"><span class="ico">${ic("logout")}</span><span class="rmid"><b>Cerrar sesión</b><span>${esc(A.email)}</span></span></button></div>
+    </div>
+
+    <div class="card"><div class="ttl">Apariencia</div>
+      <div class="mtema"><div class="seg" role="group" aria-label="Tema">${TEMAS.map(([k, l]) => `<button type="button" class="${tema === k ? "on" : ""}" data-tema="${k}">${l}</button>`).join("")}</div>
+      <p class="nsub">Automático sigue el modo claro u oscuro de tu celular.</p></div>
+    </div>
+
+    <button type="button" class="msalir" data-go="salir">${ic("logout")}Cerrar sesión</button>
     <p class="note">Nodo · app ${esc(window.NODO_APP_VERSION || "1.0")}</p>`;
 }
 async function clic(e) {
@@ -73,13 +89,16 @@ async function clic(e) {
     toast(prender ? `${c.nombre}: bot encendido` : `${c.nombre}: bot apagado`);
     return;
   }
+  const tm = e.target.closest("[data-tema]");
+  if (tm) { ponerTema(tm.dataset.tema); pintar(); return; }
+  const vb = e.target.closest("[data-ver]");
+  if (vb) { await cambiarBot(vb.dataset.ver); toast("Ahora estás viendo " + (A.channels.find((c) => c.id === vb.dataset.ver)?.nombre || "ese bot")); pintar(); return; }
   const g = e.target.closest("[data-go]"); if (!g) return;
   const k = g.dataset.go;
   if (k === "notif") emit("abrirNotif");
   else if (k === "avisos") { pintaAvisos(); abrirCapa("avisos"); }
   else if (k === "copiarNum") { const t = NUM.get(A.ch)?.telefono || ""; try { await navigator.clipboard.writeText(t.replace(/[^\d+]/g, "")); toast("Número copiado"); } catch (_) { toast(t); } }
   else if (k === "accesos") toast("Para ver los accesos, elige un bot de micro apps o ábrelos desde el panel web de Nodo.");
-  else if (k === "tema") hoja("Tema", [{ t: "Automático (como el celular)", v: "auto", on: temaPref() === "auto" }, { t: "Claro", v: "light", on: temaPref() === "light" }, { t: "Oscuro", v: "dark", on: temaPref() === "dark" }], (o) => { ponerTema(o.v); pintar(); });
   else if (k === "salir") { if (await confirmar("Cerrar sesión", "Tendrás que volver a entrar con tu correo y contraseña. Este celular dejará de recibir avisos.", { si: "Cerrar sesión", peligro: true })) { emit("salir"); setTimeout(() => supa.auth.signOut(), 400); } }
 }
 

@@ -223,15 +223,14 @@ function pintar(r, n, apps) {
   }).join("") : `<p class="nsub" style="padding:6px 14px 12px">Sin gasto de anuncios en este período.</p>`}</div>`;
   // Igual que el Dashboard: la Ganancia neta va destacada (tarjeta de tinta) y Ventas, Ingresos y ROAS en blanco
   const pctCob = n.vendido > 0 ? Math.round((n.cobrado / n.vendido) * 100) : null;
-  $("#hoyPad").innerHTML = cabecera(r) + `<div id="hoyEspera"></div>
-    <button type="button" class="hero gan" id="verGanancia"><small>Ganancia neta ${ic("help")}</small><div class="big num">${m(n.neta)}</div>
-      <div class="hgrid"><span><small>Ingresos</small><b class="num">${m(n.vendido)}</b></span><span><small>Anuncios</small><b class="num">${n.gasto > 0 ? m(n.gasto) : "—"}</b></span></div>
-      <div class="row2"><span>tras publicidad, IA y gastos · toca para ver de dónde sale</span></div></button>
+  $("#hoyPad").innerHTML = `<div class="hero gan" id="verGanancia" role="button" tabindex="0"><div class="hhead"><small>Ganancia neta ${ic("help")}</small>${botonFechas(r)}</div><div class="big num">${m(n.neta)}</div>
+      <div class="row2"><span>${m(n.vendido)} en ventas − ${n.gasto > 0 ? m(n.gasto) : "S/ 0"} en anuncios · toca para ver el detalle</span></div></div>
+    <div id="hoyEspera"></div>
     <div class="kpis">
-      <div class="kpi"><span class="kic k-azul">${ic("bolsa")}</span><small>Ventas</small><b class="num">${n.ventas}</b><span class="mutc">${n.ventas ? "ticket " + m(n.vendido / n.ventas) : "sin ventas en estas fechas"}</span></div>
-      <div class="kpi"><span class="kic k-verde">${ic("banknote")}</span><small>Ingresos</small><b class="num">${m(n.vendido)}</b><span class="${pctCob === 100 ? "up" : "mutc"}">${pctCob == null ? "sin ventas" : "cobrado " + pctCob + "%"}</span></div>
-      <div class="kpi"><span class="kic k-violeta">${ic("tendencia")}</span><small>ROAS</small><b class="num">${n.gasto > 0 && n.roas > 0 ? n.roas.toFixed(2) + "×" : "—"}</b><span class="mutc">${n.gasto > 0 ? m(n.gasto) + " en Meta" : "sin gasto en Meta"}</span></div>
-      <div class="kpi"><span class="kic k-celeste">${ic("message")}</span><small>Costo por chat</small><b class="num">${n.chatsAd && n.gasto > 0 ? m(n.cpc) : "—"}</b><span class="mutc">${n.chatsAd} chat${n.chatsAd === 1 ? "" : "s"} de anuncio</span></div>
+      <div class="kpi"><small>Ventas</small><b class="num kv-azul">${n.ventas}</b><span class="mutc">${n.ventas ? "ticket " + m(n.vendido / n.ventas) : "sin ventas en estas fechas"}</span></div>
+      <div class="kpi"><small>Ingresos</small><b class="num up">${m(n.vendido)}</b><span class="${pctCob === 100 ? "up" : "mutc"}">${pctCob == null ? "sin ventas" : "cobrado " + pctCob + "%"}</span></div>
+      <div class="kpi"><small>ROAS</small><b class="num">${n.gasto > 0 && n.roas > 0 ? n.roas.toFixed(2) + "×" : "—"}</b><span class="mutc">${n.gasto > 0 ? m(n.gasto) + " en Meta" : "sin gasto en Meta"}</span></div>
+      <div class="kpi"><small>Costo por chat</small><b class="num">${n.chatsAd && n.gasto > 0 ? m(n.cpc) : "—"}</b><span class="mutc">${n.chatsAd} chat${n.chatsAd === 1 ? "" : "s"} de anuncio</span></div>
     </div>
     ${tablero(n, m)}
     <div class="card"><div class="ttl">Ingresos ${unDia(r) ? "por hora" : "por día"}</div><div style="padding:0 14px 12px">${grafico(n, r)}</div></div>
@@ -288,5 +287,6 @@ function clic(e) {
   if (d === "humano") { ir("chats"); emit("verHumano"); } else ir(d);
 }
 function cabecera(r) {
-  return `<h2 class="h">Resumen</h2>${botonFechas(r)}`;
+  // (diseño A, 21-oct) sin el título «Resumen»: arriba va la tarjeta de la ganancia con el selector de fechas adentro
+  return botonFechas(r);
 }
