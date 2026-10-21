@@ -547,8 +547,8 @@ textarea.inpt{min-height:80px;resize:vertical}
    para lo que es marca y acción (pestaña activa, botones principales, ganancia de Hoy, no leídos), violeta para lo que
    hace la IA, y los colores con significado de siempre (verde plata, ámbar espera, rojo urgente).
    ═══════════════════════════════════════════════════════════════════ */
-:root{ --grad:linear-gradient(135deg,#0046FF 0%,#5A4BFF 55%,#8B5CF6 100%); --grad-txt:#3A4BFF; --ia-a:#6941C6; --ia-b:#8B5CF6 }
-html:not([data-theme="light"]){ --grad-txt:#9AA8FF; --ia-a:#A78BFA; --ia-b:#8B5CF6 }
+:root{ --grad:linear-gradient(135deg,#0046FF 0%,#5A4BFF 55%,#8B5CF6 100%); --grad-txt:#3A4BFF }
+html:not([data-theme="light"]){ --grad-txt:#9AA8FF }
 html[data-theme="light"] body.app{background:#F5F6FB!important}
 html[data-theme="light"] .view{background:#F5F6FB}
 
@@ -586,6 +586,4 @@ html:not([data-theme="light"]) .k-verde{background:rgba(18,183,106,.16);color:#5
 html:not([data-theme="light"]) .k-violeta{background:rgba(139,92,246,.2);color:#C4B5FD}
 html:not([data-theme="light"]) .k-celeste{background:rgba(1,175,254,.16);color:#7DD3FC}
 
-/* lo que hace la IA: violeta (el botón de sugerencias y el «bot» de cada chat, con el degradado de marca) */
-.who.bot{background:var(--grad)}
-.field .iconbtn.ctool-ia{background:var(--grad)}
+/* Lo de la IA se queda con su degradado violeta → rosado (--ia-a/--ia-b de arriba): Rodrigo, 21-oct */
