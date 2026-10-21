@@ -195,7 +195,7 @@ function grafico(n, r) {
   const s = n.serie || [], max = Math.max(1, ...s.map((x) => x[1])), W = 300, H = 70, bw = W / Math.max(1, s.length);
   const total = s.reduce((a, x) => a + x[1], 0);
   if (!total) return `<div class="graf vacio">Sin ventas en este período</div>`;
-  const barras = s.map(([k, v], i) => { const h = v ? Math.max(3, (v / max) * (H - 6)) : 1.5; return `<rect x="${(i * bw + bw * 0.15).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${v === max ? "var(--brand)" : "var(--brand-border)"}"><title>${k}: ${sol(v, n.CUR)}</title></rect>`; }).join("");
+  const barras = s.map(([k, v], i) => { const h = v ? Math.max(3, (v / max) * (H - 6)) : 1.5; return `<rect x="${(i * bw + bw * 0.15).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${(bw * 0.7).toFixed(1)}" height="${h.toFixed(1)}" rx="1.5" fill="${v === max ? "var(--grad-txt, var(--brand))" : "var(--brand-border)"}"><title>${k}: ${sol(v, n.CUR)}</title></rect>`; }).join("");
   const ini = unDia(r) ? "0 h" : fDia(r.from), fin = unDia(r) ? "23 h" : fDia(r.to);
   const top = s.reduce((a, x) => (x[1] > a[1] ? x : a), s[0]);
   const pico = unDia(r) ? `Tu mejor hora: ${top[0]}:00 – ${top[0] + 1}:00` : `Tu mejor día: ${fDia(new Date(top[0] + "T12:00"))}`;
@@ -225,12 +225,13 @@ function pintar(r, n, apps) {
   const pctCob = n.vendido > 0 ? Math.round((n.cobrado / n.vendido) * 100) : null;
   $("#hoyPad").innerHTML = cabecera(r) + `<div id="hoyEspera"></div>
     <button type="button" class="hero gan" id="verGanancia"><small>Ganancia neta ${ic("help")}</small><div class="big num">${m(n.neta)}</div>
+      <div class="hgrid"><span><small>Ingresos</small><b class="num">${m(n.vendido)}</b></span><span><small>Anuncios</small><b class="num">${n.gasto > 0 ? m(n.gasto) : "—"}</b></span></div>
       <div class="row2"><span>tras publicidad, IA y gastos · toca para ver de dónde sale</span></div></button>
     <div class="kpis">
-      <div class="kpi"><small>Ventas</small><b class="num">${n.ventas}</b><span class="mutc">${n.ventas ? "ticket " + m(n.vendido / n.ventas) : "sin ventas en estas fechas"}</span></div>
-      <div class="kpi"><small>Ingresos</small><b class="num">${m(n.vendido)}</b><span class="${pctCob === 100 ? "up" : "mutc"}">${pctCob == null ? "sin ventas" : "cobrado " + pctCob + "%"}</span></div>
-      <div class="kpi"><small>ROAS</small><b class="num">${n.gasto > 0 && n.roas > 0 ? n.roas.toFixed(2) + "×" : "—"}</b><span class="mutc">${n.gasto > 0 ? m(n.gasto) + " en Meta" : "sin gasto en Meta"}</span></div>
-      <div class="kpi"><small>Costo por chat</small><b class="num">${n.chatsAd && n.gasto > 0 ? m(n.cpc) : "—"}</b><span class="mutc">${n.chatsAd} chat${n.chatsAd === 1 ? "" : "s"} de anuncio</span></div>
+      <div class="kpi"><span class="kic k-azul">${ic("bolsa")}</span><small>Ventas</small><b class="num">${n.ventas}</b><span class="mutc">${n.ventas ? "ticket " + m(n.vendido / n.ventas) : "sin ventas en estas fechas"}</span></div>
+      <div class="kpi"><span class="kic k-verde">${ic("banknote")}</span><small>Ingresos</small><b class="num">${m(n.vendido)}</b><span class="${pctCob === 100 ? "up" : "mutc"}">${pctCob == null ? "sin ventas" : "cobrado " + pctCob + "%"}</span></div>
+      <div class="kpi"><span class="kic k-violeta">${ic("tendencia")}</span><small>ROAS</small><b class="num">${n.gasto > 0 && n.roas > 0 ? n.roas.toFixed(2) + "×" : "—"}</b><span class="mutc">${n.gasto > 0 ? m(n.gasto) + " en Meta" : "sin gasto en Meta"}</span></div>
+      <div class="kpi"><span class="kic k-celeste">${ic("message")}</span><small>Costo por chat</small><b class="num">${n.chatsAd && n.gasto > 0 ? m(n.cpc) : "—"}</b><span class="mutc">${n.chatsAd} chat${n.chatsAd === 1 ? "" : "s"} de anuncio</span></div>
     </div>
     ${tablero(n, m)}
     <div class="card"><div class="ttl">Ingresos ${unDia(r) ? "por hora" : "por día"}</div><div style="padding:0 14px 12px">${grafico(n, r)}</div></div>

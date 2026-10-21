@@ -541,3 +541,51 @@ textarea.inpt{min-height:80px;resize:vertical}
 .sheet.hoja-fechas.on .opt,.sheet.hoja-fechas.on .grid2,.sheet.hoja-fechas.on .btn{animation:optEntra .34s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i,0) * 32ms + 90ms)}
 .sheet.hoja-fechas.on h3,.sheet.hoja-fechas.on .lead{animation:optEntra .3s ease both;animation-delay:50ms}
 @keyframes optEntra{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Diseño B «Red de nodos» (21-oct, elegido por Rodrigo en la muestra): el degradado azul → violeta del logo animado
+   para lo que es marca y acción (pestaña activa, botones principales, ganancia de Hoy, no leídos), violeta para lo que
+   hace la IA, y los colores con significado de siempre (verde plata, ámbar espera, rojo urgente).
+   ═══════════════════════════════════════════════════════════════════ */
+:root{ --grad:linear-gradient(135deg,#0046FF 0%,#5A4BFF 55%,#8B5CF6 100%); --grad-txt:#3A4BFF; --ia-a:#6941C6; --ia-b:#8B5CF6 }
+html:not([data-theme="light"]){ --grad-txt:#9AA8FF; --ia-a:#A78BFA; --ia-b:#8B5CF6 }
+html[data-theme="light"] body.app{background:#F5F6FB!important}
+html[data-theme="light"] .view{background:#F5F6FB}
+
+/* barra de abajo: la pestaña activa lleva el degradado */
+.tab.on{color:var(--grad-txt)}
+.tab.on .pill{background:var(--grad);color:#fff;box-shadow:0 4px 12px rgba(58,75,255,.28)}
+.badge.dot{background:#8B5CF6}
+
+/* botones y acentos de acción */
+.btn.blue,.send,.chip.on,.fbtn b,.unread,.aud .play{background:var(--grad);border-color:transparent}
+.chip.on{color:#fff}
+.fbtn.nuevo{background:var(--grad);color:#fff;border-color:transparent}
+.rend.new time{color:var(--grad-txt)}
+.dsel .i{color:var(--grad-txt)}
+.dsel.abierto{border-color:#5A4BFF}
+.seg button.on b{background:var(--grad);color:#fff}
+
+/* Hoy: la ganancia en la tarjeta de degradado, con sus dos números adentro */
+.hero.gan{background:var(--grad);border:0;color:#fff;box-shadow:0 10px 26px rgba(58,75,255,.25)}
+.hero.gan small,.hero.gan .row2{color:rgba(255,255,255,.88)}
+.hgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0 4px}
+.hgrid > span{background:rgba(255,255,255,.15);border-radius:12px;padding:9px 11px;display:flex;flex-direction:column;gap:1px}
+.hgrid small{font-size:11.5px;color:rgba(255,255,255,.9)!important;font-weight:600}
+.hgrid b{font-size:17px;font-weight:700;color:#fff}
+/* indicadores con su ícono de color */
+.kpi{gap:4px}
+.kic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;margin-bottom:4px}
+.kic .i{width:16px;height:16px}
+.k-azul{background:#E7EEFF;color:#0046FF}
+.k-verde{background:#E8F7EE;color:#067647}
+.k-violeta{background:#EFE9FE;color:#6941C6}
+.k-celeste{background:#E5F8FF;color:#0583B8}
+html:not([data-theme="light"]) .k-azul{background:rgba(0,70,255,.18);color:#8EA8FF}
+html:not([data-theme="light"]) .k-verde{background:rgba(18,183,106,.16);color:#5FD39A}
+html:not([data-theme="light"]) .k-violeta{background:rgba(139,92,246,.2);color:#C4B5FD}
+html:not([data-theme="light"]) .k-celeste{background:rgba(1,175,254,.16);color:#7DD3FC}
+
+/* lo que hace la IA: violeta (el botón de sugerencias y el «bot» de cada chat, con el degradado de marca) */
+.who.bot{background:var(--grad)}
+.field .iconbtn.ctool-ia{background:var(--grad)}
