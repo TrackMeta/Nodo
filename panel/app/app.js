@@ -37,7 +37,7 @@ export function pintaIconos(root = document) { $$("[data-ic]", root).forEach((e)
 export const A = {
   uid: null, email: "", nombre: "",
   channels: [], ch: null, tipo: "digital", tieneApps: false, logos: {},
-  tab: "chats",
+  tab: "hoy",   // 21-oct: la app abre en Hoy (primera pestaña del diseño B)
 };
 const BUS = new Map();
 export const on = (ev, fn) => { if (!BUS.has(ev)) BUS.set(ev, new Set()); BUS.get(ev).add(fn); };

@@ -72,7 +72,7 @@ try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" 
   <div class="waal" id="waal" role="alert" hidden></div>
 
   <div class="views">
-    <section class="view" id="v-chats"><div class="pad" id="chatsPad">
+    <section class="view" id="v-chats" hidden><div class="pad" id="chatsPad">
       <div class="ctop"><div class="seg" id="modeseg"></div><button type="button" class="fbtn" id="fbtn"><span data-ic="filter"></span>Filtros<b id="fbadge" hidden></b></button><button type="button" class="fbtn nuevo" id="nuevobtn" aria-label="Nuevo contacto" title="Nuevo contacto"><span data-ic="plus"></span></button></div>
       <label class="search"><span data-ic="search"></span><input id="q" type="search" placeholder="Nombre, teléfono o nº de operación…" autocomplete="off" aria-label="Buscar chats"></label>
       <div class="chips" id="fchips" hidden></div>
@@ -81,7 +81,7 @@ try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" 
     </div></section>
     <section class="view" id="v-pagos" hidden><div class="pad" id="pagosPad"></div></section>
     <section class="view" id="v-t4" hidden><div class="pad" id="t4Pad"></div></section>
-    <section class="view" id="v-hoy" hidden><div class="pad" id="hoyPad"></div></section>
+    <section class="view" id="v-hoy"><div class="pad" id="hoyPad"></div></section>
     <section class="view" id="v-mas" hidden><div class="pad" id="masPad"></div></section>
 
     <!-- Chat abierto -->
@@ -136,8 +136,8 @@ try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" 
   </div>
 
   <nav class="tabs" id="tabs">
-    <button class="tab" type="button" data-tab="hoy"><span class="pill" data-ic="dashboard"></span>Hoy</button>
-    <button class="tab on" type="button" data-tab="chats"><span class="pill" data-ic="message"></span>Chats<span class="badge urg" id="tb-chats" hidden></span></button>
+    <button class="tab on" type="button" data-tab="hoy"><span class="pill" data-ic="dashboard"></span>Hoy</button>
+    <button class="tab" type="button" data-tab="chats"><span class="pill" data-ic="message"></span>Chats<span class="badge urg" id="tb-chats" hidden></span></button>
     <button class="tab" type="button" data-tab="pagos"><span class="pill" data-ic="banknote"></span>Pagos<span class="badge" id="tb-pagos" hidden></span></button>
     <button class="tab" type="button" data-tab="t4"><span class="pill" id="t4ico"></span><span id="t4lbl">Ventas</span><span class="badge" id="tb-t4" hidden></span></button>
     <button class="tab" type="button" data-tab="mas"><span class="pill" data-ic="menu"></span>Más</button>
