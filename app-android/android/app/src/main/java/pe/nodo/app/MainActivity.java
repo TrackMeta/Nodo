@@ -122,21 +122,35 @@ public class MainActivity extends BridgeActivity {
             DiagInicio.fase("página visible debajo (logo quieto)");
             if (web == null) { salir(false); return; }
             web.setVisibility(View.VISIBLE);
-            final boolean[] hecho = { false };
-            final Runnable trasDibujo = () -> {
-                if (hecho[0]) return;
-                hecho[0] = true;
-                DiagInicio.marca("WebView: la app ya está en pantalla");
-                // dos cuadros más: que el dibujo pesado ya haya pasado antes de mover nada
-                android.view.Choreographer.getInstance().postFrameCallback(f1 ->
-                    android.view.Choreographer.getInstance().postFrameCallback(f2 -> salir(false)));
-            };
+            // 1.0.19 (medido con la 1.0.18): postVisualStateCallback avisa ANTES del dibujo pesado (llegaba a los 50–70 ms
+            // y el congelón de 0,4–1 s caía en plena salida). Ahora se miran los cuadros: el primer dibujo de la página
+            // bloquea el hilo principal (un hueco largo entre cuadros); se sale cuando ya pasó + 2 cuadros normales. Si
+            // en 10 cuadros no hubo hueco, fue liviano y se sale igual. Tope 2,5 s.
             try {
                 web.postVisualStateCallback(1, new WebView.VisualStateCallback() {
-                    @Override public void onComplete(long id) { runOnUiThread(trasDibujo); }
+                    @Override public void onComplete(long id) { DiagInicio.marca("WebView: contenido listo para dibujar"); }
                 });
-            } catch (Throwable t) { h.postDelayed(trasDibujo, 300); }
-            h.postDelayed(trasDibujo, 1200);   // respaldo
+            } catch (Throwable t) { /* solo es una marca */ }
+            final long[] previo = { 0 };
+            final int[] cuadros = { 0 }, normalesTrasHueco = { 0 };
+            final boolean[] hueco = { false }, hecho = { false };
+            final Runnable listo = () -> { if (hecho[0]) return; hecho[0] = true; salir(false); };
+            android.view.Choreographer.getInstance().postFrameCallback(new android.view.Choreographer.FrameCallback() {
+                @Override public void doFrame(long ns) {
+                    if (hecho[0] || cerrando) return;
+                    long t = ns / 1_000_000L;
+                    if (previo[0] > 0) {
+                        long d = t - previo[0];
+                        cuadros[0]++;
+                        if (d > 100) { hueco[0] = true; normalesTrasHueco[0] = 0; DiagInicio.marca("primer dibujo de la página: " + d + " ms (logo quieto)"); }
+                        else if (hueco[0] && d < 34) normalesTrasHueco[0]++;
+                    }
+                    previo[0] = t;
+                    if ((hueco[0] && normalesTrasHueco[0] >= 2) || (!hueco[0] && cuadros[0] >= 10)) { listo.run(); return; }
+                    android.view.Choreographer.getInstance().postFrameCallback(this);
+                }
+            });
+            h.postDelayed(listo, 2500);   // respaldo
         };
         if (latido != null && latido.isRunning()) {
             latido.cancel();
@@ -196,6 +210,11 @@ public class MainActivity extends BridgeActivity {
         }
         // Al girar el celular o si Android recrea la pantalla, no se repite
         web = wv;
+        // 1.0.19: oculta, la página perdía prioridad (Android baja la del proceso de la web que no se ve) y empezaba a
+        // cargar 0,4–2 s más tarde (medido). Se mantiene «importante» aunque esté oculta.
+        if (wv != null && android.os.Build.VERSION.SDK_INT >= 26) {
+            try { wv.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false); } catch (Throwable t) { }
+        }
         if (savedInstanceState == null) mostrarInicio(fondo);
         // Respaldo si la página no avisa (sin internet, página de error, una versión vieja en caché)
         if (getBridge() != null) {
