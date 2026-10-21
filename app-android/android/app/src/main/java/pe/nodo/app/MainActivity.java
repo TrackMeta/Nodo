@@ -142,15 +142,19 @@ public class MainActivity extends BridgeActivity {
                     if (previo[0] > 0) {
                         long d = t - previo[0];
                         cuadros[0]++;
-                        if (d > 100) { hueco[0] = true; normalesTrasHueco[0] = 0; DiagInicio.marca("primer dibujo de la página: " + d + " ms (logo quieto)"); }
+                        if (d > 80) { hueco[0] = true; normalesTrasHueco[0] = 0; DiagInicio.marca("primer dibujo de la página: " + d + " ms (logo quieto)"); }
                         else if (hueco[0] && d < 34) normalesTrasHueco[0]++;
                     }
                     previo[0] = t;
-                    if ((hueco[0] && normalesTrasHueco[0] >= 2) || (!hueco[0] && cuadros[0] >= 10)) { listo.run(); return; }
+                    if (hueco[0] && normalesTrasHueco[0] >= 2) { listo.run(); return; }
                     android.view.Choreographer.getInstance().postFrameCallback(this);
                 }
             });
-            h.postDelayed(listo, 2500);   // respaldo
+            // 1.0.20 (medido con la 1.0.19): el dibujo pesado NO llega en los primeros cuadros tras mostrar la página sino
+            // 0,3–1 s después (la página primero rasteriza y recién entonces entrega su cuadro): esperar «10 cuadros sin
+            // hueco» (a 120 Hz, 0,08 s) salía antes de tiempo. Ahora se espera el hueco; si no aparece en 1,5 s, se sale.
+            h.postDelayed(() -> { if (!hueco[0]) { DiagInicio.marca("sin dibujo pesado en 1,5 s: sale igual"); listo.run(); } }, 1500);
+            h.postDelayed(listo, 2800);   // respaldo final
         };
         if (latido != null && latido.isRunning()) {
             latido.cancel();
