@@ -20,10 +20,11 @@ let APP = defApp();
 export function init() {
   on("tab", (t) => { if (t === "mas") pintar(); });
   on("notifPrefs", (p) => { APP = { ...defApp(), ...(p?.app || {}) }; APP.dnd = { ...defApp().dnd, ...(APP.dnd || {}) }; });
-  on("notifConteo", () => { if (A.tab === "mas") pintar(); });
   on("logos", () => { if (A.tab === "mas") pintar(); });
   $("#masPad").addEventListener("click", clic);
   $("#avbody").addEventListener("click", clicAvisos);
+  // (21-oct) «Qué avisos me llegan» ya no está en Más: se abre con el engranaje de la pantalla de Notificaciones
+  $("#notifAjustes").addEventListener("click", () => { pintaAvisos(); abrirCapa("avisos"); });
   $("#avbody").addEventListener("change", (e) => { if (e.target.id === "dnd1") { APP.dnd.desde = e.target.value; guardar(); } if (e.target.id === "dnd2") { APP.dnd.hasta = e.target.value; guardar(); } });
 }
 // Número de WhatsApp (API) del bot que estás viendo: lo pregunta a Meta (channel-config · whatsapp_test, solo lectura)
@@ -45,13 +46,13 @@ function numeroHtml() {
   return `<button type="button" class="li" data-go="copiarNum"><span class="ico">${ic("phone")}</span><span class="rmid"><b>${esc(n.telefono)}</b><span>${esc(n.nombre || "Número de WhatsApp")}${q ? ` · calidad <b class="${q[1]}">${q[0]}</b>` : ""}</span></span><span class="mcopy">${ic("copy")}Copiar</span></button>`;
 }
 // «Más», reordenado (21-oct, «me parece un poco confuso»): quién eres → el bot que estás viendo (encendido + su
-// número) → tus otros bots (tocar = verlo) → avisos → apariencia (tema en el momento) → cerrar sesión.
+// número) → tus otros bots (tocar = verlo) → apariencia (tema en el momento) → cerrar sesión. Las notificaciones van
+// en la campanita y «Qué avisos me llegan» en su engranaje.
 // Se quitó «Abrir el panel completo».
 // (21-oct) sin «Automático»: Claro u Oscuro. Quien nunca eligió sigue al celular y ve marcado el que tiene puesto
 const TEMAS = [["light", "Claro"], ["dark", "Oscuro"]];
 function pintar() {
   cargarNumero(A.ch);
-  const vivas = [...N.rows.values()].filter((n) => n.por_atender && !n.resuelta_at).length;
   const tema = temaPref() === "auto" ? document.documentElement.dataset.theme : temaPref(), ch = A.channels.find((c) => c.id === A.ch) || {}, otros = A.channels.filter((c) => c.id !== A.ch);
   const estado = (c) => c.bot_apagado ? "Apagado · no contesta a nadie" : "Encendido · contesta solo";
   $("#masPad").innerHTML = `<h2 class="h">Más</h2>
@@ -64,11 +65,6 @@ function pintar() {
     </div>
 
     ${otros.length ? `<div class="card"><div class="ttl">Tus otros bots</div>${otros.map((c) => `<div class="li"><button type="button" class="mver" data-ver="${esc(c.id)}"><span class="ico"><img src="${esc(logoDe(c.id))}" alt=""></span><span class="rmid"><b>${esc(c.nombre)}</b><span>${estado(c)} · toca para verlo</span></span></button><button type="button" class="sw${c.bot_apagado ? "" : " on"}" data-sw="${esc(c.id)}" aria-label="Encender o apagar ${esc(c.nombre)}"></button></div>`).join("")}</div>` : ""}
-
-    <div class="card"><div class="ttl">Avisos</div>
-      <button type="button" class="li" data-go="notif"><span class="ico">${ic("bell")}</span><span class="rmid"><b>Notificaciones</b><span>${vivas ? `${vivas} por atender` : "Todo al día"}</span></span>${vivas ? `<span class="mnum">${vivas > 99 ? "99+" : vivas}</span>` : ic("chevronRight")}</button>
-      <button type="button" class="li" data-go="avisos"><span class="ico">${ic("config")}</span><span class="rmid"><b>Qué avisos me llegan</b><span>Sonidos, por tipo, por bot y No molestar</span></span>${ic("chevronRight")}</button>
-    </div>
 
     <div class="card"><div class="ttl">Apariencia</div>
       <div class="mtema"><div class="seg" role="group" aria-label="Tema">${TEMAS.map(([k, l]) => `<button type="button" class="${tema === k ? "on" : ""}" data-tema="${k}">${l}</button>`).join("")}</div></div>
@@ -95,9 +91,7 @@ async function clic(e) {
   if (vb) { await cambiarBot(vb.dataset.ver); toast("Ahora estás viendo " + (A.channels.find((c) => c.id === vb.dataset.ver)?.nombre || "ese bot")); pintar(); return; }
   const g = e.target.closest("[data-go]"); if (!g) return;
   const k = g.dataset.go;
-  if (k === "notif") emit("abrirNotif");
-  else if (k === "avisos") { pintaAvisos(); abrirCapa("avisos"); }
-  else if (k === "copiarNum") { const t = NUM.get(A.ch)?.telefono || ""; try { await navigator.clipboard.writeText(t.replace(/[^\d+]/g, "")); toast("Número copiado"); } catch (_) { toast(t); } }
+  if (k === "copiarNum") { const t = NUM.get(A.ch)?.telefono || ""; try { await navigator.clipboard.writeText(t.replace(/[^\d+]/g, "")); toast("Número copiado"); } catch (_) { toast(t); } }
   else if (k === "accesos") toast("Para ver los accesos, elige un bot de micro apps o ábrelos desde el panel web de Nodo.");
   else if (k === "salir") { if (await confirmar("Cerrar sesión", "Tendrás que volver a entrar con tu correo y contraseña. Este celular dejará de recibir avisos.", { si: "Cerrar sesión", peligro: true })) { emit("salir"); setTimeout(() => supa.auth.signOut(), 400); } }
 }
