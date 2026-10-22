@@ -1214,7 +1214,7 @@ html:not([data-ds="1"]) .nodo-head .demopill[style*="surface-2"]{color:#475467!i
    hacia abajo; el Dashboard la mantiene alta con la ganancia grande (.nodo-head.franja-alta). */
 html:not([data-ds="1"]) .nodo-head{padding:14px 0 15px;margin-bottom:18px}
 html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-head > .grow h1{font-size:21px;line-height:1.2}
-html:not([data-ds="1"]) .nodo-head .nodo-lead,html:not([data-ds="1"]) .nodo-head > .grow p{margin-top:3px;font-size:12.5px;line-height:1.4}
+html:not([data-ds="1"]) .nodo-head .nodo-lead,html:not([data-ds="1"]) .nodo-head > .grow p{margin-top:3px;font-size:12.5px;line-height:1.4;max-width:900px}
 html:not([data-ds="1"]) .nodo-head .neg-id{gap:10px}
 html:not([data-ds="1"]) .nodo-head .neg-id img{width:36px;height:36px;border-radius:10px}
 html:not([data-ds="1"]) .nodo-head .neg-k{font-size:10.5px;margin-bottom:0}
