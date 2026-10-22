@@ -1163,10 +1163,11 @@ html:not([data-ds="1"]) .nodo-link.nodo-link-ia.active{background:linear-gradien
 html:not([data-ds="1"]) .nodo-page,html:not([data-ds="1"]) body.nodo-shelled .wrap{overflow-x:hidden}
 html:not([data-ds="1"]) .nodo-head{position:relative;z-index:0;margin:-32px 0 22px;padding:24px 0 26px;align-items:center}
 @media(max-width:720px){html:not([data-ds="1"]) .nodo-head{margin-top:-24px;padding:20px 0 22px}}
+/* (22-oct) En pantallas anchas el degradado llega al celeste a los ~60 % (no al final): estirado en ~1.900 px se veía casi plano */
 /* --franja-x / --franja-w los pone shell.js (ajustarFranja): el degradado ocupa justo el ancho del área de contenido */
 html:not([data-ds="1"]) .nodo-head::before{content:"";position:absolute;top:0;bottom:0;z-index:-1;
   left:calc(-1 * var(--franja-x,100vw));width:var(--franja-w,calc(100% + 200vw));
-  background:linear-gradient(90deg,#0044FE 0%,#01AFFE 100%)}
+  background:linear-gradient(90deg,#0044FE 0%,#01AFFE max(60%,820px))}
 html:not([data-ds="1"]) .nodo-head > .grow{color:#fff}
 html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-head > .grow h1{color:#fff}
 html:not([data-ds="1"]) .nodo-head .nodo-lead,html:not([data-ds="1"]) .nodo-head > .grow p{color:rgba(255,255,255,.9)}
