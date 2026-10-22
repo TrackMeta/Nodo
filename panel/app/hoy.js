@@ -146,19 +146,14 @@ function funnelDe(cs, conPedido) {
   return { N, saltos, peor: peor && peor.drop > 25 && peor.seCae >= 2 ? peor : null, enCurso: c.confirmado };
 }
 function comoAvanzan(F) {
-  if (!F || !F.N.llegaron) return `<div class="card"><div class="ttl">Cómo avanzan</div><p class="nsub" style="padding:6px 14px 12px">Nadie llegó en estas fechas.</p></div>`;
-  const { N, saltos, peor, enCurso } = F;
-  const niveles = [["Llegaron", N.llegaron, "llegaron"], ["Curiosos", N.curiosos, "curioso"], ["Interés", N.interes, "interesado"], ["Caliente", N.calientes, "caliente"], ["Confirmaron", N.confirmaron, "confirmado"], ["Compraron", N.compraron, "comprado"]];
-  const flecha = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
-  let fun = "";
-  niveles.forEach(([l, n, k], i) => {
-    fun += `<div class="fbar f-${k}" style="width:${Math.max(66, Math.round((n / N.llegaron) * 100))}%"><span>${l}</span><b class="num">${n} · ${pctN(n, N.llegaron)}%</b></div>`;
-    if (i < niveles.length - 1) { const s = saltos[i]; fun += `<div class="fpaso${peor && peor.i === i ? " peor" : ""}">${flecha}<span>${s.drop == null ? "—" : s.drop > 0 ? "−" + s.drop + "%" : "sin caída"}</span></div>`; }
-  });
-  const aviso = peor ? `<div class="fneck">${ic("alert")}<div><b>Mayor fuga:</b> ${peor.de} → ${peor.a}, se van ${peor.seCae} (${peor.drop}%). ${peor.tip}</div></div>`
-    : `<div class="fneck ok">${ic("check")}<div>Tu embudo fluye bien.</div></div>`;
+  // (diseño A, 21-oct) como en la muestra: cuatro escalones en barras; el detalle completo sigue en la página Embudo
+  if (!F || !F.N.llegaron) return `<div class="card avz"><div class="ttl">Cómo avanzan</div><p class="nsub" style="padding:6px 14px 12px">Nadie llegó en estas fechas.</p></div>`;
+  const { N, peor, enCurso } = F;
+  const filas = [["Escribieron", N.llegaron, "a1"], ["Conversaron", N.interes, "a2"], ["Confirmaron", N.confirmaron, "a3"], ["Compraron", N.compraron, "a4"]];
+  const barras = filas.map(([l, n, k]) => `<div class="abar ${k}"><div class="atop"><span>${l}</span><b class="num">${n}</b></div><i><s style="width:${n ? Math.max(3, Math.round((n / N.llegaron) * 100)) : 0}%"></s></i></div>`).join("");
+  const aviso = peor ? `<div class="fneck">${ic("alert")}<div><b>Mayor fuga:</b> ${peor.de} → ${peor.a}, se van ${peor.seCae} (${peor.drop}%). ${peor.tip}</div></div>` : "";
   const curso = enCurso > 0 ? `<div class="fneck ok">${ic("truck")}<div>${enCurso} ${enCurso === 1 ? "venta confirmada sigue" : "ventas confirmadas siguen"} en curso.</div></div>` : "";
-  return `<div class="card"><div class="ttl">Cómo avanzan</div><div class="fwrap">${aviso}${curso}<div class="fun">${fun}</div><p class="nsub">Los que llegaron en estas fechas, como en la página Embudo.</p></div></div>`;
+  return `<div class="card avz"><div class="ttl">Cómo avanzan</div><div class="abars">${barras}${aviso}${curso}</div></div>`;
 }
 
 // ── «Lo que espera por ti» (se pinta con los números que ya tienen las otras pestañas) ──
@@ -223,19 +218,21 @@ function pintar(r, n, apps) {
   }).join("") : `<p class="nsub" style="padding:6px 14px 12px">Sin gasto de anuncios en este período.</p>`}</div>`;
   // Igual que el Dashboard: la Ganancia neta va destacada (tarjeta de tinta) y Ventas, Ingresos y ROAS en blanco
   const pctCob = n.vendido > 0 ? Math.round((n.cobrado / n.vendido) * 100) : null;
-  $("#hoyPad").innerHTML = `<div class="hero gan" id="verGanancia" role="button" tabindex="0"><div class="hhead"><small>Ganancia neta ${ic("help")}</small>${botonFechas(r)}</div><div class="big num">${m(n.neta)}</div>
-      <div class="row2"><span>${m(n.vendido)} en ventas − ${n.gasto > 0 ? m(n.gasto) : "S/ 0"} en anuncios · toca para ver el detalle</span></div></div>
+  const chats = n.chatsAd + n.chatsOrg, ci = n.cierre || { interes: 0, compraron: 0 };
+  $("#hoyPad").innerHTML = `<div class="hero gan pegada" id="verGanancia" role="button" tabindex="0"><div class="gtxt"><small>Ganancia neta ${ic("help")}</small><div class="big num">${m(n.neta)}</div>
+      <div class="row2"><span>${m(n.vendido)} en ventas − ${n.gasto > 0 ? m(n.gasto) : "S/ 0"} en anuncios</span></div></div>${botonFechas(r)}</div>
     <div id="hoyEspera"></div>
     <div class="kpis">
       <div class="kpi"><small>Ventas</small><b class="num kv-azul">${n.ventas}</b><span class="mutc">${n.ventas ? "ticket " + m(n.vendido / n.ventas) : "sin ventas en estas fechas"}</span></div>
       <div class="kpi"><small>Ingresos</small><b class="num up">${m(n.vendido)}</b><span class="${pctCob === 100 ? "up" : "mutc"}">${pctCob == null ? "sin ventas" : "cobrado " + pctCob + "%"}</span></div>
-      <div class="kpi"><small>ROAS</small><b class="num">${n.gasto > 0 && n.roas > 0 ? n.roas.toFixed(2) + "×" : "—"}</b><span class="mutc">${n.gasto > 0 ? m(n.gasto) + " en Meta" : "sin gasto en Meta"}</span></div>
-      <div class="kpi"><small>Costo por chat</small><b class="num">${n.chatsAd && n.gasto > 0 ? m(n.cpc) : "—"}</b><span class="mutc">${n.chatsAd} chat${n.chatsAd === 1 ? "" : "s"} de anuncio</span></div>
+      <div class="kpi"><small>Costo por chat</small><b class="num">${n.chatsAd && n.gasto > 0 ? m(n.cpc) : "—"}</b><span class="mutc">${n.chatsAd} chat${n.chatsAd === 1 ? "" : "s"} del anuncio</span></div>
+      <div class="kpi"><small>Conversión</small><b class="num">${chats ? Math.round((n.ventas / chats) * 100) + " %" : "—"}</b><span class="mutc">de chat a venta · ${chats} chat${chats === 1 ? "" : "s"}</span></div>
     </div>
+    ${comoAvanzan(n.funnel)}
+    ${ci.interes ? `<div class="iacard"><span class="iaic">${ic("sparkles")}</span><span class="rmid"><b>La IA cerró ${ci.compraron} venta${ci.compraron === 1 ? "" : "s"}</b><span>${ci.compraron} de ${ci.interes} que conversaron · ${Math.round((ci.compraron / ci.interes) * 100)} % de cierre</span></span></div>` : ""}
     ${tablero(n, m)}
     <div class="card"><div class="ttl">Ingresos ${unDia(r) ? "por hora" : "por día"}</div><div style="padding:0 14px 12px">${grafico(n, r)}</div></div>
     <div class="card"><div style="padding:12px 14px" id="hoyHorarios"></div></div>
-    ${comoAvanzan(n.funnel)}
     ${adsHtml}${tipoHtml}${prodHtml}
     <p class="note">Mismo cálculo que el Dashboard del panel (vista Todo) · hora del negocio · se actualiza solo.</p>`;
   pintaEspera();
@@ -245,15 +242,13 @@ function pintar(r, n, apps) {
 // Las tres tarjetas del Dashboard (renderND): Ventas, Publicidad y Rentabilidad
 function tablero(n, m) {
   const fila = (l, v, cls = "") => `<div class="nrow"><span>${l}</span><b class="num ${cls}">${v}</b></div>`;
-  const chats = n.chatsAd + n.chatsOrg, ci = n.cierre || { interes: 0, compraron: 0 };
+  const chats = n.chatsAd + n.chatsOrg;
   const ventas = `<div class="card"><div class="ttl">Ventas</div>` +
     fila("Chats nuevos", `${chats}<small>${n.chatsAd} anuncio · ${n.chatsOrg} orgánico${n.chatsOrg === 1 ? "" : "s"}</small>`) +
-    fila("Conversión total", chats ? Math.round((n.ventas / chats) * 100) + "%" : "—") +
-    fila(`Cierre del bot <i class="nia">IA</i>`, ci.interes ? `${Math.round((ci.compraron / ci.interes) * 100)}%<small>${ci.compraron} de ${ci.interes} que conversaron</small>` : "—") +
     fila("Ticket promedio", n.ventas ? m(n.vendido / n.ventas) : "—") +
     (n.vendeFisico ? fila("Por cobrar", m(n.porCobrar)) + fila("Esperando adelanto", n.espAdel) : "") + `</div>`;
   const pub = `<div class="card"><div class="ttl">Publicidad</div>` + (n.gasto > 0
-    ? fila("Gasto en Meta", m(n.gasto)) + fila("Costo por chat", n.chatsAd ? m(n.cpc) : "—") + fila("Costo por venta", n.cpa == null ? "—" : m(n.cpa)) + fila("ROAS", n.roas > 0 ? n.roas.toFixed(2) + "×" : "—")
+    ? fila("Gasto en Meta", m(n.gasto)) + fila("Costo por venta", n.cpa == null ? "—" : m(n.cpa)) + fila("ROAS", n.roas > 0 ? n.roas.toFixed(2) + "×" : "—")
     : `<p class="nsub" style="padding:4px 14px 12px">Sin gasto de anuncios en estas fechas. Conecta tus anuncios en el panel (Ajustes → Meta) para ver cuánto te cuesta cada chat y cada venta.</p>`) + `</div>`;
   const rent = `<div class="card"><div class="ttl">Rentabilidad</div>` +
     fila(n.vendeFisico ? "Ganancia bruta" : "Ingresos cobrados", m(n.bruta)) +
@@ -288,5 +283,5 @@ function clic(e) {
 }
 function cabecera(r) {
   // (diseño A, 21-oct) sin el título «Resumen»: arriba va la tarjeta de la ganancia con el selector de fechas adentro
-  return botonFechas(r);
+  return `<div class="hero gan pegada"><div class="gtxt"><small>Ganancia neta</small><div class="big num">…</div></div>${botonFechas(r)}</div>`;
 }
