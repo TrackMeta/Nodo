@@ -126,6 +126,10 @@
   .ia-k{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:linear-gradient(90deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:2px}
   .ia-tt{margin:0;font-size:26px;font-weight:700;letter-spacing:-.4px;color:var(--text)}
   .ia-top p{margin:4px 0 0;color:var(--muted);font-size:13.5px}
+  /* (22-oct) Diseño A: la cabecera de IA es la franja de borde a borde con su violeta → rosado (shell.css, .nodo-head.ia) */
+  html:not([data-ds="1"]) .ia-top.nodo-head{border-bottom:0;gap:16px;flex-wrap:nowrap}
+  html:not([data-ds="1"]) .ia-top.nodo-head .ia-k{background:none;-webkit-text-fill-color:currentColor;color:rgba(255,255,255,.85)}
+  html:not([data-ds="1"]) .ia-top.nodo-head .ia-ic{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);box-shadow:none}
   .card:not(.ver-ayuda) .ay{display:none}
   .qm{margin-left:auto;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);font:inherit;font-size:12px;font-weight:700;cursor:pointer;flex:none;display:inline-flex;align-items:center;justify-content:center}
   /* (11-oct) Si la cabecera ya tiene algo empujado a la derecha (el selector de fechas), el «?» va pegado a eso:
@@ -144,9 +148,9 @@
 <body>
 <div class="nodo-page">
   <div class="nodo-wrap" style="--nodo-max:var(--nodo-form)">
-    <div class="ia-top">
+    <div class="ia-top nodo-head ia">
       <span class="ia-ic" id="iaIc"></span>
-      <div style="min-width:0"><div class="ia-k">Centro de IA</div><h1 class="ia-tt">Inteligencia Artificial</h1>
+      <div class="grow" style="min-width:0"><div class="ia-k">Centro de IA</div><h1 class="ia-tt">Inteligencia Artificial</h1>
         <p>Cómo habla y atiende tu bot, cómo revisa los pagos y cuánto gasta su IA.</p></div>
     </div>
     <span id="iaBadge" hidden></span>

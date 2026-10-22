@@ -1171,6 +1171,7 @@ html:not([data-ds="1"]) .nodo-head{position:relative;z-index:30;margin:-32px 0 2
 html:not([data-ds="1"]) .nodo-head::before{content:"";position:absolute;top:0;bottom:0;z-index:-1;
   left:calc(-1 * var(--franja-x,100vw));width:var(--franja-w,calc(100% + 200vw));
   background:linear-gradient(90deg,#0044FE 0%,#01AFFE max(60%,820px))}
+html:not([data-ds="1"]) .nodo-head.ia::before{background:linear-gradient(90deg,#a855f7 0%,#ec4899 max(60%,820px))}   /* IA: su violeta → rosado */
 html:not([data-ds="1"]) .nodo-head > .grow{color:#fff}
 html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-head > .grow h1{color:#fff}
 html:not([data-ds="1"]) .nodo-head .nodo-lead,html:not([data-ds="1"]) .nodo-head > .grow p{color:rgba(255,255,255,.9)}
@@ -1178,8 +1179,10 @@ html:not([data-ds="1"]) .nodo-head > .grow a{color:#fff!important}
 html:not([data-ds="1"]) .nodo-head .neg-k{color:rgba(255,255,255,.85)}
 html:not([data-ds="1"]) .nodo-head > .grow [style*="color:var(--faint)"],html:not([data-ds="1"]) .nodo-head > .grow [style*="color:var(--muted)"]{color:rgba(255,255,255,.85)!important}
 /* Botones sobre la franja: el principal blanco con letras azules; los demás, blanco transparente */
-html:not([data-ds="1"]) .nodo-head :is(.nodo-btn,.btn,.pillbtn){background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.45);color:#fff}
-html:not([data-ds="1"]) .nodo-head :is(.nodo-btn,.btn,.pillbtn):hover{background:rgba(255,255,255,.26);border-color:rgba(255,255,255,.7)}
+/* (22-oct) Los secundarios OSCURECEN un poco el fondo en vez de aclararlo: blanco transparente sobre el celeste del lado
+   derecho se perdía («Sincronizar con Meta» en Plantillas) */
+html:not([data-ds="1"]) .nodo-head :is(.nodo-btn,.btn,.pillbtn){background:rgba(0,0,0,.16);border:1.5px solid rgba(255,255,255,.8);color:#fff}
+html:not([data-ds="1"]) .nodo-head :is(.nodo-btn,.btn,.pillbtn):hover{background:rgba(0,0,0,.26);border-color:#fff}
 html:not([data-ds="1"]) .nodo-head :is(.nodo-btn.primary,.btn.primary){background:#fff;border-color:#fff;color:#0B63E5;font-weight:600}
 html:not([data-ds="1"]) .nodo-head :is(.nodo-btn.primary,.btn.primary):hover{background:#EEF4FF}
 /* Los menús que se abren desde la franja vuelven a sus colores */
@@ -1188,10 +1191,10 @@ html:not([data-ds="1"]) .nodo-head .nodo-actions :is(.drpop){color:var(--text)}
 /* Fechas, Todo/Digital/Físico y ayuda sobre la franja (Dashboard, Embudo, Compras, Directo…) */
 html:not([data-ds="1"]) .nodo-head :is(.drtrigger,.df-btn){background:#fff;border-color:#fff;color:#0B63E5}
 html:not([data-ds="1"]) .nodo-head :is(.drtrigger,.df-btn) :is(svg,.cur,.drlabel){color:#0B63E5}
-html:not([data-ds="1"]) .nodo-head .dseg{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.32)}
+html:not([data-ds="1"]) .nodo-head .dseg{background:rgba(0,0,0,.16);border-color:rgba(255,255,255,.5)}
 html:not([data-ds="1"]) .nodo-head .dseg button{color:#fff}
 html:not([data-ds="1"]) .nodo-head .dseg button.on{background:#fff;color:#0B63E5;box-shadow:none}
-html:not([data-ds="1"]) .nodo-head .helpbtn{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.4);color:#fff}
+html:not([data-ds="1"]) .nodo-head .helpbtn{background:rgba(0,0,0,.16);border-color:rgba(255,255,255,.7);color:#fff}
 /* Los selectores sobre la franja (Producto/anuncio en Dashboard, Embudo, Directo…), blancos en los dos temas */
 html:not([data-ds="1"]) .nodo-head select{background-color:#fff;border-color:#fff;color:#101828;color-scheme:light}
 /* (22-oct) Notificaciones pegadas al menú: el panel seguía en el ancho del menú anterior (248/72 px) y quedaba una franja
