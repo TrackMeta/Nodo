@@ -105,7 +105,10 @@ function pintar() {
     <span class="nend"><time>${fmtHora(n.created_at)}</time>${pendiente(n) ? `<button type="button" class="btn soft sm" data-res="${n.id}">Atendido</button>` : `<button type="button" class="iconbtn nx" data-quitar="${n.id}" aria-label="Quitar">${ic("x")}</button>`}</span></div>`;
   let body;
   if (N.tab === "pend") {
-    body = `<p class="nsub">Lo que espera que hagas algo. Se va solo cuando lo resuelves, o con «Atendido» si ya lo viste.</p>${chips}` + (pend.length ? `<div class="card">${pend.map(fila).join("")}</div>` : `<div class="empty"><b>${ic("check")}</b>Todo al día.<br>Nada espera por ustedes.</div>`);
+    // (22-oct) «Atendido a todos»: lo pendiente menos los pagos por validar (esos se deciden uno por uno)
+    const nAt = pend.filter((n) => !VALIDAR.has(n.tipo)).length;
+    body = `<p class="nsub">Lo que espera que hagas algo. Se va solo cuando lo resuelves, cuando le respondes al cliente, o con «Atendido» si ya lo viste.</p>${chips}`
+      + (nAt > 1 ? `<div class="nacts"><button type="button" class="btn soft sm" id="natodos">${ic("check")} Atendido a todos (${nAt})</button></div>` : "") + (pend.length ? `<div class="card">${pend.map(fila).join("")}</div>` : `<div class="empty"><b>${ic("check")}</b>Todo al día.<br>Nada espera por ustedes.</div>`);
   } else {
     const grupos = new Map();
     hist.forEach((n) => { const d = fmtDia(n.created_at); if (!grupos.has(d)) grupos.set(d, []); grupos.get(d).push(n); });
@@ -151,6 +154,17 @@ async function clic(e) {
     if (error) { lista.forEach((id) => N.quitadas.delete(id)); campana(); pintar(); toast("No se pudo limpiar", true); return; }
     const quedan = [...N.rows.values()].filter((n) => !oculta(n) && pendiente(n) && (N.bot === "todos" || n.channel_id === N.bot)).length;
     toast(`Se quitaron ${lista.length} notificaci${lista.length === 1 ? "ón" : "ones"}.` + (quedan ? ` Quedan ${quedan} pendiente${quedan === 1 ? "" : "s"}: se van cuando las resuelves o tocas «Atendido».` : "")); return;
+  }
+  if (e.target.closest("#natodos")) {
+    const lista = [...N.rows.values()].filter((n) => !oculta(n) && pendiente(n) && !VALIDAR.has(n.tipo) && (N.bot === "todos" || n.channel_id === N.bot));
+    if (!lista.length) return;
+    if (!(await confirmar("Atendido a todos", `Se marcan como atendid${lista.length === 1 ? "a" : "as"} ${lista.length} notificaci${lista.length === 1 ? "ón" : "ones"} y salen de Pendientes para todo el equipo. Los pagos por validar se quedan.`, { si: "Marcar atendidas" }))) return;
+    const ahora = new Date().toISOString();
+    lista.forEach((n) => { n.resuelta_at = ahora; N.leidas.add(n.id); }); campana(); pintar();
+    const res = await Promise.all(lista.map((n) => supa.rpc("notif_resolver", { p_id: n.id, p_por: null }).then((x) => !x.error && x.data !== false, () => false)));
+    const mal = lista.filter((_, i) => !res[i]);
+    if (mal.length) { mal.forEach((n) => { n.resuelta_at = null; }); campana(); pintar(); toast(`No se pudieron marcar ${mal.length}`, true); return; }
+    toast(`Listo: ${lista.length} marcad${lista.length === 1 ? "a" : "as"} como atendid${lista.length === 1 ? "a" : "as"}`); return;
   }
   const qx = e.target.closest("[data-quitar]");
   if (qx) {

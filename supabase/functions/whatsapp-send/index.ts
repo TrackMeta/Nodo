@@ -12,6 +12,16 @@ import { finVentanaAnuncio } from "../_shared/fep.ts";
 
 const db = serviceClient();
 
+// (22-oct) «Te necesita a ti» se da por atendido cuando le respondes (antes solo con «Atendido» o reactivando el
+// bot: el que contestaba con el bot en pausa veía los avisos acumularse en Pendientes aunque ya hubiera respondido).
+// Si el cliente vuelve a escribir con el bot en pausa, nace un aviso nuevo.
+async function atendidoAlResponder(contactId: string) {
+  const ahora = new Date().toISOString();
+  await db.from("notificaciones").update({ resuelta_at: ahora, resuelta_por: "Le respondiste", updated_at: ahora })
+    .eq("contact_id", contactId).eq("tipo", "pide_humano").eq("por_atender", true).is("resuelta_at", null)
+    .then(() => {}, (e: unknown) => console.error("[whatsapp-send] atendidoAlResponder:", (e as any)?.message ?? e));
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -97,6 +107,7 @@ Deno.serve(async (req) => {
           .then(() => {}, () => {});
       }
     }
+      await atendidoAlResponder(contact_id);
       return json({ ok: true, wamid });
     } catch (e) {
       const meta = e instanceof MetaApiError ? e.meta : { message: String((e as any)?.message ?? e) };
@@ -173,6 +184,7 @@ Deno.serve(async (req) => {
           .then(() => {}, () => {});
       }
     }
+    await atendidoAlResponder(contact_id);
     return json({ ok: true, wamid });
   } catch (e) {
     // Guardar el mensaje como fallido para que se vea en el hilo.

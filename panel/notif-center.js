@@ -576,7 +576,7 @@ function pintar() {
       <button class="nn-tab${N.tab === "atender" ? " on" : ""}" data-tab="atender" role="tab">Pendientes${pend.length ? `<b class="${pend.some((n) => n.prioridad === "urgente") ? "urg" : ""}">${pend.length}</b>` : ""}</button>
       <button class="nn-tab${N.tab === "todas" ? " on" : ""}" data-tab="todas" role="tab">Historial${nNo ? `<b class="soft">${nNo > 99 ? "99+" : nNo}</b>` : ""}</button>
     </div>
-    <p class="nn-tabsub">${N.tab === "atender" ? "Lo que espera que hagas algo. Se va cuando lo resuelves." : "Todo lo que pasó en tus bots, por día."}</p>
+    <p class="nn-tabsub">${N.tab === "atender" ? "Lo que espera que hagas algo. Se va cuando lo resuelves o le respondes al cliente." : "Todo lo que pasó en tus bots, por día."}</p>
     <div class="nn-filt"></div>
     ${bannerNavegador()}
     <div class="nn-list"></div>`;
@@ -621,7 +621,10 @@ function pintarLista() {
   if (N.tab === "atender") {
     // Lo más grave arriba; dentro de cada nivel, lo más nuevo primero.
     lista.sort((a, b) => (RANGO[a.prioridad] ?? 3) - (RANGO[b.prioridad] ?? 3) || Date.parse(b.created_at) - Date.parse(a.created_at));
-    box.innerHTML = lista.map((n) => item(n, true)).join("");
+    // (22-oct) «Atendido a todos»: despeja de un toque lo que ya viste (los pagos por validar no: esos se deciden uno por uno)
+    const nAt = lista.filter(atendible).length;
+    box.innerHTML = (nAt > 1 ? `<div class="nn-bulk"><span>${nAt} se pueden marcar de una vez</span><button class="nn-btn ghost" data-a="atender-todos">${I("check")}Atendido a todos</button></div>` : "")
+      + lista.map((n) => item(n, true)).join("");
     return;
   }
   lista.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
@@ -850,6 +853,27 @@ async function ejecutar(n, a) {
   await N.ctx.ir(dest, n.channel_id);
 }
 
+// Lo que «Atendido a todos» puede cerrar: lo pendiente que está a la vista (bot y filtro elegidos), menos los pagos por
+// validar (adelanto, saldo, digital, extra, prepago Lima), que tienen que aprobarse o rechazarse uno por uno.
+const atendible = (n) => pendiente(n) && !/_validar$/.test(n.tipo || "");
+async function atenderTodos() {
+  const lista = filtradas().filter((n) => N.grupo === "todo" || (n.grupo || tipoDe(n).g) === N.grupo).filter(atendible);
+  if (!lista.length) return;
+  const msg = `Se marcan como atendid${lista.length === 1 ? "a" : "as"} ${lista.length} notificaci${lista.length === 1 ? "ón" : "ones"} y salen de «Pendientes» para todo el equipo. Los pagos por validar se quedan.`;
+  const ok = N.ctx.confirmDialog
+    ? await N.ctx.confirmDialog({ title: "Atendido a todos", message: msg, confirmText: "Marcar atendidas", cancelText: "Cancelar" })
+    : window.confirm(msg);
+  if (!ok) return;
+  const ahora = new Date().toISOString();
+  lista.forEach((n) => { const r = N.rows.get(n.id); if (r) { r.resuelta_at = ahora; r.resuelta_por = "Atendido"; } N.leidas.add(n.id); });
+  refrescar();
+  const res = await Promise.all(lista.map((n) => N.ctx.supa.rpc("notif_resolver", { p_id: n.id, p_por: null }).then((x) => !x.error && x.data !== false, () => false)));
+  const fallaron = lista.filter((_, i) => !res[i]);
+  fallaron.forEach((n) => { const r = N.rows.get(n.id); if (r) { r.resuelta_at = null; r.resuelta_por = null; } });
+  if (fallaron.length) { refrescar(); N.ctx.toast(`No se pudieron marcar ${fallaron.length}. Prueba de nuevo.`, true); return; }
+  N.ctx.toast(`Listo: ${lista.length} marcad${lista.length === 1 ? "a" : "as"} como atendid${lista.length === 1 ? "a" : "as"}`);
+}
+
 async function resolver(n) {
   const r = N.rows.get(n.id);
   if (r) { r.resuelta_at = new Date().toISOString(); r.resuelta_por = "Atendido"; }
@@ -903,6 +927,7 @@ function onClickCajon(e) {
     else if (k === "cerrar") cerrar();
     else if (k === "leer-todo") leerTodo();
     else if (k === "limpiar") limpiar();
+    else if (k === "atender-todos") atenderTodos();
     else if (k === "prefs") { N.vista = "prefs"; pintar(); }
     else if (k === "volver") { N.vista = "lista"; pintar(); }
     else if (k === "probar-sonido") probarSonido("urgente", tonoUrgente(), volUrgente());
