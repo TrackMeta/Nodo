@@ -1283,6 +1283,37 @@ function ajustarFranja() {
   heads().forEach((h) => { _franjaRO.observe(h); const c = h.closest(".nodo-page, .wrap"); if (c) _franjaRO.observe(c); });
 }
 
+// 🔌 (22-oct) «Bot encendido» vive en el menú (antes escondido en Canales): bajo el nombre del bot se ve si está encendido
+// o apagado, cada bot del selector tiene su interruptor y, si el bot que estás viendo está apagado, una barra abajo lo
+// avisa en todas las secciones con el botón «Encender». Mismo campo de siempre: channels.bot_apagado.
+function pintarEncendido() {
+  const c = S.channels.find((x) => x.id === S.channelId);
+  const off = !!c?.bot_apagado;
+  if (S.botEst) { S.botEst.textContent = c ? (off ? "Apagado" : "Encendido") : ""; S.botEst.classList.toggle("off", off); }
+  let el = document.getElementById("nodo-bot-off");
+  if (!c || !off) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "nodo-bot-off"; el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
+  el.innerHTML = `<span class="bo-dot"></span><span class="bo-tx"><b>El bot de ${escHtml(c.nombre)} está apagado</b> · no le contesta a nadie (ni IA, ni remarketing)</span><button type="button" class="bo-btn">Encender</button>`;
+  el.querySelector(".bo-btn").onclick = () => cambiarEncendido(c.id, true);
+}
+async function cambiarEncendido(id, prender) {
+  const c = S.channels.find((x) => x.id === id); if (!c) return false;
+  if (!prender && !(await confirmDialog({ title: "Apagar el bot",
+    message: `El bot de «${c.nombre}» deja de escribirle a todos: mensajes iniciales, IA, remarketing y recordatorios. Los mensajes siguen llegando a la Bandeja y lo que mandes tú sí sale. Lo enciendes cuando quieras.`,
+    confirmText: "Apagar", danger: true }))) return false;
+  const { error } = await updateChannel(id, { bot_apagado: !prender });
+  if (error) { toast(/bot_apagado|column/.test(error.message) ? "Falta aplicar la migración 0127" : error.message, true); return false; }
+  c.bot_apagado = !prender;
+  olvidaChannel();
+  pintarEncendido();
+  toast(prender ? `${c.nombre}: encendido, vuelve a atender (en menos de un minuto)` : `${c.nombre}: apagado, no le escribe a nadie`);
+  return true;
+}
+
 export async function mountShell({ active } = {}) {
   _bootLlego(); // la navegación SPA en curso ya puede dar paso a la siguiente (ver navigate)
   // Branding inicial desde caché (mismo bot que la última página) → sin parpadeo.
@@ -1346,7 +1377,7 @@ export async function mountShell({ active } = {}) {
     <div class="nodo-brand">
       <button class="nodo-botsel" id="nodoBotBtn" type="button" title="Cambiar de bot">
         <span class="nb-logo-w"><img class="nb-logo" id="nodoBotLogo" src="${escAttr(initLogo)}" alt="" /></span>
-        <span class="nb-name" id="nodoBotName" title="${escAttr(initName)}">${escHtml(initName)}</span>
+        <span class="nb-txt"><span class="nb-name" id="nodoBotName" title="${escAttr(initName)}">${escHtml(initName)}</span><span class="nb-est" id="nodoBotEst"></span></span>
         <svg class="nb-cx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </button>
       <button class="nodo-icnbtn" id="nodoCollapse" title="Comprimir menú"><span class="cl-shrink">${svg("panel")}</span><span class="cl-grow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></button>
@@ -1447,6 +1478,7 @@ export async function mountShell({ active } = {}) {
   const botBtn = nav.querySelector("#nodoBotBtn");
   const botLogo = nav.querySelector("#nodoBotLogo");
   const botName = nav.querySelector("#nodoBotName");
+  S.botEst = nav.querySelector("#nodoBotEst");
   // El popover va en <body> (no dentro del sidebar) porque el backdrop-filter
   // del nav recorta a los hijos position:fixed.
   let botPop = document.getElementById("nodoBotPop");
@@ -1455,7 +1487,8 @@ export async function mountShell({ active } = {}) {
   const brandName = nav.querySelector("#nodoBrandName");
   S.botBtn = botBtn; S.botLogo = botLogo; S.botName = botName; S.botPop = botPop; S.logo = logo; S.brandName = brandName;
   // Resiliente: si la columna logo_url aún no está migrada en la BD, reintenta sin ella.
-  let { data, error } = await supa.from("channels").select("id,nombre,logo_url,timezone").eq("activo", true).order("nombre");
+  let { data, error } = await supa.from("channels").select("id,nombre,logo_url,timezone,bot_apagado").eq("activo", true).order("nombre");
+  if (error) ({ data, error } = await supa.from("channels").select("id,nombre,logo_url,timezone").eq("activo", true).order("nombre"));
   if (error) ({ data } = await supa.from("channels").select("id,nombre,timezone").eq("activo", true).order("nombre"));
   if (error) ({ data } = await supa.from("channels").select("id,nombre").eq("activo", true).order("nombre"));
   S.channels = data || [];
@@ -1499,9 +1532,12 @@ export async function mountShell({ active } = {}) {
     // necesita sin abrir el cajón.
     const cnt = (id) => { const x = (S.notifPorBot || {})[id];
       return x && x.pend ? `<b class="nb-cnt${x.urg ? " urg" : ""}" title="${x.pend} por atender">${x.pend > 99 ? "99+" : x.pend}</b>` : ""; };
-    botPop.innerHTML = S.channels.map((c) => `<button class="nb-item${c.id === S.channelId ? " on" : ""}" type="button" data-id="${c.id}"><img src="${escBot(c.logo_url || FALLBACK_LOGO)}" alt="" /><span>${escBot(c.nombre)}</span>${cnt(c.id)}${c.id === S.channelId ? svg("check") : ""}</button>`).join("")
+    // (22-oct) Cada bot con su interruptor «encendido» (antes solo en Canales): se prende o apaga sin entrar a ninguna sección
+    const sw = (c) => `<button class="nb-sw${c.bot_apagado ? "" : " on"}" type="button" role="switch" aria-checked="${c.bot_apagado ? "false" : "true"}" data-sw="${c.id}" title="${c.bot_apagado ? "Apagado: toca para encenderlo" : "Encendido: toca para apagarlo"}" aria-label="Encender o apagar ${escBot(c.nombre)}"></button>`;
+    botPop.innerHTML = S.channels.map((c) => `<div class="nb-row"><button class="nb-item${c.id === S.channelId ? " on" : ""}" type="button" data-id="${c.id}"><img src="${escBot(c.logo_url || FALLBACK_LOGO)}" alt="" /><span>${escBot(c.nombre)}</span>${cnt(c.id)}${c.id === S.channelId ? svg("check") : ""}</button>${sw(c)}</div>`).join("")
       + (S.puedeCrear !== false ? `<button class="nb-create" type="button">${svg("plus")}<span>Crear nuevo bot</span></button>` : "");
     botPop.querySelectorAll(".nb-item").forEach((b) => { b.onclick = async () => { if (b.dataset.id !== S.channelId && !(await _dirtyGate())) return; S.api.setChannel(b.dataset.id); closeBotPop(); }; });
+    botPop.querySelectorAll(".nb-sw").forEach((b) => { b.onclick = async (e) => { e.stopPropagation(); await cambiarEncendido(b.dataset.sw, !b.classList.contains("on")); renderBotPop(); }; });
     const cr = botPop.querySelector(".nb-create"); if (cr) cr.onclick = () => { closeBotPop(); openCreateBot(); };
   };
   const positionBotPop = () => {
@@ -1539,6 +1575,7 @@ export async function mountShell({ active } = {}) {
     if (S.brandName) S.brandName.textContent = name;
     if (S.botLogo) S.botLogo.src = src;
     if (S.botName) { S.botName.textContent = name; S.botName.title = name; }   // nombre completo al pasar el mouse si no entra
+    pintarEncendido();
     setFavicon(src); // favicon = logo del bot activo
     if (c) writeBrandCache({ id: c.id, logo: c.logo_url || null, name }); // caché anti-parpadeo
     pintarPuntoBots();   // al cambiar de bot cambia cuáles son «los otros»

@@ -390,7 +390,16 @@ function renderAtencion(b){
   };
   const ta=(v,ph,rows)=>`<textarea class="in" rows="${rows||4}" style="min-height:${(rows||4)*24+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(v||"")}</textarea>`;
   b.innerHTML=`
-    <p class="sub">Cuándo le pasa el chat a una persona y cómo atiende a quien ya compró.</p>
+    <p class="sub">A quién atiende el bot, cuándo le pasa el chat a una persona y cómo atiende a quien ya compró.</p>
+
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${icon("megaphone")}</span><span class="nm">A quién atiende</span></div>
+      <div id="soloAdsRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span><span style="font-weight:600;font-size:13px">Responder solo a clientes que llegan por anuncio</span>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Los que escriben sin venir de un anuncio quedan en la Bandeja para que los atienda una persona. Se guarda al instante.</div></span>
+        <span class="sw" id="soloAdsSw" role="switch" aria-checked="false" style="flex:none"></span>
+      </div>
+    </div>
 
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.agent}</span><span class="nm">Cuándo pasar a un asesor</span></div>
@@ -473,6 +482,20 @@ function renderAtencion(b){
     </div>
 
     <div class="acts"><button class="btn ia" id="atSave">Guardar cambios</button></div>`;
+  // (22-oct) «Responder solo a clientes que llegan por anuncio» se movió acá desde Canales (es a quién atiende el bot,
+  // no la conexión). Igual que allá: se guarda al instante, mezclado sobre el ia_router FRESCO (Palabras clave escribe
+  // en el mismo objeto y una copia vieja le revertiría sus ajustes).
+  const pintaSoloAds=(on)=>{ const s=$("soloAdsSw"); if(s){ s.classList.toggle("on",on); s.setAttribute("aria-checked",on?"true":"false"); } };
+  supa.from("channels").select("ia_router").eq("id",st.channelId).maybeSingle().then(({data})=>pintaSoloAds(!!data?.ia_router?.solo_anuncios),()=>{});
+  $("soloAdsRow").onclick=async()=>{
+    const on=!$("soloAdsSw").classList.contains("on");
+    let actual={};
+    try{ const { data:fresh }=await supa.from("channels").select("ia_router").eq("id",st.channelId).maybeSingle(); if(fresh&&fresh.ia_router&&typeof fresh.ia_router==="object") actual=fresh.ia_router; }catch(_){ /* */ }
+    const { error }=await updateChannel(st.channelId, { ia_router:{ ...actual, solo_anuncios:on } });
+    if(error){ toast(error.message,true); return; }
+    pintaSoloAds(on);
+    toast(on?"El bot ahora solo responde a clientes de anuncios":"El bot vuelve a responder a todos");
+  };
   $("huRecRow").onclick=()=>{ p.humano.reclamos=!(p.humano.reclamos!==false); $("huRecSw").classList.toggle("on",p.humano.reclamos!==false); };
   $("huVentaRow").onclick=()=>{ p.humano.al_vender=!p.humano.al_vender; $("huVentaSw").classList.toggle("on",!!p.humano.al_vender); const vb=$("huVentaBox"); if(vb) vb.style.display=p.humano.al_vender?"block":"none"; };
   $("huSilRow").onclick=()=>{ p.humano.aviso_venta_silencio=!p.humano.aviso_venta_silencio; $("huSilSw").classList.toggle("on",!!p.humano.aviso_venta_silencio); const m=$("huVentaMsg"); if(m) m.style.display=p.humano.aviso_venta_silencio?"none":"block"; };

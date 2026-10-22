@@ -1228,3 +1228,30 @@ html:not([data-ds="1"]) .nodo-brand{gap:4px}
 html:not([data-ds="1"]) .nodo-botsel{gap:7px;padding:0 6px}
 html:not([data-ds="1"]) .nodo-botsel .nb-name{font-size:13.5px}
 html:not([data-ds="1"]) .nodo-brand #nodoCollapse{width:28px;height:28px}
+
+/* (22-oct) 🔌 Bot encendido en el menú: estado bajo el nombre, interruptor por bot en el selector y barra de aviso si está apagado */
+.nodo-botsel .nb-txt{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;line-height:1.2;text-align:left}
+.nodo-botsel .nb-txt .nb-name{flex:none;max-width:100%}
+.nodo-botsel .nb-est{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:500;color:#16A34A}
+.nodo-botsel .nb-est:empty{display:none}
+.nodo-botsel .nb-est::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.nodo-botsel .nb-est.off{color:#DC2626}
+html:not([data-theme="light"]) .nodo-botsel .nb-est{color:#22C55E}
+html:not([data-theme="light"]) .nodo-botsel .nb-est.off{color:#F04438}
+.nodo-nav.collapsed .nodo-botsel .nb-txt{display:none}
+.nb-row{display:flex;align-items:center;gap:4px}
+.nb-row .nb-item{flex:1;min-width:0}
+.nb-sw{flex:none;width:34px;height:20px;border-radius:999px;border:0;padding:0;margin-right:4px;background:var(--border-strong,#D0D5DD);position:relative;cursor:pointer;transition:background .18s}
+.nb-sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .18s}
+.nb-sw.on{background:#16A34A}
+.nb-sw.on::after{transform:translateX(14px)}
+.nodo-botpop.mini .nb-sw{display:none}
+#nodo-bot-off{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:99980;display:flex;align-items:center;gap:10px;
+  max-width:min(620px,calc(100vw - 32px));padding:9px 9px 9px 14px;border-radius:14px;background:#B42318;color:#fff;font-size:13px;line-height:1.35;
+  box-shadow:0 10px 28px rgba(180,35,24,.35)}
+#nodo-bot-off .bo-dot{width:8px;height:8px;border-radius:50%;background:#fff;flex:none;animation:nodoBoPulse 1.6s ease-in-out infinite}
+#nodo-bot-off .bo-tx{flex:1;min-width:0}
+#nodo-bot-off .bo-btn{flex:none;height:32px;padding:0 14px;border-radius:9px;border:0;background:#fff;color:#B42318;font:inherit;font-weight:600;cursor:pointer}
+#nodo-bot-off .bo-btn:hover{background:#FEEDEB}
+@keyframes nodoBoPulse{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){#nodo-bot-off .bo-dot{animation:none}}

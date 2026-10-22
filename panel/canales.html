@@ -257,25 +257,7 @@ function renderWA(){
       </div>
       </details>
 
-      <div class="metabox">
-        <div class="mt">Comportamiento del bot</div>
-        <div class="adsrow">
-          <span class="ads-ic">${icon("robot")}</span>
-          <span class="ads-tx">
-            <b>Bot encendido</b>
-            <span>Apagado no le escribe a nadie (ni IA, ni remarketing). Los mensajes siguen entrando a la Bandeja y lo que hagas a mano sí sale.</span>
-          </span>
-          <div class="swx ${c.bot_apagado?"":"on"}" id="w_boton" role="switch" aria-checked="${c.bot_apagado?"false":"true"}" title="Prender/apagar el bot"></div>
-        </div>
-        <div class="adsrow">
-          <span class="ads-ic">${icon("megaphone")}</span>
-          <span class="ads-tx">
-            <b>Responder solo a clientes que llegan por anuncio</b>
-            <span>Los que escriben sin venir de un anuncio quedan en la Bandeja para que los atienda una persona.</span>
-          </span>
-          <div class="swx ${c.ia_router?.solo_anuncios?"on":""}" id="w_soloads" role="switch" aria-checked="${c.ia_router?.solo_anuncios?"true":"false"}" title="Prender/apagar"></div>
-        </div>
-      </div>
+      <div class="mh" style="margin:14px 0 0">El bot se <b>enciende y apaga</b> desde el menú, junto a su nombre (arriba a la izquierda). «Responder solo a clientes que llegan por anuncio» está en <a href="ia.html" style="color:var(--brand);font-weight:600">IA → Atención</a>.</div>
 
       <details class="avanzado">
         <summary>Configuración manual del webhook</summary>
@@ -363,37 +345,6 @@ function renderWA(){
   const disc=$("waDisc"); if(disc) disc.onclick=()=>desconectarWA(disc);
   // Si el número está conectado, trae y muestra la tarjeta bonita apenas se abre.
   if(conn) cargarNumeroHero();
-  // 🔌 Interruptor general: guarda al instante. Apagar pide confirmación (deja de atender a todos).
-  $("w_boton").onclick=async(e)=>{
-    const sw=e.currentTarget, prender=!sw.classList.contains("on");
-    if(!prender && !await confirmDialog({title:"Apagar el bot",
-      message:`El bot de «${st.channel.nombre||"este bot"}» deja de escribirle a todos: mensajes iniciales, IA, remarketing y recordatorios. Los mensajes siguen llegando a la Bandeja. Lo prendes cuando quieras.`,
-      confirmText:"Apagar", danger:true})) return;
-    const { error }=await updateChannel(st.channelId, { bot_apagado:!prender });
-    if(error){ toast(/bot_apagado|column/.test(error.message)?"Falta aplicar la migración 0127":error.message,true); return; }
-    sw.classList.toggle("on",prender); sw.setAttribute("aria-checked",prender?"true":"false");
-    st.channel.bot_apagado=!prender;
-    toast(prender?"Bot encendido: vuelve a atender (en menos de un minuto)":"Bot apagado: no le escribe a nadie");
-  };
-  // Toggle "solo anuncios": guarda al instante (merge sobre ia_router para no
-  // pisar el resto del ruteo — fallback_flow_id, umbral, etc.).
-  $("w_soloads").onclick=async(e)=>{
-    const sw=e.currentTarget, on=!sw.classList.contains("on");
-    // Sobre el ia_router FRESCO, no sobre el que se cargó al abrir Canales: Palabras clave
-    // escribe en el mismo objeto (umbral, recepción…), así que con la copia vieja este
-    // toggle podía revertirle esos ajustes. El otro lado ya hace lo simétrico.
-    let actual=st.channel.ia_router||{};
-    try{
-      const { data:fresh }=await supa.from("channels").select("ia_router").eq("id",st.channelId).maybeSingle();
-      if(fresh&&fresh.ia_router&&typeof fresh.ia_router==="object") actual=fresh.ia_router;
-    }catch(_){ /* sin lo fresco, se usa lo que hay en pantalla */ }
-    const ir={ ...actual, solo_anuncios:on };
-    const { error }=await updateChannel(st.channelId, { ia_router:ir });
-    if(error){ toast(error.message,true); return; }
-    sw.classList.toggle("on",on); sw.setAttribute("aria-checked",on?"true":"false");
-    st.channel.ia_router=ir;
-    toast(on?"El bot ahora solo responde a clientes de anuncios":"El bot vuelve a responder a todos");
-  };
 }
 async function copiar(txt){
   try{ await navigator.clipboard.writeText(txt); toast("Copiado"); }
