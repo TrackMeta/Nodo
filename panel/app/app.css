@@ -600,7 +600,8 @@ html:not([data-theme="light"]) .kv-azul{color:#6EA8FF}
 /* Más (21-oct): perfil arriba, el bot que estás viendo con su interruptor y su número, tus otros bots, avisos,
    apariencia y cerrar sesión */
 .mperfil{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px}
-.mav{width:48px;height:48px;border-radius:50%;background:var(--grad);color:#fff;display:grid;place-items:center;font-weight:800;font-size:17px;flex:none}
+.mav{width:48px;height:48px;border-radius:50%;background:var(--grad);color:#fff;display:grid;place-items:center;font-weight:800;font-size:17px;flex:none;overflow:hidden}
+.mav img{width:100%;height:100%;object-fit:cover;display:block}
 .mperfil .rmid b{font-size:16px}
 .mperfil .rmid > span{font-size:12.5px}
 .mbot .ico{background:none}

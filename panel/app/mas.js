@@ -56,7 +56,7 @@ function pintar() {
   const tema = temaPref() === "auto" ? document.documentElement.dataset.theme : temaPref(), ch = A.channels.find((c) => c.id === A.ch) || {}, otros = A.channels.filter((c) => c.id !== A.ch);
   const estado = (c) => c.bot_apagado ? "Apagado · no contesta a nadie" : "Encendido · contesta solo";
   $("#masPad").innerHTML = `<h2 class="h">Más</h2>
-    <div class="mperfil"><span class="mav">${esc(iniciales(A.nombre, A.email))}</span><span class="rmid"><b>${esc(A.nombre || "Tu cuenta")}</b><span>${esc(A.email)}</span></span></div>
+    <div class="mperfil"><span class="mav">${A.avatar ? `<img src="${esc(A.avatar)}" alt="">` : esc(iniciales(A.nombre, A.email))}</span><span class="rmid"><b>${esc(A.nombre || "Tu cuenta")}</b><span>${esc(A.email)}</span></span></div>
 
     <div class="card"><div class="ttl">Bot que estás viendo</div>
       <div class="li mbot"><span class="ico"><img src="${esc(logoDe(ch.id))}" alt=""></span><span class="rmid"><b>${esc(ch.nombre || "Bot")}</b><span class="${ch.bot_apagado ? "mutc" : "up"}">${estado(ch)}</span></span><button type="button" class="sw${ch.bot_apagado ? "" : " on"}" data-sw="${esc(ch.id)}" aria-label="Encender o apagar ${esc(ch.nombre || "el bot")}"></button></div>

@@ -337,6 +337,17 @@ async function empezar() {
   emit("listo");
   limpiarDiagInicio();
   pintaAlertaWA().catch(() => {});
+  // (22-oct) Tu foto de perfil, la misma del panel web (app_users.avatar_url, la que subes en Perfil): antes la app solo
+  // mostraba tus iniciales. Aparte, como los logos (puede ser una imagen pesada); la última queda guardada para el arranque.
+  const AV_KEY = "nodo.app.avatar." + A.uid;
+  try { A.avatar = localStorage.getItem(AV_KEY) || ""; } catch (_) { A.avatar = ""; }
+  supa.from("app_users").select("avatar_url").eq("id", A.uid).maybeSingle().then(({ data }) => {
+    const nueva = data?.avatar_url || "";
+    if (nueva === A.avatar) return;
+    A.avatar = nueva;
+    try { if (nueva && nueva.length < 200000) localStorage.setItem(AV_KEY, nueva); else localStorage.removeItem(AV_KEY); } catch (_) { /* */ }
+    emit("logos");
+  }, () => {});
   // Los logos van aparte: cada uno pesa ~27 KB (data URI) y no deben frenar el arranque
   supa.from("channels").select("id,logo_url").in("id", A.channels.map((c) => c.id)).then(({ data }) => { (data || []).forEach((c) => { if (c.logo_url) A.logos[c.id] = c.logo_url; }); pintaBot(); emit("logos"); }, () => {});
   // Con lo guardado se mostró al toque: ahora se confirma con la base
