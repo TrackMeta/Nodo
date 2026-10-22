@@ -1120,3 +1120,64 @@ html:not([data-ds="1"]):not([data-theme="light"]){
 .del-btn{width:40px;height:40px;flex:none;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--faint);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s;padding:0}
 .del-btn:hover{color:var(--red,#e2564a);border-color:var(--red,#e2564a);background:rgba(226,86,74,.09)}
 .del-btn svg{width:17px;height:17px}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Diseño A «Azul Nodo» en la web (22-oct, elegido por Rodrigo en la muestra, opción 3 = como la app):
+   · Menú BLANCO en modo claro (la sección activa en celeste suave, como la barra de abajo de la app; Bandeja en azul
+     sólido). En oscuro sigue la tinta, con la activa en azul.
+   · La cabecera de cada sección (.nodo-head: título, descripción y sus botones) es una FRANJA AZUL de borde a borde
+     con el degradado del logo (#0044FE → #01AFFE), como la cabecera de la app. En el Dashboard la ganancia neta va
+     grande adentro de la franja.
+   · Lo de la IA conserva su violeta → rosado.
+   ═══════════════════════════════════════════════════════════════════ */
+html:not([data-ds="1"])[data-theme="light"] body.nodo-shelled{--bg:#F3F6FC}
+html:not([data-ds="1"])[data-theme="light"] .nodo-nav{
+  --text:#101828; --muted:#475467; --faint:#5F6B7D;
+  --surface:#FFFFFF; --surface-1:#FFFFFF; --surface-2:#F2F4F7;
+  --border:#E4E7EC; --border-strong:#D0D5DD;
+  --brand:#0B63E5; --brand-2:#0B63E5; --brand-bg:#E6EFFF; --brand-border:#BFD6FF;
+  --ink-border:#E4E7EC; --glass-brd:#E4E7EC;
+  background:#FFFFFF!important;border-right:1px solid #E4E7EC;color:var(--text)}
+html:not([data-ds="1"])[data-theme="light"] .nodo-link:hover{background:#F2F4F7;color:#101828}
+html:not([data-ds="1"])[data-theme="light"] .nodo-link.active{background:#E6EFFF;color:#0B63E5;font-weight:600}
+html:not([data-ds="1"])[data-theme="light"] .nodo-sec:hover{color:#101828}
+html:not([data-ds="1"])[data-theme="light"] .nodo-confpop{background:#fff;border-color:#E4E7EC;box-shadow:0 12px 32px rgba(16,24,40,.14)}
+html:not([data-ds="1"])[data-theme="light"] .nodo-confpop .ncp-t{color:#5F6B7D}
+html:not([data-ds="1"]) .nodo-link.active::before{display:none}
+html:not([data-ds="1"]):not([data-theme="light"]) .nodo-link.active{background:rgba(37,99,235,.22);color:#6EA8FF}
+/* Bandeja: azul sólido (la acción principal del menú) */
+html:not([data-ds="1"]) .nodo-link.nodo-cta{background:#0B63E5;border-color:transparent;color:#fff;font-weight:600}
+html:not([data-ds="1"]) .nodo-link.nodo-cta:hover{background:#0044FE}
+html:not([data-ds="1"]) .nodo-link.nodo-cta svg{color:#fff}
+html:not([data-ds="1"]) .nodo-link.nodo-cta .cta-dot{background:#fff}
+html:not([data-ds="1"]) .nodo-link.nodo-cta.active{background:#0044FE;color:#fff}
+/* La IA sigue con su degradado (le gana a la activa celeste) */
+html:not([data-ds="1"]) .nodo-link.nodo-link-ia.active{background:linear-gradient(90deg,rgba(168,85,247,.16),rgba(236,72,153,.10));color:inherit}
+
+/* La franja azul: sube hasta el borde de arriba (el relleno de la página) y se estira de borde a borde por detrás
+   (::before); el degradado se ancla a la ventana para que todas las secciones lo vean igual. */
+html:not([data-ds="1"]) .nodo-page,html:not([data-ds="1"]) body.nodo-shelled .wrap{overflow-x:hidden}
+html:not([data-ds="1"]) .nodo-head{position:relative;z-index:0;margin:-32px 0 22px;padding:24px 0 26px;align-items:center}
+@media(max-width:720px){html:not([data-ds="1"]) .nodo-head{margin-top:-24px;padding:20px 0 22px}}
+html:not([data-ds="1"]) .nodo-head::before{content:"";position:absolute;top:0;bottom:0;left:-100vw;right:-100vw;z-index:-1;
+  background:linear-gradient(90deg,#0044FE 0%,#01AFFE 100%) fixed}
+html:not([data-ds="1"]) .nodo-head > .grow{color:#fff}
+html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-head > .grow h1{color:#fff}
+html:not([data-ds="1"]) .nodo-head .nodo-lead,html:not([data-ds="1"]) .nodo-head > .grow p{color:rgba(255,255,255,.9)}
+html:not([data-ds="1"]) .nodo-head > .grow a{color:#fff!important}
+html:not([data-ds="1"]) .nodo-head .neg-k{color:rgba(255,255,255,.85)}
+/* Botones sobre la franja: el principal blanco con letras azules; los demás, blanco transparente */
+html:not([data-ds="1"]) .nodo-head :is(.nodo-btn,.btn){background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.45);color:#fff}
+html:not([data-ds="1"]) .nodo-head :is(.nodo-btn,.btn):hover{background:rgba(255,255,255,.26);border-color:rgba(255,255,255,.7)}
+html:not([data-ds="1"]) .nodo-head :is(.nodo-btn.primary,.btn.primary){background:#fff;border-color:#fff;color:#0B63E5;font-weight:600}
+html:not([data-ds="1"]) .nodo-head :is(.nodo-btn.primary,.btn.primary):hover{background:#EEF4FF}
+/* Los menús que se abren desde la franja vuelven a sus colores */
+html:not([data-ds="1"]) .nodo-head .nodo-actions :is(.expmenu,.masmenu,.df-pop){color:var(--text)}
+html:not([data-ds="1"]) .nodo-head .nodo-actions :is(.drpop){color:var(--text)}
+/* Fechas, Todo/Digital/Físico y ayuda sobre la franja (Dashboard, Embudo, Compras, Directo…) */
+html:not([data-ds="1"]) .nodo-head :is(.drtrigger,.df-btn){background:#fff;border-color:#fff;color:#0B63E5}
+html:not([data-ds="1"]) .nodo-head :is(.drtrigger,.df-btn) :is(svg,.cur,.drlabel){color:#0B63E5}
+html:not([data-ds="1"]) .nodo-head .dseg{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.32)}
+html:not([data-ds="1"]) .nodo-head .dseg button{color:#fff}
+html:not([data-ds="1"]) .nodo-head .dseg button.on{background:#fff;color:#0B63E5;box-shadow:none}
+html:not([data-ds="1"]) .nodo-head .helpbtn{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.4);color:#fff}

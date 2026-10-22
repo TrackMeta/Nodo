@@ -229,14 +229,20 @@
   .aiact{margin-top:9px;height:32px;padding:0 13px;border:1px solid var(--border);border-radius:9px;background:transparent;color:var(--brand);font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
   .aiact:hover{border-color:var(--brand)}
   /* ═══ Dashboard nuevo (Diseño 2, 10-oct) ═══ */
-  .nd-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0 16px}
-  @media(max-width:900px){.nd-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .nd-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 16px}
+  @media(max-width:700px){.nd-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  /* (22-oct, diseño A) la ganancia neta, grande, dentro de la franja azul de la cabecera (como Hoy en la app) */
+  .nd-gan{flex-basis:100%;display:flex;flex-direction:column;gap:4px;color:#fff;margin-top:4px}
+  .nd-gan:empty{display:none}
+  .nd-kpi .n.azul{color:#0B63E5} html:not([data-theme="light"]) .nd-kpi .n.azul{color:#6EA8FF} .nd-kpi .n.verde{color:var(--green)}
+  .nd-gan .l{font-size:13.5px;font-weight:500;opacity:.92}
+  .nd-gan .n{font-size:56px;line-height:1;font-weight:600;letter-spacing:-.035em;font-variant-numeric:tabular-nums}
+  .nd-gan .s{font-size:13.5px;opacity:.92}
+  @media(max-width:720px){.nd-gan .n{font-size:44px}}
   .nd-kpi{display:flex;flex-direction:column;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0}
   .nd-kpi .l{font-size:12px;color:var(--muted);font-weight:500}
   .nd-kpi .n{font-size:28px;line-height:1.15;font-weight:600;letter-spacing:-.02em;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .nd-kpi .s{font-size:12px;color:var(--muted)} .nd-kpi .s.ok{color:var(--green)} .nd-kpi .s.bad{color:var(--red)}
-  .nd-kpi.hero{background:var(--hero,#0F1523);border-color:var(--hero-border,transparent)}
-  .nd-kpi.hero .l,.nd-kpi.hero .s{color:var(--hero-muted,#98A2B3)} .nd-kpi.hero .n{color:var(--hero-text,#fff)}
   .nd-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 16px}
   @media(max-width:900px){.nd-groups{grid-template-columns:1fr}}
   .nd-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px}
@@ -302,6 +308,7 @@
           <div class="df-pop" id="dfPop"></div>
         </div>
       </div>
+      <div class="nd-gan" id="ndGan"></div>
     </div>
 
     <div id="efecPanel" hidden></div>
@@ -1959,11 +1966,24 @@ function ndRow(lbl,val,cls=""){ return `<div class="nd-row"><span>${lbl}</span><
 function renderND(v){
   const el=$("ndKpis"); if(!el) return;
   const pctCob = v.vendido>0 ? Math.round(v.cobrado/v.vendido*100) : null;
+  // La ganancia neta va en la franja azul: de dónde sale (lo cobrado o la ganancia bruta − lo que se restó)
+  const gan=$("ndGan");
+  if(gan){
+    let s;
+    if(v.brutaDesconocida) s="falta registrar algún costo";
+    else if(!vistaGeneral()) s="tras su publicidad · sin IA ni gastos extra";
+    else {
+      const partes=[`${money(v.bruta)} ${v.vendeFisico?"de ganancia bruta":"cobrados"}`];
+      if(v.hasAds) partes.push(`${money(v.gastoAds)} en anuncios`);
+      if(v.gastoIa>0.009) partes.push(`${money(v.gastoIa)} de IA`);
+      if(v.gastosExtra>0.009) partes.push(`${money(v.gastosExtra)} de gastos extra`);
+      s=partes.join(" − ")+(v.hasAds?"":" · aún sin restar publicidad");
+    }
+    gan.innerHTML=`<span class="l">Ganancia neta</span><span class="n">${v.brutaDesconocida?"—":money(v.neta)}</span><span class="s">${s}</span>`;
+  }
   el.innerHTML=
-    `<div class="nd-kpi hero"><span class="l">Ganancia neta</span><span class="n">${v.brutaDesconocida?"—":money(v.neta)}</span>`+
-      `<span class="s">${v.brutaDesconocida?"falta registrar algún costo":(!vistaGeneral()?"tras su publicidad · sin IA ni gastos extra":v.hasAds?"tras publicidad, IA y gastos":"aún sin restar publicidad")}</span></div>`+
-    `<div class="nd-kpi"><span class="l">Ventas</span><span class="n">${v.compras}</span><span class="s">${v.compras?"ticket "+money(v.ticket):"sin ventas en estas fechas"}</span></div>`+
-    `<div class="nd-kpi"><span class="l">Ingresos</span><span class="n">${money(v.vendido)}</span><span class="s ${pctCob===100?"ok":""}">${pctCob==null?"sin ventas":"cobrado "+pctCob+"%"}</span></div>`+
+    `<div class="nd-kpi"><span class="l">Ventas</span><span class="n azul">${v.compras}</span><span class="s">${v.compras?"ticket "+money(v.ticket):"sin ventas en estas fechas"}</span></div>`+
+    `<div class="nd-kpi"><span class="l">Ingresos</span><span class="n verde">${money(v.vendido)}</span><span class="s ${pctCob===100?"ok":""}">${pctCob==null?"sin ventas":"cobrado "+pctCob+"%"}</span></div>`+
     `<div class="nd-kpi"><span class="l">ROAS</span><span class="n">${v.hasAds&&v.roas>0?v.roas.toFixed(2)+"×":"—"}</span><span class="s">${v.hasAds?money(v.gastoAds)+" en Meta":"conecta Meta en Ajustes"}</span></div>`;
   const g=$("ndGroups"); if(!g) return;
   const ventas = `<div class="nd-card"><h4>Ventas</h4>`+
