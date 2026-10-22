@@ -1222,3 +1222,9 @@ html:not([data-ds="1"]) .nodo-head .neg-k{font-size:10.5px;margin-bottom:0}
 html:not([data-ds="1"]) .nodo-head.franja-alta{padding:24px 0 26px;margin-bottom:22px}
 html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title{font-size:26px}
 @media(max-width:720px){html:not([data-ds="1"]) .nodo-head.franja-alta{padding:20px 0 22px}}
+/* (22-oct) El nombre del bot en el menú se cortaba («Prime D…»): le faltaban ~15 px. Menos separación, el botón de comprimir
+   un poco más chico y la letra a 13,5 px; un nombre largo igual se corta, con el nombre completo al pasar el mouse. */
+html:not([data-ds="1"]) .nodo-brand{gap:4px}
+html:not([data-ds="1"]) .nodo-botsel{gap:7px;padding:0 6px}
+html:not([data-ds="1"]) .nodo-botsel .nb-name{font-size:13.5px}
+html:not([data-ds="1"]) .nodo-brand #nodoCollapse{width:28px;height:28px}

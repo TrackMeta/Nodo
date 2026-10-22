@@ -1346,7 +1346,7 @@ export async function mountShell({ active } = {}) {
     <div class="nodo-brand">
       <button class="nodo-botsel" id="nodoBotBtn" type="button" title="Cambiar de bot">
         <span class="nb-logo-w"><img class="nb-logo" id="nodoBotLogo" src="${escAttr(initLogo)}" alt="" /></span>
-        <span class="nb-name" id="nodoBotName">${escHtml(initName)}</span>
+        <span class="nb-name" id="nodoBotName" title="${escAttr(initName)}">${escHtml(initName)}</span>
         <svg class="nb-cx" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
       </button>
       <button class="nodo-icnbtn" id="nodoCollapse" title="Comprimir menú"><span class="cl-shrink">${svg("panel")}</span><span class="cl-grow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></span></button>
@@ -1538,7 +1538,7 @@ export async function mountShell({ active } = {}) {
     if (S.logo) S.logo.src = src;
     if (S.brandName) S.brandName.textContent = name;
     if (S.botLogo) S.botLogo.src = src;
-    if (S.botName) S.botName.textContent = name;
+    if (S.botName) { S.botName.textContent = name; S.botName.title = name; }   // nombre completo al pasar el mouse si no entra
     setFavicon(src); // favicon = logo del bot activo
     if (c) writeBrandCache({ id: c.id, logo: c.logo_url || null, name }); // caché anti-parpadeo
     pintarPuntoBots();   // al cambiar de bot cambia cuáles son «los otros»
