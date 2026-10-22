@@ -16,20 +16,22 @@ public class NodoNativoPlugin extends Plugin {
     public void barras(PluginCall call) {
         final String color = call.getString("color", "#131A26");
         final boolean claro = Boolean.TRUE.equals(call.getBoolean("claro", false));
+        int[] arr = null;
+        try {
+            com.getcapacitor.JSArray ja = call.getArray("arriba");
+            if (ja != null && ja.length() >= 2) arr = new int[] { android.graphics.Color.parseColor(ja.getString(0)), android.graphics.Color.parseColor(ja.getString(1)) };
+        } catch (Throwable t) { arr = null; }
+        final int[] arriba = arr;
         getActivity().runOnUiThread(() -> {
             try {
-                android.view.Window w = getActivity().getWindow();
                 int c = android.graphics.Color.parseColor(color);
-                w.getDecorView().setBackgroundColor(c);
-                w.setStatusBarColor(c);
-                w.setNavigationBarColor(c);
-                androidx.core.view.WindowInsetsControllerCompat ic = androidx.core.view.WindowCompat.getInsetsController(w, w.getDecorView());
-                ic.setAppearanceLightStatusBars(claro);
-                ic.setAppearanceLightNavigationBars(claro);
+                MainActivity.pintarBarras(getActivity(), c, claro, arriba);
                 // Se recuerda el tema: la próxima vez que abras la app, el fondo nativo (y la pantalla de inicio de
                 // Android 13+) ya sale de tu color, sin el destello oscuro antes de que cargue la página.
-                getContext().getSharedPreferences(MainActivity.PREFS, android.content.Context.MODE_PRIVATE).edit()
-                    .putInt("fondo", c).putBoolean("claro", claro).apply();
+                android.content.SharedPreferences.Editor ed = getContext().getSharedPreferences(MainActivity.PREFS, android.content.Context.MODE_PRIVATE).edit()
+                    .putInt("fondo", c).putBoolean("claro", claro);
+                if (arriba != null) ed.putInt("arriba1", arriba[0]).putInt("arriba2", arriba[1]); else ed.remove("arriba1").remove("arriba2");
+                ed.apply();
                 if (android.os.Build.VERSION.SDK_INT >= 33) {
                     getActivity().getSplashScreen().setSplashScreenTheme(claro ? R.style.NodoInicioClaro : R.style.NodoInicioOscuro);
                 }

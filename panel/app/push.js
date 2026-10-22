@@ -8,7 +8,10 @@ import { A, on, emit, supa, callFn, toast, cambiarBot, ir } from "./app.js";
 // y elige íconos claros u oscuros; StatusBar queda de respaldo para celulares más viejos.
 function barra(t) {
   const claro = t === "light", color = claro ? "#FFFFFF" : "#131A26";
-  window.Capacitor?.Plugins?.NodoNativo?.barras?.({ color, claro }).catch?.(() => {});
+  // (1.0.23+) arriba, el mismo degradado que la cabecera (diseño A); los APK de antes lo ignoran
+  const NN = window.Capacitor?.Plugins?.NodoNativo;
+  // NodoNativo.barras ya pinta la barra de arriba: StatusBar, después, la volvía a poner blanca
+  if (NN?.barras) { NN.barras({ color, claro, arriba: ["#0044FE", "#01AFFE"] }).catch?.(() => {}); return; }
   const SB = window.Capacitor?.Plugins?.StatusBar; if (!SB) return;
   SB.setStyle?.({ style: claro ? "LIGHT" : "DARK" }).catch?.(() => {});
   SB.setBackgroundColor?.({ color }).catch?.(() => {});

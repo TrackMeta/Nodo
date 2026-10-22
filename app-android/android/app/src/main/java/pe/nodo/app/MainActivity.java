@@ -28,6 +28,44 @@ import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
     static final String PREFS = "nodo";
+
+    // Barras del celular (1.0.23): abajo y el fondo de la ventana del color del tema; arriba (hora, señal, batería),
+    // si la app lo pide, el mismo degradado horizontal que la cabecera (#0044FE → #01AFFE) con íconos blancos.
+    // Con Android 15 la barra de arriba no se pinta (borde a borde): lo que se ve es el fondo de la ventana; por eso
+    // el degradado va como una franja arriba de ese fondo, del alto de la barra.
+    static void pintarBarras(android.app.Activity a, int c, boolean claro, int[] arriba) {
+        android.view.Window w = a.getWindow();
+        View decor = w.getDecorView();
+        androidx.core.view.WindowInsetsControllerCompat ic = androidx.core.view.WindowCompat.getInsetsController(w, decor);
+        if (arriba != null && arriba.length >= 2) {
+            int alto = 0;
+            WindowInsetsCompat ins = ViewCompat.getRootWindowInsets(decor);
+            if (ins != null) alto = ins.getInsets(WindowInsetsCompat.Type.statusBars()).top;
+            if (alto <= 0) {
+                int id = a.getResources().getIdentifier("status_bar_height", "dimen", "android");
+                alto = id > 0 ? a.getResources().getDimensionPixelSize(id) : (int) (24 * a.getResources().getDisplayMetrics().density);
+            }
+            android.graphics.drawable.GradientDrawable grad = new android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT, arriba);
+            android.graphics.drawable.LayerDrawable capas = new android.graphics.drawable.LayerDrawable(
+                new Drawable[] { new android.graphics.drawable.ColorDrawable(c), grad });
+            capas.setLayerGravity(1, Gravity.TOP | Gravity.FILL_HORIZONTAL);
+            capas.setLayerHeight(1, alto);
+            decor.setBackground(capas);
+            w.setStatusBarColor(android.graphics.Color.TRANSPARENT);
+            ic.setAppearanceLightStatusBars(false);
+        } else {
+            decor.setBackgroundColor(c);
+            w.setStatusBarColor(c);
+            ic.setAppearanceLightStatusBars(claro);
+        }
+        w.setNavigationBarColor(c);
+        ic.setAppearanceLightNavigationBars(claro);
+    }
+    static int[] arribaGuardado(android.content.SharedPreferences sp) {
+        if (!sp.contains("arriba1")) return null;
+        return new int[] { sp.getInt("arriba1", 0xFF0044FE), sp.getInt("arriba2", 0xFF01AFFE) };
+    }
     // ── Pantalla de inicio NATIVA (APK 1.0.16, 20-oct, como Vendia) ──────────────────────────────────────────────
     // La pantalla del sistema es solo el fondo; la animación entera vive en una capa nativa encima de la app:
     //   1) la «Red de nodos» (drawable/splash_n, animated-vector),
@@ -214,13 +252,7 @@ public class MainActivity extends BridgeActivity {
                 int c = sp.getInt("fondo", 0xFF131A26);
                 boolean claro = sp.getBoolean("claro", false);
                 fondo = c;
-                android.view.Window w = getWindow();
-                w.getDecorView().setBackgroundColor(c);
-                w.setStatusBarColor(c);
-                w.setNavigationBarColor(c);
-                androidx.core.view.WindowInsetsControllerCompat ic = androidx.core.view.WindowCompat.getInsetsController(w, w.getDecorView());
-                ic.setAppearanceLightStatusBars(claro);
-                ic.setAppearanceLightNavigationBars(claro);
+                pintarBarras(this, c, claro, arribaGuardado(sp));
                 if (wv != null) wv.setBackgroundColor(c);
             } catch (Throwable t) { /* sin tema guardado: el oscuro de siempre */ }
         }
