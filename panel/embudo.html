@@ -705,8 +705,8 @@ function renderOrigen(cs){
     ? `Las ofertas trajeron <b>${money(deOfertas)}</b> · ${Math.round(deOfertas/plata*100)}% de los ${money(plata)} vendidos`
     : `<b>${money(plata)}</b> vendidos, todos a precio normal`;
   el.innerHTML=filas.map(([p,g],i)=>`<div class="drow">
-      <div class="dhead"><span class="ddot" style="background:${i===0?"var(--green)":"var(--amber)"}"></span><div><div class="dname">${money(p)}</div><div class="dsub">${i===0?"Precio normal":"Oferta"}</div></div></div>
-      <div class="dbarwrap"><div class="dbar" style="width:${Math.round(g.n/max*100)}%;background:${i===0?"var(--green)":"var(--amber)"}"></div></div>
+      <div class="dhead"><span class="ddot" style="background:${i===0?"var(--fill-verde,#16A34A)":"var(--fill-ambar,#F59E0B)"}"></span><div><div class="dname">${money(p)}</div><div class="dsub">${i===0?"Precio normal":"Oferta"}</div></div></div>
+      <div class="dbarwrap"><div class="dbar" style="width:${Math.round(g.n/max*100)}%;background:${i===0?"var(--fill-verde,#16A34A)":"var(--fill-ambar,#F59E0B)"}"></div></div>
       <div class="dn">${nf.format(g.n)}</div>
       <div class="dmoney">${money(g.sum)}</div>
     </div>`).join("");

@@ -1105,16 +1105,18 @@ html[data-bot-tipo-pend] .nodo-link[data-nav="pedidos"],html[data-bot-tipo-pend]
 /* (10-oct) Colores de ETAPA del embudo, compartidos por todo el panel (antes solo en embudo.html).
    Temperatura (Rodrigo, 10-oct): gris (frío) · azul (interesado) · naranja (caliente) · amarillo (confirmado) ·
    verde (compró) · rojo (perdido). Igual que EMBUDO_STAGES en contact-extras.js. --pv-* = pasos de entrega en provincia. */
-html:not([data-ds="1"])[data-theme="light"]{
-  --st-llegaron:#344054; --st-nuevo:#667085; --st-curioso:#667085; --st-interesado:#2563EB; --st-caliente:#EA580C;
-  --st-confirmado:#CA8A04; --st-comprado:#16A34A; --st-perdido:#DC2626; --st-resto:#E4E7EC;
-  --pv-1:#344054; --pv-2:#4A5D82; --pv-3:#3D68BD; --pv-4:#B54708; --pv-5:#0B63E5; --pv-6:#067647;
+/* (22-oct) UN solo tono por color en los dos temas (antes el oscuro usaba otros: el naranja, el amarillo y el azul
+   «cambiaban» al pasar de claro a oscuro). Solo el fondo de la barra vacía (--st-resto) depende del tema.
+   --fill-* = colores de RELLENO (barras, puntos de gráficos), también iguales en claro y oscuro; el texto sigue con
+   --green/--amber/--red, que sí necesitan su versión por tema para leerse. */
+html:not([data-ds="1"]){
+  --st-llegaron:#475467; --st-nuevo:#667085; --st-curioso:#667085; --st-interesado:#2563EB; --st-caliente:#EA580C;
+  --st-confirmado:#CA8A04; --st-comprado:#16A34A; --st-perdido:#DC2626;
+  --pv-1:#475467; --pv-2:#4A5D82; --pv-3:#3D68BD; --pv-4:#D97706; --pv-5:#2563EB; --pv-6:#16A34A;
+  --fill-verde:#16A34A; --fill-rojo:#DC2626; --fill-ambar:#F59E0B; --fill-azul:#2563EB;
 }
-html:not([data-ds="1"]):not([data-theme="light"]){
-  --st-llegaron:#3A4558; --st-nuevo:#5D6B82; --st-curioso:#5D6B82; --st-interesado:#3B82F6; --st-caliente:#F97316;
-  --st-confirmado:#EAB308; --st-comprado:#16A34A; --st-perdido:#EF4444; --st-resto:#263043;
-  --pv-1:#3A4558; --pv-2:#3F5274; --pv-3:#2F5DB0; --pv-4:#B45309; --pv-5:#2563EB; --pv-6:#15803D;
-}
+html:not([data-ds="1"])[data-theme="light"]{--st-resto:#E4E7EC}
+html:not([data-ds="1"]):not([data-theme="light"]){--st-resto:#263043}
 
 /* (10-oct) Eliminar en el detalle (Productos, Respuestas rápidas, Secuencias): tacho gris que se pone rojo al pasar el mouse */
 .del-btn{width:40px;height:40px;flex:none;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--faint);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s;padding:0}

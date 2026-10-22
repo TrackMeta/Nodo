@@ -1834,7 +1834,7 @@ async function renderBitaChart(dayMes){
     const pts=series.map((s,i)=>vals[i]==null?null:[padL+i*bw+bw/2, yf(vals[i])]).filter(Boolean);
     if(pts.length){
       const linea=pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");
-      const ult=nums[nums.length-1], col=ult<0?"var(--red)":"var(--green)";
+      const ult=nums[nums.length-1], col=ult<0?"var(--fill-rojo,#DC2626)":"var(--fill-verde,#16A34A)";
       marks+=`<path d="${linea} L${pts[pts.length-1][0].toFixed(1)} ${y0.toFixed(1)} L${pts[0][0].toFixed(1)} ${y0.toFixed(1)} Z" fill="${col}" fill-opacity=".10"/>`;
       marks+=`<path d="${linea}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
       const lp=pts[pts.length-1];
@@ -1848,7 +1848,7 @@ async function renderBitaChart(dayMes){
       if(bitaModo==="diario") marks+=`<rect x="${(x+bw*0.2).toFixed(1)}" y="${(y0-3).toFixed(1)}" width="${Math.max(2,bw*0.6).toFixed(1)}" height="6" rx="2" fill="var(--border-strong,#D0D5DD)"/>`;
     } else if(bitaModo==="diario" && s.profit!=null){
       const p=s.profit, y=Math.min(yf(p),y0), h=Math.max(2,Math.abs(yf(p)-y0));
-      marks+=`<rect x="${(x+bw*0.18).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(3,bw*0.64).toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${p<0?"var(--red)":"var(--green)"}" fill-opacity="${s.hoy?0.5:0.92}"/>`;
+      marks+=`<rect x="${(x+bw*0.18).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(3,bw*0.64).toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${p<0?"var(--fill-rojo,#DC2626)":"var(--fill-verde,#16A34A)"}" fill-opacity="${s.hoy?0.5:0.92}"/>`;
       if(conMonto) marks+=`<text x="${(x+bw/2).toFixed(1)}" y="${(p>=0?y-5:y+h+12).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="600" fill="var(--muted)">${sgCorto(p)}</text>`;
     }
     // zona invisible para el mouse (todo el alto de la columna)
