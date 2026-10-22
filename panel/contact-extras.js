@@ -1826,7 +1826,7 @@ export async function openEditarPedido(o, deps) {
             <option value="confirmada"${o.estado === "confirmada" || !o.estado ? " selected" : ""}>Pagado / entregado (cuenta en tus números)</option>
             <option value="anulada"${o.estado === "anulada" ? " selected" : ""}>Anular la venta (deja de contar)</option>
           </select>
-          <div class="hint">Corrige el monto y el Dashboard/KPIs se ajustan al instante. Si ya se envió a Meta con el monto viejo, después toca <b>“reintentar”</b> en el chip de Meta del chat.</div>
+          <div class="hint">Corrige el monto y Inicio y los KPIs se ajustan al instante. Si ya se envió a Meta con el monto viejo, después toca <b>“reintentar”</b> en el chip de Meta del chat.</div>
         </div>
         ${atrHtml}
         ${bumpHtml}

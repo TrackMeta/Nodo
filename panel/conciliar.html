@@ -521,7 +521,7 @@ async function marcarOtroMedio(v,el){
 }
 async function anular(v,el){
   const motivo=await askText({ title:"Anular esta venta",
-    message:"Sale del Dashboard, de Compras y de las métricas (no se borra: queda registrada como anulada).",
+    message:"Sale de Inicio, de Compras y de las métricas (no se borra: queda registrada como anulada).",
     label:"Motivo (para tu registro)", placeholder:"Ej: pago falso, el banco no lo respalda",
     confirmText:"Anular venta", cancelText:"No, dejarla" });
   if(!motivo) return;

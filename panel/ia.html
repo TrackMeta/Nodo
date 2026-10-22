@@ -263,7 +263,7 @@ const PERFILES=[
   ["ventas","Conversación y ventas","La IA que asesora, responde dudas y cierra ventas por chat (operación “generar texto”). Es la que más se usa."],
   ["ocr","Validar comprobantes (OCR)","La IA que lee las capturas de pago (Yape, Plin, transferencias) y valida el pago (operación “analizar imagen”). Se apoya en la pestaña Validador de comprobantes."],
   ["extraccion","Extraer datos","La IA que saca datos ordenados de un texto: nombre, dirección, distrito, etc. (operación “extraer”). También la usa el Router de intención de Palabras clave."],
-  ["asistente","Asistente (Armar · Aconseja · Opera)","La IA que arma productos y el negocio desde un brief, da consejos en el Dashboard y ejecuta tus órdenes. No es el bot en vivo: es una tarea ocasional que tú revisas, así que conviene tu mejor modelo (Claude suele redactar mejor). Si dejas 'Por defecto del bot', usa el proveedor por defecto del canal."],
+  ["asistente","Asistente (Armar · Aconseja · Opera)","La IA que arma productos y el negocio desde un brief, da consejos en Inicio y ejecuta tus órdenes. No es el bot en vivo: es una tarea ocasional que tú revisas, así que conviene tu mejor modelo (Claude suele redactar mejor). Si dejas 'Por defecto del bot', usa el proveedor por defecto del canal."],
 ];
 const st = { channelId:null, tab:"vendedor", iaProvider:null, cfg:{}, channel:{}, pick:{}, perfMod:{}, form:{}, ocr:null, campos:{ fields:[], deleted:[], loaded:false } };
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -1032,7 +1032,7 @@ function renderValidador(b){
 const USO_NOMBRES={ vender:"Vender y responder", ocr:"Leer comprobantes", stt:"Escuchar audios",
   extraer:"Tomar los datos del pedido", clasificar:"Entender qué quiso decir", asistente:"Asistentes del panel",
   memoria:"Recordar a cada cliente", recepcion:"Recibir a quien escribe sin palabra clave", examen:"Exámenes de prueba (calificador)", otro:"Otros" };
-// El rango que se está mirando (mismo selector que el Dashboard, por si compara).
+// El rango que se está mirando (mismo selector que Inicio, por si compara).
 let gastoRango=computePreset("hoy");   // (todas las fechas arrancan en Hoy — Rodrigo, 10-oct)
 // ¿Este canal llegó a consumir IA alguna vez? Se pregunta UNA vez y aparte del rango:
 // si se dedujera del periodo elegido, elegir un mes sin consumo haría desaparecer la

@@ -1218,7 +1218,7 @@ function renderRegaloProducto(b){
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px"><span style="color:var(--green);display:inline-flex">${icon("dollar")}</span> Lo que te cuesta <span style="font-weight:400;color:var(--faint);font-size:12px">— opcional</span></h4>
       <input class="in" id="pCosto" type="number" min="0" step="0.5" value="${esc(c.costo??"")}" placeholder="${tipo==="fisico"?"Ej. 8":"Ej. 0"}" style="margin-top:8px"/>
-      <div style="font-size:11px;color:var(--faint);margin-top:5px">Cuánto te cuesta regalar una unidad. El Dashboard lo descuenta de tu ganancia (el regalo no se cobra, pero te cuesta). El cliente nunca lo ve. En digital suele ser 0.</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:5px">Cuánto te cuesta regalar una unidad. Inicio lo descuenta de tu ganancia (el regalo no se cobra, pero te cuesta). El cliente nunca lo ve. En digital suele ser 0.</div>
     </div>
     `;
   const pc=$("pCosto"); if(pc) pc.onchange=(e)=>prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));

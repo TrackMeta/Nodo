@@ -242,7 +242,7 @@ function pintar(r, n, apps) {
     <div class="card"><div style="padding:12px 14px" id="hoyHorarios"></div></div>
     ${comoAvanzan(n.funnel)}
     ${adsHtml}${tipoHtml}${prodHtml}
-    <p class="note">Mismo cálculo que el Dashboard del panel (vista Todo) · hora del negocio · se actualiza solo.</p>`;
+    <p class="note">Mismo cálculo que Inicio en el panel web (vista Todo) · hora del negocio · se actualiza solo.</p>`;
   pintaEspera();
   if (!n.ventasOk) { const hh = $("#hoyHorarios"); if (hh) hh.innerHTML = `<p class="nsub" style="margin:0">Horarios de venta · actualizando…</p>`; }
   else import("../horarios.js").then((mod) => mod.montarHorarios($("#hoyHorarios"), { supa, channelId: A.ch, fromISO: n.fromISO, toISO: n.toISO, ventas: n.ventasOk, chats: n.conts, money: m, h: "h4", plegable: "nodo.app.horarios" })).catch(() => {});
