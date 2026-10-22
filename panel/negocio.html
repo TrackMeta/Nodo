@@ -80,8 +80,10 @@
   .nq-prog.ok .bar i{background:var(--green)}
   .nq-prog b{color:var(--text)}
   .nq-prog .okt{color:var(--green);font-weight:600}
-  /* (10-oct) «Listo» como ✓ verde, sin píldora */
-  .nq.lleno .nq-st{background:none!important;color:var(--green)!important;font-size:15px;padding:0 2px}
+  /* (22-oct) «Listo» como puntito verde (antes ✓), sin píldora */
+  .nq.lleno .nq-st{width:9px;height:9px;padding:0;border-radius:50%;background:var(--fill-verde,#16A34A)!important;font-size:0;color:transparent!important;margin:0 3px}
+  .nq-prog .okt{display:inline-flex;align-items:center;gap:7px}
+  .nq-prog .okt::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--fill-verde,#16A34A);flex:none}
   /* cuadros plegados cuando los 4 están completos */
   .nq.plegado:not(.abierto){padding:12px 16px}
   .nq.plegado:not(.abierto) .nq-va,.nq.plegado:not(.abierto) .nq-no,.nq.plegado:not(.abierto) label,
@@ -425,14 +427,14 @@ function renderConocimiento(b){
   const resumen=(c)=>{ const t=String(form[c.req]||"").replace(/\s+/g," ").trim(); return t.length>110 ? t.slice(0,110)+"…" : t; };
   const cuadro=(c)=>`<div class="nq${lleno(c)?" lleno":""}${todoListo?" plegado":""}" data-req="${c.req}">
       <div class="nq-hd"><span class="nq-ic">${NQ_ICO[c.ico]||""}<span class="n">${c.n}</span></span>
-        <span class="nq-tt">${c.titulo}</span><span class="nq-st">${lleno(c)?"✓":"Falta"}</span>${todoListo?'<span class="nq-chev">›</span>':""}</div>
+        <span class="nq-tt">${c.titulo}</span><span class="nq-st"${lleno(c)?' title="Listo" aria-label="Listo"':""}>${lleno(c)?"":"Falta"}</span>${todoListo?'<span class="nq-chev">›</span>':""}</div>
       ${todoListo?`<div class="nq-res">${esc(resumen(c))}</div>`:""}
       <div class="nq-va">${c.va}</div>
       <div class="nq-no">${NQ_ICO.no}<span>No va aquí: ${c.no}</span></div>
       ${c.campos.map(field).join("")}</div>`;
   const nLlenos=()=>NEG_CUADROS.filter(lleno).length;
   const progHtml=()=> nLlenos()===NEG_CUADROS.length
-    ? `<div class="nq-prog ok" id="nqProg"><span class="okt">✓ El bot ya sabe lo esencial de tu negocio</span></div>`
+    ? `<div class="nq-prog ok" id="nqProg"><span class="okt">El bot ya sabe lo esencial de tu negocio</span></div>`
     : `<div class="nq-prog" id="nqProg"><span class="bar"><i style="width:${Math.round(100*nLlenos()/NEG_CUADROS.length)}%"></i></span><span><b>${nLlenos()} de ${NEG_CUADROS.length}</b> listos${nLlenos()===NEG_CUADROS.length?" — el bot ya sabe lo esencial de tu negocio":""}</span></div>`;
   const vacioNeg = !(form.rubro && String(form.rubro).trim());
   b.innerHTML=`
@@ -479,7 +481,7 @@ function renderConocimiento(b){
     el.addEventListener("input",()=>{
       form[req]=el.value;
       const ok=!!el.value.trim(); box.classList.toggle("lleno",ok);
-      const stt=box.querySelector(".nq-st"); if(stt) stt.textContent=ok?"✓":"Falta";
+      const stt=box.querySelector(".nq-st"); if(stt){ stt.textContent=ok?"":"Falta"; if(ok){ stt.title="Listo"; stt.setAttribute("aria-label","Listo"); } else { stt.removeAttribute("title"); stt.removeAttribute("aria-label"); } }
       const pg=$("nqProg"); if(pg) pg.outerHTML=progHtml();
     });
   });
