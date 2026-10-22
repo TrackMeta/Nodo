@@ -640,7 +640,3 @@ body.app *::-webkit-scrollbar{display:none;width:0;height:0}
 .plg.cerrado .plg-tog svg{transform:rotate(-90deg)}
 .plg.cerrado .plg-cuerpo{display:none}
 .plg .plg-cuerpo{padding-top:0}
-
-/* (21-oct) Modo oscuro: verde y rojo del mismo tono que en claro (antes menta #5FD39A y salmón #FF8A80, se veían
-   como otros colores); solo más brillantes para que se lean sobre el fondo oscuro (contraste ≥ 4,5) */
-html:not([data-ds="1"]):not([data-theme="light"]){ --green:#22C55E; --red:#F04438 }

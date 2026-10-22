@@ -1015,9 +1015,9 @@ html:not([data-ds="1"]):not([data-theme="light"]){
   --text:#E6E9EF; --muted:#98A2B3; --faint:#8C96A8; --disabled:#475467;
   --brand:#2563EB; --brand-2:#6EA8FF; --brand-3:#1D4ED8;
   --brand-bg:rgba(37,99,235,.16); --brand-border:rgba(110,168,255,.35);
-  --green:#5FD39A;  --green-bg:#12291F;
+  --green:#22C55E;  --green-bg:#12291F;
   --amber:#F7C063;  --amber-bg:#2E2412;
-  --red:#FF8A80;    --red-bg:#2F1A1A;
+  --red:#F04438;    --red-bg:#2F1A1A;
   --info:#6EA8FF;   --info-bg:rgba(37,99,235,.16);
   --purple:#B9A3FB; --violet:#B9A3FB; --violet-bg:#2A2246; --violet-text:#B9A3FB;
   --ink:#070A10; --ink-border:rgba(255,255,255,.06);
