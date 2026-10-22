@@ -145,9 +145,15 @@ function funnelDe(cs, conPedido) {
   const peor = validos.length ? validos.reduce((a, b) => (b.seCae > a.seCae ? b : a)) : null;
   return { N, saltos, peor: peor && peor.drop > 25 && peor.seCae >= 2 ? peor : null, enCurso: c.confirmado };
 }
+// (21-oct) El embudo va al final, arriba de «Tus anuncios», y se pliega: arranca cerrado y se recuerda
+const PLG_KEY = "nodo.app.embudo";
+const plgAbierto = () => { try { return localStorage.getItem(PLG_KEY) === "1"; } catch (_) { return false; } };
+const FLECHA_PLG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
 function comoAvanzan(F) {
   // (21-oct) a pedido de Rodrigo vuelve el embudo completo (el de la página Embudo) en vez de las cuatro barras
-  if (!F || !F.N.llegaron) return `<div class="card"><div class="ttl">Embudo</div><p class="nsub" style="padding:6px 14px 12px">Nadie llegó en estas fechas.</p></div>`;
+  const resumen = F && F.N.llegaron ? `${F.N.llegaron} llegaron · ${F.N.compraron} compraron (${pctN(F.N.compraron, F.N.llegaron)}%)` : "Nadie llegó en estas fechas";
+  const cab = `<button type="button" class="plg-tog" data-plg aria-expanded="${plgAbierto()}"><span class="rmid"><b>Embudo</b><span>${resumen}</span></span>${FLECHA_PLG}</button>`;
+  if (!F || !F.N.llegaron) return `<div class="card plg cerrado">${cab}</div>`;
   const { N, saltos, peor, enCurso } = F;
   const niveles = [["Llegaron", N.llegaron, "llegaron"], ["Curiosos", N.curiosos, "curioso"], ["Interés", N.interes, "interesado"], ["Caliente", N.calientes, "caliente"], ["Confirmaron", N.confirmaron, "confirmado"], ["Compraron", N.compraron, "comprado"]];
   const flecha = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
@@ -159,7 +165,7 @@ function comoAvanzan(F) {
   const aviso = peor ? `<div class="fneck">${ic("alert")}<div><b>Mayor fuga:</b> ${peor.de} → ${peor.a}, se van ${peor.seCae} (${peor.drop}%). ${peor.tip}</div></div>`
     : `<div class="fneck ok">${ic("check")}<div>Tu embudo fluye bien.</div></div>`;
   const curso = enCurso > 0 ? `<div class="fneck ok">${ic("truck")}<div>${enCurso} ${enCurso === 1 ? "venta confirmada sigue" : "ventas confirmadas siguen"} en curso.</div></div>` : "";
-  return `<div class="card"><div class="ttl">Embudo</div><div class="fwrap">${aviso}${curso}<div class="fun">${fun}</div><p class="nsub">Los que llegaron en estas fechas, como en la página Embudo.</p></div></div>`;
+  return `<div class="card plg${plgAbierto() ? "" : " cerrado"}">${cab}<div class="fwrap plg-cuerpo">${aviso}${curso}<div class="fun">${fun}</div><p class="nsub">Los que llegaron en estas fechas, como en la página Embudo.</p></div></div>`;
 }
 
 // ── «Lo que espera por ti» (se pinta con los números que ya tienen las otras pestañas) ──
@@ -234,11 +240,11 @@ function pintar(r, n, apps) {
       <div class="kpi"><small>Costo por chat</small><b class="num">${n.chatsAd && n.gasto > 0 ? m(n.cpc) : "—"}</b><span class="mutc">${n.chatsAd} chat${n.chatsAd === 1 ? "" : "s"} del anuncio</span></div>
       <div class="kpi"><small>Conversión</small><b class="num">${chats ? Math.round((n.ventas / chats) * 100) + " %" : "—"}</b><span class="mutc">de chat a venta · ${chats} chat${chats === 1 ? "" : "s"}</span></div>
     </div>
-    ${comoAvanzan(n.funnel)}
     ${ci.interes ? `<div class="iacard"><span class="iaic">${ic("sparkles")}</span><span class="rmid"><b>La IA cerró ${ci.compraron} venta${ci.compraron === 1 ? "" : "s"}</b><span>${ci.compraron} de ${ci.interes} que conversaron · ${Math.round((ci.compraron / ci.interes) * 100)} % de cierre</span></span></div>` : ""}
     ${tablero(n, m)}
     <div class="card"><div class="ttl">Ingresos ${unDia(r) ? "por hora" : "por día"}</div><div style="padding:0 14px 12px">${grafico(n, r)}</div></div>
     <div class="card"><div style="padding:12px 14px" id="hoyHorarios"></div></div>
+    ${comoAvanzan(n.funnel)}
     ${adsHtml}${tipoHtml}${prodHtml}
     <p class="note">Mismo cálculo que el Dashboard del panel (vista Todo) · hora del negocio · se actualiza solo.</p>`;
   pintaEspera();
@@ -281,6 +287,13 @@ function detalleGanancia() {
     ${n.sinCosto ? `<p class="alert">A ${n.sinCosto} pedido${n.sinCosto === 1 ? "" : "s"} le falta el costo del producto o el flete: no suman a la ganancia hasta cargarlos en el panel.</p>` : ""}`);
 }
 function clic(e) {
+  const plg = e.target.closest("[data-plg]");
+  if (plg) {
+    const card = plg.closest(".plg"), abre = card.classList.contains("cerrado") && !!card.querySelector(".plg-cuerpo");
+    card.classList.toggle("cerrado", !abre); plg.setAttribute("aria-expanded", String(abre));
+    try { localStorage.setItem(PLG_KEY, abre ? "1" : "0"); } catch (_) { /* */ }
+    return;
+  }
   if (e.target.closest("[data-dsel]")) { elegirFechas(R, (r) => { R = r; cargar(); }); return; }
   if (e.target.closest("#verGanancia")) { detalleGanancia(); return; }
   const b = e.target.closest("[data-ir]"); if (!b) return;

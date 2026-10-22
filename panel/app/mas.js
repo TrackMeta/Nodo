@@ -47,11 +47,12 @@ function numeroHtml() {
 // «Más», reordenado (21-oct, «me parece un poco confuso»): quién eres → el bot que estás viendo (encendido + su
 // número) → tus otros bots (tocar = verlo) → avisos → apariencia (tema en el momento) → cerrar sesión.
 // Se quitó «Abrir el panel completo».
-const TEMAS = [["auto", "Automático"], ["light", "Claro"], ["dark", "Oscuro"]];
+// (21-oct) sin «Automático»: Claro u Oscuro. Quien nunca eligió sigue al celular y ve marcado el que tiene puesto
+const TEMAS = [["light", "Claro"], ["dark", "Oscuro"]];
 function pintar() {
   cargarNumero(A.ch);
   const vivas = [...N.rows.values()].filter((n) => n.por_atender && !n.resuelta_at).length;
-  const tema = temaPref(), ch = A.channels.find((c) => c.id === A.ch) || {}, otros = A.channels.filter((c) => c.id !== A.ch);
+  const tema = temaPref() === "auto" ? document.documentElement.dataset.theme : temaPref(), ch = A.channels.find((c) => c.id === A.ch) || {}, otros = A.channels.filter((c) => c.id !== A.ch);
   const estado = (c) => c.bot_apagado ? "Apagado · no contesta a nadie" : "Encendido · contesta solo";
   $("#masPad").innerHTML = `<h2 class="h">Más</h2>
     <div class="mperfil"><span class="mav">${esc(iniciales(A.nombre, A.email))}</span><span class="rmid"><b>${esc(A.nombre || "Tu cuenta")}</b><span>${esc(A.email)}</span></span></div>
@@ -70,8 +71,7 @@ function pintar() {
     </div>
 
     <div class="card"><div class="ttl">Apariencia</div>
-      <div class="mtema"><div class="seg" role="group" aria-label="Tema">${TEMAS.map(([k, l]) => `<button type="button" class="${tema === k ? "on" : ""}" data-tema="${k}">${l}</button>`).join("")}</div>
-      <p class="nsub">Automático sigue el modo claro u oscuro de tu celular.</p></div>
+      <div class="mtema"><div class="seg" role="group" aria-label="Tema">${TEMAS.map(([k, l]) => `<button type="button" class="${tema === k ? "on" : ""}" data-tema="${k}">${l}</button>`).join("")}</div></div>
     </div>
 
     <button type="button" class="msalir" data-go="salir">${ic("logout")}Cerrar sesión</button>
