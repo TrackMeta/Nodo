@@ -1264,6 +1264,24 @@ function pintarPuntoBots() {
   btn.title = "Cambiar de bot · " + otros.map((c) => `${c.nombre}: ${cnt[c.id].pend} por atender`).join(" · ");
 }
 
+// (22-oct, diseño A) La franja azul de la cabecera (.nodo-head::before) va de borde a borde del área que hace scroll, y
+// su degradado tiene que ocupar justo ese ancho: anclado a la ventana, en pantallas anchas solo se veía su tramo del
+// medio (casi un solo azul). Se le pasan a CSS el borde izquierdo (--franja-x) y el ancho (--franja-w) de esa área.
+let _franjaRO = null;
+function ajustarFranja() {
+  const heads = () => document.querySelectorAll(".nodo-head");
+  const medir = () => heads().forEach((h) => {
+    const caja = h.closest(".nodo-page, .wrap"); if (!caja) return;
+    h.style.setProperty("--franja-x", (h.getBoundingClientRect().left - caja.getBoundingClientRect().left - caja.clientLeft) + "px");
+    h.style.setProperty("--franja-w", caja.clientWidth + "px");
+  });
+  medir();
+  if (!("ResizeObserver" in window)) return;
+  if (_franjaRO) _franjaRO.disconnect();
+  _franjaRO = new ResizeObserver(medir);   // menú comprimido, ventana más angosta, barra de scroll que aparece
+  heads().forEach((h) => { _franjaRO.observe(h); const c = h.closest(".nodo-page, .wrap"); if (c) _franjaRO.observe(c); });
+}
+
 export async function mountShell({ active } = {}) {
   _bootLlego(); // la navegación SPA en curso ya puede dar paso a la siguiente (ver navigate)
   // Branding inicial desde caché (mismo bot que la última página) → sin parpadeo.
@@ -1290,6 +1308,7 @@ export async function mountShell({ active } = {}) {
     updateActive(active);
     applyInboxCollapse(active);
     pintarAlertaWA();
+    ajustarFranja();
     return S.api;
   }
 
@@ -1585,6 +1604,7 @@ export async function mountShell({ active } = {}) {
   applyInboxCollapse(active); // Bandeja arranca colapsada
   setupRouter(); // activa la navegación SPA
   pintarAlertaWA();
+  ajustarFranja();
   // 🔔 Campanita: módulo aparte que baja en paralelo (el menú no la espera). Recibe lo que usa
   // del shell por parámetro para no importar shell.js de vuelta.
   if (S.channels.length) import("./notif-center.js").then((m) => m.montar({
