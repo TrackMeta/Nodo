@@ -9,7 +9,7 @@ export const fRango = (r) => (ymd(r.from) === ymd(r.to) ? fDia(r.to) : `${fDia(r
 export const lblDe = (r) => (r.preset === "custom" ? "Personalizado" : (PRESETS.find((p) => p[0] === r.preset) || [, "Período"])[1]);
 
 // El botón (la página escucha el clic en [data-dsel] y llama a elegirFechas)
-export const botonFechas = (r) => `<button type="button" class="dsel" data-dsel>${ic("calendar")}<span><b>${esc(lblDe(r))}</b><small>${fRango(r)}</small></span>${ic("chevronDown")}</button>`;
+export const botonFechas = (r) => `<button type="button" class="dsel" data-dsel>${ic("calendar")}<span><b>${esc(lblDe(r))}</b><small>${r.preset === "max" ? "desde el inicio" : fRango(r)}</small></span>${ic("chevronDown")}</button>`;
 
 // Abre la hoja con el período actual `R`; `listo(nuevoR)` recibe el período elegido
 // Animación al abrir (15-oct): la hoja sube con un rebote corto y las opciones entran en cascada; la flechita del

@@ -2,15 +2,15 @@
 // cajón de la Bandeja), filtros guardados y tiempo real. Las consultas son las de loadConversations().
 import { A, $, $$, esc, ic, on, emit, supa, avatar, quienDe, fmtHora, abrirCapa, cerrarCapa, abrirHoja, confirmar, toast, pedirTexto, trasArranque } from "./app.js";
 import { pageAll, enTrozos, norm } from "../shell.js";
-import { computePreset, startOfDayTZ, endOfDayTZ } from "../date-range.js";
+import { computePreset, startOfDayTZ, endOfDayTZ, ymd } from "../date-range.js";
+import { botonFechas, elegirFechas, lblDe, fRango } from "./fechas.js";
 import { STAGES, ETAPA, ENTREGA_PROV, ENTREGA_ESTADO_K, RECOMPRA_ESTADOS, previewHtml, esPrueba } from "./comun.js";
 
 const L = { convs: [], tags: [], prods: [], recompra: new Set(), entrega: new Map(), meta: new Set(), tope: false, cargando: false, buscados: [] };
 export const CHATS = L;
 let MODO = "bot", Q = "";
-const vacio = () => ({ range: "max", sinResp: false, seg: false, anuncio: false, organico: false, sinprod: false, img: false, recompra: false, arch: false, meta: false, stages: new Set(), entrega: new Set(), tags: new Set(), prod: "" });
+const vacio = () => ({ range: "max", d1: "", d2: "", sinResp: false, seg: false, anuncio: false, organico: false, sinprod: false, img: false, recompra: false, arch: false, meta: false, stages: new Set(), entrega: new Set(), tags: new Set(), prod: "" });
 let F = vacio();
-const RANGOS = [["hoy", "Hoy"], ["ayer", "Ayer"], ["7d", "Últimos 7 días"], ["30d", "Últimos 30 días"], ["max", "Máximo"]];
 const ESTADO_F = [["sinResp", "Sin responder"], ["seg", "Seguimiento", "clock"], ["anuncio", "Llegó por anuncio", "megaphone"], ["organico", "Orgánico"], ["sinprod", "Sin producto aún"], ["img", "Envió imagen", "image"], ["recompra", "Recomprando", "refresh"], ["arch", "Archivados", "archive"]];
 
 export function init() {
@@ -162,7 +162,10 @@ function nuevoContacto() {
 // ── Filtros ──
 const esBot = (cv) => cv.contact.bot_activo !== false;
 const enModo = (cv) => (MODO === "bot" ? esBot(cv) : !esBot(cv));
-function rangoDe(k) { if (k === "max") return null; const r = computePreset(k); return [startOfDayTZ(r.from).getTime(), endOfDayTZ(r.to).getTime()]; }
+// (21-oct) las fechas como en Hoy y Ventas: cualquier período o «Personalizado» (d1/d2 = desde/hasta, AAAA-MM-DD)
+const diaDe = (v) => { const [y, mo, d] = String(v).split("-").map(Number); return new Date(y, mo - 1, d); };
+function periodo(f = F) { return f.range === "custom" && f.d1 && f.d2 ? { from: diaDe(f.d1), to: diaDe(f.d2), preset: "custom" } : computePreset(f.range === "custom" ? "max" : f.range); }
+function rangoDe(f) { if (f.range === "max") return null; const r = periodo(f); return [startOfDayTZ(r.from).getTime(), endOfDayTZ(r.to).getTime()]; }
 function pasa(cv, f = F) {
   const c = cv.contact;
   if (!!cv.archivada !== f.arch) return false;
@@ -176,7 +179,7 @@ function pasa(cv, f = F) {
   if (f.organico && c.source) return false;
   if (f.sinprod && c.product_id) return false;
   if (f.img && !c.ultima_imagen_at) return false;
-  if (f.range !== "max") { const r = rangoDe(f.range), t = new Date(cv.updated_at).getTime(); if (t < r[0] || t > r[1]) return false; }
+  if (f.range !== "max") { const r = rangoDe(f), t = new Date(cv.updated_at).getTime(); if (t < r[0] || t > r[1]) return false; }
   if (f.prod && c.product_id !== f.prod) return false;
   if (f.tags.size && !(c.contact_tags || []).some((t) => f.tags.has(t.tag_id))) return false;
   return true;
@@ -188,7 +191,7 @@ const buscar = (cv) => {
 };
 function activos() {
   const out = [], f = F;
-  if (f.range !== "max") out.push([RANGOS.find((r) => r[0] === f.range)[1], () => (f.range = "max")]);
+  if (f.range !== "max") { const r = periodo(f); out.push([r.preset === "custom" ? fRango(r) : lblDe(r), () => (f.range = "max")]); }
   for (const [k, l] of ESTADO_F) if (f[k]) out.push([l, () => (f[k] = false)]);
   if (f.meta) out.push(["Falta enviar a Meta", () => (f.meta = false)]);
   for (const k of f.stages) out.push([ETAPA[k]?.label || k, () => f.stages.delete(k)]);
@@ -254,7 +257,7 @@ function pintaFiltros() {
   const saved = leerGuardados();
   $("#filbody").innerHTML = `
     ${saved.length ? `<div class="fgrp"><h4>Mis filtros</h4><div class="tagrow">${saved.map((x, i) => `<button type="button" class="tagb" data-saved="${i}">${ic("bookmark")} ${esc(x.name)}</button>`).join("")}</div></div>` : ""}
-    <div class="fgrp"><h4>Fechas · última actividad</h4><div class="chips" style="flex-wrap:wrap;margin:0;padding:0">${RANGOS.map(([k, l]) => `<button type="button" class="chip${f.range === k ? " on" : ""}" data-range="${k}">${l}</button>`).join("")}</div></div>
+    <div class="fgrp fechas"><h4>Fechas · última actividad</h4>${botonFechas(periodo(f))}</div>
     <div class="fgrp"><h4>Estado</h4>${ESTADO_F.map(([k, l, i]) => tog(f[k], `data-est="${k}"`, l, cuenta(P[k], k === "arch"), i ? ic(i) : "")).join("")}</div>
     <div class="fgrp"><h4>Atribución a Meta</h4>${tog(f.meta, 'data-est="meta"', "Falta enviar a Meta", cuenta((cv) => L.meta.has(cv.contact_id)))}</div>
     <div class="fgrp"><h4>Etapa del embudo</h4>${STAGES.map((s) => tog(f.stages.has(s.k), `data-stage="${s.k}"`, s.label, cuenta((cv) => (cv.contact.stage || "nuevo") === s.k), `<span class="tagdot" style="background:${s.color}"></span>`)).join("")}</div>
@@ -267,8 +270,11 @@ function pintaFiltros() {
 }
 async function clicFiltro(e) {
   const b = e.target.closest("button"); if (!b) return; const f = F;
-  if (b.dataset.range) f.range = b.dataset.range;
-  else if (b.dataset.est) f[b.dataset.est] = !f[b.dataset.est];
+  if (b.matches("[data-dsel]")) {
+    elegirFechas(periodo(f), (r) => { f.range = r.preset; f.d1 = r.preset === "custom" ? ymd(r.from) : ""; f.d2 = r.preset === "custom" ? ymd(r.to) : ""; pintaFiltros(); pintar(); });
+    return;
+  }
+  if (b.dataset.est) f[b.dataset.est] = !f[b.dataset.est];
   else if (b.dataset.stage) f.stages.has(b.dataset.stage) ? f.stages.delete(b.dataset.stage) : f.stages.add(b.dataset.stage);
   else if (b.dataset.entrega) f.entrega.has(b.dataset.entrega) ? f.entrega.delete(b.dataset.entrega) : f.entrega.add(b.dataset.entrega);
   else if (b.dataset.tag) f.tags.has(b.dataset.tag) ? f.tags.delete(b.dataset.tag) : f.tags.add(b.dataset.tag);

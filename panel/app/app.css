@@ -640,3 +640,8 @@ html:not([data-theme="light"]) .kv-azul{color:#6EA8FF}
    deslizando igual */
 body.app *{scrollbar-width:none}
 body.app *::-webkit-scrollbar{display:none;width:0;height:0}
+
+/* Chats → Filtros (21-oct): las fechas con el mismo selector que Hoy y Ventas, a todo lo ancho */
+.fgrp.fechas .dsel{width:100%;padding:11px 13px}
+.fgrp.fechas .dsel > span{flex:1;min-width:0}
+.fgrp.fechas .dsel .i{color:var(--azul)}

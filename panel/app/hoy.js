@@ -146,14 +146,20 @@ function funnelDe(cs, conPedido) {
   return { N, saltos, peor: peor && peor.drop > 25 && peor.seCae >= 2 ? peor : null, enCurso: c.confirmado };
 }
 function comoAvanzan(F) {
-  // (diseño A, 21-oct) como en la muestra: cuatro escalones en barras; el detalle completo sigue en la página Embudo
-  if (!F || !F.N.llegaron) return `<div class="card avz"><div class="ttl">Cómo avanzan</div><p class="nsub" style="padding:6px 14px 12px">Nadie llegó en estas fechas.</p></div>`;
-  const { N, peor, enCurso } = F;
-  const filas = [["Escribieron", N.llegaron, "a1"], ["Conversaron", N.interes, "a2"], ["Confirmaron", N.confirmaron, "a3"], ["Compraron", N.compraron, "a4"]];
-  const barras = filas.map(([l, n, k]) => `<div class="abar ${k}"><div class="atop"><span>${l}</span><b class="num">${n}</b></div><i><s style="width:${n ? Math.max(3, Math.round((n / N.llegaron) * 100)) : 0}%"></s></i></div>`).join("");
-  const aviso = peor ? `<div class="fneck">${ic("alert")}<div><b>Mayor fuga:</b> ${peor.de} → ${peor.a}, se van ${peor.seCae} (${peor.drop}%). ${peor.tip}</div></div>` : "";
+  // (21-oct) a pedido de Rodrigo vuelve el embudo completo (el de la página Embudo) en vez de las cuatro barras
+  if (!F || !F.N.llegaron) return `<div class="card"><div class="ttl">Embudo</div><p class="nsub" style="padding:6px 14px 12px">Nadie llegó en estas fechas.</p></div>`;
+  const { N, saltos, peor, enCurso } = F;
+  const niveles = [["Llegaron", N.llegaron, "llegaron"], ["Curiosos", N.curiosos, "curioso"], ["Interés", N.interes, "interesado"], ["Caliente", N.calientes, "caliente"], ["Confirmaron", N.confirmaron, "confirmado"], ["Compraron", N.compraron, "comprado"]];
+  const flecha = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
+  let fun = "";
+  niveles.forEach(([l, n, k], i) => {
+    fun += `<div class="fbar f-${k}" style="width:${Math.max(66, Math.round((n / N.llegaron) * 100))}%"><span>${l}</span><b class="num">${n} · ${pctN(n, N.llegaron)}%</b></div>`;
+    if (i < niveles.length - 1) { const s = saltos[i]; fun += `<div class="fpaso${peor && peor.i === i ? " peor" : ""}">${flecha}<span>${s.drop == null ? "—" : s.drop > 0 ? "−" + s.drop + "%" : "sin caída"}</span></div>`; }
+  });
+  const aviso = peor ? `<div class="fneck">${ic("alert")}<div><b>Mayor fuga:</b> ${peor.de} → ${peor.a}, se van ${peor.seCae} (${peor.drop}%). ${peor.tip}</div></div>`
+    : `<div class="fneck ok">${ic("check")}<div>Tu embudo fluye bien.</div></div>`;
   const curso = enCurso > 0 ? `<div class="fneck ok">${ic("truck")}<div>${enCurso} ${enCurso === 1 ? "venta confirmada sigue" : "ventas confirmadas siguen"} en curso.</div></div>` : "";
-  return `<div class="card avz"><div class="ttl">Cómo avanzan</div><div class="abars">${barras}${aviso}${curso}</div></div>`;
+  return `<div class="card"><div class="ttl">Embudo</div><div class="fwrap">${aviso}${curso}<div class="fun">${fun}</div><p class="nsub">Los que llegaron en estas fechas, como en la página Embudo.</p></div></div>`;
 }
 
 // ── «Lo que espera por ti» (se pinta con los números que ya tienen las otras pestañas) ──
