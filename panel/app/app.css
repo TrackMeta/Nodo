@@ -614,27 +614,13 @@ html:not([data-theme="light"]) .kv-azul{color:#6EA8FF}
 .msalir{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px;border-radius:14px;background:var(--surface);border:1px solid var(--border)!important;color:var(--red);font-weight:700;font-size:14.5px}
 .msalir .i{width:18px;height:18px}
 
-/* Hoy como en la muestra A (21-oct): la ganancia sigue a la cabecera azul (mismo degradado horizontal, sin costura),
-   «Cómo avanzan» en cuatro barras y la tarjeta de lo que cerró la IA */
+/* Hoy como en la muestra A (21-oct): la ganancia sigue a la cabecera azul (mismo degradado horizontal, sin costura) */
 .top,.hero.gan.pegada{background:linear-gradient(90deg,#0044FE 0%,#01AFFE 100%)}
 .hero.gan.pegada{flex-direction:row;align-items:flex-end;justify-content:space-between;gap:12px;width:auto;align-self:stretch;margin:-14px -14px 0;border-radius:0;box-shadow:none;padding:4px 16px 20px}
 .hero.gan.pegada .gtxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .hero.gan.pegada .big{font-size:40px;margin:0}
 .hero.gan.pegada .row2{font-size:12.5px}
 .hero.gan.pegada .dsel{flex:none;margin-bottom:2px}
-.abars{padding:2px 14px 14px;display:flex;flex-direction:column;gap:11px}
-.abar .atop{display:flex;justify-content:space-between;align-items:baseline;font-size:13.5px;font-weight:600;margin-bottom:5px}
-.abar .atop b{font-size:14px;font-weight:800}
-.abar i{display:block;height:8px;border-radius:99px;background:var(--brand-bg,#E8EEFB);overflow:hidden}
-.abar s{display:block;height:100%;border-radius:99px;text-decoration:none}
-.abar.a1 s{background:#0044FE} .abar.a2 s{background:#2F7BFF} .abar.a3 s{background:#01AFFE} .abar.a4 s{background:#16A34A}
-.abar.a4 .atop b{color:var(--green,#16A34A)}
-.abars .fneck{margin-top:2px}
-.iacard{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px}
-.iacard .iaic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;flex:none;background:color-mix(in srgb,var(--ia-a,#a855f7) 14%,transparent);color:var(--ia-a,#a855f7)}
-.iacard .iaic .i{width:20px;height:20px}
-.iacard .rmid b{font-size:14.5px}
-.iacard .rmid > span{font-size:12.5px}
 
 /* (21-oct) sin barra de desplazamiento visible (en el celular se veía la rayita gris a la derecha); se sigue
    deslizando igual */
