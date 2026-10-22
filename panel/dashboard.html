@@ -1966,21 +1966,11 @@ function ndRow(lbl,val,cls=""){ return `<div class="nd-row"><span>${lbl}</span><
 function renderND(v){
   const el=$("ndKpis"); if(!el) return;
   const pctCob = v.vendido>0 ? Math.round(v.cobrado/v.vendido*100) : null;
-  // La ganancia neta va en la franja azul: de dónde sale (lo cobrado o la ganancia bruta − lo que se restó)
+  // La ganancia neta va en la franja azul, sola (22-oct: sin la cuenta de abajo, a pedido de Rodrigo; el desglose está
+  // en la tarjeta Rentabilidad). Solo se explica el «—» cuando falta un costo.
   const gan=$("ndGan");
-  if(gan){
-    let s;
-    if(v.brutaDesconocida) s="falta registrar algún costo";
-    else if(!vistaGeneral()) s="tras su publicidad · sin IA ni gastos extra";
-    else {
-      const partes=[`${money(v.bruta)} ${v.vendeFisico?"de ganancia bruta":"cobrados"}`];
-      if(v.hasAds) partes.push(`${money(v.gastoAds)} en anuncios`);
-      if(v.gastoIa>0.009) partes.push(`${money(v.gastoIa)} de IA`);
-      if(v.gastosExtra>0.009) partes.push(`${money(v.gastosExtra)} de gastos extra`);
-      s=partes.join(" − ")+(v.hasAds?"":" · aún sin restar publicidad");
-    }
-    gan.innerHTML=`<span class="l">Ganancia neta</span><span class="n">${v.brutaDesconocida?"—":money(v.neta)}</span><span class="s">${s}</span>`;
-  }
+  if(gan) gan.innerHTML=`<span class="l">Ganancia neta</span><span class="n">${v.brutaDesconocida?"—":money(v.neta)}</span>`+
+    (v.brutaDesconocida?`<span class="s">falta registrar algún costo</span>`:"");
   el.innerHTML=
     `<div class="nd-kpi"><span class="l">Ventas</span><span class="n azul">${v.compras}</span><span class="s">${v.compras?"ticket "+money(v.ticket):"sin ventas en estas fechas"}</span></div>`+
     `<div class="nd-kpi"><span class="l">Ingresos</span><span class="n verde">${money(v.vendido)}</span><span class="s ${pctCob===100?"ok":""}">${pctCob==null?"sin ventas":"cobrado "+pctCob+"%"}</span></div>`+
