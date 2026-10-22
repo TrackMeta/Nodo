@@ -129,7 +129,10 @@
   /* (22-oct) Diseño A: la cabecera de IA es la franja de borde a borde con su violeta → rosado (shell.css, .nodo-head.ia) */
   html:not([data-ds="1"]) .ia-top.nodo-head{border-bottom:0;gap:16px;flex-wrap:nowrap}
   html:not([data-ds="1"]) .ia-top.nodo-head .ia-k{background:none;-webkit-text-fill-color:currentColor;color:rgba(255,255,255,.85)}
-  html:not([data-ds="1"]) .ia-top.nodo-head .ia-ic{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);box-shadow:none}
+  html:not([data-ds="1"]) .ia-top.nodo-head .ia-ic{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);box-shadow:none;width:40px;height:40px;border-radius:12px}
+  html:not([data-ds="1"]) .ia-top.nodo-head .ia-ic svg{width:20px;height:20px}
+  html:not([data-ds="1"]) .ia-top.nodo-head{gap:12px}
+  html:not([data-ds="1"]) .ia-top.nodo-head .ia-k{font-size:10.5px;margin-bottom:0}
   .card:not(.ver-ayuda) .ay{display:none}
   .qm{margin-left:auto;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);font:inherit;font-size:12px;font-weight:700;cursor:pointer;flex:none;display:inline-flex;align-items:center;justify-content:center}
   /* (11-oct) Si la cabecera ya tiene algo empujado a la derecha (el selector de fechas), el «?» va pegado a eso:
