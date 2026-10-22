@@ -1349,7 +1349,7 @@ async function load(){
       compras, ticket, porCobrar, espAdel:espAdel.length, vendeFisico, cpa: _vAdN && gastoAds>0 ? gastoAds/_vAdN : null });
     ndChats({ fromISO, toISO, gastoAds, hasAds, cid, compras });
     // Import dinámico: con un horarios.js viejo en caché (o que falle) el Dashboard sigue vivo
-    import("./horarios.js").then((m) => { if (cid === channelId) m.montarHorarios(document.getElementById("horariosPanel"), { supa, channelId, fromISO, toISO, ventas: ventasOk, money }); }).catch(() => { const h = document.getElementById("horariosPanel"); if (h) h.hidden = true; });
+    import("./horarios.js").then((m) => { if (cid === channelId) m.montarHorarios(document.getElementById("horariosPanel"), { supa, channelId, fromISO, toISO, ventas: ventasOk, money, plegable: "nodo.web.horarios" }); }).catch(() => { const h = document.getElementById("horariosPanel"); if (h) h.hidden = true; });
   }
 
   // 📈 Efectividad DEL PERIODO (7-oct, pedido de Rodrigo): los que te escribieron por PRIMERA vez en las fechas elegidas
