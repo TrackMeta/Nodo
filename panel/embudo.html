@@ -88,7 +88,7 @@
   .osum{font-size:12.5px;color:var(--muted);margin:2px 0 14px} .osum b{color:var(--text)}
   .fstep .fdrop{color:var(--faint)} .fstep.peor .fdrop{color:var(--red);font-weight:600}
   .mcmp{font-size:12px;margin-top:6px;color:var(--muted)} .mcmp .up{color:var(--green);font-weight:600} .mcmp .down{color:var(--red);font-weight:600}
-  .met.mconv .mcmp{color:var(--hero-muted,#98A2B3)} .met.mconv .mcmp .up{color:#22C55E} .met.mconv .mcmp .down{color:#F04438}
+  .met.mconv .mcmp{color:var(--hero-muted,#98A2B3)} .met.mconv .mcmp .up{color:#BBF7D0;font-weight:600} .met.mconv .mcmp .down{color:#FECACA;font-weight:600}
   /* Por anuncio */
   .adtbl{width:100%;border-collapse:collapse;font-size:13px}
   .adtbl th{font-size:11px;font-weight:600;color:var(--muted);text-align:right;padding:0 10px 8px;white-space:nowrap}
@@ -129,12 +129,12 @@
   /* (los colores de etapa --st-* y --pv-* viven en shell.css: los comparten Embudo y Directo) */
   html:not([data-ds="1"]) .met{border:1px solid var(--border);border-radius:12px;box-shadow:none;background:var(--surface)}
   html:not([data-ds="1"]) .met .num{font-weight:600;letter-spacing:-.03em;font-size:46px}
-  /* Conversión = el único número destacado (tarjeta tinta, como la Ganancia neta del Dashboard) */
-  html:not([data-ds="1"]) .met.mconv{background:var(--hero);border-color:var(--hero-border,transparent)}
+  /* Conversión = el único número destacado: (22-oct, diseño A) con el degradado azul del logo, como la ganancia del Dashboard */
+  html:not([data-ds="1"]) .met.mconv{background:linear-gradient(135deg,#0044FE,#01AFFE);border-color:transparent;--hero-text:#fff;--hero-muted:rgba(255,255,255,.88)}
   html:not([data-ds="1"]) .met.mconv .num,html:not([data-ds="1"]) .met.mconv .mlbl{color:var(--hero-text)}
   html:not([data-ds="1"]) .met.mconv .mdesc,html:not([data-ds="1"]) .met.mconv .mbrk{color:var(--hero-muted)}
   html:not([data-ds="1"]) .met.mconv .mdesc b{color:var(--hero-text)}
-  html:not([data-ds="1"]) .met.mconv .mtag{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.12);color:var(--hero-muted)}
+  html:not([data-ds="1"]) .met.mconv .mtag{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.3);color:#fff}
   /* Efectividad de cierre = lo que hace la IA: conserva su degradado violeta → rosado */
   html:not([data-ds="1"]) .met.mia{border-color:rgba(168,85,247,.34);background:radial-gradient(130% 150% at 0% 0%,rgba(168,85,247,.14),transparent 55%),var(--surface)}
   html:not([data-ds="1"]) .panel{border-radius:12px}

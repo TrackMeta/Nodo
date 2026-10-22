@@ -568,10 +568,10 @@ body.nodo-shelled > #app{flex:1;min-width:0}
      rellena 24px y otra 32px, el texto SIGUE corriendose al cambiar de seccion. Va como
      variable para que las pantallas que traen su propio .wrap usen exactamente esto,
      media queries incluidas, en vez de repetir los numeros y volver a divergir. */
-  --nodo-pad:32px 32px 64px;
+  --nodo-pad:32px 32px 64px; --nodo-padx:32px;
 }
-@media(min-width:1440px){:root{--nodo-pad:32px 40px 64px}}
-@media(max-width:720px){:root{--nodo-pad:24px 16px 48px}}
+@media(min-width:1440px){:root{--nodo-pad:32px 40px 64px;--nodo-padx:40px}}
+@media(max-width:720px){:root{--nodo-pad:24px 16px 48px;--nodo-padx:16px}}
 .nodo-page{flex:1;min-width:0;height:100vh;overflow-y:auto;scrollbar-gutter:stable}
 .nodo-wrap{max-width:var(--nodo-max,var(--nodo-ancho));margin:0 auto;width:100%;padding:var(--nodo-pad)}
 
@@ -1166,9 +1166,10 @@ html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-hea
 html:not([data-ds="1"]) .nodo-head .nodo-lead,html:not([data-ds="1"]) .nodo-head > .grow p{color:rgba(255,255,255,.9)}
 html:not([data-ds="1"]) .nodo-head > .grow a{color:#fff!important}
 html:not([data-ds="1"]) .nodo-head .neg-k{color:rgba(255,255,255,.85)}
+html:not([data-ds="1"]) .nodo-head > .grow [style*="color:var(--faint)"],html:not([data-ds="1"]) .nodo-head > .grow [style*="color:var(--muted)"]{color:rgba(255,255,255,.85)!important}
 /* Botones sobre la franja: el principal blanco con letras azules; los demás, blanco transparente */
-html:not([data-ds="1"]) .nodo-head :is(.nodo-btn,.btn){background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.45);color:#fff}
-html:not([data-ds="1"]) .nodo-head :is(.nodo-btn,.btn):hover{background:rgba(255,255,255,.26);border-color:rgba(255,255,255,.7)}
+html:not([data-ds="1"]) .nodo-head :is(.nodo-btn,.btn,.pillbtn){background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.45);color:#fff}
+html:not([data-ds="1"]) .nodo-head :is(.nodo-btn,.btn,.pillbtn):hover{background:rgba(255,255,255,.26);border-color:rgba(255,255,255,.7)}
 html:not([data-ds="1"]) .nodo-head :is(.nodo-btn.primary,.btn.primary){background:#fff;border-color:#fff;color:#0B63E5;font-weight:600}
 html:not([data-ds="1"]) .nodo-head :is(.nodo-btn.primary,.btn.primary):hover{background:#EEF4FF}
 /* Los menús que se abren desde la franja vuelven a sus colores */
