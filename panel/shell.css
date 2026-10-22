@@ -1161,7 +1161,8 @@ html:not([data-ds="1"]) .nodo-link.nodo-link-ia.active{background:linear-gradien
 /* La franja azul: sube hasta el borde de arriba (el relleno de la página) y se estira de borde a borde por detrás
    (::before); el degradado se ancla a la ventana para que todas las secciones lo vean igual. */
 html:not([data-ds="1"]) .nodo-page,html:not([data-ds="1"]) body.nodo-shelled .wrap{overflow-x:hidden}
-html:not([data-ds="1"]) .nodo-head{position:relative;z-index:0;margin:-32px 0 22px;padding:24px 0 26px;align-items:center}
+/* z-index 30: la cabecera hace su propia capa (para el azul de atrás); por encima del contenido, así los menús que abre (fechas, exportar, «más») no quedan tapados por las tarjetas de abajo */
+html:not([data-ds="1"]) .nodo-head{position:relative;z-index:30;margin:-32px 0 22px;padding:24px 0 26px;align-items:center}
 @media(max-width:720px){html:not([data-ds="1"]) .nodo-head{margin-top:-24px;padding:20px 0 22px}}
 /* (22-oct) En pantallas anchas el degradado llega al celeste a los ~60 % (no al final): estirado en ~1.900 px se veía casi plano */
 /* --franja-x / --franja-w los pone shell.js (ajustarFranja): el degradado ocupa justo el ancho del área de contenido */
