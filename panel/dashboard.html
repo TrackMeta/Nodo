@@ -1936,7 +1936,9 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd, gast
     const mpct=(p.margen!=null&&p.ing>0)?Math.round(p.margen/p.ing*100):0;
     rows+=`<tr><td class="pname"><span class="bar-mini" style="width:${Math.round(p.ing/maxIng*44)}px"></span>${esc(p.nombre)}</td>
       <td class="r">${p.units}</td><td class="r money">${money(p.ing)}</td>${mCol(p.margen,mpct)}${adsCols(p)}<td class="r">${share}%</td></tr>`;
-    Object.values(p.versions).filter(v=>v.units>0).forEach(v=>{
+    // (22-oct) Con UNA sola versión no se desglosa: solo las ventas que guardaron esa versión caían ahí («↳ Única: 1»
+    // de 15) y parecía que se había vendido 1. La fila del producto ya lo dice todo.
+    if(Object.keys(p.versions).length>1) Object.values(p.versions).filter(v=>v.units>0).forEach(v=>{
       rows+=`<tr><td class="vname">↳ ${esc(v.nombre)}</td><td class="r" style="color:var(--muted)">${v.units}</td><td class="r" style="color:var(--muted)">${money(v.ing)}</td><td class="r"></td><td class="r"></td>${vacias}<td class="r"></td></tr>`;
     });
   });
