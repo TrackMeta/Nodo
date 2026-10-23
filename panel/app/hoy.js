@@ -230,8 +230,7 @@ function pintar(r, n, apps) {
   }).join("") : `<p class="nsub" style="padding:6px 14px 12px">Sin gasto de anuncios en este período.</p>`}</div>`;
   // Igual que el Dashboard: la Ganancia neta va destacada (tarjeta de tinta) y Ventas, Ingresos y ROAS en blanco
   const pctCob = n.vendido > 0 ? Math.round((n.cobrado / n.vendido) * 100) : null;
-  $("#hoyPad").innerHTML = `<div class="hero gan pegada" id="verGanancia" role="button" tabindex="0"><div class="gtxt"><small>Ganancia neta ${ic("help")}</small><div class="big num">${m(n.neta)}</div>
-      <div class="row2"><span>${m(n.vendido)} en ventas − ${n.gasto > 0 ? m(n.gasto) : "S/ 0"} en anuncios</span></div></div>${botonFechas(r)}</div>
+  $("#hoyPad").innerHTML = `<div class="hero gan pegada" id="verGanancia" role="button" tabindex="0"><div class="gtxt"><small>Ganancia neta ${ic("help")}</small><div class="big num">${m(n.neta)}</div></div>${botonFechas(r)}</div>
     <div id="hoyEspera"></div>
     <div class="kpis">
       <div class="kpi"><small>Ventas</small><b class="num kv-azul">${n.ventas}</b><span class="mutc">${n.ventas ? "ticket " + m(n.vendido / n.ventas) : "sin ventas en estas fechas"}</span></div>
@@ -299,6 +298,7 @@ function clic(e) {
   if (d === "humano") { ir("chats"); emit("verHumano"); } else ir(d);
 }
 function cabecera(r) {
+  // (22-oct) la ganancia va sola, sin «S/ X en ventas − S/ Y en anuncios» debajo (el detalle está en Rentabilidad y al tocarla)
   // (diseño A, 21-oct) sin el título «Resumen»: arriba va la tarjeta de la ganancia con el selector de fechas adentro
   return `<div class="hero gan pegada"><div class="gtxt"><small>Ganancia neta</small><div class="big num">…</div></div>${botonFechas(r)}</div>`;
 }
