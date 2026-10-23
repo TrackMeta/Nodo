@@ -28319,8 +28319,15 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // edición, ni operación), se acepta: el resto de los frenos del pago (anti-reúso, monto en la transcripción,
         // fecha, número ajeno) corren igual en el camino del PAGO_OK. El cliente se había quedado con «salió a otra
         // cuenta», escribió «Pura estafa» y casi se va.
+        // (22-oct, EL SANTOS) «El número de celular destino está INCOMPLETO» es la máscara de Yape (*** *** 092), no una
+        // duda: ese número siempre viene incompleto. Contaba como «otra duda» y un Yape bueno de S/ 3 esperó 1 h 42 min
+        // en revisión. Se quita ese «incompleto» (el que habla del número/nombre del destino) antes de buscar otras dudas;
+        // «comprobante incompleto», «recortada e incompleta» o un monto raro siguen mandando a revisión.
+        const _motivoDudasT = _motivoT0
+          .replace(/(n[uú]mero|celular|destino|destinatari\w*|nombre|titular|beneficiari\w*)[^.;\n]{0,60}?incomplet\w*/gi, " ")
+          .replace(/incomplet\w*[^.;\n]{0,30}?(n[uú]mero|celular|destino|nombre|titular)/gi, " ");
         const _otrasDudasT = /(monto|falta|menor|fecha|edit|alterad|borros|ilegible|proceso|pendiente|duplic|usad|operaci[oó]n|vencid|antig|recort|fals[oa]|sospech|incomplet|no\s+(?:es|parece)\s+(?:un\s+)?(?:comprobante|yape|plin|pago)|\bqr\b)/i
-          .test(_motivoT0);
+          .test(_motivoDudasT);
         if (_numOk && _titOk && !_otrasDudasT && _ocrLeyo) {
           const _antesT = String(result ?? "");
           result = `PAGO_OK\n${JSON.stringify(_ocrLeyo)}`;
