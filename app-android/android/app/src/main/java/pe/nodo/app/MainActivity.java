@@ -129,18 +129,11 @@ public class MainActivity extends BridgeActivity {
         if (appLista) mostrarWeb(); else latir();
     }
 
-    // 2) La app todavía no está: late suave (como la V de Vendia)
+    // 2) La app todavía no está: (1.0.24, a pedido de Rodrigo) el logo se queda QUIETO esperándola; antes latía suave
+    //    (como la V de Vendia). `latido` queda null y lo de abajo que lo cancela no hace nada.
     private void latir() {
         if (cerrando || inicioLogo == null || mostrandoWeb) return;
-        DiagInicio.fase("latido (esperando la app)");
-        latido = ObjectAnimator.ofPropertyValuesHolder(inicioLogo,
-            PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.06f),
-            PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.06f));
-        latido.setDuration(560);
-        latido.setRepeatCount(ValueAnimator.INFINITE);
-        latido.setRepeatMode(ValueAnimator.REVERSE);
-        latido.setInterpolator(new AccelerateDecelerateInterpolator());
-        latido.start();
+        DiagInicio.fase("logo quieto (esperando la app)");
     }
 
     // La página avisa que la app ya está armada (NodoNativo.bootListo)
