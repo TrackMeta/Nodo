@@ -23535,10 +23535,13 @@ function frenoDeComprobante(parsed: any, ch: any): string | null {
       const x = String(v ?? "").toUpperCase(); if (!x.trim()) return "";
       if (/US\$|USD|D[OÓ]LAR/.test(x)) return "USD";
       if (/S\/|PEN|SOL/.test(x)) return "PEN";
-      if (/^\s*\$\s*$/.test(x)) return "USD";
+      // «$» solo: en México, Colombia, Chile, Argentina… es la moneda LOCAL, no dólares (24-oct: un Mercado Pago de
+      // «$199.00» en un bot en MXN se fue a revisión «el comprobante está en USD»). Dólar solo si lo dice (US$/USD).
+      if (/^\s*\$\s*$/.test(x)) return simboloMoneda(monCh) === "$" ? monCh : "USD";
       return x.replace(/[^A-Z]/g, "").slice(0, 3);
     };
-    const monCh = String(ch?.moneda ?? "").toUpperCase(), monL = norm(parsed?.moneda);
+    const monCh = String(ch?.moneda ?? "").toUpperCase();
+    const monL = norm(parsed?.moneda);
     if (monCh && monL && monL.length === 3 && monL !== monCh) return `el comprobante está en ${monL} y tu negocio cobra en ${monCh}`;
   }
   const ocr = (ch as any)?.ocr_config;
@@ -23657,6 +23660,14 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
   }
   const nivel = r.exigencia === "alta" ? "ALTA (rechaza ante cualquier duda)" : r.exigencia === "baja" ? "BAJA (aprueba si lo esencial coincide)" : "MEDIA (equilibrio entre seguridad y fluidez)";
   reglas.push(`Nivel de exigencia: ${nivel}.`);
+  // 💱 La moneda del negocio, dicha. Sin esto el modelo sacaba la «moneda válida» del molde de JSON de abajo (que
+  // decía "PEN" fijo) y rechazaba un SPEI de $199 MXN «la moneda válida para el negocio es PEN» (24-oct, bot en pesos).
+  const _monIso = String(moneda ?? "").trim().toUpperCase();
+  if (_monIso) {
+    reglas.push(`Este negocio cobra en ${_monIso}.` + (simboloMoneda(_monIso) === "$" && _monIso !== "USD"
+      ? ` En sus comprobantes el signo «$» es ${_monIso} (moneda local), NO dólares: solo es dólar si dice USD, US$ o «dólares».`
+      : ""));
+  }
   p.push("## Reglas de validación\n" + reglas.map((x) => "- " + x).join("\n"));
   // Consideraciones SIEMPRE presentes (realidad de los pagos en Perú).
   const cons: string[] = [
@@ -23680,7 +23691,7 @@ function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string
   ];
   p.push("## Consideraciones importantes\n" + cons.map((x) => "- " + x).join("\n"));
   if (ocr.instrucciones && String(ocr.instrucciones).trim()) p.push("## Instrucciones adicionales del negocio\n" + String(ocr.instrucciones).trim());
-  p.push('Devuelve tu conclusión en JSON: {"es_pago":true|false,"legible":true|false,"valido":true|false,"monto":number,"moneda":"PEN","operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"UNA frase corta, escrita PARA EL CLIENTE: se le manda tal cual, así que nada de jerga ni de listar todo lo que revisaste. Si NO es válido, dile SOLO el motivo principal y qué tiene que hacer (mandar la captura completa, reenviarla más nítida, mandar la del pago correcto). ⛔ Nunca encadenes varios motivos con «y», «además», «falta confirmar»: un cliente que lee cuatro problemas técnicos no sabe qué hacer y se va"}. `es_pago` es false si la imagen no es un comprobante (una foto cualquiera, un meme, el producto). `legible` es false si no se alcanza a leer. Si te piden otro formato en el prompt del nodo, respétalo, pero aplica siempre estas reglas de validación.');
+  p.push('Devuelve tu conclusión en JSON: {"es_pago":true|false,"legible":true|false,"valido":true|false,"monto":number,"moneda":"' + (_monIso || "PEN") + '","operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"UNA frase corta, escrita PARA EL CLIENTE: se le manda tal cual, así que nada de jerga ni de listar todo lo que revisaste. Si NO es válido, dile SOLO el motivo principal y qué tiene que hacer (mandar la captura completa, reenviarla más nítida, mandar la del pago correcto). ⛔ Nunca encadenes varios motivos con «y», «además», «falta confirmar»: un cliente que lee cuatro problemas técnicos no sabe qué hacer y se va"}. `es_pago` es false si la imagen no es un comprobante (una foto cualquiera, un meme, el producto). `legible` es false si no se alcanza a leer. Si te piden otro formato en el prompt del nodo, respétalo, pero aplica siempre estas reglas de validación.');
   return p.join("\n\n");
 }
 // El hilo del chat, como lo vería una persona. Es lo que convierte al nodo IA
