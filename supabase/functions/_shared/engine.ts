@@ -23484,6 +23484,11 @@ function titularNoCoincide(ocrCfg: any, quien: unknown): boolean {
   if (!suyos.length) return false;
   const t = toks(s);
   if (t.size < 2) return false;                           // un nombre suelto no alcanza para acusar
+  // El «destinatario» leído es el nombre de una de TUS apps/bancos («Spin by OXXO», «Mercado Pago»), no una persona:
+  // no dice a quién fue. Medido 24-oct: un depósito OXXO a NUESTRA tarjeta, número exacto, rechazado «salió a otra cuenta».
+  const apps = (Array.isArray(ocrCfg?.metodos) ? ocrCfg.metodos : []).map((m: any) => norm(String(m?.app ?? ""))).filter(Boolean);
+  const ns = norm(s);
+  if (apps.some((a: string) => a === ns || (a.length >= 4 && ns.includes(a)) || (ns.length >= 4 && a.includes(ns)))) return false;
   // Basta UNA palabra en común con ALGUNO de los titulares (un apellido, el nombre) para
   // darlo por bueno. Cero coincidencias con todos = el dinero fue a otra persona.
   return !suyos.some((x) => { const a = toks(x); for (const w of t) if (a.has(w)) return true; return false; });
@@ -28338,7 +28343,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _motivoDudasT = _motivoT0
           .replace(/(n[uú]mero|celular|destino|destinatari\w*|nombre|titular|beneficiari\w*)[^.;\n]{0,60}?incomplet\w*/gi, " ")
           .replace(/incomplet\w*[^.;\n]{0,30}?(n[uú]mero|celular|destino|nombre|titular)/gi, " ");
-        const _otrasDudasT = /(monto|falta|menor|fecha|edit|alterad|borros|ilegible|proceso|pendiente|duplic|usad|operaci[oó]n|vencid|antig|recort|fals[oa]|sospech|incomplet|no\s+(?:es|parece)\s+(?:un\s+)?(?:comprobante|yape|plin|pago)|\bqr\b)/i
+        // (24-oct: + «posterior/futura» y «moneda/dólares»: «el pago es posterior a la hora actual» y «está en MXN y el
+        // negocio es PEN» no decían «fecha» ni «monto», y el rescate entregaba igual.)
+        const _otrasDudasT = /(monto|falta|menor|fecha|edit|alterad|borros|ilegible|proceso|pendiente|duplic|usad|operaci[oó]n|vencid|antig|recort|fals[oa]|sospech|incomplet|posterior|futur|moneda|d[oó]lar|no\s+(?:es|parece)\s+(?:un\s+)?(?:comprobante|yape|plin|pago)|\bqr\b)/i
           .test(_motivoDudasT);
         if (_numOk && _titOk && !_otrasDudasT && _ocrLeyo) {
           const _antesT = String(result ?? "");
