@@ -1776,17 +1776,21 @@ function bitaLabelNav(){
   const enChart=!$("bitaChart").hidden;
   const hoy=new Date(), esActual=bitaMonth.getFullYear()===hoy.getFullYear() && bitaMonth.getMonth()===hoy.getMonth();
   const ms=new Intl.DateTimeFormat("es-PE",{month:"long",year:"numeric"}).format(bitaMonth);
-  $("bitaMonth").textContent = (enChart && esActual) ? "Últimos 14 días" : ms.charAt(0).toUpperCase()+ms.slice(1);
+  $("bitaMonth").textContent = (enChart && esActual) ? (bitaModo==="acum" && bitaPrimera[channelId] ? "Desde la 1.ª venta" : "Últimos 14 días") : ms.charAt(0).toUpperCase()+ms.slice(1);
 }
 async function renderBitaChart(dayMes){
   const box=$("bitaChart");
   const hoy=new Date(), todayK=ymdLima(hoy);
   const esActual=bitaMonth.getFullYear()===hoy.getFullYear() && bitaMonth.getMonth()===hoy.getMonth();
+  const primera=await primeraVentaK();
+  // (24-oct, Rodrigo) El «Acumulado» del mes actual cuenta desde la PRIMERA VENTA en Nodo (lo que llevas ganado con Nodo),
+  // no desde hace 14 días. El «Diario» sigue con los últimos 14 días; los meses anteriores, el mes completo.
+  const acumTotal = esActual && bitaModo==="acum" && !!primera;
   let from, to;   // fechas-día locales; `to` exclusivo
-  if(esActual){ const t=startOfDay(hoy); from=new Date(t.getFullYear(),t.getMonth(),t.getDate()-13); to=new Date(t.getFullYear(),t.getMonth(),t.getDate()+1); }
+  if(acumTotal){ const [y,m,d]=primera.split("-").map(Number); const t=startOfDay(hoy); from=new Date(y,m-1,d); to=new Date(t.getFullYear(),t.getMonth(),t.getDate()+1); }
+  else if(esActual){ const t=startOfDay(hoy); from=new Date(t.getFullYear(),t.getMonth(),t.getDate()-13); to=new Date(t.getFullYear(),t.getMonth(),t.getDate()+1); }
   else { from=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth(),1); to=new Date(bitaMonth.getFullYear(),bitaMonth.getMonth()+1,1); }
   const day = (from>=bitaMonth) ? dayMes : await loadDias(from,to);
-  const primera=await primeraVentaK();
   const fmtD=new Intl.DateTimeFormat("es-PE",{weekday:"short",day:"numeric",month:"short"});
   const series=[];
   for(let d=new Date(from); d<to; d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1)){
@@ -1804,7 +1808,7 @@ async function renderBitaChart(dayMes){
   const mejor=reales.length?reales.reduce((a,b)=>b.profit>a.profit?b:a):null;
   const sg=(v)=> (v<0?"−":"+")+curSym()+" "+Math.abs(Math.round(v)).toLocaleString("es-PE");
   const sgCorto=(v)=> (v<0?"−":"+")+Math.abs(Math.round(v)).toLocaleString("es-PE");
-  const periodo = esActual ? "Últimos 14 días" : $("bitaMonth").textContent;
+  const periodo = acumTotal ? "Desde tu primera venta en Nodo" : esActual ? "Últimos 14 días" : $("bitaMonth").textContent;
   const resumen = reales.length
     ? `<span>${esc(periodo)} <b class="${total<0?"neg":"pos"}">${sg(total)}</b></span><span>${verdes} de ${reales.length} ${reales.length===1?"día":"días"} en verde</span>${mejor&&mejor.profit>0?`<span>Mejor: ${esc(mejor.fecha)} <b>${sg(mejor.profit)}</b></span>`:""}`
     : `<span>${esc(periodo)}: aún sin ventas en Nodo</span>`;
