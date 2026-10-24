@@ -4473,9 +4473,10 @@ function harvest(){
 //    igual que el editor de pasos: cabecera + papel tapiz + "HOY" + burbujas) ──
 let _welcomeBrand={};
 function welcomePreview(v){
-  // {{precio}} con el precio y la moneda REALES del producto (antes «S/ 100» fijo)
+  // {{precio}} con el precio REAL del producto, solo el número: así lo reemplaza el bot («199»; el símbolo lo escribes tú
+  // en el texto). Antes la vista previa decía «S/ 100» y hacía creer que el bot pone la moneda.
   const _pv=(st.versions||[]).find(x=>x&&x.precio!==""&&x.precio!=null);
-  const _precioEj=`${curSym(st.prod&&st.prod.config)} ${_pv?_pv.precio:100}`;
+  const _precioEj=String(_pv?_pv.precio:100);
   const smp=(t)=>String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana").replace(/\{\{\s*precio\s*\}\}/gi,_precioEj).replace(/\{\{[^}]*\}\}/g,"…");
   return waScreenHtml({ title:_welcomeBrand.nombre, logoUrl:_welcomeBrand.logo_url, bubblesHtml: waBubbles((v&&v.bubbles)||[], smp), empty:"Escribe el saludo para ver cómo llega…" });
 }
