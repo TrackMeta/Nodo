@@ -10,6 +10,7 @@ import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
 import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, aplicarStock, soloAnunciosBloquea, pasarAHumano, esOptOut, canalActivo, botEncendido } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
+import { simboloMoneda } from "../_shared/moneda.ts";
 import { esRechazoTemporal } from "../_shared/meta.ts";
 import { sendTelegram } from "../_shared/telegram.ts";
 import { construirResumen, localParts, localDayStartUTC, ymd } from "../_shared/resumen.ts";
@@ -1562,7 +1563,7 @@ async function processMicroapps(now: number) {
       if (!r?.ok) continue;
       const vers = ((p.product_versions ?? []) as any[]).filter((v) => v.activo !== false && v.config?.oculta !== true);
       const { data: ch } = await db.from("channels").select("moneda").eq("id", p.channel_id).maybeSingle();
-      const sym = String((ch as any)?.moneda ?? "PEN").toUpperCase() === "PEN" ? "S/" : String((ch as any)?.moneda ?? "");
+      const sym = simboloMoneda((ch as any)?.moneda);   // (24-oct) catálogo completo: MXN → «$», no «MXN»
       const mes = vers.find((v) => v.config?.modalidad === "mensual" && (Number(v.config?.meses) || 1) === 1);
       const unico = vers.find((v) => v.config?.modalidad !== "mensual");
       const precioRen = mes ? `${sym} ${mes.precio}` : "";

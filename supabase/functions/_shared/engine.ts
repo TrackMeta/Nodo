@@ -29,6 +29,7 @@ import { fetchConTimeout } from "./http.ts";
 import { finVentanaAnuncio } from "./fep.ts";
 import { appsApi, cfgDe as cfgMicroapp, modalidadDeOpcion, proximoRecordatorioMin, CORREO_PEDIR_DEF, mensajeEntrega, fechaLarga, extraerCorreo, extraerCelular, noQuiereNovedades, type MicroappCfg } from "./microapps.ts";
 import { urlArchivo, urlDirecta as urlStorageDirecta } from "./archivo.ts";
+import { simboloMoneda, RE_MONTO_CON_MONEDA } from "./moneda.ts";
 
 export type EngineEvent =
   // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
@@ -799,7 +800,7 @@ async function runEngineInner(
         cliente: (_cPi as any)?.nombre || (_cPi as any)?.wa_id || "Un cliente",
         telefono: (_cPi as any)?.wa_id || "",
         pedido: String(_vivoArr.estado ?? ""),
-        monto: _vivoArr.amount ? `S/ ${_vivoArr.amount}` : "",
+        monto: _vivoArr.amount ? `${simboloMoneda((_vivoArr as any).currency)} ${_vivoArr.amount}` : "",
         texto: String(event.text ?? "").slice(0, 120),
         adelanto: "",
       }).catch(() => {});
@@ -13512,7 +13513,7 @@ export function mensajeEstadoDefault(
   demora?: string | null,
 ): string | null {
   const s = shipping || {};
-  const sym = moneda === "USD" ? "$" : "S/";
+  const sym = simboloMoneda(moneda);
   // La plantilla ya dice "la agencia Shalom de …", y el cliente suele dar la sede
   // CON el nombre del courier ("Shalom Trujillo Parque Industrial") → salía
   // "la agencia Shalom de Shalom Trujillo…" en los 3 avisos (despacho, llegada y
@@ -14023,7 +14024,7 @@ function evaluarAbono(
   const cubre = !ambiguo && Number.isFinite(esperado) && esperado > 0 && r2(total) >= r2(esperado - tolSafe);
   return { key, abonos, total: r2(total), cubre, falta: Math.max(0, r2(esperado - total)), dup, ambiguo };
 }
-function simboloMoneda(cur?: string): string { return String(cur ?? "").toUpperCase() === "USD" ? "$" : "S/"; }
+// (simboloMoneda vive en ./moneda.ts: el catálogo completo de monedas del panel, no solo S/ y $)
 
 // Acredita al SALDO lo que el cliente pagó de MÁS en el adelanto. El total que
 // debe = adelanto + saldo (incluye extras que hayan subido el saldo). Si pagó justo
@@ -17728,7 +17729,7 @@ async function maybePostventa(db: SupabaseClient, channelId: string, contactId: 
     parts.push(
       "## Estás COBRANDO el saldo de su pedido (tu rol AHORA)\n" +
       `Este cliente ya pagó el ADELANTO y su pedido está **${estadoLegible}**. Le FALTA pagar el **saldo**` +
-      (saldoTxt ? ` de S/ ${saldoTxt}` : "") + " para poder recoger su pedido en la agencia.\n" +
+      (saldoTxt ? ` de ${simboloMoneda(ctx.moneda as string)} ${saldoTxt}` : "") + " para poder recoger su pedido en la agencia.\n" +
       // Igual que en post-venta: sin la lista real, si pregunta "¿qué me llega?" la IA rellena
       // con lo que se le ofreció en la charla y le promete cosas que no van en la caja.
       `- Su pedido lleva EXACTAMENTE esto y nada más: ${
@@ -29704,7 +29705,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _siNo = /(?:^|[^\p{L}])(hay que|tengo que|tendr[ií]a que|debo|se paga|se tiene que|piden|cobran|es con|necesito|se deja|dejo)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))
             && !/(?:^|[^\p{L}])(c[oó]mo|por qu[eé]|estaf\p{L}*|conf[ií]\p{L}*|segur\p{L}*|garant\p{L}*)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""));
           _tr("«Sí:» solo contesta una pregunta de sí/no («¿hay que pagar adelanto?») ·L28007");
-          salida = `${_siNo ? "Sí: a" : "A"} provincia te lo mando con un adelanto de *S/ ${Number(ctx.adelanto)}* y el resto me lo pagas por acá cuando ya esté en la agencia 🙌\n\n` + String(salida ?? "");
+          salida = `${_siNo ? "Sí: a" : "A"} provincia te lo mando con un adelanto de *${simboloMoneda(ctx.moneda as string)} ${Number(ctx.adelanto)}* y el resto me lo pagas por acá cuando ya esté en la agencia 🙌\n\n` + String(salida ?? "");
           await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Preguntó por el adelanto y la IA no lo nombró",
             "Se le contestó por código, con el monto").catch(() => {});
         }
@@ -31641,11 +31642,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       _tr("📦 Cómo le llega: antes salía acá, en su burbuja y ANTES del mensaje.  ·L29814");
       if (op === "generar_texto" && esDigital(ctx) && Number(ctx.precio) > 0
           && /\b(cu[aá]nto (cuesta|vale|est[aá]|es|sale|cobran)|precio|cu[aá]nto\s*\?)/i.test(String(ctx.last_input ?? ""))
-          && !/s\/\s*\d|\d+\s*soles/i.test(String(salida ?? ""))) {
+          && !RE_MONTO_CON_MONEDA.test(String(salida ?? ""))) {
         _tr("📦 Cómo le llega: antes salía acá, en su burbuja y ANTES del mensaje.  ·L29817");
-        salida = String(salida ?? "").trim() + `\n\nCuesta *S/ ${Number(ctx.precio)}* 👌`;
+        salida = String(salida ?? "").trim() + `\n\nCuesta *${simboloMoneda(ctx.moneda as string)} ${Number(ctx.precio)}* 👌`;
         await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Preguntó el precio y la IA no lo dijo",
-          `Se agregó «Cuesta S/ ${Number(ctx.precio)}»`).catch(() => {});
+          `Se agregó «Cuesta ${simboloMoneda(ctx.moneda as string)} ${Number(ctx.precio)}»`).catch(() => {});
       }
       // 💳 «¿Se puede Plin?» se contesta con un SÍ. Medido (P-pplin-1/2, 2026-09-18): «Piura, ¿se
       // puede plin?» → «Claro, te llega por agencia Shalom… ¿cuántas unidades?» sin la palabra
