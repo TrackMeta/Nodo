@@ -390,8 +390,9 @@ async function boot(){
   const shell=await mountShell({ active:"productos" });
   AV = await avPermitido();
   st.channelId=shell.channelId;
+  cargarMonedaBot();
   guardUnsaved(".nodo-page"); // avisa si sales con la ficha del producto a medio editar
-  shell.onChannel(async id=>{ await esperarFlujo(); st.channelId=id; st.prod=null; showGrid(); loadProducts(); });
+  shell.onChannel(async id=>{ await esperarFlujo(); st.channelId=id; st.prod=null; cargarMonedaBot(); showGrid(); loadProducts(); });
   $("addProduct").onclick = createProduct;
   $("pSearch").oninput = renderCards;
   $("saveBtn").onclick = saveProduct;
@@ -1033,7 +1034,11 @@ const CURRENCIES=[
 ];
 // Símbolo de la moneda de un producto (config.moneda). Los readouts del editor y el
 // mensaje de adelanto usaban "S/" fijo aunque el producto se venda en otra moneda.
-function curSym(cfg){ const cur=(cfg&&cfg.moneda)||"PEN"; return (CURRENCIES.find(c=>c[0]===cur)||["","S/"])[1]; }
+// (24-oct) Un producto sin moneda propia usa la del BOT (Ajustes → Moneda), no soles fijos: en un bot en pesos mexicanos
+// el producto nuevo aparecía «S/ · Perú — Sol» y la vista previa del saludo decía «S/ 100».
+let _monedaBot="PEN";
+function cargarMonedaBot(){ getChannel(st.channelId).then(d=>{ _monedaBot=(d&&d.moneda)||"PEN"; }).catch(()=>{}); }
+function curSym(cfg){ const cur=(cfg&&cfg.moneda)||_monedaBot||"PEN"; return (CURRENCIES.find(c=>c[0]===cur)||["","S/"])[1]; }
 const MODOS_ENVIO=[
   ["cliente","Envío lo paga el cliente al recibir (según la agencia)"],
   ["gratis","Envío gratis en todos los envíos"],
@@ -3934,7 +3939,7 @@ function renderOpciones(host){
   // arranca mostrando el precio, no un estado vacío.
   if(!st.versions.length) st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:0 });
   const multi = st.versions.length>1;
-  const cur=cfg.moneda||"PEN";
+  const cur=cfg.moneda||_monedaBot||"PEN";
   const sym=(CURRENCIES.find(c=>c[0]===cur)||["","S/"])[1];
   const monedaSel=`<select class="sel" id="opMoneda" style="width:auto;min-width:210px;height:36px;font-size:12.5px">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${cur===cd?"selected":""}>${sy} · ${esc(nm)} (${cd})</option>`).join("")}</select>`;
 
@@ -4468,7 +4473,10 @@ function harvest(){
 //    igual que el editor de pasos: cabecera + papel tapiz + "HOY" + burbujas) ──
 let _welcomeBrand={};
 function welcomePreview(v){
-  const smp=(t)=>String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana").replace(/\{\{\s*precio\s*\}\}/gi,"S/ 100").replace(/\{\{[^}]*\}\}/g,"…");
+  // {{precio}} con el precio y la moneda REALES del producto (antes «S/ 100» fijo)
+  const _pv=(st.versions||[]).find(x=>x&&x.precio!==""&&x.precio!=null);
+  const _precioEj=`${curSym(st.prod&&st.prod.config)} ${_pv?_pv.precio:100}`;
+  const smp=(t)=>String(t||"").replace(/\{\{\s*nombre\s*\}\}/gi,"Ana").replace(/\{\{\s*precio\s*\}\}/gi,_precioEj).replace(/\{\{[^}]*\}\}/g,"…");
   return waScreenHtml({ title:_welcomeBrand.nombre, logoUrl:_welcomeBrand.logo_url, bubblesHtml: waBubbles((v&&v.bubbles)||[], smp), empty:"Escribe el saludo para ver cómo llega…" });
 }
 function actTabBtn(active){ return `font-size:12.5px;padding:6px 13px;border-radius:999px;cursor:pointer;font-weight:${active?'700':'600'};border:${active?'none':'0.5px solid var(--border)'};background:${active?'var(--ia1,#8b5cf6)':'transparent'};color:${active?'#fff':'var(--muted)'}`; }

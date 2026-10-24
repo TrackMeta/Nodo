@@ -921,12 +921,12 @@ function renderValidador(b){
   const metRow=(m,i)=>{
     const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
     el.innerHTML=`<div class="row">
-      <div class="f"><label style="margin-top:0">App / Banco</label><input class="in mApp" value="${esc(m.app||"")}" placeholder="Yape"/></div>
+      <div class="f"><label style="margin-top:0">App / Banco</label><input class="in mApp" value="${esc(m.app||"")}" placeholder="Ej. Yape, BBVA, Nequi…"/></div>
       <div class="f"><label style="margin-top:0">Titular esperado</label><input class="in mTit" value="${esc(m.titular||"")}" placeholder="Juan Pérez"/></div>
-      <div class="f"><label style="margin-top:0">Número / cuenta</label><input class="in mNum" value="${esc(m.numero||"")}" placeholder="900 000 000 / CCI"/></div>
+      <div class="f"><label style="margin-top:0">Número / cuenta</label><input class="in mNum" value="${esc(m.numero||"")}" placeholder="Número, cuenta, CCI o CLABE"/></div>
       <button class="btn danger" style="align-self:flex-end;border:1px solid var(--border)">${icon("trash")}</button>
     </div>
-    <input class="in mNot" value="${esc(m.notas||"")}" placeholder="Notas (opcional): ej. solo soles, no aceptar de terceros" style="margin-top:8px"/>`;
+    <input class="in mNot" value="${esc(m.notas||"")}" placeholder="Notas (opcional): ej. solo en moneda local, no aceptar de terceros" style="margin-top:8px"/>`;
     el.querySelector(".mApp").oninput=(e)=>{ m.app=e.target.value; paintDp(); };
     el.querySelector(".mTit").oninput=(e)=>{ m.titular=e.target.value; paintDp(); };
     el.querySelector(".mNum").oninput=(e)=>{ m.numero=e.target.value; paintDp(); };
