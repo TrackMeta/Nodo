@@ -16865,7 +16865,8 @@ async function maybeDatosPago(
       const _mNuevo = Number(digital?.monto);
       const _ultCab = (outs ?? []).map((m: any) => String(m.content?.text ?? ""))
         .find((tx) => _tieneNum(tx) && /Son \*/.test(tx)) ?? "";
-      const _mPrev = Number((_ultCab.match(/Son \*[^\d]*(\d+(?:[.,]\d+)?)\*/) ?? [])[1]?.replace(",", "."));
+      // (sinMiles: el bloque ya sale «Son *$ 49.900*» y se leía 49,9 → «cambió el monto» y se reenviaba en cada turno)
+      const _mPrev = Number(sinMiles((_ultCab.match(/Son \*[^\d]*(\d[\d.,]*)\*/) ?? [])[1] ?? "").replace(",", "."));
       _montoCambio = Number.isFinite(_mNuevo) && _mNuevo > 0 && Number.isFinite(_mPrev) && _mPrev !== _mNuevo;
     }
     // (15-oct) …o la IA decidió reenviarlos porque los pidió (ver `reenviar`): sin esto la marca no hacía nada y la IA
@@ -27948,8 +27949,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           if (!_preciosOk.length) return [];
           const out: number[] = [];
           const t = sinFormato(String(txt ?? ""));
-          for (const m of t.matchAll(/(?:S\/\.?|US\$|\$)\s*(\d{1,5}(?:[.,]\d{1,2})?)|(\d{1,5}(?:[.,]\d{1,2})?)\s*soles\b/gi)) {
-            const n = Number(String(m[1] ?? m[2]).replace(",", "."));
+          // (25-oct: con los miles —«$49.900»— leía 49,9, lo daba por precio inventado y BORRABA la frase buena de la IA)
+          for (const m of t.matchAll(/(?:S\/\.?|US\$|\$)\s*(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d{1,6}(?:[.,]\d{1,2})?)|(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d{1,6}(?:[.,]\d{1,2})?)\s*(?:soles|pesos)\b/gi)) {
+            const n = Number(sinMiles(m[1] ?? m[2]).replace(",", "."));
             if (n > 0 && !_preciosOk.some((p) => Math.abs(p - n) < 0.01)) out.push(n);
           }
           return out;
@@ -31673,7 +31675,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       _tr("📦 Cómo le llega: antes salía acá, en su burbuja y ANTES del mensaje.  ·L29814");
       if (op === "generar_texto" && esDigital(ctx) && Number(ctx.precio) > 0
           && /\b(cu[aá]nto (cuesta|vale|est[aá]|es|sale|cobran)|precio|cu[aá]nto\s*\?)/i.test(String(ctx.last_input ?? ""))
-          && !RE_MONTO_CON_MONEDA.test(String(salida ?? ""))) {
+          // (25-oct: «cuesta *49.900* pesos» —la negrita entre la cifra y «pesos»— no contaba como dicho; y si en este turno
+          //  salen los datos de pago, «Son *$ 49.900*» ya le contesta: no va el precio dos veces seguidas)
+          && !RE_MONTO_CON_MONEDA.test(sinFormato(salida)) && !dicePrecio(salida, ctx.precio)
+          && !(run as any)._iaDatosPago) {
         _tr("📦 Cómo le llega: antes salía acá, en su burbuja y ANTES del mensaje.  ·L29817");
         salida = String(salida ?? "").trim() + `\n\nCuesta *${simboloMoneda(ctx.moneda as string)} ${Number(ctx.precio)}* 👌`;
         await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Preguntó el precio y la IA no lo dijo",
