@@ -30783,7 +30783,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             // (con o sin «¿»: la última frase que termina en «?» y habla de pagar)
             // Corta desde el «¿» o desde el último emoji/punto — nunca el mensaje entero.
             const _RE_PAGO_FINAL = /(?:¿[^?¿]*?|[^.!?¿\n\p{Extended_Pictographic}]*)\b(?:yape|plin|transferencia|pagas|pagarlo|pagarla|pagar|pago)\b[^.!?¿\n]*\?[\s\p{Extended_Pictographic}️]*$|¿\s*(?:lo\s+aseguramos|lo\s+quieres)\s+hoy\?[^?¿]*$/iu;
-            if (_yaPreguntoPago && _RE_PAGO_FINAL.test(String(salida ?? "").trim())) {
+            // 🎯 (25-oct) Con «Cerrar preguntando cómo paga» PRENDIDO en el producto (config.ia.cierre_alt, 11-oct: el cierre de
+            // ChatLevel) ese cierre es lo que pidió el dueño: no se cambia por la suave. Sin esto la deshacía ~48 veces por
+            // semana en Prime — `_yaPreguntoPago` mira también el mensaje de AHORA, así que saltaba con su propia pregunta.
+            let _cierreAltOn = false;
+            if (ctx._product_id) {
+              try {
+                const { data: _pcA } = await db.from("products").select("config").eq("id", String(ctx._product_id)).maybeSingle();
+                const _iaA = (_pcA as any)?.config?.ia ?? {};
+                _cierreAltOn = _iaA.cierre_alt === "1" && !!String(_iaA.cierre_alt_txt ?? "").trim();
+              } catch (_) { /* sin ficha legible → como antes */ }
+            }
+            if (_yaPreguntoPago && !_cierreAltOn && _RE_PAGO_FINAL.test(String(salida ?? "").trim())) {
               const _suave = _yaPreguntoSuave ? "" : _rota(["¿Te queda alguna duda para empezar hoy? 🙂", "¿Algo más que quieras saber antes de empezar? 🙂"]);
               // (si este turno pueden salir los DATOS —«ok dame» a «¿Lo quieres hoy?»—, la suave va en espera y no pegada:
               //  «¿Algo más que quieras saber antes de empezar?» justo encima de «Son S/ 19 👇» — R1D-plantillarubro, 2026-10-01)
