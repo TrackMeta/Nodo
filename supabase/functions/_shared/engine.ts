@@ -8555,7 +8555,8 @@ function conPrecios(texto: string, lista: string, preguntoElCliente = false): st
   // peor versión de esto: le pide permiso para vender y encima lo deja esperando.
   // Solo cuenta si escribió alguna de las cifras REALES de sus presentaciones.
   const cifras = (lista.match(/\d+(?:[.,]\d+)?/g) ?? []).filter((n) => Number(String(n).replace(",", ".")) >= 10);
-  if (cifras.length ? cifras.some((n) => t.includes(n)) : /\d{2,}/.test(t.replace(/\d{6,}/g, ""))) return t;
+  // (sin los miles en los dos lados: la lista trae «49900» y la IA escribió «49.900» — 25-oct, Colombia)
+  if (cifras.length ? cifras.some((n) => sinMiles(t).includes(sinMiles(n))) : /\d{2,}/.test(t.replace(/\d{6,}/g, ""))) return t;
   // 🧹 Y la frase que ANUNCIA los precios sobra, porque la lista va pegada justo debajo:
   // «¿con cuántas unidades te interesa? Te paso las opciones y precios para que elijas.»
   // seguido de las tres presentaciones. Anunciar algo que ya está a la vista es relleno, y
