@@ -21,8 +21,14 @@ const RE_PERSONA =
   /(?<![\p{L}])asesor(?:a|\(a\)|es|as)?(?![\p{L}])|te\s+(?:va|van)\s+a\s+(?:llamar|escribir|contactar)|(?:un|una)\s+persona\s+(?:real|del\s+equipo)\s+te|no\s+soy\s+(?:un\s+)?(?:bot|robot)|soy\s+(?:una\s+)?persona\b/iu;
 // Números de cuenta o de Yape escritos en la ficha (van en IA → Validador de comprobantes).
 const RE_NUMERO_CUENTA = /(?<!\d)(?:9\d{2}[\s.-]?\d{3}[\s.-]?\d{3}|\d{10,20})(?!\d)/;
-// 2) Montos escritos: «S/ 7», «S/7», «7 soles», «$ 5».
-const RE_MONTO = /(?:S\/\.?|US\$|\$)\s?(\d+(?:[.,]\d{1,2})?)|(\d+(?:[.,]\d{1,2})?)\s*soles\b/gi;
+// 2) Montos escritos: «S/ 7», «S/7», «7 soles», «$ 5», «$49.900», «49.900 pesos».
+// (25-oct: con miles —Colombia, Chile— «$49.900» se leía 49,9 y avisaba de un monto que SÍ era el precio)
+const RE_MONTO = /(?:S\/\.?|US\$|\$)\s?(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)|(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(?:soles|pesos|d[oó]lares)(?![\p{L}])/giu;
+// «49.900» → 49900, «1.234,50» → 1234.5, «7,50» → 7.5 (el separador que va último con 1-2 cifras es el decimal).
+function numeroDe(t) {
+  const m = /^(.*?)(?:[.,](\d{1,2}))?$/.exec(String(t));
+  return Number(m[1].replace(/[.,]/g, "") + (m[2] ? "." + m[2] : ""));
+}
 // 4) Temas que suelen quedar escritos en dos sitios con órdenes distintas.
 const TEMAS = [
   ["«Lo pensaré»", /\blo\s+pens(?:ar[eé]|ar[aá]|amos)|\blo\s+pienso|d[eé]jame\s+pensarlo|luego\s+compro/i],
@@ -68,19 +74,19 @@ function avisoPersona(campos) {
       `Nodo le avisa a tu equipo solo.`,
   }] : [];
 }
-function avisoMontos(campos, precios) {
+function avisoMontos(campos, precios, sym = "S/") {
   const ok = new Set((precios ?? []).map((p) => Number(p)).filter((p) => p > 0));
   const hall = [];
   for (const k of Object.keys(campos)) {
     const vistos = [];
     for (const m of String(campos[k] ?? "").matchAll(RE_MONTO)) {
-      const n = Number(String(m[1] ?? m[2]).replace(",", "."));
+      const n = numeroDe(m[1] ?? m[2]);
       if (n > 0 && !ok.has(n) && !vistos.includes(n)) vistos.push(n);
     }
     if (vistos.length) hall.push([k, vistos]);
   }
   if (!hall.length) return [];
-  const cifras = [...new Set(hall.flatMap(([, v]) => v))].slice(0, 6).map((n) => `S/ ${n}`).join(", ");
+  const cifras = [...new Set(hall.flatMap(([, v]) => v))].slice(0, 6).map((n) => `${sym} ${Number.isInteger(n) ? n.toLocaleString("es") : n}`).join(", ");
   return [{
     campo: hall[0][0], titulo: `Escribiste montos que no son el precio de venta (${cifras})`,
     detalle: `En ${lista(hall.map(([k]) => k))}. El bot repite las cifras que lee: tarde o temprano ofrece ese monto ` +
@@ -127,7 +133,7 @@ function avisoOrtografiaSaludo(saludo) {
 }
 
 // Textos sueltos de la ficha (lo que el motor lee del producto).
-export function revisarFicha({ ia = {}, faq = [], emojis = "", precios = [], saludo = "" } = {}) {
+export function revisarFicha({ ia = {}, faq = [], emojis = "", precios = [], saludo = "", sym = "S/" } = {}) {
   const ejemplos = (ia.ejemplos ?? []).map((e) => `${e?.sit ?? ""} ${e?.resp ?? ""}`).join("\n");
   const faqTxt = (faq ?? []).map((q) => `${q?.q ?? q?.p ?? ""} ${q?.a ?? q?.r ?? ""}`).join("\n");
   const campos = {
@@ -141,7 +147,7 @@ export function revisarFicha({ ia = {}, faq = [], emojis = "", precios = [], sal
     ...avisoCobro(conSaludo),
     ...avisoNumeros(campos),            // (el método de pago especial del producto sí lleva su número: no se mira)
     ...avisoPersona(conSaludo),
-    ...avisoMontos(conSaludo, precios),
+    ...avisoMontos(conSaludo, precios, sym),
     // (con la ficha de 3 cuadros las objeciones viven en la lista de «lo que te preguntan»)
     ...avisoTemasRepetidos(`${ia.proceso ?? ""}\n${ia.tecnicas ?? ""}`, `${ia.objeciones ?? ""}\n${faqTxt}`),
     ...avisoEmojis(emojis, ia.emojis_prohibidos, saludo),

@@ -4906,7 +4906,7 @@ async function _saveProduct(){
     if(!c.ia.detalle && c.contexto_producto && !c.ia._migrado){ c.ia.detalle=c.contexto_producto; c.ia._migrado=true; }
     if(st.prod.clase!=="extra") fusionarFicha(c);
     const saludo=(st.act?.node?.config?.variantes||[]).flatMap(v=>(v?.bubbles||[]).map(bb=>bb?.text??bb?.caption??"")).join("\n");
-    const avisos=revisarFicha({ ia:c.ia||{}, faq:c.faq_items||[], emojis:c.emojis||"", saludo,
+    const avisos=revisarFicha({ ia:c.ia||{}, faq:c.faq_items||[], emojis:c.emojis||"", saludo, sym:curSym(c),
       precios:(st.versions||[]).filter(v=>v.activo!==false).map(v=>Number(v.precio)) });
     // Lo que ya aceptó con «Guardar igual» en esta visita no se le vuelve a preguntar en cada guardado.
     const vistos=(st._avisosVistos=st._avisosVistos||{})[st.prod.id||"nuevo"]||=new Set();
