@@ -30481,13 +30481,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               .join(" ")).join("\n").replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n").trim();
             if (salida !== _antesAs) await logEvent(db, run.channel_id, run.contact_id, "nota", "🛒 La IA elegía la versión por él con el combo armado", `«${_antesAs.slice(0, 120)}»`).catch(() => {});
           }
-          // (…y también SIN combo cuando nadie habló de cantidades: «Con uno te alcanza y te queda para siempre» a quien solo
-          //  dijo «quiero el curso» — R1D-sinelegir, R1D-montoraro, regresión 2026-10-01)
-          // (…pero NUNCA cuando él preguntó justo eso: «¿tengo que comprar más de uno?», «¿sirve para dos personas?», «¿lo puedo
-          //  compartir?». «Con uno solo te queda para siempre» ERA la respuesta y se borraba — juez de retoques, 7-oct)
-          const _preguntaCuantosAcc = /m[aá]s\s+de\s+(?:un[oa]?|1)\b|\bun[oa]?\s+sol[oa]\b|\bcu[aá]nt[oa]s\s+(?:accesos?|veces|cuentas|personas|usuarios)|\bcompart\p{L}*|\botra\s+persona|\bvarios\s+(?:usuarios|celulares|equipos|dispositivos)|\b(?:necesito|tengo\s+que|debo|hay\s+que)\s+(?:comprar|pagar|llevar)\s+(?:otro|otra|dos|varios)|\bpara\s+(?:mi|mis)\s+(?:esposa|esposo|hij[oa]s?|herman[oa]s?|pareja|amig[oa]s?)\b/iu
-            .test(String(ctx.last_input ?? ""));
-          if (comboDe(run).length > 0 || (!_preguntaCuantosAcc && !/\d|\b(?:dos|tres|cuatro|varios|varias|ambos|ambas|par\s+de|los\s+dos|las\s+dos)\b/i.test(String(ctx.last_input ?? "")))) {
+          // (25-oct, Rodrigo: menos cortes) Ya NO corre sin combo. Antes también quitaba «con uno solo…» a quien no habló de
+          //  cantidades, y se llevó «el precio es S/ 10 y con uno solo te queda el acceso de por vida» (1 vez en la semana, y
+          //  para mal: «uno solo» era «un solo pago»). Queda solo con COMBO: ahí «un solo acceso» es falso, lleva dos productos.
+          if (comboDe(run).length > 0) {
             const _antesC2 = salida;
             _tr("(…y también SIN combo cuando nadie habló de cantidades: «Con uno te al ·L28705");
             const _RE_UN_ACCESO = /(?:un\s+solo|uno\s+solo|un\s+[uú]nico)\s+acceso|\b(?:con\s+)?un[oa]?\s+sol[oa]\b[^.!?\n]{0,30}\b(?:queda|basta|alcanza|sirve)|\bcon\s+un[oa]?\s+(?:sol[oa]\s+)?te\s+(?:basta|alcanza|sirve)\b|\buna\s+sola\s+compra\b|no\s+(?:hace\s+falta|necesitas|tienes\s+que)\s+(?:llevar\s+|comprar\s+|tener\s+|pagar\s+)?(?:dos|2)\b|con\s+una\s+(?:vez|sola)\s+te\s+alcanza|el\s+acceso\s+es\s+uno\s+solo|no\s+hay\s+que\s+comprar(?:lo)?\s+dos\s+veces/iu;
