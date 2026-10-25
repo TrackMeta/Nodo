@@ -29,7 +29,7 @@ import { fetchConTimeout } from "./http.ts";
 import { finVentanaAnuncio } from "./fep.ts";
 import { appsApi, cfgDe as cfgMicroapp, modalidadDeOpcion, proximoRecordatorioMin, CORREO_PEDIR_DEF, mensajeEntrega, fechaLarga, extraerCorreo, extraerCelular, noQuiereNovedades, type MicroappCfg } from "./microapps.ts";
 import { urlArchivo, urlDirecta as urlStorageDirecta } from "./archivo.ts";
-import { simboloMoneda, RE_MONTO_CON_MONEDA } from "./moneda.ts";
+import { simboloMoneda, RE_MONTO_CON_MONEDA, agruparMiles, dicePrecio, sinMiles } from "./moneda.ts";
 
 export type EngineEvent =
   // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
@@ -5534,6 +5534,9 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
       return m[0] !== m[0].toLowerCase() ? r[0].toUpperCase() + r.slice(1) : r;
     });
   }
+  // 💱 Miles con punto donde se escribe así (Colombia, Chile, Argentina…): «Son *$ 49900*» → «$ 49.900». Todo el
+  // texto, el del dueño también ({{precio}} sale pegado). En soles, pesos mexicanos y dólares no cambia nada.
+  text = agruparMiles(text, ctx?.moneda);
   // 🗣️ «Por lo que me cuentas, te conviene…» a quien escribió «Los Olivos, quiero 3» o «1» (F13-losolivos3,
   // F13-miraflores): suena a que no lo leyó. Con un mensaje corto (≤6 palabras) la muletilla se va y queda lo demás.
   if (bubble._noTpl && String(ctx?.last_input ?? "").trim().split(/\s+/).filter(Boolean).length <= 6) {
@@ -8860,7 +8863,7 @@ async function yaLeListamosPrecios(db: SupabaseClient, run: Run, ops: Opcion[]):
       // pedir, `RE_CLIENTE_PIDE_PRECIO` manda y la lista sale entera igual.
       .order("ts", { ascending: false }).limit(4);
     const txt = (data ?? []).map((m: any) => sinFormato(String(m?.content?.text ?? ""))).join("\n");
-    return ops.filter((o) => o.precio != null && txt.includes(String(o.precio))).length >= 2;
+    return ops.filter((o) => o.precio != null && dicePrecio(txt, o.precio)).length >= 2;
   } catch (_) { return false; }
 }
 
@@ -23169,7 +23172,7 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
         // Después de ver los precios, un número solo es la cantidad: en esa conversación no
         // hay otra cosa numerada del 1 al 3. Es la misma puerta de antes, por el otro lado.
         const _leListamos = list.filter((o) =>
-          o.precio != null && _dichoOut.includes(String(o.precio))).length >= 2;
+          o.precio != null && dicePrecio(_dichoOut, o.precio)).length >= 2;
         // 📍 …y un número SOLO cuando lo último que se le preguntó fue la SEDE con una lista que
         // NO va numerada (📍 *Trujillo* / 📍 *La Esperanza*…): ahí «1» no puede ser una oficina
         // —no hay nada del 1 al 3 en esa lista— y la IA lo tomaba por «la primera» (D14-
@@ -29063,7 +29066,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // «QUIERO 3 PARA AREQUIPA, ¿CUÁNTO ES?» recibió los precios de 1 y 2 (F7b-hmayus).
       _tr("💰 Preguntó cuánto cuesta: el precio va primero, sin el pitch encima ( ·L27410");
       if (op === "generar_texto" && RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? "")) && !esDigital(ctx) && String(ctx.opcion ?? "").trim()
-          && Number(ctx.precio) > 0 && !sinFormato(salida).includes(String(ctx.precio))) {
+          && Number(ctx.precio) > 0 && !dicePrecio(salida, ctx.precio)) {
         _tr("💰 Preguntó cuánto cuesta: el precio va primero, sin el pitch encima ( ·L27412");
         salida = `Por *${String(ctx.opcion)}* son *${simboloMoneda(ctx.moneda as string)} ${Number(ctx.precio)}* 🙌\n\n${String(salida).trimStart()}`;
         await logEvent(db, run.channel_id, run.contact_id, "nota", "💰 Faltaba el precio de lo que eligió",
@@ -29106,7 +29109,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       }
       const _symP = simboloMoneda(ctx.moneda as string);
       const _traeCifra = _opsPre.length
-        ? _opsPre.some((o) => sinFormato(salida).includes(String(o.precio)))
+        ? _opsPre.some((o) => dicePrecio(salida, o.precio))   // («49.900» también es 49900: la IA pone los miles a su manera)
         // Sin precios cargados se cae al criterio de antes: «el símbolo de moneda seguido de
         // un número». Escrito sin escapes a propósito — construir la regex a mano acá se comía
         // las contrabarras al pasar por el editor y dejaba un patrón que no casaba nada.
@@ -30622,7 +30625,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 } else if (Number(_montoPago) > 0) {
                   const _symP = simboloMoneda(ctx.moneda as string);
                   const _yaDiceMonto = new RegExp(`(?:^|[^\\d])${String(_montoPago).replace(".", "\\.")}(?:[^\\d]|$)`)
-                    .test(sinFormato(salida));
+                    .test(sinMiles(sinFormato(salida)));   // («49.900» también es el monto)
                   if (!_yaDiceMonto) salida = `Son *${_symP} ${_montoPago}* 👇\n\n${salida}`;
                 }
               } catch (_) { /* sin opciones → se envía tal cual */ }
@@ -31076,7 +31079,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           try {
             const _opsFO = opcionesVisibles(await loadOpciones(db, run, String(ctx._product_id)), run);   // 🙈
             const _salFO = sinFormato(salida);
-            const _listadasFO = _opsFO.filter((o) => o.precio != null && _salFO.includes(String(o.precio))).length >= 2;
+            const _listadasFO = _opsFO.filter((o) => o.precio != null && dicePrecio(_salFO, o.precio)).length >= 2;
             if (_opsFO.length > 1 && !_listadasFO) {
               const _yaLFO = await yaLeListamosPrecios(db, run, _opsFO);
               const _pregFO = preguntaCuantos(_opsFO, ctx, _negOn, _yaLFO);
@@ -31398,7 +31401,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                     return /^[A-ZÁÉÍÓÚÑ]/.test(m) ? r.charAt(0).toUpperCase() + r.slice(1) : r;
                   });
               }
-              if (_suyaL && _suyaL.precio != null && !salida.includes(String(_suyaL.precio))) {
+              if (_suyaL && _suyaL.precio != null && !dicePrecio(salida, _suyaL.precio)) {
                 const _symL = simboloMoneda(ctx.moneda as string);
                 const _vL = Math.round(Number(_suyaL.precio) * 100) / 100;   // 69 pelado, 54.50 con sus dos cifras
                 salida = `Anotado: *${_suyaL.nombre}*, ${_symL} ${Number.isInteger(_vL) ? _vL : _vL.toFixed(2)}.\n\n${salida}`;   // misma forma que la oferta
@@ -31460,7 +31463,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               .sort((a, b) => Number(a.cantidad) - Number(b.cantidad))[0];
             // Si el mensaje ya trae la lista con ese precio, el ahorro ya está a la vista:
             // repetirlo es una burbuja pagada para decir lo mismo.
-            if (_mejor && !salida.includes(String(_mejor.precio))) {
+            if (_mejor && !dicePrecio(salida, _mejor.precio)) {
               const sym = simboloMoneda(ctx.moneda as string);
               // Plata: el entero va pelado (69), el partido con sus dos cifras (54.50).
               const r2 = (n: number) => {
@@ -31476,7 +31479,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               const _ojo = `Si llevas *${_mejor.nombre}* te salen ${sym} ${r2(Number(_mejor.precio))}, o sea ` +
                 `*${sym} ${r2(_unit(_mejor))} cada una* 🔧`;
               // Sin repetir la confirmación si el mensaje ya trae su precio («Perfecto, 1 unidad por *S/ 69*»).
-              const _oferta = (salida.includes(String(_suya.precio)) || (run.vars as any)?._upsell_anotado) ? _ojo : `${_anotado} ${_ojo}`;
+              const _oferta = (dicePrecio(salida, _suya.precio) || (run.vars as any)?._upsell_anotado) ? _ojo : `${_anotado} ${_ojo}`;
               // Antes del bloque que le pide algo — y antes de la LISTA a la que esa pregunta se refiere
               // (📍 oficinas → «¿Cuál te queda mejor?», con su encabezado «…tenemos estas 👇»): metida
               // entre las dos, la pregunta quedaba lejos de lo que pregunta (G3-truji, La Esperanza).
@@ -32913,7 +32916,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         let _eligirYaDicho = !!(run as any)._pidioElegirTurno;
         if (!_eligirYaDicho && esDigital(ctx) && _opsProd.length > 1) {
           const _salOp = sinFormato(String(salida ?? ""));
-          if (_opsProd.filter((o) => o.precio != null && _salOp.includes(String(o.precio))).length >= 2) _eligirYaDicho = true;
+          if (_opsProd.filter((o) => o.precio != null && dicePrecio(_salOp, o.precio)).length >= 2) _eligirYaDicho = true;
           else {
             try {
               const { data: _outsE } = await db.from("messages").select("content")

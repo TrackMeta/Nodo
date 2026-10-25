@@ -12,6 +12,26 @@ export function simboloMoneda(cur?: string | null): string {
   return SIMBOLOS[c] ?? c;
 }
 
+// Monedas que separan los miles con PUNTO: «$49.900» (Colombia), «$9.990» (Chile). (25-oct: el bot escribía
+// «Son *$ 49900*» y «faltan $19900»; en Perú, México y dólares no se toca nada.)
+const MILES_CON_PUNTO = new Set(["COP", "CLP", "ARS", "PYG", "UYU", "VES", "BOB", "BRL", "EUR", "CRC"]);
+export function agruparMiles(texto: string, cur?: string | null): string {
+  if (!MILES_CON_PUNTO.has(String(cur ?? "").trim().toUpperCase())) return texto;
+  const pun = (d: string) => d.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  // Solo cifras que son PLATA: detrás de un signo de moneda («$ 49900», «*$49900*») o delante de «pesos»/«COP»…
+  // Un celular o una cuenta no llevan ninguna de las dos cosas. Ya agrupadas o con decimales, se dejan.
+  return String(texto ?? "")
+    .replace(/((?:R\$|\$U|\$|€|₲|₡|Bs\.?)\s?\*?)(\d{4,})(?![\d.,]?\d)/g, (_m, s: string, d: string) => s + pun(d))
+    .replace(/(?<![\d.,])(\d{4,})(?![\d.,]?\d)(\*?\s*(?:pesos|COP|CLP|ARS|reales|bol[ií]vares|guaran[ií]es|colones|euros)(?![\p{L}]))/giu,
+      (_m, d: string, r: string) => pun(d) + r);
+}
+// ¿El texto dice este precio? «49.900», «49,900» y «49900» son lo mismo: la IA escribe los miles a su manera y el
+// motor buscaba la cifra pegada («49900») — no la hallaba y pegaba la lista de precios otra vez (25-oct, Colombia).
+export const sinMiles = (t: unknown) => String(t ?? "").replace(/(\d)[.,](?=\d{3}(?!\d))/g, "$1");
+export function dicePrecio(texto: unknown, precio: unknown): boolean {
+  return sinMiles(String(texto ?? "").replace(/[*_~`]/g, "")).includes(String(precio));
+}
+
 // ¿El texto ya trae un monto con su moneda? «S/ 10», «$199», «€ 5», «199 pesos», «10 soles»…
 export const RE_MONTO_CON_MONEDA =
   /(?:s\/|r\$|rd\$|\$u|c\$|b\/\.|\$|€|£|₲|₡|(?:^|[^\p{L}])bs\.?|(?:^|[^\p{L}])q)\s*\d|\d[\d.,]*\s*(?:soles|pesos|d[oó]lares|euros|reales|bolivianos|quetzales|colones|guaran[ií]es|lempiras|c[oó]rdobas|balboas|libras)(?![\p{L}])/iu;
