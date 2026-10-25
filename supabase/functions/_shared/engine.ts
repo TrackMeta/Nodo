@@ -29129,8 +29129,17 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           && (RE_PROMETE_PRECIOS.test(sinFormato(salida)) || _pidioPrecio || _sinCifrasDebiendo)
           // (digital de UN solo precio: una «lista» de un renglón no compara nada y el monto ya va en «Son *S/ X*» del bloque
           //  de pago — «Única — *S/ 10*» salía pegado debajo de «los datos están arriba», prueba del 8-oct. Solo si lo pregunta.)
-          && !(esDigital(ctx) && _opsPre.length <= 1 && !_pidioPrecio)) {
-        if (_opsPre.length) {
+          && !(esDigital(ctx) && _opsPre.length <= 1 && !_pidioPrecio)
+          // (…y aunque lo pregunte, si en este turno salen los datos de pago: «Son *$ 49.900*» ya le contesta — 25-oct)
+          && !(esDigital(ctx) && _opsPre.length <= 1 && (run as any)._iaDatosPago)) {
+        if (esDigital(ctx) && _opsPre.length === 1) {
+          // Un solo precio no es una lista: «Única — *S/ 10*» se lee raro. Va dicho como frase, si la IA no lo dijo ya.
+          const _p1 = _opsPre[0].precio;
+          if (!dicePrecio(salida, _p1)) {
+            const _sym1 = simboloMoneda(ctx.moneda as string);
+            salida = salida.trimEnd() + `\n\nCuesta ${_negOn ? `*${_sym1} ${_p1}*` : `${_sym1} ${_p1}`} 👌`;
+          }
+        } else if (_opsPre.length) {
           const sym = simboloMoneda(ctx.moneda as string);
           const _pz = (v: unknown) => (_negOn ? `*${sym} ${v}*` : `${sym} ${v}`);
           _tr("🤫 …y nunca al que acaba de decir que lo va a pensar: pegarle la lista ·L27462");
