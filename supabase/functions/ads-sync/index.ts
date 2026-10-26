@@ -124,6 +124,8 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
   const fields = [
     "ad_id", "ad_name", "adset_id", "adset_name", "campaign_id", "campaign_name",
     "spend", "impressions", "reach", "clicks",
+    // (25-oct) clics en el ENLACE: el CTR/CPC que muestra el Administrador de anuncios por defecto. `clicks` son TODOS.
+    "inline_link_clicks",
     // clics a WhatsApp: acciones de tipo click-to-WhatsApp / mensajería
     "actions",
   ].join(",");
@@ -173,6 +175,7 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
         channel_id: channelId, ad_id: adId, fecha: r.date_start,
         gasto: Number(r.spend || 0), impresiones: Number(r.impressions || 0),
         alcance: Number(r.reach || 0), clics: Number(r.clicks || 0), clics_wa: clicsWA,
+        clics_link: Number(r.inline_link_clicks || 0),
         updated_at: new Date().toISOString(),
       });
     }
@@ -196,7 +199,12 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
   }
   // Upsert por chunks para no exceder límites.
   for (let i = 0; i < insightRows.length; i += 500) {
-    const { error } = await db.from("ads_insights").upsert(insightRows.slice(i, i + 500), { onConflict: "channel_id,ad_id,fecha" });
+    const lote = insightRows.slice(i, i + 500);
+    let { error } = await db.from("ads_insights").upsert(lote, { onConflict: "channel_id,ad_id,fecha" });
+    // Sin la migración 0139 (columna clics_link) se sube sin ella: el gasto no puede dejar de bajar por esto.
+    if (error && /clics_link/.test(error.message)) {
+      ({ error } = await db.from("ads_insights").upsert(lote.map(({ clics_link: _c, ...r }) => r), { onConflict: "channel_id,ad_id,fecha" }));
+    }
     if (error) throw new Error("ads_insights upsert: " + error.message);
   }
   ultimoEstados = await syncEstados(channelId, acctId, authH);

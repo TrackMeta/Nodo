@@ -264,6 +264,9 @@ async function loadData(){
     if(!ve) st.ventana=vr||[];
     st.tarifaMsg=ch&&Number(ch.tarifa_msg_usd)>0?Number(ch.tarifa_msg_usd):null;
   }catch(_){ st.ventana=null; }
+  // 👥 (25-oct) El ALCANCE no se suma por día (son personas distintas): se le pide a Meta el del rango completo, en
+  // paralelo con lo demás. Si no se puede (sin token, error de Meta), el alcance sale «—», nunca la suma.
+  const alcP=supa.functions.invoke("ads-alcance",{ body:{ channel_id:cid, since:from, until:to } }).then(r=>r.data||null, ()=>null);
   let insR={data:[]}, metaR={data:[]}, ordR={data:[]};
   try{ [insR,metaR,ordR]=await Promise.all([
     // Las tres van PAGINADAS: PostgREST corta en 1000 filas por pedido y esta pantalla es la
@@ -271,13 +274,17 @@ async function loadData(){
     // día: 30 anuncios × 90 días ya son 2700) perdía gasto → ROAS inflado; y `orders` perdía
     // ventas → un anuncio rentable se veía perdedor. Los dos errores empujan a la decisión
     // equivocada y ninguno avisaba. Orden estable + desempate para no repetir ni saltar filas.
-    pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto,impresiones,alcance,clics,clics_wa").eq("channel_id",cid).gte("fecha",from).lte("fecha",to).order("fecha",{ascending:false}).order("ad_id").range(f,t)),
+    pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto,impresiones,alcance,clics,clics_wa,clics_link").eq("channel_id",cid).gte("fecha",from).lte("fecha",to).order("fecha",{ascending:false}).order("ad_id").range(f,t)),
     pageAll((f,t)=>supa.from("ads_meta").select("ad_id,ad_name,adset_name,campaign_name,account_id,account_currency,estado").eq("channel_id",cid).order("ad_id").range(f,t)),
     pageAll((f,t)=>supa.from("orders").select("contact_id,estado,amount,order_bumps,currency,shipping,product_id,version_id,created_at,product:product_id(nombre,emoji,tipo,config,product_versions(id,cantidad))").eq("channel_id",cid).not("shipping->>ad_id","is",null).gte("created_at",ordDesde).lte("created_at",ordHasta).order("created_at",{ascending:false}).order("id").range(f,t)),
   ]); }catch(_){ st.loaded=true; return; }
   // pageAll DEVUELVE el error en vez de lanzarlo, así que el catch de arriba ya no lo ve: sin
   // esto, una consulta que falla a media paginación se veía como un periodo con menos ventas
   // (o menos gasto) en vez de como un fallo, que es justo la lectura que hace apagar un anuncio.
+  // Sin la migración 0139 (columna clics_link) la lectura falla: se repite sin ella y Rendimiento carga como antes.
+  if(insR.error && /clics_link/.test(insR.error.message||"")){
+    insR=await pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto,impresiones,alcance,clics,clics_wa").eq("channel_id",cid).gte("fecha",from).lte("fecha",to).order("fecha",{ascending:false}).order("ad_id").range(f,t));
+  }
   if(insR.error||metaR.error||ordR.error){ st.loaded=true; return; }
   st.adEstado={}; (metaR.data||[]).forEach(m=>{ if(m.estado) st.adEstado[m.ad_id]=m.estado; });   // (0136) activo/pausado en Meta
   // Fuera los pedidos de los contactos de PRUEBA (Probar flujos y simulador): esta pantalla
@@ -309,8 +316,8 @@ async function loadData(){
     (angs||[]).forEach(a=>{ const t=a.product?(a.product.tipo==="fisico"?"fisico":"digital"):null;
       (a.ad_ids||[]).forEach(id=>{ const k=String(id); if(!angMap[k]) angMap[k]={slug:a.slug,nombre:a.nombre,tipo:t}; }); }); }catch(_){}
   const byAd={};
-  const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; const ang=angMap[String(adId)]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), angulo:ang.nombre||"— Sin ángulo —", anguloSlug:ang.slug||null, tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:0,clics:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, chats:0,interes:0,calientes:0,compraron:0,perdidos:0,vRemarketing:0, daily:{} }; } return byAd[adId]; };
-  const day=(row,f)=>{ if(!row.daily[f]) row.daily[f]={gasto:0,impr:0,clics:0,conf:0,ventas:0,ingresos:0}; return row.daily[f]; };
+  const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; const ang=angMap[String(adId)]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), angulo:ang.nombre||"— Sin ángulo —", anguloSlug:ang.slug||null, tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:null,clics:0,clicsAll:0,imprLink:0,gastoLink:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, chats:0,interes:0,calientes:0,compraron:0,perdidos:0,vRemarketing:0, daily:{} }; } return byAd[adId]; };
+  const day=(row,f)=>{ if(!row.daily[f]) row.daily[f]={gasto:0,impr:0,clics:null,clicsAll:0,conf:0,ventas:0,ingresos:0}; return row.daily[f]; };
   // El gasto llega en la moneda de la CUENTA de Meta. Se lleva a la del negocio con
   // la misma regla que el Dashboard (factorAds, en shell.js): si Meta ya factura en tu
   // moneda no se toca; si factura en dólares y hay tipo de cambio, se convierte; y si
@@ -318,7 +325,13 @@ async function loadData(){
   const _ads=factorAds(metaR.data||[], CUR, USD_RATE);
   const _f=_ads.factor;
   const _adsFuera=await adsDeCuentasQuitadas(cid);   // cuentas publicitarias ya quitadas de este bot
-  (insR.data||[]).filter(i=>!_adsFuera.has(String(i.ad_id))).forEach(i=>{ const row=getRow(i.ad_id); row.gasto+=(+i.gasto||0)*_f; row.impr+=+i.impresiones||0; row.alcance+=+i.alcance||0; row.clics+=+i.clics||0; row.clicsWA+=+i.clics_wa||0; const d=day(row,i.fecha); d.gasto+=(+i.gasto||0)*_f; d.impr+=+i.impresiones||0; d.clics+=+i.clics||0; });
+  (insR.data||[]).filter(i=>!_adsFuera.has(String(i.ad_id))).forEach(i=>{ const row=getRow(i.ad_id); const g=(+i.gasto||0)*_f, im=+i.impresiones||0; row.gasto+=g; row.impr+=im; row.clicsAll+=+i.clics||0; row.clicsWA+=+i.clics_wa||0; const d=day(row,i.fecha); d.gasto+=g; d.impr+=im; d.clicsAll+=+i.clics||0;
+    // (25-oct) CTR y CPC con los clics en el ENLACE (como el Administrador de anuncios), solo de los días que ya lo traen
+    // (clics_link null = día sincronizado antes del cambio). `clics` de Meta son TODOS (likes, perfil, «ver más»…).
+    if(i.clics_link!=null){ const cl=+i.clics_link||0; row.clics+=cl; row.imprLink+=im; row.gastoLink+=g; d.clics=(d.clics||0)+cl; } });
+  const _alc=await alcP;
+  if(_alc && _alc.ads) Object.values(byAd).forEach(row=>{ const v=_alc.ads[String(row.ad_id)]; row.alcance=v==null?null:Number(v); });
+  st.alcanceTotal=_alc && _alc.total!=null ? Number(_alc.total) : null;
   const _adCnt={}, _ventas=[];
   (ordR.data||[]).forEach(o=>{ const a=o.shipping&&o.shipping.ad_id; if(!a) return; (_adCnt[a]||(_adCnt[a]={fisico:0,digital:0}))[O.esFisico(o)?"fisico":"digital"]++; });
   (ordR.data||[]).forEach(o=>{ const adId=o.shipping&&o.shipping.ad_id; if(!adId) return; const row=getRow(adId); const e=O.EST[o.estado]||{}; const esConf=!!e.venta && !e.perdido; const esVenta=e.cobro==="todo"; const tot=O.total(o); const cant=((o.product&&o.product.product_versions)||[]).find(v=>v.id===o.version_id)?.cantidad??1; const mg=O.margen(o,o.product,cant); const f=o.created_at?ymdLima(o.created_at):""; const d=day(row,f);
@@ -402,7 +415,9 @@ async function reload(){ await loadData(); render(); }
 function metrics(a){
   return {
     gasto:a.gasto, impr:a.impr, alcance:a.alcance, frec:a.alcance?a.impr/a.alcance:null,
-    clics:a.clics, ctr:a.impr?a.clics/a.impr:null, cpm:a.impr?a.gasto/a.impr*1000:null, cpc:a.clics?a.gasto/a.clics:null,
+    // CTR y CPC de ENLACE (como Meta por defecto); «todos» queda como columna aparte.
+    clics:a.imprLink?a.clics:null, ctr:a.imprLink?a.clics/a.imprLink:null, cpm:a.impr?a.gasto/a.impr*1000:null, cpc:a.clics?a.gastoLink/a.clics:null,
+    clicsAll:a.clicsAll, ctrAll:a.impr?a.clicsAll/a.impr:null,
     clicsWA:a.clicsWA, conf:a.conf, cpaConf:a.conf?a.gasto/a.conf:null,
     ventas:a.ventas, cpaReal:a.ventas?a.gasto/a.ventas:null, ingresos:a.ingresos,
     neta:a.neta, roas:a.gasto?a.ingresos/a.gasto:null,
@@ -421,7 +436,9 @@ function metrics(a){
 const semCpa=(cpa,max)=> cpa==null||max==null ? "" : max<=0 ? "r" : cpa<=max*0.8 ? "g" : cpa<=max ? "a" : "r";
 const conPct=(n,p)=>`${nf(n)}${p==null?"":` <span class="sub">${nf(p*100,0)}%</span>`}`;
 const oDash=(v,f)=> v==null||!Number.isFinite(Number(v)) ? "—" : f(v);
-const sumAds=(arr)=>{ const k=["gasto","impr","alcance","clics","clicsWA","conf","ventas","ingresos","neta","chats","interes","calientes","compraron","perdidos","vRemarketing","_margen","_sinMargen"]; const o={}; k.forEach(x=>o[x]=0); arr.forEach(a=>k.forEach(x=>{ if(o[x]===null) return; if(a[x]==null){ if(x==="neta") o[x]=null; return; } o[x]+=a[x]; })); return o; };
+const sumAds=(arr)=>{ const k=["gasto","impr","clics","clicsAll","imprLink","gastoLink","clicsWA","conf","ventas","ingresos","neta","chats","interes","calientes","compraron","perdidos","vRemarketing","_margen","_sinMargen"]; const o={}; k.forEach(x=>o[x]=0); arr.forEach(a=>k.forEach(x=>{ if(o[x]===null) return; if(a[x]==null){ if(x==="neta") o[x]=null; return; } o[x]+=a[x]; }));
+  // 👥 Alcance: el de UN anuncio es exacto (Meta, del rango); el de varios no se suma (personas repetidas) → «—».
+  o.alcance = arr.length===1 ? arr[0].alcance : null; return o; };
 
 // Catálogo de columnas: key, label, grupo, cómo se pinta, y si es fija.
 // El robot de la tarjeta «Efectividad de cierre» del Dashboard.
@@ -429,13 +446,15 @@ const ROBOT=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-w
 const COLS=[
   {k:"gasto",  l:"Gasto",         g:"Inversión", fix:true,  cell:m=>`<td class="num money">${money0(m.gasto)}</td>`},
   {k:"impr",   l:"Impresiones",   g:"Entrega",   cell:m=>`<td class="num">${nf(m.impr)}</td>`},
-  {k:"alcance",l:"Alcance",       g:"Entrega",   cell:m=>`<td class="num">${nf(m.alcance)}</td>`},
+  {k:"alcance",l:"Alcance",       g:"Entrega",   t:"Personas distintas que lo vieron en el periodo (lo pide a Meta para el rango completo). En un grupo de anuncios no se suma: «—»", cell:m=>`<td class="num">${oDash(m.alcance,nf)}</td>`},
   {k:"frec",   l:"Frecuencia",    g:"Entrega",   cell:m=>`<td class="num">${oDash(m.frec,v=>nf(v,2))}</td>`},
-  {k:"clics",  l:"Clics",         g:"Entrega",   cell:m=>`<td class="num">${nf(m.clics)}</td>`},
-  {k:"ctr",    l:"CTR",           g:"Entrega",   cell:m=>`<td class="num">${oDash(m.ctr,pct)}</td>`},
+  {k:"clics",  l:"Clics en el enlace", h:"Clics", g:"Entrega", t:"Los que tocaron el botón del anuncio (como el Administrador de anuncios)", cell:m=>`<td class="num">${oDash(m.clics,nf)}</td>`},
+  {k:"ctr",    l:"CTR",           g:"Entrega",   t:"Clics en el enlace ÷ impresiones: el CTR que muestra Meta por defecto", cell:m=>`<td class="num">${oDash(m.ctr,pct)}</td>`},
+  {k:"clicsAll",l:"Clics (todos)", g:"Entrega",  t:"TODOS los clics: likes, comentarios, perfil, «ver más», agrandar el video", cell:m=>`<td class="num">${nf(m.clicsAll)}</td>`},
+  {k:"ctrAll", l:"CTR (todos)",   g:"Entrega",   t:"Clics de todo tipo ÷ impresiones (siempre más alto que el CTR de enlace)", cell:m=>`<td class="num">${oDash(m.ctrAll,pct)}</td>`},
   {k:"cpm",    l:"CPM",           g:"Entrega",   cell:m=>`<td class="num">${oDash(m.cpm,money)}</td>`},
-  {k:"cpc",    l:"CPC",           g:"Entrega",   cell:m=>`<td class="num">${oDash(m.cpc,money)}</td>`},
-  {k:"clicsWA",l:"Clics a WhatsApp",g:"Entrega", cell:m=>`<td class="num">${nf(m.clicsWA)}</td>`},
+  {k:"cpc",    l:"CPC",           g:"Entrega",   t:"Costo por clic en el enlace", cell:m=>`<td class="num">${oDash(m.cpc,money)}</td>`},
+  {k:"clicsWA",l:"Conversaciones iniciadas", h:"Conversaciones", g:"Entrega", t:"Según Meta: tocaron el anuncio y escribieron por WhatsApp (hasta 7 días después)", cell:m=>`<td class="num">${nf(m.clicsWA)}</td>`},
   // 💬 Dentro de WhatsApp: los que llegaron por el anuncio en el periodo y hasta dónde avanzaron (etapa de hoy).
   {k:"chats",  l:"Chats",         g:"WhatsApp",  t:"Clientes que escribieron por este anuncio en el periodo", cell:m=>`<td class="num">${nf(m.chats)}</td>`},
   {k:"cpr",    l:"Costo por chat", h:"Costo/chat", g:"WhatsApp",  t:"Costo por chat: gasto ÷ chats", cell:m=>`<td class="num">${oDash(m.cpr,money)}</td>`},
@@ -662,7 +681,8 @@ function renderTable(){
   $("thead").innerHTML=headRow(st.vista==="anuncio"?"Anuncio":st.vista==="angulo"?"Ángulo":"Producto");
   if(!rows.length){ $("tbody").innerHTML=`<tr><td colspan="${visibleCols().length+1}" style="text-align:center;color:var(--faint);padding:26px">Ningún anuncio de este tipo en el periodo.</td></tr>`; $("tfoot").innerHTML=""; return; }
   if(st.vista==="anuncio"){ renderAnuncio(); } else if(st.vista==="angulo"){ renderAngulo(); } else { renderProducto(); }
-  $("tfoot").innerHTML= rows.length>1 ? `<tr><td>Total</td>${cells(metrics(sumAds(rows)))}</tr>` : "";
+  const _tot=sumAds(rows); if(rows.length===st.rows.length && st.alcanceTotal!=null) _tot.alcance=st.alcanceTotal;   // (personas distintas de la cuenta entera)
+  $("tfoot").innerHTML= rows.length>1 ? `<tr><td>Total</td>${cells(metrics(_tot))}</tr>` : "";
 }
 function nameCell(name,tag,emoji,drill){
   return `<div class="nm">${emoji?`<span class="em">${esc(emoji)}</span>`:""}<span class="t1">${esc(name)}</span>${tag?`<span class="tag ${tag}">${TAGLBL[tag]}</span>`:""}${drill?`<span class="drill">${icon("chevronRight")||'›'}</span>`:""}</div>`;
@@ -1012,7 +1032,7 @@ function serieReal(row){
   const tope=new Date(end); tope.setDate(tope.getDate()-399); if(tope>d) d=tope;
   let guard=0;
   while(d<=end && guard++<400){ const f=ymd(d); const x=row.daily[f]||{};
-    out.push({ fecha:new Date(d), gasto:x.gasto||0, impr:x.impr||0, clics:x.clics||0, conf:x.conf||0, ventas:x.ventas||0, ingresos:x.ingresos||0 });
+    out.push({ fecha:new Date(d), gasto:x.gasto||0, impr:x.impr||0, clics:x.clics??null, conf:x.conf||0, ventas:x.ventas||0, ingresos:x.ingresos||0 });
     d=new Date(d); d.setDate(d.getDate()+1);
   }
   return out;
@@ -1028,8 +1048,8 @@ const DASH='<span style="color:var(--faint)">—</span>';
 const DCOLS=[
   {k:"gasto",   l:"Gasto",        c:d=>money(d.gasto)},
   {k:"impr",    l:"Impresiones",  c:d=>nf(d.impr)},
-  {k:"clics",   l:"Clics",        c:d=>nf(d.clics)},
-  {k:"ctr",     l:"CTR",          c:d=>d.impr?nf(d.clics/d.impr*100,2)+"%":DASH},
+  {k:"clics",   l:"Clics en el enlace", h:"Clics", c:d=>d.clics==null?DASH:nf(d.clics)},
+  {k:"ctr",     l:"CTR",          c:d=>d.clics!=null&&d.impr?nf(d.clics/d.impr*100,2)+"%":DASH},
   {k:"cpm",     l:"CPM",          c:d=>d.impr?money(d.gasto/d.impr*1000):DASH},
   {k:"cpc",     l:"CPC",          c:d=>d.clics?money(d.gasto/d.clics):DASH},
   {k:"conf",    l:"Confirmaciones", h:"Confirm.", c:d=>nf(d.conf)},
@@ -1138,7 +1158,7 @@ function pintarDetChart(S){
   // Valor(es) por día según la métrica. null = ese día no aplica (no se dibuja).
   const val=(d)=> M==="ganancia" ? ((d.gasto||d.ingresos)?d.ingresos-d.gasto:null)
     : M==="cpa" ? (d.ventas?d.gasto/d.ventas:null)
-    : M==="ctr" ? (d.impr?d.clics/d.impr*100:null) : null;
+    : M==="ctr" ? (d.clics!=null&&d.impr?d.clics/d.impr*100:null) : null;
   const fmt=(x)=> M==="ctr" ? nf(x,2)+"%" : M==="ganancia" ? (x<0?"−":"+")+nf(Math.abs(Math.round(x))) : nf(x, x<10?2:0);
   // (10-oct) El dibujo se arma al ANCHO REAL de la tarjeta (sin estirarse ni dejar huecos a los lados) y con un alto
   // medio fijo. Antes: viewBox fijo + alto tope = dibujo chico y centrado con espacio en blanco a los costados.
@@ -1173,7 +1193,7 @@ function pintarDetChart(S){
     marks+=`<rect class="dhit" data-i="${i}" x="${x.toFixed(1)}" y="${padT}" width="${bw.toFixed(1)}" height="${H-padT-padB}" fill="transparent"/>`;
   });
   // resumen de la métrica en el periodo
-  const T=S.filter(d=>!d.pre).reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; o.im+=d.impr; o.c+=d.clics; return o; },{g:0,i:0,v:0,im:0,c:0});
+  const T=S.filter(d=>!d.pre).reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; if(d.clics!=null){ o.im+=d.impr; o.c+=d.clics; } return o; },{g:0,i:0,v:0,im:0,c:0});
   sumEl.innerHTML = M==="ganancia" ? `Ingresos − publicidad: <b class="${T.i-T.g<0?"neg":"pos"}">${money(T.i-T.g)}</b>`
     : M==="gastoing" ? `<span class="lg"><i style="background:var(--muted);opacity:.55"></i>Gasto ${money0(T.g)}</span><span class="lg"><i style="background:var(--green)"></i>Ingresos ${money0(T.i)}</span>`
     : M==="cpa" ? `CPA del periodo: <b>${T.v?money(T.g/T.v):"—"}</b>`
