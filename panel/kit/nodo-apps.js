@@ -15,7 +15,10 @@
 (function () {
   "use strict";
   // Dirección de la base de Apps. Se puede pasar `api` en iniciar() para otra base.
-  var API_DEFECTO = "https://zllosysoknhtalpkjabv.supabase.co/functions/v1/kit";
+  // (25-oct) Región FIJA en São Paulo, donde está la base: Supabase corre la función cerca de QUIEN LLAMA, y desde
+  // México o EE. UU. caería en us-east-1, con cada consulta viajando hasta Brasil (lo mismo que se arregló en el webhook
+  // del bot el 27-sep). Medido desde Lima: ya caía en sa-east-1, así que en Perú no cambia nada; protege a los de afuera.
+  var API_DEFECTO = "https://zllosysoknhtalpkjabv.supabase.co/functions/v1/kit?forceFunctionRegion=sa-east-1";
   var REVISAR_MS = 10 * 60 * 1000;
   var cfg = null, cliente = null, timer = null, guardando = null, pendiente = null;
 
