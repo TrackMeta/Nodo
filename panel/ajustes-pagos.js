@@ -47,12 +47,25 @@ const CSS = `
 .ajp-btn{height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
 .ajp-btn.pri{background:var(--brand);border-color:var(--brand);color:#fff}
 .ajp-btn:disabled{opacity:.5}
+.ajp-sw{width:44px;height:25px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);position:relative;transition:.15s;flex:none;cursor:pointer}
+.ajp-sw::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:var(--muted);transition:.15s}
+.ajp-sw.on{background:var(--brand);border-color:var(--brand)} .ajp-sw.on::after{left:20px;background:#fff}
+.ajp-tog{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer}
+.ajp-tog b{font-size:13px} .ajp-tog small{display:block;font-size:11.5px;color:var(--faint);margin-top:2px;font-weight:400}
+.ajp-in{height:36px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--text);padding:0 10px;font-size:13px;font-family:var(--font)}
+.ajp-mom{border:1px solid var(--border);border-radius:12px;padding:12px 13px;margin-top:12px}
+.ajp-mom > b{display:block;font-size:13.5px} .ajp-mom > small{display:block;font-size:11.5px;color:var(--faint);margin:2px 0 8px}
+.ajp-fila{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px}
+.ajp-fila > span{color:var(--muted);font-weight:700;min-width:150px}
+.ajp-nota{display:flex;gap:9px;border:1px solid var(--border);border-radius:11px;padding:10px 12px;margin-top:12px;font-size:12px;color:var(--muted);line-height:1.5;background:rgba(43,127,255,.08)}
 `;
 let _css = false;
+// Estilos de las ventanas de ajustes (los usa también ajustes-pedidos.js).
+export function asegurarEstilos() { if (!_css) { const s = document.createElement("style"); s.textContent = CSS; document.head.appendChild(s); _css = true; } }
 
 export async function abrirAjustesPagos(channelId) {
   if (!channelId) return;
-  if (!_css) { const s = document.createElement("style"); s.textContent = CSS; document.head.appendChild(s); _css = true; }
+  asegurarEstilos();
   const [{ data: ch, error }, { data: prods }, { data: chm }] = await Promise.all([
     supa.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle(),
     supa.from("products").select("tipo").eq("channel_id", channelId),

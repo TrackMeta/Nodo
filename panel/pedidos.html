@@ -188,7 +188,11 @@
         <div class="masw"><button class="nodo-btn" id="masBtn" title="Más" aria-label="Más"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
           <div class="masmenu" id="masMenu">
             <button class="mi" id="rotBtn" title="Imprimir varias etiquetas de una vez (elige cuáles)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Imprimir rótulos</button>
-            <a href="pagos.html" class="mi"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg> Pagos y avisos</a>
+            <div style="height:1px;background:var(--border);margin:5px 4px"></div>
+            <div style="font-size:10.5px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;padding:4px 10px 2px">Pagos y avisos</div>
+            <button class="mi" data-ajp="adelantos" type="button"></button>
+            <button class="mi" data-ajp="logistica" type="button"></button>
+            <button class="mi" data-ajp="avisos" type="button"></button>
           </div></div>
       </div>
     </div>
@@ -210,6 +214,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, confirmDialog, askText, askChoice, norm, pageAll, esUbicacionCompartida } from "./shell.js";
 import * as O from "./orders.js";
+import { abrirAjustesPedidos, SECCIONES as SEC_AJP } from "./ajustes-pedidos.js";
 import { inicioDeHoyTZ } from "./date-range.js";
 import { openDespachoModal, openEditarPedido, elegirPedidosDespacho, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
 import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia } from "./courier-export.js";
@@ -312,6 +317,11 @@ function wireMas(){
   b.onclick=(e)=>{ e.stopPropagation(); m.classList.toggle("show"); };
   document.addEventListener("click",(e)=>{ const mm=$("masMenu"); if(mm && !e.target.closest(".masw")) mm.classList.remove("show"); });
   const v=$("vistaSel"); if(v) v.addEventListener("change",(e)=>{ st.vista=e.target.value||"all"; render(); });
+  // (25-oct) «Pagos y avisos» ya no es una página larga: cada sección abre SU ventana (ajustes-pedidos.js).
+  m.querySelectorAll("[data-ajp]").forEach(btn=>{
+    const s=SEC_AJP.find(x=>x[0]===btn.dataset.ajp); if(s) btn.innerHTML=`${icon(s[1])} ${s[2]}`;
+    btn.onclick=()=>{ m.classList.remove("show"); abrirAjustesPedidos(st.channelId, btn.dataset.ajp); };
+  });
 }
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
@@ -323,6 +333,8 @@ async function boot(){
   $("exportBtn").onclick=(ev)=>{ ev.stopPropagation(); toggleExportMenu(); };
   $("rotBtn").onclick=()=>{ const m=$("masMenu"); if(m) m.classList.remove("show"); abrirImprimirRotulos(); };
   wireMas();
+  // Enlaces que antes iban a «Pagos y avisos» (pagos.html) llegan con ?ajustes=adelantos|logistica|avisos.
+  { const aj=new URLSearchParams(location.search).get("ajustes"); if(aj) abrirAjustesPedidos(st.channelId, aj); }
   // Nombrado para quitarlo al salir: boot() corre en cada visita (SPA) y sumaba uno por vez.
   const cierraExport=(e)=>{ if(!e.target.closest(".expwrap")){ const m=$("exportMenu"); if(m) m.classList.remove("show"); } };
   document.addEventListener("click",cierraExport);

@@ -910,13 +910,13 @@ export function avisoBlockHtml(info) {
     <label style="margin:0 0 8px">¿Cómo le aviso?</label>
     ${op("mensaje",
       info.porDefecto ? "El mensaje del sistema" : info.texto ? "Tu mensaje" : info.flujo ? `Tu aviso: “${esc(info.flujo)}”` : "Tu mensaje",
-      !hayFlujo ? "Todavía no escribiste el mensaje de este momento, así que no se enviaría nada. Escríbelo en Pagos y avisos → Avisos de pedido."
+      !hayFlujo ? "Todavía no escribiste el mensaje de este momento, así que no se enviaría nada. Escríbelo en Pedidos → ⋯ → Avisos de pedido."
         : !info.abierta ? "La ventana está cerrada: Meta lo va a rechazar y el cliente no recibirá nada."
         : info.texto ? `“${esc(info.texto.length > 120 ? info.texto.slice(0, 120) + "…" : info.texto)}”`
         : "Es el flujo que se dispara con este estado.",
-      // Siempre a Pagos y avisos → Avisos de pedido (ahí se escribe/edita el
+      // Siempre a Pedidos → ⋯ → Avisos de pedido (ventana; ahí se escribe/edita el
       // mensaje de cada momento; si escribes uno, manda ese y el flujo no dispara).
-      `<a href="pagos.html" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">${info.porDefecto ? "Escribir uno propio →" : info.texto ? "Editar este mensaje →" : info.flujo ? "Editarlo en Pagos y avisos →" : "Escribirlo ahora →"}</a>`,
+      `<a href="pedidos.html?ajustes=avisos" target="_blank" style="font-size:11.5px;color:var(--brand);text-decoration:none;display:inline-block;margin-top:5px">${info.porDefecto ? "Escribir uno propio →" : info.texto ? "Editar este mensaje →" : info.flujo ? "Editarlo en Pagos y avisos →" : "Escribirlo ahora →"}</a>`,
       !info.abierta || !hayFlujo)}
     ${op("plantilla", "Una plantilla aprobada",
       hayTpl ? "Es lo único que WhatsApp acepta fuera de la ventana." : "No tienes plantillas aprobadas y activas — créalas en Plantillas.",
