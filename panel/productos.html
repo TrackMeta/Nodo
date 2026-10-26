@@ -1089,7 +1089,9 @@ function compileProductoIA(c,tipo){
   // reales (migración 0029) y el motor le inyecta a la IA el catálogo con sus
   // precios de verdad. Tenerlas en dos lados se contradecía.
   add("Precios con descuento",ia.descuentos);
-  add("Formas de pago de este producto (tienen PRIORIDAD sobre las generales)",ia.metodos_pago);
+  // (25-oct) Los medios PROPIOS ahora son una lista (config.pago_propio): acá van en texto para que la IA los conozca.
+  const _pp=((c.pago_propio&&c.pago_propio.metodos)||[]).filter(m=>m&&(m.app||m.numero||m.titular));
+  add("Formas de pago de este producto (REEMPLAZAN a las generales: cóbralo SOLO con estas)", _pp.length ? _pp.map(m=>"- "+[m.app,m.numero,m.titular&&("a nombre de "+m.titular),m.notas].filter(Boolean).join(" · ")).join("\n") : ia.metodos_pago);
   const ej=(ia.ejemplos||[]).filter(e=>e&&(e.sit||e.resp));
   if(ej.length) L.push("## Ejemplos de respuesta\n"+ej.map(e=>`- Si el cliente ${(e.sit||"").trim()} → responde: ${(e.resp||"").trim()}`).join("\n"));
   // (con lista de permitidos ya dice «ninguno fuera de esa lista»: la de prohibidos sobra y el panel ya no la pide)
@@ -1679,9 +1681,10 @@ function renderProductoIA(host){
           <label>Emojis que puede usar</label>
           <input class="in" id="pEmojis" value="${esc(c.emojis||"")}" placeholder="👟🔥⚡ (fuera de esta lista no usa ninguno)"/>
           <details style="margin-top:12px;border-top:1px solid var(--border);padding-top:6px">
-            <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px;list-style:none">Método de pago especial para este producto</summary>
-            <div style="font-size:11.5px;color:var(--muted);margin:6px 0 4px;line-height:1.5">Normalmente los métodos de pago salen de <a href="ia.html" style="color:var(--brand)">IA → Validador de comprobantes</a>. Llena esto <b>solo</b> si este producto se cobra por otra cuenta. Tiene prioridad sobre los generales.</div>
-            ${taField("metodos_pago","Método de pago de este producto","Ej. transferencia al BCP 123-456 solo para este producto…",2)}
+            <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px;list-style:none">Medios de pago propios de este producto</summary>
+            <div style="font-size:11.5px;color:var(--muted);margin:6px 0 8px;line-height:1.5">Normalmente se cobra con los medios de <a href="ia.html" style="color:var(--brand)">IA → Validador de comprobantes</a>. Si cargas medios acá, <b>este producto se cobra SOLO con estos</b>: el bloque de pago que manda el bot, lo que nombra la IA y el validador de comprobantes usan estos en vez de los del bot. Sirve, por ejemplo, para vender este producto en otro país con su propia cuenta (ponle también su moneda en ¿Cuánto cuesta?).</div>
+            <div id="ppList"></div>
+            <button class="btn" id="ppAdd" type="button" style="margin-top:6px;height:34px">+ Agregar medio de pago</button>
           </details>
           <label>Multimedia que la IA puede enviar</label>
           <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Sube imágenes, videos o archivos y explica <b>cuándo</b> usarlos. La IA los enviará sola cuando la conversación lo pida (vía <b style="color:${P}">[[media:tag]]</b>).</div>
@@ -1738,6 +1741,24 @@ function renderProductoIA(host){
   };
   paintEj();
   $("ejAdd").onclick=()=>{ ia.ejemplos.push({sit:"",resp:""}); paintEj(); };
+  // 💳 (25-oct) Medios de pago PROPIOS (config.pago_propio.metodos): mismos campos que el Validador. El motor los usa en
+  // el bloque de pago, en lo que nombra la IA y en el validador, en vez de los del bot.
+  const ppGet=()=>{ const pp=c.pago_propio=c.pago_propio||{}; if(!Array.isArray(pp.metodos)) pp.metodos=[]; return pp.metodos; };
+  const ppSave=()=>{ const m=ppGet().filter(x=>x&&(String(x.app||"").trim()||String(x.numero||"").trim()||String(x.titular||"").trim())); prodSetC("pago_propio", m.length?{ metodos:m }:null); };
+  const paintPP=()=>{
+    const box=$("ppList"); if(!box) return; const ms=ppGet();
+    box.innerHTML=ms.length?ms.map((m,i)=>`<div style="border:1px solid var(--border);border-radius:11px;padding:10px 11px;margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <input class="in" data-pp="${i}" data-f="app" value="${esc(m.app||"")}" placeholder="App o banco (Nequi, BBVA…)">
+      <input class="in" data-pp="${i}" data-f="titular" value="${esc(m.titular||"")}" placeholder="A nombre de">
+      <input class="in" data-pp="${i}" data-f="numero" value="${esc(m.numero||"")}" placeholder="Número, cuenta o CLABE">
+      <div style="display:flex;gap:8px"><input class="in" data-pp="${i}" data-f="notas" value="${esc(m.notas||"")}" placeholder="Nota (opcional)" style="flex:1;min-width:0">
+        <button class="btn" data-ppdel="${i}" type="button" title="Quitar" style="flex:none;height:38px">${icon("trash")}</button></div>
+    </div>`).join(""):`<div style="font-size:12px;color:var(--faint);margin-top:4px">Sin medios propios: se cobra con los del bot.</div>`;
+    box.querySelectorAll("[data-pp]").forEach(inp=>inp.oninput=()=>{ ppGet()[+inp.dataset.pp][inp.dataset.f]=inp.value; ppSave(); });
+    box.querySelectorAll("[data-ppdel]").forEach(b=>b.onclick=()=>{ ppGet().splice(+b.dataset.ppdel,1); ppSave(); paintPP(); });
+  };
+  $("ppAdd").onclick=()=>{ ppGet().push({app:"",titular:"",numero:"",notas:""}); paintPP(); };
+  paintPP();
   const paintMM=()=>{
     const box=$("mmList"); box.innerHTML="";
     if(!c.ia_multimedia.length){ box.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin archivos.</div>`; }
@@ -3443,7 +3464,7 @@ const EN_VIVO_HASTA_1025 = new Set([
   "horario","demora","_flujo_sello",
 ]);
 const CONTENIDO_EN_VIVO = new Set([
-  "microapp",
+  "microapp", "pago_propio",   // (pago_propio, 25-oct: lo leen en vivo el bloque de pago y el validador)
   "contexto_producto","ia","ia_multimedia","faq","faq_items","objeciones","objeciones_items",
   // (entrega_mensaje NO va acá: el generador lo COPIA al nodo «entregar» y el motor lee el del
   // nodo, así que cambiarlo tiene que regenerar el flujo — antes el cliente seguía recibiendo el viejo.)

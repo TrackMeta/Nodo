@@ -3154,6 +3154,7 @@ async function responderComoPagar(
 ): Promise<boolean> {
   try {
     const { data: ch } = await db.from("channels").select("ocr_config, moneda").eq("id", channelId).maybeSingle();
+    if (ch) (ch as any).ocr_config = ocrConPropios((ch as any).ocr_config, await metodosPropios(db, (ord as any)?.product_id ?? await productoDelContacto(db, contactId)));   // 💳 (25-oct) medios propios del producto
     // Mismo formato que el {{datos_pago}} del panel (genDatosPago): el número SOLO en su
     // línea para que se copie de un toque, el titular en negrita para que vea a quién le
     // paga, y el número en dígitos normales — nunca en letras Unicode "bonitas", que se ven
@@ -14095,6 +14096,7 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (ai?.api_key) {
       const { data: ch } = await db.from("channels").select("ocr_config, moneda, timezone").eq("id", channelId).maybeSingle();
+      if (ch) (ch as any).ocr_config = ocrConPropios((ch as any).ocr_config, await metodosPropios(db, await productoDelContacto(db, contactId)));   // 💳 (25-oct) medios propios del producto
       const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (ch as any)?.moneda ?? null, false, (ch as any)?.timezone)
         ?? ocrSystemMinimo((ch as any)?.timezone)) +
         "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, moneda, operacion, fecha, destinatario, destino, motivo y texto_visible. " +
@@ -15414,6 +15416,7 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
   };
 
   const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config, entregas, timezone, moneda").eq("id", channelId).maybeSingle();
+  if (ch) (ch as any).ocr_config = ocrConPropios((ch as any).ocr_config, await metodosPropios(db, await productoDelPedido(db, (order as any).id, contactId)));   // 💳 (25-oct) medios propios del producto
   const cfg = (ch as any)?.pedidos_config?.adelanto ?? {};
   const url = urlDirecta ?? await ingestImage(db, channelId, contactId, event.mediaRef!).catch(() => null);
   if (!url) return false; // no se pudo leer → que lo maneje el flujo normal
@@ -15839,6 +15842,7 @@ async function maybeAutoSaldo(db: SupabaseClient, channelId: string, contactId: 
 
   // 2) ¿Modo automático activado en IA · Pedidos?
   const { data: ch } = await db.from("channels").select("pedidos_config, ocr_config, timezone, moneda").eq("id", channelId).maybeSingle();
+  if (ch) (ch as any).ocr_config = ocrConPropios((ch as any).ocr_config, await metodosPropios(db, await productoDelPedido(db, (order as any).id, contactId)));   // 💳 (25-oct) medios propios del producto
   const log = (ch as any)?.pedidos_config?.log ?? {};
   // NO se corta en modo manual: igual que el ADELANTO, el comprobante del saldo
   // SIEMPRE se lee (OCR) y se adjunta al pedido para que aparezca en "Saldo por
@@ -16801,9 +16805,8 @@ async function maybeDatosPago(
         if (!((_pagaAntes || fisico?.forzar) && Number(fisico?.total) > 0)) return;
       }
     }
-    const { data: f } = await db.from("custom_fields").select("valor")
-      .eq("channel_id", channelId).eq("key", "datos_pago").eq("modo", "fijo").maybeSingle();
-    const dp = String((f as any)?.valor ?? "").trim();
+    // (25-oct) Los medios PROPIOS del producto que está comprando, si tiene; si no, los del bot (datosPagoTexto).
+    const dp = await datosPagoTexto(db, channelId, await productoDelContacto(db, contactId));
     // 🔴 Sin datos de pago configurados esto se iba en SILENCIO, y es el peor sitio para
     // callarse: la IA acaba de prometer «te paso los datos» y el cliente —que ya dijo que
     // quiere pagar— se queda esperando un mensaje que nunca sale. Medido en un canal nuevo:
@@ -18919,6 +18922,12 @@ async function channelIaInfo(db: SupabaseClient, run: Run): Promise<{ negocio: s
         } catch (_3) { /* migración 0023 pendiente */ }
       }
     }
+    // 💳 (25-oct) El producto de este flujo con medios de pago PROPIOS: el validador los usa en vez de los del bot.
+    try {
+      const { data: _fl } = await db.from("flows").select("product_id").eq("id", (run as any).flow_id).maybeSingle();
+      const _pid = (_fl as any)?.product_id ?? await productoDelContacto(db, run.contact_id);
+      info.ocr = ocrConPropios(info.ocr, await metodosPropios(db, _pid));
+    } catch (_) { /* sin producto legible → los del bot */ }
     (run as any)._chIa = info;
   }
   return info;
@@ -23581,6 +23590,69 @@ function validadorSinDestinatarios(ocrCfg: any): boolean {
     : [];
   return m.length === 0;
 }
+// 💳 MEDIOS DE PAGO PROPIOS de un producto (25-oct, Rodrigo). products.config.pago_propio.metodos =
+// [{app, titular, numero, notas, pais}], igual que los del Validador. Si el producto los tiene, REEMPLAZAN a los del bot
+// en TODO: el bloque «Son *X* 👇 ✅ …», la lista de medios que nombra la IA y el validador de comprobantes. Sirve, por
+// ejemplo, para vender un producto de otro país (en su moneda) desde el mismo bot. Antes existía un campo de texto
+// «Método de pago especial» que solo leía la IA: el motor seguía mandando el Yape del bot.
+async function metodosPropios(db: SupabaseClient, productId: unknown): Promise<any[] | null> {
+  const pid = String(productId ?? "").trim();
+  if (!pid) return null;
+  try {
+    const { data } = await db.from("products").select("config").eq("id", pid).maybeSingle();
+    const m = ((data as any)?.config?.pago_propio?.metodos ?? []) as any[];
+    const ok = m.filter((x) => x && (String(x.app ?? "").trim() || String(x.numero ?? "").trim() || String(x.titular ?? "").trim()));
+    return ok.length ? ok : null;
+  } catch (_) { return null; }
+}
+// El producto del CONTACTO (el que está comprando): para los sitios que no tienen el run a mano.
+async function productoDelContacto(db: SupabaseClient, contactId: string): Promise<string | null> {
+  try { const { data } = await db.from("contacts").select("product_id").eq("id", contactId).maybeSingle(); return (data as any)?.product_id ?? null; }
+  catch (_) { return null; }
+}
+// El producto de un PEDIDO (y si no lo trae, el del contacto).
+async function productoDelPedido(db: SupabaseClient, orderId: unknown, contactId: string): Promise<string | null> {
+  try { const { data } = await db.from("orders").select("product_id").eq("id", String(orderId ?? "")).maybeSingle(); if ((data as any)?.product_id) return (data as any).product_id; }
+  catch (_) { /* cae al del contacto */ }
+  return await productoDelContacto(db, contactId);
+}
+// El validador con los medios del producto (si tiene): se cambia SOLO la lista de métodos; las reglas son las del bot.
+// Sin Validador configurado en el bot (ocr null) se deja igual: los medios propios no lo encienden solos.
+function ocrConPropios(ocr: any, propios: any[] | null): any {
+  if (!propios?.length || !ocr) return ocr;
+  return { ...ocr, metodos: propios };
+}
+// El texto del bloque de pago a partir de una lista de métodos. MISMO formato que genDatosPago del panel (ia.html):
+// el número SOLO en su línea (para copiarlo de un toque), el titular en negrita, agrupado por número+titular.
+function datosPagoDeMetodos(mets: any[]): string {
+  const grupos = new Map<string, { apps: string[]; numero: string; titular: string; notas: string }>();
+  for (const m of mets ?? []) {
+    if (!m || !(m.app || m.numero || m.titular)) continue;
+    const num = String(m.numero ?? "").trim(), tit = String(m.titular ?? "").trim();
+    const k = num + "|" + tit;
+    if (!grupos.has(k)) grupos.set(k, { apps: [], numero: num, titular: tit, notas: String(m.notas ?? "").trim() });
+    const g = grupos.get(k)!;
+    const app = String(m.app ?? "").trim();
+    if (app && !g.apps.includes(app)) g.apps.push(app);
+    if (!g.notas && m.notas) g.notas = String(m.notas).trim();
+  }
+  return [...grupos.values()].map((g) => {
+    const l = ["✅ " + (g.apps.length ? g.apps.map((a) => "*" + a + "*").join(" o ") : "*Pago*")];
+    if (g.numero) l.push(g.numero);
+    if (g.titular) l.push("*" + g.titular + "*");
+    if (g.notas) l.push(g.notas);
+    return l.join("\n");
+  }).join("\n\n");
+}
+// El {{datos_pago}} que corresponde: los del PRODUCTO si tiene medios propios; si no, el campo del bot.
+async function datosPagoTexto(db: SupabaseClient, channelId: string, productId: unknown): Promise<string> {
+  const propios = await metodosPropios(db, productId);
+  if (propios) return datosPagoDeMetodos(propios);
+  const { data: f } = await db.from("custom_fields").select("valor")
+    .eq("channel_id", channelId).eq("key", "datos_pago").eq("modo", "fijo").maybeSingle();
+  return String((f as any)?.valor ?? "").trim();
+}
+
 function buildOcrSystem(ocr: any, montoEsperado?: number | null, moneda?: string | null, noJuzgarMonto?: boolean, tz?: string | null): string | null {
   if (!ocr || ocr.activo === false) return null;
   const metodos = Array.isArray(ocr.metodos) ? ocr.metodos.filter((m: any) => m && (m.app || m.titular || m.numero)) : [];
@@ -27173,9 +27245,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // medios de pago SÍ están escritos (datos de pago), así que no es un hueco — es decirle cuáles son.
       if (esDigital(ctx) && /(?:^|[^\p{L}])(tarjeta|cr[eé]dito|d[eé]bito|cuotas|paypal|western|efectivo|agente|izipay|mercado\s*pago|no\s+tengo\s+(?:cuenta|yape|plin|banco|tarjeta)|sin\s+cuenta|chile|argentina|colombia|m[eé]xico|espa[ñn]a|ecuador|bolivia|venezuela|estados\s+unidos|eeuu|usa|extranjero)(?![\p{L}])/iu.test(String(ctx.last_input ?? ""))) {
         try {
-          const { data: _fdpM } = await db.from("custom_fields").select("valor")
-            .eq("channel_id", run.channel_id).eq("key", "datos_pago").eq("modo", "fijo").maybeSingle();
-          const _dpM = normalize(String((_fdpM as any)?.valor ?? ""));
+          const _dpM = normalize(await datosPagoTexto(db, run.channel_id, ctx._product_id));   // (los del producto si tiene)
           const _medM: string[] = [];
           if (/\byape\b/.test(_dpM)) _medM.push("Yape");
           if (/\bplin\b/.test(_dpM)) _medM.push("Plin");
@@ -30602,9 +30672,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       _tr("Los datos de pago que la IA haya escrito a su manera, con el formato b ·L28796");
       if (op === "generar_texto") {
         try {
-          const { data: fdp } = await db.from("custom_fields").select("valor")
-            .eq("channel_id", run.channel_id).eq("key", "datos_pago").eq("modo", "fijo").maybeSingle();
-          const dpTxt = String((fdp as any)?.valor ?? "").trim();
+          const dpTxt = await datosPagoTexto(db, run.channel_id, ctx._product_id);   // (los del producto si tiene)
           if (dpTxt) {
             const nums = dpTxt.match(/\d{6,}/g) ?? [];
             const tits = ((info.ocr?.metodos ?? []) as any[]).map((mm) => String(mm?.titular ?? "").trim()).filter(Boolean);
@@ -30752,9 +30820,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 }
                 let _med: string[] = [];
                 try {
-                  const { data: _fdp } = await db.from("custom_fields").select("valor")
-                    .eq("channel_id", run.channel_id).eq("key", "datos_pago").eq("modo", "fijo").maybeSingle();
-                  const _dp = normalize(String((_fdp as any)?.valor ?? ""));
+                  const _dp = normalize(await datosPagoTexto(db, run.channel_id, ctx._product_id));   // (los del producto si tiene)
                   if (/\byape\b/.test(_dp)) _med.push("Yape");
                   if (/\bplin\b/.test(_dp)) _med.push("Plin");
                   if (/\b(bcp|bbva|interbank|scotiabank|cuenta|cci|banco)\b/.test(_dp)) _med.push("transferencia");
@@ -33432,6 +33498,10 @@ async function buildContext(db: SupabaseClient, run: Run) {
           // `prompt_v2: false` explícito lo devuelve al prompt compartido, y existe para
           // poder volver atrás sin desplegar si aparece un caso que no probamos.
           pc._promptV2 = (p as any).config?.prompt_v2 === false ? "no" : "";
+          // 💳 (25-oct) Medios de pago PROPIOS del producto: su {{datos_pago}} pisa el del bot (estos campos se copian a
+          // ctx DESPUÉS de los fijos del bot), así los flujos y mensajes que lo usan muestran los de este producto.
+          const _pp = (((p as any).config?.pago_propio?.metodos ?? []) as any[]).filter((x) => x && (x.app || x.numero || x.titular));
+          if (_pp.length) pc.datos_pago = datosPagoDeMetodos(_pp);
           // 📱 Config de la micro app (cobro, prueba, correo…): la usan el prompt y la entrega.
           if ((p as any).tipo === "microapp") pc._microapp = (p as any).config?.microapp ?? {};
           for (const [k, v] of Object.entries((p as any).config ?? {})) {
