@@ -114,7 +114,7 @@ function agoTxt(t){ const s=(Date.now()-t)/1000; if(s<90) return "recién"; if(s
 
 // (se importa al hacer clic: si el módulo fallara, solo falla la ventana, nunca la lista de pagos)
 async function abrirAjustesPagosLazy(){
-  try{ const m=await import("./ajustes-pagos.js"); await m.abrirAjustesPagos(st.channelId); }
+  try{ const m=await import("./ajustes-pagos.js?v=2");   // (?v=: al cambiar el módulo, súbelo; así nunca carga una copia vieja del navegador) await m.abrirAjustesPagos(st.channelId); }
   catch(e){ console.error("[ajustes-pagos]", e); toast("No se pudo abrir: recarga la página (Ctrl+F5)", true); }
 }
 async function boot(){
