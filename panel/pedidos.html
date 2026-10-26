@@ -214,7 +214,6 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, confirmDialog, askText, askChoice, norm, pageAll, esUbicacionCompartida } from "./shell.js";
 import * as O from "./orders.js";
-import { abrirAjustesPedidos, SECCIONES as SEC_AJP } from "./ajustes-pedidos.js";
 import { inicioDeHoyTZ } from "./date-range.js";
 import { openDespachoModal, openEditarPedido, elegirPedidosDespacho, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
 import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia } from "./courier-export.js";
@@ -312,15 +311,21 @@ function isFisico(o){ if(String((o.shipping&&o.shipping.zona)||"")==="digital") 
 const badgeClass=O.tono;
 const cap=(s)=>{ s=String(s||""); return s.charAt(0).toUpperCase()+s.slice(1); };
 
+async function abrirAjustesPedidosLazy(sec){
+  try{ const m=await import("./ajustes-pedidos.js"); await m.abrirAjustesPedidos(st.channelId, sec); }
+  catch(e){ console.error("[ajustes-pedidos]", e); toast("No se pudo abrir: recarga la página (Ctrl+F5)", true); }
+}
 function wireMas(){
   const b=$("masBtn"), m=$("masMenu"); if(!b||!m) return;
   b.onclick=(e)=>{ e.stopPropagation(); m.classList.toggle("show"); };
   document.addEventListener("click",(e)=>{ const mm=$("masMenu"); if(mm && !e.target.closest(".masw")) mm.classList.remove("show"); });
   const v=$("vistaSel"); if(v) v.addEventListener("change",(e)=>{ st.vista=e.target.value||"all"; render(); });
   // (25-oct) «Pagos y avisos» ya no es una página larga: cada sección abre SU ventana (ajustes-pedidos.js).
+  // (se importa recién al hacer clic: si el módulo fallara, solo falla esa ventana, nunca el tablero)
+  const SEC_AJP={ adelantos:["clock","Adelantos de provincia"], logistica:["truck","Agente de logística"], avisos:["message","Avisos de pedido"] };
   m.querySelectorAll("[data-ajp]").forEach(btn=>{
-    const s=SEC_AJP.find(x=>x[0]===btn.dataset.ajp); if(s) btn.innerHTML=`${icon(s[1])} ${s[2]}`;
-    btn.onclick=()=>{ m.classList.remove("show"); abrirAjustesPedidos(st.channelId, btn.dataset.ajp); };
+    const s=SEC_AJP[btn.dataset.ajp]; if(s) btn.innerHTML=`${icon(s[0])} ${s[1]}`;
+    btn.onclick=()=>{ m.classList.remove("show"); abrirAjustesPedidosLazy(btn.dataset.ajp); };
   });
 }
 async function boot(){
@@ -334,7 +339,7 @@ async function boot(){
   $("rotBtn").onclick=()=>{ const m=$("masMenu"); if(m) m.classList.remove("show"); abrirImprimirRotulos(); };
   wireMas();
   // Enlaces que antes iban a «Pagos y avisos» (pagos.html) llegan con ?ajustes=adelantos|logistica|avisos.
-  { const aj=new URLSearchParams(location.search).get("ajustes"); if(aj) abrirAjustesPedidos(st.channelId, aj); }
+  { const aj=new URLSearchParams(location.search).get("ajustes"); if(aj) abrirAjustesPedidosLazy(aj); }
   // Nombrado para quitarlo al salir: boot() corre en cada visita (SPA) y sumaba uno por vez.
   const cierraExport=(e)=>{ if(!e.target.closest(".expwrap")){ const m=$("exportMenu"); if(m) m.classList.remove("show"); } };
   document.addEventListener("click",cierraExport);

@@ -7,7 +7,7 @@
 // ═════════════════════════════════════════════════════════════════════════
 import { supa, toast, icon, confirmDialog, updateChannel } from "./shell.js";
 import { attachVarPicker } from "./var-picker.js";
-import { asegurarEstilos } from "./ajustes-pagos.js";
+import { asegurarEstilos } from "./ventana-ajustes.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const D = {

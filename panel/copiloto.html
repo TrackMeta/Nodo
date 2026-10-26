@@ -104,7 +104,6 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, confirmDialog, askChoice, askText, enTrozos, pageAll, updateChannel, usuarioActual } from "./shell.js";
 import * as O from "./orders.js";
-import { abrirAjustesPagos } from "./ajustes-pagos.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, list:[], imgs:{}, dudas:{}, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -113,6 +112,11 @@ const sym=(o)=>o.currency==="USD"?"$":"S/";
 const TYPE_COLOR={ digital:"#8b5cf6", extra:"#22c079", adelanto:"#f0a92b", saldo:"#2b7fff", lima:"#14b8a6" };
 function agoTxt(t){ const s=(Date.now()-t)/1000; if(s<90) return "recién"; if(s<3600) return "hace "+Math.round(s/60)+" min"; if(s<86400) return "hace "+Math.round(s/3600)+" h"; return "hace "+Math.round(s/86400)+" d"; }
 
+// (se importa al hacer clic: si el módulo fallara, solo falla la ventana, nunca la lista de pagos)
+async function abrirAjustesPagosLazy(){
+  try{ const m=await import("./ajustes-pagos.js"); await m.abrirAjustesPagos(st.channelId); }
+  catch(e){ console.error("[ajustes-pagos]", e); toast("No se pudo abrir: recarga la página (Ctrl+F5)", true); }
+}
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"copiloto" });
@@ -124,9 +128,9 @@ async function boot(){
   $("ajustesBtn").innerHTML=`${icon("config")} Ajustes de pagos`;
   $("masBtn").onclick=(e)=>{ e.stopPropagation(); $("masMenu").classList.toggle("show"); };
   document.addEventListener("click",()=>$("masMenu").classList.remove("show"));
-  $("ajustesBtn").onclick=()=>{ $("masMenu").classList.remove("show"); abrirAjustesPagos(st.channelId); };
+  $("ajustesBtn").onclick=()=>{ $("masMenu").classList.remove("show"); abrirAjustesPagosLazy(); };
   // Los enlaces que antes llevaban a «Pagos y avisos» (ficha de producto, rechazar un pago) llegan con ?ajustes=1.
-  if(new URLSearchParams(location.search).get("ajustes")==="1") abrirAjustesPagos(st.channelId);
+  if(new URLSearchParams(location.search).get("ajustes")==="1") abrirAjustesPagosLazy();
   await load();
   wireRealtime();
 }
