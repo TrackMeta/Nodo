@@ -200,69 +200,7 @@ function render(b){
   st.pedidos = p;
   const ta=(v,ph,rows)=>`<textarea class="in" rows="${rows||4}" style="min-height:${(rows||4)*24+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(v||"")}</textarea>`;
   b.innerHTML=`
-    <p class="sub">Quién aprueba los pagos —<b>tú</b> con un toque en Pagos por validar, o la <b>IA</b> sola si el monto cuadra. El proceso digital y el físico son distintos, así que cada uno tiene su ajuste.</p>
-
-    <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.zap}</span><span class="nm">Pagos digitales</span></div>
-      <div class="desc">El digital es rápido: el cliente paga y recibe su producto al instante. Esto decide si esa entrega es automática o espera tu visto bueno. Es el <b>default del canal</b>; cada producto digital puede cambiarlo en su ficha.</div>
-      <label style="margin-top:6px;font-weight:700;font-size:13px;color:var(--text)">¿Quién aprueba el pago de un producto digital?</label>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px" id="digOpts">
-        ${[["auto",icon("disparadores"),"Automático: si el monto cuadra, entrega el producto sin consultarme","La IA lee el comprobante y, si el monto coincide, envía el link/archivo al toque. Ante cualquier duda te lo deriva a Pagos por validar."],
-           ["manual",icon("eye"),"Manual: cuando llegue un comprobante, avísame para aprobarlo yo","La IA lo analiza y te deja su lectura hecha, pero no entrega nada: la tarjeta con la foto te espera en Pagos por validar. Al aprobar, el bot entrega y sigue vendiendo."]]
-          .map(([v,ic,t,d])=>{ const on=(v==="manual")?(p.digital.validacion==="manual"):(p.digital.validacion!=="manual"); return `
-        <div class="digopt" data-modo="${v}" style="border:1.5px solid ${on?'var(--ia)':'var(--border)'};background:${on?'var(--ia-bg)':'transparent'};border-radius:12px;padding:13px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer">
-          <span class="digdot" style="width:18px;height:18px;border-radius:50%;border:2px solid ${on?'var(--ia)':'var(--border)'};flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center"><span style="width:9px;height:9px;border-radius:50%;background:var(--ia);display:${on?'block':'none'}"></span></span>
-          <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px">${t}</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5">${d}</div></div>
-        </div>`; }).join("")}
-      </div>
-      <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <label style="margin:0;font-size:12.5px;font-weight:700">Si paga de menos, perdonarle hasta</label>
-        <div style="display:flex;align-items:center;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
-          <span style="font-size:12.5px;color:var(--muted);font-weight:700;padding:0 4px 0 10px">S/</span>
-          <input class="in" id="pDigTol" type="number" min="0" step="0.5" value="${Number(p.digital.tolerancia ?? 1)}" style="width:80px;border:none"/>
-        </div>
-        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Ejemplo con un producto de S/19 y esto en 1: si te paga <b>S/18</b>, se acepta y recibe el producto. Si te paga <b>S/17</b>, el bot le dice que le faltan S/2.</span>
-      </div>
-      <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <label style="margin:0;font-size:12.5px;font-weight:700">${icon("shield")} Si paga de más, que lo revise yo cuando se pase por más de</label>
-        <div style="display:flex;align-items:center;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden">
-          <span style="font-size:12.5px;color:var(--muted);font-weight:700;padding:0 4px 0 10px">S/</span>
-          <input class="in" id="pDigRev" type="number" min="0" step="5" value="${Number(p.digital.revisar_sobre_sol ?? 50)}" style="width:80px;border:none"/>
-        </div>
-        <span style="font-size:11.5px;color:var(--faint);flex:1;min-width:200px">Si se pasa <b>un poco</b>, el bot entrega solo. Si se pasa <b>mucho</b>, no entrega: te lo deja en <b>Pagos por validar</b> y al cliente le dice que lo está revisando. Sirve también por si el bot lee mal la captura (ve S/190 donde decía S/19). En productos baratos el bot es más estricto: revisa desde la mitad del precio. Ej. producto de S/19 → lo revisas tú si paga más de <b>S/28.50</b>. Ponlo en <b>0</b> para revisar cualquier pago de más.</span>
-      </div>
-      <div class="snote" style="margin-top:12px"><span class="si">${IC.shield}</span><span>¿Cómo cuenta en tus ventas un pago de más? Si se pasa <b>un poco</b> (ej. S/25 por uno de S/19), la venta cuenta <b>lo que pagó</b> (S/25) y no queda vuelto pendiente. Si se pasa <b>mucho</b> y tú lo apruebas, cuenta <b>solo el precio</b> y lo demás queda anotado como <b>vuelto</b> para devolver. Así un error de lectura no infla tus números ni lo que se reporta a Meta.</span></div>
-    </div>
-
-    <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.shield}</span><span class="nm">Cuando rechazas un comprobante</span></div>
-      <div class="desc">Si rechazas un pago en <b>Pagos por validar</b> o en la ficha del cliente y eliges <b>«Que el bot le pida otro»</b>, el bot le escribe esto. Al rechazar te lo mostramos igual, para que lo cambies si ese cliente necesita otro motivo.</div>
-      <label style="margin-top:10px">Lo que le dice el bot</label>
-      ${ta(p.rechazo.mensaje,"No pude validar ese comprobante. ¿Me lo reenvías, por favor?",3).replace('class="in"','class="in" id="rzMsg"')}
-      <div style="font-size:11px;color:var(--faint);margin-top:6px;line-height:1.5">Le llega así: <b>«Mmm, revisé tu comprobante 🤔»</b>, después esta frase y al final el cierre de tu flujo («Cualquier duda, dime nomás 🙂»). Si lo dejas vacío, usa la frase de ejemplo.</div>
-    </div>
-
-    <div class="card ia">
-      <div class="chd"><span class="ico iaic">${IC.coins}</span><span class="nm">Pago de más (vuelto)</span></div>
-      <div class="desc">Qué hace el bot cuando el cliente <b>reclama</b> que pagó de más.</div>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px" id="vlOpts">
-        ${[["tranquilizar",icon("handshake"),"Tranquilizar y seguir vendiendo","El bot le dice que estás gestionando su vuelto, te avisa por Telegram, y sigue atendiéndolo. Nunca queda en el aire."],
-           ["humano",icon("user"),"Pasar a un humano","El bot pausa esa conversación y te la traspasa. Ojo: si no estás disponible, el cliente queda esperando tu respuesta."],
-           ["off",icon("ban"),"No hacer nada especial","El bot no responde nada específico ni te avisa; lo maneja la IA como cualquier mensaje."]]
-          .map(([v,ic,t,d])=>{ const on=p.vuelto.modo===v; return `
-        <div class="vlopt" data-modo="${v}" style="border:1.5px solid ${on?'var(--ia)':'var(--border)'};background:${on?'var(--ia-bg)':'transparent'};border-radius:12px;padding:13px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer">
-          <span class="vldot" style="width:18px;height:18px;border-radius:50%;border:2px solid ${on?'var(--ia)':'var(--border)'};flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center"><span style="width:9px;height:9px;border-radius:50%;background:var(--ia);display:${on?'block':'none'}"></span></span>
-          <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:13.5px">${t}</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5">${d}</div></div>
-        </div>`; }).join("")}
-      </div>
-      <div id="vlMsgWrap" style="display:${p.vuelto.modo==='tranquilizar'?'block':'none'}">
-        <label style="margin-top:16px">Mensaje al cliente</label>
-        ${ta(p.vuelto.mensaje,"¡No te preocupes! 🙌 Registramos que pagaste de más{{monto}}. Un administrador está gestionando la devolución de tu vuelto y te enviaremos la constancia por aquí en un momentito.",4).replace('class="in"','class="in" id="vlMsg"')}
-        <div style="font-size:11px;color:var(--faint);margin-top:6px">Puedes usar <b>{{vuelto}}</b> (el monto, ej. “S/ 20”) o <b>{{monto}}</b> (agrega “ (S/ 20)”). Si lo dejas vacío, usa un mensaje por defecto.</div>
-      </div>
-    </div>
+    <p class="sub">Los pagos y los avisos de tus <b>pedidos físicos</b>: el adelanto, la clave de recojo y lo que le escribe el bot al cliente cuando mueves su pedido. Los pagos digitales, el mensaje al rechazar un comprobante y el vuelto están en <a href="copiloto.html?ajustes=1" style="color:var(--brand)"><b>Pagos por validar → ⋯ → Ajustes de pagos</b></a>.</p>
 
     <div class="card ia">
       <div class="chd"><span class="ico iaic">${IC.clock}</span><span class="nm">Adelantos de provincia</span></div>
@@ -387,15 +325,6 @@ function render(b){
     </div>
 
     <div class="acts"><button class="btn ia" id="pedSave">Guardar cambios</button></div>`;
-  b.querySelectorAll(".digopt").forEach(opt=> opt.onclick=()=>{
-    p.digital.validacion=opt.dataset.modo;
-    b.querySelectorAll(".digopt").forEach(o=>{
-      const on=o.dataset.modo===p.digital.validacion;
-      o.style.borderColor=on?"var(--ia)":"var(--border)";
-      o.style.background=on?"var(--ia-bg)":"transparent";
-      const dot=o.querySelector(".digdot"); dot.style.borderColor=on?"var(--ia)":"var(--border)"; dot.firstElementChild.style.display=on?"block":"none";
-    });
-  });
   b.querySelectorAll(".adelopt").forEach(opt=> opt.onclick=()=>{
     p.adelanto.validacion=opt.dataset.modo;
     b.querySelectorAll(".adelopt").forEach(o=>{
@@ -404,16 +333,6 @@ function render(b){
       o.style.background=on?"var(--ia-bg)":"transparent";
       const dot=o.querySelector(".adeldot"); dot.style.borderColor=on?"var(--ia)":"var(--border)"; dot.firstElementChild.style.display=on?"block":"none";
     });
-  });
-  b.querySelectorAll(".vlopt").forEach(opt=> opt.onclick=()=>{
-    p.vuelto.modo=opt.dataset.modo;
-    b.querySelectorAll(".vlopt").forEach(o=>{
-      const on=o.dataset.modo===p.vuelto.modo;
-      o.style.borderColor=on?"var(--ia)":"var(--border)";
-      o.style.background=on?"var(--ia-bg)":"transparent";
-      const dot=o.querySelector(".vldot"); dot.style.borderColor=on?"var(--ia)":"var(--border)"; dot.firstElementChild.style.display=on?"block":"none";
-    });
-    const w=$("vlMsgWrap"); if(w) w.style.display=(p.vuelto.modo==="tranquilizar")?"block":"none";
   });
   $("pnRow").onclick=()=>{ p.adelanto.nudge.activo=!p.adelanto.nudge.activo; $("pnSw").classList.toggle("on",p.adelanto.nudge.activo); };
   $("pvRow").onclick=()=>{ p.adelanto.vencimiento.activo=!p.adelanto.vencimiento.activo; $("pvSw").classList.toggle("on",p.adelanto.vencimiento.activo); };
@@ -459,10 +378,6 @@ function render(b){
     foto.querySelector("[data-avfotosw]").classList.toggle("on",!!a.foto_guia);
   };
   $("pedSave").onclick=async(e)=>{
-    p.digital.tolerancia=Math.max(0,Number($("pDigTol").value)||0);
-    if($("pDigRev")) p.digital.revisar_sobre_sol=Math.max(0,Number($("pDigRev").value)||0);
-    if($("vlMsg")) p.vuelto.mensaje=$("vlMsg").value.trim();
-    if($("rzMsg")) p.rechazo.mensaje=$("rzMsg").value.trim();
     p.log.tolerancia=Math.max(0,Number($("pLogTol").value)||0);
     // Avisos de pedido: el mensaje que se manda dentro de la ventana y la
     // plantilla para cuando está cerrada. El toggle de la foto ya se fue
@@ -507,7 +422,10 @@ function render(b){
     // el fix SIMÉTRICO al de ia.html, que quedó sin aplicar en este lado.
     try{ const { data:fresh }=await supa.from("channels").select("pedidos_config").eq("id",st.channelId).maybeSingle();
       const base=(fresh&&fresh.pedidos_config&&typeof fresh.pedidos_config==="object")?fresh.pedidos_config:null;
-      if(base){ if(base.humano) p.humano=base.humano; if(base.postventa) p.postventa=base.postventa; }
+      if(base){ if(base.humano) p.humano=base.humano; if(base.postventa) p.postventa=base.postventa;
+        // (25-oct) digital / rechazo / vuelto se editan ahora en Pagos por validar → ⋯ → Ajustes de pagos: se toman de
+        // lo FRESCO para no revertir lo que se guardó allá después de abrir esta página.
+        if(base.digital) p.digital=base.digital; if(base.rechazo) p.rechazo=base.rechazo; if(base.vuelto) p.vuelto=base.vuelto; }
     }catch(_){}
     const { error }=await updateChannel(st.channelId, { pedidos_config:p });
     btn.disabled=false; btn.textContent=old;
