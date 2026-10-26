@@ -3432,7 +3432,18 @@ async function generarFlujoFisico(flowId, N, E){
 // que sabemos que el motor lee en vivo. Si mañana alguien agrega una clave y se olvida de
 // esto, el peor caso es una actualización de más — nunca un flujo desfasado en silencio,
 // que es como se pierde plata sin que nadie se entere.
+// (25-oct) + "microapp": la config de la micro app (renovación, correo, prueba, conexión) la leen EN VIVO el motor y el
+// scheduler; el generador no la copia a ningún nodo. Ahora también se edita desde Accesos → Avisos de renovación, y
+// cada cambio regeneraba el flujo por nada. Los sellos guardados antes se re-sellan solos (EN_VIVO_HASTA_1025).
+const EN_VIVO_HASTA_1025 = new Set([
+  "contexto_producto","ia","ia_multimedia","faq","faq_items","objeciones","objeciones_items",
+  "costo","empaque","stock","atributos","remarketing_seqs","entrega",
+  "regalos","adelanto_override","adelanto_minimo","stock_umbral","ad_bank",
+  "memoria","intencion","reglas","limites","conocimiento",
+  "horario","demora","_flujo_sello",
+]);
 const CONTENIDO_EN_VIVO = new Set([
+  "microapp",
   "contexto_producto","ia","ia_multimedia","faq","faq_items","objeciones","objeciones_items",
   // (entrega_mensaje NO va acá: el generador lo COPIA al nodo «entregar» y el motor lee el del
   // nodo, así que cambiarlo tiene que regenerar el flujo — antes el cliente seguía recibiendo el viejo.)
@@ -3493,7 +3504,7 @@ async function sincronizarFlujo(){
   // entrada el flujo de cada producto que ya vende, sin que nadie lo pida, sería peor.
   if(!guardado){ await sellarFlujo(fVenta.id); return; }
   if(guardado.sello === selloEstructura()) return;          // nada estructural cambió
-  if(guardado.sello === selloEstructura(EN_VIVO_HASTA_0930)){
+  if(guardado.sello === selloEstructura(EN_VIVO_HASTA_0930) || guardado.sello === selloEstructura(EN_VIVO_HASTA_1025)){
     // Sello de la lista vieja y nada cambió: se re-sella con la nueva SIN re-hashear los bloques
     // (eso borraría la prueba de una edición a mano y el próximo cambio la pisaría sin avisar).
     const nuevo = { ...guardado, sello: selloEstructura() };
