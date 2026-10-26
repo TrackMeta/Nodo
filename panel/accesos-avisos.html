@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Avisos de renovación</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<style>
+  /* (25-oct) Misma cara que «Pagos y avisos» (pagos.html), a la que se llega desde Pedidos → Más. */
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --amber:#f0a92b; --red:#e2564a;
+    --ia:#2b7fff; --ia-bg:rgba(43,127,255,.14); --ia-border:rgba(43,127,255,.4);
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:16px}
+  .chd{display:flex;align-items:center;gap:13px;margin-bottom:4px}
+  .chd .ico{width:46px;height:46px;border-radius:13px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;flex:none}
+  .chd .ico svg{width:22px;height:22px}
+  .chd .nm{font-weight:700;font-size:16px;letter-spacing:-.1px}
+  .chd .nm small{display:block;font-weight:500;font-size:12.5px;color:var(--muted);margin-top:2px}
+  .row{display:flex;align-items:center;gap:14px;padding:14px 0;border-top:1px solid var(--border)}
+  .row:first-of-type{margin-top:12px}
+  .row .t{flex:1;min-width:0}
+  .row .t b{display:block;font-size:13.5px}
+  .row .t span{display:block;color:var(--muted);font-size:12.5px;margin-top:3px;line-height:1.5}
+  .dias{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+  .dias input{width:60px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);text-align:center;font-size:13.5px;font-family:var(--font)}
+  .off{opacity:.55}
+  .snote{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--border);border-radius:11px;padding:10px 12px;margin-top:4px;font-size:12px;color:var(--muted);line-height:1.5;background:var(--ia-bg)}
+  .snote .si{flex:none;width:17px;height:17px;color:var(--ia);margin-top:1px}
+  .snote .si svg{width:17px;height:17px;display:block}
+  .snote b{color:var(--text);font-weight:700}
+  .sw{width:44px;height:25px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);position:relative;transition:.15s;flex:none;cursor:pointer}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:var(--muted);transition:.15s}
+  .sw.on{background:var(--ia-bg);border-color:var(--ia-border)} .sw.on::after{left:20px;background:var(--ia)}
+  .empty{color:var(--muted);padding:30px 0;text-align:center}
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="nodo-wrap" style="--nodo-max:var(--nodo-form)">
+    <div class="nodo-head">
+      <div class="grow">
+        <a href="accesos.html" style="display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px;text-decoration:none;margin-bottom:6px">← Volver a Accesos</a>
+        <h1 class="nodo-title">Avisos de renovación</h1>
+        <p class="nodo-lead">Si el bot le avisa solo al cliente cuando su acceso mensual está por vencer o ya venció.</p>
+      </div>
+    </div>
+    <div id="body"><div class="empty">Cargando…</div></div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, toast, icon, patchProductConfig } from "./shell.js";
+// Los avisos AUTOMÁTICOS de renovación de las micro apps. Es la MISMA config que Productos → la micro app →
+// Renovación (products.config.microapp.renovacion; la lee el scheduler en vivo): las dos pantallas tocan el mismo
+// dato. Se guarda al tocar, sobre el config FRESCO (patchProductConfig: no pisa el resto del producto).
+const st={ channelId:null };
+const $=(id)=>document.getElementById(id);
+const esc=(s)=>String(s??"").replace(/[&<>"]/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+async function boot(){
+  const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
+  const shell=await mountShell({ active:"accesos" });
+  st.channelId=shell.channelId;
+  shell.onChannel(id=>{ st.channelId=id; load(); });
+  if(st.channelId) await load();
+}
+
+async function load(){
+  $("body").innerHTML=`<div class="empty">Cargando…</div>`;
+  const { data:prods, error }=await supa.from("products").select("id, nombre, config, product_versions(activo, config)")
+    .eq("channel_id",st.channelId).eq("tipo","microapp").order("nombre");
+  if(error){ $("body").innerHTML=`<div class="empty">No se pudieron cargar tus micro apps.</div>`; return; }
+  if(!(prods||[]).length){ $("body").innerHTML=`<div class="empty">Este bot no vende micro apps.</div>`; return; }
+  $("body").innerHTML=prods.map(card).join("")+`
+    <div class="snote"><span class="si">${icon("bulb")}</span><span>Si los apagas, el bot no avisa solo: le recuerdas tú cuando quieras desde
+      <b>Accesos</b> → la ficha del cliente → <b>Recordar renovación</b>. El texto del aviso es la plantilla de Meta que elegiste en
+      <b>Productos</b> → la app → Renovación.</span></div>`;
+  document.querySelectorAll(".card[data-pid]").forEach(box=>{
+    box.querySelectorAll(".sw").forEach(sw=>sw.onclick=()=>{ sw.classList.toggle("on"); guardar(box); });
+    box.querySelector('[data-k="dias"]').onchange=()=>guardar(box);
+  });
+}
+
+function card(p){
+  const r=p.config?.microapp?.renovacion||{};
+  const mensual=(p.product_versions||[]).some(v=>v.activo!==false && v.config?.modalidad==="mensual");
+  return `<div class="card ${mensual?"":"off"}" data-pid="${esc(p.id)}">
+    <div class="chd"><div class="ico">${icon("bell")}</div>
+      <div class="nm">${esc(p.nombre)}<small>${mensual?"Accesos mensuales":"Esta app no tiene precio mensual: los avisos no aplican"}</small></div></div>
+    <div class="row"><span class="sw ${r.previo!==false?"on":""}" data-k="previo" role="switch"></span>
+      <span class="t"><b>Avisar antes de vencer</b><span>El bot le escribe solo para que renueve, con la fecha y el precio.</span></span>
+      <span class="dias"><input type="number" min="1" max="15" value="${esc(r.dias??3)}" data-k="dias" title="Días antes"> días antes</span></div>
+    <div class="row"><span class="sw ${r.vencido!==false?"on":""}" data-k="vencido" role="switch"></span>
+      <span class="t"><b>Avisar el día que vence</b><span>Le dice que su acceso venció, que su progreso quedó guardado y cuánto cuesta renovar.</span></span></div>
+  </div>`;
+}
+
+async function guardar(box){
+  const previo=box.querySelector('[data-k="previo"]').classList.contains("on");
+  const vencido=box.querySelector('[data-k="vencido"]').classList.contains("on");
+  const inp=box.querySelector('[data-k="dias"]');
+  const dias=Math.min(15,Math.max(1,Number(inp.value)||3)); inp.value=dias;
+  const r=await patchProductConfig(box.dataset.pid,(cfg)=>{
+    cfg.microapp={ ...(cfg.microapp||{}) };
+    cfg.microapp.renovacion={ ...(cfg.microapp.renovacion||{}), previo, vencido, dias };
+  });
+  toast(r.ok?"Guardado":"No se pudo guardar", !r.ok);
+}
+
+boot();
+</script>
+</body>
+</html>
