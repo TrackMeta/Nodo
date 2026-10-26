@@ -114,7 +114,7 @@ async function api(body){
   return data||{ ok:false };
 }
 const ERR={ apps_sin_configurar:"Nodo todavía no está conectado con la base de Apps.", ventana_cerrada:"Pasaron más de 24 h desde su último mensaje: WhatsApp no deja escribirle sin plantilla. Pídele que te escriba «mi acceso».",
-  correo_invalido:"Ese correo no es válido.", app_no_conectada:"Esa app no está conectada (Productos → la app → Correo, renovación y conexión)." };
+  correo_invalido:"Ese correo no es válido.", solo_mensual:"El recordatorio de renovación es solo para accesos mensuales.", app_no_conectada:"Esa app no está conectada (Productos → la app → Correo, renovación y conexión)." };
 const errTxt=(e)=>ERR[e]||e||"Algo falló";
 
 async function boot(){
@@ -290,6 +290,7 @@ async function abrirFicha(id){
     ${d.eventos.length?d.eventos.slice(0,12).map(x=>`<div class="ev">${esc(EV[x.tipo]||x.tipo)}${x.detalle?` · ${esc(x.detalle)}`:""} <span style="color:var(--faint)">· ${hace(x.creado_at).toLowerCase()}</span></div>`).join(""):`<div class="ev">Sin movimientos.</div>`}
     <div class="acts">
       <button class="btn primary" id="fre">${icon("message")} Reenviar acceso</button>
+      ${a.tipo==="mensual"?`<button class="btn" id="frec" title="Le manda ahora el mismo aviso de renovación que sale automático">${icon("bell")} Recordar renovación</button>`:""}
       ${a.tipo!=="unico"?`<button class="btn" id="fext">${icon("calendar")} Extender</button>`:""}
       <button class="btn" id="fmail">${icon("mail")} Cambiar correo</button>
       <button class="btn ${a.bloqueado?"":"danger"}" id="fblq">${a.bloqueado?icon("check")+" Desbloquear":icon("ban")+" Bloquear"}</button>
@@ -299,6 +300,12 @@ async function abrirFicha(id){
   f.querySelector("#fx").onclick=()=>ov.remove();
   f.querySelector("#fcopy").onclick=()=>{ navigator.clipboard?.writeText(d.link); toast("Link copiado"); };
   f.querySelector("#fre").onclick=async(ev)=>{ ev.currentTarget.disabled=true; const r=await api({ action:"reenviar", id }); ev.currentTarget.disabled=false; toast(r.ok?"Acceso reenviado por WhatsApp":errTxt(r.error), !r.ok); };
+  const fr=f.querySelector("#frec"); if(fr) fr.onclick=async(ev)=>{
+    const vencio=a.vence_at && new Date(a.vence_at)<=new Date();
+    if(!await confirmDialog({ title:"Recordar renovación", message:vencio?`Le mandas el aviso de que su acceso ya venció, con el precio para renovar.`:`Le mandas el aviso de que su acceso vence el ${fecha(a.vence_at)}, con el precio para renovar.`, confirmText:"Enviar" })) return;
+    ev.currentTarget.disabled=true; const r=await api({ action:"recordar", id }); ev.currentTarget.disabled=false;
+    if(!r.ok){ toast(r.error==="sin_plantilla"?`No salió: aprueba la plantilla «${r.plantilla}» en Plantillas (o espera a que te escriba: con su chat abierto sale gratis).`:errTxt(r.error), true); return; }
+    toast("Recordatorio enviado por WhatsApp"); ov.remove(); abrirFicha(id); };
   const fe=f.querySelector("#fext"); if(fe) fe.onclick=async()=>{ ov.remove(); await extender([id]); };
   f.querySelector("#fmail").onclick=async()=>{
     const c=await askText({ title:"Cambiar correo", label:"Correo nuevo", value:a.correo||"", placeholder:"cliente@gmail.com", confirmText:"Guardar" }); if(c==null) return;

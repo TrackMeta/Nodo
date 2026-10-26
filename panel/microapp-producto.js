@@ -153,6 +153,7 @@ export function renderConfigMicroapp(host, st, opts = {}) {
 
     <div class="ma-sec" style="${mensual ? "" : "opacity:.5"}">
       <div class="ma-hd"><div class="ma-n">2</div><div class="ma-t">Renovación</div><span class="ma-s" style="margin:0">Solo con mensual${mensual ? "" : " (actívalo en «¿Cuánto cuesta?»)"}</span></div>
+      <p class="ma-s">Avisos <b>automáticos</b> del bot. Si los apagas, no avisa solo: puedes recordarle tú cuando quieras desde <b>Ventas → Accesos</b> → la ficha del cliente → <b>Recordar renovación</b>.</p>
       <div class="ma-row">${chk("maPrevOn", r.previo !== false, "Avisar antes de vencer")}<input class="ma-in sm" id="maPrevDias" type="number" min="1" max="15" value="${esc(r.dias ?? 3)}"> días antes</div>
       <div class="ma-dep"><div class="ma-row"><span class="ma-lbl">Plantilla</span>${plantillaSel("maPrevTpl", r.plantilla_previo, "acceso_por_vencer")}</div></div>
       <div class="ma-row">${chk("maVencOn", r.vencido !== false, "Avisar el día que vence")}</div>

@@ -8,8 +8,10 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel, getChannelSecrets } from "../_shared/db.ts";
-import { appsApi, appsConfigurada, extraerCorreo, mensajeEntrega, fechaLarga } from "../_shared/microapps.ts";
+import { appsApi, appsConfigurada, extraerCorreo, mensajeEntrega, fechaLarga, cfgDe } from "../_shared/microapps.ts";
 import { deliverMessage, ventana24hAbierta } from "../_shared/engine.ts";
+import { sendTemplateToContact } from "../_shared/campaigns.ts";
+import { simboloMoneda } from "../_shared/moneda.ts";
 import { fetchConTimeout } from "../_shared/http.ts";
 
 const db = serviceClient();
@@ -79,6 +81,52 @@ Deno.serve(async (req) => {
         if (!(await ventana24hAbierta(db, ct))) return json({ ok: false, error: "ventana_cerrada" });
         const ok = await deliverMessage(db, channelId, ct, `Aquí tienes tu acceso a *${d.acceso.app}* 🙌\n${d.link}\n\nÁbrelo desde tu celular y listo.`);
         return json({ ok });
+      }
+
+      // 🔔 Recordar la renovación a mano (25-oct, botón de la ficha). El MISMO aviso que manda el scheduler
+      // (processMicroapps): plantilla «por vencer» o «vencido» del producto, con los mismos datos; con la ventana
+      // abierta va como texto (gratis). Funciona aunque el aviso automático esté apagado en el producto, y abre la
+      // ventana de renovación de 7 días (el próximo Yape se valida aunque el post-venta esté apagado).
+      case "recordar": {
+        const d = await appsApi("detalle", { channel_id: channelId, id: b.id });
+        if (!d?.ok) return json(d);
+        const a = d.acceso ?? {};
+        if (a.tipo !== "mensual" || !a.vence_at) return json({ ok: false, error: "solo_mensual" });
+        const ct = String(a.contact_id ?? "");
+        const { data: p } = await db.from("products").select("id, nombre, channel_id, config, product_versions(precio, activo, config)")
+          .eq("id", String(a.product_id ?? "")).maybeSingle();
+        if (!p || (p as any).channel_id !== channelId) return json({ error: "producto_ajeno" }, 403);
+        const { data: chM } = await db.from("channels").select("moneda, timezone").eq("id", channelId).maybeSingle();
+        const sym = simboloMoneda((chM as any)?.moneda);
+        const tz = String((chM as any)?.timezone || "America/Lima");
+        const vers = (((p as any).product_versions ?? []) as any[]).filter((v) => v.activo !== false && v.config?.oculta !== true);
+        const mes = vers.find((v) => v.config?.modalidad === "mensual" && (Number(v.config?.meses) || 1) === 1);
+        const precioRen = mes ? `${sym} ${mes.precio}` : "";
+        const ren = cfgDe((p as any).config).renovacion ?? {};
+        const vencido = new Date(a.vence_at).getTime() <= Date.now();
+        const nom = String(a.nombre ?? "").trim().split(/\s+/)[0] || "";
+        const plantilla = vencido ? String(ren.plantilla_vencido || "acceso_vencido") : String(ren.plantilla_previo || "acceso_por_vencer");
+        const params = vencido ? [nom || "👋", (p as any).nombre, precioRen || "-"]
+          : [nom || "👋", (p as any).nombre, fechaLarga(a.vence_at, tz), precioRen || "-"];
+        const texto = vencido
+          ? `Hola${nom ? " " + nom : ""}, venció tu acceso a ${(p as any).nombre}. Tu progreso quedó guardado 💾 Renuévalo${precioRen ? ` con ${precioRen}` : ""} y sigues donde te quedaste. Escríbeme por aquí 🙌`
+          : `¡Hola${nom ? " " + nom : ""}! 📅 Tu acceso a ${(p as any).nombre} vence el ${fechaLarga(a.vence_at, tz)}. Para seguir usándola, renuévalo${precioRen ? ` con ${precioRen}` : ""}. Escríbeme por aquí 🙌`;
+        let salio = false, motivo = "";
+        try {
+          salio = !!(await sendTemplateToContact(db, channelId, ct, { name: plantilla, params, preferirTexto: true }, { sentBy: "human", sentByUser: uid }));
+        } catch (err) {
+          motivo = String((err as any)?.message ?? err);
+          if (await ventana24hAbierta(db, ct)) salio = await deliverMessage(db, channelId, ct, texto);
+        }
+        if (!salio) return json({ ok: false, error: "sin_plantilla", plantilla, detalle: motivo });
+        const { data: c } = await db.from("contacts").select("bot_activo").eq("id", ct).maybeSingle();
+        const { data: cv } = await db.from("conversations").select("requiere_humano").eq("contact_id", ct).maybeSingle();
+        const patch: Record<string, unknown> = { renovar_app_hasta: new Date(Date.now() + 7 * 86_400_000).toISOString(), renovar_app_product: (p as any).id };
+        if ((c as any)?.bot_activo === false && (cv as any)?.requiere_humano !== true) patch.bot_activo = true;
+        await db.from("contacts").update(patch).eq("id", ct);
+        await db.from("contact_events").insert({ channel_id: channelId, contact_id: ct, tipo: "nota",
+          titulo: `📱 Recordatorio de ${vencido ? "acceso vencido" : "renovación"} enviado desde el panel`, detalle: `${(p as any).nombre} · plantilla ${plantilla}` }).then(() => {}, () => {});
+        return json({ ok: true, vencido });
       }
 
       // Dar un acceso a mano (el cliente pagó y no llegó a dar el correo, o la entrega falló).
