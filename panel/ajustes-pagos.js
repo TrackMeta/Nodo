@@ -34,7 +34,7 @@ const CSS = `
 .ajp-dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--border);flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center}
 .ajp-opt.on .ajp-dot{border-color:var(--brand)} .ajp-dot i{width:9px;height:9px;border-radius:50%;background:var(--brand);display:none}
 .ajp-opt.on .ajp-dot i{display:block}
-.ajp-opt b{display:block;font-size:13.5px} .ajp-opt span{display:block;font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5}
+.ajp-opt b{display:block;font-size:13.5px} .ajp-opt > div > span{display:block;font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5}
 .ajp-num{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:12.5px}
 .ajp-num .box{display:flex;align-items:center;border:1px solid var(--border);border-radius:8px;overflow:hidden}
 .ajp-num .box span{color:var(--muted);font-weight:700;padding:0 4px 0 10px}
