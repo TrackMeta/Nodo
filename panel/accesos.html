@@ -81,6 +81,15 @@
   .masmenu.show{display:block}
   .masmenu .mi{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:var(--text);font:inherit;font-size:13px;padding:8px 10px;border-radius:8px;cursor:pointer;height:auto}
   .masmenu .mi:hover{background:var(--surface-2)} .masmenu .mi svg{color:var(--muted);width:16px;height:16px}
+  .sw{width:44px;height:25px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);position:relative;transition:.15s;flex:none;cursor:pointer}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:var(--muted);transition:.15s}
+  .sw.on{background:var(--brand);border-color:var(--brand)} .sw.on::after{left:20px;background:#fff}
+  .avp{border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-top:12px}
+  .avp h4{margin:0 0 4px;font-size:14px}
+  .avr{display:flex;align-items:center;gap:12px;padding:8px 0;font-size:13px}
+  .avr .t{flex:1} .avr .t small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+  .avr input{width:58px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);text-align:center}
+  .avnota{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -92,7 +101,7 @@
       </div>
       <div class="nodo-actions">
         <div class="masw"><button class="nodo-btn" id="masBtn" title="Más" aria-label="Más"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
-          <div class="masmenu" id="masMenu"><a class="mi" id="avisosBtn" href="accesos-avisos.html" style="text-decoration:none"></a></div></div>
+          <div class="masmenu" id="masMenu"><button class="mi" id="avisosBtn" type="button"></button></div></div>
       </div>
     </div>
     <div id="body"><div class="empty">Cargando…</div></div>
@@ -100,7 +109,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog, patchProductConfig } from "./shell.js";
 const $=(id)=>document.getElementById(id);
 const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const DIA=86400000;
@@ -135,9 +144,53 @@ async function boot(){
   $("avisosBtn").innerHTML=`${icon("bell")} Avisos de renovación`;
   $("masBtn").onclick=(e)=>{ e.stopPropagation(); $("masMenu").classList.toggle("show"); };
   document.addEventListener("click",()=>$("masMenu").classList.remove("show"));
+  $("avisosBtn").onclick=()=>{ $("masMenu").classList.remove("show"); abrirAvisos(); };
   await load();
 }
 
+// 🔔 (25-oct) Los avisos AUTOMÁTICOS de renovación, prendidos o apagados desde acá (como las opciones de Pedidos).
+// Es la MISMA config que Productos → la micro app → Renovación (products.config.microapp.renovacion): las dos
+// pantallas tocan el mismo dato. Se guarda al tocar, sobre el config fresco (patchProductConfig).
+async function abrirAvisos(){
+  const { data:prods, error }=await supa.from("products").select("id, nombre, config, product_versions(activo, config)")
+    .eq("channel_id",st.channelId).eq("tipo","microapp").order("nombre");
+  if(error){ toast("No se pudieron cargar las apps",true); return; }
+  if(!(prods||[]).length){ toast("Este bot no vende micro apps",true); return; }
+  const ov=document.createElement("div"); ov.className="ov";
+  const bloque=(p)=>{
+    const r=p.config?.microapp?.renovacion||{};
+    const mensual=(p.product_versions||[]).some(v=>v.activo!==false && v.config?.modalidad==="mensual");
+    return `<div class="avp" data-pid="${p.id}" style="${mensual?"":"opacity:.55"}">
+      <h4>${esc(p.nombre)}</h4>${mensual?"":`<div class="avnota" style="margin:0">Esta app no tiene precio mensual: los avisos no aplican.</div>`}
+      <div class="avr"><span class="sw ${r.previo!==false?"on":""}" data-k="previo" role="switch"></span>
+        <span class="t">Avisar antes de vencer<small>El bot le escribe solo para que renueve.</small></span>
+        <input type="number" min="1" max="15" value="${esc(r.dias??3)}" data-k="dias" title="Días antes"> <span>días antes</span></div>
+      <div class="avr"><span class="sw ${r.vencido!==false?"on":""}" data-k="vencido" role="switch"></span>
+        <span class="t">Avisar el día que vence<small>Le dice que su acceso venció y cuánto cuesta renovar.</small></span></div>
+    </div>`;
+  };
+  ov.innerHTML=`<div class="ficha" style="max-width:560px">
+    <div style="display:flex;align-items:center;gap:10px"><h3 style="flex:1">${icon("bell")} Avisos de renovación</h3><button class="btn" id="avx" title="Cerrar">${icon("x")}</button></div>
+    <div class="avnota" style="margin-top:6px">Avisos <b>automáticos</b> del bot para los accesos mensuales. Si los apagas, no avisa solo: le recuerdas tú desde la ficha de cada cliente → <b>Recordar renovación</b>.</div>
+    ${prods.map(bloque).join("")}
+    <div class="avnota">El texto del aviso es la plantilla de Meta que elegiste en Productos → la app → Renovación.</div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.onclick=(e)=>{ if(e.target===ov) ov.remove(); };
+  ov.querySelector("#avx").onclick=()=>ov.remove();
+  const guardar=async(box)=>{
+    const pid=box.dataset.pid;
+    const previo=box.querySelector('[data-k="previo"]').classList.contains("on");
+    const vencido=box.querySelector('[data-k="vencido"]').classList.contains("on");
+    const dias=Math.min(15,Math.max(1,Number(box.querySelector('[data-k="dias"]').value)||3));
+    const r=await patchProductConfig(pid,(cfg)=>{ cfg.microapp={ ...(cfg.microapp||{}) }; cfg.microapp.renovacion={ ...(cfg.microapp.renovacion||{}), previo, vencido, dias }; });
+    toast(r.ok?"Guardado":"No se pudo guardar", !r.ok);
+  };
+  ov.querySelectorAll(".avp").forEach(box=>{
+    box.querySelectorAll(".sw").forEach(sw=>sw.onclick=()=>{ sw.classList.toggle("on"); guardar(box); });
+    box.querySelector('[data-k="dias"]').onchange=()=>guardar(box);
+  });
+}
 
 async function load(){
   const gen=++st.loadGen;
