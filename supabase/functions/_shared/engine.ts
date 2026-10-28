@@ -1241,11 +1241,16 @@ async function runEngineInner(
         if (_vp.flow && String(_vp.flow.id) !== String(flow?.id ?? "")) {
           await logEvent(db, channelId, contactId, "nota", "🌎 Versión de su país",
             `${_vp.pais ?? "?"} (${_vp.motivo ?? ""}) → ${_vp.flow.nombre ?? ""}`).catch(() => {});
-          // La respuesta «México» no es una pregunta ni la palabra clave: que arranque el saludo y nada más.
           if (!flow) decision = { ...decision, tier: "pais" as any, flow: _vp.flow } as RouteResult;
           flow = _vp.flow;
         } else if (_vp.pais && _vp.motivo !== "ya lo sabíamos") {
           await logEvent(db, channelId, contactId, "nota", "🌎 País del cliente", `${_vp.pais} (${_vp.motivo ?? ""})`).catch(() => {});
+        }
+        // «Soy de México» contesta NUESTRA pregunta: no es algo que la IA tenga que atender (se reinyectaba y la IA
+        // contestaba sobre el país). Se trata como la palabra clave: sale el saludo y nada más. Si además preguntó algo
+        // («de México, ¿cuánto cuesta?»), se atiende como siempre.
+        if (_vp.respondioPais && flow && !traePregunta(String(event.text ?? ""))) {
+          decision = { ...decision, keyword: String(event.text ?? "") } as RouteResult;
         }
       } catch (e) { console.error("[pais]", (e as any)?.message ?? e); }
     }
@@ -4014,7 +4019,7 @@ async function familiaPorPais(db: SupabaseClient, channelId: string, flowId: str
 async function versionDelPais(
   db: SupabaseClient, channelId: string, contactId: string,
   flow: { id: string; nombre?: string } | null, tier: string, texto: string,
-): Promise<{ flow: { id: string; nombre?: string } | null; pais?: string; preguntar?: boolean; motivo?: string }> {
+): Promise<{ flow: { id: string; nombre?: string } | null; pais?: string; preguntar?: boolean; motivo?: string; respondioPais?: boolean }> {
   // ¿Le habíamos preguntado de qué país es? Su respuesta decide (aunque «México» suelto no rutee a nada).
   const pend = await leerCampoContacto(db, contactId, "_pais_pendiente");
   let flowId = flow?.id ? String(flow.id) : "";
@@ -4027,9 +4032,10 @@ async function versionDelPais(
     if (!flowId || tier === "ia" || tier === "none") flowId = pend;
     if (dijo) { pais = dijo; motivo = "lo dijo"; }
   }
+  const respondioPais = !!pend;
   if (!flowId) return { flow };
   const fam = await familiaPorPais(db, channelId, flowId);
-  if (!fam) return { flow: flowId === String(flow?.id ?? "") ? flow : { id: flowId } };
+  if (!fam) return { flow: flowId === String(flow?.id ?? "") ? flow : { id: flowId }, respondioPais };
   const mio = fam.miembros.find((m) => m.id === fam.productId);
   if (!mio) return { flow: flowId === String(flow?.id ?? "") ? flow : { id: flowId } };
   // El anuncio ya es de un país: cada anuncio se asigna a la versión de su país.
@@ -4050,9 +4056,9 @@ async function versionDelPais(
   // reconocible → el ORIGINAL, el del país del bot.
   const elegido = fam.miembros.find((m) => m.pais === pais) ?? fam.miembros.find((m) => m.id === fam.baseId)!;
   if (pais) await setField(db, channelId, contactId, "pais", pais).catch(() => {});
-  if (!elegido || elegido.id === fam.productId) return { flow: { id: flowId, nombre: flow?.nombre }, pais, motivo };
+  if (!elegido || elegido.id === fam.productId) return { flow: { id: flowId, nombre: flow?.nombre }, pais, motivo, respondioPais };
   const otro = await flowDeEntrada(db, channelId, elegido.id);
-  return otro ? { flow: otro, pais, motivo } : { flow: { id: flowId, nombre: flow?.nombre }, pais, motivo };
+  return otro ? { flow: otro, pais, motivo, respondioPais } : { flow: { id: flowId, nombre: flow?.nombre }, pais, motivo, respondioPais };
 }
 
 // Español del cliente: acá se le escribe a peruanos, de TÚ. Los modelos se van solos al
@@ -27441,7 +27447,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             _paisM = (/(?:^|[^\p{L}])(chile|argentina|colombia|m[eé]xico|espa[ñn]a|ecuador|bolivia|venezuela|estados\s+unidos|eeuu|usa|italia|brasil)(?![\p{L}])/iu.exec(_txM)?.[1] ?? "");
           } catch (_) { /* sin historial */ }
           if (_medM.length) {
-            if (_paisM) {
+            // (28-oct) Solo si de verdad cobramos con Yape o Plin: la versión de México cobra con BBVA/OXXO y a «Soy de
+            // México» le salía «Yape y Plin solo funcionan con cuentas de Perú».
+            const _conYape = _medM.includes("Yape") || _medM.includes("Plin");
+            if (_paisM && _conYape) {
               parts.push(`## ⚠️ 🌎 Está en ${_paisM.charAt(0).toUpperCase() + _paisM.slice(1)}\n` +
                 "Yape y Plin solo funcionan con cuentas de Perú. Díselo claro y dale la salida: que le pague alguien que " +
                 "esté en Perú, o por transferencia si su banco permite enviar a una cuenta de Perú. ⛔ No le digas «paga por Yape» como si pudiera.");
@@ -27453,8 +27462,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               `Los medios de pago que tenemos son SOLO estos: ${_medM.join(", ")}. Si pregunta por tarjeta, cuotas, PayPal, ` +
               "efectivo u otro que no esté en esa lista, dile con naturalidad que por ahora se paga por esos medios (sin " +
               "disculparte de más) y, si no tiene ninguno, que puede pagar alguien de su familia o un amigo por él. " +
-              "Si escribe desde OTRO PAÍS («soy de Chile»): Yape y Plin solo funcionan con cuentas de Perú, así que dile " +
-              "que le puede pagar alguien que esté en Perú, o por transferencia si su banco permite enviar a Perú (D17-pchile). " +
+              (_conYape ? "Si escribe desde OTRO PAÍS («soy de Chile»): Yape y Plin solo funcionan con cuentas de Perú, así que dile " +
+              "que le puede pagar alguien que esté en Perú, o por transferencia si su banco permite enviar a Perú (D17-pchile). " : "") +
               "⛔ No inventes que «pronto» habrá tarjeta ni ofrezcas cuotas.");
           }
         } catch (_) { /* sin datos de pago → queda como hueco */ }
