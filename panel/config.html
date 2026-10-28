@@ -186,14 +186,26 @@ const IC={
   sheet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>',
   monitor:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
 };
-const TIMEZONES=[
-  ["America/Lima","Perú (Lima) · UTC-5"],["America/Bogota","Colombia (Bogotá) · UTC-5"],
-  ["America/Mexico_City","México (CDMX) · UTC-6"],["America/Santiago","Chile (Santiago) · UTC-3/-4"],
-  ["America/Argentina/Buenos_Aires","Argentina (Bs. As.) · UTC-3"],["America/Guayaquil","Ecuador (Guayaquil) · UTC-5"],
-  ["America/La_Paz","Bolivia (La Paz) · UTC-4"],["America/Caracas","Venezuela (Caracas) · UTC-4"],
-  ["America/Santo_Domingo","Rep. Dominicana · UTC-4"],["America/Guatemala","Guatemala · UTC-6"],
-  ["America/New_York","EE. UU. (Este) · UTC-5"],["Europe/Madrid","España (Madrid) · UTC+1"],
+// (28-oct) Ajustes pregunta el PAÍS del negocio, no la zona horaria: «America/Lima · UTC-5» no le dice nada a nadie.
+// Cada país guarda la zona de su capital en channels.timezone (el motor la sigue leyendo igual). Los países con
+// varias zonas dejan elegir la suya en «¿Tu negocio está en otra zona de …?».
+const PAISES_TZ=[
+  ["PE","🇵🇪","Perú","America/Lima"],["MX","🇲🇽","México","America/Mexico_City"],["CO","🇨🇴","Colombia","America/Bogota"],
+  ["CL","🇨🇱","Chile","America/Santiago"],["AR","🇦🇷","Argentina","America/Argentina/Buenos_Aires"],["EC","🇪🇨","Ecuador","America/Guayaquil"],
+  ["BO","🇧🇴","Bolivia","America/La_Paz"],["VE","🇻🇪","Venezuela","America/Caracas"],["PY","🇵🇾","Paraguay","America/Asuncion"],
+  ["UY","🇺🇾","Uruguay","America/Montevideo"],["CR","🇨🇷","Costa Rica","America/Costa_Rica"],["PA","🇵🇦","Panamá","America/Panama"],
+  ["GT","🇬🇹","Guatemala","America/Guatemala"],["SV","🇸🇻","El Salvador","America/El_Salvador"],["HN","🇭🇳","Honduras","America/Tegucigalpa"],
+  ["NI","🇳🇮","Nicaragua","America/Managua"],["DO","🇩🇴","Rep. Dominicana","America/Santo_Domingo"],["PR","🇵🇷","Puerto Rico","America/Puerto_Rico"],
+  ["ES","🇪🇸","España","Europe/Madrid"],["US","🇺🇸","Estados Unidos","America/New_York"],["BR","🇧🇷","Brasil","America/Sao_Paulo"],
 ];
+const ZONAS_EXTRA={
+  MX:[["America/Mexico_City","Centro (CDMX, Guadalajara, Monterrey)"],["America/Cancun","Quintana Roo (Cancún)"],["America/Mazatlan","Pacífico (Sinaloa, Nayarit)"],["America/Hermosillo","Sonora"],["America/Tijuana","Baja California (Tijuana)"]],
+  US:[["America/New_York","Este (Nueva York, Miami)"],["America/Chicago","Centro (Chicago, Texas)"],["America/Denver","Montaña (Denver)"],["America/Los_Angeles","Pacífico (Los Ángeles)"]],
+  BR:[["America/Sao_Paulo","Brasilia (São Paulo, Río)"],["America/Manaus","Amazonas (Manaos)"]],
+  ES:[["Europe/Madrid","Península (Madrid)"],["Atlantic/Canary","Canarias"]],
+  CL:[["America/Santiago","Continental (Santiago)"],["America/Punta_Arenas","Magallanes (Punta Arenas)"]],
+};
+const paisDeZona=(tz)=>{ for(const p of PAISES_TZ){ if(p[3]===tz || (ZONAS_EXTRA[p[0]]||[]).some(z=>z[0]===tz)) return p[0]; } return null; };
 
 const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png", meta:"../assets/apps/meta.png", sheets:"../assets/apps/sheets.png" };
 const PROVIDERS = [
@@ -404,13 +416,15 @@ function renderGeneral(b){
   const tz = c.timezone || "America/Lima";
   const mon = c.moneda || "PEN";
   b.innerHTML=`
-    <h2>Ajustes generales</h2><p class="sub">Zona horaria y moneda de este canal.</p>
+    <h2>Ajustes generales</h2><p class="sub">País y moneda de este bot.</p>
     <div id="usoPanel"></div>
     <div class="card">
-      <div class="chd"><span class="ico" style="background:var(--brand-bg);color:var(--brand)">${IC.target}</span><span class="nm">Zona horaria</span></div>
-      <div class="desc">Define cuándo empieza y termina el día en todas las métricas, reportes y campañas programadas.</div>
-      <label>País / zona horaria</label>
-      <select class="in" id="g_tz" style="max-width:340px">${TIMEZONES.map(([v,l])=>`<option value="${v}" ${v===tz?"selected":""}>${l}</option>`).join("")}</select>
+      <div class="chd"><span class="ico" style="background:var(--brand-bg);color:var(--brand)">${IC.target}</span><span class="nm">País de tu negocio</span></div>
+      <div class="desc">De aquí sale la hora del bot: cuándo empieza el día en tus reportes, a qué hora sale el remarketing y la fecha de los comprobantes.</div>
+      <label>País</label>
+      <select class="in" id="g_pais" style="max-width:340px">${PAISES_TZ.map(([cd,fl,nm])=>`<option value="${cd}" ${cd===(paisDeZona(tz)||"")?"selected":""}>${fl} ${nm}</option>`).join("")}${paisDeZona(tz)?"":`<option value="" selected>🌎 Otra zona (${esc(tz)})</option>`}</select>
+      <div id="g_zonaBox" style="margin-top:12px"></div>
+      <div id="g_hora" style="margin-top:10px;font-size:12.5px;color:var(--muted)"></div>
     </div>
     <div class="card">
       <div class="chd"><span class="ico" style="background:var(--green-bg);color:var(--green)">${icon("dollar")}</span><span class="nm">Moneda</span></div>
@@ -428,6 +442,23 @@ function renderGeneral(b){
       </div>
     </div>
     <div class="acts"><button class="btn primary" id="saveGeneral">Guardar ajustes</button></div>`;
+  // La zona: la de la capital del país, o la que elija si su país tiene varias. Sin país reconocido, se queda la de antes.
+  let zonaElegida=tz;
+  const pintaZona=()=>{
+    const cd=$("g_pais").value, extra=ZONAS_EXTRA[cd]||[];
+    if(cd){ const cap=PAISES_TZ.find(p=>p[0]===cd)[3]; if(paisDeZona(zonaElegida)!==cd) zonaElegida=cap; }
+    $("g_zonaBox").innerHTML = extra.length>1
+      ? `<details ${zonaElegida!==extra[0][0]?"open":""}><summary style="cursor:pointer;font-size:12.5px;color:var(--brand);font-weight:600">¿Tu negocio está en otra zona horaria de ${esc(PAISES_TZ.find(p=>p[0]===cd)[2])}?</summary>
+          <select class="in" id="g_zona" style="max-width:340px;margin-top:8px">${extra.map(([z,l])=>`<option value="${z}" ${z===zonaElegida?"selected":""}>${esc(l)}</option>`).join("")}</select></details>`
+      : "";
+    const gz=$("g_zona"); if(gz) gz.onchange=()=>{ zonaElegida=gz.value; pintaHora(); };
+    pintaHora();
+  };
+  const pintaHora=()=>{
+    let h=""; try{ h=new Date().toLocaleTimeString("es-PE",{ timeZone:zonaElegida, hour:"numeric", minute:"2-digit" }); }catch(_){}
+    $("g_hora").innerHTML = h ? `🕐 Hora del bot ahora: <b>${esc(h)}</b>` : "";
+  };
+  $("g_pais").onchange=pintaZona; pintaZona();
   // El tipo de cambio solo tiene sentido si NO cobras en dólares.
   $("g_moneda").onchange=()=>{
     const m=$("g_moneda").value;
@@ -437,7 +468,7 @@ function renderGeneral(b){
   $("saveGeneral").onclick=async(e)=>{
     const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
     const tc=Number($("g_tc")?.value);
-    const patch={ timezone:$("g_tz").value, moneda:$("g_moneda").value,
+    const patch={ timezone:zonaElegida, moneda:$("g_moneda").value,
       usd_rate: ($("g_moneda").value!=="USD" && tc>0) ? +tc.toFixed(4) : null };
     let { error }=await updCanal(patch);
     // Si falta la columna del tipo de cambio (migración 0089 sin aplicar), se guarda

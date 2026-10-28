@@ -22,9 +22,14 @@ export const PAISES = [
   ["ES", "España", "🇪🇸", "EUR"], ["US", "Estados Unidos", "🇺🇸", "USD"], ["BR", "Brasil", "🇧🇷", "BRL"],
 ];
 const PAIS_DE_ZONA = {
-  "America/Lima": "PE", "America/Bogota": "CO", "America/Mexico_City": "MX", "America/Santiago": "CL",
+  "America/Lima": "PE", "America/Bogota": "CO", "America/Mexico_City": "MX", "America/Cancun": "MX", "America/Mazatlan": "MX",
+  "America/Hermosillo": "MX", "America/Tijuana": "MX", "America/Santiago": "CL", "America/Punta_Arenas": "CL",
   "America/Argentina/Buenos_Aires": "AR", "America/Guayaquil": "EC", "America/La_Paz": "BO", "America/Caracas": "VE",
-  "America/Santo_Domingo": "DO", "America/Guatemala": "GT", "America/New_York": "US", "Europe/Madrid": "ES",
+  "America/Asuncion": "PY", "America/Montevideo": "UY", "America/Costa_Rica": "CR", "America/Panama": "PA",
+  "America/Guatemala": "GT", "America/El_Salvador": "SV", "America/Tegucigalpa": "HN", "America/Managua": "NI",
+  "America/Santo_Domingo": "DO", "America/Puerto_Rico": "PR", "Europe/Madrid": "ES", "Atlantic/Canary": "ES",
+  "America/New_York": "US", "America/Chicago": "US", "America/Denver": "US", "America/Los_Angeles": "US",
+  "America/Sao_Paulo": "BR", "America/Manaus": "BR",
 };
 const SIMBOLO = { PEN: "S/", USD: "$", MXN: "$", COP: "$", ARS: "$", CLP: "$", BOB: "Bs", EUR: "€", BRL: "R$", UYU: "$U", PYG: "₲", VES: "Bs", GTQ: "Q", CRC: "₡", DOP: "RD$", HNL: "L", NIO: "C$", PAB: "B/." };
 export function paisInfo(c) { return PAISES.find((p) => p[0] === String(c || "").toUpperCase()) || null; }
