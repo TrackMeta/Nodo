@@ -319,6 +319,7 @@
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <button class="nodo-back" id="backBtn" style="margin-bottom:0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Volver a productos</button>
         <div style="display:flex;gap:10px;align-items:center">
+          <button class="btn" id="paisBtn" title="Vender este producto en otro país" style="display:none">🌎 Países</button>
           <button class="del-btn" id="delBtn" title="Eliminar producto" aria-label="Eliminar producto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M10 11v6M14 11v6"/></svg></button>
           <button class="btn primary" id="saveBtn">Guardar cambios</button>
         </div>
@@ -397,6 +398,15 @@ async function boot(){
   $("pSearch").oninput = renderCards;
   $("saveBtn").onclick = saveProduct;
   $("delBtn").onclick = deleteProduct;
+  // 🌎 Versiones por país (28-oct): ventana aparte, importada al hacer clic (?v= para no usar una copia vieja).
+  $("paisBtn").onclick = async()=>{
+    if(!st.prod) return;
+    if(isDirty && isDirty()){ toast("Primero guarda los cambios de este producto",true); return; }
+    try{
+      const m=await import("./version-pais.js?v=1");
+      m.abrirVersionesPais({ channelId:st.channelId, prod:st.prod, onAbrir:async(id)=>{ await loadProducts(); openProduct(id); } });
+    }catch(e){ toast("No se pudo abrir: recarga la página",true); }
+  };
   // 🔴 «Volver a productos» se saltaba el aviso de cambios sin guardar. Medido (2026-09-14):
   // cambié el costo del Adaptador PRO, pulsé este botón y volvió a la grilla SIN preguntar —
   // el cambio se perdió. Y no era que la bandera fallara: `isDirty()` devolvía true. El guard
@@ -727,7 +737,7 @@ function renderCards(){
       <div class="c-ic">${emIc}</div>
       <div class="c-tt">${esc(p.nombre)}</div>
       <div class="c-sub">${esReg(p)?"Regalo · gratis con la compra":esEx(p)?"Complemento · para ventas extra":(p.tipo==="fisico"?"Producto físico":p.tipo==="microapp"?"Micro app":"Producto digital")}</div>
-      <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">${icon("gift")} Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">${icon("plus")} Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":p.tipo==="microapp"?icon("phone")+"Micro app":icon("download")+"Digital"}</span><span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>${estadoHtml}`;
+      <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">${icon("gift")} Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">${icon("plus")} Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":p.tipo==="microapp"?icon("phone")+"Micro app":icon("download")+"Digital"}</span>${p.config&&p.config.pais?`<span class="nodo-pill neutral" title="Versión para ${esc(p.config.pais)}">${banderaDe(p.config.pais)} ${esc(p.config.pais)}</span>`:''}<span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>${estadoHtml}`;
     const fslot=el.querySelector("[data-cardfolder]");
     if(fslot && Fbar){
       const pk=Fbar.picker({ current:p.folder||null, onPick:async(v)=>{
@@ -915,6 +925,7 @@ function renderDetail(){
   const d=$("detail"); if(!st.prod) return;
   const esExtra = st.prod.clase==="extra";
   const esRegalo = st.prod.clase==="regalo";
+  { const pb=$("paisBtn"); if(pb){ pb.style.display=(esExtra||esRegalo)?"none":""; const pc=st.prod.config&&st.prod.config.pais; pb.textContent=pc?`${banderaDe(pc)} ${pc} · Países`:"🌎 Países"; } }
   const EXTRA_TABS=["inicio","producto","opciones","entrega","ia","stock"];
   // Un regalo NO se vende: no lleva "venta con IA", activación, ventas extra ni
   // remarketing. Solo qué es (producto) y qué entrega (opciones → Qué entrega).
@@ -1038,6 +1049,7 @@ const CURRENCIES=[
 // el producto nuevo aparecía «S/ · Perú — Sol» y la vista previa del saludo decía «S/ 100».
 let _monedaBot="PEN";
 function cargarMonedaBot(){ getChannel(st.channelId).then(d=>{ _monedaBot=(d&&d.moneda)||"PEN"; }).catch(()=>{}); }
+function banderaDe(c){ c=String(c||"").toUpperCase(); return /^[A-Z]{2}$/.test(c)?String.fromCodePoint(...[...c].map(x=>127397+x.charCodeAt(0))):"🌎"; }
 function curSym(cfg){ const cur=(cfg&&cfg.moneda)||_monedaBot||"PEN"; return (CURRENCIES.find(c=>c[0]===cur)||["","S/"])[1]; }
 const MODOS_ENVIO=[
   ["cliente","Envío lo paga el cliente al recibir (según la agencia)"],
@@ -3093,6 +3105,9 @@ function renderSalud(ready){
   const errs=[], warns=[];
   if(!ops.length) errs.push("El producto no tiene ninguna presentación activa.");
   if(!conPrecio.length) errs.push("Ninguna presentación tiene precio: el validador no puede saber cuánto debe pagar el cliente.");
+  // 🌎 La versión de otro país sin sus medios de pago cobraría con los del bot (el Yape de Perú a un mexicano).
+  { const c=st.prod.config||{}; if(c.hermano_de && c.pais && !((c.pago_propio&&c.pago_propio.metodos)||[]).length)
+    errs.push(`Es la versión para ${banderaDe(c.pais)} ${esc(c.pais)}: ponle sus <b>medios de pago propios</b> (Venta con IA → Avanzado). Sin ellos cobraría con los del bot.`); }
   // 📱 Micro app: no entrega links, entrega un ACCESO — lo que no puede faltar es la conexión con la app.
   if(st.prod.tipo==="microapp"){ if(!String(st.prod.config?.microapp?.conexion?.url||"").trim()) errs.push("La app no está conectada: pon su link en «Correo, renovación y conexión». El cliente pagaría y no tendría a dónde entrar."); }
   else if(!fisico){
@@ -3465,6 +3480,7 @@ const EN_VIVO_HASTA_1025 = new Set([
 ]);
 const CONTENIDO_EN_VIVO = new Set([
   "microapp", "pago_propio",   // (pago_propio, 25-oct: lo leen en vivo el bloque de pago y el validador)
+  "pais", "hermano_de",   // (28-oct: versiones por país — las lee el ruteo, no el flujo)
   "contexto_producto","ia","ia_multimedia","faq","faq_items","objeciones","objeciones_items",
   // (entrega_mensaje NO va acá: el generador lo COPIA al nodo «entregar» y el motor lee el del
   // nodo, así que cambiarlo tiene que regenerar el flujo — antes el cliente seguía recibiendo el viejo.)

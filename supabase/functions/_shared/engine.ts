@@ -1230,6 +1230,25 @@ async function runEngineInner(
         }
       } catch (e) { console.error("[ruteo/memoria]", (e as any)?.message ?? e); }
     }
+    // 🌎 La versión del producto para SU país (si el producto tiene hermanos por país). Ver versionDelPais.
+    if (event.type === "message") {
+      try {
+        const _vp = await versionDelPais(db, channelId, contactId, flow, String(decision.tier ?? ""), String(event.text ?? ""));
+        if (_vp.preguntar) {
+          await logEvent(db, channelId, contactId, "nota", "🌎 Le preguntamos su país", "Llegó sin número y sin anuncio: la versión depende de su país").catch(() => {});
+          return;
+        }
+        if (_vp.flow && String(_vp.flow.id) !== String(flow?.id ?? "")) {
+          await logEvent(db, channelId, contactId, "nota", "🌎 Versión de su país",
+            `${_vp.pais ?? "?"} (${_vp.motivo ?? ""}) → ${_vp.flow.nombre ?? ""}`).catch(() => {});
+          // La respuesta «México» no es una pregunta ni la palabra clave: que arranque el saludo y nada más.
+          if (!flow) decision = { ...decision, tier: "pais" as any, flow: _vp.flow } as RouteResult;
+          flow = _vp.flow;
+        } else if (_vp.pais && _vp.motivo !== "ya lo sabíamos") {
+          await logEvent(db, channelId, contactId, "nota", "🌎 País del cliente", `${_vp.pais} (${_vp.motivo ?? ""})`).catch(() => {});
+        }
+      } catch (e) { console.error("[pais]", (e as any)?.message ?? e); }
+    }
     let reinyectarTrasArranque = false;
     let _saludoRecien = "";
     // ❓ SU PRIMER MENSAJE TRAE UNA PREGUNTA. El saludo de "Mensajes iniciales" es fijo y no
@@ -1442,6 +1461,19 @@ async function runEngineInner(
           .select("id, nombre, estado").eq("id", recFlowId).eq("channel_id", channelId).maybeSingle();
         if (fRec && (fRec as any).estado === "activo") {
           flow = { id: (fRec as any).id, nombre: (fRec as any).nombre };
+          // 🌎 …a la versión de su país (la Recepción solo ve el original).
+          try {
+            const _vpR = await versionDelPais(db, channelId, contactId, flow, "recepcion", String(event.text ?? ""));
+            if (_vpR.preguntar) {
+              await logEvent(db, channelId, contactId, "nota", "🌎 Le preguntamos su país", "Llegó sin número y sin anuncio: la versión depende de su país").catch(() => {});
+              return;
+            }
+            if (_vpR.flow && String(_vpR.flow.id) !== String(flow.id)) {
+              await logEvent(db, channelId, contactId, "nota", "🌎 Versión de su país",
+                `${_vpR.pais ?? "?"} (${_vpR.motivo ?? ""}) → ${_vpR.flow.nombre ?? ""}`).catch(() => {});
+              flow = _vpR.flow;
+            }
+          } catch (e) { console.error("[pais/recepcion]", (e as any)?.message ?? e); }
           if (_unico) {
             await logEvent(db, channelId, contactId, "nota", "🎯 Un solo producto: directo a la venta",
               `No se pasó por la Recepción — el catálogo entero es «${(fRec as any).nombre}».`).catch(() => {});
@@ -3857,6 +3889,11 @@ async function flowPorAnuncio(db: SupabaseClient, channelId: string, adId?: stri
       }
     }
     if (!productId) return null;
+    return await flowDeEntrada(db, channelId, productId);
+  } catch (_) { return null; }
+}
+async function flowDeEntrada(db: SupabaseClient, channelId: string, productId: string): Promise<{ id: string; nombre?: string } | null> {
+  try {
     // El flujo de ENTRADA de ese producto (el que arranca la venta): un flow ACTIVO
     // del producto que sea punto de entrada (trigger keyword/entrada/referral). El
     // `.eq("activo", true)` faltaba (a diferencia de matchTrigger/receptionCands) → un
@@ -3877,6 +3914,145 @@ async function flowPorAnuncio(db: SupabaseClient, channelId: string, adId?: stri
     const fl = ((fls ?? []) as any[]).find((f) => f.role === "mensajes_iniciales") ?? ((fls ?? []) as any[]).find((f) => f.role === "venta");
     return fl ? { id: fl.id, nombre: fl.nombre } : null;
   } catch (_) { return null; }
+}
+
+// ═══ 🌎 VERSIONES DEL PRODUCTO POR PAÍS (28-oct) ═══════════════════════════════════════════════
+// Un mismo producto se vende en varios países como productos HERMANOS: la copia de otro país lleva
+// `config.pais` (ISO, «MX») y `config.hermano_de` (el id del original). Cada hermano cobra con SU
+// moneda, SUS precios y SUS medios de pago — caminos ya probados (México y Colombia, 26-oct) —, así
+// que el cobro no se toca: acá solo se elige A CUÁL hermano entra el cliente.
+// Su país: el anuncio (cada anuncio está asignado a la versión de su país) → el que ya sabíamos
+// (campo «pais») → el código de su número → si no hay número (nombre de usuario), se le PREGUNTA
+// (decisión de Rodrigo, 28-oct). Un producto sin hermanos no cambia en nada.
+const PREFIJOS_PAIS: Array<[string, string]> = [
+  ["1809", "DO"], ["1829", "DO"], ["1849", "DO"], ["1787", "PR"], ["1939", "PR"],
+  ["591", "BO"], ["593", "EC"], ["595", "PY"], ["598", "UY"], ["502", "GT"], ["503", "SV"], ["504", "HN"],
+  ["505", "NI"], ["506", "CR"], ["507", "PA"],
+  ["51", "PE"], ["52", "MX"], ["53", "CU"], ["54", "AR"], ["55", "BR"], ["56", "CL"], ["57", "CO"], ["58", "VE"],
+  ["34", "ES"], ["1", "US"],
+];
+export function paisDelTelefono(tel: unknown): string | null {
+  const d = String(tel ?? "").replace(/\D/g, "");
+  if (d.length < 8) return null;
+  for (const [p, c] of PREFIJOS_PAIS) if (d.startsWith(p)) return c;
+  return null;
+}
+// El país del bot cuando el producto no dice el suyo: el de su zona horaria (Ajustes → General).
+const PAIS_DE_ZONA: Record<string, string> = {
+  "America/Lima": "PE", "America/Bogota": "CO", "America/Mexico_City": "MX", "America/Santiago": "CL",
+  "America/Argentina/Buenos_Aires": "AR", "America/Guayaquil": "EC", "America/La_Paz": "BO", "America/Caracas": "VE",
+  "America/Santo_Domingo": "DO", "America/Guatemala": "GT", "America/New_York": "US", "Europe/Madrid": "ES",
+};
+// Lo que contesta a «¿desde qué país nos escribes?». Sin tildes ni mayúsculas (se normaliza antes).
+const PAISES_TEXTO: Array<[string, RegExp]> = [
+  ["PE", /\b(peru|peruan[oa]s?|lima|arequipa|trujillo|cusco|piura|chiclayo)\b/],
+  ["MX", /\b(mexico|mexican[oa]s?|cdmx|monterrey|guadalajara|puebla|tijuana)\b/],
+  ["CO", /\b(colombia|colombian[oa]s?|bogota|medellin|cali|barranquilla|cartagena)\b/],
+  ["CL", /\b(chile|chilen[oa]s?)\b/],
+  ["AR", /\b(argentina|argentin[oa]s?|buenos aires|rosario)\b/],
+  ["EC", /\b(ecuador|ecuatorian[oa]s?|quito|guayaquil)\b/],
+  ["BO", /\b(bolivia|bolivian[oa]s?|la paz|santa cruz de la sierra|cochabamba)\b/],
+  ["VE", /\b(venezuela|venezolan[oa]s?|caracas|maracaibo)\b/],
+  ["PY", /\b(paraguay|paraguay[oa]s?|asuncion)\b/],
+  ["UY", /\b(uruguay|uruguay[oa]s?|montevideo)\b/],
+  ["CR", /\b(costa rica|costarricense)\b/],
+  ["PA", /\b(panama|panamen[oa]s?)\b/],
+  ["GT", /\b(guatemala|guatemaltec[oa]s?)\b/],
+  ["SV", /\b(el salvador|salvadoren[oa]s?)\b/],
+  ["HN", /\b(honduras|hondure[n][oa]s?|tegucigalpa)\b/],
+  ["NI", /\b(nicaragua|nicaraguense|managua)\b/],
+  ["DO", /\b(republica dominicana|dominican[oa]s?|santo domingo)\b/],
+  ["PR", /\b(puerto rico|puertorrique[n][oa]s?|boricua)\b/],
+  ["CU", /\b(cuba|cuban[oa]s?|la habana)\b/],
+  ["ES", /\b(espana|madrid|barcelona)\b/],
+  ["US", /\b(estados unidos|eeuu|ee uu|usa|miami|nueva york|new york)\b/],
+  ["BR", /\b(brasil|brasilen[oa]s?|sao paulo)\b/],
+];
+export function paisDeTexto(txt: unknown): string | null {
+  const t = String(txt ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[.]/g, " ");
+  let mejor: { c: string; i: number; vive: boolean } | null = null;
+  for (const [c, re] of PAISES_TEXTO) {
+    const m = re.exec(t);
+    if (!m) continue;
+    // «soy peruano pero VIVO EN México»: para cobrarle importa dónde está, no de dónde es.
+    const vive = /\b(vivo|estoy|radico|resido|desde|ahorita en|ahora en)\b[^.,;]{0,12}$/.test(t.slice(0, m.index));
+    if (!mejor || (vive && !mejor.vive) || (vive === mejor.vive && m.index < mejor.i)) mejor = { c, i: m.index, vive };
+  }
+  return mejor?.c ?? null;
+}
+const PREGUNTA_PAIS = "¡Hola! 😊 ¿Desde qué país nos escribes? Así te paso el precio en tu moneda.";
+async function leerCampoContacto(db: SupabaseClient, contactId: string, key: string): Promise<string> {
+  try {
+    const { data } = await db.from("contact_field_values").select("value, custom_fields!inner(key)")
+      .eq("contact_id", contactId).eq("custom_fields.key", key).maybeSingle();
+    return String((data as any)?.value ?? "").trim();
+  } catch (_) { return ""; }
+}
+// La familia de hermanos del producto de ese flujo y el país de cada uno. null = el producto no tiene
+// hermanos (lo normal): nada que elegir.
+async function familiaPorPais(db: SupabaseClient, channelId: string, flowId: string):
+  Promise<{ productId: string; baseId: string; miembros: Array<{ id: string; pais: string }> } | null> {
+  const { data: fl } = await db.from("flows").select("product_id").eq("id", flowId).maybeSingle();
+  const productId = String((fl as any)?.product_id ?? "");
+  if (!productId) return null;
+  const { data: prods } = await db.from("products").select("id, config").eq("channel_id", channelId);
+  const lista = (prods ?? []) as any[];
+  const yo = lista.find((p) => String(p.id) === productId);
+  if (!yo) return null;
+  const base = String(yo.config?.hermano_de || yo.id);
+  const fam = lista.filter((p) => String(p.id) === base || String(p.config?.hermano_de ?? "") === base);
+  if (fam.length < 2) return null;
+  let paisBot = "PE";
+  try { const { data: ch } = await db.from("channels").select("timezone").eq("id", channelId).maybeSingle(); paisBot = PAIS_DE_ZONA[String((ch as any)?.timezone ?? "")] ?? "PE"; } catch (_) { /* PE */ }
+  // El original sin `pais` es del país del bot; una copia sin país elegido no compite (no se sabe de dónde es).
+  const miembros = fam.filter((p) => String(p.id) === base || p.config?.pais)
+    .map((p) => ({ id: String(p.id), pais: String(p.config?.pais || paisBot).toUpperCase() }));
+  if (miembros.length < 2 || !miembros.some((m) => m.id === base)) return null;
+  return { productId, baseId: base, miembros };
+}
+// Decide a qué versión entra. `preguntar` = se le mandó la pregunta del país y hay que esperar su respuesta.
+async function versionDelPais(
+  db: SupabaseClient, channelId: string, contactId: string,
+  flow: { id: string; nombre?: string } | null, tier: string, texto: string,
+): Promise<{ flow: { id: string; nombre?: string } | null; pais?: string; preguntar?: boolean; motivo?: string }> {
+  // ¿Le habíamos preguntado de qué país es? Su respuesta decide (aunque «México» suelto no rutee a nada).
+  const pend = await leerCampoContacto(db, contactId, "_pais_pendiente");
+  let flowId = flow?.id ? String(flow.id) : "";
+  let pais = "";
+  let motivo = "";
+  if (pend) {
+    await setField(db, channelId, contactId, "_pais_pendiente", null).catch(() => {});
+    const dijo = paisDeTexto(texto);
+    // Si lo que escribió ahora rutea a OTRO producto, manda eso; si no, sigue el que lo trajo.
+    if (!flowId || tier === "ia" || tier === "none") flowId = pend;
+    if (dijo) { pais = dijo; motivo = "lo dijo"; }
+  }
+  if (!flowId) return { flow };
+  const fam = await familiaPorPais(db, channelId, flowId);
+  if (!fam) return { flow: flowId === String(flow?.id ?? "") ? flow : { id: flowId } };
+  const mio = fam.miembros.find((m) => m.id === fam.productId);
+  if (!mio) return { flow: flowId === String(flow?.id ?? "") ? flow : { id: flowId } };
+  // El anuncio ya es de un país: cada anuncio se asigna a la versión de su país.
+  if (!pais && (tier === "anuncio" || tier === "referral")) { pais = mio.pais; motivo = "anuncio"; }
+  if (!pais) { pais = (await leerCampoContacto(db, contactId, "pais")).toUpperCase(); if (pais) motivo = "ya lo sabíamos"; }
+  if (!pais) {
+    const { data: c } = await db.from("contacts").select("telefono").eq("id", contactId).maybeSingle();
+    const p = paisDelTelefono((c as any)?.telefono);
+    if (p) { pais = p; motivo = "su número"; }
+  }
+  if (!pais && !pend) {
+    // Sin número (nombre de usuario) y sin anuncio: se le pregunta antes de darle un precio.
+    await setField(db, channelId, contactId, "_pais_pendiente", flowId);
+    await deliverMessage(db, channelId, contactId, PREGUNTA_PAIS).catch(() => {});
+    return { flow: null, preguntar: true };
+  }
+  // Su país tiene versión → esa. Si no (un chileno cuando solo hay Perú y México) o no contestó un país
+  // reconocible → el ORIGINAL, el del país del bot.
+  const elegido = fam.miembros.find((m) => m.pais === pais) ?? fam.miembros.find((m) => m.id === fam.baseId)!;
+  if (pais) await setField(db, channelId, contactId, "pais", pais).catch(() => {});
+  if (!elegido || elegido.id === fam.productId) return { flow: { id: flowId, nombre: flow?.nombre }, pais, motivo };
+  const otro = await flowDeEntrada(db, channelId, elegido.id);
+  return otro ? { flow: otro, pais, motivo } : { flow: { id: flowId, nombre: flow?.nombre }, pais, motivo };
 }
 
 // Español del cliente: acá se le escribe a peruanos, de TÚ. Los modelos se van solos al
@@ -4012,7 +4188,9 @@ async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ 
       }
     }
   } catch (_) { /* sin precios → como antes */ }
-  return [...flows.values()].map((f) => {
+  // 🌎 Las versiones de OTRO país de un producto no se ofrecen aparte: es el mismo producto (al
+  // encaminarlo, versionDelPais lo pasa a la de su país). Si no, la Recepción listaba «Reto» dos veces.
+  return [...flows.values()].filter((f) => !(f.product_id && (prods.get(f.product_id) as any)?.config?.hermano_de)).map((f) => {
     const p = f.product_id ? prods.get(f.product_id) : null;
     const c = (p as any)?.config ?? {};
     // `ia.detalle` (lo que ES el producto) antes que `contexto_producto`: en la Plantilla ese arranca con «## Objeciones
