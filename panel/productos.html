@@ -3339,7 +3339,7 @@ async function generarFlujoFisico(flowId, N, E){
     // 📏 Corto (Rodrigo, 2026-10-01: «el mensaje del adelanto es largo»): cinco bloques en vez de ocho. La
     // captura y el saldo van en un párrafo; la promesa de despacho y el plazo, en otro (el motor ya los
     // junta también en los flujos viejos). «Me los pagas POR ACÁ»: el saldo se paga a nosotros, no en el mostrador.
-    bubbles:[{ text:"¡Perfecto! 🙌 Para mandártelo, solo necesito un adelanto de *"+curSym(st.prod&&st.prod.config)+" {{adelanto}}*:\n\n{{datos_pago}}\n\nMándame la captura y lo verifico al toque. Los *"+curSym(st.prod&&st.prod.config)+" {{saldo}}* restantes me los pagas por acá cuando ya esté en la agencia, y ahí te paso tu clave para recogerlo.\n\n{{promesa_despacho}} {{demora_provincia_linea}}" }],
+    bubbles:[{ text:"¡Perfecto! 🙌 Para mandártelo, solo necesito un adelanto de *"+curSym(st.prod&&st.prod.config)+" {{adelanto}}*:\n\n{{datos_pago}}\n\nMándame la captura y lo verifico enseguida. Los *"+curSym(st.prod&&st.prod.config)+" {{saldo}}* restantes me los pagas por acá cuando ya esté en la agencia, y ahí te paso tu clave para recogerlo.\n\n{{promesa_despacho}} {{demora_provincia_linea}}" }],
   },false,1520,640);
   // ¿El cliente YA pagó el adelanto ANTES de dar sus datos? El motor lo enganchó
   // al crear el pedido (engancharPrepagoAdelanto) y marcó `adelanto_prepagado`. Si
@@ -3737,7 +3737,7 @@ async function generarFlujoVenta(skipConfirm){
       // ("envíame uno nuevo") le pedía justo reenviar el mismo. El cliente quedaba sin
       // saber si su pago entró ni qué hacer, y eso es plata. Así funciona en los tres
       // casos: motivo escueto del OCR, abono parcial y comprobante ya usado.
-      bubbles:[{ text:"{{pago_resultado_intro}}\n\n{{pago_resultado_motivo}}\n\nCualquier duda, dime nomás. 🙂" }],
+      bubbles:[{ text:"{{pago_resultado_intro}}\n\n{{pago_resultado_motivo}}\n\nCualquier duda, me dices. 🙂" }],
     },false,960,340);
 
     await E(nVender,"exito",nEsperar);
