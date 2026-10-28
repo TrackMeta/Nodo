@@ -3985,6 +3985,28 @@ export function paisDeTexto(txt: unknown): string | null {
   }
   return mejor?.c ?? null;
 }
+// 🌎 Lo que NO es «otro producto» para un cliente de esta versión: sus hermanos (el mismo producto en otro país,
+// con el mismo nombre y la misma palabra clave) y los productos de otros países. Sin versiones por país en el bot →
+// vacío (nada cambia). Lo usan el cambio de producto por palabra clave, el combo y los bloques «Otros productos»:
+// sin esto, la palabra clave compartida pasaba al cliente de México a la versión de Colombia a mitad de la venta.
+async function ocultosPorPais(db: SupabaseClient, channelId: string, productId: unknown): Promise<Set<string>> {
+  const out = new Set<string>();
+  const pid = String(productId ?? "");
+  if (!pid) return out;
+  try {
+    const { data } = await db.from("products").select("id, config").eq("channel_id", channelId);
+    const lista = (data ?? []) as any[];
+    if (!lista.some((x) => x?.config?.hermano_de || x?.config?.pais)) return out;
+    const yo = lista.find((x) => String(x.id) === pid);
+    const miPais = String(yo?.config?.pais ?? "");
+    const miBase = String(yo?.config?.hermano_de || pid);
+    for (const x of lista) {
+      if (String(x.id) === pid) continue;
+      if (String(x.config?.hermano_de || x.id) === miBase || String(x.config?.pais ?? "") !== miPais) out.add(String(x.id));
+    }
+  } catch (_) { /* sin lista → no se oculta nada */ }
+  return out;
+}
 const PREGUNTA_PAIS = "¡Hola! 😊 ¿Desde qué país nos escribes? Así te paso el precio en tu moneda.";
 async function leerCampoContacto(db: SupabaseClient, contactId: string, key: string): Promise<string> {
   try {
@@ -16373,11 +16395,13 @@ async function resetItemFields(db: SupabaseClient, channelId: string, contactId:
 async function otroProductoPorKeyword(db: SupabaseClient, channelId: string, text: string, actualProductId: string | null): Promise<string | null> {
   try {
     if (!text || !text.trim()) return null;
+    const _ocultos = await ocultosPorPais(db, channelId, actualProductId);   // 🌎 sus versiones de otro país no son «otro»
     const det = await matchTrigger(db, channelId, text, undefined);
     const fid = (det?.flow as any)?.id;
     if (det?.flow && (det.tier === "keyword" || det.tier === "referral") && fid) {
       const { data: fr } = await db.from("flows").select("product_id").eq("id", fid).maybeSingle();
       const pid = (fr as any)?.product_id;
+      if (pid && _ocultos.has(String(pid))) return null;   // su misma palabra clave: sigue en la suya
       if (pid && pid !== actualProductId) return pid; // otro producto del catálogo
     }
     // 🏷️ Por el NOMBRE del producto, también determinista. La palabra clave del anuncio es
@@ -16395,7 +16419,8 @@ async function otroProductoPorKeyword(db: SupabaseClient, channelId: string, tex
     // por debajo tiraba la venta abierta y la IA inventó «S/20 total por ambos» (M-mdosprod-1).
     // Se queda en el que estaba; el bloque «Otros productos» ya le deja contar del otro.
     if (/\b(tambi[eé]n|adem[aá]s|ambos|ambas|los dos|las dos|junto (con|al|a la))\b/i.test(_norm(text))) return null;
-    const { data: prods } = await db.from("products").select("id, nombre").eq("channel_id", channelId);
+    const { data: _prods0 } = await db.from("products").select("id, nombre").eq("channel_id", channelId);
+    const prods = ((_prods0 ?? []) as any[]).filter((x) => !_ocultos.has(String(x?.id)));
     const cand: string[] = [];
     for (const p of (prods ?? []) as any[]) {
       if (!p?.id || p.id === actualProductId) continue;
@@ -22603,8 +22628,10 @@ async function catalogoDigital(db: SupabaseClient, run: Run): Promise<Array<{ id
       .select("product_id, products!inner(id, nombre, tipo, clase)")
       .eq("channel_id", run.channel_id).eq("role", "venta").eq("estado", "activo");
     const vistos = new Set<string>();
+    let _ocultos = new Set<string>();
+    try { const { data: _fr } = await db.from("flows").select("product_id").eq("id", run.flow_id).maybeSingle(); _ocultos = await ocultosPorPais(db, run.channel_id, (_fr as any)?.product_id); } catch (_) { /* nada que ocultar */ }
     const prods = ((fl ?? []) as any[]).map((f) => f.products)
-      .filter((p) => p && tipoDigital(p.tipo) && p.clase !== "extra" && p.clase !== "regalo" && !vistos.has(p.id) && vistos.add(p.id));
+      .filter((p) => p && tipoDigital(p.tipo) && p.clase !== "extra" && p.clase !== "regalo" && !_ocultos.has(String(p.id)) && !vistos.has(p.id) && vistos.add(p.id));
     if (prods.length) {
       const { data: vs } = await db.from("product_versions").select("id, product_id, nombre, precio, config")
         .in("product_id", prods.map((p) => String(p.id))).eq("activo", true).order("orden");
@@ -25393,8 +25420,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           .select("product_id, products!inner(id, nombre, emoji, clase, tipo, config)")
           .eq("channel_id", run.channel_id).eq("role", "venta").eq("estado", "activo").neq("product_id", String(ctx._product_id));
         const _vistosP = new Set<string>();
+        const _ocultosP = await ocultosPorPais(db, run.channel_id, ctx._product_id);   // 🌎
         const _otros = (_otrosF ?? []).map((f: any) => f.products).filter((p: any) =>
-          p && p.clase !== "extra" && p.clase !== "regalo" && !_vistosP.has(p.id) && _vistosP.add(p.id));
+          p && p.clase !== "extra" && p.clase !== "regalo" && !_ocultosP.has(String(p.id)) && !_vistosP.has(p.id) && _vistosP.add(p.id));
         if (_otros.length) {
           // 💵 Con su PRECIO real (de sus presentaciones): «quiero la plantilla y el curso, ¿cuánto es
           // todo?» se quedaba sin el precio del curso y sin total porque el bloque lo prohibía
@@ -26642,8 +26670,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           .select("config, flows:flow_id(estado, product_id, products:product_id(nombre))")
           .eq("channel_id", run.channel_id).eq("tipo", "keyword").eq("activo", true);
         const vistos = new Set<string>(); const nombres: string[] = [];
+        const _ocultosL = await ocultosPorPais(db, run.channel_id, ctx._product_id);   // 🌎
         for (const t of (trs ?? []) as any[]) {
           const f = t?.flows; if (!f || f.estado !== "activo") continue;
+          if (_ocultosL.has(String(f.product_id ?? ""))) continue;
           const nom = String(f?.products?.nombre ?? "").trim();
           if (!nom || !f.product_id || vistos.has(f.product_id)) continue;
           vistos.add(f.product_id);
