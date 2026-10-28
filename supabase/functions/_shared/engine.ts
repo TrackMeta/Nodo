@@ -4012,6 +4012,15 @@ async function ocultosPorPais(db: SupabaseClient, channelId: string, productId: 
   } catch (_) { /* sin lista → no se oculta nada */ }
   return out;
 }
+// La hora de cada país (la de su capital), para las versiones por país. Ver tzDe.
+const ZONA_DE_PAIS: Record<string, string> = {
+  PE: "America/Lima", MX: "America/Mexico_City", CO: "America/Bogota", CL: "America/Santiago",
+  AR: "America/Argentina/Buenos_Aires", EC: "America/Guayaquil", BO: "America/La_Paz", VE: "America/Caracas",
+  PY: "America/Asuncion", UY: "America/Montevideo", CR: "America/Costa_Rica", PA: "America/Panama",
+  GT: "America/Guatemala", SV: "America/El_Salvador", HN: "America/Tegucigalpa", NI: "America/Managua",
+  DO: "America/Santo_Domingo", PR: "America/Puerto_Rico", ES: "Europe/Madrid", US: "America/New_York", BR: "America/Sao_Paulo",
+};
+export function zonaDePais(c: unknown): string | null { return ZONA_DE_PAIS[String(c ?? "").toUpperCase()] ?? null; }
 const PREGUNTA_PAIS = "¡Hola! 😊 ¿Desde qué país nos escribes? Así te paso el precio en tu moneda.";
 async function leerCampoContacto(db: SupabaseClient, contactId: string, key: string): Promise<string> {
   try {
@@ -11389,6 +11398,13 @@ async function tzDe(db: SupabaseClient, run: any): Promise<string> {
   if (run._tz) return run._tz;
   try { const { data } = await db.from("channels").select("timezone").eq("id", run.channel_id).maybeSingle(); run._tz = (data as any)?.timezone || "America/Lima"; }
   catch (_) { run._tz = "America/Lima"; }
+  // 🌎 (28-oct) Con el cliente manda la hora de SU país: la versión de México de un producto usa la de México
+  // (comprobantes, «hoy/mañana», fechas). Lo que es del dueño (reportes, avisos) sigue con la del bot.
+  try {
+    const { data: fr } = await db.from("flows").select("products(config)").eq("id", run.flow_id).maybeSingle();
+    const z = zonaDePais((fr as any)?.products?.config?.pais);
+    if (z) run._tz = z;
+  } catch (_) { /* la del bot */ }
   return run._tz;
 }
 
@@ -14310,7 +14326,10 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
     const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
     if (ai?.api_key) {
       const { data: ch } = await db.from("channels").select("ocr_config, moneda, timezone").eq("id", channelId).maybeSingle();
-      if (ch) (ch as any).ocr_config = ocrConPropios((ch as any).ocr_config, await metodosPropios(db, await productoDelContacto(db, contactId)));   // 💳 (25-oct) medios propios del producto
+      const _pidS = await productoDelContacto(db, contactId);
+      if (ch) (ch as any).ocr_config = ocrConPropios((ch as any).ocr_config, await metodosPropios(db, _pidS));   // 💳 (25-oct) medios propios del producto
+      // 🌎 (28-oct) …y la hora de su país (la versión de México valida la fecha con la hora de México).
+      try { if (ch && _pidS) { const { data: _pS } = await db.from("products").select("config").eq("id", _pidS).maybeSingle(); const _zS = zonaDePais((_pS as any)?.config?.pais); if (_zS) (ch as any).timezone = _zS; } } catch (_) { /* la del bot */ }
       const sys = (buildOcrSystem((ch as any)?.ocr_config, null, (ch as any)?.moneda ?? null, false, (ch as any)?.timezone)
         ?? ocrSystemMinimo((ch as any)?.timezone)) +
         "\n\nDevuelve SOLO un JSON con: es_pago, valido, monto, moneda, operacion, fecha, destinatario, destino, motivo y texto_visible. " +

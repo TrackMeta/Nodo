@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
-import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, aplicarStock, soloAnunciosBloquea, pasarAHumano, esOptOut, canalActivo, botEncendido } from "../_shared/engine.ts";
+import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, aplicarStock, soloAnunciosBloquea, pasarAHumano, esOptOut, canalActivo, botEncendido, zonaDePais } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 import { simboloMoneda } from "../_shared/moneda.ts";
 import { esRechazoTemporal } from "../_shared/meta.ts";
@@ -750,7 +750,7 @@ async function yaCompro(contactId: string, productId: string | string[] | null):
 // (spam a un comprador de A, o baja de un lead vivo de A por comprar B). Cacheado por tick.
 // Si la secuencia no mapea a ningún producto (general/legacy/enroll manual) → null → yaCompro
 // cae al veto GLOBAL (cualquier compra firme), que es el fallback seguro (no spamear).
-const prodSeqCache = new Map<string, Array<{ id: string; seqs: Set<string> }>>();
+const prodSeqCache = new Map<string, Array<{ id: string; seqs: Set<string>; pais?: string }>>();
 async function productoDeSecuencia(channelId: string, sequenceId: string): Promise<string | null> {
   try {
     if (!sequenceId) return null;
@@ -763,12 +763,20 @@ async function productoDeSecuencia(channelId: string, sequenceId: string): Promi
         const map = (cfg.remarketing_seqs && typeof cfg.remarketing_seqs === "object") ? cfg.remarketing_seqs : {};
         for (const v of Object.values(map)) if (v) seqs.add(String(v));
         if (cfg.remarketing_seq_id) seqs.add(String(cfg.remarketing_seq_id));
-        return { id: p.id as string, seqs };
+        return { id: p.id as string, seqs, pais: cfg.pais ? String(cfg.pais) : undefined };
       });
       prodSeqCache.set(channelId, prods);
     }
     const hit = prods.find((p) => p.seqs.has(String(sequenceId)));
     return hit ? hit.id : null;
+  } catch (_) { return null; }
+}
+// 🌎 (28-oct) La hora del país de la secuencia: la de la versión de México sale con la hora de México. null = la del bot.
+async function zonaDeSecuencia(channelId: string, sequenceId: string): Promise<string | null> {
+  try {
+    await productoDeSecuencia(channelId, sequenceId);   // llena la caché
+    const hit = (prodSeqCache.get(channelId) ?? []).find((p) => p.seqs.has(String(sequenceId)) && p.pais);
+    return hit ? zonaDePais(hit.pais) : null;
   } catch (_) { return null; }
 }
 // TODOS los productos que comparten una secuencia (Guia Experta: los tres apuntan a la misma
@@ -784,7 +792,7 @@ async function productosDeSecuencia(channelId: string, sequenceId: string): Prom
 // Horario permitido del remarketing (hora local del negocio). Sin configurar,
 // se manda a cualquier hora (lo de antes). Cacheado por tick.
 const horarioCache = new Map<string, any>();
-async function enHorario(channelId: string): Promise<boolean> {
+async function enHorario(channelId: string, tzCliente?: string | null): Promise<boolean> {
   try {
     let cfg = horarioCache.get(channelId);
     if (cfg === undefined) {
@@ -800,7 +808,7 @@ async function enHorario(channelId: string): Promise<boolean> {
     // que el canal se quedaba con un horario que el dueño VE apagado y el remarketing se callaba de
     // noche sin que nadie lo hubiera pedido. Manda lo que muestra la pantalla.
     if (!r || r.activo !== true || !r.desde || !r.hasta) return true; // sin restricción
-    const tz = cfg?.timezone || "America/Lima";
+    const tz = tzCliente || cfg?.timezone || "America/Lima";
     const hhmm = new Intl.DateTimeFormat("es-PE", {
       timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false,
     }).format(new Date()).replace(/^24/, "00"); // ICU a veces da "24:xx" a medianoche → "00:xx"
@@ -815,7 +823,7 @@ async function enHorario(channelId: string): Promise<boolean> {
 
 // Minutos que faltan para que ABRA el horario de remarketing de este canal (null si el canal
 // no tiene horario configurado). Reusa el mismo caché por tick que `enHorario`.
-async function minutosHastaApertura(channelId: string): Promise<number | null> {
+async function minutosHastaApertura(channelId: string, tzCliente?: string | null): Promise<number | null> {
   try {
     let cfg = horarioCache.get(channelId);
     if (cfg === undefined) {
@@ -825,7 +833,7 @@ async function minutosHastaApertura(channelId: string): Promise<number | null> {
     }
     const r = cfg?.remarketing;
     if (!r || r.activo !== true || !r.desde) return null;   // mismo criterio que enHorario
-    const tz = cfg?.timezone || "America/Lima";
+    const tz = tzCliente || cfg?.timezone || "America/Lima";
     const hhmm = new Intl.DateTimeFormat("es-PE", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false })
       .format(new Date()).replace(/^24/, "00");
     const aMin = (s: string) => {
@@ -981,8 +989,9 @@ async function processSub(s: any, now: number): Promise<boolean> {
   // necesitaban porque salen desparramadas solas... salvo después de la noche, que es cuando
   // se amontonan. Con el desfase, la misma tanda se reparte a lo largo de tres cuartos de
   // hora y cada cliente recibe su mensaje a una hora distinta, que además parece más humano.
-  if (!await enHorario(s.channel_id)) {
-    const falta = await minutosHastaApertura(s.channel_id);
+  const _tzSeq = await zonaDeSecuencia(s.channel_id, s.sequence_id);   // 🌎 la versión de otro país, con su hora
+  if (!await enHorario(s.channel_id, _tzSeq)) {
+    const falta = await minutosHastaApertura(s.channel_id, _tzSeq);
     const desfase = Math.floor(Math.random() * 45);
     await posponer(s.id, ((falta ?? 20) + desfase) * 60_000);
     return false;

@@ -419,8 +419,8 @@ function renderGeneral(b){
     <h2>Ajustes generales</h2><p class="sub">País y moneda de este bot.</p>
     <div id="usoPanel"></div>
     <div class="card">
-      <div class="chd"><span class="ico" style="background:var(--brand-bg);color:var(--brand)">${IC.target}</span><span class="nm">País de tu negocio</span></div>
-      <div class="desc">De aquí sale la hora del bot: cuándo empieza el día en tus reportes, a qué hora sale el remarketing y la fecha de los comprobantes.</div>
+      <div class="chd"><span class="ico" style="background:var(--brand-bg);color:var(--brand)">${IC.target}</span><span class="nm">Tu país</span></div>
+      <div class="desc">Tus reportes y avisos usan su hora. Las versiones de otros países usan la de su país.</div>
       <label>País</label>
       <select class="in" id="g_pais" style="max-width:340px">${PAISES_TZ.map(([cd,fl,nm])=>`<option value="${cd}" ${cd===(paisDeZona(tz)||"")?"selected":""}>${fl} ${nm}</option>`).join("")}${paisDeZona(tz)?"":`<option value="" selected>🌎 Otra zona (${esc(tz)})</option>`}</select>
       <div id="g_zonaBox" style="margin-top:12px"></div>
@@ -456,7 +456,7 @@ function renderGeneral(b){
   };
   const pintaHora=()=>{
     let h=""; try{ h=new Date().toLocaleTimeString("es-PE",{ timeZone:zonaElegida, hour:"numeric", minute:"2-digit" }); }catch(_){}
-    $("g_hora").innerHTML = h ? `🕐 Hora del bot ahora: <b>${esc(h)}</b>` : "";
+    $("g_hora").innerHTML = h ? `🕐 Tu hora ahora: <b>${esc(h)}</b>` : "";
   };
   $("g_pais").onchange=pintaZona; pintaZona();
   // El tipo de cambio solo tiene sentido si NO cobras en dólares.
