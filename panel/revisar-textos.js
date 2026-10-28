@@ -133,7 +133,28 @@ function avisoOrtografiaSaludo(saludo) {
 }
 
 // Textos sueltos de la ficha (lo que el motor lee del producto).
-export function revisarFicha({ ia = {}, faq = [], emojis = "", precios = [], saludo = "", sym = "S/" } = {}) {
+// 🌎 (28-oct) Un texto que nombra OTRA moneda que la del producto: la versión de México copiada de la de Colombia
+// seguía diciendo «$999 pesos colombianos» en el saludo. Se mira el nombre de la moneda y el «S/» de los soles.
+const NOMBRES_MONEDA = {
+  PEN: /\bsoles\b|\bS\/\s?\d/i, MXN: /pesos?\s+mexicanos?|\bmxn\b/i, COP: /pesos?\s+colombianos?|\bcop\b/i,
+  ARS: /pesos?\s+argentinos?|\bars\b/i, CLP: /pesos?\s+chilenos?|\bclp\b/i, USD: /d[oó]lares|\busd\b/i,
+  EUR: /\beuros?\b/i, BOB: /\bbolivianos\b/i, BRL: /\breais\b|\breales brasile/i,
+};
+function avisoMonedaAjena(campos, moneda) {
+  const mia = String(moneda || "").toUpperCase();
+  if (!mia) return [];
+  const out = [];
+  for (const [cod, re] of Object.entries(NOMBRES_MONEDA)) {
+    if (cod === mia) continue;
+    for (const [k, v] of Object.entries(campos)) {
+      const m = re.exec(String(v ?? ""));
+      if (m) { out.push({ titulo: `Habla de otra moneda: «${m[0].trim()}»`, detalle: `En «${k}» dice «${m[0].trim()}», pero este producto cobra en ${mia}. El cliente vería un precio en la moneda equivocada: cámbialo (o usa {{precio}}).` }); break; }
+    }
+  }
+  return out;
+}
+
+export function revisarFicha({ ia = {}, faq = [], emojis = "", precios = [], saludo = "", sym = "S/", moneda = "" } = {}) {
   const ejemplos = (ia.ejemplos ?? []).map((e) => `${e?.sit ?? ""} ${e?.resp ?? ""}`).join("\n");
   const faqTxt = (faq ?? []).map((q) => `${q?.q ?? q?.p ?? ""} ${q?.a ?? q?.r ?? ""}`).join("\n");
   const campos = {
@@ -148,6 +169,7 @@ export function revisarFicha({ ia = {}, faq = [], emojis = "", precios = [], sal
     ...avisoNumeros(campos),            // (el método de pago especial del producto sí lleva su número: no se mira)
     ...avisoPersona(conSaludo),
     ...avisoMontos(conSaludo, precios, sym),
+    ...avisoMonedaAjena(conSaludo, moneda),
     // (con la ficha de 3 cuadros las objeciones viven en la lista de «lo que te preguntan»)
     ...avisoTemasRepetidos(`${ia.proceso ?? ""}\n${ia.tecnicas ?? ""}`, `${ia.objeciones ?? ""}\n${faqTxt}`),
     ...avisoEmojis(emojis, ia.emojis_prohibidos, saludo),
