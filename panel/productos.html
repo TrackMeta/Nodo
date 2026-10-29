@@ -403,8 +403,9 @@ async function boot(){
     if(!st.prod) return;
     if(isDirty && isDirty()){ toast("Primero guarda los cambios de este producto",true); return; }
     try{
-      const m=await import("./version-pais.js?v=2");
-      m.abrirVersionesPais({ channelId:st.channelId, prod:st.prod, onAbrir:async(id)=>{ await loadProducts(); openProduct(id); } });
+      const m=await import("./version-pais.js?v=3");
+      m.abrirVersionesPais({ channelId:st.channelId, prod:st.prod, onAbrir:async(id)=>{ await loadProducts(); openProduct(id); },
+        onCambio:async(id)=>{ await loadProducts(); openProduct(id); } });
     }catch(e){ toast("No se pudo abrir: recarga la página",true); }
   };
   // 🔴 «Volver a productos» se saltaba el aviso de cambios sin guardar. Medido (2026-09-14):
@@ -737,7 +738,7 @@ function renderCards(){
       <div class="c-ic">${emIc}</div>
       <div class="c-tt">${esc(p.nombre)}</div>
       <div class="c-sub">${esReg(p)?"Regalo · gratis con la compra":esEx(p)?"Complemento · para ventas extra":(p.tipo==="fisico"?"Producto físico":p.tipo==="microapp"?"Micro app":"Producto digital")}</div>
-      <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">${icon("gift")} Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">${icon("plus")} Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":p.tipo==="microapp"?icon("phone")+"Micro app":icon("download")+"Digital"}</span>${p.config&&p.config.pais?`<span class="nodo-pill neutral" title="Versión para ${esc(p.config.pais)}">${banderaDe(p.config.pais)} ${esc(p.config.pais)}</span>`:''}<span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>${estadoHtml}`;
+      <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">${icon("gift")} Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">${icon("plus")} Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":p.tipo==="microapp"?icon("phone")+"Micro app":icon("download")+"Digital"}</span>${p.config&&p.config.pais&&String(p.config.pais).toUpperCase()!==_paisBot?`<span class="nodo-pill neutral" title="Se vende en ${esc((PAIS_INFO[String(p.config.pais).toUpperCase()]||[p.config.pais])[0])}">${banderaDe(p.config.pais)} ${esc(p.config.pais)}</span>`:''}<span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>${estadoHtml}`;
     const fslot=el.querySelector("[data-cardfolder]");
     if(fslot && Fbar){
       const pk=Fbar.picker({ current:p.folder||null, onPick:async(v)=>{
@@ -925,7 +926,7 @@ function renderDetail(){
   const d=$("detail"); if(!st.prod) return;
   const esExtra = st.prod.clase==="extra";
   const esRegalo = st.prod.clase==="regalo";
-  { const pb=$("paisBtn"); if(pb){ pb.style.display=(esExtra||esRegalo)?"none":""; const pc=st.prod.config&&st.prod.config.pais; pb.textContent=pc?`${banderaDe(pc)} ${pc} · Países`:"🌎 Países"; } }
+  { const pb=$("paisBtn"); if(pb){ pb.style.display=(esExtra||esRegalo)?"none":""; const pc=String(st.prod.config&&st.prod.config.pais||"").toUpperCase(); pb.textContent=(pc&&pc!==_paisBot)||(st.prod.config&&(st.prod.config.familia||st.prod.config.hermano_de))?`${banderaDe(pc||_paisBot)} ${(PAIS_INFO[pc||_paisBot]||[pc])[0]} · Países`:"🌎 Países"; } }
   const EXTRA_TABS=["inicio","producto","opciones","entrega","ia","stock"];
   // Un regalo NO se vende: no lleva "venta con IA", activación, ventas extra ni
   // remarketing. Solo qué es (producto) y qué entrega (opciones → Qué entrega).
@@ -1047,10 +1048,16 @@ const CURRENCIES=[
 // mensaje de adelanto usaban "S/" fijo aunque el producto se venda en otra moneda.
 // (24-oct) Un producto sin moneda propia usa la del BOT (Ajustes → Moneda), no soles fijos: en un bot en pesos mexicanos
 // el producto nuevo aparecía «S/ · Perú — Sol» y la vista previa del saludo decía «S/ 100».
-let _monedaBot="PEN";
-function cargarMonedaBot(){ getChannel(st.channelId).then(d=>{ _monedaBot=(d&&d.moneda)||"PEN"; }).catch(()=>{}); }
+let _monedaBot="PEN", _paisBot="PE";
+// (29-oct) El país del bot sale de su zona horaria (Ajustes → Tu país); cada versión de otro país trae el suyo.
+const PAIS_ZONA={"America/Lima":"PE","America/Bogota":"CO","America/Mexico_City":"MX","America/Cancun":"MX","America/Mazatlan":"MX","America/Hermosillo":"MX","America/Tijuana":"MX","America/Santiago":"CL","America/Punta_Arenas":"CL","America/Argentina/Buenos_Aires":"AR","America/Guayaquil":"EC","America/La_Paz":"BO","America/Caracas":"VE","America/Asuncion":"PY","America/Montevideo":"UY","America/Costa_Rica":"CR","America/Panama":"PA","America/Guatemala":"GT","America/El_Salvador":"SV","America/Tegucigalpa":"HN","America/Managua":"NI","America/Santo_Domingo":"DO","America/Puerto_Rico":"PR","Europe/Madrid":"ES","Atlantic/Canary":"ES","America/New_York":"US","America/Chicago":"US","America/Denver":"US","America/Los_Angeles":"US","America/Sao_Paulo":"BR","America/Manaus":"BR"};
+const PAIS_INFO={PE:["Perú","PEN"],MX:["México","MXN"],CO:["Colombia","COP"],CL:["Chile","CLP"],AR:["Argentina","ARS"],EC:["Ecuador","USD"],BO:["Bolivia","BOB"],VE:["Venezuela","USD"],PY:["Paraguay","PYG"],UY:["Uruguay","UYU"],CR:["Costa Rica","CRC"],PA:["Panamá","USD"],GT:["Guatemala","GTQ"],SV:["El Salvador","USD"],HN:["Honduras","HNL"],NI:["Nicaragua","NIO"],DO:["Rep. Dominicana","DOP"],PR:["Puerto Rico","USD"],ES:["España","EUR"],US:["Estados Unidos","USD"],BR:["Brasil","BRL"]};
+function cargarMonedaBot(){ getChannel(st.channelId).then(d=>{ _monedaBot=(d&&d.moneda)||"PEN"; _paisBot=PAIS_ZONA[(d&&d.timezone)||"America/Lima"]||"PE"; }).catch(()=>{}); }
+// La moneda con la que cobra (lo mismo que el motor): la elegida a mano → la de su país → la del bot.
+function monedaAutoDe(cfg){ const pa=cfg&&cfg.pais&&PAIS_INFO[String(cfg.pais).toUpperCase()]; return pa?pa[1]:(_monedaBot||"PEN"); }
+function monedaDe(cfg){ return (cfg&&cfg.moneda)?String(cfg.moneda).toUpperCase():monedaAutoDe(cfg); }
 function banderaDe(c){ c=String(c||"").toUpperCase(); return /^[A-Z]{2}$/.test(c)?String.fromCodePoint(...[...c].map(x=>127397+x.charCodeAt(0))):"🌎"; }
-function curSym(cfg){ const cur=(cfg&&cfg.moneda)||_monedaBot||"PEN"; return (CURRENCIES.find(c=>c[0]===cur)||["","S/"])[1]; }
+function curSym(cfg){ const cur=monedaDe(cfg); return (CURRENCIES.find(c=>c[0]===cur)||["","S/"])[1]; }
 const MODOS_ENVIO=[
   ["cliente","Envío lo paga el cliente al recibir (según la agencia)"],
   ["gratis","Envío gratis en todos los envíos"],
@@ -3106,7 +3113,7 @@ function renderSalud(ready){
   if(!ops.length) errs.push("El producto no tiene ninguna presentación activa.");
   if(!conPrecio.length) errs.push("Ninguna presentación tiene precio: el validador no puede saber cuánto debe pagar el cliente.");
   // 🌎 La versión de otro país sin sus medios de pago cobraría con los del bot (el Yape de Perú a un mexicano).
-  { const c=st.prod.config||{}; if(c.hermano_de && c.pais && !((c.pago_propio&&c.pago_propio.metodos)||[]).length)
+  { const c=st.prod.config||{}; if(c.pais && String(c.pais).toUpperCase()!==_paisBot && !((c.pago_propio&&c.pago_propio.metodos)||[]).length)
     errs.push(`Es la versión para ${banderaDe(c.pais)} ${esc(c.pais)}: ponle sus <b>medios de pago propios</b> (Venta con IA → Avanzado). Sin ellos cobraría con los del bot.`); }
   // 📱 Micro app: no entrega links, entrega un ACCESO — lo que no puede faltar es la conexión con la app.
   if(st.prod.tipo==="microapp"){ if(!String(st.prod.config?.microapp?.conexion?.url||"").trim()) errs.push("La app no está conectada: pon su link en «Correo, renovación y conexión». El cliente pagaría y no tendría a dónde entrar."); }
@@ -3480,7 +3487,7 @@ const EN_VIVO_HASTA_1025 = new Set([
 ]);
 const CONTENIDO_EN_VIVO = new Set([
   "microapp", "pago_propio",   // (pago_propio, 25-oct: lo leen en vivo el bloque de pago y el validador)
-  "pais", "hermano_de",   // (28-oct: versiones por país — las lee el ruteo, no el flujo)
+  "pais", "hermano_de", "familia", "pais_resto",   // (28-oct: versiones por país — las lee el ruteo, no el flujo)
   "contexto_producto","ia","ia_multimedia","faq","faq_items","objeciones","objeciones_items",
   // (entrega_mensaje NO va acá: el generador lo COPIA al nodo «entregar» y el motor lee el del
   // nodo, así que cambiarlo tiene que regenerar el flujo — antes el cliente seguía recibiendo el viejo.)
@@ -3987,9 +3994,19 @@ function renderOpciones(host){
   // arranca mostrando el precio, no un estado vacío.
   if(!st.versions.length) st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:0 });
   const multi = st.versions.length>1;
-  const cur=cfg.moneda||_monedaBot||"PEN";
+  const cur=monedaDe(cfg);
   const sym=(CURRENCIES.find(c=>c[0]===cur)||["","S/"])[1];
-  const monedaSel=`<select class="sel" id="opMoneda" style="width:auto;min-width:210px;height:36px;font-size:12.5px">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${cur===cd?"selected":""}>${sy} · ${esc(nm)} (${cd})</option>`).join("")}</select>`;
+  // 🌎 (29-oct, Rodrigo) La moneda sale del PAÍS del producto: no se elige. «¿Cobrar en otra moneda?» queda escondido
+  // para el caso raro (un curso en dólares desde Perú). Una moneda guardada igual a la de su país cuenta como automática.
+  const _monAuto=monedaAutoDe(cfg), _monManual=!!cfg.moneda && String(cfg.moneda).toUpperCase()!==_monAuto;
+  const _paisP=String(cfg.pais||_paisBot).toUpperCase(), _paisNom=(PAIS_INFO[_paisP]||[_paisP])[0];
+  const _monNom=String((CURRENCIES.find(c=>c[0]===cur)||[cur,"",cur])[2]).replace(/^.*— /,"");
+  const _selMon=`<select class="sel" id="opMoneda" style="width:auto;min-width:210px;height:36px;font-size:12.5px">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${cur===cd?"selected":""}>${sy} · ${esc(nm)} (${cd})</option>`).join("")}</select>`;
+  const monedaSel=`<div style="flex:1;min-width:0"><div style="font-size:13px;line-height:1.6;color:var(--text)">Cobra en <b>${esc(sym)} ${esc(_monNom)}</b> · ${_monManual
+      ? `elegida a mano · <a href="#" id="opMonAuto" style="color:var(--brand)">volver a la moneda de ${esc(_paisNom)}</a>`
+      : `${banderaDe(_paisP)} ${esc(_paisNom)}`}</div>
+    <details ${_monManual?"open":""} style="margin-top:2px"><summary style="cursor:pointer;font-size:12px;color:var(--faint);list-style:none">¿Cobrar en otra moneda?</summary>
+      <div style="margin-top:6px">${_selMon}</div></details></div>`;
 
   // ── PRODUCTO SIMPLE (1 presentación): una tarjeta limpia, precio primero ──
   if(!multi){
@@ -4011,8 +4028,8 @@ function renderOpciones(host){
           ? `<div style="font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.55">Este producto se <b>envía</b>: la venta termina cuando se crea el pedido (no entrega nada por el chat). ¿Regalar algo digital con la compra? Va en <a href="#" class="oGoExtra" style="color:var(--brand)">Ventas extra →</a>.</div>`
           : `<div style="font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.55">El <b>link o archivo</b> que recibe el cliente lo configuras en <a href="#" class="oGoEnt" style="color:var(--brand)">¿Cómo se entrega? →</a>.</div>`}
       </div>
-      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 4px 14px;font-size:12.5px;color:var(--muted)">
-        <span style="font-weight:700">Moneda</span>${monedaSel}<span style="font-size:11.5px;color:var(--faint)">Aplica a todo el producto.</span>
+      <div style="display:flex;align-items:flex-start;gap:9px;flex-wrap:wrap;margin:0 4px 14px;font-size:12.5px;color:var(--muted)">
+        ${monedaSel}
       </div>
       <details>
         <summary style="cursor:pointer;list-style:none;font-size:13px;font-weight:700;color:var(--brand);padding:8px 4px">＋ ¿Vendes en packs o varias versiones?</summary>
@@ -4024,7 +4041,8 @@ function renderOpciones(host){
     const oc2=$("opCosto"); if(oc2) oc2.onchange=(e)=>{ prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value)); updateOpMargen(); };
     const oge=b.querySelector(".oGoExtra"); if(oge) oge.onclick=(e)=>{ e.preventDefault(); accOpen("extras"); };
     const ogEnt=b.querySelector(".oGoEnt"); if(ogEnt) ogEnt.onclick=(e)=>{ e.preventDefault(); accOpen("entrega"); };
-    $("opMoneda").onchange=(e)=>{ prodSetC("moneda", e.target.value); renderOpciones(b); };
+    $("opMoneda").onchange=(e)=>{ prodSetC("moneda", e.target.value===monedaAutoDe(Object.assign({},cfg,{moneda:undefined}))?undefined:e.target.value); renderOpciones(b); };
+    { const ma=$("opMonAuto"); if(ma) ma.onclick=(e)=>{ e.preventDefault(); prodSetC("moneda", undefined); renderOpciones(b); }; }
     $("opAdd").onclick=()=>{ st.versions.push({ nombre:"", precio:"", cantidad:1, descripcion:"", entrega:[], activo:true, orden:st.versions.length }); renderOpciones(b); accInvalidate("entrega"); };
     updateOpMargen();
     return;
@@ -4035,9 +4053,8 @@ function renderOpciones(host){
     <div class="card" style="border-color:var(--brand-border)">
       <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("productos")} Presentaciones y precios</h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6">Cada versión con su propio precio (1 par / 2 pares, Básico / Premium, packs). La IA detecta cuál eligió el cliente aunque lo escriba a su manera, y el validador de pagos usa ese precio como <b>monto esperado</b>.</div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">
-        <label style="margin:0;font-size:12.5px;font-weight:700">Moneda</label>${monedaSel}
-        <span style="font-size:11.5px;color:var(--faint)">Aplica a todas.</span>
+      <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-top:12px">
+        ${monedaSel}
       </div>
     </div>
     ${fisico?`
@@ -4055,7 +4072,8 @@ function renderOpciones(host){
     <div id="opWarn"></div>
     <button class="btn" id="opAdd">+ Presentación</button>`;
   paintOpciones(fisico);
-  $("opMoneda").onchange=(e)=>prodSetC("moneda", e.target.value);
+  $("opMoneda").onchange=(e)=>{ prodSetC("moneda", e.target.value===monedaAutoDe(Object.assign({},cfg,{moneda:undefined}))?undefined:e.target.value); renderOpciones(b); };
+  { const ma=$("opMonAuto"); if(ma) ma.onclick=(e)=>{ e.preventDefault(); prodSetC("moneda", undefined); renderOpciones(b); }; }
   const oc2=$("opCosto"); if(oc2) oc2.onchange=(e)=>{ prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value)); updateOpMargen(); };
   const oe2=$("opEmpaque"); if(oe2) oe2.onchange=(e)=>prodSetC("empaque", e.target.value.trim()===""?undefined:Number(e.target.value));
   $("opAdd").onclick=()=>{

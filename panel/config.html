@@ -205,6 +205,8 @@ const ZONAS_EXTRA={
   ES:[["Europe/Madrid","Península (Madrid)"],["Atlantic/Canary","Canarias"]],
   CL:[["America/Santiago","Continental (Santiago)"],["America/Punta_Arenas","Magallanes (Punta Arenas)"]],
 };
+// (29-oct) La moneda sale del país (no se elige): la de cada país.
+const MONEDA_PAIS={PE:"PEN",MX:"MXN",CO:"COP",CL:"CLP",AR:"ARS",EC:"USD",BO:"BOB",VE:"USD",PY:"PYG",UY:"UYU",CR:"CRC",PA:"USD",GT:"GTQ",SV:"USD",HN:"HNL",NI:"NIO",DO:"DOP",PR:"USD",ES:"EUR",US:"USD",BR:"BRL"};
 const paisDeZona=(tz)=>{ for(const p of PAISES_TZ){ if(p[3]===tz || (ZONAS_EXTRA[p[0]]||[]).some(z=>z[0]===tz)) return p[0]; } return null; };
 
 const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png", meta:"../assets/apps/meta.png", sheets:"../assets/apps/sheets.png" };
@@ -425,14 +427,12 @@ function renderGeneral(b){
       <select class="in" id="g_pais" style="max-width:340px">${PAISES_TZ.map(([cd,fl,nm])=>`<option value="${cd}" ${cd===(paisDeZona(tz)||"")?"selected":""}>${fl} ${nm}</option>`).join("")}${paisDeZona(tz)?"":`<option value="" selected>🌎 Otra zona (${esc(tz)})</option>`}</select>
       <div id="g_zonaBox" style="margin-top:12px"></div>
       <div id="g_hora" style="margin-top:10px;font-size:12.5px;color:var(--muted)"></div>
+      <div id="g_mon" style="margin-top:4px;font-size:12.5px;color:var(--muted)"></div>
     </div>
-    <div class="card">
-      <div class="chd"><span class="ico" style="background:var(--green-bg);color:var(--green)">${icon("dollar")}</span><span class="nm">Moneda</span></div>
-      <div class="desc">La moneda de los importes del panel.</div>
-      <label>Moneda del negocio</label>
-      <select class="in" id="g_moneda" style="max-width:340px">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${cd===mon?"selected":""}>${sy} · ${nm} (${cd})</option>`).join("")}</select>
-      <div id="g_tcBox" style="margin-top:16px;${mon==="USD"?"display:none":""}">
-        <label>Cuánto vale un dólar en tu moneda</label>
+    <div class="card" id="g_tcCard">
+      <div class="chd"><span class="ico" style="background:var(--green-bg);color:var(--green)">${icon("dollar")}</span><span class="nm">Tipo de cambio</span></div>
+      <div id="g_tcBox">
+        <label style="margin-top:0">Cuánto vale un dólar en tu moneda</label>
         <div class="desc" style="margin:2px 0 8px">Tu IA te la cobra tu proveedor <b>en dólares</b>. Con este número, ese gasto se convierte y entra en la <b>ganancia</b> de Inicio como un costo más. Si lo dejas vacío, el gasto se sigue viendo, pero aparte y en dólares.</div>
         <div style="display:flex;align-items:center;gap:8px;max-width:340px">
           <span style="font-size:13px;color:var(--muted);font-weight:600;white-space:nowrap">1 USD =</span>
@@ -458,18 +458,44 @@ function renderGeneral(b){
     let h=""; try{ h=new Date().toLocaleTimeString("es-PE",{ timeZone:zonaElegida, hour:"numeric", minute:"2-digit" }); }catch(_){}
     $("g_hora").innerHTML = h ? `🕐 Tu hora ahora: <b>${esc(h)}</b>` : "";
   };
-  $("g_pais").onchange=pintaZona; pintaZona();
-  // El tipo de cambio solo tiene sentido si NO cobras en dólares.
-  $("g_moneda").onchange=()=>{
-    const m=$("g_moneda").value;
-    $("g_tcBox").style.display = m==="USD" ? "none" : "";
+  // 💵 La moneda sale del país (Otra zona → la que ya tenía). El tipo de cambio solo si no es dólar.
+  const monedaElegida=()=>MONEDA_PAIS[$("g_pais").value]||mon;
+  const pintaMoneda=()=>{
+    const m=monedaElegida(), cu=CURRENCIES.find(x=>x[0]===m)||["",m,m];
+    $("g_mon").innerHTML=`💵 Moneda: <b>${esc(cu[1])} ${esc(String(cu[2]).replace(/^.*— /,""))}</b>`;
+    $("g_tcCard").style.display = m==="USD" ? "none" : "";
     $("g_tcCur").textContent = m;
   };
+  // (el tipo de cambio guardado es de la moneda de antes: con otra moneda se vacía para que pongas el nuevo)
+  $("g_pais").onchange=()=>{ pintaZona(); pintaMoneda(); const ti=$("g_tc"); if(ti) ti.value = monedaElegida()===mon && Number(st.channel?.usd_rate)>0 ? String(st.channel.usd_rate) : ""; }; pintaZona(); pintaMoneda();
   $("saveGeneral").onclick=async(e)=>{
-    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    const btn=e.target;
+    // 🌎 Cambiar de país: los productos que ya venden siguen en el país de antes (con su moneda y su hora). Si no,
+    // un bot de Perú que pasa a «México» empezaría a cobrar en pesos lo que vendía en soles.
+    const paisAntes=paisDeZona(tz), paisNuevo=$("g_pais").value||paisAntes;
+    let fijar=false;
+    if(paisAntes && paisNuevo && paisAntes!==paisNuevo){
+      const nA=(PAISES_TZ.find(p=>p[0]===paisAntes)||[])[2]||paisAntes, nN=(PAISES_TZ.find(p=>p[0]===paisNuevo)||[])[2]||paisNuevo;
+      if(!await confirmDialog({ title:"Cambiar tu país",
+        message:`Tus reportes y avisos pasan a la hora de ${nN}. Los productos que ya tienes se quedan como versiones de ${nA}: siguen cobrando en ${mon} con la hora de ${nA}. Los productos nuevos serán de ${nN}.`,
+        confirmText:"Cambiar" })) return;
+      fijar=true;
+    }
+    btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    if(fijar){
+      try{
+        const { data:ps }=await supa.from("products").select("id, config").eq("channel_id",st.channelId);
+        for(const p of (ps||[])){
+          const cfg={ ...(p.config||{}) }; if(cfg.pais) continue;
+          cfg.pais=paisAntes; if(!cfg.moneda && mon!==(MONEDA_PAIS[paisAntes]||"")) cfg.moneda=mon;
+          await supa.from("products").update({ config:cfg }).eq("id",p.id);
+        }
+      }catch(_){ btn.disabled=false; btn.textContent=old; toast("No se pudieron fijar tus productos al país de antes",true); return; }
+    }
     const tc=Number($("g_tc")?.value);
-    const patch={ timezone:zonaElegida, moneda:$("g_moneda").value,
-      usd_rate: ($("g_moneda").value!=="USD" && tc>0) ? +tc.toFixed(4) : null };
+    const monNueva=monedaElegida();
+    const patch={ timezone:zonaElegida, moneda:monNueva,
+      usd_rate: (monNueva!=="USD" && tc>0) ? +tc.toFixed(4) : null };
     let { error }=await updCanal(patch);
     // Si falta la columna del tipo de cambio (migración 0089 sin aplicar), se guarda
     // el resto y se dice qué falta — en vez de perder también la zona y la moneda.

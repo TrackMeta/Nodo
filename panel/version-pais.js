@@ -1,12 +1,13 @@
 // ═════════════════════════════════════════════════════════════════════════
-// 🌎 Versiones del producto por país (28-oct) — Productos → (producto) → «🌎 Países».
-// Vender el mismo producto en otro país = una COPIA hermana con su país, su moneda, sus precios y sus medios de
-// pago. La copia lleva config.pais («MX») y config.hermano_de (el id del original); el motor manda a cada cliente
-// a la versión de su país (versionDelPais en engine.ts: anuncio → país guardado → código del número → le pregunta).
-// El cobro no cambia: cada hermano es un producto normal con su moneda, camino ya probado con México y Colombia.
-// La copia nace EN PAUSA (flujos en borrador): sin sus medios de pago cobraría con el Yape del bot.
+// 🌎 Versiones del producto por país — Productos → (producto) → «🌎 Países».
+// Vender el mismo producto en otro país = una VERSIÓN con su país, su moneda, sus precios y sus medios de pago.
+// (29-oct, Rodrigo) Las versiones son IGUALES: ninguna es «la original». Comparten config.familia (las creadas antes
+// con config.hermano_de se agrupan por ese id); cada una lleva config.pais (sin país = el país del bot). El cliente de
+// un país sin versión va a la de «Para los demás países» (config.pais_resto, igual en toda la familia). El motor
+// elige la versión (versionDelPais en engine.ts: anuncio → país guardado → código del número → le pregunta).
+// La versión nueva nace EN PAUSA (flujos en borrador): sin sus medios de pago cobraría con los del bot.
 // ═════════════════════════════════════════════════════════════════════════
-import { supa, toast, icon } from "./shell.js";
+import { supa, toast, icon, confirmDialog, patchProductConfig } from "./shell.js";
 import { asegurarEstilos } from "./ventana-ajustes.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -34,6 +35,15 @@ const PAIS_DE_ZONA = {
 const SIMBOLO = { PEN: "S/", USD: "$", MXN: "$", COP: "$", ARS: "$", CLP: "$", BOB: "Bs", EUR: "€", BRL: "R$", UYU: "$U", PYG: "₲", VES: "Bs", GTQ: "Q", CRC: "₡", DOP: "RD$", HNL: "L", NIO: "C$", PAB: "B/." };
 export function paisInfo(c) { return PAISES.find((p) => p[0] === String(c || "").toUpperCase()) || null; }
 export function banderaPais(c) { return paisInfo(c)?.[2] || "🌎"; }
+export function paisDeZona(tz) { return PAIS_DE_ZONA[String(tz || "")] || "PE"; }
+// La familia de un producto (sus versiones por país). Un producto solo es su propia familia.
+export function familiaDe(p) { const c = p?.config || {}; return String(c.familia || c.hermano_de || p?.id || ""); }
+// La moneda con la que cobra: la elegida a mano → la de su país → la del bot.
+export function monedaDeProducto(cfg, paisBot, monedaBot) {
+  if (cfg?.moneda) return String(cfg.moneda).toUpperCase();
+  if (cfg?.pais) return paisInfo(cfg.pais)?.[3] || monedaBot || "PEN";
+  return monedaBot || paisInfo(paisBot)?.[3] || "PEN";
+}
 
 // Reemplaza en un valor (objeto, texto) cada id viejo por el nuevo: las versiones, los flujos, los nodos y las
 // secuencias se copian con ids nuevos, y la config, los nodos y los pasos del remarketing los nombran por id.
@@ -45,17 +55,18 @@ function remap(val, mapa) {
 }
 const sin = (o, ...k) => { const c = { ...o }; for (const x of k) delete c[x]; return c; };
 
-async function crearVersion({ channelId, baseId, pais, moneda, precios }) {
+// Copia el producto `origenId` como versión para `pais`. La copia entra en la familia `familia`.
+async function crearVersion({ origenId, familia, pais, moneda, precios }) {
   const info = paisInfo(pais);
   const creado = { producto: null, secuencias: [] };
   try {
-    const { data: base, error: eB } = await supa.from("products").select("*").eq("id", baseId).single();
-    if (eB || !base) throw new Error("No se encontró el producto original");
+    const { data: base, error: eB } = await supa.from("products").select("*").eq("id", origenId).single();
+    if (eB || !base) throw new Error("No se encontró el producto");
     const cfg0 = base.config || {};
     const [{ data: vers }, { data: flows }, { data: angs }] = await Promise.all([
-      supa.from("product_versions").select("*").eq("product_id", baseId).order("orden"),
-      supa.from("flows").select("*").eq("product_id", baseId),
-      supa.from("angulos").select("*").eq("product_id", baseId).order("orden"),
+      supa.from("product_versions").select("*").eq("product_id", origenId).order("orden"),
+      supa.from("flows").select("*").eq("product_id", origenId),
+      supa.from("angulos").select("*").eq("product_id", origenId).order("orden"),
     ]);
     const flowIds = (flows || []).map((f) => f.id);
     const [{ data: nodes }, { data: edges }, { data: trigs }] = flowIds.length ? await Promise.all([
@@ -71,10 +82,10 @@ async function crearVersion({ channelId, baseId, pais, moneda, precios }) {
     // se ve con su bandera.
     const nombre = base.nombre;
     const etiqueta = `${info?.[2] || ""} ${info?.[1] || pais}`.trim();
-    // 1) El producto. Sin los anuncios (cada anuncio es de UN país: se asignan en la copia) ni los medios de pago
-    //    propios del original (los de otro país se ponen en la copia).
-    const cfg = sin(cfg0, "ad_bank", "pago_propio");
-    cfg.pais = pais; cfg.moneda = moneda; cfg.hermano_de = baseId;
+    // 1) El producto. Sin los anuncios (cada anuncio es de UN país: se asignan en la versión) ni los medios de pago
+    //    propios (los de otro país se ponen en la versión).
+    const cfg = sin(cfg0, "ad_bank", "pago_propio", "hermano_de");
+    cfg.pais = pais; cfg.moneda = moneda; cfg.familia = familia;
     const { data: pNew, error: eP } = await supa.from("products")
       .insert({ ...sin(base, "id", "created_at", "updated_at"), nombre, config: cfg }).select("id").single();
     if (eP) throw eP;
@@ -96,11 +107,11 @@ async function crearVersion({ channelId, baseId, pais, moneda, precios }) {
       creado.secuencias.push(sN.id);
       mapa.set(s.id, sN.id);
     }
-    // 4) Los flujos (saludo y venta), EN PAUSA: la copia no vende hasta que tenga sus medios de pago.
+    // 4) Los flujos (saludo y venta), EN PAUSA: la versión no vende hasta que tenga sus medios de pago.
     for (const f of flows || []) {
       const { data: fN, error } = await supa.from("flows").insert({
         ...sin(f, "id", "created_at", "updated_at"), product_id: pNew.id, es_entrada: false, estado: "borrador",
-        nombre: `${f.nombre} · ${etiqueta}`,
+        nombre: `${String(f.nombre || "").replace(/ · \S+ [^·]+$/, "")} · ${etiqueta}`,
       }).select("id").single();
       if (error) throw error;
       mapa.set(f.id, fN.id);
@@ -137,54 +148,65 @@ async function crearVersion({ channelId, baseId, pais, moneda, precios }) {
   }
 }
 
-export async function abrirVersionesPais({ channelId, prod, onAbrir }) {
+export async function abrirVersionesPais({ channelId, prod, onAbrir, onCambio }) {
   if (!channelId || !prod) return;
   asegurarEstilos();
-  const baseId = String(prod.config?.hermano_de || prod.id);
   const [{ data: prods }, { data: ch }, { data: vers }] = await Promise.all([
     supa.from("products").select("id, nombre, config, tipo").eq("channel_id", channelId),
     supa.from("channels").select("timezone, moneda").eq("id", channelId).maybeSingle(),
-    supa.from("product_versions").select("id, nombre, precio, activo").eq("product_id", baseId).order("orden"),
+    supa.from("product_versions").select("id, nombre, precio, activo").eq("product_id", prod.id).order("orden"),
   ]);
-  const paisBot = PAIS_DE_ZONA[ch?.timezone || "America/Lima"] || "PE";
-  const base = (prods || []).find((p) => p.id === baseId);
-  if (!base) { toast("No se encontró el producto original", true); return; }
-  const fam = (prods || []).filter((p) => p.id === baseId || String(p.config?.hermano_de || "") === baseId);
-  const paisDe = (p) => String(p.config?.pais || (p.id === baseId ? paisBot : "")).toUpperCase();
+  const paisBot = paisDeZona(ch?.timezone || "America/Lima");
+  const yo = (prods || []).find((p) => p.id === prod.id) || prod;
+  const clave = familiaDe(yo);
+  const fam = (prods || []).filter((p) => familiaDe(p) === clave);
+  const paisDe = (p) => String(p.config?.pais || paisBot).toUpperCase();
   const usados = new Set(fam.map(paisDe));
   const libres = PAISES.filter((p) => !usados.has(p[0]));
   const versA = (vers || []).filter((v) => v.activo !== false);
-  const monBase = (base.config?.moneda || ch?.moneda || "PEN").toUpperCase();
+  const monYo = monedaDeProducto(yo.config, paisBot, ch?.moneda);
+  const miPais = paisDe(yo);
+  // «Para los demás países»: el que diga la familia; si nadie eligió, la primera versión (la que dio el id).
+  const restoGuardado = String(fam.find((p) => p.config?.pais_resto)?.config?.pais_resto || "").toUpperCase();
+  const resto = fam.some((p) => paisDe(p) === restoGuardado) ? restoGuardado : paisDe(fam.find((p) => p.id === clave) || fam[0]);
 
   const ov = document.createElement("div"); ov.className = "ajp-ov";
   const fila = (p) => {
     const c = paisDe(p), i = paisInfo(c);
-    const mon = (p.config?.moneda || ch?.moneda || "PEN").toUpperCase();
-    const propios = (p.config?.pago_propio?.metodos || []).length;
-    const falta = p.id !== baseId && !propios;
+    const mon = monedaDeProducto(p.config, paisBot, ch?.moneda);
+    const falta = fam.length > 1 && c !== paisBot && !(p.config?.pago_propio?.metodos || []).length;
     return `<div class="ajp-tog" style="cursor:default">
-      <div><b>${i ? i[2] + " " + esc(i[1]) : "🌎 Sin país"}${p.id === prod.id ? ' <small style="display:inline;color:var(--brand)">· estás aquí</small>' : ""}</b>
-        <small>${esc(p.nombre)} · cobra en ${esc(mon)}${p.id === baseId ? " · original (país del bot)" : ""}${falta ? ' · <span style="color:var(--amber,#d97706)">⚠️ falta ponerle sus medios de pago</span>' : ""}</small></div>
+      <div><b>${i ? i[2] + " " + esc(i[1]) : "🌎 " + esc(c)}${p.id === prod.id ? ' <small style="display:inline;color:var(--brand)">· estás aquí</small>' : ""}</b>
+        <small>Cobra en ${esc(SIMBOLO[mon] || "")} ${esc(mon)}${falta ? ' · <span style="color:var(--amber,#d97706)">⚠️ falta ponerle sus medios de pago</span>' : ""}</small></div>
       ${p.id === prod.id ? "" : `<button class="ajp-btn" data-abrir="${esc(p.id)}">Abrir</button>`}
     </div>`;
   };
-  ov.innerHTML = `<div class="ajp" role="dialog" aria-label="Versiones por país">
-    <div class="ajp-hd"><h3>🌎 Versiones por país</h3><button class="ajp-x" id="vpX" title="Cerrar">${icon("x")}</button></div>
-    <p class="ajp-sub">Vende <b>${esc(base.nombre)}</b> en otro país con su moneda, sus precios y sus medios de pago. El bot manda a cada cliente a la versión de su país: por el anuncio, por el código de su número o, si escribe sin número, preguntándole.</p>
-    <div class="ajp-card"><h4>Versiones de este producto</h4>${fam.map(fila).join("")}</div>
+  const opcionesPais = (sel, excluir) => PAISES.filter((p) => p[0] === sel || !excluir.has(p[0]))
+    .map((p) => `<option value="${p[0]}" ${p[0] === sel ? "selected" : ""}>${p[2]} ${esc(p[1])}</option>`).join("");
+  ov.innerHTML = `<div class="ajp" role="dialog" aria-label="Países">
+    <div class="ajp-hd"><h3>🌎 Países</h3><button class="ajp-x" id="vpX" title="Cerrar">${icon("x")}</button></div>
+    <p class="ajp-sub">Vende <b>${esc(yo.nombre)}</b> en varios países, cada uno con su moneda, sus precios y sus medios de pago. El bot manda a cada cliente a la versión de su país: por el anuncio, por el código de su número o preguntándole.</p>
+    <div class="ajp-card"><h4>País de esta versión</h4>
+      <p class="ajp-desc">Define su moneda y su hora con los clientes.</p>
+      <select class="ajp-in" id="vpMiPais" style="width:100%;max-width:320px;margin-top:6px">${opcionesPais(miPais, new Set([...usados].filter((c) => c !== miPais)))}</select>
+    </div>
+    <div class="ajp-card"><h4>Versiones de este producto</h4>${fam.map(fila).join("")}
+      ${fam.length > 1 ? `<span class="ajp-lbl">Para los demás países</span>
+      <p class="ajp-desc" style="margin-top:0">El cliente de un país sin versión entra a esta.</p>
+      <select class="ajp-in" id="vpResto" style="width:100%;max-width:320px">${fam.map((p) => { const i = paisInfo(paisDe(p)); return `<option value="${paisDe(p)}" ${paisDe(p) === resto ? "selected" : ""}>${i ? i[2] + " " + esc(i[1]) : esc(paisDe(p))}</option>`; }).join("")}</select>` : ""}
+    </div>
     ${prod.tipo === "fisico" ? `<div class="ajp-nota">📦 Los productos físicos se venden solo en el país del bot (agencias, distritos, adelantos). Las versiones por país son para productos digitales y micro apps.</div>` : libres.length ? `
-    <div class="ajp-card"><h4>Crear versión para otro país</h4>
-      <p class="ajp-desc">Se copia todo: ficha, saludo, palabra clave, versiones, ángulos y remarketing. Los anuncios y los medios de pago <b>no</b> se copian: son de cada país.</p>
+    <div class="ajp-card"><h4>＋ Agregar país</h4>
+      <p class="ajp-desc">Se copia esta versión: ficha, saludo, palabra clave, presentaciones, ángulos y remarketing. Los anuncios y los medios de pago <b>no</b> se copian: son de cada país.</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
         <label style="flex:1;min-width:180px"><span class="ajp-lbl" style="margin-top:0">País</span>
           <select class="ajp-in" id="vpPais" style="width:100%">${libres.map((p) => `<option value="${p[0]}">${p[2]} ${esc(p[1])}</option>`).join("")}</select></label>
-        <label style="flex:1;min-width:180px"><span class="ajp-lbl" style="margin-top:0">Moneda</span>
-          <select class="ajp-in" id="vpMon" style="width:100%">${Object.keys(SIMBOLO).map((m) => `<option value="${m}">${m}</option>`).join("")}</select></label>
       </div>
+      <div class="ajp-hint" id="vpMonTxt"></div>
       <span class="ajp-lbl">Precios en la moneda de ese país</span>
       ${versA.map((v) => `<div class="ajp-num" style="margin-top:6px"><span style="min-width:150px;color:var(--muted);font-weight:700">${esc(v.nombre || "Precio")}</span>
         <div class="box"><span class="vpSym">$</span><input type="number" min="0" step="0.01" data-v="${esc(v.id)}" placeholder="0"/></div>
-        <small>En el original: ${esc(SIMBOLO[monBase] || "")} ${esc(v.precio ?? "—")}</small></div>`).join("")}
+        <small>En esta versión: ${esc(SIMBOLO[monYo] || "")} ${esc(v.precio ?? "—")}</small></div>`).join("")}
       <div class="ajp-nota">⏸️ La versión nueva nace <b>en pausa</b>. Antes de reanudarla ponle sus <b>medios de pago</b> (ficha → Avanzado → «Medios de pago propios»), revisa los textos que tengan precios escritos a mano y asigna los anuncios de ese país en su banco de anuncios.</div>
       <div class="ajp-acts"><button class="ajp-btn pri" id="vpCrear">Crear versión</button></div>
     </div>` : `<div class="ajp-nota">Ya hay una versión para cada país de la lista.</div>`}
@@ -194,21 +216,50 @@ export async function abrirVersionesPais({ channelId, prod, onAbrir }) {
   ov.querySelector("#vpX").onclick = cerrar;
   ov.addEventListener("mousedown", (e) => { if (e.target === ov) cerrar(); });
   ov.querySelectorAll("[data-abrir]").forEach((b) => { b.onclick = () => { cerrar(); onAbrir && onAbrir(b.dataset.abrir); }; });
-  const selP = ov.querySelector("#vpPais"), selM = ov.querySelector("#vpMon");
-  const pintaSym = () => ov.querySelectorAll(".vpSym").forEach((s) => { s.textContent = SIMBOLO[selM.value] || "$"; });
-  if (selP && selM) {
-    const porPais = () => { selM.value = paisInfo(selP.value)?.[3] || "USD"; pintaSym(); };
-    selP.onchange = porPais; selM.onchange = pintaSym; porPais();
-  }
+
+  // Toda la familia guarda la misma clave (así se agrupan aunque se borre la primera versión).
+  const sellarFamilia = async () => {
+    for (const p of fam) if (!p.config?.familia) await patchProductConfig(p.id, (c) => { c.familia = clave; delete c.hermano_de; });
+  };
+
+  // País de esta versión: cambia su moneda (salvo que la hayan elegido a mano) y su hora con los clientes.
+  const selMi = ov.querySelector("#vpMiPais");
+  selMi.onchange = async () => {
+    const nuevo = selMi.value, iN = paisInfo(nuevo);
+    const monManual = yo.config?.moneda && yo.config.moneda !== (paisInfo(miPais)?.[3] || "");
+    if (!await confirmDialog({ title: "Cambiar el país de esta versión",
+      message: `Esta versión pasa a ser de ${iN?.[1] || nuevo}${monManual ? "" : `: cobrará en ${iN?.[3] || ""}`} y usará la hora de ese país con sus clientes. Revisa sus precios${fam.length > 1 ? "" : " y sus medios de pago"}.`,
+      confirmText: "Cambiar" })) { selMi.value = miPais; return; }
+    const r = await patchProductConfig(yo.id, (c) => { c.pais = nuevo; if (!monManual) c.moneda = iN?.[3] || c.moneda; });
+    if (!r.ok) { toast(r.error?.message || "No se pudo guardar", true); selMi.value = miPais; return; }
+    toast(`Ahora es la versión de ${iN?.[1] || nuevo}`);
+    cerrar(); onCambio && onCambio(yo.id);
+  };
+  const selR = ov.querySelector("#vpResto");
+  if (selR) selR.onchange = async () => {
+    await sellarFamilia();
+    for (const p of fam) await patchProductConfig(p.id, (c) => { c.pais_resto = selR.value; });
+    toast(`Los demás países entran a la versión de ${paisInfo(selR.value)?.[1] || selR.value}`);
+  };
+
+  const selP = ov.querySelector("#vpPais");
+  const pintaMon = () => {
+    if (!selP) return;
+    const m = paisInfo(selP.value)?.[3] || "USD";
+    ov.querySelectorAll(".vpSym").forEach((s) => { s.textContent = SIMBOLO[m] || "$"; });
+    ov.querySelector("#vpMonTxt").textContent = `Cobrará en ${SIMBOLO[m] || ""} ${m}.`;
+  };
+  if (selP) { selP.onchange = pintaMon; pintaMon(); }
   const btn = ov.querySelector("#vpCrear");
   if (btn) btn.onclick = async () => {
     const precios = {};
     let falta = false;
     ov.querySelectorAll("input[data-v]").forEach((i) => { precios[i.dataset.v] = i.value.trim(); if (!i.value.trim()) falta = true; });
-    if (falta) { toast("Ponle precio a cada versión en la moneda de ese país", true); return; }
+    if (falta) { toast("Ponle precio a cada presentación en la moneda de ese país", true); return; }
     btn.disabled = true; btn.textContent = "Creando…";
     try {
-      const id = await crearVersion({ channelId, baseId, pais: selP.value, moneda: selM.value, precios });
+      await sellarFamilia();
+      const id = await crearVersion({ origenId: yo.id, familia: clave, pais: selP.value, moneda: paisInfo(selP.value)?.[3] || "USD", precios });
       toast(`Versión ${paisInfo(selP.value)?.[1] || ""} creada — en pausa hasta que le pongas sus medios de pago`);
       cerrar();
       onAbrir && onAbrir(id);

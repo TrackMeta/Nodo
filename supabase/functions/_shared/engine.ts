@@ -3922,10 +3922,10 @@ async function flowDeEntrada(db: SupabaseClient, channelId: string, productId: s
 }
 
 // ═══ 🌎 VERSIONES DEL PRODUCTO POR PAÍS (28-oct) ═══════════════════════════════════════════════
-// Un mismo producto se vende en varios países como productos HERMANOS: la copia de otro país lleva
-// `config.pais` (ISO, «MX») y `config.hermano_de` (el id del original). Cada hermano cobra con SU
-// moneda, SUS precios y SUS medios de pago — caminos ya probados (México y Colombia, 26-oct) —, así
-// que el cobro no se toca: acá solo se elige A CUÁL hermano entra el cliente.
+// Un mismo producto se vende en varios países como VERSIONES (productos de la misma familia, ver familiaDe),
+// cada una con `config.pais` (ISO, «MX»). Cada versión cobra con SU moneda, SUS precios y SUS medios de
+// pago — caminos ya probados (México y Colombia, 26-oct) —, así que el cobro no se toca: acá solo se elige
+// A CUÁL versión entra el cliente.
 // Su país: el anuncio (cada anuncio está asignado a la versión de su país) → el que ya sabíamos
 // (campo «pais») → el código de su número → si no hay número (nombre de usuario), se le PREGUNTA
 // (decisión de Rodrigo, 28-oct). Un producto sin hermanos no cambia en nada.
@@ -4001,13 +4001,14 @@ async function ocultosPorPais(db: SupabaseClient, channelId: string, productId: 
   try {
     const { data } = await db.from("products").select("id, config").eq("channel_id", channelId);
     const lista = (data ?? []) as any[];
-    if (!lista.some((x) => x?.config?.hermano_de || x?.config?.pais)) return out;
+    if (!lista.some((x) => x?.config?.hermano_de || x?.config?.familia || x?.config?.pais)) return out;
     const yo = lista.find((x) => String(x.id) === pid);
-    const miPais = String(yo?.config?.pais ?? "");
-    const miBase = String(yo?.config?.hermano_de || pid);
+    const paisBot = await paisDelBot(db, channelId);
+    const miPais = paisDeProducto(yo, paisBot);
+    const miFam = familiaDe(yo);
     for (const x of lista) {
       if (String(x.id) === pid) continue;
-      if (String(x.config?.hermano_de || x.id) === miBase || String(x.config?.pais ?? "") !== miPais) out.add(String(x.id));
+      if (familiaDe(x) === miFam || paisDeProducto(x, paisBot) !== miPais) out.add(String(x.id));
     }
   } catch (_) { /* sin lista → no se oculta nada */ }
   return out;
@@ -4020,6 +4021,10 @@ const ZONA_DE_PAIS: Record<string, string> = {
   GT: "America/Guatemala", SV: "America/El_Salvador", HN: "America/Tegucigalpa", NI: "America/Managua",
   DO: "America/Santo_Domingo", PR: "America/Puerto_Rico", ES: "Europe/Madrid", US: "America/New_York", BR: "America/Sao_Paulo",
 };
+const MONEDA_DE_PAIS: Record<string, string> = {
+  PE: "PEN", MX: "MXN", CO: "COP", CL: "CLP", AR: "ARS", EC: "USD", BO: "BOB", VE: "USD", PY: "PYG", UY: "UYU",
+  CR: "CRC", PA: "USD", GT: "GTQ", SV: "USD", HN: "HNL", NI: "NIO", DO: "DOP", PR: "USD", ES: "EUR", US: "USD", BR: "BRL",
+};
 export function zonaDePais(c: unknown): string | null { return ZONA_DE_PAIS[String(c ?? "").toUpperCase()] ?? null; }
 const PREGUNTA_PAIS = "¡Hola! 😊 ¿Desde qué país nos escribes? Así te paso el precio en tu moneda.";
 async function leerCampoContacto(db: SupabaseClient, contactId: string, key: string): Promise<string> {
@@ -4029,10 +4034,19 @@ async function leerCampoContacto(db: SupabaseClient, contactId: string, key: str
     return String((data as any)?.value ?? "").trim();
   } catch (_) { return ""; }
 }
-// La familia de hermanos del producto de ese flujo y el país de cada uno. null = el producto no tiene
-// hermanos (lo normal): nada que elegir.
+// 🌎 (28-oct, 2.ª forma) Las versiones de un producto por país son IGUALES: ninguna es «la original». Comparten
+// `config.familia` (las creadas antes con `hermano_de` se agrupan por ese id). Cada una tiene su país (`config.pais`; un
+// producto sin país es del país del bot). El cliente de un país SIN versión va a la que el dueño eligió en «Para los
+// demás países» (`config.pais_resto`, igual en todas las de la familia; decisión (a) de Rodrigo).
+function familiaDe(p: any): string { const c = p?.config ?? {}; return String(c.familia || c.hermano_de || p?.id || ""); }
+async function paisDelBot(db: SupabaseClient, channelId: string): Promise<string> {
+  try { const { data: ch } = await db.from("channels").select("timezone").eq("id", channelId).maybeSingle(); return PAIS_DE_ZONA[String((ch as any)?.timezone ?? "")] ?? "PE"; }
+  catch (_) { return "PE"; }
+}
+const paisDeProducto = (p: any, paisBot: string) => String(p?.config?.pais || paisBot).toUpperCase();
+// La familia del producto de ese flujo. null = el producto no tiene otras versiones (lo normal): nada que elegir.
 async function familiaPorPais(db: SupabaseClient, channelId: string, flowId: string):
-  Promise<{ productId: string; baseId: string; miembros: Array<{ id: string; pais: string }> } | null> {
+  Promise<{ productId: string; resto: string; miembros: Array<{ id: string; pais: string }> } | null> {
   const { data: fl } = await db.from("flows").select("product_id").eq("id", flowId).maybeSingle();
   const productId = String((fl as any)?.product_id ?? "");
   if (!productId) return null;
@@ -4040,16 +4054,16 @@ async function familiaPorPais(db: SupabaseClient, channelId: string, flowId: str
   const lista = (prods ?? []) as any[];
   const yo = lista.find((p) => String(p.id) === productId);
   if (!yo) return null;
-  const base = String(yo.config?.hermano_de || yo.id);
-  const fam = lista.filter((p) => String(p.id) === base || String(p.config?.hermano_de ?? "") === base);
+  const clave = familiaDe(yo);
+  const fam = lista.filter((p) => familiaDe(p) === clave);
   if (fam.length < 2) return null;
-  let paisBot = "PE";
-  try { const { data: ch } = await db.from("channels").select("timezone").eq("id", channelId).maybeSingle(); paisBot = PAIS_DE_ZONA[String((ch as any)?.timezone ?? "")] ?? "PE"; } catch (_) { /* PE */ }
-  // El original sin `pais` es del país del bot; una copia sin país elegido no compite (no se sabe de dónde es).
-  const miembros = fam.filter((p) => String(p.id) === base || p.config?.pais)
-    .map((p) => ({ id: String(p.id), pais: String(p.config?.pais || paisBot).toUpperCase() }));
-  if (miembros.length < 2 || !miembros.some((m) => m.id === base)) return null;
-  return { productId, baseId: base, miembros };
+  const paisBot = await paisDelBot(db, channelId);
+  const miembros = fam.map((p) => ({ id: String(p.id), pais: paisDeProducto(p, paisBot) }));
+  // «Para los demás países»: lo que diga la familia; si nadie lo eligió, la primera versión (la que dio el id).
+  const elegidoResto = String(yo.config?.pais_resto || fam.find((p) => p.config?.pais_resto)?.config?.pais_resto || "").toUpperCase();
+  const resto = miembros.some((m) => m.pais === elegidoResto) ? elegidoResto
+    : (miembros.find((m) => m.id === clave) ?? miembros[0]).pais;
+  return { productId, resto, miembros };
 }
 // Decide a qué versión entra. `preguntar` = se le mandó la pregunta del país y hay que esperar su respuesta.
 async function versionDelPais(
@@ -4072,8 +4086,7 @@ async function versionDelPais(
   if (!flowId) return { flow };
   const fam = await familiaPorPais(db, channelId, flowId);
   if (!fam) return { flow: flowId === String(flow?.id ?? "") ? flow : { id: flowId }, respondioPais };
-  const mio = fam.miembros.find((m) => m.id === fam.productId);
-  if (!mio) return { flow: flowId === String(flow?.id ?? "") ? flow : { id: flowId } };
+  const mio = fam.miembros.find((m) => m.id === fam.productId)!;
   // El anuncio ya es de un país: cada anuncio se asigna a la versión de su país.
   if (!pais && (tier === "anuncio" || tier === "referral")) { pais = mio.pais; motivo = "anuncio"; }
   if (!pais) { pais = (await leerCampoContacto(db, contactId, "pais")).toUpperCase(); if (pais) motivo = "ya lo sabíamos"; }
@@ -4089,10 +4102,10 @@ async function versionDelPais(
     return { flow: null, preguntar: true };
   }
   // Su país tiene versión → esa. Si no (un chileno cuando solo hay Perú y México) o no contestó un país
-  // reconocible → el ORIGINAL, el del país del bot.
-  const elegido = fam.miembros.find((m) => m.pais === pais) ?? fam.miembros.find((m) => m.id === fam.baseId)!;
+  // reconocible → la de «Para los demás países».
+  const elegido = fam.miembros.find((m) => m.pais === pais) ?? fam.miembros.find((m) => m.pais === fam.resto) ?? fam.miembros[0];
   if (pais) await setField(db, channelId, contactId, "pais", pais).catch(() => {});
-  if (!elegido || elegido.id === fam.productId) return { flow: { id: flowId, nombre: flow?.nombre }, pais, motivo, respondioPais };
+  if (elegido.id === fam.productId) return { flow: { id: flowId, nombre: flow?.nombre }, pais, motivo, respondioPais };
   const otro = await flowDeEntrada(db, channelId, elegido.id);
   return otro ? { flow: otro, pais, motivo, respondioPais } : { flow: { id: flowId, nombre: flow?.nombre }, pais, motivo, respondioPais };
 }
@@ -4230,9 +4243,10 @@ async function receptionCands(db: SupabaseClient, channelId: string): Promise<{ 
       }
     }
   } catch (_) { /* sin precios → como antes */ }
-  // 🌎 Las versiones de OTRO país de un producto no se ofrecen aparte: es el mismo producto (al
-  // encaminarlo, versionDelPais lo pasa a la de su país). Si no, la Recepción listaba «Reto» dos veces.
-  return [...flows.values()].filter((f) => !(f.product_id && (prods.get(f.product_id) as any)?.config?.hermano_de)).map((f) => {
+  // 🌎 Las versiones por país de un producto se ofrecen UNA vez: es el mismo producto (al encaminarlo,
+  // versionDelPais lo pasa a la de su país). Si no, la Recepción listaba «Reto» dos veces.
+  const _famVistas = new Set<string>();
+  return [...flows.values()].filter((f) => { const p = f.product_id ? prods.get(f.product_id) : null; if (!p) return true; const k = familiaDe(p); if (_famVistas.has(k)) return false; _famVistas.add(k); return true; }).map((f) => {
     const p = f.product_id ? prods.get(f.product_id) : null;
     const c = (p as any)?.config ?? {};
     // `ia.detalle` (lo que ES el producto) antes que `contexto_producto`: en la Plantilla ese arranca con «## Objeciones
@@ -34248,7 +34262,9 @@ async function buildContext(db: SupabaseClient, run: Run) {
     // La moneda del PRODUCTO (Opciones → «Moneda — aplica a todo el producto») manda sobre la
     // del canal: el selector existía en el panel pero el motor nunca lo leía → un curso en
     // dólares se cotizaba «S/ 99» y el pedido nacía en PEN.
-    const monProd = String((run as any)._prodCtx?.moneda ?? "").trim().toUpperCase();
+    // 🌎 (28-oct) …y si no la dice, la de SU PAÍS (una versión para México cobra en pesos mexicanos).
+    const monProd = String((run as any)._prodCtx?.moneda ?? "").trim().toUpperCase()
+      || String(MONEDA_DE_PAIS[String((run as any)._prodCtx?.pais ?? "").toUpperCase()] ?? "");
     ctx.moneda = monProd || String((chL as any)?.moneda || "PEN");
     // {{promesa_despacho}} — la prueba que va a recibir, dicha ANTES de cobrarle el
     // adelanto. Se arma con lo que este canal realmente manda (ver promesaDespacho).
