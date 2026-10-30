@@ -31029,7 +31029,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _yaPago = RE_DICE_QUE_PAGO.test(normalize(String(ctx.last_input ?? ""))) ||
             /(?:^|[^\p{L}])(?:ah[ií]\s+(?:te\s+)?va|va\s+el\s+resto|el\s+resto|lo\s+que\s+(?:falta|faltaba)|te\s+(?:mando|env[ií]o|yapeo)\s+(?:el\s+resto|lo\s+que\s+falta))(?![\p{L}])/iu.test(String(ctx.last_input ?? "")) ||
             /abono de|van\s+(?:S\/|\$)\s?\d|faltan\s+(?:S\/|\$)\s?\d/i.test(dicho);
-          const _pideCaptura = /captura|comprobante|constancia|pantallazo|voucher/i.test(salida);
+          // (30-oct) + «la FOTO del pago»: «Mándame la foto del pago para activarte el acceso» recibía detrás «¿Algo más que quieras saber?»
+          const _pideCaptura = /captura|comprobante|constancia|pantallazo|voucher|foto\s+(?:del|de\s+tu|de\s+su)\s+(?:pago|yape|plin|transferencia|dep[oó]sito)/i.test(salida);
+          // 🎯 (30-oct) …y si la IA ya CERRÓ a su manera, no se le pega otra pregunta: se DESPIDIÓ («Aquí estaré si en otro momento
+          // quieres retomar. ¡Éxitos!» + «¿Algo más que quieras saber antes de empezar?» a quien dijo «ya no quiero») o le PIDIÓ su
+          // pregunta («dime qué consulta tienes» + la misma). Los 3 casos de Prime del 26 al 28-oct.
+          const _iaYaCerro = /(?:^|[^\p{L}])(?:aqu[ií]\s+estar[eé]|en\s+otro\s+momento|cuando\s+(?:t[uú]\s+)?quieras\s+(?:retomar|volver)|[ée]xitos|que\s+te\s+vaya\s+(?:bien|s[uú]per)|hasta\s+(?:pronto|luego)|dime\s+(?:qu[eé]|cu[aá]l)\s+(?:es\s+)?(?:tu\s+)?(?:consulta|duda|pregunta)|cu[eé]ntame\s+(?:tu|qu[eé])\s+(?:consulta|duda|pregunta)|dime\s+tu\s+(?:consulta|duda|pregunta))(?![\p{L}])/iu.test(sinFormato(salida));
           const cierre = _esDigital
             ? (_yaPago && !_pideCaptura ? "Mándame la captura y te lo dejo listo 📷" : "")
             : (ofertas >= 2
@@ -31042,9 +31047,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // chats). Ahora la pregunta va EN ESPERA (`_cierreDiferido`) y sale solo si los datos NO
           // salen este turno. Sin repetirla: si la anterior ya fue la de pago, una más suave.
           const _li = String(ctx.last_input ?? "");
-          if (_esDigital && !cierre && !_yaPago && !_pideCaptura &&
+          if (_esDigital && !cierre && !_yaPago && !_pideCaptura && !_iaYaCerro &&
               !dudaDeSalud(_li) && !RE_QUEJA_SUAVE.test(_li) && !RE_PIDE_DEVOLUCION.test(_li) &&
-              !/\b(no me interesa|no gracias|no,? gracias|chau|adi[oó]s|hasta luego|nos vemos)\b/i.test(_li) &&
+              !/\b(no me interesa|ya no me interesa|ya no (?:lo )?quiero|no gracias|no,? gracias|chau|adi[oó]s|hasta luego|nos vemos)\b/i.test(_li) &&
               // 🙋 (9-oct, decisión de Rodrigo) Solo ANUNCIA que va a preguntar («Una pregunta», «tengo una consulta»): la
               // pregunta todavía no llegó. «Dime nomás…» + «¿Con qué lo pagas?» se sentía apurado (Cris, 9-oct). Si la pregunta
               // viene en el mismo mensaje («una pregunta, ¿son videos?»), esto no aplica y el cierre al pago sigue igual.
