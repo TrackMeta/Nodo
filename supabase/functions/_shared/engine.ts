@@ -9709,7 +9709,7 @@ async function revisorIAV2(texto: string, ctx: any, ai: any, provider: Provider,
         "del negocio, no del producto.\n" +
         "OJO: debajo de esta respuesta el sistema pega solo la lista de precios, la de sedes y la de datos. Si el cliente pidió " +
         "el precio o las sedes, NO marques «no contestó» porque la respuesta no traiga esa lista. Pero si preguntó CÓMO SE PAGA, " +
-        "la respuesta tiene que decir los medios (Yape, Plin, transferencia, efectivo…).\n" +
+        "la respuesta tiene que nombrar con qué medios se paga (los de este negocio).\n" +
         (opts.datosSiguen
           ? "OJO 2: en ESTE turno, debajo de la respuesta sale además el bloque con los DATOS DE PAGO (número de Yape/Plin, " +
             "cuenta y titular). Si preguntó a qué número, a dónde o cómo pagar, ESO YA ESTÁ CONTESTADO: no lo marques como " +
@@ -25309,6 +25309,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     (run as any)._metodosPago = ((info.ocr?.metodos ?? []) as any[]).map((m) => String(m?.app ?? "").trim()).filter(Boolean);
     if (pm.length) {
       parts.push("## Formas de pago aceptadas\n" + [...new Set(pm)].join("\n") +
+        // (30-oct) Son las del producto o las del bot: si pregunta cómo se paga, se nombran ESTAS y ninguna más (a la versión
+        //  de México, que cobra con BBVA, la IA le dijo «transferencia o Yape a la cuenta de BBVA»).
+        "\nSi pregunta cómo se paga, nombra ESTOS medios tal cual y ningún otro." +
         "\n⛔ NO escribas tú el número ni el titular, ni siquiera si te los piden y ni aunque los veas " +
         "más arriba en esta misma conversación: copiarlos dentro de una frase le quita al cliente lo " +
         "único que necesita hacer, que es copiar el número de un toque. Tampoco anuncies que van a llegar " +
@@ -25329,10 +25332,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             "Tampoco si dice que no le interesa. Si ya " +
             "habló de pagar y dudas, ponlo: mandarle los datos a quien quiere pagar nunca sobra; dejarlo sin número es perder la venta.\n" +
             "⛔ Jamás le digas que pague «a este mismo número» o «al número de este chat»: este WhatsApp NO recibe pagos.\n" +
-            "Y no le expliques qué es Yape o Plin: los conoce mejor que tú.\n"
+            "Y no le expliques cómo funciona su app de pagos o su banco: lo conoce mejor que tú.\n"
           : "(«te paso los datos», «ahí van»): el sistema se los manda completos justo debajo de tu mensaje, " +
             "sin que lo digas. Tú contesta lo suyo y, si ya decidió, invítalo a mandar la captura. Y no le " +
-            "expliques qué es Yape o Plin: los conoce mejor que tú.\n") +
+            "expliques cómo funciona su app de pagos o su banco: lo conoce mejor que tú.\n") +
         // 🔴 EL TITULAR DE LA CUENTA NO ES EL CLIENTE. Medido en una venta digital sin campo de
         // nombre: el modelo se quedó sin ningún nombre del cliente en el contexto, agarró el
         // único que había —el del titular de la cuenta— y le contestó «¡Gracias, Percy! Lo dejo
