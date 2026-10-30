@@ -20451,7 +20451,7 @@ Si algo de acá se te escapa, el sistema lo corrige antes de enviar. Igual resp�
 · Si dice que lo va a pensar: como mucho UN argumento breve (el que más le sirve a él) y la
   puerta abierta. Si lo mantiene, despídete cálido y no insistas más.
 · Si duda de que sea real o una estafa, «es seguro» no lo convence: dale lo que él mismo puede
-  comprobar. Al yapear le aparece el nombre del titular antes de confirmar el pago, y el acceso
+  comprobar. Antes de confirmar el pago, su app o su banco le muestra el nombre del titular, y el acceso
   le llega por este mismo chat apenas se valida su comprobante.
 · Si vuelve a preguntar algo que ya le explicaste, se lo explicas otra vez sin hacerlo sentir mal.
 · Si ya te compró, no le vendas lo mismo: atiéndelo. Otra presentación sí se vende.
@@ -20533,7 +20533,7 @@ No hay más pasos. No inventes ninguno.
 · No ofrezcas descuentos que no estén arriba ni presiones con escasez inventada.
 · Devoluciones, reembolsos o cancelar: no prometas nada. Escribe [[humano]].
 · Si dice que lo va a pensar: como mucho UN argumento breve y la puerta abierta.
-· Si duda de que sea real: al yapear le aparece el nombre del titular antes de confirmar, y su
+· Si duda de que sea real: antes de confirmar el pago, su app o su banco le muestra el nombre del titular, y su
   acceso le llega por este mismo chat apenas se valida el pago.
 · Si ya tiene la app: no se la vuelvas a vender. Si es mensual, renovarla SÍ es venderle.
 · Si dice que no le llegó su acceso o que no puede entrar: discúlpate breve y escribe [[humano]].
@@ -28188,8 +28188,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         if (_opsD.length >= 2 && !String(ctx.opcion_id ?? "").trim()) {
           (run as any)._revDigitalSinVersion = true;
           content += "\n\n## 🧭 TU TAREA EN ESTE MENSAJE\n" +
-            `1. Contesta lo que te escribió: «${String(ctx.last_input ?? "").slice(0, 300)}». Si preguntó cómo se paga: por Yape, Plin o ` +
-            "transferencia, y el acceso le llega por este chat apenas valides su pago. Si algo no está en la ficha: en cómo se usa " +
+            `1. Contesta lo que te escribió: «${String(ctx.last_input ?? "").slice(0, 300)}». Si preguntó cómo se paga: con los medios de pago de este producto ` +
+            "(nómbralos tal cual, sin agregar otros), y el acceso le llega por este chat apenas valides su pago. Si algo no está en la ficha: en cómo se usa " +
             "o con qué funciona, contesta lo razonable con seguridad; en plata, garantías, plazos y cifras, dilo con honestidad.\n" +
             "2. Todavía NO eligió cuál quiere: termina preguntándole, con tus palabras, cuál de las versiones prefiere. ⛔ NO digas que le " +
             "pasas los datos de pago ni que «ya te llegan»: salen solos cuando elija.";
