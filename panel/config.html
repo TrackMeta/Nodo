@@ -508,6 +508,7 @@ function renderGeneral(b){
     btn.disabled=false; btn.textContent=old;
     if(error){ toast(/timezone|column/.test(error.message)?"Falta aplicar la migración 0014 (timezone)":error.message,true); return; }
     st.channel.timezone=patch.timezone; st.channel.moneda=patch.moneda; st.channel.usd_rate=patch.usd_rate; toast("Guardado");
+    renderGeneral(b);   // la página recuerda el país guardado (si no, un segundo cambio no avisaba)
   };
   renderUso();
 }
