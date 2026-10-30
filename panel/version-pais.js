@@ -9,6 +9,7 @@
 // ═════════════════════════════════════════════════════════════════════════
 import { supa, toast, icon, confirmDialog, patchProductConfig } from "./shell.js";
 import { asegurarEstilos } from "./ventana-ajustes.js";
+import { cargarCambios, factorCambio } from "./cambio.js?v=1";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -56,7 +57,7 @@ function remap(val, mapa) {
 const sin = (o, ...k) => { const c = { ...o }; for (const x of k) delete c[x]; return c; };
 
 // Copia el producto `origenId` como versión para `pais`. La copia entra en la familia `familia`.
-async function crearVersion({ origenId, familia, pais, moneda, precios }) {
+async function crearVersion({ origenId, familia, pais, moneda, precios, ofertas }) {
   const info = paisInfo(pais);
   const creado = { producto: null, secuencias: [] };
   try {
@@ -91,6 +92,9 @@ async function crearVersion({ origenId, familia, pais, moneda, precios }) {
       .insert({ ...sin(base, "id", "created_at", "updated_at"), nombre, config: cfg }).select("id").single();
     if (eP) throw eP;
     creado.producto = pNew.id;
+    // Lo que nombra al producto (la oferta del remarketing: {product_id, version_id, precio}) pasa a nombrar la copia.
+    // Sin esto la oferta de la versión de México seguía apuntando al original y el motor no la aplicaba.
+    mapa.set(origenId, pNew.id);
     // 2) Las versiones (Básica / Premium / packs), con el precio en la moneda nueva.
     for (const v of vers || []) {
       const precio = precios[v.id];
@@ -135,10 +139,18 @@ async function crearVersion({ origenId, familia, pais, moneda, precios }) {
     if (ans.length) { const { error } = await supa.from("angulos").insert(ans); if (error) throw error; }
     // 6) Los pasos del remarketing y la config, con los ids nuevos.
     for (const s of seqs || []) {
-      const { error } = await supa.from("sequences").update({ pasos: remap(s.pasos, mapa) }).eq("id", mapa.get(s.id));
+      const pasos = remap(s.pasos, mapa);
+      // El precio de cada oferta en la moneda nueva (lo que puso en la ventana; si no, se borra: un 7 en pesos no es oferta).
+      (Array.isArray(pasos) ? pasos : []).forEach((p, i) => {
+        if (!p?.oferta) return;
+        const nuevo = Number((ofertas?.[s.id] || {})[i]);
+        if (nuevo > 0) p.oferta.precio = nuevo; else delete p.oferta;
+      });
+      const { error } = await supa.from("sequences").update({ pasos }).eq("id", mapa.get(s.id));
       if (error) throw error;
     }
-    const { error: eC } = await supa.from("products").update({ config: remap(cfg, mapa) }).eq("id", pNew.id);
+    const cfgF = remap(cfg, mapa); cfgF.familia = familia;   // (la familia es el id de la primera versión: no se cambia)
+    const { error: eC } = await supa.from("products").update({ config: cfgF }).eq("id", pNew.id);
     if (eC) throw eC;
     return pNew.id;
   } catch (e) {
@@ -158,6 +170,15 @@ export async function abrirVersionesPais({ channelId, prod, onAbrir, onCambio })
     supa.from("product_versions").select("id, nombre, precio, activo").eq("product_id", prod.id).order("orden"),
   ]);
   const paisBot = paisDeZona(ch?.timezone || "America/Lima");
+  // Las ofertas (con descuento) del remarketing de esta versión, para ponerles su precio en la moneda nueva.
+  const _cfgP = (prods || []).find((p) => p.id === prod.id)?.config || prod.config || {};
+  const _seqIds = [...new Set([...Object.values(_cfgP.remarketing_seqs || {}), _cfgP.remarketing_seq_id].filter(Boolean).map(String))];
+  const { data: _seqs } = _seqIds.length ? await supa.from("sequences").select("id, nombre, pasos").in("id", _seqIds) : { data: [] };
+  const ofertasHoy = [];
+  for (const sq of _seqs || []) (Array.isArray(sq.pasos) ? sq.pasos : []).forEach((p, i) => {
+    if (p?.oferta && Number(p.oferta.precio) > 0) ofertasHoy.push({ seq: sq.id, i, precio: Number(p.oferta.precio), version: (vers || []).find((v) => v.id === p.oferta.version_id)?.nombre || "" });
+  });
+  const cambios = ofertasHoy.length ? await cargarCambios() : {};
   const yo = (prods || []).find((p) => p.id === prod.id) || prod;
   const clave = familiaDe(yo);
   const fam = (prods || []).filter((p) => familiaDe(p) === clave);
@@ -196,6 +217,15 @@ export async function abrirVersionesPais({ channelId, prod, onAbrir, onCambio })
       <p class="ajp-desc" style="margin-top:0">El cliente de un país sin versión entra a esta.</p>
       <select class="ajp-in" id="vpResto" style="width:100%;max-width:320px">${fam.map((p) => { const i = paisInfo(paisDe(p)); return `<option value="${paisDe(p)}" ${paisDe(p) === resto ? "selected" : ""}>${i ? i[2] + " " + esc(i[1]) : esc(paisDe(p))}</option>`; }).join("")}</select>` : ""}
     </div>
+    ${fam.length > 1 ? `<div class="ajp-card"><h4>Pasar cambios a las otras versiones</h4>
+      <p class="ajp-desc">Copia lo de esta versión a las demás. No toca precios, moneda, medios de pago ni anuncios.</p>
+      <label class="ajp-tog"><div><b>Ficha de la IA</b><small>Qué es, detalles, preguntas frecuentes, objeciones y cómo vende</small></div><input type="checkbox" id="vpPfFicha" checked></label>
+      <label class="ajp-tog"><div><b>Saludo</b><small>Los mensajes iniciales (todas sus versiones y ángulos)</small></div><input type="checkbox" id="vpPfSal"></label>
+      <span class="ajp-lbl">A estas versiones</span>
+      ${fam.filter((p) => p.id !== prod.id).map((p) => { const i = paisInfo(paisDe(p)); return `<label class="ajp-tog" style="padding:8px 12px"><div><b>${i ? i[2] + " " + esc(i[1]) : esc(paisDe(p))}</b></div><input type="checkbox" data-pf="${esc(p.id)}" checked></label>`; }).join("")}
+      <div class="ajp-hint">Si la ficha o el saludo tienen precios escritos a mano, revísalos después en cada versión: están en la moneda de esta.</div>
+      <div class="ajp-acts"><button class="ajp-btn pri" id="vpPasar">Pasar a las versiones elegidas</button></div>
+    </div>` : ""}
     ${prod.tipo === "fisico" ? `<div class="ajp-nota"><span>📦 Los productos físicos se venden solo en el país del bot (agencias, distritos, adelantos). Las versiones por país son para productos digitales y micro apps.</span></div>` : libres.length ? `
     <div class="ajp-card"><h4>＋ Agregar país</h4>
       <p class="ajp-desc">Se copia esta versión: ficha, saludo, palabra clave, presentaciones, ángulos y remarketing. Los anuncios y los medios de pago <b>no</b> se copian: son de cada país.</p>
@@ -208,6 +238,11 @@ export async function abrirVersionesPais({ channelId, prod, onAbrir, onCambio })
       ${versA.map((v) => `<div class="ajp-num" style="margin-top:6px"><span style="min-width:150px;color:var(--muted);font-weight:700">${esc(v.nombre || "Precio")}</span>
         <div class="box"><span class="vpSym">$</span><input type="number" min="0" step="0.01" data-v="${esc(v.id)}" placeholder="0"/></div>
         <small>En esta versión: ${esc(SIMBOLO[monYo] || "")} ${esc(v.precio ?? "—")}</small></div>`).join("")}
+      ${ofertasHoy.length ? `<span class="ajp-lbl">Ofertas del remarketing</span>
+      <p class="ajp-desc" style="margin-top:0">Propuestas con el tipo de cambio de hoy. Cámbialas si quieres un número redondo; vacía = sin oferta.</p>
+      ${ofertasHoy.map((o, k) => `<div class="ajp-num" style="margin-top:6px"><span style="min-width:150px;color:var(--muted);font-weight:700">Toque ${o.i + 1}${o.version ? " · " + esc(o.version) : ""}</span>
+        <div class="box"><span class="vpSym">$</span><input type="number" min="0" step="0.01" data-of="${k}" placeholder="0"/></div>
+        <small>En esta versión: ${esc(SIMBOLO[monYo] || "")} ${esc(o.precio)}</small></div>`).join("")}` : ""}
       <div class="ajp-nota"><span>⏸️ La versión nueva nace <b>en pausa</b>. Antes de reanudarla ponle sus <b>medios de pago</b> (ficha → Avanzado → «Medios de pago propios»), revisa los textos que tengan precios escritos a mano y asigna los anuncios de ese país en su banco de anuncios.</span></div>
       <div class="ajp-acts"><button class="ajp-btn pri" id="vpCrear">Crear versión</button></div>
     </div>` : `<div class="ajp-nota">Ya hay una versión para cada país de la lista.</div>`}
@@ -236,6 +271,51 @@ export async function abrirVersionesPais({ channelId, prod, onAbrir, onCambio })
     toast(`Ahora es la versión de ${iN?.[1] || nuevo}`);
     cerrar(); onCambio && onCambio(yo.id);
   };
+  // Pasar la ficha y/o el saludo de esta versión a las otras. La ficha = las claves de la ficha de la IA; de config.ia se
+  // conserva el «método de pago especial» de cada versión (es de su país).
+  const FICHA = ["contexto_producto", "ia", "ia_multimedia", "faq", "faq_items", "objeciones", "objeciones_items", "emojis", "intencion"];
+  const btnPasar = ov.querySelector("#vpPasar");
+  if (btnPasar) btnPasar.onclick = async () => {
+    const ficha = ov.querySelector("#vpPfFicha").checked, saludo = ov.querySelector("#vpPfSal").checked;
+    const destinos = [...ov.querySelectorAll("input[data-pf]")].filter((x) => x.checked).map((x) => x.dataset.pf);
+    if (!ficha && !saludo) { toast("Elige qué pasar: la ficha, el saludo o los dos", true); return; }
+    if (!destinos.length) { toast("Elige al menos una versión", true); return; }
+    const nombres = destinos.map((id) => paisInfo(paisDe(fam.find((p) => p.id === id)))?.[1] || "").join(", ");
+    if (!await confirmDialog({ title: "Pasar cambios",
+      message: `Se reemplaza ${ficha && saludo ? "la ficha y el saludo" : ficha ? "la ficha de la IA" : "el saludo"} de ${nombres} con lo de esta versión.`, confirmText: "Pasar" })) return;
+    btnPasar.disabled = true; btnPasar.textContent = "Pasando…";
+    try {
+      const { data: src } = await supa.from("products").select("config").eq("id", yo.id).single();
+      const cfgS = src?.config || {};
+      let rotS = null;
+      if (saludo) {
+        const { data: fS } = await supa.from("flows").select("id").eq("product_id", yo.id).eq("role", "mensajes_iniciales").limit(1).maybeSingle();
+        if (fS) { const { data: nS } = await supa.from("flow_nodes").select("config").eq("flow_id", fS.id).eq("tipo", "rotador").limit(1).maybeSingle(); rotS = nS?.config || null; }
+      }
+      let sinSaludo = 0;
+      for (const id of destinos) {
+        if (ficha) {
+          const r = await patchProductConfig(id, (c) => {
+            const metodo = c.ia?.metodos_pago;
+            for (const k of FICHA) { if (k in cfgS) c[k] = JSON.parse(JSON.stringify(cfgS[k])); else delete c[k]; }
+            if (c.ia && typeof c.ia === "object") { if (metodo != null) c.ia.metodos_pago = metodo; else delete c.ia.metodos_pago; }
+          });
+          if (!r.ok) throw r.error || new Error("no se pudo guardar la ficha");
+        }
+        if (saludo && rotS) {
+          const { data: fD } = await supa.from("flows").select("id").eq("product_id", id).eq("role", "mensajes_iniciales").limit(1).maybeSingle();
+          const { data: nD } = fD ? await supa.from("flow_nodes").select("id").eq("flow_id", fD.id).eq("tipo", "rotador").limit(1).maybeSingle() : { data: null };
+          if (nD) { const { error } = await supa.from("flow_nodes").update({ config: JSON.parse(JSON.stringify(rotS)) }).eq("id", nD.id); if (error) throw error; }
+          else sinSaludo++;
+        }
+      }
+      toast(`Listo: pasado a ${nombres}` + (sinSaludo ? ` (${sinSaludo} sin saludo propio, no se tocó)` : ""));
+      btnPasar.textContent = "Pasado ✓";
+    } catch (e) {
+      toast("No se pudo pasar: " + (e?.message || e), true);
+      btnPasar.disabled = false; btnPasar.textContent = "Pasar a las versiones elegidas";
+    }
+  };
   const selR = ov.querySelector("#vpResto");
   if (selR) selR.onchange = async () => {
     await sellarFamilia();
@@ -249,6 +329,10 @@ export async function abrirVersionesPais({ channelId, prod, onAbrir, onCambio })
     const m = paisInfo(selP.value)?.[3] || "USD";
     ov.querySelectorAll(".vpSym").forEach((s) => { s.textContent = SIMBOLO[m] || "$"; });
     ov.querySelector("#vpMonTxt").textContent = `Cobrará en ${SIMBOLO[m] || ""} ${m}.`;
+    // Ofertas: el monto de esta versión llevado a la moneda nueva con el cambio de hoy, redondeado como se cobra.
+    const fx = factorCambio(cambios, monYo, m, new Date().toISOString());
+    const redondo = (x) => x < 100 ? Math.round(x) : x < 1000 ? Math.round(x / 5) * 5 : x < 10000 ? Math.round(x / 10) * 10 : Math.round(x / 100) * 100;
+    ov.querySelectorAll("input[data-of]").forEach((inp) => { const o = ofertasHoy[+inp.dataset.of]; inp.value = fx ? String(redondo(o.precio * fx)) : ""; });
   };
   if (selP) { selP.onchange = pintaMon; pintaMon(); }
   const btn = ov.querySelector("#vpCrear");
@@ -260,7 +344,9 @@ export async function abrirVersionesPais({ channelId, prod, onAbrir, onCambio })
     btn.disabled = true; btn.textContent = "Creando…";
     try {
       await sellarFamilia();
-      const id = await crearVersion({ origenId: yo.id, familia: clave, pais: selP.value, moneda: paisInfo(selP.value)?.[3] || "USD", precios });
+      const ofertas = {};
+      ov.querySelectorAll("input[data-of]").forEach((inp) => { const o = ofertasHoy[+inp.dataset.of]; (ofertas[o.seq] ||= {})[o.i] = inp.value.trim(); });
+      const id = await crearVersion({ origenId: yo.id, familia: clave, pais: selP.value, moneda: paisInfo(selP.value)?.[3] || "USD", precios, ofertas });
       toast(`Versión ${paisInfo(selP.value)?.[1] || ""} creada — en pausa hasta que le pongas sus medios de pago`);
       cerrar();
       onAbrir && onAbrir(id);

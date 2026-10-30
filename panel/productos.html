@@ -403,7 +403,7 @@ async function boot(){
     if(!st.prod) return;
     if(isDirty && isDirty()){ toast("Primero guarda los cambios de este producto",true); return; }
     try{
-      const m=await import("./version-pais.js?v=5");
+      const m=await import("./version-pais.js?v=6");
       m.abrirVersionesPais({ channelId:st.channelId, prod:st.prod, onAbrir:async(id)=>{ await loadProducts(); openProduct(id); },
         onCambio:async(id)=>{ await loadProducts(); openProduct(id); } });
     }catch(e){ toast("No se pudo abrir: recarga la página",true); }
