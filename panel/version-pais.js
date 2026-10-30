@@ -84,7 +84,8 @@ async function crearVersion({ origenId, familia, pais, moneda, precios }) {
     const etiqueta = `${info?.[2] || ""} ${info?.[1] || pais}`.trim();
     // 1) El producto. Sin los anuncios (cada anuncio es de UN país: se asignan en la versión) ni los medios de pago
     //    propios (los de otro país se ponen en la versión).
-    const cfg = sin(cfg0, "ad_bank", "pago_propio", "hermano_de");
+    // (el costo y el empaque están en la moneda del original: en la versión nueva se ponen en la suya)
+    const cfg = sin(cfg0, "ad_bank", "pago_propio", "hermano_de", "costo", "empaque");
     cfg.pais = pais; cfg.moneda = moneda; cfg.familia = familia;
     const { data: pNew, error: eP } = await supa.from("products")
       .insert({ ...sin(base, "id", "created_at", "updated_at"), nombre, config: cfg }).select("id").single();
