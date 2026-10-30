@@ -302,6 +302,7 @@
           <button data-t="microapp">Micro apps</button>
         </div>
         <select class="vsel" id="vistaSel" style="display:none" title="Ver la plata de un producto o de uno de sus anuncios"><option value="all">Todo</option></select>
+        <button class="vsel" id="usdBtn" style="display:none;cursor:pointer" title="Ver todo convertido a dólares con el tipo de cambio de cada día">Ver en dólares</button>
         <div class="datefilter">
           <button class="df-btn" id="dfBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> <span class="cur" id="dfLabel">Hoy</span><svg class="df-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
           <div class="df-pop" id="dfPop"></div>
@@ -369,6 +370,7 @@ import { supa, getChannel, mountShell, toast, icon, confirmDialog, pageAll, patc
 // 🔐 ¿La cuenta ve «Avanzado» (Flujos y Campos)? Decide a dónde apunta el checklist.
 let AV = false;
 import * as O from "./orders.js";
+import { llevarAMoneda, cargarCambios, factorCambio } from "./cambio.js?v=1";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 import { ymdTZ, startOfDayTZ, endOfDayTZ, tzNombre } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -390,10 +392,39 @@ const curSym=()=>CUR_SYM[CUR]||CUR;
 // gasto de IA —que el proveedor cobra en dólares— no se puede sumar a una ganancia
 // en soles sin mentir: se muestra aparte y en dólares hasta que lo configuren.
 let USD_RATE=0;
+// 💱 (29-oct) CUR_NEG = la moneda del negocio; CUR = la del reporte (la misma, o dólares con «Ver en dólares»).
+// Las ventas en otra moneda se CONVIERTEN con el tipo de cambio de su día (cambio.js) en vez de quedar aparte.
+let CUR_NEG="PEN", PAIS_BOT="PE";
+const PAIS_ZONA_D={"America/Lima":"PE","America/Bogota":"CO","America/Mexico_City":"MX","America/Cancun":"MX","America/Mazatlan":"MX","America/Hermosillo":"MX","America/Tijuana":"MX","America/Santiago":"CL","America/Punta_Arenas":"CL","America/Argentina/Buenos_Aires":"AR","America/Guayaquil":"EC","America/La_Paz":"BO","America/Caracas":"VE","America/Asuncion":"PY","America/Montevideo":"UY","America/Costa_Rica":"CR","America/Panama":"PA","America/Guatemala":"GT","America/El_Salvador":"SV","America/Tegucigalpa":"HN","America/Managua":"NI","America/Santo_Domingo":"DO","America/Puerto_Rico":"PR","Europe/Madrid":"ES","Atlantic/Canary":"ES","America/New_York":"US","America/Chicago":"US","America/Denver":"US","America/Los_Angeles":"US","America/Sao_Paulo":"BR","America/Manaus":"BR"};
+const NOMBRE_PAIS_D={PE:"Perú",MX:"México",CO:"Colombia",CL:"Chile",AR:"Argentina",EC:"Ecuador",BO:"Bolivia",VE:"Venezuela",PY:"Paraguay",UY:"Uruguay",CR:"Costa Rica",PA:"Panamá",GT:"Guatemala",SV:"El Salvador",HN:"Honduras",NI:"Nicaragua",DO:"Rep. Dominicana",PR:"Puerto Rico",ES:"España",US:"Estados Unidos",BR:"Brasil"};
+const banderaD=(c)=>{ c=String(c||"").toUpperCase(); return /^[A-Z]{2}$/.test(c)?String.fromCodePoint(...[...c].map(x=>127397+x.charCodeAt(0))):"🌎"; };
+const verUsd=()=>{ try{ return localStorage.getItem("nodo.verUsd."+channelId)==="1"; }catch(_){ return false; } };
 async function loadCurrency(){
   const ch=await getChannel(channelId);
-  CUR=(ch&&ch.moneda)||"PEN";
+  CUR_NEG=(ch&&ch.moneda)||"PEN";
+  PAIS_BOT=PAIS_ZONA_D[(ch&&ch.timezone)||"America/Lima"]||"PE";
+  CUR = (verUsd() && CUR_NEG!=="USD") ? "USD" : CUR_NEG;
   USD_RATE = CUR==="USD" ? 1 : await getUsdRate(channelId);
+  const ub=$("usdBtn"); if(ub){ ub.style.display = CUR_NEG==="USD" ? "none" : ""; ub.classList.toggle("on", CUR==="USD"); ub.textContent = CUR==="USD" ? "Ver en "+(CUR_SYM[CUR_NEG]||CUR_NEG) : "Ver en dólares";
+    ub.onclick=()=>{ try{ localStorage.setItem("nodo.verUsd."+channelId, CUR==="USD"?"0":"1"); }catch(_){} load(); }; }
+}
+// El costo del producto de la ficha × cantidad, en la moneda del producto (para convertirlo junto con el pedido).
+const costoFichaDe=(prods)=>{ const pc={}, cv={}; (prods||[]).forEach(p=>{ pc[p.id]=p.config&&p.config.costo; (p.product_versions||[]).forEach(v=>{ cv[v.id]=v.cantidad??1; }); });
+  return (o)=>{ const u=pc[o.product_id]; return (u==null||u==="") ? null : Number(u)*(Number(cv[o.version_id]??1)||1); }; };
+// El gasto de Meta en la moneda del reporte: factorAds y, si no puede (otra moneda), el tipo de cambio de hoy.
+async function factorAdsConv(rows){
+  const r=factorAds(rows, CUR, USD_RATE);
+  if(!r.aviso || r.aviso==="moneda sin confirmar") return r;
+  const mons=[...new Set((rows||[]).map(m=>String(m.account_currency||"").toUpperCase()).filter(Boolean))];
+  if(mons.length!==1) return r;
+  const fx=factorCambio(await cargarCambios(), mons[0], CUR, new Date().toISOString());
+  return fx ? { factor:fx, aviso:"" } : r;
+}
+// Los gastos que anotas a mano están en la moneda del negocio: con «Ver en dólares» se convierten.
+async function gastosEnReporte(expR){
+  if(CUR===CUR_NEG || !expR || expR.error) return expR;
+  const c=await cargarCambios();
+  return { ...expR, data:(expR.data||[]).map(e=>{ const fx=factorCambio(c, CUR_NEG, CUR, e.fecha); return fx ? { ...e, monto:+(Number(e.monto||0)*fx).toFixed(2) } : e; }) };
 }
 const money=(n)=>curSym()+" "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
 // Saca de `ordR.data` los pedidos cuya moneda NO es la del negocio y devuelve el
@@ -413,6 +444,27 @@ const otrasMonedasTxt=(otras)=>Object.entries(otras||{}).sort((a,b)=>b[1].n-a[1]
 const avisoOtrasMonedas=(otras)=>Object.keys(otras||{}).length
   ? `<div style="grid-column:1/-1;padding:10px 12px;border:1px solid var(--amber,#f59e0b);border-radius:10px;background:rgba(245,158,11,.08);font-size:12.5px;line-height:1.55">${icon("alert")} ${esc(otrasMonedasTxt(otras))} <b>${Object.values(otras).reduce((a,k)=>a+k.n,0)>1?"no entran":"no entra"}</b> en estos números: el negocio ahora factura en <b>${esc(CUR)}</b> y no hay cómo convertirlos sin inventar una tasa. Los ves, con su moneda, en Compras y Pedidos.</div>`
   : "";
+// Las ventas en otra moneda que SÍ entraron, convertidas con el tipo de cambio de su día.
+const avisoConvertidas=(conv)=>{ const e=Object.entries(conv||{}); if(!e.length) return "";
+  const t=e.map(([c,k])=>`${k.n} venta${k.n>1?"s":""} en ${c} (${(CUR_SYM[c]||c)+" "+k.total.toLocaleString("es-PE",{maximumFractionDigits:2})})`).join(" · ");
+  return `<div style="grid-column:1/-1;padding:9px 12px;border:1px solid var(--border);border-radius:10px;font-size:12.5px;line-height:1.55;color:var(--muted)">💱 Incluye ${esc(t)}, pasadas a <b>${esc(CUR)}</b> con el tipo de cambio del día de cada venta.</div>`; };
+// 🌎 Ventas por país (si el bot vende en más de uno): cuántas, cuánto en SU moneda y cuánto en la del reporte.
+function ventasPorPais(ventas, prodPorId){
+  const g={};
+  (ventas||[]).forEach(o=>{
+    const p=String((prodPorId[o.product_id]&&prodPorId[o.product_id].config&&prodPorId[o.product_id].config.pais)||PAIS_BOT).toUpperCase();
+    const k=g[p]||(g[p]={ n:0, conv:0, orig:{} }); k.n++; k.conv+=O.total(o);
+    const mo=o._moneda_orig||CUR, vo=o._moneda_orig?Number(o._total_orig||0):O.total(o); k.orig[mo]=(k.orig[mo]||0)+vo;
+  });
+  const filas=Object.entries(g).sort((a,b)=>b[1].conv-a[1].conv);
+  if(filas.length<2) return "";
+  return `<div style="grid-column:1/-1;border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:var(--surface)">
+    <div style="font-weight:700;font-size:13.5px;margin-bottom:6px">🌎 Ventas por país</div>${filas.map(([p,k])=>{
+      const orig=Object.entries(k.orig).filter(([m])=>m!==CUR).map(([m,v])=>`${(CUR_SYM[m]||m)} ${v.toLocaleString("es-PE",{maximumFractionDigits:0})} ${m}`).join(" + ");
+      return `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--border);font-size:13px">
+        <span>${banderaD(p)} ${esc(NOMBRE_PAIS_D[p]||p)} · ${k.n} venta${k.n>1?"s":""}</span>
+        <span style="text-align:right"><b>${money(k.conv)}</b>${orig?`<span style="color:var(--faint);font-size:12px"> · ${esc(orig)}</span>`:""}</span></div>`; }).join("")}</div>`;
+}
 // Versión corta (sin decimales) para el calendario de la Bitácora.
 // Ojo con el CERO NEGATIVO: Math.round(-0.21) da -0 y se imprime "S/ -0", que en el
 // calendario de la Bitácora se lee como un día en pérdida. Pasa con cualquier importe
@@ -969,7 +1021,8 @@ async function load(){
   // conservan la suya): se sumaban como si fueran de la actual → S/ y US$ mezclados en un
   // mismo total. Quedan FUERA de estos números (no hay cómo convertirlos sin inventar una
   // tasa) y se avisa cuántos son y cuánto suman; Compras y Pedidos los muestran por moneda.
-  const otrasMonedas=apartarOtrasMonedas(ordR);
+  const _conv=await llevarAMoneda(ordR, CUR, O.cobrado, costoFichaDe(prodR.error?[]:(prodR.data||[])));
+  const otrasMonedas=_conv.otras, convertidas=_conv.convertidas;
   const s=stats.data||{};
   // `contactos` y `por_stage` vienen del RPC ya SIN los contactos de prueba (migración 0099):
   // pisarlos con un conteo propio que solo excluía a webchat-test los volvía a contar, y
@@ -1075,7 +1128,7 @@ async function load(){
   // la del negocio. Sin convertir, neta/ROAS/%ads salen inflados (~3.75× con USD/PEN).
   // Ahora se convierte cuando se puede y se sigue avisando cuando no (ver factorAds).
   const _admRows = admR.error ? [] : (admR.data||[]);
-  const _ads = factorAds(_admRows, CUR, USD_RATE);
+  const _ads = await factorAdsConv(_admRows);
   let gastoAds=0;
   ins.forEach(i=>{ if((tipo==="todo" || adTipo[i.ad_id]===tipo) && enVistaAd(i.ad_id)) gastoAds+=Number(i.gasto||0)*_ads.factor; });
   const monedaAdsRara = gastoAds>0 && !!_ads.aviso;
@@ -1140,7 +1193,8 @@ async function load(){
   const faltaTxt = [_faltaCostos, porCobrarN ? `${porCobrarN} pedido${porCobrarN>1?"s":""} aún por cobrar (su ganancia entra al cobrarse)` : ""].filter(Boolean).join(" · ");
   // Gastos extra (operativos, registrados a mano). Son overhead del negocio,
   // así que solo se restan en la vista general ("Todo"), no por segmento.
-  const expenses = expR.error ? [] : (expR.data||[]);
+  const _expR = await gastosEnReporte(expR);
+  const expenses = _expR.error ? [] : (_expR.data||[]);
   const gastosExtra = (tipo==="todo" && vistaGeneral()) ? expenses.reduce((a,e)=>a+Number(e.monto||0),0) : 0;
   // ── Lo que costó la IA en el periodo ──────────────────────────────
   // Es un costo operativo como cualquier otro: si no se resta, la "ganancia real"
@@ -1337,7 +1391,7 @@ async function load(){
   K.push(kpi("users","#9b6cf0","Contactos", s.contactos??0, "en todo el bot, ahora mismo"));
   K.push(kpi("repeat","#f0a92b","En remarketing", s.subs_activas??0, "en todo el bot, ahora mismo"));
   K.push(kpi("bell","#e2564a","Requieren humano", s.requiere_humano??0, "en todo el bot, ahora mismo"));
-  $("kpis").innerHTML=avisoOtrasMonedas(otrasMonedas)+K.join("");
+  $("kpis").innerHTML=avisoOtrasMonedas(otrasMonedas)+avisoConvertidas(convertidas)+K.join("")+ventasPorPais(ventasOk, prodPorId);
   animateNums($("kpis"));
   renderBand({ bruta, gastoAds, gastosExtra, gastoIa, iaUsd, iaSinConvertir, neta, roas, pctAds, hasAds, sinCostoF, faltaTxt, brutaDesconocida, tipo });
   {
@@ -1665,7 +1719,7 @@ async function loadDias(from, to){
   // Fuera los pedidos de TODOS los contactos de prueba (Probar flujos y simulador), como arriba.
   { const _pr=new Set(((wsB&&!wsB.error&&wsB.data)||[]).map(c=>c.id)); if(!ordR.error && _pr.size) ordR.data=(ordR.data||[]).filter(o=>!_pr.has(o.contact_id)); }
   // Y fuera los pedidos en otra moneda, como arriba (se avisa en el título del calendario).
-  bitaOtras=apartarOtrasMonedas(ordR);
+  bitaOtras=(await llevarAMoneda(ordR, CUR, O.cobrado, costoFichaDe(prodR.error?[]:(prodR.data||[])))).otras;
   const prods=prodR.error?[]:(prodR.data||[]);
   const prodPorId={},cantPorVersion={};
   prods.forEach(p=>{ prodPorId[p.id]=p; TIPO_PROD[p.id]=p.tipo; (p.product_versions||[]).forEach(v=>{ cantPorVersion[v.id]=v.cantidad??1; }); });
@@ -1693,10 +1747,10 @@ async function loadDias(from, to){
   });
   // Mismo factor de moneda que la banda de arriba, o el profit del día y el del
   // periodo dirían cosas distintas para los mismos anuncios.
-  const _adsB = factorAds(admR2&&!admR2.error?(admR2.data||[]):[], CUR, USD_RATE);
+  const _adsB = await factorAdsConv(admR2&&!admR2.error?(admR2.data||[]):[]);
   const _adsFueraB=await adsDeCuentasQuitadas(channelId);
   (insR.error?[]:(insR.data||[])).filter(i=>!_adsFueraB.has(String(i.ad_id))).forEach(i=>{ if((tipo==="todo"||adTipo[i.ad_id]===tipo) && enVistaAd(i.ad_id)){ D(i.fecha).spend+=Number(i.gasto||0)*_adsB.factor; } });
-  if(tipo==="todo" && vistaGeneral()) (expR.error?[]:(expR.data||[])).forEach(e=>{ D(e.fecha).exp+=Number(e.monto||0); });
+  { const _eB=await gastosEnReporte(expR); if(tipo==="todo" && vistaGeneral()) (_eB.error?[]:(_eB.data||[])).forEach(e=>{ D(e.fecha).exp+=Number(e.monto||0); }); }
   // Mismo trato que arriba: solo entra convertido a tu moneda (si no, no se puede
   // restar de una ganancia en soles sin inventar una tasa).
   if(tipo==="todo" && vistaGeneral() && USD_RATE>0) (iaR&&!iaR.error?(iaR.data||[]):[]).forEach(x=>{ D(x.dia).exp+=Number(x.costo_usd||0)*USD_RATE; });
