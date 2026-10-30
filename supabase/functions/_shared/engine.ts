@@ -20409,7 +20409,7 @@ Estas cinco no las corrige nadie más. Si las rompes, salen tal cual.
   ⛔ Si en los precios de abajo hay UNA sola presentación, NO existen versiones: no hables de
   «básica», «completa», «premium» ni «planes», ni le preguntes cuál quiere — hay una sola.
 
-4 ⛔ UN PAGO QUE NO VISTE NO ES UN PAGO. "Ya te yapeé" es una intención, no un pago. Pídele la
+4 ⛔ UN PAGO QUE NO VISTE NO ES UN PAGO. "Ya te pagué" es una intención, no un pago. Pídele la
   captura y espera. Quien confirma el dinero es el sistema, no tú.
   MAL: "¡Listo, ya me llegó! Ahí va tu acceso"
   BIEN: "Mándame la captura y te lo dejo listo 📷"
@@ -20487,7 +20487,7 @@ Store ni de App Store: se abre con un link y se puede agregar a la pantalla del 
 cualquier app. Funciona en Android y en iPhone.
 Se cobra como dicen las «Opciones de compra»: pago único (de por vida, mientras la app exista)
 y/o mensual. El mensual NO tiene cobros automáticos: cuando se acerca la fecha le recordamos y
-renueva con Yape si quiere; si no renueva, la app queda en pausa y su progreso se guarda.
+renueva pagando otra vez si quiere; si no renueva, la app queda en pausa y su progreso se guarda.
 
 ## Cómo se compra (esto es todo el camino)
 1. Elige cómo pagar (si hay más de una opción).  2. Le llegan los datos de pago con el monto exacto.
@@ -20509,7 +20509,7 @@ No hay más pasos. No inventes ninguno.
 3 ⛔ EL TITULAR DE LA CUENTA NO ES EL CLIENTE. Ese nombre es el del negocio. Si no sabes cómo
   se llama el cliente, no lo saludes por nombre.
 
-4 ⛔ UN PAGO QUE NO VISTE NO ES UN PAGO. "Ya te yapeé" es una intención: pídele la captura.
+4 ⛔ UN PAGO QUE NO VISTE NO ES UN PAGO. "Ya te pagué" es una intención: pídele la captura.
   BIEN: "Mándame la captura y te dejo tu acceso listo 📷"
 
 5 ⛔ EL CORREO SE PIDE DESPUÉS DEL PAGO, NO ANTES. Antes de pagar no le pidas correo, nombre
@@ -25307,6 +25307,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       .map((m: any) => "- " + String(m.app ?? "pago").trim());
     // Se guardan los NOMBRES de los métodos para el guard de «¿se puede Plin?» (al emitir).
     (run as any)._metodosPago = ((info.ocr?.metodos ?? []) as any[]).map((m) => String(m?.app ?? "").trim()).filter(Boolean);
+    // 🌎 (30-oct) Los ejemplos de cómo pide pagar el cliente hablan de Yape/Plin SOLO si se cobra con Yape o Plin: lo que va
+    // de ejemplo en el prompt la IA lo repite, y a la versión de México (BBVA) le contestaba «por transferencia o Yape».
+    const _conYapeLista = (run as any)._metodosPago.some((a: string) => /yape|plin/i.test(a));
+    const _ejPagar = _conYapeLista
+      ? "«yape será mi medio de pago», «hola plin», «num», «¿a quién yapeo?», «¿es a este mismo número?», «no me deja yapear», «ya, lo quiero»"
+      : "«pago por transferencia», «num», «¿a qué cuenta te pago?», «¿es a este mismo número?», «no me deja pagar», «ya, lo quiero»";
     if (pm.length) {
       parts.push("## Formas de pago aceptadas\n" + [...new Set(pm)].join("\n") +
         // (30-oct) Son las del producto o las del bot: si pregunta cómo se paga, se nombran ESTAS y ninguna más (a la versión
@@ -25323,8 +25329,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // contestando sobre datos que nunca salieron («yapea al mismo número de este chat» — deypradoba, 8-oct).
           ? "(«te paso los datos», «ahí van»).\n" +
             "🔑 TÚ decides cuándo salen. Cuando el cliente quiera pagar o pregunte cómo, dónde o a qué número pagar —lo diga como " +
-            "lo diga: «yape será mi medio de pago», «hola plin», «num», «¿a quién yapeo?», «¿es a este mismo número?», «no me " +
-            "deja yapear», «ya, lo quiero»—, termina tu mensaje con `[[datos_pago]]` (el cliente no lo ve): el sistema le manda " +
+            "lo diga: " + _ejPagar + "—, termina tu mensaje con `[[datos_pago]]` (el cliente no lo ve): el sistema le manda " +
             "justo debajo el bloque con el monto y los números. Tú contesta lo suyo y, si ya decidió, invítalo a mandar la captura.\n" +
             // (…y no a una PREGUNTA del producto: a «¿es para mayores de 50?» le salió el Yape — prueba del 8-oct)
             "No lo pongas si su mensaje es una PREGUNTA sobre el producto (para quién es, qué incluye, cuánto dura, si es " +
