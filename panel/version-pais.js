@@ -116,7 +116,8 @@ async function crearVersion({ origenId, familia, pais, moneda, precios, ofertas 
     for (const f of flows || []) {
       const { data: fN, error } = await supa.from("flows").insert({
         ...sin(f, "id", "created_at", "updated_at"), product_id: pNew.id, es_entrada: false, estado: "borrador",
-        nombre: `${String(f.nombre || "").replace(/ · \S+ [^·]+$/, "")} · ${etiqueta}`,
+        // (solo se quita la etiqueta de país de una copia anterior —«· 🇲🇽 México»—, no el nombre del producto)
+        nombre: `${String(f.nombre || "").replace(/ · [\u{1F1E6}-\u{1F1FF}]{2} [^·]+$/u, "")} · ${etiqueta}`,
       }).select("id").single();
       if (error) throw error;
       mapa.set(f.id, fN.id);
