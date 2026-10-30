@@ -5,6 +5,16 @@ export const SIMBOLOS: Record<string, string> = {
   PYG: "₲", VES: "Bs", GTQ: "Q", CRC: "₡", DOP: "RD$", HNL: "L", NIO: "C$", PAB: "B/.", GBP: "£", CAD: "$",
 };
 
+// (30-oct) El NOMBRE de las monedas cuyo símbolo es «$» a secas: con «$ 999» la IA no sabe de qué país es y lo sacaba
+// del saludo («$999 COP» a un cliente de la versión de México).
+const NOMBRE_DOLAR_PESO: Record<string, string> = {
+  USD: "dólares (USD)", MXN: "pesos mexicanos (MXN)", COP: "pesos colombianos (COP)", ARS: "pesos argentinos (ARS)",
+  CLP: "pesos chilenos (CLP)", CAD: "dólares canadienses (CAD)",
+};
+export function nombreMonedaAmbigua(cur?: string | null): string | null {
+  return NOMBRE_DOLAR_PESO[String(cur ?? "").trim().toUpperCase()] ?? null;
+}
+
 // Sin moneda configurada = soles (así nacieron todos los bots); un código que no está en la lista sale tal cual («JPY 500»).
 export function simboloMoneda(cur?: string | null): string {
   const c = String(cur ?? "").trim().toUpperCase();

@@ -29,7 +29,7 @@ import { fetchConTimeout } from "./http.ts";
 import { finVentanaAnuncio } from "./fep.ts";
 import { appsApi, cfgDe as cfgMicroapp, modalidadDeOpcion, proximoRecordatorioMin, CORREO_PEDIR_DEF, mensajeEntrega, fechaLarga, extraerCorreo, extraerCelular, noQuiereNovedades, type MicroappCfg } from "./microapps.ts";
 import { urlArchivo, urlDirecta as urlStorageDirecta } from "./archivo.ts";
-import { simboloMoneda, RE_MONTO_CON_MONEDA, agruparMiles, dicePrecio, sinMiles } from "./moneda.ts";
+import { simboloMoneda, RE_MONTO_CON_MONEDA, agruparMiles, dicePrecio, sinMiles, nombreMonedaAmbigua } from "./moneda.ts";
 
 export type EngineEvent =
   // mediaRef: referencia a la imagen del mensaje ("wa-media:<id>" en WhatsApp,
@@ -25318,6 +25318,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // (30-oct) Son las del producto o las del bot: si pregunta cómo se paga, se nombran ESTAS y ninguna más (a la versión
         //  de México, que cobra con BBVA, la IA le dijo «transferencia o Yape a la cuenta de BBVA»).
         "\nSi pregunta cómo se paga, nombra ESTOS medios tal cual y ningún otro." +
+        (nombreMonedaAmbigua(ctx.moneda as string) ? `\nLos precios están en ${nombreMonedaAmbigua(ctx.moneda as string)}: si nombras la moneda, di esa y ninguna otra.` : "") +
         "\n⛔ NO escribas tú el número ni el titular, ni siquiera si te los piden y ni aunque los veas " +
         "más arriba en esta misma conversación: copiarlos dentro de una frase le quita al cliente lo " +
         "único que necesita hacer, que es copiar el número de un toque. Tampoco anuncies que van a llegar " +
