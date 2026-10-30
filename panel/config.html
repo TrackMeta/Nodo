@@ -431,15 +431,8 @@ function renderGeneral(b){
     </div>
     <div class="card" id="g_tcCard">
       <div class="chd"><span class="ico" style="background:var(--green-bg);color:var(--green)">${icon("dollar")}</span><span class="nm">Tipo de cambio</span></div>
-      <div id="g_tcBox">
-        <label style="margin-top:0">Cuánto vale un dólar en tu moneda</label>
-        <div class="desc" style="margin:2px 0 8px">Tu IA te la cobra tu proveedor <b>en dólares</b>. Con este número, ese gasto se convierte y entra en la <b>ganancia</b> de Inicio como un costo más. Si lo dejas vacío, el gasto se sigue viendo, pero aparte y en dólares.</div>
-        <div style="display:flex;align-items:center;gap:8px;max-width:340px">
-          <span style="font-size:13px;color:var(--muted);font-weight:600;white-space:nowrap">1 USD =</span>
-          <input class="in" id="g_tc" type="number" step="0.01" min="0" placeholder="ej. 3.75" value="${Number(st.channel?.usd_rate)>0?esc(String(st.channel.usd_rate)):""}">
-          <span id="g_tcCur" style="font-size:13px;color:var(--muted);font-weight:700">${esc(mon)}</span>
-        </div>
-      </div>
+      <div class="desc">Con esto se pasa a tu moneda lo que te cobra en dólares tu proveedor de IA. Se actualiza solo cada día.</div>
+      <div id="g_tcVal" style="font-size:14px;font-weight:700;margin-top:4px"></div>
     </div>
     <div class="acts"><button class="btn primary" id="saveGeneral">Guardar ajustes</button></div>`;
   // La zona: la de la capital del país, o la que elija si su país tiene varias. Sin país reconocido, se queda la de antes.
@@ -460,15 +453,23 @@ function renderGeneral(b){
   };
   // 💵 La moneda sale del país (Otra zona → la que ya tenía). El tipo de cambio solo si no es dólar.
   const monedaElegida=()=>MONEDA_PAIS[$("g_pais").value]||mon;
+  // 💱 (29-oct) El tipo de cambio ya no se escribe: lo baja el scheduler cada día (tabla tipos_cambio). Se muestra el
+  // último de cada moneda; sin la tabla todavía, el que tenga el bot.
+  let _cambios={};
+  supa.from("tipos_cambio").select("fecha,moneda,por_usd").order("fecha",{ascending:false}).limit(60)
+    .then(({data})=>{ for(const r of (data||[])) if(!_cambios[r.moneda]) _cambios[r.moneda]=r; pintaMoneda(); }, ()=>{});
+  const cambioDe=(m)=>_cambios[m]?Number(_cambios[m].por_usd):(m===mon&&Number(st.channel?.usd_rate)>0?Number(st.channel.usd_rate):null);
   const pintaMoneda=()=>{
     const m=monedaElegida(), cu=CURRENCIES.find(x=>x[0]===m)||["",m,m];
     const NOM={PEN:"Sol",USD:"Dólar",MXN:"Peso mexicano",COP:"Peso colombiano",ARS:"Peso argentino",CLP:"Peso chileno",UYU:"Peso uruguayo",DOP:"Peso dominicano",EUR:"Euro",BRL:"Real"};
     $("g_mon").innerHTML=`💵 Moneda: <b>${esc(cu[1])} ${esc(NOM[m]||String(cu[2]).replace(/^.*— /,""))}</b>`;
     $("g_tcCard").style.display = m==="USD" ? "none" : "";
-    $("g_tcCur").textContent = m;
+    const tcv=cambioDe(m), fe=_cambios[m]?.fecha;
+    let feTxt=""; try{ if(fe) feTxt=new Date(fe+"T12:00:00Z").toLocaleDateString("es-PE",{ day:"numeric", month:"long" }); }catch(_){}
+    $("g_tcVal").innerHTML = tcv ? `1 USD = ${esc(cu[1])} ${esc(tcv.toLocaleString("es-PE",{ maximumFractionDigits: tcv<100?2:0 }))}${feTxt?` <span style="font-weight:400;font-size:12px;color:var(--faint)">· al ${esc(feTxt)}</span>`:""}`
+      : `<span style="font-weight:400;font-size:12.5px;color:var(--muted)">Se actualiza solo durante el día.</span>`;
   };
-  // (el tipo de cambio guardado es de la moneda de antes: con otra moneda se vacía para que pongas el nuevo)
-  $("g_pais").onchange=()=>{ pintaZona(); pintaMoneda(); const ti=$("g_tc"); if(ti) ti.value = monedaElegida()===mon && Number(st.channel?.usd_rate)>0 ? String(st.channel.usd_rate) : ""; }; pintaZona(); pintaMoneda();
+  $("g_pais").onchange=()=>{ pintaZona(); pintaMoneda(); }; pintaZona(); pintaMoneda();
   $("saveGeneral").onclick=async(e)=>{
     const btn=e.target;
     // 🌎 Cambiar de país: los productos que ya venden siguen en el país de antes (con su moneda y su hora). Si no,
@@ -493,8 +494,8 @@ function renderGeneral(b){
         }
       }catch(_){ btn.disabled=false; btn.textContent=old; toast("No se pudieron fijar tus productos al país de antes",true); return; }
     }
-    const tc=Number($("g_tc")?.value);
     const monNueva=monedaElegida();
+    const tc=cambioDe(monNueva);
     const patch={ timezone:zonaElegida, moneda:monNueva,
       usd_rate: (monNueva!=="USD" && tc>0) ? +tc.toFixed(4) : null };
     let { error }=await updCanal(patch);

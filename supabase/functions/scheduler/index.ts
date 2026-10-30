@@ -304,6 +304,10 @@ Deno.serve(async (req) => {
   try { resumenes = await processResumenes(now); }
   catch (e) { console.error("[scheduler] resumenes:", (e as any)?.message ?? e); }
 
+  // ── 6b) Tipo de cambio del día (una vez al día) ───────────────────
+  try { await actualizarTiposDeCambio(); }
+  catch (e) { console.error("[scheduler] tipo de cambio:", (e as any)?.message ?? e); }
+
   // ── 7) Salud del número de WhatsApp (cada 3 h por canal) ──────────
   // Respaldo del webhook: el token vencido o un número baneado/desconectado se detectan acá
   // aunque Meta no mande (o no llegue) el aviso. Pocos por tick para no comerse el minuto.
@@ -338,6 +342,38 @@ Deno.serve(async (req) => {
   }
   return json({ ok: true, ms, atendidos, woke, fired, reaped, nudged, recordados, vencidos, resumenes });
 });
+
+// ── 💱 Tipo de cambio del día (29-oct) ──────────────────────────────
+// Rodrigo: que no haya que escribir «cuánto vale un dólar». Una vez al día se baja de open.er-api.com (gratis, sin
+// clave, se publica cada día) cuánto vale 1 USD en cada moneda, se guarda en tipos_cambio (el historial sirve para
+// convertir cada venta con el cambio de su día) y se pone en channels.usd_rate de cada bot según su moneda — lo que
+// ya lee el panel para pasar el gasto de IA a la moneda del negocio. Si la fuente falla, queda el valor de ayer.
+const MONEDAS_CAMBIO = ["PEN", "MXN", "COP", "CLP", "ARS", "BOB", "EUR", "BRL", "UYU", "PYG", "VES", "GTQ", "CRC", "DOP", "HNL", "NIO", "PAB", "GBP", "CAD"];
+let _cambioListoEl = "";   // el día que ya quedó guardado (por isolate: así no se consulta la base cada minuto)
+async function actualizarTiposDeCambio(): Promise<void> {
+  const hoy = new Date().toISOString().slice(0, 10);
+  if (_cambioListoEl === hoy) return;
+  const { data: ya } = await db.from("tipos_cambio").select("fecha").eq("fecha", hoy).eq("moneda", "PEN").maybeSingle();
+  if (ya) { _cambioListoEl = hoy; return; }
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 8000);
+  let rates: Record<string, number> = {};
+  try {
+    const r = await fetch("https://open.er-api.com/v6/latest/USD", { signal: ctl.signal });
+    const j = await r.json();
+    if (j?.result !== "success" || !j?.rates) throw new Error("respuesta sin tipos de cambio");
+    rates = j.rates;
+  } finally { clearTimeout(t); }
+  const filas = MONEDAS_CAMBIO.filter((m) => Number(rates[m]) > 0)
+    .map((m) => ({ fecha: hoy, moneda: m, por_usd: +Number(rates[m]).toFixed(6), fuente: "open.er-api.com" }));
+  if (!filas.length) return;
+  const { error } = await db.from("tipos_cambio").upsert(filas, { onConflict: "fecha,moneda" });
+  if (error) throw error;
+  // Cada bot, con el de su moneda (un bot en dólares no lleva tipo de cambio).
+  for (const f of filas) {
+    await db.from("channels").update({ usd_rate: +Number(f.por_usd).toFixed(4) }).eq("moneda", f.moneda).then(() => {}, () => {});
+  }
+  _cambioListoEl = hoy;
+}
 
 // ── Resúmenes diarios ───────────────────────────────────────────────
 // Dos avisos que el operador programa (Canales → Avisos): mañana = cómo fue
