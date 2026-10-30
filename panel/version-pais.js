@@ -195,7 +195,7 @@ export async function abrirVersionesPais({ channelId, prod, onAbrir, onCambio })
       <p class="ajp-desc" style="margin-top:0">El cliente de un país sin versión entra a esta.</p>
       <select class="ajp-in" id="vpResto" style="width:100%;max-width:320px">${fam.map((p) => { const i = paisInfo(paisDe(p)); return `<option value="${paisDe(p)}" ${paisDe(p) === resto ? "selected" : ""}>${i ? i[2] + " " + esc(i[1]) : esc(paisDe(p))}</option>`; }).join("")}</select>` : ""}
     </div>
-    ${prod.tipo === "fisico" ? `<div class="ajp-nota">📦 Los productos físicos se venden solo en el país del bot (agencias, distritos, adelantos). Las versiones por país son para productos digitales y micro apps.</div>` : libres.length ? `
+    ${prod.tipo === "fisico" ? `<div class="ajp-nota"><span>📦 Los productos físicos se venden solo en el país del bot (agencias, distritos, adelantos). Las versiones por país son para productos digitales y micro apps.</span></div>` : libres.length ? `
     <div class="ajp-card"><h4>＋ Agregar país</h4>
       <p class="ajp-desc">Se copia esta versión: ficha, saludo, palabra clave, presentaciones, ángulos y remarketing. Los anuncios y los medios de pago <b>no</b> se copian: son de cada país.</p>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
@@ -207,7 +207,7 @@ export async function abrirVersionesPais({ channelId, prod, onAbrir, onCambio })
       ${versA.map((v) => `<div class="ajp-num" style="margin-top:6px"><span style="min-width:150px;color:var(--muted);font-weight:700">${esc(v.nombre || "Precio")}</span>
         <div class="box"><span class="vpSym">$</span><input type="number" min="0" step="0.01" data-v="${esc(v.id)}" placeholder="0"/></div>
         <small>En esta versión: ${esc(SIMBOLO[monYo] || "")} ${esc(v.precio ?? "—")}</small></div>`).join("")}
-      <div class="ajp-nota">⏸️ La versión nueva nace <b>en pausa</b>. Antes de reanudarla ponle sus <b>medios de pago</b> (ficha → Avanzado → «Medios de pago propios»), revisa los textos que tengan precios escritos a mano y asigna los anuncios de ese país en su banco de anuncios.</div>
+      <div class="ajp-nota"><span>⏸️ La versión nueva nace <b>en pausa</b>. Antes de reanudarla ponle sus <b>medios de pago</b> (ficha → Avanzado → «Medios de pago propios»), revisa los textos que tengan precios escritos a mano y asigna los anuncios de ese país en su banco de anuncios.</span></div>
       <div class="ajp-acts"><button class="ajp-btn pri" id="vpCrear">Crear versión</button></div>
     </div>` : `<div class="ajp-nota">Ya hay una versión para cada país de la lista.</div>`}
   </div>`;

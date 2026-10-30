@@ -403,7 +403,7 @@ async function boot(){
     if(!st.prod) return;
     if(isDirty && isDirty()){ toast("Primero guarda los cambios de este producto",true); return; }
     try{
-      const m=await import("./version-pais.js?v=3");
+      const m=await import("./version-pais.js?v=4");
       m.abrirVersionesPais({ channelId:st.channelId, prod:st.prod, onAbrir:async(id)=>{ await loadProducts(); openProduct(id); },
         onCambio:async(id)=>{ await loadProducts(); openProduct(id); } });
     }catch(e){ toast("No se pudo abrir: recarga la página",true); }
@@ -1057,6 +1057,9 @@ function cargarMonedaBot(){ getChannel(st.channelId).then(d=>{ _monedaBot=(d&&d.
 function monedaAutoDe(cfg){ const pa=cfg&&cfg.pais&&PAIS_INFO[String(cfg.pais).toUpperCase()]; return pa?pa[1]:(_monedaBot||"PEN"); }
 function monedaDe(cfg){ return (cfg&&cfg.moneda)?String(cfg.moneda).toUpperCase():monedaAutoDe(cfg); }
 function banderaDe(c){ c=String(c||"").toUpperCase(); return /^[A-Z]{2}$/.test(c)?String.fromCodePoint(...[...c].map(x=>127397+x.charCodeAt(0))):"🌎"; }
+// «Peso» a secas no dice cuál: «Peso mexicano», «Peso colombiano»… (el resto, el nombre de la lista).
+const NOMBRE_MONEDA={PEN:"Sol",USD:"Dólar",MXN:"Peso mexicano",COP:"Peso colombiano",ARS:"Peso argentino",CLP:"Peso chileno",UYU:"Peso uruguayo",DOP:"Peso dominicano",EUR:"Euro",BRL:"Real",BOB:"Boliviano",PYG:"Guaraní",GTQ:"Quetzal",CRC:"Colón",HNL:"Lempira",NIO:"Córdoba",PAB:"Balboa",VES:"Bolívar",GBP:"Libra",CAD:"Dólar canadiense"};
+function nombreMoneda(cd){ return NOMBRE_MONEDA[cd]||String((CURRENCIES.find(c=>c[0]===cd)||[cd,"",cd])[2]).replace(/^.*— /,""); }
 function curSym(cfg){ const cur=monedaDe(cfg); return (CURRENCIES.find(c=>c[0]===cur)||["","S/"])[1]; }
 const MODOS_ENVIO=[
   ["cliente","Envío lo paga el cliente al recibir (según la agencia)"],
@@ -4000,7 +4003,7 @@ function renderOpciones(host){
   // para el caso raro (un curso en dólares desde Perú). Una moneda guardada igual a la de su país cuenta como automática.
   const _monAuto=monedaAutoDe(cfg), _monManual=!!cfg.moneda && String(cfg.moneda).toUpperCase()!==_monAuto;
   const _paisP=String(cfg.pais||_paisBot).toUpperCase(), _paisNom=(PAIS_INFO[_paisP]||[_paisP])[0];
-  const _monNom=String((CURRENCIES.find(c=>c[0]===cur)||[cur,"",cur])[2]).replace(/^.*— /,"");
+  const _monNom=nombreMoneda(cur);
   const _selMon=`<select class="sel" id="opMoneda" style="width:auto;min-width:210px;height:36px;font-size:12.5px">${CURRENCIES.map(([cd,sy,nm])=>`<option value="${cd}" ${cur===cd?"selected":""}>${sy} · ${esc(nm)} (${cd})</option>`).join("")}</select>`;
   const monedaSel=`<div style="flex:1;min-width:0"><div style="font-size:13px;line-height:1.6;color:var(--text)">Cobra en <b>${esc(sym)} ${esc(_monNom)}</b> · ${_monManual
       ? `elegida a mano · <a href="#" id="opMonAuto" style="color:var(--brand)">volver a la moneda de ${esc(_paisNom)}</a>`

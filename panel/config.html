@@ -462,7 +462,8 @@ function renderGeneral(b){
   const monedaElegida=()=>MONEDA_PAIS[$("g_pais").value]||mon;
   const pintaMoneda=()=>{
     const m=monedaElegida(), cu=CURRENCIES.find(x=>x[0]===m)||["",m,m];
-    $("g_mon").innerHTML=`💵 Moneda: <b>${esc(cu[1])} ${esc(String(cu[2]).replace(/^.*— /,""))}</b>`;
+    const NOM={PEN:"Sol",USD:"Dólar",MXN:"Peso mexicano",COP:"Peso colombiano",ARS:"Peso argentino",CLP:"Peso chileno",UYU:"Peso uruguayo",DOP:"Peso dominicano",EUR:"Euro",BRL:"Real"};
+    $("g_mon").innerHTML=`💵 Moneda: <b>${esc(cu[1])} ${esc(NOM[m]||String(cu[2]).replace(/^.*— /,""))}</b>`;
     $("g_tcCard").style.display = m==="USD" ? "none" : "";
     $("g_tcCur").textContent = m;
   };
