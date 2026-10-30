@@ -351,7 +351,8 @@ Deno.serve(async (req) => {
 const MONEDAS_CAMBIO = ["PEN", "MXN", "COP", "CLP", "ARS", "BOB", "EUR", "BRL", "UYU", "PYG", "VES", "GTQ", "CRC", "DOP", "HNL", "NIO", "PAB", "GBP", "CAD"];
 let _cambioListoEl = "";   // el día que ya quedó guardado (por isolate: así no se consulta la base cada minuto)
 async function actualizarTiposDeCambio(): Promise<void> {
-  const hoy = new Date().toISOString().slice(0, 10);
+  // El día en hora de Lima: con la fecha UTC, a las 7 p. m. de Perú ya era «mañana» y el panel decía «al 30» un 29.
+  const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   if (_cambioListoEl === hoy) return;
   const { data: ya } = await db.from("tipos_cambio").select("fecha").eq("fecha", hoy).eq("moneda", "PEN").maybeSingle();
   if (ya) { _cambioListoEl = hoy; return; }
