@@ -1590,7 +1590,7 @@ function toggleExpForm(){
   const _n=new Date(), _p=x=>String(x).padStart(2,"0");
   const today=`${_n.getFullYear()}-${_p(_n.getMonth()+1)}-${_p(_n.getDate())}`;
   f.innerHTML=`<div class="expform">
-    <div class="ef-row"><input class="ef-in" id="ef_monto" type="number" min="0" step="0.01" placeholder="Monto en ${CUR_SYM[CUR_NEG]||CUR_NEG}"/><input class="ef-in" id="ef_fecha" type="date" value="${today}"/></div>
+    <div class="ef-row">${CUR_NEG!=="USD"?`<select class="ef-in" id="ef_mon" style="flex:0 0 84px" title="En qué moneda pagaste este gasto"><option value="${CUR_NEG}">${CUR_SYM[CUR_NEG]||CUR_NEG}</option><option value="USD">US$</option></select>`:""}<input class="ef-in" id="ef_monto" type="number" min="0" step="0.01" placeholder="Monto"/><input class="ef-in" id="ef_fecha" type="date" value="${today}"/></div>
     <input class="ef-in" id="ef_desc" placeholder="Descripción (ej. Empaques, Sueldo asistente)"/>
     <select class="ef-in" id="ef_cat"><option value="">Categoría (opcional)</option><option>Operativo</option><option>Personal</option><option>Local</option><option>Marketing</option><option>Otro</option></select>
     <div class="ef-acts"><button class="expbtn ghost" id="ef_cancel">Cancelar</button><button class="expbtn primary" id="ef_save">Guardar gasto</button></div>
@@ -1611,10 +1611,22 @@ async function saveExpense(){
   // Fecha local (no dejar que la BD ponga current_date en UTC → de noche en Lima adelanta un día)
   const _n=new Date(), _p=x=>String(x).padStart(2,"0");
   const fechaLocal=`${_n.getFullYear()}-${_p(_n.getMonth()+1)}-${_p(_n.getDate())}`;
-  const { error }=await supa.from("manual_expenses").insert({ channel_id:channelId, monto, descripcion:desc, categoria:$("ef_cat").value||null, fecha:$("ef_fecha").value||fechaLocal });
+  const fecha=$("ef_fecha").value||fechaLocal;
+  // 💵 (31-oct) Un gasto pagado en dólares (una herramienta, un dominio) se guarda YA convertido a la moneda del
+  // negocio con el tipo de cambio de su fecha: así Inicio, la app y los resúmenes lo siguen sumando igual. Lo que
+  // pagaste en dólares queda escrito en la descripción para que no se pierda.
+  let montoNeg=monto, descripcion=desc, aviso="Gasto registrado";
+  if($("ef_mon")?.value==="USD" && CUR_NEG!=="USD"){
+    const fx=factorCambio(await cargarCambios(), "USD", CUR_NEG, fecha);
+    if(!fx){ _savingExp=false; if(btn){ btn.disabled=false; btn.textContent="Guardar gasto"; } toast("No tengo el tipo de cambio de esa fecha: anótalo en "+(CUR_SYM[CUR_NEG]||CUR_NEG),true); return; }
+    montoNeg=+(monto*fx).toFixed(2);
+    descripcion=`${desc} (US$ ${monto.toLocaleString("es-PE",{maximumFractionDigits:2})})`;
+    aviso=`Gasto registrado: US$ ${monto.toLocaleString("es-PE",{maximumFractionDigits:2})} = ${CUR_SYM[CUR_NEG]||CUR_NEG} ${montoNeg.toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  }
+  const { error }=await supa.from("manual_expenses").insert({ channel_id:channelId, monto:montoNeg, descripcion, categoria:$("ef_cat").value||null, fecha });
   _savingExp=false;
   if(error){ if(btn){ btn.disabled=false; btn.textContent="Guardar gasto"; } toast(error.message,true); return; }
-  toast("Gasto registrado"); toggleExpForm(); load();
+  toast(aviso); toggleExpForm(); load();
 }
 async function delExpense(id){
   if(!await confirmDialog({ title:"Eliminar gasto", message:"¿Quitar este gasto? Volverá a sumar a tu ganancia.", confirmText:"Eliminar", danger:true })) return;
