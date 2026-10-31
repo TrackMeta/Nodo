@@ -2573,7 +2573,7 @@ async function updateWindow() {
       ? `Su ventana sin costo por el anuncio ya terminó (dura hasta ${FEP_DIAS} días desde la primera respuesta): Meta cobra cada mensaje que le mandes.`
       : `Llegó por un anuncio, pero no hay una respuesta tuya en sus primeras 24 h (hasta el ${hora(limiteResp)}), así que la ventana sin costo no se abrió: Meta cobra cada mensaje. Si le respondió otra app conectada al número (por ejemplo ChatLevel), puede que sí esté abierta.`);
   const cobraChip = (!fepOpen && !aTiempo && now >= COBRO_DESDE)
-    ? `<span class="win closed" title="${esc(porQueCobra)} El precio por mensaje se configura en Ajustes → Meta.">${icon("banknote")} Se cobra</span>`
+    ? `<span class="win closed" title="${esc(porQueCobra)} El precio por mensaje se configura en Ajustes → Conexiones.">${icon("banknote")} Se cobra</span>`
     : "";
   w.innerHTML = svcChip + fepChip + cobraChip;
   // ⚠ El candado mira SOLO la ventana de servicio (24h), y así debe quedarse.

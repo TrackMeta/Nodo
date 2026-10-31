@@ -214,13 +214,13 @@ async function boot(){
   try{ const qp=new URLSearchParams(location.search); if(qp.get("preguntas")==="1"){ st._abrirPreguntas=true; history.replaceState(null,"",location.pathname); } }catch(_){}
   if(st.channelId) await load();
 }
-// (10-oct, Rodrigo) Arriba, la foto y el nombre del negocio (el del bot), como el Dashboard. La foto se cambia en Ajustes → Marca.
+// (10-oct, Rodrigo) Arriba, la foto y el nombre del negocio (el del bot), como el Dashboard. La foto se cambia en Ajustes → Tu negocio.
 function pintaIdentidad(){
   const c=(st.shell&&st.shell.channels||[]).find(x=>x.id===st.channelId)||{};
   const nf=(st.channel&&st.channel.negocio_form&&typeof st.channel.negocio_form==="object")?st.channel.negocio_form:{};
   const nom=String(nf.nombre||st.channel.nombre||c.nombre||"Negocio").trim();
   const n=$("negNombre"); if(n) n.textContent=nom;
-  const img=$("negLogo"); if(img){ if(c.logo_url){ img.src=c.logo_url; img.style.display=""; img.title="La foto se cambia en Ajustes → Marca"; } else img.style.display="none"; }
+  const img=$("negLogo"); if(img){ if(c.logo_url){ img.src=c.logo_url; img.style.display=""; img.title="La foto se cambia en Ajustes → Tu negocio"; } else img.style.display="none"; }
 }
 async function load(){
   // Anti-carrera al cambiar de bot: si la respuesta del bot ANTERIOR llegaba después, la

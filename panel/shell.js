@@ -246,7 +246,7 @@ export async function usuarioActual() {
 const CH_COLS = "id,nombre,channel_type,phone_number_id,waba_id,pixel_id,page_id,vertical," +
   "telegram_chat_ids,buffer_default_seg,activo,ia_provider,timezone,gsheets,negocio,ia_perfiles," +
   "ia_router,negocio_form,ocr_config,pedidos_config,remarketing,entregas,telegram_avisos," +
-  "account_id,ad_account_id,ads_sync_error,ads_sync_at,moneda,resumenes,resumen_estado,wa_alerta";
+  "account_id,ad_account_id,ads_sync_error,ads_sync_at,moneda,resumenes,resumen_estado,wa_alerta,moneda_reporte";
 
 let _ch = { id: null, fila: null, vuelo: null };
 
@@ -1025,30 +1025,17 @@ const fileOf = (path) => path.split("/").pop() || "";
 
 // ═══════════════════════════════════════════════════════════════════
 //  Efectos de fondo — aurora + constelación de nodos (concepto de marca)
-//  Configurable en Ajustes → Apariencia. Salvaguardas de rendimiento:
-//  se pausa al ocultar la pestaña, tope de 64 nodos, glow con sprite
-//  (sin shadowBlur), FPS configurable y respeta prefers-reduced-motion.
+//  Salvaguardas de rendimiento: se pausa al ocultar la pestaña, tope de
+//  64 nodos, glow con sprite (sin shadowBlur) y respeta prefers-reduced-motion.
 // ═══════════════════════════════════════════════════════════════════
-const FX_LEVELS = ["full", "suave", "off"];
 // El fondo animado (constelación) es un canvas a pantalla completa que se
 // redibuja y RECOMPONE cada frame → cuesta CPU/GPU de forma continua y hace
-// sentir pesado todo el navegador apenas se abre la app. Es decorativo, así
-// que va APAGADO por defecto (opt-in): quien lo quiera lo enciende en
-// Ajustes → Apariencia y su elección se recuerda.
+// sentir pesado todo el navegador apenas se abre la app. Es decorativo.
+// (31-oct, Rodrigo) Queda APAGADO FIJO: se quitó Ajustes → Apariencia, que era
+// el único sitio para prenderlo, y se ignora lo que alguien haya guardado antes.
+// El motor sigue acá por si algún día vuelve; la nebulosa de IA no depende de esto.
 export function getEffects() {
-  let level = localStorage.getItem("nodo.fx.level");
-  if (!FX_LEVELS.includes(level)) level = "off"; // default: sin fondo animado
-  let fps = parseInt(localStorage.getItem("nodo.fx.fps") || "", 10);
-  if (!Number.isFinite(fps)) fps = 30; // si lo encienden, 30 fps se ve fluido y cuesta la mitad
-  fps = Math.min(60, Math.max(20, fps));
-  return { level, fps };
-}
-export function setEffects({ level, fps } = {}) {
-  if (level && FX_LEVELS.includes(level)) localStorage.setItem("nodo.fx.level", level);
-  if (fps) localStorage.setItem("nodo.fx.fps", String(Math.min(60, Math.max(20, fps | 0))));
-  if (getEffects().level !== "off") ensureFX(); // encenderlo desde Ajustes → monta la capa si aún no existe
-  applyEffects();
-  return getEffects();
+  return { level: "off", fps: 30 };
 }
 
 const FX = { built: false, cv: null, cx: null, W: 0, H: 0, DPR: 1, nodes: [], signals: [], sprites: {}, sig: null, COL: [], raf: 0, last: 0, mouse: { x: -1e4, y: -1e4 }, reduce: false, level: "suave", fps: 60 };

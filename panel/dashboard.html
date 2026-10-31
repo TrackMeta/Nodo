@@ -302,7 +302,6 @@
           <button data-t="microapp">Micro apps</button>
         </div>
         <select class="vsel" id="vistaSel" style="display:none" title="Ver la plata de un producto o de uno de sus anuncios"><option value="all">Todo</option></select>
-        <button class="vsel" id="usdBtn" style="display:none;cursor:pointer" title="Ver todo convertido a dólares con el tipo de cambio de cada día">Ver en dólares</button>
         <div class="datefilter">
           <button class="df-btn" id="dfBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> <span class="cur" id="dfLabel">Hoy</span><svg class="df-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
           <div class="df-pop" id="dfPop"></div>
@@ -388,25 +387,23 @@ async function avPermitido(){
 const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
 let CUR="PEN";
 const curSym=()=>CUR_SYM[CUR]||CUR;
-// Cuánto vale un dólar en la moneda del negocio (Ajustes › General). Sin esto, el
+// Cuánto vale un dólar en la moneda del negocio (Ajustes › Tu negocio). Sin esto, el
 // gasto de IA —que el proveedor cobra en dólares— no se puede sumar a una ganancia
 // en soles sin mentir: se muestra aparte y en dólares hasta que lo configuren.
 let USD_RATE=0;
-// 💱 (29-oct) CUR_NEG = la moneda del negocio; CUR = la del reporte (la misma, o dólares con «Ver en dólares»).
+// 💱 (29-oct) CUR_NEG = la moneda del negocio; CUR = la del reporte (la misma, o dólares si así se eligió en
+// Ajustes → Tu negocio → «Moneda de tus reportes»; 31-oct: antes era un botón «Ver en dólares» acá).
 // Las ventas en otra moneda se CONVIERTEN con el tipo de cambio de su día (cambio.js) en vez de quedar aparte.
 let CUR_NEG="PEN", PAIS_BOT="PE";
 const PAIS_ZONA_D={"America/Lima":"PE","America/Bogota":"CO","America/Mexico_City":"MX","America/Cancun":"MX","America/Mazatlan":"MX","America/Hermosillo":"MX","America/Tijuana":"MX","America/Santiago":"CL","America/Punta_Arenas":"CL","America/Argentina/Buenos_Aires":"AR","America/Guayaquil":"EC","America/La_Paz":"BO","America/Caracas":"VE","America/Asuncion":"PY","America/Montevideo":"UY","America/Costa_Rica":"CR","America/Panama":"PA","America/Guatemala":"GT","America/El_Salvador":"SV","America/Tegucigalpa":"HN","America/Managua":"NI","America/Santo_Domingo":"DO","America/Puerto_Rico":"PR","Europe/Madrid":"ES","Atlantic/Canary":"ES","America/New_York":"US","America/Chicago":"US","America/Denver":"US","America/Los_Angeles":"US","America/Sao_Paulo":"BR","America/Manaus":"BR"};
 const NOMBRE_PAIS_D={PE:"Perú",MX:"México",CO:"Colombia",CL:"Chile",AR:"Argentina",EC:"Ecuador",BO:"Bolivia",VE:"Venezuela",PY:"Paraguay",UY:"Uruguay",CR:"Costa Rica",PA:"Panamá",GT:"Guatemala",SV:"El Salvador",HN:"Honduras",NI:"Nicaragua",DO:"Rep. Dominicana",PR:"Puerto Rico",ES:"España",US:"Estados Unidos",BR:"Brasil"};
 const banderaD=(c)=>{ c=String(c||"").toUpperCase(); return /^[A-Z]{2}$/.test(c)?String.fromCodePoint(...[...c].map(x=>127397+x.charCodeAt(0))):"🌎"; };
-const verUsd=()=>{ try{ return localStorage.getItem("nodo.verUsd."+channelId)==="1"; }catch(_){ return false; } };
 async function loadCurrency(){
   const ch=await getChannel(channelId);
   CUR_NEG=(ch&&ch.moneda)||"PEN";
   PAIS_BOT=PAIS_ZONA_D[(ch&&ch.timezone)||"America/Lima"]||"PE";
-  CUR = (verUsd() && CUR_NEG!=="USD") ? "USD" : CUR_NEG;
+  CUR = ((ch&&ch.moneda_reporte)==="USD" && CUR_NEG!=="USD") ? "USD" : CUR_NEG;
   USD_RATE = CUR==="USD" ? 1 : await getUsdRate(channelId);
-  const ub=$("usdBtn"); if(ub){ ub.style.display = CUR_NEG==="USD" ? "none" : ""; ub.classList.toggle("on", CUR==="USD"); ub.textContent = CUR==="USD" ? "Ver en "+(CUR_SYM[CUR_NEG]||CUR_NEG) : "Ver en dólares";
-    ub.onclick=()=>{ try{ localStorage.setItem("nodo.verUsd."+channelId, CUR==="USD"?"0":"1"); }catch(_){} load(); }; }
 }
 // El costo del producto de la ficha × cantidad, en la moneda del producto (para convertirlo junto con el pedido).
 const costoFichaDe=(prods)=>{ const pc={}, cv={}; (prods||[]).forEach(p=>{ pc[p.id]=p.config&&p.config.costo; (p.product_versions||[]).forEach(v=>{ cv[v.id]=v.cantidad??1; }); });
@@ -420,7 +417,7 @@ async function factorAdsConv(rows){
   const fx=factorCambio(await cargarCambios(), mons[0], CUR, new Date().toISOString());
   return fx ? { factor:fx, aviso:"" } : r;
 }
-// Los gastos que anotas a mano están en la moneda del negocio: con «Ver en dólares» se convierten.
+// Los gastos que anotas a mano están en la moneda del negocio: con los reportes en dólares se convierten.
 async function gastosEnReporte(expR){
   if(CUR===CUR_NEG || !expR || expR.error) return expR;
   const c=await cargarCambios();
@@ -1593,7 +1590,7 @@ function toggleExpForm(){
   const _n=new Date(), _p=x=>String(x).padStart(2,"0");
   const today=`${_n.getFullYear()}-${_p(_n.getMonth()+1)}-${_p(_n.getDate())}`;
   f.innerHTML=`<div class="expform">
-    <div class="ef-row"><input class="ef-in" id="ef_monto" type="number" min="0" step="0.01" placeholder="Monto (${curSym()})"/><input class="ef-in" id="ef_fecha" type="date" value="${today}"/></div>
+    <div class="ef-row"><input class="ef-in" id="ef_monto" type="number" min="0" step="0.01" placeholder="Monto en ${CUR_SYM[CUR_NEG]||CUR_NEG}"/><input class="ef-in" id="ef_fecha" type="date" value="${today}"/></div>
     <input class="ef-in" id="ef_desc" placeholder="Descripción (ej. Empaques, Sueldo asistente)"/>
     <select class="ef-in" id="ef_cat"><option value="">Categoría (opcional)</option><option>Operativo</option><option>Personal</option><option>Local</option><option>Marketing</option><option>Otro</option></select>
     <div class="ef-acts"><button class="expbtn ghost" id="ef_cancel">Cancelar</button><button class="expbtn primary" id="ef_save">Guardar gasto</button></div>
@@ -1645,7 +1642,7 @@ function renderBand(b){
   if(!b.hasAds && !hasExtra && !hasIa){
     box.innerHTML=`
       <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v ${b.brutaDesconocida?"":"green"}">${brutaTxt}</span>${brutaSub}</div>
-      <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="config.html">Ajustes → Meta</a> (o registra un gasto extra abajo) y aquí verás tu <b>ganancia NETA</b> después de todo.</div></div>`;
+      <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="config.html?tab=conexiones">Ajustes → Conexiones</a> (o registra un gasto extra abajo) y aquí verás tu <b>ganancia NETA</b> después de todo.</div></div>`;
     return;
   }
   const netaCls = b.neta<0?"red":"green";
@@ -2059,7 +2056,7 @@ function renderND(v){
       // (22-oct) Meta conectado pero sin gasto en estas fechas (hoy temprano, Meta todavía no reporta): no es «conecta Meta»
       : v.adsConectado ? ndRow("Gasto en Meta", money(0)) + ndRow("Costo por chat","—") + ndRow("Costo por venta","—")
         + `<div class="nd-note">Meta todavía no reporta gasto en estas fechas. Si es hoy, aparece en unas horas.</div>`
-      : `<div class="nd-note">Conecta tus anuncios en <a href="config.html">Ajustes → Meta</a> para ver cuánto te cuesta cada chat y cada venta.</div>`)+
+      : `<div class="nd-note">Conecta tus anuncios en <a href="config.html?tab=conexiones">Ajustes → Conexiones</a> para ver cuánto te cuesta cada chat y cada venta.</div>`)+
     `</div>`;
   const r = `<div class="nd-card"><h4>Rentabilidad</h4>`+
     ndRow(v.vendeFisico?"Ganancia bruta":"Ingresos cobrados", v.brutaDesconocida?"—":money(v.bruta))+

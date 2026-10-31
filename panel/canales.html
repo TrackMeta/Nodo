@@ -736,7 +736,7 @@ async function terminarWA(cid, pin){
 // conexión de WhatsApp, y un aviso rojo acá solo asustaría.
 // 📈 Ventas a Meta del MISMO viaje: si el bot todavía no tiene dataset, se le pide a su cuenta de WhatsApp Business y se
 // deja conectado (y salen las ventas de la última semana que no habían llegado). Si ya tenía uno, no se toca. Silencio si falla:
-// el motivo exacto lo muestra Ajustes → Meta, y no es un fallo de la conexión de WhatsApp.
+// el motivo exacto lo muestra Ajustes → Conexiones, y no es un fallo de la conexión de WhatsApp.
 async function ventasMetaDelMismoToken(cid){
   try{
     const r=await callFn("channel-config",{ action:"ventas_meta_conectar", channel_id:cid });
@@ -755,14 +755,14 @@ async function adsDelMismoToken(cid){
     if(!cuentas.length) return "";
     // Con UNA cuenta no hay nada que elegir y se conecta sola. Con VARIAS no se elige por el
     // dueño: se le avisa que están ahí y él marca cuáles seguir.
-    if(cuentas.length>1) return `tu token también lee anuncios (${cuentas.length} cuentas): elige cuáles seguir en Ajustes → Meta`;
+    if(cuentas.length>1) return `tu token también lee anuncios (${cuentas.length} cuentas): elige cuáles seguir en Ajustes → Conexiones`;
     const a=cuentas[0];
     // La MISMA cuenta publicitaria pegada a dos bots hace que CADA UNO muestre el gasto
     // entero (todo se lee por canal), o sea uno de los dos con un ROAS inflado. Un token
     // puede cubrir varios canales, así que esto pasaría solo. Si ya está en otro, no se
     // elige por el dueño: se le avisa.
     const { data:enOtro }=await supa.from("ad_accounts").select("channel_id").eq("account_id",a.account_id).limit(1);
-    if(enOtro&&enOtro.length) return `tu token también lee anuncios, pero esa cuenta ya está en otro bot: si también es de este, agrégala en Ajustes → Meta`;
+    if(enOtro&&enOtro.length) return `tu token también lee anuncios, pero esa cuenta ya está en otro bot: si también es de este, agrégala en Ajustes → Conexiones`;
     const { error }=await supa.from("ad_accounts").upsert({ channel_id:cid, account_id:a.account_id, nombre:a.nombre||null },{ onConflict:"channel_id,account_id" });
     if(error) return "";
     return `y conecté tus anuncios (${a.nombre||a.account_id}): el gasto ya sale en Rendimiento`;

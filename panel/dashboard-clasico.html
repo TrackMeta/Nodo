@@ -306,7 +306,7 @@ async function avPermitido(){
 const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
 let CUR="PEN";
 const curSym=()=>CUR_SYM[CUR]||CUR;
-// Cuánto vale un dólar en la moneda del negocio (Ajustes › General). Sin esto, el
+// Cuánto vale un dólar en la moneda del negocio (Ajustes › Tu negocio). Sin esto, el
 // gasto de IA —que el proveedor cobra en dólares— no se puede sumar a una ganancia
 // en soles sin mentir: se muestra aparte y en dólares hasta que lo configuren.
 let USD_RATE=0;
@@ -1409,7 +1409,7 @@ function renderBand(b){
   if(!b.hasAds && !hasExtra && !hasIa){
     box.innerHTML=`
       <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v ${b.brutaDesconocida?"":"green"}">${brutaTxt}</span>${brutaSub}</div>
-      <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="config.html">Ajustes → Meta</a> (o registra un gasto extra abajo) y aquí verás tu <b>ganancia NETA</b> después de todo.</div></div>`;
+      <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="config.html?tab=conexiones">Ajustes → Conexiones</a> (o registra un gasto extra abajo) y aquí verás tu <b>ganancia NETA</b> después de todo.</div></div>`;
     return;
   }
   const netaCls = b.neta<0?"red":"green";

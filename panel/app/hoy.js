@@ -258,7 +258,7 @@ function tablero(n, m) {
     (n.vendeFisico ? fila("Por cobrar", m(n.porCobrar)) + fila("Esperando adelanto", n.espAdel) : "") + `</div>`;
   const pub = `<div class="card"><div class="ttl">Publicidad</div>` + (n.gasto > 0
     ? fila("Gasto en Meta", m(n.gasto)) + fila("Costo por chat", n.chatsAd ? m(n.cpc) : "—") + fila("Costo por venta", n.cpa == null ? "—" : m(n.cpa)) + fila("ROAS", n.roas > 0 ? n.roas.toFixed(2) + "×" : "—")
-    : `<p class="nsub" style="padding:4px 14px 12px">Sin gasto de anuncios en estas fechas. Conecta tus anuncios en el panel (Ajustes → Meta) para ver cuánto te cuesta cada chat y cada venta.</p>`) + `</div>`;
+    : `<p class="nsub" style="padding:4px 14px 12px">Sin gasto de anuncios en estas fechas. Conecta tus anuncios en el panel (Ajustes → Conexiones) para ver cuánto te cuesta cada chat y cada venta.</p>`) + `</div>`;
   const rent = `<div class="card"><div class="ttl">Rentabilidad</div>` +
     fila(n.vendeFisico ? "Ganancia bruta" : "Ingresos cobrados", m(n.bruta)) +
     (n.gasto > 0 ? fila("− Publicidad", m(n.gasto), "down") : "") +
