@@ -28,6 +28,13 @@
   /* Partes apiladas dentro de una pestaña (Tu negocio = nombre y logo + país y moneda) */
   .sec{margin-top:34px;padding-top:28px;border-top:1px solid var(--border)}
   .sec:empty{display:none}
+  /* Lista de monedas (Tipo de cambio → Ver las demás monedas) */
+  .tclist{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}
+  .tclist th{text-align:left;font-weight:600;color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:6px 8px;border-bottom:1px solid var(--border)}
+  .tclist td{padding:7px 8px;border-bottom:1px solid var(--border);color:var(--text)}
+  .tclist .r{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .tclist .cod{color:var(--faint);font-size:11px;margin-left:4px}
+  .tclist tr.yo td{background:var(--brand-bg);font-weight:650}
   /* Uso de Supabase (barra del dueño de la plataforma) */
   .uso{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 20px;margin:0 0 20px}
   .uso:empty{display:none}
@@ -199,6 +206,9 @@ const ZONAS_EXTRA={
 };
 // (29-oct) La moneda sale del país (no se elige): la de cada país.
 const MONEDA_PAIS={PE:"PEN",MX:"MXN",CO:"COP",CL:"CLP",AR:"ARS",EC:"USD",BO:"BOB",VE:"USD",PY:"PYG",UY:"UYU",CR:"CRC",PA:"USD",GT:"GTQ",SV:"USD",HN:"HNL",NI:"NIO",DO:"DOP",PR:"USD",ES:"EUR",US:"USD",BR:"BRL"};
+// Bandera de cada moneda (el euro tiene la suya).
+const BANDERA_MON={PEN:"PE",MXN:"MX",COP:"CO",CLP:"CL",ARS:"AR",BOB:"BO",BRL:"BR",UYU:"UY",PYG:"PY",VES:"VE",CRC:"CR",GTQ:"GT",HNL:"HN",NIO:"NI",DOP:"DO",PAB:"PA",EUR:"EU",GBP:"GB",CAD:"CA",USD:"US"};
+const banderaMon=(m)=>{ const c=BANDERA_MON[m]; return c?String.fromCodePoint(...[...c].map(x=>127397+x.charCodeAt(0))):"🌎"; };
 const paisDeZona=(tz)=>{ for(const p of PAISES_TZ){ if(p[3]===tz || (ZONAS_EXTRA[p[0]]||[]).some(z=>z[0]===tz)) return p[0]; } return null; };
 
 const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png", meta:"../assets/apps/meta.png", sheets:"../assets/apps/sheets.png" };
@@ -387,6 +397,7 @@ function renderGeneral(b){
       <div class="chd"><span class="ico" style="background:var(--green-bg);color:var(--green)">${icon("dollar")}</span><span class="nm">Tipo de cambio</span></div>
       <div class="desc">Con esto se convierten las ventas en otras monedas y lo que pagas en dólares, como la IA. Se actualiza solo cada día.</div>
       <div id="g_tcVal" style="font-size:14px;font-weight:700;margin-top:4px"></div>
+      <details id="g_tcMas" style="margin-top:12px;display:none"><summary style="cursor:pointer;font-size:12.5px;color:var(--brand);font-weight:600">Ver las demás monedas</summary><div id="g_tcLista"></div></details>
     </div>
     <div class="acts"><button class="btn primary" id="saveGeneral">Guardar ajustes</button></div>`;
   // La zona: la de la capital del país, o la que elija si su país tiene varias. Sin país reconocido, se queda la de antes.
@@ -417,7 +428,7 @@ function renderGeneral(b){
     const m=monedaElegida(), cu=CURRENCIES.find(x=>x[0]===m)||["",m,m];
     const NOM={PEN:"Sol",USD:"Dólar",MXN:"Peso mexicano",COP:"Peso colombiano",ARS:"Peso argentino",CLP:"Peso chileno",UYU:"Peso uruguayo",DOP:"Peso dominicano",EUR:"Euro",BRL:"Real"};
     $("g_mon").innerHTML=`💵 Moneda: <b>${esc(cu[1])} ${esc(NOM[m]||String(cu[2]).replace(/^.*— /,""))}</b>`;
-    $("g_tcCard").style.display = m==="USD" ? "none" : "";
+    // (31-oct) La tarjeta queda aunque cobres en dólares: la lista de las demás monedas también sirve ahí.
     // Si tu país ya cobra en dólares no hay nada que elegir.
     $("g_repCard").style.display = m==="USD" ? "none" : "";
     const nomPlural={PEN:"Soles",MXN:"Pesos mexicanos",COP:"Pesos colombianos",ARS:"Pesos argentinos",CLP:"Pesos chilenos",UYU:"Pesos uruguayos",DOP:"Pesos dominicanos",EUR:"Euros",BRL:"Reales"}[m]||String(cu[2]).replace(/^.*— /,"");
@@ -430,6 +441,26 @@ function renderGeneral(b){
     let feTxt=""; try{ if(fe) feTxt=new Date(fe+"T12:00:00Z").toLocaleDateString("es-PE",{ day:"numeric", month:"long" }); }catch(_){}
     $("g_tcVal").innerHTML = tcv ? `1 USD = ${esc(cu[1])} ${esc(tcv.toLocaleString("es-PE",{ maximumFractionDigits: tcv<100?2:0 }))}${feTxt?` <span style="font-weight:400;font-size:12px;color:var(--faint)">· al ${esc(feTxt)}</span>`:""}`
       : `<span style="font-weight:400;font-size:12.5px;color:var(--muted)">Se actualiza solo durante el día.</span>`;
+    if(m==="USD") $("g_tcVal").innerHTML=`<span style="font-weight:400;font-size:12.5px;color:var(--muted)">Tu negocio usa dólares: no necesita tipo de cambio.</span>`;
+    pintaLista(m, cu[1]);
+  };
+  // 🌎 (31-oct, Rodrigo) Las 19 monedas que Nodo baja cada día (tipos_cambio) se usaban por dentro y no se veían en
+  // ningún lado. Van plegadas: cuánto vale un dólar en cada una y, si tu negocio no es en dólares, cuánto vale cada una
+  // en tu moneda — que es lo que Nodo hace al convertir (pasa por el dólar).
+  const pintaLista=(m, sym)=>{
+    const filas=Object.values(_cambios).filter(r=>r.moneda!=="USD" && Number(r.por_usd)>0);
+    $("g_tcMas").style.display = filas.length ? "" : "none";
+    if(!filas.length) return;
+    const tuyo=Number(_cambios[m]?.por_usd)||0, enTuya = m!=="USD" && tuyo>0;
+    const f=(n)=>Number(n).toLocaleString("es-PE",{ maximumFractionDigits: n<1?4:(n<100?2:0) });
+    const orden=["PEN","MXN","COP","CLP","ARS","BOB","BRL","UYU","PYG","VES","CRC","GTQ","HNL","NIO","DOP","PAB","EUR","GBP","CAD"];
+    const pos=(x)=>{ const i=orden.indexOf(x); return i<0?99:i; };   // la tuya primero, después por cercanía
+    filas.sort((a,b)=>(a.moneda===m?-1:b.moneda===m?1:0) || pos(a.moneda)-pos(b.moneda));
+    $("g_tcLista").innerHTML=`<table class="tclist"><thead><tr><th>Moneda</th><th class="r">1 USD =</th>${enTuya?`<th class="r">En ${esc(sym)}</th>`:""}</tr></thead><tbody>${filas.map(r=>{
+      const c=CURRENCIES.find(x=>x[0]===r.moneda)||[r.moneda,r.moneda,r.moneda], v=Number(r.por_usd);
+      const nom=String(c[2]).replace(/ — /," · ");
+      return `<tr class="${r.moneda===m?"yo":""}"><td>${banderaMon(r.moneda)} ${esc(nom)} <span class="cod">${esc(r.moneda)}</span></td><td class="r">${esc(c[1])} ${esc(f(v))}</td>${enTuya?`<td class="r">${r.moneda===m?"—":esc(sym)+" "+esc(f(tuyo/v))}</td>`:""}</tr>`;
+    }).join("")}</tbody></table><p class="fhelp" style="margin-top:8px">Valores de hoy. Nodo convierte cada venta y cada gasto con el de su día.</p>`;
   };
   $("g_pais").onchange=()=>{ pintaZona(); pintaMoneda(); }; pintaZona(); pintaMoneda();
   $("saveGeneral").onclick=async(e)=>{
