@@ -347,7 +347,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll, usuarioActual } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
-import { montarMapaAngulos } from "./angulos-mapa.js?v=1";
+import { montarMapaAngulos } from "./angulos-mapa.js?v=2";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
@@ -452,7 +452,9 @@ function renderGvToggle(){
 // Lo que el mapa de ángulos necesita de esta página: los productos, el país del bot y cómo abrir un producto en su
 // saludo (con la pestaña del ángulo elegida) o en su remarketing, para lo que la ficha no edita (imágenes, botones…).
 function ctxAngulos(){
-  const abrir=async(pid, sec)=>{ await openProduct(pid); if(st.prod && String(st.prod.id)===String(pid)) setTimeout(()=>accOpen(sec),60); };
+  // La ficha del producto termina de pintarse después de openProduct: se espera a que exista la sección (hasta 4 s).
+  const abrir=async(pid, sec)=>{ await openProduct(pid);
+    for(let i=0;i<40;i++){ if(!st.prod || String(st.prod.id)!==String(pid)) return; if(document.querySelector('.acc[data-t="'+sec+'"]')){ accOpen(sec); return; } await new Promise(r=>setTimeout(r,100)); } };
   return { channelId:st.channelId, list:st.list, paisBot:_paisBot, PAIS_INFO,
     abrirSaludo:(pid,slug)=>{ st._angTab=slug||""; return abrir(pid,"activacion"); },
     abrirRemarketing:(pid)=>abrir(pid,"remarketing") };

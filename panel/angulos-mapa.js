@@ -147,7 +147,7 @@ function estadoCelda(p, a) {
   return falta.length ? { tono: "wa", txt: "Falta " + falta.join(", "), ic: "alert" } : { tono: "ok", txt: "Completo", ic: "check" };
 }
 // Precios escritos a mano en un texto (para avisar antes de copiar a otro país).
-const RE_PRECIO = /(S\/\s?\d|US\$\s?\d|\$\s?\d|€\s?\d|\b\d[\d.,]*\s?(soles?|pesos?|d[oó]lares?|euros?)\b)/i;
+const RE_PRECIO = /((S\/|US\$|\$|€)\s?\d[\d.,]*\d|(S\/|US\$|\$|€)\s?\d|\b\d[\d.,]*\s?(soles?|pesos?|d[oó]lares?|euros?)\b)/i;
 const textos = (vs) => (vs || []).flatMap((v) => (v.bubbles || []).map((b) => String(b.text || b.caption || "")));
 
 // ── Pintar ────────────────────────────────────────────────────────────────
@@ -212,7 +212,7 @@ function pintaFicha(pid, slug) {
   h += `<div class="amx-card"><h3>${icon("rendimiento")} Cómo le va <span>· últimos ${DIAS} días · en ${esc(S.cur)}</span></h3>
     <div class="amx-kpi"><div><b>${plata(x.g)}</b><span>Gasto en anuncios</span></div><div><b>${x.c}</b><span>Conversaciones</span></div><div><b>${x.v}</b><span>Ventas</span></div>
       <div><b>${x.v ? plata(x.g / x.v) : "—"}</b><span>Por venta</span></div><div><b>${x.c ? Math.round((x.v / x.c) * 100) + " %" : "—"}</b><span>Cierra</span></div></div>
-    ${S.avisoGasto ? `<p class="amx-help">${icon("alert")} El gasto puede no estar convertido: ${esc(S.avisoGasto)}.</p>` : ""}
+    ${S.avisoGasto && x.g ? `<p class="amx-help">${icon("alert")} El gasto puede no estar convertido: ${esc(S.avisoGasto)}.</p>` : ""}
     <p class="amx-help">Ventas cobradas de clientes que llegaron por estos anuncios. <a href="rendimiento.html">Ver en Rendimiento →</a></p></div>`;
   // 2) Anuncios
   h += `<div class="amx-card" id="amxAds"></div>`;
@@ -346,13 +346,16 @@ function leeBurbujas(box, key, v) {
   box.querySelectorAll(`textarea[data-k="${key}"]`).forEach((t) => { const b = v.bubbles[+t.dataset.bi]; if (b && !b.media_url) b.text = t.value; });
   v.bubbles = (v.bubbles || []).filter((b) => b.media_url || String(b.text || "").trim());
 }
-const prevSmp = (t) => String(t || "").replace(/\{\{\s*nombre\s*\}\}/gi, "Ana").replace(/\{\{[^}]*\}\}/g, "…");
+// {{precio}} con el precio real de la versión (solo el número, como lo reemplaza el bot).
+let _precioPrev = "100";
+const prevSmp = (t) => String(t || "").replace(/\{\{\s*nombre\s*\}\}/gi, "Ana").replace(/\{\{\s*precio\s*\}\}/gi, _precioPrev).replace(/\{\{[^}]*\}\}/g, "…");
 let _marca = {};
 const vistaWa = (v) => waScreenHtml({ title: _marca.nombre, logoUrl: _marca.logo_url, bubblesHtml: waBubbles((v && v.bubbles) || [], prevSmp), empty: "Sin mensajes" });
 
 // ── Saludo ────────────────────────────────────────────────────────────────
 function pintaSaludo(p, a) {
   const box = document.getElementById("amxSal"); if (!box) return;
+  const pv = (p.product_versions || []).find((v) => v.activo !== false && v.precio != null && v.precio !== ""); _precioPrev = String(pv ? pv.precio : 100);
   const nodo = S.saludo[p.id];
   const editor = `<button class="amx-link" data-full>${icon("edit")} Editor completo (imágenes, botones, varias versiones)</button>`;
   if (!nodo) {
