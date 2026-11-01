@@ -347,7 +347,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll, usuarioActual } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
-import { montarMapaAngulos } from "./angulos-mapa.js?v=17";
+import { montarMapaAngulos } from "./angulos-mapa.js?v=18";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
@@ -367,7 +367,7 @@ async function avPermitido(){
 let AV = false;
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=21";
+import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=22";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set(), gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -4376,7 +4376,7 @@ function renderComposer(){
   if(st.act.tab && !angs.some(a=>a.slug===st.act.tab)) st.act.tab="";
   const tab=st.act.tab;
   const tabVars=()=> cfg.variantes.map((v,i)=>({v,i})).filter(({v})=> tab? (v.angulo===tab) : !v.angulo);
-  if(!tabVars().length){ const nv=newVariant(cfg.variantes.length); if(tab) nv.angulo=tab; cfg.variantes.push(nv); }
+  if(!tabVars().length){ const nv=newVariant(0); if(tab) nv.angulo=tab;   // la primera de su pestaña: «Versión A» cfg.variantes.push(nv); }
   const angActivo = tab? angs.find(a=>a.slug===tab) : null;
   const angIdx = tab? angs.findIndex(a=>a.slug===tab) : -1;
 

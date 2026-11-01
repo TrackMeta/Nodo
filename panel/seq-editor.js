@@ -15,6 +15,8 @@ const uid = ()=> "v"+Math.random().toString(36).slice(2,9);
 // `rev` sube cuando se reescribe el texto: los resultados medidos de un copy que ya
 // cambió son de otro copy, y sumarlos con los nuevos corrompe justo el número que uno
 // mira para decidir qué versión deja. Ver `subeRevSiCambio`.
+// La primera «Versión X» libre entre estas versiones (las del mismo grupo/pestaña): cada pestaña cuenta A, B, C…
+export function versionLibre(vs){ const usados=new Set((vs||[]).map(v=>String(v?.nombre||""))); for(let i=0;i<26;i++){ const n="Versión "+String.fromCharCode(65+i); if(!usados.has(n)) return n; } return "Versión "+((vs||[]).length+1); }
 export function newVariant(idx){ return { id:uid(), rev:1, nombre:"Versión "+String.fromCharCode(65+(idx||0)), activo:true, peso:1, bubbles:[{text:""}] }; }
 // Texto plano de una versión (para detectar el cambio).
 export function textoVariante(v){ return (v?.bubbles||[]).map(b=>String(b?.text||"")).join("\n"); }
@@ -202,7 +204,7 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
       </div>`;
     box.querySelectorAll(".se-tab").forEach(b=> b.onclick=()=>{ tabDe.set(paso, b.dataset.tab); composer(box,paso); box.dispatchEvent(new Event("click",{bubbles:true})); });
     const rtog=box.querySelector("[data-rot]"); if(rtog) rtog.onclick=()=>{ paso.rotacion=!rot; composer(box,paso); };
-    const av=box.querySelector("[data-addvar]"); if(av) av.onclick=()=>{ paso.variantes.push(newVariant(paso.variantes.length)); composer(box,paso); };
+    const av=box.querySelector("[data-addvar]"); if(av) av.onclick=()=>{ paso.variantes.push({ ...newVariant(0), nombre:versionLibre(paso.variantes) }); composer(box,paso); };
     const vl=box.querySelector(".se-varlist");
 
     // Pinta una versión (tarjeta). `compite` = hay 2+ versiones activas en su
@@ -258,7 +260,7 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
           <button class="btn" type="button" data-propio style="height:32px;padding:0 13px;font-size:12.5px">＋ Mensaje propio para ${nom}</button>`;
         w.querySelector("[data-propio]").onclick=()=>{
           const base=paso.variantes.find(v=>enTabDe("",v) && v.activo!==false) || paso.variantes.find(v=>enTabDe("",v));
-          const nv=newVariant(paso.variantes.length); nv.angulo=tab;
+          const nv=newVariant(0); nv.angulo=tab;   // la primera de esta pestaña: «Versión A»
           if(base && Array.isArray(base.bubbles) && base.bubbles.length) nv.bubbles=JSON.parse(JSON.stringify(base.bubbles));
           paso.variantes.push(nv); composer(box,paso); box.dispatchEvent(new Event("input",{bubbles:true}));
         };
@@ -271,7 +273,7 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
       if(tabs && tab!=="" && mias.length===1){ const q=document.createElement("button"); q.type="button"; q.className="btn"; q.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin:9px 8px 0 0;background:transparent;border:1px dashed var(--border);color:var(--muted)"; q.textContent="✕ Quitar y usar el de Todos"; q.onclick=async()=>{ if(!await confirmDialog({title:"Quitar el mensaje propio",message:"Los que llegan por este ángulo van a recibir el mensaje de Todos.",confirmText:"Quitar",danger:true})) return; paso.variantes.splice(mias[0].vi,1); composer(box,paso); box.dispatchEvent(new Event("input",{bubbles:true})); }; vl.appendChild(q); }
       const add=document.createElement("button"); add.className="btn"; add.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin-top:9px;background:transparent;border:1px dashed var(--border)";
       add.textContent="＋ Otra versión (el bot las rota)";
-      add.onclick=()=>{ const nv=newVariant(paso.variantes.length); if(grupoVis) nv.angulo=grupoVis; paso.variantes.push(nv); paso.rotacion=true; composer(box,paso); };   // rotacion: el motor rota entre las versiones de un mismo grupo
+      add.onclick=()=>{ const nv={ ...newVariant(0), nombre:versionLibre(mias.map(x=>x.v)) }; if(grupoVis) nv.angulo=grupoVis; paso.variantes.push(nv); paso.rotacion=true; composer(box,paso); };   // rotacion: el motor rota entre las versiones de un mismo grupo
       vl.appendChild(add);
       return;
     }
