@@ -27,7 +27,6 @@ const ZONAS_EXTRA={
 };
 // (29-oct) La moneda sale del país (no se elige): la de cada país.
 const MONEDA_PAIS={PE:"PEN",MX:"MXN",CO:"COP",CL:"CLP",AR:"ARS",EC:"USD",BO:"BOB",VE:"USD",PY:"PYG",UY:"UYU",CR:"CRC",PA:"USD",GT:"GTQ",SV:"USD",HN:"HNL",NI:"NIO",DO:"DOP",PR:"USD",ES:"EUR",US:"USD",BR:"BRL"};
-// Bandera de cada moneda (el euro tiene la suya).
 const paisDeZona=(tz)=>{ for(const p of PAISES_TZ){ if(p[3]===tz || (ZONAS_EXTRA[p[0]]||[]).some(z=>z[0]===tz)) return p[0]; } return null; };
 
 const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png", meta:"../assets/apps/meta.png", sheets:"../assets/apps/sheets.png" };
