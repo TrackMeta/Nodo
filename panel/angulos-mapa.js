@@ -460,50 +460,56 @@ function pintaRem(p, a) {
     return;
   }
   const clave = `${p.id}|${a.slug}`;
-  if (!S.trabajoRem || S.trabajoRem.clave !== clave) S.trabajoRem = { clave, pasos: Object.fromEntries(seqs.map(({ seq }) => [seq.id, clon(seq.pasos)])) };
+  if (!S.trabajoRem || S.trabajoRem.clave !== clave) S.trabajoRem = { clave, pasos: Object.fromEntries(seqs.map(({ seq }) => [seq.id, clon(seq.pasos)])), seq: seqs[0].seq.id, sel: 0 };
   const T = S.trabajoRem;
-  let h = `<h3>${icon("secuencias")} Secuencias de este ángulo</h3><p class="amx-help">A quien llegó por este ángulo y no compró. «Propio» = un mensaje que retoma este anuncio; «general» = el mismo para todos.</p>`;
-  for (const { seg, seq } of seqs) {
-    if (seqs.length > 1) h += `<div class="amx-sub">${esc(SEG[seg] || seg)} <span>· ${esc(seq.nombre || "")}</span></div>`;
-    T.pasos[seq.id].forEach((paso, i) => {
-      const k = `${seq.id}:${i}`, cab = `<b>Toque ${i + 1}</b><span>· ${espera({ pasos: T.pasos[seq.id] }, i)}</span>`;
-      if (!esMsg(paso)) { h += `<div class="amx-step"><div class="amx-sh">${cab}<span class="amx-chip">${paso.template_name ? "plantilla" : "flujo"}</span></div><p class="amx-help" style="margin:0">Igual para todos los ángulos.</p></div>`; return; }
-      if (deAngulo(paso.variantes, a.slug).length) {
-        h += `<div class="amx-step" data-k="${k}"><div class="amx-sh">${cab}<span class="amx-chip ok">propio</span><button class="amx-link" data-gen="${k}" style="margin-left:8px">${icon("x")} Usar el general</button></div>
-          <div class="amx-salg con-vista"><div class="amx-ed"></div><div class="amx-prevbox amx-prev"></div></div></div>`;
-      } else {
-        const g = burbujasGenerales(paso), t = (g || []).map((b) => b.text || b.caption || "").join(" ").trim();
-        h += `<div class="amx-step"><div class="amx-sh">${cab}<span class="amx-chip">general</span></div><p class="amx-gtxt">${esc(t.slice(0, 160) || "(sin texto)")}${t.length > 160 ? "…" : ""}</p>
-          <div class="amx-acts" style="justify-content:flex-start"><button class="amx-btn sm" data-propio="${k}" ${g ? "" : "disabled"}>${icon("plus")} Crear propio</button></div></div>`;
-      }
-    });
-  }
+  // (1-nov, Rodrigo: «que no sea una lista larga») Los toques van en una fila (número, espera y si es propio) y se
+  // edita UNO a la vez, como en Secuencias. Con varias audiencias, primero se elige cuál.
+  if (!seqs.some((x) => x.seq.id === T.seq)) { T.seq = seqs[0].seq.id; T.sel = 0; }
+  const pasos = T.pasos[T.seq];
+  if (T.sel >= pasos.length) T.sel = Math.max(0, pasos.length - 1);
+  const estado = (ps) => (!esMsg(ps) ? "otro" : deAngulo(ps.variantes, a.slug).length ? "propio" : "general");
+  let h = `<h3>${icon("secuencias")} Secuencias de este ángulo</h3><p class="amx-help">A quien llegó por este ángulo y no compró. Verde = tiene su propio mensaje; gris = recibe el mismo que todos.</p>`;
+  if (seqs.length > 1) h += `<div class="amx-segs">${seqs.map(({ seg, seq }) => `<button type="button" class="amx-seg ${seq.id === T.seq ? "on" : ""}" data-seq="${esc(seq.id)}">${esc(SEG[seg] || seg)}</button>`).join("")}</div>`;
+  h += `<div class="amx-toques">${pasos.map((ps, i) => { const e = estado(ps);
+    return `<button type="button" class="amx-toque ${e} ${i === T.sel ? "on" : ""}" data-i="${i}" title="${e === "propio" ? "Tiene su propio mensaje" : e === "general" ? "Recibe el mensaje de todos" : "Plantilla o flujo: igual para todos"}">
+      <span class="amx-tn">${i + 1}</span><span class="amx-tw">${espera({ pasos }, i)}</span><span class="amx-te">${e === "propio" ? "propio" : e === "general" ? "general" : pasos[i].template_name ? "plantilla" : "flujo"}</span></button>`; }).join(`<span class="amx-tl"></span>`)}</div>`;
+  const ps = pasos[T.sel], k = `${T.seq}:${T.sel}`, e = estado(ps);
+  if (e === "otro") h += `<div class="amx-step"><p class="amx-help" style="margin:0">El toque ${T.sel + 1} manda ${ps.template_name ? "una plantilla" : "un flujo"}: es igual para todos los ángulos.</p></div>`;
+  else if (e === "propio") h += `<div class="amx-step" data-k="${k}"><div class="amx-sh"><b>Toque ${T.sel + 1}</b><span>· ${espera({ pasos }, T.sel)}</span><span class="amx-chip ok">propio</span><button class="amx-link" data-gen="${k}" style="margin-left:8px">${icon("x")} Usar el general</button></div>
+      <div class="amx-salg con-vista"><div class="amx-ed"></div><div class="amx-prevbox amx-prev"></div></div></div>`;
+  else { const g = burbujasGenerales(ps), t = (g || []).map((b) => b.text || b.caption || "").join(" ").trim();
+    h += `<div class="amx-step"><div class="amx-sh"><b>Toque ${T.sel + 1}</b><span>· ${espera({ pasos }, T.sel)}</span><span class="amx-chip">general</span></div>
+      <p class="amx-gtxt">${esc(t.slice(0, 220) || "(sin texto)")}${t.length > 220 ? "…" : ""}</p>
+      <div class="amx-acts" style="justify-content:flex-start"><button class="amx-btn sm" data-propio="${k}" ${g ? "" : "disabled"}>${icon("plus")} Crear propio para este ángulo</button></div></div>`; }
   h += `<div class="amx-acts">${full}<button class="amx-btn pri" data-grem>Guardar secuencias</button></div>`;
   box.innerHTML = h;
-  const pasoDe = (k) => { const [id, i] = k.split(":"); return T.pasos[id][+i]; };
+  const pasoDe = (kk) => { const [id, i] = kk.split(":"); return T.pasos[id][+i]; };
   box.querySelectorAll(".amx-step[data-k]").forEach((st) => montaEditor(st, pasoDe(st.dataset.k), p, a.slug));
+  box.querySelectorAll("[data-seq]").forEach((b) => (b.onclick = () => { T.seq = b.dataset.seq; T.sel = 0; pintaRem(p, a); }));
+  box.querySelectorAll("[data-i]").forEach((b) => (b.onclick = () => { T.sel = +b.dataset.i; pintaRem(p, a); }));
   box.querySelector("[data-full]").onclick = () => S.ctx.abrirRemarketing(p.id);
   box.querySelectorAll("[data-propio]").forEach((b) => (b.onclick = () => {
-    const ps = pasoDe(b.dataset.propio);
-    asegurarVariantes(ps);
-    ps.variantes.push({ ...newVariant(0), angulo: a.slug, bubbles: burbujasGenerales(ps) || [{ text: "" }] });
-    ps.rotacion = true;   // el editor de Secuencias lo muestra en modo «según el anuncio»
+    const x = pasoDe(b.dataset.propio);
+    asegurarVariantes(x);
+    x.variantes.push({ ...newVariant(0), angulo: a.slug, bubbles: burbujasGenerales(x) || [{ text: "" }] });
+    x.rotacion = true;
     pintaRem(p, a);
   }));
   box.querySelectorAll("[data-gen]").forEach((b) => (b.onclick = () => {
-    const ps = pasoDe(b.dataset.gen);
-    ps.variantes = ps.variantes.filter((v) => v.angulo !== a.slug);
+    const x = pasoDe(b.dataset.gen);
+    x.variantes = x.variantes.filter((v) => v.angulo !== a.slug);
     pintaRem(p, a);
   }));
-  box.querySelector("[data-grem]").onclick = async (e) => {
+  box.querySelector("[data-grem]").onclick = async (ev) => {
     let n = 0, ok = true;
     for (const { seq } of seqs) {
-      const pasos = T.pasos[seq.id].map((ps) => (esMsg(ps) && Array.isArray(ps.variantes) ? { ...ps, variantes: limpiaAngulo(ps.variantes, a.slug) } : ps));
-      if (JSON.stringify(pasos) === JSON.stringify(seq.pasos)) continue;
-      const antes = seq.pasos; seq.pasos = pasos;
-      if (await guardarSeq(seq, e.currentTarget)) n++; else { seq.pasos = antes; ok = false; }
+      const nuevos = T.pasos[seq.id].map((x) => (esMsg(x) && Array.isArray(x.variantes) ? { ...x, variantes: limpiaAngulo(x.variantes, a.slug) } : x));
+      if (JSON.stringify(nuevos) === JSON.stringify(seq.pasos)) continue;
+      const antes = seq.pasos; seq.pasos = nuevos;
+      if (await guardarSeq(seq, ev.currentTarget)) n++; else { seq.pasos = antes; ok = false; }
     }
-    if (ok) { S.trabajoRem = null; toast(n ? "Secuencias guardadas" : "No había cambios"); pinta(); }   // toda la ficha: también las etiquetas de arriba
+    if (ok) { const { seq: s0, sel } = T; S.trabajoRem = null; toast(n ? "Secuencias guardadas" : "No había cambios"); pinta();   // toda la ficha: también las etiquetas de arriba
+      if (S.trabajoRem) { S.trabajoRem.seq = s0; S.trabajoRem.sel = sel; pintaRem(p, a); } }   // y te deja en el toque donde estabas
   };
 }
 // Un paso del formato viejo (bubbles/mensaje sueltos) pasa a variantes sin cambiar lo que manda: la general primero.
@@ -727,6 +733,20 @@ function cargaCss() {
   .amx-link:focus{outline:none}.amx-link:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
   .amx-warnrow{display:flex;gap:7px;align-items:center;font-size:12.5px;color:var(--amber);background:rgba(240,169,43,.08);border-radius:10px;padding:8px 10px}
   .amx-warnrow svg{width:14px;height:14px;flex:none}
+  .amx-segs{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px}
+  .amx-seg{font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer}
+  .amx-seg.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  .amx-toques{display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding:4px 2px 10px}
+  .amx-tl{flex:1 1 18px;min-width:12px;max-width:40px;height:0;border-top:1.5px dashed var(--border);margin-top:21px}
+  .amx-toque{flex:none;display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;font:inherit;cursor:pointer;padding:0 2px;color:var(--muted)}
+  .amx-tn{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:700;border:1.5px solid var(--border);background:var(--surface-2);color:var(--muted)}
+  .amx-toque.propio .amx-tn{border-color:var(--green);color:var(--green);background:rgba(34,192,121,.08)}
+  .amx-toque.on .amx-tn{background:var(--brand);border-color:var(--brand);color:#fff}
+  .amx-toque.on.propio .amx-tn{background:var(--green);border-color:var(--green)}
+  .amx-tw{font-size:11px;color:var(--muted)}
+  .amx-te{font-size:10.5px;font-weight:600}
+  .amx-toque.propio .amx-te{color:var(--green)}
+  .amx-toque.on .amx-tw{color:var(--text)}
   .amx-step{border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-top:10px}
   .amx-sh{display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:12.5px}.amx-sh span{color:var(--muted)}.amx-sh .amx-chip{margin-left:auto}
   .amx-gtxt{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0;white-space:pre-wrap}
