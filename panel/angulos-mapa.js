@@ -141,11 +141,13 @@ const plata = (n) => { const s = SIMB[S.cur] || S.cur + " "; return s + (s.endsW
 const nomAd = (id) => { const m = S.meta[String(id)]; return m ? (m.ad_name || m.ad_id) : String(id); };
 function estadoCelda(p, a) {
   const nAds = a.ad_ids.length, rem = remEstado(p, a.slug), falta = [];
-  if (!nAds) return { tono: "no", txt: "Sin anuncios", ic: "dot" };
-  if (!String(a.gancho_ia || "").trim()) falta.push("gancho");
-  if (!saludoPropio(p.id, a.slug)) falta.push("saludo");
-  if (rem.total && rem.propios < rem.total) falta.push(`secuencias ${rem.propios} de ${rem.total}`);
-  return falta.length ? { tono: "wa", txt: "Falta " + falta.join(", "), ic: "alert" } : { tono: "ok", txt: "Completo", ic: "check" };
+  // `foco`: la sección de la ficha que falta (la primera), para llevarte directo ahí al tocar la casilla.
+  if (!nAds) return { tono: "no", txt: "Sin anuncios", ic: "dot", foco: "amxAds" };
+  let foco = "";
+  if (!String(a.gancho_ia || "").trim()) { falta.push("gancho"); foco ||= "amxIa"; }
+  if (!saludoPropio(p.id, a.slug)) { falta.push("saludo"); foco ||= "amxSal"; }
+  if (rem.total && rem.propios < rem.total) { falta.push(`secuencias ${rem.propios} de ${rem.total}`); foco ||= "amxRem"; }
+  return falta.length ? { tono: "wa", txt: "Falta " + falta.join(", "), ic: "alert", foco } : { tono: "ok", txt: "Completo", ic: "check", foco: "" };
 }
 // Precios escritos a mano en un texto (para avisar antes de copiar a otro país).
 const RE_PRECIO = /((S\/|US\$|\$|€)\s?\d[\d.,]*\d|(S\/|US\$|\$|€)\s?\d|\b\d[\d.,]*\s?(soles?|pesos?|d[oó]lares?|euros?)\b)/i;
@@ -159,7 +161,14 @@ function pinta() {
   S.vista = { tipo: "mapa" };
   pintaMapa();
 }
-function ir(vista) { S.vista = vista; S.trabajo = null; S.trabajoRem = null; pinta(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+function ir(vista) {
+  S.vista = vista; S.trabajo = null; S.trabajoRem = null; pinta();
+  const el = vista.foco && document.getElementById(vista.foco);
+  if (!el) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+  if (el.classList.contains("amx-cerrado")) el.classList.remove("amx-cerrado");   // el saludo plegado se abre
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  el.classList.add("amx-foco"); setTimeout(() => el.classList.remove("amx-foco"), 2200);
+}
 
 function pintaMapa() {
   const fams = familias();
@@ -181,18 +190,19 @@ function pintaMapa() {
         if (!a) { h += `<td><button class="amx-cell no" data-crear="${esc(m.id)}" data-slug="${esc(s.slug)}"><span>${icon("plus")} Crear en ${esc(paisNom(paisDe(m)))}</span><small>Copia el de otro país</small></button></td>`; continue; }
         const e = estadoCelda(m, a), x = statsDe(a.ad_ids);
         const num = x.v ? `${plata(x.g / x.v)} por venta` : x.g ? `${plata(x.g)} sin ventas` : "";
-        h += `<td><button class="amx-cell ${e.tono}" data-pid="${esc(m.id)}" data-slug="${esc(s.slug)}"><span>${icon(e.ic)} ${esc(e.txt)}</span><small>${a.ad_ids.length} anuncio${a.ad_ids.length === 1 ? "" : "s"}${num ? " · " + num : ""}</small></button></td>`;
+        h += `<td><button class="amx-cell ${e.tono}" data-pid="${esc(m.id)}" data-slug="${esc(s.slug)}" data-foco="${e.foco}"><span>${icon(e.ic)} ${esc(e.txt)}</span><small>${a.ad_ids.length} anuncio${a.ad_ids.length === 1 ? "" : "s"}${num ? " · " + num : ""}</small></button></td>`;
       }
       h += `</tr>`;
     }
-    h += `<tr class="amx-sin"><td class="amx-an"><span>Sin ángulo</span><span>Llegan al producto con el saludo general</span></td>`;
-    for (const m of ms) { const n = sinAngulo(m).length; h += `<td><button class="amx-cell sin" data-pid="${esc(m.id)}" data-slug=""><small>${n ? `${n} anuncio${n === 1 ? "" : "s"} · asignar` : "Agregar anuncios"}</small></button></td>`; }
-    h += `</tr></tbody></table></div>
+    // (1-nov, Rodrigo) «Sin ángulo» no es un ángulo: va como franja debajo, y solo si hay anuncios sueltos.
+    const sueltos = ms.map((m) => ({ m, n: sinAngulo(m).length })).filter((x) => x.n);
+    h += `</tbody></table></div>
+      ${sueltos.map(({ m, n }) => `<button type="button" class="amx-sueltos" data-pid="${esc(m.id)}" data-slug="">${icon("megaphone")}<span><b>${n} anuncio${n === 1 ? "" : "s"}${multi ? ` de ${esc(paisNom(paisDe(m)))}` : ""} sin ángulo</b> · llega${n === 1 ? "" : "n"} con el saludo general</span><span class="amx-sueltos-cta">Asignar →</span></button>`).join("")}
       <button class="amx-btn" data-nuevo="${esc(famDe(p0))}">${icon("plus")} Ángulo</button></div>`;
   }
   h += `</div>`;
   S.host.innerHTML = h;
-  S.host.querySelectorAll("[data-pid]").forEach((b) => (b.onclick = () => ir({ tipo: "ficha", pid: b.dataset.pid, slug: b.dataset.slug })));
+  S.host.querySelectorAll("[data-pid]").forEach((b) => (b.onclick = () => ir({ tipo: "ficha", pid: b.dataset.pid, slug: b.dataset.slug, foco: b.dataset.foco || "" })));
   S.host.querySelectorAll("[data-crear]").forEach((b) => (b.onclick = () => crearEnPais(b.dataset.crear, b.dataset.slug)));
   S.host.querySelectorAll("[data-nuevo]").forEach((b) => (b.onclick = () => nuevoAngulo(familias().find((f) => famDe(f[0]) === b.dataset.nuevo) || [])));
 }
@@ -204,7 +214,7 @@ function pintaFicha(pid, slug) {
   const x = statsDe(ids), rem = a ? remEstado(p, slug) : null;
   const chip = (ok, txt) => `<span class="amx-chip ${ok ? "ok" : "wa"}">${ok ? icon("check") : ""}${esc(txt)}</span>`;
   let h = `<div class="amx"><button class="amx-back" data-volver>${icon("chevronLeft")} Volver al mapa</button>
-    <div class="amx-card amx-head"><div style="flex:1;min-width:0"><h2>${a ? esc(a.nombre || a.slug) : "Anuncios sin ángulo"}</h2>
+    <div class="amx-card amx-head"><div style="flex:1;min-width:0"><h2>${a ? esc(a.nombre || a.slug) : "Anuncios sin ángulo"}</h2>${a ? "" : `<p style="margin:3px 0 0">Estos anuncios llegan con el saludo general. Asígnales un ángulo para que el bot retome la idea del anuncio.</p>`}
       <p>${esc(p.nombre)} · <b>${esc(paisNom(pais))}</b></p></div>
       ${otros.length && a ? `<div class="amx-paises">${fam.map((m) => { const tiene = !!angDe(m.id, slug); return `<button class="amx-pais ${String(m.id) === String(pid) ? "on" : ""}" ${tiene ? `data-ir="${esc(m.id)}"` : "disabled title=\"Este ángulo no existe en ese país\""}>${esc(paisNom(paisDe(m)))}</button>`; }).join("")}</div>` : ""}
     </div>`;
@@ -220,7 +230,7 @@ function pintaFicha(pid, slug) {
   if (a) {
     // 3) Nombre y gancho
     // Con el violeta/rosa de la IA (como «Gancho para la IA» en el producto): es lo que lee la IA, no un dato del cliente.
-    h += `<div class="amx-card amx-ia"><h3><span class="amx-iagl">${icon("robot")}</span><span class="amx-iatt">Nombre y gancho para la IA</span></h3>
+    h += `<div class="amx-card amx-ia" id="amxIa"><h3><span class="amx-iagl">${icon("robot")}</span><span class="amx-iatt">Nombre y gancho para la IA</span></h3>
       <label class="amx-lbl">Nombre del ángulo</label><input class="amx-in" id="amxNom" value="${esc(a.nombre || "")}" maxlength="60"/>
       <label class="amx-lbl">Gancho para la IA <span>· desde qué idea le vende a este cliente</span></label>
       <input class="amx-in" id="amxGan" value="${esc(a.gancho_ia || "")}" placeholder="Ej. vino por un anuncio sobre bajar la barriga en 21 días"/>
@@ -649,7 +659,13 @@ function cargaCss() {
   .amx-mx td{vertical-align:top;padding:0}
   .amx-an{padding:8px 6px!important;min-width:150px;max-width:240px}
   .amx-an b{display:block;font-size:13px}.amx-an span{display:block;font-size:11.5px;color:var(--muted);line-height:1.4;margin-top:2px}
-  .amx-sin .amx-an span:first-child{font-size:12.5px;font-weight:600;color:var(--text)}
+  .amx-sueltos{display:flex;align-items:center;gap:9px;width:100%;margin-top:8px;padding:9px 12px;border-radius:11px;border:1px dashed rgba(240,169,43,.55);background:rgba(240,169,43,.06);color:var(--text);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+  .amx-sueltos:hover{border-style:solid}
+  .amx-sueltos>svg{width:15px;height:15px;color:var(--amber);flex:none}
+  .amx-sueltos>span:nth-child(2){flex:1;min-width:0;color:var(--muted)}.amx-sueltos b{color:var(--text)}
+  .amx-sueltos-cta{font-weight:700;color:var(--brand);white-space:nowrap}
+  .amx-card{transition:box-shadow .3s,border-color .3s}
+  .amx-foco{border-color:var(--brand)!important;box-shadow:0 0 0 3px var(--brand-bg)}
   .amx-cell{width:100%;min-height:54px;text-align:left;font:inherit;cursor:pointer;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding:8px 10px;display:flex;flex-direction:column;gap:3px;color:var(--text)}
   .amx-cell:hover{border-color:var(--brand)}
   .amx-cell span{font-size:12.5px;font-weight:650;display:flex;align-items:center;gap:5px}
@@ -658,7 +674,6 @@ function cargaCss() {
   .amx-cell.ok{background:rgba(34,192,121,.08);border-color:rgba(34,192,121,.35)}.amx-cell.ok span{color:var(--green)}
   .amx-cell.wa{background:rgba(240,169,43,.08);border-color:rgba(240,169,43,.4)}.amx-cell.wa span{color:var(--amber)}
   .amx-cell.no span{color:var(--muted)}
-  .amx-cell.sin{min-height:38px;justify-content:center;border-style:dashed}
   .amx-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;margin-top:10px}
   .amx-btn svg{width:15px;height:15px}.amx-btn:hover{border-color:var(--brand)}
   .amx-btn.pri{background:var(--brand);border-color:var(--brand);color:#fff}
