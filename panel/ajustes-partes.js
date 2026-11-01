@@ -28,8 +28,6 @@ const ZONAS_EXTRA={
 // (29-oct) La moneda sale del país (no se elige): la de cada país.
 const MONEDA_PAIS={PE:"PEN",MX:"MXN",CO:"COP",CL:"CLP",AR:"ARS",EC:"USD",BO:"BOB",VE:"USD",PY:"PYG",UY:"UYU",CR:"CRC",PA:"USD",GT:"GTQ",SV:"USD",HN:"HNL",NI:"NIO",DO:"DOP",PR:"USD",ES:"EUR",US:"USD",BR:"BRL"};
 // Bandera de cada moneda (el euro tiene la suya).
-const BANDERA_MON={PEN:"PE",MXN:"MX",COP:"CO",CLP:"CL",ARS:"AR",BOB:"BO",BRL:"BR",UYU:"UY",PYG:"PY",VES:"VE",CRC:"CR",GTQ:"GT",HNL:"HN",NIO:"NI",DOP:"DO",PAB:"PA",EUR:"EU",GBP:"GB",CAD:"CA",USD:"US"};
-const banderaMon=(m)=>{ const c=BANDERA_MON[m]; return c?String.fromCodePoint(...[...c].map(x=>127397+x.charCodeAt(0))):"🌎"; };
 const paisDeZona=(tz)=>{ for(const p of PAISES_TZ){ if(p[3]===tz || (ZONAS_EXTRA[p[0]]||[]).some(z=>z[0]===tz)) return p[0]; } return null; };
 
 const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png", meta:"../assets/apps/meta.png", sheets:"../assets/apps/sheets.png" };
@@ -90,27 +88,26 @@ function drawUso(){
 
 async function loadCfg(){
   const gen=(st.gen=(st.gen||0)+1);   // guardia anti-carrera al cambiar de bot
-  let { data:ch, error:chErr } = await supa.from("channels")
-    .select("nombre,logo_url,ia_provider,pixel_id,page_id,ad_account_id,ads_sync_error,buffer_default_seg,timezone,moneda,gsheets,negocio,ia_perfiles,entregas").eq("id",st.channelId).maybeSingle();
+  // (1-nov, Rodrigo: «cambiar a Nombre, país y moneda es muy lento») Antes eran 4 pedidos en fila (~1,6 s): las 3
+  // lecturas del canal van ahora a la vez, y el estado de las claves (una función del servidor, ~0,7-0,9 s) solo se
+  // pide para Conexiones, la única parte que lo usa.
+  const uno=(cols)=>supa.from("channels").select(cols).eq("id",st.channelId).maybeSingle().then(r=>r,()=>({}));
+  const pSecretos = st.parte==="negocio" ? Promise.resolve(null)
+    : callFn("channel-config",{ action:"status", channel_id:st.channelId }).then(r=>r?.secrets||{},()=>({}));
+  const [r0, tcR, mrR, secretos] = await Promise.all([
+    uno("nombre,logo_url,ia_provider,pixel_id,page_id,ad_account_id,ads_sync_error,buffer_default_seg,timezone,moneda,gsheets,negocio,ia_perfiles,entregas"),
+    uno("usd_rate"), uno("moneda_reporte"), pSecretos ]);
+  let { data:ch, error:chErr } = r0;
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets").eq("id",st.channelId).maybeSingle()); }
   if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider,pixel_id,page_id,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
   if(gen!==st.gen) return;   // cambiaste de bot mientras cargaba: esta carga ya no manda
   st.channel = ch || {};
-  // El tipo de cambio se pide APARTE a propósito: es una columna nueva (0089) y si
-  // se pidiera junto al resto, un proyecto sin la migración tiraría el select entero
-  // al fallback y Ajustes se quedaría sin moneda, sin Meta y sin entregas.
-  try{
-    const { data:tcRow }=await supa.from("channels").select("usd_rate").eq("id",st.channelId).maybeSingle();
-    if(tcRow) st.channel.usd_rate=tcRow.usd_rate;
-  }catch(_){ /* sin la columna, el campo sale vacío y el guardado avisa */ }
-  // Igual con la moneda de los reportes (0141): aparte, para que su falta no tumbe la carga.
-  try{
-    const { data:mrRow }=await supa.from("channels").select("moneda_reporte").eq("id",st.channelId).maybeSingle();
-    if(mrRow) st.channel.moneda_reporte=mrRow.moneda_reporte;
-  }catch(_){}
-  st.secrets = {};
-  try{ const r=await callFn("channel-config",{ action:"status", channel_id:st.channelId }); st.secrets=r?.secrets||{}; }catch(_){}
+  // El tipo de cambio (0089) y la moneda de los reportes (0141) se piden APARTE a propósito: son columnas nuevas y si
+  // se pidieran junto al resto, un proyecto sin la migración tiraría el select entero al fallback.
+  if(tcR?.data) st.channel.usd_rate=tcR.data.usd_rate;
+  if(mrR?.data) st.channel.moneda_reporte=mrR.data.moneda_reporte;
+  if(secretos) st.secrets=secretos; else if(!st.secrets) st.secrets={};
   render();
 }
 
@@ -131,7 +128,7 @@ function render(){
 // Supabase; va en Conexiones). Se vuelve a llamar al cambiar de bot.
 export async function montarAjustes(box, parte, channelId){
   if(!document.getElementById("ajxCss")){
-    const l=document.createElement("link"); l.id="ajxCss"; l.rel="stylesheet"; l.href=new URL("./ajustes-partes.css?v=3", import.meta.url).href;
+    const l=document.createElement("link"); l.id="ajxCss"; l.rel="stylesheet"; l.href=new URL("./ajustes-partes.css?v=4", import.meta.url).href;
     document.head.appendChild(l);
   }
   st.box=box; st.parte=parte; st.channelId=channelId;
@@ -223,7 +220,7 @@ function renderDatos(b){
     <div class="card">
       <div class="chd"><span class="ico">${icon("globe")}</span><span class="nm">País y hora</span></div>
       <label>País</label>
-      <select class="in" id="g_pais" style="max-width:340px">${PAISES_TZ.map(([cd,fl,nm])=>`<option value="${cd}" ${cd===(paisDeZona(tz)||"")?"selected":""}>${fl} ${nm}</option>`).join("")}${paisDeZona(tz)?"":`<option value="" selected>🌎 Otra zona (${esc(tz)})</option>`}</select>
+      <select class="in" id="g_pais" style="max-width:340px">${PAISES_TZ.map(([cd,fl,nm])=>`<option value="${cd}" ${cd===(paisDeZona(tz)||"")?"selected":""}>${nm}</option>`).join("")}${paisDeZona(tz)?"":`<option value="" selected>Otra zona (${esc(tz)})</option>`}</select>
       <div id="g_zonaBox" style="margin-top:10px"></div>
       <div class="dline" id="g_hora"></div>
       <p class="fhelp">Tus reportes y avisos usan su hora. Las versiones de otros países usan la de su país.</p>
@@ -274,7 +271,7 @@ function renderDatos(b){
   const pintaHora=()=>{
     let h=""; try{ h=new Date().toLocaleTimeString("es-PE",{ timeZone:zonaElegida, hour:"numeric", minute:"2-digit" }); }catch(_){}
     const m=monedaElegida(), cu=CURRENCIES.find(x=>x[0]===m)||["",m,m];
-    $("g_hora").innerHTML = (h ? `🕐 Tu hora ahora: <b>${esc(h)}</b> · ` : "") + `💵 Cobras en <b>${esc(cu[1])} ${esc(NOM[m]||String(cu[2]).replace(/^.*— /,""))}</b>`;
+    $("g_hora").innerHTML = (h ? `${icon("clock","di")} Tu hora ahora: <b>${esc(h)}</b><span class="dsep"></span>` : "") + `${icon("dollar","di")} Cobras en <b>${esc(cu[1])} ${esc(NOM[m]||String(cu[2]).replace(/^.*— /,""))}</b>`;
   };
   // 💵 La moneda sale del país (Otra zona → la que ya tenía).
   const monedaElegida=()=>MONEDA_PAIS[$("g_pais").value]||mon;
@@ -297,9 +294,9 @@ function renderDatos(b){
     $("g_rep").querySelectorAll(".opt").forEach(x=> x.onclick=()=>{ repElegida=x.dataset.r; pintaMoneda(); revisa(); });
     const tcv=cambioDe(m), fe=_cambios[m]?.fecha;
     let feTxt=""; try{ if(fe) feTxt=new Date(fe+"T12:00:00Z").toLocaleDateString("es-PE",{ day:"numeric", month:"long" }); }catch(_){}
-    $("g_tcVal").innerHTML = m==="USD" ? `Tu negocio usa dólares: no necesita tipo de cambio.`
-      : tcv ? `💱 Tipo de cambio: <b>1 USD = ${esc(cu[1])} ${esc(tcv.toLocaleString("es-PE",{ maximumFractionDigits: tcv<100?2:0 }))}</b>${feTxt?` · al ${esc(feTxt)}`:""}. Se actualiza solo cada día.`
-      : `💱 El tipo de cambio se actualiza solo durante el día.`;
+    $("g_tcVal").innerHTML = m==="USD" ? `${icon("dollar","di")} Tu negocio usa dólares: no necesita tipo de cambio.`
+      : tcv ? `${icon("refresh","di")} Tipo de cambio: <b>1 USD = ${esc(cu[1])} ${esc(tcv.toLocaleString("es-PE",{ maximumFractionDigits: tcv<100?2:0 }))}</b>${feTxt?` · al ${esc(feTxt)}`:""}. Se actualiza solo cada día.`
+      : `${icon("refresh","di")} El tipo de cambio se actualiza solo durante el día.`;
     pintaLista(m, cu[1]);
   };
   // 🌎 Las 19 monedas que Nodo baja cada día (tipos_cambio), plegadas: cuánto vale un dólar en cada una y, si tu negocio
@@ -316,7 +313,7 @@ function renderDatos(b){
     $("g_tcLista").innerHTML=`<table class="tclist"><thead><tr><th>Moneda</th><th class="r">1 USD =</th>${enTuya?`<th class="r">En ${esc(sym)}</th>`:""}</tr></thead><tbody>${filas.map(r=>{
       const c=CURRENCIES.find(x=>x[0]===r.moneda)||[r.moneda,r.moneda,r.moneda], v=Number(r.por_usd);
       const nom=String(c[2]).replace(/ — /," · ");
-      return `<tr class="${r.moneda===m?"yo":""}"><td>${banderaMon(r.moneda)} ${esc(nom)} <span class="cod">${esc(r.moneda)}</span></td><td class="r">${esc(c[1])} ${esc(f(v))}</td>${enTuya?`<td class="r">${r.moneda===m?"—":esc(sym)+" "+esc(f(tuyo/v))}</td>`:""}</tr>`;
+      return `<tr class="${r.moneda===m?"yo":""}"><td>${esc(nom)} <span class="cod">${esc(r.moneda)}</span></td><td class="r">${esc(c[1])} ${esc(f(v))}</td>${enTuya?`<td class="r">${r.moneda===m?"—":esc(sym)+" "+esc(f(tuyo/v))}</td>`:""}</tr>`;
     }).join("")}</tbody></table><p class="fhelp" style="margin-top:8px">Valores de hoy. Nodo convierte cada venta y cada gasto con el de su día.</p>`;
   };
   $("g_pais").onchange=()=>{ pintaZona(); pintaMoneda(); revisa(); }; pintaZona(); pintaMoneda();

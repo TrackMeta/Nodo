@@ -76,6 +76,8 @@
   /* Una línea de dato (la hora y la moneda, el tipo de cambio) en vez de una tarjeta para cada uno */
   .ajx .dline{margin-top:10px;font-size:12.5px;color:var(--muted);line-height:1.55}
   .ajx .dline b{color:var(--text)}
+  .ajx .dline svg.di{width:14px;height:14px;vertical-align:-2px;margin-right:3px;color:var(--faint)}
+  .ajx .dline .dsep{display:inline-block;width:14px}
   /* Opciones como tarjetas, no como botones estirados (moneda de tus reportes) */
   .ajx .opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
   .ajx .opt{position:relative;text-align:left;padding:12px 13px;border-radius:13px;border:1px solid var(--border);
