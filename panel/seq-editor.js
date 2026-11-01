@@ -59,6 +59,15 @@ export function pesoFromShare(othersSum, pct){
 export function freqControlHtml(v, sharePct){
   return `<span style="font-size:11px;color:var(--muted)">Sale el</span><span style="display:inline-flex;align-items:center;gap:2px"><input class="se-share-num" type="number" min="0" max="100" value="${Math.round(sharePct)}" title="% que sale esta versión (a mano)" style="width:48px;height:30px;text-align:center;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;color:var(--brand);font-weight:700;font-size:13px;outline:none;font-family:inherit"/><span style="font-size:12px;color:var(--brand);font-weight:700">%</span></span><span style="font-size:11px;color:var(--muted)">de las veces</span>`;
 }
+const CAPTION_MAX = 1024;
+const conCaption = (b) => !!(b && b.media_url && b.media_kind !== "audio");
+// La imagen pegada a una burbuja de texto: primero la de ARRIBA (el texto queda debajo, como ya se leía) y si no, la de abajo.
+function mediaVecina(v, bi){
+  const bs=v.bubbles||[];
+  if(conCaption(bs[bi-1])) return { idx:bi-1, arriba:true, b:bs[bi-1] };
+  if(conCaption(bs[bi+1])) return { idx:bi+1, arriba:false, b:bs[bi+1] };
+  return null;
+}
 function splitDur(sec){ sec=Number(sec||0); if(sec%86400===0&&sec>=86400)return{val:sec/86400,u:"86400"}; if(sec%3600===0&&sec>=3600)return{val:sec/3600,u:"3600"}; return{val:Math.round(sec/60)||1,u:"60"}; }
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
 
@@ -139,11 +148,14 @@ function previewHtml(paso){
 // varias versiones que rotan con su %, y a qué ángulo responde cada una. Lo usan el editor de pasos (abajo) y la
 // ficha del ángulo (angulos-mapa.js). Edita `paso.variantes` EN SITIO; cada página guarda con su botón.
 // soloAngulo: muestra y crea solo las versiones de ese ángulo (sin el selector «el mismo / según el anuncio»).
+// grupo: igual pero acepta "" = solo las generales (sin ángulo). Lo usan las pestañas del saludo del producto.
 // ═════════════════════════════════════════════════════════════════════════
-export function mountMensajeEditor(box, paso, { channelId, angulos = [], soloAngulo = "" } = {}){
-  hazComposer({ channelId, angulos: (angulos||[]).filter(a=>a&&a.slug), soloAngulo })(box, paso);
+export function mountMensajeEditor(box, paso, { channelId, angulos = [], soloAngulo = "", grupo = null } = {}){
+  hazComposer({ channelId, angulos: (angulos||[]).filter(a=>a&&a.slug), soloAngulo, grupo })(box, paso);
 }
-function hazComposer({ channelId, angulos, soloAngulo = "" }){
+function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
+  // El grupo que se edita (null = todos, como en Secuencias): "" = las generales, "slug" = las de ese ángulo.
+  const solo = grupo != null ? String(grupo) : (soloAngulo ? String(soloAngulo) : null);
   function composer(box, paso){
     if(!Array.isArray(paso.variantes)||!paso.variantes.length){
       const first = paso.mensaje ? [{text:String(paso.mensaje)}] : (Array.isArray(paso.bubbles)&&paso.bubbles.length?paso.bubbles:[{text:""}]);
@@ -151,9 +163,9 @@ function hazComposer({ channelId, angulos, soloAngulo = "" }){
     }
     delete paso.mensaje; delete paso.bubbles;
     if(paso.rotacion===undefined) paso.rotacion=false;
-    const rot=soloAngulo ? true : (paso.rotacion===true && paso.variantes.length>0);
-    const hasAng=angulos.length>0 && !soloAngulo;
-    if(soloAngulo){ box.innerHTML=`<div class="se-varlist"></div>`; }
+    const rot=solo!=null ? true : (paso.rotacion===true && paso.variantes.length>0);
+    const hasAng=angulos.length>0 && solo==null;
+    if(solo!=null){ box.innerHTML=`<div class="se-varlist"></div>`; }
     else box.innerHTML=`
       <div style="border:1px solid var(--border);border-radius:11px;background:var(--surface-2);padding:11px 12px;margin-top:10px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
@@ -200,7 +212,7 @@ function hazComposer({ channelId, angulos, soloAngulo = "" }){
         card.querySelector(".se-vname").oninput=(e)=>v.nombre=e.target.value;
         { const sn=card.querySelector(".se-share-num"); if(sn){ sn.onchange=()=>{ const others=(groupActiveVs||[]).filter(x=>x!==v); const os=others.reduce((a,x)=>a+Math.max(0,Number(x.peso??1)),0); v.peso=pesoFromShare(os, sn.value); composer(box,paso); }; } }
         card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; composer(box,paso); };
-        card.querySelector(".se-vdel").onclick=async()=>{ if(!soloAngulo && paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); composer(box,paso); };
+        card.querySelector(".se-vdel").onclick=async()=>{ if(solo==null && paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); composer(box,paso); };
         { const ag=card.querySelector(".se-vangulo"); if(ag) ag.onchange=(e)=>{ v.angulo=e.target.value; composer(box,paso); }; }
       } else {
         card.innerHTML=`<div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
@@ -216,14 +228,14 @@ function hazComposer({ channelId, angulos, soloAngulo = "" }){
     }
 
     if(!rot){ vl.appendChild(renderCard(paso.variantes[0], 0, false, 1)); return; }
-    if(soloAngulo){
-      // Solo las versiones de este ángulo (las demás siguen en el paso, intactas).
-      const mias=paso.variantes.map((v,vi)=>({v,vi})).filter(x=>(x.v.angulo||"")===soloAngulo);
+    if(solo!=null){
+      // Solo las versiones de este grupo (las demás siguen en el paso, intactas).
+      const mias=paso.variantes.map((v,vi)=>({v,vi})).filter(x=>(x.v.angulo||"")===solo);
       const act=mias.filter(x=>x.v.activo!==false), pesoG=act.reduce((s2,x)=>s2+Math.max(0,Number(x.v.peso??1)),0)||1;
       mias.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, act.length>1, pesoG, act.map(x=>x.v))));
       const add=document.createElement("button"); add.className="btn"; add.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin-top:9px;background:transparent;border:1px dashed var(--border)";
       add.textContent="＋ Otra versión (el bot las rota)";
-      add.onclick=()=>{ const nv=newVariant(paso.variantes.length); nv.angulo=soloAngulo; paso.variantes.push(nv); composer(box,paso); };
+      add.onclick=()=>{ const nv=newVariant(paso.variantes.length); if(solo) nv.angulo=solo; paso.variantes.push(nv); composer(box,paso); };
       vl.appendChild(add);
       return;
     }
@@ -269,6 +281,27 @@ function hazComposer({ channelId, angulos, soloAngulo = "" }){
     });
   }
 
+  // 🖼️ Texto en la misma burbuja que la imagen (venía del saludo del producto, 2-oct): una burbuja de texto pegada a una
+  // imagen/video/archivo se puede juntar como su texto debajo. Con botones no (es un mensaje interactivo); el audio no lleva texto.
+  function juntarHtml(v,bub,bi){
+    if(bub.media_url || (bub.buttons||[]).length) return "";
+    const m=mediaVecina(v,bi); if(!m) return "";
+    const que=m.b.media_kind==="video"?"el video":m.b.media_kind==="document"?"el archivo":"la imagen";
+    return `<button class="btn se-juntar" type="button" style="margin-top:7px;height:28px;padding:0 10px;font-size:12px;background:transparent;border:1px dashed var(--border);color:var(--muted)">${icon("image")} Juntar con ${que} de ${m.arriba?"arriba":"abajo"}</button>`;
+  }
+  function juntarConMedia(box,paso,v,bi){
+    const t=v.bubbles[bi]; const m=mediaVecina(v,bi); if(!t||!m) return;
+    const txt=String(t.text||"").trim();
+    if(!txt){ toast("Escribe el texto primero",true); return; }
+    const cap=String(m.b.caption||"").trim();
+    // El texto de la imagen siempre sale DEBAJO: si el texto iba antes, se antepone a lo que ya tuviera.
+    const nuevo = cap ? (m.arriba ? `${cap}\n\n${txt}` : `${txt}\n\n${cap}`) : txt;
+    if(nuevo.length>CAPTION_MAX){ toast(`Juntos tendrían ${nuevo.length} caracteres y WhatsApp corta el texto de una imagen en ${CAPTION_MAX}. Acórtalo primero.`,true); return; }
+    m.b.caption=nuevo; v.bubbles.splice(bi,1);
+    composer(box,paso);
+    box.dispatchEvent(new Event("input",{bubbles:true}));   // la página que lo usa se entera (vista previa, «sin guardar»)
+    toast("Listo: el texto va en la misma burbuja");
+  }
   // (10-oct) Dos botones: el tipo (imagen/video/audio/archivo) se saca del archivo elegido.
   function addBtns(){ return ["text","file"].map(k=>`<button class="btn" data-addb="${k}" style="height:30px;padding:0 10px;font-size:12px">+ ${({text:"Texto",file:"Imagen o archivo"})[k]}</button>`).join(""); }
 
@@ -291,11 +324,17 @@ function hazComposer({ channelId, angulos, soloAngulo = "" }){
       </div>
       ${prev}
       ${kind==="text"
-        ? `<textarea class="in se-btext" style="width:100%;min-height:52px" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
-        : (kind!=="audio"?`<input class="in se-bcap" placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
+        ? `<textarea class="in se-btext" style="width:100%;min-height:52px;field-sizing:content;max-height:320px" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
+        : (kind!=="audio"?`<textarea class="in se-bcap" style="width:100%;min-height:44px;field-sizing:content;max-height:320px" placeholder="Texto debajo (opcional) — sale en la MISMA burbuja que ${kind==="video"?"el video":kind==="document"?"el archivo":"la imagen"}">${esc(bub.caption||"")}</textarea><div class="se-capav" style="font-size:11.5px;margin-top:4px;color:var(--red,#e2564a)"></div>`:``)}
+      ${juntarHtml(v,bub,bi)}`;
     if(kind==="text") wireBotones(el3,bub,()=>composer(box,paso));
     const tx=el3.querySelector(".se-btext"); if(tx) tx.oninput=(e)=>bub.text=e.target.value;
-    const cp=el3.querySelector(".se-bcap"); if(cp) cp.oninput=(e)=>bub.caption=e.target.value;
+    const cp=el3.querySelector(".se-bcap");
+    if(cp){ const av=el3.querySelector(".se-capav");
+      // 🖼️ WhatsApp corta el texto debajo de una foto/video en 1024 caracteres.
+      const pinta=()=>{ const n=cp.value.length; av.textContent = n>CAPTION_MAX ? `Tiene ${n} caracteres: WhatsApp corta el texto debajo de ${kind==="video"?"un video":"una imagen"} en ${CAPTION_MAX}. Acórtalo o pásalo a una burbuja de texto.` : ""; };
+      cp.oninput=(e)=>{ bub.caption=e.target.value; pinta(); }; pinta(); }
+    { const jb=el3.querySelector(".se-juntar"); if(jb) jb.onclick=()=>juntarConMedia(box,paso,v,bi); }
     const _bd=el3.querySelector(".se-bdel"), _bu=el3.querySelector(".se-bup"), _bw=el3.querySelector(".se-bdown");
     if(_bd) _bd.onclick=()=>{ v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); composer(box,paso); };
     if(_bu) _bu.onclick=()=>{ if(bi===0)return; [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; composer(box,paso); };

@@ -347,7 +347,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll, usuarioActual } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
-import { montarMapaAngulos } from "./angulos-mapa.js?v=13";
+import { montarMapaAngulos } from "./angulos-mapa.js?v=14";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
@@ -367,7 +367,7 @@ async function avPermitido(){
 let AV = false;
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, waScreenHtml, waBubbles, seqBrand, freqControlHtml, pesoFromShare, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=17";
+import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=18";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set(), gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -1819,7 +1819,6 @@ async function resolverAvisosPreguntas(pid){
   }catch(_){ /* la campanita se puede marcar a mano */ }
 }
 
-
 // Formulario ligero de "Venta con IA" para un producto EXTRA (complemento).
 // Solo lo esencial: qué es, por qué agregarlo y dudas frecuentes. Escribe a
 // config.ia.detalle / config.ia.resumen / config.faq_items (los mismos campos
@@ -2084,7 +2083,6 @@ async function renderRemarketing(host){
   };
   renderSlots();
 }
-
 
 // Sube un archivo y lo agrega a config.ia_multimedia (multimedia que la IA
 // enviará sola). Reusa la Edge Function media-upload igual que pickMedia.
@@ -4346,22 +4344,9 @@ async function createWelcome(){
   toast("Mensajes iniciales creados"); accRerender("activacion"); refreshActivacionRow();
 }
 
-// Lee los valores editables del DOM a memoria (antes de re-render o guardar).
-function harvest(){
-  const cfg=st.act.node.config;
-  document.querySelectorAll("#actroot [data-vi]").forEach(vc=>{
-    const vi=+vc.dataset.vi; const v=cfg.variantes[vi]; if(!v) return;
-    const nm=vc.querySelector(".vname"); if(nm) v.nombre=nm.value;
-    const pw=vc.querySelector(".vpeso"); if(pw) v.peso=Math.max(0,Number(pw.value)||0);
-    const ag=vc.querySelector(".vangulo"); if(ag) v.angulo=ag.value;
-    vc.querySelectorAll("[data-bi]").forEach(bc=>{
-      const bi=+bc.dataset.bi; const bub=v.bubbles[bi]; if(!bub) return;
-      const tx=bc.querySelector(".btext"); if(tx) bub.text=tx.value;
-      const cp=bc.querySelector(".bcap"); if(cp) bub.caption=cp.value;
-    });
-  });
-  // El "y después" ya no se pregunta: el motor continúa solo al flujo de venta.
-}
+// Antes leía del DOM los textos del saludo antes de volver a pintar o guardar. Desde que el saludo usa el editor
+// compartido (que escribe cada cambio al momento) no queda nada que leer; se deja para no tocar a quienes la llaman.
+function harvest(){}
 
 // ── Vista previa tipo WhatsApp del saludo (usa el builder compartido de seq-editor,
 //    igual que el editor de pasos: cabecera + papel tapiz + "HOY" + burbujas) ──
@@ -4375,7 +4360,6 @@ function welcomePreview(v){
   return waScreenHtml({ title:_welcomeBrand.nombre, logoUrl:_welcomeBrand.logo_url, bubblesHtml: waBubbles((v&&v.bubbles)||[], smp), empty:"Escribe el saludo para ver cómo llega…" });
 }
 function actTabBtn(active){ return `font-size:12.5px;padding:6px 13px;border-radius:999px;cursor:pointer;font-weight:${active?'700':'600'};border:${active?'none':'0.5px solid var(--border)'};background:${active?'var(--ia1,#8b5cf6)':'transparent'};color:${active?'#fff':'var(--muted)'}`; }
-function actAddBtns(){ return ["text","image","video","audio","document"].map(k=>`<button class="btn addb" data-k="${k}" style="height:30px;padding:0 10px;font-size:12px;background:transparent;border:1px solid var(--border);color:var(--text)">+ ${({text:"Texto",image:"Imagen",video:"Video",audio:"Audio",document:"Archivo"})[k]}</button>`).join(""); }
 
 // ── Sección "Cómo llegan los clientes" REDISEÑADA: llegada simple + saludo por
 //    ángulo (une ángulos + mensajes iniciales en pestañas) + un solo Guardar. ──
@@ -4479,43 +4463,24 @@ function renderComposer(){
         if(Array.isArray(cfg.variantes)) cfg.variantes=cfg.variantes.filter(v=>v.angulo!==slug);
         st.act.tab=""; renderComposer(); };
     }
-    const list=tabVars();
-    // El peso "en cristiano" (Poco/Normal/Mucho) + % REAL dentro de la pestaña
-    // (la pestaña = el grupo del ángulo; el % solo compara versiones del mismo).
-    const pesoTab=list.reduce((a,{v})=>a+Math.max(0,Number(v.peso??1)),0)||1;
-    list.forEach(({v,i},li)=>{
-      const grid=document.createElement("div"); grid.dataset.vi=i;
-      grid.style.cssText="border:1px solid var(--border);border-radius:12px;padding:13px;background:var(--surface-2,rgba(255,255,255,.02));margin-bottom:12px";
-      const sharePct=Math.round(Math.max(0,Number(v.peso??1))/pesoTab*100);
-      grid.innerHTML=`
-        ${list.length>1?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-          <input class="in vname" style="flex:1;min-width:90px;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+li)))}"/>
-          <button class="iconbtn vdelVar" title="Eliminar versión">${icon("trash")}</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">${freqControlHtml(v, sharePct)}</div>`:``}
-        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,220px);gap:12px;align-items:start">
-          <div><div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">El saludo${angActivo?" para este ángulo":""}</div>
-            <div class="bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${actAddBtns()}</div></div>
-          <div><div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">Así le llega</div><div class="wprev"></div></div>
-        </div>`;
-      const bb=grid.querySelector(".bubbles");
-      (v.bubbles||[]).forEach((bub,bi)=> bb.appendChild(renderBubble(v,i,bub,bi)));
-      grid.querySelectorAll(".addb").forEach(btn=> btn.onclick=()=>{ harvest(); const k=btn.dataset.k; if(k==="text"){ v.bubbles.push({text:""}); renderComposer(); } else pickMedia(i,k); });
-      if(list.length>1){
-        { const sn=grid.querySelector(".se-share-num"); if(sn){ sn.onchange=()=>{ harvest(); const others=list.map(x=>x.v).filter(x=>x!==v); const os=others.reduce((a,x)=>a+Math.max(0,Number(x.peso??1)),0); v.peso=pesoFromShare(os, sn.value); renderComposer(); }; } }
-        grid.querySelector(".vdelVar").onclick=async()=>{ if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true}))return; harvest(); cfg.variantes.splice(i,1); renderComposer(); };
-      }
-      const prev=grid.querySelector(".wprev"); const upd=()=>{ if(prev) prev.innerHTML=welcomePreview(v); };
-      upd(); grid.addEventListener("input", upd); grid.addEventListener("click", ()=>setTimeout(upd,0));
-      seqBrand(st.channelId).then(b=>{ _welcomeBrand=b; upd(); }); // nombre/logo real en la cabecera
-      body.appendChild(grid);
-    });
-    const addv=document.createElement("button"); addv.className="btn";
-    addv.style.cssText="margin-top:2px;background:transparent;border:1px solid var(--border);color:var(--text);height:32px;padding:0 12px;font-size:12.5px";
-    addv.textContent=list.length>1?"+ otra versión":"+ otra versión (el bot la rota)";
-    addv.onclick=()=>{ harvest(); const nv=newVariant(cfg.variantes.length); if(tab) nv.angulo=tab; cfg.variantes.push(nv); renderComposer(); };
-    body.appendChild(addv);
+    // (1-nov, Rodrigo: «unifícalos») Las versiones de la pestaña se editan con el MISMO editor que Secuencias y la ficha
+    // del ángulo (seq-editor.js → mountMensajeEditor, grupo = la pestaña): texto, imagen/video/audio/archivo, botones,
+    // juntar el texto con la imagen, varias versiones con su %. Edita cfg.variantes en sitio; se guarda con «Guardar cambios».
+    tabVars();   // la pestaña arranca con una versión si no tiene
+    const wrap=document.createElement("div");
+    wrap.style.cssText="display:grid;grid-template-columns:minmax(0,1fr) minmax(200px,240px);gap:14px;align-items:start";
+    wrap.innerHTML=`<div class="act-ed"></div><div><div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">Así le llega</div><div class="wprev"></div></div>`;
+    body.appendChild(wrap);
+    const obj={ variantes:cfg.variantes, rotacion:true };   // el mismo arreglo: lo que cambie el editor queda en cfg
+    const ed=wrap.querySelector(".act-ed");
+    mountMensajeEditor(ed, obj, { channelId:st.channelId, angulos:angs.filter(a=>a.slug), grupo:tab });
+    const prev=wrap.querySelector(".wprev");
+    const upd=()=>{ const g=cfg.variantes.filter(v=>(v.angulo||"")===tab); prev.innerHTML=welcomePreview(g.find(v=>v.activo!==false)||g[0]); };
+    // Cambios por clic (agregar burbuja, quitar, mover, el %) también cuentan como «sin guardar».
+    if(st.act.fotoJson===undefined) st.act.fotoJson=JSON.stringify(cfg.variantes);
+    const revisa=()=>setTimeout(()=>{ upd(); if(JSON.stringify(cfg.variantes)!==st.act.fotoJson) markDirty(); },0);
+    upd(); ["input","change","click"].forEach(ev=>ed.addEventListener(ev, revisa));
+    seqBrand(st.channelId).then(b=>{ _welcomeBrand=b; upd(); }); // nombre/logo real en la cabecera
   }
 }
 // 🔑 Sin palabra clave el producto queda fuera de la puerta: el que la escribe no entra a la
@@ -4579,101 +4544,6 @@ async function saveActivacion(){
   accRerender("activacion"); refreshActivacionRow();
   return null;
 }
-// 🖼️ TEXTO EN LA MISMA BURBUJA QUE LA IMAGEN (Rodrigo, 2026-10-02). El motor ya manda el texto de una burbuja de
-// imagen/video/archivo como su caption; faltaba que el editor lo dejara escribir cómodo y juntar una burbuja de texto
-// que ya existe con la imagen de al lado sin volver a escribirla. WhatsApp corta el caption en 1024 caracteres; el
-// audio no lleva texto.
-const CAPTION_MAX = 1024;
-const _conCaption = (b) => !!(b && b.media_url && b.media_kind !== "audio");
-// La imagen pegada a esta burbuja de texto: primero la de ARRIBA (el texto queda debajo, como ya se leía) y si no, la de abajo.
-function _mediaVecina(v, bi){
-  const bs=v.bubbles||[];
-  if(_conCaption(bs[bi-1])) return { idx:bi-1, arriba:true, b:bs[bi-1] };
-  if(_conCaption(bs[bi+1])) return { idx:bi+1, arriba:false, b:bs[bi+1] };
-  return null;
-}
-function juntarHtml(v,bub,bi){
-  if(bub.media_url || (bub.buttons||[]).length) return "";   // con botones es un mensaje interactivo: no puede ir en la foto
-  // (La pregunta del saludo también puede ir debajo de la foto: el motor guarda ese texto en el historial como si fuera
-  //  una burbuja y, si el cliente abrió preguntando, le quita el renglón de la pregunta — ver case "rotador".)
-  const m=_mediaVecina(v,bi); if(!m) return "";
-  const que=m.b.media_kind==="video"?"el video":m.b.media_kind==="document"?"el archivo":"la imagen";
-  return `<button class="btn bjuntar" type="button" style="margin-top:7px;height:28px;padding:0 10px;font-size:12px;background:transparent;border:1px dashed var(--border);color:var(--muted)">${icon("image")} Juntar con ${que} de ${m.arriba?"arriba":"abajo"}</button>`;
-}
-function juntarConMedia(v,bi){
-  const t=v.bubbles[bi]; const m=_mediaVecina(v,bi); if(!t||!m) return;
-  const txt=String(t.text||"").trim();
-  if(!txt){ toast("Escribe el texto primero",true); return; }
-  const cap=String(m.b.caption||"").trim();
-  // El caption siempre sale DEBAJO de la imagen: si el texto iba antes, se antepone a lo que ya tuviera.
-  const nuevo = cap ? (m.arriba ? `${cap}\n\n${txt}` : `${txt}\n\n${cap}`) : txt;
-  if(nuevo.length>CAPTION_MAX){ toast(`Juntos tendrían ${nuevo.length} caracteres y WhatsApp corta el texto de una imagen en ${CAPTION_MAX}. Acórtalo primero.`,true); return; }
-  m.b.caption=nuevo;
-  v.bubbles.splice(bi,1);
-  markDirty(); renderComposer();
-  toast("Listo: el texto va en la misma burbuja");
-}
-function renderBubble(v,vi,bub,bi){
-  const el=document.createElement("div"); el.dataset.bi=bi;
-  el.style.cssText="border:1px solid var(--border);border-radius:9px;padding:9px 10px;background:var(--surface)";
-  const isMedia=!!bub.media_url;
-  const kind=bub.media_kind||"text";
-  const tIco={text:"note",image:"image",video:"video",audio:"mic",document:"file"}[kind]||"note";
-  let preview="";
-  if(kind==="image") preview=`<img src="${esc(bub.media_url)}" style="max-width:140px;max-height:100px;border-radius:7px;display:block;margin-bottom:7px"/>`;
-  else if(kind==="video") preview=`<video src="${esc(bub.media_url)}" style="max-width:180px;max-height:120px;border-radius:7px;display:block;margin-bottom:7px" controls></video>`;
-  else if(kind==="audio") preview=`<audio src="${esc(bub.media_url)}" style="height:34px;margin-bottom:7px;display:block" controls></audio>`;
-  else if(kind==="document") preview=`<div style="font-size:12px;margin-bottom:7px;display:flex;align-items:center;gap:5px">${icon("file")} ${esc(bub.filename||"documento")}</div>`;
-  el.innerHTML=`
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:${isMedia?'8px':'6px'}">
-      <span style="display:inline-flex;color:var(--muted)">${icon(tIco)}</span>
-      <span style="font-size:11px;color:var(--muted);font-weight:600;flex:1">${kind==="text"?"Texto":kind.charAt(0).toUpperCase()+kind.slice(1)}</span>
-      <button class="iconbtn bup" title="Subir">▲</button>
-      <button class="iconbtn bdown" title="Bajar">▼</button>
-      <button class="iconbtn bdel" title="Quitar">${icon("trash")}</button>
-    </div>
-    ${preview}
-    ${kind==="text"
-      ? `<textarea class="in btext" style="field-sizing:content;min-height:58px;max-height:320px;overflow:auto;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
-      : (kind!=="audio"?`<textarea class="in bcap" style="field-sizing:content;min-height:44px;max-height:320px;overflow:auto;padding:8px 10px;line-height:1.45;font-family:var(--font);resize:vertical" placeholder="Texto debajo (opcional) — sale en la MISMA burbuja que ${kind==="video"?"el video":kind==="document"?"el archivo":"la imagen"}">${esc(bub.caption||"")}</textarea><div class="bcapAviso" style="font-size:11.5px;margin-top:4px"></div>`:``)}
-    ${juntarHtml(v,bub,bi)}`;
-  if(kind==="text") wireBotones(el,bub,()=>{ harvest(); renderComposer(); });
-  // 🖼️ El largo del texto debajo: WhatsApp corta el de una foto/video en 1024 caracteres.
-  { const cp=el.querySelector(".bcap"), av=el.querySelector(".bcapAviso");
-    const pinta=()=>{ if(!cp||!av) return; const n=cp.value.length;
-      av.textContent = n>CAPTION_MAX ? `Tiene ${n} caracteres: WhatsApp corta el texto debajo de ${kind==="video"?"un video":"una imagen"} en ${CAPTION_MAX}. Acórtalo o pásalo a una burbuja de texto.` : "";
-      av.style.color="var(--red,#e2564a)"; };
-    if(cp){ cp.addEventListener("input",pinta); pinta(); } }
-  { const jb=el.querySelector(".bjuntar"); if(jb) jb.onclick=()=>{ harvest(); juntarConMedia(v,bi); }; }
-  // Actualizar el texto/caption EN CADA TECLA (como seq-editor): así la vista
-  // previa de WhatsApp (que lee bub.text) refleja en vivo lo que escribes. Sin
-  // esto, bub.text solo se refrescaba en harvest() → el preview salía desfasado.
-  { const tx=el.querySelector(".btext"); if(tx) tx.addEventListener("input",e=>{ bub.text=e.target.value; }); }
-  { const cp=el.querySelector(".bcap"); if(cp) cp.addEventListener("input",e=>{ bub.caption=e.target.value; }); }
-  el.querySelector(".bdel").onclick=()=>{ harvest(); v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); renderComposer(); };
-  el.querySelector(".bup").onclick=()=>{ if(bi===0)return; harvest(); [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; renderComposer(); };
-  el.querySelector(".bdown").onclick=()=>{ if(bi>=v.bubbles.length-1)return; harvest(); [v.bubbles[bi+1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi+1]]; renderComposer(); };
-  return el;
-}
-
-function pickMedia(vi,kind){
-  const accept={image:"image/*",video:"video/*",audio:"audio/*"}[kind]||"*/*";
-  const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
-  inp.onchange=async()=>{
-    const file=inp.files&&inp.files[0]; if(!file) return;
-    if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
-    toast("Subiendo…");
-    try{
-      const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
-      const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
-      if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
-      st.act.node.config.variantes[vi].bubbles.push({ media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, caption:"" });
-      toast("Archivo agregado"); renderComposer();
-    }catch(e){ toast("Error al subir",true); }
-  };
-  inp.click();
-}
-
 // Palabras que arrancan una venta sola. Una clave demasiado común o corta hace
 // que el bot salte a vender en medio de una conversación que no venía a eso —
 // y eso se descubre tarde, con un cliente real. Se avisa, no se impide: puede
