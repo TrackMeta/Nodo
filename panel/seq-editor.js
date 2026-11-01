@@ -208,10 +208,13 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
     // Pinta una versión (tarjeta). `compite` = hay 2+ versiones activas en su
     // grupo → recién ahí aparece el control de frecuencia (Poco/Normal/Mucho) y
     // el % REAL dentro del grupo. Con una sola, nada de eso (no aplica).
-    function renderCard(v, vi, compite, pesoG, groupActiveVs){
+    // `unico` = es la única versión de su grupo: sin encabezado (nombre, encendido, tacho), solo el mensaje — con una
+    // sola no hay nada que elegir y la tarjeta «Versión A» confundía (1-nov, Rodrigo). Si está pausada sí se muestra,
+    // para poder volver a prenderla.
+    function renderCard(v, vi, compite, pesoG, groupActiveVs, unico){
       if(!Array.isArray(v.bubbles)||!v.bubbles.length) v.bubbles=[{text:""}];
       const card=document.createElement("div");
-      if(rot){
+      if(rot && !(unico && v.activo!==false)){
         card.style.cssText="border:1px solid var(--border);border-radius:10px;padding:11px;background:var(--surface);margin-top:9px";
         const share=v.activo!==false?Math.round(Math.max(0,Number(v.peso??1))/pesoG*100):0;
         const freq = compite ? freqControlHtml(v, share) : "";
@@ -263,7 +266,9 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
         return;
       }
       const act=mias.filter(x=>x.v.activo!==false), pesoG=act.reduce((s2,x)=>s2+Math.max(0,Number(x.v.peso??1)),0)||1;
-      mias.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, act.length>1, pesoG, act.map(x=>x.v))));
+      mias.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, act.length>1, pesoG, act.map(x=>x.v), mias.length===1)));
+      // Pestaña de un ángulo con su único mensaje propio: cómo volver a usar el de Todos (sin tacho a la vista).
+      if(tabs && tab!=="" && mias.length===1){ const q=document.createElement("button"); q.type="button"; q.className="btn"; q.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin:9px 8px 0 0;background:transparent;border:1px dashed var(--border);color:var(--muted)"; q.textContent="✕ Quitar y usar el de Todos"; q.onclick=async()=>{ if(!await confirmDialog({title:"Quitar el mensaje propio",message:"Los que llegan por este ángulo van a recibir el mensaje de Todos.",confirmText:"Quitar",danger:true})) return; paso.variantes.splice(mias[0].vi,1); composer(box,paso); box.dispatchEvent(new Event("input",{bubbles:true})); }; vl.appendChild(q); }
       const add=document.createElement("button"); add.className="btn"; add.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin-top:9px;background:transparent;border:1px dashed var(--border)";
       add.textContent="＋ Otra versión (el bot las rota)";
       add.onclick=()=>{ const nv=newVariant(paso.variantes.length); if(grupoVis) nv.angulo=grupoVis; paso.variantes.push(nv); paso.rotacion=true; composer(box,paso); };   // rotacion: el motor rota entre las versiones de un mismo grupo
@@ -274,7 +279,7 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
     const withIdx = paso.variantes.map((v,vi)=>({v,vi}));
     const activas=withIdx.filter(x=>x.v.activo!==false);
     const pesoG=activas.reduce((a,x)=>a+Math.max(0,Number(x.v.peso??1)),0)||1;
-    withIdx.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, activas.length>1, pesoG, activas.map(x=>x.v))));
+    withIdx.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, activas.length>1, pesoG, activas.map(x=>x.v), withIdx.length===1)));
   }
 
   // 🖼️ Texto en la misma burbuja que la imagen (venía del saludo del producto, 2-oct): una burbuja de texto pegada a una

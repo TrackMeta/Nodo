@@ -834,8 +834,8 @@ function defaultConfig(tipo){
     case "esperar": return { segundos:4 };
     case "iniciar_flujo": return { target_flow_id:"", target_role:"" };
     case "rotador": return { activo:true, variantes:[
-      { id:nuevoVarId(), rev:1, nombre:"Variante A", peso:1, activo:true, bubbles:[{ text:"¡Hola! 👋 Gracias por escribirnos." }] },
-      { id:nuevoVarId(), rev:1, nombre:"Variante B", peso:1, activo:true, bubbles:[{ text:"¡Hola! 😃 Qué bueno tenerte por aquí." }] },
+      { id:nuevoVarId(), rev:1, nombre:"Versión A", peso:1, activo:true, bubbles:[{ text:"¡Hola! 👋 Gracias por escribirnos." }] },
+      { id:nuevoVarId(), rev:1, nombre:"Versión B", peso:1, activo:true, bubbles:[{ text:"¡Hola! 😃 Qué bueno tenerte por aquí." }] },
     ] };
     case "nota": return { text:"" };
     default: return {};
@@ -1190,7 +1190,7 @@ function buildRotadorCfg(m, body){
       const card=document.createElement("div"); card.className="fcard"; card.dataset.vid=v.id||"";
       const head=document.createElement("div"); head.className="frow"; head.style.marginBottom="8px";
       const on=document.createElement("input"); on.type="checkbox"; on.checked=v.activo!==false; on.title="Activa"; on.onchange=()=>{ v.activo=on.checked; paint(); updateNodeDom(m); };
-      const nm=document.createElement("input"); nm.className="in"; nm.value=v.nombre||("Variante "+(i+1)); nm.oninput=()=>{ v.nombre=nm.value; };
+      const nm=document.createElement("input"); nm.className="in"; nm.value=v.nombre||("Versión "+String.fromCharCode(65+i)); nm.oninput=()=>{ v.nombre=nm.value; };
       const del=document.createElement("button"); del.className="xbtn"; del.innerHTML=XSVG; del.onclick=()=>{ c.variantes.splice(i,1); paint(); updateNodeDom(m); };
       head.append(on,nm,del); card.appendChild(head);
       card.appendChild(mkTextarea(v.bubbles[0]?.text, (val)=>{ v.bubbles[0]=v.bubbles[0]||{}; v.bubbles[0].text=val; }, "60px"));
@@ -1203,8 +1203,8 @@ function buildRotadorCfg(m, body){
     });
   };
   paint(); body.appendChild(list);
-  const add=document.createElement("button"); add.className="fbtn"; add.innerHTML=PLUS+" variante";
-  add.onclick=()=>{ c.variantes.push({id:nuevoVarId(),rev:1,_txt0:"",nombre:"Variante "+(c.variantes.length+1),peso:1,activo:true,bubbles:[{text:""}]}); paint(); updateNodeDom(m); };
+  const add=document.createElement("button"); add.className="fbtn"; add.innerHTML=PLUS+" versión";
+  add.onclick=()=>{ c.variantes.push({id:nuevoVarId(),rev:1,_txt0:"",nombre:"Versión "+String.fromCharCode(65+c.variantes.length),peso:1,activo:true,bubbles:[{text:""}]}); paint(); updateNodeDom(m); };
   body.appendChild(add);
 }
 

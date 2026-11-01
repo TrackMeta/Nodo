@@ -347,7 +347,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll, usuarioActual } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
-import { montarMapaAngulos } from "./angulos-mapa.js?v=16";
+import { montarMapaAngulos } from "./angulos-mapa.js?v=17";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
@@ -367,7 +367,7 @@ async function avPermitido(){
 let AV = false;
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=20";
+import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=21";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set(), gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -4262,7 +4262,7 @@ async function renderFlujos(){
 // iniciales con ROTACIÓN de copy (variantes con pesos) + "y después".
 // Por debajo = un flujo "Bienvenida" con UN nodo `rotador` (self-contained).
 function newVariant(idx){
-  return { id:crypto.randomUUID(), nombre:"Variante "+String.fromCharCode(65+(idx||0)), activo:true, peso:1, bubbles:[{text:""}] };
+  return { id:crypto.randomUUID(), nombre:"Versión "+String.fromCharCode(65+(idx||0)), activo:true, peso:1, bubbles:[{text:""}] };
 }
 async function renderActivacion(host){
   const b=host||$("tabBody");
