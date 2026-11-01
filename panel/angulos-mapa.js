@@ -380,12 +380,24 @@ function pintaSaludo(p, a) {
   }
   const T = S.trabajo;
   const deOtro = T.nuevo ? famDeProd(p.id).filter((m) => String(m.id) !== String(p.id) && propiasDe(S.saludo[m.id]?.config?.variantes, a.slug).length) : [];
-  box.innerHTML = `<h3>${icon("message")} ${T.nuevo ? "Saludo" : "Saludo de este ángulo"}</h3>
+  // (1-nov, Rodrigo: «que sea comprimible») Se pliega desde el título; plegado muestra un resumen de una línea. Se
+  // pliega con una clase (sin volver a pintar), así no se pierde lo que estés escribiendo. Recuerda cómo lo dejaste.
+  const v0 = primeraDe(nodo.config.variantes, a.slug) || generalesDe(nodo.config.variantes)[0];
+  const t0 = String((v0?.bubbles || []).map((b) => b.text || b.caption || "").find((t) => String(t).trim()) || "").replace(/\s+/g, " ").trim();
+  const nB = (v0?.bubbles || []).length;
+  let abierto = true; try { abierto = localStorage.getItem("nodo.amx.saludo") !== "0"; } catch (_) {}
+  box.classList.toggle("amx-cerrado", !abierto);
+  box.innerHTML = `<button type="button" class="amx-tog" data-tog><h3>${icon("message")} ${T.nuevo ? "Saludo" : "Saludo de este ángulo"}</h3>
+      <span class="amx-res"><span class="amx-chip ${T.nuevo ? "wa" : "ok"}">${T.nuevo ? "usa el general" : "propio"}</span> ${nB} mensaje${nB === 1 ? "" : "s"}${t0 ? ` · ${esc(t0.slice(0, 90))}${t0.length > 90 ? "…" : ""}` : ""}</span>
+      <span class="amx-chev">${icon("chevronRight")}</span></button>
+    <div class="amx-colbody">
     ${T.nuevo ? `<div class="amx-warnrow">${icon("alert")} Hoy usa el saludo general. Abajo tienes una copia: cámbiala para que retome la idea del anuncio y guárdala como saludo de este ángulo.</div>`
               : `<p class="amx-help" style="margin-top:-4px">Lo reciben solo los clientes que llegan por los anuncios de este ángulo.</p>`}
     <div class="amx-salg con-vista"><div class="amx-ed"></div><div class="amx-prevbox amx-prev"></div></div>
     <div class="amx-acts">${T.nuevo ? deOtro.map((m) => `<button class="amx-link" data-copia="${esc(m.id)}">${icon("copy")} Copiar el de ${esc(paisNom(paisDe(m)))}</button>`).join("") : `<button class="amx-link" data-quitar>${icon("x")} Volver al general</button>`}
-      ${editor}<button class="amx-btn pri" data-guardar>${T.nuevo ? "Guardar como saludo de este ángulo" : "Guardar saludo"}</button></div>`;
+      ${editor}<button class="amx-btn pri" data-guardar>${T.nuevo ? "Guardar como saludo de este ángulo" : "Guardar saludo"}</button></div>
+    </div>`;
+  box.querySelector("[data-tog]").onclick = () => { const cerrado = box.classList.toggle("amx-cerrado"); try { localStorage.setItem("nodo.amx.saludo", cerrado ? "0" : "1"); } catch (_) {} };
   montaEditor(box, T.obj, p, a.slug);
   box.querySelector("[data-guardar]").onclick = async (e) => {
     const vs = limpiaAngulo(T.obj.variantes, a.slug);
@@ -695,6 +707,16 @@ function cargaCss() {
   .amx-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(200px,240px);gap:14px;align-items:start;margin-top:10px}
   @media(max-width:640px){.amx-two{grid-template-columns:1fr}}
   .amx-var{margin-top:10px}
+  .amx-tog{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;padding:0;margin:0;font:inherit;color:inherit;text-align:left;cursor:pointer;flex-wrap:wrap}
+  .amx-tog:focus{outline:none}.amx-tog:focus-visible{outline:2px solid var(--brand);outline-offset:4px;border-radius:8px}
+  .amx-tog h3{margin:0!important}
+  .amx-res{display:none;flex:1;min-width:0;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;align-items:center;gap:6px}
+  .amx-chev{margin-left:auto;display:grid;place-items:center;color:var(--muted);transition:transform .15s}
+  .amx-chev svg{width:16px;height:16px}
+  .amx-card:not(.amx-cerrado) .amx-chev{transform:rotate(90deg)}
+  .amx-card:not(.amx-cerrado) .amx-tog{margin-bottom:10px}
+  .amx-cerrado .amx-colbody{display:none}
+  .amx-cerrado .amx-res{display:flex}
   .amx-salg{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start}
   .amx-salg>.amx-prevbox{display:none}
   .amx-salg.con-vista{grid-template-columns:minmax(0,1fr) 300px}
