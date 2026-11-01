@@ -6,9 +6,6 @@
 // ═══════════════════════════════════════════════════════════════════
 import { supa, toast, icon, confirmDialog } from "./shell.js";
 const $ = (id) => document.getElementById(id);
-const IC={
-  target:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
-};
 // (28-oct) Ajustes pregunta el PAÍS del negocio, no la zona horaria: «America/Lima · UTC-5» no le dice nada a nadie.
 // Cada país guarda la zona de su capital en channels.timezone (el motor la sigue leyendo igual). Los países con
 // varias zonas dejan elegir la suya en «¿Tu negocio está en otra zona de …?».
@@ -123,8 +120,7 @@ function render(){
   const b=st.box; if(!b || !b.isConnected) return;   // te fuiste de la página o de la pestaña mientras cargaba
   b.classList.add("ajx");
   if(st.parte==="negocio"){
-    b.innerHTML=`<div id="secMarca"></div><div id="secGeneral" class="sec"></div>`;
-    renderBranding($("secMarca")); renderGeneral($("secGeneral"));
+    renderDatos(b);
   } else {
     b.innerHTML=`<div id="secMeta"></div><div id="secSheets" class="sec"></div><div id="usoPanel" class="sec"></div>`;
     renderPixel($("secMeta")); renderGsheets($("secSheets")); renderUso();
@@ -135,7 +131,7 @@ function render(){
 // Supabase; va en Conexiones). Se vuelve a llamar al cambiar de bot.
 export async function montarAjustes(box, parte, channelId){
   if(!document.getElementById("ajxCss")){
-    const l=document.createElement("link"); l.id="ajxCss"; l.rel="stylesheet"; l.href=new URL("./ajustes-partes.css?v=1", import.meta.url).href;
+    const l=document.createElement("link"); l.id="ajxCss"; l.rel="stylesheet"; l.href=new URL("./ajustes-partes.css?v=2", import.meta.url).href;
     document.head.appendChild(l);
   }
   st.box=box; st.parte=parte; st.channelId=channelId;
@@ -188,39 +184,81 @@ const CURRENCIES=[
   ["HNL","L","Honduras — Lempira"],["NIO","C$","Nicaragua — Córdoba"],["PAB","B/.","Panamá — Balboa"],
   ["GBP","£","Reino Unido — Libra"],["CAD","$","Canadá — Dólar"],
 ];
-// ── General: zona horaria + moneda ──────────────────────────────────
+// ── Nombre, país y moneda (Negocio) ──────────────────────────────────
+// (31-oct, Rodrigo: «ordénala») Una sola pantalla corta con UN Guardar: «Tu bot» (logo + nombre), «País y hora» y
+// «Moneda» (moneda de tus reportes + tipo de cambio). Antes eran «Nombre y logo» con su vista previa del sidebar y
+// su Guardar, y debajo «País y moneda» en tres tarjetas con otro Guardar: dos botones para una misma página.
 // El "Retraso de respuesta del bot" se movió a IA › Vendedor IA.
-function renderGeneral(b){
+function renderDatos(b){
+  if(!b) return;   // ya cambiaste de sección mientras esto cargaba: no hay dónde pintar
   const c=st.channel||{};
   const tz = c.timezone || "America/Lima";
   const mon = c.moneda || "PEN";
-  // 📊 (31-oct) La moneda de los reportes se elige acá y vale para Inicio y Rendimiento, en cualquier navegador.
-  // Antes era el botón «Ver en dólares» de Inicio, guardado solo en ese navegador. Vacío = la de tu país.
+  const logo=c.logo_url||"../assets/logo-128.png";
+  const urlVal=(c.logo_url||"").startsWith("data:")?"":(c.logo_url||"");
+  // 📊 La moneda de los reportes vale para Inicio y Rendimiento, en cualquier navegador (antes: botón «Ver en
+  // dólares» de Inicio, guardado solo en ese navegador). Vacío = la de tu país.
   let repElegida = c.moneda_reporte==="USD" ? "USD" : "";
+  st.pendingLogo=null; st.removeLogo=false;
   b.innerHTML=`
-    <h2>País y moneda</h2><p class="sub">Dónde está tu negocio y en qué moneda ves tus números.</p>
+    <h2>Nombre, país y moneda</h2><p class="sub">Cómo se llama este bot, dónde está tu negocio y en qué moneda ves tus números.</p>
     <div class="card">
-      <div class="chd"><span class="ico" style="background:var(--brand-bg);color:var(--brand)">${IC.target}</span><span class="nm">Tu país</span></div>
-      <div class="desc">Tus reportes y avisos usan su hora. Las versiones de otros países usan la de su país.</div>
+      <div class="chd"><span class="ico">${icon("edit")}</span><span class="nm">Tu bot</span></div>
+      <div class="dbot">
+        <button type="button" class="dlogo" id="d_drop" title="Cambiar el logo (o suelta una imagen acá)"><img id="d_logo" src="${esc(logo)}" alt=""/><span class="dcam">${icon("camera","")}</span></button>
+        <div class="dbot-f">
+          <label for="d_nombre">Nombre del bot</label>
+          <input class="in" id="d_nombre" value="${esc(c.nombre||"")}" maxlength="40" autocomplete="off"/>
+          <div class="dlinks">
+            <button type="button" class="linkish" id="d_cambiar">Cambiar logo</button>
+            <button type="button" class="linkish" id="d_url">${urlVal?"Ocultar la URL":"Pegar una URL"}</button>
+            <button type="button" class="linkish" id="d_quitar" style="color:var(--muted)">Usar el de Nodo</button>
+          </div>
+          <input class="in" id="d_logoUrl" value="${esc(urlVal)}" placeholder="https://.../logo.png" style="margin-top:8px;${urlVal?"":"display:none"}"/>
+        </div>
+      </div>
+      <p class="fhelp" style="margin-top:12px">Así ves este bot en el panel y en el selector de bots. Tus clientes no lo ven.</p>
+      <input type="file" id="d_file" accept="image/png,image/jpeg,image/webp" hidden/>
+    </div>
+    <div class="card">
+      <div class="chd"><span class="ico">${icon("globe")}</span><span class="nm">País y hora</span></div>
       <label>País</label>
       <select class="in" id="g_pais" style="max-width:340px">${PAISES_TZ.map(([cd,fl,nm])=>`<option value="${cd}" ${cd===(paisDeZona(tz)||"")?"selected":""}>${fl} ${nm}</option>`).join("")}${paisDeZona(tz)?"":`<option value="" selected>🌎 Otra zona (${esc(tz)})</option>`}</select>
-      <div id="g_zonaBox" style="margin-top:12px"></div>
-      <div id="g_hora" style="margin-top:10px;font-size:12.5px;color:var(--muted)"></div>
-      <div id="g_mon" style="margin-top:4px;font-size:12.5px;color:var(--muted)"></div>
+      <div id="g_zonaBox" style="margin-top:10px"></div>
+      <div class="dline" id="g_hora"></div>
+      <p class="fhelp">Tus reportes y avisos usan su hora. Las versiones de otros países usan la de su país.</p>
     </div>
-    <div class="card" id="g_repCard">
-      <div class="chd"><span class="ico" style="background:var(--brand-bg);color:var(--brand)">${icon("rendimiento")}</span><span class="nm">Moneda de tus reportes</span></div>
-      <div class="desc">En qué moneda ves tus ventas, gastos y ganancia en Inicio y Rendimiento. Tus clientes siguen viendo y pagando en su moneda.</div>
-      <div class="opts" id="g_rep" style="margin-top:12px"></div>
+    <div class="card">
+      <div class="chd"><span class="ico" style="background:var(--green-bg);color:var(--green)">${icon("dollar")}</span><span class="nm">Moneda</span></div>
+      <div id="g_repBox">
+        <label>Tus reportes en</label>
+        <div class="opts" id="g_rep"></div>
+        <p class="fhelp">Para Inicio y Rendimiento. Tus clientes siguen viendo y pagando en su moneda.</p>
+      </div>
+      <div class="dline" id="g_tcVal" style="margin-top:14px"></div>
+      <details id="g_tcMas" style="margin-top:8px;display:none"><summary style="cursor:pointer;font-size:12.5px;color:var(--brand);font-weight:600">Ver las demás monedas</summary><div id="g_tcLista"></div></details>
     </div>
-    <div class="card" id="g_tcCard">
-      <div class="chd"><span class="ico" style="background:var(--green-bg);color:var(--green)">${icon("dollar")}</span><span class="nm">Tipo de cambio</span></div>
-      <div class="desc">Con esto se convierten las ventas en otras monedas y lo que pagas en dólares, como la IA. Se actualiza solo cada día.</div>
-      <div id="g_tcVal" style="font-size:14px;font-weight:700;margin-top:4px"></div>
-      <details id="g_tcMas" style="margin-top:12px;display:none"><summary style="cursor:pointer;font-size:12.5px;color:var(--brand);font-weight:600">Ver las demás monedas</summary><div id="g_tcLista"></div></details>
-    </div>
-    <div class="acts"><button class="btn primary" id="saveGeneral">Guardar ajustes</button></div>`;
-  // La zona: la de la capital del país, o la que elija si su país tiene varias. Sin país reconocido, se queda la de antes.
+    <div class="acts"><button class="btn primary" id="d_guardar" disabled>Guardar</button></div>`;
+
+  // ── Logo ──
+  const pintaLogo=(src)=>{ $("d_logo").src=src||"../assets/logo-128.png"; };
+  const logoAhora=()=> st.pendingLogo || (st.removeLogo ? "" : ($("d_logoUrl").value.trim() || (String(c.logo_url||"").startsWith("data:")?String(c.logo_url):"")));
+  $("d_drop").onclick=()=>$("d_file").click();
+  $("d_cambiar").onclick=()=>$("d_file").click();
+  $("d_file").onchange=(e)=>handleLogoFile(e.target.files[0],(d)=>{ pintaLogo(d); revisa(); });
+  // Arrastrar y soltar: es como se mueve un logo de verdad, sin pasar por el explorador.
+  const dz=$("d_drop");
+  ["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,(e)=>{ e.preventDefault(); dz.classList.add("over"); }));
+  ["dragleave","drop"].forEach(ev=>dz.addEventListener(ev,(e)=>{ e.preventDefault(); dz.classList.remove("over"); }));
+  dz.addEventListener("drop",(e)=>{ const f=e.dataTransfer?.files?.[0]; if(f) handleLogoFile(f,(d)=>{ pintaLogo(d); revisa(); }); });
+  $("d_url").onclick=()=>{ const i=$("d_logoUrl"); const ver=i.style.display==="none"; i.style.display=ver?"":"none"; $("d_url").textContent=ver?"Ocultar la URL":"Pegar una URL"; if(ver) i.focus(); };
+  $("d_logoUrl").oninput=()=>{ st.pendingLogo=null; st.removeLogo=false; pintaLogo($("d_logoUrl").value.trim()); revisa(); };
+  // «Usar el de Nodo» manda logo_url:null a propósito: si el actual es una imagen subida, vaciar la URL no alcanza
+  // (el guardado conserva la imagen justo para no borrarla sin querer).
+  $("d_quitar").onclick=()=>{ st.pendingLogo=null; st.removeLogo=true; $("d_logoUrl").value=""; pintaLogo(""); revisa(); };
+  $("d_nombre").oninput=()=>revisa();
+
+  // ── País y hora ── la zona es la de la capital, o la que elija si su país tiene varias. Sin país reconocido, la de antes.
   let zonaElegida=tz;
   const pintaZona=()=>{
     const cd=$("g_pais").value, extra=ZONAS_EXTRA[cd]||[];
@@ -229,44 +267,43 @@ function renderGeneral(b){
       ? `<details ${zonaElegida!==extra[0][0]?"open":""}><summary style="cursor:pointer;font-size:12.5px;color:var(--brand);font-weight:600">¿Tu negocio está en otra zona horaria de ${esc(PAISES_TZ.find(p=>p[0]===cd)[2])}?</summary>
           <select class="in" id="g_zona" style="max-width:340px;margin-top:8px">${extra.map(([z,l])=>`<option value="${z}" ${z===zonaElegida?"selected":""}>${esc(l)}</option>`).join("")}</select></details>`
       : "";
-    const gz=$("g_zona"); if(gz) gz.onchange=()=>{ zonaElegida=gz.value; pintaHora(); };
+    const gz=$("g_zona"); if(gz) gz.onchange=()=>{ zonaElegida=gz.value; pintaHora(); revisa(); };
     pintaHora();
   };
+  const NOM={PEN:"Sol",USD:"Dólar",MXN:"Peso mexicano",COP:"Peso colombiano",ARS:"Peso argentino",CLP:"Peso chileno",UYU:"Peso uruguayo",DOP:"Peso dominicano",EUR:"Euro",BRL:"Real"};
   const pintaHora=()=>{
     let h=""; try{ h=new Date().toLocaleTimeString("es-PE",{ timeZone:zonaElegida, hour:"numeric", minute:"2-digit" }); }catch(_){}
-    $("g_hora").innerHTML = h ? `🕐 Tu hora ahora: <b>${esc(h)}</b>` : "";
+    const m=monedaElegida(), cu=CURRENCIES.find(x=>x[0]===m)||["",m,m];
+    $("g_hora").innerHTML = (h ? `🕐 Tu hora ahora: <b>${esc(h)}</b> · ` : "") + `💵 Cobras en <b>${esc(cu[1])} ${esc(NOM[m]||String(cu[2]).replace(/^.*— /,""))}</b>`;
   };
-  // 💵 La moneda sale del país (Otra zona → la que ya tenía). El tipo de cambio solo si no es dólar.
+  // 💵 La moneda sale del país (Otra zona → la que ya tenía).
   const monedaElegida=()=>MONEDA_PAIS[$("g_pais").value]||mon;
-  // 💱 (29-oct) El tipo de cambio ya no se escribe: lo baja el scheduler cada día (tabla tipos_cambio). Se muestra el
+
+  // ── Moneda ── 💱 El tipo de cambio no se escribe: lo baja el scheduler cada día (tabla tipos_cambio). Se muestra el
   // último de cada moneda; sin la tabla todavía, el que tenga el bot.
   let _cambios={};
   supa.from("tipos_cambio").select("fecha,moneda,por_usd").order("fecha",{ascending:false}).limit(60)
-    .then(({data})=>{ for(const r of (data||[])) if(!_cambios[r.moneda]) _cambios[r.moneda]=r; pintaMoneda(); }, ()=>{});
+    .then(({data})=>{ for(const r of (data||[])) if(!_cambios[r.moneda]) _cambios[r.moneda]=r; if($("g_tcVal")) pintaMoneda(); }, ()=>{});
   const cambioDe=(m)=>_cambios[m]?Number(_cambios[m].por_usd):(m===mon&&Number(st.channel?.usd_rate)>0?Number(st.channel.usd_rate):null);
   const pintaMoneda=()=>{
     const m=monedaElegida(), cu=CURRENCIES.find(x=>x[0]===m)||["",m,m];
-    const NOM={PEN:"Sol",USD:"Dólar",MXN:"Peso mexicano",COP:"Peso colombiano",ARS:"Peso argentino",CLP:"Peso chileno",UYU:"Peso uruguayo",DOP:"Peso dominicano",EUR:"Euro",BRL:"Real"};
-    $("g_mon").innerHTML=`💵 Moneda: <b>${esc(cu[1])} ${esc(NOM[m]||String(cu[2]).replace(/^.*— /,""))}</b>`;
-    // (31-oct) La tarjeta queda aunque cobres en dólares: la lista de las demás monedas también sirve ahí.
-    // Si tu país ya cobra en dólares no hay nada que elegir.
-    $("g_repCard").style.display = m==="USD" ? "none" : "";
+    // Si tu país ya cobra en dólares no hay nada que elegir (la lista de monedas igual sirve).
+    $("g_repBox").style.display = m==="USD" ? "none" : "";
     const nomPlural={PEN:"Soles",MXN:"Pesos mexicanos",COP:"Pesos colombianos",ARS:"Pesos argentinos",CLP:"Pesos chilenos",UYU:"Pesos uruguayos",DOP:"Pesos dominicanos",EUR:"Euros",BRL:"Reales"}[m]||String(cu[2]).replace(/^.*— /,"");
     const tick=icon("check","tick");
     $("g_rep").innerHTML=
-      `<button type="button" class="opt ${repElegida?"":"on"}" data-r="">${tick}<b>${esc(cu[1])} ${esc(nomPlural)}</b><span>La moneda de tu país.</span></button>`+
-      `<button type="button" class="opt ${repElegida==="USD"?"on":""}" data-r="USD">${tick}<b>$ Dólares</b><span>Todo convertido con el tipo de cambio del día de cada venta.</span></button>`;
-    $("g_rep").querySelectorAll(".opt").forEach(x=> x.onclick=()=>{ repElegida=x.dataset.r; pintaMoneda(); });
+      `<button type="button" class="opt ${repElegida?"":"on"}" data-r="">${tick}<b>${esc(cu[1])} ${esc(nomPlural)}</b><span>La de tu país.</span></button>`+
+      `<button type="button" class="opt ${repElegida==="USD"?"on":""}" data-r="USD">${tick}<b>$ Dólares</b><span>Con el cambio del día de cada venta.</span></button>`;
+    $("g_rep").querySelectorAll(".opt").forEach(x=> x.onclick=()=>{ repElegida=x.dataset.r; pintaMoneda(); revisa(); });
     const tcv=cambioDe(m), fe=_cambios[m]?.fecha;
     let feTxt=""; try{ if(fe) feTxt=new Date(fe+"T12:00:00Z").toLocaleDateString("es-PE",{ day:"numeric", month:"long" }); }catch(_){}
-    $("g_tcVal").innerHTML = tcv ? `1 USD = ${esc(cu[1])} ${esc(tcv.toLocaleString("es-PE",{ maximumFractionDigits: tcv<100?2:0 }))}${feTxt?` <span style="font-weight:400;font-size:12px;color:var(--faint)">· al ${esc(feTxt)}</span>`:""}`
-      : `<span style="font-weight:400;font-size:12.5px;color:var(--muted)">Se actualiza solo durante el día.</span>`;
-    if(m==="USD") $("g_tcVal").innerHTML=`<span style="font-weight:400;font-size:12.5px;color:var(--muted)">Tu negocio usa dólares: no necesita tipo de cambio.</span>`;
+    $("g_tcVal").innerHTML = m==="USD" ? `Tu negocio usa dólares: no necesita tipo de cambio.`
+      : tcv ? `💱 Tipo de cambio: <b>1 USD = ${esc(cu[1])} ${esc(tcv.toLocaleString("es-PE",{ maximumFractionDigits: tcv<100?2:0 }))}</b>${feTxt?` · al ${esc(feTxt)}`:""}. Se actualiza solo cada día.`
+      : `💱 El tipo de cambio se actualiza solo durante el día.`;
     pintaLista(m, cu[1]);
   };
-  // 🌎 (31-oct, Rodrigo) Las 19 monedas que Nodo baja cada día (tipos_cambio) se usaban por dentro y no se veían en
-  // ningún lado. Van plegadas: cuánto vale un dólar en cada una y, si tu negocio no es en dólares, cuánto vale cada una
-  // en tu moneda — que es lo que Nodo hace al convertir (pasa por el dólar).
+  // 🌎 Las 19 monedas que Nodo baja cada día (tipos_cambio), plegadas: cuánto vale un dólar en cada una y, si tu negocio
+  // no es en dólares, cuánto vale cada una en tu moneda — que es lo que Nodo hace al convertir (pasa por el dólar).
   const pintaLista=(m, sym)=>{
     const filas=Object.values(_cambios).filter(r=>r.moneda!=="USD" && Number(r.por_usd)>0);
     $("g_tcMas").style.display = filas.length ? "" : "none";
@@ -282,9 +319,16 @@ function renderGeneral(b){
       return `<tr class="${r.moneda===m?"yo":""}"><td>${banderaMon(r.moneda)} ${esc(nom)} <span class="cod">${esc(r.moneda)}</span></td><td class="r">${esc(c[1])} ${esc(f(v))}</td>${enTuya?`<td class="r">${r.moneda===m?"—":esc(sym)+" "+esc(f(tuyo/v))}</td>`:""}</tr>`;
     }).join("")}</tbody></table><p class="fhelp" style="margin-top:8px">Valores de hoy. Nodo convierte cada venta y cada gasto con el de su día.</p>`;
   };
-  $("g_pais").onchange=()=>{ pintaZona(); pintaMoneda(); }; pintaZona(); pintaMoneda();
-  $("saveGeneral").onclick=async(e)=>{
-    const btn=e.target;
+  $("g_pais").onchange=()=>{ pintaZona(); pintaMoneda(); revisa(); }; pintaZona(); pintaMoneda();
+
+  // ── Un solo Guardar ── nace apagado y se enciende solo si algo cambió: así se ve de un vistazo si queda algo sin guardar.
+  const foto=()=>JSON.stringify([$("d_nombre").value.trim(), logoAhora(), $("g_pais").value, zonaElegida, repElegida]);
+  const ini=foto();
+  function revisa(){ const btn=$("d_guardar"); if(btn) btn.disabled = !$("d_nombre").value.trim() || foto()===ini; }
+  $("d_guardar").onclick=async(e)=>{
+    const btn=e.currentTarget;
+    const nombre=$("d_nombre").value.trim();
+    if(!nombre){ toast("El nombre no puede estar vacío",true); return; }
     // 🌎 Cambiar de país: los productos que ya venden siguen en el país de antes (con su moneda y su hora). Si no,
     // un bot de Perú que pasa a «México» empezaría a cobrar en pesos lo que vendía en soles.
     const paisAntes=paisDeZona(tz), paisNuevo=$("g_pais").value||paisAntes;
@@ -296,7 +340,8 @@ function renderGeneral(b){
         confirmText:"Cambiar" })) return;
       fijar=true;
     }
-    btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    btn.disabled=true; btn.textContent="Guardando…";
+    const listo=()=>{ btn.textContent="Guardar"; revisa(); };
     if(fijar){
       try{
         const { data:ps }=await supa.from("products").select("id, config").eq("channel_id",st.channelId);
@@ -305,31 +350,34 @@ function renderGeneral(b){
           cfg.pais=paisAntes; if(!cfg.moneda && mon!==(MONEDA_PAIS[paisAntes]||"")) cfg.moneda=mon;
           await supa.from("products").update({ config:cfg }).eq("id",p.id);
         }
-      }catch(_){ btn.disabled=false; btn.textContent=old; toast("No se pudieron fijar tus productos al país de antes",true); return; }
+      }catch(_){ listo(); toast("No se pudieron fijar tus productos al país de antes",true); return; }
     }
-    const monNueva=monedaElegida();
-    const tc=cambioDe(monNueva);
-    const patch={ timezone:zonaElegida, moneda:monNueva,
+    // El campo de URL va VACÍO cuando el logo actual es una imagen subida (data-URI): si solo cambias el nombre y
+    // guardas, se mandaba logo_url:null y el logo se borraba. Se conserva.
+    const logoActual=String(c.logo_url||"");
+    const logo_url = st.removeLogo ? null
+      : (st.pendingLogo || ($("d_logoUrl").value.trim() || (logoActual.startsWith("data:") ? logoActual : null)));
+    const monNueva=monedaElegida(), tc=cambioDe(monNueva);
+    const patch={ nombre, logo_url, timezone:zonaElegida, moneda:monNueva,
       usd_rate: (monNueva!=="USD" && tc>0) ? +tc.toFixed(4) : null,
       moneda_reporte: (repElegida==="USD" && monNueva!=="USD") ? "USD" : null };
-    let { error }=await updCanal(patch);
-    // Sin la migración 0141 se guarda lo demás y se dice qué falta (antes de los otros respaldos, que la confundirían
-    // con la columna «moneda»).
+    let { error }=await updCanal(patch), avisado=false;
+    // Sin la migración 0141 se guarda lo demás y se dice qué falta.
     if(error && /moneda_reporte/.test(error.message)){
       delete patch.moneda_reporte; ({ error }=await updCanal(patch));
-      if(!error){ btn.disabled=false; btn.textContent=old; toast("Guardado; falta aplicar la migración 0141 para la moneda de tus reportes",true); return; }
+      if(!error){ avisado=true; toast("Guardado; falta aplicar la migración 0141 para la moneda de tus reportes",true); }
     }
-    // Si falta la columna del tipo de cambio (migración 0089 sin aplicar), se guarda
-    // el resto y se dice qué falta — en vez de perder también la zona y la moneda.
-    if(error && /usd_rate/.test(error.message)){
-      ({ error }=await updCanal({ timezone:patch.timezone, moneda:patch.moneda }));
-      if(!error){ btn.disabled=false; btn.textContent=old; toast("Guardado; falta aplicar la migración 0089 para el tipo de cambio",true); return; }
-    }
-    if(error && /moneda|column/.test(error.message)){ ({ error }=await updCanal({ timezone:patch.timezone })); if(!error) toast("Zona guardada; falta la columna 'moneda' (migración)",true); }
-    btn.disabled=false; btn.textContent=old;
-    if(error){ toast(/timezone|column/.test(error.message)?"Falta aplicar la migración 0014 (timezone)":error.message,true); return; }
-    st.channel.timezone=patch.timezone; st.channel.moneda=patch.moneda; st.channel.usd_rate=patch.usd_rate; st.channel.moneda_reporte=patch.moneda_reporte; toast("Guardado");
-    renderGeneral(b);   // la página recuerda el país guardado (si no, un segundo cambio no avisaba)
+    if(error){ listo(); toast(error.message,true); return; }
+    Object.assign(st.channel, patch); st.pendingLogo=null; st.removeLogo=false;
+    // El nombre y el logo también están arriba en la barra y en el selector de bot: sin tocarlos, decía «guardado»
+    // y seguía el nombre y el logo viejos hasta recargar.
+    const src=logo_url||"../assets/logo-128.png";
+    for(const id of ["nodoLogo","nodoBotLogo"]){ const el=document.getElementById(id); if(el) el.src=src; }
+    for(const id of ["nodoBrandName","nodoBotName"]){ const el=document.getElementById(id); if(el) el.textContent=nombre; }
+    const opt=document.querySelector(`#nodoBot option[value="${st.channelId}"]`); if(opt) opt.textContent=nombre;
+    window.dispatchEvent(new CustomEvent("nodo:marca",{ detail:{ nombre, logo_url } }));
+    if(!avisado) toast("Guardado");
+    renderDatos(b);   // la página recuerda lo guardado (si no, un segundo cambio de país no avisaba)
   };
 }
 
@@ -602,81 +650,6 @@ async function saveGsheets(btn, gs){
   st.channel.gsheets=gs; toast("Guardado"); render();
 }
 
-// ── Nombre y logo del bot ───────────────────────────────────────────────────
-function renderBranding(b){
-  if(!b) return;   // ya cambiaste de sección mientras esto cargaba: no hay dónde pintar
-  const c=st.channel||{}; const logo=c.logo_url||"../assets/logo-128.png";
-  const propio=!!(c.logo_url||"").trim();      // ¿tiene logo propio o está usando el de Nodo?
-  const urlVal=(c.logo_url||"").startsWith("data:")?"":(c.logo_url||"");
-  b.innerHTML=`
-    <h2>Nombre y logo</h2><p class="sub">Cómo aparece este bot en el panel. Tus clientes no lo ven. Si no pones un logo, se usa el de Nodo.</p>
-    <div class="brand-grid">
-      <div class="card">
-        <div class="chd"><div class="ico">${icon("edit")}</div><div class="nm">Identidad</div></div>
-        <div class="f" style="margin-top:14px">
-          <label>Nombre del bot</label>
-          <input class="in" id="b_nombre" value="${esc(c.nombre||'')}" maxlength="40" autocomplete="off"/>
-          <p class="fhelp">Es el nombre con el que lo distingues cuando manejas varios bots.</p>
-        </div>
-        <label style="display:block;margin-top:16px">Logo del bot</label>
-        <button type="button" class="drop" id="drop">
-          <img id="brandPrev" class="thumb" src="${esc(logo)}" alt=""/>
-          <div style="min-width:0">
-            <div class="dt">Arrastra una imagen o haz clic</div>
-            <div class="ds">PNG, JPG o WEBP · se recorta a 96×96</div>
-          </div>
-        </button>
-        <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp" hidden/>
-        <div class="acts" style="margin-top:10px;gap:14px">
-          <button type="button" class="linkish" id="urlToggle">${urlVal?"Ocultar la URL":"o pegar una URL"}</button>
-          <button type="button" class="linkish" id="rmLogo" style="color:var(--muted);${propio?"":"display:none"}">Quitar y usar el de Nodo</button>
-        </div>
-        <input class="in" id="b_logo" value="${esc(urlVal)}" placeholder="https://.../logo.png"
-               style="margin-top:10px;${urlVal?"":"display:none"}"/>
-        <div class="acts"><button class="btn primary" id="saveBrand" disabled>Guardar</button></div>
-      </div>
-
-      <div class="card">
-        <div class="chd"><div class="ico">${icon("eye")}</div><div class="nm">Cómo se ve</div></div>
-        <p class="desc" style="margin:10px 0 12px">Así aparece este bot en el panel.</p>
-        <div class="pv">
-          <div>
-            <div class="pv-cap" style="margin-bottom:8px">Barra lateral</div>
-            <div class="pv-row"><img id="pvLogo1" src="${esc(logo)}" alt=""/><div class="pv-nm" id="pvNm1">${esc(c.nombre||"Sin nombre")}</div></div>
-          </div>
-          <div>
-            <div class="pv-cap" style="margin-bottom:8px">Selector de bot</div>
-            <div class="pv-sel"><img id="pvLogo2" src="${esc(logo)}" alt=""/><span id="pvNm2">${esc(c.nombre||"Sin nombre")}</span></div>
-          </div>
-        </div>
-      </div>
-    </div>`;
-
-  // El botón nace apagado y se enciende solo cuando algo cambió de verdad: así se ve de un
-  // vistazo si queda algo sin guardar, en vez de un primario siempre encendido que no dice nada.
-  const ini={ nombre:c.nombre||"", logo:String(c.logo_url||"") };
-  const save=$("saveBrand");
-  const pinta=(src)=>{ for(const id of ["brandPrev","pvLogo1","pvLogo2"]) $(id).src=src||"../assets/logo-128.png"; };
-  const logoAhora=()=> st.pendingLogo || (st.removeLogo ? "" : ($("b_logo").value.trim() || (ini.logo.startsWith("data:")?ini.logo:"")));
-  const revisa=()=>{
-    const n=$("b_nombre").value.trim();
-    save.disabled = !n || (n===ini.nombre && logoAhora()===ini.logo);
-    $("rmLogo").style.display = logoAhora() ? "" : "none";
-  };
-  $("b_nombre").oninput=()=>{ const v=$("b_nombre").value.trim(); $("pvNm1").textContent=v||"Sin nombre"; $("pvNm2").textContent=v||"Sin nombre"; revisa(); };
-  $("b_logo").oninput=()=>{ st.pendingLogo=null; st.removeLogo=false; pinta($("b_logo").value.trim()); revisa(); };
-  $("urlToggle").onclick=()=>{ const i=$("b_logo"); const ver=i.style.display==="none"; i.style.display=ver?"":"none"; $("urlToggle").textContent=ver?"Ocultar la URL":"o pegar una URL"; if(ver) i.focus(); };
-  $("rmLogo").onclick=()=>{ st.pendingLogo=null; st.removeLogo=true; $("b_logo").value=""; pinta(""); revisa(); };
-  $("drop").onclick=()=>$("logoFile").click();
-  $("logoFile").onchange=(e)=>handleLogoFile(e.target.files[0],revisa);
-  // Arrastrar y soltar: es como se mueve un logo de verdad, sin pasar por el explorador.
-  const dz=$("drop");
-  ["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,(e)=>{ e.preventDefault(); dz.classList.add("over"); }));
-  ["dragleave","drop"].forEach(ev=>dz.addEventListener(ev,(e)=>{ e.preventDefault(); dz.classList.remove("over"); }));
-  dz.addEventListener("drop",(e)=>{ const f=e.dataTransfer?.files?.[0]; if(f) handleLogoFile(f,revisa); });
-  save.onclick=(e)=>saveBrand(e.target);
-  revisa();
-}
 function downscaleImage(file, size=96){
   return new Promise((res,rej)=>{ const img=new Image(); const url=URL.createObjectURL(file);
     img.onload=()=>{ const c=document.createElement("canvas"); c.width=size; c.height=size; const ctx=c.getContext("2d");
@@ -688,44 +661,9 @@ async function handleLogoFile(file, luego){
   if(!file) return;
   if(!/^image\//.test(file.type||"")){ toast("Eso no es una imagen",true); return; }
   if(file.size>4*1024*1024){ toast("Imagen muy grande (máx 4MB)",true); return; }
-  try{
-    const d=await downscaleImage(file,96); st.pendingLogo=d; st.removeLogo=false;
-    // La previa son tres sitios (el recuadro y las dos maquetas): se pintan juntos o el
-    // dueño ve el logo nuevo en uno y el viejo en los otros, que es peor que no verlo.
-    for(const id of ["brandPrev","pvLogo1","pvLogo2"]){ const el=document.getElementById(id); if(el) el.src=d; }
-    toast("Imagen cargada — pulsa Guardar");
-  }
+  try{ const d=await downscaleImage(file,96); st.pendingLogo=d; st.removeLogo=false; if(typeof luego==="function") luego(d); toast("Imagen cargada — pulsa Guardar"); }
   catch(e){ toast(e.message||"error",true); }
-  if(typeof luego==="function") luego();
 }
-async function saveBrand(btn){
-  const nombre=$("b_nombre").value.trim();
-  // El campo de URL va VACÍO cuando el logo actual es una imagen subida (data-URI): si solo
-  // cambias el nombre y guardas, se mandaba logo_url:null y el logo se borraba. Se conserva.
-  const logoActual=String(st.channel?.logo_url||"");
-  // «Quitar y usar el de Nodo» tiene que poder mandar null a propósito: antes no había forma
-  // de volver al logo de Nodo si el actual era una imagen subida (el campo de URL va vacío en
-  // ese caso, y el guardado conservaba la imagen justo para no borrarla sin querer).
-  const logo_url = st.removeLogo ? null
-    : (st.pendingLogo || ($("b_logo").value.trim() || (logoActual.startsWith("data:") ? logoActual : null)));
-  if(!nombre){ toast("El nombre no puede estar vacío",true); return; }
-  btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-  const { error }=await updCanal({ nombre, logo_url });
-  btn.disabled=false; btn.textContent=old;
-  if(error){ toast(error.message.includes("logo_url")?"Falta aplicar la migración 0012 (logo_url)":error.message,true); return; }
-  toast("Nombre y logo guardados");
-  const nl=document.getElementById("nodoLogo"); if(nl) nl.src=logo_url||"../assets/logo-128.png";
-  const bn=document.getElementById("nodoBrandName"); if(bn) bn.textContent=nombre;
-  // El selector de bot del sidebar usa estos ids: sin tocarlos, «guardado» y arriba seguía
-  // el nombre y el logo viejos hasta recargar.
-  const bl=document.getElementById("nodoBotLogo"); if(bl) bl.src=logo_url||"../assets/logo-128.png";
-  const bnm=document.getElementById("nodoBotName"); if(bnm) bnm.textContent=nombre;
-  const opt=document.querySelector(`#nodoBot option[value="${st.channelId}"]`); if(opt) opt.textContent=nombre;
-  st.channel.nombre=nombre; st.channel.logo_url=logo_url; st.pendingLogo=null; st.removeLogo=false;
-  window.dispatchEvent(new CustomEvent("nodo:marca",{ detail:{ nombre, logo_url } }));
-  if($("secMarca")) renderBranding($("secMarca"));   // el botón vuelve a apagarse: ya no hay nada sin guardar
-}
-
 // ── Pixel de Meta (CAPI) ────────────────────────────────────────────
 // 📊 La sección de Meta son DOS conexiones que van en sentidos OPUESTOS, y apiladas sin
 // jerarquía se confundían: una TRAE el gasto (alimenta Rendimiento) y la otra MANDA las
