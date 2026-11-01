@@ -218,11 +218,12 @@ function pintaFicha(pid, slug) {
   h += `<div class="amx-card" id="amxAds"></div>`;
   if (a) {
     // 3) Nombre y gancho
-    h += `<div class="amx-card"><h3>${icon("robot")} Nombre y gancho para la IA</h3>
+    // Con el violeta/rosa de la IA (como «Gancho para la IA» en el producto): es lo que lee la IA, no un dato del cliente.
+    h += `<div class="amx-card amx-ia"><h3><span class="amx-iagl">${icon("robot")}</span><span class="amx-iatt">Nombre y gancho para la IA</span></h3>
       <label class="amx-lbl">Nombre del ángulo</label><input class="amx-in" id="amxNom" value="${esc(a.nombre || "")}" maxlength="60"/>
       <label class="amx-lbl">Gancho para la IA <span>· desde qué idea le vende a este cliente</span></label>
       <input class="amx-in" id="amxGan" value="${esc(a.gancho_ia || "")}" placeholder="Ej. vino por un anuncio sobre bajar la barriga en 21 días"/>
-      <div class="amx-acts"><button class="amx-btn pri" id="amxGanG">Guardar</button></div></div>`;
+      <div class="amx-acts"><button class="amx-btn ia" id="amxGanG">Guardar</button></div></div>`;
     h += `<div class="amx-card" id="amxSal"></div><div class="amx-card" id="amxRem"></div>`;
     if (otros.length) h += `<div class="amx-card"><h3>${icon("copy")} Copiar a otros países</h3>
       <p class="amx-help">Lleva el nombre, el gancho, el saludo y el remarketing de este ángulo a ${otros.map((m) => esc(paisNom(paisDe(m)))).join(" y ")}. Reemplaza lo que ese ángulo tenga allá. Los anuncios y los precios no se copian.</p>
@@ -596,8 +597,8 @@ async function eliminarAngulo(p, a) {
 
 // ── Estilos ───────────────────────────────────────────────────────────────
 function cargaCss() {
-  if (document.getElementById("amxCss")) return;
-  const s = document.createElement("style"); s.id = "amxCss";
+  // Siempre se reescribe: si una versión anterior del módulo ya lo puso (el panel navega sin recargar), queda la nueva.
+  const s = document.getElementById("amxCss") || document.head.appendChild(Object.assign(document.createElement("style"), { id: "amxCss" }));
   s.textContent = `
   .amx{display:flex;flex-direction:column;gap:14px}
   .amx-empty{padding:28px;text-align:center;color:var(--muted);font-size:13px}
@@ -646,6 +647,13 @@ function cargaCss() {
   .amx-chip.wa{background:rgba(240,169,43,.1);border-color:rgba(240,169,43,.4);color:var(--amber)}
   .amx-card h3{margin:0 0 10px;font-size:14.5px;display:flex;align-items:center;gap:7px}
   .amx-card h3 svg{width:17px;height:17px;color:var(--brand)}.amx-card h3 span{font-size:12px;font-weight:500;color:var(--muted)}
+  .amx-ia{border-color:var(--ia-brd,rgba(168,85,247,.42));background:radial-gradient(130% 140% at 0% 0%,rgba(168,85,247,.12),transparent 58%),var(--surface)}
+  .amx-iagl{width:24px;height:24px;flex:none;border-radius:7px;display:grid;place-items:center;background:linear-gradient(135deg,var(--ia1,#a855f7),var(--ia2,#ec4899));box-shadow:0 3px 8px -3px rgba(168,85,247,.6)}
+  .amx-card h3 .amx-iagl svg{width:13px;height:13px;color:#fff}
+  .amx-iatt{background:linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .amx-ia .amx-in{width:100%;box-sizing:border-box}
+  .amx-ia .amx-in:focus{outline:none;border-color:var(--ia1,#a855f7);box-shadow:0 0 0 3px var(--ia-bg,rgba(168,85,247,.14))}
+  .amx-btn.ia{background:linear-gradient(135deg,var(--ia1,#a855f7),var(--ia2,#ec4899));border:none;color:#fff}
   .amx-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
   .amx-kpi div{background:var(--surface-2);border-radius:10px;padding:9px 11px}
   .amx-kpi b{display:block;font-size:17px;letter-spacing:-.3px}.amx-kpi span{font-size:11.5px;color:var(--muted)}
@@ -680,5 +688,4 @@ function cargaCss() {
   .amx-sh{display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:12.5px}.amx-sh span{color:var(--muted)}.amx-sh .amx-chip{margin-left:auto}
   .amx-gtxt{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0;white-space:pre-wrap}
   `;
-  document.head.appendChild(s);
 }
