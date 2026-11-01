@@ -543,7 +543,7 @@ function renderStatus(){
     : `<span class="demopill" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)"><span class="d" style="background:var(--faint)"></span>SIN CONECTAR</span>`;
   const bs=$("syncAds"); if(bs) bs.onclick=()=>sincronizarAhora(bs);
   $("noticeSlot").innerHTML = st.syncError
-    ? `<div class="notice" style="background:var(--red-bg);border-color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(st.syncError)} Reconéctalo en <a href="canales.html">Conexiones</a>.</div></div>`
+    ? `<div class="notice" style="background:var(--red-bg);border-color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(st.syncError)} Reconéctalo en <a href="canales.html?tab=meta">Conexiones → Meta</a>.</div></div>`
     : "";
 }
 // Fuerza una corrida de ads-sync. No llama a ads-sync directo (está protegida con el secreto
@@ -575,7 +575,7 @@ function emptyStateHtml(){
     <h3>${n?"Aún no hay datos en este periodo":"Conecta tu cuenta de anuncios"}</h3>
     <p>${n
       ? `Estás conectado a ${n} cuenta${n>1?'s':''}. Los números aparecen tras la <b>primera sincronización con Meta</b> (según la frecuencia que elijas en Conexiones → Meta). Si acabas de conectar, dale unos minutos o prueba otro periodo.`
-      : `Para ver tu <b>CPA real</b>, <b>ganancia neta</b> y <b>ROAS</b> por anuncio, <a href="canales.html" style="color:var(--brand)">conecta tu cuenta de anuncios en Conexiones</a>. Las ventas, el margen y la atribución por anuncio ya los tiene Nodo; solo falta el gasto de Meta.`}</p>
+      : `Para ver tu <b>CPA real</b>, <b>ganancia neta</b> y <b>ROAS</b> por anuncio, <a href="canales.html?tab=meta" style="color:var(--brand)">conecta tu cuenta de anuncios en Conexiones → Meta</a>. Las ventas, el margen y la atribución por anuncio ya los tiene Nodo; solo falta el gasto de Meta.`}</p>
     ${/* Toda esta sección se arma sobre el gasto por ANUNCIO: las vistas "Por producto"
           y "Por ángulo" agrupan esos mismos anuncios, así que sin Meta tampoco tienen
           filas. Dicho así, el cartel deja al dueño buscando una tabla que no va a

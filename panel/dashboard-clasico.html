@@ -1409,7 +1409,7 @@ function renderBand(b){
   if(!b.hasAds && !hasExtra && !hasIa){
     box.innerHTML=`
       <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v ${b.brutaDesconocida?"":"green"}">${brutaTxt}</span>${brutaSub}</div>
-      <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="canales.html">Conexiones</a> (o registra un gasto extra abajo) y aquí verás tu <b>ganancia NETA</b> después de todo.</div></div>`;
+      <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="canales.html?tab=meta">Conexiones → Meta</a> (o registra un gasto extra abajo) y aquí verás tu <b>ganancia NETA</b> después de todo.</div></div>`;
     return;
   }
   const netaCls = b.neta<0?"red":"green";

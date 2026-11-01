@@ -136,6 +136,20 @@
   .wanum-skel{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:12.5px;padding:13px 4px}
   .wanum-skel .sk{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--muted);animation:waSpin .8s linear infinite}
   @keyframes waSpin{to{transform:rotate(360deg)}}
+  /* (31-oct, Rodrigo) Una pestaña por servicio: la página era una sola tira con todo apilado. Las partes se pintan
+     como siempre y la pestaña solo decide cuál se ve (data-ctab en .nodo-wrap), así nada se recarga al cambiar. */
+  .tabs{display:flex;gap:4px;margin:22px 0 22px;border-bottom:1px solid var(--border);flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{background:transparent;border:none;color:var(--muted);font-size:13.5px;font-weight:600;padding:11px 12px;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;flex:none}
+  .tab:hover{color:var(--text)}
+  .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+  .tab svg{width:17px;height:17px}
+  .tab img{width:18px;height:18px;border-radius:5px;object-fit:cover}
+  [data-ctab] #waCard,[data-ctab] #tgCard,[data-ctab] #secMeta,[data-ctab] #secSheets,[data-ctab] #usoPanel,[data-ctab] #archCard{display:none}
+  [data-ctab=whatsapp] #waCard,[data-ctab=telegram] #tgCard,[data-ctab=meta] #secMeta,[data-ctab=sheets] #secSheets,
+  [data-ctab=avanzado] #usoPanel,[data-ctab=avanzado] #archCard{display:block}
+  [data-ctab=avanzado] #usoPanel:empty{display:none}
+  #ajxCard .sec{margin-top:0;padding-top:0;border-top:0}   /* sin separadores: ya no van una debajo de otra */
 </style>
 </head>
 <body>
@@ -147,11 +161,18 @@
         <p class="nodo-lead">Cómo se conecta este bot con WhatsApp, Telegram, Meta y Google Sheets.</p>
       </div>
     </div>
-    <div id="waCard" style="margin-top:20px"></div>
+    <div class="tabs" id="cTabs">
+      <button class="tab" data-c="whatsapp"><img src="../assets/apps/whatsapp.png" alt=""/><span>WhatsApp</span></button>
+      <button class="tab" data-c="telegram"><img src="../assets/apps/telegram.png" alt=""/><span>Telegram</span></button>
+      <button class="tab" data-c="meta"><img src="../assets/apps/meta.png" alt=""/><span>Meta</span></button>
+      <button class="tab" data-c="sheets"><img src="../assets/apps/sheets.png" alt=""/><span>Google Sheets</span></button>
+      <button class="tab" data-c="avanzado" id="cTabAv"><span>Avanzado</span></button>
+    </div>
+    <div id="waCard"></div>
     <div id="tgCard"></div>
     <!-- (31-oct) Lo que era Ajustes → Conexiones: Meta, Google Sheets y uso de Supabase (ajustes-partes.js) -->
-    <div id="ajxCard" style="margin-top:34px;padding-top:28px;border-top:1px solid var(--border)"></div>
-    <div id="archCard" style="margin-top:28px"></div>
+    <div id="ajxCard"></div>
+    <div id="archCard"></div>
   </div>
 </div>
 
@@ -170,6 +191,13 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   const shell=await mountShell({ active:"canales" });
   st.channelId=shell.channelId;
+  // Pestaña de entrada: la que pide el enlace (?tab=meta, ?tab=sheets…), Google Sheets si volvemos del login de
+  // Google, o WhatsApp. «Avanzado» = uso de Supabase (solo el dueño) + dar de baja el bot.
+  { const qp=new URLSearchParams(location.search), pedida=qp.get("tab");
+    $("cTabAv").insertAdjacentHTML("afterbegin", icon("wrench"));
+    document.querySelectorAll("#cTabs .tab").forEach(b=> b.onclick=()=>abrirTab(b.dataset.c));
+    abrirTab(qp.has("gs") ? "sheets" : (["whatsapp","telegram","meta","sheets","avanzado"].includes(pedida) ? pedida : "whatsapp"));
+    if(pedida){ qp.delete("tab"); const q=qp.toString(); history.replaceState(null,"",location.pathname+(q?"?"+q:"")); } }
   shell.onChannel(id=>{ clearInterval(st.pairTimer); st.channelId=id; load(); });  // el sondeo de vinculación es del bot ANTERIOR: sin cortarlo, daba «Telegram vinculado» en el nuevo
   // Al salir por SPA, el sondeo de vinculación de Telegram no queda colgado (seguía llamando a
   // channel-config cada 2 s y pintando una página que ya no existe).
@@ -206,6 +234,10 @@ async function load(){
   if(!$("waCard")) return;
   renderWA(); renderTG(); renderArchivo();
   montarAjustes($("ajxCard"),"conexiones",forChannel);
+}
+function abrirTab(t){
+  const w=document.querySelector(".nodo-wrap"); if(w) w.dataset.ctab=t;
+  document.querySelectorAll("#cTabs .tab").forEach(x=>x.classList.toggle("active",x.dataset.c===t));
 }
 function badge(on){ return on?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'; }
 function ph(on,hint){ return on?'•••••••• guardado':hint; }
