@@ -571,7 +571,7 @@ async function copiarAOtros(btn, p, a, otros) {
   pinta();
 }
 async function eliminarAngulo(p, a) {
-  if (!(await confirmDialog({ title: "Eliminar ángulo", message: `Se borra «${a.nombre}» en ${paisNom(paisDe(p))} con su saludo y sus mensajes de remarketing. Sus ${a.ad_ids.length} anuncio${a.ad_ids.length === 1 ? "" : "s"} siguen llegando al producto, con el saludo general.`, confirmText: "Eliminar", danger: true }))) return;
+  if (!(await confirmDialog({ title: "Eliminar ángulo", message: `Se borra «${a.nombre}» en ${paisNom(paisDe(p))} con su saludo y sus mensajes de remarketing.${a.ad_ids.length ? ` ${a.ad_ids.length === 1 ? "Su anuncio sigue" : `Sus ${a.ad_ids.length} anuncios siguen`} llegando al producto, con el saludo general.` : ""}`, confirmText: "Eliminar", danger: true }))) return;
   try {
     // Los anuncios se quedan en el banco: siguen llevando al producto.
     const r = await patchProductConfig(p.id, (cfg) => { cfg.ad_bank = [...new Set([...(Array.isArray(cfg.ad_bank) ? cfg.ad_bank.map(String) : []), ...a.ad_ids])]; });
