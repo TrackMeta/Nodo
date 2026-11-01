@@ -1,4 +1,4 @@
-// Estilos de las ventanas flotantes de ajustes (Ajustes de pagos, y las de Pedidos → ⋯). Archivo aparte (25-oct):
+// Estilos de las ventanas flotantes de ajustes (Ajustes de pagos, y las de Pedidos → Ajustes). Archivo aparte (25-oct):
 // si una página importa un módulo y el navegador tiene guardada una versión vieja sin ese export, la página entera
 // queda en blanco; con un archivo propio y nuevo eso no puede pasar.
 const CSS = `

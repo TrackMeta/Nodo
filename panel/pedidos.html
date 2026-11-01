@@ -31,6 +31,9 @@
   .kb.vacio{display:block}
   .kb{display:grid;grid-template-columns:repeat(var(--kcols,4),minmax(200px,1fr));gap:14px;overflow-x:auto;padding-bottom:14px;align-items:start}
   .kb.vacio{display:block}
+  /* (1-nov, Rodrigo: «no me gustan los 3 puntos») Rótulos es su propio botón y los ajustes de la sección cuelgan de
+     «⚙ Ajustes ▾» en vez de un «⋯» que no decía qué había adentro. */
+  #masBtn .caret{margin-left:-2px}
   .masw{position:relative}
   .masmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:40;min-width:210px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.25);padding:6px;display:none}
   .masmenu.show{display:block}
@@ -185,11 +188,9 @@
           <button class="nodo-btn primary" id="exportBtn" title="Exportar los pedidos por enviar al Excel de carga masiva del courier"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exportar <svg class="caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
           <div class="expmenu" id="exportMenu"></div>
         </div>
-        <div class="masw"><button class="nodo-btn" id="masBtn" title="Más" aria-label="Más"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+        <button class="nodo-btn" id="rotBtn" title="Imprimir varias etiquetas de una vez (elige cuáles)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Rótulos</button>
+        <div class="masw"><button class="nodo-btn" id="masBtn" type="button" title="Ajustes de pagos y avisos de pedido" aria-label="Ajustes"></button>
           <div class="masmenu" id="masMenu">
-            <button class="mi" id="rotBtn" title="Imprimir varias etiquetas de una vez (elige cuáles)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Imprimir rótulos</button>
-            <div style="height:1px;background:var(--border);margin:5px 4px"></div>
-            <div style="font-size:10.5px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;padding:4px 10px 2px">Pagos y avisos</div>
             <button class="mi" data-ajp="adelantos" type="button"></button>
             <button class="mi" data-ajp="logistica" type="button"></button>
             <button class="mi" data-ajp="avisos" type="button"></button>
@@ -318,6 +319,7 @@ async function abrirAjustesPedidosLazy(sec){
 }
 function wireMas(){
   const b=$("masBtn"), m=$("masMenu"); if(!b||!m) return;
+  b.innerHTML=`${icon("config")} Ajustes <svg class="caret" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
   b.onclick=(e)=>{ e.stopPropagation(); m.classList.toggle("show"); };
   document.addEventListener("click",(e)=>{ const mm=$("masMenu"); if(mm && !e.target.closest(".masw")) mm.classList.remove("show"); });
   const v=$("vistaSel"); if(v) v.addEventListener("change",(e)=>{ st.vista=e.target.value||"all"; render(); });
@@ -337,7 +339,7 @@ async function boot(){
   shell.onChannel(id=>{ st.channelId=id; st.vista="all"; load(); wireRealtime(); });
   $("q").oninput=(e)=>{ st.q=norm(e.target.value.trim()); render(); };
   $("exportBtn").onclick=(ev)=>{ ev.stopPropagation(); toggleExportMenu(); };
-  $("rotBtn").onclick=()=>{ const m=$("masMenu"); if(m) m.classList.remove("show"); abrirImprimirRotulos(); };
+  $("rotBtn").onclick=()=>abrirImprimirRotulos();
   wireMas();
   // Enlaces que antes iban a «Pagos y avisos» (pagos.html) llegan con ?ajustes=adelantos|logistica|avisos.
   { const aj=new URLSearchParams(location.search).get("ajustes"); if(aj) abrirAjustesPedidosLazy(aj); }
