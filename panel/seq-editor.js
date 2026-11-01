@@ -196,7 +196,7 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
         const freq = compite ? freqControlHtml(v, share) : "";
         card.innerHTML=`
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:${compite?'8px':'9px'}">
-            <input class="in se-vname" style="flex:1;min-width:90px;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+vi)))}"/>
+            <input class="in se-vname" style="flex:1;min-width:90px;font-weight:700;height:32px;padding:0 10px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+vi)))}"/>
             <div class="sw ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
             <button class="iconbtn se-vdel" title="Eliminar versión">${icon("trash")}</button>
           </div>
@@ -463,8 +463,8 @@ export function mountStepsEditor(el, opts){
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="width:24px;height:24px;border-radius:50%;background:var(--surface-2);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--muted);flex:none">${i+1}</span>
         <span style="font-size:12.5px;color:var(--muted)">Espera</span>
-        <input class="in se-num" type="number" min="1" value="${val}" style="width:70px;height:34px"/>
-        <select class="sel se-unit" style="height:34px">${UNITS.map(([v,l])=>`<option value="${v}" ${v===u?"selected":""}>${l}</option>`).join("")}</select>
+        <input class="in se-num" type="number" min="1" value="${val}" style="width:70px;height:34px;padding:0 10px"/>
+        <select class="sel se-unit" style="height:34px;padding:0 10px">${UNITS.map(([v,l])=>`<option value="${v}" ${v===u?"selected":""}>${l}</option>`).join("")}</select>
         <span style="font-size:12.5px;color:var(--muted)">desde el paso anterior</span>
         <span style="flex:1"></span>
         <button class="iconbtn se-del" title="Quitar toque" style="flex:none">${icon("trash")}</button>
@@ -489,7 +489,7 @@ export function mountStepsEditor(el, opts){
         </div>
       </div>` : ``}
       ${actions.enabled?`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Acción</div>
-        <select class="sel se-act" style="width:100%;height:36px">
+        <select class="sel se-act" style="width:100%;height:36px;padding:0 12px">
           <option value="mensaje" data-desc="Texto, fotos o archivos · dentro de las 24 h" ${mode==="mensaje"?"selected":""}>Enviar un mensaje</option>
           <option value="plantilla" data-desc="Para escribirle pasadas las 24 h" ${mode==="plantilla"?"selected":""}>Enviar una plantilla</option>
           <option value="flow" data-desc="Arranca uno de tus flujos" ${mode==="flow"?"selected":""}>Iniciar un flujo</option>
@@ -507,12 +507,12 @@ export function mountStepsEditor(el, opts){
       if(m==="flow"){
         ofer.style.display="none"; if(paso.oferta) delete paso.oferta;
         delete paso.mensaje; delete paso.template_name; delete paso.variantes; delete paso.bubbles; delete paso.rotacion;
-        actBody.innerHTML=`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Flujo a iniciar</div><select class="sel se-fs" style="width:100%;height:36px"><option value="">— elige —</option>${(actions.flows||[]).map(f=>`<option value="${f.id}" ${paso.flow_id===f.id?"selected":""}>${esc(f.nombre)}${f.role?" · "+esc(f.role):""}${f.estado&&f.estado!=="activo"?" — en borrador, no arranca":""}</option>`).join("")}</select>${(actions.flows||[]).some(f=>f.id===paso.flow_id&&f.estado&&f.estado!=="activo")?`<div style="font-size:11.5px;color:var(--amber);margin-top:7px;font-weight:600">Ese flujo está en borrador: el motor no lo arranca, así que este toque se salta. Publícalo en Flujos.</div>`:""}</div>`;
+        actBody.innerHTML=`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Flujo a iniciar</div><select class="sel se-fs" style="width:100%;height:36px;padding:0 12px"><option value="">— elige —</option>${(actions.flows||[]).map(f=>`<option value="${f.id}" ${paso.flow_id===f.id?"selected":""}>${esc(f.nombre)}${f.role?" · "+esc(f.role):""}${f.estado&&f.estado!=="activo"?" — en borrador, no arranca":""}</option>`).join("")}</select>${(actions.flows||[]).some(f=>f.id===paso.flow_id&&f.estado&&f.estado!=="activo")?`<div style="font-size:11.5px;color:var(--amber);margin-top:7px;font-weight:600">Ese flujo está en borrador: el motor no lo arranca, así que este toque se salta. Publícalo en Flujos.</div>`:""}</div>`;
         actBody.querySelector(".se-fs").onchange=(e)=>paso.flow_id=e.target.value||undefined;
       } else if(m==="plantilla"){
         ofer.style.display="block"; oferta(ofer,paso);
         delete paso.mensaje; delete paso.flow_id; delete paso.variantes; delete paso.bubbles; delete paso.rotacion;
-        actBody.innerHTML=`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Plantilla</div><select class="sel se-ts" style="width:100%;height:36px"><option value="">— elige —</option>${(actions.templates||[]).map(t=>`<option value="${esc(t.name)}" data-lang="${esc(t.language)}" ${paso.template_name===t.name?"selected":""}>${esc(t.name)} (${esc(t.language)})</option>`).join("")}</select>
+        actBody.innerHTML=`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Plantilla</div><select class="sel se-ts" style="width:100%;height:36px;padding:0 12px"><option value="">— elige —</option>${(actions.templates||[]).map(t=>`<option value="${esc(t.name)}" data-lang="${esc(t.language)}" ${paso.template_name===t.name?"selected":""}>${esc(t.name)} (${esc(t.language)})</option>`).join("")}</select>
           ${(actions.templates||[]).length?`<div style="font-size:12px;color:var(--muted);margin:9px 0 5px">Variables (una por línea)</div><textarea class="in se-pta" style="width:100%;min-height:60px">${esc((paso.template_params||[]).join("\n"))}</textarea>`:`<div style="font-size:11.5px;color:var(--amber);margin-top:8px">No hay plantillas activas.</div>`}</div>`;
         // Texto real de la plantilla y cuántos huecos {{n}} tiene: sin esto el operador escribía
         // las variables (posicionales) a ciegas → desfase = Meta 132000 o el dato en el hueco equivocado.
