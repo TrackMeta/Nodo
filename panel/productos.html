@@ -4376,7 +4376,7 @@ function renderComposer(){
   if(st.act.tab && !angs.some(a=>a.slug===st.act.tab)) st.act.tab="";
   const tab=st.act.tab;
   const tabVars=()=> cfg.variantes.map((v,i)=>({v,i})).filter(({v})=> tab? (v.angulo===tab) : !v.angulo);
-  if(!tabVars().length){ const nv=newVariant(0); if(tab) nv.angulo=tab;   // la primera de su pestaña: «Versión A» cfg.variantes.push(nv); }
+  if(!tabVars().length){ const nv=newVariant(0); if(tab) nv.angulo=tab; cfg.variantes.push(nv); }   // la primera de su pestaña: «Versión A»
   const angActivo = tab? angs.find(a=>a.slug===tab) : null;
   const angIdx = tab? angs.findIndex(a=>a.slug===tab) : -1;
 
