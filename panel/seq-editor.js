@@ -446,7 +446,7 @@ export function mountStepsEditor(el, opts){
             : `Ojo con tu <b>tope de frecuencia</b> (${durTxt(topeSeg)}): si el cliente ya recibió otro
                mensaje automático hace poco —otra secuencia, una campaña—, este toque no saldrá
                <b>${aLa(paso.umbral_silencio_seg)}</b>, sino cuando se cumpla el tope.`}
-          <span style="color:var(--muted)">Se cambia en Productos → el producto → Reenganche.</span>
+          <span style="color:var(--muted)">Se cambia en Productos → el producto → Secuencias.</span>
         </div>
       </div>` : ``}
       ${actions.enabled?`<div style="margin-top:11px"><div style="font-size:12px;color:var(--muted);margin-bottom:5px">Acción</div>

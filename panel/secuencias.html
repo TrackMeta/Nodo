@@ -143,9 +143,9 @@ const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
 // [valor, nombre, explicación larga (ya no se pinta), subtítulo corto del selector]
 const SEGMENTOS=[
   ["general","Todos los interesados (general)","Cualquiera que mostró interés en un producto. Es la red de seguridad para quien no calce en un segmento específico."],
-  ["solo_inicio","Solo curiosos","Escribieron la palabra clave y no volvieron a interactuar (no dejaron ningún dato). Un reenganche suave para reavivarlos."],
+  ["solo_inicio","Solo curiosos","Escribieron la palabra clave y no volvieron a interactuar (no dejaron ningún dato). Un toque suave para reavivarlos."],
   ["interactuo","Interesados activos","Conversaron o dejaron algún dato (talla, ciudad…) pero no llegaron a dejar un pedido. Ya sabes qué les interesó, ve al grano."],
-  ["caliente","Caliente (4+ mensajes)","El más enganchado: escribió 4+ mensajes y no compró. Va después de 'Interesados activos' — reenganche más directo y con urgencia."],
+  ["caliente","Caliente (4+ mensajes)","El más enganchado: escribió 4+ mensajes y no compró. Va después de 'Interesados activos' — mensajes más directos y con urgencia."],
   ["provincia_sin_adelanto","Provincia · dejó sus datos, sin adelanto","Pedidos de provincia esperando el adelanto: dieron nombre, DNI, dirección y agencia, pero no pagaron. Súper caliente."],
 ];
 const segLabel=(v)=>(SEGMENTOS.find(s=>s[0]===v)||SEGMENTOS[0])[1];
@@ -265,7 +265,7 @@ function renderCards(){
   if(Fbar) list=Fbar.filter(list);
   const box=$("cards");
   if(!st.seqs.length){
-    box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></div><h3>Aún no hay secuencias</h3><p>Crea tu primera secuencia de reenganche para recuperar clientes que dejaron de responder.</p></div>`;
+    box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg></div><h3>Aún no hay secuencias</h3><p>Crea tu primera secuencia para recuperar clientes que dejaron de responder.</p></div>`;
     return;
   }
   box.innerHTML="";

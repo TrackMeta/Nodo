@@ -144,7 +144,7 @@ function estadoCelda(p, a) {
   if (!nAds) return { tono: "no", txt: "Sin anuncios", ic: "dot" };
   if (!String(a.gancho_ia || "").trim()) falta.push("gancho");
   if (!saludoPropio(p.id, a.slug)) falta.push("saludo");
-  if (rem.total && rem.propios < rem.total) falta.push(`reenganche ${rem.propios} de ${rem.total}`);
+  if (rem.total && rem.propios < rem.total) falta.push(`secuencias ${rem.propios} de ${rem.total}`);
   return falta.length ? { tono: "wa", txt: "Falta " + falta.join(", "), ic: "alert" } : { tono: "ok", txt: "Completo", ic: "check" };
 }
 // Precios escritos a mano en un texto (para avisar antes de copiar a otro país).
@@ -163,7 +163,7 @@ function ir(vista) { S.vista = vista; S.trabajo = null; S.trabajoRem = null; pin
 
 function pintaMapa() {
   const fams = familias();
-  let h = `<div class="amx"><div class="amx-intro">${icon("compass")}<div><b>Ángulos</b><p>Cada fila es una idea con la que anuncias tu producto; cada columna, un país. Toca una casilla para ver y editar todo lo de ese ángulo en ese país: sus anuncios, su gancho, su saludo, su reenganche y cómo le va (últimos ${DIAS} días).</p></div></div>`;
+  let h = `<div class="amx"><div class="amx-intro">${icon("compass")}<div><b>Ángulos</b><p>Cada fila es una idea con la que anuncias tu producto; cada columna, un país. Toca una casilla para ver y editar todo lo de ese ángulo en ese país: sus anuncios, su gancho, su saludo, sus secuencias y cómo le va (últimos ${DIAS} días).</p></div></div>`;
   if (!fams.length) h += `<div class="amx-empty">Todavía no tienes productos principales. Crea uno en el Catálogo.</div>`;
   for (const ms of fams) {
     const p0 = ms[0];
@@ -208,7 +208,7 @@ function pintaFicha(pid, slug) {
       <p>${esc(p.nombre)} · <b>${esc(paisNom(pais))}</b></p></div>
       ${otros.length && a ? `<div class="amx-paises">${fam.map((m) => { const tiene = !!angDe(m.id, slug); return `<button class="amx-pais ${String(m.id) === String(pid) ? "on" : ""}" ${tiene ? `data-ir="${esc(m.id)}"` : "disabled title=\"Este ángulo no existe en ese país\""}>${esc(paisNom(paisDe(m)))}</button>`; }).join("")}</div>` : ""}
     </div>`;
-  if (a) h += `<div class="amx-chips">${chip(a.ad_ids.length, `Anuncios ${a.ad_ids.length}`)}${chip(String(a.gancho_ia || "").trim(), "Gancho")}${chip(saludoPropio(pid, slug), "Saludo propio")}${rem.total ? chip(rem.propios === rem.total, `Reenganche ${rem.propios}/${rem.total}`) : ""}</div>`;
+  if (a) h += `<div class="amx-chips">${chip(a.ad_ids.length, `Anuncios ${a.ad_ids.length}`)}${chip(String(a.gancho_ia || "").trim(), "Gancho")}${chip(saludoPropio(pid, slug), "Saludo propio")}${rem.total ? chip(rem.propios === rem.total, `Secuencias ${rem.propios}/${rem.total}`) : ""}</div>`;
   // 1) Cómo le va
   h += `<div class="amx-card"><h3>${icon("rendimiento")} Cómo le va <span>· últimos ${DIAS} días · en ${esc(S.cur)}</span></h3>
     <div class="amx-kpi"><div><b>${plata(x.g)}</b><span>Gasto en anuncios</span></div><div><b>${x.c}</b><span>Conversaciones</span></div><div><b>${x.v}</b><span>Ventas</span></div>
@@ -227,7 +227,7 @@ function pintaFicha(pid, slug) {
       <div class="amx-acts"><button class="amx-btn ia" id="amxGanG">Guardar</button></div></div>`;
     h += `<div class="amx-card" id="amxSal"></div><div class="amx-card" id="amxRem"></div>`;
     if (otros.length) h += `<div class="amx-card"><h3>${icon("copy")} Copiar a otros países</h3>
-      <p class="amx-help">Lleva el nombre, el gancho, el saludo y el reenganche de este ángulo a ${otros.map((m) => esc(paisNom(paisDe(m)))).join(" y ")}. Reemplaza lo que ese ángulo tenga allá. Los anuncios y los precios no se copian.</p>
+      <p class="amx-help">Lleva el nombre, el gancho, el saludo y las secuencias de este ángulo a ${otros.map((m) => esc(paisNom(paisDe(m)))).join(" y ")}. Reemplaza lo que ese ángulo tenga allá. Los anuncios y los precios no se copian.</p>
       <div class="amx-acts"><button class="amx-btn" id="amxCopiar">${icon("copy")} Copiar a ${otros.length === 1 ? esc(paisNom(paisDe(otros[0]))) : "los otros países"}</button></div></div>`;
     h += `<div class="amx-acts" style="justify-content:flex-start;margin-top:4px"><button class="amx-link dang" id="amxDel">${icon("trash")} Eliminar este ángulo en ${esc(paisNom(pais))}</button></div>`;
   }
@@ -443,14 +443,14 @@ function pintaRem(p, a) {
   const seqs = seqsDe(p);
   const full = `<button class="amx-link" data-full>${icon("edit")} Abrir en el producto (esperas y descuentos)</button>`;
   if (!seqs.length) {
-    box.innerHTML = `<h3>${icon("secuencias")} Reenganche</h3><p class="amx-help">Este producto no tiene secuencia de reenganche.</p><div class="amx-acts" style="justify-content:flex-start">${full}</div>`;
+    box.innerHTML = `<h3>${icon("secuencias")} Secuencias</h3><p class="amx-help">Este producto no tiene secuencias.</p><div class="amx-acts" style="justify-content:flex-start">${full}</div>`;
     box.querySelector("[data-full]").onclick = () => S.ctx.abrirRemarketing(p.id);
     return;
   }
   const clave = `${p.id}|${a.slug}`;
   if (!S.trabajoRem || S.trabajoRem.clave !== clave) S.trabajoRem = { clave, pasos: Object.fromEntries(seqs.map(({ seq }) => [seq.id, clon(seq.pasos)])) };
   const T = S.trabajoRem;
-  let h = `<h3>${icon("secuencias")} Reenganche de este ángulo</h3><p class="amx-help">A quien llegó por este ángulo y no compró. «Propio» = un mensaje que retoma este anuncio; «general» = el mismo para todos.</p>`;
+  let h = `<h3>${icon("secuencias")} Secuencias de este ángulo</h3><p class="amx-help">A quien llegó por este ángulo y no compró. «Propio» = un mensaje que retoma este anuncio; «general» = el mismo para todos.</p>`;
   for (const { seg, seq } of seqs) {
     if (seqs.length > 1) h += `<div class="amx-sub">${esc(SEG[seg] || seg)} <span>· ${esc(seq.nombre || "")}</span></div>`;
     T.pasos[seq.id].forEach((paso, i) => {
@@ -466,7 +466,7 @@ function pintaRem(p, a) {
       }
     });
   }
-  h += `<div class="amx-acts">${full}<button class="amx-btn pri" data-grem>Guardar reenganche</button></div>`;
+  h += `<div class="amx-acts">${full}<button class="amx-btn pri" data-grem>Guardar secuencias</button></div>`;
   box.innerHTML = h;
   const pasoDe = (k) => { const [id, i] = k.split(":"); return T.pasos[id][+i]; };
   box.querySelectorAll(".amx-step[data-k]").forEach((st) => montaEditor(st, pasoDe(st.dataset.k), p, a.slug));
@@ -491,7 +491,7 @@ function pintaRem(p, a) {
       const antes = seq.pasos; seq.pasos = pasos;
       if (await guardarSeq(seq, e.currentTarget)) n++; else { seq.pasos = antes; ok = false; }
     }
-    if (ok) { S.trabajoRem = null; toast(n ? "Reenganche guardado" : "No había cambios"); pinta(); }   // toda la ficha: también las etiquetas de arriba
+    if (ok) { S.trabajoRem = null; toast(n ? "Secuencias guardadas" : "No había cambios"); pinta(); }   // toda la ficha: también las etiquetas de arriba
   };
 }
 // Un paso del formato viejo (bubbles/mensaje sueltos) pasa a variantes sin cambiar lo que manda: la general primero.
@@ -506,7 +506,7 @@ async function guardarSeq(seq, btn) {
   if (btn) btn.disabled = true;
   const { error } = await supa.from("sequences").update({ pasos: seq.pasos }).eq("id", seq.id);
   if (btn) btn.disabled = false;
-  if (error) { toast("No se pudo guardar el reenganche: " + error.message, true); return false; }
+  if (error) { toast("No se pudo guardar la secuencia: " + error.message, true); return false; }
   S.fotoSeq[seq.id] = fotoVariantes(seq.pasos);
   return true;
 }
@@ -536,7 +536,7 @@ async function crearEnPais(pid, slug) {
   if (!p || !src) return;
   try { await insertaAngulo(p, angDe(src.id, slug)); await copiaAngulo(src, p, slug); }
   catch (e) { toast(e.message || "No se pudo crear", true); pinta(); return; }
-  toast(`Ángulo creado en ${paisNom(paisDe(p))} con el saludo y el reenganche de ${paisNom(paisDe(src))}: revisa los precios escritos`);
+  toast(`Ángulo creado en ${paisNom(paisDe(p))} con el saludo y las secuencias de ${paisNom(paisDe(src))}: revisa los precios escritos`);
   ir({ tipo: "ficha", pid: p.id, slug });
 }
 // Copia gancho, saludo y remarketing del ángulo `slug` de `src` a `dst` (que ya tiene el ángulo). Devuelve qué copió.
@@ -564,7 +564,7 @@ async function copiaAngulo(src, dst, slug) {
       pd.variantes = pd.variantes.filter((v) => v.angulo !== slug).concat(own.map((v) => ({ ...clon(v), id: uid(), rev: 1 })));
       pd.rotacion = true; cambio = true; res.toques++;
     });
-    if (cambio && !(await guardarSeq(ds))) throw new Error("no se pudo copiar el reenganche");
+    if (cambio && !(await guardarSeq(ds))) throw new Error("no se pudieron copiar las secuencias");
   }
   return res;
 }
@@ -572,7 +572,7 @@ async function copiarAOtros(btn, p, a, otros) {
   const conPrecio = [...textos(propiasDe(S.saludo[p.id]?.config?.variantes, a.slug)), ...seqsDe(p).flatMap(({ seq }) => seq.pasos.flatMap((ps) => textos(propiasDe(ps.variantes, a.slug))))].filter((t) => RE_PRECIO.test(t));
   const ok = await confirmDialog({
     title: `Copiar «${a.nombre}»`,
-    messageHtml: `Se copia a <b>${esc(otros.map((m) => paisNom(paisDe(m))).join(" y "))}</b>: nombre, gancho, saludo y reenganche de este ángulo, reemplazando lo que tenga allá. Los anuncios no se copian.` +
+    messageHtml: `Se copia a <b>${esc(otros.map((m) => paisNom(paisDe(m))).join(" y "))}</b>: nombre, gancho, saludo y secuencias de este ángulo, reemplazando lo que tenga allá. Los anuncios no se copian.` +
       (conPrecio.length ? `<br><br>⚠️ ${conPrecio.length === 1 ? "Un mensaje nombra" : conPrecio.length + " mensajes nombran"} un precio escrito a mano («${esc(conPrecio[0].match(RE_PRECIO)[0])}»): después de copiar, cámbialo a la moneda de cada país.` : ""),
     confirmText: "Copiar",
   });
@@ -587,7 +587,7 @@ async function copiarAOtros(btn, p, a, otros) {
   pinta();
 }
 async function eliminarAngulo(p, a) {
-  if (!(await confirmDialog({ title: "Eliminar ángulo", message: `Se borra «${a.nombre}» en ${paisNom(paisDe(p))} con su saludo y sus mensajes de reenganche.${a.ad_ids.length ? ` ${a.ad_ids.length === 1 ? "Su anuncio sigue" : `Sus ${a.ad_ids.length} anuncios siguen`} llegando al producto, con el saludo general.` : ""}`, confirmText: "Eliminar", danger: true }))) return;
+  if (!(await confirmDialog({ title: "Eliminar ángulo", message: `Se borra «${a.nombre}» en ${paisNom(paisDe(p))} con su saludo y sus mensajes de secuencias.${a.ad_ids.length ? ` ${a.ad_ids.length === 1 ? "Su anuncio sigue" : `Sus ${a.ad_ids.length} anuncios siguen`} llegando al producto, con el saludo general.` : ""}`, confirmText: "Eliminar", danger: true }))) return;
   try {
     // Los anuncios se quedan en el banco: siguen llevando al producto.
     const r = await patchProductConfig(p.id, (cfg) => { cfg.ad_bank = [...new Set([...(Array.isArray(cfg.ad_bank) ? cfg.ad_bank.map(String) : []), ...a.ad_ids])]; });

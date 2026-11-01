@@ -1702,10 +1702,10 @@ function renderContactPanel(){
     // 🔕 Fuera del remarketing: la marca existía (Contactos, Directo) pero acá no se veía
     // y el operador podía meterlo en un seguimiento o mandarle una promoción. La pone el
     // cliente al pedir baja o el operador a mano (botón de abajo), por eso no dice quién.
-    + (contact.no_remarketing ? ' <span style="color:var(--amber)" title="No recibe secuencias ni reenganche. El bot le sigue contestando si escribe.">'+icon("bell")+' Sin remarketing</span>' : '');
+    + (contact.no_remarketing ? ' <span style="color:var(--amber)" title="No recibe secuencias. El bot le sigue contestando si escribe.">'+icon("bell")+' Sin remarketing</span>' : '');
   // Sacar/devolver al remarketing sin ir a Contactos (va en «Automatizaciones activas»). Pausar
   // el bot solo lo FRENA (sigue en el paso donde iba); esto lo SACA: sus secuencias se cancelan.
-  const remkBtn = isTest ? "" : `<button type="button" class="cx-remk${contact.no_remarketing?" on":""}" id="pRemk" title="${contact.no_remarketing?"Vuelve a recibir sus secuencias, desde el primer paso":"No recibirá más toques de secuencias ni reenganche"}">${icon("bell")} ${contact.no_remarketing?"Volver al remarketing":"Sacar del remarketing"}</button>`;
+  const remkBtn = isTest ? "" : `<button type="button" class="cx-remk${contact.no_remarketing?" on":""}" id="pRemk" title="${contact.no_remarketing?"Vuelve a recibir sus secuencias, desde el primer paso":"No recibirá más toques de secuencias"}">${icon("bell")} ${contact.no_remarketing?"Volver al remarketing":"Sacar del remarketing"}</button>`;
   const sysRows = isTest ? "" : `
     <div class="kv"><span class="k">País</span><span class="v">${prefixLook(contact.wa_id, COUNTRY_BY_PREFIX, "—")}</span></div>
     <div class="kv"><span class="k">Hora local</span><span class="v">${localTime(contact.wa_id)}</span></div>
@@ -1801,7 +1801,7 @@ function renderContactPanel(){
   if(remk) remk.onclick=async()=>{
     const val=!contact.no_remarketing, quien=contact.nombre||"Este contacto", n=subsA.length;
     if(!await confirmDialog(val
-      ? {title:"Sacar del remarketing", message:`${quien} no recibirá más toques de secuencias ni reenganche${n?` (tiene ${n===1?"1 secuencia":n+" secuencias"} en curso)`:""}. El bot le sigue contestando si escribe. Si lo vuelves a incluir, sus secuencias arrancan desde el primer paso.`, confirmText:"Sacar"}
+      ? {title:"Sacar del remarketing", message:`${quien} no recibirá más toques de secuencias${n?` (tiene ${n===1?"1 secuencia":n+" secuencias"} en curso)`:""}. El bot le sigue contestando si escribe. Si lo vuelves a incluir, sus secuencias arrancan desde el primer paso.`, confirmText:"Sacar"}
       : {title:"Volver al remarketing", message:`${quien} vuelve a recibir sus secuencias, desde el primer paso.`, confirmText:"Volver a incluir"})) return;
     remk.disabled=true;
     const { error }=await supa.from("contacts").update({ no_remarketing:val }).eq("id",contact.id);

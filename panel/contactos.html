@@ -734,7 +734,7 @@ async function bulk(act){
   }
   if(act==="nomk"){
     const mode=await askChoice({ title:`Remarketing · ${ids.length} contacto(s)`, options:[
-      { value:"off", label:"Excluir del remarketing", desc:"No recibirán secuencias ni reenganche." },
+      { value:"off", label:"Excluir del remarketing", desc:"No recibirán secuencias." },
       { value:"on",  label:"Volver a incluir",        desc:"Vuelven a recibir remarketing." },
     ] });
     if(!mode) return;

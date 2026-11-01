@@ -169,7 +169,7 @@ export function renderConfigMicroapp(host, st, opts = {}) {
         <div class="ma-row"><span class="ma-lbl">Duración</span><select class="ma-in md" id="maPrueH">${[24, 48, 72, 168].map((h) => `<option value="${h}" ${(Number(p.horas) || 24) === h ? "selected" : ""}>${h === 24 ? "24 horas" : h === 168 ? "7 días" : h / 24 + " días"}</option>`).join("")}</select></div>
         <div class="ma-row"><span class="ma-lbl">Dónde se ofrece</span>Solo en el remarketing, a los que no compraron</div>
         <div class="ma-row"><span class="ma-lbl">Al terminar</span>${plantillaSel("maPrueTpl", p.plantilla_fin, "prueba_terminada")}</div>
-        <div class="ma-note">Una prueba por persona. También pide el correo. El mensaje que la ofrece va en un paso del <b>Reenganche</b>: marca ese paso con «🎁 Ofrece la prueba gratis».</div>
+        <div class="ma-note">Una prueba por persona. También pide el correo. El mensaje que la ofrece va en un paso de las <b>Secuencias</b>: marca ese paso con «🎁 Ofrece la prueba gratis».</div>
       </div>
     </div>
 
