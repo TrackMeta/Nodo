@@ -368,22 +368,25 @@ function pintaSaludo(p, a) {
   if (!propias.length) {
     const gen = generalesDe(vs)[0];
     const deOtro = famDeProd(p.id).filter((m) => String(m.id) !== String(p.id) && propiasDe(S.saludo[m.id]?.config?.variantes, a.slug).length);
-    // (1-nov, Rodrigo: «saludo es muy grande») La vista de WhatsApp del general medía ~2000 px: va plegada y, al abrirla,
-    // al costado (en la pantalla ancha) con alto máximo, en vez de debajo con todo el ancho vacío.
-    const nGen = (gen?.bubbles || []).length;
+    // (1-nov, Rodrigo) Ordenado en dos columnas: a la izquierda qué le llega hoy (los mensajes del saludo general, en
+    // orden) y qué hacer; a la derecha cómo se ve en WhatsApp. Antes la vista iba debajo y medía ~2000 px.
+    const gb = gen?.bubbles || [];
+    const fila = (b, i) => { const t = String(b.text || b.caption || "").replace(/\s+/g, " ").trim(); const k = b.media_kind;
+      return `<li><span class="amx-mn">${i + 1}</span>${b.media_url ? `<span class="amx-mk">${icon(k === "video" ? "video" : k === "audio" ? "mic" : k === "document" ? "file" : "image")} ${k === "video" ? "Video" : k === "audio" ? "Audio" : k === "document" ? "Archivo" : "Imagen"}</span>` : ""}<span class="amx-mt">${esc(t || (b.media_url ? "" : "(vacío)"))}</span></li>`; };
     box.innerHTML = `<h3>${icon("message")} Saludo</h3>
-      <div class="amx-salg${S.verPrev && gen ? " con-vista" : ""}"><div>
+      <div class="amx-salg${gen ? " con-vista" : ""}"><div class="amx-salizq">
         <div class="amx-warnrow">${icon("alert")} Usa el saludo general: no retoma la idea de este anuncio.</div>
-        <div class="amx-acts" style="justify-content:flex-start">${gen ? `<button class="amx-btn pri" data-desde="gen">${icon("plus")} Crear desde el general</button>` : `<button class="amx-btn pri" data-desde="vacio">${icon("plus")} Escribir uno</button>`}
-          ${deOtro.map((m) => `<button class="amx-btn" data-desde="${esc(m.id)}">${icon("copy")} Copiar el de ${esc(paisNom(paisDe(m)))}</button>`).join("")}</div>
-        <div class="amx-acts" style="justify-content:flex-start;gap:16px">${gen ? `<button class="amx-link" data-vista>${icon("eye")} <span class="amx-vt"></span> <small>· ${nGen} mensaje${nGen === 1 ? "" : "s"}</small></button>` : ""}${editor}</div>
+        ${gen ? `<div class="amx-sub">Hoy le llegan estos ${gb.length} mensaje${gb.length === 1 ? "" : "s"}</div><ol class="amx-msgs">${gb.map(fila).join("")}</ol>
+        <p class="amx-help" style="margin-top:10px">«Crear desde el general» los copia para este ángulo; después cambia el primero para que retome la idea del anuncio.</p>` : ""}
+        <div class="amx-acts" style="justify-content:flex-start;margin-top:12px">${gen ? `<button class="amx-btn pri" data-desde="gen">${icon("plus")} Crear desde el general</button>` : `<button class="amx-btn pri" data-desde="vacio">${icon("plus")} Escribir uno</button>`}
+          ${deOtro.map((m) => `<button class="amx-btn" data-desde="${esc(m.id)}">${icon("copy")} Copiar el de ${esc(paisNom(paisDe(m)))}</button>`).join("")}${editor}</div>
       </div>${gen ? `<div class="amx-prevbox">${vistaWa(gen)}</div>` : ""}</div>`;
     box.querySelectorAll("[data-desde]").forEach((b) => (b.onclick = () => crearSaludo(p, a, b.dataset.desde)));
   } else {
     box.innerHTML = `<h3>${icon("message")} Saludo de este ángulo</h3>
-      ${propias.map((v, i) => `<div class="amx-var amx-salg${S.verPrev ? " con-vista" : ""}" data-vi="${i}"><div>${propias.length > 1 ? `<div class="amx-sub" style="margin-top:0">${esc(v.nombre || "Versión " + (i + 1))} <span>· el bot las rota</span></div>` : ""}${burbujasHtml(v, "s" + i)}</div>
+      ${propias.map((v, i) => `<div class="amx-var amx-salg con-vista" data-vi="${i}"><div>${propias.length > 1 ? `<div class="amx-sub" style="margin-top:0">${esc(v.nombre || "Versión " + (i + 1))} <span>· el bot las rota</span></div>` : ""}${burbujasHtml(v, "s" + i)}</div>
         <div class="amx-prevbox amx-prev">${vistaWa(v)}</div></div>`).join("")}
-      <div class="amx-acts"><button class="amx-link" data-vista style="margin-right:auto">${icon("eye")} <span class="amx-vt"></span></button><button class="amx-link" data-quitar>${icon("x")} Volver al general</button>${editor}<button class="amx-btn pri" data-guardar>Guardar saludo</button></div>`;
+      <div class="amx-acts"><button class="amx-link" data-quitar>${icon("x")} Volver al general</button>${editor}<button class="amx-btn pri" data-guardar>Guardar saludo</button></div>`;
     box.querySelectorAll("textarea").forEach((t) => (t.oninput = () => { const i = +t.dataset.k.slice(1), v = clon(propias[i]); leeBurbujas(box, t.dataset.k, v); const pv = box.querySelector(`[data-vi="${i}"] .amx-prev`); if (pv) pv.innerHTML = vistaWa(v); }));
     box.querySelector("[data-guardar]").onclick = async (e) => {
       propias.forEach((v, i) => leeBurbujas(box, "s" + i, v));
@@ -399,10 +402,6 @@ function pintaSaludo(p, a) {
     };
   }
   box.querySelector("[data-full]").onclick = () => S.ctx.abrirSaludo(p.id, a.slug);
-  // Ver/ocultar la vista previa sin volver a pintar (no se pierde lo que estés escribiendo); queda igual al volver.
-  const vt = () => box.querySelectorAll(".amx-vt").forEach((x) => (x.textContent = S.verPrev ? "Ocultar cómo llega" : (propias.length ? "Ver cómo le llega" : "Ver el saludo general")));
-  vt();
-  box.querySelectorAll("[data-vista]").forEach((b) => (b.onclick = () => { S.verPrev = !S.verPrev; box.querySelectorAll(".amx-salg").forEach((g) => g.classList.toggle("con-vista", S.verPrev)); vt(); }));
   seqBrand(S.ctx.channelId).then((b) => { if (b && b.nombre !== _marca.nombre) { _marca = b; if (S.vista.tipo === "ficha") pintaSaludo(p, a); } }).catch(() => {});
 }
 async function crearSaludo(p, a, desde) {
@@ -696,7 +695,13 @@ function cargaCss() {
   .amx-salg.con-vista{grid-template-columns:minmax(0,1fr) 300px}
   .amx-salg.con-vista>.amx-prevbox{display:block}
   @media(max-width:760px){.amx-salg.con-vista{grid-template-columns:1fr}}
-  .amx-prevbox{max-height:460px;overflow:auto;border-radius:14px}
+  .amx-prevbox{max-height:520px;overflow:auto;border-radius:14px}
+  .amx-msgs{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .amx-msgs li{display:flex;align-items:center;gap:9px;border:1px solid var(--border);border-radius:10px;padding:8px 10px;background:var(--surface-2);min-width:0}
+  .amx-mn{flex:none;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--brand-bg);color:var(--brand)}
+  .amx-mk{flex:none;display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;color:var(--muted)}
+  .amx-mk svg{width:13px;height:13px}
+  .amx-mt{flex:1;min-width:0;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .amx-link small{font-weight:400;color:var(--muted);font-size:12px}
   .amx-link:focus{outline:none}.amx-link:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
   .amx-media{font-size:12px;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
