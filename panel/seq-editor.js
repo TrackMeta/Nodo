@@ -137,9 +137,16 @@ export function waScreenHtml({ title, logoUrl, emoji, bubblesHtml, empty }={}){
 }
 
 // Sólo las burbujas del paso (extrae la 1ª variante activa). Se envuelve con waScreenHtml.
-function previewHtml(paso){
-  const vs=(Array.isArray(paso?.variantes)?paso.variantes:[]).filter(v=>v.activo!==false && v.bubbles && v.bubbles.length);
-  const v=vs[0]||(paso&&paso.variantes&&paso.variantes[0]);
+// Con ángulos, la de la pestaña elegida (si ese ángulo no tiene propio, la de Todos: es lo que le llega).
+function previewHtml(paso, angulos=[]){
+  let todas=(Array.isArray(paso?.variantes)?paso.variantes:[]);
+  if(angulos.length){
+    const known=new Set(angulos.map(a=>a.slug)), tab=tabDe.get(paso) ?? "";
+    const de=(t)=>todas.filter(v=> t==="" ? (!v.angulo || !known.has(v.angulo)) : v.angulo===t);
+    todas = de(tab).length ? de(tab) : de("");
+  }
+  const vs=todas.filter(v=>v.activo!==false && v.bubbles && v.bubbles.length);
+  const v=vs[0]||todas[0];
   return waBubbles((v&&v.bubbles)||[], sample);
 }
 
@@ -153,7 +160,11 @@ function previewHtml(paso){
 export function mountMensajeEditor(box, paso, { channelId, angulos = [], soloAngulo = "", grupo = null } = {}){
   hazComposer({ channelId, angulos: (angulos||[]).filter(a=>a&&a.slug), soloAngulo, grupo })(box, paso);
 }
+// La pestaña elegida en cada paso. Va aparte (no dentro del paso) para que no se guarde en la base.
+const tabDe = new WeakMap();
+export const pestanaDe = (paso) => tabDe.get(paso) ?? "";
 function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
+  const enTabDe=(t,v)=>{ const known=new Set(angulos.map(a=>a.slug)); return t==="" ? (!v.angulo || !known.has(v.angulo)) : v.angulo===t; };
   // El grupo que se edita (null = todos, como en Secuencias): "" = las generales, "slug" = las de ese ángulo.
   const solo = grupo != null ? String(grupo) : (soloAngulo ? String(soloAngulo) : null);
   function composer(box, paso){
@@ -163,23 +174,33 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
     }
     delete paso.mensaje; delete paso.bubbles;
     if(paso.rotacion===undefined) paso.rotacion=false;
-    const rot=solo!=null ? true : (paso.rotacion===true && paso.variantes.length>0);
-    const hasAng=angulos.length>0 && solo==null;
+    // (1-nov, Rodrigo: «de saludo me gusta ese selector») Con ángulos, cada toque se edita por PESTAÑAS como el saludo
+    // del producto: «Todos · Dolor · …», una a la vez. Reemplaza «El mismo para todos / Según el anuncio», los grupos
+    // apilados («Respaldo general») y el «Mover a». El motor elige igual: la del ángulo del cliente; si no hay, la de Todos.
+    const tabs = solo==null && angulos.length>0;
+    const rot=solo!=null || tabs ? true : (paso.rotacion===true && paso.variantes.length>0);
+    const known=new Set(angulos.map(a=>a.slug));
+    const tab = tabs ? (tabDe.get(paso) ?? "") : null;
+    // «Todos» = las versiones sin ángulo (y las de un ángulo que ya no existe, que el motor trata igual).
+    const enTab=(v)=> tab==="" ? (!v.angulo || !known.has(v.angulo)) : v.angulo===tab;
+    const tabBtn=(on)=>`font-size:12px;padding:5px 12px;border-radius:999px;cursor:pointer;font-weight:${on?'700':'600'};border:${on?'none':'0.5px solid var(--border)'};background:${on?'var(--ia1,#8b5cf6)':'transparent'};color:${on?'#fff':'var(--muted)'}`;
     if(solo!=null){ box.innerHTML=`<div class="se-varlist"></div>`; }
     else box.innerHTML=`
       <div style="border:1px solid var(--border);border-radius:11px;background:var(--surface-2);padding:11px 12px;margin-top:10px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
           <span style="flex:1;min-width:135px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px">${icon("message")} Mensaje del paso</span>
-          ${hasAng?`<div style="display:inline-flex;border:0.5px solid var(--border);border-radius:999px;padding:3px;gap:2px">
-            <button class="se-mode" data-mode="todos" style="font-size:11.5px;padding:5px 11px;border-radius:999px;border:none;cursor:pointer;font-weight:600;background:${!rot?'var(--ia1,#8b5cf6)':'transparent'};color:${!rot?'#fff':'var(--muted)'}">El mismo para todos</button>
-            <button class="se-mode" data-mode="angulo" style="font-size:11.5px;padding:5px 11px;border-radius:999px;border:none;cursor:pointer;font-weight:600;background:${rot?'var(--ia1,#8b5cf6)':'transparent'};color:${rot?'#fff':'var(--muted)'}">Según el anuncio</button>
-          </div>`:`<span style="font-size:11.5px;color:var(--muted);font-weight:600">Varias versiones</span><div class="sw ${rot?'on':''}" data-rot title="Enviar una versión distinta cada vez"></div>`}
+          ${tabs?``:`<span style="font-size:11.5px;color:var(--muted);font-weight:600">Varias versiones</span><div class="sw ${rot?'on':''}" data-rot title="Enviar una versión distinta cada vez"></div>`}
         </div>
-        <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${rot?(hasAng?"Cada versión responde a un ángulo del anuncio; el cliente recibe la del ángulo por el que vino. Deja una en <b>Respaldo general</b> para quien no calce en ninguno.":"El bot va alternando entre las versiones. Con 2+ puedes ajustar cuánto sale cada una."):"Un solo mensaje para todos los clientes de este público."}</div>
+        ${tabs?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+            <button type="button" class="se-tab" data-tab="" style="${tabBtn(tab==="")}">Todos</button>
+            ${angulos.map(a=>{ const tiene=paso.variantes.some(v=>v.angulo===a.slug); return `<button type="button" class="se-tab" data-tab="${esc(a.slug)}" style="${tabBtn(tab===a.slug)}" title="${tiene?"Tiene su propio mensaje":"Usa el mensaje de Todos"}">${esc(a.nombre||a.slug)}${tiene?"":` <span style="opacity:.6;font-weight:500">· usa Todos</span>`}</button>`; }).join("")}
+          </div>
+          <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${tab===""?"Lo reciben todos, salvo los que llegaron por un ángulo con su propio mensaje.":"Lo reciben solo los que llegaron por los anuncios de este ángulo."}</div>`
+        :`<div style="font-size:11px;color:var(--faint);margin-bottom:8px">${rot?"El bot va alternando entre las versiones. Con 2+ puedes ajustar cuánto sale cada una.":"Un solo mensaje para todos los clientes de este público."}</div>`}
         <div class="se-varlist"></div>
-        ${rot&&!hasAng?`<button class="btn" data-addvar style="height:30px;padding:0 10px;font-size:12px;margin-top:10px">+ Agregar versión</button>`:``}
+        ${rot&&!tabs?`<button class="btn" data-addvar style="height:30px;padding:0 10px;font-size:12px;margin-top:10px">+ Agregar versión</button>`:``}
       </div>`;
-    box.querySelectorAll(".se-mode").forEach(b=> b.onclick=()=>{ const ang=(b.dataset.mode==="angulo"); paso.rotacion=ang; if(!ang && paso.variantes[0]) delete paso.variantes[0].angulo; composer(box,paso); });
+    box.querySelectorAll(".se-tab").forEach(b=> b.onclick=()=>{ tabDe.set(paso, b.dataset.tab); composer(box,paso); box.dispatchEvent(new Event("click",{bubbles:true})); });
     const rtog=box.querySelector("[data-rot]"); if(rtog) rtog.onclick=()=>{ paso.rotacion=!rot; composer(box,paso); };
     const av=box.querySelector("[data-addvar]"); if(av) av.onclick=()=>{ paso.variantes.push(newVariant(paso.variantes.length)); composer(box,paso); };
     const vl=box.querySelector(".se-varlist");
@@ -201,19 +222,12 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
             <button class="iconbtn se-vdel" title="Eliminar versión">${icon("trash")}</button>
           </div>
           ${compite?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">${freq}</div>`:``}
-          ${hasAng?`<div style="display:flex;align-items:center;gap:7px;margin:2px 0 9px">
-            <span style="font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap">Mover a</span>
-            <select class="in se-vangulo" style="height:32px;padding:0 10px;flex:1;max-width:240px;font-size:12px">
-              <option value="">Respaldo general</option>
-              ${angulos.map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>${esc(a.nombre||a.slug)}</option>`).join("")}
-            </select></div>`:``}
           <div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
         card.querySelector(".se-vname").oninput=(e)=>v.nombre=e.target.value;
         { const sn=card.querySelector(".se-share-num"); if(sn){ sn.onchange=()=>{ const others=(groupActiveVs||[]).filter(x=>x!==v); const os=others.reduce((a,x)=>a+Math.max(0,Number(x.peso??1)),0); v.peso=pesoFromShare(os, sn.value); composer(box,paso); }; } }
         card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; composer(box,paso); };
         card.querySelector(".se-vdel").onclick=async()=>{ if(solo==null && paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); composer(box,paso); };
-        { const ag=card.querySelector(".se-vangulo"); if(ag) ag.onchange=(e)=>{ v.angulo=e.target.value; composer(box,paso); }; }
       } else {
         card.innerHTML=`<div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
       }
@@ -228,57 +242,39 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
     }
 
     if(!rot){ vl.appendChild(renderCard(paso.variantes[0], 0, false, 1)); return; }
-    if(solo!=null){
-      // Solo las versiones de este grupo (las demás siguen en el paso, intactas).
-      const mias=paso.variantes.map((v,vi)=>({v,vi})).filter(x=>(x.v.angulo||"")===solo);
+    // Un grupo a la vez: la pestaña elegida, o el grupo fijo de quien lo usa (saludo del producto, ficha del ángulo).
+    const grupoVis = solo!=null ? solo : tab;
+    if(grupoVis!=null){
+      const mias=paso.variantes.map((v,vi)=>({v,vi})).filter(x=> solo!=null ? (x.v.angulo||"")===solo : enTab(x.v));
+      if(!mias.length && tabs && tab!==""){
+        // Ángulo sin mensaje propio: le llega el de Todos. Se crea copiando el de Todos para cambiarlo.
+        const nom=esc((angulos.find(a=>a.slug===tab)||{}).nombre||tab);
+        const w=document.createElement("div");
+        w.style.cssText="border:1px dashed var(--border);border-radius:10px;padding:14px;text-align:center;margin-top:4px";
+        w.innerHTML=`<div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Los que llegan por <b style="color:var(--text)">${nom}</b> reciben el mensaje de <b style="color:var(--text)">Todos</b>.</div>
+          <button class="btn" type="button" data-propio style="height:32px;padding:0 13px;font-size:12.5px">＋ Mensaje propio para ${nom}</button>`;
+        w.querySelector("[data-propio]").onclick=()=>{
+          const base=paso.variantes.find(v=>enTabDe("",v) && v.activo!==false) || paso.variantes.find(v=>enTabDe("",v));
+          const nv=newVariant(paso.variantes.length); nv.angulo=tab;
+          if(base && Array.isArray(base.bubbles) && base.bubbles.length) nv.bubbles=JSON.parse(JSON.stringify(base.bubbles));
+          paso.variantes.push(nv); composer(box,paso); box.dispatchEvent(new Event("input",{bubbles:true}));
+        };
+        vl.appendChild(w);
+        return;
+      }
       const act=mias.filter(x=>x.v.activo!==false), pesoG=act.reduce((s2,x)=>s2+Math.max(0,Number(x.v.peso??1)),0)||1;
       mias.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, act.length>1, pesoG, act.map(x=>x.v))));
       const add=document.createElement("button"); add.className="btn"; add.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin-top:9px;background:transparent;border:1px dashed var(--border)";
       add.textContent="＋ Otra versión (el bot las rota)";
-      add.onclick=()=>{ const nv=newVariant(paso.variantes.length); if(solo) nv.angulo=solo; paso.variantes.push(nv); composer(box,paso); };
+      add.onclick=()=>{ const nv=newVariant(paso.variantes.length); if(grupoVis) nv.angulo=grupoVis; paso.variantes.push(nv); paso.rotacion=true; composer(box,paso); };   // rotacion: el motor rota entre las versiones de un mismo grupo
       vl.appendChild(add);
       return;
     }
-
-    // ROTACIÓN: agrupar por ángulo. Cada ángulo compite por su cuenta (el filtro
-    // por ángulo del motor ocurre ANTES del sorteo por peso), así el peso solo
-    // importa entre versiones del MISMO grupo. Sin ángulos → un solo grupo (A/B).
+    // Sin ángulos: un solo grupo con todas las versiones (A/B), que el bot rota.
     const withIdx = paso.variantes.map((v,vi)=>({v,vi}));
-    let groups;
-    if(hasAng){
-      const order=[...angulos.map(a=>a.slug), ""]; // Respaldo general al final
-      const known=new Set(order);
-      groups=order.map(slug=>({ slug, items: withIdx.filter(x=>(x.v.angulo||"")===slug) }));
-      const orphans=withIdx.filter(x=> x.v.angulo && !known.has(x.v.angulo)); // ángulo borrado
-      if(orphans.length){ const gen=groups.find(g=>g.slug===""); gen.items.push(...orphans); }
-      groups=groups.filter(g=>g.items.length);
-    } else {
-      groups=[{ slug:"__all", items: withIdx }];
-    }
-    groups.forEach(g=>{
-      const activeInGroup=g.items.filter(x=>x.v.activo!==false);
-      const compite=activeInGroup.length>1;
-      const pesoG=activeInGroup.reduce((a,x)=>a+Math.max(0,Number(x.v.peso??1)),0)||1;
-      if(hasAng){
-        const ang=angulos.find(a=>a.slug===g.slug);
-        const titulo = g.slug==="" ? "Respaldo general" : (esc(ang?.nombre||g.slug));
-        const hintBase = g.slug==="" ? "Para clientes que no vinieron de un ángulo con versión propia." : "Para clientes que llegaron por este ángulo.";
-        const hintMas = compite ? " Rota entre estas versiones — ajusta cuánto sale cada una." : " Sale siempre a estos clientes.";
-        const gh=document.createElement("div");
-        gh.style.cssText="margin-top:15px";
-        gh.innerHTML=`<div style="font-size:12.5px;font-weight:800;letter-spacing:-.01em">${titulo}</div><div style="font-size:11px;color:var(--faint);margin-top:2px;line-height:1.45">${hintBase}${hintMas}</div>`;
-        vl.appendChild(gh);
-      }
-      const groupActiveVs=activeInGroup.map(x=>x.v);
-      g.items.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, compite, pesoG, groupActiveVs)));
-      if(hasAng){
-        const add=document.createElement("button");
-        add.className="btn"; add.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin-top:9px;background:transparent;border:1px dashed var(--border)";
-        add.textContent="＋ Otra versión aquí";
-        add.onclick=()=>{ const nv=newVariant(paso.variantes.length); if(g.slug!=="__all"&&g.slug!=="") nv.angulo=g.slug; paso.variantes.push(nv); composer(box,paso); };
-        vl.appendChild(add);
-      }
-    });
+    const activas=withIdx.filter(x=>x.v.activo!==false);
+    const pesoG=activas.reduce((a,x)=>a+Math.max(0,Number(x.v.peso??1)),0)||1;
+    withIdx.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, activas.length>1, pesoG, activas.map(x=>x.v))));
   }
 
   // 🖼️ Texto en la misma burbuja que la imagen (venía del saludo del producto, 2-oct): una burbuja de texto pegada a una
@@ -541,7 +537,7 @@ export function mountStepsEditor(el, opts){
           </div>`;
         composer(actBody.querySelector(".se-comp"), paso);
         const prev=actBody.querySelector(".se-prev");
-        const upd=()=>{ if(!prev) return; const b=_brandCache[channelId]||{}; prev.innerHTML=waScreenHtml({ title:b.nombre, logoUrl:b.logo_url, bubblesHtml:previewHtml(paso) }); };
+        const upd=()=>{ if(!prev) return; const b=_brandCache[channelId]||{}; prev.innerHTML=waScreenHtml({ title:b.nombre, logoUrl:b.logo_url, bubblesHtml:previewHtml(paso, angulos) }); };
         upd(); actBody.addEventListener("input", upd); actBody.addEventListener("click", ()=>setTimeout(upd,0));
         seqBrand(channelId).then(upd); // rellena nombre/logo real y repinta
       }

@@ -10,7 +10,7 @@
 // El motor elige igual que antes: variante del ángulo del cliente → si no hay, la general.
 // ═════════════════════════════════════════════════════════════════════════
 import { supa, icon, toast, confirmDialog, askText, patchProductConfig, pageAll, getChannel } from "./shell.js";
-import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, newVariant, mountMensajeEditor } from "./seq-editor.js?v=19";
+import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, newVariant, mountMensajeEditor } from "./seq-editor.js?v=20";
 import { limpiaBotones } from "./bubble-buttons.js";
 import { gastoAdsEn, llevarAMoneda } from "./cambio.js?v=2";
 import * as O from "./orders.js";
