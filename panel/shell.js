@@ -435,9 +435,10 @@ const NAV_GROUPS = [
     { id:"campos",      label:"Campos",               href:"campos.html",     icon:"campos" },
   ]},
   { key:"conf", sec:"Configuración", items:[
-    { id:"canales",     label:"Canales",              href:"canales.html",    icon:"canales" },
+    // (31-oct, Rodrigo) «Canales» pasó a llamarse Conexiones (WhatsApp, Telegram, Meta y Google Sheets) y Ajustes
+    // desapareció: lo suyo se repartió entre Conexiones y Negocio → «Nombre, país y moneda».
+    { id:"canales",     label:"Conexiones",           href:"canales.html",    icon:"link" },
     { id:"cuenta",      label:"Cuenta y equipo",      href:"cuenta.html",     icon:"users" },
-    { id:"config",      label:"Ajustes",              href:"config.html",     icon:"config" },
   ]},
 ];
 
@@ -1351,7 +1352,7 @@ export async function mountShell({ active } = {}) {
   // «Avanzado» solo si la cuenta lo tiene (ver avanzadoPermitido). Acá se usa lo último que
   // se supo, porque el menú se pinta antes de poder preguntar; se corrige abajo al saberlo.
   const _avAlPintar = avanzadoCache();
-  // (Diseño 2: «Configuración» —Canales, Cuenta y equipo, Ajustes— se toca una vez al mes: va al botón ⚙ del pie, no al menú)
+  // (Diseño 2: «Configuración» —Conexiones y Cuenta y equipo— se toca una vez al mes: va al botón ⚙ del pie, no al menú)
   const groupsHTML = NAV_GROUPS.filter((g) => g.sec && (g.key !== "avanzado" || _avAlPintar) && !(DS2 && g.key === "conf")).map(grupoHTML).join("");
   const _confG = NAV_GROUPS.find((g) => g.key === "conf");
   const confHTML = DS2 && _confG
@@ -2077,7 +2078,7 @@ export function factorAds(rows, cur, tasa) {
   if (!monedas.length || filas.some((m) => !m.account_currency)) return { factor: 1, aviso: "moneda sin confirmar" };
   if (monedas.every((m) => m === cur)) return { factor: 1, aviso: "" };
   if (monedas.length === 1 && monedas[0] === "USD" && cur !== "USD") {
-    return Number(tasa) > 0 ? { factor: Number(tasa), aviso: "" } : { factor: 1, aviso: "pon el valor del dólar en Ajustes" };
+    return Number(tasa) > 0 ? { factor: Number(tasa), aviso: "" } : { factor: 1, aviso: "falta el tipo de cambio del dólar" };
   }
   return { factor: 1, aviso: "moneda sin convertir" };
 }

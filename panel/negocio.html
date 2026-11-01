@@ -164,6 +164,7 @@
     <div class="tabs">
       <button class="tab active" data-t="conocimiento" id="tabCon"></button>
       <button class="tab" data-t="entrega" id="tabEnt"></button>
+      <button class="tab" data-t="datos" id="tabDatos"></button>
     </div>
     <div id="body"></div>
     <div id="fisLink" style="display:none;margin:18px 2px 0;font-size:12.5px;color:var(--muted)">¿Vas a vender productos físicos? <a href="#" style="color:var(--brand);text-decoration:none;font-weight:600">Configura la entrega y logística</a></div>
@@ -191,6 +192,7 @@ import { revisarNegocio, avisosHtml } from "./revisar-textos.js";
 import { TONOS, compileNegocio, fusionarNegocio } from "./negocio-texto.js";
 import { supa, mountShell, toast, icon, askText, guardUnsaved, markClean, markDirty, isDirty, confirmDialog, confirmDescartar, updateChannel, usuarioActual } from "./shell.js";
 import { cargarListas } from "./courier-export.js";
+import { montarAjustes, desmontarAjustes } from "./ajustes-partes.js?v=1";
 const $=(id)=>document.getElementById(id);
 const IC={ book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>' };
 const st={ channelId:null, tab:"conocimiento", channel:{}, form:{}, retraso:4, ent:null, listas:null };
@@ -200,8 +202,10 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   $("tabCon").innerHTML=IC.book+"<span>Conocimiento del negocio</span>";
   $("tabEnt").innerHTML=icon("truck")+"<span>Entrega y logística</span>";
+  // (31-oct) Lo que era Ajustes → Tu negocio: nombre y logo del bot, país, moneda de los reportes y tipo de cambio.
+  $("tabDatos").innerHTML=icon("globe")+"<span>Nombre, país y moneda</span>";
   // Cambiar de pestaña rehace el formulario desde el snapshot: si hay cambios sin guardar, se pregunta.
-  document.querySelectorAll(".tab").forEach(b=> b.onclick=async()=>{ if(st.tab===b.dataset.t) return; if(!await confirmDescartar()) return; st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
+  document.querySelectorAll(".tab").forEach(b=> b.onclick=async()=>{ if(st.tab===b.dataset.t) return; if(!await confirmDescartar()) return; marcaTab(b.dataset.t); render(); });
   const shell=await mountShell({ active:"negocio" });
   st.shell=shell;
   st.channelId=shell.channelId;
@@ -212,15 +216,20 @@ async function boot(){
   cargarListas().then(l=>{ st.listas=l; if(st.tab==="entrega" && !isDirty()) render(); });
   // 🔗 La campanita («Revisar preguntas» del negocio) abre acá con la tarjeta desplegada.
   try{ const qp=new URLSearchParams(location.search); if(qp.get("preguntas")==="1"){ st._abrirPreguntas=true; history.replaceState(null,"",location.pathname); } }catch(_){}
+  // Los enlaces viejos a Ajustes (y «La foto se cambia en…») llegan con ?tab=datos.
+  try{ if(new URLSearchParams(location.search).get("tab")==="datos"){ marcaTab("datos"); history.replaceState(null,"",location.pathname); } }catch(_){}
+  // Guardaste nombre o logo en «Nombre, país y moneda»: el encabezado de arriba se pone al día sin recargar.
+  window.addEventListener("nodo:marca",(e)=>{ const c=(st.shell&&st.shell.channels||[]).find(x=>x.id===st.channelId); if(c){ c.nombre=e.detail.nombre; c.logo_url=e.detail.logo_url; } st.channel.nombre=e.detail.nombre; pintaIdentidad(); });
   if(st.channelId) await load();
 }
-// (10-oct, Rodrigo) Arriba, la foto y el nombre del negocio (el del bot), como el Dashboard. La foto se cambia en Ajustes → Tu negocio.
+function marcaTab(t){ st.tab=t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t===t)); }
+// (10-oct, Rodrigo) Arriba, la foto y el nombre del negocio (el del bot), como el Dashboard. La foto se cambia en la pestaña «Nombre, país y moneda».
 function pintaIdentidad(){
   const c=(st.shell&&st.shell.channels||[]).find(x=>x.id===st.channelId)||{};
   const nf=(st.channel&&st.channel.negocio_form&&typeof st.channel.negocio_form==="object")?st.channel.negocio_form:{};
   const nom=String(nf.nombre||st.channel.nombre||c.nombre||"Negocio").trim();
   const n=$("negNombre"); if(n) n.textContent=nom;
-  const img=$("negLogo"); if(img){ if(c.logo_url){ img.src=c.logo_url; img.style.display=""; img.title="La foto se cambia en Ajustes → Tu negocio"; } else img.style.display="none"; }
+  const img=$("negLogo"); if(img){ if(c.logo_url){ img.src=c.logo_url; img.style.display=""; img.title="La foto se cambia en «Nombre, país y moneda»"; img.style.cursor="pointer"; img.onclick=async()=>{ if(st.tab==="datos"||!await confirmDescartar()) return; marcaTab("datos"); render(); }; } else img.style.display="none"; }
 }
 async function load(){
   // Anti-carrera al cambiar de bot: si la respuesta del bot ANTERIOR llegaba después, la
@@ -238,12 +247,12 @@ async function load(){
     if(gen!==st.gen) return;
     st.soloDigital = (ps||[]).length>0 && !(ps||[]).some(p=>p.tipo==="fisico");
   }catch(_){ st.soloDigital=false; }
-  { const te=$("tabEnt"); const bar=te&&te.parentElement;
+  { const te=$("tabEnt");
     if(te) te.style.display = st.soloDigital ? "none" : "";
-    if(bar && bar!==document.body) bar.style.display = st.soloDigital ? "none" : "";
+    // (31-oct) La barra ya no se esconde en un bot solo digital: queda «Nombre, país y moneda» al lado de Conocimiento.
     // (10-oct) Bot solo digital: la logística queda a un enlace, por si empieza a vender físico.
-    { const fl=$("fisLink"); if(fl){ fl.style.display=st.soloDigital?"":"none"; const a=fl.querySelector("a"); a.onclick=(e)=>{ e.preventDefault(); if(bar && bar!==document.body) bar.style.display=""; if(te){ te.style.display=""; te.click(); } fl.style.display="none"; window.scrollTo(0,0); }; } }
-    if(st.soloDigital && st.tab!=="conocimiento"){ st.tab="conocimiento"; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t==="conocimiento")); } }
+    { const fl=$("fisLink"); if(fl){ fl.style.display=st.soloDigital&&st.tab==="conocimiento"?"":"none"; const a=fl.querySelector("a"); a.onclick=(e)=>{ e.preventDefault(); if(te){ te.style.display=""; te.click(); } fl.style.display="none"; window.scrollTo(0,0); }; } }
+    if(st.soloDigital && st.tab==="entrega") marcaTab("conocimiento"); }
   markClean();
   render();
 }
@@ -274,8 +283,12 @@ async function mezclarConFresco(form, retraso){
 }
 function render(){
   const b=$("body");
-  if(st.tab==="conocimiento") renderConocimiento(b);
+  b.classList.remove("ajx");   // la pestaña de datos lo pone; las otras usan los estilos de esta página
+  if(st.tab!=="datos") desmontarAjustes();
+  if(st.tab==="datos") montarAjustes(b,"negocio",st.channelId);
+  else if(st.tab==="conocimiento") renderConocimiento(b);
   else renderEntregas(b);
+  { const fl=$("fisLink"); if(fl && st.tab!=="conocimiento") fl.style.display="none"; else if(fl && st.soloDigital) fl.style.display=""; }
   sincronizaFab();
 }
 
@@ -287,6 +300,7 @@ let _armObs=null;
 function sincronizaFab(){
   const fab=$("armFab"); if(!fab) return;
   if(_armObs){ _armObs.disconnect(); _armObs=null; }
+  if(st.tab==="datos"){ fab.style.display="none"; return; }   // «Armar con IA» arma el conocimiento, no el nombre ni el país
   const hero=document.querySelector(".armhero");
   if(!hero){ fab.style.display=""; return; }   // sin franja (form ya lleno) → flotante solo
   // El que scrollea es .nodo-page, no la ventana: con root nulo el observador

@@ -1674,7 +1674,7 @@ function origenLeadHtml(contact, adMeta){
     </div>` : "";
   const nota = !ref
     ? (m ? "Llegó antes del 5 de octubre de 2026, cuando Nodo aún no guardaba el título, el texto ni la imagen del anuncio."
-         : "Conecta tu cuenta publicitaria en Ajustes › Meta para ver el nombre del anuncio y su campaña.")
+         : "Conecta tu cuenta publicitaria en Conexiones › Meta para ver el nombre del anuncio y su campaña.")
     : "";
   return `
     <div class="ol-src"><span class="ol-src-ic">${icon("megaphone")}</span><div class="ol-src-tx"><div class="ol-src-t">Anuncio de Meta</div>${m?.campaign_name?`<div class="ol-src-s" title="${esc(m.campaign_name)}">Campaña: ${esc(m.campaign_name)}</div>`:`<div class="ol-src-s">Click a WhatsApp</div>`}</div></div>
@@ -2573,7 +2573,7 @@ async function updateWindow() {
       ? `Su ventana sin costo por el anuncio ya terminó (dura hasta ${FEP_DIAS} días desde la primera respuesta): Meta cobra cada mensaje que le mandes.`
       : `Llegó por un anuncio, pero no hay una respuesta tuya en sus primeras 24 h (hasta el ${hora(limiteResp)}), así que la ventana sin costo no se abrió: Meta cobra cada mensaje. Si le respondió otra app conectada al número (por ejemplo ChatLevel), puede que sí esté abierta.`);
   const cobraChip = (!fepOpen && !aTiempo && now >= COBRO_DESDE)
-    ? `<span class="win closed" title="${esc(porQueCobra)} El precio por mensaje se configura en Ajustes → Conexiones.">${icon("banknote")} Se cobra</span>`
+    ? `<span class="win closed" title="${esc(porQueCobra)} El precio por mensaje se configura en Conexiones.">${icon("banknote")} Se cobra</span>`
     : "";
   w.innerHTML = svcChip + fepChip + cobraChip;
   // ⚠ El candado mira SOLO la ventana de servicio (24h), y así debe quedarse.

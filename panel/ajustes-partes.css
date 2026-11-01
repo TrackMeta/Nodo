@@ -1,0 +1,138 @@
+/* Partes de lo que era Ajustes (nombre y logo, país y moneda, Meta, Google Sheets, uso de Supabase).
+   Las montan Negocio y Conexiones dentro de un .ajx, así sus reglas no tocan las de la página. Generado desde
+   config.html el 31-oct; desde ahora se edita acá. */
+  /* Partes apiladas dentro de una pestaña (Tu negocio = nombre y logo + país y moneda) */
+  .ajx .sec{margin-top:34px;padding-top:28px;border-top:1px solid var(--border)}
+  .ajx .sec:empty{display:none}
+  /* Lista de monedas (Tipo de cambio → Ver las demás monedas) */
+  .ajx .tclist{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}
+  .ajx .tclist th{text-align:left;font-weight:600;color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:6px 8px;border-bottom:1px solid var(--border)}
+  .ajx .tclist td{padding:7px 8px;border-bottom:1px solid var(--border);color:var(--text)}
+  .ajx .tclist .r{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .ajx .tclist .cod{color:var(--faint);font-size:11px;margin-left:4px}
+  .ajx .tclist tr.yo td{background:var(--brand-bg);font-weight:650}
+  /* Uso de Supabase (barra del dueño de la plataforma) */
+  .ajx .uso{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 20px;margin:0 0 20px}
+  .ajx .uso:empty{display:none}
+  .ajx .uso-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:5px}
+  .ajx .uso-hd h3{margin:0;font-size:15px;font-weight:700;letter-spacing:-.2px}
+  .ajx .uso-hd .tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--purple);background:rgba(139,92,246,.13);padding:3px 9px;border-radius:20px}
+  .ajx .uso-plan{margin-left:auto;display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px}
+  .ajx .uso-plan button{border:none;background:transparent;color:var(--muted);font-size:12px;font-weight:700;padding:5px 12px;border-radius:7px}
+  .ajx .uso-plan button.on{background:var(--brand);color:#fff}
+  .ajx .uso-sub{font-size:12px;color:var(--faint);margin:0 0 15px;line-height:1.55}
+  .ajx .uso-bars{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:640px){.ajx .uso-bars{grid-template-columns:1fr}}
+  .ajx .ubar .ub-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px}
+  .ajx .ubar .ub-l{font-size:13px;font-weight:600}
+  .ajx .ubar .ub-n{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .ajx .ubar .ub-track{height:10px;border-radius:6px;background:var(--surface-2);overflow:hidden}
+  .ajx .ubar .ub-fill{height:100%;border-radius:6px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+  .ajx .ubar .ub-fill.g{background:var(--green)} .ajx .ubar .ub-fill.a{background:var(--amber)} .ajx .ubar .ub-fill.r{background:var(--red)}
+  .ajx .ubar .ub-pct{font-size:11.5px;margin-top:6px;font-weight:700}
+  .ajx .uso-foot{font-size:11.5px;color:var(--faint);margin-top:15px;line-height:1.6;border-top:1px solid var(--border);padding-top:12px}
+  .ajx h2{font-size:18px;margin:0 0 4px;font-weight:700;letter-spacing:-.2px}
+  .ajx .sub{color:var(--muted);font-size:13.5px;margin:0 0 20px;line-height:1.55;max-width:640px}
+  .ajx .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:16px}
+  .ajx .card.on{border-color:var(--green)}
+  .ajx .chd{display:flex;align-items:center;gap:13px;margin-bottom:4px}
+  .ajx .chd .ico{width:46px;height:46px;border-radius:13px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
+  .ajx .chd .ico svg{width:22px;height:22px}
+  .ajx .chd .ico img{width:100%;height:100%;object-fit:cover}
+  .ajx .chd .nm{font-weight:700;font-size:16px;letter-spacing:-.1px}
+  .ajx .badge{font-size:10.5px;padding:3px 10px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
+  .ajx .badge.on{background:var(--green-bg);color:var(--green);border-color:transparent}
+  .ajx .badge.def{background:var(--brand-bg);color:var(--brand);border-color:transparent}
+  .ajx .desc{color:var(--muted);font-size:12.5px;margin:12px 0 4px;line-height:1.55}
+  .ajx label{display:block;font-size:11.5px;color:var(--muted);margin:14px 0 6px;font-weight:700}
+  .ajx .in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:11px 13px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .ajx .in:focus{border-color:var(--brand)}
+  .ajx .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+  .ajx .row>.f{flex:1;min-width:170px}
+  .ajx .acts{display:flex;gap:8px;margin-top:18px;align-items:center;flex-wrap:wrap}
+  .ajx .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600}
+  .ajx .btn.primary{background:var(--brand);border:none;color:#fff}
+  .ajx .btn.primary:hover{background:var(--brand-2)}
+  .ajx .btn.ghost{color:var(--muted)} .ajx .btn.danger{color:var(--red);border-color:transparent}
+  /* Google Sheets — pasos guiados */
+  /* ── Marca del bot ── dos columnas: lo que editas y cómo queda ── */
+  /* El contenedor de Ajustes son 740px fijos (.nodo-wrap max 820): las proporciones están
+     medidas para ESE ancho, no para el del navegador. La izquierda manda porque es donde se
+     edita; la previa solo tiene que caber. */
+  .ajx .brand-grid{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(238px,.68fr);gap:16px;align-items:start}
+  @media(max-width:900px){.ajx .brand-grid{grid-template-columns:1fr}}
+  .ajx .brand-grid .card{margin-bottom:0}
+  .ajx .fhelp{font-size:11.5px;color:var(--faint);margin:6px 0 0;line-height:1.5}
+  /* Zona de logo: se puede soltar el archivo encima o hacer clic */
+  .ajx .drop{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:14px;border-radius:14px;
+        border:1px dashed var(--border);background:var(--surface-2);cursor:pointer;transition:border-color .15s,background .15s}
+  .ajx .drop:hover{border-color:var(--brand);background:var(--surface)}
+  .ajx .drop.over{border-color:var(--brand);background:var(--brand-bg)}
+  .ajx .drop .thumb{width:60px;height:60px;border-radius:15px;object-fit:cover;background:var(--surface);border:1px solid var(--border);flex:none}
+  .ajx .drop .dt{font-size:13.5px;font-weight:650;color:var(--text)}
+  .ajx .drop .ds{font-size:11.5px;color:var(--faint);margin-top:3px;line-height:1.5}
+  .ajx .linkish{background:none;border:none;padding:0;color:var(--brand);font-size:12.5px;font-weight:600;cursor:pointer}
+  .ajx .linkish:hover{text-decoration:underline}
+  /* Vista previa: el sidebar y el selector, en pequeño */
+  .ajx .pv{background:var(--surface-2);border:1px solid var(--border);border-radius:14px;padding:14px;display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
+  /* (sin esto la columna crecía al ancho del nombre y «Soluciones Practicas» se salía del recuadro) */
+  .ajx .pv > div{min-width:0}
+  .ajx .pv-row{display:flex;align-items:center;gap:11px;min-width:0}
+  .ajx .pv-row img{width:36px;height:36px;border-radius:10px;object-fit:cover;background:var(--surface);border:1px solid var(--border);flex:none}
+  .ajx .pv-nm{font-weight:700;font-size:14px;letter-spacing:-.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ajx .pv-cap{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700}
+  .ajx .pv-sel{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 11px;min-width:0}
+  .ajx .pv-sel img{width:22px;height:22px;border-radius:6px;object-fit:cover;flex:none}
+  .ajx .pv-sel span{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* ── Apariencia ── opciones como tarjetas, no como botones estirados ── */
+  .ajx .opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .ajx .opt{position:relative;text-align:left;padding:12px 13px;border-radius:13px;border:1px solid var(--border);
+       background:var(--surface-2);cursor:pointer;transition:border-color .15s,background .15s,transform .12s}
+  .ajx .opt:hover{border-color:var(--brand);background:var(--surface);transform:translateY(-1px)}
+  .ajx .opt.on{border-color:var(--brand);background:var(--brand-bg)}
+  .ajx .opt b{display:block;font-size:13.5px;font-weight:650;color:var(--text);line-height:1.25}
+  .ajx .opt span{display:block;font-size:11.5px;color:var(--faint);margin-top:3px;line-height:1.45}
+  .ajx .opt .tick{position:absolute;top:10px;right:10px;width:16px;height:16px;color:var(--brand);opacity:0;transition:opacity .15s}
+  .ajx .opt.on .tick{opacity:1}
+  /* ── Selector de método (Google Sheets) ── no es navegación, es una elección: se ve
+     como un control segmentado y no como otra barra de pestañas encima de la de arriba ── */
+  .ajx .seg{display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px;gap:2px;margin-bottom:16px;max-width:100%;overflow:auto;scrollbar-width:none}
+  .ajx .seg::-webkit-scrollbar{display:none}
+  .ajx .seg button{border:none;background:transparent;color:var(--muted);font-size:13px;font-weight:650;
+              padding:7px 13px;border-radius:8px;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+  .ajx .seg button:hover{color:var(--text)}
+  .ajx .seg button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.18)}
+  .ajx .seg button .mut{font-weight:500;color:var(--faint);font-size:11.5px}
+  .ajx .seg button.on .mut{color:var(--muted)}
+  /* Las 3 pestañas que Nodo mantiene en la hoja, dichas como cosas y no como párrafo */
+  .ajx .tabpills{display:flex;gap:7px;flex-wrap:wrap;margin:9px 0 2px}
+  .ajx .tabpill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:650;color:var(--text);
+           background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:4px 11px}
+  .ajx .tabpill i{width:7px;height:7px;border-radius:50%;display:block}
+  .ajx .steps{counter-reset:s;margin:4px 0 8px}
+  .ajx .step{display:flex;gap:14px;padding:14px 0;border-bottom:1px solid var(--border)}
+  .ajx .step:last-child{border-bottom:none}
+  .ajx .step .num{counter-increment:s;width:28px;height:28px;flex:none;border-radius:50%;background:var(--brand-bg);color:var(--brand);font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center}
+  .ajx .step .num::before{content:counter(s)}
+  .ajx .step .st-b{flex:1;min-width:0}
+  .ajx .step .st-t{font-weight:700;font-size:14px;margin-bottom:3px}
+  .ajx .step .st-d{font-size:12.5px;color:var(--muted);line-height:1.55}
+  .ajx .copybox{display:flex;align-items:center;gap:8px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;margin-top:8px;font-size:12px;font-family:monospace;word-break:break-all}
+  .ajx .copybox button{margin-left:auto;flex:none;background:var(--brand-bg);color:var(--brand);border:none;border-radius:7px;padding:5px 10px;font-size:11.5px;font-weight:700}
+  /* Encabezado de tarjeta con subtítulo y estado a la derecha */
+  .ajx .chd .sub2{font-size:11.5px;color:var(--faint);margin-top:3px;font-family:monospace;letter-spacing:.02em}
+  .ajx .chd .badge{margin-left:auto;align-self:flex-start}
+  /* Guía plegada DENTRO de su propia tarjeta: los pasos viven al lado del campo
+     que hay que llenar, no en otra pantalla. Cerrada por defecto para que el que
+     ya sabe no tenga que pasar por encima de ella. */
+  .ajx .guia{border:1px solid var(--border);border-radius:12px;background:var(--surface-2);margin:14px 0 2px;overflow:hidden}
+  .ajx .guia>summary{list-style:none;cursor:pointer;padding:11px 14px;font-size:12.5px;font-weight:700;color:var(--muted);display:flex;align-items:center;gap:8px}
+  .ajx .guia>summary::-webkit-details-marker{display:none}
+  .ajx .guia>summary:hover{color:var(--text)}
+  .ajx .guia>summary::after{content:"";width:7px;height:7px;margin-left:auto;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px);transition:transform .2s}
+  .ajx .guia[open]>summary::after{transform:rotate(225deg) translateY(-2px)}
+  .ajx .guia .gb{padding:0 15px 10px}
+  .ajx .guia .step{padding:12px 0}
+  .ajx .hint{font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.6}
+  .ajx code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:1px 5px;color:var(--text)}
+  .ajx .sep{height:1px;background:var(--border);margin:20px 0 4px}

@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
-<title>Nodo · Canales</title>
+<title>Nodo · Conexiones</title>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="stylesheet" href="shell.css" />
 <style>
@@ -143,18 +143,21 @@
   <div class="nodo-wrap" style="--nodo-max:var(--nodo-form)">
     <div class="nodo-head">
       <div class="grow">
-        <h1 class="nodo-title">Canales</h1>
-        <p class="nodo-lead">Cómo se conecta este bot a WhatsApp y a Telegram.</p>
+        <h1 class="nodo-title">Conexiones</h1>
+        <p class="nodo-lead">Cómo se conecta este bot con WhatsApp, Telegram, Meta y Google Sheets.</p>
       </div>
     </div>
     <div id="waCard" style="margin-top:20px"></div>
     <div id="tgCard"></div>
-    <div id="archCard"></div>
+    <!-- (31-oct) Lo que era Ajustes → Conexiones: Meta, Google Sheets y uso de Supabase (ajustes-partes.js) -->
+    <div id="ajxCard" style="margin-top:34px;padding-top:28px;border-top:1px solid var(--border)"></div>
+    <div id="archCard" style="margin-top:28px"></div>
   </div>
 </div>
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, askChoice, confirmDialog, SUPABASE_URL, updateChannel, usuarioActual } from "./shell.js";
+import { montarAjustes, volverDeGoogle } from "./ajustes-partes.js?v=1";
 // Con la región fija (São Paulo, junto a la base): sin ella el bot corría en EE. UU. y cada
 // respuesta tardaba ~12 s más. Ver WEBHOOK_CALLBACK en channel-config.
 const WEBHOOK_URL = `${SUPABASE_URL}/functions/v1/whatsapp-webhook?forceFunctionRegion=sa-east-1`;
@@ -171,6 +174,8 @@ async function boot(){
   // Al salir por SPA, el sondeo de vinculación de Telegram no queda colgado (seguía llamando a
   // channel-config cada 2 s y pintando una página que ya no existe).
   shell.onLeave?.(()=>clearInterval(st.pairTimer));
+  // Regreso del login de Google (llega por la página vieja de Ajustes, que reenvía acá con ?gs=…).
+  if(st.channelId && new URLSearchParams(location.search).has("gs")) await volverDeGoogle(st.channelId);
   if(st.channelId) await load();
 }
 async function load(){
@@ -200,6 +205,7 @@ async function load(){
   // Function y esas no se pueden cancelar a ciegas (muchas escriben).
   if(!$("waCard")) return;
   renderWA(); renderTG(); renderArchivo();
+  montarAjustes($("ajxCard"),"conexiones",forChannel);
 }
 function badge(on){ return on?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'; }
 function ph(on,hint){ return on?'•••••••• guardado':hint; }
@@ -736,7 +742,7 @@ async function terminarWA(cid, pin){
 // conexión de WhatsApp, y un aviso rojo acá solo asustaría.
 // 📈 Ventas a Meta del MISMO viaje: si el bot todavía no tiene dataset, se le pide a su cuenta de WhatsApp Business y se
 // deja conectado (y salen las ventas de la última semana que no habían llegado). Si ya tenía uno, no se toca. Silencio si falla:
-// el motivo exacto lo muestra Ajustes → Conexiones, y no es un fallo de la conexión de WhatsApp.
+// el motivo exacto lo muestra la parte de Meta, más abajo, y no es un fallo de la conexión de WhatsApp.
 async function ventasMetaDelMismoToken(cid){
   try{
     const r=await callFn("channel-config",{ action:"ventas_meta_conectar", channel_id:cid });
@@ -755,14 +761,14 @@ async function adsDelMismoToken(cid){
     if(!cuentas.length) return "";
     // Con UNA cuenta no hay nada que elegir y se conecta sola. Con VARIAS no se elige por el
     // dueño: se le avisa que están ahí y él marca cuáles seguir.
-    if(cuentas.length>1) return `tu token también lee anuncios (${cuentas.length} cuentas): elige cuáles seguir en Ajustes → Conexiones`;
+    if(cuentas.length>1) return `tu token también lee anuncios (${cuentas.length} cuentas): elige cuáles seguir más abajo, en Meta`;
     const a=cuentas[0];
     // La MISMA cuenta publicitaria pegada a dos bots hace que CADA UNO muestre el gasto
     // entero (todo se lee por canal), o sea uno de los dos con un ROAS inflado. Un token
     // puede cubrir varios canales, así que esto pasaría solo. Si ya está en otro, no se
     // elige por el dueño: se le avisa.
     const { data:enOtro }=await supa.from("ad_accounts").select("channel_id").eq("account_id",a.account_id).limit(1);
-    if(enOtro&&enOtro.length) return `tu token también lee anuncios, pero esa cuenta ya está en otro bot: si también es de este, agrégala en Ajustes → Conexiones`;
+    if(enOtro&&enOtro.length) return `tu token también lee anuncios, pero esa cuenta ya está en otro bot: si también es de este, agrégala más abajo, en Meta`;
     const { error }=await supa.from("ad_accounts").upsert({ channel_id:cid, account_id:a.account_id, nombre:a.nombre||null },{ onConflict:"channel_id,account_id" });
     if(error) return "";
     return `y conecté tus anuncios (${a.nombre||a.account_id}): el gasto ya sale en Rendimiento`;

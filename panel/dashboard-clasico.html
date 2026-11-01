@@ -1081,7 +1081,7 @@ async function load(){
     brutaDesconocida?"—":money(bruta),
     brutaDesconocida?`no se puede calcular todavía · ${faltaTxt}`:brutaSub));
   K.push(kpi("megaphone","#f0a92b","Gasto en anuncios", money(gastoAds),
-    (hasAds ? `${pctAds}% de lo cobrado` : "conecta Meta en Ajustes") + (monedaAdsRara?" · "+avisoAds:"")));
+    (hasAds ? `${pctAds}% de lo cobrado` : "conecta Meta en Conexiones") + (monedaAdsRara?" · "+avisoAds:"")));
   // ROAS con tarjeta propia (antes solo vivía como cola del texto de "Gasto en
   // anuncios"). Es el número por el que se decide subir o bajar la inversión, así que
   // merece verse solo. Sin gasto cargado NO se inventa un número: se dice qué falta.
@@ -1142,7 +1142,7 @@ async function load(){
   if(tipo==="todo" && (gastoIa>0 || iaSinConvertir))
     K.push(kpi("robot","#a855f7","Tu IA",
       iaSinConvertir ? "$"+iaUsd.toFixed(2) : money(gastoIa),
-      iaSinConvertir ? "pon el valor del dólar en Ajustes para restarlo"
+      iaSinConvertir ? "falta el tipo de cambio para restarlo"
         : `$${iaUsd.toFixed(2)} de tu proveedor · ya restado de tu ganancia`));
   // La neta sale de la bruta: si la bruta no se puede calcular, la neta tampoco.
   K.push(kpi("wallet", brutaDesconocida?"#6d8ea0":neta<0?"#e2564a":"#22c079", "Ganancia neta",
@@ -1409,7 +1409,7 @@ function renderBand(b){
   if(!b.hasAds && !hasExtra && !hasIa){
     box.innerHTML=`
       <div class="pb-step"><span class="pb-l">Ganancia bruta</span><span class="pb-v ${b.brutaDesconocida?"":"green"}">${brutaTxt}</span>${brutaSub}</div>
-      <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="config.html?tab=conexiones">Ajustes → Conexiones</a> (o registra un gasto extra abajo) y aquí verás tu <b>ganancia NETA</b> después de todo.</div></div>`;
+      <div class="pb-cta"><div><b>¿Cuánto ganaste de verdad?</b><br>Conecta tus anuncios en <a href="canales.html">Conexiones</a> (o registra un gasto extra abajo) y aquí verás tu <b>ganancia NETA</b> después de todo.</div></div>`;
     return;
   }
   const netaCls = b.neta<0?"red":"green";
