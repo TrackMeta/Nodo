@@ -1875,7 +1875,10 @@ async function renderRemarketing(host){
   const b=host||$("tabBody");
   b.innerHTML=`<p class="hint" style="margin:0 0 14px">Cargando…</p>`;
   const [{ data:seqs, error }, ch, { data:angs }]=await Promise.all([
-    supa.from("sequences").select("id,nombre,activo,pasos").eq("channel_id",st.channelId).order("created_at",{ascending:false}),
+    // (1-nov) Con `modo`: sin él, «¿Cómo se envía?» mostraba siempre «Reenganche» aunque la secuencia fuera Goteo (la
+    // página Secuencias sí lo leía). Si la columna faltara (proyecto sin la 0064), se pide sin ella.
+    supa.from("sequences").select("id,nombre,activo,pasos,modo").eq("channel_id",st.channelId).order("created_at",{ascending:false})
+      .then(r=> r.error && /modo|column/.test(r.error.message) ? supa.from("sequences").select("id,nombre,activo,pasos").eq("channel_id",st.channelId).order("created_at",{ascending:false}) : r),
     getChannel(st.channelId),
     supa.from("angulos").select("nombre,slug").eq("product_id",st.prod.id).order("orden"),
   ]);
