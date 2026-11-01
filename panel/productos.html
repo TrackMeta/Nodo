@@ -226,23 +226,6 @@
   .pq-adv>summary .chev{width:16px;height:16px;color:var(--muted);transition:transform .2s;flex:none}
   .pq-adv[open]>summary .chev{transform:rotate(90deg)}
   .pq-adv>summary span{font-weight:400;color:var(--faint);font-size:12.5px}
-  /* Hub de Ángulos */
-  .hub-prod{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;margin-bottom:14px}
-  .hub-prod-hd{display:flex;align-items:center;gap:12px;margin-bottom:4px}
-  .hub-prod-em{flex:none;width:40px;height:40px;border-radius:11px;background:var(--surface-2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:21px}
-  .hub-prod-nm{font-weight:750;font-size:16px;letter-spacing:-.2px}
-  .hub-prod-sub{font-size:12px;color:var(--muted);margin-top:1px}
-  .hub-pais{color:var(--brand);font-weight:700}
-  .hub-paisnota{display:flex;gap:7px;align-items:flex-start;font-size:11.5px;color:var(--muted);line-height:1.5;background:var(--brand-bg);border-radius:9px;padding:7px 10px;margin:4px 0 2px}
-  .hub-paisnota svg{flex:none;margin-top:2px;color:var(--brand)}
-  .hub-count{flex:none;font-size:11.5px;font-weight:700;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:3px 11px}
-  .hub-ang{border:1px solid var(--border);border-radius:11px;padding:12px;margin-top:10px;background:var(--surface-2)}
-  .hub-ang.dup{border-color:var(--amber);box-shadow:inset 0 0 0 1px rgba(240,169,43,.3)}
-  .hub-warn{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:var(--amber);background:rgba(240,169,43,.08);border:1px solid rgba(240,169,43,.28);border-radius:10px;padding:10px 12px;line-height:1.5;margin-top:10px}
-  .hub-warn svg{width:15px;height:15px;flex:none;margin-top:1px}
-  .hub-empty-ads{font-size:11.5px;color:var(--faint);margin-top:8px}
-  .ad-chip2{display:inline-flex;align-items:center;gap:6px;background:var(--brand-bg);border:1px solid var(--brand-border);border-radius:20px;padding:3px 6px 3px 11px;font-size:12px;color:var(--brand-2)}
-  .ad-chip2.dup{background:rgba(240,169,43,.14);border-color:rgba(240,169,43,.4);color:var(--amber)}
   /* Campo "Gancho para la IA": destacado con el color/diseño de la sección IA */
   .ia-gancho{margin-top:9px;border:1px solid var(--ia-brd);border-radius:11px;padding:10px 11px;
     background:radial-gradient(130% 140% at 0% 0%,rgba(168,85,247,.12),transparent 58%),var(--surface)}
@@ -364,6 +347,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll, usuarioActual } from "./shell.js";
 import { mountFolders } from "./folder-bar.js";
+import { montarMapaAngulos } from "./angulos-mapa.js?v=1";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
@@ -465,216 +449,24 @@ function renderGvToggle(){
   el.innerHTML=seg("catalogo",icon("box"),"Catálogo")+seg("angulos",icon("compass"),"Ángulos");
   el.querySelectorAll("[data-gv]").forEach(b=> b.onclick=()=>{ if(st.gv===b.dataset.gv) return; st.gv=b.dataset.gv; renderGvToggle(); applyGvMode(); });
 }
+// Lo que el mapa de ángulos necesita de esta página: los productos, el país del bot y cómo abrir un producto en su
+// saludo (con la pestaña del ángulo elegida) o en su remarketing, para lo que la ficha no edita (imágenes, botones…).
+function ctxAngulos(){
+  const abrir=async(pid, sec)=>{ await openProduct(pid); if(st.prod && String(st.prod.id)===String(pid)) setTimeout(()=>accOpen(sec),60); };
+  return { channelId:st.channelId, list:st.list, paisBot:_paisBot, PAIS_INFO,
+    abrirSaludo:(pid,slug)=>{ st._angTab=slug||""; return abrir(pid,"activacion"); },
+    abrirRemarketing:(pid)=>abrir(pid,"remarketing") };
+}
 // Muestra el panel del modo activo (catálogo o hub de ángulos).
 function applyGvMode(){
   const cat=st.gv==="catalogo";
   ["pSearchWrap","claseSeg","folders","cards"].forEach(id=>{ const e=$(id); if(!e) return; e.style.display = cat ? (id==="pSearchWrap" ? (st.list.length?"":"none") : "") : "none"; });
   const hub=$("angHub"); if(hub) hub.style.display=cat?"none":"";
-  if(cat){ renderCards(); } else { if(st.hub) renderAngHub(); else loadAngHub(); }
+  if(cat){ renderCards(); } else { const h=$("angHub"); if(h) montarMapaAngulos(h, ctxAngulos()); }
 }
 
-// ── Hub de Ángulos: todos los productos principales + sus ángulos y anuncios en
-//    un solo lugar. Comparte la tabla `angulos` con el editor por-producto de
-//    "Cómo llegan" (mismos campos/slug/guardado), así no divergen. ──
-const HUB_WARN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
-async function loadAngHub(){
-  const host=$("angHub"); if(!host) return;
-  host.innerHTML=`<div class="empty">Cargando ángulos…</div>`;
-  const gen=(st.hubGen=(st.hubGen||0)+1);
-  const prods=(st.list||[]).filter(p=>p.clase!=="extra"&&p.clase!=="regalo");
-  let angs=[], angOk=true, adsMeta=[];
-  try{
-    const { data, error }=await supa.from("angulos").select("id,product_id,nombre,slug,ad_ids,gancho_ia,orden").eq("channel_id",st.channelId).order("orden");
-    if(error) throw error;
-    angs=(data||[]).map(a=>({...a, ad_ids:Array.isArray(a.ad_ids)?a.ad_ids.map(String):[]}));
-  }catch(_){ angOk=false; }
-  try{
-    const { data }=await pageAll((f,t)=>supa.from("ads_meta").select("ad_id,ad_name,campaign_name").eq("channel_id",st.channelId).order("campaign_name").order("ad_id").range(f,t));   // paginado: pasado 1000 faltaban anuncios
-    adsMeta=(data||[]).map(m=>({...m, ad_id:String(m.ad_id)}));
-  }catch(_){ adsMeta=[]; }
-  if(gen!==st.hubGen) return;
-  const byProd={}, orig={}, bank={};
-  prods.forEach(p=>{ byProd[p.id]=[]; });
-  angs.forEach(a=>{ (byProd[a.product_id]=byProd[a.product_id]||[]).push(a); });
-  prods.forEach(p=>{
-    orig[p.id]=(byProd[p.id]||[]).map(a=>a.id).filter(Boolean);
-    // El BANCO del producto = fuente de ruteo. Union de config.ad_bank + lo que ya
-    // esté en sus ángulos (por si se agregó por "Cómo llegan"), para no perder nada.
-    const fromCfg=Array.isArray(p.config&&p.config.ad_bank)?p.config.ad_bank.map(String):[];
-    const fromAng=(byProd[p.id]||[]).flatMap(a=>a.ad_ids||[]).map(String);
-    bank[p.id]=[...new Set([...fromCfg, ...fromAng])];
-  });
-  st.hub={ prods, byProd, bank, adsMeta, angOk, orig };
-  renderAngHub();
-}
-// Índice del ángulo (en byProd[pid]) que tiene ese anuncio, o -1 (sin ángulo).
-function hubAnguloDeAd(pid, adId){ return (st.hub.byProd[pid]||[]).findIndex(a=>(a.ad_ids||[]).includes(String(adId))); }
-// Asigna un anuncio a un ángulo (o -1 = sin ángulo): lo saca de todos y lo mete en el elegido.
-function hubAssign(pid, adId, angIdx){
-  adId=String(adId);
-  (st.hub.byProd[pid]||[]).forEach(a=>{ a.ad_ids=(a.ad_ids||[]).filter(id=>id!==adId); });
-  if(angIdx>=0){ const a=(st.hub.byProd[pid]||[])[angIdx]; if(a){ a.ad_ids=a.ad_ids||[]; if(!a.ad_ids.includes(adId)) a.ad_ids.push(adId); } }
-}
-// ¿Un anuncio de Meta "coincide" con un producto? Si su nombre o campaña menciona
-// el nombre del producto (o su 1ª palabra ≥4 letras). Normaliza (minúsculas/tildes).
-function hubNorm(s){ return String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,""); }
-function hubMatchAd(m, nombre){
-  const hay=hubNorm((m.ad_name||"")+" "+(m.campaign_name||""));
-  const n=hubNorm(nombre).trim(); if(!n) return false;
-  if(hay.includes(n)) return true;
-  const w=n.split(/\s+/).find(x=>x.length>=4);
-  return w?hay.includes(w):false;
-}
-// 🌎 (1-nov) Versiones por país: llevan el MISMO nombre, así que en el hub cada tarjeta dice su país, y un anuncio va
-// a la versión del país que nombra (si no nombra ninguno, a la del país del bot). Poner el anuncio de México en la
-// versión Perú cobraría en soles a los mexicanos.
-const hubFam=(p)=>String((p.config&&(p.config.familia||p.config.hermano_de))||p.id);
-const hubPais=(p)=>String((p.config&&p.config.pais)||_paisBot).toUpperCase();
-let _hubPaisRe=null;   // se arma al usarse: PAIS_INFO se declara más abajo
-function hubPaisDeAd(m){
-  _hubPaisRe ||= Object.entries(PAIS_INFO).map(([cd,[nm]])=>[cd,new RegExp("\\b"+hubNorm(nm).replace(/\./g,"\\.")+"\\b")]);
-  const hay=hubNorm((m.ad_name||"")+" "+(m.campaign_name||"")); const x=_hubPaisRe.find(([,re])=>re.test(hay)); return x?x[0]:null;
-}
-function renderAngHub(){
-  const host=$("angHub"); if(!host||!st.hub) return;
-  const { prods, byProd, bank, adsMeta, angOk }=st.hub;
-  const adName=(id)=>{ const m=adsMeta.find(x=>x.ad_id===String(id)); return m?(m.ad_name||m.ad_id):id; };
-  let html=`<div class="card" style="display:flex;gap:12px;align-items:flex-start;margin-bottom:16px">
-    <span style="font-size:26px;line-height:1">${icon("compass")}</span>
-    <div><div style="font-weight:750;font-size:15px;letter-spacing:-.2px">Ángulos y banco de anuncios</div>
-    <div style="font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:3px">El <b>banco de anuncios</b> de cada producto es su lista de anuncios: cualquiera que esté ahí <b>rutea a ese producto</b> (aunque el cliente no escriba la palabra clave). A cada anuncio le eliges un <b>ángulo</b> para su saludo — o lo dejas sin ángulo y usa el saludo general.</div></div>
-  </div>`;
-  if(!angOk){ host.innerHTML=html+`<div class="hub-warn">${HUB_WARN}Para usar los ángulos falta aplicar la migración <b>0063</b> en la base de datos.</div>`; return; }
-  if(!prods.length){ host.innerHTML=html+`<div class="nodo-empty"><p>Aún no tienes productos principales. Crea uno en el Catálogo para configurar sus ángulos.</p></div>`; return; }
-  prods.forEach(p=>{
-    const angs=byProd[p.id]||[];
-    const bk=bank[p.id]||[];
-    const sinAng=bk.filter(id=> hubAnguloDeAd(p.id,id)<0);
-    const em = p.emoji ? esc(p.emoji) : icon("box");
-    const multi=prods.filter(q=>hubFam(q)===hubFam(p)).length>1, pais=hubPais(p), paisNom=(PAIS_INFO[pais]||[pais])[0];
-    html+=`<div class="hub-prod" data-prod="${p.id}">
-      <div class="hub-prod-hd">
-        <div class="hub-prod-em">${em}</div>
-        <div style="flex:1;min-width:0"><div class="hub-prod-nm">${esc(p.nombre)}${multi?` <span class="hub-pais">· ${esc(paisNom)}</span>`:""}</div><div class="hub-prod-sub">${bk.length} anuncio${bk.length!==1?"s":""} · ${angs.length} ángulo${angs.length!==1?"s":""}${sinAng.length?` · <span style="color:var(--amber)">${sinAng.length} sin ángulo</span>`:""}</div></div>
-      </div>`;
-    // ── ÁNGULOS (los cajones: la idea + el saludo) ──
-    html+=`<div style="font-size:12px;font-weight:800;margin:14px 0 4px">${icon("compass")} Ángulos <span style="font-weight:500;color:var(--faint)">— la idea y su saludo</span></div>`;
-    if(!angs.length){ html+=`<div style="font-size:11.5px;color:var(--faint);padding:0 0 4px">Aún no hay ángulos. Sin ellos, los anuncios del banco rutean igual, pero con el saludo general.</div>`; }
-    angs.forEach((a,ai)=>{
-      html+=`<div class="hub-ang" data-pid="${p.id}" data-ai="${ai}">
-        <div style="display:flex;gap:8px;align-items:center">
-          <input class="in hub-nombre" style="flex:1;font-weight:600" placeholder="Nombre del ángulo (ej. Dolor / calambres)" value="${esc(a.nombre||'')}"/>
-          <span class="hub-count" title="anuncios en este ángulo">${(a.ad_ids||[]).length} ${icon("megaphone")}</span>
-          <button class="iconbtn hub-del" title="Eliminar ángulo">${icon("trash")}</button>
-        </div>
-        ${ganchoIAHtml(a.gancho_ia, "hub-gancho")}
-      </div>`;
-    });
-    html+=`<button class="btn hub-add" style="height:30px;padding:0 12px;font-size:12px;margin-top:8px;background:transparent;border:1px dashed var(--border);color:var(--text)">＋ Ángulo</button>`;
-    // ── BANCO DE ANUNCIOS (fuente de ruteo del producto) ──
-    const angOpts=(cur)=>`<option value="-1"${cur<0?" selected":""}>— Sin ángulo (saludo general) —</option>`+angs.map((a,ai)=>`<option value="${ai}"${cur===ai?" selected":""}>${esc(a.nombre||a.slug||"(sin nombre)")}</option>`).join("");
-    html+=`<div style="font-size:12px;font-weight:800;margin:18px 0 4px">${icon("megaphone")} Banco de anuncios <span style="font-weight:500;color:var(--faint)">— rutean a ${multi?`la versión de ${esc(paisNom)}`:"este producto"}</span></div>`;
-    if(multi) html+=`<div class="hub-paisnota">${icon("globe")} Pon aquí solo los anuncios para <b>${esc(paisNom)}</b>: a quien llegue por ellos se le vende esta versión, con su precio en ${esc(PAIS_INFO[pais]?.[1]||"")}.</div>`;
-    if(!bk.length){ html+=`<div style="font-size:12px;color:var(--muted);border:1px dashed var(--border);border-radius:10px;padding:12px;text-align:center">Aún no hay anuncios. Agrega el ID de un anuncio abajo${adsMeta.length?" o elígelo de Meta":""}.</div>`; }
-    bk.forEach(id=>{
-      const ai=hubAnguloDeAd(p.id,id);
-      html+=`<div class="hub-adrow" data-pid="${p.id}" data-ad="${esc(id)}" style="display:flex;gap:8px;align-items:center;border:1px solid var(--border);border-radius:10px;padding:9px 11px;margin-top:8px;background:var(--surface-2)">
-        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px">${adsMeta.length?esc(adName(id)):`<span class="mono">${esc(id)}</span>`}${ai<0?` <span style="color:var(--amber);font-size:11px">· sin ángulo</span>`:""}</span>
-        <select class="sel hub-assign" style="height:32px;font-size:12px;max-width:230px">${angOpts(ai)}</select>
-        <button class="iconbtn hub-adx" title="Quitar del banco">${icon("trash")}</button>
-      </div>`;
-    });
-    // Libres = que no estén en ESTE banco NI en el de otro producto: el mismo anuncio en dos bancos
-    // hacía ganar a uno en silencio (el de menor id) y el otro nunca recibía esos leads.
-    const _enOtro=new Set(Object.entries(st.hub.bank||{}).filter(([k])=>String(k)!==String(p.id)).flatMap(([,v])=>(v||[]).map(String)));
-    const metaLibres=adsMeta.filter(m=>!bk.includes(m.ad_id) && !_enOtro.has(String(m.ad_id)));
-    const sugeridos=metaLibres.filter(m=>hubMatchAd(m,p.nombre) && (!multi || (hubPaisDeAd(m)||_paisBot)===pais));
-    const otros=metaLibres.filter(m=>!sugeridos.includes(m));
-    if(sugeridos.length){
-      html+=`<div style="border:1px solid var(--ia-brd,rgba(168,85,247,.4));border-radius:11px;padding:11px 12px;margin-top:10px;background:radial-gradient(130% 140% at 0% 0%,rgba(168,85,247,.10),transparent 58%),var(--surface)">
-        <div style="font-size:11.5px;font-weight:800"><span style="background:linear-gradient(90deg,var(--ia1),var(--ia2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Sugeridos de Meta</span> <span style="font-weight:500;color:var(--faint)">— mencionan «${esc(p.nombre)}»${multi?` y son de ${esc(paisNom)}`:""}</span></div>
-        <div style="font-size:11px;color:var(--muted);margin:2px 0 8px">Anuncios de Meta cuyo nombre o campaña menciona este producto. Desmarca los que no quieras.</div>
-        <div style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto">
-          ${sugeridos.map(m=>`<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;cursor:pointer"><input type="checkbox" class="hub-sug" value="${esc(m.ad_id)}" checked/> <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.ad_name||m.ad_id)}${m.campaign_name?` <span style="color:var(--faint)">· ${esc(m.campaign_name)}</span>`:""}</span></label>`).join("")}
-        </div>
-        <button class="btn primary hub-sug-add" style="height:30px;padding:0 13px;font-size:12px;margin-top:9px">＋ Agregar los marcados</button>
-      </div>`;
-    }
-    html+=`<div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
-      ${otros.length?`<select class="sel hub-addmeta" style="height:34px;font-size:12px;flex:1;min-width:180px"><option value="">＋ Elegir otro anuncio de Meta…</option>${otros.map(m=>`<option value="${esc(m.ad_id)}">${esc(m.ad_name||m.ad_id)}${m.campaign_name?` · ${esc(m.campaign_name)}`:""}</option>`).join("")}</select>`:``}
-      <input class="in hub-addid" style="height:34px;flex:1;min-width:160px" placeholder="${adsMeta.length?"…o pega un ID y Enter":"Pega un ID de anuncio y Enter"}"/>
-    </div>
-    <div style="display:flex;margin-top:14px"><button class="btn primary hub-save" style="height:34px;padding:0 18px;font-size:12.5px;margin-left:auto">Guardar</button></div>
-    </div>`;
-  });
-  host.innerHTML=html;
+// Pestaña «Ángulos»: el mapa ángulos × países y la ficha de cada ángulo viven en angulos-mapa.js.
 
-  host.querySelectorAll(".hub-prod").forEach(card=>{
-    const pid=card.dataset.prod;
-    card.querySelector(".hub-add").onclick=async()=>{
-      hubHarvest();
-      const nombre=await askText({title:"Nuevo ángulo", placeholder:"Ej. Dolor / calambres", confirmText:"Crear"});
-      if(!nombre) return;
-      (st.hub.byProd[pid]=st.hub.byProd[pid]||[]).push({ nombre, gancho_ia:"", ad_ids:[], slug:anguloSlug(nombre) });
-      renderAngHub();
-    };
-    card.querySelector(".hub-save").onclick=()=>hubSaveProduct(pid);
-    const am=card.querySelector(".hub-addmeta"); if(am) am.onchange=()=>{ const id=am.value; if(!id) return; hubHarvest(); st.hub.bank[pid]=st.hub.bank[pid]||[]; if(!st.hub.bank[pid].includes(id)) st.hub.bank[pid].push(id); renderAngHub(); };
-    const sa=card.querySelector(".hub-sug-add"); if(sa) sa.onclick=()=>{ hubHarvest(); st.hub.bank[pid]=st.hub.bank[pid]||[]; card.querySelectorAll(".hub-sug:checked").forEach(ck=>{ if(!st.hub.bank[pid].includes(ck.value)) st.hub.bank[pid].push(ck.value); }); renderAngHub(); };
-    const ain=card.querySelector(".hub-addid"); if(ain) ain.onkeydown=(e)=>{
-      if(e.key!=="Enter") return; e.preventDefault(); const val=ain.value.trim(); if(!val) return; hubHarvest();
-      st.hub.bank[pid]=st.hub.bank[pid]||[];
-      val.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean).forEach(id=>{ if(!st.hub.bank[pid].includes(id)) st.hub.bank[pid].push(id); });
-      renderAngHub();
-    };
-  });
-  host.querySelectorAll(".hub-ang[data-pid]").forEach(row=>{
-    const pid=row.dataset.pid, ai=+row.dataset.ai;
-    row.querySelector(".hub-del").onclick=()=>{ hubHarvest(); st.hub.byProd[pid].splice(ai,1); renderAngHub(); };
-  });
-  host.querySelectorAll(".hub-adrow").forEach(row=>{
-    const pid=row.dataset.pid, adId=row.dataset.ad;
-    row.querySelector(".hub-assign").onchange=(e)=>{ hubHarvest(); hubAssign(pid, adId, +e.target.value); renderAngHub(); };
-    row.querySelector(".hub-adx").onclick=()=>{ hubHarvest(); st.hub.bank[pid]=(st.hub.bank[pid]||[]).filter(x=>x!==adId); hubAssign(pid, adId, -1); renderAngHub(); };
-  });
-}
-// Lee nombre+gancho de las filas del hub a memoria (los ad_ids ya se mantienen en memoria).
-function hubHarvest(){
-  if(!st.hub) return;
-  document.querySelectorAll("#angHub .hub-ang[data-pid]").forEach(row=>{
-    const a=(st.hub.byProd[row.dataset.pid]||[])[+row.dataset.ai]; if(!a) return;
-    const nm=row.querySelector(".hub-nombre"); if(nm) a.nombre=nm.value.trim();
-    const gn=row.querySelector(".hub-gancho"); if(gn) a.gancho_ia=gn.value.trim();
-  });
-}
-// Persiste los ángulos de un producto (mismo upsert/delete que saveActivacion).
-async function hubSaveProduct(pid){
-  hubHarvest();
-  const angs=(st.hub.byProd[pid]||[]).filter(a=>a.nombre);
-  const usados=new Set();
-  angs.forEach((a,i)=>{ let s=a.slug||anguloSlug(a.nombre); let base=s,n=2; while(usados.has(s)){ s=base+"-"+(n++); } usados.add(s); a.slug=s; a.orden=i; });
-  try{
-    for(const a of angs){
-      const payload={ channel_id:st.channelId, product_id:pid, nombre:a.nombre, slug:a.slug, ad_ids:a.ad_ids||[], gancho_ia:a.gancho_ia||null, orden:a.orden };
-      if(a.id){ const {error}=await supa.from("angulos").update(payload).eq("id",a.id); if(error) throw error; }
-      else { const {data:ins,error}=await supa.from("angulos").insert(payload).select("id").single(); if(error) throw error; if(ins) a.id=ins.id; }
-    }
-    const vivos=new Set(angs.map(a=>a.id).filter(Boolean));
-    // Sin revisar el error, un borrado rechazado cantaba «Guardado» y el ángulo reaparecía al
-    // recargar (seguía ruteando sus anuncios). Reintentar es seguro: borrar dos veces no daña.
-    for(const id of (st.hub.orig[pid]||[])){ if(!vivos.has(id)){ const { error:eDel }=await supa.from("angulos").delete().eq("id",id); if(eDel) throw eDel; } }
-    // Guardar el BANCO en el config del producto (fuente de ruteo por ID).
-    // Solo `ad_bank`, sobre el config FRESCO: escribir la copia de cuando se abrió la página
-    // revertía el STOCK a esa hora (las ventas del día volvían a estar disponibles = sobreventa)
-    // y pisaba cualquier otra clave cambiada desde entonces.
-    const prod=(st.hub.prods||[]).find(p=>p.id===pid);
-    const rCfg=await patchProductConfig(pid,(cfg)=>{ cfg.ad_bank=st.hub.bank[pid]||[]; });
-    if(!rCfg.ok) throw (rCfg.error||new Error("No se pudo guardar"));
-    if(prod) prod.config=rCfg.config;
-    st.hub.byProd[pid]=angs; st.hub.orig[pid]=angs.map(a=>a.id);
-    toast("Guardado"); renderAngHub();
-  }catch(e){ toast(e.message||"No se pudo guardar",true); }
-}
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); /* el FAB lo controla renderDetail según si estás en el hub */ }
 
 async function loadProducts(){
@@ -686,7 +478,7 @@ async function loadProducts(){
   if(error){ ({ data, error } = await supa.from("products").select("id,nombre,config,folder,emoji,tipo").eq("channel_id",st.channelId).order("created_at")); }
   if(error){ ({ data } = await supa.from("products").select("id,nombre,config").eq("channel_id",st.channelId).order("created_at")); }
   if(gen!==st.loadGen) return; // otra carga (otro bot) la reemplazó
-  st.list=data||[]; st.hub=null; // los productos cambiaron → recargar el hub de ángulos
+  st.list=data||[];
   // (10-oct) Cómo le va a cada producto, en su tarjeta: si está vendiendo y cuánto vendió en 7 días.
   st.estadoVenta={}; st.ventas7={};
   try{
@@ -878,7 +670,7 @@ async function openProduct(id){
   await esperarFlujo();   // el flujo del producto anterior se regenera leyendo st.prod
   // Guard anti-carrera: doble clic (producto A y luego B) podía resolver A DESPUÉS
   // de B → se pintaba B pero con las versiones/config de A (y un guardado escribía
-  // el set mezclado). Mismo patrón que loadProducts/loadAngHub.
+  // el set mezclado). Mismo patrón que loadProducts.
   const gen=(st.openGen=(st.openGen||0)+1);
   const { data:p } = await supa.from("products").select("*").eq("id",id).maybeSingle();
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
@@ -4591,7 +4383,7 @@ function renderComposer(){
   const match=st.act.kw?.config?.match||"contiene";
   const angs=(st.act.angulos||[]);
   angs.forEach(a=>{ if(a.nombre && !a.slug) a.slug=anguloSlug(a.nombre); });
-  if(st.act.tab===undefined) st.act.tab="";
+  if(st.act.tab===undefined){ st.act.tab=st._angTab||""; st._angTab=null; }   // desde la ficha del ángulo: abre su pestaña
   if(st.act.tab && !angs.some(a=>a.slug===st.act.tab)) st.act.tab="";
   const tab=st.act.tab;
   const tabVars=()=> cfg.variantes.map((v,i)=>({v,i})).filter(({v})=> tab? (v.angulo===tab) : !v.angulo);
