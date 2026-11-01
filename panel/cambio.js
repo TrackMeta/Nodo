@@ -76,3 +76,32 @@ export async function llevarAMoneda(ordR, cur, cobradoDe, costoDe) {
   }).filter(Boolean);
   return res;
 }
+
+// 📣 (31-oct) El gasto de Meta con el tipo de cambio de SU día, igual que las ventas. Antes era un solo factor para
+// todo el rango (el cambio de hoy, o el usd_rate del bot): una venta del 1-oct y el gasto del 1-oct se convertían
+// con dólares distintos. metaRows = ads_meta {ad_id, account_currency}; cada fila de ads_insights {ad_id, fecha,
+// gasto} se pasa a `cur` con la moneda de SU cuenta. Avisos iguales a factorAds (shell.js): «moneda sin confirmar»
+// si alguna cuenta no la trajo (no se convierte nada), «moneda sin convertir» si no hubo tipo de cambio para alguna.
+export async function gastoAdsEn(metaRows, cur, usdRate) {
+  const filas = metaRows || [], C = String(cur || "").toUpperCase();
+  const monDe = {};
+  for (const m of filas) monDe[String(m.ad_id)] = String(m.account_currency || "").toUpperCase();
+  const monedas = [...new Set(Object.values(monDe).filter(Boolean))];
+  const crudo = (i) => Number(i.gasto || 0);
+  if (!monedas.length || filas.some((m) => !m.account_currency)) return { gastoEn: crudo, aviso: "moneda sin confirmar", convirtio: false };
+  if (monedas.every((m) => m === C)) return { gastoEn: crudo, aviso: "", convirtio: false };
+  const cambios = await cargarCambios();
+  const r = { aviso: "", convirtio: false };
+  r.gastoEn = (i) => {
+    const g = Number(i.gasto || 0);
+    // Un anuncio que ya no está en ads_meta: si todas las cuentas facturan en la misma moneda, es esa.
+    const m = monDe[String(i.ad_id)] || (monedas.length === 1 ? monedas[0] : "");
+    if (!m || m === C) return g;
+    let fx = factorCambio(cambios, m, C, i.fecha);
+    if (!fx && m === "USD" && Number(usdRate) > 0) fx = Number(usdRate);   // sin la tabla: el dólar del bot, como antes
+    if (!fx) { r.aviso = "moneda sin convertir"; return g; }
+    r.convirtio = true;
+    return g * fx;
+  };
+  return r;
+}

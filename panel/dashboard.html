@@ -369,7 +369,7 @@ import { supa, getChannel, mountShell, toast, icon, confirmDialog, pageAll, patc
 // 🔐 ¿La cuenta ve «Avanzado» (Flujos y Campos)? Decide a dónde apunta el checklist.
 let AV = false;
 import * as O from "./orders.js";
-import { llevarAMoneda, cargarCambios, factorCambio } from "./cambio.js?v=1";
+import { llevarAMoneda, cargarCambios, factorCambio, gastoAdsEn } from "./cambio.js?v=2";
 import { EMBUDO_STAGES as STAGES } from "./contact-extras.js";
 import { ymdTZ, startOfDayTZ, endOfDayTZ, tzNombre } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -409,14 +409,9 @@ async function loadCurrency(){
 const costoFichaDe=(prods)=>{ const pc={}, cv={}; (prods||[]).forEach(p=>{ pc[p.id]=p.config&&p.config.costo; (p.product_versions||[]).forEach(v=>{ cv[v.id]=v.cantidad??1; }); });
   return (o)=>{ const u=pc[o.product_id]; return (u==null||u==="") ? null : Number(u)*(Number(cv[o.version_id]??1)||1); }; };
 // El gasto de Meta en la moneda del reporte: factorAds y, si no puede (otra moneda), el tipo de cambio de hoy.
-async function factorAdsConv(rows){
-  const r=factorAds(rows, CUR, USD_RATE);
-  if(!r.aviso || r.aviso==="moneda sin confirmar") return r;
-  const mons=[...new Set((rows||[]).map(m=>String(m.account_currency||"").toUpperCase()).filter(Boolean))];
-  if(mons.length!==1) return r;
-  const fx=factorCambio(await cargarCambios(), mons[0], CUR, new Date().toISOString());
-  return fx ? { factor:fx, aviso:"" } : r;
-}
+// (31-oct) Cada fila de gasto con el cambio de SU día (cambio.js → gastoAdsEn), como las ventas: antes un solo
+// factor para todo el rango, el de hoy. Devuelve { gastoEn(fila), aviso }; el aviso se lee DESPUÉS de sumar.
+async function factorAdsConv(rows){ return gastoAdsEn(rows, CUR, USD_RATE); }
 // Los gastos que anotas a mano están en la moneda del negocio: con los reportes en dólares se convierten.
 async function gastosEnReporte(expR){
   if(CUR===CUR_NEG || !expR || expR.error) return expR;
@@ -1134,7 +1129,7 @@ async function load(){
   const _admRows = admR.error ? [] : (admR.data||[]);
   const _ads = await factorAdsConv(_admRows);
   let gastoAds=0;
-  ins.forEach(i=>{ if((tipo==="todo" || adTipo[i.ad_id]===tipo) && enVistaAd(i.ad_id)) gastoAds+=Number(i.gasto||0)*_ads.factor; });
+  ins.forEach(i=>{ if((tipo==="todo" || adTipo[i.ad_id]===tipo) && enVistaAd(i.ad_id)) gastoAds+=_ads.gastoEn(i); });
   const monedaAdsRara = gastoAds>0 && !!_ads.aviso;
   const avisoAds = _ads.aviso;
   // Ganancia BRUTA del negocio (respeta el tipo): digital = cobrado (sin COGS);
@@ -1237,7 +1232,7 @@ async function load(){
       : O.margen(o, prodPorId[o.product_id], cantPorVersion[o.version_id]??1);
     if(m!=null){ const pid=o.product_id||"_none"; margenPorProd[pid]=(margenPorProd[pid]||0)+m; dailyMargin[k]=(dailyMargin[k]||0)+m; }
   });
-  ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo){ dailySpend[i.fecha]=(dailySpend[i.fecha]||0)+Number(i.gasto||0)*_ads.factor; } });
+  ins.forEach(i=>{ if(tipo==="todo" || adTipo[i.ad_id]===tipo){ dailySpend[i.fecha]=(dailySpend[i.fecha]||0)+_ads.gastoEn(i); } });
   const dailyExpense={};
   if(tipo==="todo") expenses.forEach(e=>{ dailyExpense[e.fecha]=(dailyExpense[e.fecha]||0)+Number(e.monto||0); });
   // La IA y el flete de los perdidos también van al día: la banda de arriba los resta, y el
@@ -1509,7 +1504,7 @@ async function load(){
     Object.keys(adVentas).forEach(a=>{ if(!adProd[a]) adProd[a]=Object.entries(adVentas[a]).sort((x,y)=>y[1]-x[1])[0][0]; });
     ins.forEach(i=>{ if((tipo==="todo" || adTipo[i.ad_id]===tipo) && enVistaAd(i.ad_id)){
       const pid=adProd[String(i.ad_id)]||"_ads";
-      gastoPorProd[pid]=(gastoPorProd[pid]||0)+Number(i.gasto||0)*_ads.factor; } });
+      gastoPorProd[pid]=(gastoPorProd[pid]||0)+_ads.gastoEn(i); } });
   }
   renderProducts(prods, ventasOk, vendido, ordersUnavailable, margenPorProd, hasAds?gastoPorProd:null);
   { const _vpp=ventasPorPais(ventasOk, prodPorId, hasAds?gastoPorProd:null); if(_vpp && cid===channelId) $("kpis").insertAdjacentHTML("beforeend", _vpp); }
@@ -1766,7 +1761,7 @@ async function loadDias(from, to){
   // periodo dirían cosas distintas para los mismos anuncios.
   const _adsB = await factorAdsConv(admR2&&!admR2.error?(admR2.data||[]):[]);
   const _adsFueraB=await adsDeCuentasQuitadas(channelId);
-  (insR.error?[]:(insR.data||[])).filter(i=>!_adsFueraB.has(String(i.ad_id))).forEach(i=>{ if((tipo==="todo"||adTipo[i.ad_id]===tipo) && enVistaAd(i.ad_id)){ D(i.fecha).spend+=Number(i.gasto||0)*_adsB.factor; } });
+  (insR.error?[]:(insR.data||[])).filter(i=>!_adsFueraB.has(String(i.ad_id))).forEach(i=>{ if((tipo==="todo"||adTipo[i.ad_id]===tipo) && enVistaAd(i.ad_id)){ D(i.fecha).spend+=_adsB.gastoEn(i); } });
   { const _eB=await gastosEnReporte(expR); if(tipo==="todo" && vistaGeneral()) (_eB.error?[]:(_eB.data||[])).forEach(e=>{ D(e.fecha).exp+=Number(e.monto||0); }); }
   // Mismo trato que arriba: solo entra convertido a tu moneda (si no, no se puede
   // restar de una ganancia en soles sin inventar una tasa).

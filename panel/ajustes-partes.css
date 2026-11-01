@@ -53,6 +53,8 @@
   .ajx .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600}
   .ajx .btn.primary{background:var(--brand);border:none;color:#fff}
   .ajx .btn.primary:hover{background:var(--brand-2)}
+  /* Apagado = gris y sin hover: antes se veía igual que prendido y no se notaba que no había nada que guardar (31-oct) */
+  .ajx .btn.primary:disabled,.ajx .btn.primary:disabled:hover{background:var(--surface-2);color:var(--faint);border:1px solid var(--border);cursor:default}
   .ajx .btn.ghost{color:var(--muted)} .ajx .btn.danger{color:var(--red);border-color:transparent}
   /* Google Sheets — pasos guiados */
   .ajx .fhelp{font-size:11.5px;color:var(--faint);margin:6px 0 0;line-height:1.5}

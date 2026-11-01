@@ -213,7 +213,7 @@
 
 <script type="module">
 import { supa, getChannel, mountShell, icon, pageAll, factorAds, getUsdRate, toast, updateChannel, adsDeCuentasQuitadas } from "./shell.js";
-import { llevarAMoneda, cargarCambios, factorCambio } from "./cambio.js?v=1";
+import { llevarAMoneda, cargarCambios, factorCambio, gastoAdsEn } from "./cambio.js?v=2";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, startOfDayTZ as startOfDayLima, endOfDayTZ as endOfDayLima, ymdTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -327,15 +327,11 @@ async function loadData(){
   // la misma regla que el Dashboard (factorAds, en shell.js): si Meta ya factura en tu
   // moneda no se toca; si factura en dólares y hay tipo de cambio, se convierte; y si
   // no se puede saber, se deja crudo y el banner de arriba lo dice.
-  let _ads=factorAds(metaR.data||[], CUR, USD_RATE);
-  // …y si la cuenta factura en otra moneda que factorAds no sabe pasar (o ves todo en dólares), con el cambio de hoy.
-  if(_ads.aviso && _ads.aviso!=="moneda sin confirmar"){
-    const _ms=[...new Set((metaR.data||[]).map(m=>String(m.account_currency||"").toUpperCase()).filter(Boolean))];
-    if(_ms.length===1){ const _fx=factorCambio(await cargarCambios(), _ms[0], CUR, new Date().toISOString()); if(_fx) _ads={ factor:_fx, aviso:"" }; }
-  }
-  const _f=_ads.factor;
+  // (31-oct) Cada día de gasto con el cambio de SU día (cambio.js → gastoAdsEn), igual que las ventas y que Inicio:
+  // antes un solo factor para todo el rango, el de hoy.
+  const _ads=await gastoAdsEn(metaR.data||[], CUR, USD_RATE);
   const _adsFuera=await adsDeCuentasQuitadas(cid);   // cuentas publicitarias ya quitadas de este bot
-  (insR.data||[]).filter(i=>!_adsFuera.has(String(i.ad_id))).forEach(i=>{ const row=getRow(i.ad_id); const g=(+i.gasto||0)*_f, im=+i.impresiones||0; row.gasto+=g; row.impr+=im; row.clicsAll+=+i.clics||0; row.clicsWA+=+i.clics_wa||0; const d=day(row,i.fecha); d.gasto+=g; d.impr+=im; d.clicsAll+=+i.clics||0;
+  (insR.data||[]).filter(i=>!_adsFuera.has(String(i.ad_id))).forEach(i=>{ const row=getRow(i.ad_id); const g=_ads.gastoEn(i), im=+i.impresiones||0; row.gasto+=g; row.impr+=im; row.clicsAll+=+i.clics||0; row.clicsWA+=+i.clics_wa||0; const d=day(row,i.fecha); d.gasto+=g; d.impr+=im; d.clicsAll+=+i.clics||0;
     // (25-oct) CTR y CPC con los clics en el ENLACE (como el Administrador de anuncios), solo de los días que ya lo traen
     // (clics_link null = día sincronizado antes del cambio). `clics` de Meta son TODOS (likes, perfil, «ver más»…).
     if(i.clics_link!=null){ const cl=+i.clics_link||0; row.clics+=cl; row.imprLink+=im; row.gastoLink+=g; d.clics=(d.clics||0)+cl; } });
@@ -401,7 +397,7 @@ async function loadData(){
   st.rows=Object.values(byAd); st.loaded=true;
   // Si el gasto SÍ se pudo convertir, no hay desajuste que avisar: las cifras ya están
   // todas en la moneda del negocio. El banner solo debe salir cuando queda crudo.
-  st.adsConvertido = _ads.factor!==1 && !_ads.aviso;
+  st.adsConvertido = _ads.convirtio && !_ads.aviso;
   // Monedas de las cuentas de Meta (para avisar del desajuste con la moneda del negocio).
   st.adCurrencies=st.adsConvertido ? [] : [...new Set((metaR.data||[]).map(m=>m.account_currency).filter(Boolean).map(c=>String(c).toUpperCase()))];
   // ¿Hay gasto cuya moneda NO conocemos? account_currency lo llena un fetch best-effort

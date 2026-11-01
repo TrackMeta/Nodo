@@ -131,7 +131,7 @@ function render(){
 // Supabase; va en Conexiones). Se vuelve a llamar al cambiar de bot.
 export async function montarAjustes(box, parte, channelId){
   if(!document.getElementById("ajxCss")){
-    const l=document.createElement("link"); l.id="ajxCss"; l.rel="stylesheet"; l.href=new URL("./ajustes-partes.css?v=2", import.meta.url).href;
+    const l=document.createElement("link"); l.id="ajxCss"; l.rel="stylesheet"; l.href=new URL("./ajustes-partes.css?v=3", import.meta.url).href;
     document.head.appendChild(l);
   }
   st.box=box; st.parte=parte; st.channelId=channelId;
