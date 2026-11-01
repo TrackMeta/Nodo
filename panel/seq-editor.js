@@ -134,6 +134,197 @@ function previewHtml(paso){
   return waBubbles((v&&v.bubbles)||[], sample);
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+// Editor de UN mensaje (las versiones de un paso de secuencia o del saludo): texto, imágenes y archivos, botones,
+// varias versiones que rotan con su %, y a qué ángulo responde cada una. Lo usan el editor de pasos (abajo) y la
+// ficha del ángulo (angulos-mapa.js). Edita `paso.variantes` EN SITIO; cada página guarda con su botón.
+// soloAngulo: muestra y crea solo las versiones de ese ángulo (sin el selector «el mismo / según el anuncio»).
+// ═════════════════════════════════════════════════════════════════════════
+export function mountMensajeEditor(box, paso, { channelId, angulos = [], soloAngulo = "" } = {}){
+  hazComposer({ channelId, angulos: (angulos||[]).filter(a=>a&&a.slug), soloAngulo })(box, paso);
+}
+function hazComposer({ channelId, angulos, soloAngulo = "" }){
+  function composer(box, paso){
+    if(!Array.isArray(paso.variantes)||!paso.variantes.length){
+      const first = paso.mensaje ? [{text:String(paso.mensaje)}] : (Array.isArray(paso.bubbles)&&paso.bubbles.length?paso.bubbles:[{text:""}]);
+      paso.variantes=[{ ...newVariant(0), bubbles:first }];
+    }
+    delete paso.mensaje; delete paso.bubbles;
+    if(paso.rotacion===undefined) paso.rotacion=false;
+    const rot=soloAngulo ? true : (paso.rotacion===true && paso.variantes.length>0);
+    const hasAng=angulos.length>0 && !soloAngulo;
+    if(soloAngulo){ box.innerHTML=`<div class="se-varlist"></div>`; }
+    else box.innerHTML=`
+      <div style="border:1px solid var(--border);border-radius:11px;background:var(--surface-2);padding:11px 12px;margin-top:10px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+          <span style="flex:1;min-width:135px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px">${icon("message")} Mensaje del paso</span>
+          ${hasAng?`<div style="display:inline-flex;border:0.5px solid var(--border);border-radius:999px;padding:3px;gap:2px">
+            <button class="se-mode" data-mode="todos" style="font-size:11.5px;padding:5px 11px;border-radius:999px;border:none;cursor:pointer;font-weight:600;background:${!rot?'var(--ia1,#8b5cf6)':'transparent'};color:${!rot?'#fff':'var(--muted)'}">El mismo para todos</button>
+            <button class="se-mode" data-mode="angulo" style="font-size:11.5px;padding:5px 11px;border-radius:999px;border:none;cursor:pointer;font-weight:600;background:${rot?'var(--ia1,#8b5cf6)':'transparent'};color:${rot?'#fff':'var(--muted)'}">Según el anuncio</button>
+          </div>`:`<span style="font-size:11.5px;color:var(--muted);font-weight:600">Varias versiones</span><div class="sw ${rot?'on':''}" data-rot title="Enviar una versión distinta cada vez"></div>`}
+        </div>
+        <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${rot?(hasAng?"Cada versión responde a un ángulo del anuncio; el cliente recibe la del ángulo por el que vino. Deja una en <b>Respaldo general</b> para quien no calce en ninguno.":"El bot va alternando entre las versiones. Con 2+ puedes ajustar cuánto sale cada una."):"Un solo mensaje para todos los clientes de este público."}</div>
+        <div class="se-varlist"></div>
+        ${rot&&!hasAng?`<button class="btn" data-addvar style="height:30px;padding:0 10px;font-size:12px;margin-top:10px">+ Agregar versión</button>`:``}
+      </div>`;
+    box.querySelectorAll(".se-mode").forEach(b=> b.onclick=()=>{ const ang=(b.dataset.mode==="angulo"); paso.rotacion=ang; if(!ang && paso.variantes[0]) delete paso.variantes[0].angulo; composer(box,paso); });
+    const rtog=box.querySelector("[data-rot]"); if(rtog) rtog.onclick=()=>{ paso.rotacion=!rot; composer(box,paso); };
+    const av=box.querySelector("[data-addvar]"); if(av) av.onclick=()=>{ paso.variantes.push(newVariant(paso.variantes.length)); composer(box,paso); };
+    const vl=box.querySelector(".se-varlist");
+
+    // Pinta una versión (tarjeta). `compite` = hay 2+ versiones activas en su
+    // grupo → recién ahí aparece el control de frecuencia (Poco/Normal/Mucho) y
+    // el % REAL dentro del grupo. Con una sola, nada de eso (no aplica).
+    function renderCard(v, vi, compite, pesoG, groupActiveVs){
+      if(!Array.isArray(v.bubbles)||!v.bubbles.length) v.bubbles=[{text:""}];
+      const card=document.createElement("div");
+      if(rot){
+        card.style.cssText="border:1px solid var(--border);border-radius:10px;padding:11px;background:var(--surface);margin-top:9px";
+        const share=v.activo!==false?Math.round(Math.max(0,Number(v.peso??1))/pesoG*100):0;
+        const freq = compite ? freqControlHtml(v, share) : "";
+        card.innerHTML=`
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:${compite?'8px':'9px'}">
+            <input class="in se-vname" style="flex:1;min-width:90px;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+vi)))}"/>
+            <div class="sw ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
+            <button class="iconbtn se-vdel" title="Eliminar versión">${icon("trash")}</button>
+          </div>
+          ${compite?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">${freq}</div>`:``}
+          ${hasAng?`<div style="display:flex;align-items:center;gap:7px;margin:2px 0 9px">
+            <span style="font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap">Mover a</span>
+            <select class="in se-vangulo" style="height:32px;padding:0 10px;flex:1;max-width:240px;font-size:12px">
+              <option value="">Respaldo general</option>
+              ${angulos.map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>${esc(a.nombre||a.slug)}</option>`).join("")}
+            </select></div>`:``}
+          <div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
+        card.querySelector(".se-vname").oninput=(e)=>v.nombre=e.target.value;
+        { const sn=card.querySelector(".se-share-num"); if(sn){ sn.onchange=()=>{ const others=(groupActiveVs||[]).filter(x=>x!==v); const os=others.reduce((a,x)=>a+Math.max(0,Number(x.peso??1)),0); v.peso=pesoFromShare(os, sn.value); composer(box,paso); }; } }
+        card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; composer(box,paso); };
+        card.querySelector(".se-vdel").onclick=async()=>{ if(!soloAngulo && paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); composer(box,paso); };
+        { const ag=card.querySelector(".se-vangulo"); if(ag) ag.onchange=(e)=>{ v.angulo=e.target.value; composer(box,paso); }; }
+      } else {
+        card.innerHTML=`<div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
+      }
+      const bb=card.querySelector(".se-bubbles");
+      v.bubbles.forEach((bub,bi)=> bb.appendChild(bubbleEl(box,paso,v,bub,bi)));
+      card.querySelectorAll("[data-addb]").forEach(btn=> btn.onclick=()=>{
+        const k=btn.dataset.addb;
+        if(k==="text"){ v.bubbles.push({text:""}); composer(box,paso); }
+        else pickMedia(box,paso,v,k);
+      });
+      return card;
+    }
+
+    if(!rot){ vl.appendChild(renderCard(paso.variantes[0], 0, false, 1)); return; }
+    if(soloAngulo){
+      // Solo las versiones de este ángulo (las demás siguen en el paso, intactas).
+      const mias=paso.variantes.map((v,vi)=>({v,vi})).filter(x=>(x.v.angulo||"")===soloAngulo);
+      const act=mias.filter(x=>x.v.activo!==false), pesoG=act.reduce((s2,x)=>s2+Math.max(0,Number(x.v.peso??1)),0)||1;
+      mias.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, act.length>1, pesoG, act.map(x=>x.v))));
+      const add=document.createElement("button"); add.className="btn"; add.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin-top:9px;background:transparent;border:1px dashed var(--border)";
+      add.textContent="＋ Otra versión (el bot las rota)";
+      add.onclick=()=>{ const nv=newVariant(paso.variantes.length); nv.angulo=soloAngulo; paso.variantes.push(nv); composer(box,paso); };
+      vl.appendChild(add);
+      return;
+    }
+
+    // ROTACIÓN: agrupar por ángulo. Cada ángulo compite por su cuenta (el filtro
+    // por ángulo del motor ocurre ANTES del sorteo por peso), así el peso solo
+    // importa entre versiones del MISMO grupo. Sin ángulos → un solo grupo (A/B).
+    const withIdx = paso.variantes.map((v,vi)=>({v,vi}));
+    let groups;
+    if(hasAng){
+      const order=[...angulos.map(a=>a.slug), ""]; // Respaldo general al final
+      const known=new Set(order);
+      groups=order.map(slug=>({ slug, items: withIdx.filter(x=>(x.v.angulo||"")===slug) }));
+      const orphans=withIdx.filter(x=> x.v.angulo && !known.has(x.v.angulo)); // ángulo borrado
+      if(orphans.length){ const gen=groups.find(g=>g.slug===""); gen.items.push(...orphans); }
+      groups=groups.filter(g=>g.items.length);
+    } else {
+      groups=[{ slug:"__all", items: withIdx }];
+    }
+    groups.forEach(g=>{
+      const activeInGroup=g.items.filter(x=>x.v.activo!==false);
+      const compite=activeInGroup.length>1;
+      const pesoG=activeInGroup.reduce((a,x)=>a+Math.max(0,Number(x.v.peso??1)),0)||1;
+      if(hasAng){
+        const ang=angulos.find(a=>a.slug===g.slug);
+        const titulo = g.slug==="" ? "Respaldo general" : (esc(ang?.nombre||g.slug));
+        const hintBase = g.slug==="" ? "Para clientes que no vinieron de un ángulo con versión propia." : "Para clientes que llegaron por este ángulo.";
+        const hintMas = compite ? " Rota entre estas versiones — ajusta cuánto sale cada una." : " Sale siempre a estos clientes.";
+        const gh=document.createElement("div");
+        gh.style.cssText="margin-top:15px";
+        gh.innerHTML=`<div style="font-size:12.5px;font-weight:800;letter-spacing:-.01em">${titulo}</div><div style="font-size:11px;color:var(--faint);margin-top:2px;line-height:1.45">${hintBase}${hintMas}</div>`;
+        vl.appendChild(gh);
+      }
+      const groupActiveVs=activeInGroup.map(x=>x.v);
+      g.items.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, compite, pesoG, groupActiveVs)));
+      if(hasAng){
+        const add=document.createElement("button");
+        add.className="btn"; add.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin-top:9px;background:transparent;border:1px dashed var(--border)";
+        add.textContent="＋ Otra versión aquí";
+        add.onclick=()=>{ const nv=newVariant(paso.variantes.length); if(g.slug!=="__all"&&g.slug!=="") nv.angulo=g.slug; paso.variantes.push(nv); composer(box,paso); };
+        vl.appendChild(add);
+      }
+    });
+  }
+
+  // (10-oct) Dos botones: el tipo (imagen/video/audio/archivo) se saca del archivo elegido.
+  function addBtns(){ return ["text","file"].map(k=>`<button class="btn" data-addb="${k}" style="height:30px;padding:0 10px;font-size:12px">+ ${({text:"Texto",file:"Imagen o archivo"})[k]}</button>`).join(""); }
+
+  function bubbleEl(box,paso,v,bub,bi){
+    const el3=document.createElement("div");
+    el3.style.cssText="border:1px solid var(--border);border-radius:9px;padding:9px 10px;background:var(--surface)";
+    const kind=bub.media_kind||"text";
+    const tIco={text:"note",image:"image",video:"video",audio:"mic",document:"file"}[kind]||"note";
+    let prev="";
+    if(kind==="image") prev=`<img src="${esc(bub.media_url)}" style="max-width:140px;max-height:100px;border-radius:7px;display:block;margin-bottom:7px"/>`;
+    else if(kind==="video") prev=`<video src="${esc(bub.media_url)}" style="max-width:180px;max-height:120px;border-radius:7px;display:block;margin-bottom:7px" controls></video>`;
+    else if(kind==="audio") prev=`<audio src="${esc(bub.media_url)}" style="height:34px;margin-bottom:7px;display:block" controls></audio>`;
+    else if(kind==="document") prev=`<div style="font-size:12px;margin-bottom:7px;display:flex;align-items:center;gap:5px">${icon("file")} ${esc(bub.filename||"documento")}</div>`;
+    el3.innerHTML=`
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:7px">
+        <span style="flex:1;font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--muted)">${icon(tIco)} ${kind==="text"?"Texto":kind.charAt(0).toUpperCase()+kind.slice(1)}</span>
+        ${bi>0?`<button class="iconbtn se-bup" title="Subir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg></button>`:""}
+        ${bi<v.bubbles.length-1?`<button class="iconbtn se-bdown" title="Bajar"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>`:""}
+        ${(v.bubbles.length>1||bub.media_url)?`<button class="iconbtn se-bdel" title="Quitar">${icon("trash")}</button>`:""}
+      </div>
+      ${prev}
+      ${kind==="text"
+        ? `<textarea class="in se-btext" style="width:100%;min-height:52px" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
+        : (kind!=="audio"?`<input class="in se-bcap" placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
+    if(kind==="text") wireBotones(el3,bub,()=>composer(box,paso));
+    const tx=el3.querySelector(".se-btext"); if(tx) tx.oninput=(e)=>bub.text=e.target.value;
+    const cp=el3.querySelector(".se-bcap"); if(cp) cp.oninput=(e)=>bub.caption=e.target.value;
+    const _bd=el3.querySelector(".se-bdel"), _bu=el3.querySelector(".se-bup"), _bw=el3.querySelector(".se-bdown");
+    if(_bd) _bd.onclick=()=>{ v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); composer(box,paso); };
+    if(_bu) _bu.onclick=()=>{ if(bi===0)return; [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; composer(box,paso); };
+    if(_bw) _bw.onclick=()=>{ if(bi>=v.bubbles.length-1)return; [v.bubbles[bi+1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi+1]]; composer(box,paso); };
+    return el3;
+  }
+
+  function pickMedia(box,paso,v,kind){
+    const accept={image:"image/*",video:"video/*",audio:"audio/*",file:"image/*,video/*,audio/*,application/pdf,*/*"}[kind]||"*/*";
+    const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
+    inp.onchange=async()=>{
+      const file=inp.files&&inp.files[0]; if(!file) return;
+      if(kind==="file"){ const t=file.type||""; kind=t.startsWith("image/")?"image":t.startsWith("video/")?"video":t.startsWith("audio/")?"audio":"document"; }
+      if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
+      toast("Subiendo…");
+      try{
+        const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+        const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:channelId, filename:file.name, content_type:file.type, data:dataURL } });
+        if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
+        v.bubbles.push({ media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, caption:"" });
+        toast("Archivo agregado"); composer(box,paso);
+      }catch(e){ toast("Error al subir",true); }
+    };
+    inp.click();
+  }
+
+  return composer;
+}
+
 export function mountStepsEditor(el, opts){
   const seq = opts.seq || {};
   const channelId = opts.channelId;
@@ -341,171 +532,7 @@ export function mountStepsEditor(el, opts){
     body.appendChild(el2);
   }
 
-  function composer(box, paso){
-    if(!Array.isArray(paso.variantes)||!paso.variantes.length){
-      const first = paso.mensaje ? [{text:String(paso.mensaje)}] : (Array.isArray(paso.bubbles)&&paso.bubbles.length?paso.bubbles:[{text:""}]);
-      paso.variantes=[{ ...newVariant(0), bubbles:first }];
-    }
-    delete paso.mensaje; delete paso.bubbles;
-    if(paso.rotacion===undefined) paso.rotacion=false;
-    const rot=paso.rotacion===true && paso.variantes.length>0;
-    const hasAng=angulos.length>0;
-    box.innerHTML=`
-      <div style="border:1px solid var(--border);border-radius:11px;background:var(--surface-2);padding:11px 12px;margin-top:10px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
-          <span style="flex:1;min-width:135px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px">${icon("message")} Mensaje del paso</span>
-          ${hasAng?`<div style="display:inline-flex;border:0.5px solid var(--border);border-radius:999px;padding:3px;gap:2px">
-            <button class="se-mode" data-mode="todos" style="font-size:11.5px;padding:5px 11px;border-radius:999px;border:none;cursor:pointer;font-weight:600;background:${!rot?'var(--ia1,#8b5cf6)':'transparent'};color:${!rot?'#fff':'var(--muted)'}">El mismo para todos</button>
-            <button class="se-mode" data-mode="angulo" style="font-size:11.5px;padding:5px 11px;border-radius:999px;border:none;cursor:pointer;font-weight:600;background:${rot?'var(--ia1,#8b5cf6)':'transparent'};color:${rot?'#fff':'var(--muted)'}">Según el anuncio</button>
-          </div>`:`<span style="font-size:11.5px;color:var(--muted);font-weight:600">Varias versiones</span><div class="sw ${rot?'on':''}" data-rot title="Enviar una versión distinta cada vez"></div>`}
-        </div>
-        <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${rot?(hasAng?"Cada versión responde a un ángulo del anuncio; el cliente recibe la del ángulo por el que vino. Deja una en <b>Respaldo general</b> para quien no calce en ninguno.":"El bot va alternando entre las versiones. Con 2+ puedes ajustar cuánto sale cada una."):"Un solo mensaje para todos los clientes de este público."}</div>
-        <div class="se-varlist"></div>
-        ${rot&&!hasAng?`<button class="btn" data-addvar style="height:30px;padding:0 10px;font-size:12px;margin-top:10px">+ Agregar versión</button>`:``}
-      </div>`;
-    box.querySelectorAll(".se-mode").forEach(b=> b.onclick=()=>{ const ang=(b.dataset.mode==="angulo"); paso.rotacion=ang; if(!ang && paso.variantes[0]) delete paso.variantes[0].angulo; composer(box,paso); });
-    const rtog=box.querySelector("[data-rot]"); if(rtog) rtog.onclick=()=>{ paso.rotacion=!rot; composer(box,paso); };
-    const av=box.querySelector("[data-addvar]"); if(av) av.onclick=()=>{ paso.variantes.push(newVariant(paso.variantes.length)); composer(box,paso); };
-    const vl=box.querySelector(".se-varlist");
-
-    // Pinta una versión (tarjeta). `compite` = hay 2+ versiones activas en su
-    // grupo → recién ahí aparece el control de frecuencia (Poco/Normal/Mucho) y
-    // el % REAL dentro del grupo. Con una sola, nada de eso (no aplica).
-    function renderCard(v, vi, compite, pesoG, groupActiveVs){
-      if(!Array.isArray(v.bubbles)||!v.bubbles.length) v.bubbles=[{text:""}];
-      const card=document.createElement("div");
-      if(rot){
-        card.style.cssText="border:1px solid var(--border);border-radius:10px;padding:11px;background:var(--surface);margin-top:9px";
-        const share=v.activo!==false?Math.round(Math.max(0,Number(v.peso??1))/pesoG*100):0;
-        const freq = compite ? freqControlHtml(v, share) : "";
-        card.innerHTML=`
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:${compite?'8px':'9px'}">
-            <input class="in se-vname" style="flex:1;min-width:90px;font-weight:700;height:32px" value="${esc(v.nombre||('Versión '+String.fromCharCode(65+vi)))}"/>
-            <div class="sw ${v.activo!==false?'on':''}" data-vact title="Activar/pausar"></div>
-            <button class="iconbtn se-vdel" title="Eliminar versión">${icon("trash")}</button>
-          </div>
-          ${compite?`<div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">${freq}</div>`:``}
-          ${hasAng?`<div style="display:flex;align-items:center;gap:7px;margin:2px 0 9px">
-            <span style="font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap">Mover a</span>
-            <select class="in se-vangulo" style="height:32px;padding:0 10px;flex:1;max-width:240px;font-size:12px">
-              <option value="">Respaldo general</option>
-              ${angulos.map(a=>`<option value="${esc(a.slug)}"${(v.angulo||"")===a.slug?" selected":""}>${esc(a.nombre||a.slug)}</option>`).join("")}
-            </select></div>`:``}
-          <div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
-        card.querySelector(".se-vname").oninput=(e)=>v.nombre=e.target.value;
-        { const sn=card.querySelector(".se-share-num"); if(sn){ sn.onchange=()=>{ const others=(groupActiveVs||[]).filter(x=>x!==v); const os=others.reduce((a,x)=>a+Math.max(0,Number(x.peso??1)),0); v.peso=pesoFromShare(os, sn.value); composer(box,paso); }; } }
-        card.querySelector("[data-vact]").onclick=()=>{ v.activo=v.activo===false?true:false; composer(box,paso); };
-        card.querySelector(".se-vdel").onclick=async()=>{ if(paso.variantes.length<=1){ toast("Debe quedar al menos una versión",true); return; } if(!await confirmDialog({title:"Eliminar versión",message:"¿Eliminar esta versión?",confirmText:"Eliminar",danger:true})) return; paso.variantes.splice(vi,1); composer(box,paso); };
-        { const ag=card.querySelector(".se-vangulo"); if(ag) ag.onchange=(e)=>{ v.angulo=e.target.value; composer(box,paso); }; }
-      } else {
-        card.innerHTML=`<div class="se-bubbles" style="display:flex;flex-direction:column;gap:8px"></div><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px">${addBtns()}</div>`;
-      }
-      const bb=card.querySelector(".se-bubbles");
-      v.bubbles.forEach((bub,bi)=> bb.appendChild(bubbleEl(box,paso,v,bub,bi)));
-      card.querySelectorAll("[data-addb]").forEach(btn=> btn.onclick=()=>{
-        const k=btn.dataset.addb;
-        if(k==="text"){ v.bubbles.push({text:""}); composer(box,paso); }
-        else pickMedia(box,paso,v,k);
-      });
-      return card;
-    }
-
-    if(!rot){ vl.appendChild(renderCard(paso.variantes[0], 0, false, 1)); return; }
-
-    // ROTACIÓN: agrupar por ángulo. Cada ángulo compite por su cuenta (el filtro
-    // por ángulo del motor ocurre ANTES del sorteo por peso), así el peso solo
-    // importa entre versiones del MISMO grupo. Sin ángulos → un solo grupo (A/B).
-    const withIdx = paso.variantes.map((v,vi)=>({v,vi}));
-    let groups;
-    if(hasAng){
-      const order=[...angulos.map(a=>a.slug), ""]; // Respaldo general al final
-      const known=new Set(order);
-      groups=order.map(slug=>({ slug, items: withIdx.filter(x=>(x.v.angulo||"")===slug) }));
-      const orphans=withIdx.filter(x=> x.v.angulo && !known.has(x.v.angulo)); // ángulo borrado
-      if(orphans.length){ const gen=groups.find(g=>g.slug===""); gen.items.push(...orphans); }
-      groups=groups.filter(g=>g.items.length);
-    } else {
-      groups=[{ slug:"__all", items: withIdx }];
-    }
-    groups.forEach(g=>{
-      const activeInGroup=g.items.filter(x=>x.v.activo!==false);
-      const compite=activeInGroup.length>1;
-      const pesoG=activeInGroup.reduce((a,x)=>a+Math.max(0,Number(x.v.peso??1)),0)||1;
-      if(hasAng){
-        const ang=angulos.find(a=>a.slug===g.slug);
-        const titulo = g.slug==="" ? "Respaldo general" : (esc(ang?.nombre||g.slug));
-        const hintBase = g.slug==="" ? "Para clientes que no vinieron de un ángulo con versión propia." : "Para clientes que llegaron por este ángulo.";
-        const hintMas = compite ? " Rota entre estas versiones — ajusta cuánto sale cada una." : " Sale siempre a estos clientes.";
-        const gh=document.createElement("div");
-        gh.style.cssText="margin-top:15px";
-        gh.innerHTML=`<div style="font-size:12.5px;font-weight:800;letter-spacing:-.01em">${titulo}</div><div style="font-size:11px;color:var(--faint);margin-top:2px;line-height:1.45">${hintBase}${hintMas}</div>`;
-        vl.appendChild(gh);
-      }
-      const groupActiveVs=activeInGroup.map(x=>x.v);
-      g.items.forEach(({v,vi})=> vl.appendChild(renderCard(v, vi, compite, pesoG, groupActiveVs)));
-      if(hasAng){
-        const add=document.createElement("button");
-        add.className="btn"; add.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin-top:9px;background:transparent;border:1px dashed var(--border)";
-        add.textContent="＋ Otra versión aquí";
-        add.onclick=()=>{ const nv=newVariant(paso.variantes.length); if(g.slug!=="__all"&&g.slug!=="") nv.angulo=g.slug; paso.variantes.push(nv); composer(box,paso); };
-        vl.appendChild(add);
-      }
-    });
-  }
-
-  // (10-oct) Dos botones: el tipo (imagen/video/audio/archivo) se saca del archivo elegido.
-  function addBtns(){ return ["text","file"].map(k=>`<button class="btn" data-addb="${k}" style="height:30px;padding:0 10px;font-size:12px">+ ${({text:"Texto",file:"Imagen o archivo"})[k]}</button>`).join(""); }
-
-  function bubbleEl(box,paso,v,bub,bi){
-    const el3=document.createElement("div");
-    el3.style.cssText="border:1px solid var(--border);border-radius:9px;padding:9px 10px;background:var(--surface)";
-    const kind=bub.media_kind||"text";
-    const tIco={text:"note",image:"image",video:"video",audio:"mic",document:"file"}[kind]||"note";
-    let prev="";
-    if(kind==="image") prev=`<img src="${esc(bub.media_url)}" style="max-width:140px;max-height:100px;border-radius:7px;display:block;margin-bottom:7px"/>`;
-    else if(kind==="video") prev=`<video src="${esc(bub.media_url)}" style="max-width:180px;max-height:120px;border-radius:7px;display:block;margin-bottom:7px" controls></video>`;
-    else if(kind==="audio") prev=`<audio src="${esc(bub.media_url)}" style="height:34px;margin-bottom:7px;display:block" controls></audio>`;
-    else if(kind==="document") prev=`<div style="font-size:12px;margin-bottom:7px;display:flex;align-items:center;gap:5px">${icon("file")} ${esc(bub.filename||"documento")}</div>`;
-    el3.innerHTML=`
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:7px">
-        <span style="flex:1;font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:5px;color:var(--muted)">${icon(tIco)} ${kind==="text"?"Texto":kind.charAt(0).toUpperCase()+kind.slice(1)}</span>
-        ${bi>0?`<button class="iconbtn se-bup" title="Subir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg></button>`:""}
-        ${bi<v.bubbles.length-1?`<button class="iconbtn se-bdown" title="Bajar"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>`:""}
-        ${(v.bubbles.length>1||bub.media_url)?`<button class="iconbtn se-bdel" title="Quitar">${icon("trash")}</button>`:""}
-      </div>
-      ${prev}
-      ${kind==="text"
-        ? `<textarea class="in se-btext" style="width:100%;min-height:52px" placeholder="Escribe el mensaje… puedes usar {{nombre}}, {{precio}}…">${esc(bub.text||"")}</textarea>${botonesHtml(bub)}`
-        : (kind!=="audio"?`<input class="in se-bcap" placeholder="Texto/caption (opcional)" value="${esc(bub.caption||"")}"/>`:``)}`;
-    if(kind==="text") wireBotones(el3,bub,()=>composer(box,paso));
-    const tx=el3.querySelector(".se-btext"); if(tx) tx.oninput=(e)=>bub.text=e.target.value;
-    const cp=el3.querySelector(".se-bcap"); if(cp) cp.oninput=(e)=>bub.caption=e.target.value;
-    const _bd=el3.querySelector(".se-bdel"), _bu=el3.querySelector(".se-bup"), _bw=el3.querySelector(".se-bdown");
-    if(_bd) _bd.onclick=()=>{ v.bubbles.splice(bi,1); if(!v.bubbles.length) v.bubbles.push({text:""}); composer(box,paso); };
-    if(_bu) _bu.onclick=()=>{ if(bi===0)return; [v.bubbles[bi-1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi-1]]; composer(box,paso); };
-    if(_bw) _bw.onclick=()=>{ if(bi>=v.bubbles.length-1)return; [v.bubbles[bi+1],v.bubbles[bi]]=[v.bubbles[bi],v.bubbles[bi+1]]; composer(box,paso); };
-    return el3;
-  }
-
-  function pickMedia(box,paso,v,kind){
-    const accept={image:"image/*",video:"video/*",audio:"audio/*",file:"image/*,video/*,audio/*,application/pdf,*/*"}[kind]||"*/*";
-    const inp=document.createElement("input"); inp.type="file"; inp.accept=accept;
-    inp.onchange=async()=>{
-      const file=inp.files&&inp.files[0]; if(!file) return;
-      if(kind==="file"){ const t=file.type||""; kind=t.startsWith("image/")?"image":t.startsWith("video/")?"video":t.startsWith("audio/")?"audio":"document"; }
-      if(file.size>16*1024*1024){ toast("Archivo muy grande (máx 16 MB)",true); return; }
-      toast("Subiendo…");
-      try{
-        const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
-        const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:channelId, filename:file.name, content_type:file.type, data:dataURL } });
-        if(error||!data?.url){ toast("No se pudo subir el archivo",true); return; }
-        v.bubbles.push({ media_kind:data.kind||kind, media_url:data.url, mime:file.type, filename:file.name, caption:"" });
-        toast("Archivo agregado"); composer(box,paso);
-      }catch(e){ toast("Error al subir",true); }
-    };
-    inp.click();
-  }
+  const composer = hazComposer({ channelId, angulos });
 
   function ofWarn(paso){
     if(!paso.oferta) return "";

@@ -10,7 +10,8 @@
 // El motor elige igual que antes: variante del ángulo del cliente → si no hay, la general.
 // ═════════════════════════════════════════════════════════════════════════
 import { supa, icon, toast, confirmDialog, askText, patchProductConfig, pageAll, getChannel } from "./shell.js";
-import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=16";
+import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, newVariant, mountMensajeEditor } from "./seq-editor.js?v=17";
+import { limpiaBotones } from "./bubble-buttons.js";
 import { gastoAdsEn, llevarAMoneda } from "./cambio.js?v=2";
 import * as O from "./orders.js";
 
@@ -158,7 +159,7 @@ function pinta() {
   S.vista = { tipo: "mapa" };
   pintaMapa();
 }
-function ir(vista) { S.vista = vista; S.trabajo = null; pinta(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+function ir(vista) { S.vista = vista; S.trabajo = null; S.trabajoRem = null; pinta(); window.scrollTo({ top: 0, behavior: "smooth" }); }
 
 function pintaMapa() {
   const fams = familias();
@@ -337,68 +338,60 @@ async function guardarAngulo(btn, a) {
   toast("Guardado"); pinta();
 }
 
-// ── Editor de burbujas de texto (las de imagen/video se ven, pero se cambian en el editor completo) ──
-// Numeradas, en el mismo orden en que le llegan al cliente.
-function burbujasHtml(v, key) {
-  return (v.bubbles || []).map((b, bi) => `<div class="amx-bb"><span class="amx-mn">${bi + 1}</span>${b.media_url
-    ? `<div class="amx-media">${icon(b.media_kind === "video" ? "video" : b.media_kind === "audio" ? "mic" : b.media_kind === "document" ? "file" : "image")} ${esc(b.media_kind === "video" ? "Video" : b.media_kind === "audio" ? "Audio" : b.media_kind === "document" ? "Archivo" : "Imagen")}${String(b.text || b.caption || "").trim() ? ` · <i>${esc(String(b.text || b.caption).slice(0, 80))}</i>` : ""}</div>`
-    : `<textarea class="amx-ta" data-k="${esc(key)}" data-bi="${bi}" rows="2">${esc(b.text || "")}</textarea>`}</div>`).join("");
-}
-// Pasa lo escrito a la variante (sin quitar las vacías: los índices tienen que seguir calzando mientras escribes).
-function leeTextos(box, key, v) {
-  box.querySelectorAll(`textarea[data-k="${key}"]`).forEach((t) => { const b = v.bubbles[+t.dataset.bi]; if (b && !b.media_url) b.text = t.value; });
-}
-// Al guardar: lo escrito y fuera las burbujas vacías.
-function leeBurbujas(box, key, v) {
-  leeTextos(box, key, v);
-  v.bubbles = (v.bubbles || []).filter((b) => b.media_url || String(b.text || "").trim());
-}
 // {{precio}} con el precio real de la versión (solo el número, como lo reemplaza el bot).
 let _precioPrev = "100";
 const prevSmp = (t) => String(t || "").replace(/\{\{\s*nombre\s*\}\}/gi, "Ana").replace(/\{\{\s*precio\s*\}\}/gi, _precioPrev).replace(/\{\{[^}]*\}\}/g, "…");
 let _marca = {};
-const vistaWa = (v) => waScreenHtml({ title: _marca.nombre, logoUrl: _marca.logo_url, bubblesHtml: waBubbles((v && v.bubbles) || [], prevSmp), empty: "Sin mensajes" });
+const vistaWa = (v) => waScreenHtml({ title: _marca.nombre, logoUrl: _marca.logo_url, bubblesHtml: waBubbles((v && v.bubbles) || [], prevSmp), empty: "Escribe el mensaje para ver cómo llega…" });
+const deAngulo = (vs, slug) => (vs || []).filter((v) => v && v.angulo === slug);
+const primeraDe = (vs, slug) => deAngulo(vs, slug).find((v) => v.activo !== false) || deAngulo(vs, slug)[0] || null;
+// Lo de este ángulo, listo para guardar: sin burbujas vacías ni versiones vacías (las demás versiones, intactas).
+function limpiaAngulo(vs, slug) {
+  return (vs || []).map((v) => (v && v.angulo === slug ? { ...v, bubbles: limpiaBotones((v.bubbles || []).filter((b) => b && (b.media_url || String(b.text || "").trim()))) } : v))
+    .filter((v) => !(v && v.angulo === slug) || v.bubbles.length);
+}
+// Monta el editor completo (el mismo del reenganche en Secuencias) y la vista de WhatsApp al lado, que sigue lo que escribes.
+function montaEditor(cont, obj, p, slug) {
+  const ed = cont.querySelector(".amx-ed"), pv = cont.querySelector(".amx-prev");
+  mountMensajeEditor(ed, obj, { channelId: S.ctx.channelId, angulos: angsDe(p.id), soloAngulo: slug });
+  const upd = () => { if (pv) pv.innerHTML = vistaWa(primeraDe(obj.variantes, slug)); };
+  upd(); ed.addEventListener("input", upd); ed.addEventListener("click", () => setTimeout(upd, 0));
+}
 
 // ── Saludo ────────────────────────────────────────────────────────────────
-// (1-nov, Rodrigo: «editar directo») A la izquierda los mensajes en cuadros para escribir, a la derecha cómo llegan. Si el
-// ángulo todavía no tiene saludo propio, los cuadros arrancan con el general y «Guardar como saludo de este ángulo» lo
-// crea: ya no hay un paso aparte de «Crear desde el general». Lo escrito vive en una copia de trabajo (S.trabajo) hasta
-// guardar, así volver a pintar (la marca del bot llega después) no lo borra.
+// (1-nov, Rodrigo) El editor COMPLETO dentro de la ficha: texto, imágenes, botones y varias versiones que rotan, solo
+// las de este ángulo (las generales no se tocan). Si el ángulo no tiene saludo propio, arranca con una copia del general
+// y «Guardar como saludo de este ángulo» lo crea. Se edita una copia de trabajo (S.trabajo) hasta guardar.
 function pintaSaludo(p, a) {
   const box = document.getElementById("amxSal"); if (!box) return;
   const pv = (p.product_versions || []).find((v) => v.activo !== false && v.precio != null && v.precio !== ""); _precioPrev = String(pv ? pv.precio : 100);
   const nodo = S.saludo[p.id];
-  const editor = `<button class="amx-link" data-full>${icon("edit")} Editor completo (imágenes, botones, varias versiones)</button>`;
+  const editor = `<button class="amx-link" data-full>${icon("edit")} Abrir en el producto</button>`;
   if (!nodo) {
     box.innerHTML = `<h3>${icon("message")} Saludo</h3><p class="amx-help">Este producto todavía no tiene mensajes iniciales.</p><div class="amx-acts" style="justify-content:flex-start">${editor}</div>`;
     box.querySelector("[data-full]").onclick = () => S.ctx.abrirSaludo(p.id, a.slug);
     return;
   }
-  const propias = propiasDe(nodo.config.variantes, a.slug), nuevo = !propias.length;
   const clave = `${p.id}|${a.slug}`;
   if (!S.trabajo || S.trabajo.clave !== clave) {
-    const gen = generalesDe(nodo.config.variantes)[0];
-    S.trabajo = { clave, vars: nuevo ? [{ id: uid(), rev: 1, nombre: "Versión A", activo: true, peso: 1, angulo: a.slug, bubbles: clon(gen?.bubbles || [{ text: "" }]) }] : clon(propias) };
+    const vs = clon(nodo.config.variantes), nuevo = !propiasDe(vs, a.slug).length;
+    if (nuevo) { const gen = generalesDe(vs)[0]; vs.push({ ...newVariant(0), angulo: a.slug, bubbles: clon(gen?.bubbles || [{ text: "" }]) }); }
+    S.trabajo = { clave, nuevo, obj: { variantes: vs, rotacion: true } };
   }
-  const vars = S.trabajo.vars;
-  const deOtro = nuevo ? famDeProd(p.id).filter((m) => String(m.id) !== String(p.id) && propiasDe(S.saludo[m.id]?.config?.variantes, a.slug).length) : [];
-  box.innerHTML = `<h3>${icon("message")} ${nuevo ? "Saludo" : "Saludo de este ángulo"}</h3>
-    ${nuevo ? `<div class="amx-warnrow">${icon("alert")} Hoy usa el saludo general. Cámbialo aquí para que retome la idea del anuncio y guárdalo como saludo de este ángulo.</div>`
-            : `<p class="amx-help" style="margin-top:-4px">Lo reciben solo los clientes que llegan por los anuncios de este ángulo.</p>`}
-    ${vars.map((v, i) => `<div class="amx-var amx-salg con-vista" data-vi="${i}"><div>${vars.length > 1 ? `<div class="amx-sub" style="margin-top:0">${esc(v.nombre || "Versión " + (i + 1))} <span>· el bot las rota</span></div>` : ""}${burbujasHtml(v, "s" + i)}</div>
-      <div class="amx-prevbox amx-prev">${vistaWa(v)}</div></div>`).join("")}
-    <div class="amx-acts">${nuevo ? deOtro.map((m) => `<button class="amx-link" data-copia="${esc(m.id)}">${icon("copy")} Copiar el de ${esc(paisNom(paisDe(m)))}</button>`).join("") : `<button class="amx-link" data-quitar>${icon("x")} Volver al general</button>`}
-      ${editor}<button class="amx-btn pri" data-guardar>${nuevo ? "Guardar como saludo de este ángulo" : "Guardar saludo"}</button></div>`;
-  box.querySelectorAll("textarea").forEach((t) => (t.oninput = () => {
-    const i = +t.dataset.k.slice(1); leeTextos(box, t.dataset.k, vars[i]);
-    const pv2 = box.querySelector(`[data-vi="${i}"] .amx-prev`); if (pv2) pv2.innerHTML = vistaWa(vars[i]);
-  }));
+  const T = S.trabajo;
+  const deOtro = T.nuevo ? famDeProd(p.id).filter((m) => String(m.id) !== String(p.id) && propiasDe(S.saludo[m.id]?.config?.variantes, a.slug).length) : [];
+  box.innerHTML = `<h3>${icon("message")} ${T.nuevo ? "Saludo" : "Saludo de este ángulo"}</h3>
+    ${T.nuevo ? `<div class="amx-warnrow">${icon("alert")} Hoy usa el saludo general. Abajo tienes una copia: cámbiala para que retome la idea del anuncio y guárdala como saludo de este ángulo.</div>`
+              : `<p class="amx-help" style="margin-top:-4px">Lo reciben solo los clientes que llegan por los anuncios de este ángulo.</p>`}
+    <div class="amx-salg con-vista"><div class="amx-ed"></div><div class="amx-prevbox amx-prev"></div></div>
+    <div class="amx-acts">${T.nuevo ? deOtro.map((m) => `<button class="amx-link" data-copia="${esc(m.id)}">${icon("copy")} Copiar el de ${esc(paisNom(paisDe(m)))}</button>`).join("") : `<button class="amx-link" data-quitar>${icon("x")} Volver al general</button>`}
+      ${editor}<button class="amx-btn pri" data-guardar>${T.nuevo ? "Guardar como saludo de este ángulo" : "Guardar saludo"}</button></div>`;
+  montaEditor(box, T.obj, p, a.slug);
   box.querySelector("[data-guardar]").onclick = async (e) => {
-    vars.forEach((v, i) => leeBurbujas(box, "s" + i, v));
-    if (vars.some((v) => !v.bubbles.length)) { toast("El saludo no puede quedar vacío", true); return; }
-    const antes = nodo.config.variantes;
-    nodo.config.variantes = antes.filter((v) => v.angulo !== a.slug).concat(clon(vars));
-    if (await guardarSaludo(p.id, e.currentTarget)) { S.trabajo = null; toast(nuevo ? "Listo: este ángulo ya tiene su propio saludo" : "Saludo guardado"); }
+    const vs = limpiaAngulo(T.obj.variantes, a.slug);
+    if (!deAngulo(vs, a.slug).length) { toast("El saludo no puede quedar vacío", true); return; }
+    const antes = nodo.config.variantes; nodo.config.variantes = vs;
+    if (await guardarSaludo(p.id, e.currentTarget)) { S.trabajo = null; toast(T.nuevo ? "Listo: este ángulo ya tiene su propio saludo" : "Saludo guardado"); }
     else nodo.config.variantes = antes;
     pinta();
   };
@@ -411,14 +404,15 @@ function pintaSaludo(p, a) {
   };
   box.querySelectorAll("[data-copia]").forEach((b) => (b.onclick = () => copiarSaludoDe(p, a, b.dataset.copia)));
   box.querySelector("[data-full]").onclick = () => S.ctx.abrirSaludo(p.id, a.slug);
-  seqBrand(S.ctx.channelId).then((b) => { if (b && b.nombre !== _marca.nombre) { _marca = b; if (S.vista.tipo === "ficha") pintaSaludo(p, a); } }).catch(() => {});
+  seqBrand(S.ctx.channelId).then((b) => { if (b && b.nombre !== _marca.nombre) { _marca = b; const pr = box.querySelector(".amx-prev"); if (pr) pr.innerHTML = vistaWa(primeraDe(T.obj.variantes, a.slug)); } }).catch(() => {});
 }
-// Trae a los cuadros el saludo de este ángulo en otro país (no guarda: revisas el precio y guardas).
-async function copiarSaludoDe(p, a, desdePid) {
-  const src = propiasDe(S.saludo[desdePid]?.config?.variantes, a.slug);
-  if (!src.length) return;
-  S.trabajo = { clave: `${p.id}|${a.slug}`, vars: src.map((v) => ({ ...clon(v), id: uid(), rev: 1, angulo: a.slug })) };
-  pinta();
+// Trae al editor el saludo de este ángulo en otro país (no guarda: revisas el precio y guardas).
+function copiarSaludoDe(p, a, desdePid) {
+  const src = propiasDe(S.saludo[desdePid]?.config?.variantes, a.slug), nodo = S.saludo[p.id];
+  if (!src.length || !nodo) return;
+  const vs = clon(nodo.config.variantes).filter((v) => v.angulo !== a.slug).concat(src.map((v) => ({ ...clon(v), id: uid(), rev: 1, angulo: a.slug })));
+  S.trabajo = { clave: `${p.id}|${a.slug}`, nuevo: true, obj: { variantes: vs, rotacion: true } };
+  pintaSaludo(p, a);
   if (src.some((v) => textos([v]).some((t) => RE_PRECIO.test(t)))) toast(`Copiado de ${paisNom(paisDe(prodDe(desdePid)))}: nombra un precio en su moneda, cámbialo antes de guardar`, true);
   else toast("Copiado: revísalo y guarda");
 }
@@ -441,54 +435,64 @@ function espera(seq, i) {
   if (s >= 3600) { const h = Math.round(s / 3600); return h === 1 ? "1 hora" : h + " horas"; }
   return Math.max(1, Math.round(s / 60)) + " min";
 }
+// (1-nov, Rodrigo) Reenganche con el editor COMPLETO por toque (texto, imágenes, botones, versiones), solo las versiones
+// de este ángulo. Se edita una copia de los pasos (S.trabajoRem) y «Guardar reenganche» escribe las secuencias que
+// cambiaron. La espera y el descuento de cada toque se cambian en el producto («Abrir en el producto»).
 function pintaRem(p, a) {
   const box = document.getElementById("amxRem"); if (!box) return;
   const seqs = seqsDe(p);
-  const full = `<button class="amx-link" data-full>${icon("edit")} Editor completo</button>`;
+  const full = `<button class="amx-link" data-full>${icon("edit")} Abrir en el producto (esperas y descuentos)</button>`;
   if (!seqs.length) {
     box.innerHTML = `<h3>${icon("secuencias")} Reenganche</h3><p class="amx-help">Este producto no tiene secuencia de reenganche.</p><div class="amx-acts" style="justify-content:flex-start">${full}</div>`;
     box.querySelector("[data-full]").onclick = () => S.ctx.abrirRemarketing(p.id);
     return;
   }
+  const clave = `${p.id}|${a.slug}`;
+  if (!S.trabajoRem || S.trabajoRem.clave !== clave) S.trabajoRem = { clave, pasos: Object.fromEntries(seqs.map(({ seq }) => [seq.id, clon(seq.pasos)])) };
+  const T = S.trabajoRem;
   let h = `<h3>${icon("secuencias")} Reenganche de este ángulo</h3><p class="amx-help">A quien llegó por este ángulo y no compró. «Propio» = un mensaje que retoma este anuncio; «general» = el mismo para todos.</p>`;
   for (const { seg, seq } of seqs) {
     if (seqs.length > 1) h += `<div class="amx-sub">${esc(SEG[seg] || seg)} <span>· ${esc(seq.nombre || "")}</span></div>`;
-    seq.pasos.forEach((paso, i) => {
-      const k = `${seq.id}:${i}`;
-      if (!esMsg(paso)) { h += `<div class="amx-step"><div class="amx-sh"><b>Toque ${i + 1}</b><span>· ${espera(seq, i)}</span><span class="amx-chip">${paso.template_name ? "plantilla" : "flujo"}</span></div><p class="amx-help" style="margin:0">Igual para todos los ángulos.</p></div>`; return; }
-      const own = propiasDe(paso.variantes, a.slug)[0];
-      if (own) h += `<div class="amx-step"><div class="amx-sh"><b>Toque ${i + 1}</b><span>· ${espera(seq, i)}</span><span class="amx-chip ok">propio</span></div>${burbujasHtml(own, k)}
-          <div class="amx-acts"><button class="amx-link" data-gen="${k}">${icon("x")} Usar el general</button><button class="amx-btn pri sm" data-gpaso="${k}">Guardar</button></div></div>`;
-      else { const g = burbujasGenerales(paso); const t = (g || []).map((b) => b.text || "").join(" ").trim();
-        h += `<div class="amx-step"><div class="amx-sh"><b>Toque ${i + 1}</b><span>· ${espera(seq, i)}</span><span class="amx-chip">general</span></div><p class="amx-gtxt">${esc(t.slice(0, 160) || "(sin texto)")}${t.length > 160 ? "…" : ""}</p>
-          <div class="amx-acts"><button class="amx-btn sm" data-propio="${k}" ${g ? "" : "disabled"}>${icon("plus")} Crear propio</button></div></div>`; }
+    T.pasos[seq.id].forEach((paso, i) => {
+      const k = `${seq.id}:${i}`, cab = `<b>Toque ${i + 1}</b><span>· ${espera({ pasos: T.pasos[seq.id] }, i)}</span>`;
+      if (!esMsg(paso)) { h += `<div class="amx-step"><div class="amx-sh">${cab}<span class="amx-chip">${paso.template_name ? "plantilla" : "flujo"}</span></div><p class="amx-help" style="margin:0">Igual para todos los ángulos.</p></div>`; return; }
+      if (deAngulo(paso.variantes, a.slug).length) {
+        h += `<div class="amx-step" data-k="${k}"><div class="amx-sh">${cab}<span class="amx-chip ok">propio</span><button class="amx-link" data-gen="${k}" style="margin-left:8px">${icon("x")} Usar el general</button></div>
+          <div class="amx-salg con-vista"><div class="amx-ed"></div><div class="amx-prevbox amx-prev"></div></div></div>`;
+      } else {
+        const g = burbujasGenerales(paso), t = (g || []).map((b) => b.text || b.caption || "").join(" ").trim();
+        h += `<div class="amx-step"><div class="amx-sh">${cab}<span class="amx-chip">general</span></div><p class="amx-gtxt">${esc(t.slice(0, 160) || "(sin texto)")}${t.length > 160 ? "…" : ""}</p>
+          <div class="amx-acts" style="justify-content:flex-start"><button class="amx-btn sm" data-propio="${k}" ${g ? "" : "disabled"}>${icon("plus")} Crear propio</button></div></div>`;
+      }
     });
   }
-  h += `<div class="amx-acts" style="justify-content:flex-start">${full}</div>`;
+  h += `<div class="amx-acts">${full}<button class="amx-btn pri" data-grem>Guardar reenganche</button></div>`;
   box.innerHTML = h;
-  const paso = (k) => { const [id, i] = k.split(":"); return { seq: S.seqs[id], paso: S.seqs[id].pasos[+i] }; };
+  const pasoDe = (k) => { const [id, i] = k.split(":"); return T.pasos[id][+i]; };
+  box.querySelectorAll(".amx-step[data-k]").forEach((st) => montaEditor(st, pasoDe(st.dataset.k), p, a.slug));
   box.querySelector("[data-full]").onclick = () => S.ctx.abrirRemarketing(p.id);
-  box.querySelectorAll("[data-propio]").forEach((b) => (b.onclick = async () => {
-    const { seq, paso: ps } = paso(b.dataset.propio);
+  box.querySelectorAll("[data-propio]").forEach((b) => (b.onclick = () => {
+    const ps = pasoDe(b.dataset.propio);
     asegurarVariantes(ps);
-    ps.variantes.push({ id: uid(), rev: 1, nombre: "Versión A", activo: true, peso: 1, angulo: a.slug, bubbles: burbujasGenerales(ps) || [{ text: "" }] });
+    ps.variantes.push({ ...newVariant(ps.variantes.length), angulo: a.slug, bubbles: burbujasGenerales(ps) || [{ text: "" }] });
     ps.rotacion = true;   // el editor de Secuencias lo muestra en modo «según el anuncio»
-    if (await guardarSeq(seq, b)) toast("Mensaje propio creado desde el general: cámbialo para que retome el anuncio");
-    pinta();
+    pintaRem(p, a);
   }));
-  box.querySelectorAll("[data-gpaso]").forEach((b) => (b.onclick = async () => {
-    const k = b.dataset.gpaso, { seq, paso: ps } = paso(k), own = propiasDe(ps.variantes, a.slug)[0];
-    leeBurbujas(box, k, own);
-    if (!own.bubbles.length) { toast("El mensaje no puede quedar vacío", true); return; }
-    if (await guardarSeq(seq, b)) toast("Guardado");
-    pinta();
-  }));
-  box.querySelectorAll("[data-gen]").forEach((b) => (b.onclick = async () => {
-    const { seq, paso: ps } = paso(b.dataset.gen);
+  box.querySelectorAll("[data-gen]").forEach((b) => (b.onclick = () => {
+    const ps = pasoDe(b.dataset.gen);
     ps.variantes = ps.variantes.filter((v) => v.angulo !== a.slug);
-    if (await guardarSeq(seq, b)) toast("Este toque usa el mensaje general");
-    pinta();
+    pintaRem(p, a);
   }));
+  box.querySelector("[data-grem]").onclick = async (e) => {
+    let n = 0, ok = true;
+    for (const { seq } of seqs) {
+      const pasos = T.pasos[seq.id].map((ps) => (esMsg(ps) && Array.isArray(ps.variantes) ? { ...ps, variantes: limpiaAngulo(ps.variantes, a.slug) } : ps));
+      if (JSON.stringify(pasos) === JSON.stringify(seq.pasos)) continue;
+      const antes = seq.pasos; seq.pasos = pasos;
+      if (await guardarSeq(seq, e.currentTarget)) n++; else { seq.pasos = antes; ok = false; }
+    }
+    if (ok) { S.trabajoRem = null; toast(n ? "Reenganche guardado" : "No había cambios"); pintaRem(p, a); }
+  };
 }
 // Un paso del formato viejo (bubbles/mensaje sueltos) pasa a variantes sin cambiar lo que manda: la general primero.
 function asegurarVariantes(paso) {
@@ -690,22 +694,15 @@ function cargaCss() {
   .amx-acts .amx-btn{margin-top:0}
   .amx-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(200px,240px);gap:14px;align-items:start;margin-top:10px}
   @media(max-width:640px){.amx-two{grid-template-columns:1fr}}
-  .amx-ta{width:100%;box-sizing:border-box;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);color:var(--text);font:inherit;font-size:13px;line-height:1.5;padding:8px 11px;margin-bottom:6px;resize:vertical;field-sizing:content;min-height:42px;max-height:220px}
   .amx-var{margin-top:10px}
-  .amx-bb{display:flex;gap:8px;align-items:flex-start;margin-bottom:6px}
-  .amx-bb>.amx-mn{margin-top:9px}
-  .amx-bb>.amx-ta,.amx-bb>.amx-media{flex:1;margin-bottom:0}
   .amx-salg{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start}
   .amx-salg>.amx-prevbox{display:none}
   .amx-salg.con-vista{grid-template-columns:minmax(0,1fr) 300px}
   .amx-salg.con-vista>.amx-prevbox{display:block}
   @media(max-width:760px){.amx-salg.con-vista{grid-template-columns:1fr}}
   .amx-prevbox{max-height:520px;overflow:auto;border-radius:14px}
-  .amx-mn{flex:none;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;background:var(--brand-bg);color:var(--brand)}
   .amx-link small{font-weight:400;color:var(--muted);font-size:12px}
   .amx-link:focus{outline:none}.amx-link:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
-  .amx-media{font-size:12px;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
-  .amx-media svg{width:14px;height:14px}
   .amx-warnrow{display:flex;gap:7px;align-items:center;font-size:12.5px;color:var(--amber);background:rgba(240,169,43,.08);border-radius:10px;padding:8px 10px}
   .amx-warnrow svg{width:14px;height:14px;flex:none}
   .amx-step{border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-top:10px}
