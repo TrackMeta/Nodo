@@ -491,7 +491,7 @@ function pintaRem(p, a) {
       const antes = seq.pasos; seq.pasos = pasos;
       if (await guardarSeq(seq, e.currentTarget)) n++; else { seq.pasos = antes; ok = false; }
     }
-    if (ok) { S.trabajoRem = null; toast(n ? "Reenganche guardado" : "No había cambios"); pintaRem(p, a); }
+    if (ok) { S.trabajoRem = null; toast(n ? "Reenganche guardado" : "No había cambios"); pinta(); }   // toda la ficha: también las etiquetas de arriba
   };
 }
 // Un paso del formato viejo (bubbles/mensaje sueltos) pasa a variantes sin cambiar lo que manda: la general primero.
