@@ -704,6 +704,10 @@ async function openProduct(id){
   st._avisoStock=null; // el aviso de stock podado es de ESTE producto, no del anterior
   st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="inicio";
   st._carpetaOrig=prodFolder();   // la carpeta de sus flujos y secuencias al abrir: si cambia el nombre o el emoji, se renombra
+  st._sucioFuera=false;            // ¿hay cambios sin guardar FUERA del editor de secuencias? (ver «Guardar pasos»)
+  if(!window._sucioFueraWired){ window._sucioFueraWired=true;
+    const marca=(e)=>{ const t=e.target; if(t && t.closest && t.closest("#detailView") && !t.closest("[data-noguard]")) st._sucioFuera=true; };
+    document.addEventListener("input",marca,true); document.addEventListener("change",marca,true); }
   st._verOrig=Object.fromEntries((vs||[]).map(v=>[v.id,{ precio:v.precio, costo:v.costo }]));   // foto de precios al abrir
   // Snapshot del config al ABRIR: al guardar se mezcla por delta contra el config FRESCO
   // (otra pestaña —palabras clave, adelanto, secuencias— pudo escribir una clave mientras
@@ -2012,7 +2016,13 @@ ${(()=>{ const ra=(c.remarketing_seqs_angulo&&typeof c.remarketing_seqs_angulo==
     if(k==="general"){ if(seqId) c.remarketing_seq_id=seqId; else delete c.remarketing_seq_id; }
     prodSync();
     if(seqId){ try{ await supa.from("sequences").update({ segmento:k }).eq("id",seqId); }catch(_){} } // etiqueta para la insignia en Secuencias
-    toast(seqId?"Vinculada — recuerda Guardar el producto":"Quitada — recuerda Guardar el producto");
+    // (2-nov) El enlace se guarda AL INSTANTE: antes esperaba al «Guardar cambios» de arriba y, si no se tocaba, la
+    // secuencia quedaba creada pero sin enlazar — nadie la recibía. Solo esas dos claves, sobre el config fresco.
+    const rs={ ...m }, rid=c.remarketing_seq_id;
+    const r=await patchProductConfig(st.prod.id,(cfg)=>{ cfg.remarketing_seqs=rs; if(rid) cfg.remarketing_seq_id=rid; else delete cfg.remarketing_seq_id; });
+    if(r.ok){ st._cfgOrig={ ...(st._cfgOrig||{}), remarketing_seqs:JSON.parse(JSON.stringify(rs)) }; if(rid) st._cfgOrig.remarketing_seq_id=rid; else delete st._cfgOrig.remarketing_seq_id;
+      toast(seqId?"Secuencia enlazada":"Secuencia quitada de este producto"); }
+    else toast("No se pudo guardar el enlace: "+(r.error?.message||"error"),true);
     renderSlots();
   };
   const crearPara=async(k,label)=>{
@@ -2021,8 +2031,9 @@ ${(()=>{ const ra=(c.remarketing_seqs_angulo&&typeof c.remarketing_seqs_angulo==
     if(error && /folder|segmento|column/.test(error.message)){ ({ data,error }=await supa.from("sequences").insert({ channel_id:st.channelId, nombre, activo:true, pasos:[] }).select("id").single()); }
     if(error||!data){ toast("No se pudo crear la secuencia",true); return; }
     list.unshift({ id:data.id, nombre, activo:true, pasos:[] });
+    abierto=k;   // se abre su editor para escribir los toques ahí mismo
     await setSlot(k,data.id);
-    toast("Secuencia creada — edítala en Secuencias");
+    toast("Secuencia creada: escribe sus toques aquí abajo");
   };
   let abierto=null; // qué casilla tiene el editor de pasos abierto (una a la vez)
   const renderSlots=()=>{
@@ -2055,6 +2066,7 @@ ${(()=>{ const ra=(c.remarketing_seqs_angulo&&typeof c.remarketing_seqs_angulo==
     ? "Serie programada desde el primer contacto: Día 1, 3, 7… corren pase lo que pase. Ignora el silencio y no se reinicia si el cliente responde. Los pasos fuera de las 24h necesitan plantilla."
     : "Recupera al que se enfrió: cada paso espera a que el cliente lleve un rato callado, y si responde el reloj se reinicia y la secuencia se pausa mientras haya conversación.";
   const paintEditor=(seq, wrap)=>{
+    wrap.setAttribute("data-noguard","");   // sus cambios los marca revisa() (abajo) y los limpia «Guardar pasos»
     // Editor de pasos COMPARTIDO (mismo módulo que la página Secuencias). El producto
     // usa mensaje-only (actions.enabled=false) y su propio producto para el descuento.
     const modo0=seq.modo||"reenganche";
@@ -2106,6 +2118,9 @@ ${(()=>{ const ra=(c.remarketing_seqs_angulo&&typeof c.remarketing_seqs_angulo==
       const err=await guardarUnaSecuencia(reg.get(seq.id));
       btn.disabled=false; btn.textContent=old;
       if(err){ toast(err,true); return; }
+      // (2-nov) Si lo único sin guardar eran estos pasos, la página queda limpia: antes avisaba «Cambios sin guardar»
+      // al salir aunque todo estaba guardado.
+      if(!st._sucioFuera && ![...reg.values()].some(r=>JSON.stringify(r.seq.pasos||[])!==r.foto)) markClean();
       toast("Pasos guardados");
     };
   };
@@ -4960,7 +4975,7 @@ async function _saveProduct(){
   st._verOrig=Object.fromEntries((st.versions||[]).filter(v=>v.id).map(v=>[v.id,{ precio:v.precio, costo:v.costo }]));   // nueva foto
   if(eAct) toast("Se guardó el producto, pero no «Cómo llegan los clientes» ("+eAct+"). Vuelve a guardar.",true);
   else if(eRem) toast("Se guardó el producto, pero no los pasos del remarketing ("+eRem+"). Vuelve a guardar.",true);
-  else { markClean(); const av=st._avisoStock; st._avisoStock=null; toast(av?"Guardado. "+av:"Guardado", !!av); }
+  else { markClean(); st._sucioFuera=false; const av=st._avisoStock; st._avisoStock=null; toast(av?"Guardado. "+av:"Guardado", !!av); }
   sincronizarCarpetaProducto().catch(()=>{});
   loadProducts();
   // 💲 Un EXTRA: su precio vive COPIADO en el flujo de cada principal que lo ofrece (el generador
