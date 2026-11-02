@@ -55,7 +55,7 @@ export function veredictoWebhook(field: string, v: any): Veredicto {
       return { alerta: { nivel: "amarillo", origen: "violacion", texto: `Meta registró una infracción de políticas en tu cuenta de WhatsApp${t ? ` (${t})` : ""}. Varias seguidas terminan en bloqueo: revisa qué mensajes la causaron.` } };
     }
     if (ev === "ACCOUNT_DELETED" || ev === "PARTNER_REMOVED") {
-      return { alerta: { nivel: "rojo", origen: "ban", texto: "Meta desvinculó o eliminó tu cuenta de WhatsApp Business. El bot no puede enviar mensajes: reconecta el número en Canales." } };
+      return { alerta: { nivel: "rojo", origen: "ban", texto: "Meta desvinculó o eliminó tu cuenta de WhatsApp Business. El bot no puede enviar mensajes: reconecta el número en Conexiones → WhatsApp." } };
     }
     return null;
   }
@@ -146,8 +146,8 @@ export async function sondearNumero(db: SupabaseClient, channelId: string, phone
   const j: any = await r.json().catch(() => ({}));
   if (!r.ok || j?.error) {
     const code = Number(j?.error?.code);
-    if (code === 190) return { alerta: { nivel: "rojo", origen: "sondeo", texto: "El token de WhatsApp venció o fue revocado: el bot NO puede responder. Reconecta el número en Canales." } };
-    if (code === 100 || code === 803) return { alerta: { nivel: "rojo", origen: "sondeo", texto: "Meta ya no reconoce este número en tu cuenta (¿lo eliminaron o migraron?). Revisa Canales." } };
+    if (code === 190) return { alerta: { nivel: "rojo", origen: "sondeo", texto: "El token de WhatsApp venció o fue revocado: el bot NO puede responder. Reconecta el número en Conexiones → WhatsApp." } };
+    if (code === 100 || code === 803) return { alerta: { nivel: "rojo", origen: "sondeo", texto: "Meta ya no reconoce este número en tu cuenta (¿lo eliminaron o migraron?). Revisa Conexiones → WhatsApp." } };
     return null; // hipo de red o de Meta: no alarmar por uno
   }
   const st = String(j?.status ?? "").toUpperCase();
@@ -155,7 +155,7 @@ export async function sondearNumero(db: SupabaseClient, channelId: string, phone
   if (st === "BANNED") return { alerta: { nivel: "rojo", origen: "sondeo", texto: "Meta BANEÓ tu número de WhatsApp. El bot no puede enviar mensajes. Revisa el Business Manager → Calidad de la cuenta para apelar." } };
   if (st === "RESTRICTED") return { alerta: { nivel: "rojo", origen: "sondeo", texto: "Meta RESTRINGIÓ tu número de WhatsApp: por ahora no puede iniciar conversaciones. Revisa el Business Manager." } };
   if (st === "FLAGGED" || q === "RED") return { alerta: { nivel: "amarillo", origen: "sondeo", texto: "La calidad de tu número está en ROJO (clientes que bloquean o reportan). Frena campañas y remarketing hasta que mejore o Meta te baja el límite." } };
-  if (st === "DISCONNECTED" || st === "DELETED") return { alerta: { nivel: "rojo", origen: "sondeo", texto: "Tu número de WhatsApp aparece DESCONECTADO en Meta. Revisa Canales → Probar conexión." } };
+  if (st === "DISCONNECTED" || st === "DELETED") return { alerta: { nivel: "rojo", origen: "sondeo", texto: "Tu número de WhatsApp aparece DESCONECTADO en Meta. Revisa Conexiones → WhatsApp → Probar conexión." } };
   // Sano: apaga lo que el propio sondeo había levantado (y la calidad si Meta ya no la marca).
   return { limpiar: q === "GREEN" ? ["sondeo", "calidad"] : ["sondeo"], info: "Tu número de WhatsApp volvió a funcionar con normalidad." };
 }

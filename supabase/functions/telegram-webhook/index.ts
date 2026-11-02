@@ -118,7 +118,7 @@ Deno.serve(async (req) => {
         .update({ telegram_chat_ids: ids, telegram_pair: null, telegram_vinculos: vinc })
         .eq("id", channelId).eq("telegram_pair->>codigo", String(pair.codigo)).select("id");
       if (!_vinculado || !_vinculado.length) {
-        await sendTelegram(token, [quienEs], "⚠️ Ese código ya no vale. Genera uno nuevo en <b>Canales → Telegram</b>.");
+        await sendTelegram(token, [quienEs], "⚠️ Ese código ya no vale. Genera uno nuevo en <b>Conexiones → Telegram</b>.");
         return json({ ok: true });
       }
       await sendTelegram(token, [quienEs],
@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
         .eq("id", channelId).eq("telegram_pair->>codigo", codigo);
       if (intentos >= 5) {
         await anular();
-        await sendTelegram(token, [quienEs], "⚠️ Demasiados intentos. Anulé el código; genera uno nuevo en <b>Canales → Telegram</b>.");
+        await sendTelegram(token, [quienEs], "⚠️ Demasiados intentos. Anulé el código; genera uno nuevo en <b>Conexiones → Telegram</b>.");
       } else {
         let q = db.from("channels").update({ telegram_pair: { ...pair, intentos } })
           .eq("id", channelId).eq("telegram_pair->>codigo", codigo);
@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
         const { data: _contado } = await q.select("id");
         if (!_contado || !_contado.length) {
           await anular();
-          await sendTelegram(token, [quienEs], "⚠️ Demasiados intentos. Anulé el código; genera uno nuevo en <b>Canales → Telegram</b>.");
+          await sendTelegram(token, [quienEs], "⚠️ Demasiados intentos. Anulé el código; genera uno nuevo en <b>Conexiones → Telegram</b>.");
         } else {
           await sendTelegram(token, [quienEs], "❌ Código incorrecto. Revísalo en el panel e inténtalo de nuevo.");
         }
@@ -166,13 +166,13 @@ Deno.serve(async (req) => {
           "• <b>/hoy</b> — resumen de cómo va hoy\n" +
           "• <b>/ayer</b> — resumen de ayer\n" +
           "• <b>/fecha 2026-07-20</b> — resumen de un día\n\n" +
-          (esAdmin ? "" : "Para usarlos, vincúlate primero: <b>Canales → Telegram</b> en el panel, " +
+          (esAdmin ? "" : "Para usarlos, vincúlate primero: <b>Conexiones → Telegram</b> en el panel, " +
             "toca <b>Detectar mi chat ID</b> y mándame el código."));
         return json({ ok: true });
       }
       if (!esAdmin) {
         await sendTelegram(token, [chatId],
-          "🔒 Para ver los resúmenes tienes que estar vinculado. Entra a <b>Canales → Telegram</b> en el panel y sigue el paso de vinculación.");
+          "🔒 Para ver los resúmenes tienes que estar vinculado. Entra a <b>Conexiones → Telegram</b> en el panel y sigue el paso de vinculación.");
         return json({ ok: true });
       }
       const tz = (ch as any).timezone || "America/Lima";

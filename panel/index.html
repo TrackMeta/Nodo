@@ -1349,9 +1349,9 @@ const META_MOTIVO = {
   131049: "Meta frenó este mensaje para no saturar al cliente (límite de marketing)",
   131053: "WhatsApp no pudo descargar el archivo (formato o tamaño no aceptado)",
   131030: "La app de Meta está en modo desarrollo: este número no está en su lista de prueba",
-  133010: "El número del negocio no está registrado en la API de WhatsApp (Canales → Probar conexión)",
+  133010: "El número del negocio no está registrado en la API de WhatsApp (Conexiones → WhatsApp → Probar conexión)",
   130429: "WhatsApp está limitando el ritmo de envío del número. Reintenta en un momento",
-  190:    "El token de WhatsApp venció o fue revocado: reconecta el número en Canales",
+  190:    "El token de WhatsApp venció o fue revocado: reconecta el número en Conexiones → WhatsApp",
   470:    "El cliente bloqueó al negocio o el número dejó de ser válido",
   100:    "Meta rechazó un parámetro del mensaje (formato del número o del archivo)",
 };
@@ -2687,7 +2687,7 @@ async function openTplPicker() {
   // sentido elegir una plantilla (el envío fallaría con "canal_invalido").
   const ch = await getChannel(state.channelId);
   if (!ch || !ch.activo || !ch.phone_number_id) {
-    toast("Aún no conectaste tu número de WhatsApp. Conéctalo en Canales → WhatsApp para poder enviar plantillas.", true);
+    toast("Aún no conectaste tu número de WhatsApp. Conéctalo en Conexiones → WhatsApp para poder enviar plantillas.", true);
     return;
   }
   const { data, error } = await supa.from("wa_templates")
@@ -2709,8 +2709,8 @@ async function openTplPicker() {
   const o = await r.json().catch(() => ({}));
   if (!r.ok) {
     const FRIEND = {
-      canal_invalido: "Aún no conectaste tu número de WhatsApp. Conéctalo en Canales → WhatsApp.",
-      sin_token: "Falta el token de tu número de WhatsApp. Revísalo en Canales → WhatsApp.",
+      canal_invalido: "Aún no conectaste tu número de WhatsApp. Conéctalo en Conexiones → WhatsApp.",
+      sin_token: "Falta el token de tu número de WhatsApp. Revísalo en Conexiones → WhatsApp.",
       forbidden_channel: "No tienes permiso para enviar en este canal.",
       no_auth: "Tu sesión expiró. Vuelve a iniciar sesión.",
       not_member: "Tu sesión expiró. Vuelve a iniciar sesión.",

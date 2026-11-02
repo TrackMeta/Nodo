@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
   const ok = await verifyMetaSignature(raw, sig, secrets.app_secret);
   // Firma inválida = App Secret mal pegado o rotado: TODOS los mensajes rebotan. Al menos que
   // quede en el log con el canal (antes era un 401 mudo).
-  if (!ok) { console.error(`[webhook] firma inválida para el canal ${channel.id}: revisa el App Secret en Canales`); return new Response("Unauthorized", { status: 401 }); }
+  if (!ok) { console.error(`[webhook] firma inválida para el canal ${channel.id}: revisa el App Secret en Conexiones → WhatsApp`); return new Response("Unauthorized", { status: 401 }); }
 
   // Procesar (idempotente por wamid). Si falla, devolvemos 500 y Meta reintenta.
   try {

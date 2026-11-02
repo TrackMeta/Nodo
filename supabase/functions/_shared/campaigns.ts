@@ -280,9 +280,9 @@ async function avisarCanalRoto(db: SupabaseClient, c: any, meta: any) {
     const chatIds: string[] = Array.isArray((ch as any)?.telegram_chat_ids) ? (ch as any).telegram_chat_ids.map(String) : [];
     const token = secrets?.telegram_bot_token;
     const code = Number(meta?.code);
-    const que = code === 190 ? "el token de WhatsApp venció o fue revocado: reconecta el número en Canales"
+    const que = code === 190 ? "el token de WhatsApp venció o fue revocado: reconecta el número en Conexiones → WhatsApp"
       : code === 131030 ? "la app de Meta está en modo desarrollo y el destinatario no está en su lista de prueba"
-      : code === 133010 ? "el número del negocio no está registrado en la API (Canales → Probar conexión)"
+      : code === 133010 ? "el número del negocio no está registrado en la API (Conexiones → WhatsApp → Probar conexión)"
       : code === 131042 ? "hay un problema con el medio de pago de tu cuenta de WhatsApp en Meta (revisa la tarjeta en el Business Manager → Facturación)"
       : code === 131031 ? "Meta bloqueó la cuenta de WhatsApp Business (revisa el Business Manager)"
       : code === 368 ? "Meta bloqueó temporalmente el número por sus políticas"

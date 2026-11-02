@@ -13457,7 +13457,7 @@ async function avisar(
     // (pide_humano) o "no le llegó algo que pagó" (envio_fallido/entrega_fallida). El
     // bot igual pausó/cerró la venta; apagar la alerta dejaría al cliente fantasmeado
     // sin que nadie se entere. El resto (marketing, confirmaciones) sí respeta el toggle.
-    if (!AVISOS_CRITICOS.has(clave) && !avisoActivo(cfg, clave)) { await _noSale("lo apagaste en Canales → Avisos"); return; }
+    if (!AVISOS_CRITICOS.has(clave) && !avisoActivo(cfg, clave)) { await _noSale("lo apagaste en Conexiones → Telegram"); return; }
 
     const secrets = await getChannelSecrets(db, channelId);
     const token = secrets?.telegram_bot_token;
@@ -13487,7 +13487,7 @@ async function avisar(
     if (!texto) { await _noSale(`la plantilla «${clave}» no existe en el catálogo o quedó vacía`); return; }
 
     // Adjuntar el comprobante de pago: si el operador lo pidió para este aviso
-    // (Canales → Avisos) y quien lo dispara no mandó ya una foto, se busca el
+    // (Conexiones → Telegram) y quien lo dispara no mandó ya una foto, se busca el
     // último comprobante que subió el cliente ({{ultima_imagen}} = URL pública).
     // Los avisos "por validar" ya traen su foto por código (opts.foto), así que
     // este relleno solo aplica a los de venta confirmada.
@@ -18336,7 +18336,7 @@ export async function sugerirRespuestas(db: SupabaseClient, channelId: string, c
   const info = await channelIaInfo(db, run);
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: channelId, p_provider: null });
   const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
-  if (!ai?.api_key) throw new Error("Este canal no tiene IA configurada (Ajustes → IA · Proveedores).");
+  if (!ai?.api_key) throw new Error("Este canal no tiene IA configurada (IA → Cuentas y gasto).");
 
   const prod = ctx.producto_nombre || "";
   const parts: string[] = [];
@@ -33439,7 +33439,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
 }
 
 // ── Nodo Google Sheets: registra una fila vía webhook de Apps Script ─
-// El usuario publica un Apps Script en su hoja (Ajustes → Google Sheets) que
+// El usuario publica un Apps Script en su hoja (Conexiones → Google Sheets) que
 // recibe { hoja, fila } y agrega la fila. Nodo solo hace POST a esa URL.
 async function runGoogleSheets(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   const cfg = node.config ?? {};
@@ -33482,9 +33482,9 @@ async function runGoogleSheets(db: SupabaseClient, run: Run, node: Node, ctx: an
     if (g.mode === "oauth") {
       // OAuth: llamamos a la Sheets API con el token del canal (Vault).
       const spreadsheetId = g.spreadsheet_id;
-      if (!spreadsheetId) throw new Error("Falta elegir la hoja en Ajustes → Google Sheets");
+      if (!spreadsheetId) throw new Error("Falta elegir la hoja en Conexiones → Google Sheets");
       const { data: refresh } = await db.rpc("get_gsheets_token", { p_channel_id: run.channel_id });
-      if (!refresh) throw new Error("Google Sheets desconectado (reconecta en Ajustes)");
+      if (!refresh) throw new Error("Google Sheets desconectado (reconecta en Conexiones → Google Sheets)");
       const token = await getAccessToken(String(refresh));
       if (accion === "update") await sheetsUpdate(token, spreadsheetId, hoja, buscar, fila);
       else await sheetsAppend(token, spreadsheetId, hoja, fila);
@@ -33499,7 +33499,7 @@ async function runGoogleSheets(db: SupabaseClient, run: Run, node: Node, ctx: an
       });
       if (!res.ok) throw new Error("Apps Script respondió " + res.status);
     } else {
-      throw new Error("Google Sheets no está conectado (Ajustes → Google Sheets)");
+      throw new Error("Google Sheets no está conectado (Conexiones → Google Sheets)");
     }
     await logEvent(db, run.channel_id, run.contact_id, "nota", accion === "update" ? "📊 Fila actualizada en Google Sheets" : "📊 Fila enviada a Google Sheets");
     run.current_node_id =

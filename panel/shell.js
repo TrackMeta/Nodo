@@ -672,7 +672,7 @@ function openCreateBot() {
   back.innerHTML = `
     <div class="nodo-modal" role="dialog" aria-modal="true" aria-label="Crear nuevo bot">
       <h3>Crear nuevo bot</h3>
-      <p>Cada bot es un <b>espacio independiente</b> dentro de tu cuenta: su propia bandeja, contactos, flujos, productos, configuración y pixel. El número de WhatsApp y el pixel se conectan después, en <b>Canales</b>.</p>
+      <p>Cada bot es un <b>espacio independiente</b> dentro de tu cuenta: su propia bandeja, contactos, flujos, productos, configuración y pixel. El número de WhatsApp y el pixel se conectan después, en <b>Conexiones</b>.</p>
       <label for="nbName">Nombre del bot</label>
       <input id="nbName" placeholder="Ej. Mi Negocio 2" maxlength="60" autocomplete="off" />
       <div class="nb-acts">
@@ -695,7 +695,7 @@ function openCreateBot() {
     S.channels.push({ id: data.id, nombre: data.nombre, logo_url: null });
     S.channels.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
     close();
-    toast("Bot creado — conéctalo en Canales");
+    toast("Bot creado — conéctalo en Conexiones");
     // Guard de cambios sin guardar ANTES de cambiar de bot (setChannel recarga la página y
     // descartaría ediciones en silencio): el selector de bot existente ya lo respeta, esta
     // ruta no. Si hay cambios y el operador cancela, el bot queda creado y sigue en su página.
@@ -1335,6 +1335,11 @@ export async function mountShell({ active } = {}) {
   const nav = document.createElement("aside");
   const startCollapsed = localStorage.getItem("nodo.collapsed") === "1";
   nav.className = "nodo-nav" + (startCollapsed ? " collapsed" : "");
+  // (2-nov) En pantallas angostas (celular) la barra va comprimida, solo íconos: abierta ocupaba 224 de 390 px y el
+  // contenido quedaba en una tira de 160 px. No toca la preferencia guardada (al volver a una pantalla ancha, como estaba).
+  { const angosta = window.matchMedia("(max-width:720px)");
+    const ajusta = () => { if (angosta.matches) nav.classList.add("collapsed"); else nav.classList.toggle("collapsed", localStorage.getItem("nodo.collapsed") === "1"); };
+    ajusta(); try { angosta.addEventListener("change", ajusta); } catch (_) {} }
   // Ítems: el grupo primario (Bandeja/Dashboard/Pedidos) va FIJO fuera del
   // scroll; los demás grupos van dentro del área scrolleable.
   // (con el diseño anterior —?ds=1— el Dashboard es el clásico)

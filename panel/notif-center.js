@@ -1082,7 +1082,7 @@ function pintarPrefs(d) {
       </section>
       <section class="nn-psec">
         <h3>Qué ver en la campanita</h3>
-        <p class="nn-pnote">Lo que apagues deja de salir en la campanita y en el contador. No toca Telegram (eso se configura en Canales → Avisos).</p>
+        <p class="nn-pnote">Lo que apagues deja de salir en la campanita y en el contador. No toca Telegram (eso se configura en Conexiones → Telegram).</p>
         ${bloques}
       </section>
     </div>`;

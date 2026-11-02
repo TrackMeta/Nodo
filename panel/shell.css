@@ -19,6 +19,15 @@
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
 }
 
+/* (2-nov) Banderas: Chrome en Windows no dibuja las banderas emoji y muestra letras («MX», «PE»). Esta fuente trae SOLO
+   banderas y el navegador la baja recién cuando una página muestra una (unicode-range); el resto del texto no cambia. */
+@font-face{
+  font-family:'NodoBanderas';
+  font-display:swap;
+  src:url("https://cdn.jsdelivr.net/npm/country-flag-emoji-polyfill@0.1.8/dist/TwemojiCountryFlags.woff2") format('woff2');
+  unicode-range:U+1F1E6-1F1FF,U+1F3F4,U+E0062-E007F;
+}
+
 /* ── Transiciones de navegación entre páginas ──────────────────────
    View Transitions API (Chrome/Edge): al cambiar de sección el
    navegador hace un cross-fade suave del contenido en vez del flash
@@ -40,7 +49,7 @@
 
 /* ── Tokens no temáticos (radios, transiciones, tipografía) ────────── */
 :root{
-  --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font:"NodoBanderas","Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --font-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
   /* Azul/celeste del logo de la app (CTA Bandeja) */
   --inbox:#007dfd; --inbox-2:#3aa5ff; --inbox-3:#5ec6ff;
@@ -1088,7 +1097,7 @@ html:not([data-ds="1"]) .nu-av{width:30px;height:30px;border-radius:8px}
   src:url("vendor/inter-latin.woff2") format('woff2');
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
 }
-html:not([data-ds="1"]){--font:"InterDS",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-synthesis-weight:none}
+html:not([data-ds="1"]){--font:"NodoBanderas","InterDS",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-synthesis-weight:none}
 html:not([data-ds="1"]) .nodo-title{font-weight:600;letter-spacing:-.02em}
 
 /* ── Diseño 2 · Pie del menú: entra en 224 px (antes «Ro… Ad…») ── */

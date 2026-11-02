@@ -276,7 +276,7 @@ const MOTIVOS: Record<number, string> = {
   132000: "La plantilla no cuadra con los datos enviados: faltan o sobran variables.",
   132001: "Esa plantilla no existe o no está aprobada en Meta.",
   133016: "WhatsApp está restaurando la cuenta. Se reintenta solo.",
-  190: "El token de WhatsApp venció o fue revocado: hay que reconectar el número en Canales.",
+  190: "El token de WhatsApp venció o fue revocado: hay que reconectar el número en Conexiones → WhatsApp.",
   131042: "Meta no pudo cobrar: hay un problema con el medio de pago de tu cuenta de WhatsApp (Business Manager → Facturación).",
   131031: "Meta bloqueó la cuenta de WhatsApp Business: revisa el Business Manager.",
   368: "Meta bloqueó temporalmente el número por sus políticas.",

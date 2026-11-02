@@ -192,7 +192,7 @@ async function syncTemplates(){
   try{
     const r=await callFn("channel-config",{ action:"templates_sync", channel_id:st.channelId });
     if(r?.error){ toast(r.error, true); }
-    else if(r?.falta){ toast(r.falta.token ? "Conecta WhatsApp primero — falta el token de Meta (Canales → WhatsApp)" : "Falta el WABA ID del canal (Canales → WhatsApp)", true); }
+    else if(r?.falta){ toast(r.falta.token ? "Conecta WhatsApp primero — falta el token de Meta (Conexiones → WhatsApp)" : "Falta el WABA ID del canal (Conexiones → WhatsApp)", true); }
     else if(r?.sincronizado){
       const partes=[]; if(r.creadas) partes.push(`${r.creadas} nueva(s)`); if(r.actualizadas) partes.push(`${r.actualizadas} actualizada(s)`); if(r.eliminadas) partes.push(`${r.eliminadas} ya no existe(n) en Meta`);
       toast(`Sincronizado con Meta — ${r.total} plantilla(s)${partes.length?" ("+partes.join(", ")+")":""}`);
@@ -501,7 +501,7 @@ async function enviarMeta(){
   catch(e){ r={ error:e.message }; }
   btn.disabled=false; btn.textContent=old;
   if(r?.enviado){ toast("Enviada a Meta — en revisión (24-48h)"); await loadList(); openTpl(st.tpl.id); }
-  else if(r?.falta) toast("Conecta WhatsApp primero (Canales → WhatsApp) para enviarla a aprobar.", true);
+  else if(r?.falta) toast("Conecta WhatsApp primero (Conexiones → WhatsApp) para enviarla a aprobar.", true);
   else toast(r?.error||"No se pudo enviar a Meta", true);
 }
 // Nº más alto de hueco {{N}} presente en el cuerpo → cuántos casilleros mostrar.

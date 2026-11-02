@@ -192,7 +192,7 @@ async function removeMember(accId, userId){
   if(error){ toast(error.message,true); return; }
   // …y se le cortan sus códigos pendientes y su Telegram (seguía aprobando pagos).
   const r = await callFn({ action:"limpiar_miembro", account_id:accId, user_id:userId }, true);
-  toast("Miembro quitado"+(r&&r.telegram_cortados?` · se le cortó Telegram en ${r.telegram_cortados} bot(s)`:"")+". Si vinculó su Telegram antes de hoy, quítalo también en Canales → Telegram."); load();
+  toast("Miembro quitado"+(r&&r.telegram_cortados?` · se le cortó Telegram en ${r.telegram_cortados} bot(s)`:"")+". Si vinculó su Telegram antes de hoy, quítalo también en Conexiones → Telegram."); load();
 }
 async function cambiarRol(accId, userId, actual){
   const nuevo = actual==="admin" ? "operador" : "admin";

@@ -782,7 +782,7 @@ async function loadVentasMeta(){
     html = r&&r.whatsapp
       ? `<div class="hint" style="margin:0">Todavía no está conectado. Lo hago en un clic con tu token de WhatsApp: busco el dataset de tu cuenta de WhatsApp Business y, de paso, mando las ventas de esta semana que no llegaron.</div>
          <div class="acts"><button class="btn primary" id="vmConectar">Conectar ventas a Meta</button></div>`
-      : `<div class="hint" style="margin:0">Primero conecta WhatsApp en <b>Canales</b>: las ventas se conectan con ese mismo token, sin pegar nada más.</div>`;
+      : `<div class="hint" style="margin:0">Primero conecta WhatsApp en <b>Conexiones</b>: las ventas se conectan con ese mismo token, sin pegar nada más.</div>`;
   }else{
     const tok=r.token==="propio"?"el que pegaste a mano":r.token==="whatsapp"?"el mismo de WhatsApp":"falta";
     const u=r.ultima_venta;
