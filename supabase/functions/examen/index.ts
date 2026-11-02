@@ -481,7 +481,8 @@ Deno.serve(async (req) => {
       for (const p of (Array.isArray(body?.pasos) ? body.pasos.slice(0, 12) : [])) {
         if (p?.oferta) {
           await db.from("contacts").update({ oferta_activa: { opcion_id: String(p.oferta.version_id), precio: Number(p.oferta.precio),
-            vence: new Date(Date.now() + 48 * 3600_000).toISOString(), origen: "remarketing" } }).eq("id", contactId);
+            // `vencida: true` = una oferta que ya caducó (el cliente vuelve días después pidiendo ese precio).
+            vence: new Date(Date.now() + (p.oferta.vencida ? -24 : 48) * 3600_000).toISOString(), origen: "remarketing" } }).eq("id", contactId);
           await db.from("messages").insert({ channel_id: channelId, contact_id: contactId, direction: "out", type: "text",
             content: { text: String(p.oferta.texto ?? "") }, status: "delivered" });
           tr.push({ c: "[secuencia con oferta S/ " + p.oferta.precio + "]", b: [String(p.oferta.texto ?? "")] });

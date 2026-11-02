@@ -506,7 +506,20 @@ async function runEngineInner(
     // «no pago adelanto, ya me estafaron antes» es la objeción, no un reclamo.
     const _ordRec = await tienePedidoVivo(db, contactId);
     const _pagadoRec = !!_ordRec && COMPRADO_STATES.has(String(_ordRec.estado ?? ""));
-    const dudaSinComprar = (dudaNoReclamo(event.text) || RE_ESTAFA_AJENA.test(String(event.text ?? ""))) && !_pagadoRec;
+    // 🛒 SIN NINGÚN PEDIDO (ni vivo ni comprado antes) la lista no escala: contesta la IA, que ya responde bien
+    // la desconfianza y decide sola con [[humano]] si hace falta una persona. Las frases que se colaban por la
+    // lista de dudas mandaban a un humano al que estaba por comprar, y nadie le contestaba: «No es una estafa,
+    // que tal si pago y no envían nada» (Manuel, 14-oct), «O es una estafa...mmm» (9-oct). [[confiar-en-la-ia]]
+    let _sinPedidoRec = !_ordRec;
+    if (_sinPedidoRec) {
+      try {
+        const { data: _oc } = await db.from("orders").select("id").eq("contact_id", contactId)
+          .in("estado", [...COMPRADO_STATES]).limit(1);
+        if ((_oc ?? []).length) _sinPedidoRec = false;
+      } catch (_) { _sinPedidoRec = false; }   // sin poder mirar → se escala como siempre
+    }
+    const dudaSinComprar = _sinPedidoRec ||
+      ((dudaNoReclamo(event.text) || RE_ESTAFA_AJENA.test(String(event.text ?? ""))) && !_pagadoRec);
     const { data: chR } = dudaSinComprar
       ? { data: null }
       : await db.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
@@ -24776,6 +24789,34 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         }
       }
     } catch (_) { /* sin datos de remarketing → sin bloque */ }
+    // 💸 LA OFERTA QUE TUVO, aunque no conteste justo al toque. El bloque de arriba solo sale si el último mensaje
+    // nuestro fue el toque; días después la IA veía el precio normal sin saber que le habíamos ofrecido otro.
+    // Medido (revisión 13-14 oct y 18-26 oct, Prime): «3 soles» → «Perfecto, Soldado 💪» + «Son *S/ 10*» (Fernando,
+    // Victor CL); «¿sigue a 3 soles?» → el freno de precios la corregía a medias. Las vencidas se quedan vencidas
+    // (Rodrigo, 2-nov): la IA solo tiene que saberlo y decirlo bien.
+    if (!/precio especial/.test(_bloqueTurno)) {
+      try {
+        const { data: _cO } = await db.from("contacts").select("oferta_activa").eq("id", run.contact_id).maybeSingle();
+        const _oO = (_cO as any)?.oferta_activa;
+        if (_oO && _oO.origen === "remarketing" && Number.isFinite(Number(_oO.precio)) && String(ctx.pedido_creado ?? "") !== "si") {
+          const _symO = simboloMoneda(ctx.moneda as string);
+          const _venceO = _oO.vence ? new Date(_oO.vence) : null;
+          const _fechaO = _venceO ? _venceO.toLocaleDateString("es-PE", { day: "numeric", month: "long", timeZone: "America/Lima" }) : "";
+          const _hoyO = Number(ctx.precio);
+          if (_venceO && _venceO.getTime() > Date.now()) {
+            _bloqueTurno += "\n\n## Tiene un precio especial vigente\n" +
+              `En un recordatorio le ofrecimos *${_symO} ${_oO.precio}*${_fechaO ? ` y vale hasta el ${_fechaO}` : ""}. ` +
+              "Ese es SU precio: si pregunta por la promoción, sigue en pie. No le digas que cerró ni le cobres el normal.";
+          } else if (_venceO && Number.isFinite(_hoyO) && _hoyO > 0 && _hoyO !== Number(_oO.precio)) {
+            _bloqueTurno += "\n\n## Tuvo un precio especial que YA VENCIÓ\n" +
+              `En un recordatorio le ofrecimos *${_symO} ${_oO.precio}*, pero venció${_fechaO ? ` el ${_fechaO}` : ""}. ` +
+              `Hoy su precio es *${_symO} ${_hoyO}*. Si menciona esa promoción o ese monto, no se lo aceptes (nada de ` +
+              `«perfecto» ni «exacto»): dile con amabilidad que esa promoción ya terminó y que hoy es *${_symO} ${_hoyO}*. ` +
+              "No inventes otra rebaja.";
+          }
+        }
+      } catch (_) { /* sin la oferta legible → sin bloque */ }
+    }
     // 🙈 OFERTAS OCULTAS y CANTIDADES que no están en la lista (decisión de Rodrigo, 2026-09-28 — [[ofertas-ocultas]]).
     // Nació de «quiero 5 para mi taller» con packs de 1/2/3 → «dime cuántas quieres» (F9-cinco).
     //  · Pide MÁS («¿y si llevo más?», «por mayor», «para mi taller», o un número mayor que la visible más grande)
