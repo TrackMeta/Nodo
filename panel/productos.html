@@ -306,7 +306,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--faint);pointer-events:none"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="pSearch" placeholder="Buscar producto…" autocomplete="off" style="width:100%;height:40px;background:var(--surface);border:1px solid var(--border);border-radius:11px;color:var(--text);padding:0 12px 0 36px;font-size:13.5px;outline:none;font-family:inherit"/>
       </div>
-      <button class="nodo-btn" id="addFolderBtn" style="display:none;height:40px" title="Crear una carpeta para ordenar tus productos">+ Carpeta</button>
       </div>
       <div id="claseSeg" style="display:inline-flex;gap:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:3px;margin:0 0 14px"></div>
       <div class="nodo-folders" id="folders"></div>
@@ -346,7 +345,7 @@
 
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll, usuarioActual } from "./shell.js";
-import { mountFolders } from "./folder-bar.js";
+import { mountFolders } from "./folder-bar.js?v=2";
 import { montarMapaAngulos } from "./angulos-mapa.js?v=20";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
@@ -369,9 +368,33 @@ let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=22";
 const $ = (id) => document.getElementById(id);
-const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", localFolders:new Set(), gv:"catalogo", hub:null };
+const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
 function prodFolder(){ return ((st.prod?.emoji?st.prod.emoji+" ":"")+(st.prod?.nombre||"")).slice(0,60); }
+// 📁 (2-nov) Los flujos y secuencias de un producto viven en la carpeta «emoji + nombre» del producto. Si le cambias el
+// nombre o el emoji, la carpeta se renombra con él (antes quedaba con el viejo: «💪 Protocolo…» con el producto en 🪖) y
+// pasa a ser una carpeta de verdad (fila en `folders`), no solo un texto en cada elemento.
+async function sincronizarCarpetaProducto(){
+  const viejo=st._carpetaOrig, nuevo=prodFolder();
+  if(!st.prod || !nuevo) return;
+  const ch=st.channelId;
+  for(const [tipo, tabla] of [["flow","flows"],["sequence","sequences"]]){
+    if(viejo && viejo!==nuevo){
+      let q=supa.from(tabla).update({ folder:nuevo }).eq("channel_id",ch).eq("folder",viejo);
+      if(tabla==="flows") q=q.eq("product_id",st.prod.id);
+      await q;
+      const { data:fv }=await supa.from("folders").select("id").eq("channel_id",ch).eq("tipo",tipo).eq("nombre",viejo).maybeSingle();
+      const { data:fn }=await supa.from("folders").select("id").eq("channel_id",ch).eq("tipo",tipo).eq("nombre",nuevo).maybeSingle();
+      if(fv && !fn) await supa.from("folders").update({ nombre:nuevo }).eq("id",fv.id);
+    }
+    // Que exista como carpeta de verdad si algo la usa.
+    const { count }=await supa.from(tabla).select("id",{ count:"exact", head:true }).eq("channel_id",ch).eq("folder",nuevo);
+    if(count){ const { data:fx }=await supa.from("folders").select("id").eq("channel_id",ch).eq("tipo",tipo).eq("nombre",nuevo).maybeSingle();
+      if(!fx){ const { count:n }=await supa.from("folders").select("id",{ count:"exact", head:true }).eq("channel_id",ch).eq("tipo",tipo);
+        await supa.from("folders").insert({ channel_id:ch, tipo, nombre:nuevo, orden:n||0 }); } }
+  }
+  st._carpetaOrig=nuevo;
+}
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 // Emojis para IDENTIFICAR el producto (se muestran sobre el avatar en la
 // Bandeja). El emoji del producto se conserva; el picker ofrece TODOS.
@@ -523,9 +546,7 @@ function renderCards(){
   }
   const sw=$("pSearchWrap"); if(sw) sw.style.display=st.list.length?"":"none";
   // (10-oct) La fila de carpetas solo cuando creaste alguna; mientras tanto, «+ Carpeta» chico al lado del buscador.
-  { const hayCarp = !!(Fbar && Fbar.metas().length); const fb=$("folders"), ab=$("addFolderBtn");
-    if(fb) fb.style.display = hayCarp ? "" : "none";
-    if(ab){ ab.style.display = (!hayCarp && st.list.length) ? "" : "none"; ab.onclick=()=>{ const nb=document.querySelector('#folders [data-act="new"]'); if(nb) nb.click(); }; } }
+  // (2-nov) La barra de carpetas decide sola cuándo mostrarse (folder-bar.js): una regla para todas las secciones.
   let list=st.list;
   if(st.claseFilter==="principal") list=list.filter(esPrin);
   else if(st.claseFilter==="extra") list=list.filter(esEx);
@@ -562,7 +583,7 @@ function renderCards(){
       <div class="c-sub">${esReg(p)?"Regalo · gratis con la compra":esEx(p)?"Complemento · para ventas extra":(p.tipo==="fisico"?"Producto físico":p.tipo==="microapp"?"Micro app":"Producto digital")}</div>
       <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">${icon("gift")} Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">${icon("plus")} Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":p.tipo==="microapp"?icon("phone")+"Micro app":icon("download")+"Digital"}</span>${p.config&&p.config.pais&&String(p.config.pais).toUpperCase()!==_paisBot?`<span class="nodo-pill neutral" title="Se vende en ${esc((PAIS_INFO[String(p.config.pais).toUpperCase()]||[p.config.pais])[0])}">${banderaDe(p.config.pais)} ${esc(p.config.pais)}</span>`:''}<span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>${estadoHtml}`;
     const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar){
+    if(fslot && Fbar && Fbar.metas().length){
       const pk=Fbar.picker({ current:p.folder||null, onPick:async(v)=>{
         const { error }=await supa.from("products").update({ folder:v }).eq("id",p.id);
         if(error){ toast(error.message,true); return; }
@@ -682,6 +703,7 @@ async function openProduct(id){
   if(!p){ toast("Ese producto ya no existe",true); st.prod=null; showGrid(); loadProducts(); return; }
   st._avisoStock=null; // el aviso de stock podado es de ESTE producto, no del anterior
   st.prod=p; st.versions=vs||[]; st.delVersions=[]; st.tab="inicio";
+  st._carpetaOrig=prodFolder();   // la carpeta de sus flujos y secuencias al abrir: si cambia el nombre o el emoji, se renombra
   st._verOrig=Object.fromEntries((vs||[]).map(v=>[v.id,{ precio:v.precio, costo:v.costo }]));   // foto de precios al abrir
   // Snapshot del config al ABRIR: al guardar se mezcla por delta contra el config FRESCO
   // (otra pestaña —palabras clave, adelanto, secuencias— pudo escribir una clave mientras
@@ -4935,6 +4957,7 @@ async function _saveProduct(){
   if(eAct) toast("Se guardó el producto, pero no «Cómo llegan los clientes» ("+eAct+"). Vuelve a guardar.",true);
   else if(eRem) toast("Se guardó el producto, pero no los pasos del remarketing ("+eRem+"). Vuelve a guardar.",true);
   else { markClean(); const av=st._avisoStock; st._avisoStock=null; toast(av?"Guardado. "+av:"Guardado", !!av); }
+  sincronizarCarpetaProducto().catch(()=>{});
   loadProducts();
   // 💲 Un EXTRA: su precio vive COPIADO en el flujo de cada principal que lo ofrece (el generador
   // lo fija ahí) y en lo que el bot le dice al cliente. Cambiarlo acá no toca esos flujos: se

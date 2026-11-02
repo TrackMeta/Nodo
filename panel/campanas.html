@@ -111,7 +111,6 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
       <input id="cSearch" placeholder="Buscar por nombre o plantilla…" autocomplete="off"/>
     </div>
-    <button class="btn" id="addFolderBtn" style="display:none;height:40px" title="Crear una carpeta para ordenar tus campañas">+ Carpeta</button>
     </div>
     <div class="folders" id="folders"></div>
     <div class="grid" id="grid"></div>
@@ -150,7 +149,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, askChoice } from "./shell.js";
 import { instanteEn, getTZ, tzNombre } from "./date-range.js";
-import { mountFolders } from "./folder-bar.js";
+import { mountFolders } from "./folder-bar.js?v=2";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=22";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
@@ -162,7 +161,7 @@ const ORDER_STATES=[["confirmada","Confirmada (digital)"],["confirmado","Confirm
 const STAGE_LBL=Object.fromEntries(STAGES);
 const EST_LBL={ borrador:["Borrador","var(--faint)"], programada:["Programada","var(--brand)"], enviando:["Enviando","var(--amber)"], completada:["Terminada","var(--green)"], cancelada:["Cancelada","var(--red)"] };
 const OSTATE_LBL=Object.fromEntries(ORDER_STATES);
-const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", localFolders:new Set(), editing:null, pickTags:new Set(), pickStages:new Set(), pickOStates:new Set() };
+const st={ channelId:null, camps:[], templates:[], tags:[], folder:"__all", editing:null, pickTags:new Set(), pickStages:new Set(), pickOStates:new Set() };
 let _campBrand={};
 const fmt=new Intl.DateTimeFormat("es-PE",{ day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit" });
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -212,9 +211,7 @@ function renderGrid(){
   const box=$("grid");
   const sw=$("csearchWrap"); if(sw) sw.style.display=st.camps.length?"":"none";
   // (10-oct) Carpetas solo cuando creaste alguna; mientras tanto «+ Carpeta» chico al lado del buscador (solo con campañas).
-  { const hayCarp=!!(Fbar && Fbar.metas().length); const fb=$("folders"), ab=$("addFolderBtn");
-    if(fb) fb.style.display=(hayCarp && st.camps.length)?"":"none";
-    if(ab){ ab.style.display=(!hayCarp && st.camps.length)?"":"none"; ab.onclick=()=>{ const nb=document.querySelector('#folders [data-act="new"]'); if(nb) nb.click(); }; } }
+  // (2-nov) La barra de carpetas decide sola cuándo mostrarse (folder-bar.js): una regla para todas las secciones.
   // Sin plantilla aprobada no hay nada que enviar: «Nueva campaña» apagado y la pantalla vacía lo dice.
   const sinTpl=!st.templates.length;
   { const nb=$("newBtn"); nb.disabled=sinTpl; nb.title=sinTpl?"Primero necesitas una plantilla aprobada por Meta":""; }
@@ -258,23 +255,20 @@ function renderGrid(){
         ${c.estado==="borrador"?`<button class="btn primary" data-a="activate">${icon("play")} Activar</button><button class="btn" data-a="edit">Editar</button>`:""}
         ${c.estado==="programada"?`<button class="btn" data-a="edit">Editar</button>`:""}
         ${(c.estado==="programada"||c.estado==="enviando")?`<button class="btn danger" data-a="cancel">Cancelar</button>`:""}
+        <span data-cardfolder style="margin-left:auto"></span>
         <div class="masw"><button class="masb" data-mas title="Más">⋯</button><div class="masmenu">
-          ${(Fbar && Fbar.metas().length)?'<button data-a="folder">Mover a carpeta…</button>':""}
           <button class="dang" data-a="del">Eliminar</button></div></div>
       </div>`;
     el.querySelectorAll("button[data-a]").forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); const m=b.closest(".masmenu"); if(m) m.classList.remove("show"); action(b.dataset.a,c); });
     el.querySelector("[data-mas]").onclick=(e)=>{ e.stopPropagation(); const m=el.querySelector(".masmenu"); const ab=m.classList.contains("show"); document.querySelectorAll(".masmenu.show").forEach(x=>x.classList.remove("show")); if(!ab) m.classList.add("show"); };
+    // (2-nov) La carpeta se cambia desde la tarjeta, con el mismo selector que el resto de las secciones (antes: ⋯ → «Mover a carpeta…»).
+    { const fslot=el.querySelector("[data-cardfolder]");
+      if(fslot && Fbar && Fbar.metas().length){ const pk=Fbar.picker({ current:c.folder||null, onPick:async(v)=>{ const { error }=await supa.from("campaigns").update({ folder:v }).eq("id",c.id); if(error){ toast(error.message,true); return; } c.folder=v; toast(v?`Movida a «${v}»`:"Quitada de la carpeta"); await Fbar.reload(); renderGrid(); } }); pk.addEventListener("click",(e)=>e.stopPropagation()); fslot.appendChild(pk); } }
     box.appendChild(el);
   });
 }
 async function action(a, c){
   if(a==="edit") return openModal(c);
-  if(a==="folder"){
-    const ops=[{ value:"__none", label:"Sin carpeta" }, ...Fbar.metas().map(m=>({ value:m.nombre, label:`${m.emoji?m.emoji+" ":""}${m.nombre}` }))];
-    const v=await askChoice({ title:"Mover a carpeta", options:ops, value:c.folder||"__none" }); if(v==null) return;
-    const folder=v==="__none"?null:v;
-    const { error }=await supa.from("campaigns").update({ folder }).eq("id",c.id); if(error){ toast(error.message,true); return; }
-    c.folder=folder; toast(folder?`Movida a «${folder}»`:"Quitada de la carpeta"); await Fbar.reload(); return renderGrid(); }
   if(a==="del"){ if(!await confirmDialog({title:"Eliminar campaña",message:"Esta acción no se puede deshacer.",confirmText:"Eliminar",danger:true})) return; const { error }=await supa.from("campaigns").delete().eq("id",c.id); if(error){ toast(error.message,true); return; } toast("Eliminada"); return load(); }
   if(a==="cancel"){
     // Cancelar es terminal (no se deshace) y antes iba sin confirmación, a un clic de «Activar».

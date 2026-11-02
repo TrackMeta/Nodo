@@ -133,10 +133,10 @@
 import { supa, mountShell, toast, icon, askText, confirmDialog, patchProductConfig } from "./shell.js";
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 import { mountStepsEditor, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=22";
-import { mountFolders } from "./folder-bar.js";
+import { mountFolders } from "./folder-bar.js?v=2";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, seq:null, seqs:[], flows:[], templates:[], angulos:[], folder:"__all", localFolders:new Set() };
+const st={ channelId:null, seq:null, seqs:[], flows:[], templates:[], angulos:[], folder:"__all" };
 const UNITS=[["60","minutos"],["3600","horas"],["86400","días"]];
 // ¿A quién va dirigida la secuencia? El motor mete a cada cliente en la del
 // segmento que le corresponde según qué tan lejos llegó (ver "Cómo trabajan").
@@ -294,7 +294,7 @@ function renderCards(){
       ${tl}
       <div class="sq-foot"><span>${nc?`<b>${nc}</b> en curso`:"Nadie la está recibiendo ahora"} · ${s.modo==="goteo"?"goteo":"reenganche"}</span><span data-cardfolder style="margin-left:auto"></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar && Fbar.metas().length>1){ const pk=Fbar.picker({ current:s.folder||null, onPick:async(v)=>{ const { error }=await supa.from("sequences").update({ folder:v }).eq("id",s.id); if(error){ toast(error.message,true); return; } s.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
+    if(fslot && Fbar && Fbar.metas().length){ const pk=Fbar.picker({ current:s.folder||null, onPick:async(v)=>{ const { error }=await supa.from("sequences").update({ folder:v }).eq("id",s.id); if(error){ toast(error.message,true); return; } s.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openSeq(s.id); box.appendChild(el);
   });
 }

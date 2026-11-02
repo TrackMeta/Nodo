@@ -90,7 +90,6 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="qSearch" placeholder="Buscar por título, atajo o texto…" autocomplete="off"/>
       </div>
-      <button class="nodo-btn" id="addFolderBtn" style="display:none;height:40px" title="Crear una carpeta para ordenar tus respuestas">+ Carpeta</button>
       </div>
       <div class="nodo-folders" id="folders"></div>
       <div class="nodo-cards" id="cards"></div>
@@ -110,11 +109,11 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved } from "./shell.js";
-import { mountFolders } from "./folder-bar.js";
+import { mountFolders } from "./folder-bar.js?v=2";
 import { waScreenHtml, waBubbles, seqBrand } from "./seq-editor.js?v=22";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, list:[], qr:null, folder:"__all", localFolders:new Set() };
+const st={ channelId:null, list:[], qr:null, folder:"__all" };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 // Paleta para identificar cada respuesta con un color (como Etiquetas).
 const PALETTE=["#2563EB","#16A34A","#CA8A04","#EA580C","#DC2626","#7C3AED"];
@@ -172,9 +171,7 @@ function renderCards(){
   const sw=$("qsearchWrap"); if(sw) sw.style.display=st.list.length?"":"none";
   // (10-oct) Carpetas solo cuando creaste alguna; mientras tanto «+ Carpeta» chico al lado del buscador.
   const hayCarp=!!(Fbar && Fbar.metas().length);
-  { const fb=$("folders"), ab=$("addFolderBtn");
-    if(fb) fb.style.display=(hayCarp && st.list.length)?"":"none";
-    if(ab){ ab.style.display=(!hayCarp && st.list.length)?"":"none"; ab.onclick=()=>{ const nb=document.querySelector('#folders [data-act="new"]'); if(nb) nb.click(); }; } }
+  // (2-nov) La barra de carpetas decide sola cuándo mostrarse (folder-bar.js): una regla para todas las secciones.
   if(!st.list.length){
     box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 13h5"/></svg></div><h3>Aún no hay respuestas rápidas</h3><p>Crea mensajes predefinidos para responder al instante desde la Bandeja.</p></div>`;
     return;

@@ -156,10 +156,10 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { CATALOGO } from "./plantillas-catalogo.js";
-import { mountFolders } from "./folder-bar.js";
+import { mountFolders } from "./folder-bar.js?v=2";
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, tpl:null, list:[], folder:"__all", localFolders:new Set() };
+const st={ channelId:null, tpl:null, list:[], folder:"__all" };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const CATS=["MARKETING","UTILITY","AUTHENTICATION"];
 const CATLABEL={MARKETING:"Marketing",UTILITY:"Utilidad",AUTHENTICATION:"Autenticación"};
@@ -336,7 +336,7 @@ function renderCards(){
       <div class="wa-chat tprev"><div class="wa-out">${waHighlight(t.body_preview||"(sin cuerpo)")}<span class="wa-time">12:30 ${WACHECK}</span></div></div>
       <div class="c-meta"><span class="cat">${CATLABEL[t.categoria]||esc(t.categoria||"—")}</span><span>${esc(t.language||"es")}</span>${t.activa===false?'<span style="color:var(--amber)">• inactiva</span>':''}${t.soporta_envio===false?'<span style="color:var(--amber)" title="Usa variables en el encabezado o botón; Nodo solo llena el cuerpo, así que no se puede enviar desde acá.">• no enviable</span>':''}<span data-cardfolder style="margin-left:auto"></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar){ const pk=Fbar.picker({ current:t.folder||null, onPick:async(v)=>{ const { error }=await supa.from("wa_templates").update({ folder:v }).eq("id",t.id); if(error){ toast(error.message,true); return; } t.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards(); renderReco(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
+    if(fslot && Fbar && Fbar.metas().length){ const pk=Fbar.picker({ current:t.folder||null, onPick:async(v)=>{ const { error }=await supa.from("wa_templates").update({ folder:v }).eq("id",t.id); if(error){ toast(error.message,true); return; } t.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderCards(); renderReco(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openTpl(t.id); box.appendChild(el);
   });
   marcaRecortes();

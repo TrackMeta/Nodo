@@ -74,7 +74,6 @@
     </div>
     <div class="tabs" id="tabs"></div>
     <p class="lead" id="lead"></p>
-    <div style="display:flex;justify-content:flex-end;margin:-6px 0 0"><button class="btn" id="addFolderBtn" style="display:none;height:32px;font-size:12px">+ Carpeta</button></div>
     <div class="nodo-folders" id="folders" style="margin:14px 0 4px"></div>
     <div id="warn"></div>
     <div id="list"></div>
@@ -83,7 +82,7 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog, guardUnsaved } from "./shell.js";
-import { mountFolders } from "./folder-bar.js";
+import { mountFolders } from "./folder-bar.js?v=2";
 // 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se pregunta a shell.js, pero SIN
 // importarlo estático: si el navegador tiene cacheado un shell.js viejo (sin ese export),
 // un `import { avanzadoPermitido }` deja la página EN BLANCO — el módulo entero no carga y
@@ -96,7 +95,7 @@ async function avPermitido(){
 }
 let Fbar = null;
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, fields:[], deleted:[], tab:"dinamico", folder:"__all", localFolders:new Set() };
+const st={ channelId:null, fields:[], deleted:[], tab:"dinamico", folder:"__all" };
 const TIPOS=[["text","Texto"],["number","Número"],["date","Fecha"]];
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function slug(s){return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40);}
@@ -165,9 +164,7 @@ function render(){
   renderTabs();
   $("lead").innerHTML=LEADS[st.tab];
   if(Fbar) Fbar.repaint();
-  { const hay=!!(Fbar && Fbar.metas().length); const fb=$("folders"), ab=$("addFolderBtn");
-    if(fb) fb.style.display=hay?"":"none";
-    if(ab){ ab.style.display=hay?"none":""; ab.onclick=()=>{ const nb=document.querySelector('#folders [data-act="new"]'); if(nb) nb.click(); }; } }
+  // (2-nov) La barra de carpetas decide sola cuándo mostrarse (folder-bar.js): una regla para todas las secciones.
   let rows=inTab();
   if(Fbar) rows=Fbar.filter(rows);
   const box=$("list");

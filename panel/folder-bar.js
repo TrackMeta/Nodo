@@ -37,6 +37,12 @@ function ensureStyle(){
   const s = document.createElement("style");
   s.textContent = `
   .nodo-folder .fdot{width:9px;height:9px;border-radius:50%;flex:none}
+  /* (2-nov) Pastilla de carpeta sin brillo; la elegida, rellena con su color suave. Botón único ⚙ «Carpetas». */
+  .fb-bar .nodo-folder.fb-cfg{gap:6px;color:var(--muted)}
+  .fb-bar .nodo-folder.fb-cfg svg{width:14px;height:14px}
+  .fb-bar .nodo-folder.fb-solo{border-style:dashed;color:var(--faint);font-weight:500}
+  .fb-bar .nodo-folder.fb-solo:hover{color:var(--brand);border-color:var(--brand-border,var(--brand))}
+  @media(max-width:640px){ .fb-bar{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none;padding-bottom:2px} .fb-bar::-webkit-scrollbar{display:none} .fb-bar .nodo-folder{flex:none} }
   .nodo-folder .femo{font-size:13px;line-height:1}
   .fb-modal-back{position:fixed;inset:0;background:var(--overlay,rgba(15,17,26,.55));display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px}
   .fb-modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:min(560px,96vw);max-height:88vh;display:flex;flex-direction:column;box-shadow:var(--shadow-3,0 20px 60px rgba(0,0,0,.35))}
@@ -127,13 +133,14 @@ export async function mountFolders(opts){
       // abrir la página (baliza por CSS). Cualquier otra cosa se ignora.
       if (meta.color && /^#[0-9a-f]{3,8}$/i.test(String(meta.color))){
         const c = meta.color;
-        style = active
-          ? `background:${c}1f;border-color:${c};box-shadow:0 0 0 1px ${c}66, 0 0 14px ${c}66`
-          : `border-color:${c}55;box-shadow:0 0 7px ${c}30`;
+        // (2-nov) Sin el brillo de antes (se veía recargado): la elegida se rellena con su color suave.
+        if (active) style = `background:${c}1f;border-color:${c};color:var(--text)`;
       }
     }
     inner += esc(label);
-    return `<button class="nodo-folder${on}" data-f="${esc(v)}"${style?` style="${style}"`:""}>${inner}<span class="cnt">${count(v)}</span></button>`;
+    // El número, solo en «Todos» y en la elegida: con todos los números la barra no respira.
+    const cnt = (active || v==="__all") ? `<span class="cnt">${count(v)}</span>` : "";
+    return `<button class="nodo-folder${on}" data-f="${esc(v)}"${style?` style="${style}"`:""}>${inner}${cnt}</button>`;
   }
 
   function extraChip(t){
@@ -148,16 +155,27 @@ export async function mountFolders(opts){
     if (!S.el || !document.body.contains(S.el)) return;
     const extra = (opts.extraTabs ? (opts.extraTabs()||[]) : []);
     const trailing = (opts.trailingTabs ? (opts.trailingTabs()||[]) : []);
+    S.el.classList.add("fb-bar"); S.el.style.display = "";
+    // (2-nov) UNA regla para todas las secciones: la barra aparece cuando filtrar sirve — 2+ carpetas, o una carpeta
+    // con cosas fuera de ella, o pestañas extra de la página. Si no, un solo botón discreto para organizar en carpetas
+    // (y nada si la sección está vacía). Antes cada página decidía a su manera (barra escondida, «Todas 0», un botón suelto).
+    const sirve = S.metas.length>=2 || (S.metas.length===1 && count("__none")>0) || extra.length || trailing.length || S.current!=="__all";
+    if (!sirve){
+      S.el.innerHTML = (S.items()||[]).length
+        ? `<button class="nodo-folder fb-solo" data-act="manage" title="Crear carpetas para ordenar">${icon("folder")}${S.metas.length?"Carpetas":"Organizar en carpetas"}</button>`
+        : "";
+      const b = S.el.querySelector('[data-act="manage"]'); if (b) b.onclick = S.metas.length ? openManage : createFolder;
+      return;
+    }
     const chips = [ chip("__all", opts.labelAll||"Todos", null),
       ...extra.map(extraChip),
       ...((S.current==="__none" || count("__none")>0) ? [chip("__none", opts.labelNone||"Sin carpeta", null)] : []),   // (10-oct) «Sin carpeta 0» no se muestra
       ...S.metas.map(m=> chip(m.nombre, m.nombre, m)),
       ...trailing.map(extraChip) ];
+    // «+ Carpeta» y «Gestionar» en UN botón: la ventana de carpetas crea, renombra, colorea, ordena y borra.
     S.el.innerHTML = chips.join("")
-      + `<button class="nodo-folder add" data-act="new">+ Carpeta</button>`
-      + `<button class="nodo-folder" data-act="manage" style="gap:5px">${icon("edit")}Gestionar</button>`;
+      + `<button class="nodo-folder fb-cfg" data-act="manage" title="Crear, renombrar, ordenar o borrar carpetas">${icon("config")}Carpetas</button>`;
     S.el.querySelectorAll(".nodo-folder[data-f]").forEach(b=> b.onclick=()=>{ S.current=b.dataset.f; render(); S.onChange(); });
-    S.el.querySelector('[data-act="new"]').onclick = createFolder;
     S.el.querySelector('[data-act="manage"]').onclick = openManage;
   }
 
@@ -190,8 +208,8 @@ export async function mountFolders(opts){
     const rows = S.metas.map(m=>({ id:m.id||null, nombre:m.nombre, _orig:m.nombre, color:m.color||null, emoji:m.emoji||null, orden:m.orden||0, _del:false, _new:false }));
     const back = document.createElement("div"); back.className="fb-modal-back";
     back.innerHTML = `<div class="fb-modal">
-      <h3>Gestionar carpetas</h3>
-      <div class="fb-sub">Renombra, dale color y emoji, arrástralas para ordenar. Borrar una manda sus items a “Sin carpeta”.</div>
+      <h3>Carpetas</h3>
+      <div class="fb-sub">Crea, renombra, dales color y emoji, arrástralas para ordenar. Borrar una deja sus elementos en «Sin carpeta».</div>
       <div class="fb-rows" id="fbRows"></div>
       <button class="fb-add" id="fbAdd">${icon("plus")} Nueva carpeta</button>
       <div class="fb-acts"><button class="fb-btn" id="fbCancel">Cancelar</button><button class="fb-btn primary" id="fbSave">Guardar</button></div>

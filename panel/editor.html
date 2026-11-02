@@ -213,7 +213,7 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog } from "./shell.js";
 import { NODE_TYPES, nodeHtml, nodeIcon, decorateNode, installCanvas, mountZoomControls, autoLayout, ACCION_LABELS } from "./flow-canvas.js";
-import { mountFolders } from "./folder-bar.js";
+import { mountFolders } from "./folder-bar.js?v=2";
 // 🔐 ¿Esta cuenta ve «Avanzado» (Flujos y Campos)? Se pregunta a shell.js, pero SIN
 // importarlo estático: si el navegador tiene cacheado un shell.js viejo (sin ese export),
 // un `import { avanzadoPermitido }` deja la página EN BLANCO — el módulo entero no carga y
@@ -246,7 +246,7 @@ const NODE_DEFS = {
   fin:          { handles:[] },
 };
 
-const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura", flows:[], filter:"__all", localFolders:new Set() };
+const st = { channelId:null, flowId:null, flow:null, model:{}, dfToUuid:{}, selected:null, view:"estructura", flows:[], filter:"__all" };
 let editor, canvas, zoomCtl, shell;
 let onKeyEditor=null, onClickEditor=null, onBeforeUnloadEditor=null;   // listeners globales, para quitarlos al salir (SPA)
 const CONTENT_TYPES = new Set(["mensaje","pregunta","ia","evento_fb"]);
@@ -657,7 +657,7 @@ function renderFlowCards(){
       <div class="c-sub">${isSk?"Esqueleto":esc(ROL[f.role]||f.role||"Flujo")}</div>
       <div class="c-foot"><span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--muted)"><i style="width:8px;height:8px;border-radius:50%;background:${on?'var(--green)':'var(--faint)'}"></i>${on?'Activo':esc((f.estado||"").replace(/^./,c=>c.toUpperCase()))}</span>${prod?`<span style="font-size:11.5px;color:var(--faint)">${prod}</span>`:""}<span data-cardfolder style="margin-left:auto"></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
-    if(fslot && Fbar && Fbar.metas().length>1){ const pk=Fbar.picker({ current:f.folder||null, onPick:async(v)=>{ const { error }=await supa.from("flows").update({ folder:v }).eq("id",f.id); if(error){ toast(error.message,true); return; } f.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderFlowCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
+    if(fslot && Fbar && Fbar.metas().length){ const pk=Fbar.picker({ current:f.folder||null, onPick:async(v)=>{ const { error }=await supa.from("flows").update({ folder:v }).eq("id",f.id); if(error){ toast(error.message,true); return; } f.folder=v; toast(v?`Movido a "${v}"`:"Quitado de la carpeta"); await Fbar.reload(); renderFlowCards(); } }); pk.addEventListener("click",e=>e.stopPropagation()); fslot.appendChild(pk); }
     el.onclick=()=>openFlow(f.id); box.appendChild(el);
   });
 }
