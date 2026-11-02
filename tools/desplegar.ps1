@@ -95,8 +95,11 @@ public class CredNodoDep {
       $argsDep = @('functions', 'deploy', $f, '--project-ref', $REF)
       if ($prod.ContainsKey($f)) { if (-not $prod[$f]) { $argsDep += '--no-verify-jwt' } }
       else { "  (nueva: $f se sube SIN verify_jwt; si debe pedir sesión de Supabase, cámbialo en el Dashboard)"; $argsDep += '--no-verify-jwt' }
-      $r = (& supabase @argsDep 2>&1 | Select-Object -Last 3) -join " "
-      if ($r -match "Deployed Functions") { "OK    $f" } else { "FALLO $f :: $r"; $fallos++ }
+      # Se mira TODA la salida: el aviso «A new version of Supabase CLI is available» sale al final y empujaba el
+      # «Deployed Functions» fuera de las últimas 3 líneas → marcaba FALLO lo que sí se subió (2-nov).
+      $todo = (& supabase @argsDep 2>&1 | Out-String)
+      $r = (($todo -split "`r?`n") | Where-Object { $_ -and $_ -notmatch "new version of Supabase CLI|We recommend updating|updating-the-supabase-cli" } | Select-Object -Last 3) -join " "
+      if ($todo -match "Deployed Functions") { "OK    $f" } else { "FALLO $f :: $r"; $fallos++ }
     }
   }
 
