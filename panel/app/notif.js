@@ -97,7 +97,7 @@ function campana() {
 function pintar() {
   const vivas = [...N.rows.values()].filter((n) => !oculta(n) && (N.bot === "todos" || n.channel_id === N.bot)).sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
   const pend = vivas.filter(pendiente), hist = vivas, sinLeer = hist.filter(cuentaSinLeer).length;
-  $("#ntabs").innerHTML = `<button type="button" class="ntab${N.tab === "pend" ? " on" : ""}" data-t="pend">Pendientes${pend.length ? ` <b>${pend.length}</b>` : ""}</button><button type="button" class="ntab${N.tab === "hist" ? " on" : ""}" data-t="hist">Historial${sinLeer ? ` <b class="soft">${sinLeer}</b>` : ""}</button>`;
+  $("#ntabs").innerHTML = `<button type="button" class="ntab${N.tab === "pend" ? " on" : ""}" data-t="pend">Pendientes${pend.length ? ` <b>${pend.length}</b>` : ""}</button><button type="button" class="ntab${N.tab === "hist" ? " on" : ""}" data-t="hist">Historial</button>`;
   const chips = A.channels.length > 1 ? `<div class="chips">${[["todos", "Todos los bots"], ...A.channels.map((c) => [c.id, c.nombre])].map(([k, l]) => `<button type="button" class="chip${N.bot === k ? " on" : ""}" data-b="${k}">${k !== "todos" ? `<img src="${esc(logoDe(k))}" alt="">` : ""}${esc(l)}</button>`).join("")}</div>` : "";
   const fila = (n) => `<div role="button" tabindex="0" class="notif${noLeida(n) ? " nu" : ""}" data-n="${n.id}">
     <span class="ico${pendiente(n) && critico(n) ? " urg" : ""}">${ic(icDe(n))}</span>
@@ -107,13 +107,13 @@ function pintar() {
   if (N.tab === "pend") {
     // (22-oct) «Atendido a todos»: lo pendiente menos los pagos por validar (esos se deciden uno por uno)
     const nAt = pend.filter((n) => !VALIDAR.has(n.tipo)).length;
-    body = `<p class="nsub">Lo que espera que hagas algo. Se va solo cuando lo resuelves, cuando le respondes al cliente, o con «Atendido» si ya lo viste.</p>${chips}`
-      + (nAt > 1 ? `<div class="nacts"><button type="button" class="btn soft sm" id="natodos">${ic("check")} Atendido a todos (${nAt})</button></div>` : "") + (pend.length ? `<div class="card">${pend.map(fila).join("")}</div>` : `<div class="empty"><b>${ic("check")}</b>Todo al día.<br>Nada espera por ustedes.</div>`);
+    body = chips + (pend.length ? `<div class="nacts"><span>${pend.length === 1 ? "1 espera" : pend.length + " esperan"} que hagas algo</span>`
+      + (nAt > 1 ? `<button type="button" class="btn soft sm" id="natodos">${ic("check")} Marcar atendidos</button>` : "") + `</div>` : "") + (pend.length ? `<div class="card">${pend.map(fila).join("")}</div>` : `<div class="empty"><b>${ic("check")}</b>Todo al día.<br>Nada espera por ustedes.</div>`);
   } else {
     const grupos = new Map();
     hist.forEach((n) => { const d = fmtDia(n.created_at); if (!grupos.has(d)) grupos.set(d, []); grupos.get(d).push(n); });
-    body = `<p class="nsub">Todo lo que pasó en tus bots, por día. «Limpiar» quita todo menos lo pendiente; lo leído se limpia solo a los 7 días.</p>${chips}
-      <div class="nacts"><button type="button" class="btn soft sm" id="nleer"${sinLeer ? "" : " disabled"}>Marcar todo como leído</button><button type="button" class="btn soft sm" id="nlimpiar">Limpiar</button></div>` +
+    body = `${chips}
+      <div class="nacts"><span>${sinLeer ? (sinLeer === 1 ? "1 sin leer" : sinLeer + " sin leer") : "Todo leído"}</span><button type="button" class="btn soft sm" id="nleer"${sinLeer ? "" : " disabled"}>Marcar leídas</button><button type="button" class="btn soft sm" id="nlimpiar">Limpiar</button></div>` +
       (hist.length ? [...grupos].map(([d, ns]) => `<div class="nday">${esc(d)}</div><div class="card">${ns.map(fila).join("")}</div>`).join("") : `<div class="empty"><b>${ic("archive")}</b>El historial está limpio.</div>`);
   }
   $("#nbody").innerHTML = body;
