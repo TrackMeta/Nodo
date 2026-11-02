@@ -195,7 +195,7 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
         </div>
         ${tabs?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
             <button type="button" class="se-tab" data-tab="" style="${tabBtn(tab==="")}">Todos</button>
-            ${angulos.map(a=>{ const tiene=paso.variantes.some(v=>v.angulo===a.slug); return `<button type="button" class="se-tab" data-tab="${esc(a.slug)}" style="${tabBtn(tab===a.slug)}" title="${tiene?"Tiene su propio mensaje":"Usa el mensaje de Todos"}">${esc(a.nombre||a.slug)}${tiene?"":` <span style="opacity:.6;font-weight:500">· usa Todos</span>`}</button>`; }).join("")}
+            ${angulos.map(a=>{ const tiene=paso.variantes.some(v=>v.angulo===a.slug); return `<button type="button" class="se-tab" data-tab="${esc(a.slug)}" style="${tabBtn(tab===a.slug)}" title="${a.propia?"Tiene su propia secuencia: no recibe estos toques":tiene?"Tiene su propio mensaje":"Usa el mensaje de Todos"}">${esc(a.nombre||a.slug)}${a.propia?` <span style="opacity:.6;font-weight:500">· su secuencia</span>`:tiene?"":` <span style="opacity:.6;font-weight:500">· usa Todos</span>`}</button>`; }).join("")}
           </div>
           <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${tab===""?"Lo reciben todos, salvo los que llegaron por un ángulo con su propio mensaje.":"Lo reciben solo los que llegaron por los anuncios de este ángulo."}</div>`
         :`<div style="font-size:11px;color:var(--faint);margin-bottom:8px">${rot?"El bot va alternando entre las versiones. Con 2+ puedes ajustar cuánto sale cada una.":"Un solo mensaje para todos los clientes de este público."}</div>`}
@@ -249,6 +249,15 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
     if(!rot){ vl.appendChild(renderCard(paso.variantes[0], 0, false, 1)); return; }
     // Un grupo a la vez: la pestaña elegida, o el grupo fijo de quien lo usa (saludo del producto, ficha del ángulo).
     const grupoVis = solo!=null ? solo : tab;
+    const angTab = tabs && tab ? angulos.find(a=>a.slug===tab) : null;
+    if(angTab && angTab.propia){
+      // (2-nov) Ángulo con secuencia PROPIA: no recibe los toques de esta secuencia, así que no se edita acá.
+      const w=document.createElement("div");
+      w.style.cssText="border:1px dashed var(--border);border-radius:10px;padding:14px;text-align:center;margin-top:4px;font-size:12.5px;color:var(--muted);line-height:1.5";
+      w.innerHTML=`«<b style="color:var(--text)">${esc(angTab.nombre||tab)}</b>» tiene su <b style="color:var(--text)">propia secuencia</b>: los que llegan por sus anuncios no reciben este toque. Se edita en Productos → Ángulos → ${esc(angTab.nombre||tab)}.`;
+      vl.appendChild(w);
+      return;
+    }
     if(grupoVis!=null){
       const mias=paso.variantes.map((v,vi)=>({v,vi})).filter(x=> solo!=null ? (x.v.angulo||"")===solo : enTab(x.v));
       if(!mias.length && tabs && tab!==""){

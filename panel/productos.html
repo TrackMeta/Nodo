@@ -346,7 +346,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll, usuarioActual } from "./shell.js";
 import { mountFolders } from "./folder-bar.js?v=2";
-import { montarMapaAngulos } from "./angulos-mapa.js?v=21";
+import { montarMapaAngulos } from "./angulos-mapa.js?v=22";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
@@ -366,7 +366,7 @@ async function avPermitido(){
 let AV = false;
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=22";
+import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=23";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -1956,7 +1956,7 @@ async function renderRemarketing(host){
 ${(()=>{ const ra=(c.remarketing_seqs_angulo&&typeof c.remarketing_seqs_angulo==="object")?c.remarketing_seqs_angulo:{}; const ks=Object.keys(ra).filter(k=>list.some(q=>q.id===ra[k])); if(!ks.length) return "";
         // (2-nov) Ángulos con secuencia propia: sus clientes no reciben las de arriba.
         return `<div style="margin-top:12px;font-size:12px;line-height:1.5;color:var(--muted);background:var(--brand-bg);border-radius:10px;padding:9px 12px">${icon("compass")} Además, ${ks.length===1?"este ángulo tiene":"estos ángulos tienen"} su <b style="color:var(--text)">secuencia propia</b>: ${ks.map(k=>"«"+esc(((st.remAngulos||[]).find(x=>x.slug===k)||{}).nombre||k)+"»").join(", ")}. Quien llega por sus anuncios la recibe en lugar de las de arriba. Se edita en Productos → Ángulos.</div>`; })()}
-      <div style="font-size:11px;color:var(--faint);margin-top:12px">Los pasos de cada secuencia se editan en <a href="secuencias.html" style="color:var(--brand)">Secuencias</a>. Recuerda <b>Guardar</b> el producto para fijar los enlaces.</div>
+      <div style="font-size:11px;color:var(--faint);margin-top:12px">Crear, vincular o quitar una secuencia se guarda al instante. Sus pasos se editan con «Editar pasos» o en <a href="secuencias.html" style="color:var(--brand)">Secuencias</a>.</div>
     </div>`;
 
   // ── Horario (global del canal) ──
@@ -2094,7 +2094,8 @@ ${(()=>{ const ra=(c.remarketing_seqs_angulo&&typeof c.remarketing_seqs_angulo==
       toast(seq.modo==="goteo"?"Modo goteo":"Modo reenganche");
     };
     const ed=mountStepsEditor(wrap.querySelector(".se-mount"), {
-      seq, channelId:st.channelId, angulos:st.remAngulos, presets:[],
+      // (2-nov) Los ángulos con secuencia propia van marcados: su pestaña avisa que este toque no les llega.
+      seq, channelId:st.channelId, angulos:(st.remAngulos||[]).map(a=>({ ...a, propia:!!(c.remarketing_seqs_angulo&&c.remarketing_seqs_angulo[a.slug]) })), presets:[],
       ofertaProducts:[{ id:st.prod.id, nombre:st.prod.nombre, opciones }],
       actions:{ enabled:false },
     });
