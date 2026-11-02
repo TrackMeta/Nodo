@@ -24807,12 +24807,14 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             _bloqueTurno += "\n\n## Tiene un precio especial vigente\n" +
               `En un recordatorio le ofrecimos *${_symO} ${_oO.precio}*${_fechaO ? ` y vale hasta el ${_fechaO}` : ""}. ` +
               "Ese es SU precio: si pregunta por la promoción, sigue en pie. No le digas que cerró ni le cobres el normal.";
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "💸 La IA sabe su precio especial", `${_symO} ${_oO.precio} vigente${_fechaO ? " hasta el " + _fechaO : ""}`).catch(() => {});
           } else if (_venceO && Number.isFinite(_hoyO) && _hoyO > 0 && _hoyO !== Number(_oO.precio)) {
             _bloqueTurno += "\n\n## Tuvo un precio especial que YA VENCIÓ\n" +
               `En un recordatorio le ofrecimos *${_symO} ${_oO.precio}*, pero venció${_fechaO ? ` el ${_fechaO}` : ""}. ` +
               `Hoy su precio es *${_symO} ${_hoyO}*. Si menciona esa promoción o ese monto, no se lo aceptes (nada de ` +
               `«perfecto» ni «exacto»): dile con amabilidad que esa promoción ya terminó y que hoy es *${_symO} ${_hoyO}*. ` +
               "No inventes otra rebaja.";
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "💸 La IA sabe que su oferta venció", `${_symO} ${_oO.precio} venció${_fechaO ? " el " + _fechaO : ""} · hoy ${_symO} ${_hoyO}`).catch(() => {});
           }
         }
       } catch (_) { /* sin la oferta legible → sin bloque */ }
@@ -24939,6 +24941,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // y «habla en BENEFICIOS»— entra al final del system, y en un prompt lo ÚLTIMO pesa.
       // Puesta acá, noventa bloques antes, esta regla perdía siempre. Misma lección que el estilo.
       _turnoDeVenta = _hayQueVender || _quiereComprar;
+      // 🔴 `+ _bloqueTurno` al final: era `=` a secas y BORRABA lo que se armó antes en este turno —el
+      // «📣 contesta a un remarketing» (1-oct) y la oferta del cliente—, así que la IA nunca vio su precio
+      // especial aunque el evento dijera «La IA sabe que contesta a un remarketing» (medido 2-nov).
       _bloqueTurno = ((_hayQueVender || _quiereComprar)
         ? "## Este turno SÍ es para vender\nTe preguntó algo o puso un pero: acá sí desarrollas — el beneficio " +
           "que le toca a ÉL por lo que acaba de decir, con lo que tienes en la ficha. Igual, corto: lo que " +
@@ -24949,7 +24954,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           "⛔ Para ESTE mensaje ignora cualquier instrucción de " +
           "«explicar el valor» o «hablar en beneficios» —no toca ahora—, y NO describas el producto: los " +
           "mensajes iniciales ya se lo contaron. Acusas lo que te dio, contestas si preguntó algo y das el " +
-          "siguiente paso. Dos líneas.");
+          "siguiente paso. Dos líneas.") + _bloqueTurno;
     }
     // 👥 DOS DESTINOS («uno para mí y otro para mi hermana en Trujillo»): cada uno es un pedido.
     if (RE_DOS_DESTINOS.test(String(ctx.last_input ?? ""))) {
