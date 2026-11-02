@@ -1656,7 +1656,8 @@ export async function mountShell({ active } = {}) {
 // las demás secciones respetan la preferencia guardada del usuario.
 function applyInboxCollapse(active) {
   if (!S.nav) return;
-  if (active === "inbox") S.nav.classList.add("collapsed");
+  // (2-nov) En pantallas angostas (celular), siempre comprimido: abierto se comía el contenido.
+  if (active === "inbox" || window.matchMedia("(max-width:720px)").matches) S.nav.classList.add("collapsed");
   else S.nav.classList.toggle("collapsed", localStorage.getItem("nodo.collapsed") === "1");
 }
 
