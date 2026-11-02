@@ -565,6 +565,31 @@
   .runrow .rs{font-size:10.5px;color:var(--faint)}
   .runrow .rsub{display:block;font-size:10.5px;color:var(--faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis}
   .cempty{font-size:12px;color:var(--faint);padding:6px 0}
+
+  /* ── Celular: una columna a la vez. Lista a lo ancho; al abrir un chat (#app.m-chat) la
+     conversación ocupa toda la pantalla con «‹» para volver, y la ficha del contacto se abre
+     encima (#app.m-ficha). Antes la lista fija de 300 px + la ficha dejaban al chat en ~20 px. */
+  .mback,.mficha,.cp-x,.cp-ov{display:none}
+  @media (max-width:720px){
+    .list{width:100%;border-right:none}
+    .chat{display:none}
+    #app.m-chat .list{display:none}
+    #app.m-chat .chat{display:flex}
+    .chat .hd{flex-wrap:wrap;padding:8px 10px;gap:6px 8px}
+    .hd-left{flex:1 1 0;gap:8px}
+    .botbtn{height:30px;padding:0 11px;font-size:12px}
+    .hd-right{order:2;flex-basis:100%;min-width:0;justify-content:space-between;gap:6px}
+    .hd-right .winwrap{margin-left:0;flex:1 1 auto;min-width:0}
+    .hdtoggle{margin-left:0}
+    .mback,.mficha{display:flex;flex:none;align-items:center;justify-content:center;width:32px;height:32px;border:none;border-radius:9px;background:transparent;color:var(--muted);padding:0}
+    .mback:hover,.mficha:hover{background:var(--surface-2);color:var(--text)}
+    .mback svg,.mficha svg{width:20px;height:20px}
+    .mback{margin-left:-4px}
+    .cpanel{display:none}
+    #app.m-ficha .cpanel:not(.hidden){display:block;position:fixed;top:0;right:0;bottom:0;width:min(360px,92vw);z-index:61;box-shadow:-12px 0 32px rgba(15,23,42,.18)}
+    #app.m-ficha .cp-ov{display:block;position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.28)}
+    #app.m-ficha .cp-x{display:flex;position:fixed;top:10px;right:10px;z-index:62;width:32px;height:32px;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:50%;background:var(--surface);color:var(--muted);font-size:18px;line-height:1}
+  }
 </style>
 </head>
 <body>
@@ -633,6 +658,7 @@
     <div id="chatView" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
       <div class="hd">
         <div class="hd-side hd-left">
+          <button class="mback" id="chBack" type="button" title="Volver a los chats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
           <div class="av" id="chAv"></div>
           <div style="min-width:0">
             <div class="nm" id="chName"></div>
@@ -646,6 +672,7 @@
             <button class="htb active" data-v="chat">Chat</button>
             <button class="htb" data-v="timeline">Actividad</button>
           </div>
+          <button class="mficha" id="chFicha" type="button" title="Ficha del contacto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></button>
           <button class="hdmenu" id="actionsBtn" title="Acciones del contacto">⋮</button>
           <div class="actmenu hidden" id="actionsMenu"></div>
         </div>
@@ -698,6 +725,8 @@
   </div>
 
   <aside class="cpanel hidden" id="cpanel"></aside>
+  <div class="cp-ov" id="cpOv"></div>
+  <button class="cp-x" id="cpX" type="button" title="Cerrar la ficha">×</button>
 </div>
 
 
@@ -780,7 +809,7 @@ async function boot() {
   });
   // Selector de bot propio de la Bandeja (el rail minimal no lo incluye).
   // El cambio de bot lo maneja el selector del sidebar (shell); aquí solo reaccionamos.
-  shell.onChannel((id) => { state.channelId = id; state.contactId = null; state.drafts = {}; /* los borradores no cruzan de un negocio a otro */ $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadFilters(); loadQuickReplies(); loadInboxFlows(); loadConversations(); subscribeRealtime(); });
+  shell.onChannel((id) => { state.channelId = id; state.contactId = null; state.drafts = {}; /* los borradores no cruzan de un negocio a otro */ $("chatView").classList.add("hidden"); $("app").classList.remove("m-chat","m-ficha"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); loadTestFlows(); loadFilters(); loadQuickReplies(); loadInboxFlows(); loadConversations(); subscribeRealtime(); });
   // Cargas independientes en PARALELO (antes eran 5 en serie → arranque lento).
   await Promise.all([loadTestFlows(), loadFilters(), loadQuickReplies(), loadInboxFlows(), loadConversations()]);
   subscribeRealtime();
@@ -1524,6 +1553,7 @@ async function openChat(c) {
   state.contactNombreReal = c.nombre || "";
   state.isTest = (c.wa_id === "webchat-test");
   $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden");
+  $("app").classList.add("m-chat"); $("app").classList.remove("m-ficha");
   $("chAv").textContent = initials(c.nombre, c.wa_id);
   $("chName").innerHTML = esc(c.nombre || c.wa_id) + (state.isTest ? '<span class="testtag">modo prueba</span>' : "");
   $("chPhone").textContent = state.isTest ? "Escribes como el cliente" : "+" + c.wa_id;
@@ -1937,7 +1967,14 @@ function renderActionsMenu(){
     <button class="actitem danger" data-a="delchat">${icon("trash")} Eliminar chat</button>`;
   m.querySelectorAll(".actitem").forEach(b=> b.onclick=()=>{ m.classList.add("hidden"); actionHandler(b.dataset.a); });
 }
-function backToList(){ state.contactId=null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); }
+function backToList(){ state.contactId=null; $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); $("app").classList.remove("m-chat","m-ficha"); }
+// Celular: «‹» vuelve a la lista (guarda el borrador como al cambiar de chat); la ficha se abre encima.
+$("chBack").onclick = () => {
+  const inp = $("msgInput"); if (inp && state.contactId) { const v = inp.value; if (v.trim()) state.drafts[state.contactId] = v; else delete state.drafts[state.contactId]; inp.value = ""; }
+  backToList();
+};
+$("chFicha").onclick = () => $("app").classList.add("m-ficha");
+$("cpOv").onclick = $("cpX").onclick = () => $("app").classList.remove("m-ficha");
 async function actionHandler(a){
   const cid=state.contactId; if(!cid) return;
   const conv=()=>supa.from("conversations");
