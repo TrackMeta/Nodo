@@ -579,7 +579,16 @@
     .hd-left{flex:1 1 0;gap:8px}
     .botbtn{height:30px;padding:0 11px;font-size:12px}
     .hd-right{order:2;flex-basis:100%;min-width:0;justify-content:space-between;gap:6px}
-    .hd-right .winwrap{margin-left:0;flex:1 1 auto;min-width:0}
+    .hd-right .winwrap{margin-left:0;flex:1 1 auto;min-width:0;overflow-x:auto;scrollbar-width:none}
+    .hd-right .winwrap::-webkit-scrollbar{display:none}
+    .hd-right .winwrap>*{flex:none}
+    .thread{padding:10px 10px 8px}
+    .msg{max-width:86%}
+    .msg img,.msg video,.msg audio{max-width:100%}
+    .msg .ccard{min-width:0;max-width:100%}
+    .composer{padding:8px;gap:2px}
+    .ctool{width:32px}
+    .composer textarea#msgInput{min-width:0;padding:11px 12px}
     .hdtoggle{margin-left:0}
     .mback,.mficha{display:flex;flex:none;align-items:center;justify-content:center;width:32px;height:32px;border:none;border-radius:9px;background:transparent;color:var(--muted);padding:0}
     .mback:hover,.mficha:hover{background:var(--surface-2);color:var(--text)}
