@@ -58,7 +58,7 @@ function pintar() {
   const esAd = !!(c.ad_id || /^(ad|ctwa)$/i.test(c.source || ""));
   $("#fibody").innerHTML = `
     <div class="fhead">${avatar(c.id, c.nombre, c.wa_id, w, c.product?.emoji)}<b>${esc(c.nombre || "Cliente")}</b><span>${/^\d+$/.test(c.wa_id || "") ? "+" + esc(c.wa_id) : "Sin número visible"}</span><span>${whoTxt(w)}${c.product ? ` · ${c.product.emoji ? esc(c.product.emoji) + " " : ""}${esc(c.product.nombre)}` : ""}</span></div>
-    <div class="fsec"><h4>${A.tipo === "fisico" ? "Pedido" : "Compra"}</h4>${pedidoHtml(F.orden)}</div>
+    <div class="fsec"><h4>${A.tipo === "fisico" ? "Pedido" : "Compra"}</h4>${pedidoHtml(F.orden)}${!F.orden || O.esPerdido(F.orden) || O.esCerrado(F.orden) ? `<button type="button" class="btn soft" data-venta style="width:100%;margin-top:4px">${ic("dollar")} ${F.orden && O.esCerrado(F.orden) ? "Registrar otra venta" : "Registrar venta a mano"}</button>` : ""}</div>
     ${quien.length || trato.length || F.vender.length ? `<div class="fsec mia"><h4>Memoria IA</h4>
       ${quien.length ? `<p><b>Quién es</b></p><ul>${quien.map((x) => `<li>${esc(typeof x === "string" ? x : x?.texto || x?.t || "")}</li>`).join("")}</ul>` : ""}
       ${trato.length ? `<p><b>Cómo tratarlo</b></p><ul>${trato.map((x) => `<li>${esc(typeof x === "string" ? x : x?.texto || x?.t || "")}</li>`).join("")}</ul>` : ""}
@@ -75,7 +75,6 @@ function pintar() {
       const u = x.content?.media_url; return x.type === "image" || x.type === "sticker" ? `<button type="button" class="mtile" data-ver="${esc(u)}" style="background-image:url('${esc(u)}')"></button>` : `<a class="mtile" href="${esc(u)}" target="_blank" rel="noopener">${ic(x.type === "audio" ? "mic" : x.type === "video" ? "video" : "file")}${x.type === "audio" ? "Nota de voz" : esc(x.content?.filename || "Archivo")}</a>`;
     }).join("")}</div>` : `<p style="color:var(--muted)">Sin fotos, audios ni archivos.</p>`}</div>
     <div class="card"><div class="ttl">Acciones</div>
-      ${!F.orden || O.esPerdido(F.orden) || O.esCerrado(F.orden) ? `<button type="button" class="li" data-venta><span class="ico">${ic("banknote")}</span><span class="rmid"><b>Registrar venta</b><span>Te pagó por fuera (llamada, tu número, efectivo): crea el pedido y entrega el acceso</span></span>${ic("chevronRight")}</button>` : ""}
       <button type="button" class="li" data-acc="seg"><span class="ico">${ic("clock")}</span><span class="rmid"><b>${F.conv.requiere_humano ? "Quitar de Seguimiento" : "Marcar Seguimiento"}</b><span>Para acordarte de volver a este chat</span></span></button>
       <button type="button" class="li" data-acc="arch"><span class="ico">${ic("archive")}</span><span class="rmid"><b>${F.conv.archivada ? "Sacar de archivados" : "Archivar chat"}</b><span>Se esconde de la lista (no se borra)</span></span></button>
       <button type="button" class="li${c.bloqueado ? "" : " peligro"}" data-blq><span class="ico">${ic(c.bloqueado ? "lock" : "ban")}</span><span class="rmid"><b>${c.bloqueado ? "Desbloquear contacto" : "Bloquear contacto"}</b><span>${c.bloqueado ? "Vuelve a la lista y el bot le contesta de nuevo" : "El bot deja de responderle y sale de la lista"}</span></span></button>
@@ -106,7 +105,7 @@ async function ventaManual() {
     : [["confirmado", "Por entregar"], ["entregado_cobrado", "Entregado y cobrado"]];
   const pre = cat.find((p) => p.nombre === c.product?.nombre) || cat[0];
 
-  abrirHoja(`<h3>Registrar venta</h3>
+  abrirHoja(`<h3>Registrar venta a mano</h3>
     <p class="lead">Para una venta que cerraste por fuera. ${tieneAd ? "Este cliente vino de un <b>anuncio</b>: la venta se le atribuye y se avisa a Meta." : "Este cliente no vino de un anuncio: cuenta en tus números, pero no se avisa a Meta."}</p>
     <label class="flabel">Producto<select class="inpt" id="vmP">${cat.map((p) => `<option value="${p.id}"${p.id === pre.id ? " selected" : ""}>${p.emoji ? esc(p.emoji) + " " : ""}${esc(p.nombre)}</option>`).join("")}</select></label>
     <label class="flabel" id="vmVW">Versión<select class="inpt" id="vmV"></select></label>
