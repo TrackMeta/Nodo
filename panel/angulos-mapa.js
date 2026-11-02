@@ -192,7 +192,7 @@ function pintaMapa() {
         if (!a) { h += `<td><button class="amx-cell no" data-crear="${esc(m.id)}" data-slug="${esc(s.slug)}"><span>${icon("plus")} Crear en ${esc(paisNom(paisDe(m)))}</span><small>Copia el de otro país</small></button></td>`; continue; }
         const e = estadoCelda(m, a), x = statsDe(a.ad_ids);
         const num = x.v ? `${plata(x.g / x.v)} por venta` : x.g ? `${plata(x.g)} sin ventas` : "";
-        h += `<td><button class="amx-cell ${e.tono}" data-pid="${esc(m.id)}" data-slug="${esc(s.slug)}" data-foco="${e.foco}"><span>${icon(e.ic)} ${esc(e.txt)}</span><small>${a.ad_ids.length} anuncio${a.ad_ids.length === 1 ? "" : "s"}${num ? " · " + num : ""}</small></button></td>`;
+        h += `<td><button class="amx-cell ${e.tono}" data-pid="${esc(m.id)}" data-slug="${esc(s.slug)}" data-foco="${e.foco}"><span>${icon(e.ic)} ${esc(e.txt)}</span><small>${a.ad_ids.length} anuncio${a.ad_ids.length === 1 ? "" : "s"}${seqPropiaId(m, s.slug) ? " · secuencia propia" : ""}${num ? " · " + num : ""}</small></button></td>`;
       }
       h += `</tr>`;
     }
