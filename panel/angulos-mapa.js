@@ -473,12 +473,22 @@ function pintaRem(p, a) {
   const box = document.getElementById("amxRem"); if (!box) return;
   const clave = `${p.id}|${a.slug}`, propiaId = seqPropiaId(p, a.slug);
   const vista = S.remVista && S.remVista.clave === clave ? S.remVista.v : (propiaId ? "propia" : "prod");
-  box.innerHTML = `<h3>${icon("secuencias")} Secuencias de este ángulo</h3>
+  // (2-nov, Rodrigo: «que se pueda comprimir») Se pliega desde el título, como el saludo; plegada muestra una línea.
+  const rem = remEstado(p, a.slug);
+  const resumen = propiaId ? `<span class="amx-chip ok">secuencia propia</span> ${(S.seqs[propiaId].pasos || []).length} toques`
+    : rem.total ? `<span class="amx-chip ${rem.propios === rem.total ? "ok" : rem.propios ? "wa" : ""}">toques del producto</span> ${rem.propios} de ${rem.total} con texto propio` : "sin secuencias";
+  let abierto = true; try { abierto = localStorage.getItem("nodo.amx.secuencias") !== "0"; } catch (_) {}
+  box.classList.toggle("amx-cerrado", !abierto);
+  box.innerHTML = `<button type="button" class="amx-tog" data-tog><h3>${icon("secuencias")} Secuencias de este ángulo</h3>
+      <span class="amx-res">${resumen}</span><span class="amx-chev">${icon("chevronRight")}</span></button>
+    <div class="amx-colbody">
     <div class="amx-modos" role="tablist">
       <button type="button" class="amx-modo ${vista === "prod" ? "on" : ""}" data-vista="prod"><b>Toques del producto</b><span>Mismos toques y tiempos que todos; cambias el texto</span></button>
       <button type="button" class="amx-modo ${vista === "propia" ? "on" : ""}" data-vista="propia"><b>Secuencia propia${propiaId ? " ✓" : ""}</b><span>Sus propios toques, tiempos y descuentos</span></button>
     </div>
-    <div id="amxRemBody"></div>`;
+    <div id="amxRemBody"></div>
+    </div>`;
+  box.querySelector("[data-tog]").onclick = () => { const cerrado = box.classList.toggle("amx-cerrado"); try { localStorage.setItem("nodo.amx.secuencias", cerrado ? "0" : "1"); } catch (_) {} };
   box.querySelectorAll("[data-vista]").forEach((b) => (b.onclick = () => { S.remVista = { clave, v: b.dataset.vista }; pintaRem(p, a); }));
   const cont = box.querySelector("#amxRemBody");
   if (vista === "prod") {
