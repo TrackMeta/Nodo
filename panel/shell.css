@@ -735,7 +735,7 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 @media (max-width:719px){.nn-drawer{width:100vw;left:0!important;border-right:none}}
 
 .nn-head{display:flex;align-items:center;gap:4px;padding:14px 10px 10px 18px}
-.nn-hl{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.nn-hl{flex:1;min-width:0;display:flex;align-items:center;gap:10px}   /* título y bot en una fila (2-nov) */
 .nn-hl h2{margin:0;font-size:17px;font-weight:750;letter-spacing:-.02em}
 .nn-sub{font-size:12px;color:var(--faint)}
 .nn-ib{width:34px;height:34px;flex:none;border-radius:10px;border:none;background:transparent;color:var(--muted);
@@ -747,8 +747,8 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 
 /* Selector de bot (desplegable propio). Botón: logo + nombre del elegido + flecha. Lista: cada bot con
    su logo, cuánto espera en él y un check en el elegido. */
-.nn-bsel{position:relative;align-self:flex-start;margin-top:2px}
-.nn-bsel-btn{display:inline-flex;align-items:center;gap:7px;height:30px;max-width:250px;padding:0 8px 0 4px;border-radius:9px;
+.nn-bsel{position:relative;min-width:0}
+.nn-bsel-btn{display:inline-flex;align-items:center;gap:7px;height:30px;max-width:190px;padding:0 8px 0 4px;border-radius:9px;
   border:1px solid var(--border);background:var(--surface-2);color:var(--text);font:inherit;font-size:12.5px;font-weight:650;cursor:pointer;
   transition:border-color var(--t-fast),background var(--t-fast),box-shadow var(--t-fast)}
 .nn-bsel-btn:hover{border-color:var(--border-strong)}
@@ -796,7 +796,8 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-tab b.urg{background:var(--red)}
 .nn-tab b.soft{background:var(--brand-bg);color:var(--brand)}
 .nn-tabsub{margin:7px 18px 0;font-size:11.5px;color:var(--muted);line-height:1.4}
-.nn-bulk{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;padding:8px 10px 8px 12px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2);font-size:12.5px;color:var(--muted)}
+.nn-bulk{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px;margin:0 0 6px;padding:0 2px 0 4px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.nn-bulk-acts{display:flex;gap:4px;flex:none}
 .nn-bulk .nn-btn{flex:none}
 
 .nn-filt{display:flex;gap:6px;padding:12px 16px 6px;overflow-x:auto;scrollbar-width:none;flex:none}

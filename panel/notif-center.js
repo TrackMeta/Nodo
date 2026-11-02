@@ -556,8 +556,6 @@ function pintar() {
   if (N.vista === "prefs") { pintarPrefs(d); return; }
   const chs = N.ctx.S.channels || [];
   const pend = [...N.rows.values()].filter((n) => pendiente(n) && !oculta(n) && (N.bot === "todos" || n.channel_id === N.bot));
-  const nNo = [...N.rows.values()].filter((n) => cuentaSinLeer(n) && !oculta(n) && (N.bot === "todos" || n.channel_id === N.bot)).length;
-  const nNoTodo = [...N.rows.values()].filter((n) => noLeida(n) && !oculta(n)).length;
   // Un bot que se archivó mientras estaba elegido: vuelve a «Todos».
   if (N.bot !== "todos" && !chs.some((c) => c.id === N.bot)) N.bot = "todos";
   const _menuAbierto = menuBotAbierto();
@@ -567,16 +565,13 @@ function pintar() {
         <h2>Notificaciones</h2>
         ${chs.length > 1 ? selectorBot(chs) : ""}
       </div>
-      <button class="nn-ib" data-a="leer-todo" title="Marcar todo como leído (todos los bots)"${nNoTodo ? "" : " disabled"}>${I("checkAll")}</button>
-      <button class="nn-ib" data-a="limpiar" title="Limpiar: quitar de tu campanita todo lo que no es pendiente (leído o no)"${limpiables().length ? "" : " disabled"}>${I("eraser")}</button>
-      <button class="nn-ib" data-a="prefs" title="Preferencias">${I("config")}</button>
+      <button class="nn-ib" data-a="prefs" title="Preferencias: sonidos y qué avisos ves">${I("config")}</button>
       <button class="nn-ib" data-a="cerrar" title="Cerrar (Esc)">${I("x")}</button>
     </header>
     <div class="nn-tabs" role="tablist">
-      <button class="nn-tab${N.tab === "atender" ? " on" : ""}" data-tab="atender" role="tab">Pendientes${pend.length ? `<b class="${pend.some((n) => n.prioridad === "urgente") ? "urg" : ""}">${pend.length}</b>` : ""}</button>
-      <button class="nn-tab${N.tab === "todas" ? " on" : ""}" data-tab="todas" role="tab">Historial${nNo ? `<b class="soft">${nNo > 99 ? "99+" : nNo}</b>` : ""}</button>
+      <button class="nn-tab${N.tab === "atender" ? " on" : ""}" data-tab="atender" role="tab" title="Lo que espera que hagas algo. Se va cuando lo resuelves o le respondes al cliente.">Pendientes${pend.length ? `<b class="${pend.some((n) => n.prioridad === "urgente") ? "urg" : ""}">${pend.length}</b>` : ""}</button>
+      <button class="nn-tab${N.tab === "todas" ? " on" : ""}" data-tab="todas" role="tab" title="Todo lo que pasó en tus bots, por día">Historial</button>
     </div>
-    <p class="nn-tabsub">${N.tab === "atender" ? "Lo que espera que hagas algo. Se va cuando lo resuelves o le respondes al cliente." : "Todo lo que pasó en tus bots, por día."}</p>
     <div class="nn-filt"></div>
     ${bannerNavegador()}
     <div class="nn-list"></div>`;
@@ -610,9 +605,10 @@ function pintarLista() {
   const cuenta = (g) => base.filter((n) => (n.grupo || tipoDe(n).g) === g).length;
   const f = d.querySelector(".nn-filt");
   // Sin nada que filtrar, los chips en cero solo ensucian el «Todo al día».
-  f.hidden = !base.length;
-  f.innerHTML =[`<button class="nn-chip${N.grupo === "todo" ? " on" : ""}" data-g="todo">Todo<i>${base.length}</i></button>`,
-    ...GRUPOS.map((g) => { const k = cuenta(g.k); return `<button class="nn-chip${N.grupo === g.k ? " on" : ""}" data-g="${g.k}"${k || N.grupo === g.k ? "" : " disabled"}>${g.lb}${k ? `<i>${k}</i>` : ""}</button>`; })].join("");
+  const conAlgo = GRUPOS.filter((g) => cuenta(g.k) || N.grupo === g.k);
+  f.hidden = !base.length || (conAlgo.length < 2 && N.grupo === "todo");
+  f.innerHTML = [`<button class="nn-chip${N.grupo === "todo" ? " on" : ""}" data-g="todo">Todo<i>${base.length}</i></button>`,
+    ...conAlgo.map((g) => { const k = cuenta(g.k); return `<button class="nn-chip${N.grupo === g.k ? " on" : ""}" data-g="${g.k}">${g.lb}${k ? `<i>${k}</i>` : ""}</button>`; })].join("");
 
   let lista = base.filter((n) => N.grupo === "todo" || (n.grupo || tipoDe(n).g) === N.grupo);
   const box = d.querySelector(".nn-list");
@@ -623,12 +619,18 @@ function pintarLista() {
     lista.sort((a, b) => (RANGO[a.prioridad] ?? 3) - (RANGO[b.prioridad] ?? 3) || Date.parse(b.created_at) - Date.parse(a.created_at));
     // (22-oct) «Atendido a todos»: despeja de un toque lo que ya viste (los pagos por validar no: esos se deciden uno por uno)
     const nAt = lista.filter(atendible).length;
-    box.innerHTML = (nAt > 1 ? `<div class="nn-bulk"><span>${nAt} se pueden marcar de una vez</span><button class="nn-btn ghost" data-a="atender-todos">${I("check")}Atendido a todos</button></div>` : "")
+    box.innerHTML = `<div class="nn-bulk"><span>${lista.length === 1 ? "1 espera" : lista.length + " esperan"} que hagas algo</span>`
+      + (nAt > 1 ? `<button class="nn-btn ghost" data-a="atender-todos" title="Los pagos por validar no: esos se deciden uno por uno">${I("check")}Marcar atendidos</button>` : "") + `</div>`
       + lista.map((n) => item(n, true)).join("");
     return;
   }
   lista.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-  let html = "", dia = "";
+  const nNoTodo = [...N.rows.values()].filter((n) => noLeida(n) && !oculta(n)).length;
+  const nLimp = limpiables().length;
+  let html = (nNoTodo || nLimp) ? `<div class="nn-bulk"><span>${nNoTodo ? (nNoTodo === 1 ? "1 sin leer" : nNoTodo + " sin leer") : "Todo leído"}</span><span class="nn-bulk-acts">`
+    + (nNoTodo ? `<button class="nn-btn ghost" data-a="leer-todo" title="Marca como leído todo, de todos los bots">${I("checkAll")}Marcar leídas</button>` : "")
+    + (nLimp ? `<button class="nn-btn ghost" data-a="limpiar" title="Quita de tu campanita lo leído y lo resuelto (lo pendiente se queda)">${I("eraser")}Limpiar</button>` : "")
+    + `</span></div>` : "", dia = "";
   for (const n of lista) {
     const k = etiquetaDia(n.created_at);
     if (k !== dia) { dia = k; html += `<div class="nn-day">${esc(k)}</div>`; }
