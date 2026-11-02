@@ -790,6 +790,7 @@ async function productoPorRef(){
       const cfg=p.config||{};
       const m=(cfg.remarketing_seqs&&typeof cfg.remarketing_seqs==="object")?cfg.remarketing_seqs:{};
       for(const v of Object.values(m)) if(v) map[v]=p.id;
+      for(const v of Object.values((cfg.remarketing_seqs_angulo&&typeof cfg.remarketing_seqs_angulo==="object")?cfg.remarketing_seqs_angulo:{})) if(v) map[v]=p.id;   // (2-nov) secuencias propias de ángulos
       if(cfg.remarketing_seq_id) map[cfg.remarketing_seq_id]=p.id;
     }
   }catch(_){ }

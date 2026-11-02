@@ -239,13 +239,15 @@ async function deleteSeq(){
     const sid=st.seq.id;
     for(const [pid,cfg] of (st.prodConfig||new Map())){
       const rs=(cfg&&cfg.remarketing_seqs&&typeof cfg.remarketing_seqs==="object")?cfg.remarketing_seqs:{};
-      const apunta=Object.values(rs).includes(sid) || (cfg&&cfg.remarketing_seq_id===sid);
+      const ra=(cfg&&cfg.remarketing_seqs_angulo&&typeof cfg.remarketing_seqs_angulo==="object")?cfg.remarketing_seqs_angulo:{};
+      const apunta=Object.values(rs).includes(sid) || (cfg&&cfg.remarketing_seq_id===sid) || Object.values(ra).includes(sid);
       if(!apunta) continue;
       await patchProdConfig(pid,(c)=>{
         const r={ ...(c.remarketing_seqs||{}) };
         for(const k of Object.keys(r)) if(r[k]===sid) delete r[k];
         c.remarketing_seqs=r;
         if(c.remarketing_seq_id===sid) delete c.remarketing_seq_id;
+        if(c.remarketing_seqs_angulo&&typeof c.remarketing_seqs_angulo==="object"){ for(const k of Object.keys(c.remarketing_seqs_angulo)) if(c.remarketing_seqs_angulo[k]===sid) delete c.remarketing_seqs_angulo[k]; }
       });
     }
   }
@@ -283,13 +285,15 @@ function renderCards(){
     const el=document.createElement("div"); el.className="nodo-card qcard"+(on?"":" paused");
     // (10-oct) Producto + a quién le llega · los tiempos de cada paso · cuántos la reciben ahora.
     const lk=findSeqLink(s.id); const pr=lk && (st.allProducts||[]).find(p=>p.id===lk.productId);
-    const _et=SEG_ETAPA[s.segmento||"general"];
+    const _et=lk&&lk.angulo ? null : SEG_ETAPA[s.segmento||"general"];
+    const _ang=lk&&lk.angulo ? ((st.angulos||[]).find(a=>a.slug===lk.angulo)||{}).nombre||lk.angulo : "";
     const pub=`${pr?`${pr.emoji?esc(pr.emoji)+" ":""}${esc(pr.nombre)} · `:""}${_et?`<i style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--st-${_et});margin-right:5px;vertical-align:1px"></i>`:""}${esc(SEG_CORTO[s.segmento||"general"]||segLabel(s.segmento))}`;
+    const pubFinal=_ang ? `${pr?`${pr.emoji?esc(pr.emoji)+" ":""}${esc(pr.nombre)} · `:""}Ángulo «${esc(_ang)}»` : pub;
     const tl=(s.pasos||[]).length ? `<div class="sq-tl">${(()=>{ let acc=0; return (s.pasos||[]).map(p=>(acc+=Number(p.umbral_silencio_seg||0))); })().slice(0,6).map((cum,i)=>`${i?'<span class="a">→</span>':''}<span class="t">${cumTxt(cum)}</span>`).join("")}${n>6?`<span class="a">+${n-6}</span>`:""}</div>` : `<div class="sq-tl"><span class="a">Sin pasos aún</span></div>`;
     const nc=st.enCurso?.[s.id]||0;
     el.innerHTML=`
       <div class="c-top"><span class="c-tt">${esc(s.nombre)}</span><span class="sq-est"><i style="background:${on?'var(--green)':'var(--faint)'}"></i>${on?'Activa':'Pausada'}</span></div>
-      <div class="sq-pub"><span>${pub}</span></div>
+      <div class="sq-pub"><span>${pubFinal}</span></div>
       ${aviso?`<div style="font-size:11.5px;color:var(--amber);background:var(--amber-bg);border-radius:9px;padding:8px 10px;margin:-4px 0 12px;line-height:1.45">${esc(aviso)}</div>`:""}
       ${tl}
       <div class="sq-foot"><span>${nc?`<b>${nc}</b> en curso`:"Nadie la está recibiendo ahora"} · ${s.modo==="goteo"?"goteo":"reenganche"}</span><span data-cardfolder style="margin-left:auto"></span></div>`;
@@ -318,6 +322,9 @@ function findSeqLink(seqId){
     const rs=(cfg&&cfg.remarketing_seqs&&typeof cfg.remarketing_seqs==="object")?cfg.remarketing_seqs:{};
     for(const seg of Object.keys(rs)){ if(rs[seg]===seqId) return { productId:pid, segmento:seg }; }
     if(cfg && cfg.remarketing_seq_id===seqId) return { productId:pid, segmento:"general" };
+    // (2-nov) La secuencia propia de un ángulo (products.config.remarketing_seqs_angulo = {slug: id}).
+    const ra=(cfg&&cfg.remarketing_seqs_angulo&&typeof cfg.remarketing_seqs_angulo==="object")?cfg.remarketing_seqs_angulo:{};
+    for(const slug of Object.keys(ra)){ if(ra[slug]===seqId) return { productId:pid, segmento:"general", angulo:slug }; }
   }
   return null;
 }
@@ -342,6 +349,7 @@ async function patchProdConfig(pid, mutar){
   return true;
 }
 async function syncSeqLink(seqId){
+  if(st.seqOrigLink && st.seqOrigLink.angulo) return;   // secuencia propia de un ángulo: su enlace se maneja en Productos → Ángulos
   const orig=st.seqOrigLink, newPid=st.seqProduct||"", newSeg=(st.seq.segmento||"general");
   if(orig && (orig.productId!==newPid || orig.segmento!==newSeg)){
     const ok=await patchProdConfig(orig.productId,(cfg)=>{
@@ -370,7 +378,8 @@ function renderDetail(){
       <input id="s_nombre" value="${esc(s.nombre||"")}" placeholder="Nombre de la secuencia"/>
       <div class="toggle"><span id="s_state">${s.activo!==false?"Activa":"Pausada"}</span><div class="sw ${s.activo!==false?'on':''}" id="s_toggle"></div></div>
     </div>
-    <div class="sq-sel3">
+    ${curLink&&curLink.angulo?`<div style="font-size:12.5px;color:var(--muted);background:var(--brand-bg);border:1px solid var(--brand-border,var(--border));border-radius:10px;padding:9px 12px;margin:0 0 12px;line-height:1.5">Es la <b style="color:var(--text)">secuencia propia del ángulo «${esc(((st.angulos||[]).find(a=>a.slug===curLink.angulo)||{}).nombre||curLink.angulo)}»</b>: la reciben solo los que llegan por sus anuncios, en lugar de las del producto. Se crea o se quita en Productos → Ángulos.</div>`:""}
+    <div class="sq-sel3"${curLink&&curLink.angulo?' style="display:none"':""}>
       <div><label>Producto</label>
         <select class="sel" id="s_producto">
           <option value="" data-desc="La enlazas después">Ninguno</option>

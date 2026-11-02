@@ -10,7 +10,7 @@
 // El motor elige igual que antes: variante del ángulo del cliente → si no hay, la general.
 // ═════════════════════════════════════════════════════════════════════════
 import { supa, icon, toast, confirmDialog, askText, patchProductConfig, pageAll, getChannel } from "./shell.js";
-import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, newVariant, mountMensajeEditor } from "./seq-editor.js?v=22";
+import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, newVariant, mountMensajeEditor, mountStepsEditor } from "./seq-editor.js?v=22";
 import { limpiaBotones } from "./bubble-buttons.js";
 import { gastoAdsEn, llevarAMoneda } from "./cambio.js?v=2";
 import * as O from "./orders.js";
@@ -127,6 +127,8 @@ function burbujasGenerales(paso) {
   return null;
 }
 function remEstado(p, slug) {
+  const pid = seqPropiaId(p, slug);
+  if (pid) { const n = Math.max(1, (S.seqs[pid].pasos || []).length); return { total: n, propios: n, propia: true }; }
   let total = 0, propios = 0;
   for (const { seq } of seqsDe(p)) for (const paso of seq.pasos) if (esMsg(paso)) { total++; if (propiasDe(paso.variantes, slug).length) propios++; }
   return { total, propios };
@@ -162,7 +164,7 @@ function pinta() {
   pintaMapa();
 }
 function ir(vista) {
-  S.vista = vista; S.trabajo = null; S.trabajoRem = null; pinta();
+  S.vista = vista; S.trabajo = null; S.trabajoRem = null; S.trabajoProp = null; pinta();
   const el = vista.foco && document.getElementById(vista.foco);
   if (!el) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
   if (el.classList.contains("amx-cerrado")) el.classList.remove("amx-cerrado");   // el saludo plegado se abre
@@ -218,7 +220,7 @@ function pintaFicha(pid, slug) {
       <p>${esc(p.nombre)} · <b>${esc(paisNom(pais))}</b></p></div>
       ${otros.length && a ? `<div class="amx-paises">${fam.map((m) => { const tiene = !!angDe(m.id, slug); return `<button class="amx-pais ${String(m.id) === String(pid) ? "on" : ""}" ${tiene ? `data-ir="${esc(m.id)}"` : "disabled title=\"Este ángulo no existe en ese país\""}>${esc(paisNom(paisDe(m)))}</button>`; }).join("")}</div>` : ""}
     </div>`;
-  if (a) h += `<div class="amx-chips">${chip(a.ad_ids.length, `Anuncios ${a.ad_ids.length}`)}${chip(String(a.gancho_ia || "").trim(), "Gancho")}${chip(saludoPropio(pid, slug), "Saludo propio")}${rem.total ? chip(rem.propios === rem.total, `Secuencias ${rem.propios}/${rem.total}`) : ""}</div>`;
+  if (a) h += `<div class="amx-chips">${chip(a.ad_ids.length, `Anuncios ${a.ad_ids.length}`)}${chip(String(a.gancho_ia || "").trim(), "Gancho")}${chip(saludoPropio(pid, slug), "Saludo propio")}${rem.propia ? chip(true, "Secuencia propia") : rem.total ? chip(rem.propios === rem.total, `Secuencias ${rem.propios}/${rem.total}`) : ""}</div>`;
   // 1) Cómo le va
   h += `<div class="amx-card"><h3>${icon("rendimiento")} Cómo le va <span>· últimos ${DIAS} días · en ${esc(S.cur)}</span></h3>
     <div class="amx-kpi"><div><b>${plata(x.g)}</b><span>Gasto en anuncios</span></div><div><b>${x.c}</b><span>Conversaciones</span></div><div><b>${x.v}</b><span>Ventas</span></div>
@@ -460,12 +462,128 @@ function espera(seq, i) {
 // (1-nov, Rodrigo) Reenganche con el editor COMPLETO por toque (texto, imágenes, botones, versiones), solo las versiones
 // de este ángulo. Se edita una copia de los pasos (S.trabajoRem) y «Guardar reenganche» escribe las secuencias que
 // cambiaron. La espera y el descuento de cada toque se cambian en el producto («Abrir en el producto»).
+// ── Secuencias del ángulo: «Toques del producto» o «Secuencia propia» ─────────
+// (2-nov, Rodrigo) Un ángulo puede tener su PROPIA secuencia (otros toques, tiempos, descuentos o modo). Vive como una
+// secuencia normal enlazada en products.config.remarketing_seqs_angulo = {slug: sequence_id}; el motor la usa para quien
+// llegó por ese ángulo en lugar de las de audiencia (enrolarSegmento). Sin ella, sigue lo de siempre: los toques del
+// producto, con el texto propio de cada toque si se escribe.
+const seqPropiaId = (p, slug) => { const m = p?.config?.remarketing_seqs_angulo; const id = m && typeof m === "object" ? m[slug] : null; return id && S.seqs[id] ? id : null; };
+const carpetaDe = (p) => ((p.emoji ? p.emoji + " " : "") + (p.nombre || "")).slice(0, 60);
 function pintaRem(p, a) {
   const box = document.getElementById("amxRem"); if (!box) return;
+  const clave = `${p.id}|${a.slug}`, propiaId = seqPropiaId(p, a.slug);
+  const vista = S.remVista && S.remVista.clave === clave ? S.remVista.v : (propiaId ? "propia" : "prod");
+  box.innerHTML = `<h3>${icon("secuencias")} Secuencias de este ángulo</h3>
+    <div class="amx-modos" role="tablist">
+      <button type="button" class="amx-modo ${vista === "prod" ? "on" : ""}" data-vista="prod"><b>Toques del producto</b><span>Mismos toques y tiempos que todos; cambias el texto</span></button>
+      <button type="button" class="amx-modo ${vista === "propia" ? "on" : ""}" data-vista="propia"><b>Secuencia propia${propiaId ? " ✓" : ""}</b><span>Sus propios toques, tiempos y descuentos</span></button>
+    </div>
+    <div id="amxRemBody"></div>`;
+  box.querySelectorAll("[data-vista]").forEach((b) => (b.onclick = () => { S.remVista = { clave, v: b.dataset.vista }; pintaRem(p, a); }));
+  const cont = box.querySelector("#amxRemBody");
+  if (vista === "prod") {
+    if (propiaId) {
+      cont.innerHTML = `<div class="amx-step"><p class="amx-help" style="margin:0">${icon("alert")} Este ángulo usa su <b>secuencia propia</b>: quien llega por sus anuncios no recibe los toques del producto.</p>
+        <div class="amx-acts" style="justify-content:flex-start"><button class="amx-btn sm" data-ver>Ver la secuencia propia</button><button class="amx-link dang" data-quitarpropia>${icon("x")} Dejarla y volver a los toques del producto</button></div></div>`;
+      cont.querySelector("[data-ver]").onclick = () => { S.remVista = { clave, v: "propia" }; pintaRem(p, a); };
+      cont.querySelector("[data-quitarpropia]").onclick = () => quitarSecuenciaPropia(p, a);
+      return;
+    }
+    return pintaRemToques(p, a, cont);
+  }
+  if (!propiaId) {
+    const base = seqsDe(p)[0]?.seq;
+    cont.innerHTML = `<div class="amx-propia-vacia">
+        <p><b>¿Este anuncio necesita otro ritmo?</b> Por ejemplo, 3 toques en un día con urgencia, mientras el resto recibe 4 toques espaciados.</p>
+        <ul><li>Arranca como copia de ${base ? `«${esc(base.nombre)}» (${base.pasos.length} toque${base.pasos.length === 1 ? "" : "s"}), con los textos propios de este ángulo si ya los escribiste` : "un toque en blanco"}.</li>
+          <li>Le cambias toques, esperas, descuentos y modo sin tocar la del producto.</li>
+          <li>Solo la reciben los que llegan por los anuncios de «${esc(a.nombre)}»; los demás siguen igual.</li></ul>
+        <button class="amx-btn pri" data-crearpropia>${icon("plus")} Crear secuencia propia</button>
+      </div>`;
+    cont.querySelector("[data-crearpropia]").onclick = (e) => crearSecuenciaPropia(p, a, e.currentTarget);
+    return;
+  }
+  pintaRemPropia(p, a, cont, propiaId);
+}
+async function pintaRemPropia(p, a, cont, seqId) {
+  const clave = `${p.id}|${a.slug}|${seqId}`;
+  if (!S.trabajoProp || S.trabajoProp.clave !== clave) S.trabajoProp = { clave, seq: clon(S.seqs[seqId]) };
+  const T = S.trabajoProp, seq = T.seq;
+  cont.innerHTML = `<div class="amx-propia-hd">
+      <div><b>${esc(seq.nombre || "Secuencia propia")}</b><span>Solo la reciben los que llegan por «${esc(a.nombre)}», en lugar de las del producto.</span></div>
+      <label>Cómo se envía <select class="amx-sel" id="amxModo"><option value="reenganche">Reenganche (espera el silencio)</option><option value="goteo">Goteo (calendario fijo)</option></select></label>
+    </div>
+    <div id="amxSeqEd"><div class="amx-empty">Cargando…</div></div>
+    <div class="amx-acts"><button class="amx-link dang" data-quitarpropia style="margin-right:auto">${icon("x")} Dejarla y volver a los toques del producto</button><button class="amx-btn pri" data-gpropia>Guardar secuencia</button></div>`;
+  const modo = cont.querySelector("#amxModo"); modo.value = seq.modo === "goteo" ? "goteo" : "reenganche"; modo.onchange = () => { seq.modo = modo.value; };
+  cont.querySelector("[data-quitarpropia]").onclick = () => quitarSecuenciaPropia(p, a);
+  // Las opciones del producto, para el descuento de cada toque.
+  const { data: vers } = await supa.from("product_versions").select("id,nombre,precio").eq("product_id", p.id).order("orden");
+  const edBox = cont.querySelector("#amxSeqEd"); if (!edBox || !edBox.isConnected) return;
+  const ed = mountStepsEditor(edBox, { seq, channelId: S.ctx.channelId, angulos: [], presets: [],
+    ofertaProducts: [{ id: p.id, nombre: p.nombre, opciones: (vers || []).filter((v) => v.precio != null && v.precio !== "") }],
+    seqProductId: p.id, actions: { enabled: false } });
+  cont.querySelector("[data-gpropia]").onclick = async (e) => {
+    ed.normalize();
+    // Un descuento sin precio regalaría el producto (el motor cobraría 0): no se guarda así.
+    const gratis = (seq.pasos || []).findIndex((ps) => ps && ps.oferta && ps.oferta.version_id && !(Number(ps.oferta.precio) > 0));
+    if (gratis >= 0) { toast(`El descuento del toque ${gratis + 1} no tiene precio: ponle uno mayor a 0 o quítalo`, true); return; }
+    const real = S.seqs[seqId];
+    subeRevSiCambio(seq.pasos, S.fotoSeq[seqId]);
+    const b = e.currentTarget; b.disabled = true;
+    const { error } = await supa.from("sequences").update({ pasos: seq.pasos, modo: seq.modo || "reenganche" }).eq("id", seqId);
+    b.disabled = false;
+    if (error) { toast("No se pudo guardar: " + error.message, true); return; }
+    real.pasos = clon(seq.pasos); real.modo = seq.modo; S.fotoSeq[seqId] = fotoVariantes(real.pasos);
+    S.trabajoProp = null; toast("Secuencia propia guardada"); pinta();
+  };
+}
+// Copia de la secuencia del producto «aplanada» para este ángulo: en cada toque queda el texto propio del ángulo si lo
+// tenía (si no, el general), ya sin marca de ángulo — en la secuencia propia todos sus mensajes son de este ángulo.
+function pasosParaAngulo(pasos, slug) {
+  return clon(pasos || []).map((ps) => {
+    if (!esMsg(ps)) return ps;
+    asegurarVariantes(ps);
+    const propias = ps.variantes.filter((v) => v.angulo === slug && conTexto(v));
+    const gen = generalesDe(ps.variantes);
+    const quedan = (propias.length ? propias : gen.length ? gen : ps.variantes.filter((v) => !v.angulo)).map((v) => { const n = { ...v, id: uid(), rev: 1 }; delete n.angulo; return n; });
+    ps.variantes = quedan.length ? quedan : [{ ...newVariant(0) }];
+    ps.rotacion = ps.variantes.length > 1;
+    return ps;
+  });
+}
+async function crearSecuenciaPropia(p, a, btn) {
+  const base = seqsDe(p)[0]?.seq;
+  const pasos = base ? pasosParaAngulo(base.pasos, a.slug) : [{ umbral_silencio_seg: 86400, rotacion: false, variantes: [{ ...newVariant(0) }] }];
+  if (btn) btn.disabled = true;
+  const fila = { channel_id: S.ctx.channelId, nombre: `${p.nombre} · ${a.nombre}`.slice(0, 90), activo: true, pasos, folder: carpetaDe(p), segmento: "general", modo: base?.modo || "reenganche" };
+  let { data, error } = await supa.from("sequences").insert(fila).select("id,nombre,pasos,modo,activo").single();
+  if (error && /modo|folder|segmento|column/.test(error.message)) ({ data, error } = await supa.from("sequences").insert({ channel_id: fila.channel_id, nombre: fila.nombre, activo: true, pasos }).select("id,nombre,pasos,activo").single());
+  if (error) { if (btn) btn.disabled = false; toast("No se pudo crear: " + error.message, true); return; }
+  const r = await patchProductConfig(p.id, (c) => { c.remarketing_seqs_angulo = { ...(c.remarketing_seqs_angulo && typeof c.remarketing_seqs_angulo === "object" ? c.remarketing_seqs_angulo : {}), [a.slug]: data.id }; });
+  if (!r.ok) { await supa.from("sequences").delete().eq("id", data.id); if (btn) btn.disabled = false; toast("No se pudo enlazar la secuencia al ángulo", true); return; }
+  p.config = r.config;
+  S.seqs[data.id] = { ...data, pasos: Array.isArray(data.pasos) ? data.pasos : [] };
+  S.fotoSeq[data.id] = fotoVariantes(S.seqs[data.id].pasos);
+  S.remVista = { clave: `${p.id}|${a.slug}`, v: "propia" };
+  toast("Secuencia propia creada: cámbiale toques, tiempos o textos y guarda");
+  pinta();
+}
+async function quitarSecuenciaPropia(p, a, sinPreguntar) {
+  const id = seqPropiaId(p, a.slug); if (!id) return;
+  if (!sinPreguntar && !(await confirmDialog({ title: "Volver a los toques del producto", message: `Se borra la secuencia propia de «${a.nombre}». Los clientes que la estén recibiendo la dejan; desde ahora, los que lleguen por este ángulo reciben los toques del producto.`, confirmText: "Borrarla", danger: true }))) return;
+  const r = await patchProductConfig(p.id, (c) => { if (c.remarketing_seqs_angulo && typeof c.remarketing_seqs_angulo === "object") { delete c.remarketing_seqs_angulo[a.slug]; if (!Object.keys(c.remarketing_seqs_angulo).length) delete c.remarketing_seqs_angulo; } });
+  if (!r.ok) { toast("No se pudo quitar", true); return; }
+  p.config = r.config;
+  await supa.from("sequences").delete().eq("id", id);
+  delete S.seqs[id]; S.trabajoProp = null; S.remVista = { clave: `${p.id}|${a.slug}`, v: "prod" };
+  if (!sinPreguntar) { toast("Ahora usa los toques del producto"); pinta(); }
+}
+function pintaRemToques(p, a, box) {
   const seqs = seqsDe(p);
   const full = `<button class="amx-link" data-full>${icon("edit")} Abrir en el producto (esperas y descuentos)</button>`;
   if (!seqs.length) {
-    box.innerHTML = `<h3>${icon("secuencias")} Secuencias</h3><p class="amx-help">Este producto no tiene secuencias.</p><div class="amx-acts" style="justify-content:flex-start">${full}</div>`;
+    box.innerHTML = `<p class="amx-help">Este producto no tiene secuencias.</p><div class="amx-acts" style="justify-content:flex-start">${full}</div>`;
     box.querySelector("[data-full]").onclick = () => S.ctx.abrirRemarketing(p.id);
     return;
   }
@@ -478,7 +596,7 @@ function pintaRem(p, a) {
   const pasos = T.pasos[T.seq];
   if (T.sel >= pasos.length) T.sel = Math.max(0, pasos.length - 1);
   const estado = (ps) => (!esMsg(ps) ? "otro" : deAngulo(ps.variantes, a.slug).length ? "propio" : "general");
-  let h = `<h3>${icon("secuencias")} Secuencias de este ángulo</h3><p class="amx-help">A quien llegó por este ángulo y no compró. Verde = tiene su propio mensaje; gris = recibe el mismo que todos.</p>`;
+  let h = `<p class="amx-help" style="margin-top:0">A quien llegó por este ángulo y no compró. Verde = tiene su propio mensaje; gris = recibe el mismo que todos.</p>`;
   if (seqs.length > 1) h += `<div class="amx-segs">${seqs.map(({ seg, seq }) => `<button type="button" class="amx-seg ${seq.id === T.seq ? "on" : ""}" data-seq="${esc(seq.id)}">${esc(SEG[seg] || seg)}</button>`).join("")}</div>`;
   h += `<div class="amx-toques">${pasos.map((ps, i) => { const e = estado(ps);
     return `<button type="button" class="amx-toque ${e} ${i === T.sel ? "on" : ""}" data-i="${i}" title="${e === "propio" ? "Tiene su propio mensaje" : e === "general" ? "Recibe el mensaje de todos" : "Plantilla o flujo: igual para todos"}">
@@ -594,6 +712,25 @@ async function copiaAngulo(src, dst, slug) {
     });
     if (cambio && !(await guardarSeq(ds))) throw new Error("no se pudieron copiar las secuencias");
   }
+  // La secuencia propia del ángulo también viaja: la de allá se reemplaza (o se crea). Sin descuentos: nombran las
+  // opciones y precios de este país, allá se ponen los suyos.
+  const sp = seqPropiaId(src, slug);
+  if (sp) {
+    const pasos = clon(S.seqs[sp].pasos || []).map((ps) => { if (ps && ps.oferta) delete ps.oferta; return ps; });
+    const dp = seqPropiaId(dst, slug), modo = S.seqs[sp].modo || "reenganche";
+    if (dp) {
+      const { error } = await supa.from("sequences").update({ pasos, modo }).eq("id", dp);
+      if (error) throw error;
+      S.seqs[dp].pasos = pasos; S.seqs[dp].modo = modo; S.fotoSeq[dp] = fotoVariantes(pasos);
+    } else {
+      const { data, error } = await supa.from("sequences").insert({ channel_id: S.ctx.channelId, nombre: `${dst.nombre} · ${(angDe(dst.id, slug) || {}).nombre || slug}`.slice(0, 90), activo: true, pasos, folder: carpetaDe(dst), segmento: "general", modo }).select("id,nombre,pasos,modo,activo").single();
+      if (error) throw error;
+      const r = await patchProductConfig(dst.id, (c) => { c.remarketing_seqs_angulo = { ...(c.remarketing_seqs_angulo && typeof c.remarketing_seqs_angulo === "object" ? c.remarketing_seqs_angulo : {}), [slug]: data.id }; });
+      if (!r.ok) { await supa.from("sequences").delete().eq("id", data.id); throw new Error("no se pudo enlazar la secuencia propia"); }
+      dst.config = r.config; S.seqs[data.id] = { ...data, pasos }; S.fotoSeq[data.id] = fotoVariantes(pasos);
+    }
+    res.propia = true;
+  }
   return res;
 }
 async function copiarAOtros(btn, p, a, otros) {
@@ -608,7 +745,7 @@ async function copiarAOtros(btn, p, a, otros) {
   btn.disabled = true; const txt = btn.innerHTML; btn.textContent = "Copiando…";
   const hechos = [];
   try {
-    for (const m of otros) { if (!angDe(m.id, a.slug)) await insertaAngulo(m, a); const r = await copiaAngulo(p, m, a.slug); hechos.push(`${paisNom(paisDe(m))}${r.saludo ? " (saludo" + (r.toques ? ` y ${r.toques} toque${r.toques === 1 ? "" : "s"})` : ")") : r.toques ? ` (${r.toques} toque${r.toques === 1 ? "" : "s"})` : ""}`); }
+    for (const m of otros) { if (!angDe(m.id, a.slug)) await insertaAngulo(m, a); const r = await copiaAngulo(p, m, a.slug); hechos.push(`${paisNom(paisDe(m))}${r.saludo ? " (saludo" + (r.toques ? ` y ${r.toques} toque${r.toques === 1 ? "" : "s"})` : ")") : r.toques ? ` (${r.toques} toque${r.toques === 1 ? "" : "s"})` : ""}${r.propia ? " con su secuencia propia (sin descuentos: ponle los de ese país)" : ""}`); }
     toast("Copiado a " + hechos.join(", ") + (conPrecio.length ? ". Revisa los precios escritos." : ""));
   } catch (e) { toast((hechos.length ? `Se copió a ${hechos.join(", ")}, pero falló el resto: ` : "No se pudo copiar: ") + (e.message || e), true); }
   btn.disabled = false; btn.innerHTML = txt;
@@ -621,6 +758,7 @@ async function eliminarAngulo(p, a) {
     const r = await patchProductConfig(p.id, (cfg) => { cfg.ad_bank = [...new Set([...(Array.isArray(cfg.ad_bank) ? cfg.ad_bank.map(String) : []), ...a.ad_ids])]; });
     if (!r.ok) throw r.error || new Error("No se pudo guardar");
     p.config = r.config;
+    await quitarSecuenciaPropia(p, a, true);   // su secuencia propia, si tenía, se va con él
     const { error } = await supa.from("angulos").delete().eq("id", a.id);
     if (error) throw error;
     S.angs[p.id] = angsDe(p.id).filter((x) => x.id !== a.id);
@@ -748,6 +886,16 @@ function cargaCss() {
   .amx-link:focus{outline:none}.amx-link:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
   .amx-warnrow{display:flex;gap:7px;align-items:center;font-size:12.5px;color:var(--amber);background:rgba(240,169,43,.08);border-radius:10px;padding:8px 10px}
   .amx-warnrow svg{width:14px;height:14px;flex:none}
+  .amx-modos{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px 0 12px}
+  @media(max-width:560px){.amx-modos{grid-template-columns:1fr}}
+  .amx-modo{display:flex;flex-direction:column;gap:2px;text-align:left;font:inherit;cursor:pointer;padding:10px 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface-2);color:var(--text)}
+  .amx-modo b{font-size:13px}.amx-modo span{font-size:11.5px;color:var(--muted);line-height:1.4}
+  .amx-modo.on{border-color:var(--brand);background:var(--brand-bg);box-shadow:inset 0 0 0 1px var(--brand)}
+  .amx-propia-vacia{border:1px dashed var(--border);border-radius:12px;padding:14px 16px;font-size:13px;line-height:1.55}
+  .amx-propia-vacia p{margin:0 0 6px}.amx-propia-vacia ul{margin:0 0 12px;padding-left:18px;color:var(--muted);font-size:12.5px}
+  .amx-propia-hd{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:8px}
+  .amx-propia-hd>div{flex:1;min-width:220px}.amx-propia-hd b{display:block;font-size:13.5px}.amx-propia-hd span{font-size:12px;color:var(--muted)}
+  .amx-propia-hd label{font-size:12px;font-weight:650;color:var(--muted);display:flex;flex-direction:column;gap:4px}
   .amx-segs{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 10px}
   .amx-seg{font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer}
   .amx-seg.on{background:var(--brand);border-color:var(--brand);color:#fff}

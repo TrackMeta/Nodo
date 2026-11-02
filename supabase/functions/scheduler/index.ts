@@ -799,6 +799,9 @@ async function productoDeSecuencia(channelId: string, sequenceId: string): Promi
         const seqs = new Set<string>();
         const map = (cfg.remarketing_seqs && typeof cfg.remarketing_seqs === "object") ? cfg.remarketing_seqs : {};
         for (const v of Object.values(map)) if (v) seqs.add(String(v));
+        // (2-nov) …y las secuencias propias de sus ángulos: también son de este producto (freno «ya compró», hora del país).
+        const angMap = (cfg.remarketing_seqs_angulo && typeof cfg.remarketing_seqs_angulo === "object") ? cfg.remarketing_seqs_angulo : {};
+        for (const v of Object.values(angMap)) if (v) seqs.add(String(v));
         if (cfg.remarketing_seq_id) seqs.add(String(cfg.remarketing_seq_id));
         return { id: p.id as string, seqs, pais: cfg.pais ? String(cfg.pais) : undefined };
       });

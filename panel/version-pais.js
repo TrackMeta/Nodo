@@ -75,7 +75,7 @@ async function crearVersion({ origenId, familia, pais, moneda, precios, ofertas 
       supa.from("flow_edges").select("*").in("flow_id", flowIds),
       supa.from("flow_triggers").select("*").in("flow_id", flowIds),
     ]) : [{ data: [] }, { data: [] }, { data: [] }];
-    const seqIds = [...new Set([...Object.values(cfg0.remarketing_seqs || {}), cfg0.remarketing_seq_id].filter(Boolean).map(String))];
+    const seqIds = [...new Set([...Object.values(cfg0.remarketing_seqs || {}), ...Object.values(cfg0.remarketing_seqs_angulo || {}), cfg0.remarketing_seq_id].filter(Boolean).map(String))];   // (2-nov) + las propias de sus ángulos
     const { data: seqs } = seqIds.length ? await supa.from("sequences").select("*").in("id", seqIds) : { data: [] };
 
     const mapa = new Map();
@@ -173,7 +173,7 @@ export async function abrirVersionesPais({ channelId, prod, onAbrir, onCambio })
   const paisBot = paisDeZona(ch?.timezone || "America/Lima");
   // Las ofertas (con descuento) del remarketing de esta versión, para ponerles su precio en la moneda nueva.
   const _cfgP = (prods || []).find((p) => p.id === prod.id)?.config || prod.config || {};
-  const _seqIds = [...new Set([...Object.values(_cfgP.remarketing_seqs || {}), _cfgP.remarketing_seq_id].filter(Boolean).map(String))];
+  const _seqIds = [...new Set([...Object.values(_cfgP.remarketing_seqs || {}), ...Object.values(_cfgP.remarketing_seqs_angulo || {}), _cfgP.remarketing_seq_id].filter(Boolean).map(String))];
   const { data: _seqs } = _seqIds.length ? await supa.from("sequences").select("id, nombre, pasos").in("id", _seqIds) : { data: [] };
   const ofertasHoy = [];
   for (const sq of _seqs || []) (Array.isArray(sq.pasos) ? sq.pasos : []).forEach((p, i) => {

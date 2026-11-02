@@ -346,7 +346,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll, usuarioActual } from "./shell.js";
 import { mountFolders } from "./folder-bar.js?v=2";
-import { montarMapaAngulos } from "./angulos-mapa.js?v=20";
+import { montarMapaAngulos } from "./angulos-mapa.js?v=21";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
@@ -1949,6 +1949,9 @@ async function renderRemarketing(host){
       <h4 style="display:flex;align-items:center;gap:7px;margin:0 0 4px">${icon("secuencias")} Secuencias por audiencia</h4>
       <p class="hint" style="margin:0 0 4px">Cada tipo de cliente puede tener su propia secuencia. Lo que dejes vacío usa la <b>General</b>.</p>
       <div id="remSlots"></div>
+${(()=>{ const ra=(c.remarketing_seqs_angulo&&typeof c.remarketing_seqs_angulo==="object")?c.remarketing_seqs_angulo:{}; const ks=Object.keys(ra).filter(k=>list.some(q=>q.id===ra[k])); if(!ks.length) return "";
+        // (2-nov) Ángulos con secuencia propia: sus clientes no reciben las de arriba.
+        return `<div style="margin-top:12px;font-size:12px;line-height:1.5;color:var(--muted);background:var(--brand-bg);border-radius:10px;padding:9px 12px">${icon("compass")} Además, ${ks.length===1?"este ángulo tiene":"estos ángulos tienen"} su <b style="color:var(--text)">secuencia propia</b>: ${ks.map(k=>"«"+esc(((st.remAngulos||[]).find(x=>x.slug===k)||{}).nombre||k)+"»").join(", ")}. Quien llega por sus anuncios la recibe en lugar de las de arriba. Se edita en Productos → Ángulos.</div>`; })()}
       <div style="font-size:11px;color:var(--faint);margin-top:12px">Los pasos de cada secuencia se editan en <a href="secuencias.html" style="color:var(--brand)">Secuencias</a>. Recuerda <b>Guardar</b> el producto para fijar los enlaces.</div>
     </div>`;
 
@@ -3339,6 +3342,7 @@ const EN_VIVO_HASTA_1025 = new Set([
 const CONTENIDO_EN_VIVO = new Set([
   "microapp", "pago_propio",   // (pago_propio, 25-oct: lo leen en vivo el bloque de pago y el validador)
   "pais", "hermano_de", "familia", "pais_resto",   // (28-oct: versiones por país — las lee el ruteo, no el flujo)
+  "remarketing_seqs_angulo",   // (2-nov: secuencia propia de un ángulo — la lee el motor al enrolar, no el flujo)
   "contexto_producto","ia","ia_multimedia","faq","faq_items","objeciones","objeciones_items",
   // (entrega_mensaje NO va acá: el generador lo COPIA al nodo «entregar» y el motor lee el del
   // nodo, así que cambiarlo tiene que regenerar el flujo — antes el cliente seguía recibiendo el viejo.)

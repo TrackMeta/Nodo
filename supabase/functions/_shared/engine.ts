@@ -13240,6 +13240,10 @@ async function unsubscribeSeq(db: SupabaseClient, run: Run, a: any) {
 // "curioso" porque el motor le escriba en un campo.
 const SEG_RANK: Record<string, number> = {
   solo_inicio: 1, general: 1, interactuo: 2, caliente: 3, provincia_sin_adelanto: 4,
+  // (2-nov) La secuencia PROPIA de un ángulo reemplaza a las de audiencia (general, curiosos, interesados, calientes):
+  // rango justo encima de «caliente» para graduar desde cualquiera de ellas, y debajo de «provincia sin adelanto»
+  // (un pedido físico con adelanto pendiente sigue teniendo su propia secuencia).
+  angulo: 3.5,
 };
 // Enrola al contacto en la secuencia de remarketing de un SEGMENTO (audiencia).
 // El remarketing es POR PRODUCTO: la secuencia sale del mapa del producto del
@@ -13251,7 +13255,7 @@ const SEG_RANK: Record<string, number> = {
 async function enrolarSegmento(db: SupabaseClient, channelId: string, contactId: string, segmento: string) {
   try {
     // Producto del contacto → su mapa de remarketing por segmento.
-    const { data: c } = await db.from("contacts").select("product_id, no_remarketing, wa_id, source").eq("id", contactId).maybeSingle();
+    const { data: c } = await db.from("contacts").select("product_id, no_remarketing, wa_id, source, angulo").eq("id", contactId).maybeSingle();
     // Pidió que no le escriban: NO re-enrolarlo por "graduación". Antes se le creaba
     // una sub 'activa' nueva (el scheduler la re-cancelaba al siguiente tick por
     // no_remarketing, pero era churn constante crear→cancelar y un estado
@@ -13269,6 +13273,10 @@ async function enrolarSegmento(db: SupabaseClient, channelId: string, contactId:
     let seqId = map[segmento] as string | undefined;
     let seg = segmento;
     if (!seqId) { seqId = (map.general ?? cfg.remarketing_seq_id) as string | undefined; seg = "general"; }
+    // Ángulo con secuencia propia (products.config.remarketing_seqs_angulo = {slug: sequence_id}): esa, para toda audiencia.
+    const angMap = (cfg.remarketing_seqs_angulo && typeof cfg.remarketing_seqs_angulo === "object") ? cfg.remarketing_seqs_angulo : {};
+    const angSeq = (c as any)?.angulo ? angMap[String((c as any).angulo)] as string | undefined : undefined;
+    if (angSeq && segmento !== "provincia_sin_adelanto") { seqId = angSeq; seg = "angulo"; }
     if (!seqId) return; // el producto no tiene secuencia para este segmento ni general
     const rank = SEG_RANK[seg] ?? 1;
     // Sus subs de remarketing ACTIVAS + el segmento en que están (guardado en la
@@ -13282,6 +13290,7 @@ async function enrolarSegmento(db: SupabaseClient, channelId: string, contactId:
     // A). Espeja el veto por-producto de yaCompro. Una sub de otro producto sigue su propio curso.
     const misSeqs = new Set<string>();
     for (const v of Object.values(map)) if (v) misSeqs.add(String(v));
+    for (const v of Object.values(angMap)) if (v) misSeqs.add(String(v));
     if (cfg.remarketing_seq_id) misSeqs.add(String(cfg.remarketing_seq_id));
     const activosMios = (activos ?? []).filter((a: any) => misSeqs.has(String(a.sequence_id)));
     const rankActual = Math.max(0, ...activosMios.map((a: any) => SEG_RANK[a.segmento ?? "general"] ?? 1));
