@@ -707,9 +707,9 @@ function dlgMsg(o) {
 }
 // 📱 App para celular (3-nov): el APK de Android vive en Storage público (bucket «descargas»), siempre con el mismo
 // nombre, así el link y el QR no cambian. La app carga la web publicada, así que se actualiza sola; el APK solo hay que
-// volver a subirlo cuando cambia la parte nativa (workflow apk.yml → subirlo como descargas/Nodo.apk).
+// volver a armar cuando cambia la parte nativa, y apk.yml lo sube solo acá junto con Nodo.json (versión y tamaño).
 const APK_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co/storage/v1/object/public/descargas/Nodo.apk";
-const APK_INFO = "Versión 1.0.24 · 4,6 MB · solo Android";
+const APK_JSON = APK_URL.replace(/.apk$/, ".json");
 function cargarQR() {
   if (window.qrcode) return Promise.resolve(window.qrcode);
   return new Promise((res, rej) => {
@@ -729,7 +729,7 @@ export function abrirAppCelular() {
           <b>Escanéalo con la cámara de tu Android</b>
           <span>Se baja la app al celular. Si ya estás en el celular, usa el botón.</span>
           <a class="nb-btn primary ac-dl" href="${APK_URL}" download="Nodo.apk">${svg("download")}Descargar APK</a>
-          <small>${APK_INFO}</small>
+          <small id="acInfo">Solo Android</small>
         </div>
       </div>
       <ol class="ac-pasos">
@@ -742,6 +742,11 @@ export function abrirAppCelular() {
     </div>`);
   back.querySelector("#acCerrar").onclick = () => close();
   back.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  fetch(APK_JSON + "?t=" + Date.now()).then((r) => r.ok ? r.json() : null).then((j) => {
+    const el = back.querySelector("#acInfo"); if (!el || !j || !j.version) return;
+    const mb = Number(j.bytes) > 0 ? ` · ${(Number(j.bytes) / 1048576).toFixed(1).replace(".", ",")} MB` : "";
+    el.textContent = `Versión ${j.version}${mb} · solo Android`;
+  }).catch(() => {});
   cargarQR().then((qrcode) => {
     const q = qrcode(0, "M"); q.addData(APK_URL); q.make();
     const box = back.querySelector("#acQr"); if (box) box.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
