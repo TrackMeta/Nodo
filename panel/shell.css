@@ -458,10 +458,9 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
 .nodo-sec{
   display:flex;align-items:center;justify-content:space-between;width:100%;
   font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
-  padding:0 12px;margin:28px 0 10px;border:none;background:transparent;cursor:pointer;
+  padding:0 12px;margin:28px 0 10px;border:none;background:transparent;cursor:default;
   font-family:inherit;white-space:nowrap;text-align:left;transition:color var(--t-fast);
 }
-.nodo-sec:hover{color:var(--muted)}
 .nodo-sec svg{width:14px;height:14px;stroke-width:2;opacity:.7;transition:transform var(--t-med)}
 .nodo-group.closed .nodo-sec svg{transform:rotate(-90deg)}
 .nodo-group .nodo-gitems{display:flex;flex-direction:column;gap:4px;overflow:hidden}
@@ -473,8 +472,8 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
    que en modo expandido (antes los forzaba a mostrarse todos). El propio
    chevron + el espaciado separan los grupos, ya no hace falta la línea. */
 .nodo-nav.collapsed .nodo-sec{justify-content:center;padding:0;margin:10px 0 4px;font-size:0;min-height:20px}
-.nodo-nav.collapsed .nodo-sec svg{opacity:.45}
-.nodo-nav.collapsed .nodo-sec:hover svg{opacity:.9}
+/* (3-nov) sin flechita: en modo íconos una rayita separa los grupos */
+.nodo-nav.collapsed .nodo-sec::after{content:"";width:18px;height:1px;background:var(--border)}
 .nodo-nav.collapsed .nodo-group{margin-top:6px}
 .nodo-nav.collapsed .nodo-gitems{gap:4px}
 
@@ -1061,7 +1060,6 @@ html:not([data-ds="1"]) .nodo-links::-webkit-scrollbar{width:0;height:0}
 html:not([data-ds="1"]) .nodo-primary{gap:2px}
 html:not([data-ds="1"]) .nodo-group .nodo-gitems{gap:2px}
 html:not([data-ds="1"]) .nodo-sec{margin:16px 0 6px;padding:0 10px;font-size:11px;font-weight:500;letter-spacing:.06em;color:var(--faint)}
-html:not([data-ds="1"]) .nodo-sec:hover{color:var(--text)}
 html:not([data-ds="1"]) .nodo-link{height:32px;gap:10px;padding:0 10px;font-size:13px;font-weight:500;color:var(--muted);border-radius:7px}
 html:not([data-ds="1"]) .nodo-link svg{width:16px;height:16px}
 html:not([data-ds="1"]) .nodo-link:hover{background:rgba(255,255,255,.06);color:#fff}
@@ -1154,7 +1152,6 @@ html:not([data-ds="1"])[data-theme="light"] .nodo-nav{
   background:#FFFFFF!important;border-right:1px solid #E4E7EC;color:var(--text)}
 html:not([data-ds="1"])[data-theme="light"] .nodo-link:not(.nodo-cta):hover{background:#F2F4F7;color:#101828}
 html:not([data-ds="1"])[data-theme="light"] .nodo-link.active{background:#E6EFFF;color:#0B63E5;font-weight:600}
-html:not([data-ds="1"])[data-theme="light"] .nodo-sec:hover{color:#101828}
 html:not([data-ds="1"])[data-theme="light"] .nodo-confpop{background:#fff;border-color:#E4E7EC;box-shadow:0 12px 32px rgba(16,24,40,.14)}
 html:not([data-ds="1"])[data-theme="light"] .nodo-confpop .ncp-t{color:#5F6B7D}
 html:not([data-ds="1"]) .nodo-link.active::before{display:none}

@@ -475,22 +475,6 @@ export async function avanzadoPermitido() {
   } catch { return avanzadoCache(); }   // sin red: lo último que se supo, nunca una pantalla rota
 }
 
-// ── grupos del sidebar colapsados (persistencia) ────────────────────
-function closedGroups() {
-  // Primera visita (sin preferencia guardada): "Avanzado" arranca colapsado
-  // para no abrumar. Si el usuario ya tocó grupos, se respeta su elección.
-  try {
-    const raw = localStorage.getItem("nodo.navClosed");
-    if (raw == null) return ["auto", "avanzado"];
-    return JSON.parse(raw);
-  } catch { return []; }
-}
-function toggleGroup(key, closed) {
-  const set = new Set(closedGroups());
-  closed ? set.add(key) : set.delete(key);
-  localStorage.setItem("nodo.navClosed", JSON.stringify([...set]));
-}
-
 // ── toast global (DS §12: esquina inferior derecha, nivel 2) ────────
 const TOAST_OK = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
 const TOAST_ERR = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
@@ -1351,8 +1335,8 @@ export async function mountShell({ active } = {}) {
   const primaryHTML = (topGroup ? topGroup.items : []).map(itemHTML).join("");
   const grupoHTML = (g) => {
     const items = g.items.map(itemHTML).join("");
-    const closed = closedGroups().includes(g.key) && !g.items.some((it) => it.id === active);
-    return `<div class="nodo-group${closed ? " closed" : ""}" data-g="${g.key}"><button class="nodo-sec" type="button">${g.sec}${svg("chevron")}</button><div class="nodo-gitems">${items}</div></div>`;
+    // (3-nov) Sin flechita ni plegado: el título del grupo es solo un rótulo y el grupo va siempre abierto.
+    return `<div class="nodo-group" data-g="${g.key}"><div class="nodo-sec">${g.sec}</div><div class="nodo-gitems">${items}</div></div>`;
   };
   // «Avanzado» solo si la cuenta lo tiene (ver avanzadoPermitido). Acá se usa lo último que
   // se supo, porque el menú se pinta antes de poder preguntar; se corrige abajo al saberlo.
@@ -1416,10 +1400,7 @@ export async function mountShell({ active } = {}) {
   // 🔐 «Avanzado»: se pintó con lo último que se supo. Cuando llega la respuesta de verdad,
   // se agrega o se quita el grupo — sin recargar y sin que el usuario vea el menú saltar
   // (el grupo va siempre antes de «Configuración», en su sitio de siempre).
-  const cablearGrupo = (g) => {
-    const b = g.querySelector(".nodo-sec");
-    if (b) b.onclick = () => { g.classList.toggle("closed"); toggleGroup(g.dataset.g, g.classList.contains("closed")); };
-  };
+  const cablearGrupo = () => {};   // (3-nov) los grupos ya no se pliegan
   avanzadoPermitido().then((ok) => {
     const ya = nav.querySelector('.nodo-group[data-g="avanzado"]');
     if (ok && !ya) {
@@ -1438,14 +1419,6 @@ export async function mountShell({ active } = {}) {
     }
   }).catch(() => { /* si no se puede saber, se queda como se pintó */ });
 
-  // Grupos colapsables (persisten en localStorage)
-  nav.querySelectorAll(".nodo-group > .nodo-sec").forEach((btn) => {
-    btn.onclick = () => {
-      const g = btn.parentElement;
-      g.classList.toggle("closed");
-      toggleGroup(g.dataset.g, g.classList.contains("closed"));
-    };
-  });
 
   // Comprimir (no existe en modo minimal)
   const collapseBtn = nav.querySelector("#nodoCollapse");
