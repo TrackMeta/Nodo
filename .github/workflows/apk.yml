@@ -54,6 +54,22 @@ jobs:
           falla() { grep -E "error|What went wrong|FAILURE|e: |Could not|> " "$RUNNER_TEMP/gradle.log" | tail -30 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
           if [ -n "$NODO_KEYSTORE" ]; then ./gradlew --no-daemon assembleRelease > "$RUNNER_TEMP/gradle.log" 2>&1 || falla; cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/Nodo-1.0.${{ github.run_number }}.apk"
           else ./gradlew --no-daemon assembleDebug > "$RUNNER_TEMP/gradle.log" 2>&1 || falla; cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/Nodo-1.0.${{ github.run_number }}-prueba.apk"; fi
+      # 📱 (3-nov) El APK firmado se publica en el link fijo de descarga del panel (⚙ → App para celular):
+      # Storage público descargas/Nodo.apk + Nodo.json (versión, tamaño, fecha). Así quien la baje recibe siempre la
+      # última. Necesita el secreto SUPABASE_SERVICE_ROLE_KEY (tools/secreto-apk-github.ps1); sin él, no se publica.
+      - name: Publicar en el link de descarga
+        if: ${{ env.NODO_KEYSTORE != '' }}
+        env: { SRK: "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" }
+        run: |
+          if [ -z "$SRK" ]; then echo "::warning::Sin SUPABASE_SERVICE_ROLE_KEY: el APK no se publicó en el link de descarga"; exit 0; fi
+          APK="$RUNNER_TEMP/Nodo-1.0.${{ github.run_number }}.apk"
+          B="https://ahoxdyffbwjlshmdezwi.supabase.co/storage/v1/object/descargas"
+          curl -sSf -X POST "$B/Nodo.apk" -H "Authorization: Bearer $SRK" -H "apikey: $SRK" -H "x-upsert: true" \
+            -H "cache-control: max-age=300" -H "Content-Type: application/vnd.android.package-archive" --data-binary @"$APK"
+          printf '{"version":"1.0.%s","bytes":%s,"fecha":"%s"}' "${{ github.run_number }}" "$(stat -c%s "$APK")" "$(date -u +%FT%TZ)" > "$RUNNER_TEMP/Nodo.json"
+          curl -sSf -X POST "$B/Nodo.json" -H "Authorization: Bearer $SRK" -H "apikey: $SRK" -H "x-upsert: true" \
+            -H "cache-control: max-age=60" -H "Content-Type: application/json" --data-binary @"$RUNNER_TEMP/Nodo.json"
+          echo "Publicado: Nodo.apk 1.0.${{ github.run_number }}"
       - uses: actions/upload-artifact@v4
         with:
           name: Nodo-APK-1.0.${{ github.run_number }}
