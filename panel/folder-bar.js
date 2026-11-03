@@ -338,11 +338,11 @@ export async function mountFolders(opts){
     const meta = cur ? S.metas.find(m=>m.nombre===cur) : null;
     const btn = document.createElement("button");
     btn.type = "button"; btn.className = "nodo-folder";
-    btn.style.cssText = "gap:7px";
+    btn.style.cssText = "gap:7px;max-width:100%;min-width:0;white-space:nowrap";
     const paintBtn = (name)=>{
       const m = name ? S.metas.find(x=>x.nombre===name) : null;
       let h="";
-      if (name){ if(m&&m.color) h+=`<span class="fdot" style="background:${/^#[0-9a-f]{3,8}$/i.test(m.color)?m.color:"var(--muted)"}"></span>`; else h+=icon("folder"); if(m&&m.emoji) h+=`<span class="femo">${esc(m.emoji)}</span>`; h+=esc(name); }
+      if (name){ if(m&&m.color) h+=`<span class="fdot" style="background:${/^#[0-9a-f]{3,8}$/i.test(m.color)?m.color:"var(--muted)"}"></span>`; else h+=icon("folder"); if(m&&m.emoji) h+=`<span class="femo">${esc(m.emoji)}</span>`; h+=`<span style="min-width:0;overflow:hidden;text-overflow:ellipsis" title="${esc(name)}">${esc(name)}</span>`; }
       else { h = `${icon("folder")}<span style="color:var(--muted)">Sin carpeta</span>`; }
       btn.innerHTML = h + `<span style="color:var(--muted)">${icon("chevron")}</span>`;
     };
