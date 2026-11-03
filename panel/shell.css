@@ -1262,3 +1262,7 @@ html:not([data-theme="light"]) .nodo-botsel .nb-est.off{color:#F04438}
 #nodo-bot-off .bo-btn:hover{background:#FEEDEB}
 @keyframes nodoBoPulse{0%,100%{opacity:1}50%{opacity:.35}}
 @media (prefers-reduced-motion:reduce){#nodo-bot-off .bo-dot{animation:none}}
+
+/* (3-nov) Selector de carpeta dentro de una tarjeta: nunca más ancho que la tarjeta (el nombre largo va con «…»). */
+[data-cardfolder]{display:flex;min-width:0;max-width:100%}
+[data-cardfolder] > .nodo-folder{min-width:0;max-width:100%;overflow:hidden}
