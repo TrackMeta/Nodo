@@ -23821,6 +23821,24 @@ function motivoParaDueno(m: unknown): string {
   return /^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t;
 }
 
+// 🧾 Lee el JSON que devuelve «Validar el pago». Si viene roto (una comilla o un salto sin escapar dentro de
+// `texto_visible`, que es texto libre), antes se descartaba ENTERO en silencio: sin operación ni monto, el pago se iba a
+// validación manual aunque el Yape estuviera perfecto (Joel, 2-nov: S/ 10, op 34814873 → 16 h esperando). Ahora, si el
+// JSON no se deja leer, se sacan los campos uno por uno; `texto_visible` no se rescata (sin él la prueba anti-invento
+// no opina, igual que cuando el modelo no la manda). Devuelve null solo si no hay ni un campo.
+function leerJsonComprobante(txt: string): { p: any; reparado: boolean } | null {
+  const m = /\{[\s\S]*\}/.exec(String(txt ?? ""));
+  if (!m) return null;
+  try { return { p: JSON.parse(m[0]), reparado: false }; } catch (_) { /* roto: campo por campo */ }
+  const s = m[0], p: any = {};
+  const texto = (k: string) => { const r = new RegExp(`"${k}"\\s*:\\s*"([^"\\n]*)"`).exec(s); return r ? r[1].trim() : ""; };
+  const num = (k: string) => { const r = new RegExp(`"${k}"\\s*:\\s*"?\\s*(-?[0-9]+(?:[.,][0-9]+)?)`).exec(s); return r ? r[1] : ""; };
+  for (const k of ["banco", "metodo", "app", "titular", "fecha", "destinatario", "destino", "moneda"]) { const v = texto(k); if (v) p[k] = v; }
+  const op = /"operacion"\s*:\s*"?([0-9A-Za-z-]{3,})"?/.exec(s); if (op) p.operacion = op[1];
+  const mo = num("monto"); if (mo) p.monto = Number(mo.replace(",", "."));
+  return Object.keys(p).length ? { p, reparado: true } : null;
+}
+
 function frenoDeComprobante(parsed: any, ch: any): string | null {
   // MONEDA: un Yape de S/49 en un negocio que cobra en dólares se contaba como $49.
   {
@@ -28626,10 +28644,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       run.vars.pago_metodo = ""; ctx.pago_metodo = "";
       run.vars.pago_titular = ""; ctx.pago_titular = "";
       try {
-        const m = /\{[\s\S]*\}/.exec(String(result ?? ""));
-        if (m) {
-          const p = JSON.parse(m[0]);
+        const _lj = leerJsonComprobante(String(result ?? ""));
+        if (_lj) {
+          const p = _lj.p;
           _ocrLeyo = p;
+          if (_lj.reparado) await logEvent(db, run.channel_id, run.contact_id, "nota", "🧾 Respuesta del validador con formato roto",
+            `Se leyó campo por campo: ${["banco", "operacion", "monto", "titular"].map((k) => `${k} ${p[k] ?? "—"}`).join(" · ")}`).catch(() => {});
           const guarda = async (k: string, v: any) => {
             const s = String(v ?? "").trim();
             if (!s) return;
