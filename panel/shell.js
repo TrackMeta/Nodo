@@ -705,6 +705,49 @@ function dlgMsg(o) {
   if (o.messageHtml != null) return `<p>${o.messageHtml}</p>`;
   return o.message ? `<p>${escHtml(o.message)}</p>` : "";
 }
+// 📱 App para celular (3-nov): el APK de Android vive en Storage público (bucket «descargas»), siempre con el mismo
+// nombre, así el link y el QR no cambian. La app carga la web publicada, así que se actualiza sola; el APK solo hay que
+// volver a subirlo cuando cambia la parte nativa (workflow apk.yml → subirlo como descargas/Nodo.apk).
+const APK_URL = "https://ahoxdyffbwjlshmdezwi.supabase.co/storage/v1/object/public/descargas/Nodo.apk";
+const APK_INFO = "Versión 1.0.24 · 4,6 MB · solo Android";
+function cargarQR() {
+  if (window.qrcode) return Promise.resolve(window.qrcode);
+  return new Promise((res, rej) => {
+    const sc = document.createElement("script");
+    sc.src = new URL("vendor/qrcode.min.js", import.meta.url).href;
+    sc.onload = () => res(window.qrcode); sc.onerror = rej;
+    document.head.appendChild(sc);
+  });
+}
+export function abrirAppCelular() {
+  const { back, close } = mountModal(`
+    <div class="nodo-modal nodo-appcel" role="dialog" aria-modal="true">
+      <h3>App de Nodo para tu celular</h3>
+      <div class="ac-row">
+        <div class="ac-qr" id="acQr" aria-label="Código QR para descargar la app"></div>
+        <div class="ac-tx">
+          <b>Escanéalo con la cámara de tu Android</b>
+          <span>Se baja la app al celular. Si ya estás en el celular, usa el botón.</span>
+          <a class="nb-btn primary ac-dl" href="${APK_URL}" download="Nodo.apk">${svg("download")}Descargar APK</a>
+          <small>${APK_INFO}</small>
+        </div>
+      </div>
+      <ol class="ac-pasos">
+        <li>Abre el archivo que se bajó (<b>Nodo.apk</b>).</li>
+        <li>Si Android pregunta, toca <b>Configuración</b> y activa <b>Permitir de esta fuente</b>.</li>
+        <li>Toca <b>Instalar</b> y entra con tu correo y contraseña de Nodo.</li>
+      </ol>
+      <p class="ac-nota">Se actualiza sola: lo nuevo del panel aparece en la app sin volver a instalarla.</p>
+      <div class="nb-acts"><button class="nb-btn" id="acCerrar" type="button">Cerrar</button></div>
+    </div>`);
+  back.querySelector("#acCerrar").onclick = () => close();
+  back.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  cargarQR().then((qrcode) => {
+    const q = qrcode(0, "M"); q.addData(APK_URL); q.make();
+    const box = back.querySelector("#acQr"); if (box) box.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  }).catch(() => { const box = back.querySelector("#acQr"); if (box) box.remove(); });
+}
+
 function mountModal(html, { onClose } = {}) {
   const back = document.createElement("div");
   back.className = "nodo-modal-back";
@@ -1348,7 +1391,7 @@ export async function mountShell({ active } = {}) {
     ? `<button class="nodo-icnbtn" id="nodoConf" type="button" title="Configuración" aria-label="Configuración">${svg("config")}</button>`
     : "";
   const confPopHTML = DS2 && _confG
-    ? `<div class="nodo-confpop" id="nodoConfPop" hidden><div class="ncp-t">Configuración</div>${_confG.items.map(itemHTML).join("")}</div>`
+    ? `<div class="nodo-confpop" id="nodoConfPop" hidden><div class="ncp-t">Configuración</div>${_confG.items.map(itemHTML).join("")}<div class="ncp-sep"></div><button class="nodo-link" id="nodoAppCel" type="button" title="Descarga la app de Nodo para tu celular Android">${svg("phone")}<span class="nodo-lbl">App para celular</span></button></div>`
     : "";
   nav.innerHTML = `
     <div class="nodo-brand">
@@ -1384,6 +1427,8 @@ export async function mountShell({ active } = {}) {
   if (confBtn && confPop) {
     confBtn.onclick = (e) => { e.stopPropagation(); confPop.hidden = !confPop.hidden; };
     confPop.addEventListener("click", (e) => { if (e.target.closest("a")) confPop.hidden = true; });
+    const appBtn = confPop.querySelector("#nodoAppCel");
+    if (appBtn) appBtn.onclick = () => { confPop.hidden = true; abrirAppCelular(); };
     document.addEventListener("click", (e) => { if (!confPop.hidden && !e.target.closest("#nodoConfPop,#nodoConf")) confPop.hidden = true; });
   }
 

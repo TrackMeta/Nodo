@@ -1266,3 +1266,21 @@ html:not([data-theme="light"]) .nodo-botsel .nb-est.off{color:#F04438}
 /* (3-nov) Selector de carpeta dentro de una tarjeta: nunca más ancho que la tarjeta (el nombre largo va con «…»). */
 [data-cardfolder]{display:flex;min-width:0;max-width:100%}
 [data-cardfolder] > .nodo-folder{min-width:0;max-width:100%;overflow:hidden}
+
+/* (3-nov) ⚙ → «App para celular»: separador + botón con aspecto de link del menú, y su ventana con QR */
+.nodo-confpop .ncp-sep{height:1px;margin:4px 6px;background:var(--border)}
+.nodo-confpop button.nodo-link{width:100%;border:none;background:transparent;font-family:inherit;cursor:pointer;text-align:left}
+.nodo-appcel{max-width:480px}
+.nodo-appcel .ac-row{display:flex;gap:16px;align-items:center;margin:6px 0 14px}
+.nodo-appcel .ac-qr{width:148px;height:148px;flex:none;padding:8px;border-radius:12px;background:#fff;border:1px solid var(--border)}
+.nodo-appcel .ac-qr svg{width:100%;height:100%;display:block}
+.nodo-appcel .ac-tx{display:flex;flex-direction:column;gap:6px;min-width:0}
+.nodo-appcel .ac-tx b{font-size:14px;color:var(--text)}
+.nodo-appcel .ac-tx span{font-size:12.5px;color:var(--muted);line-height:1.45}
+.nodo-appcel .ac-tx small{font-size:11.5px;color:var(--faint)}
+.nodo-appcel .ac-dl{display:inline-flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;align-self:flex-start;margin-top:4px}
+.nodo-appcel .ac-dl svg{width:16px;height:16px}
+.nodo-appcel .ac-pasos{margin:0 0 10px;padding:12px 14px 12px 32px;border-radius:12px;background:var(--surface-2);font-size:12.5px;color:var(--muted);line-height:1.6}
+.nodo-appcel .ac-pasos b{color:var(--text);font-weight:600}
+.nodo-appcel .ac-nota{margin:0;font-size:12px;color:var(--faint)}
+@media (max-width:720px){ .nodo-appcel .ac-qr{display:none} .nodo-appcel .ac-dl{align-self:stretch} }
