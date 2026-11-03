@@ -65,12 +65,25 @@
   .sitel{color:var(--faint)}
   .siapr{margin-top:10px;font-size:12.5px;color:var(--muted);line-height:1.5}
   .siapr b{color:var(--text)}
-  .hoy{margin-top:26px}
-  .hoy .hrow{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);margin-bottom:6px;font-size:13px}
-  .hoy .hrow .hd{font-weight:600;flex:none} .hoy .hrow .hd.ok{color:var(--green)} .hoy .hrow .hd.no{color:var(--red)}
-  .hoy .hrow .hn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .hoy .hrow .ht{color:var(--faint);font-size:12px;flex:none}
-  .hoy .hrow a{color:var(--brand);font-size:12.5px;text-decoration:none;flex:none}
+  /* (3-nov) Sin nada que decidir: una franja arriba, no un bloque centrado en medio de la pantalla */
+  .vacio{display:flex;align-items:center;gap:14px;padding:16px 18px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}
+  .vacio .v-ic{width:38px;height:38px;flex:none;border-radius:11px;display:grid;place-items:center;background:var(--green-bg,rgba(22,163,74,.1));color:var(--green)}
+  .vacio .v-ic svg{width:19px;height:19px;stroke-width:2.4}
+  .vacio b{display:block;font-size:14.5px;color:var(--text)}
+  .vacio span{display:block;font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.45}
+  .vacio a{color:var(--brand)}
+  /* «Decididos hoy»: una sola lista, cada fila = estado · cliente · monto · hora · abrir chat */
+  .hoy{margin-top:22px}
+  .hoy .hlist{border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden}
+  .hoy .hrow{display:flex;align-items:center;gap:12px;padding:11px 16px;font-size:13px}
+  .hoy .hrow + .hrow{border-top:1px solid var(--border)}
+  .hoy .hrow .hd{flex:none;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px}
+  .hoy .hrow .hd.ok{color:var(--green);background:var(--green-bg,rgba(22,163,74,.1))} .hoy .hrow .hd.no{color:var(--red);background:var(--red-bg,rgba(220,38,38,.1))}
+  .hoy .hrow .hn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+  .hoy .hrow .hn b{color:var(--text);font-weight:600}
+  .hoy .hrow .ht{color:var(--faint);font-size:12px;flex:none;font-variant-numeric:tabular-nums}
+  .hoy .hrow a{flex:none;color:var(--brand);font-size:12.5px;font-weight:600;text-decoration:none;padding:5px 10px;border-radius:8px}
+  .hoy .hrow a:hover{background:var(--brand-bg)}
   .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;align-items:center;justify-content:center;z-index:100;padding:24px}
   .lightbox.show{display:flex} .lightbox img{max-width:92vw;max-height:92vh;border-radius:12px}
   .mrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
@@ -285,11 +298,11 @@ function render(){
   });
   renderStats(groups);
   if(!groups.some(g=>g.items.length)){
-    box.innerHTML=`<div class="nodo-empty"><div class="e-ic">${icon("check")}</div><h3>Nada que decidir</h3>
-      <p>Cuando entre un comprobante que necesite tu visto bueno, aparece acá solo.
+    box.innerHTML=`<div class="vacio"><span class="v-ic">${icon("check")}</span><div><b>Nada que decidir</b>
+      <span>Cuando entre un comprobante que necesite tu visto bueno, aparece acá solo.
       ${document.documentElement.hasAttribute("data-bot-digital")
-        ? 'Lo ya cobrado está en <a href="compras.html" style="color:var(--brand)">Compras</a>.'
-        : 'Para mover tus pedidos —despachar, avisar, entregar— anda a <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.'}</p></div>`;
+        ? 'Lo ya cobrado está en <a href="compras.html">Compras</a>.'
+        : 'Para mover tus pedidos —despachar, avisar, entregar— anda a <a href="pedidos.html">Pedidos</a>.'}</span></div></div>`;
     renderHoy();
     return;
   }
@@ -566,11 +579,11 @@ async function renderHoy(){
     const { data }=await supa.from("contact_events").select("contact_id,titulo,detalle,created_at,contact:contacts(nombre)")
       .eq("channel_id",st.channelId).ilike("titulo","%"+TIT_DEC).gte("created_at",hoy.toISOString()).order("created_at",{ascending:false}).limit(50);
     if(!data||!data.length){ box.innerHTML=""; return; }
-    box.innerHTML=`<div class="hoy"><div class="sect" style="margin-top:0">Decididos hoy · ${data.length}</div>`+data.map(e=>{
+    box.innerHTML=`<div class="hoy"><div class="sect" style="margin-top:0">Decididos hoy · ${data.length}</div><div class="hlist">`+data.map(e=>{
       const ok=/aprobado/.test(e.titulo);
       const hora=new Date(e.created_at).toLocaleTimeString("es-PE",{hour:"2-digit",minute:"2-digit"});
-      return `<div class="hrow"><span class="hd ${ok?"ok":"no"}">${ok?"✓ Aprobado":"✕ Rechazado"}</span><span class="hn">${esc((e.contact&&e.contact.nombre)||"Cliente")} · ${esc(e.detalle||"")}</span><span class="ht">${hora}</span><a href="index.html?c=${encodeURIComponent(e.contact_id)}">Abrir chat</a></div>`;
-    }).join("")+`</div>`;
+      return `<div class="hrow"><span class="hd ${ok?"ok":"no"}">${ok?"Aprobado":"Rechazado"}</span><span class="hn"><b>${esc((e.contact&&e.contact.nombre)||"Cliente")}</b> · ${esc(String(e.detalle||"").replace(/^confirmada · /,""))}</span><span class="ht">${hora}</span><a href="index.html?c=${encodeURIComponent(e.contact_id)}">Abrir chat</a></div>`;
+    }).join("")+`</div></div>`;
   }catch(_){ box.innerHTML=""; }
 }
 async function updateOrder(body){
