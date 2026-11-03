@@ -29042,6 +29042,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // abono viejo o a otro número entraba sin freno y uno chico real lo completaba → se
           // entregaba el producto al instante). Varias partes = lo ve un humano.
           const enPartesDig = Array.isArray(run.vars._pago_abonos) && (run.vars._pago_abonos as any[]).length > 1;
+          // 🗒️ POR QUÉ va a manual, en palabras (3-nov): antes el chat decía solo «en revisión» y no se sabía cuál de estos
+          // diez frenos saltó (Joel: un Yape perfecto esperó 16 h y hubo que adivinar). Va al evento y al aviso ({{motivo}}).
+          const _motivosManual = [
+            modo.manual && "tienes la validación manual encendida",
+            sobrepagoSospechoso && "pagó de más (o lo que sobra es el precio de otro producto)",
+            sinOpVerificable && "no se pudo leer el número de operación: sin él no se puede ver si el comprobante ya se usó",
+            montoIlegible && "no se pudo leer el monto",
+            precioSinResolver && "no se sabe qué versión compró: no hay precio contra el cual medir el pago",
+            extraMontoDudoso && "el monto del extra no cuadra con su precio",
+            sinPruebaDig && "el monto que leyó la IA no aparece en el texto del comprobante",
+            sinDestinatariosDig && "no hay medios de pago cargados para saber a quién debía ir el pago",
+            _frenoDig ? String(_frenoDig) : "",
+            enPartesDig && "pagó en varias partes",
+          ].filter(Boolean) as string[];
           if (modo.digital && (modo.manual || sobrepagoSospechoso || sinOpVerificable || montoIlegible || precioSinResolver || extraMontoDudoso || sinPruebaDig || sinDestinatariosDig || !!_frenoDig || enPartesDig)) {
             const url = String(run.vars._last_image ?? ctx.ultima_imagen ?? "");
             const { data: cc } = await db.from("contacts").select("product_id, nombre, wa_id").eq("id", run.contact_id).maybeSingle();
@@ -29179,6 +29193,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 monto: _amountTotal || "", operacion: run.vars.pago_operacion ?? "",
                 // Lo que PAGÓ (puede no ser el precio: S/150 por un curso de S/79). La campanita lo muestra.
                 monto_leido: run.vars.pago_monto ?? "",
+                motivo: _motivosManual.join(" · "),
               }, {
                 foto: url,
                 botones: run.vars._order_id
@@ -29205,7 +29220,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                   ? `¡Gracias! 🙌 Me llegó tu pago de *${_sym} ${_pagado}* y el precio es ${_sym} ${_vale}, así que lo estoy revisando para no cobrarte de más. En un momentito te confirmo. 😊`
                   : "¡Gracias! Estoy verificando tu pago y en un momentito te confirmo. 🙌").catch(() => {});
             }
-            await logEvent(db, run.channel_id, run.contact_id, "nota", esExtra ? "🎁 Pago de extra en revisión (validación manual)" : "💳 Pago digital en revisión (validación manual)").catch(() => {});
+            await logEvent(db, run.channel_id, run.contact_id, "nota", esExtra ? "🎁 Pago de extra en revisión (validación manual)" : "💳 Pago digital en revisión (validación manual)",
+              _motivosManual.length ? "Por qué: " + _motivosManual.join(" · ") : undefined).catch(() => {});
             run.vars._await = { type: "aprobacion_digital", node_id: node.id };
             run.estado = "esperando";
             return; // parqueado: la entrega ocurre recién al aprobar

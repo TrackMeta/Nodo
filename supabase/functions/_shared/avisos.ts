@@ -160,12 +160,13 @@ export const AVISOS: AvisoDef[] = [
     clave: "pago_digital_validar", grupo: "pagos",
     titulo: "Pago digital por validar",
     desc: "Producto digital con validación manual: el cliente pagó y espera. Hasta que apruebes, no recibe nada.",
-    vars: ["cliente", "telefono", "producto", "monto", "operacion"],
+    vars: ["cliente", "telefono", "producto", "monto", "operacion", "motivo"],
     texto:
       "💳 *PAGO DIGITAL POR VALIDAR*\n" +
       "\n" +
       "🛍 {{producto}}\n" +
       "💵 *{{moneda}} {{monto}}* · 🧾 {{operacion}}\n" +
+      "❓ Por qué: {{motivo}}\n" +
       "\n" +
       "👤 {{cliente}}\n" +
       "📱 {{telefono}}\n" +
