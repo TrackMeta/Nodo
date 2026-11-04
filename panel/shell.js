@@ -680,6 +680,8 @@ function openCreateBot() {
     let { data, error } = await supa.from("channels").insert({ nombre, negocio_form: { nombre }, negocio: "# " + nombre }).select("id,nombre").single();
     if (error && /negocio/.test(error.message || "")) ({ data, error } = await supa.from("channels").insert({ nombre }).select("id,nombre").single());
     if (error) { btn.disabled = false; btn.textContent = "Crear bot"; toast(error.message || "No se pudo crear el bot", true); return; }
+    // Las etiquetas automáticas existen desde el primer día (etiquetas-auto.js); si falla, la pantalla de Etiquetas las crea.
+    try { const m = await import("./etiquetas-auto.js"); await m.asegurarEtiquetasAuto(supa, data.id); } catch (_) {}
     S.channels.push({ id: data.id, nombre: data.nombre, logo_url: null });
     S.channels.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
     close();

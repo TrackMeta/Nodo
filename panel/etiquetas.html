@@ -81,6 +81,13 @@
   .newrow .in{flex:1;min-width:0;height:40px}
   .newrow .swatch{width:26px;height:26px;border-radius:50%;flex:none;cursor:pointer;box-shadow:0 0 0 1px var(--border)}
   .tcount{font-size:12px;color:var(--muted)}
+  /* (4-nov) Automáticas: las pone Nodo; nombre fijo, candado en vez de borrar */
+  .head2 .h2sub{margin:3px 0 0;font-size:12.5px;color:var(--muted);font-weight:400}
+  .sec2{margin-top:30px}
+  .tcard .name.ro{display:flex;align-items:center;cursor:default;background:transparent;border-color:transparent;padding:0 2px}
+  .tcard .lockb{width:32px;height:32px;flex:none;display:flex;align-items:center;justify-content:center;color:var(--faint);cursor:help}
+  .tcard .lockb svg{width:15px;height:15px}
+  .tcard .cuando{margin:0;font-size:12.5px;line-height:1.45;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -107,13 +114,17 @@
       </div>
     </div>
 
-    <div class="head2"><h3>Tus etiquetas</h3><span class="cnt" id="tagCount"></span></div>
+    <div class="head2"><h3>Tuyas</h3><span class="cnt" id="tagCount"></span></div>
     <div class="grid" id="list"></div>
+
+    <div class="head2 sec2"><div><h3>Automáticas</h3><p class="h2sub">Las pone Nodo solo. No se pueden renombrar ni borrar; sí cambiarles el color.</p></div><span class="cnt" id="autoCount"></span></div>
+    <div class="grid" id="listAuto"></div>
   </div>
 </div>
 
 <script type="module">
 import { supa, mountShell, toast, icon, confirmDialog } from "./shell.js";
+import { ETIQUETAS_AUTO, etiquetaAuto, asegurarEtiquetasAuto } from "./etiquetas-auto.js";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, tags:[], newColor:null };
 // Paleta ampliada: 8 familias × 4 tonos. El primero es el por defecto.
@@ -181,6 +192,8 @@ function updatePreview(){
 }
 async function load(){
   const gen=(st.loadGen=(st.loadGen||0)+1), forChannel=st.channelId; // anti-carrera al cambiar de bot
+  await asegurarEtiquetasAuto(supa, forChannel);   // existen desde el primer día (bots viejos o creados por otro lado)
+  if(gen!==st.loadGen) return;
   const { data }=await supa.from("tags").select("*").eq("channel_id",forChannel).order("nombre");
   if(gen!==st.loadGen) return;
   st.tags=data||[];
@@ -190,12 +203,16 @@ async function load(){
   if(gen!==st.loadGen) return;
   render();
 }
+const nCont=(t)=>(st.nTag&&st.nTag[t.id]!=null)?`${st.nTag[t.id]} contacto${st.nTag[t.id]===1?"":"s"}`:"";
 function render(){
+  const tuyas=st.tags.filter(t=>!etiquetaAuto(t.nombre));
+  const autos=ETIQUETAS_AUTO.map(e=>st.tags.find(t=>String(t.nombre||"").trim()===e.nombre)).filter(Boolean);
+  $("tagCount").textContent=tuyas.length?`${tuyas.length} etiqueta${tuyas.length===1?"":"s"}`:"";
+  renderAuto(autos);
   const box=$("list");
-  $("tagCount").textContent=st.tags.length?`${st.tags.length} etiqueta${st.tags.length===1?"":"s"}`:"";
-  if(!st.tags.length){ box.innerHTML=`<div class="empty" style="grid-column:1/-1">Aún no hay etiquetas. Escribe el nombre arriba y toca Crear.</div>`; return; }
+  if(!tuyas.length){ box.innerHTML=`<div class="empty" style="grid-column:1/-1">Aún no creaste ninguna. Escribe el nombre arriba y toca Crear.</div>`; return; }
   box.innerHTML="";
-  st.tags.forEach(t=>{
+  tuyas.forEach(t=>{
     const c=hex(t.color);
     const el=document.createElement("div"); el.className="tcard"; el.style.setProperty("--tc",c+"88");
     el.innerHTML=`
@@ -204,7 +221,7 @@ function render(){
         <input class="name" value="${esc(t.nombre)}"/>
         <button class="iconbtn" title="Eliminar">${TRASH}</button>
       </div>
-      <div class="preview"><span class="tcount">${(st.nTag&&st.nTag[t.id]!=null)?`${st.nTag[t.id]} contacto${st.nTag[t.id]===1?"":"s"}`:""}</span><span class="chip" style="display:none"></span></div>`;
+      <div class="preview"><span class="tcount">${nCont(t)}</span><span class="chip" style="display:none"></span></div>`;
     const chip=el.querySelector(".chip");
     const nameInp=el.querySelector(".name");
     // El chip se actualiza SOLO si el server confirmó el rename (antes se pintaba el nombre
@@ -217,6 +234,29 @@ function render(){
       update(t,{ color:col });
     });
     el.querySelector(".iconbtn").onclick=()=>remove(t);
+    box.appendChild(el);
+  });
+}
+// Automáticas: nombre fijo (el motor las busca por nombre), candado en vez de borrar, cuándo aparecen. Solo color.
+function renderAuto(autos){
+  const box=$("listAuto");
+  $("autoCount").textContent=autos.length?`${autos.length}`:"";
+  box.innerHTML="";
+  autos.forEach(t=>{
+    const c=hex(t.color), info=etiquetaAuto(t.nombre);
+    const el=document.createElement("div"); el.className="tcard"; el.style.setProperty("--tc",c+"88");
+    el.innerHTML=`
+      <div class="tc-top">
+        <span class="swatch" style="background:${c}" title="Cambiar color"></span>
+        <div class="name ro">${esc(t.nombre)}</div>
+        <span class="lockb" title="La maneja Nodo: no se puede renombrar ni borrar">${icon("lock","")}</span>
+      </div>
+      <p class="cuando">${esc(info?info.cuando:"")}</p>
+      <div class="preview"><span class="tcount">${nCont(t)}</span></div>`;
+    el.querySelector(".swatch").onclick=(e)=>openColorPopover(e.currentTarget, hex(t.color), (col)=>{
+      el.querySelector(".swatch").style.background=col; el.style.setProperty("--tc",col+"88");
+      update(t,{ color:col });
+    });
     box.appendChild(el);
   });
 }
@@ -260,12 +300,8 @@ async function update(t, patch){
   // Renombrar una etiqueta desengancha en SILENCIO las campañas/secuencias que segmentan por su
   // NOMBRE (se guardan por nombre, no por id → el segmento deja de encontrarla). Se avisa para que
   // el dueño las re-apunte. (Solo al cambiar el nombre; los cambios de color no afectan.)
-  // «Lima», «Provincia» y «Digital» las escribe el MOTOR en cada venta (por nombre exacto): si
-  // se renombran, en la siguiente venta crea otra con el nombre original y los contactos quedan
-  // repartidos entre las dos sin que nadie lo vea.
-  if(patch.nombre!==undefined && patch.nombre!==t.nombre && ["Lima","Provincia","Digital"].includes(String(t.nombre||"").trim())){
-    if(!await confirmDialog({title:"Etiqueta del motor",messageHtml:`<b>${esc(t.nombre)}</b> la pone el bot solo a cada venta según la zona de entrega. Si la renombras, en la próxima venta el bot creará otra vez una etiqueta <b>${esc(t.nombre)}</b> y tus contactos quedarán repartidos en dos etiquetas. Si solo quieres cambiarle el color, cancela y cambia el color.`,confirmText:"Renombrar igual",danger:true})) return false;
-  }
+  // Las automáticas (etiquetas-auto.js) ya no se pueden renombrar desde acá: van aparte, con candado.
+  if(patch.nombre!==undefined && etiquetaAuto(t.nombre)) return false;
   if(patch.nombre!==undefined && patch.nombre!==t.nombre){
     if(!await confirmDialog({title:"Renombrar etiqueta",message:`Si alguna campaña o secuencia segmenta por la etiqueta "${esc(t.nombre)}", dejará de encontrarla al renombrarla (los segmentos guardan la etiqueta por su nombre). Tendrás que volver a elegirla en esos segmentos. ¿Renombrar igual?`,confirmText:"Renombrar",cancelText:"Cancelar"})) return false;
   }
