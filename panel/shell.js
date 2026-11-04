@@ -637,7 +637,7 @@ function mostrarPrimerBot() {
   back.id = "nodo-primerbot"; back.className = "nodo-modal-back";
   back.innerHTML = `
     <div class="nodo-modal" role="dialog" aria-modal="true" aria-label="Crea tu primer bot">
-      <h3>Empecemos: crea tu primer bot 🤖</h3>
+      <h3>Empecemos: crea tu primer bot</h3>
       <p>Un <b>bot</b> es tu negocio dentro de Nodo: su bandeja, sus productos, sus pedidos y su
       número de WhatsApp. Hasta que crees uno, las secciones se ven vacías porque todavía no hay
       de qué llenarlas.</p>
