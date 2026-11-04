@@ -216,7 +216,6 @@ function renderDatos(b){
         <div class="dbot-f">
           <label for="d_nombre">Nombre de tu negocio</label>
           <input class="in" id="d_nombre" value="${esc(c.nombre||"")}" maxlength="40" autocomplete="off"/>
-          <div class="hint" style="margin-top:6px">Así te presenta la IA a tus clientes y así lo ves en el menú.</div>
           <div class="dlinks">
             <button type="button" class="linkish" id="d_cambiar">Cambiar logo</button>
             <button type="button" class="linkish" id="d_url">${urlVal?"Ocultar la URL":"Pegar una URL"}</button>
@@ -225,7 +224,7 @@ function renderDatos(b){
           <input class="in" id="d_logoUrl" value="${esc(urlVal)}" placeholder="https://.../logo.png" style="margin-top:8px;${urlVal?"":"display:none"}"/>
         </div>
       </div>
-      <p class="fhelp" style="margin-top:12px">Así ves este bot en el panel y en el selector de bots. Tus clientes no lo ven.</p>
+      <p class="fhelp" style="margin-top:12px">La IA usa este nombre con tus clientes («soy el asistente de …») y es el que ves en el menú. El logo solo lo ves tú.</p>
       <input type="file" id="d_file" accept="image/png,image/jpeg,image/webp" hidden/>
     </div>
     <div class="card">
