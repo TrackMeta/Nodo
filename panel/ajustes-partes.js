@@ -5,6 +5,7 @@
 //  config.html quedó solo para reenviar enlaces viejos (y el regreso de Google).
 // ═══════════════════════════════════════════════════════════════════
 import { supa, toast, icon, confirmDialog } from "./shell.js";
+import { compileNegocio, fusionarNegocio } from "./negocio-texto.js";
 const $ = (id) => document.getElementById(id);
 // (28-oct) Ajustes pregunta el PAÍS del negocio, no la zona horaria: «America/Lima · UTC-5» no le dice nada a nadie.
 // Cada país guarda la zona de su capital en channels.timezone (el motor la sigue leyendo igual). Los países con
@@ -37,6 +38,16 @@ async function updCanal(patch){
   const { data, error }=await supa.from("channels").update(patch).eq("id",st.channelId).select("id");
   if(!error && !(data&&data.length)) return { error:{ message:"No se guardó: solo un administrador puede cambiar esto" } };
   return { error };
+}
+// (4-nov) Un solo nombre: el del bot ES el del negocio que la IA dice al cliente («asistente de ventas de …»).
+// Al renombrar se cambia también en la ficha del negocio y se rearma el texto que lee la IA (lo fresco de la base,
+// para no pisar lo que otra pestaña guardó).
+async function sincronizaNombreNegocio(nombre){
+  const { data:fr }=await supa.from("channels").select("negocio_form").eq("id",st.channelId).maybeSingle();
+  const form=(fr&&fr.negocio_form&&typeof fr.negocio_form==="object")?{ ...fr.negocio_form }:{};
+  form.nombre=nombre; fusionarNegocio(form);
+  const { error }=await updCanal({ negocio_form:form, negocio:compileNegocio(form).trim()||null });
+  if(error) toast("El nombre se guardó, pero la IA sigue usando el anterior: "+error.message,true);
 }
 function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
@@ -197,14 +208,15 @@ function renderDatos(b){
   let repElegida = c.moneda_reporte==="USD" ? "USD" : "";
   st.pendingLogo=null; st.removeLogo=false;
   b.innerHTML=`
-    <h2>Nombre, país y moneda</h2><p class="sub">Cómo se llama este bot, dónde está tu negocio y en qué moneda ves tus números.</p>
+    <h2>Nombre, país y moneda</h2><p class="sub">Cómo se llama tu negocio, dónde está y en qué moneda ves tus números.</p>
     <div class="card">
-      <div class="chd"><span class="ico">${icon("edit")}</span><span class="nm">Tu bot</span></div>
+      <div class="chd"><span class="ico">${icon("edit")}</span><span class="nm">Tu negocio</span></div>
       <div class="dbot">
         <button type="button" class="dlogo" id="d_drop" title="Cambiar el logo (o suelta una imagen acá)"><img id="d_logo" src="${esc(logo)}" alt=""/><span class="dcam">${icon("camera","")}</span></button>
         <div class="dbot-f">
-          <label for="d_nombre">Nombre del bot</label>
+          <label for="d_nombre">Nombre de tu negocio</label>
           <input class="in" id="d_nombre" value="${esc(c.nombre||"")}" maxlength="40" autocomplete="off"/>
+          <div class="hint" style="margin-top:6px">Así te presenta la IA a tus clientes y así lo ves en el menú.</div>
           <div class="dlinks">
             <button type="button" class="linkish" id="d_cambiar">Cambiar logo</button>
             <button type="button" class="linkish" id="d_url">${urlVal?"Ocultar la URL":"Pegar una URL"}</button>
@@ -364,6 +376,7 @@ function renderDatos(b){
       if(!error){ avisado=true; toast("Guardado; falta aplicar la migración 0141 para la moneda de tus reportes",true); }
     }
     if(error){ listo(); toast(error.message,true); return; }
+    if(nombre!==(st.channel.nombre||"")) await sincronizaNombreNegocio(nombre);
     Object.assign(st.channel, patch); st.pendingLogo=null; st.removeLogo=false;
     // El nombre y el logo también están arriba en la barra y en el selector de bot: sin tocarlos, decía «guardado»
     // y seguía el nombre y el logo viejos hasta recargar.

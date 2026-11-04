@@ -657,8 +657,9 @@ function openCreateBot() {
     <div class="nodo-modal" role="dialog" aria-modal="true" aria-label="Crear nuevo bot">
       <h3>Crear nuevo bot</h3>
       <p>Cada bot es un <b>espacio independiente</b> dentro de tu cuenta: su propia bandeja, contactos, flujos, productos, configuración y pixel. El número de WhatsApp y el pixel se conectan después, en <b>Conexiones</b>.</p>
-      <label for="nbName">Nombre del bot</label>
-      <input id="nbName" placeholder="Ej. Mi Negocio 2" maxlength="60" autocomplete="off" />
+      <label for="nbName">Nombre de tu negocio</label>
+      <input id="nbName" placeholder="Ej. Tienda Sofía" maxlength="60" autocomplete="off" />
+      <div class="nb-hint">Así te presenta la IA a tus clientes («soy el asistente de …») y así lo ves en el menú. El nombre de tu asistente lo eliges después, en IA.</div>
       <div class="nb-acts">
         <button class="nb-btn" id="nbCancel" type="button">Cancelar</button>
         <button class="nb-btn primary" id="nbCreate" type="button">Crear bot</button>
@@ -674,7 +675,10 @@ function openCreateBot() {
     if (!nombre) { input.focus(); return; }
     const btn = back.querySelector("#nbCreate"); if (btn.disabled) return;   // doble Enter = dos bots: el keydown no miraba el botón
     btn.disabled = true; btn.textContent = "Creando…";
-    const { data, error } = await supa.from("channels").insert({ nombre }).select("id,nombre").single();
+    // (4-nov) Un solo nombre: el del bot ES el del negocio. Se guarda también en la ficha del negocio y en el texto
+    // que lee la IA; antes un bot nuevo no sabía cómo se llamaba su negocio hasta que alguien guardaba Negocio.
+    let { data, error } = await supa.from("channels").insert({ nombre, negocio_form: { nombre }, negocio: "# " + nombre }).select("id,nombre").single();
+    if (error && /negocio/.test(error.message || "")) ({ data, error } = await supa.from("channels").insert({ nombre }).select("id,nombre").single());
     if (error) { btn.disabled = false; btn.textContent = "Crear bot"; toast(error.message || "No se pudo crear el bot", true); return; }
     S.channels.push({ id: data.id, nombre: data.nombre, logo_url: null });
     S.channels.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
