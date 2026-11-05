@@ -33,6 +33,14 @@ async function abrir(cid) {
   const c = ct.data;
   let ad = null;
   if (c.ad_id) { const { data } = await supa.from("ads_meta").select("ad_name,adset_name,campaign_name").eq("channel_id", A.ch).eq("ad_id", String(c.ad_id)).maybeSingle(); ad = data; }
+  // 📣 Todos los anuncios que tocó (como la ficha web; los anota el webhook desde el 5-nov)
+  let adClics = [], adMetas = {};
+  try {
+    const { data: ev } = await supa.from("contact_events").select("created_at,meta").eq("contact_id", cid).eq("titulo", "📣 Tocó un anuncio").order("created_at", { ascending: false }).limit(30);
+    adClics = (ev || []).filter((e) => e.meta && e.meta.ad_id);
+    const ids = [...new Set(adClics.map((e) => String(e.meta.ad_id)))];
+    if (ids.length) { const { data: am } = await supa.from("ads_meta").select("ad_id,ad_name,campaign_name").eq("channel_id", A.ch).in("ad_id", ids); (am || []).forEach((x) => { adMetas[String(x.ad_id)] = x; }); }
+  } catch (_) { /* sin historial: la ficha sale igual */ }
   const nombres = new Map((campos.data || []).map((f) => [f.id, f]));
   // Lo de la ficha web que la app reusa tal cual (editar pedido, rótulo, chips de Meta): se carga recién al abrir una ficha
   const orden0 = (ord.data || [])[0] || null;
@@ -42,7 +50,7 @@ async function abrir(cid) {
     supa.from("sequence_subscriptions").select("id,estado,paso_actual,sequence:sequence_id(nombre)").eq("contact_id", cid).eq("estado", "activa").then((r) => r.data || [], () => []),
   ]);
   F = {
-    c, ad, conv: conv.data || {}, orden: orden0, CE: CEm, capi, subs, tags: tags.data || [], asig: new Set((asig.data || []).map((x) => x.tag_id)),
+    c, ad, adClics, adMetas, conv: conv.data || {}, orden: orden0, CE: CEm, capi, subs, tags: tags.data || [], asig: new Set((asig.data || []).map((x) => x.tag_id)),
     vender: (vals.data || []).map((v) => ({ f: nombres.get(v.field_id), v: v.value })).filter((x) => x.f && !interna(x.f.key) && presentable(x.v)),
     media: media.data || [],
   };
@@ -213,7 +221,18 @@ function origenHtml(c, ref) {
     `<div class="ol-rows">${c.ad_id ? `<div class="ol-kv"><span>Ad ID</span><b class="num">${esc(c.ad_id)}<button type="button" class="ol-copy" data-copiar="${esc(c.ad_id)}" aria-label="Copiar el ID del anuncio">${ic("copy")}</button></b></div>` : ""}
       <div class="ol-kv"><span>Primer contacto</span><b>${primer ? esc(fmtHora(primer)) : "—"}</b></div>
       ${clicTarde ? `<div class="ol-kv"><span>Último clic al anuncio</span><b>${esc(fmtHora(ref.at))}</b></div>` : ""}</div>` +
-    (!ref ? `<p class="ol-note">${ic("help")} ${m ? "Llegó antes del 5 de octubre de 2026, cuando Nodo aún no guardaba el título, el texto ni la imagen del anuncio." : "Conecta tu cuenta publicitaria en el panel (Conexiones → Meta) para ver el nombre del anuncio y su campaña."}</p>` : "");
+    (!ref ? `<p class="ol-note">${ic("help")} ${m ? "Llegó antes del 5 de octubre de 2026, cuando Nodo aún no guardaba el título, el texto ni la imagen del anuncio." : "Conecta tu cuenta publicitaria en el panel (Conexiones → Meta) para ver el nombre del anuncio y su campaña."}</p>` : "") +
+    historialAnuncios(c.ad_id);
+}
+// Todos los anuncios que tocó, del más nuevo al más viejo. Solo si tocó más de uno o uno distinto del actual.
+function historialAnuncios(adActual) {
+  const L = F.adClics || []; if (!L.length) return "";
+  if (L.length === 1 && String(L[0].meta.ad_id) === String(adActual || "")) return "";
+  return `<div class="olh"><div class="ol-k">Anuncios que tocó · ${L.length}</div>` + L.map((e, i) => {
+    const m = e.meta || {}, am = F.adMetas[String(m.ad_id)] || {}, img = _https(m.thumbnail_url) || _https(m.image_url);
+    const actual = i === 0 && String(m.ad_id) === String(adActual || "");
+    return `<div class="olh-row">${img ? `<img src="${esc(img)}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">` : `<span class="ol-th sm">${ic("megaphone")}</span>`}<span class="olh-tx"><b>${esc(am.ad_name || m.headline || "Anuncio " + m.ad_id)}${actual ? ' <em class="olh-tag">actual</em>' : ""}</b><small>${am.campaign_name ? esc(am.campaign_name) + " · " : ""}${esc(fmtHora(e.created_at))}</small></span></div>`;
+  }).join("") + `</div>`;
 }
 function etiquetasHtml() {
   if (!F.tags.length) return `<p style="color:var(--muted)">Este bot no tiene etiquetas. Créalas desde el panel.</p>`;

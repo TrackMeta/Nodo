@@ -429,6 +429,27 @@ async function processInbound(
   }
   if (upErr || !contact) throw new Error(`upsert contact: ${upErr?.message ?? "sin contacto"}`);
 
+  // 📣 HISTORIAL DE ANUNCIOS (5-nov, Rodrigo: «que aparezcan todos los anuncios»). contacts.ad_id / ad_ref guardan solo
+  // el ÚLTIMO anuncio: cada clic nuevo pisa el anterior. Cada clic de anuncio queda anotado acá como evento, con lo que
+  // Meta cuenta de él, y la ficha («Origen del lead») lista todos. Un reintento de Meta trae el mismo ctwa_clid: no se
+  // anota dos veces. Best-effort: si falla, el mensaje se atiende igual (pero deja rastro en el log).
+  if (ref?.ctwa_clid && ref?.source_id) {
+    try {
+      const { data: _ya } = await db.from("contact_events").select("id").eq("contact_id", contact.id)
+        .eq("titulo", "📣 Tocó un anuncio").eq("meta->>ctwa_clid", String(ref.ctwa_clid)).limit(1).maybeSingle();
+      if (!_ya) {
+        const t = (v: unknown, n: number) => typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null;
+        await db.from("contact_events").insert({
+          channel_id: channelId, contact_id: contact.id, tipo: "nota", titulo: "📣 Tocó un anuncio",
+          detalle: t(ref.headline, 140) ?? `Anuncio ${String(ref.source_id)}`,
+          meta: { ad_id: String(ref.source_id), ctwa_clid: String(ref.ctwa_clid), headline: t(ref.headline, 300),
+            image_url: t(ref.image_url, 1500), thumbnail_url: t(ref.thumbnail_url, 1500), source_url: t(ref.source_url, 500),
+            media_type: t(ref.media_type, 20), at: tsCliente },
+        });
+      }
+    } catch (e) { console.error("[historial anuncios]", (e as any)?.message ?? e); }
+  }
+
   // El nombre del perfil de WhatsApp solo se pone si el contacto TODAVÍA no tiene uno: sirve
   // para estrenar el contacto, no para revertir lo que el dueño escribió. Best-effort — si
   // falla, el mensaje se procesa igual (el nombre es lo de menos frente a atender al cliente).

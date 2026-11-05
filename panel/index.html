@@ -590,6 +590,16 @@
      no cambia nada. Tres cosas: (la lista compacta se probó y se quitó: no le gustó) (1) la ficha no le quita ancho al chat: empieza escondida y se abre ENCIMA, desde la derecha, como en el
      celular; (2) «Escribe libre» y «Sin costo por anuncio» van juntos en un solo chip (ver updateWindow). */
   .winwrap .winfull{display:contents}
+  /* Historial de anuncios en «Origen del lead» */
+  .cpanel .olh{margin-top:12px;border-top:1px dashed var(--border);padding-top:10px;display:flex;flex-direction:column;gap:8px}
+  .cpanel .olh-t{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--faint)}
+  .cpanel .olh-row{display:flex;align-items:center;gap:9px}
+  .cpanel .olh-row img,.cpanel .olh-ph{width:34px;height:34px;flex:none;border-radius:8px;object-fit:cover;background:var(--surface-2);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  .cpanel .olh-ph svg{width:16px;height:16px}
+  .cpanel .olh-tx{min-width:0}
+  .cpanel .olh-n{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cpanel .olh-s{font-size:11px;color:var(--muted)}
+  .cpanel .olh-tag{font-size:10px;font-weight:700;color:var(--green);background:var(--green-bg);padding:1px 6px;border-radius:6px;margin-left:3px}
   /* (5-nov) La × de la ficha encima, cuadrada con el contenido: a la altura del avatar y alineada con el borde derecho de
      los botones de la ficha (antes iba pegada al borde de la pantalla, más afuera y más arriba que todo) */
   #app.m-ficha .cp-x{top:16px!important;right:calc(16px + 8px)!important;width:32px!important;height:32px!important;border:1px solid var(--border)!important;background:var(--surface-2)!important;color:var(--text)!important;box-shadow:0 1px 3px rgba(15,23,42,.08);cursor:pointer;padding:0}
@@ -1677,13 +1687,20 @@ async function loadContactPanel(c){
     latestOrder(supa, c.id),
   ]);
   if (state.contactId !== c.id) return; // cambió de chat mientras cargaba
-  let capiEvt=null, adMeta=null;
+  let capiEvt=null, adMeta=null, adClicks=[], adMetas={};
   // Nombre del anuncio y de la campaña para «Origen del lead»: salen de ads_meta (lo baja ads-sync
   // de la cuenta publicitaria conectada). Sin cuenta conectada simplemente no hay fila.
   const adIdCt = (ctRes.data||c).ad_id;
   await Promise.all([
     (orderRes && orderRes.id) ? supa.from("capi_events").select("estado, value, currency, event_id, action_source, meta_response, created_at").eq("order_id",orderRes.id).eq("event_name","Purchase").maybeSingle().then(r=>{ capiEvt=r.data||null; },()=>{}) : null,
     adIdCt ? supa.from("ads_meta").select("ad_name,adset_name,campaign_name").eq("channel_id", state.channelId).eq("ad_id", String(adIdCt)).maybeSingle().then(r=>{ adMeta=r.data||null; },()=>{}) : null,
+    // 📣 Todos los anuncios que tocó (los anota el webhook desde el 5-nov; antes solo quedaba el último)
+    supa.from("contact_events").select("created_at,meta").eq("contact_id", c.id).eq("titulo","📣 Tocó un anuncio").order("created_at",{ascending:false}).limit(30)
+      .then(async r=>{
+        adClicks=(r.data||[]).filter(e=>e.meta&&e.meta.ad_id);
+        const ids=[...new Set(adClicks.map(e=>String(e.meta.ad_id)))];
+        if(ids.length){ const { data:am }=await supa.from("ads_meta").select("ad_id,ad_name,campaign_name").eq("channel_id", state.channelId).in("ad_id", ids); (am||[]).forEach(x=>{ adMetas[String(x.ad_id)]=x; }); }
+      },()=>{}),
   ]);
   if (state.contactId !== c.id) return; // ese await también es una ventana: sin esto la ficha de A se pintaba en el chat de B
   panelData = {
@@ -1691,6 +1708,8 @@ async function loadContactPanel(c){
     order: orderRes || null,
     capiEvt,
     adMeta,
+    adClicks,
+    adMetas,
     allTags: tagsRes.data || [],
     assigned: new Set((ctagsRes.data||[]).map(r=>r.tag_id)),
     fields: fieldsRes.data || [],
@@ -1723,7 +1742,7 @@ function pasoSubTxt(s){
 // mensaje (contacts.ad_ref, desde la 0128). Solo se usa ad_ref si es del MISMO anuncio que ad_id.
 const ES_ANUNCIO = (s) => ["ad","ctwa"].includes(String(s||"").toLowerCase());
 const urlSegura = (u) => typeof u === "string" && /^https:\/\//i.test(u) ? u : "";
-function origenLeadHtml(contact, adMeta){
+function origenLeadHtml(contact, adMeta, clics = [], metas = {}){
   if (!contact.ad_id && !ES_ANUNCIO(contact.source)) return "";
   const r0 = contact.ad_ref && typeof contact.ad_ref === "object" ? contact.ad_ref : null;
   const ref = r0 && (!contact.ad_id || String(r0.source_id||"") === String(contact.ad_id)) ? r0 : null;
@@ -1762,10 +1781,25 @@ function origenLeadHtml(contact, adMeta){
       <div class="kv"><span class="k">Primer contacto</span><span class="v">${primer?fmtFull(primer):"—"}</span></div>
       ${clicTarde?`<div class="kv"><span class="k">Último clic al anuncio</span><span class="v">${fmtFull(ref.at)}</span></div>`:""}
     </div>
-    ${nota?`<div class="ol-note">${icon("help")}<span>${nota}</span></div>`:""}`;
+    ${nota?`<div class="ol-note">${icon("help")}<span>${nota}</span></div>`:""}
+    ${historialAnunciosHtml(clics, metas, contact.ad_id)}`;
+}
+// 📣 Todos los anuncios que tocó, del más nuevo al más viejo (5-nov). Solo sale si tocó más de uno, o uno distinto del
+// actual: con un solo anuncio la tarjeta de arriba ya lo dice todo. El historial empieza el 5-nov (antes no se guardaba).
+function historialAnunciosHtml(clics, metas, adActual){
+  if(!clics || !clics.length) return "";
+  if(clics.length===1 && String(clics[0].meta.ad_id)===String(adActual||"")) return "";
+  const fila=(e,i)=>{
+    const m=e.meta||{}, am=metas[String(m.ad_id)]||{};
+    const img=urlSegura(m.thumbnail_url)||urlSegura(m.image_url);
+    const nombre=am.ad_name||m.headline||("Anuncio "+m.ad_id);
+    const actual=i===0 && String(m.ad_id)===String(adActual||"");
+    return `<div class="olh-row">${img?`<img src="${esc(img)}" alt="" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`:`<span class="olh-ph">${icon("megaphone")}</span>`}<div class="olh-tx"><div class="olh-n">${esc(nombre)}${actual?' <span class="olh-tag">actual</span>':""}</div><div class="olh-s">${am.campaign_name?esc(am.campaign_name)+" · ":""}${fmtFull(e.created_at)}</div></div></div>`;
+  };
+  return `<div class="olh"><div class="olh-t">Anuncios que tocó · ${clics.length}</div>${clics.map(fila).join("")}</div>`;
 }
 function renderContactPanel(){
-  const { contact, order, capiEvt, adMeta, allTags, assigned, fields, vals, media, runs, subs, events } = panelData;
+  const { contact, order, capiEvt, adMeta, adClicks, adMetas, allTags, assigned, fields, vals, media, runs, subs, events } = panelData;
   const p = $("cpanel");
   const isTest = contact.wa_id === "webchat-test";
   const userFields = fields.filter(f=>!esCampoInterno(f.key)); // datos del cliente
@@ -1792,7 +1826,7 @@ function renderContactPanel(){
     <div class="kv"><span class="k">Primer contacto</span><span class="v">${fmtDate(contact.primera_interaccion||contact.created_at)}</span></div>
     <div class="kv"><span class="k">Último mensaje</span><span class="v" title="${contact.ultimo_mensaje_cliente_at?fmtFull(contact.ultimo_mensaje_cliente_at):''}">${contact.ultimo_mensaje_cliente_at?rel(contact.ultimo_mensaje_cliente_at):"—"}</span></div>`;
   const stageBody = stagePickerHtml(contact.stage||"nuevo");
-  const origenBody = isTest ? "" : origenLeadHtml(contact, adMeta);
+  const origenBody = isTest ? "" : origenLeadHtml(contact, adMeta, adClicks, adMetas);
   const tagsBody = `<div id="pTags" class="tagrow">${
       [...assigned].map(id=>{ const t=allTags.find(x=>x.id===id); if(!t) return ""; const c=tagHex(t.color); return `<span class="tagchip" style="background:${c}1e;color:${c};border-color:${c}4d"><span class="tdot" style="background:${c}"></span>${esc(t.nombre)}<button data-tag="${t.id}" title="Quitar">×</button></span>`; }).join("")
     }${avail.length

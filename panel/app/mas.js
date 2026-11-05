@@ -2,7 +2,7 @@
 // notificacion_usuario.prefs: los sonidos se COMPARTEN con la campanita web; lo propio del celular en prefs.app),
 // tema, panel completo y cerrar sesión.
 import { A, $, esc, ic, on, emit, supa, invoke, abrirCapa, confirmar, toast, pintaBot, logoDe, temaPref, ponerTema, cambiarBot, iniciales } from "./app.js";
-import { updateChannel } from "../shell.js";
+import { updateChannel, conEfectoTema } from "../shell.js";
 import { N } from "./notif.js";
 import { TONOS_URGENTE, TONOS_VENTA, escuchar } from "./sonidos.js";
 
@@ -86,7 +86,7 @@ async function clic(e) {
     return;
   }
   const tm = e.target.closest("[data-tema]");
-  if (tm) { ponerTema(tm.dataset.tema); pintar(); return; }
+  if (tm) { conEfectoTema(() => { ponerTema(tm.dataset.tema); pintar(); }, { currentTarget: tm }); return; }
   const vb = e.target.closest("[data-ver]");
   if (vb) { await cambiarBot(vb.dataset.ver); toast("Ahora estás viendo " + (A.channels.find((c) => c.id === vb.dataset.ver)?.nombre || "ese bot")); pintar(); return; }
   const g = e.target.closest("[data-go]"); if (!g) return;

@@ -570,6 +570,30 @@ export function toast(msg, err) {
 // ── tema ────────────────────────────────────────────────────────────
 export function getTheme() { return localStorage.getItem("nodo.theme") || "dark"; }
 export function applyTheme(t) { document.documentElement.dataset.theme = t; localStorage.setItem("nodo.theme", t); }
+// 🌗 EFECTO AL CAMBIAR DE TEMA (5-nov, Rodrigo). El tema nuevo se abre como un CÍRCULO que crece desde el botón que
+// tocaste hasta cubrir la pantalla (View Transitions). Donde el navegador no lo tiene, o si el sistema pide menos
+// movimiento, los colores cambian suave (un fundido corto) en vez de saltar de golpe. `aplicar` es lo que cambia el
+// tema; `ev` el clic (de ahí sale el centro del círculo). Lo usan el panel y la app.
+export function conEfectoTema(aplicar, ev) {
+  const root = document.documentElement;
+  const quieto = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (!document.startViewTransition || quieto) {
+    root.classList.add("tema-suave");
+    aplicar();
+    setTimeout(() => root.classList.remove("tema-suave"), 450);
+    return;
+  }
+  const r = ev?.currentTarget?.getBoundingClientRect?.() || ev?.target?.getBoundingClientRect?.();
+  const x = r ? r.left + r.width / 2 : (ev?.clientX ?? innerWidth / 2), y = r ? r.top + r.height / 2 : (ev?.clientY ?? innerHeight / 2);
+  const radio = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  root.classList.add("tema-vt");
+  const t = document.startViewTransition(() => aplicar());
+  t.ready.then(() => {
+    root.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radio}px at ${x}px ${y}px)`] },
+      { duration: 620, easing: "cubic-bezier(.4,0,.2,1)", pseudoElement: "::view-transition-new(root)" });
+  }).catch(() => {});
+  t.finished.finally(() => root.classList.remove("tema-vt"));
+}
 applyTheme(getTheme()); // aplicar cuanto antes (evita parpadeo)
 
 // ── Marca cacheada (evita el parpadeo del logo al navegar) ──────────
@@ -1451,7 +1475,7 @@ export async function mountShell({ active } = {}) {
     themeBtn.title = dark ? "Cambiar a tema claro" : "Cambiar a tema oscuro";
   };
   paintTheme();
-  themeBtn.onclick = () => { applyTheme(getTheme() === "dark" ? "light" : "dark"); paintTheme(); fxRetheme(); };
+  themeBtn.onclick = (ev) => conEfectoTema(() => { applyTheme(getTheme() === "dark" ? "light" : "dark"); paintTheme(); fxRetheme(); }, ev);
 
   // 🔐 «Avanzado»: se pintó con lo último que se supo. Cuando llega la respuesta de verdad,
   // se agrega o se quita el grupo — sin recargar y sin que el usuario vea el menú saltar

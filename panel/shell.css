@@ -1285,3 +1285,10 @@ html:not([data-theme="light"]) .nodo-botsel .nb-est.off{color:#F04438}
 .nodo-appcel .ac-pasos b{color:var(--text);font-weight:600}
 .nodo-appcel .ac-nota{margin:0;font-size:12px;color:var(--faint)}
 @media (max-width:720px){ .nodo-appcel .ac-qr{display:none} .nodo-appcel .ac-dl{align-self:stretch} }
+
+/* 🌗 Efecto al cambiar de tema (conEfectoTema en shell.js): el círculo lo anima el JS; acá se apaga el fundido
+   por defecto de View Transitions para que se vea solo el círculo. Sin View Transitions: fundido corto de colores. */
+html.tema-vt::view-transition-old(root),html.tema-vt::view-transition-new(root){animation:none;mix-blend-mode:normal}
+html.tema-vt::view-transition-old(root){z-index:1}
+html.tema-vt::view-transition-new(root){z-index:2}
+html.tema-suave,html.tema-suave *,html.tema-suave *::before,html.tema-suave *::after{transition:background-color .4s ease,color .4s ease,border-color .4s ease,fill .4s ease,stroke .4s ease!important}
