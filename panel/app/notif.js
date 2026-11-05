@@ -1,6 +1,6 @@
 // Notificaciones de la app: las mismas de la campanita del panel (notificaciones + lecturas por persona), en una
 // pantalla propia con Pendientes / Historial, filtro por bot, Limpiar y «Marcar todo como leído».
-import { A, $, esc, ic, on, emit, supa, abrirCapa, capaAbierta, cambiarBot, ir, toast, fmtHora, logoDe, confirmar, trasArranque } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, invoke, abrirCapa, capaAbierta, cambiarBot, ir, toast, fmtHora, logoDe, confirmar, trasArranque, verFoto } from "./app.js";
 import { mazo } from "../shell.js";
 
 // Catálogo (notif-center.js TIPOS)
@@ -102,7 +102,7 @@ function pintar() {
   const fila = (n) => `<div role="button" tabindex="0" class="notif${noLeida(n) ? " nu" : ""}" data-n="${n.id}">
     <span class="ico${pendiente(n) && critico(n) ? " urg" : ""}">${ic(icDe(n))}</span>
     <span class="rmid"><b>${esc(n.titulo)}${n.repeticiones > 1 ? ` <span class="nbot">×${n.repeticiones}</span>` : ""}</b><span>${esc([n.contact?.nombre, n.detalle].filter(Boolean).join(" · "))}</span>${A.channels.length > 1 && N.bot === "todos" ? `<span class="nbot"><img src="${esc(logoDe(n.channel_id))}" alt="">${esc(nomBot(n.channel_id))}</span>` : ""}</span>
-    <span class="nend"><time>${fmtHora(n.created_at)}</time>${pendiente(n) ? `<button type="button" class="btn soft sm" data-res="${n.id}">Atendido</button>` : `<button type="button" class="iconbtn nx" data-quitar="${n.id}" aria-label="Quitar">${ic("x")}</button>`}</span></div>`;
+    <span class="nend"><time>${fmtHora(n.created_at)}</time>${pendiente(n) ? `<button type="button" class="btn soft sm" data-res="${n.id}">Atendido</button>` : `<button type="button" class="iconbtn nx" data-quitar="${n.id}" aria-label="Quitar">${ic("x")}</button>`}</span>${pagoHtml(n)}</div>`;
   let body;
   if (N.tab === "pend") {
     // (22-oct) «Atendido a todos»: lo pendiente menos los pagos por validar (esos se deciden uno por uno)
@@ -117,6 +117,62 @@ function pintar() {
       (hist.length ? [...grupos].map(([d, ns]) => `<div class="nday">${esc(d)}</div><div class="card">${ns.map(fila).join("")}</div>`).join("") : `<div class="empty"><b>${ic("archive")}</b>El historial está limpio.</div>`);
   }
   $("#nbody").innerHTML = body;
+}
+// ═════════ 💳 Aprobar el pago desde el aviso (5-nov, como la campanita web · notif-center.js) ═════════
+// Con la foto a la vista, el pago se aprueba desde acá con el mismo cuerpo que Pagos (order-update), así que valen los
+// mismos candados: operación reusada, transición inválida, doble toque. Rechazar y lo que pide un dato (saldo sin clave,
+// prepago de Lima) siguen en la pestaña Pagos.
+const ETAPA_DE = { pago_digital_validar: "digital", adelanto_validar: "adelanto", saldo_validar: "saldo", pago_extra_validar: "extra", prepago_lima_validar: "lima" };
+const ESTADO_ETAPA = { digital: "pendiente", adelanto: "esperando_adelanto", saldo: "en_agencia" };
+const TXT_APROBAR = {
+  digital: ["Aprobar el pago digital", "El bot le entrega el producto al instante y sigue con su proceso de venta.", "Aprobar y entregar"],
+  adelanto: ["Aprobar el adelanto", "El pedido pasa a listo para enviar y el bot le confirma al cliente.", "Aprobar"],
+  saldo: ["Aprobar el saldo", "El bot le envía la clave de recojo al cliente.", "Aprobar y dar clave"],
+  extra: ["Aprobar la venta extra", "El bot le entrega el extra al instante y continúa.", "Aprobar y entregar"],
+};
+N.ordenes = new Map();   // order_id → pedido | "cargando" | null
+async function cargarOrden(id) {
+  if (!id || N.ordenes.has(id)) return;
+  N.ordenes.set(id, "cargando");
+  try { const { data } = await supa.from("orders").select("id,estado,amount,currency,shipping,contact_id").eq("id", id).maybeSingle(); N.ordenes.set(id, data || null); }
+  catch (_) { N.ordenes.set(id, null); }
+  if (capaAbierta("notif")) pintar();
+}
+function pagoDe(n) {
+  const et = ETAPA_DE[n.tipo]; if (!et || !n.order_id) return null;
+  const o = N.ordenes.get(n.order_id);
+  if (o === undefined) { cargarOrden(n.order_id); return null; }
+  if (!o || o === "cargando") return null;
+  const s = o.shipping || {};
+  const foto = et === "digital" ? s.digital_comprobante : et === "adelanto" ? s.adelanto_comprobante : et === "saldo" ? s.saldo_comprobante : et === "extra" ? s.extra_comprobante : s.pago_adelantado_comprobante;
+  const metodo = et === "digital" ? s.digital_metodo : s[et + "_metodo"] ?? s.pago_metodo;
+  const op = et === "digital" ? s.digital_operacion : s[et + "_operacion"];
+  const espera = et === "extra" ? s.extra_pendiente === true : et === "lima" ? s.pago_adelantado_por_validar === true : o.estado === ESTADO_ETAPA[et];
+  const directo = espera && (et === "digital" || et === "adelanto" || et === "extra" || (et === "saldo" && !!String(s.clave_recojo ?? "").trim()));
+  return { et, o, foto: /^https?:/.test(String(foto ?? "")) ? String(foto) : "", metodo, op, espera, directo };
+}
+function pagoHtml(n) {
+  if (!VALIDAR.has(n.tipo) || n.resuelta_at) return "";
+  const p = pagoDe(n); if (!p) return "";
+  const linea = [p.metodo ? esc(p.metodo) : "", p.op ? `op ${esc(p.op)}` : "", p.espera ? "" : "ya no está esperando"].filter(Boolean).join(" · ");
+  return `<div class="npago">${p.foto ? `<img src="${esc(p.foto)}" alt="Comprobante" loading="lazy" data-nfoto="${esc(p.foto)}">` : ""}<div class="npago-tx">${linea ? `<small>${linea}</small>` : ""}
+    <div class="npago-acts">${p.directo ? `<button type="button" class="btn main sm" data-aprobar="${n.id}">${ic("check")} ${TXT_APROBAR[p.et][2]}</button>` : ""}<button type="button" class="btn soft sm" data-revisar="${n.id}">${p.directo ? "Revisar" : "Validar pago"}</button></div></div></div>`;
+}
+async function aprobarPago(n) {
+  const p = pagoDe(n); if (!p || !p.directo) { abrirN(n); return; }
+  const [titulo, detalle] = TXT_APROBAR[p.et];
+  if (!(await confirmar(titulo, `${n.contact?.nombre || "Cliente"} — ${detalle}`, { si: "Confirmar" }))) return;
+  const body = p.et === "extra"
+    ? { order_id: p.o.id, resume: true, shipping: { extra_pendiente: false, extra_aprobado_at: new Date().toISOString() } }
+    : { order_id: p.o.id, estado: p.et === "digital" ? "confirmada" : p.et === "adelanto" ? "adelanto_validado" : "saldo_pagado" };
+  const r = await invoke("order-update", body), d = r.data || {};
+  if (!r.ok || d.error) { toast(d.detalle || d.error || r.error?.message || "No se pudo aprobar", true); return; }
+  if (d.deduped) toast("Ese pago ya lo aprobó alguien más — no se cambió nada", true);
+  else if (d.entrega_pendiente) toast("Aprobado, pero el producto NO se entregó solo: entrégaselo a mano desde el chat", true);
+  else toast(d.flow_started || d.resumed ? "Aprobado · el bot le está escribiendo" : "Aprobado");
+  // Lo mismo que anota Pagos («Decididos hoy»)
+  supa.from("contact_events").insert({ channel_id: n.channel_id, contact_id: p.o.contact_id, tipo: "nota", titulo: "🧾 Pago aprobado · Pagos por validar", detalle: `${p.et} · desde la campanita`, meta: { decision: "ok", tipo: p.et, order_id: p.o.id, por: A.nombre, desde: "app" } }).then(() => {}, () => {});
+  N.ordenes.delete(p.o.id); emit("orden", { contact_id: p.o.contact_id }); pintar();
 }
 function fmtDia(ts) {
   const tz = A.channels.find((c) => c.id === A.ch)?.timezone || "America/Lima";
@@ -184,6 +240,9 @@ async function clic(e) {
     if (error || data === false) { n.resuelta_at = null; campana(); pintar(); toast("No se pudo marcar como atendido", true); return; }
     toast("Marcado como atendido"); return;
   }
+  const nf = e.target.closest("[data-nfoto]"); if (nf) { e.stopPropagation(); verFoto(nf.dataset.nfoto); return; }
+  const ap = e.target.closest("[data-aprobar]"); if (ap) { const n = N.rows.get(ap.dataset.aprobar); if (n) aprobarPago(n); return; }
+  const rv = e.target.closest("[data-revisar]"); if (rv) { const n = N.rows.get(rv.dataset.revisar); if (n) abrirN(n); return; }
   const it = e.target.closest("[data-n]"); if (!it) return;
   const n = N.rows.get(it.dataset.n); if (n) abrirN(n);
 }

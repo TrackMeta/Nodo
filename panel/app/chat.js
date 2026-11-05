@@ -5,7 +5,7 @@ import { CHATS } from "./chats.js";
 import { copilotoEtapa, MEDIA_LABEL } from "./comun.js";
 import { waFmt } from "../shell.js";
 
-const C = { cid: null, contacto: null, conv: null, msgs: [], orden: null, agentes: new Map(), ventana: true, okManual: new Set(), qr: [], qrCh: null, tmp: 0 };
+const C = { cid: null, contacto: null, conv: null, msgs: [], orden: null, agentes: new Map(), ventana: true, okManual: new Set(), qr: [], qrCh: null, tmp: 0, vista: "chat", evs: [], borradores: {} };
 export const CHAT = C;
 
 export function init() {
@@ -21,6 +21,7 @@ export function init() {
   $("#sendbtn").onclick = () => enviarTexto();
   $("#inp").addEventListener("input", () => { autoAlto(); alEscribir(); });
   $("#copibtn").onclick = sugerencias;
+  $("#actbtn").onclick = alternarVista;
   $("#qrbtn").onclick = () => { if (!$("#qr").hidden && $("#qr").dataset.modo === "qr") { $("#qr").hidden = true; return; } mostrarQR("", true); };
   $("#qr").addEventListener("click", clicQR);
   $("#attbtn").onclick = () => $("#fileInput").click();
@@ -35,14 +36,15 @@ export function init() {
 async function abrir(cid) {
   // Lo que esté abierto encima (notificaciones, un acceso…) se cierra: el chat va debajo de esas capas.
   if (A.tab !== "chats") ir("chats"); else cerrarTodo();
-  C.cid = cid; C.msgs = []; C.orden = null;
+  guardarBorrador();
+  C.cid = cid; C.msgs = []; C.orden = null; C.vista = "chat"; C.evs = []; pintaVistaBtn();
   const cv = CHATS.convs.find((x) => x.contact_id === cid) || CHATS.buscados?.find((x) => x.contact_id === cid);
   C.conv = cv ? { requiere_humano: cv.requiere_humano, archivada: cv.archivada } : { requiere_humano: false };
   C.contacto = cv ? { ...cv.contact } : null;
   pintaCabecera();
   $("#msgs").innerHTML = `<div class="cargando">Cargando…</div>`;
-  $("#qr").hidden = true; $("#inp").value = ""; autoAlto(); alEscribir();
-  abrirCapa("chat", () => { C.cid = null; });
+  $("#qr").hidden = true; $("#inp").value = C.borradores[cid] || ""; autoAlto(); alEscribir();
+  abrirCapa("chat", () => { guardarBorrador(); C.cid = null; });
   // Marcar leído (como openChat de la Bandeja)
   if (cv) cv.no_leidos = 0;
   supa.from("conversations").update({ no_leidos: 0 }).eq("contact_id", cid).then(() => emit("conv", { contact_id: cid, no_leidos: 0 }), () => {});
@@ -101,16 +103,46 @@ const diaDe = (ts) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ() }).forma
 function pintaHilo() {
   let html = "", dAnt = "";
   if (C.msgs.length >= 150) html += `<p class="note">Se muestran los últimos 150 mensajes.</p>`;
-  for (const m of C.msgs) {
-    const d = diaDe(m.ts);
-    if (d !== dAnt) { html += `<span class="day">${esc(etiquetaDia(m.ts))}</span>`; dAnt = d; }
-    html += burbuja(m);
+  const items = C.vista === "actividad"
+    ? [...C.msgs.map((m) => ({ ts: m.ts, m })), ...C.evs.map((e) => ({ ts: e.created_at, e }))].sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts))
+    : C.msgs.map((m) => ({ ts: m.ts, m }));
+  for (const it of items) {
+    const d = diaDe(it.ts);
+    if (d !== dAnt) { html += `<span class="day">${esc(etiquetaDia(it.ts))}</span>`; dAnt = d; }
+    html += it.m ? burbuja(it.m) : eventoHtml(it.e);
   }
   $("#msgs").innerHTML = html || `<div class="empty"><b>${ic("message")}</b>Todavía no hay mensajes.</div>`;
   $("#msgs").insertAdjacentHTML("beforeend", `<span class="window" id="winchip" hidden></span>`);
   calcVentana();
   requestAnimationFrame(() => { $("#msgs").scrollTop = $("#msgs").scrollHeight; });
   setTimeout(() => { $("#msgs").scrollTop = $("#msgs").scrollHeight; }, 60);
+}
+// ═════════ Vista «Actividad» (como la Bandeja web): lo que hizo el bot —nodos, etiquetas, flujos, errores— intercalado
+// con los mensajes y con «por quién» cuando lo hizo una persona ═════════
+const ACT_ICON = { etiqueta_add: "etiquetas", etiqueta_del: "etiquetas", campo: "edit", flujo_inicio: "flujos", flujo_fin: "flag", secuencia_inicio: "secuencias", secuencia_cancel: "stop", compra: "dollar", humano: "user", bot_pausa: "pause", bot_reactiva: "play", nodo: "node", error: "alert", nota: "note" };
+function eventoHtml(e) {
+  const por = e.meta && e.meta.por ? ` · por ${esc(String(e.meta.por))}` : "";
+  return `<div class="actline${e.tipo === "error" ? " err" : ""}"><span class="ai">${ic(ACT_ICON[e.tipo] || "node")}</span><span class="atx"><b>${esc(e.titulo || "")}</b>${e.detalle ? `<span>${esc(e.detalle)}</span>` : ""}<small>${hhmm(e.created_at)}${por}</small></span></div>`;
+}
+function pintaVistaBtn() {
+  const b = $("#actbtn"); if (!b) return;
+  b.classList.toggle("on", C.vista === "actividad"); b.setAttribute("aria-pressed", C.vista === "actividad" ? "true" : "false");
+}
+async function alternarVista() {
+  if (!C.cid) return;
+  C.vista = C.vista === "actividad" ? "chat" : "actividad"; pintaVistaBtn();
+  if (C.vista === "chat") { pintaHilo(); return; }
+  const cid = C.cid;
+  toast("Mostrando lo que hizo el bot en este chat");
+  const { data } = await supa.from("contact_events").select("*").eq("contact_id", cid).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(300);
+  if (C.cid !== cid || C.vista !== "actividad") return;
+  C.evs = (data || []).reverse(); pintaHilo();
+}
+// Borrador por chat (como la web): lo que dejaste escrito vuelve al reabrir ese chat, y no se cuela en otro
+function guardarBorrador() {
+  if (!C.cid) return;
+  const v = $("#inp").value;
+  if (v.trim()) C.borradores[C.cid] = v; else delete C.borradores[C.cid];
 }
 function etiquetaDia(ts) {
   const d = diaDe(ts), hoy = diaDe(Date.now()), ayer = diaDe(Date.now() - 864e5);
@@ -310,7 +342,7 @@ async function enviarTexto(texto) {
   if (!C.ventana) { toast("La ventana está cerrada: usa una plantilla", true); return false; }
   if (!(await okManual())) return false;
   const cid = C.cid;
-  if (texto == null) { $("#inp").value = ""; autoAlto(); alEscribir(); }
+  if (texto == null) { $("#inp").value = ""; delete C.borradores[cid]; autoAlto(); alEscribir(); }
   $("#qr").hidden = true;
   const id = "tmp" + ++C.tmp;
   $("#winchip").insertAdjacentHTML("beforebegin", `<div class="m out tmp nueva" id="${id}" data-txt="${esc(t.slice(0, 60))}">${esc(t)}<div class="meta"><span>${hhmm(Date.now())}</span>${tick("")}</div></div>`);

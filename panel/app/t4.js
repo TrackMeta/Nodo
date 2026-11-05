@@ -1,13 +1,13 @@
 // 4.ª pestaña según el tipo de bot: Ventas (digital), Pedidos (físico, como pedidos.html) o Accesos (micro apps,
 // por la función edge `microapps`). Los cambios de estado van por order-update, igual que en el panel.
-import { A, $, esc, ic, on, emit, supa, invoke, avatar, abrirCapa, abrirHoja, confirmar, pedirTexto, hoja, toast, fmtHora, sol, ir, enReposo } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, invoke, avatar, abrirCapa, abrirHoja, confirmar, pedirTexto, hoja, toast, fmtHora, sol, ir, enReposo, verFoto } from "./app.js";
 import { pageAll, ventanaAnuncio } from "../shell.js";
 import { computePreset, startOfDayTZ, endOfDayTZ } from "../date-range.js";
 import * as O from "../orders.js";
 import { esPrueba } from "./comun.js";
 import { botonFechas, elegirFechas } from "./fechas.js";
 
-const T = { rango: computePreset("hoy"), seg: { fisico: "lima", apps: "todos" }, ventas: [], pedidos: [], entregas: null, accesos: [], pend: [], apps: [], cargando: false };
+const T = { qv: "", rango: computePreset("hoy"), seg: { fisico: "lima", apps: "todos" }, ventas: [], pedidos: [], entregas: null, accesos: [], pend: [], apps: [], cargando: false };
 export function init() {
   on("bot", () => { T.ventas = []; T.pedidos = []; T.accesos = []; T.entregas = null; if (A.tab === "t4") cargar(); else badge(); });
   on("orden", () => { if (A.tab === "t4" && A.tipo !== "apps") cargarPronto(); });
@@ -55,16 +55,77 @@ async function cargarVentas() {
   try { localStorage.setItem(VKEY(), JSON.stringify({ k, ventas: T.ventas.slice(0, 300) })); } catch (_) { /* */ }
   pintaVentas();
 }
+// (5-nov) Como Compras en la web: buscador (cliente, teléfono o nº de operación) y, al tocar una venta: abrir el chat,
+// ver el comprobante en grande o anularla con motivo (pago falso, no llegó la plata).
+const OPS_V = ["digital_operacion", "adelanto_operacion", "adelanto_operacion_leida", "saldo_operacion", "extra_operacion"];
+const _n = (x) => String(x || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+function coincide(o, q) {
+  if (!q) return true;
+  const c = o.contact || {}, sh = o.shipping || {};
+  if (_n(c.nombre).includes(q) || _n(sh.cliente).includes(q) || String(c.wa_id || "").includes(q)) return true;
+  const qd = q.replace(/[^0-9a-z]/gi, "");
+  return !!qd && OPS_V.some((k) => sh[k] && String(sh[k]).toLowerCase().replace(/[^0-9a-z]/gi, "").includes(qd));
+}
+function filaVenta(o) {
+  const c = o.contact || {};
+  return `<button type="button" class="row" data-venta="${o.id}">
+      ${avatar(o.contact_id, c.nombre, c.wa_id)}
+      <span class="rmid"><b>${esc(c.nombre || "Cliente")}</b><span>${o.product ? `${o.product.emoji ? esc(o.product.emoji) + " " : ""}${esc(o.product.nombre)}` : "Venta"}${(o.order_bumps || []).length ? " + extras" : ""}</span></span>
+      <span class="rend"><b class="num" style="font-size:14px">${sol(O.cobrado(o), o.currency)}</b><time>${fmtHora(o.confirmed_at || o.created_at)}</time></span></button>`;
+}
+function listaVentas() {
+  const q = _n(T.qv.trim()), vis = T.ventas.filter((o) => coincide(o, q));
+  return vis.map(filaVenta).join("") || `<div class="empty"><b>${ic(q ? "search" : "inbox")}</b>${q ? "Ninguna venta coincide." : "Sin ventas en este período."}</div>`;
+}
+async function accionesVenta(o) {
+  const c = o.contact || {};
+  hoja(`${c.nombre || "Cliente"} · ${sol(O.cobrado(o), o.currency)}`, [
+    { t: "Abrir el chat", icono: "message", v: "chat" },
+    { t: "Ver el comprobante", icono: "image", v: "ver" },
+    { t: "Anular venta…", icono: "ban", v: "anular" },
+  ], async (op) => {
+    if (op.v === "chat") { emit("abrirChat", o.contact_id); return; }
+    if (op.v === "ver") {
+      let url = (o.shipping || {}).digital_comprobante;
+      if (!url) { const { data } = await supa.from("messages").select("content").eq("contact_id", o.contact_id).eq("direction", "in").eq("type", "image").order("ts", { ascending: false }).limit(1); url = data?.[0]?.content?.media_url; }
+      if (url) verFoto(url); else toast("No hay foto del comprobante de esta venta", true);
+      return;
+    }
+    const m = await pedirTexto("Anular esta venta", { lead: "Sale de Inicio, de Ventas y de las métricas (no se borra: queda registrada como anulada). Úsalo para pagos falsos o ventas que no eran reales.", ph: "Ej. pago falso, comprobante montado, no llegó la plata…", boton: "Anular venta" });
+    if (m == null) return;
+    if (!m.trim()) { toast("Escribe el motivo, queda para tu registro", true); return; }
+    const r = await invoke("order-update", { order_id: o.id, estado: "anulada", shipping: { anulada_motivo: m.trim(), anulada_at: new Date().toISOString() } });
+    if (!r.ok || r.data?.error) { toast(r.data?.detalle || r.data?.error || "No se pudo anular la venta", true); return; }
+    toast("Venta anulada"); await cargarVentas();
+  });
+}
 function pintaVentas() {
   const r = T.rango, total = T.ventas.reduce((s, o) => s + O.cobrado(o), 0);
   $("#t4Pad").innerHTML = `<h2 class="h">Ventas</h2><p class="sub">Ventas digitales cobradas (confirmadas).</p>
     ${botonFechas(r)}
     <div class="kpis"><div class="kpi"><small>Ventas</small><b class="num">${T.ventas.length}</b></div><div class="kpi"><small>Cobrado</small><b class="num">${sol(total)}</b></div></div>
-    <div class="list">${T.ventas.map((o) => { const c = o.contact || {}; return `<button type="button" class="row" data-chat="${o.contact_id}">
-      ${avatar(o.contact_id, c.nombre, c.wa_id)}
-      <span class="rmid"><b>${esc(c.nombre || "Cliente")}</b><span>${o.product ? `${o.product.emoji ? esc(o.product.emoji) + " " : ""}${esc(o.product.nombre)}` : "Venta"}${(o.order_bumps || []).length ? " + extras" : ""}</span></span>
-      <span class="rend"><b class="num" style="font-size:14px">${sol(O.cobrado(o), o.currency)}</b><time>${fmtHora(o.confirmed_at || o.created_at)}</time></span></button>`; }).join("") || `<div class="empty"><b>${ic("inbox")}</b>Sin ventas en este período.</div>`}</div>
-    <p class="note">Toca una venta para abrir el chat (si no le llegó el acceso, reenvíaselo desde ahí).</p>`;
+    <input class="inpt" id="ventasQ" type="search" placeholder="Buscar cliente, teléfono o nº de operación" value="${esc(T.qv)}" autocomplete="off" style="margin:0">
+    <div class="list" id="ventasList">${listaVentas()}</div>
+    <p class="note">Toca una venta para abrir el chat, ver el comprobante o anularla.</p>`;
+  const qi = $("#ventasQ"); if (qi) qi.oninput = () => { T.qv = qi.value; $("#ventasList").innerHTML = listaVentas(); };
+}
+
+// ═════════ Accesos: «Pagaron y falta entregar» (5-nov, como accesos.html) ═════════
+// Antes tocarlo solo abría el chat. Ahora, como en la web, se puede DAR el acceso con el correo que el cliente te pasó
+// por otro lado: se crea su acceso y, si su chat está abierto, le llega el link.
+const ERR_APPS = { apps_sin_configurar: "Nodo todavía no está conectado con la base de Apps.", ventana_cerrada: "Pasaron más de 24 h desde su último mensaje: WhatsApp no deja escribirle sin plantilla. Pídele que te escriba «mi acceso».", correo_invalido: "Ese correo no es válido.", app_no_conectada: "Esa app no está conectada (en el panel: Productos → la app → Correo, renovación y conexión)." };
+function accionesPendiente(p) {
+  const nom = p.contacts?.nombre || "El cliente";
+  hoja(`${nom}${p.products?.nombre ? " · " + p.products.nombre : ""}`, [{ t: "Dar acceso…", icono: "key", v: "dar" }, ...(p.contact_id ? [{ t: "Abrir el chat", icono: "message", v: "chat" }] : [])], async (op) => {
+    if (op.v === "chat") { emit("abrirChat", p.contact_id); return; }
+    const correo = await pedirTexto("Dar acceso", { lead: `${nom} pagó ${p.products?.nombre || "la app"} y no llegó a darte su correo. Si te lo pasó por otro lado, ponlo acá: se crea su acceso y, si su chat está abierto, le llega el link.`, ph: "cliente@gmail.com", boton: "Dar acceso", tipo: "email" });
+    if (!correo || !correo.trim()) return;
+    const r = await invoke("microapps", { channel_id: A.ch, action: "dar_acceso", product_id: p.product_id, contact_id: p.contact_id, correo: correo.trim(), tipo: p.tipo, meses: p.meses, entrega_id: p.id });
+    const d = r.data || {};
+    if (!r.ok || d.ok === false) { const e = d.error || r.error?.message; toast(ERR_APPS[e] || e || "No se pudo dar el acceso", true); return; }
+    toast(d.enviado ? "Acceso creado y link enviado" : "Acceso creado. Su chat está cerrado: el link sale cuando te escriba (o reenvíalo desde su acceso).");
+    await cargarAccesos();
+  });
 }
 
 // ═════════ Pedidos (físico) ═════════
@@ -316,7 +377,7 @@ function pintaAccesos() {
   const vis = L.filter((a) => f === "todos" || estadoVis(a) === f || (f === "vencido" && a.estado === "prueba_terminada"));
   const pend = (T.pend || []).filter((p) => p.estado !== "entregado");
   $("#t4Pad").innerHTML = `<h2 class="h">Accesos</h2><p class="sub">${esc(T.apps.map((a) => a.nombre).join(" · ") || "Micro apps")} · quién tiene la app y hasta cuándo.</p>
-    ${pend.length ? `<div class="card"><div class="ttl">Pagaron y falta entregar · ${pend.length}</div>${pend.slice(0, 10).map((p) => `<button type="button" class="li" data-chat="${esc(p.contact_id || "")}"><span class="ico">${ic(p.estado === "falta_correo" ? "mail" : "alert")}</span><span class="rmid"><b>${esc(p.contacts?.nombre || p.contacts?.wa_id || "Cliente")}${p.products?.nombre ? " · " + esc(p.products.nombre) : ""}</b><span>${esc({ falta_correo: "Falta su correo (el bot se lo pide)", falta_telefono: "Falta su número", a_humano: "Le toca a una persona", error: "Hubo un error al dar el acceso" }[p.estado] || p.estado)}</span></span></button>`).join("")}</div>` : ""}
+    ${pend.length ? `<div class="card"><div class="ttl">Pagaron y falta entregar · ${pend.length}</div>${pend.slice(0, 10).map((p) => `<button type="button" class="li" data-pend="${esc(p.id)}"><span class="ico">${ic(p.estado === "falta_correo" ? "mail" : "alert")}</span><span class="rmid"><b>${esc(p.contacts?.nombre || p.contacts?.wa_id || "Cliente")}${p.products?.nombre ? " · " + esc(p.products.nombre) : ""}</b><span>${esc({ falta_correo: "Falta su correo (el bot se lo pide)", falta_telefono: "Falta su número", a_humano: "Le toca a una persona", error: "Hubo un error al dar el acceso" }[p.estado] || p.estado)}</span></span></button>`).join("")}</div>` : ""}
     <div class="kpis">
       <button type="button" class="kpi tap${f === "porvencer" ? " on" : ""}" data-f="porvencer"><small>Vencen esta semana</small><b class="num warnc">${nV}</b><span class="mutc">tocar para ver</span></button>
       <button type="button" class="kpi tap${f === "vencido" ? " on" : ""}" data-f="vencido"><small>Vencidos</small><b class="num down">${nX}</b><span class="mutc">la app quedó en pausa</span></button>
@@ -371,6 +432,8 @@ function clic(e) {
   if (e.target.closest("[data-dsel]")) { elegirFechas(T.rango, (r) => { T.rango = r; T.ventas = []; cargar(); }); return; }
   const sg = e.target.closest("[data-seg] button, .kpi.tap");
   if (sg) { T.seg[A.tipo] = sg.dataset.f; if (A.tipo === "fisico") pintaPedidos(); else if (A.tipo === "apps") pintaAccesos(); else cargar(); return; }
+  const pd = e.target.closest("[data-pend]"); if (pd) { const x = (T.pend || []).find((y) => String(y.id) === pd.dataset.pend); if (x) accionesPendiente(x); return; }
+  const vt = e.target.closest("[data-venta]"); if (vt) { const o = T.ventas.find((x) => String(x.id) === vt.dataset.venta); if (o) accionesVenta(o); return; }
   const ch = e.target.closest("[data-chat]"); if (ch && ch.dataset.chat) { emit("abrirChat", ch.dataset.chat); return; }
   const mv = e.target.closest("[data-mover]"); if (mv) { const o = T.pedidos.find((x) => String(x.id) === mv.dataset.mover); if (o) mover(o); return; }
   const ac = e.target.closest("[data-acc]"); if (ac) abrirAcceso(ac.dataset.acc);

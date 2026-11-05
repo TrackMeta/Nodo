@@ -20,13 +20,13 @@ async function abrir(cid) {
   $("#fibody").innerHTML = `<div class="cargando">Cargando ficha…</div>`;
   abrirCapa("ficha", () => { F = null; });
   const [ct, tags, asig, campos, vals, media, ord, conv] = await Promise.all([
-    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,bloqueado,source,ad_id,ad_ref,memoria_ia,primera_interaccion,ultimo_mensaje_cliente_at,created_at,product:products(nombre,emoji)").eq("id", cid).maybeSingle(),
+    supa.from("contacts").select("id,nombre,wa_id,stage,bot_activo,bloqueado,no_remarketing,source,ad_id,ad_ref,memoria_ia,primera_interaccion,ultimo_mensaje_cliente_at,created_at,product:products(nombre,emoji)").eq("id", cid).maybeSingle(),
     supa.from("tags").select("id,nombre,color").eq("channel_id", A.ch).order("nombre"),
     supa.from("contact_tags").select("tag_id").eq("contact_id", cid),
     supa.from("custom_fields").select("id,nombre,key").eq("channel_id", A.ch),
     supa.from("contact_field_values").select("field_id,value").eq("contact_id", cid),
     supa.from("messages").select("id,type,content,ts,direction").eq("contact_id", cid).not("content->>media_url", "is", null).order("ts", { ascending: false }).limit(30),
-    supa.from("orders").select("id,amount,currency,order_bumps,estado,created_at,shipping,product:product_id(nombre,emoji,tipo),version:version_id(nombre)").eq("contact_id", cid).order("created_at", { ascending: false }).limit(1),
+    supa.from("orders").select("id,amount,currency,order_bumps,estado,order_id,created_at,shipping,product_id,product:product_id(nombre,emoji,tipo),version:version_id(nombre)").eq("contact_id", cid).order("created_at", { ascending: false }).limit(1),
     supa.from("conversations").select("requiere_humano,archivada").eq("contact_id", cid).maybeSingle(),
   ]);
   if (!ct.data) { $("#fibody").innerHTML = `<div class="empty">No se encontró el cliente.</div>`; return; }
@@ -34,8 +34,15 @@ async function abrir(cid) {
   let ad = null;
   if (c.ad_id) { const { data } = await supa.from("ads_meta").select("ad_name,adset_name,campaign_name").eq("channel_id", A.ch).eq("ad_id", String(c.ad_id)).maybeSingle(); ad = data; }
   const nombres = new Map((campos.data || []).map((f) => [f.id, f]));
+  // Lo de la ficha web que la app reusa tal cual (editar pedido, rótulo, chips de Meta): se carga recién al abrir una ficha
+  const orden0 = (ord.data || [])[0] || null;
+  const [CEm, capi, subs] = await Promise.all([
+    cx().catch(() => null),
+    orden0 ? supa.from("capi_events").select("estado, value, currency, event_id, action_source, meta_response, created_at").eq("order_id", orden0.id).eq("event_name", "Purchase").maybeSingle().then((r) => r.data || null, () => null) : null,
+    supa.from("sequence_subscriptions").select("id,estado,paso_actual,sequence:sequence_id(nombre)").eq("contact_id", cid).eq("estado", "activa").then((r) => r.data || [], () => []),
+  ]);
   F = {
-    c, ad, conv: conv.data || {}, orden: (ord.data || [])[0] || null, tags: tags.data || [], asig: new Set((asig.data || []).map((x) => x.tag_id)),
+    c, ad, conv: conv.data || {}, orden: orden0, CE: CEm, capi, subs, tags: tags.data || [], asig: new Set((asig.data || []).map((x) => x.tag_id)),
     vender: (vals.data || []).map((v) => ({ f: nombres.get(v.field_id), v: v.value })).filter((x) => x.f && !interna(x.f.key) && presentable(x.v)),
     media: media.data || [],
   };
@@ -214,6 +221,62 @@ function etiquetasHtml() {
   return `<div class="tagrow">${puestas.map((t) => { const c = tagHex(t.color); return `<span class="tagchip" style="background:${c}1e;color:${c};border-color:${c}4d"><span class="tagdot" style="background:${c}"></span>${esc(t.nombre)}<button type="button" data-tag="${t.id}" aria-label="Quitar ${esc(t.nombre)}">${ic("x")}</button></span>`; }).join("")}${libres.length ? `<button type="button" class="tagadd" data-tagadd>${ic("plus")} Añadir</button>` : ""}</div>` +
     (!puestas.length ? `<p style="color:var(--muted);margin-top:6px">Sin etiquetas aún: añade una para segmentar y filtrar.</p>` : "");
 }
+// ═════════ Pedido: Meta, editar y rótulo · Remarketing (5-nov, como la ficha de la Bandeja web) ═════════
+let _cx = null;
+const cx = () => (_cx ||= import("../contact-extras.js").then((m) => { try { m.injectExtrasCss(); } catch (_) { /* */ } return m; }));
+function pedidoAcciones() {
+  const o = F.orden; if (!o || !F.CE) return "";
+  const fis = ["lima", "provincia"].includes(O.zonaDe(o));
+  return `<div class="pd-chips">${F.CE.ventaChipsHtml(o, F.capi)}</div>
+    <div class="grid2" style="margin-top:4px"><button type="button" class="btn soft" data-editped>${ic("edit")} Editar pedido</button>${fis ? `<button type="button" class="btn soft" data-rotulo>${ic("printer")} Imprimir rótulo</button>` : ""}</div>`;
+}
+function remarketingHtml() {
+  const c = F.c, n = F.subs.length;
+  return `<div class="fsec"><h4>Remarketing ${c.no_remarketing ? '<span class="pd-chip warn">sin remarketing</span>' : `<span>${n}</span>`}</h4>
+    ${c.no_remarketing ? `<p style="color:var(--muted)">No le llegan toques de secuencias. El bot le sigue contestando si escribe.</p>`
+      : n ? F.subs.map((x) => `<p>${ic("secuencias")} ${esc(x.sequence?.nombre || "Secuencia")} <span style="color:var(--muted)">· toque ${(x.paso_actual || 0) + 1}</span></p>`).join("") : `<p style="color:var(--muted)">Ninguna secuencia en curso.</p>`}
+    <button type="button" class="btn soft" data-remk>${c.no_remarketing ? "Volver al remarketing" : "Sacar del remarketing"}</button></div>`;
+}
+async function clicPedido(e) {
+  if (e.target.closest("[data-editped]")) {
+    const ok = await F.CE.openEditarPedido({ ...F.orden, contact: F.c }, { supa });
+    if (ok) { toast("Pedido actualizado"); emit("conv", { contact_id: F.c.id }); abrir(F.c.id); }
+    return true;
+  }
+  if (e.target.closest("[data-rotulo]")) {
+    const rem = await F.CE.remitenteDe(supa, A.ch).catch(() => null);
+    F.CE.printRotulo({ ...F.orden, contact: F.c }, rem);
+    return true;
+  }
+  const rt = e.target.closest("[data-capi-retry]");
+  if (rt) {
+    e.stopPropagation(); rt.disabled = true; const prev = rt.textContent; rt.textContent = "enviando…";
+    const r = await invoke("capi-retry", { channel_id: A.ch, order_id: rt.dataset.capiRetry });
+    if (!r.ok || !r.data?.ok) { toast("No se envió a Meta: " + (r.data?.error || r.error?.message || "error"), true); rt.disabled = false; rt.textContent = prev; return true; }
+    toast("Enviado a Meta"); abrir(F.c.id); return true;
+  }
+  if (e.target.closest("[data-meta-detalle]")) {
+    const ok = await F.CE.openMetaDetalle(F.orden, F.capi, F.c, { supa, toast, channelId: A.ch });
+    if (ok) abrir(F.c.id);
+    return true;
+  }
+  if (e.target.closest("[data-remk]")) {
+    const c = F.c, val = !c.no_remarketing, n = F.subs.length, quien = c.nombre || "Este cliente";
+    const ok = await confirmar(val ? "Sacar del remarketing" : "Volver al remarketing", val
+      ? `${quien} no recibirá más toques de secuencias${n ? ` (tiene ${n === 1 ? "1 secuencia" : n + " secuencias"} en curso)` : ""}. El bot le sigue contestando si escribe. Si lo vuelves a incluir, sus secuencias arrancan desde el primer paso.`
+      : `${quien} vuelve a recibir sus secuencias, desde el primer paso.`, { si: val ? "Sacar" : "Volver a incluir" });
+    if (!ok) return true;
+    const { error } = await supa.from("contacts").update({ no_remarketing: val }).eq("id", c.id);
+    if (error) { toast("No se pudo cambiar: " + error.message, true); return true; }
+    const ahora = new Date().toISOString();
+    const r = val ? await supa.from("sequence_subscriptions").update({ estado: "cancelada", updated_at: ahora }).eq("contact_id", c.id).eq("estado", "activa")
+      : await supa.from("sequence_subscriptions").update({ estado: "activa", paso_actual: 0, proximo_at: null, updated_at: ahora }).eq("contact_id", c.id).eq("estado", "cancelada");
+    evento("nota", val ? "Sacado del remarketing a mano" : "Devuelto al remarketing a mano");
+    toast(r?.error ? "Cambiado, pero las secuencias no se pudieron " + (val ? "cancelar" : "reanudar") + ": " + r.error.message : val ? "Sacado del remarketing" : "Vuelve al remarketing", !!r?.error);
+    abrir(c.id); return true;
+  }
+  return false;
+}
 function pintar() {
   if (!F) return;
   const c = F.c, w = quienDe({ bot_activo: c.bot_activo, requiere_humano: F.conv.requiere_humano }), m = c.memoria_ia || {};
@@ -223,7 +286,7 @@ function pintar() {
   const esAd = !!(c.ad_id || /^(ad|ctwa)$/i.test(c.source || ""));
   $("#fibody").innerHTML = `
     <div class="fhead">${avatar(c.id, c.nombre, c.wa_id, w, c.product?.emoji)}<b>${esc(c.nombre || "Cliente")}</b><span>${/^\d+$/.test(c.wa_id || "") ? "+" + esc(c.wa_id) : "Sin número visible"}</span><span>${whoTxt(w)}${c.product ? ` · ${c.product.emoji ? esc(c.product.emoji) + " " : ""}${esc(c.product.nombre)}` : ""}</span></div>
-    <div class="fsec"><h4>${A.tipo === "fisico" ? "Pedido" : "Compra"}</h4>${pedidoHtml(F.orden)}${!F.orden || O.esPerdido(F.orden) || O.esCerrado(F.orden) ? `<button type="button" class="btn soft" data-venta style="width:100%;margin-top:4px">${ic("dollar")} ${F.orden && O.esCerrado(F.orden) ? "Registrar otra venta" : "Registrar venta a mano"}</button>` : ""}</div>
+    <div class="fsec"><h4>${A.tipo === "fisico" ? "Pedido" : "Compra"}</h4>${pedidoHtml(F.orden)}${pedidoAcciones()}${!F.orden || O.esPerdido(F.orden) || O.esCerrado(F.orden) ? `<button type="button" class="btn soft" data-venta style="width:100%;margin-top:4px">${ic("dollar")} ${F.orden && O.esCerrado(F.orden) ? "Registrar otra venta" : "Registrar venta a mano"}</button>` : ""}</div>
     ${miaHtml(quien, trato)}
     <div class="fsec"><h4>Etapa del embudo</h4><div class="steps">${STAGES.map((s) => `<button type="button" class="step${(c.stage || "nuevo") === s.k ? " on" : ""}" data-et="${s.k}"><span class="sd" style="background:${s.color}"></span><span><b>${s.label}</b><small>${s.desc}</small></span></button>`).join("")}</div></div>
     <div class="fsec"><h4>Origen del lead</h4>${esAd ? origenHtml(c, ref) : `<p style="color:var(--muted)">Orgánico: escribió sin pasar por un anuncio.</p>`}</div>
@@ -231,7 +294,9 @@ function pintar() {
     <div class="fsec"><h4>Medios y archivos <span>${F.media.length}</span></h4>${F.media.length ? `<div class="mgrid">${F.media.slice(0, 12).map((x) => {
       const u = x.content?.media_url; return x.type === "image" || x.type === "sticker" ? `<button type="button" class="mtile" data-ver="${esc(u)}" style="background-image:url('${esc(u)}')"></button>` : `<a class="mtile" href="${esc(u)}" target="_blank" rel="noopener">${ic(x.type === "audio" ? "mic" : x.type === "video" ? "video" : "file")}${x.type === "audio" ? "Nota de voz" : esc(x.content?.filename || "Archivo")}</a>`;
     }).join("")}</div>` : `<p style="color:var(--muted)">Sin fotos, audios ni archivos.</p>`}</div>
+    ${remarketingHtml()}
     <div class="card"><div class="ttl">Acciones</div>
+      <button type="button" class="li" data-acc="unread"><span class="ico">${ic("mail")}</span><span class="rmid"><b>Marcar como no leído</b><span>Vuelve a la lista con el punto de «sin leer»</span></span></button>
       <button type="button" class="li" data-acc="seg"><span class="ico">${ic("clock")}</span><span class="rmid"><b>${F.conv.requiere_humano ? "Quitar de Seguimiento" : "Marcar Seguimiento"}</b><span>Para acordarte de volver a este chat</span></span></button>
       <button type="button" class="li" data-acc="arch"><span class="ico">${ic("archive")}</span><span class="rmid"><b>${F.conv.archivada ? "Sacar de archivados" : "Archivar chat"}</b><span>Se esconde de la lista (no se borra)</span></span></button>
       <button type="button" class="li${c.bloqueado ? "" : " peligro"}" data-blq><span class="ico">${ic(c.bloqueado ? "lock" : "ban")}</span><span class="rmid"><b>${c.bloqueado ? "Desbloquear contacto" : "Bloquear contacto"}</b><span>${c.bloqueado ? "Vuelve a la lista y el bot le contesta de nuevo" : "El bot deja de responderle y sale de la lista"}</span></span></button>
@@ -343,6 +408,7 @@ async function ponerEtiqueta(id) {
 async function clic(e) {
   if (!F) return;
   if (clicMia(e)) return;
+  if (await clicPedido(e)) return;
   const cp = e.target.closest("[data-copiar]");
   if (cp) { (navigator.clipboard?.writeText(cp.dataset.copiar) || Promise.reject()).then(() => toast("Ad ID copiado"), () => toast("No se pudo copiar", true)); return; }
   const mas = e.target.closest("[data-olmas]"); if (mas) { mas.previousElementSibling?.classList.remove("clamp"); mas.remove(); return; }
@@ -380,6 +446,14 @@ async function clic(e) {
     return;
   }
   const ac = e.target.closest("[data-acc]");
+  if (ac && ac.dataset.acc === "unread") {
+    const { error } = await supa.from("conversations").update({ no_leidos: 1 }).eq("contact_id", F.c.id);
+    if (error) { toast("No se pudo: " + error.message, true); return; }
+    const id = F.c.id; emit("conv", { contact_id: id, no_leidos: 1 }); emit("refrescarChats");
+    toast("Marcado como no leído");
+    if (CHAT.cid === id && capaAbierta("chat")) cerrarCapa("chat"); else cerrarCapa("ficha");
+    return;
+  }
   if (ac) {
     const k = ac.dataset.acc, campo = k === "seg" ? "requiere_humano" : "archivada", val = !F.conv[campo];
     const { error } = await supa.from("conversations").update({ [campo]: val }).eq("contact_id", F.c.id);

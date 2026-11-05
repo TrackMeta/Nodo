@@ -120,11 +120,40 @@ function pintar() {
       <span class="ptype">${esc(et.titulo)} · ${esc(et.sub)}</span>
       ${url ? `<img class="comprob" src="${esc(url)}" data-ver="${esc(url)}" alt="Comprobante" loading="lazy">` : `<div class="sincomp">Sin foto del comprobante. Revísalo en el chat.</div>`}
       <div class="checks">${chips(o)}</div>
+      ${datosAgencia(o)}
       ${o.et === "saldo" && !s.clave_recojo ? `<label class="flabel" for="clave-${o.id}">${ic("key")} Clave de recojo (falta)</label><input class="inpt clave-in" id="clave-${o.id}" inputmode="text" placeholder="Escríbela antes de aprobar">` : ""}
       <div class="acts"><button type="button" class="btn ghost" data-a="no">Rechazar</button><button type="button" class="btn main" data-a="ok">${ic(o.et === "saldo" ? "key" : "check")} ${BOTON[o.et]}</button></div>
       <button type="button" class="btn soft sm" data-a="chat">${ic("message")} Abrir el chat</button>
     </article>`;
-  }).join(""); }).join("") : `<div class="empty"><b>${ic("check")}</b>Todo validado.<br>Te avisamos cuando llegue otro pago.</div>`);
+  }).join(""); }).join("") : `<div class="empty"><b>${ic("check")}</b>Todo validado.<br>Te avisamos cuando llegue otro pago.</div>`) + `<div id="pagosHoy"></div>`;
+  decididosHoy();
+}
+// Datos para copiar a la agencia (como copiloto.html): después de aprobar los vas a tipear en el sistema de la agencia,
+// y un error de tipeo ahí es un paquete que no le entregan. El nombre es el del PEDIDO (el que va con el DNI).
+function datosAgencia(o) {
+  const s = o.shipping || {}, c = o.contact || {}, d = [];
+  if (s.cliente || c.nombre) d.push(["Nombre", s.cliente || c.nombre]);
+  if (s.dni) d.push(["DNI", s.dni]);
+  if (s.sede) d.push(["Agencia", (s.ciudad ? `Shalom ${s.ciudad} · ` : "") + s.sede]);
+  if (s.direccion) d.push(["Dirección", s.direccion]);
+  if (s.referencia) d.push(["Referencia", s.referencia]);
+  if (s.opcion) d.push(["Pedido", s.opcion]);
+  if (d.length < 2) return "";   // con solo el nombre no hay nada que tipear en la agencia
+  const txt = d.map(([k, v]) => `${k}: ${v}`).join("\n");
+  return `<div class="copybox"><div>${d.map(([k, v]) => `${esc(k)}: <b>${esc(v)}</b>`).join("<br>")}</div><button type="button" class="btn soft sm" data-copiar="${esc(txt)}">${ic("copy")} Copiar</button></div>`;
+}
+// Decididos hoy (como copiloto.html): lo que se aprobó o rechazó hoy, para abrir el chat si te equivocaste
+async function decididosHoy() {
+  const box = $("#pagosHoy"); if (!box) return;
+  try {
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const { data } = await supa.from("contact_events").select("contact_id,titulo,detalle,created_at,contact:contacts(nombre)").eq("channel_id", A.ch).ilike("titulo", "%· Pagos por validar").gte("created_at", hoy.toISOString()).order("created_at", { ascending: false }).limit(50);
+    if (!data?.length) { box.innerHTML = ""; return; }
+    box.innerHTML = `<div class="pgrp">Decididos hoy · ${data.length}</div><div class="card hoyd">` + data.map((e) => {
+      const ok = /aprobado/.test(e.titulo);
+      return `<button type="button" class="li" data-chatc="${e.contact_id}"><span class="hd ${ok ? "ok" : "no"}">${ok ? "Aprobado" : "Rechazado"}</span><span class="rmid"><b>${esc(e.contact?.nombre || "Cliente")}</b><span>${esc(String(e.detalle || "").replace(/^confirmada · /, ""))}</span></span><small class="num">${esc(fmtHora(e.created_at))}</small></button>`;
+    }).join("") + `</div>`;
+  } catch (_) { box.innerHTML = ""; }
 }
 
 // ── Acciones (las de copiloto.html) ──
@@ -140,6 +169,9 @@ async function anotar(o, dec, tipo) {
 async function enVuelo(fn) { if (P.enVuelo) return; P.enVuelo = true; try { await fn(); } finally { P.enVuelo = false; } }
 function clic(e) {
   const v = e.target.closest("[data-ver]"); if (v) { verFoto(v.dataset.ver); return; }
+  const cp = e.target.closest("[data-copiar]");
+  if (cp) { (navigator.clipboard?.writeText(cp.dataset.copiar) || Promise.reject()).then(() => toast("Datos copiados"), () => toast("No se pudo copiar", true)); return; }
+  const hc = e.target.closest("[data-chatc]"); if (hc) { emit("abrirChat", hc.dataset.chatc); return; }
   const b = e.target.closest("[data-a]"); if (!b) return;
   const card = b.closest(".pay"), o = P.lista.find((x) => String(x.id) === card.dataset.id); if (!o) return;
   if (b.dataset.a === "chat") { emit("abrirChat", o.contact_id); return; }
