@@ -60,11 +60,13 @@ const SCHEMA = {
 // "vive en Av. España 200" (≤60 chars) y eso quedaría en el perfil y se re-inyectaría al system.
 // Estos marcadores (dirección/domicilio) son lo más sensible y regex-detectable; nombres/ciudades
 // sueltos siguen dependiendo del prompt, pero la dirección es la que no debe filtrarse.
-const PROHIBIDO_MEM = /(precio|descuent|dcto|gratis|regal|cup[oó]n|oferta|\bsoles?\b|s\/\s*\d|\$\s*\d|yape|plin|transfer|\bpaga\b|\bdni\b|tel[eé]fono|ignora|olvida|reglas|sistema|prompt|instrucci|jailbreak|obedece|actúa como|actua como|av\.|avenida|\bjr\.?\b|jir[oó]n|\bcalle\b|\bmz\.?\b|manzana|\blote\b|urbanizaci|\burb\.?\b|pasaje|\bpsje\b|direcci[oó]n|domicilio|vivo en|\bvip\b|precio especial|may[uú]scul|en ingl[eé]s|responde en|cont[eé]stale|habla como|tr[aá]tal[oa] como|\benferm[oa]s?\b|c[aá]ncer|\bcovid\b|hospital|cl[ií]nic|di[aá]gn[oó]stic|embaraz|\bluto\b|falleci|divorci|depresi[oó]n)/i;
+const PROHIBIDO_MEM = /(precio|descuent|dcto|gratis|regal|cup[oó]n|oferta|\bsoles?\b|s\/\s*\d|\$\s*\d|yape|plin|transfer|\bpaga\b|\bdni\b|tel[eé]fono|ignora|olvida|reglas|sistema|prompt|instrucci|jailbreak|obedece|actúa como|actua como|av\.|avenida|\bjr\.?\b|jir[oó]n|\bcalle\b|\bmz\.?\b|manzana|\blote\b|urbanizaci|\burb\.?\b|pasaje|\bpsje\b|direcci[oó]n|domicilio|vivo en|\bvip\b|se llama|me llamo|su nombre|nombre es|m[eé]todos? de pago|\bpagos?\b|precio especial|may[uú]scul|en ingl[eé]s|responde en|cont[eé]stale|habla como|tr[aá]tal[oa] como|\benferm[oa]s?\b|c[aá]ncer|\bcovid\b|hospital|cl[ií]nic|di[aá]gn[oó]stic|embaraz|\bluto\b|falleci|divorci|depresi[oó]n|artrosis|artritis|lesi[oó]n|lesionad|diabet|hipertens|\basma\b|cirug|discapacid|condici[oó]n f[ií]sica)/i;
+
+const RELLENO_MEM = /^(?:quiere|pide|busca|solicita|necesita)\s+(?:m[aá]s\s+)?info|^(?:est[aá]\s+)?(?:muy\s+)?interesad[oa]\s+en|^inter[eé]s\s+(?:en|por)|^(?:es\s+)?(?:un\s+)?cliente\s+potencial|^muestra\s+inter[eé]s/i;
 
 // Normaliza una lista: strings limpios, sin duplicados, cortos, cap por capa. Descarta
 // los ítems operativos/de inyección (PROHIBIDO_MEM).
-function curar(arr: unknown): string[] {
+export function curar(arr: unknown): string[] {
   if (!Array.isArray(arr)) return [];
   const out: string[] = [];
   const vistos = new Set<string>();
@@ -74,6 +76,9 @@ function curar(arr: unknown): string[] {
     // antes de la palabra gatillo («…vive en Av. España 200, Jr.» → «…vive en Av. España 2»)
     // la dirección pasaba a la ficha igual.
     if (!entero || PROHIBIDO_MEM.test(entero)) continue;   // fuera datos operativos / intentos de inyección
+    // Relleno que el prompt ya prohíbe y el modelo barato igual escribe («Quiere información del Protocolo…»,
+    // «Interesado en calistenia militar»): eso ya se sabe por el chat y ocupa el lugar de lo que sí importa.
+    if (RELLENO_MEM.test(entero)) continue;
     const s = entero.slice(0, MAX_LEN);
     if (!s) continue;
     const k = s.toLowerCase();
@@ -106,7 +111,22 @@ function _norm(s: string): string {
 }
 const _VACIAS = new Set(["que", "de", "del", "la", "el", "los", "las", "un", "una", "y", "o",
   "en", "su", "sus", "mi", "le", "lo", "se", "es", "para", "por", "con", "sin", "al", "a",
-  "ha", "he", "muy", "mas", "ya", "no", "si", "me", "te", "nos"]);
+  "ha", "he", "muy", "mas", "ya", "no", "si", "me", "te", "nos",
+  // 🧠 (5-nov) Verbos y muletillas que NO prueban nada. Con la raíz de 5 letras, «Quiere forjar un físico de
+  // combate» (frase de NUESTRO anuncio) encontraba respaldo en el «Quiero más información…» del cliente: «quier»
+  // está en «quiero». Medido en 40 fichas de Prime (4-nov): casi todas eran texto de los mensajes de venta.
+  "quiere", "quiero", "quieres", "quisiera", "queria", "busca", "buscar", "busco", "interesa", "interesado",
+  "interesada", "informacion", "info", "saber", "tener", "tiene", "hacer", "algo", "esto", "esta", "este",
+  "pregunta", "preguntas", "consulta", "dice", "hola", "buenas", "gracias", "favor", "puedo", "obtener",
+  "sobre", "como", "cuando", "donde", "todo", "bien", "bueno",
+  // …y lo que se contesta para PAGAR, que no dice nada de la persona («Yape», «listo», «ya pagué»).
+  "yape", "yapeo", "yapear", "yapee", "plin", "okey", "okay", "listo", "dale", "claro", "perfecto", "genial",
+  "excelente", "entiendo", "entendido", "transferencia", "deposito", "pago", "pague", "pagar", "pagado",
+  "captura", "comprobante", "numero", "precio", "cuanto", "cuesta", "vale", "soles",
+  // conectores que aparecen en cualquier mensaje y no prueban nada
+  "pero", "solo", "tambien", "aqui", "ahora", "entonces", "osea", "nomas", "porque", "mucho", "poco", "cada",
+  "otro", "otra", "otros", "otras", "estos", "estas", "esos", "esas", "unos", "unas", "estoy", "estan", "eres",
+  "puede", "puedes", "seria", "sera", "haber"]);
 // Palabras con carga (≥ 4 letras, o un número). El resto no distingue una frase de otra.
 function _palabras(s: string): string[] {
   return _norm(s).split(" ").filter((w) => w && !_VACIAS.has(w) && (w.length >= 4 || /^[0-9]+$/.test(w)));
@@ -124,27 +144,54 @@ const _DEPARTAMENTOS = ["amazonas", "ancash", "apurimac", "arequipa", "ayacucho"
 // Lo que el CLIENTE escribió (las líneas "Cliente:" del hilo), sin nombres de lugar: los
 // departamentos y, además, los que ya sabemos de él (su ciudad, su sede) — que el motor
 // pasa en `lugares`, porque un pueblo como "Mazuko" no está en ninguna lista fija.
-export function loQueDijoElCliente(thread: string, lugares: string[] = []): string {
-  let t = _norm(String(thread ?? "").split("\n")
+// 🔑 (5-nov) También sin la PALABRA CLAVE ni la frase que Meta deja en el anuncio: ese texto no lo redactó el
+// cliente (regla de Rodrigo: el mensaje que activa el flujo nunca se responde), así que tampoco prueba nada de él.
+// «Quiero mas información del Protocolo de Calistenia Militar» dejaba pasar «Quiere información del Protocolo…».
+// Tampoco cuentan «[image]» ni «Reaccionó 👍»: mandar una foto no es contar algo de sí mismo.
+const _PRELLENADO_META = /\b(?:hola\s+)?puedo\s+obtener\s+mas\s+informacion(?:\s+sobre)?(?:\s+esto)?\b/g;
+function lineasDelCliente(thread: string, lugares: string[] = [], claves: string[] = []): string[] {
+  const quitar = [..._DEPARTAMENTOS, ...lugares.map((x) => _norm(String(x ?? "")))].filter((l) => l && l.length >= 3);
+  const kws = claves.map((k) => _norm(String(k ?? ""))).filter((k) => k.length >= 3)
+    .sort((a, b) => b.length - a.length);   // la más larga primero: «quiero info del curso» antes que «curso»
+  return String(thread ?? "").split("\n")
     // «Cliente (respondiendo a «…»): …» también es una línea del cliente: con `\s*:` a secas
     // esas líneas no contaban, y un dato real dicho al citar un mensaje se descartaba como
     // «inventado» (filtrarInventado no le encontraba respaldo).
-    .filter((l) => /^cliente\b[^:\n]{0,120}:/i.test(l.trim())).join(" "));
-  for (const l of [..._DEPARTAMENTOS, ...lugares.map((x) => _norm(String(x ?? "")))]) {
-    if (l && l.length >= 3) t = t.split(l).join(" ");
-  }
-  return t.replace(/\s+/g, " ").trim();
+    .filter((l) => /^cliente\b[^:\n]{0,120}:/i.test(l.trim()))
+    .map((l) => l.trim().replace(/^cliente\b[^:\n]{0,120}:/i, ""))   // fuera el rótulo (y la cita: es texto NUESTRO)
+    .filter((l) => !/^\s*\[[a-z_]+\]\s*$/i.test(l) && !/^\s*reaccion[oó]\b/i.test(l))
+    .map((l) => {
+      let t = ` ${_norm(l)} `;
+      for (const k of kws) t = t.split(` ${k} `).join(" ").split(k).join(" ");
+      t = t.replace(_PRELLENADO_META, " ");
+      for (const q of quitar) t = t.split(q).join(" ");
+      return t.replace(/\s+/g, " ").trim();
+    })
+    .filter(Boolean);
+}
+export function loQueDijoElCliente(thread: string, lugares: string[] = [], claves: string[] = []): string {
+  return lineasDelCliente(thread, lugares, claves).join(" ").replace(/\s+/g, " ").trim();
+}
+// Cuántos mensajes del cliente dicen ALGO (al menos una palabra con carga). Un «Yape», un «ok» o la palabra
+// clave sola no cuentan: de eso no se deduce cómo tratarlo.
+export function mensajesReales(thread: string, lugares: string[] = [], claves: string[] = []): number {
+  return lineasDelCliente(thread, lugares, claves).filter((l) => _palabras(l).length > 0).length;
 }
 
-// ¿Hay rastro de esta frase en lo que el cliente escribió? Basta UNA palabra con carga.
+// ¿Hay rastro de esta frase en lo que el cliente escribió? Hacen falta DOS palabras con carga (o todas, si la frase
+// tiene una sola). Con una bastaba la del rubro: «tus fotos para entrenar» validaba «Quiere dejar de entrenar sin
+// rumbo», que es la frase del anuncio (simulado sobre 240 fichas de Prime, 5-nov).
 // Solo se le exige a las frases NUEVAS: el hilo son los últimos 12 mensajes, y un dato
 // legítimo de hace tres conversaciones ya no tiene respaldo ahí — pedírselo lo borraría solo.
-function tieneRespaldo(frase: string, dicho: string): boolean {
+export function tieneRespaldo(frase: string, dicho: string): boolean {
   if (!dicho) return true;   // sin hilo con el que comparar, no se castiga
   const palabras = ` ${dicho} `;
+  const ws = _palabras(frase);
+  if (!ws.length) return false;   // solo muletillas («Quiere información»): nada que lo respalde
   // La raíz de 5 letras cubre la flexión: el cliente dice "entrenar", el modelo "entrenado".
-  return _palabras(frase).some((w) =>
-    palabras.includes(` ${w} `) || (w.length >= 6 && dicho.includes(w.slice(0, 5))));
+  const calzan = ws.filter((w) =>
+    palabras.includes(` ${w} `) || (w.length >= 6 && dicho.includes(w.slice(0, 5)))).length;
+  return calzan >= Math.min(2, ws.length);
 }
 
 // Filtro de la salida CRUDA del modelo. NO se aplica a lo ya guardado (`leerMemoria`):
@@ -224,12 +271,20 @@ export async function actualizarMemoriaIA(
   // `lugares`: lo que ya sabemos de DÓNDE es (ciudad, sede, zona). No son datos del perfil
   // —se guardan aparte—, pero hacen falta acá para no tomarlos como prueba de un hecho
   // personal: "Para Madre de Dios" no dice nada sobre la madre de nadie.
+  // `claves`: las palabras clave del bot. El mensaje que las trae no lo redactó el cliente (ver lineasDelCliente).
   opts: { channelId: string; contactId: string; provider: Provider; apiKey: string; thread: string;
-          lugares?: string[]; model?: string },
+          lugares?: string[]; claves?: string[]; model?: string },
 ): Promise<void> {
   try {
     const { channelId, contactId, provider, apiKey, thread } = opts;
     if (!apiKey || !thread || thread.trim().length < 15) return; // nada útil que analizar
+    // 🧠 (5-nov) Si el cliente todavía no dijo NADA suyo —solo la palabra clave, «Yape», «ok», una foto— no hay de
+    // dónde sacar un perfil: el modelo solo podía copiar nuestros mensajes de venta. No se lo llama (ni se paga).
+    const dicho = loQueDijoElCliente(thread, opts.lugares ?? [], opts.claves ?? []);
+    if (!_palabras(dicho).length) return;
+    // «Cómo tratarlo» se DEDUCE de cómo escribe: con menos de 3 mensajes de verdad salía «Decide rápido» de un
+    // «Yape» (40 fichas de Prime, 4-nov). Hasta entonces esa capa no se toca: mejor vacía que relleno.
+    const puedeDeducir = mensajesReales(thread, opts.lugares ?? [], opts.claves ?? []) >= 3;
 
     // Lectura con detección de FALLO (no usar leerMemoria acá: traga el error y devuelve
     // vacío, indistinguible de "sin memoria" → un timeout de lectura terminaría escribiendo
@@ -292,10 +347,10 @@ export async function actualizarMemoriaIA(
     if (!m) { await bumpLast(); return; }
     let parsed: any; try { parsed = JSON.parse(m[0]); } catch (_) { await bumpLast(); return; }
     const crudoQ = curar(parsed.quien_es);
-    const crudoC = curar(parsed.como_tratar);
+    // (sin 3 mensajes de verdad, la capa queda como estaba: lo nuevo que deduzca no se guarda)
+    const crudoC = puedeDeducir ? curar(parsed.como_tratar) : (actual.como_tratar ?? []);
     // 🛡️ Fuera lo INVENTADO: un "hecho" de "quien_es" del que no hay rastro en lo que el
-    // cliente escribió (descontando los nombres de lugar) no lo contó él, lo puso el modelo.
-    const dicho = loQueDijoElCliente(thread, opts.lugares ?? []);
+    // cliente escribió (descontando los nombres de lugar y la palabra clave) no lo contó él, lo puso el modelo.
     const fQ = filtrarInventado(crudoQ, actual.quien_es ?? [], dicho);
     const quien_es = fQ.limpias, como_tratar = crudoC;
     const tirado = fQ.descartadas;

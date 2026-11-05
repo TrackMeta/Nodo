@@ -28575,7 +28575,16 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     // para que el isolate no lo corte a medias. Si falla, no pasa nada: siempre fue defensivo.
     if (op === "generar_texto" && (run as any)._memNivel !== "off") {
       (run as any)._memPromesa = (async () => {
+        // 🔑 Las palabras clave del bot: el mensaje que las trae lo escribió el anuncio, no el cliente, y no
+        // puede servir de prueba de lo que «contó» (5-nov: «Quiero más información…» validaba frases del anuncio).
+        let _claves: string[] = [];
+        try {
+          const { data: _kt } = await db.from("flow_triggers").select("config")
+            .eq("channel_id", run.channel_id).eq("tipo", "keyword").eq("activo", true);
+          _claves = ((_kt ?? []) as any[]).flatMap((t) => (t?.config?.keywords ?? []) as string[]).map(String);
+        } catch (_) { /* sin claves → se compara contra todo lo que escribió */ }
         await actualizarMemoriaIA(db, {
+          claves: _claves,
           channelId: run.channel_id, contactId: run.contact_id,
           provider, apiKey: ai.api_key, model: ai.model || undefined, thread: await historial(db, run),
           // Dónde vive NO va al perfil, pero sí hay que pasarlo: si no, el nombre de su tierra
