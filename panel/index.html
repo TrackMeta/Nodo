@@ -579,6 +579,33 @@
     #app.ficha-oculta .mficha{background:transparent;color:var(--muted)}
     #app.ficha-oculta .cpanel{display:none}
   }
+  /* 💻 PANTALLA CHICA de compu (5-nov, Rodrigo: laptop de 14″ WUXGA al 150 % = ~1280 px útiles). En una pantalla grande
+     no cambia nada. Tres cosas: (1) la lista más compacta, con las insignias en la línea del nombre (2 líneas por chat
+     en vez de 3); (2) la ficha no le quita ancho al chat: empieza escondida y se abre ENCIMA, desde la derecha, como en el
+     celular; (3) «Escribe libre» y «Sin costo por anuncio» van juntos en un solo chip (ver updateWindow). */
+  .winwrap .winfull{display:contents}
+  .winwrap .wincorto{display:none}
+  @media (min-width:721px) and (max-width:1440px){
+    .conv{padding:9px 12px;gap:10px}
+    .conv .av{width:34px;height:34px;font-size:12.5px}
+    .conv .body{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr) auto;grid-template-areas:"nm dots tm" "pv pv bd";column-gap:6px;align-items:center}
+    .conv .r1{display:contents}
+    .conv .nm{grid-area:nm}
+    .conv .tm{grid-area:tm}
+    .conv .pv{grid-area:pv;margin-top:1px}
+    .conv .badge{grid-area:bd}
+    .conv .dots{grid-area:dots;margin-top:0;flex-wrap:nowrap;overflow:hidden;min-width:0}
+    .conv .idot{flex:none;font-size:10px;padding:1px 6px}
+    .cpanel{display:none}
+    #app.ficha-oculta .cpanel{display:none}
+    #app.m-ficha .cpanel:not(.hidden){display:block;position:fixed;top:0;right:0;bottom:0;width:min(360px,92vw);z-index:61;box-shadow:-12px 0 32px rgba(15,23,42,.18)}
+    #app.m-ficha .cp-ov{display:block;position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.28)}
+    #app.m-ficha .cp-x{display:flex;position:fixed;top:10px;right:10px;z-index:62;width:32px;height:32px;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:50%;background:var(--surface);color:var(--muted);font-size:18px;line-height:1}
+    #app .mficha{background:transparent;color:var(--muted)}
+    #app.m-ficha .mficha{background:var(--surface-2);color:var(--brand)}
+    .winwrap .winfull{display:none}
+    .winwrap .wincorto{display:inline-flex}
+  }
   @media (max-width:720px){
     .list{width:100%;border-right:none}
     .chat{display:none}
@@ -1547,6 +1574,7 @@ function renderConversations(){
 
 // ── Chat ──
 async function openChat(c) {
+  if (!window.matchMedia("(max-width:720px)").matches) $("app").classList.remove("m-ficha");
   // Borrador POR conversación (como WhatsApp). Antes el compositor no se tocaba al cambiar
   // de chat: lo que habías escrito para Juan seguía ahí al abrir el de Pedro, y un Enter se
   // lo mandaba a Pedro. Guardar en vez de limpiar evita el otro extremo, que es perder de
@@ -1997,7 +2025,7 @@ try { if (localStorage.getItem(FICHA_OCULTA_KEY) === "1") $("app").classList.add
 const pintaBtnFicha = () => { const o = $("app").classList.contains("ficha-oculta"); $("chFicha").title = o ? "Mostrar la ficha del cliente" : "Esconder la ficha del cliente"; $("chFicha").setAttribute("aria-pressed", o ? "false" : "true"); };
 pintaBtnFicha();
 $("chFicha").onclick = () => {
-  if (window.matchMedia("(max-width:720px)").matches) { $("app").classList.add("m-ficha"); return; }
+  if (window.matchMedia("(max-width:1440px)").matches) { $("app").classList.toggle("m-ficha"); return; }
   const oculta = $("app").classList.toggle("ficha-oculta");
   try { localStorage.setItem(FICHA_OCULTA_KEY, oculta ? "1" : "0"); } catch (_) {}
   pintaBtnFicha();
@@ -2640,7 +2668,21 @@ async function updateWindow() {
   const cobraChip = (!fepOpen && !aTiempo && now >= COBRO_DESDE)
     ? `<span class="win closed" title="${esc(porQueCobra)} El precio por mensaje se configura en Conexiones.">${icon("banknote")} Se cobra</span>`
     : "";
-  w.innerHTML = svcChip + fepChip + cobraChip;
+  // 💻 En pantalla chica los dos chips van en UNO: primero si puedes escribir (Libre · cuánto queda, o Solo plantillas)
+  // y después si cuesta (gratis · cuánto queda, gratis si respondes, o se cobra). Color: verde si es gratis, ámbar si
+  // solo plantillas o se cobra, gris si solo dice cuánto queda. Al pasar el mouse dice lo mismo que los chips largos.
+  const tCorto = [];
+  let clsCorto = svcOpen ? "svc" : "closed";
+  tCorto.push(svcOpen ? `${icon("clock")} Libre ${fmt(svcEnd - now)}` : `${icon("lock")} Solo plantillas`);
+  if (fepOpen) { tCorto.push(`gratis ${fmt(fepEnd - now)}`); clsCorto = "fep" + (fepEnd - now < 6*3.6e6 ? " urge" : ""); }
+  else if (aTiempo) { tCorto.push(`gratis si respondes · ${fmt(limiteResp - now)}`); clsCorto = "fep" + (limiteResp - now < 6*3.6e6 ? " urge" : ""); }
+  else if (cobraChip) { tCorto.push("se cobra"); clsCorto = "closed"; }
+  const titCorto = [
+    svcOpen ? `Puedes escribirle libre por ${fmt(svcEnd - now)} más (24 h desde su último mensaje).` : "Pasaron más de 24 h desde su último mensaje: WhatsApp solo acepta una plantilla.",
+    fepOpen ? `Llegó por un anuncio y le respondiste a tiempo: sin costo hasta el ${hora(fepEnd)}.` : aTiempo ? `Llegó por un anuncio: si le respondes antes del ${hora(limiteResp)}, Meta no te cobra los mensajes por hasta ${FEP_DIAS} días.` : cobraChip ? porQueCobra : "",
+  ].filter(Boolean).join(" ");
+  const corto = `<span class="win ${clsCorto}" title="${esc(titCorto)}">${tCorto.join(" · ")}</span>`;
+  w.innerHTML = `<span class="winfull">${svcChip + fepChip + cobraChip}</span><span class="wincorto">${corto}</span>`;
   // ⚠ El candado mira SOLO la ventana de servicio (24h), y así debe quedarse.
   // La ventana del anuncio (Free Entry Point, hasta 7 días) es sobre el COBRO, no sobre el permiso: durante
   // esa ventana los mensajes no se cobran, pero para mandar TEXTO LIBRE sigue haciendo falta
