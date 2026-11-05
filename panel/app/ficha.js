@@ -50,6 +50,101 @@ function pedidoHtml(o) {
   const dir = z === "lima" ? [s.direccion, s.distrito].filter(Boolean).join(", ") : z === "provincia" ? [s.sede, s.destino || s.ciudad].filter(Boolean).join(" · ") : "";
   return `<p><b>${prod}</b></p>${plata}<p style="color:var(--muted)">Estado: <b style="color:var(--text)">${esc(O.label(o.estado))}</b>${dir ? " · " + esc(dir) : ""}</p>`;
 }
+// ═════════ Memoria IA (5-nov) ═════════
+// Igual que la tarjeta de la ficha en la Bandeja web (index.html · miaCard + contact-extras.js · wireMemoriaChips):
+// encabezado con el degradado de la IA, tres capas de chips (Para vender · Quién es · Cómo tratar) y cada chip se
+// toca para corregirlo, se vacía para borrarlo y «+» agrega uno. En el celular los chips son más altos, para el dedo.
+const _txt = (x) => String(typeof x === "string" ? x : x?.texto || x?.t || "").trim();
+function miaHtml(quien, trato) {
+  const sell = F.vender.map((x) => `<button type="button" class="mia-chip sell" data-field="${esc(x.f.id)}" data-name="${esc(x.f.nombre || x.f.key)}">${esc(String(x.v).trim())}</button>`).join("");
+  const capa = (lista, layer, cls, extra) => lista.map((t, i) => `<button type="button" class="mia-chip ${cls}" data-mlayer="${layer}" data-midx="${i}">${esc(_txt(t))}${extra}</button>`).join("") +
+    `<button type="button" class="mia-chip ghost mia-add" data-mlayer="${layer}" aria-label="Agregar">${ic("plus")}</button>`;
+  return `<div class="fsec mia">
+    <div class="mia-hd"><span class="mia-ico">${ic("robot")}</span><span class="mia-htx"><span class="mia-title">Memoria IA</span><span class="mia-cap">la IA la mantiene sola · toca un dato para corregirlo</span></span></div>
+    <div class="mia-lyr">Para vender</div>
+    <div class="mia-chips">${sell || '<span class="mia-none">Aún sin datos — la IA los irá capturando al conversar</span>'}</div>
+    ${quien.length ? `<div class="mia-lyr">Quién es <span class="mia-sub">· detectado</span></div><div class="mia-chips">${capa(quien, "quien_es", "who", "")}</div>` : ""}
+    ${trato.length ? `<div class="mia-lyr">Cómo tratar <span class="mia-sub">· deducido</span></div><div class="mia-chips">${capa(trato, "como_tratar", "how", " " + ic("help"))}</div>` : ""}
+  </div>`;
+}
+// El chip se vuelve un cuadro de texto en su lugar. Enter o tocar fuera = guardar; vacío = borrar.
+function editarInline(el, valor, placeholder, onSave) {
+  const inp = document.createElement("input");
+  inp.className = "mia-edit"; inp.value = valor; inp.placeholder = placeholder || "escribe…"; inp.maxLength = 60;
+  inp.setAttribute("enterkeyhint", "done");
+  el.replaceWith(inp); inp.focus(); inp.select();
+  let hecho = false;
+  const fin = async () => { if (hecho) return; hecho = true; await onSave(inp.value.trim()); };
+  inp.addEventListener("blur", fin);
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); inp.blur(); }
+    else if (e.key === "Escape") { hecho = true; pintar(); }
+  });
+}
+const _mia = () => {
+  const m = (F.c.memoria_ia && typeof F.c.memoria_ia === "object") ? F.c.memoria_ia : {};
+  return { quien_es: Array.isArray(m.quien_es) ? m.quien_es.map(_txt) : [], como_tratar: Array.isArray(m.como_tratar) ? m.como_tratar.map(_txt) : [], _last: m._last };
+};
+// Guarda como la web: la IA pudo agregar algo mientras editabas, así que se relee lo fresco y se aplica solo TU cambio
+// (lo que quitaste y lo que agregaste) — nunca se pisa el perfil entero con la copia vieja.
+async function guardarMia(base, nueva) {
+  const norm = (s) => String(s ?? "").trim().toLowerCase();
+  let fresco = base;
+  try {
+    const { data } = await supa.from("contacts").select("memoria_ia").eq("id", F.c.id).maybeSingle();
+    const m = (data?.memoria_ia && typeof data.memoria_ia === "object") ? data.memoria_ia : {};
+    fresco = { quien_es: Array.isArray(m.quien_es) ? m.quien_es : [], como_tratar: Array.isArray(m.como_tratar) ? m.como_tratar : [], _last: m._last };
+  } catch (_) { /* sin red: se usa lo que había */ }
+  const capa = (k) => {
+    const antes = new Set((base[k] || []).map(norm)), ahora = new Set((nueva[k] || []).map(norm));
+    const quitados = new Set([...antes].filter((x) => !ahora.has(x)));
+    const out = [], vis = new Set();
+    for (const x of (fresco[k] || [])) { const n = norm(x); if (n && !quitados.has(n) && !vis.has(n)) { vis.add(n); out.push(x); } }
+    for (const x of (nueva[k] || [])) { const n = norm(x); if (n && !antes.has(n) && !vis.has(n)) { vis.add(n); out.push(x); } }
+    return out;
+  };
+  const payload = { quien_es: capa("quien_es"), como_tratar: capa("como_tratar") };
+  const last = fresco._last ?? base._last; if (last) payload._last = last;   // el reloj de la IA no se toca
+  const { error } = await supa.from("contacts").update({ memoria_ia: payload }).eq("id", F.c.id);
+  if (error) { toast("No se pudo guardar la memoria: " + error.message, true); pintar(); return; }
+  F.c.memoria_ia = payload; toast("Memoria actualizada"); pintar();
+}
+function clicMia(e) {
+  const sell = e.target.closest(".mia-chip.sell");
+  if (sell) {
+    const fid = sell.dataset.field, nombre = sell.dataset.name || "", cur = sell.textContent.trim();
+    editarInline(sell, cur, nombre, async (v) => {
+      if (v === cur) { pintar(); return; }
+      const { error } = await supa.from("contact_field_values").upsert({ contact_id: F.c.id, field_id: fid, value: v, updated_at: new Date().toISOString() }, { onConflict: "contact_id,field_id" });
+      if (error) { toast("No se pudo guardar: " + error.message, true); pintar(); return; }
+      const it = F.vender.find((x) => x.f.id === fid);
+      if (v && it) it.v = v; else F.vender = F.vender.filter((x) => x.f.id !== fid);
+      evento("campo", v ? "Dato actualizado: " + nombre : "Dato borrado: " + nombre);
+      toast(v ? "Guardado" : "Dato borrado"); pintar();
+    });
+    return true;
+  }
+  const add = e.target.closest(".mia-add[data-mlayer]");
+  if (add) {
+    const layer = add.dataset.mlayer, base = _mia();
+    editarInline(add, "", "", async (v) => {
+      if (!v) { pintar(); return; }
+      const m = _mia(); m[layer].push(v.slice(0, 60)); await guardarMia(base, m);
+    });
+    return true;
+  }
+  const chip = e.target.closest(".mia-chip[data-mlayer][data-midx]");
+  if (chip) {
+    const layer = chip.dataset.mlayer, idx = Number(chip.dataset.midx), base = _mia(), cur = base[layer][idx] ?? "";
+    editarInline(chip, cur, "", async (v) => {
+      if (v === cur) { pintar(); return; }
+      const m = _mia(); if (!v) m[layer].splice(idx, 1); else m[layer][idx] = v;
+      await guardarMia(base, m);
+    });
+    return true;
+  }
+  return false;
+}
 function pintar() {
   if (!F) return;
   const c = F.c, w = quienDe({ bot_activo: c.bot_activo, requiere_humano: F.conv.requiere_humano }), m = c.memoria_ia || {};
@@ -59,10 +154,7 @@ function pintar() {
   $("#fibody").innerHTML = `
     <div class="fhead">${avatar(c.id, c.nombre, c.wa_id, w, c.product?.emoji)}<b>${esc(c.nombre || "Cliente")}</b><span>${/^\d+$/.test(c.wa_id || "") ? "+" + esc(c.wa_id) : "Sin número visible"}</span><span>${whoTxt(w)}${c.product ? ` · ${c.product.emoji ? esc(c.product.emoji) + " " : ""}${esc(c.product.nombre)}` : ""}</span></div>
     <div class="fsec"><h4>${A.tipo === "fisico" ? "Pedido" : "Compra"}</h4>${pedidoHtml(F.orden)}${!F.orden || O.esPerdido(F.orden) || O.esCerrado(F.orden) ? `<button type="button" class="btn soft" data-venta style="width:100%;margin-top:4px">${ic("dollar")} ${F.orden && O.esCerrado(F.orden) ? "Registrar otra venta" : "Registrar venta a mano"}</button>` : ""}</div>
-    ${quien.length || trato.length || F.vender.length ? `<div class="fsec mia"><h4>Memoria IA</h4>
-      ${quien.length ? `<p><b>Quién es</b></p><ul>${quien.map((x) => `<li>${esc(typeof x === "string" ? x : x?.texto || x?.t || "")}</li>`).join("")}</ul>` : ""}
-      ${trato.length ? `<p><b>Cómo tratarlo</b></p><ul>${trato.map((x) => `<li>${esc(typeof x === "string" ? x : x?.texto || x?.t || "")}</li>`).join("")}</ul>` : ""}
-      ${F.vender.length ? `<p><b>Para vender</b></p><ul>${F.vender.map((x) => `<li>${esc(x.f.nombre || x.f.key)}: <b>${esc(x.v)}</b></li>`).join("")}</ul>` : ""}</div>` : ""}
+    ${miaHtml(quien, trato)}
     <div class="fsec"><h4>Etapa del embudo</h4><div class="steps">${STAGES.map((s) => `<button type="button" class="step${(c.stage || "nuevo") === s.k ? " on" : ""}" data-et="${s.k}"><span class="sd" style="background:${s.color}"></span><span><b>${s.label}</b><small>${s.desc}</small></span></button>`).join("")}</div></div>
     <div class="fsec"><h4>Origen del lead</h4>${esAd
       ? `${ref?.thumbnail_url || ref?.image_url ? `<img src="${esc(ref.thumbnail_url || ref.image_url)}" alt="" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px" onerror="this.remove()">` : ""}
@@ -175,6 +267,7 @@ async function ventaManual() {
 async function evento(tipo, titulo, detalle) { try { await supa.from("contact_events").insert({ channel_id: A.ch, contact_id: F.c.id, tipo, titulo, detalle: detalle || null, meta: { por: A.nombre, desde: "app" } }); } catch (_) { /* */ } }
 async function clic(e) {
   if (!F) return;
+  if (clicMia(e)) return;
   const v = e.target.closest("[data-ver]"); if (v) { verFoto(v.dataset.ver); return; }
   if (e.target.closest("[data-venta]")) { ventaManual(); return; }
   const st = e.target.closest("[data-et]");

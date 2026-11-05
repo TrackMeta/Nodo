@@ -438,8 +438,32 @@ html:not([data-theme="light"]) .send.mic{color:#06210f}
 .fsec h4{margin:0;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);display:flex;justify-content:space-between;align-items:center}
 .fsec p{margin:0;font-size:13px;line-height:1.5}
 .fsec ul{margin:0;padding-left:18px;font-size:13px;line-height:1.55}
-.fsec.mia{border-color:color-mix(in srgb,var(--ia-a) 35%,var(--border))}
-.fsec.mia h4{color:var(--ia-a)}
+/* Memoria IA (5-nov): la misma tarjeta que la ficha de la Bandeja web (.cpanel .mia-* en contact-extras.js), con chips
+   más altos para tocarlos con el dedo. */
+.fsec.mia{gap:0;border-color:color-mix(in srgb,var(--ia-a) 38%,var(--border));background:color-mix(in srgb,var(--ia-a) 6%,var(--surface));padding:13px 13px 5px}
+.mia-hd{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.mia-ico{width:30px;height:30px;flex:none;border-radius:9px;background:linear-gradient(135deg,var(--ia-a),var(--ia-b));color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px}
+.mia-htx{display:flex;flex-direction:column;min-width:0}
+.mia-title{font-size:15px;font-weight:800;letter-spacing:-.2px;line-height:1.15;background:linear-gradient(90deg,var(--ia-a),var(--ia-b));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.mia-cap{font-size:11.5px;color:var(--muted);margin-top:2px}
+.mia-lyr{display:flex;align-items:center;gap:6px;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#c9b6e8;font-weight:700;margin:0 0 7px}
+.mia-lyr::before{content:"";width:6px;height:6px;border-radius:50%;background:linear-gradient(135deg,var(--ia-a),var(--ia-b));flex:none}
+.mia-sub{color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400}
+.mia-chips{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}
+.mia-chip{font:inherit;font-size:13.5px;line-height:1.25;min-height:36px;padding:7px 13px;border-radius:999px;border:1px solid transparent;text-align:left;display:inline-flex;align-items:center;gap:5px;-webkit-tap-highlight-color:transparent}
+.mia-chip:active{filter:brightness(1.18)}
+.mia-chip .i{font-size:12px;opacity:.7}
+.mia-chip.sell{background:rgba(168,85,247,.18);border-color:rgba(168,85,247,.5);color:#e9d5ff}
+.mia-chip.who{background:rgba(236,72,153,.15);border-color:rgba(236,72,153,.5);color:#f9a8d4}
+.mia-chip.how{background:rgba(139,110,247,.15);border-color:rgba(139,110,247,.45);color:#c4b5fd}
+.mia-chip.ghost{background:rgba(168,85,247,.06);border:1px dashed color-mix(in srgb,var(--ia-a) 45%,var(--border));color:var(--muted);min-width:42px;justify-content:center}
+.mia-chip.ghost .i{font-size:15px;opacity:1}
+.mia-none{font-size:12.5px;color:var(--muted)}
+.mia-edit{font:inherit;font-size:16px;height:38px;border-radius:999px;background:var(--surface);border:1.5px solid var(--ia-a);color:var(--text);padding:0 14px;outline:none;min-width:140px;flex:1 1 140px}
+html[data-theme="light"] .mia-lyr{color:#7c3aed}
+html[data-theme="light"] .mia-chip.sell{color:#6b21a8}
+html[data-theme="light"] .mia-chip.who{color:#9d174d}
+html[data-theme="light"] .mia-chip.how{background:rgba(124,58,237,.1);border-color:rgba(124,58,237,.35);color:#6d28d9}
 .steps{position:relative;display:flex;flex-direction:column}
 .steps::before{content:"";position:absolute;left:12px;top:14px;bottom:14px;width:2px;background:var(--border-strong)}
 .step{display:flex;gap:12px;align-items:center;padding:7px 4px;text-align:left;border-radius:10px;position:relative}
