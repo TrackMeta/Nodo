@@ -67,6 +67,7 @@
   .fbar2 .fl{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
   .fbar2 .fr{font-weight:800;font-size:20px;white-space:nowrap;flex:none;text-shadow:0 1px 2px rgba(0,0,0,.25)}
   .fstep{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;padding:7px 0;font-weight:600}
+  .fantes{margin:10px auto 0;text-align:center;font-size:12.5px;color:var(--muted)}
   .fstep .drop{color:var(--red)} .fstep .keep{color:var(--green)}
   .fstep svg{width:14px;height:14px;color:var(--faint)}
   /* Plata en juego */
@@ -276,13 +277,18 @@ async function load(){
   // truncado (numerador y denominador falseados). Orden estable con id de desempate.
   const [cR, oR, chR, adR] = await Promise.all([
     pageAll((f,t)=>supa.from("contacts").select("id,nombre,wa_id,stage,etapa_previa,product_id,ad_id,created_at,primera_interaccion,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim").order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
-    pageAll((f,t)=>supa.from("orders").select("contact_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    pageAll((f,t)=>supa.from("orders").select("contact_id,product_id,version_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     getChannel(st.channelId),
     // Nombres de los anuncios (ads-sync). Sin cuenta de Meta conectada viene vacío y se muestra el ID.
     supa.from("ads_meta").select("ad_id,ad_name,estado").eq("channel_id",st.channelId).then(r=>r,()=>({data:[]})),
   ]);
   if(gen!==st.loadGen) return;
   st.contacts=cR.data||[];
+  // Precio de LISTA de cada versión: con eso se sabe si una venta fue a precio normal u oferta (antes se tomaba el
+  // precio más alto vendido en las fechas, y un día sin ventas a S/ 10 marcaba S/ 7 como «precio normal»).
+  st.precioLista={};
+  try{ const { data:pv }=await supa.from("product_versions").select("id,precio,product:products!inner(channel_id)").eq("product.channel_id",st.channelId);
+    (pv||[]).forEach(v=>{ if(v.precio!=null) st.precioLista[v.id]=Number(v.precio); }); }catch(_){}
   st.adNames={}; st.adEstado={}; (adR&&adR.data||[]).forEach(a=>{ if(a.ad_id){ st.adNames[a.ad_id]=a.ad_name||""; if(a.estado) st.adEstado[a.ad_id]=a.estado; } });
   st.ordersBy={};
   (oR.data||[]).forEach(o=>{ if(!o.contact_id) return; (st.ordersBy[o.contact_id]||(st.ordersBy[o.contact_id]=[])).push(o); });
@@ -436,7 +442,7 @@ function render(){
   renderNeck(F);
   renderFunnel(F);
   renderPlata(cs);
-  renderOrigen(cs);
+  renderOrigen();
   renderAnuncios();
   renderEntrega(cs);
   renderProvinciaAhora(cs);
@@ -571,6 +577,11 @@ function renderFunnel(F){
         : `<div class="fstep${peor&&peor.i===i?" peor":""}" title="Pasa el ${100-sa.drop}% · se van ${sa.seCae}">${arrow}<span class="fdrop">${sa.drop>0?"−"+sa.drop+"%":"sin caída"}</span></div>`;
     }
   });
+  // (5-nov) Las ventas de estas fechas de gente que te escribió ANTES (el remarketing que cierra días después): cuentan en
+  // «N ventas» de arriba pero no en «Compraron», que sigue solo a los que llegaron en estas fechas. Se dice, para que
+  // «4 ventas» y «Compraron 3» no parezcan una contradicción.
+  const antes=ventasPeriodo(c=>pasaFiltros(c) && !enRango(c)).n;
+  if(antes>0) html+=`<div class="fantes">+${nf.format(antes)} ${antes===1?"venta":"ventas"} de ${antes===1?"alguien que te escribió":"gente que te escribió"} antes de estas fechas · en total ${nf.format(F.ventas)} ${F.ventas===1?"venta":"ventas"}</div>`;
   el.innerHTML=html;
 }
 
@@ -710,25 +721,32 @@ function renderProvinciaAhora(cs){
 
 // 💸 (10-oct, Rodrigo) Por precio de compra: el más alto es el normal; los demás salen de las ofertas (remarketing).
 // Medido el 9-oct en Prime Digital: S/ 10 → 21 · S/ 7 → 2 · S/ 5 → 0 · S/ 3 → 8 (el escalón de S/ 5 no vendía nada).
-function renderOrigen(cs){
+// (5-nov) Las MISMAS ventas que «N ventas» de arriba e Inicio: las hechas en estas fechas (también de quien escribió antes),
+// no las de los que llegaron. Y «Precio normal» es el precio de LISTA de la versión, no el más alto que se vendió.
+function renderOrigen(){
   const panel=$("origenPanel"), el=$("origen"); if(!panel||!el) return;
-  const porPrecio=new Map();
-  cs.forEach(c=> (st.ordersBy[c.id]||[]).forEach(o=>{
-    if(!O.esVenta(o) || O.esPerdido(o)) return;
+  const porPrecio=new Map(); const [ini,fin]=rangoMs();
+  st.contacts.forEach(c=>{ if(!pasaFiltros(c)) return; (st.ordersBy[c.id]||[]).forEach(o=>{
+    if(!O.esVenta(o) || O.esPerdido(o) || !enMoneda(o)) return;
+    const t=new Date(o.created_at).getTime(); if(!(t>=ini && t<=fin)) return;
     const p=Math.round(Number(o.amount||0)*100)/100; if(!(p>0)) return;
-    const g=porPrecio.get(p)||{ n:0, sum:0 }; g.n++; g.sum+=O.total(o); porPrecio.set(p,g);
-  }));
+    const lista=st.precioLista[o.version_id];
+    const g=porPrecio.get(p)||{ n:0, sum:0, normal:false }; g.n++; g.sum+=O.total(o); if(lista!=null && p>=lista-0.009) g.normal=true; porPrecio.set(p,g);
+  }); });
+  // Sin precio de lista conocido (versión borrada), el más alto vale como normal (lo de antes)
+  if(porPrecio.size && ![...porPrecio.values()].some(g=>g.normal) && !Object.keys(st.precioLista).length){ const top=Math.max(...porPrecio.keys()); porPrecio.get(top).normal=true; }
   if(!porPrecio.size){ panel.style.display="none"; el.innerHTML=""; return; }
   panel.style.display="";
   const filas=[...porPrecio.entries()].sort((a,b)=>b[0]-a[0]);
   const max=Math.max(...filas.map(([,g])=>g.n));
-  const plata=filas.reduce((a,[,g])=>a+g.sum,0), deOfertas=filas.slice(1).reduce((a,[,g])=>a+g.sum,0);
-  $("origenSum").innerHTML= filas.length>1 && plata>0
+  const plata=filas.reduce((a,[,g])=>a+g.sum,0), deOfertas=filas.filter(([,g])=>!g.normal).reduce((a,[,g])=>a+g.sum,0);
+  $("origenSum").innerHTML= deOfertas>0 && plata>0
     ? `Las ofertas trajeron <b>${money(deOfertas)}</b> · ${Math.round(deOfertas/plata*100)}% de los ${money(plata)} vendidos`
     : `<b>${money(plata)}</b> vendidos, todos a precio normal`;
+  const nor=(g)=>g.normal;
   el.innerHTML=filas.map(([p,g],i)=>`<div class="drow">
-      <div class="dhead"><span class="ddot" style="background:${i===0?"var(--fill-verde,#16A34A)":"var(--fill-ambar,#F59E0B)"}"></span><div><div class="dname">${money(p)}</div><div class="dsub">${i===0?"Precio normal":"Oferta"}</div></div></div>
-      <div class="dbarwrap"><div class="dbar" style="width:${Math.round(g.n/max*100)}%;background:${i===0?"var(--fill-verde,#16A34A)":"var(--fill-ambar,#F59E0B)"}"></div></div>
+      <div class="dhead"><span class="ddot" style="background:${nor(g)?"var(--fill-verde,#16A34A)":"var(--fill-ambar,#F59E0B)"}"></span><div><div class="dname">${money(p)}</div><div class="dsub">${nor(g)?"Precio normal":"Oferta"}</div></div></div>
+      <div class="dbarwrap"><div class="dbar" style="width:${Math.round(g.n/max*100)}%;background:${nor(g)?"var(--fill-verde,#16A34A)":"var(--fill-ambar,#F59E0B)"}"></div></div>
       <div class="dn">${nf.format(g.n)}</div>
       <div class="dmoney">${money(g.sum)}</div>
     </div>`).join("");
