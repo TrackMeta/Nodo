@@ -165,7 +165,7 @@
           <button class="helpbtn" id="helpBtn" type="button" title="¿Cómo lee las fechas?" aria-label="¿Cómo lee las fechas?"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
           <div id="dateHelp" class="datehelp" hidden>
             <h4>Cómo leer el embudo</h4>
-            <b>Conversión total:</b> de todos los que te escriben (curiosos incluidos), cuántos compran. Es todo el embudo junto: enganchar + cerrar.<br>
+            <b>Conversión total:</b> las ventas de estas fechas ÷ las personas que te escribieron por primera vez en estas fechas (curiosos incluidos). Cuenta también la venta de alguien que te escribió antes. Es la misma cuenta que Inicio, Meta y Trakker.<br>
             <b>Efectividad de cierre:</b> de los que se interesaron de verdad, cuántos cierra el bot. No cuenta a los curiosos que solo saludan.<br>
             <b>Comparación:</b> contra el período anterior del mismo largo y «a la misma altura» (ej. con «Hoy», ayer hasta esta misma hora), para que sea justo.
             <h4 style="margin-top:14px">Las fechas</h4>
@@ -336,8 +336,13 @@ function fillVista(){
   // (10-oct, Rodrigo) Cada fila dice cuántos llegaron en las fechas elegidas y qué conversión tuvieron, para ver qué
   // rinde antes de elegirlo. Respeta tipo/zona; no el propio selector.
   const enFecha=st.contacts.filter(c=>(st.tipo==="all"||tipoDe(c)===st.tipo) && (st.zona==="total"||zonaDeContacto(c)===st.zona) && enRango(c));
-  const cuenta={}; const sum=(k,c)=>{ const x=cuenta[k]||(cuenta[k]={n:0,b:0}); x.n++; if(c.stage==="comprado") x.b++; };
-  enFecha.forEach(c=>{ sum("all",c); sum("p:"+(c.product_id||""),c); sum(c.ad_id?"a:"+c.ad_id:"none",c); });
+  const cuenta={}; const sum=(k)=>{ const x=cuenta[k]||(cuenta[k]={n:0,b:0}); x.n++; };
+  enFecha.forEach(c=>{ sum("all"); sum("p:"+(c.product_id||"")); sum(c.ad_id?"a:"+c.ad_id:"none"); });
+  { // ventas de estas fechas por fila (misma cuenta que la conversión de arriba)
+    const [ini,fin]=rangoMs();
+    st.contacts.forEach(c=>{ if(!((st.tipo==="all"||tipoDe(c)===st.tipo) && (st.zona==="total"||zonaDeContacto(c)===st.zona))) return;
+      (st.ordersBy[c.id]||[]).forEach(o=>{ if(!O.esVenta(o)||O.esPerdido(o)) return; const t=new Date(o.created_at).getTime(); if(!(t>=ini&&t<=fin)) return;
+        ["all","p:"+(c.product_id||""), c.ad_id?"a:"+c.ad_id:"none"].forEach(k=>{ (cuenta[k]||(cuenta[k]={n:0,b:0})).b++; }); }); }); }
   const nTxt=(k)=>{ const x=cuenta[k]; if(!x||!x.n) return "0"; return `${x.n} · ${Math.round(x.b/x.n*100)}%`; };
   const prods=new Map(); st.contacts.forEach(c=>{ if(c.product_id&&c.product&&(st.tipo==="all"||tipoDe(c)===st.tipo)&&!prods.has(c.product_id)) prods.set(c.product_id,c.product); });
   const adsDe={}; Object.keys(st.adProd).forEach(ad=>{ const p=st.adProd[ad]; (adsDe[p]||(adsDe[p]=[])).push(ad); });
@@ -370,7 +375,20 @@ function fillVista(){
 
 // ── El cálculo del embudo para un subconjunto de contactos ────────────
 const pct=(a,b)=> b>0 ? Math.round(a/b*100) : null;
-function funnelDe(cs){
+// 🔁 (5-nov, Rodrigo: «contar a Pedro») La CONVERSIÓN es la misma cuenta que Inicio, Meta y Trakker: ventas hechas EN
+// estas fechas ÷ personas que te escribieron por primera vez EN estas fechas. Cuenta también la venta de alguien que te
+// escribió antes (el remarketing que cierra al día 2). Antes era «de los que llegaron, cuántos tienen etapa comprado» y
+// los dos números no coincidían nunca. Las barras del embudo siguen siendo de las PERSONAS que llegaron (eso no cambia).
+function rangoMs(){ if(!st.range) return [-Infinity, Infinity]; return [startOfDayLima(st.range.from).getTime(), endOfDayLima(st.range.to).getTime()]; }
+function ventasPeriodo(pred, desde, hasta){
+  const [ini,fin]= desde!=null ? [desde,hasta] : rangoMs(); let n=0, monto=0;
+  st.contacts.forEach(c=>{ if(!pred(c)) return; (st.ordersBy[c.id]||[]).forEach(o=>{
+    if(!O.esVenta(o) || O.esPerdido(o)) return;
+    const t=new Date(o.created_at).getTime(); if(!(t>=ini && t<=fin)) return;
+    n++; if(enMoneda(o)) monto+=O.total(o); }); });
+  return { n, monto };
+}
+function funnelDe(cs, ventas){
   const c={nuevo:0,curioso:0,interesado:0,caliente:0,confirmado:0,comprado:0,perdido:0};
   cs.forEach(x=>{ const k=(x.stage||"nuevo"); if(k in c) c[k]++; else c.nuevo++; });
   const total=cs.length;
@@ -403,13 +421,14 @@ function funnelDe(cs){
     // los excluyen a propósito (fuga post-venta ≠ fuga de enganche); solo este número los suma,
     // para que coincida con el Dashboard y sea honesto.
     efectividad: pct(compraron, interes + perdidoVenta),   // de los que se interesaron de verdad (incl. los que se cayeron), cuántos cerraste
-    conversion: pct(compraron, total) };    // de todos los contactos, cuántos compran
+    ventas: ventas ? ventas.n : compraron, montoVentas: ventas ? ventas.monto : null,
+    conversion: pct(ventas ? ventas.n : compraron, total) };    // ventas de estas fechas ÷ los que llegaron en estas fechas
 }
 
 function render(){
   fillVista();
   const cs=filtrados();
-  const F=funnelDe(cs);
+  const F=funnelDe(cs, ventasPeriodo(c=>pasaFiltros(c)));
   renderMetricas(F, comparar());
   renderNeck(F);
   renderFunnel(F);
@@ -436,7 +455,7 @@ function comparar(){
   const desfase=dias*DIA, pIni=ini-desfase, pFin=fin-desfase, corte=ahora-desfase;
   const prev=st.contacts.filter(c=>{ if(!c.created_at||!pasaFiltros(c)) return false; const t=new Date(c.created_at).getTime(); return t>=pIni && t<=pFin; });
   if(!prev.length) return null;
-  const compro=prev.filter(c=>(st.ordersBy[c.id]||[]).some(o=>O.esVenta(o) && !O.esPerdido(o) && new Date(o.created_at).getTime()<=corte)).length;
+  const compro=ventasPeriodo(c=>pasaFiltros(c), pIni, Math.min(pFin, corte)).n;
   const conCorte = fin>=ahora-60000;   // el período llega hasta ahora
   const lbl = st.range.preset==="hoy" ? "ayer a esta hora"
     : st.range.preset==="ayer" ? "anteayer"
@@ -466,7 +485,7 @@ function renderMetricas(F, cmp){
   el.innerHTML=`
     <div class="met ${F.total?"mconv":"low"}"><div class="num">${cv==null?"—":cv+"%"}</div><div class="mtxt">
       <div class="mlbl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"}</div>
-      <div class="mbrk">${F.niveles.compraron} compraron de ${F.total} contactos${zonaSub?` que ya dijeron ser de ${zonaNom}`:""}</div>
+      <div class="mbrk" title="Ventas hechas en estas fechas ÷ personas que te escribieron por primera vez en estas fechas. Es la misma cuenta que Inicio, Meta y Trakker: incluye la venta de alguien que te escribió antes.">${F.ventas} ${F.ventas===1?"venta":"ventas"} ÷ ${F.total} ${F.total===1?"chat nuevo":"chats nuevos"}${zonaSub?` de ${zonaNom}`:""}</div>
       ${cmpHtml}
     </div></div>
     <div class="met ${eCls}"><div class="num">${ef==null?"—":ef+"%"}</div><div class="mtxt">
@@ -715,18 +734,19 @@ function renderOrigen(cs){
 function renderAnuncios(){
   const panel=$("adPanel"), tbl=$("adTbl"); if(!panel||!tbl) return;
   const pt=st.prodTabla||"all";
-  const base=st.contacts.filter(c=> (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.zona==="total"||zonaDeContacto(c)===st.zona) && enRango(c)
-    && (pt==="all" || (c.ad_id ? st.adProd[c.ad_id]===pt : c.product_id===pt)));
+  const predT=(c)=> (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.zona==="total"||zonaDeContacto(c)===st.zona)
+    && (pt==="all" || (c.ad_id ? st.adProd[c.ad_id]===pt : c.product_id===pt));
+  const base=st.contacts.filter(c=> predT(c) && enRango(c));
   const g=new Map();
   base.forEach(c=>{ const k=c.ad_id||"none"; (g.get(k)||g.set(k,[]).get(k)).push(c); });
   if(g.size<2){ panel.style.display="none"; tbl.innerHTML=""; return; }
   panel.style.display="";
   const filas=[...g.entries()].map(([k,cs])=>{
-    const F=funnelDe(cs);
-    let plata=0; cs.forEach(c=>(st.ordersBy[c.id]||[]).forEach(o=>{ if(O.esVenta(o)&&!O.esPerdido(o)&&enMoneda(o)) plata+=O.total(o); }));
-    return { k, n:F.total, compraron:F.niveles.compraron, cv:F.conversion, plata };
+    const v=ventasPeriodo(c=> predT(c) && (k==="none" ? !c.ad_id : c.ad_id===k));
+    const F=funnelDe(cs, v);
+    return { k, n:F.total, compraron:v.n, cv:F.conversion, plata:v.monto };
   }).sort((a,b)=> (a.k==="none")-(b.k==="none") || b.n-a.n);
-  tbl.innerHTML=`<thead><tr><th>Anuncio</th><th>Llegaron</th><th>Compraron</th><th>Conversión</th><th>Ventas</th></tr></thead><tbody>`+
+  tbl.innerHTML=`<thead><tr><th>Anuncio</th><th>Llegaron</th><th>Ventas</th><th>Conversión</th><th>Monto</th></tr></thead><tbody>`+
     filas.map(f=>`<tr data-ad="${esc(f.k)}" class="${st.ad===f.k?"on":""}" title="Ver el embudo de este anuncio"><td class="adn">${st.adEstado[f.k]?`<span class="addot${st.adEstado[f.k]==="ACTIVE"?" on":""}" title="${st.adEstado[f.k]==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}"></span>`:""}${esc(adNombre(f.k))}</td><td>${nf.format(f.n)}</td><td>${nf.format(f.compraron)}</td><td class="adcv">${f.cv==null?"—":f.cv+"%"}</td><td>${money(f.plata)}</td></tr>`).join("")+`</tbody>`;
   tbl.querySelectorAll("tr[data-ad]").forEach(tr=> tr.onclick=()=>{ const k=tr.dataset.ad, v= k==="none" ? "none" : "a:"+k;
     ponerVista(st.vista===v ? (pt==="all" ? "all" : "p:"+pt) : v); render(); });
@@ -763,7 +783,7 @@ function renderProductos(){
   base.forEach(c=>{ if(!porProd.has(c.product_id)) porProd.set(c.product_id,{ prod:c.product, cs:[] }); porProd.get(c.product_id).cs.push(c); });
   if(porProd.size<2){ panel.style.display="none"; return; } // con 1 solo producto no aporta comparar
   panel.style.display="";
-  const cards=[...porProd.entries()].map(([id,g])=>({ id, prod:g.prod, F:funnelDe(g.cs) }))
+  const cards=[...porProd.entries()].map(([id,g])=>({ id, prod:g.prod, F:funnelDe(g.cs, ventasPeriodo(c=> (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.tipo!=="fisico"||st.zona==="total"||zonaDeContacto(c)===st.zona) && c.product_id===id)) }))
     .sort((a,b)=> (b.F.conversion??-1)-(a.F.conversion??-1) || b.F.total-a.F.total);
   grid.innerHTML=cards.map(({prod,F})=>{
     const efC=F.efectividad==null?"z":F.efectividad>=20?"ef":F.efectividad>=8?"z":"z";
@@ -777,7 +797,7 @@ function renderProductos(){
         <div class="pc-kpi"><div class="pc-kv ${efC}">${F.efectividad==null?"—":F.efectividad+"%"}</div><div class="pc-kl">Efectividad</div></div>
       </div>
       <div class="pc-mini">${seg(N.compraron,col("comprado"))}${seg(N.confirmaron-N.compraron,col("confirmado"))}${seg(N.interes-N.confirmaron,col("interesado"))}${seg(N.llegaron-N.interes,"var(--st-resto,#3a4453)")}</div>
-      <div class="pc-foot">${nf.format(N.compraron)} compraron · ${nf.format(N.llegaron)} contactos</div>
+      <div class="pc-foot">${nf.format(F.ventas)} ${F.ventas===1?"venta":"ventas"} · ${nf.format(N.llegaron)} chats nuevos</div>
     </div>`;
   }).join("");
 }
