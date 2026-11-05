@@ -588,7 +588,7 @@
   @media (min-width:721px) and (max-width:1440px){
     .conv{padding:9px 12px;gap:10px}
     .conv .av{width:34px;height:34px;font-size:12.5px}
-    .conv .body{display:grid;grid-template-columns:minmax(0,auto) minmax(0,1fr) auto;grid-template-areas:"nm dots tm" "pv pv bd";column-gap:6px;align-items:center}
+    .conv .body{display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"nm dots tm" "pv pv bd";column-gap:6px;align-items:center}
     .conv .r1{display:contents}
     .conv .nm{grid-area:nm}
     .conv .tm{grid-area:tm}
@@ -597,7 +597,7 @@
     .conv .dots{grid-area:dots;margin-top:0;flex-wrap:nowrap;overflow:hidden;min-width:0}
     .conv .idot{flex:none;font-size:10px;padding:1px 6px}
     /* (las insignias que no entran enteras pasan a una 2.ª línea que no se ve: nada de «Anun…» cortado) */
-    .conv .dots{flex-wrap:wrap;height:18px;align-content:flex-start}
+    .conv .dots{flex-wrap:wrap;height:18px;align-content:flex-start;max-width:128px;justify-content:flex-end}
     /* (el círculo es más chico: el emoji del producto va en la esquina de abajo, sin tapar la inicial) */
     .conv .avwrap{align-self:center;height:34px}
     .conv .av-emoji{bottom:-4px;right:-5px;width:17px;height:17px;font-size:11px}
@@ -2027,7 +2027,7 @@ $("chBack").onclick = () => {
 // En el celular la ficha se abre encima; en la compu el mismo botón la esconde o la muestra (retráctil) y se recuerda.
 const FICHA_OCULTA_KEY = "nodo.bandeja.fichaOculta";
 try { if (localStorage.getItem(FICHA_OCULTA_KEY) === "1") $("app").classList.add("ficha-oculta"); } catch (_) {}
-const pintaBtnFicha = () => { const o = $("app").classList.contains("ficha-oculta"); $("chFicha").title = o ? "Mostrar la ficha del cliente" : "Esconder la ficha del cliente"; $("chFicha").setAttribute("aria-pressed", o ? "false" : "true"); };
+const pintaBtnFicha = () => { const o = $("app").classList.contains("ficha-oculta"); $("chFicha").title = window.matchMedia("(max-width:1440px)").matches ? "Ver la ficha del cliente" : o ? "Mostrar la ficha del cliente" : "Esconder la ficha del cliente"; $("chFicha").setAttribute("aria-pressed", o ? "false" : "true"); };
 pintaBtnFicha();
 $("chFicha").onclick = () => {
   if (window.matchMedia("(max-width:1440px)").matches) { $("app").classList.toggle("m-ficha"); return; }
