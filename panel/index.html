@@ -570,6 +570,15 @@
      conversación ocupa toda la pantalla con «‹» para volver, y la ficha del contacto se abre
      encima (#app.m-ficha). Antes la lista fija de 300 px + la ficha dejaban al chat en ~20 px. */
   .mback,.mficha,.cp-x,.cp-ov{display:none}
+  /* Ficha retráctil en la compu (5-nov, Rodrigo): el botón de la ficha en la cabecera del chat la esconde o la vuelve a
+     mostrar, para darle todo el ancho al chat. Se recuerda en este navegador. En el celular sigue abriéndose encima. */
+  @media (min-width:721px){
+    .mficha{display:flex;flex:none;align-items:center;justify-content:center;width:32px;height:32px;border:none;border-radius:9px;background:var(--surface-2);color:var(--brand);padding:0;cursor:pointer}
+    .mficha svg{width:19px;height:19px}
+    .mficha:hover{filter:brightness(1.1)}
+    #app.ficha-oculta .mficha{background:transparent;color:var(--muted)}
+    #app.ficha-oculta .cpanel{display:none}
+  }
   @media (max-width:720px){
     .list{width:100%;border-right:none}
     .chat{display:none}
@@ -1982,7 +1991,17 @@ $("chBack").onclick = () => {
   const inp = $("msgInput"); if (inp && state.contactId) { const v = inp.value; if (v.trim()) state.drafts[state.contactId] = v; else delete state.drafts[state.contactId]; inp.value = ""; }
   backToList();
 };
-$("chFicha").onclick = () => $("app").classList.add("m-ficha");
+// En el celular la ficha se abre encima; en la compu el mismo botón la esconde o la muestra (retráctil) y se recuerda.
+const FICHA_OCULTA_KEY = "nodo.bandeja.fichaOculta";
+try { if (localStorage.getItem(FICHA_OCULTA_KEY) === "1") $("app").classList.add("ficha-oculta"); } catch (_) {}
+const pintaBtnFicha = () => { const o = $("app").classList.contains("ficha-oculta"); $("chFicha").title = o ? "Mostrar la ficha del cliente" : "Esconder la ficha del cliente"; $("chFicha").setAttribute("aria-pressed", o ? "false" : "true"); };
+pintaBtnFicha();
+$("chFicha").onclick = () => {
+  if (window.matchMedia("(max-width:720px)").matches) { $("app").classList.add("m-ficha"); return; }
+  const oculta = $("app").classList.toggle("ficha-oculta");
+  try { localStorage.setItem(FICHA_OCULTA_KEY, oculta ? "1" : "0"); } catch (_) {}
+  pintaBtnFicha();
+};
 $("cpOv").onclick = $("cpX").onclick = () => $("app").classList.remove("m-ficha");
 async function actionHandler(a){
   const cid=state.contactId; if(!cid) return;
