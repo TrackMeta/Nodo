@@ -1,7 +1,7 @@
 // Chats: la lista de la Bandeja en el celular — modo Humano/Bot, buscador, filtros (los mismos grupos que el
 // cajón de la Bandeja), filtros guardados y tiempo real. Las consultas son las de loadConversations().
 import { A, $, $$, esc, ic, on, emit, supa, avatar, quienDe, fmtHora, abrirCapa, cerrarCapa, abrirHoja, confirmar, toast, pedirTexto, trasArranque } from "./app.js";
-import { pageAll, enTrozos, norm } from "../shell.js";
+import { pageAll, enTrozos, norm, FEP_DIAS } from "../shell.js";
 import { computePreset, startOfDayTZ, endOfDayTZ, ymd } from "../date-range.js";
 import { botonFechas, elegirFechas, lblDe, fRango } from "./fechas.js";
 import { STAGES, ETAPA, ENTREGA_PROV, ENTREGA_ESTADO_K, RECOMPRA_ESTADOS, previewHtml, esPrueba } from "./comun.js";
@@ -237,10 +237,22 @@ export function pintar() {
 function fila(cv) {
   const c = cv.contact, w = quienDe({ bot_activo: c.bot_activo, requiere_humano: cv.requiere_humano });
   const st = ETAPA[c.stage || "nuevo"] || ETAPA.nuevo;
-  const flag = c.bloqueado ? `<span class="flag blq">Bloqueado</span>` : w === "espera" ? `<span class="flag hum">Pide humano</span>` : cv.requiere_humano ? `<span class="flag seg">Seguimiento</span>` : c.stage === "comprado" ? (L.recompra.has(c.id) ? `<span class="flag pago">Recomprando</span>` : `<span class="flag ok">Compró</span>`) : "";
+  // (5-nov) Como la Bandeja web: todas las insignias que apliquen a la vez (antes salía una sola, y nunca la del anuncio).
+  // La del anuncio cuenta desde el clic (fep_hasta − 72 h) sin consultar por fila: lo exacto está en el chat abierto.
+  const clic = c.fep_hasta ? Date.parse(c.fep_hasta) - 72 * 3.6e6 : NaN, finAd = Number.isFinite(clic) ? clic + FEP_DIAS * 864e5 : 0;
+  const diasAd = finAd > Date.now() ? Math.max(1, Math.ceil((finAd - Date.now()) / 864e5)) : 0;
+  const flags = [
+    c.bloqueado ? `<span class="flag blq">Bloqueado</span>` : "",
+    w === "espera" ? `<span class="flag hum">Pide humano</span>` : w === "yo" ? `<span class="flag hum">Humano</span>` : "",
+    diasAd ? `<span class="flag fep">${ic("megaphone")} Anuncio · ${diasAd} ${diasAd === 1 ? "día" : "días"}</span>` : /^(ad|ctwa)$/i.test(c.source || "") ? `<span class="flag ad">${ic("megaphone")} Anuncio</span>` : "",
+    cv.requiere_humano && w !== "espera" ? `<span class="flag seg">Seguimiento</span>` : "",
+    c.stage === "comprado" ? `<span class="flag ok">Compró</span>` : "",
+    L.recompra.has(c.id) ? `<span class="flag pago">Recompra</span>` : "",
+  ].join("");
+  const flag = flags ? `<span class="flags">${flags}</span>` : "";
   return `<button class="row" type="button" data-id="${c.id}">
     ${avatar(c.id, c.nombre, c.wa_id, null, c.product?.emoji)}
-    <span class="rmid"><b><span class="stage-dot" style="background:${st.color}" title="${st.label}"></span>${esc(c.nombre || "+" + c.wa_id)}${flag}</b><span>${previewHtml(c)}</span></span>
+    <span class="rmid"><b><span class="stage-dot" style="background:${st.color}" title="${st.label}"></span>${esc(c.nombre || "+" + c.wa_id)}</b><span>${previewHtml(c)}</span>${flag}</span>
     <span class="rend${cv.no_leidos ? " new" : ""}"><time>${fmtHora(cv.updated_at)}</time>${cv.no_leidos ? `<span class="unread">${cv.no_leidos > 99 ? "99+" : cv.no_leidos}</span>` : ""}</span>
   </button>`;
 }

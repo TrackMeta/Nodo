@@ -1,6 +1,6 @@
 // Pagos por validar (copiloto.html en el celular): la misma cola, los mismos tipos y la misma función order-update
 // para aprobar o rechazar. Lo que la IA leyó del comprobante va en chips; la foto se amplía al tocarla.
-import { A, $, esc, ic, on, emit, supa, invoke, avatar, abrirHoja, confirmar, pedirTexto, hoja, toast, verFoto, fmtHora, trasArranque } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, invoke, avatar, abrirHoja, confirmar, pedirTexto, hoja, toast, verFoto, fmtHora, trasArranque, sol } from "./app.js";
 import { pageAll, enTrozos } from "../shell.js";
 import * as O from "../orders.js";
 import { esPrueba } from "./comun.js";
@@ -93,13 +93,27 @@ function chips(o) {
   (P.dudas[o.contact_id] || []).forEach((d) => out.push(`<span class="ck warn">${ic("alert")} ${esc(d)}</span>`));
   return out.join("");
 }
+// Resumen de la cola, como copiloto.html: cuántos pagos esperan, cuánta plata suman y hace cuánto llegó el más
+// antiguo (para no dejar nada rancio sin decidir).
+function resumenCola() {
+  const L = P.lista; if (!L.length) return "";
+  const total = L.reduce((a, o) => a + (Number(montoDe(o)) || 0), 0);
+  const viejo = Math.min(...L.map((o) => Date.parse(o.created_at) || Date.now()));
+  const min = Math.max(0, Math.round((Date.now() - viejo) / 60000));
+  const hace = min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} d`;
+  return `<div class="pstats"><span><b class="num">${L.length}</b>${L.length === 1 ? "pago esperando" : "pagos esperando"}</span><span><b class="num">${sol(total, L[0].currency || "PEN")}</b>en validación</span><span><b class="num">${hace}</b>el más antiguo</span></div>`;
+}
 const BOTON = { digital: "Aprobar y entregar", extra: "Aprobar y entregar", adelanto: "Aprobar y avisarle", saldo: "Aprobar y dar la clave", lima: "Aprobar y avisarle" };
 function pintar() {
   const n = P.lista.length;
   $("#tb-pagos").hidden = !n; $("#tb-pagos").textContent = n;
   emit("pendientesPagos", n);
   const box = $("#pagosPad");
-  box.innerHTML = `<div><h2 class="h">Pagos por validar</h2></div><p class="sub">Mira la foto, revisa lo que leyó la IA y decide.</p>` + (n ? P.lista.slice().reverse().map((o) => {
+  box.innerHTML = `<div><h2 class="h">Pagos por validar</h2></div><p class="sub">Mira la foto, revisa lo que leyó la IA y decide.</p>` + (n ? resumenCola() + ETAPAS.map((g) => {
+    // (5-nov) Como copiloto.html: agrupados por tipo y, dentro, el MÁS ANTIGUO primero (es el que urge); antes era una
+    // sola lista con lo más nuevo arriba, y el pago que llevaba horas esperando quedaba al fondo
+    const its = P.lista.filter((o) => o.et === g.id).sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+    return !its.length ? "" : `<div class="pgrp">${esc(g.titulo)} · ${its.length}</div>` + its.map((o) => {
     const c = o.contact || {}, et = ETAPAS.find((e) => e.id === o.et), url = compDe(o), m = montoDe(o), s = o.shipping || {};
     return `<article class="pay" data-id="${o.id}">
       <div class="payh">${avatar(o.contact_id, c.nombre, c.wa_id)}<span class="rmid"><b>${esc(c.nombre || "Cliente")}</b><span>${fmtHora(s[o.et + "_recibido_at"] || o.updated_at)} · ${o.product ? esc(o.product.nombre) : ""}</span></span><span class="amt num">${m != null && m !== "" ? `${sym(o)} ${esc(m)}` : "—"}</span></div>
@@ -110,7 +124,7 @@ function pintar() {
       <div class="acts"><button type="button" class="btn ghost" data-a="no">Rechazar</button><button type="button" class="btn main" data-a="ok">${ic(o.et === "saldo" ? "key" : "check")} ${BOTON[o.et]}</button></div>
       <button type="button" class="btn soft sm" data-a="chat">${ic("message")} Abrir el chat</button>
     </article>`;
-  }).join("") : `<div class="empty"><b>${ic("check")}</b>Todo validado.<br>Te avisamos cuando llegue otro pago.</div>`);
+  }).join(""); }).join("") : `<div class="empty"><b>${ic("check")}</b>Todo validado.<br>Te avisamos cuando llegue otro pago.</div>`);
 }
 
 // ── Acciones (las de copiloto.html) ──

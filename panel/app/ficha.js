@@ -1,6 +1,6 @@
 // Ficha del cliente (loadContactPanel de la Bandeja, en una columna): pedido, Memoria IA, etapa del embudo,
 // origen del lead, etiquetas y medios. Cambia etapa y etiquetas igual que el panel.
-import { A, $, esc, ic, on, emit, supa, invoke, abrirHoja, avatar, quienDe, whoTxt, abrirCapa, capaAbierta, cerrarCapa, confirmar, toast, verFoto, sol, fmtHora } from "./app.js";
+import { A, $, esc, ic, on, emit, supa, invoke, abrirHoja, hoja, avatar, quienDe, whoTxt, abrirCapa, capaAbierta, cerrarCapa, confirmar, toast, verFoto, sol, fmtHora } from "./app.js";
 import { STAGES, ETAPA } from "./comun.js";
 import { tagHex } from "./chats.js";
 import { CHAT } from "./chat.js";
@@ -26,7 +26,7 @@ async function abrir(cid) {
     supa.from("custom_fields").select("id,nombre,key").eq("channel_id", A.ch),
     supa.from("contact_field_values").select("field_id,value").eq("contact_id", cid),
     supa.from("messages").select("id,type,content,ts,direction").eq("contact_id", cid).not("content->>media_url", "is", null).order("ts", { ascending: false }).limit(30),
-    supa.from("orders").select("id,amount,currency,order_bumps,estado,created_at,shipping,product:product_id(nombre,emoji,tipo)").eq("contact_id", cid).order("created_at", { ascending: false }).limit(1),
+    supa.from("orders").select("id,amount,currency,order_bumps,estado,created_at,shipping,product:product_id(nombre,emoji,tipo),version:version_id(nombre)").eq("contact_id", cid).order("created_at", { ascending: false }).limit(1),
     supa.from("conversations").select("requiere_humano,archivada").eq("contact_id", cid).maybeSingle(),
   ]);
   if (!ct.data) { $("#fibody").innerHTML = `<div class="empty">No se encontró el cliente.</div>`; return; }
@@ -41,14 +41,60 @@ async function abrir(cid) {
   };
   pintar();
 }
+// ═════════ Pedido (5-nov) ═════════
+// La misma tarjeta que la ficha de la Bandeja web (contact-extras.js · pedidoResumenHtml + pedidoProgresoHtml): estado,
+// plata (adelanto/saldo o total), los pasos del envío, talla/color, guía y clave, ventas extra y regalos, y los datos
+// del cliente para la agencia o el motorizado. Antes solo decía producto, total y estado.
+const _cap = (x) => { x = String(x || ""); return x.charAt(0).toUpperCase() + x.slice(1); };
+const TONO_COL = { ok: "var(--green)", warn: "var(--amber)", bad: "var(--red)" };
+function pasosHtml(o) {
+  const zona = O.zonaDe(o); if (zona !== "provincia" && zona !== "lima") return "";
+  const e = o.estado, s = o.shipping || {};
+  const NEG = { cancelado: "Cancelado", no_recogido: "No se recogió", rechazado: "Rechazado" };
+  if (NEG[e]) return `<div class="pd-neg">${esc(NEG[e])}</div>`;
+  const inc = (...x) => x.includes(e);
+  const saldoRecibido = !!(s.saldo_comprobante || s.saldo_recibido_at) || inc("saldo_pagado", "recogido");
+  const pasos = zona === "provincia"
+    ? [["Adelanto", inc("adelanto_validado", "por_despachar", "despachado", "en_agencia", "saldo_pagado", "recogido")], ["Envío", inc("despachado", "en_agencia", "saldo_pagado", "recogido")], ["Agencia", inc("en_agencia", "saldo_pagado", "recogido")], ["Saldo", saldoRecibido], ["Clave", inc("saldo_pagado", "recogido")], ["Recojo", inc("recogido")]]
+    : [["Confirmado", inc("confirmado", "en_reparto", "reprogramado", "entregado_cobrado")], ["En reparto", inc("en_reparto", "reprogramado", "entregado_cobrado")], ["Entregado", inc("entregado_cobrado")]];
+  const ult = pasos.map((p) => p[1]).lastIndexOf(true);
+  return `<div class="pd-steps">${pasos.map(([t, hecho], i) => `${i ? `<i class="pd-ln${hecho ? " on" : ""}"></i>` : ""}<span class="pd-st${hecho ? " on" : i === ult + 1 ? " next" : ""}"><b>${hecho ? ic("check") : ""}</b><small>${esc(t)}</small></span>`).join("")}</div>`;
+}
 function pedidoHtml(o) {
   if (!o) return `<p style="color:var(--muted)">Todavía no tiene pedido.</p>`;
-  const z = O.zonaDe(o), s = o.shipping || {}, cur = o.currency || "PEN";
-  const prod = o.product ? `${o.product.emoji ? esc(o.product.emoji) + " " : ""}${esc(o.product.nombre)}` : "Pedido";
-  const falta = O.porCobrar(o), cob = O.cobrado(o);
-  const plata = O.esCerrado(o) ? `<div class="money ok">${ic("check")} Pagado · ${sol(O.total(o), cur)}</div>` : falta > 0 && cob > 0 ? `<div class="money falta">Pagó ${sol(cob, cur)} · falta ${sol(falta, cur)}</div>` : `<div class="money">Total ${sol(O.total(o), cur)}</div>`;
-  const dir = z === "lima" ? [s.direccion, s.distrito].filter(Boolean).join(", ") : z === "provincia" ? [s.sede, s.destino || s.ciudad].filter(Boolean).join(" · ") : "";
-  return `<p><b>${prod}</b></p>${plata}<p style="color:var(--muted)">Estado: <b style="color:var(--text)">${esc(O.label(o.estado))}</b>${dir ? " · " + esc(dir) : ""}</p>`;
+  const c = F.c, p = o.product || {}, v = o.version || {}, s = o.shipping || {}, cur = o.currency || "PEN";
+  const zona = O.zonaDe(o), col = TONO_COL[O.tono(o.estado)] || "var(--amber)";
+  const prod = [p.emoji, p.nombre, v.nombre ? "· " + v.nombre : ""].filter(Boolean).join(" ") || "Pedido";
+  const adel = Number(s.adelanto || 0), saldo = Number(s.saldo || 0);
+  const plata = adel || saldo ? `${adel ? `Adelanto <b>${sol(adel, cur)}</b>` : ""}${adel && saldo ? " · " : ""}${saldo ? `Saldo <b>${sol(saldo, cur)}</b>` : ""}` : `Total <b>${sol(O.total(o), cur)}</b>`;
+  const linea = (k, val) => val ? `<div class="pd-line"><span>${esc(k)}</span><span>${val}</span></div>` : "";
+  const prodL = Object.entries(s.atributos || {}).filter(([k]) => !/regalo|extra/i.test(k)).map(([k, x]) => linea(k, esc(x)));
+  if (s.guia) prodL.push(linea("Guía", `<b class="num">${esc(s.guia)}</b>`));
+  if (s.clave_recojo) prodL.push(linea("Clave", `<b class="num">${esc(s.clave_recojo)}</b>`));
+  const bumps = (Array.isArray(o.order_bumps) ? o.order_bumps : []).map((b) => {
+    const regalo = b.regalo === true || Number(b.precio || 0) === 0;
+    const nom = String(b.nombre || "").replace(/\s*—\s*S\/\s*[\d.,]+\s*$/i, "").replace(/\s*\((?:extra|regalo)\)\s*/gi, " ").replace(/\s{2,}/g, " ").trim() || (regalo ? "Regalo" : "Extra");
+    const vari = b.stock_key && b.stock_key !== "_" ? b.stock_key.split("|").map((kv) => { const [k, x] = kv.split("="); return `${k} ${_cap(x)}`; }).join(" · ") : "";
+    return `<div class="pd-bump">${ic(regalo ? "gift" : "plus")}<span>${esc(nom)}${vari ? ` <small>${esc(vari)}</small>` : ""}${b.stock_pendiente ? ` <em class="pd-chip warn">falta talla</em>` : ""}</span><b>${regalo ? "Gratis" : sol(Number(b.precio || 0), cur)}</b></div>`;
+  }).join("");
+  const cli = [linea("Cliente", esc((s.cliente || c.nombre || "").trim())), linea("Teléfono", s.tel || /^\d+$/.test(c.wa_id || "") ? `<b class="num">+${esc(s.tel || c.wa_id)}</b>` : "")];
+  if (zona === "provincia") {
+    cli.push(linea("DNI", s.dni ? `<b class="num">${esc(s.dni)}</b>` : ""));
+    const air = s.aereo ? ` <em class="pd-chip air">${ic("plane")} Aéreo</em>` : "";
+    cli.push(linea("Agencia", s.destino ? esc(s.destino) + air : s.sede ? `${esc(s.sede)} <em class="pd-chip warn">sin confirmar</em>${air}` : s.ciudad ? `Shalom ${esc(_cap(s.ciudad))}${air}` : ""));
+    if (!s.destino && s.ciudad && s.sede) cli.push(linea("Ciudad", esc(_cap(s.ciudad))));
+  } else if (zona === "lima") {
+    const dir = String(s.direccion || "").trim(), dist = s.distrito || s.zona_nombre || "";
+    cli.push(linea("Dirección", !dir ? "" : /^https?:\/\//i.test(dir) ? `<a href="${esc(dir.split(/\s/)[0])}" target="_blank" rel="noopener">${ic("pin")} Abrir la ubicación que compartió</a>` : esc(dir)));
+    cli.push(linea("Distrito", dist && dist.toLowerCase() !== "lima" ? esc(_cap(dist)) : ""));
+    cli.push(linea("Referencia", s.referencia ? esc(s.referencia) : ""));
+  }
+  const bloque = (arr) => arr.filter(Boolean).length ? `<div class="pd-info">${arr.filter(Boolean).join("")}</div>` : "";
+  return `<div class="pd-card"><div class="pd-top"><b>${esc(prod)}</b><span class="pd-zona">${zona === "lima" ? "LIMA" : zona === "provincia" ? "PROVINCIA" : "DIGITAL"}</span></div>
+    <div class="pd-row"><span class="pd-badge" style="color:${col};background:color-mix(in srgb,${col} 12%,transparent);border-color:color-mix(in srgb,${col} 35%,transparent)">${esc(O.label(o.estado))}</span>${s.cancelado_por_cliente ? `<em class="pd-chip warn">lo canceló el cliente</em>` : ""}<span class="pd-money">${plata}</span></div>
+    ${pasosHtml(o)}${bloque(prodL)}
+    ${bumps ? `<div class="pd-sub">Ventas extra y regalos</div><div class="pd-bumps">${bumps}</div>` : ""}
+    ${cli.filter(Boolean).length ? `<div class="pd-sub">Datos del cliente</div>${bloque(cli)}` : ""}</div>`;
 }
 // ═════════ Memoria IA (5-nov) ═════════
 // Igual que la tarjeta de la ficha en la Bandeja web (index.html · miaCard + contact-extras.js · wireMemoriaChips):
@@ -145,24 +191,43 @@ function clicMia(e) {
   }
   return false;
 }
+// ═════════ Origen del lead y etiquetas (5-nov): como la ficha de la Bandeja web ═════════
+const _https = (u) => typeof u === "string" && /^https:\/\//i.test(u) ? u : "";
+function origenHtml(c, ref) {
+  const m = F.ad, ver = _https(ref?.source_url), img = _https(ref?.image_url) || _https(ref?.thumbnail_url), body = String(ref?.body || "");
+  const primer = c.primera_interaccion || c.created_at;
+  const clicTarde = ref?.at && primer && new Date(ref.at) - new Date(primer) > 3600e3;   // volvió por un anuncio después
+  const largo = body.length > 180 || body.split("\n").length > 4;
+  return `<div class="ol-src"><span class="ol-ic">${ic("megaphone")}</span><span><b>Anuncio de Meta</b><small>${m?.campaign_name ? "Campaña: " + esc(m.campaign_name) : "Click a WhatsApp"}</small></span></div>` +
+    (m?.ad_name || ref ? `<div class="ol-card"><div class="ol-ad">${img ? `<a class="ol-th" href="${esc(img)}" target="_blank" rel="noopener"><img src="${esc(img)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()"></a>` : `<span class="ol-th">${ic(ref?.media_type === "video" ? "video" : "image")}</span>`}<span><b>${esc(m?.ad_name || ref?.headline || "Anuncio")}</b>${m?.adset_name ? `<small>Conjunto: ${esc(m.adset_name)}</small>` : ""}</span></div>` +
+      (ref?.headline ? `<div class="ol-k">Título</div><div class="ol-v">${esc(ref.headline)}</div>` : "") +
+      (body ? `<div class="ol-k">Texto</div><div class="ol-v${largo ? " clamp" : ""}">${esc(body)}</div>${largo ? `<button type="button" class="ol-more" data-olmas>Ver todo</button>` : ""}` : "") +
+      (ver ? `<a class="btn soft ol-link" href="${esc(ver)}" target="_blank" rel="noopener">${ic("link")} Ver anuncio</a>` : "") + `</div>` : "") +
+    `<div class="ol-rows">${c.ad_id ? `<div class="ol-kv"><span>Ad ID</span><b class="num">${esc(c.ad_id)}<button type="button" class="ol-copy" data-copiar="${esc(c.ad_id)}" aria-label="Copiar el ID del anuncio">${ic("copy")}</button></b></div>` : ""}
+      <div class="ol-kv"><span>Primer contacto</span><b>${primer ? esc(fmtHora(primer)) : "—"}</b></div>
+      ${clicTarde ? `<div class="ol-kv"><span>Último clic al anuncio</span><b>${esc(fmtHora(ref.at))}</b></div>` : ""}</div>` +
+    (!ref ? `<p class="ol-note">${ic("help")} ${m ? "Llegó antes del 5 de octubre de 2026, cuando Nodo aún no guardaba el título, el texto ni la imagen del anuncio." : "Conecta tu cuenta publicitaria en el panel (Conexiones → Meta) para ver el nombre del anuncio y su campaña."}</p>` : "");
+}
+function etiquetasHtml() {
+  if (!F.tags.length) return `<p style="color:var(--muted)">Este bot no tiene etiquetas. Créalas desde el panel.</p>`;
+  const puestas = F.tags.filter((t) => F.asig.has(t.id)), libres = F.tags.filter((t) => !F.asig.has(t.id));
+  return `<div class="tagrow">${puestas.map((t) => { const c = tagHex(t.color); return `<span class="tagchip" style="background:${c}1e;color:${c};border-color:${c}4d"><span class="tagdot" style="background:${c}"></span>${esc(t.nombre)}<button type="button" data-tag="${t.id}" aria-label="Quitar ${esc(t.nombre)}">${ic("x")}</button></span>`; }).join("")}${libres.length ? `<button type="button" class="tagadd" data-tagadd>${ic("plus")} Añadir</button>` : ""}</div>` +
+    (!puestas.length ? `<p style="color:var(--muted);margin-top:6px">Sin etiquetas aún: añade una para segmentar y filtrar.</p>` : "");
+}
 function pintar() {
   if (!F) return;
   const c = F.c, w = quienDe({ bot_activo: c.bot_activo, requiere_humano: F.conv.requiere_humano }), m = c.memoria_ia || {};
   const quien = Array.isArray(m.quien_es) ? m.quien_es : [], trato = Array.isArray(m.como_tratar) ? m.como_tratar : [];
-  const ref = c.ad_ref && String(c.ad_ref.source_id || "") === String(c.ad_id || "") ? c.ad_ref : null;
+  // (como la web: con ad_ref y sin ad_id también vale — antes la app lo descartaba)
+  const ref = c.ad_ref && typeof c.ad_ref === "object" && (!c.ad_id || String(c.ad_ref.source_id || "") === String(c.ad_id)) ? c.ad_ref : null;
   const esAd = !!(c.ad_id || /^(ad|ctwa)$/i.test(c.source || ""));
   $("#fibody").innerHTML = `
     <div class="fhead">${avatar(c.id, c.nombre, c.wa_id, w, c.product?.emoji)}<b>${esc(c.nombre || "Cliente")}</b><span>${/^\d+$/.test(c.wa_id || "") ? "+" + esc(c.wa_id) : "Sin número visible"}</span><span>${whoTxt(w)}${c.product ? ` · ${c.product.emoji ? esc(c.product.emoji) + " " : ""}${esc(c.product.nombre)}` : ""}</span></div>
     <div class="fsec"><h4>${A.tipo === "fisico" ? "Pedido" : "Compra"}</h4>${pedidoHtml(F.orden)}${!F.orden || O.esPerdido(F.orden) || O.esCerrado(F.orden) ? `<button type="button" class="btn soft" data-venta style="width:100%;margin-top:4px">${ic("dollar")} ${F.orden && O.esCerrado(F.orden) ? "Registrar otra venta" : "Registrar venta a mano"}</button>` : ""}</div>
     ${miaHtml(quien, trato)}
     <div class="fsec"><h4>Etapa del embudo</h4><div class="steps">${STAGES.map((s) => `<button type="button" class="step${(c.stage || "nuevo") === s.k ? " on" : ""}" data-et="${s.k}"><span class="sd" style="background:${s.color}"></span><span><b>${s.label}</b><small>${s.desc}</small></span></button>`).join("")}</div></div>
-    <div class="fsec"><h4>Origen del lead</h4>${esAd
-      ? `${ref?.thumbnail_url || ref?.image_url ? `<img src="${esc(ref.thumbnail_url || ref.image_url)}" alt="" style="width:100%;max-height:160px;object-fit:cover;border-radius:10px" onerror="this.remove()">` : ""}
-         <p>${ic("megaphone")} <b>${esc(F.ad?.ad_name || ref?.headline || "Anuncio de Meta")}</b></p>
-         ${F.ad ? `<p style="color:var(--muted)">Campaña: ${esc(F.ad.campaign_name || "—")}${F.ad.adset_name ? " · " + esc(F.ad.adset_name) : ""}</p>` : ""}
-         <p style="color:var(--muted)">Llegó ${c.primera_interaccion ? "el " + esc(fmtHora(c.primera_interaccion)) : ""}</p>`
-      : `<p style="color:var(--muted)">Orgánico: escribió sin pasar por un anuncio.</p>`}</div>
-    <div class="fsec"><h4>Etiquetas <span>${F.asig.size}</span></h4>${F.tags.length ? `<div class="tagrow">${F.tags.map((t) => `<button type="button" class="tagb${F.asig.has(t.id) ? " on" : ""}" data-tag="${t.id}"><span class="tagdot" style="background:${tagHex(t.color)}"></span>${esc(t.nombre)}</button>`).join("")}</div>` : `<p style="color:var(--muted)">Este bot no tiene etiquetas. Créalas desde el panel.</p>`}</div>
+    <div class="fsec"><h4>Origen del lead</h4>${esAd ? origenHtml(c, ref) : `<p style="color:var(--muted)">Orgánico: escribió sin pasar por un anuncio.</p>`}</div>
+    <div class="fsec"><h4>Etiquetas <span>${F.asig.size}</span></h4>${etiquetasHtml()}</div>
     <div class="fsec"><h4>Medios y archivos <span>${F.media.length}</span></h4>${F.media.length ? `<div class="mgrid">${F.media.slice(0, 12).map((x) => {
       const u = x.content?.media_url; return x.type === "image" || x.type === "sticker" ? `<button type="button" class="mtile" data-ver="${esc(u)}" style="background-image:url('${esc(u)}')"></button>` : `<a class="mtile" href="${esc(u)}" target="_blank" rel="noopener">${ic(x.type === "audio" ? "mic" : x.type === "video" ? "video" : "file")}${x.type === "audio" ? "Nota de voz" : esc(x.content?.filename || "Archivo")}</a>`;
     }).join("")}</div>` : `<p style="color:var(--muted)">Sin fotos, audios ni archivos.</p>`}</div>
@@ -265,9 +330,27 @@ async function ventaManual() {
   });
 }
 async function evento(tipo, titulo, detalle) { try { await supa.from("contact_events").insert({ channel_id: A.ch, contact_id: F.c.id, tipo, titulo, detalle: detalle || null, meta: { por: A.nombre, desde: "app" } }); } catch (_) { /* */ } }
+// Pone o quita una etiqueta (la × del chip la quita; «Añadir» la pone)
+async function ponerEtiqueta(id) {
+  if (!F) return;
+  const t = F.tags.find((x) => x.id === id), tenia = F.asig.has(id);
+  const r = tenia ? await supa.from("contact_tags").delete().eq("contact_id", F.c.id).eq("tag_id", id) : await supa.from("contact_tags").upsert({ contact_id: F.c.id, tag_id: id }, { onConflict: "contact_id,tag_id" });
+  if (r.error) { toast("No se pudo cambiar la etiqueta: " + r.error.message, true); return; }
+  tenia ? F.asig.delete(id) : F.asig.add(id);
+  evento(tenia ? "etiqueta_del" : "etiqueta_add", `${tenia ? "Quitó" : "Puso"} la etiqueta «${t?.nombre}»`);
+  pintar(); emit("conv", { contact_id: F.c.id });
+}
 async function clic(e) {
   if (!F) return;
   if (clicMia(e)) return;
+  const cp = e.target.closest("[data-copiar]");
+  if (cp) { (navigator.clipboard?.writeText(cp.dataset.copiar) || Promise.reject()).then(() => toast("Ad ID copiado"), () => toast("No se pudo copiar", true)); return; }
+  const mas = e.target.closest("[data-olmas]"); if (mas) { mas.previousElementSibling?.classList.remove("clamp"); mas.remove(); return; }
+  if (e.target.closest("[data-tagadd]")) {
+    const libres = F.tags.filter((t) => !F.asig.has(t.id));
+    hoja("Añadir etiqueta", libres.map((t) => ({ t: t.nombre, dot: tagHex(t.color), v: t.id })), (op) => ponerEtiqueta(op.v));
+    return;
+  }
   const v = e.target.closest("[data-ver]"); if (v) { verFoto(v.dataset.ver); return; }
   if (e.target.closest("[data-venta]")) { ventaManual(); return; }
   const st = e.target.closest("[data-et]");
@@ -282,14 +365,7 @@ async function clic(e) {
     emit("contacto", { id: F.c.id, stage: k }); return;
   }
   const tg = e.target.closest("[data-tag]");
-  if (tg) {
-    const id = tg.dataset.tag, t = F.tags.find((x) => x.id === id), tenia = F.asig.has(id);
-    const r = tenia ? await supa.from("contact_tags").delete().eq("contact_id", F.c.id).eq("tag_id", id) : await supa.from("contact_tags").upsert({ contact_id: F.c.id, tag_id: id }, { onConflict: "contact_id,tag_id" });
-    if (r.error) { toast("No se pudo cambiar la etiqueta: " + r.error.message, true); return; }
-    tenia ? F.asig.delete(id) : F.asig.add(id);
-    evento(tenia ? "etiqueta_del" : "etiqueta_add", `${tenia ? "Quitó" : "Puso"} la etiqueta «${t?.nombre}»`);
-    pintar(); emit("conv", { contact_id: F.c.id }); return;
-  }
+  if (tg) { ponerEtiqueta(tg.dataset.tag); return; }
   // Bloquear / desbloquear: igual que el menú del chat en la Bandeja (bloqueado + bot apagado, y al revés)
   if (e.target.closest("[data-blq]")) {
     const blq = !F.c.bloqueado;

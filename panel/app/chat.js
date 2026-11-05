@@ -21,7 +21,7 @@ export function init() {
   $("#sendbtn").onclick = () => enviarTexto();
   $("#inp").addEventListener("input", () => { autoAlto(); alEscribir(); });
   $("#copibtn").onclick = sugerencias;
-  $("#qrbtn").onclick = () => { if (!$("#qr").hidden && $("#qr").dataset.modo === "qr") { $("#qr").hidden = true; return; } mostrarQR(""); };
+  $("#qrbtn").onclick = () => { if (!$("#qr").hidden && $("#qr").dataset.modo === "qr") { $("#qr").hidden = true; return; } mostrarQR("", true); };
   $("#qr").addEventListener("click", clicQR);
   $("#attbtn").onclick = () => $("#fileInput").click();
   $("#fileInput").onchange = (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) prepararArchivo(f); };
@@ -345,12 +345,29 @@ async function cargarQR() {
   const { data } = await supa.from("quick_replies").select("*").eq("channel_id", A.ch).order("orden");
   C.qr = data || []; C.qrCh = A.ch;
 }
-async function mostrarQR(filtro) {
+// Como en la Bandeja web: con el botón se abre con buscador y agrupadas por carpeta, con su color y cuántos archivos
+// llevan; escribiendo «/atajo» se filtra por el atajo sin buscador.
+async function mostrarQR(filtro, conBuscador) {
   await cargarQR();
-  const f = String(filtro || "").toLowerCase();
-  const lista = C.qr.map((r, i) => [r, i]).filter(([r]) => !f || String(r.atajo || "").toLowerCase().replace(/^\//, "").startsWith(f) || String(r.titulo || "").toLowerCase().includes(f));
   const q = $("#qr"); q.dataset.modo = "qr"; q.hidden = false;
-  q.innerHTML = `<div class="qrh">Respuestas rápidas</div>` + (lista.length ? lista.map(([r, i]) => `<button type="button" data-i="${i}"><b>${esc(r.atajo ? "/" + String(r.atajo).replace(/^\//, "") : r.titulo || "Respuesta")}</b><span>${esc(r.titulo && r.atajo ? r.titulo : burbujasDe(r).map((b) => b.text || (b.media_kind === "image" ? "Foto" : b.filename || "Archivo")).join(" · "))}</span></button>`).join("") : `<div class="cargando">${C.qr.length ? "Ninguna empieza así" : "Este bot no tiene respuestas rápidas. Créalas desde el panel."}</div>`);
+  q.innerHTML = `<div class="qrh">Respuestas rápidas</div>` + (conBuscador && C.qr.length ? `<div class="qrs"><input id="qrSearch" class="inpt" placeholder="Buscar respuesta…" autocomplete="off"></div>` : "") + `<div id="qrList"></div>`;
+  listaQR(String(filtro || ""), !conBuscador);
+  const s = $("#qrSearch"); if (s) s.oninput = () => listaQR(s.value, false);
+}
+function listaQR(filtro, porAtajo) {
+  const box = $("#qrList"); if (!box) return;
+  const f = filtro.toLowerCase().trim();
+  const lista = C.qr.map((r, i) => [r, i]).filter(([r]) => !f || (porAtajo
+    ? String(r.atajo || "").toLowerCase().replace(/^\//, "").startsWith(f) || String(r.titulo || "").toLowerCase().includes(f)
+    : `${r.titulo || ""} ${r.atajo || ""} ${r.cuerpo || ""}`.toLowerCase().includes(f)));
+  if (!lista.length) { box.innerHTML = `<div class="cargando">${C.qr.length ? (porAtajo ? "Ninguna empieza así" : "Sin coincidencias") : "Este bot no tiene respuestas rápidas. Créalas desde el panel."}</div>`; return; }
+  const carpetas = {}; lista.forEach(([r, i]) => { const k = r.folder || "__none"; (carpetas[k] = carpetas[k] || []).push([r, i]); });
+  const nombres = Object.keys(carpetas).sort((a, b) => a === "__none" ? 1 : b === "__none" ? -1 : a.localeCompare(b));
+  box.innerHTML = nombres.map((k) => (nombres.length > 1 || k !== "__none" ? `<div class="qrfold">${k === "__none" ? "Sin carpeta" : esc(k)}</div>` : "") + carpetas[k].map(([r, i]) => {
+    const col = r.color && /^#[0-9a-f]{3,8}$/i.test(r.color) ? r.color : null;
+    const nM = (Array.isArray(r.media) ? r.media : []).filter((m) => m && m.media_url).length;
+    return `<button type="button" data-i="${i}"${col ? ` style="border-left:3px solid ${col}"` : ""}><b>${col ? `<i class="qrdot" style="background:${col}"></i>` : ""}${esc(r.titulo || (r.atajo ? "/" + String(r.atajo).replace(/^\//, "") : "Respuesta"))}${r.atajo && r.titulo ? `<em class="qatajo">/${esc(String(r.atajo).replace(/^\//, ""))}</em>` : ""}${nM ? `<em class="qatajo f">${ic("file")} ${nM}</em>` : ""}</b><span>${esc(burbujasDe(r).map((b) => b.text || (b.media_kind === "image" ? "Foto" : b.filename || "Archivo")).join(" · "))}</span></button>`;
+  }).join("")).join("");
 }
 function burbujasDe(r) {
   const raw = Array.isArray(r.media) ? r.media : [];
