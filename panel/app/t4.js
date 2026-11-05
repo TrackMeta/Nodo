@@ -1,7 +1,7 @@
 // 4.ª pestaña según el tipo de bot: Ventas (digital), Pedidos (físico, como pedidos.html) o Accesos (micro apps,
 // por la función edge `microapps`). Los cambios de estado van por order-update, igual que en el panel.
 import { A, $, esc, ic, on, emit, supa, invoke, avatar, abrirCapa, abrirHoja, confirmar, pedirTexto, hoja, toast, fmtHora, sol, ir, enReposo } from "./app.js";
-import { pageAll } from "../shell.js";
+import { pageAll, ventanaAnuncio } from "../shell.js";
 import { computePreset, startOfDayTZ, endOfDayTZ } from "../date-range.js";
 import * as O from "../orders.js";
 import { esPrueba } from "./comun.js";
@@ -141,17 +141,113 @@ function siguientes(o) {
     if (e === "en_agencia") { add("saldo_pagado", "Cobré el saldo · dar clave"); add("no_recogido", "No lo recogió"); }
     if (e === "saldo_pagado") { add("recogido", "Lo recogió"); add("no_recogido", "No lo recogió"); }
   }
-  out.push({ estado: "cancelado", t: "Cancelar pedido", peligro: true });
+  // Corregir: volver a un estado anterior (o saltar uno) si te equivocaste — el ⋮ de pedidos.html.
+  if (correcciones(o).length) out.push({ corregir: true, t: "Corregir el estado…" });
+  // Si la plata YA entró, tumbarlo no es cancelar: es ANULAR una venta, con motivo (misma puerta que la web).
+  out.push(esCobrada(o) ? { anular: true, t: "Anular venta…", peligro: true } : { estado: "cancelado", t: "Cancelar pedido", peligro: true });
   return out;
 }
+const esCobrada = (o) => !!(O.EST[o.estado] && O.EST[o.estado].cobro === "todo");
+// Los mismos estados y las mismas trabas que el ⋮ de pedidos.html: no se ofrecen saltos que se salten pasos de plata
+// (cerrar sin cobrar le manda al cliente una clave vacía y le atribuye a Meta una venta que nunca se cobró).
+function correcciones(o) {
+  const lima = O.zonaDe(o) === "lima";
+  const trans = lima ? ["confirmado", "en_reparto", "entregado_cobrado", "reprogramado", "rechazado"]
+    : ["esperando_adelanto", "adelanto_validado", "despachado", "en_agencia", "saldo_pagado", "recogido", "no_recogido"];
+  const preReq = { saldo_pagado: ["despachado", "en_agencia"], recogido: ["saldo_pagado"], entregado_cobrado: ["en_reparto", "confirmado"], no_recogido: ["despachado", "en_agencia", "saldo_pagado"] };
+  return trans.filter((e) => e !== o.estado && (!preReq[e] || preReq[e].includes(o.estado)));
+}
+// ¿Cómo le aviso? (pedirAviso de contact-extras.js, en una hoja del celular). «Llegó a la agencia» es el aviso que más
+// cae fuera de la ventana de 24 h: pasan días desde que el cliente escribió, y un mensaje normal Meta lo rechaza.
+async function elegirAviso(o, momento, titulo, detalle) {
+  const info = { abierta: false, restante: "", fep: "", tpls: [], preferida: null, texto: "", flujo: "", porDefecto: false };
+  toast("Revisando cómo avisarle…");
+  try {
+    const { data: ct } = await supa.from("contacts").select("ultimo_mensaje_cliente_at,fep_hasta").eq("id", o.contact_id).maybeSingle();
+    const t = ct?.ultimo_mensaje_cliente_at ? new Date(ct.ultimo_mensaje_cliente_at).getTime() + 24 * 3600e3 : 0;
+    info.abierta = t > Date.now();
+    if (info.abierta) { const m = Math.floor((t - Date.now()) / 60000); info.restante = m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; }
+    const va = await ventanaAnuncio(o.contact_id, ct?.fep_hasta).catch(() => null);
+    if (va?.respondida && va.fin > Date.now()) { const m = Math.floor((va.fin - Date.now()) / 60000); info.fep = m >= 1440 ? `${Math.floor(m / 1440)} d ${Math.floor((m % 1440) / 60)} h` : m >= 60 ? `${Math.floor(m / 60)} h` : `${m} min`; }
+  } catch (_) { /* */ }
+  try {
+    const { data } = await supa.from("wa_templates").select("name,language,estado_meta,activa").eq("channel_id", A.ch).order("name");
+    info.tpls = (data || []).filter((t) => t.activa !== false && (t.estado_meta ?? "aprobada") === "aprobada");
+  } catch (_) { /* */ }
+  try {
+    const { data: ch } = await supa.from("channels").select("pedidos_config").eq("id", A.ch).maybeSingle();
+    const a = ch?.pedidos_config?.avisos?.[momento];
+    if (a?.template) info.preferida = a.template;
+    if (a?.texto) info.texto = String(a.texto);
+  } catch (_) { /* */ }
+  if (!info.texto) {
+    try {
+      const { data: trigs } = await supa.from("flow_triggers").select("flow_id, config, flows!inner(id,nombre,estado)").eq("channel_id", A.ch).eq("tipo", "pedido_estado").eq("activo", true);
+      const t = (trigs || []).find((x) => ((x.config?.estados) || []).map(String).includes(momento) && x.flows?.estado === "activo");
+      if (t) info.flujo = t.flows?.nombre || "Aviso";
+    } catch (_) { /* */ }
+  }
+  if (!info.texto && !info.flujo) {
+    // Ni mensaje propio ni flujo: el motor igual tiene su aviso por defecto (el de la agencia trae el saldo y la clave)
+    const r = await invoke("order-update", { order_id: o.id, estado: momento, preview: true });
+    if (r.data?.preview) { info.texto = String(r.data.preview); info.porDefecto = true; }
+  }
+  const hayTpl = info.tpls.length > 0, hayMsg = !!(info.texto || info.flujo);
+  let modo = info.abierta && hayMsg ? "mensaje" : hayTpl ? "plantilla" : "ninguno";
+  const op = (v, tit, desc, off) => `<button type="button" class="opt avz${v === modo ? " on" : ""}${off ? " off" : ""}" data-avz="${v}" style="flex-direction:column;align-items:flex-start;gap:3px"><b>${tit}</b><span style="white-space:normal;font-size:12.5px;color:var(--muted)">${desc}</span></button>`;
+  return new Promise((res) => {
+    let r = null;
+    abrirHoja(`<h3>${esc(titulo)}</h3><p class="lead">${esc(detalle)}</p>
+      <div class="money ${info.abierta ? "ok" : "falta"}" style="margin-bottom:8px">${info.abierta ? `Ventana abierta${info.restante ? " · le quedan " + esc(info.restante) : ""} para escribirle libremente` : "Ventana cerrada · WhatsApp solo acepta una plantilla aprobada"}</div>
+      ${info.fep ? `<p class="sub" style="margin:0 2px 8px">Llegó por un anuncio: la plantilla aún es gratis por ${esc(info.fep)}.</p>` : ""}
+      <div class="flabel">¿Cómo le aviso?</div>
+      ${op("mensaje", info.porDefecto ? "El mensaje del sistema" : info.flujo && !info.texto ? `Tu aviso: «${esc(info.flujo)}»` : "Tu mensaje",
+        !hayMsg ? "No hay un mensaje escrito para este momento: no se enviaría nada." : !info.abierta ? "La ventana está cerrada: Meta lo va a rechazar y el cliente no recibirá nada." : info.texto ? `«${esc(info.texto.length > 120 ? info.texto.slice(0, 120) + "…" : info.texto)}»` : "Es el flujo que se dispara con este estado.",
+        !info.abierta || !hayMsg)}
+      ${op("plantilla", "Una plantilla aprobada", hayTpl ? "Es lo único que WhatsApp acepta fuera de la ventana." : "No tienes plantillas aprobadas: créalas desde el panel.", !hayTpl)}
+      ${hayTpl ? `<select class="fsel" id="avzTpl" style="margin:0 0 10px">${info.tpls.map((t) => `<option value="${esc(t.name)}|${esc(t.language || "es")}"${info.preferida === t.name ? " selected" : ""}>${esc(t.name)}</option>`).join("")}</select>` : ""}
+      ${op("ninguno", "No avisarle", "Guardo el cambio en silencio; le escribes tú.")}
+      <button type="button" class="btn blue" style="width:100%;margin-top:6px" id="avzGo">Confirmar</button>`, (sh, cerrar) => {
+      sh.querySelectorAll("[data-avz]").forEach((b) => (b.onclick = () => { modo = b.dataset.avz; sh.querySelectorAll("[data-avz]").forEach((x) => x.classList.toggle("on", x === b)); }));
+      $("#avzGo", sh).onclick = () => {
+        if (modo === "plantilla") { const [name, language] = String($("#avzTpl", sh)?.value || "").split("|"); r = name ? { modo, template: { name, language: language || "es" } } : { modo: "ninguno" }; }
+        else r = { modo };
+        cerrar();
+      };
+    });
+    const t = setInterval(() => { if (!document.querySelector("#sheet.on")) { clearInterval(t); setTimeout(() => res(r), 50); } }, 150);
+  });
+}
+const avisoMsg = (d, aviso, base) => d.aviso_error ? `${base} · el aviso no salió: ${d.aviso_error}`
+  : d.aviso_enviado ? `${base} · ${d.aviso_enviado === "mensaje" || d.aviso_enviado === "default" ? "cliente avisado" : "plantilla enviada"}`
+  : aviso?.modo === "ninguno" ? `${base} · sin avisar al cliente` : d.flow_started ? `${base} · el bot está avisando al cliente` : base;
 async function mover(o) {
   const ops = siguientes(o);
   hoja(`Mover pedido de ${(o.contact || {}).nombre || "cliente"}`, ops.map((x) => ({ t: x.t, small: x.peligro ? "" : "", icono: x.peligro ? "ban" : null, v: x })), (op) => moverA(o, op.v), `Ahora: ${O.label(o.estado)}. Al moverlo, Nodo le avisa al cliente si corresponde.`);
 }
 async function moverA(o, x) {
   const c = o.contact || {}, s = o.shipping || {}, nom = c.nombre || "cliente";
-  let ship = null;
-  if (x.estado === "despachado") {
+  if (x.corregir) {
+    const ops = correcciones(o);
+    await new Promise((ok) => setTimeout(ok, 300));
+    hoja("Corregir el estado", ops.map((e) => ({ t: "→ " + O.label(e), v: { estado: e, t: O.label(e) } })), (op) => moverA(o, op.v), `Ahora: ${O.label(o.estado)}. Úsalo si te equivocaste de paso.`);
+    return;
+  }
+  if (x.anular) {
+    const m = await pedirTexto("Anular esta venta", { lead: "Sale de Inicio, de Ventas y de las métricas (no se borra: queda registrada como anulada). Úsalo para pagos falsos o ventas que no eran reales.", ph: "Ej. pago falso, no llegó la plata…", boton: "Anular venta" });
+    if (m == null) return;
+    if (!m.trim()) { toast("Escribe el motivo, queda para tu registro", true); return; }
+    const estado = o.product?.tipo === "digital" ? "anulada" : "cancelado";
+    const r = await invoke("order-update", { order_id: o.id, estado, shipping: { anulada_motivo: m.trim(), anulada_at: new Date().toISOString() } });
+    if (!r.ok) { toast(r.data?.detalle || r.data?.error || "No se pudo anular", true); return; }
+    toast("Venta anulada"); await cargarPedidos(); return;
+  }
+  let ship = null, aviso = null;
+  if (x.estado === "en_agencia") {
+    await new Promise((ok) => setTimeout(ok, 300));
+    aviso = await elegirAviso(o, "en_agencia", "Avisar que llegó", `${nom} — el pedido pasa a «en agencia» y se le pide el saldo para darle la clave.`);
+    if (!aviso) return;
+  } else if (x.estado === "despachado") {
     const datos = await new Promise((res) => {
       let r = null;
       abrirHoja(`<h3>Despachar el pedido</h3><p class="lead">${esc(nom)} · ${esc(s.sede || s.destino || "")}</p>
@@ -182,14 +278,14 @@ async function moverA(o, x) {
     if (m == null) return;
     ship = { anulada_motivo: m.trim() || "Cancelado desde la app", anulada_at: new Date().toISOString() };
   } else if (!(await confirmar(x.t, `${nom} — el pedido pasa a «${O.label(x.estado)}».`, { si: "Confirmar" }))) return;
-  let r = await invoke("order-update", { order_id: o.id, estado: x.estado, ...(ship ? { shipping: ship } : {}) });
+  let r = await invoke("order-update", { order_id: o.id, estado: x.estado, ...(ship ? { shipping: ship } : {}), ...(aviso ? { aviso } : {}) });
   if (!r.ok && r.data?.error === "cerrado_confirmar") {
     if (!(await confirmar("Venta ya cerrada", r.data.detalle || "Este pedido ya estaba cerrado. ¿Moverlo igual?", { si: "Mover igual", peligro: true }))) return;
-    r = await invoke("order-update", { order_id: o.id, estado: x.estado, forzar: true, ...(ship ? { shipping: ship } : {}) });
+    r = await invoke("order-update", { order_id: o.id, estado: x.estado, forzar: true, ...(ship ? { shipping: ship } : {}), ...(aviso ? { aviso } : {}) });
   }
   if (!r.ok) { toast(r.data?.detalle || r.data?.error || "No se pudo mover el pedido", true); return; }
   const d = r.data || {};
-  toast(d.aviso_error ? `Movido, pero el aviso no salió: ${d.aviso_error}` : d.aviso_enviado ? `Movido a «${O.label(x.estado)}» · se le avisó al cliente` : `Movido a «${O.label(x.estado)}»`, !!d.aviso_error);
+  toast(aviso ? avisoMsg(d, aviso, `Movido a «${O.label(x.estado)}»`) : d.aviso_error ? `Movido, pero el aviso no salió: ${d.aviso_error}` : d.aviso_enviado ? `Movido a «${O.label(x.estado)}» · se le avisó al cliente` : `Movido a «${O.label(x.estado)}»`, !!d.aviso_error);
   await cargarPedidos();
 }
 

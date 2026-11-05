@@ -273,6 +273,8 @@ async function clic(e) {
   const st = e.target.closest("[data-et]");
   if (st) {
     const k = st.dataset.et; if (k === (F.c.stage || "nuevo")) return;
+    // Como en la Bandeja web: un toque sin querer pisaba la etapa que puso el motor (p. ej. «Comprado» tras una venta)
+    if (!(await confirmar("Cambiar etapa", `${F.c.nombre || "Este cliente"} pasará a «${ETAPA[k].label}». La etapa la mueve el bot solo; cambiarla a mano afecta el Embudo y a quién le llega el remarketing.`, { si: "Cambiar" }))) return;
     const { error } = await supa.from("contacts").update({ stage: k }).eq("id", F.c.id);
     if (error) { toast("No se pudo cambiar la etapa: " + error.message, true); return; }
     evento("nota", `Etapa: ${ETAPA[k].label}`, "Cambiada a mano desde la app");

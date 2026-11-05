@@ -120,12 +120,14 @@ async function extras(ch) {
   } catch (e) { console.warn("extras de la lista", e); }
 }
 async function buscarServidor() {
-  const q = Q, ch = A.ch; const dig = q.replace(/\D/g, "");
+  const q = Q, ch = A.ch; const dig = q.replace(/\D/g, ""), opLimpio = q.replace(/[^0-9a-z]/gi, "");
   const sel = "contact_id,no_leidos,updated_at,expira_at,requiere_humano,archivada,contact:contacts!inner(id,nombre,wa_id,last_input,bot_activo,stage,source,fep_hasta,product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado)";
   const or = [`nombre.ilike.*${q.replace(/[,()*]/g, " ")}*`]; if (dig.length >= 3) or.push(`wa_id.ilike.*${dig}*`);
   const [r, ops] = await Promise.all([
     supa.from("conversations").select(sel).eq("channel_id", ch).or(or.join(","), { referencedTable: "contacts" }).order("updated_at", { ascending: false }).limit(30),
-    q.replace(/\s/g, "").length >= 4 ? supa.from("orders").select("contact_id").eq("channel_id", ch).or(["digital_operacion", "adelanto_operacion_leida", "pago_adelantado_operacion", "extra_operacion"].map((k) => `shipping->>${k}.ilike.*${q.replace(/\s/g, "")}*`).join(",")).limit(20) : Promise.resolve({ data: [] }),
+    // Nº de operación: los mismos campos que la Bandeja web (OPS_BUSCA, antes faltaban el adelanto y el saldo) más el del
+    // prepago de Lima, y como allá solo si trae algún dígito (si no, sería una consulta por cada letra que escribes)
+    opLimpio.length >= 4 && /[0-9]/.test(opLimpio) ? supa.from("orders").select("contact_id").eq("channel_id", ch).or(["digital_operacion", "adelanto_operacion", "adelanto_operacion_leida", "saldo_operacion", "pago_adelantado_operacion", "extra_operacion"].map((k) => `shipping->>${k}.ilike.*${opLimpio}*`).join(",")).limit(20) : Promise.resolve({ data: [] }),
   ]);
   if (q !== Q || ch !== A.ch) return;
   const ya = new Set(L.convs.map((c) => c.contact_id));

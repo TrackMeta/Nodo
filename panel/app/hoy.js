@@ -230,7 +230,7 @@ function pintar(r, n, apps) {
   }).join("") : `<p class="nsub" style="padding:6px 14px 12px">Sin gasto de anuncios en este período.</p>`}</div>`;
   // Igual que el Dashboard: la Ganancia neta va destacada (tarjeta de tinta) y Ventas, Ingresos y ROAS en blanco
   const pctCob = n.vendido > 0 ? Math.round((n.cobrado / n.vendido) * 100) : null;
-  $("#hoyPad").innerHTML = `<div class="hero gan pegada" id="verGanancia" role="button" tabindex="0"><div class="gtxt"><small>Ganancia neta ${ic("help")}</small><div class="big num">${m(n.neta)}</div></div>${botonFechas(r)}</div>
+  $("#hoyPad").innerHTML = `<div class="hero gan pegada" id="verGanancia" role="button" tabindex="0"><div class="gtxt"><small>Ganancia neta ${ic("help")}</small><div class="big num">${n.sinCosto ? "—" : m(n.neta)}</div>${n.sinCosto ? `<small class="gfalta">falta registrar algún costo</small>` : ""}</div>${botonFechas(r)}</div>
     <div id="hoyEspera"></div>
     <div class="kpis">
       <div class="kpi"><small>Ventas</small><b class="num kv-azul">${n.ventas}</b><span class="mutc">${n.ventas ? "ticket " + m(n.vendido / n.ventas) : "sin ventas en estas fechas"}</span></div>
@@ -260,11 +260,13 @@ function tablero(n, m) {
     ? fila("Gasto en Meta", m(n.gasto)) + fila("Costo por chat", n.chatsAd ? m(n.cpc) : "—") + fila("Costo por venta", n.cpa == null ? "—" : m(n.cpa)) + fila("ROAS", n.roas > 0 ? n.roas.toFixed(2) + "×" : "—")
     : `<p class="nsub" style="padding:4px 14px 12px">Sin gasto de anuncios en estas fechas. Conecta tus anuncios en el panel (Conexiones) para ver cuánto te cuesta cada chat y cada venta.</p>`) + `</div>`;
   const rent = `<div class="card"><div class="ttl">Rentabilidad</div>` +
-    fila(n.vendeFisico ? "Ganancia bruta" : "Ingresos cobrados", m(n.bruta)) +
+    // (5-nov) Como el Inicio web: si a un pedido le falta el costo, la ganancia no se sabe y va «—» (antes salía un número
+    //  que parecía real, con los pedidos sin costo contados en cero)
+    fila(n.vendeFisico ? "Ganancia bruta" : "Ingresos cobrados", n.sinCosto ? "—" : m(n.bruta)) +
     (n.gasto > 0 ? fila("− Publicidad", m(n.gasto), "down") : "") +
     (n.iaC > 0.009 ? fila("− IA", m(n.iaC), "down") : "") +
     (n.extra > 0.009 ? fila("− Gastos extra", m(n.extra), "down") : "") +
-    `<div class="nrow tot"><span>= Ganancia neta</span><b class="num ${n.neta < 0 ? "down" : "up"}">${m(n.neta)}</b></div></div>`;
+    `<div class="nrow tot"><span>= Ganancia neta</span><b class="num ${n.sinCosto ? "" : n.neta < 0 ? "down" : "up"}">${n.sinCosto ? "—" : m(n.neta)}</b></div></div>`;
   return ventas + pub + rent;
 }
 function detalleGanancia() {
@@ -278,7 +280,7 @@ function detalleGanancia() {
       ${fila("Anuncios de Meta", n.gasto, "− ")}
       ${n.iaC > 0.009 ? fila("Costo de la IA", n.iaC, "− ") : ""}
       ${n.extra > 0.009 ? fila("Otros gastos", n.extra, "− ", "los que cargaste en el panel") : ""}
-      <div class="gfila total"><span>Ganancia</span><b class="num ${n.neta >= 0 ? "up" : "down"}">${n.neta < 0 ? "− " : ""}${m(Math.abs(n.neta))}</b></div>
+      <div class="gfila total"><span>Ganancia</span><b class="num ${n.sinCosto ? "" : n.neta >= 0 ? "up" : "down"}">${n.sinCosto ? "—" : (n.neta < 0 ? "− " : "") + m(Math.abs(n.neta))}</b></div>
     </div>
     ${n.pendCobro ? `<p class="alert">${n.pendCobro} pedido${n.pendCobro === 1 ? "" : "s"} todavía no se cobra${n.pendCobro === 1 ? "" : "n"} completo: su ganancia entra cuando se cobre.</p>` : ""}
     ${n.sinCosto ? `<p class="alert">A ${n.sinCosto} pedido${n.sinCosto === 1 ? "" : "s"} le falta el costo del producto o el flete: no suman a la ganancia hasta cargarlos en el panel.</p>` : ""}`);

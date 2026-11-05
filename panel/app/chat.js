@@ -3,6 +3,7 @@
 import { A, $, $$, esc, ic, on, emit, supa, callFn, invoke, avatar, quienDe, whoTxt, hhmm, fmtDiaLargo, abrirCapa, capaAbierta, cerrarCapa, cerrarTodo, ir, abrirHoja, cerrarHoja, hoja, confirmar, toast, verFoto, TZ } from "./app.js";
 import { CHATS } from "./chats.js";
 import { copilotoEtapa, MEDIA_LABEL } from "./comun.js";
+import { waFmt } from "../shell.js";
 
 const C = { cid: null, contacto: null, conv: null, msgs: [], orden: null, agentes: new Map(), ventana: true, okManual: new Set(), qr: [], qrCh: null, tmp: 0 };
 export const CHAT = C;
@@ -135,16 +136,23 @@ function burbuja(m, nueva) {
   if (t === "system") return `<div class="m sys" data-mid="${m.id}">${esc(k.text || "")}</div>`;
   const bot = out && m.sent_by !== "human";
   let cuerpo = "";
-  if (k.quoted?.text || k.quoted?.media_url) cuerpo += `<div class="quoted">${esc(k.quoted.text || "Foto")}</div>`;
-  if (t === "image" || t === "sticker") cuerpo += k.media_url ? `<img class="media" src="${esc(k.media_url)}" data-ver="${esc(k.media_url)}" alt="" loading="lazy">` : `<div class="doc">${ic("image")} ${k.media_error ? "No se pudo bajar la foto" : "Bajando la foto…"}</div>`;
-  else if (t === "video") cuerpo += k.media_url ? `<video class="media" src="${esc(k.media_url)}" controls preload="metadata"></video>` : `<div class="doc">${ic("video")} Bajando el video…</div>`;
-  else if (t === "audio") cuerpo += k.media_url ? `<div class="aud" data-src="${esc(k.media_url)}"><button type="button" class="play" aria-label="Reproducir">${ic("play")}</button><span class="bar"><i></i></span><span class="dur num">0:00</span></div>` : `<div class="doc">${ic("mic")} ${k.media_error ? "No se pudo bajar el audio" : "Bajando la nota de voz…"}</div>`;
-  else if (t === "document") cuerpo += k.media_url ? `<a class="doc" href="${esc(k.media_url)}" target="_blank" rel="noopener">${ic("file")}<span>${esc(k.filename || "Archivo")}</span></a>` : `<div class="doc">${ic("file")} Bajando el archivo…</div>`;
-  else if (t === "location") { const q = k.lat != null ? `${k.lat},${k.lng}` : (k.address || k.name || ""); cuerpo += `<a class="doc" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}" target="_blank" rel="noopener">${ic("pin")}<span>${esc(k.name || k.address || "Ubicación compartida")}</span></a>`; }
+  // Cita como en la Bandeja web: quién la escribió, la foto si era una, y al tocarla lleva al mensaje citado
+  const qd = k.quoted;
+  if (qd && (qd.text || qd.media_url)) cuerpo += `<div class="quoted"${qd.wamid ? ` data-qw="${esc(qd.wamid)}"` : ""}><b class="qwho">${qd.direction === "out" ? "Tú" : qd.direction === "in" ? esc(C.contacto?.nombre || "Cliente") : "Mensaje"}</b>${qd.media_url ? `<img src="${esc(qd.media_url)}" alt="">` : ""}<span>${esc(qd.text || "Foto")}</span></div>`;
+  if (k.forwarded) cuerpo += `<div class="fwd">${ic("refresh")} Reenviado</div>`;
+  const peso = fmtBytes(k.size);
+  if (!k.media_url && ["image", "sticker", "video", "audio", "document"].includes(t)) cuerpo += sinArchivo(m);
+  else if (t === "image" || t === "sticker") cuerpo += `<img class="media" src="${esc(k.media_url)}" data-ver="${esc(k.media_url)}" alt="" loading="lazy">`;
+  else if (t === "video") cuerpo += `<video class="media" src="${esc(k.media_url)}" controls preload="metadata" playsinline></video>${peso ? `<div class="mmeta">${ic("video")} Video · ${peso}</div>` : ""}`;
+  else if (t === "audio") cuerpo += `<div class="aud" data-src="${esc(k.media_url)}"><button type="button" class="play" aria-label="Reproducir">${ic("play")}</button><span class="bar"><i></i></span><span class="dur num">0:00</span></div>`;
+  else if (t === "document") cuerpo += `<a class="doc" href="${esc(k.media_url)}" target="_blank" rel="noopener">${ic("file")}<span>${esc(k.filename || "Archivo")}</span>${peso ? `<small class="fsz">${peso}</small>` : ""}</a>`;
+  else if (t === "location") cuerpo += ubiHtml(k);
   else if (t === "template") cuerpo += `<div class="tplh">${ic("message")} Plantilla${k.template ? " · " + esc(k.template) : ""}</div>`;
-  if (k.raw_type === "contacts" && Array.isArray(k.contacts)) cuerpo += k.contacts.map((x) => `<div class="doc">${ic("user")}<span>${esc(x.nombre || "")} ${esc((x.telefonos || []).join(", "))}</span></div>`).join("");
+  if (k.raw_type === "contacts") cuerpo += tarjetaContacto(k);
   const texto = k.text ?? k.caption ?? "";
-  if (texto && !(t === "audio" && !k.caption)) cuerpo += esc(texto);
+  // *negrita*, _cursiva_ y ~tachado~ como en WhatsApp (waFmt de la Bandeja web). La ubicación ya trae su lugar en el
+  // mapa: su texto «[ubicación] -12.1, -77.0» no se repite.
+  if (texto && !(t === "audio" && !k.caption) && t !== "location") cuerpo += waFmt(texto);
   if (t === "audio" && k.transcription) cuerpo += `<div class="tr">${ic("note")}<span>${esc(k.transcription)}</span></div>`;
   if (Array.isArray(k.buttons) && k.buttons.length) cuerpo += `<div class="checks" style="margin-top:6px">${k.buttons.map((b) => `<span class="ck info">${esc(b.title || "")}</span>`).join("")}</div>`;
   let quien = "";
@@ -153,9 +161,70 @@ function burbuja(m, nueva) {
   const meta = `<div class="meta">${bot ? '<span title="Respondió el bot">IA</span>' : ""}<span>${hhmm(m.ts)}</span>${out ? tick(m.status) : ""}</div>`;
   return `<div class="m ${out ? "out" : "in"}${bot ? " bot" : ""}${nueva ? " nueva" : ""}" data-mid="${m.id}">${quien}${cuerpo}${err}${meta}</div>`;
 }
+// ── Lo mismo que la Bandeja web (index.html · mediaHtml / ubiHtml / contactCardHtml) ──
+function fmtBytes(n) { n = Number(n); if (!Number.isFinite(n) || n <= 0) return ""; if (n < 1024) return `${n} B`; if (n < 1048576) return `${(n / 1024).toFixed(0)} KB`; return `${(n / 1048576).toFixed(1)} MB`; }
+// Media sin archivo: recién llegado = se está bajando de WhatsApp (la burbuja se repinta sola); si no, el motivo o
+// «Archivo no disponible». Antes un video o documento sin archivo se quedaba diciendo «Bajando…» para siempre.
+function sinArchivo(m) {
+  const k = m.content || {}, lab = MEDIA_LABEL[m.type] || ["file", "Archivo"];
+  const reciente = m.ts && Date.now() - new Date(m.ts).getTime() < 3 * 60 * 1000;
+  const nota = k.media_error ? String(k.media_error) : k.media_id && reciente ? "Cargando desde WhatsApp…" : "Archivo no disponible";
+  return `<div class="doc mph${k.media_error ? " err" : ""}">${ic(lab[0])}<span><b>${esc(lab[1])}</b><small>${esc(nota)}</small></span></div>`;
+}
+// Ubicación: mapa chico (4 mosaicos de OpenStreetMap con el pin al centro), el lugar, las coordenadas y el enlace.
+function ubiHtml(k) {
+  let lat = Number(k.lat), lng = Number(k.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) { const mm = /(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)/.exec(String(k.text || "")); if (mm) { lat = Number(mm[1]); lng = Number(mm[2]); } }
+  const lugar = [k.name, k.address].map((x) => String(x ?? "").trim()).filter(Boolean).join(" · ");
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return `<div class="ubi"><div class="ubi-t">${ic("pin")} Ubicación compartida</div><div class="ubi-d">${esc(lugar || "Sin coordenadas")}</div></div>`;
+  const gmaps = `https://maps.google.com/?q=${lat},${lng}`;
+  const z = 16, n = 2 ** z, W = 240, H = 140, latR = (lat * Math.PI) / 180;
+  const xf = ((lng + 180) / 360) * n, yf = ((1 - Math.log(Math.tan(latR) + 1 / Math.cos(latR)) / Math.PI) / 2) * n;
+  const x0 = Math.floor(xf - 0.5), y0 = Math.floor(yf - 0.5), offX = W / 2 - (xf - x0) * 256, offY = H / 2 - (yf - y0) * 256;
+  let tiles = "";
+  for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+    const tx = (((x0 + dx) % n) + n) % n, ty = y0 + dy; if (ty < 0 || ty >= n) continue;
+    tiles += `<img src="https://tile.openstreetmap.org/${z}/${tx}/${ty}.png" alt="" loading="lazy" style="left:${(offX + dx * 256).toFixed(1)}px;top:${(offY + dy * 256).toFixed(1)}px">`;
+  }
+  return `<div class="ubi"><a class="ubi-map" href="${esc(gmaps)}" target="_blank" rel="noopener">${tiles}<span class="ubi-pin">${ic("pin")}</span><span class="ubi-attr">© OpenStreetMap</span></a>` +
+    `<div class="ubi-t">${ic("pin")} ${lugar ? esc(lugar) : "Ubicación compartida"}</div><div class="ubi-d num">${lat.toFixed(6)}, ${lng.toFixed(6)}</div>` +
+    `<a class="ubi-o" href="${esc(gmaps)}" target="_blank" rel="noopener">Abrir en Google Maps ↗</a></div>`;
+}
+// Contacto compartido: tarjeta con «Mensaje» (abre su chat o lo crea) y «Copiar número».
+function tarjetaContacto(k) {
+  const lista = Array.isArray(k.contacts) ? k.contacts : [];
+  if (!lista.length) return `<div class="ccard"><div class="cc-head"><span class="cc-av">${ic("user")}</span><span class="cc-info"><b>Contacto compartido</b><small>Sin número</small></span></div></div>`;
+  return lista.map((x) => {
+    const tel = String((x.telefonos || [])[0] || "").replace(/\D/g, ""), nombre = x.nombre || (tel ? "+" + tel : "Contacto");
+    const ini = (String(nombre).replace(/[^\p{L}\p{N}\s]/gu, "").trim().split(/\s+/).map((w) => w[0] || "").join("").slice(0, 2) || "?").toUpperCase();
+    return `<div class="ccard"><div class="cc-head"><span class="cc-av">${esc(ini)}</span><span class="cc-info"><b>${esc(nombre)}</b><small>${tel ? "+" + esc(tel) : "Sin número"}</small></span></div>` +
+      (tel ? `<div class="cc-actions"><button type="button" data-ccmsg="${esc(tel)}" data-ccname="${esc(x.nombre || "")}">Mensaje</button><button type="button" data-cccopy="${esc(tel)}">Copiar número</button></div>` : "") + `</div>`;
+  }).join("");
+}
+async function abrirChatDe(tel, nombre) {
+  const { data: ya } = await supa.from("contacts").select("id").eq("channel_id", A.ch).eq("wa_id", tel).maybeSingle();
+  if (ya) { emit("abrirChat", ya.id); return; }
+  const ok = await confirmar("Todavía no tienes chat con ese número", `${nombre || "+" + tel} nunca te ha escrito. Si creas el contacto podrás escribirle con una plantilla (WhatsApp no deja mandar texto libre hasta que responda). El bot queda en pausa para ese chat.`, { si: "Crear contacto" });
+  if (!ok) return;
+  const { data: nuevo, error } = await supa.from("contacts").insert({ channel_id: A.ch, wa_id: tel, nombre: nombre || null, bot_activo: false }).select("id").single();
+  if (error) { toast("No se pudo crear el contacto: " + error.message, true); return; }
+  await supa.from("conversations").upsert({ channel_id: A.ch, contact_id: nuevo.id, expira_at: new Date(0).toISOString() }, { onConflict: "contact_id" }).then(() => {}, () => {});
+  supa.from("contact_events").insert({ channel_id: A.ch, contact_id: nuevo.id, tipo: "nota", titulo: "Contacto creado desde una tarjeta compartida", meta: { por: A.nombre, desde: "app" } }).then(() => {}, () => {});
+  toast("Contacto creado"); emit("refrescarChats"); emit("abrirChat", nuevo.id);
+}
 let _audio = null;
 function clicHilo(e) {
   const v = e.target.closest("[data-ver]"); if (v) { verFoto(v.dataset.ver); return; }
+  const cp = e.target.closest("[data-cccopy]");
+  if (cp) { (navigator.clipboard?.writeText(cp.dataset.cccopy) || Promise.reject()).then(() => toast("Número copiado"), () => toast("No se pudo copiar el número", true)); return; }
+  const cm = e.target.closest("[data-ccmsg]"); if (cm) { abrirChatDe(cm.dataset.ccmsg, cm.dataset.ccname || ""); return; }
+  const qe = e.target.closest(".quoted[data-qw]");
+  if (qe) {
+    const obj = C.msgs.find((x) => x.wamid === qe.dataset.qw), b = obj && $(`#msgs [data-mid="${CSS.escape(String(obj.id))}"]`);
+    if (b) { b.scrollIntoView({ behavior: "smooth", block: "center" }); b.classList.add("hl"); setTimeout(() => b.classList.remove("hl"), 1500); }
+    else toast("Ese mensaje no está entre los últimos 150");
+    return;
+  }
   const p = e.target.closest(".aud .play"); if (!p) return;
   const box = p.closest(".aud"), src = box.dataset.src;
   if (_audio && _audio._box === box) { if (_audio.paused) _audio.play(); else _audio.pause(); return; }
@@ -326,9 +395,12 @@ async function elegirPlantilla() {
   const { data } = await supa.from("wa_templates").select("id,name,language,categoria,body_preview,estado_meta,activa,soporta_envio").eq("channel_id", A.ch).order("name");
   const tpls = (data || []).filter((t) => t.activa !== false && (t.estado_meta ?? "aprobada") === "aprobada" && t.soporta_envio !== false);
   if (!tpls.length) { toast("No tienes plantillas aprobadas. Créalas desde el panel (Plantillas).", true); return; }
-  abrirHoja(`<h3>Enviar plantilla</h3><p class="lead">Solo plantillas aprobadas por Meta. Las variables las completa Nodo.</p>` + tpls.map((t, i) => `<button type="button" class="opt" data-tp="${i}" style="flex-direction:column;align-items:flex-start;gap:3px"><b style="font-size:13px;color:var(--brand)">${esc(t.name)}</b><span style="font-size:13px;color:var(--muted);white-space:normal">${esc(t.body_preview || "")}</span></button>`).join(""), (sh, cerrar) => {
+  abrirHoja(`<h3>Enviar plantilla</h3><p class="lead">Solo plantillas aprobadas por Meta. Las variables las completa Nodo.</p>` + tpls.map((t, i) => `<button type="button" class="opt" data-tp="${i}" style="flex-direction:column;align-items:flex-start;gap:3px"><b style="font-size:13px;color:var(--brand)">${esc(t.name)}${t.categoria ? ` <small style="color:var(--muted);font-weight:500">· ${esc(t.categoria)}</small>` : ""}</b><span style="font-size:13px;color:var(--muted);white-space:normal">${esc(t.body_preview || "")}</span></button>`).join(""), (sh, cerrar) => {
     sh.querySelectorAll("[data-tp]").forEach((b) => (b.onclick = async () => {
       const t = tpls[+b.dataset.tp]; cerrar();
+      // Como en la Bandeja web: se confirma, porque Meta la cobra y no se puede deshacer
+      await new Promise((ok) => setTimeout(ok, 300));   // que termine de cerrarse la hoja de la lista
+      if (!(await confirmar("Enviar plantilla", `¿Enviar «${t.name}» a ${C.contacto?.nombre || "este cliente"}? Meta la cobra y no se puede deshacer.`, { si: "Enviar" }))) return;
       const r = await callFn("whatsapp-send", { channel_id: A.ch, contact_id: C.cid, template: { name: t.name, language: t.language || "es" } });
       if (!r.ok) { toast(errorEnvio(r.data), true); return; }
       toast("Plantilla enviada · si responde, se abre la ventana");

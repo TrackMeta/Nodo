@@ -149,6 +149,8 @@ async function clic(e) {
   if (e.target.closest("#nlimpiar")) {
     const lista = [...N.rows.values()].filter((n) => !oculta(n) && !pendiente(n) && (N.bot === "todos" || n.channel_id === N.bot)).map((n) => n.id);
     if (!lista.length) { toast("No hay nada que limpiar. Lo pendiente se quita con «Atendido» o al resolverlo."); return; }
+    // Como en la campanita web: se confirma antes (un toque sin querer se llevaba todo el historial)
+    if (!(await confirmar("Limpiar la campanita", `Se quitan ${lista.length} aviso${lista.length === 1 ? "" : "s"} (leído${lista.length === 1 ? "" : "s"} o no). Lo pendiente se queda hasta que lo resuelvas. Al resto del equipo no se le quita nada.`, { si: "Limpiar" }))) return;
     lista.forEach((id) => N.quitadas.add(id)); campana(); pintar();
     const { error } = await supa.rpc("notif_quitar", { p_ids: lista });
     if (error) { lista.forEach((id) => N.quitadas.delete(id)); campana(); pintar(); toast("No se pudo limpiar", true); return; }
