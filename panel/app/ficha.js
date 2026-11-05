@@ -301,44 +301,6 @@ function pintar() {
       <button type="button" class="li" data-acc="arch"><span class="ico">${ic("archive")}</span><span class="rmid"><b>${F.conv.archivada ? "Sacar de archivados" : "Archivar chat"}</b><span>Se esconde de la lista (no se borra)</span></span></button>
       <button type="button" class="li${c.bloqueado ? "" : " peligro"}" data-blq><span class="ico">${ic(c.bloqueado ? "lock" : "ban")}</span><span class="rmid"><b>${c.bloqueado ? "Desbloquear contacto" : "Bloquear contacto"}</b><span>${c.bloqueado ? "Vuelve a la lista y el bot le contesta de nuevo" : "El bot deja de responderle y sale de la lista"}</span></span></button>
     </div>`;
-  plegables({
-    "Compra": F.orden ? `${O.label(F.orden.estado)} · ${sol(O.total(F.orden), F.orden.currency || "PEN")}` : "sin pedido",
-    "Pedido": F.orden ? `${O.label(F.orden.estado)} · ${sol(O.total(F.orden), F.orden.currency || "PEN")}` : "sin pedido",
-    "Memoria IA": (() => { const n = quien.length + trato.length + F.vender.length; return n ? `${n} dato${n === 1 ? "" : "s"}` : "vacía"; })(),
-    "Etapa del embudo": ETAPA[c.stage || "nuevo"]?.label || "",
-    "Origen del lead": esAd ? (F.ad?.ad_name || ref?.headline || "Anuncio de Meta") : "Orgánico",
-  });
-}
-// ═════════ Ficha retráctil (5-nov, pedido de Rodrigo) ═════════
-// Cada sección se pliega o despliega tocando su título (con su flechita), y la app recuerda cómo la dejaste para
-// la próxima ficha. Plegada muestra un resumen corto (la etapa, el estado del pedido…) para no tener que abrirla.
-// De entrada van abiertas las que más se miran (pedido, memoria, etiquetas) y plegadas las largas.
-const PLEG_KEY = "nodo.app.ficha.plegadas";
-const PLEG_DEF = ["Etapa del embudo", "Origen del lead", "Medios y archivos", "Remarketing"];
-function plegadas() {
-  try { const v = JSON.parse(localStorage.getItem(PLEG_KEY) || "null"); if (Array.isArray(v)) return new Set(v); } catch (_) { /* */ }
-  return new Set(PLEG_DEF);
-}
-function plegables(resumenes) {
-  const cerradas = plegadas();
-  $("#fibody").querySelectorAll(".fsec").forEach((sec) => {
-    const hd = sec.querySelector(":scope > h4, :scope > .mia-hd"); if (!hd) return;
-    const key = hd.classList.contains("mia-hd") ? "Memoria IA" : (hd.firstChild?.textContent || "").trim();
-    if (!key) return;
-    const cuerpo = document.createElement("div"); cuerpo.className = "fsec-body";
-    [...sec.childNodes].filter((n) => n !== hd).forEach((n) => cuerpo.appendChild(n));
-    sec.appendChild(cuerpo);
-    sec.classList.add("plegable"); sec.classList.toggle("plegada", cerradas.has(key));
-    hd.dataset.pliega = key; hd.setAttribute("role", "button"); hd.setAttribute("aria-expanded", cerradas.has(key) ? "false" : "true");
-    hd.insertAdjacentHTML("beforeend", `${resumenes[key] ? `<em class="fsum">${esc(resumenes[key])}</em>` : ""}<i class="fchev">${ic("chevronDown")}</i>`);
-  });
-}
-function plegar(hd) {
-  const sec = hd.closest(".fsec"), key = hd.dataset.pliega, cerradas = plegadas();
-  const cerrar = !sec.classList.contains("plegada");
-  sec.classList.toggle("plegada", cerrar); hd.setAttribute("aria-expanded", cerrar ? "false" : "true");
-  if (cerrar) cerradas.add(key); else cerradas.delete(key);
-  try { localStorage.setItem(PLEG_KEY, JSON.stringify([...cerradas])); } catch (_) { /* */ }
 }
 // ═════════ Registrar venta a mano (21-oct) ═════════
 // Lo mismo que «Registrar venta a mano» de la ficha en la Bandeja web (contact-extras.js · openVentaManual) y por la
@@ -445,7 +407,6 @@ async function ponerEtiqueta(id) {
 }
 async function clic(e) {
   if (!F) return;
-  const pl = e.target.closest("[data-pliega]"); if (pl) { plegar(pl); return; }
   if (clicMia(e)) return;
   if (await clicPedido(e)) return;
   const cp = e.target.closest("[data-copiar]");
