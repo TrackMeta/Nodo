@@ -13,7 +13,7 @@ const VER = BASE + "__version__";
 const ARCHIVOS = [
   "index.html", "app.js", "app.css", "manifest.webmanifest", "chats.js", "chat.js", "ficha.js", "pagos.js", "t4.js", "hoy.js",
   "mas.js", "notif.js", "push.js", "comun.js", "fechas.js", "sonidos.js",
-  "../shell.js", "../shell.css", "../date-range.js", "../orders.js", "../horarios.js",
+  "../shell.js", "../shell.css", "../date-range.js", "../orders.js", "../horarios.js", "../cambio.js",
   "../vendor/supabase.min.js", "../vendor/inter-latin.woff2", "../../assets/logo-128.png",
 ].map((f) => new URL(f, BASE).href);
 

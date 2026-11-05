@@ -2,9 +2,10 @@
 // ventas, los números del Dashboard (Ventas, Publicidad y Rentabilidad), horarios, «Cómo avanzan», anuncios y un bloque
 // según el tipo de bot. Mismas consultas y la misma cuenta que dashboard.html (vista «Todo»). Se pone al día solo.
 import { A, $, esc, ic, on, emit, supa, invoke, abrirHoja, sol, ir, enReposo } from "./app.js";
-import { pageAll, getChannel, getUsdRate, factorAds, adsDeCuentasQuitadas } from "../shell.js";
+import { pageAll, getChannel, getUsdRate, adsDeCuentasQuitadas } from "../shell.js";
 import { computePreset, startOfDayTZ, endOfDayTZ, ymd, ymdTZ, getTZ } from "../date-range.js";
 import * as O from "../orders.js";
+import { llevarAMoneda, gastoAdsEn } from "../cambio.js";
 import { fDia, fRango, lblDe, botonFechas, elegirFechas } from "./fechas.js";
 
 let R = computePreset("hoy");
@@ -43,7 +44,7 @@ async function calcular(r, ligero) {
     todo((f, t) => supa.from("orders").select("contact_id,product_id,version_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id", ch).gte("created_at", fromISO).lt("created_at", toISO).order("created_at", { ascending: false }).order("id").range(f, t)),
     supa.from("products").select("id,nombre,emoji,clase,tipo,config,product_versions(id,nombre,cantidad)").eq("channel_id", ch),
     todo((f, t) => supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id", ch).gte("fecha", ymd(r.from)).lte("fecha", ymd(r.to)).order("fecha", { ascending: false }).order("ad_id", { ascending: false }).range(f, t)),
-    supa.from("ads_meta").select("account_currency").eq("channel_id", ch),
+    supa.from("ads_meta").select("ad_id,account_currency").eq("channel_id", ch),
     todo((f, t) => supa.from("contacts").select("id").eq("channel_id", ch).or("wa_id.eq.webchat-test,source.eq.sim").order("id").range(f, t)),
     baseC().not("ad_id", "is", null),
     baseC().is("ad_id", null),
@@ -52,19 +53,25 @@ async function calcular(r, ligero) {
     // Los chats nuevos del período (para el embudo y los chats por anuncio)
     ligero ? [] : todo((f, t) => supa.from("contacts").select("id,ad_id,stage,etapa_previa,primera_interaccion").eq("channel_id", ch).or("source.is.null,source.neq.sim").neq("wa_id", "webchat-test").gte("primera_interaccion", fromISO).lt("primera_interaccion", toISO).order("id").range(f, t)),
     ligero ? { data: [] } : supa.from("ads_meta").select("ad_id,ad_name,campaign_name").eq("channel_id", ch),
-    // «Cómo avanzan»: los contactos que llegaron en estas fechas, como la página Embudo (por created_at)
-    ligero ? [] : todo((f, t) => supa.from("contacts").select("id,stage,etapa_previa").eq("channel_id", ch).or("source.is.null,source.neq.sim").neq("wa_id", "webchat-test").gte("created_at", fromISO).lt("created_at", toISO).order("id").range(f, t)),
+    // «Cómo avanzan»: los que llegaron en estas fechas, por la fecha de su PRIMER mensaje — la misma que «Chats nuevos»
+    // (y que Inicio y el Embudo). Antes iba por created_at: con contactos importados, los dos números del mismo día no cuadraban.
+    ligero ? [] : todo((f, t) => supa.from("contacts").select("id,stage,etapa_previa").eq("channel_id", ch).or("source.is.null,source.neq.sim").neq("wa_id", "webchat-test").gte("primera_interaccion", fromISO).lt("primera_interaccion", toISO).order("id").range(f, t)),
   ]);
   const pruebaIds = new Set(prueba.map((c) => c.id));
-  const todas = ords.filter((o) => !pruebaIds.has(o.contact_id) && String(o.currency || "PEN").toUpperCase() === CUR.toUpperCase());
-  const orders = todas.filter(O.esVenta), ventasOk = orders.filter((o) => !O.esPerdido(o));
-  let cobrado = 0, porCobrar = 0; orders.forEach((o) => { cobrado += O.cobrado(o); porCobrar += O.porCobrar(o); });
   const prodPorId = {}, cant = {};
   (prods.data || []).forEach((p) => { prodPorId[p.id] = p; (p.product_versions || []).forEach((v) => { cant[v.id] = v.cantidad ?? 1; }); });
+  // 💱 (5-nov) Igual que Inicio: los pedidos en OTRA moneda se convierten con el tipo de cambio de SU día (antes se
+  // descartaban en silencio), y el gasto de Meta en dólares con el cambio de cada día (antes uno solo, el de hoy).
+  // Mismas funciones que Inicio y Rendimiento (cambio.js): así las tres pantallas dan el mismo número.
+  const ordR = { data: ords.filter((o) => !pruebaIds.has(o.contact_id)) };
+  await llevarAMoneda(ordR, CUR.toUpperCase(), O.cobrado, (o) => { const u = prodPorId[o.product_id]?.config?.costo; if (u == null || u === "") return null; return Number(u) * (Number(cant[o.version_id] ?? 1) || 1); });
+  const todas = ordR.data;
+  const orders = todas.filter(O.esVenta), ventasOk = orders.filter((o) => !O.esPerdido(o));
+  let cobrado = 0, porCobrar = 0; orders.forEach((o) => { cobrado += O.cobrado(o); porCobrar += O.porCobrar(o); });
   const [fuera, USD] = await Promise.all([pFuera, pUsd]);
-  const f = factorAds(adm.data || [], CUR, USD);
+  const _g = await gastoAdsEn(adm.data || [], CUR, USD);
   const insOk = ins.filter((i) => !fuera.has(String(i.ad_id)));
-  const gasto = insOk.reduce((a, i) => a + Number(i.gasto || 0) * f.factor, 0);
+  const gasto = insOk.reduce((a, i) => a + _g.gastoEn(i), 0);
   // Ganancia bruta (dashboard.html): digital = cobrado − mercadería; físico = margen solo si ya se cobró todo y tiene flete
   let bruta = 0, cogs = 0, pendCobro = 0, sinCosto = 0;
   ventasOk.forEach((o) => {
@@ -107,7 +114,7 @@ async function calcular(r, ligero) {
   const nom = new Map((adsM.data || []).map((a) => [String(a.ad_id), a]));
   const ads = new Map();
   const ad = (id) => { id = String(id); if (!ads.has(id)) ads.set(id, { id, gasto: 0, chats: 0, ventas: 0, cobrado: 0 }); return ads.get(id); };
-  insOk.forEach((i) => (ad(i.ad_id).gasto += Number(i.gasto || 0) * f.factor));
+  insOk.forEach((i) => (ad(i.ad_id).gasto += _g.gastoEn(i)));
   conts.forEach((c) => { if (c.ad_id) ad(c.ad_id).chats++; });
   ventasOk.forEach((o) => { const a = o.shipping?.ad_id; if (a) { const x = ad(a); x.ventas++; x.cobrado += O.cobrado(o); } });
   res.ads = [...ads.values()].filter((a) => a.gasto > 0.009 || a.ventas || a.chats).map((a) => ({ ...a, nombre: nom.get(a.id)?.ad_name || "Anuncio " + a.id.slice(-6), campana: nom.get(a.id)?.campaign_name || "" }))

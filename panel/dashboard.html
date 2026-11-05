@@ -1801,7 +1801,7 @@ async function renderBitacora(){
       if(isToday) cls+=" prov";
       const roas=d.spend>0?(d.rev/d.spend):0;
       body=`<div class="amt">${moneyShort(p)}</div>`
-        +`<div class="mt"><span class="up">▲${Math.round(d.rev)}</span><span class="dn2">▼${Math.round(d.spend)}</span></div>`
+        +`<div class="mt"><span class="up" title="Cobrado">▲${Math.round(d.rev)}</span><span class="dn2" title="Publicidad">▼${Math.round(d.spend)}</span></div>`
         +`<div class="roas">${roas>0?roas.toFixed(2)+"x · ":""}${d.sales}v</div>`;
     }
     const flag=isToday?`<span class="flag" title="Provisional — el día no terminó">${icon("clock")}</span>`:(p!=null&&p<0?`<span class="flag">${icon("alert")}</span>`:"");
@@ -1936,7 +1936,9 @@ async function renderBitaChart(dayMes){
       else if(!s.d){ h+=`<div class="nota">Sin movimientos</div>`; }
       else{
         const d=s.d, costo=Math.max(0,d.rev-d.margin);
-        h+=fila("Ingresos",moneyShort(d.rev))+(costo>=1?fila("− Costo del producto",moneyShort(costo)):"")+fila("− Publicidad",moneyShort(d.spend))+(d.exp>=0.5?fila("− IA y otros gastos",moneyShort(d.exp)):"");
+        // (5-nov) «Cobrado», no «Ingresos»: acá se suma lo que YA entró (O.cobrado), y la tarjeta «Ingresos» de arriba suma lo vendido.
+        // Con pedidos físicos sin cobrar los dos no cuadraban aunque se llamaran igual.
+        h+=fila("Cobrado",moneyShort(d.rev))+(costo>=1?fila("− Costo del producto",moneyShort(costo)):"")+fila("− Publicidad",moneyShort(d.spend))+(d.exp>=0.5?fila("− IA y otros gastos",moneyShort(d.exp)):"");
         h+=fila("= Profit",sg(s.profit),s.profit<0?"neg":"pos");
         if(bitaModo==="acum" && vals[+r.dataset.i]!=null) h+=fila("Acumulado",sg(vals[+r.dataset.i]));
         h+=`<div class="nota">${d.sales} ${d.sales===1?"venta":"ventas"}${d.spend>0?` · ROAS ${(d.rev/d.spend).toFixed(2)}×`:""}</div>`;

@@ -462,7 +462,7 @@ async function versionNueva() {
     sessionStorage.setItem("nodo.app.recargo", v);
     const mios = performance.getEntriesByType("resource").map((e) => e.name).filter((u) => u.startsWith(location.origin) && /\.(js|css|webmanifest)(\?|$)/.test(u));
     const fijos = ["app.js", "app.css", "chats.js", "chat.js", "ficha.js", "pagos.js", "t4.js", "hoy.js", "mas.js", "notif.js", "push.js", "comun.js", "fechas.js", "sonidos.js",
-      "../shell.js", "../shell.css", "../date-range.js", "../orders.js", "../horarios.js"].map((f) => new URL(f, location.href).href);
+      "../shell.js", "../shell.css", "../date-range.js", "../orders.js", "../horarios.js", "../cambio.js"].map((f) => new URL(f, location.href).href);
     await Promise.all([...new Set([location.href.split("#")[0], ...fijos, ...mios])].map((u) => fetch(u, { cache: "reload" }).catch(() => null)));
     if (_hoja || PILA.length) { toast("Hay una versión nueva de la app: se verá la próxima vez que la abras"); return; }
     location.reload();

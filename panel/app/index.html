@@ -18,6 +18,7 @@ try { var p = localStorage.getItem("nodo.app.tema") || "auto", t = p === "auto" 
 <!-- ⚡ Todos los módulos se piden a la vez (antes iban en cadena: app.js → shell.js → pantallas) -->
 <link rel="modulepreload" href="app.js">
 <link rel="modulepreload" href="../shell.js">
+<link rel="modulepreload" href="../cambio.js">
 <link rel="modulepreload" href="../vendor/supabase.min.js">
 <link rel="modulepreload" href="../date-range.js">
 <link rel="modulepreload" href="../orders.js">

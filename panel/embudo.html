@@ -275,7 +275,7 @@ async function load(){
   // el resto → efectividad, conversión y "plata en juego" se calculaban sobre un universo
   // truncado (numerador y denominador falseados). Orden estable con id de desempate.
   const [cR, oR, chR, adR] = await Promise.all([
-    pageAll((f,t)=>supa.from("contacts").select("id,nombre,wa_id,stage,etapa_previa,product_id,ad_id,created_at,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim").order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
+    pageAll((f,t)=>supa.from("contacts").select("id,nombre,wa_id,stage,etapa_previa,product_id,ad_id,created_at,primera_interaccion,product:products(nombre,emoji,tipo)").eq("channel_id",st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim").order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     pageAll((f,t)=>supa.from("orders").select("contact_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id",st.channelId).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
     getChannel(st.channelId),
     // Nombres de los anuncios (ads-sync). Sin cuenta de Meta conectada viene vacío y se muestra el ID.
@@ -314,7 +314,10 @@ function tipoDe(c){ const t=c.product&&c.product.tipo; return t==="fisico"?"fisi
 // Lima o provincia de un contacto: primero el campo temprano zona_entrega; si no,
 // del último pedido físico. null = todavía no dijo de dónde es (solo va en "Total").
 function zonaDeContacto(c){ const z=st.zonaMap[c.id]; if(z) return z; for(const o of (st.ordersBy[c.id]||[])){ if(O.esFisico(o)){ const zz=O.zonaDe(o); if(zz==="lima"||zz==="provincia") return zz; } } return null; }
-function enRango(c){ if(!st.range) return true; if(!c.created_at) return true; /* sin fecha → se muestra (no lo escondemos en silencio, como en Compras) */ const d=new Date(c.created_at); const from=startOfDayLima(st.range.from), to=endOfDayLima(st.range.to); /* corte en hora de Lima */ return d>=from && d<=to; }
+// (5-nov) «Llegó» = la fecha de su PRIMER mensaje (primera_interaccion), la misma que «Chats nuevos» de Inicio; created_at
+// solo si no la tiene. Con contactos importados las dos fechas no coinciden y la conversión de las dos pantallas se separaba.
+const llegada=(c)=> c.primera_interaccion || c.created_at;
+function enRango(c){ if(!st.range) return true; if(!llegada(c)) return true; /* sin fecha → se muestra (no lo escondemos en silencio, como en Compras) */ const d=new Date(llegada(c)); const from=startOfDayLima(st.range.from), to=endOfDayLima(st.range.to); /* corte en hora de Lima */ return d>=from && d<=to; }
 function deAnuncio(c,ad){ return ad==="all" || (ad==="none" ? !c.ad_id : c.ad_id===ad); }
 function pasaFiltros(c,{conAd=true}={}){ return (st.tipo==="all"||tipoDe(c)===st.tipo) && (st.zona==="total"||zonaDeContacto(c)===st.zona) && (st.prod==="all"||c.product_id===st.prod) && (!conAd||deAnuncio(c,st.ad)); }
 function filtrados(){ return st.contacts.filter(c=> pasaFiltros(c) && enRango(c) ); }
@@ -453,7 +456,7 @@ function comparar(){
   const ahora=Date.now();
   const ini=startOfDayLima(st.range.from).getTime(), fin=Math.min(endOfDayLima(st.range.to).getTime(), ahora);
   const desfase=dias*DIA, pIni=ini-desfase, pFin=fin-desfase, corte=ahora-desfase;
-  const prev=st.contacts.filter(c=>{ if(!c.created_at||!pasaFiltros(c)) return false; const t=new Date(c.created_at).getTime(); return t>=pIni && t<=pFin; });
+  const prev=st.contacts.filter(c=>{ if(!llegada(c)||!pasaFiltros(c)) return false; const t=new Date(llegada(c)).getTime(); return t>=pIni && t<=pFin; });
   if(!prev.length) return null;
   const compro=ventasPeriodo(c=>pasaFiltros(c), pIni, Math.min(pFin, corte)).n;
   const conCorte = fin>=ahora-60000;   // el período llega hasta ahora

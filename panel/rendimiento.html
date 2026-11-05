@@ -168,6 +168,7 @@
   .resumen{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:4px 0 14px;font-size:13.5px;color:var(--muted)}
   .resumen b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums} .resumen b.pos{color:var(--green)} .resumen b.neg{color:var(--red)}
   .resumen .sep{font-style:normal;color:var(--faint)}
+  .resumen .kpinota{flex-basis:100%;font-size:11.5px;color:var(--faint)}
   tr.grp td{font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--faint);padding:14px 12px 6px;background:transparent;cursor:default}
   tr.grp.sub td{padding-top:8px;padding-left:22px;text-transform:none;letter-spacing:0;font-size:11.5px}
   .stdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--disabled,#98A2B3);margin-right:8px;vertical-align:2px;float:left;margin-top:6px}
@@ -322,7 +323,7 @@ async function loadData(){
       (a.ad_ids||[]).forEach(id=>{ const k=String(id); if(!angMap[k]) angMap[k]={slug:a.slug,nombre:a.nombre,tipo:t}; }); }); }catch(_){}
   const byAd={};
   const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; const ang=angMap[String(adId)]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), angulo:ang.nombre||"— Sin ángulo —", anguloSlug:ang.slug||null, tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:null,clics:0,clicsAll:0,imprLink:0,gastoLink:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, chats:0,interes:0,calientes:0,compraron:0,perdidos:0,vRemarketing:0, daily:{} }; } return byAd[adId]; };
-  const day=(row,f)=>{ if(!row.daily[f]) row.daily[f]={gasto:0,impr:0,clics:null,clicsAll:0,conf:0,ventas:0,ingresos:0}; return row.daily[f]; };
+  const day=(row,f)=>{ if(!row.daily[f]) row.daily[f]={gasto:0,impr:0,clics:null,clicsAll:0,conf:0,ventas:0,ingresos:0,_margen:0,_sinMargen:0}; return row.daily[f]; };
   // El gasto llega en la moneda de la CUENTA de Meta. Se lleva a la del negocio con
   // la misma regla que el Dashboard (factorAds, en shell.js): si Meta ya factura en tu
   // moneda no se toca; si factura en dólares y hay tipo de cambio, se convierte; y si
@@ -347,7 +348,7 @@ async function loadData(){
       // (si lo tiene); físico = margen real. Si al físico le falta costo o flete, NO
       // se afirma margen (antes usaba el total = costo cero → inflaba la ganancia).
       const contrib = !O.esFisico(o) ? O.cobrado(o)-(O.costoProducto(o,o.product,cant)||0) : mg;
-      if(contrib!=null) row._margen+=contrib; else row._sinMargen=(row._sinMargen||0)+1;
+      if(contrib!=null){ row._margen+=contrib; d._margen+=contrib; } else { row._sinMargen=(row._sinMargen||0)+1; d._sinMargen++; }
     }
     // Un anuncio vende UN producto, y ese producto o es digital o es fisico -> etiqueta sin ambiguedad.
     // (La zona no sirve: un mismo anuncio fisico vende a Lima y a provincia.) Zona solo como respaldo si el pedido no trae producto.
@@ -362,7 +363,7 @@ async function loadData(){
   // Cohorte = los contactos que LLEGARON por ese anuncio en el periodo (primera_interaccion), con la etapa que tienen
   // hoy y las mismas escaleras que el Embudo (acumulado; los perdidos solo cuentan como chat).
   try{
-    const { data:cs, error:ce }=await pageAll((f,t)=>supa.from("contacts").select("id,ad_id,stage")
+    const { data:cs, error:ce }=await pageAll((f,t)=>supa.from("contacts").select("id,ad_id,stage,etapa_previa,orders(id)")
       .eq("channel_id",cid).not("ad_id","is",null).or("source.is.null,source.neq.sim").neq("wa_id","webchat-test")
       .gte("primera_interaccion",ordDesde).lte("primera_interaccion",ordHasta).order("id").range(f,t));
     if(!ce) (cs||[]).forEach(c=>{ const a=String(c.ad_id||""); if(!a || _adsFuera.has(a)) return; const row=getRow(a); const s=c.stage||"nuevo";
@@ -370,7 +371,10 @@ async function loadData(){
       if(["interesado","caliente","confirmado","comprado"].includes(s)) row.interes++;
       if(["caliente","confirmado","comprado"].includes(s)) row.calientes++;
       if(s==="comprado") row.compraron++;
-      if(s==="perdido") row.perdidos++; });
+      // (5-nov) Solo el perdido que se había INTERESADO (o llegó a tener pedido) entra en el cierre del bot, igual que Inicio
+      // y el Embudo: el curioso que solo saludó y se enfrió no es una venta que el bot dejó caer. Antes entraban todos y el
+      // «cierre del bot» de acá salía más bajo que el de Inicio.
+      if(s==="perdido" && (["interesado","caliente","confirmado"].includes(c.etapa_previa) || (c.orders||[]).length>0)) row.perdidos++; });
   }catch(_){ /* sin la cohorte, las columnas de chats salen en blanco */ }
   // 🔁 Venta POR REMARKETING = antes de comprar, el cliente ya había recibido al menos un toque de una secuencia
   // (sequence_subscriptions.paso_actual ≥ 1 en una suscripción que empezó antes del pedido). Las secuencias se cortan
@@ -428,7 +432,10 @@ function metrics(a){
     ventas:a.ventas, cpaReal:a.ventas?a.gasto/a.ventas:null, ingresos:a.ingresos,
     neta:a.neta, roas:a.gasto?a.ingresos/a.gasto:null,
     chats:a.chats||0, cpr:a.chats?a.gasto/a.chats:null, interes:a.interes||0, calientes:a.calientes||0, compraron:a.compraron||0,
-    pInteres:a.chats?(a.interes||0)/a.chats:null, pCalientes:a.chats?(a.calientes||0)/a.chats:null, conv:a.chats?(a.compraron||0)/a.chats:null,
+    pInteres:a.chats?(a.interes||0)/a.chats:null, pCalientes:a.chats?(a.calientes||0)/a.chats:null,
+    // (5-nov) Conversión = ventas de estas fechas ÷ chats nuevos de estas fechas: la MISMA cuenta que Inicio y el Embudo
+    // (antes eran personas en etapa «comprado», una tercera definición que no coincidía con ninguna)
+    conv:a.chats?(a.conf||0)/a.chats:null,
     // Efectividad del BOT (igual que el Dashboard): de los que se interesaron de verdad —más los que llegaron a tener
     // pedido y se cayeron—, cuántos cerró. El Conv% juzga al anuncio; esto, a la conversación.
     efect:((a.interes||0)+(a.perdidos||0))?(a.compraron||0)/((a.interes||0)+(a.perdidos||0)):null, baseEfect:(a.interes||0)+(a.perdidos||0),
@@ -466,7 +473,7 @@ const COLS=[
   {k:"cpr",    l:"Costo por chat", h:"Costo/chat", g:"WhatsApp",  t:"Costo por chat: gasto ÷ chats", cell:m=>`<td class="num">${oDash(m.cpr,money)}</td>`},
   {k:"interes",l:"Contestaron",   g:"WhatsApp",  t:"Escribieron algo más que la palabra clave (2+ mensajes). El % es sobre los chats", cell:m=>`<td class="num">${conPct(m.interes,m.pInteres)}</td>`},
   {k:"calientes",l:"Calientes",   g:"WhatsApp",  t:"Escribieron 4+ mensajes o ya avanzaron más. El % es sobre los chats", cell:m=>`<td class="num">${conPct(m.calientes,m.pCalientes)}</td>`},
-  {k:"conv",   l:"Conv%",         g:"WhatsApp",  t:"De los chats del periodo, cuántos ya compraron", cell:m=>`<td class="num" title="${m.compraron} de ${m.chats} chats ya compraron">${oDash(m.conv,pct)}</td>`},
+  {k:"conv",   l:"Conv%",         g:"WhatsApp",  t:"Ventas de estas fechas ÷ chats nuevos de estas fechas (la misma cuenta que Inicio y el Embudo)", cell:m=>`<td class="num" title="${m.conf} ventas ÷ ${m.chats} chats nuevos">${oDash(m.conv,pct)}</td>`},
   {k:"efect",  l:"Efectividad del bot", h:`<span class="iab">${ROBOT}</span>Efect. bot`, g:"WhatsApp", t:"Compras ÷ los que se interesaron de verdad (contestaron, incluidos los pedidos que se cayeron). Mide qué tan bien cierra el bot; el Conv% mide al anuncio", cell:m=>`<td class="num" title="${m.compraron} de ${m.baseEfect} interesados compraron">${m.efect==null?"—":`<span class="efb">${pct(m.efect)}</span>`}</td>`},
   {k:"conf",   l:"Confirmaciones",g:"Ventas",    cell:m=>`<td class="num">${m.conf}</td>`},
   {k:"cpaConf",l:"CPA conf.",     g:"Ventas",    cell:m=>`<td class="num">${oDash(m.cpaConf,money)}</td>`},
@@ -475,7 +482,7 @@ const COLS=[
   {k:"vRemarketing",l:"Por remarketing",g:"Ventas", t:"Compraron después de recibir al menos un mensaje de remarketing", cell:m=>`<td class="num">${nf(m.vRemarketing)}</td>`},
   {k:"cpaReal",l:"CPA",           g:"Ventas",    t:"Verde: ganas con holgura · ámbar: cerca del máximo · rojo: pierdes plata en cada venta", cell:m=>{ const c=semCpa(m.cpaReal,m.cpaMax); return `<td class="num"${m.cpaMax!=null?` title="Máximo para no perder: ${money(m.cpaMax)}"`:""}>${m.cpaReal==null?"—":c?`<span class="roas ${c}"><span class="rd"></span>${money(m.cpaReal)}</span>`:money(m.cpaReal)}</td>`; }},
   {k:"cpaMax", l:"CPA máximo",    g:"Ventas",    t:"Lo que deja cada venta antes de pagar anuncios. Si el CPA real lo pasa, pierdes plata", cell:m=>`<td class="num">${oDash(m.cpaMax,money)}</td>`},
-  {k:"ticket", l:"Ticket prom.",  g:"Dinero",    t:"Ingresos ÷ ventas reales", cell:m=>`<td class="num money">${oDash(m.ticket,money)}</td>`},
+  {k:"ticket", l:"Ticket prom.",  g:"Dinero",    t:"Ingresos ÷ ventas de este anuncio (solo ventas de anuncios; el de Inicio cuenta todas)", cell:m=>`<td class="num money">${oDash(m.ticket,money)}</td>`},
   {k:"ingresos",l:"Ingresos",     g:"Dinero",    cell:m=>`<td class="num money">${money0(m.ingresos)}</td>`},
   {k:"roas",   l:"ROAS",          g:"Dinero",    cell:m=>{ if(m.roas==null) return `<td class="num">—</td>`; const c=m.roas>=2?'g':m.roas>=1?'a':'r'; return `<td class="num"><span class="roas ${c}"><span class="rd"></span>${nf(m.roas,2)}×</span></td>`; }},
   {k:"neta",   l:"Ganancia neta", g:"Dinero",    cell:m=>m.neta==null?`<td class="num money" title="Hay ventas físicas sin costo o flete registrado: sin eso no se puede afirmar la ganancia">—</td>`:`<td class="num money ${m.neta<0?'neg':'pos'}">${money(m.neta)}</td>`},
@@ -678,11 +685,11 @@ function renderKpis(){
   const it=(l,v,c="")=>`<span>${l} <b class="${c}">${v}</b></span>`;
   $("kpis").innerHTML=[
     it("En anuncios",money0(m.gasto)),
-    it("Ventas",nf(m.ventas)),
+    it("Ventas de anuncios",nf(m.ventas)),
     it("CPA",oDash(m.cpaReal,money)),
-    it("ROAS",oDash(m.roas,v=>nf(v,2)+"×")),
-    it("Ganancia neta",m.neta==null?"—":money(m.neta),m.neta==null?"":m.neta<0?"neg":"pos"),
-  ].join('<i class="sep">·</i>');
+    it("ROAS de anuncios",oDash(m.roas,v=>nf(v,2)+"×")),
+    it("Ganancia neta de anuncios",m.neta==null?"—":money(m.neta),m.neta==null?"":m.neta<0?"neg":"pos"),
+  ].join('<i class="sep">·</i>') + `<span class="kpinota" title="Inicio cuenta todas tus ventas, también las que no vinieron por un anuncio; aquí solo las que trajo cada anuncio">solo lo que trajeron tus anuncios · Inicio cuenta todas tus ventas</span>`;
 }
 function renderTable(){
   const rows=visibleRows();
@@ -1041,7 +1048,7 @@ function serieReal(row){
   const tope=new Date(end); tope.setDate(tope.getDate()-399); if(tope>d) d=tope;
   let guard=0;
   while(d<=end && guard++<400){ const f=ymd(d); const x=row.daily[f]||{};
-    out.push({ fecha:new Date(d), gasto:x.gasto||0, impr:x.impr||0, clics:x.clics??null, conf:x.conf||0, ventas:x.ventas||0, ingresos:x.ingresos||0 });
+    out.push({ fecha:new Date(d), gasto:x.gasto||0, impr:x.impr||0, clics:x.clics??null, conf:x.conf||0, ventas:x.ventas||0, ingresos:x.ingresos||0, _margen:x._margen||0, _sinMargen:x._sinMargen||0 });
     d=new Date(d); d.setDate(d.getDate()+1);
   }
   return out;
@@ -1065,7 +1072,9 @@ const DCOLS=[
   {k:"ventas",  l:"Ventas",       c:d=>nf(d.ventas)},
   {k:"cpa",     l:"CPA",          c:d=>d.ventas?money(d.gasto/d.ventas):DASH},
   {k:"ingresos",l:"Ingresos",     c:d=>money(d.ingresos)},
-  {k:"ganancia",l:"Ganancia",     cls:d=>(d.ingresos-d.gasto)<0?"neg":"pos", c:d=>(d.gasto||d.ingresos)?money(d.ingresos-d.gasto):DASH},
+  // (5-nov) La misma cuenta que «Ganancia neta» de la tabla: lo que dejan las ventas (ya restado el costo del producto)
+  // menos la publicidad. Antes era ventas − publicidad, sin el costo, y daba otro número en la misma pantalla.
+  {k:"ganancia",l:"Ganancia neta", h:"Ganancia", cls:d=>d._sinMargen?"":(d._margen-d.gasto)<0?"neg":"pos", c:d=>d._sinMargen?DASH:(d.gasto||d.ingresos)?money(d._margen-d.gasto):DASH},
   {k:"roas",    l:"ROAS",         c:d=>{ const r=d.gasto?d.ingresos/d.gasto:0; return (d.ventas&&d.gasto)?`<span class="roas ${r>=2?'g':r>=1?'a':'r'}"><span class="rd"></span>${nf(r,2)}×</span>`:DASH; }},
 ];
 let detCols=(()=>{ try{ const x=JSON.parse(localStorage.getItem("nodo.rendDetCols")||"null"); if(Array.isArray(x)&&x.length) return new Set(x); }catch{} return new Set(["gasto","impr","clics","ctr","ventas","cpa","ingresos","ganancia","roas"]); })();
@@ -1123,9 +1132,9 @@ async function renderDetail(){
   // existen por día, así que en ese caso no se muestran (estarían mezclados con los de antes).
   let resumen;
   if(pre.length){
-    const T=S.filter(d=>!d.pre).reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; return o; },{g:0,i:0,v:0});
+    const T=S.filter(d=>!d.pre).reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; o.m+=d._margen||0; o.sm+=d._sinMargen||0; return o; },{g:0,i:0,v:0,m:0,sm:0});
     resumen=[ it("Gasto",money0(T.g)), it("Ventas",nf(T.v)), it("CPA",T.v?money(T.g/T.v):"—"), it("ROAS",T.g?nf(T.i/T.g,2)+"×":"—"),
-      it("Ganancia",money(T.i-T.g),T.i-T.g<0?"neg":"pos") ].join('<i class="sep">·</i>');
+      it("Ganancia neta",T.sm?"—":money(T.m-T.g),T.sm?"":T.m-T.g<0?"neg":"pos") ].join('<i class="sep">·</i>');
   } else resumen=[
     it("Gasto",money0(m.gasto)), it("Chats",nf(m.chats)), it("Costo/chat",oDash(m.cpr,money)),
     it("Ventas",nf(m.ventas)), it("CPA",oDash(m.cpaReal,money)), it("ROAS",oDash(m.roas,x=>nf(x,2)+"×")),
@@ -1165,7 +1174,7 @@ function pintarDetChart(S){
   const fd=new Intl.DateTimeFormat("es-PE",{weekday:"short",day:"numeric",month:"short"});
   const M=detMetrica;
   // Valor(es) por día según la métrica. null = ese día no aplica (no se dibuja).
-  const val=(d)=> M==="ganancia" ? ((d.gasto||d.ingresos)?d.ingresos-d.gasto:null)
+  const val=(d)=> M==="ganancia" ? (d._sinMargen?null:(d.gasto||d.ingresos)?(d._margen||0)-d.gasto:null)
     : M==="cpa" ? (d.ventas?d.gasto/d.ventas:null)
     : M==="ctr" ? (d.clics!=null&&d.impr?d.clics/d.impr*100:null) : null;
   const fmt=(x)=> M==="ctr" ? nf(x,2)+"%" : M==="ganancia" ? (x<0?"−":"+")+nf(Math.abs(Math.round(x))) : nf(x, x<10?2:0);
@@ -1202,8 +1211,8 @@ function pintarDetChart(S){
     marks+=`<rect class="dhit" data-i="${i}" x="${x.toFixed(1)}" y="${padT}" width="${bw.toFixed(1)}" height="${H-padT-padB}" fill="transparent"/>`;
   });
   // resumen de la métrica en el periodo
-  const T=S.filter(d=>!d.pre).reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; if(d.clics!=null){ o.im+=d.impr; o.c+=d.clics; } return o; },{g:0,i:0,v:0,im:0,c:0});
-  sumEl.innerHTML = M==="ganancia" ? `Ingresos − publicidad: <b class="${T.i-T.g<0?"neg":"pos"}">${money(T.i-T.g)}</b>`
+  const T=S.filter(d=>!d.pre).reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; o.m+=d._margen||0; o.sm+=d._sinMargen||0; if(d.clics!=null){ o.im+=d.impr; o.c+=d.clics; } return o; },{g:0,i:0,v:0,im:0,c:0,m:0,sm:0});
+  sumEl.innerHTML = M==="ganancia" ? (T.sm ? `Ganancia neta: <b>—</b> (hay ventas sin costo registrado)` : `Ganancia neta (ventas − costo del producto − publicidad): <b class="${T.m-T.g<0?"neg":"pos"}">${money(T.m-T.g)}</b>`)
     : M==="gastoing" ? `<span class="lg"><i style="background:var(--muted);opacity:.55"></i>Gasto ${money0(T.g)}</span><span class="lg"><i style="background:var(--green)"></i>Ingresos ${money0(T.i)}</span>`
     : M==="cpa" ? `CPA del periodo: <b>${T.v?money(T.g/T.v):"—"}</b>`
     : `CTR del periodo: <b>${T.im?nf(T.c/T.im*100,2)+"%":"—"}</b>`;
@@ -1213,9 +1222,9 @@ function pintarDetChart(S){
   const fila=(l,x,c="")=>`<div class="r${c?" "+c:""}"><span>${l}</span><b>${x}</b></div>`;
   wrap.querySelectorAll(".dhit").forEach(r=>{
     r.addEventListener("mouseenter",()=>{
-      const d=S[+r.dataset.i], g=d.ingresos-d.gasto;
+      const d=S[+r.dataset.i], g=d._sinMargen?null:(d._margen||0)-d.gasto;
       if(d.pre){ tip.innerHTML=`<div class="t">${esc(fd.format(d.fecha))}</div><div class="r"><span>Antes de la primera venta en Nodo</span></div>`+fila("Gasto",money(d.gasto)); tip.hidden=false; const sr=svg.getBoundingClientRect(), wr=wrap.getBoundingClientRect(), k=sr.width/W, cx=(padL+(+r.dataset.i)*bw+bw/2)*k+(sr.left-wr.left); tip.style.left=Math.max(0,Math.min(cx+12,wr.width-tip.offsetWidth))+"px"; tip.style.top="6px"; return; }
-      tip.innerHTML=`<div class="t">${esc(fd.format(d.fecha))}</div>`+fila("Gasto",money(d.gasto))+fila("Ingresos",money(d.ingresos))+fila("Ventas",nf(d.ventas))+fila("CPA",d.ventas?money(d.gasto/d.ventas):"—")+fila("CTR",d.impr?nf(d.clics/d.impr*100,2)+"%":"—")+fila("Ingresos − gasto",money(g),g<0?"neg":"pos");
+      tip.innerHTML=`<div class="t">${esc(fd.format(d.fecha))}</div>`+fila("Gasto",money(d.gasto))+fila("Ingresos",money(d.ingresos))+fila("Ventas",nf(d.ventas))+fila("CPA",d.ventas?money(d.gasto/d.ventas):"—")+fila("CTR",d.impr?nf(d.clics/d.impr*100,2)+"%":"—")+fila("Ganancia neta",g==null?"—":money(g),g==null?"":g<0?"neg":"pos");
       tip.hidden=false;
       const sr=svg.getBoundingClientRect(), wr=wrap.getBoundingClientRect(), k=sr.width/W;
       const cx=(padL+(+r.dataset.i)*bw+bw/2)*k+(sr.left-wr.left), tw=tip.offsetWidth;
