@@ -590,6 +590,10 @@
      no cambia nada. Tres cosas: (la lista compacta se probó y se quitó: no le gustó) (1) la ficha no le quita ancho al chat: empieza escondida y se abre ENCIMA, desde la derecha, como en el
      celular; (2) «Escribe libre» y «Sin costo por anuncio» van juntos en un solo chip (ver updateWindow). */
   .winwrap .winfull{display:contents}
+  /* (5-nov) La × de la ficha encima, cuadrada con el contenido: a la altura del avatar y alineada con el borde derecho de
+     los botones de la ficha (antes iba pegada al borde de la pantalla, más afuera y más arriba que todo) */
+  #app.m-ficha .cp-x{top:16px!important;right:calc(16px + 8px)!important;width:32px!important;height:32px!important;border:1px solid var(--border)!important;background:var(--surface-2)!important;color:var(--text)!important;box-shadow:0 1px 3px rgba(15,23,42,.08);cursor:pointer;padding:0}
+  #app.m-ficha .cp-x:hover{background:var(--brand-bg)!important;color:var(--brand)!important;border-color:var(--brand)!important}
   .winwrap .wincorto{display:none}
   @media (min-width:721px) and (max-width:1440px){
     .cpanel{display:none}
@@ -769,7 +773,7 @@
 
   <aside class="cpanel hidden" id="cpanel"></aside>
   <div class="cp-ov" id="cpOv"></div>
-  <button class="cp-x" id="cpX" type="button" title="Cerrar la ficha">×</button>
+  <button class="cp-x" id="cpX" type="button" title="Cerrar la ficha" aria-label="Cerrar la ficha"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
 </div>
 
 
