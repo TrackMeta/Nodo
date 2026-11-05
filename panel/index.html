@@ -596,6 +596,11 @@
     .conv .badge{grid-area:bd}
     .conv .dots{grid-area:dots;margin-top:0;flex-wrap:nowrap;overflow:hidden;min-width:0}
     .conv .idot{flex:none;font-size:10px;padding:1px 6px}
+    /* (las insignias que no entran enteras pasan a una 2.ª línea que no se ve: nada de «Anun…» cortado) */
+    .conv .dots{flex-wrap:wrap;height:18px;align-content:flex-start}
+    /* (el círculo es más chico: el emoji del producto va en la esquina de abajo, sin tapar la inicial) */
+    .conv .avwrap{align-self:center;height:34px}
+    .conv .av-emoji{bottom:-4px;right:-5px;width:17px;height:17px;font-size:11px}
     .cpanel{display:none}
     #app.ficha-oculta .cpanel{display:none}
     #app.m-ficha .cpanel:not(.hidden){display:block;position:fixed;top:0;right:0;bottom:0;width:min(360px,92vw);z-index:61;box-shadow:-12px 0 32px rgba(15,23,42,.18)}
