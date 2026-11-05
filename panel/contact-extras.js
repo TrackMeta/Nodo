@@ -1586,7 +1586,7 @@ function injectVentaManualCss() {
   const s = document.createElement("style"); s.id = "vm-css";
   s.textContent = `
   .vm-ov{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:18px}
-  .vm-card{background:var(--card,#fff);color:var(--text,#111);width:min(540px,94vw);max-height:90vh;display:flex;flex-direction:column;border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;border:1px solid var(--border,#e5e7eb)}
+  .vm-card{background:var(--card,var(--surface,#fff));color:var(--text,#111);width:min(540px,94vw);max-height:90vh;display:flex;flex-direction:column;border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.28);overflow:hidden;border:1px solid var(--border,#e5e7eb)}
   .vm-head{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--border,#e5e7eb)}
   .vm-ico{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--brand,#2b7fff) 16%,transparent);color:var(--brand,#2b7fff);flex:none}
   .vm-ico svg{width:20px;height:20px}
@@ -1626,7 +1626,7 @@ function injectVentaManualCss() {
   .vm-shiphint{font-size:11px;color:var(--faint,#9ca3af);line-height:1.5;margin-top:8px}
   .vm-seg{display:flex;gap:6px;background:var(--bg,#f3f4f6);padding:4px;border-radius:11px;border:1px solid var(--border,#e5e7eb)}
   .vm-segb{flex:1;border:none;background:none;color:var(--muted,#6b7280);padding:8px 10px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:background .12s}
-  .vm-segb.on{background:var(--card,#fff);color:var(--text,#111);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .vm-segb.on{background:var(--card,var(--surface,#fff));color:var(--text,#111);box-shadow:0 1px 3px rgba(0,0,0,.12)}
   .vm-switch{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;font-size:13px;font-weight:500;color:var(--text,#111)}
   .vm-switch input{position:absolute;opacity:0;pointer-events:none}
   .vm-track{width:40px;height:23px;border-radius:20px;background:var(--border,#cbd5e1);position:relative;flex:none;transition:background .15s}
@@ -1652,7 +1652,7 @@ function injectVentaManualCss() {
   .vm-total span{font-size:11px;color:var(--muted,#6b7280);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
   .vm-total b{font-size:19px;font-weight:750;color:var(--text,#111);letter-spacing:-.01em}
   .vm-actions{display:flex;gap:8px}
-  .vm-btn{border:1px solid var(--border,#e5e7eb);background:var(--card,#fff);color:var(--text,#111);border-radius:10px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .vm-btn{border:1px solid var(--border,#e5e7eb);background:var(--card,var(--surface,#fff));color:var(--text,#111);border-radius:10px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
   .vm-btn:hover{background:var(--hover,rgba(0,0,0,.04))}
   .vm-btn.primary{background:var(--brand,#2b7fff);border-color:var(--brand,#2b7fff);color:#fff}
   .vm-btn.primary:hover{filter:brightness(1.06)}
