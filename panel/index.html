@@ -191,6 +191,12 @@
   .chat .hd .ph{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   /* Header en 3 zonas: izq (contacto) · centro (botón bot) · der (ventana/vistas/menú) */
   .hd-side{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+  /* (5-nov, Rodrigo) El nombre y el número del cliente abren/esconden la ficha: es el botón (antes era un ícono suelto) */
+  .hd-who{display:flex;align-items:center;gap:10px;min-width:0;max-width:100%;background:none;border:none;padding:4px 10px 4px 4px;margin-left:-4px;border-radius:12px;cursor:pointer;text-align:left;color:inherit;font:inherit}
+  .hd-who:hover{background:var(--surface-2)}
+  .hd-who:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
+  #app:not(.ficha-oculta) .hd-who{background:var(--brand-bg)}
+  @media (max-width:1440px){ #app:not(.m-ficha) .hd-who{background:none} #app.m-ficha .hd-who{background:var(--brand-bg)} #app .hd-who:hover{background:var(--surface-2)} }
   /* La zona derecha (chips + vistas + menú) nunca se encoge por debajo de su
      contenido: así los chips no se desbordan bajo el toggle. La izquierda
      (contacto) cede con ellipsis. El botón bot queda casi centrado igual. */
@@ -573,6 +579,7 @@
   /* Ficha retráctil en la compu (5-nov, Rodrigo): el botón de la ficha en la cabecera del chat la esconde o la vuelve a
      mostrar, para darle todo el ancho al chat. Se recuerda en este navegador. En el celular sigue abriéndose encima. */
   @media (min-width:721px){
+    #app .mficha{display:none!important}
     .mficha{display:flex;flex:none;align-items:center;justify-content:center;width:32px;height:32px;border:none;border-radius:9px;background:var(--surface-2);color:var(--brand);padding:0;cursor:pointer}
     .mficha svg{width:19px;height:19px}
     .mficha:hover{filter:brightness(1.1)}
@@ -580,27 +587,11 @@
     #app.ficha-oculta .cpanel{display:none}
   }
   /* 💻 PANTALLA CHICA de compu (5-nov, Rodrigo: laptop de 14″ WUXGA al 150 % = ~1280 px útiles). En una pantalla grande
-     no cambia nada. Tres cosas: (1) la lista más compacta, con las insignias en la línea del nombre (2 líneas por chat
-     en vez de 3); (2) la ficha no le quita ancho al chat: empieza escondida y se abre ENCIMA, desde la derecha, como en el
-     celular; (3) «Escribe libre» y «Sin costo por anuncio» van juntos en un solo chip (ver updateWindow). */
+     no cambia nada. Tres cosas: (la lista compacta se probó y se quitó: no le gustó) (1) la ficha no le quita ancho al chat: empieza escondida y se abre ENCIMA, desde la derecha, como en el
+     celular; (2) «Escribe libre» y «Sin costo por anuncio» van juntos en un solo chip (ver updateWindow). */
   .winwrap .winfull{display:contents}
   .winwrap .wincorto{display:none}
   @media (min-width:721px) and (max-width:1440px){
-    .conv{padding:9px 12px;gap:10px}
-    .conv .av{width:34px;height:34px;font-size:12.5px}
-    .conv .body{display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"nm dots tm" "pv pv bd";column-gap:6px;align-items:center}
-    .conv .r1{display:contents}
-    .conv .nm{grid-area:nm}
-    .conv .tm{grid-area:tm}
-    .conv .pv{grid-area:pv;margin-top:1px}
-    .conv .badge{grid-area:bd}
-    .conv .dots{grid-area:dots;margin-top:0;flex-wrap:nowrap;overflow:hidden;min-width:0}
-    .conv .idot{flex:none;font-size:10px;padding:1px 6px}
-    /* (las insignias que no entran enteras pasan a una 2.ª línea que no se ve: nada de «Anun…» cortado) */
-    .conv .dots{flex-wrap:wrap;height:18px;align-content:flex-start;max-width:128px;justify-content:flex-end}
-    /* (el círculo es más chico: el emoji del producto va en la esquina de abajo, sin tapar la inicial) */
-    .conv .avwrap{align-self:center;height:34px}
-    .conv .av-emoji{bottom:-4px;right:-5px;width:17px;height:17px;font-size:11px}
     .cpanel{display:none}
     #app.ficha-oculta .cpanel{display:none}
     #app.m-ficha .cpanel:not(.hidden){display:block;position:fixed;top:0;right:0;bottom:0;width:min(360px,92vw);z-index:61;box-shadow:-12px 0 32px rgba(15,23,42,.18)}
@@ -709,11 +700,13 @@
       <div class="hd">
         <div class="hd-side hd-left">
           <button class="mback" id="chBack" type="button" title="Volver a los chats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
-          <div class="av" id="chAv"></div>
-          <div style="min-width:0">
-            <div class="nm" id="chName"></div>
-            <div class="ph" id="chPhone"></div>
-          </div>
+          <button class="hd-who" id="chWho" type="button" title="Ver la ficha del cliente">
+            <div class="av" id="chAv"></div>
+            <div style="min-width:0">
+              <div class="nm" id="chName"></div>
+              <div class="ph" id="chPhone"></div>
+            </div>
+          </button>
         </div>
         <button class="botbtn on" id="chBot" type="button">Bot activo</button>
         <div class="hd-side hd-right">
@@ -2027,14 +2020,16 @@ $("chBack").onclick = () => {
 // En el celular la ficha se abre encima; en la compu el mismo botón la esconde o la muestra (retráctil) y se recuerda.
 const FICHA_OCULTA_KEY = "nodo.bandeja.fichaOculta";
 try { if (localStorage.getItem(FICHA_OCULTA_KEY) === "1") $("app").classList.add("ficha-oculta"); } catch (_) {}
-const pintaBtnFicha = () => { const o = $("app").classList.contains("ficha-oculta"); $("chFicha").title = window.matchMedia("(max-width:1440px)").matches ? "Ver la ficha del cliente" : o ? "Mostrar la ficha del cliente" : "Esconder la ficha del cliente"; $("chFicha").setAttribute("aria-pressed", o ? "false" : "true"); };
+const pintaBtnFicha = () => { const o = $("app").classList.contains("ficha-oculta"); $("chFicha").title = $("chWho").title = window.matchMedia("(max-width:1440px)").matches ? "Ver la ficha del cliente" : o ? "Mostrar la ficha del cliente" : "Esconder la ficha del cliente"; $("chFicha").setAttribute("aria-pressed", o ? "false" : "true"); };
 pintaBtnFicha();
-$("chFicha").onclick = () => {
+function alternarFicha() {
   if (window.matchMedia("(max-width:1440px)").matches) { $("app").classList.toggle("m-ficha"); return; }
   const oculta = $("app").classList.toggle("ficha-oculta");
   try { localStorage.setItem(FICHA_OCULTA_KEY, oculta ? "1" : "0"); } catch (_) {}
   pintaBtnFicha();
-};
+}
+$("chFicha").onclick = alternarFicha;
+$("chWho").onclick = alternarFicha;
 $("cpOv").onclick = $("cpX").onclick = () => $("app").classList.remove("m-ficha");
 async function actionHandler(a){
   const cid=state.contactId; if(!cid) return;
