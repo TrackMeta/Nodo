@@ -1291,4 +1291,7 @@ html:not([data-theme="light"]) .nodo-botsel .nb-est.off{color:#F04438}
 html.tema-vt::view-transition-old(root),html.tema-vt::view-transition-new(root){animation:none;mix-blend-mode:normal}
 html.tema-vt::view-transition-old(root){z-index:1}
 html.tema-vt::view-transition-new(root){z-index:2}
+/* El menú tiene su propio view-transition-name (para no parpadear al cambiar de sección) y así quedaba fuera del
+   círculo: cambiaba de golpe y por encima. Mientras cambia el TEMA, va con el resto de la pantalla. */
+html.tema-vt .nodo-nav{view-transition-name:none}
 html.tema-suave,html.tema-suave *,html.tema-suave *::before,html.tema-suave *::after{transition:background-color .4s ease,color .4s ease,border-color .4s ease,fill .4s ease,stroke .4s ease!important}
