@@ -96,6 +96,10 @@
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden}
   /* (5-nov) Por copy */
   .cp-panel{margin-bottom:16px}
+  .cp-ang{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;margin:4px 0 9px 2px;font-size:13.5px;color:var(--text)}
+  .cp-ang svg{width:14px;height:14px;color:var(--brand);align-self:center}
+  .cp-ang small{font-size:11.5px;color:var(--faint)}
+  .cp-gen{font-size:10px;font-weight:700;color:var(--muted);border:1px solid var(--border);border-radius:20px;padding:0 6px}
   .cp-sel{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px}
   .cp-prod{display:flex;align-items:center;gap:8px;margin:6px 0 10px;font-size:15px;font-weight:800}
   .cp-prod svg{width:17px;height:17px;color:var(--muted)}
@@ -806,15 +810,15 @@ function textoDeVariante(v){
   return t;
 }
 async function variantesVigentes(){
-  const vivas=new Set(); st.copyTexto=st.copyTexto||{};
+  const vivas=new Set(); st.copyTexto=st.copyTexto||{}; st.copyAng=st.copyAng||{};
   try{
     const { data:nodos }=await supa.from("flow_nodes")
       .select("config, flows!inner(channel_id)").eq("tipo","rotador").eq("flows.channel_id", st.channelId);
-    for(const n of nodos||[]) for(const v of (n.config?.variantes||[])){ if(v?.id){ const t=textoDeVariante(v); if(t) st.copyTexto[v.id]=t; } if(v?.id && v.activo!==false) vivas.add(v.id); }
+    for(const n of nodos||[]) for(const v of (n.config?.variantes||[])){ if(v?.id){ const t=textoDeVariante(v); if(t) st.copyTexto[v.id]=t; st.copyAng[v.id]=String(v.angulo||"").trim(); } if(v?.id && v.activo!==false) vivas.add(v.id); }
   }catch(_){ /* sin flujos legibles → se comportan todas como vigentes */ }
   try{
     const { data:seqs }=await supa.from("sequences").select("pasos").eq("channel_id", st.channelId);
-    for(const s of seqs||[]) for(const p of (s.pasos||[])) for(const v of (p?.variantes||[])){ if(v?.id){ const t=textoDeVariante(v); if(t) st.copyTexto[v.id]=t; } if(v?.id && v.activo!==false) vivas.add(v.id); }
+    for(const s of seqs||[]) for(const p of (s.pasos||[])) for(const v of (p?.variantes||[])){ if(v?.id){ const t=textoDeVariante(v); if(t) st.copyTexto[v.id]=t; st.copyAng[v.id]=String(v.angulo||"").trim(); } if(v?.id && v.activo!==false) vivas.add(v.id); }
   }catch(_){ }
   return vivas;
 }
@@ -845,6 +849,11 @@ async function productoPorRef(){
       if(cfg.remarketing_seq_id) map[cfg.remarketing_seq_id]=p.id;
     }
   }catch(_){ }
+  try{
+    const { data:angs }=await supa.from("angulos").select("slug,nombre,product_id").eq("channel_id",st.channelId);
+    window.__angNom={};
+    for(const a of angs||[]) window.__angNom[(a.product_id||"")+"|"+a.slug]=a.nombre||a.slug;
+  }catch(_){ window.__angNom={}; }
   return map;
 }
 async function cargaCopys(){
@@ -889,8 +898,12 @@ async function cargaCopys(){
     // frios), asi que juntarlas haria parecer peor al copy del toque 2 por su publico, no
     // por su texto.
     const paso=x.paso??null;
-    const k=`${x.ambito}|${prod}|${paso}|${x.variante_id}|${x.variante_rev}`;
-    const s=m.get(k)||{ ambito:x.ambito, prod, paso, id:x.variante_id, nombre:x.variante_nom||"—", env:0, resp:0, compras:0, monto:0, angulos:new Set() };
+    // (6-nov) Y el ÁNGULO del cliente (el del anuncio por el que llegó): las versiones solo compiten dentro del mismo
+    // ángulo, porque al de «Dolor» le llega el saludo de Dolor y al resto el general. Una versión general que le llegó
+    // a clientes de varios ángulos sale en cada uno con SUS números, que es justo lo que sirve para comparar.
+    const ang=String(x.angulo||"").trim();
+    const k=`${x.ambito}|${prod}|${ang}|${paso}|${x.variante_id}|${x.variante_rev}`;
+    const s=m.get(k)||{ ambito:x.ambito, prod, ang, paso, id:x.variante_id, nombre:x.variante_nom||"—", env:0, resp:0, compras:0, monto:0, angulos:new Set() };
     // El nombre se guarda en cada envío, así que si la renombraste hay filas con el viejo y
     // filas con el nuevo. Como se recorre de más antigua a más reciente, quedarse con el
     // último deja el nombre ACTUAL — si no, la tabla te mostraría un nombre que ya no existe
@@ -956,7 +969,7 @@ function pintarCopys(filas){
       const nom = amb==="secuencia" && nVers>1 ?`<b style="font-weight:700">${esc(f.nombre)}</b>${ganador?` <span class="cp-gana">rinde más</span>`:""} · ` : "";
       return `<tr${f.vigente?"":' class="cp-vieja"'}>
         <td class="cp-et">${amb==="inicial" ? esc(f.nombre)+(ganador?' <span class="cp-gana">rinde más</span>':"") : (primera?etiqueta:"")}</td>
-        <td class="cp-tx" title="${esc(tx)}"><div>${nom}${tx?esc(corta(tx)):'<span style="color:var(--faint)">(sin texto: imagen o archivo)</span>'}</div>${f.vigente?"":'<div class="cp-sub">ya no está en uso</div>'}</td>
+        <td class="cp-tx" title="${esc(tx)}"><div>${nom}${f.ang && !(st.copyAng||{})[f.id] ? '<span class="cp-gen" title="Este ángulo no tiene una versión propia de este mensaje: le llega la general">general</span> ' : ""}${tx?esc(corta(tx)):'<span style="color:var(--faint)">(sin texto: imagen o archivo)</span>'}</div>${f.vigente?"":'<div class="cp-sub">ya no está en uso</div>'}</td>
         <td class="num">${f.env}</td><td class="num">${f.resp}</td>
         <td class="num" style="font-weight:800;color:${f.resp===0?"var(--faint)":"var(--text)"}">${pct(f)}</td>
         <td class="num">${f.compras}</td><td class="num">${money0(f.monto)}</td></tr>`;
@@ -973,8 +986,21 @@ function pintarCopys(filas){
         <button class="chip ${st.copyProd==="all"?"on":""}" data-p="all">Todos</button>
         ${prodsTodos.map(pid=>`<button class="chip ${st.copyProd===pid?"on":""}" data-p="${esc(pid)}">${emDe(pid)?esc(emDe(pid))+" ":""}${esc(nomDe(pid))}</button>`).join("")}</div></div>` : "";
     let todasUna=true;
-    const html=prods.map(pid=>`<div class="cp-prod">${emDe(pid)?`<span class="cp-em">${esc(emDe(pid))}</span>`:icon("box")}<span>${esc(nomDe(pid))}</span></div>`+AMBS.map(([amb,titulo,sub,colResp])=>{
-      const delAmb=filas.filter(f=>f.ambito===amb && (f.prod||"")===pid);
+    // (6-nov, Rodrigo) Dentro de cada producto, una parte por ÁNGULO cuando hay clientes que llegaron por un anuncio con
+    // ángulo: así se ve qué saludo y qué remarketing funciona con la gente de cada anuncio, y «rinde más» compara solo
+    // versiones del mismo ángulo. Sin ángulos (Prime hoy) no cambia nada: no sale ningún subtítulo.
+    const angNom=(pid,a)=>(window.__angNom||{})[pid+"|"+a] || a;
+    const html=prods.map(pid=>{
+      const delProd=filas.filter(f=>(f.prod||"")===pid);
+      const envAng=(a)=>delProd.filter(f=>f.ang===a && f.ambito==="inicial").reduce((x,f)=>x+f.env,0)*1e6 + delProd.filter(f=>f.ang===a).reduce((x,f)=>x+f.env,0);
+      const angs=[...new Set(delProd.map(f=>f.ang||""))].sort((a,b)=>(a===""?1:b===""?-1:envAng(b)-envAng(a)));
+      const conAng = angs.some(a=>a!=="");
+      return `<div class="cp-prod">${emDe(pid)?`<span class="cp-em">${esc(emDe(pid))}</span>`:icon("box")}<span>${esc(nomDe(pid))}</span></div>`+angs.map(ang=>{
+      const subAng = !conAng ? "" : ang
+        ? `<div class="cp-ang">${icon("compass")}<span>Ángulo <b>${esc(angNom(pid,ang))}</b></span><small>clientes que llegaron por los anuncios de este ángulo</small></div>`
+        : `<div class="cp-ang">${icon("compass")}<span><b>Sin ángulo</b></span><small>orgánicos y anuncios que no están en ningún ángulo</small></div>`;
+      return subAng+AMBS.map(([amb,titulo,sub,colResp])=>{
+      const delAmb=delProd.filter(f=>f.ambito===amb && (f.ang||"")===ang);
       if(!delAmb.length) return "";
       // Toques en orden (null = sin toque, primero)
       const pasos=[...new Set(delAmb.map(f=>f.paso??null))].sort((a,b)=>(a==null?-1:Number(a))-(b==null?-1:Number(b)));
@@ -997,7 +1023,9 @@ function pintarCopys(filas){
           <th>${amb==="secuencia"?"Toque":"Versión"}</th><th style="text-align:left">Mensaje</th><th>Recibieron</th><th>${colResp}</th>
           <th>Tasa</th><th>Compraron</th><th>Ingresos</th></tr></thead>
         <tbody>${cuerpo}</tbody></table></div></div>`;
-    }).join("")).join("");
+    }).join("");
+      }).join("");
+    }).join("");
     const avisoUna = todasUna ? `<div class="cp-aviso">${icon("clock")}<span>Cada mensaje tiene <b>una sola versión</b>, así que todavía no hay con qué compararlo. Agrega una segunda versión a un mensaje (en Secuencias o en el saludo del producto) y acá verás cuál rinde mejor.</span></div>` : "";
     box.innerHTML = (html ? selector+avisoUna+html : "") || `<div class="nodo-empty" style="border:none;padding:44px 20px"><p>Sin datos en este periodo.</p></div>`;
     const cs=$("copyProds"); if(cs) cs.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{ st.copyProd=b.dataset.p; pintarCopys(st._copyFilas||[]); });
