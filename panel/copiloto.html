@@ -506,7 +506,7 @@ function cardSinDatos(x){
         ${String(x.oper||"").trim()?`<div><div class="klbl">Operación</div><div style="font-weight:700;padding-top:4px">${esc(x.oper)}</div></div>`:""}
       </div>
       <div class="ia ${ok?"ok":"duda"}">${icon("robot")}<div>${ok?"La IA lo leyó como un pago válido":"La IA no lo dio por bueno: míralo en la foto"}<br>Todavía no hay pedido: no se puede aprobar hasta que te dé su nombre, DNI y agencia.</div></div>
-      <div class="mrow"><a class="btn main" href="${chat}">${icon("message")} Abrir el chat</a></div>
+      <div class="mrow"><a class="btn main blue" href="${chat}">${icon("message")} Abrir el chat</a></div>
     </div>`;
   const t=el.querySelector(".thumb[data-full]"); if(t) t.onclick=()=>{ $("lightImg").src=t.dataset.full; $("lightbox").classList.add("show"); };
   return el;
