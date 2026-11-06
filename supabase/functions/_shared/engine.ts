@@ -13426,7 +13426,8 @@ function datosAviso(ctx: any): Record<string, unknown> {
 // Los datos del contacto se resuelven acá y no en cada llamada: son los mismos
 // siempre ({{cliente}}, {{telefono}}) y repetirlos en 10 sitios garantizaba que
 // alguno quedara distinto.
-async function avisar(
+// (6-nov) Exportada: el programador avisa cuando aprueba solo un pago que nadie revisó (processAutoAprobar).
+export async function avisar(
   db: SupabaseClient, channelId: string, contactId: string | null,
   clave: string, datos: Record<string, unknown> = {},
   opts: { foto?: string; botones?: TgButton[][] } = {},

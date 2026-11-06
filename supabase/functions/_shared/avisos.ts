@@ -123,6 +123,21 @@ export const AVISOS: AvisoDef[] = [
       "⚠️ Todavía no hay pedido: cuando te dé sus datos, el pago se pega solo. Si se quedó callado, escríbele.",
   },
   {
+    // (6-nov) Pagos por validar → Ajustes → «Si nadie lo revisa, aprobarlo solo».
+    clave: "pago_auto_aprobado", grupo: "pagos",
+    titulo: "Pago aprobado solo (nadie lo revisó)",
+    desc: "Un pago digital esperó en Pagos por validar el tiempo que pusiste y se aprobó solo: el bot ya le entregó su producto. Míralo por si acaso.",
+    comprobante: true,
+    vars: ["cliente", "telefono", "monto", "horas"],
+    texto:
+      "✅ *PAGO APROBADO SOLO*\n" +
+      "\n" +
+      "👤 {{cliente}}\n" +
+      "📱 {{telefono}}\n" +
+      "💵 {{moneda}} {{monto}}\n" +
+      "⏱️ Nadie lo revisó en {{horas}} h: el bot ya le entregó su producto. Míralo por si acaso.",
+  },
+  {
     clave: "prepago_lima_validar", grupo: "pagos",
     titulo: "Pago adelantado de Lima por validar",
     desc: "Un cliente de Lima (contraentrega) pagó antes de recibir. Al aprobarlo baja lo que cobra el motorizado. Trae el botón para aprobar desde acá.",

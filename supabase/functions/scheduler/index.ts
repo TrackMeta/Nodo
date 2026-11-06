@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
-import { deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, aplicarStock, soloAnunciosBloquea, pasarAHumano, esOptOut, canalActivo, botEncendido, zonaDePais } from "../_shared/engine.ts";
+import { avisar, deliverStep, runEngine, startFlowRun, ventana24hAbierta, recomputeStageOnLoss, patchShipping, aplicarStock, soloAnunciosBloquea, pasarAHumano, esOptOut, canalActivo, botEncendido, zonaDePais } from "../_shared/engine.ts";
 import { processCampaigns, sendTemplateToContact } from "../_shared/campaigns.ts";
 import { simboloMoneda } from "../_shared/moneda.ts";
 import { esRechazoTemporal } from "../_shared/meta.ts";
@@ -299,6 +299,11 @@ Deno.serve(async (req) => {
   try { ({ recordados, vencidos } = await processAdelantos(now)); }
   catch (e) { console.error("[scheduler] adelantos:", (e as any)?.message ?? e); }
 
+  // ── 5b) Pagos digitales por validar que nadie revisó: aprobarlos solos (si el negocio lo prendió) ──
+  let autoAprobados = 0;
+  try { autoAprobados = await processAutoAprobar(now); }
+  catch (e) { console.error("[scheduler] auto-aprobar:", (e as any)?.message ?? e); }
+
   // ── 6) Resúmenes diarios a Telegram (mañana / noche) ──────────────
   let resumenes = 0;
   try { resumenes = await processResumenes(now); }
@@ -340,7 +345,7 @@ Deno.serve(async (req) => {
   if (ms > 42_000) {
     console.warn(`[scheduler] TICK LENTO: ${ms}ms (despertó ${woke}, remarketing ${fired}). Pasado el minuto los ticks se solapan: sube CONC_WAKE/CONC_SEQ o parte el cron.`);
   }
-  return json({ ok: true, ms, atendidos, woke, fired, reaped, nudged, recordados, vencidos, resumenes });
+  return json({ ok: true, ms, atendidos, woke, fired, reaped, nudged, recordados, vencidos, autoAprobados, resumenes });
 });
 
 // ── 💱 Tipo de cambio del día (29-oct) ──────────────────────────────
@@ -457,6 +462,59 @@ async function processResumenes(tickInicio: number): Promise<number> {
     } catch (e) { console.error("[processResumenes]", (e as any)?.message ?? e); }
   }
   return sent;
+}
+
+// (6-nov, Rodrigo: «que se valide automáticamente cuando pase cierto tiempo, activable y personalizable»)
+// Un pago DIGITAL que quedó en Pagos por validar (modo manual, o el bot tuvo dudas) y que nadie aprobó ni rechazó en
+// las horas que puso el negocio, se aprueba solo: el cliente ya no espera su acceso hasta que alguien despierte
+// (medido: uno del 2-nov esperó 16 h). Rodrigo eligió SOLO por tiempo, sin tope de monto ni excepciones.
+//   pedidos_config.digital.auto_aprobar = { activo, horas }
+// Se aprueba por order-update, el MISMO camino del panel y de Telegram (entrega, Purchase, hoja, candado de
+// operación). Queda en el historial de Pagos por validar y se avisa (Telegram + campanita).
+async function processAutoAprobar(now: number): Promise<number> {
+  let n = 0;
+  const { data: chans } = await db.from("channels").select("id, pedidos_config")
+    .eq("activo", true).eq("pedidos_config->digital->auto_aprobar->>activo", "true");
+  for (const ch of chans ?? []) {
+    if (Date.now() - now > PRESUPUESTO_MS + 12_000) break;
+    const cfg = (ch as any)?.pedidos_config?.digital?.auto_aprobar ?? {};
+    const horas = Number(cfg.horas);
+    if (!(horas > 0)) continue;
+    const chId = (ch as any).id;
+    const corte = now - horas * 3600_000;
+    const { data: ords } = await db.from("orders")
+      .select("id, contact_id, amount, currency, created_at, shipping, contact:contact_id(wa_id, source)")
+      .eq("channel_id", chId).eq("estado", "pendiente").eq("shipping->>digital_pendiente", "true")
+      .order("created_at", { ascending: true }).limit(10);
+    for (const o of (ords ?? []) as any[]) {
+      if (Date.now() - now > PRESUPUESTO_MS + 12_000) break;
+      const c = o.contact ?? {};
+      if (c.wa_id === "webchat-test" || c.source === "sim") continue;   // pruebas: nunca
+      // Desde que llegó el comprobante (si se reenvió, desde el último); si no hay marca, desde que nació el pedido.
+      const desde = Date.parse(String(o.shipping?.digital_recibido_at ?? o.created_at));
+      if (!Number.isFinite(desde) || desde > corte) continue;
+      try {
+        const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/order-update`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+          body: JSON.stringify({ order_id: o.id, estado: "confirmada", via: "auto" }),
+          signal: AbortSignal.timeout(50_000),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || j?.error) { console.error(`[auto-aprobar] ${o.id}:`, j?.detalle || j?.error || res.status); continue; }
+        if (j?.deduped) continue;   // ya lo aprobó alguien en el mismo instante
+        n++;
+        const h = Math.round(horas * 10) / 10;
+        await db.from("contact_events").insert({ channel_id: chId, contact_id: o.contact_id, tipo: "nota",
+          titulo: "🧾 Pago aprobado · Pagos por validar",
+          detalle: `digital · ${simboloMoneda(o.currency)} ${o.amount ?? ""} · solo: nadie lo revisó en ${h} h`,
+          meta: { decision: "ok", tipo: "digital", order_id: o.id, por: "automático" } }).then(() => {}, () => {});
+        await avisar(db, chId, o.contact_id, "pago_auto_aprobado",
+          { monto: o.amount ?? "", horas: h }, { foto: o.shipping?.digital_comprobante || undefined }).catch(() => {});
+      } catch (e) { console.error(`[auto-aprobar] ${o.id}:`, (e as any)?.message ?? e); }
+    }
+  }
+  return n;
 }
 
 // Un pedido de provincia se crea apenas el cliente da sus datos (todavía sin

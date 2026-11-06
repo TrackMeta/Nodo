@@ -26,6 +26,7 @@ const TIPOS = {
   pago_extra_validar:   { g: "pagos",    lb: "Pago de un extra por validar",  ic: "banknote", crit: 1 },
   prepago_lima_validar: { g: "pagos",    lb: "Prepago de Lima por validar",   ic: "banknote", crit: 1 },
   adelanto_sin_datos:   { g: "pagos",    lb: "Pagó el adelanto sin dar sus datos", ic: "banknote" },
+  pago_auto_aprobado:   { g: "pagos",    lb: "Pago aprobado solo (nadie lo revisó)", ic: "check" },
   entrega_fallida:      { g: "pagos",    lb: "Entrega digital que falló",     ic: "alert",    crit: 1 },
   reclama_vuelto:       { g: "pagos",    lb: "Cliente reclama su vuelto",     ic: "dollar" },
   pago_de_mas:          { g: "pagos",    lb: "Pagó de más",                   ic: "dollar" },

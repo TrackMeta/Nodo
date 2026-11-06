@@ -46,6 +46,8 @@ export async function abrirAjustesPagos(channelId) {
   if (error) { toast("No se pudieron cargar los ajustes", true); return; }
   const src = (ch?.pedidos_config && typeof ch.pedidos_config === "object") ? ch.pedidos_config : {};
   const digital = { ...DEF.digital, ...(src.digital || {}) };
+  // (6-nov) Aprobar solo, por tiempo, el pago que nadie revisó.
+  const autoA = { activo: false, horas: 3, ...((src.digital || {}).auto_aprobar || {}) };
   const vuelto = { ...DEF.vuelto, ...(src.vuelto || {}) }; if (!vuelto.modo) vuelto.modo = vuelto.activo === false ? "off" : "tranquilizar";
   const rechazo = { ...DEF.rechazo, ...(src.rechazo || {}) };
   // «Pagos digitales» solo si el bot vende algo que no es físico (digital o micro app); adelanto y saldo, si vende algo físico.
@@ -78,6 +80,9 @@ export async function abrirAjustesPagos(channelId) {
       ${propiosHtml()}
       <div class="ajp-num">Si paga de menos, perdonarle hasta <span class="box"><span>${sym}</span><input id="ajpTol" type="number" min="0" step="0.5" value="${Number(digital.tolerancia ?? 1)}"></span>
         <small>Con un producto de ${sym} 19 y esto en 1: si paga ${sym} 18 se acepta; si paga ${sym} 17, el bot le dice que le faltan ${sym} 2.</small></div>
+      <div class="ajp-tog" id="ajpAutoT" style="margin-top:14px"><span><b>Si nadie lo revisa, aprobarlo solo</b><small>Para que el cliente no se quede esperando su acceso si no alcanzas a verlo. Te avisamos cuando pase.</small></span><span class="ajp-sw ${autoA.activo ? "on" : ""}" id="ajpAutoSw"></span></div>
+      <div class="ajp-num" id="ajpAutoBlk" style="${autoA.activo ? "" : "display:none"}">Aprobarlo a las <input class="ajp-in" id="ajpAutoH" type="number" min="0.5" step="0.5" value="${Number(autoA.horas) || 3}" style="width:80px"> horas de que llegó el comprobante
+        <small>Ojo: se aprueba aunque el bot haya tenido dudas (monto que no se leía, pago en partes…). Si no lo quieres así, apágalo y revísalos tú.</small></div>
       <div class="ajp-num">Si paga de más, que lo revise yo cuando se pase por más de <span class="box"><span>${sym}</span><input id="ajpRev" type="number" min="0" step="5" value="${Number(digital.revisar_sobre_sol ?? 50)}"></span>
         <small>Si se pasa un poco, entrega solo y la venta cuenta lo que pagó. Si se pasa mucho, te lo deja acá y lo que sobra queda como vuelto. Ponlo en 0 para revisar cualquier pago de más.</small></div>
     </div>` : ""}
@@ -154,6 +159,8 @@ export async function abrirAjustesPagos(channelId) {
     if (sucio && !await confirmDialog({ title: "¿Salir sin guardar?", message: "Tienes cambios en los ajustes de pagos que todavía no guardaste.", confirmText: "Salir sin guardar", danger: true })) return;
     ov.remove();
   };
+  const autoT = $("ajpAutoT");
+  if (autoT) autoT.onclick = () => { autoA.activo = !autoA.activo; $("ajpAutoSw").classList.toggle("on", autoA.activo); $("ajpAutoBlk").style.display = autoA.activo ? "" : "none"; sucio = true; };
   $("ajpX").onclick = cerrar; $("ajpCancel").onclick = cerrar;
   ov.onclick = (e) => { if (e.target === ov) cerrar(); };
   $("ajpSave").onclick = async (e) => {
@@ -161,6 +168,7 @@ export async function abrirAjustesPagos(channelId) {
     if (vendeDigital) {
       digital.tolerancia = Math.max(0, Number($("ajpTol").value) || 0);
       digital.revisar_sobre_sol = Math.max(0, Number($("ajpRev").value) || 0);
+      digital.auto_aprobar = { activo: !!autoA.activo, horas: Math.max(0.5, Number($("ajpAutoH").value) || 3) };
     }
     rechazo.mensaje = $("ajpRz").value.trim();
     vuelto.mensaje = $("ajpVl").value.trim();
