@@ -1073,15 +1073,14 @@ function renderProducto(host){
   const tipo=st.prod.tipo||"digital";
   // El dinero (precio, costo, margen, presentaciones) vive TODO en "Precio y
   // presentaciones". Acá "Producto" es lo físico: identidad, variantes y stock.
+  // (6-nov) En digital, sin el párrafo de arriba: repetía palabra por palabra lo que dice la tarjeta.
   b.innerHTML=`
-    <p class="hint" style="margin:0 0 14px">${tipo==="fisico"
-      ? "Las <b>tallas/colores</b> (si tiene) y <b>cuántas unidades</b> te quedan. Nombre y emoji se editan arriba; el precio, en <b>¿Cuánto cuesta?</b>."
-      : "Datos que la IA le <b>pregunta al cliente</b> antes de cerrar (nombre para el certificado, idioma…). El <b>precio</b> va en <b>¿Cuánto cuesta?</b> y la <b>entrega</b> en <b>¿Cómo se entrega?</b>."}</p>
+    ${tipo==="fisico" ? `<p class="hint" style="margin:0 0 14px">Las <b>tallas/colores</b> (si tiene) y <b>cuántas unidades</b> te quedan. Nombre y emoji se editan arriba; el precio, en <b>¿Cuánto cuesta?</b>.</p>` : ""}
     <div class="card">
       <h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("edit")} ${tipo==="fisico"?"Tallas, colores y variantes":"Detalles a preguntar"} <span style="font-size:11px;font-weight:600;color:var(--ia1,#8b5cf6);background:var(--ia-bg,rgba(139,92,246,.12));padding:2px 8px;border-radius:20px">la IA los pregunta sola</span></h4>
       <div style="font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:8px">${tipo==="fisico"
         ? "¿Tu producto viene en <b>tallas</b> o <b>colores</b>? Agrégalos aquí — la IA se los pregunta al cliente y <b>arman la grilla de stock</b> de abajo."
-        : "Datos que la IA le <b>pregunta al cliente</b> antes de cerrar (nombre para el certificado, idioma…), que <b>no cambian el precio.</b>"}</div>
+        : "Datos que la IA le <b>pregunta al cliente</b> antes de entregarle (nombre para el certificado, idioma…). <b>No cambian el precio.</b> Si tu producto no necesita ninguno, déjalo vacío."}</div>
       <details style="margin-bottom:12px"><summary style="cursor:pointer;color:var(--brand);font-size:12px;font-weight:600;padding:2px 0">ⓘ Cómo funciona</summary>
         <div style="font-size:12.5px;color:var(--muted);line-height:1.6;margin-top:8px">
           ${tipo==="fisico"
@@ -1091,7 +1090,7 @@ function renderProducto(host){
         </div>
       </details>
       <div id="atList"></div>
-      <button class="btn" id="atAdd" style="margin-top:8px">+ ${tipo==="fisico"?"Variante (talla, color…)":"Detalle"}</button>
+      <button class="btn" id="atAdd" style="margin-top:8px;border-style:dashed;width:100%;justify-content:center">＋ ${tipo==="fisico"?"Agregar una variante (talla, color…)":"Agregar un detalle"}</button>
     </div>
     ${tipo==="fisico"?'<div id="pStock" style="margin-bottom:12px"></div>':""}`;
   const pc=$("pCosto"); if(pc) pc.onchange=(e)=>prodSetC("costo", e.target.value.trim()===""?undefined:Number(e.target.value));
@@ -4176,7 +4175,7 @@ function valsArr(a){ return String(a.valores||"").split(/[,\n;]+/).map(s=>s.trim
 function paintVals(box, a, onChange, onRename){
   const arr=valsArr(a);
   box.innerHTML=arr.map((v,idx)=>`<span class="valchip" style="display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px 6px 4px 10px;font-size:13px"><span class="valtxt" data-i="${idx}" title="Clic para renombrar" style="cursor:text">${esc(v)}</span><button type="button" class="valx" data-i="${idx}" title="Quitar" style="border:none;background:transparent;color:var(--faint);cursor:pointer;font-size:16px;line-height:1;padding:0 2px">×</button></span>`).join("")
-    +`<input class="valnew" placeholder="${arr.length?"Otro…":"Ej. 38"}" style="border:none;background:transparent;outline:none;color:var(--text);font:inherit;flex:1;min-width:70px;padding:4px 2px"/>`;
+    +`<input class="valnew" placeholder="${arr.length?"Otro…":((st.prod&&st.prod.tipo==="fisico")?"Ej. 38":"Ej. Español")}" style="border:none;background:transparent;outline:none;color:var(--text);font:inherit;flex:1;min-width:70px;padding:4px 2px"/>`;
   box.querySelectorAll(".valx").forEach(bx=> bx.onclick=()=>{ arr.splice(+bx.dataset.i,1); a.valores=arr.join(", "); onChange&&onChange(); paintVals(box,a,onChange,onRename); });
   // Renombrar un valor EN SITIO (clic en el texto del chip): es un renombre REAL que
   // conserva el stock (remapStockValor vía onRename). Antes solo se podía borrar + agregar,
@@ -4210,25 +4209,33 @@ function paintAtributos(){
     if(!Array.isArray(a.media)) a.media=[];
     if(!a.clave) a.clave=slugAttr(a.nombre)||("atributo"+(i+1));
     const el=document.createElement("div"); el.className="card"; el.style.marginBottom="10px";
+    // (6-nov, Rodrigo: «mejora el diseño; Ayuda para la IA con los colores de IA») Encabezado «Detalle N» con
+    // Obligatorio y borrar a la derecha; pregunta → opciones → ayuda para la IA (violeta, como toda la IA) → archivo
+    // de apoyo. Mismas clases (.an .ao .adel .avalbox .ahelp .atmm .atmadd): los manejadores no cambian.
     el.innerHTML=`
-      <div class="row" style="align-items:flex-end;gap:10px">
-        <div style="flex:1"><label style="margin-top:0">Nombre</label>
-          <input class="in an" value="${esc(a.nombre||"")}" placeholder="${EJ.nombre}"/></div>
-        <label class="chk" style="flex:0 0 auto;margin-bottom:9px"><input type="checkbox" class="ao" ${a.obligatorio!==false?"checked":""}/> Obligatorio</label>
-        <button class="iconbtn adel" style="flex:0 0 auto;margin-bottom:6px" title="Eliminar">${icon("trash")}</button>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span style="font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--faint)">${(st.prod.tipo||"digital")==="fisico"?"Variante":"Detalle"} ${i+1}</span>
+        <span style="flex:1"></span>
+        <label class="chk" style="margin:0;font-size:12.5px;cursor:pointer" title="Si está marcado, la IA no cierra la venta sin este dato"><input type="checkbox" class="ao" ${a.obligatorio!==false?"checked":""}/> Obligatorio</label>
+        <button class="iconbtn adel" style="flex:0 0 auto" title="Eliminar">${icon("trash")}</button>
       </div>
-      <div class="clhint" style="font-size:11px;color:var(--faint);margin-top:5px">La IA guarda lo que elija el cliente en <b style="color:var(--brand)">{{${esc(a.clave||"atributo")}}}</b> — aparece en el pedido${EJ.donde}.</div>
-      <label>Valores posibles <span style="color:var(--faint);font-weight:400">(opcional — ej. las tallas)</span></label>
+      <label style="margin-top:0">¿Qué le pregunta?</label>
+      <input class="in an" value="${esc(a.nombre||"")}" placeholder="${EJ.nombre}"/>
+      <div class="clhint" style="font-size:11px;color:var(--faint);margin-top:5px">Se guarda en el pedido${EJ.donde}. Para usarlo en un mensaje: <b style="color:var(--brand)">{{${esc(a.clave||"atributo")}}}</b></div>
+      <label>Opciones para elegir <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
       <div class="avalbox" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--border);border-radius:10px;padding:7px;min-height:44px;background:var(--surface-2)"></div>
-      <div style="font-size:11px;color:var(--faint);margin-top:4px">Escribe un valor y pulsa <b>Enter</b> para agregarlo como casilla. La IA los ofrece y confirma. Vacío = respuesta libre.</div>
-      <label>Ayuda para la IA <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
-      <input class="in ahelp" value="${esc(a.ayuda||"")}" placeholder="${EJ.ayuda}"/>
-      <label style="margin-top:12px">Multimedia de apoyo <span style="color:var(--faint);font-weight:400">— la IA lo envía cuando ayuda a decidir (${EJ.media})</span></label>
-      <div class="atmm" style="margin-top:5px"></div>
-      <div style="display:flex;gap:6px;margin-top:8px">
-        <button class="btn atmadd" data-k="image" style="height:32px">${icon("image")} Imagen</button>
-        <button class="btn atmadd" data-k="video" style="height:32px">Video</button>
-        <button class="btn atmadd" data-k="document" style="height:32px">${icon("file")} Archivo</button>
+      <div style="font-size:11px;color:var(--faint);margin-top:4px">Escribe una y pulsa <b>Enter</b>. La IA se las ofrece y confirma. Vacío = el cliente responde lo que quiera.</div>
+      <div style="margin-top:14px;border:1px solid var(--ia-brd,rgba(168,85,247,.32));background:var(--ia-bg,rgba(168,85,247,.08));border-radius:12px;padding:10px 12px">
+        <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--ia1,#a855f7)">${icon("robot")} Ayuda para la IA <span style="font-weight:500;color:var(--muted)">(opcional)</span></div>
+        <div style="font-size:11.5px;color:var(--muted);margin:2px 0 7px">Un consejo para cuando el cliente dude o no sepa qué responder.</div>
+        <input class="in ahelp" value="${esc(a.ayuda||"")}" placeholder="${EJ.ayuda}" style="background:var(--surface);border-color:var(--ia-brd,rgba(168,85,247,.32))"/>
+      </div>
+      <div style="margin-top:14px;font-size:12.5px;font-weight:600">Archivo de apoyo <span style="color:var(--faint);font-weight:400">(opcional) — la IA lo envía si ayuda a decidir: ${EJ.media}</span></div>
+      <div class="atmm" style="margin-top:6px"></div>
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+        <button class="btn atmadd" data-k="image" style="height:30px;font-size:12px">${icon("image")} Imagen</button>
+        <button class="btn atmadd" data-k="video" style="height:30px;font-size:12px">Video</button>
+        <button class="btn atmadd" data-k="document" style="height:30px;font-size:12px">${icon("file")} Archivo</button>
       </div>`;
     const anI=el.querySelector(".an");
     anI.onfocus=()=>{ anI._ejeOrig=a.nombre; }; // nombre ANTES de editar, para re-mapear el stock al soltar
@@ -4247,7 +4254,7 @@ function paintAtributos(){
     const mmBox=el.querySelector(".atmm");
     const paintAtMM=()=>{
       mmBox.innerHTML="";
-      if(!a.media.length){ mmBox.innerHTML=`<div style="font-size:12px;color:var(--faint);padding:2px 0">Sin archivos.</div>`; }
+      if(!a.media.length){ mmBox.innerHTML=""; }
       a.media.forEach((m,j)=>{
         const r=document.createElement("div"); r.style.cssText="border:1px solid var(--border);border-radius:10px;padding:9px;margin-bottom:7px;display:flex;gap:10px;align-items:flex-start";
         let prev="";
