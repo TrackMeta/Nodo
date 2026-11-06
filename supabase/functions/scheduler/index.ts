@@ -482,6 +482,9 @@ async function processAutoAprobar(now: number): Promise<number> {
     if (!(horas > 0)) continue;
     const chId = (ch as any).id;
     const corte = now - horas * 3600_000;
+    // Solo los comprobantes que llegaron DESPUÉS de prender la opción: los que ya esperaban (en Prime, uno del 7-oct)
+    // no se aprueban de golpe un mes después. Sin la marca (config vieja), se toma «ahora» y no se aprueba nada viejo.
+    const desdeOn = Date.parse(String(cfg.desde ?? "")) || now;
     const { data: ords } = await db.from("orders")
       .select("id, contact_id, amount, currency, created_at, shipping, contact:contact_id(wa_id, source)")
       .eq("channel_id", chId).eq("estado", "pendiente").eq("shipping->>digital_pendiente", "true")
@@ -492,7 +495,7 @@ async function processAutoAprobar(now: number): Promise<number> {
       if (c.wa_id === "webchat-test" || c.source === "sim") continue;   // pruebas: nunca
       // Desde que llegó el comprobante (si se reenvió, desde el último); si no hay marca, desde que nació el pedido.
       const desde = Date.parse(String(o.shipping?.digital_recibido_at ?? o.created_at));
-      if (!Number.isFinite(desde) || desde > corte) continue;
+      if (!Number.isFinite(desde) || desde > corte || desde < desdeOn) continue;
       try {
         const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/order-update`, {
           method: "POST",

@@ -160,7 +160,8 @@ export async function abrirAjustesPagos(channelId) {
     ov.remove();
   };
   const autoT = $("ajpAutoT");
-  if (autoT) autoT.onclick = () => { autoA.activo = !autoA.activo; $("ajpAutoSw").classList.toggle("on", autoA.activo); $("ajpAutoBlk").style.display = autoA.activo ? "" : "none"; sucio = true; };
+  // Al PRENDERLO se anota desde cuándo: los pagos que ya estaban esperando no se aprueban de golpe (en Prime había uno del 7-oct).
+  if (autoT) autoT.onclick = () => { autoA.activo = !autoA.activo; if (autoA.activo) autoA.desde = new Date().toISOString(); $("ajpAutoSw").classList.toggle("on", autoA.activo); $("ajpAutoBlk").style.display = autoA.activo ? "" : "none"; sucio = true; };
   $("ajpX").onclick = cerrar; $("ajpCancel").onclick = cerrar;
   ov.onclick = (e) => { if (e.target === ov) cerrar(); };
   $("ajpSave").onclick = async (e) => {
@@ -168,7 +169,7 @@ export async function abrirAjustesPagos(channelId) {
     if (vendeDigital) {
       digital.tolerancia = Math.max(0, Number($("ajpTol").value) || 0);
       digital.revisar_sobre_sol = Math.max(0, Number($("ajpRev").value) || 0);
-      digital.auto_aprobar = { activo: !!autoA.activo, horas: Math.max(0.5, Number($("ajpAutoH").value) || 3) };
+      digital.auto_aprobar = { activo: !!autoA.activo, horas: Math.max(0.5, Number($("ajpAutoH").value) || 3), ...(autoA.desde ? { desde: autoA.desde } : {}) };
     }
     rechazo.mensaje = $("ajpRz").value.trim();
     vuelto.mensaje = $("ajpVl").value.trim();
