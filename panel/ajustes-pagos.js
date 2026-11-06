@@ -78,13 +78,17 @@ export async function abrirAjustesPagos(channelId) {
       ${opt("dig", "auto", digital.validacion !== "manual", "Automático: si el monto cuadra, entrega sin consultarme", "La IA lee el comprobante y, si el monto coincide, envía el acceso al toque. Ante cualquier duda te lo deja acá, en Pagos por validar.")}
       ${opt("dig", "manual", digital.validacion === "manual", "Manual: cuando llegue un comprobante, avísame para aprobarlo yo", "La IA lo analiza y te deja su lectura hecha, pero no entrega nada hasta que lo apruebes acá.")}
       ${propiosHtml()}
+      <!-- (6-nov, auditoría de Rodrigo) Orden: modo → (solo en Automático) revisar si paga de más → perdonar si paga
+           de menos → aprobar solo si nadie lo revisa. El freno de sobrepago solo existe para que el modo AUTOMÁTICO no
+           apruebe solo un pago raro: en Manual todos pasan por ti, así que ahí se esconde. Perdonar y «aprobar solo»
+           se usan en los dos modos (el bot decide con la tolerancia si le dice «te faltan S/ X»). -->
+      <div class="ajp-num" id="ajpRevBlk" style="${digital.validacion === "manual" ? "display:none" : ""}">Si paga de más, que lo revise yo cuando se pase por más de <span class="box"><span>${sym}</span><input id="ajpRev" type="number" min="0" step="5" value="${Number(digital.revisar_sobre_sol ?? 50)}"></span>
+        <small>Si se pasa un poco, entrega solo y la venta cuenta lo que pagó. Si se pasa mucho, te lo deja acá y lo que sobra queda como vuelto. Ponlo en 0 para revisar cualquier pago de más.</small></div>
       <div class="ajp-num">Si paga de menos, perdonarle hasta <span class="box"><span>${sym}</span><input id="ajpTol" type="number" min="0" step="0.5" value="${Number(digital.tolerancia ?? 1)}"></span>
         <small>Con un producto de ${sym} 19 y esto en 1: si paga ${sym} 18 se acepta; si paga ${sym} 17, el bot le dice que le faltan ${sym} 2.</small></div>
       <div class="ajp-tog" id="ajpAutoT" style="margin-top:14px"><span><b>Si nadie lo revisa, aprobarlo solo</b><small>Para que el cliente no se quede esperando su acceso si no alcanzas a verlo. Te avisamos cuando pase.</small></span><span class="ajp-sw ${autoA.activo ? "on" : ""}" id="ajpAutoSw"></span></div>
       <div class="ajp-num" id="ajpAutoBlk" style="${autoA.activo ? "" : "display:none"}">Aprobarlo a las <input class="ajp-in" id="ajpAutoH" type="number" min="0.5" step="0.5" value="${Number(autoA.horas) || 3}" style="width:80px"> horas de que llegó el comprobante
         <small>Ojo: se aprueba aunque el bot haya tenido dudas (monto que no se leía, pago en partes…). Si no lo quieres así, apágalo y revísalos tú.</small></div>
-      <div class="ajp-num">Si paga de más, que lo revise yo cuando se pase por más de <span class="box"><span>${sym}</span><input id="ajpRev" type="number" min="0" step="5" value="${Number(digital.revisar_sobre_sol ?? 50)}"></span>
-        <small>Si se pasa un poco, entrega solo y la venta cuenta lo que pagó. Si se pasa mucho, te lo deja acá y lo que sobra queda como vuelto. Ponlo en 0 para revisar cualquier pago de más.</small></div>
     </div>` : ""}
 
     ${vendeFisico ? `<div class="ajp-card">
@@ -94,7 +98,7 @@ export async function abrirAjustesPagos(channelId) {
       ${opt("adel", "auto", adelanto.validacion === "auto", "Automático: si el monto cuadra, valida el adelanto sin consultarme", "Ante cualquier duda (monto, fraude o comprobante repetido) te lo deja igual acá.")}
       <div class="ajp-num">Si paga de menos, perdonarle hasta <span class="box"><span>${sym}</span><input id="aTol" type="number" min="0" step="0.5" value="${Number(adelanto.tolerancia ?? 1)}"></span>
         <small>Con un adelanto de ${sym} 20 y esto en 1: si manda ${sym} 19 se acepta y el pedido sale; si manda ${sym} 18, el bot le dice que le faltan ${sym} 2.</small></div>
-      <div class="ajp-num">Si el monto se pasa del TOTAL del pedido por más de <span class="box"><span>${sym}</span><input id="aRev" type="number" min="0" step="5" value="${Number(adelanto.revisar_sobre_sol ?? digital.revisar_sobre_sol ?? 50)}"></span>
+      <div class="ajp-num" id="aRevBlk" style="${adelanto.validacion === "auto" ? "" : "display:none"}">Si el monto se pasa del TOTAL del pedido por más de <span class="box"><span>${sym}</span><input id="aRev" type="number" min="0" step="5" value="${Number(adelanto.revisar_sobre_sol ?? digital.revisar_sobre_sol ?? 50)}"></span>
         <small>…lo revisas tú (por si el bot lee mal la captura). Si paga más que el adelanto, lo de más se descuenta de lo que paga en la agencia.</small></div>
       <div class="ajp-hint">El recordatorio y el vencimiento si no paga siguen en Pedidos → Ajustes → Adelantos de provincia.</div>
     </div>
@@ -148,8 +152,9 @@ export async function abrirAjustesPagos(channelId) {
   ov.querySelectorAll("textarea, input").forEach((el) => el.addEventListener("input", () => { sucio = true; }));
   ov.querySelectorAll(".ajp-opt").forEach((o) => o.onclick = () => {
     ov.querySelectorAll(`.ajp-opt[data-grp="${o.dataset.grp}"]`).forEach((x) => x.classList.toggle("on", x === o));
-    if (o.dataset.grp === "dig") digital.validacion = o.dataset.v;
-    if (o.dataset.grp === "adel") adelanto.validacion = o.dataset.v;
+    // El freno «si paga de más, revisarlo yo» solo aparece con Automático (en Manual todo pasa por ti).
+    if (o.dataset.grp === "dig") { digital.validacion = o.dataset.v; const rb = $("ajpRevBlk"); if (rb) rb.style.display = o.dataset.v === "manual" ? "none" : ""; }
+    if (o.dataset.grp === "adel") { adelanto.validacion = o.dataset.v; const rb = $("aRevBlk"); if (rb) rb.style.display = o.dataset.v === "auto" ? "" : "none"; }
     if (o.dataset.grp === "log") log.modo = o.dataset.v;
     if (o.dataset.grp === "vl") { vuelto.modo = o.dataset.v; $("ajpVlWrap").style.display = vuelto.modo === "tranquilizar" ? "block" : "none"; }
     sucio = true;
