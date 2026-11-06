@@ -145,6 +145,8 @@
   tr.ad{cursor:pointer}
   tr.ad:hover{background:var(--surface-2)}
   tr.ad .drill{opacity:0;color:var(--brand)}
+  .verad{border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:7px;width:24px;height:22px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;margin-left:6px;padding:0;flex:none}
+  .verad:hover{color:var(--brand);border-color:var(--brand)}.verad svg{width:13px;height:13px}
   tr.ad:hover .drill{opacity:1}
   .hide{display:none}
   .money{font-weight:700}
@@ -737,11 +739,39 @@ function renderTable(){
   $("thead").innerHTML=headRow(st.vista==="anuncio"?"Anuncio":st.vista==="angulo"?"Ángulo":"Producto");
   if(!rows.length){ $("tbody").innerHTML=`<tr><td colspan="${visibleCols().length+1}" style="text-align:center;color:var(--faint);padding:26px">Ningún anuncio de este tipo en el periodo.</td></tr>`; $("tfoot").innerHTML=""; return; }
   if(st.vista==="anuncio"){ renderAnuncio(); } else if(st.vista==="angulo"){ renderAngulo(); } else { renderProducto(); }
+  $("tbody").querySelectorAll("[data-verad]").forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); verAnuncio(b.dataset.verad); });
   const _tot=sumAds(rows); if(rows.length===st.rows.length && st.alcanceTotal!=null) _tot.alcance=st.alcanceTotal;   // (personas distintas de la cuenta entera)
   $("tfoot").innerHTML= rows.length>1 ? `<tr><td>Total</td>${cells(metrics(_tot))}</tr>` : "";
 }
-function nameCell(name,tag,emoji,drill){
-  return `<div class="nm">${emoji?`<span class="em">${esc(emoji)}</span>`:""}<span class="t1">${esc(name)}</span>${tag?`<span class="tag ${tag}">${TAGLBL[tag]}</span>`:""}${drill?`<span class="drill">${icon("chevronRight")||'›'}</span>`:""}</div>`;
+// (6-nov, Rodrigo) `adId`: un botón con el ojo abre una ventanita con el anuncio (imagen, texto, «Ver anuncio») sin
+// entrar a sus números. Antes la ficha iba dentro del detalle y no le gustó ahí.
+function nameCell(name,tag,emoji,drill,adId){
+  return `<div class="nm">${emoji?`<span class="em">${esc(emoji)}</span>`:""}<span class="t1">${esc(name)}</span>${tag?`<span class="tag ${tag}">${TAGLBL[tag]}</span>`:""}${adId!=null?`<button type="button" class="verad" data-verad="${esc(adId)}" title="Ver el anuncio">${icon("eye")}</button>`:""}${drill?`<span class="drill">${icon("chevronRight")||'›'}</span>`:""}</div>`;
+}
+// Ventanita con la ficha del anuncio (anuncio-ficha.js). «Ver sus números» entra al detalle de siempre.
+async function verAnuncio(adId){
+  const a=st.rows.find(r=>String(r.ad_id)===String(adId)); if(!a) return;
+  const meta={ ad_name:a.name, campaign_name:a.campaign, adset_name:a.adset, account_id:a.account_id, estado:(st.adEstado||{})[a.ad_id]||null };
+  const ov=document.createElement("div");
+  ov.style.cssText="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:18px";
+  const pinta=(datos)=>`<div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:520px;max-height:calc(100vh - 36px);overflow:auto;padding:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><b style="font-size:15px;flex:1">Así es el anuncio</b>
+        <button type="button" data-cerrar style="border:none;background:transparent;color:var(--muted);cursor:pointer;padding:4px;border-radius:8px;display:inline-flex" title="Cerrar">${icon("x")}</button></div>
+      ${fichaAnuncioHtml({ id:String(a.ad_id), meta, datos })}
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+        <button type="button" class="pillbtn" data-num style="height:34px;padding:0 14px">${icon("rendimiento")} Ver sus números</button></div>
+    </div>`;
+  const wire=()=>{
+    ov.querySelector("[data-cerrar]").onclick=()=>cerrar();
+    ov.querySelector("[data-num]").onclick=()=>{ cerrar(); abrirDetalle(st.rows.indexOf(a)); };
+    wireFichasAnuncio(ov);
+  };
+  const cerrar=()=>{ ov.remove(); document.removeEventListener("keydown",esc_); };
+  const esc_=(e)=>{ if(e.key==="Escape") cerrar(); };
+  ov.innerHTML=pinta(null); document.body.appendChild(ov); wire();
+  ov.onclick=(e)=>{ if(e.target===ov) cerrar(); };
+  document.addEventListener("keydown",esc_);
+  try{ const d=await datosAnuncios(supa, st.channelId, [a.ad_id]); if(ov.isConnected){ ov.innerHTML=pinta(d[String(a.ad_id)]); ov._adfWired=false; wire(); } }catch(_){}
 }
 function renderAnuncio(){
   // (10-oct) Antes: fila de campaña + fila de conjunto + fila del anuncio + total, las cuatro iguales con un solo
@@ -759,7 +789,7 @@ function renderAnuncio(){
       if(aads.length>1) html+=`<tr class="grp sub"><td colspan="${nCol}">Conjunto · ${esc(aset)}</td></tr>`;
       aads.forEach(a=>{ const i=st.rows.indexOf(a); const e=st.adEstado&&st.adEstado[a.ad_id];
         const dot=e?`<span class="stdot${e==="ACTIVE"?" on":""}" title="${e==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}"></span>`:"";
-        html+=`<tr class="ad" data-ad="${i}"><td>${dot}${nameCell(a.name,a.tag,"",true)}${cads.length===1&&aads.length===1?`<div class="adctx">${esc(camp)}</div>`:""}</td>${cells(metrics(a))}</tr>`; });
+        html+=`<tr class="ad" data-ad="${i}"><td>${dot}${nameCell(a.name,a.tag,"",true,a.ad_id)}${cads.length===1&&aads.length===1?`<div class="adctx">${esc(camp)}</div>`:""}</td>${cells(metrics(a))}</tr>`; });
     });
   });
   $("tbody").innerHTML=html;
@@ -1101,7 +1131,7 @@ function renderAngulo(){
     angs.forEach(ang=>{
       const aads=delProd.filter(a=>(a.angulo||"— Sin ángulo —")===ang);
       html+=`<tr class="camp" data-c="${ci}"><td><div class="nm"><span class="caret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span><span class="t1">${esc(ang)}</span></div></td>${cells(metrics(sumAds(aads)))}</tr>`;
-      aads.forEach(a=>{ const i=st.rows.indexOf(a); html+=`<tr class="ad kid k${ci}" data-ad="${i}"><td>${nameCell(a.name,a.tag,"",true)}</td>${cells(metrics(a))}</tr>`; });
+      aads.forEach(a=>{ const i=st.rows.indexOf(a); html+=`<tr class="ad kid k${ci}" data-ad="${i}"><td>${nameCell(a.name,a.tag,"",true,a.ad_id)}</td>${cells(metrics(a))}</tr>`; });
       ci++;
     });
   });
@@ -1260,17 +1290,12 @@ async function renderDetail(){
       <div id="ddr" style="margin-left:auto"></div>
     </div>
     <div class="resumen">${resumen}</div>
-    <div id="adFicha" style="margin:0 0 14px"></div>
     <div class="panel dchart">
       <div class="dch-top"><div class="seg dmet">${MET.map(([k,l])=>`<button data-m="${k}" class="${detMetrica===k?"on":""}">${l}</button>`).join("")}</div><div class="dch-sum" id="dchSum"></div></div>
       <div class="dch-wrap" id="dchWrap"></div>
     </div>
     <div class="panel"><div class="dtab-top"><span>Día por día</span><div class="colbtn"><button id="dColBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="dColPop"></div></div></div><div class="scroll" id="dTabla">${detTabla(S)}</div></div>`;
   $("back").onclick=cerrarDetalle;
-  // (6-nov) La ficha del anuncio: su título, texto, imagen, cuántos clientes llegaron y «Ver anuncio» / «Abrir en Meta».
-  { const fx=$("adFicha"), meta={ ad_name:a.name, campaign_name:a.campaign, adset_name:a.adset, account_id:a.account_id, estado:e||null };
-    if(fx){ fx.innerHTML=fichaAnuncioHtml({ id:String(a.ad_id), meta, datos:null, sinNombre:true }); wireFichasAnuncio(fx);
-      datosAnuncios(supa, st.channelId, [a.ad_id]).then(d=>{ if(fx.isConnected) fx.innerHTML=fichaAnuncioHtml({ id:String(a.ad_id), meta, datos:d[String(a.ad_id)], sinNombre:true }); }).catch(()=>{}); } }
   { const pop=$("dColPop");
     pop.innerHTML=DCOLS.map(c=>`<label><input type="checkbox" data-dcol="${c.k}" ${detCols.has(c.k)?"checked":""}/> ${c.l}</label>`).join("");
     $("dColBtn").onclick=(ev)=>{ ev.stopPropagation(); pop.classList.toggle("show"); };
