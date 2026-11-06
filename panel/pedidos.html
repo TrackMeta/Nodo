@@ -193,7 +193,6 @@
           <div class="masmenu" id="masMenu">
             <button class="mi" data-ajp="adelantos" type="button"></button>
             <button class="mi" data-ajp="avisos" type="button"></button>
-            <button class="mi" data-ajp="pagos" type="button"></button>
           </div></div>
       </div>
     </div>
@@ -326,11 +325,11 @@ function wireMas(){
   // (25-oct) «Pagos y avisos» ya no es una página larga: cada sección abre SU ventana (ajustes-pedidos.js).
   // (se importa recién al hacer clic: si el módulo fallara, solo falla esa ventana, nunca el tablero)
   // (6-nov) «Agente de logística» se fue: quién aprueba el adelanto y el saldo vive en Pagos por validar → Ajustes,
-  // junto con los demás pagos. Este menú lleva allá.
-  const SEC_AJP={ adelantos:["clock","Adelantos de provincia"], avisos:["message","Avisos de pedido"], pagos:["shield","Quién aprueba los pagos →"] };
+  // junto con los demás pagos. (Sin acceso desde este menú: Rodrigo lo quitó el 6-nov.)
+  const SEC_AJP={ adelantos:["clock","Adelantos de provincia"], avisos:["message","Avisos de pedido"] };
   m.querySelectorAll("[data-ajp]").forEach(btn=>{
     const s=SEC_AJP[btn.dataset.ajp]; if(s) btn.innerHTML=`${icon(s[0])} ${s[1]}`;
-    btn.onclick=()=>{ m.classList.remove("show"); if(btn.dataset.ajp==="pagos"){ location.href="copiloto.html?ajustes=1"; return; } abrirAjustesPedidosLazy(btn.dataset.ajp); };
+    btn.onclick=()=>{ m.classList.remove("show"); abrirAjustesPedidosLazy(btn.dataset.ajp); };
   });
 }
 async function boot(){
