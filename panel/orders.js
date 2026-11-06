@@ -293,7 +293,7 @@ export function costoZonaLima(entregas, zonaNombre){
 }
 
 // ✍️ Lo que el bot le dice al cliente cuando TÚ rechazas su comprobante y eliges «Que el bot le pida otro»
-// (7-oct, Rodrigo). La frase de siempre se cambia en Pedidos → Pagos y avisos; y en cada rechazo se puede
+// (7-oct, Rodrigo). La frase de siempre se cambia en Pagos por validar → Ajustes; y en cada rechazo se puede
 // reescribir para ese cliente («ese pago es de otro producto», «te faltan S/ 3»…). El bot lo manda tal cual,
 // entre el «Mmm, revisé tu comprobante 🤔» y el cierre del flujo. Devuelve el texto, o null si cancelas.
 export const MOTIVO_RECHAZO_DEF = "No pude validar ese comprobante. ¿Me lo reenvías, por favor?";

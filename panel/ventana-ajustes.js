@@ -29,6 +29,11 @@ const CSS = `
 .ajp textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:10px 12px;font-size:13.5px;line-height:1.5;font-family:var(--font);resize:vertical;outline:none}
 .ajp textarea:focus{border-color:var(--brand)}
 .ajp-hint{font-size:11px;color:var(--faint);margin-top:6px;line-height:1.5}
+.ajp-prop{display:flex;gap:9px;align-items:flex-start;margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--amber-bg,rgba(245,158,11,.12));color:var(--text);font-size:12px;line-height:1.5}
+.ajp-prop>svg{width:16px;height:16px;flex:none;color:var(--amber,#F59E0B);margin-top:1px}
+.ajp-prow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;flex-wrap:wrap}
+.ajp-link{background:none;border:none;padding:0;color:var(--brand);font-size:12px;font-weight:600;cursor:pointer}
+.ajp-link:disabled{opacity:.5}
 .ajp-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
 .ajp-btn{height:38px;padding:0 16px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13px;font-weight:600}
 .ajp-btn.pri{background:var(--brand);border-color:var(--brand);color:#fff}

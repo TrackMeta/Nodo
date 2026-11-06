@@ -6,7 +6,7 @@
 // (digital, rechazo, vuelto): el motor no cambia. Se guarda sobre el config FRESCO y solo esas tres claves, así no
 // pisa lo que se edita en Pagos y avisos ni en IA → Atención.
 // ═════════════════════════════════════════════════════════════════════════
-import { supa, toast, icon, confirmDialog, updateChannel } from "./shell.js";
+import { supa, toast, icon, confirmDialog, updateChannel, patchProductConfig } from "./shell.js";
 import { asegurarEstilos } from "./ventana-ajustes.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -22,7 +22,7 @@ export async function abrirAjustesPagos(channelId) {
   asegurarEstilos();
   const [{ data: ch, error }, { data: prods }, { data: chm }] = await Promise.all([
     supa.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle(),
-    supa.from("products").select("tipo").eq("channel_id", channelId),
+    supa.from("products").select("id,nombre,tipo,config").eq("channel_id", channelId).order("nombre"),
     supa.from("channels").select("moneda").eq("id", channelId).maybeSingle(),
   ]);
   if (error) { toast("No se pudieron cargar los ajustes", true); return; }
@@ -33,6 +33,15 @@ export async function abrirAjustesPagos(channelId) {
   // «Pagos digitales» solo si el bot vende algo que no es físico (digital o micro app).
   const vendeDigital = (prods || []).some((p) => p.tipo !== "fisico");
   const sym = (chm?.moneda || "PEN").toUpperCase() === "PEN" ? "S/" : "$";
+  // (5-nov) Productos con su PROPIO Automático/Manual (Productos → el producto → ¿Cómo se entrega? → Validación del pago).
+  // Ese ajuste manda sobre el del bot (digitalPagoModo en el motor): sin decirlo acá, pasar el bot a Manual dejaba esos
+  // productos entregando solos y nadie se enteraba.
+  const propios = (prods || []).filter((p) => p.tipo !== "fisico" && ["auto", "manual"].includes(p.config?.validacion_pago));
+  const MODO_TXT = { auto: "Automático", manual: "Manual" };
+  const propiosHtml = () => !propios.length ? "" : `<div class="ajp-prop" id="ajpProp">${icon("alert")}<div>
+      <b>${propios.length === 1 ? "Este producto usa su propio ajuste" : "Estos productos usan su propio ajuste"}</b> y no cambia aunque cambies el de arriba:
+      ${propios.map((p) => `<div class="ajp-prow"><span>${esc(p.nombre)} · <b>${MODO_TXT[p.config.validacion_pago]}</b></span><button class="ajp-link" data-quitar="${esc(p.id)}">Que use el del bot</button></div>`).join("")}
+      <span class="ajp-hint" style="display:block;margin-top:4px">Se cambia en Productos → el producto → ¿Cómo se entrega? → Validación del pago.</span></div></div>`;
 
   const opt = (grp, v, on, t, d) => `<div class="ajp-opt ${on ? "on" : ""}" data-grp="${grp}" data-v="${v}"><span class="ajp-dot"><i></i></span><div><b>${t}</b><span>${d}</span></div></div>`;
   const ov = document.createElement("div"); ov.className = "ajp-ov";
@@ -45,6 +54,7 @@ export async function abrirAjustesPagos(channelId) {
       <div class="ajp-desc">El cliente paga y recibe su producto al instante. Esto decide si esa entrega es automática o espera tu visto bueno. Es lo que usa el bot; cada producto digital puede cambiarlo en su ficha.</div>
       ${opt("dig", "auto", digital.validacion !== "manual", "Automático: si el monto cuadra, entrega sin consultarme", "La IA lee el comprobante y, si el monto coincide, envía el acceso al toque. Ante cualquier duda te lo deja acá, en Pagos por validar.")}
       ${opt("dig", "manual", digital.validacion === "manual", "Manual: cuando llegue un comprobante, avísame para aprobarlo yo", "La IA lo analiza y te deja su lectura hecha, pero no entrega nada hasta que lo apruebes acá.")}
+      ${propiosHtml()}
       <div class="ajp-num">Si paga de menos, perdonarle hasta <span class="box"><span>${sym}</span><input id="ajpTol" type="number" min="0" step="0.5" value="${Number(digital.tolerancia ?? 1)}"></span>
         <small>Con un producto de ${sym} 19 y esto en 1: si paga ${sym} 18 se acepta; si paga ${sym} 17, el bot le dice que le faltan ${sym} 2.</small></div>
       <div class="ajp-num">Si paga de más, que lo revise yo cuando se pase por más de <span class="box"><span>${sym}</span><input id="ajpRev" type="number" min="0" step="5" value="${Number(digital.revisar_sobre_sol ?? 50)}"></span>
@@ -76,6 +86,17 @@ export async function abrirAjustesPagos(channelId) {
   </div>`;
   document.body.appendChild(ov);
   const $ = (id) => ov.querySelector("#" + id);
+  // «Que use el del bot»: le quita al producto su ajuste propio, al instante (como en su ficha).
+  const wireProp = () => ov.querySelectorAll("[data-quitar]").forEach((b) => b.onclick = async () => {
+    b.disabled = true;
+    const r = await patchProductConfig(b.dataset.quitar, (cfg) => { delete cfg.validacion_pago; });
+    if (!r.ok) { b.disabled = false; toast("No se pudo cambiar: " + (r.error?.message || "error"), true); return; }
+    const i = propios.findIndex((p) => p.id === b.dataset.quitar); const nom = propios[i]?.nombre || "El producto";
+    if (i >= 0) propios.splice(i, 1);
+    const box = $("ajpProp"); if (box) { const t = document.createElement("div"); t.innerHTML = propiosHtml(); box.replaceWith(...(t.firstElementChild ? [t.firstElementChild] : [])); wireProp(); }
+    toast(`${nom} ahora usa el ajuste del bot`);
+  });
+  wireProp();
   let sucio = false;
   ov.querySelectorAll("textarea, input").forEach((el) => el.addEventListener("input", () => { sucio = true; }));
   ov.querySelectorAll(".ajp-opt").forEach((o) => o.onclick = () => {

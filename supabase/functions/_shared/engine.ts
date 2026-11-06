@@ -23534,7 +23534,7 @@ async function deducirOpcionPorMonto(db: SupabaseClient, run: Run, ctx: any): Pr
   const _calzaCon = (p: number) => Math.abs(pagado - p) <= tol + 0.01 || (_sumaC > 0 && Math.abs(pagado - _sumaC - p) <= tol + 0.01);
   const oferta = await ofertaActiva(db, run).catch(() => null);
   const infoT = await channelIaInfo(db, run).catch(() => null);
-  const tol = Number((infoT as any)?.pedidos?.digital?.tolerancia ?? 0) || 0;
+  const tol = Number((infoT as any)?.pedidos?.digital?.tolerancia ?? 1) || 0;   // (5-nov) sin guardar = S/ 1, lo que muestra Pagos por validar → Ajustes (antes 0 acá y 1 en otros sitios)
 
   const precioVivo = (o: Opcion): number | null => {
     if (oferta && (oferta as any).opcion_id === o.id && Number.isFinite(Number((oferta as any).precio))) return Number((oferta as any).precio);
@@ -29002,7 +29002,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const espX = cfg.monto_esperado ? (parseMonto(resolve(String(cfg.monto_esperado), ctx), ctx) ?? NaN) : NaN;
           if (Number.isFinite(espX) && espX > 0) {
             const pagX = parseMonto(run.vars.pago_monto, ctx) ?? NaN;
-            const tolX = Number((info as any)?.pedidos?.digital?.tolerancia ?? 0) || 0;
+            const tolX = Number((info as any)?.pedidos?.digital?.tolerancia ?? 1) || 0;   // (5-nov) sin guardar = S/ 1, como el panel
             const margenXraw = Number((info as any)?.pedidos?.digital?.revisar_sobre_sol);
             const margenX = Number.isFinite(margenXraw) && margenXraw >= 0 ? margenXraw : 50;
             if (!Number.isFinite(pagX) || pagX <= 0) extraMontoDudoso = true;      // no se pudo leer el monto
