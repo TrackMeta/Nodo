@@ -14,6 +14,7 @@ import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, newV
 import { limpiaBotones } from "./bubble-buttons.js";
 import { gastoAdsEn, llevarAMoneda } from "./cambio.js?v=2";
 import * as O from "./orders.js";
+import { datosAnuncios, fichaAnuncioHtml, wireFichasAnuncio } from "./anuncio-ficha.js";
 
 const esc = (s) => (s ?? "").toString().replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -45,7 +46,7 @@ async function cargar(gen) {
     supa.from("angulos").select("id,product_id,nombre,slug,ad_ids,gancho_ia,orden").eq("channel_id", channelId).order("orden"),
     supa.from("flows").select("id,product_id").eq("channel_id", channelId).eq("role", "mensajes_iniciales").eq("kind", "flow"),
     supa.from("sequences").select("id,nombre,pasos").eq("channel_id", channelId),
-    pageAll((f, t) => supa.from("ads_meta").select("ad_id,ad_name,campaign_name,account_currency").eq("channel_id", channelId).order("ad_id").range(f, t)),
+    pageAll((f, t) => supa.from("ads_meta").select("ad_id,ad_name,adset_name,campaign_name,account_id,account_currency,estado").eq("channel_id", channelId).order("ad_id").range(f, t)),
     pageAll((f, t) => supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id", channelId).gte("fecha", desdeISO.slice(0, 10)).order("fecha").order("ad_id").range(f, t)),
     pageAll((f, t) => supa.from("orders").select("id,contact_id,estado,amount,order_bumps,currency,shipping,product_id,created_at,contact:contact_id(wa_id,source)").eq("channel_id", channelId).gte("created_at", desdeISO).order("created_at").range(f, t)),
     pageAll((f, t) => supa.from("contacts").select("id,ad_id,wa_id,source").eq("channel_id", channelId).not("ad_id", "is", null).gte("created_at", desdeISO).order("created_at").range(f, t)),
@@ -271,11 +272,7 @@ function pintaAds(p, a) {
   const opt = (m) => `<option value="${esc(m.ad_id)}">${esc(m.ad_name || m.ad_id)}${m.campaign_name ? " · " + esc(m.campaign_name) : ""}</option>`;
   box.innerHTML = `<h3>${icon("megaphone")} Anuncios de ${esc(paisNom(pais))}</h3>
     <p class="amx-help">${a ? `Quien toque uno de estos anuncios cae en la versión de <b>${esc(paisNom(pais))}</b> y recibe el saludo y el gancho de este ángulo.` : `Llegan a la versión de <b>${esc(paisNom(pais))}</b> con el saludo general. Asígnales un ángulo para que el saludo retome el anuncio.`}</p>
-    ${ids.length ? ids.map((id) => `<div class="amx-row"><span class="amx-rt">${esc(nomAd(id))}<small>${esc(id)}</small></span>
-      ${a ? `<button class="amx-ib" data-suelta="${esc(id)}" title="Quitar de este ángulo (sigue llegando con el saludo general)">${icon("x")}</button>`
-          : `<select class="amx-sel" data-asig="${esc(id)}"><option value="">Asignar a…</option>${angsDe(p.id).map((x) => `<option value="${esc(x.slug)}">${esc(x.nombre || x.slug)}</option>`).join("")}</select>`}
-      <button class="amx-ib" data-saca="${esc(id)}" title="Sacar de ${esc(paisNom(pais))} (deja de llevar a este producto)">${icon("trash")}</button></div>`).join("")
-      : `<div class="amx-emptyrow">${a ? "Este ángulo no tiene anuncios: nadie llega por aquí." : "No hay anuncios sin ángulo."}</div>`}
+    <div id="amxAdList">${ids.length ? fichasAds(p, a, ids) : `<div class="amx-emptyrow">${a ? "Este ángulo no tiene anuncios: nadie llega por aquí." : "No hay anuncios sin ángulo."}</div>`}</div>
     ${sueltos.length ? `<div class="amx-sub">Sin ángulo en ${esc(paisNom(pais))}</div>${sueltos.map((id) => `<div class="amx-row soft"><span class="amx-rt">${esc(nomAd(id))}<small>${esc(id)}</small></span><button class="amx-btn sm" data-mover="${esc(id)}">Mover aquí</button></div>`).join("")}` : ""}
     <div class="amx-add">
       ${libres.length ? `<select class="amx-sel" id="amxAddSel"><option value="">＋ Elegir un anuncio de Meta…</option>${sug.length ? `<optgroup label="Sugeridos para ${esc(paisNom(pais))}">${sug.map(opt).join("")}</optgroup>` : ""}${resto.length ? `<optgroup label="${sug.length ? "Otros" : "Anuncios de Meta"}">${resto.map(opt).join("")}</optgroup>` : ""}</select>` : ""}
@@ -284,14 +281,33 @@ function pintaAds(p, a) {
     </div>
     <p class="amx-help">El ID está en el Administrador de anuncios de Meta, columna «Identificador del anuncio». Un anuncio va en un solo país y un solo ángulo.</p>`;
   const slug = a ? a.slug : "";
+  wireFichasAnuncio(box);
+  // Título, texto, imagen y clientes de cada anuncio: llegan después (una consulta por anuncio) y se repintan solo las fichas.
+  const faltan = ids.filter((id) => !(S.adDatos || {})[id]);
+  if (faltan.length) datosAnuncios(supa, S.ctx.channelId, faltan).then((d) => {
+    S.adDatos = { ...(S.adDatos || {}), ...d };
+    const lst = document.getElementById("amxAdList"); if (!lst || !box.isConnected) return;
+    lst.innerHTML = fichasAds(p, a, ids); cablea();
+  }).catch(() => {});
+  const cablea = () => {
   box.querySelectorAll("[data-suelta]").forEach((b) => (b.onclick = () => moverAd(p, b.dataset.suelta, "")));
   box.querySelectorAll("[data-mover]").forEach((b) => (b.onclick = () => moverAd(p, b.dataset.mover, slug)));
   box.querySelectorAll("[data-asig]").forEach((s) => (s.onchange = () => s.value && moverAd(p, s.dataset.asig, s.value)));
   box.querySelectorAll("[data-saca]").forEach((b) => (b.onclick = () => sacarAd(p, b.dataset.saca)));
+  };
+  cablea();
   const add = () => { const v = String(document.getElementById("amxAddId").value || document.getElementById("amxAddSel")?.value || "").trim(); if (v) agregarAd(p, v, slug); };
   document.getElementById("amxAddBtn").onclick = add;
   document.getElementById("amxAddId").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } };
   const sel = document.getElementById("amxAddSel"); if (sel) sel.onchange = () => sel.value && agregarAd(p, sel.value, slug);
+}
+// (6-nov) Ficha de cada anuncio (anuncio-ficha.js) con las acciones de este ángulo arriba a la derecha.
+function fichasAds(p, a, ids) {
+  const pais = paisDe(p);
+  return ids.map((id) => fichaAnuncioHtml({ id, meta: S.meta[String(id)], datos: (S.adDatos || {})[String(id)],
+    acciones: (a ? `<button class="amx-ib" data-suelta="${esc(id)}" title="Quitar de este ángulo (sigue llegando con el saludo general)">${icon("x")}</button>`
+      : `<select class="amx-sel" data-asig="${esc(id)}"><option value="">Asignar a…</option>${angsDe(p.id).map((x) => `<option value="${esc(x.slug)}">${esc(x.nombre || x.slug)}</option>`).join("")}</select>`)
+      + `<button class="amx-ib" data-saca="${esc(id)}" title="Sacar de ${esc(paisNom(pais))} (deja de llevar a este producto)">${icon("trash")}</button>` })).join("");
 }
 let _paisRe = null;
 function paisDeAd(m) {

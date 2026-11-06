@@ -241,6 +241,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, icon, pageAll, factorAds, getUsdRate, toast, updateChannel, adsDeCuentasQuitadas } from "./shell.js";
 import { llevarAMoneda, cargarCambios, factorCambio, gastoAdsEn } from "./cambio.js?v=2";
+import { datosAnuncios, fichaAnuncioHtml, wireFichasAnuncio } from "./anuncio-ficha.js";
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, startOfDayTZ as startOfDayLima, endOfDayTZ as endOfDayLima, ymdTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
@@ -1259,12 +1260,17 @@ async function renderDetail(){
       <div id="ddr" style="margin-left:auto"></div>
     </div>
     <div class="resumen">${resumen}</div>
+    <div id="adFicha" style="margin:0 0 14px"></div>
     <div class="panel dchart">
       <div class="dch-top"><div class="seg dmet">${MET.map(([k,l])=>`<button data-m="${k}" class="${detMetrica===k?"on":""}">${l}</button>`).join("")}</div><div class="dch-sum" id="dchSum"></div></div>
       <div class="dch-wrap" id="dchWrap"></div>
     </div>
     <div class="panel"><div class="dtab-top"><span>Día por día</span><div class="colbtn"><button id="dColBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg> Columnas</button><div class="colpop" id="dColPop"></div></div></div><div class="scroll" id="dTabla">${detTabla(S)}</div></div>`;
   $("back").onclick=cerrarDetalle;
+  // (6-nov) La ficha del anuncio: su título, texto, imagen, cuántos clientes llegaron y «Ver anuncio» / «Abrir en Meta».
+  { const fx=$("adFicha"), meta={ ad_name:a.name, campaign_name:a.campaign, adset_name:a.adset, account_id:a.account_id, estado:e||null };
+    if(fx){ fx.innerHTML=fichaAnuncioHtml({ id:String(a.ad_id), meta, datos:null, sinNombre:true }); wireFichasAnuncio(fx);
+      datosAnuncios(supa, st.channelId, [a.ad_id]).then(d=>{ if(fx.isConnected) fx.innerHTML=fichaAnuncioHtml({ id:String(a.ad_id), meta, datos:d[String(a.ad_id)], sinNombre:true }); }).catch(()=>{}); } }
   { const pop=$("dColPop");
     pop.innerHTML=DCOLS.map(c=>`<label><input type="checkbox" data-dcol="${c.k}" ${detCols.has(c.k)?"checked":""}/> ${c.l}</label>`).join("");
     $("dColBtn").onclick=(ev)=>{ ev.stopPropagation(); pop.classList.toggle("show"); };
