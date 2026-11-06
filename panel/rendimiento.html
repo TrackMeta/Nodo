@@ -129,6 +129,9 @@
   .tag.provincia{background:var(--amber-bg);color:var(--amber)}
   .tag.fisico{background:var(--green-bg);color:var(--green)}
   tr.camp{background:var(--surface-2)}
+  tr.prodrow td{background:var(--surface);border-bottom:1px solid var(--border);padding-top:14px;padding-bottom:9px;font-size:14px;font-weight:800;text-align:left}
+  tr.prodrow .nm svg{width:16px;height:16px;color:var(--muted)}
+  tr.prodrow .prodn{margin-left:8px;font-size:11.5px;font-weight:600;color:var(--faint)}
   tr.camp td{border-bottom:1px solid var(--border-2);font-weight:700;cursor:pointer}
   tr.camp .t1{font-weight:800}
   .caret{display:inline-flex;width:15px;height:15px;color:var(--muted);transition:transform .15s}
@@ -237,8 +240,11 @@ import { llevarAMoneda, cargarCambios, factorCambio, gastoAdsEn } from "./cambio
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, startOfDayTZ as startOfDayLima, endOfDayTZ as endOfDayLima, ymdTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", copyProd:"all", tipo:"all", account:"all", cols:new Set(), sel:null, range:null, rows:[], loaded:false };
-function visibleRows(){ return st.rows.filter(r=>(st.tipo==="all"||r.tag===st.tipo) && (st.account==="all"||r.account_id===st.account)); }
+const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", copyProd:"all", angProd:"all", tipo:"all", account:"all", cols:new Set(), sel:null, range:null, rows:[], loaded:false };
+function visibleRows(){ return st.rows.filter(r=>(st.tipo==="all"||r.tag===st.tipo) && (st.account==="all"||r.account_id===st.account)
+  && (st.vista!=="angulo" || st.angProd==="all" || prodDeAngulo(r)===st.angProd)); }
+// (6-nov) Producto de un anuncio en «Por ángulo»: el del ángulo (tabla angulos) y, si no tiene ángulo, el de sus ventas.
+function prodDeAngulo(r){ return r.angProd || r.prod || ""; }
 
 // Moneda del canal (símbolo por código ISO), igual que el Dashboard.
 const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
@@ -337,11 +343,11 @@ async function loadData(){
   // (resolverAnguloContacto usa .order("slug").limit(1)). Antes sin .order y con last-write, un
   // ad_id que quedó por error en DOS ángulos se reportaba bajo uno cambiante entre refrescos y
   // distinto del que el cliente realmente vivió.
-  try{ const {data:angs}=await supa.from("angulos").select("slug,nombre,ad_ids,product:product_id(tipo)").eq("channel_id",cid).order("slug");
+  try{ const {data:angs}=await supa.from("angulos").select("slug,nombre,ad_ids,product:product_id(tipo,nombre,emoji)").eq("channel_id",cid).order("slug");
     (angs||[]).forEach(a=>{ const t=a.product?(a.product.tipo==="fisico"?"fisico":"digital"):null;
-      (a.ad_ids||[]).forEach(id=>{ const k=String(id); if(!angMap[k]) angMap[k]={slug:a.slug,nombre:a.nombre,tipo:t}; }); }); }catch(_){}
+      (a.ad_ids||[]).forEach(id=>{ const k=String(id); if(!angMap[k]) angMap[k]={slug:a.slug,nombre:a.nombre,tipo:t,prod:a.product?((a.product.emoji?a.product.emoji+" ":"")+(a.product.nombre||"")):null}; }); }); }catch(_){}
   const byAd={};
-  const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; const ang=angMap[String(adId)]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), angulo:ang.nombre||"— Sin ángulo —", anguloSlug:ang.slug||null, tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:null,clics:0,clicsAll:0,imprLink:0,gastoLink:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, chats:0,interes:0,calientes:0,compraron:0,perdidos:0,vRemarketing:0, daily:{} }; } return byAd[adId]; };
+  const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; const ang=angMap[String(adId)]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), angulo:ang.nombre||"— Sin ángulo —", anguloSlug:ang.slug||null, angProd:ang.prod||null, tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:null,clics:0,clicsAll:0,imprLink:0,gastoLink:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, chats:0,interes:0,calientes:0,compraron:0,perdidos:0,vRemarketing:0, daily:{} }; } return byAd[adId]; };
   const day=(row,f)=>{ if(!row.daily[f]) row.daily[f]={gasto:0,impr:0,clics:null,clicsAll:0,conf:0,ventas:0,ingresos:0,_margen:0,_sinMargen:0}; return row.daily[f]; };
   // El gasto llega en la moneda de la CUENTA de Meta. Se lleva a la del negocio con
   // la misma regla que el Dashboard (factorAds, en shell.js): si Meta ya factura en tu
@@ -653,8 +659,20 @@ function render(){
   // La tarjeta de mensajes cobrables va ARRIBA y en las tres vistas de anuncios, con o sin
   // Meta conectada: mide lo que manda el bot, no lo que gasta Meta.
   if(!st.rows.length){ $("content").innerHTML=emptyStateHtml(); return; }
-  $("content").innerHTML=`<div class="resumen" id="kpis"></div><div class="panel"><div class="scroll"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div></div>`;   // (10-oct) sin «Mensajes que Meta cobra» — Rodrigo
+  // (6-nov) «Por ángulo»: selector de producto cuando hay 2 o más (igual que «Por copy»).
+  let angSel="";
+  if(st.vista==="angulo"){
+    const base=st.rows.filter(r=>(st.tipo==="all"||r.tag===st.tipo) && (st.account==="all"||r.account_id===st.account));
+    const gastoDe=(pp)=>base.filter(r=>prodDeAngulo(r)===pp).reduce((a,r)=>a+(Number(r.gasto)||0),0);
+    const ps=[...new Set(base.map(prodDeAngulo))].sort((a,b)=>(a===""?1:b===""?-1:gastoDe(b)-gastoDe(a)));
+    if(st.angProd!=="all" && !ps.includes(st.angProd)) st.angProd="all";
+    if(ps.length>1) angSel=`<div class="cp-sel"><span class="tlabel">Producto</span><div class="chips" id="angProds">
+      <button class="chip ${st.angProd==="all"?"on":""}" data-p="all">Todos</button>
+      ${ps.map(pp=>`<button class="chip ${st.angProd===pp?"on":""}" data-p="${esc(pp)}">${esc(pp||"Sin producto")}</button>`).join("")}</div></div>`;
+  }
+  $("content").innerHTML=angSel+`<div class="resumen" id="kpis"></div><div class="panel"><div class="scroll"><table><thead><tr id="thead"></tr></thead><tbody id="tbody"></tbody><tfoot id="tfoot"></tfoot></table></div></div>`;   // (10-oct) sin «Mensajes que Meta cobra» — Rodrigo
   renderKpis(); renderTable();
+  const aps=$("angProds"); if(aps) aps.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{ st.angProd=b.dataset.p; render(); });
 }
 // 💸 MENSAJES QUE META COBRA. Desde el 1-oct-2026 Meta cobra por mensaje lo que hoy es gratis:
 // todo lo que escribe el bot vendiendo, salvo lo que cae dentro de la ventana (hasta 7 días) de un clic en el
@@ -1036,23 +1054,27 @@ function veredictoHtml(gIn){
 
 function renderAngulo(){
   const rows=visibleRows();
-  // Los ángulos son POR PRODUCTO (tabla angulos: único por channel+product+slug), así que dos
-  // productos DISTINTOS pueden tener un ángulo con el MISMO nombre ("Oferta"). Antes se agrupaba
-  // solo por el nombre → se fusionaban gasto/ventas de productos distintos bajo una fila y el
-  // CPA/ROAS de ese ángulo no correspondía a ninguno real. Se agrupa por (nombre + producto);
-  // si un nombre se repite entre productos, se muestra el producto para no confundir.
-  const nombresPorProd={};
-  rows.forEach(a=>{ (nombresPorProd[a.angulo||""]=nombresPorProd[a.angulo||""]||new Set()).add(a.prod||""); });
-  const key=a=>`${a.angulo||""}${a.prod||""}`;
-  const grupos=[...new Set(rows.map(key))];
-  let html="";
-  grupos.forEach((gk,ci)=>{
-    const aads=rows.filter(a=>key(a)===gk);
-    const ang=aads[0].angulo||"— Sin ángulo —";
-    const ambiguo=(nombresPorProd[aads[0].angulo||""]||new Set()).size>1;
-    const label= ambiguo && aads[0].prod ? `${ang} · ${aads[0].prod}` : ang;
-    html+=`<tr class="camp" data-c="${ci}"><td><div class="nm"><span class="caret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span><span class="t1">${esc(label)}</span></div></td>${cells(metrics(sumAds(aads)))}</tr>`;
-    aads.forEach(a=>{ const i=st.rows.indexOf(a); html+=`<tr class="ad kid k${ci}" data-ad="${i}"><td>${nameCell(a.name,a.tag,"",true)}</td>${cells(metrics(a))}</tr>`; });
+  // Los ángulos son POR PRODUCTO (tabla angulos: único por channel+product+slug), así que dos productos DISTINTOS
+  // pueden tener un ángulo con el MISMO nombre ("Oferta"): se agrupa por (producto + nombre), nunca solo por el nombre.
+  // (6-nov, Rodrigo) Ordenado por producto: una fila-título por producto (el de más gasto primero) y debajo sus
+  // ángulos, también de más a menos gasto, con «Sin ángulo» al final. Todo en la MISMA tabla para que las columnas
+  // cuadren y el total siga abajo.
+  const g=(arr)=>arr.reduce((a,r)=>a+(Number(r.gasto)||0),0);
+  const prods=[...new Set(rows.map(prodDeAngulo))].sort((a,b)=>(a===""?1:b===""?-1:g(rows.filter(r=>prodDeAngulo(r)===b))-g(rows.filter(r=>prodDeAngulo(r)===a))));
+  const nCols=visibleCols().length+1;
+  let html="", ci=0;
+  prods.forEach(pp=>{
+    const delProd=rows.filter(r=>prodDeAngulo(r)===pp);
+    const parts=String(pp).split(" "); const em=pp && /\p{Extended_Pictographic}/u.test(parts[0])?parts.shift():"";
+    html+=`<tr class="prodrow"><td colspan="${nCols}"><div class="nm">${em?`<span class="em">${esc(em)}</span>`:icon("box")}<span class="t1">${esc(pp?parts.join(" ")||pp:"Sin producto")}</span><span class="prodn">${delProd.length} anuncio${delProd.length==1?"":"s"}</span></div></td></tr>`;
+    const angs=[...new Set(delProd.map(a=>a.angulo||"— Sin ángulo —"))]
+      .sort((a,b)=>(a==="— Sin ángulo —"?1:b==="— Sin ángulo —"?-1:g(delProd.filter(r=>(r.angulo||"— Sin ángulo —")===b))-g(delProd.filter(r=>(r.angulo||"— Sin ángulo —")===a))));
+    angs.forEach(ang=>{
+      const aads=delProd.filter(a=>(a.angulo||"— Sin ángulo —")===ang);
+      html+=`<tr class="camp" data-c="${ci}"><td><div class="nm"><span class="caret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span><span class="t1">${esc(ang)}</span></div></td>${cells(metrics(sumAds(aads)))}</tr>`;
+      aads.forEach(a=>{ const i=st.rows.indexOf(a); html+=`<tr class="ad kid k${ci}" data-ad="${i}"><td>${nameCell(a.name,a.tag,"",true)}</td>${cells(metrics(a))}</tr>`; });
+      ci++;
+    });
   });
   $("tbody").innerHTML=html;
   $("tbody").querySelectorAll("tr.camp").forEach(tr=>tr.onclick=()=>{ tr.classList.toggle("closed"); $("tbody").querySelectorAll(".k"+tr.dataset.c).forEach(k=>k.classList.toggle("hide")); });
