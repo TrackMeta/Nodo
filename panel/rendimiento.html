@@ -96,6 +96,10 @@
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden}
   /* (5-nov) Por copy */
   .cp-panel{margin-bottom:16px}
+  .cp-sel{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 14px}
+  .cp-prod{display:flex;align-items:center;gap:8px;margin:6px 0 10px;font-size:15px;font-weight:800}
+  .cp-prod svg{width:17px;height:17px;color:var(--muted)}
+  .cp-prod .cp-em{font-size:17px;line-height:1}
   .cp-hd{padding:14px 15px 10px}
   .cp-tt{font-weight:700;font-size:14px}
   .cp-st{font-size:12px;color:var(--muted);margin-top:2px}
@@ -233,7 +237,7 @@ import { llevarAMoneda, cargarCambios, factorCambio, gastoAdsEn } from "./cambio
 import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, startOfDayTZ as startOfDayLima, endOfDayTZ as endOfDayLima, ymdTZ } from "./date-range.js";
 const $=(id)=>document.getElementById(id);
-const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", tipo:"all", account:"all", cols:new Set(), sel:null, range:null, rows:[], loaded:false };
+const st={ channelId:null, adAccounts:[], syncError:null, vista:"anuncio", copyProd:"all", tipo:"all", account:"all", cols:new Set(), sel:null, range:null, rows:[], loaded:false };
 function visibleRows(){ return st.rows.filter(r=>(st.tipo==="all"||r.tag===st.tipo) && (st.account==="all"||r.account_id===st.account)); }
 
 // Moneda del canal (símbolo por código ISO), igual que el Dashboard.
@@ -546,12 +550,10 @@ function renderStatus(){
   // "SIN CONECTAR" era peor: con la tabla vacía parecía que era por falta de Meta cuando
   // en realidad es que todavía no hay copys medidos. El aviso de token roto tampoco viene
   // a cuento acá: esta vista no lee nada de Meta.
-  // (5-nov, Rodrigo) Sin la pastilla «NO NECESITA META»: la quitó. En «Por copy» el encabezado va sin pastilla.
-  if(st.vista==="copy"){
-    $("statusSlot").innerHTML="";
-    $("noticeSlot").innerHTML="";
-    return;
-  }
+  // (5-nov, Rodrigo) Sin la pastilla «NO NECESITA META», y con la MISMA de las otras pestañas («1 cuenta conectada» +
+  // Actualizar): así el encabezado no cambia al pasar de una pestaña a otra. El aviso de token roto sí se calla acá,
+  // porque esta vista no lee nada de Meta.
+  const _esCopy = st.vista==="copy";
   // El botón de forzar la bajada: Ajustes → Conexiones lo prometía («puedes forzarlo desde
   // Rendimiento») y no existía. Sin él, el que acaba de conectar su cuenta tiene que esperar
   // a la próxima corrida del cron para saber si quedó bien — y si quedó mal, se entera una
@@ -561,7 +563,7 @@ function renderStatus(){
        <button class="pillbtn" id="syncAds" title="Baja de Meta el gasto de ahora mismo, sin esperar a la próxima corrida">${icon("refresh")} Actualizar</button>`
     : `<span class="demopill" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)"><span class="d" style="background:var(--faint)"></span>SIN CONECTAR</span>`;
   const bs=$("syncAds"); if(bs) bs.onclick=()=>sincronizarAhora(bs);
-  $("noticeSlot").innerHTML = st.syncError
+  $("noticeSlot").innerHTML = st.syncError && !_esCopy
     ? `<div class="notice" style="background:var(--red-bg);border-color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(st.syncError)} Reconéctalo en <a href="canales.html?tab=meta">Conexiones → Meta</a>.</div></div>`
     : "";
 }
@@ -810,10 +812,10 @@ async function productoPorRef(){
     for(const f of fls||[]) if(f.product_id) map[f.id]=f.product_id;
   }catch(_){ }
   try{
-    const { data:ps }=await supa.from("products").select("id,nombre,tipo,config").eq("channel_id",st.channelId);
-    window.__prodNombre={}; window.__prodTipo={};
+    const { data:ps }=await supa.from("products").select("id,nombre,emoji,tipo,config").eq("channel_id",st.channelId);
+    window.__prodNombre={}; window.__prodTipo={}; window.__prodEmoji={};
     for(const p of ps||[]){
-      window.__prodNombre[p.id]=p.nombre;
+      window.__prodNombre[p.id]=p.nombre; window.__prodEmoji[p.id]=p.emoji||"";
       // Digital o físico, para que el filtro Tipo también valga en "Por copy": cada copy
       // pertenece a un producto, así que no había motivo para dejar esta vista sin ese
       // filtro — y era justo lo que hacía desaparecer los botones y saltar la barra.
@@ -895,6 +897,7 @@ function renderCopys(){
   const box=$("content");
   box.innerHTML=`<div class="nodo-empty" style="border:none;padding:40px 20px"><p>Cargando…</p></div>`;
   cargaCopys().then(({filas,error})=>{
+    st._copyFilas=filas||[];
     if(error){
       box.innerHTML=`<div class="nodo-empty" style="border:none;padding:44px 20px"><h3>Falta aplicar la migración 0079</h3>
         <p>Esta vista lee la tabla <code>variante_envios</code>, que todavía no existe en tu base.</p></div>`;
@@ -914,6 +917,11 @@ function renderCopys(){
         <p style="max-width:52ch;margin:8px auto 0;line-height:1.6">Se llena solo: cada vez que el bot manda un saludo inicial o un paso de remarketing que tiene <b>varias versiones</b>, queda registrado cuál mandó y si el cliente contestó.<br><br>Si tus mensajes tienen una sola versión, no hay nada que comparar — agrega una segunda en el flujo o en la secuencia.</p></div>`;
       return;
     }
+    pintarCopys(filas);
+  }).catch(e=>{ box.innerHTML=`<div class="nodo-empty" style="border:none;padding:44px 20px"><p>No se pudo cargar: ${esc(String(e?.message||e))}</p></div>`; });
+}
+function pintarCopys(filas){
+    const box=$("content"); if(!box) return;
     // (5-nov, Rodrigo: «¿el diseño está bien? ¿está ordenado?») Rehecha. Antes era una tarjeta por toque, en el orden en
     // que llegaban los datos (salía toque 2, 1, 3, 4), con el mismo aviso repetido en cada una, columnas que no cuadraban
     // entre tarjetas y sin decir qué mensaje era «Versión A». Ahora: por producto, UNA tabla del saludo y UNA del
@@ -935,9 +943,19 @@ function renderCopys(){
         <td class="num" style="font-weight:800;color:${f.resp===0?"var(--faint)":"var(--text)"}">${pct(f)}</td>
         <td class="num">${f.compras}</td><td class="num">${money0(f.monto)}</td></tr>`;
     };
-    const prods=[...new Set(filas.map(f=>f.prod||""))];
+    // (5-nov) Por PRODUCTO: los del que más envíos tuvo primero, cada uno con su encabezado, y un selector arriba
+    // cuando hay 2 o más (los copys de productos distintos nunca compiten entre sí).
+    const envDe=(pid)=>filas.filter(f=>(f.prod||"")===pid).reduce((a,f)=>a+f.env,0);
+    const prodsTodos=[...new Set(filas.map(f=>f.prod||""))].sort((a,b)=>envDe(b)-envDe(a));
+    if(st.copyProd!=="all" && !prodsTodos.includes(st.copyProd)) st.copyProd="all";
+    const prods = st.copyProd==="all" ? prodsTodos : [st.copyProd];
+    const nomDe=(pid)=>(window.__prodNombre||{})[pid] || (pid?"Producto borrado":"Sin producto");
+    const emDe=(pid)=>(window.__prodEmoji||{})[pid] || "";
+    const selector = prodsTodos.length>1 ? `<div class="cp-sel"><span class="tlabel">Producto</span><div class="chips" id="copyProds">
+        <button class="chip ${st.copyProd==="all"?"on":""}" data-p="all">Todos</button>
+        ${prodsTodos.map(pid=>`<button class="chip ${st.copyProd===pid?"on":""}" data-p="${esc(pid)}">${emDe(pid)?esc(emDe(pid))+" ":""}${esc(nomDe(pid))}</button>`).join("")}</div></div>` : "";
     let todasUna=true;
-    const html=prods.flatMap(pid=>AMBS.map(([amb,titulo,sub,colResp])=>{
+    const html=prods.map(pid=>`<div class="cp-prod">${emDe(pid)?`<span class="cp-em">${esc(emDe(pid))}</span>`:icon("box")}<span>${esc(nomDe(pid))}</span></div>`+AMBS.map(([amb,titulo,sub,colResp])=>{
       const delAmb=filas.filter(f=>f.ambito===amb && (f.prod||"")===pid);
       if(!delAmb.length) return "";
       // Toques en orden (null = sin toque, primero)
@@ -954,18 +972,17 @@ function renderCopys(){
         if(vivas.length>1 || !vivas.length) h+=`<tr class="cp-ver"><td></td><td colspan="6">${veredictoHtml(g)}</td></tr>`;
         return h;
       }).join("");
-      const nomProd=(window.__prodNombre||{})[pid];
       return `<div class="panel cp-panel">
-        <div class="cp-hd"><div class="cp-tt">${titulo}${nomProd?` · <span style="color:var(--muted);font-weight:600">${esc(nomProd)}</span>`:""}</div>
+        <div class="cp-hd"><div class="cp-tt">${titulo}</div>
           <div class="cp-st">${sub}</div></div>
         <div class="scroll"><table class="cp-tabla">${cols}<thead><tr>
           <th>${amb==="secuencia"?"Toque":"Versión"}</th><th style="text-align:left">Mensaje</th><th>Recibieron</th><th>${colResp}</th>
           <th>Tasa</th><th>Compraron</th><th>Ingresos</th></tr></thead>
         <tbody>${cuerpo}</tbody></table></div></div>`;
-    })).join("");
+    }).join("")).join("");
     const avisoUna = todasUna ? `<div class="cp-aviso">${icon("clock")}<span>Cada mensaje tiene <b>una sola versión</b>, así que todavía no hay con qué compararlo. Agrega una segunda versión a un mensaje (en Secuencias o en el saludo del producto) y acá verás cuál rinde mejor.</span></div>` : "";
-    box.innerHTML = (html ? avisoUna+html : "") || `<div class="nodo-empty" style="border:none;padding:44px 20px"><p>Sin datos en este periodo.</p></div>`;
-  }).catch(e=>{ box.innerHTML=`<div class="nodo-empty" style="border:none;padding:44px 20px"><p>No se pudo cargar: ${esc(String(e?.message||e))}</p></div>`; });
+    box.innerHTML = (html ? selector+avisoUna+html : "") || `<div class="nodo-empty" style="border:none;padding:44px 20px"><p>Sin datos en este periodo.</p></div>`;
+    const cs=$("copyProds"); if(cs) cs.querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{ st.copyProd=b.dataset.p; pintarCopys(st._copyFilas||[]); });
 }
 // El cintillo: qué se puede concluir HOY. Es la parte que más importa que sea honesta —
 // un "gana A" con datos flojos hace apagar la versión buena.
