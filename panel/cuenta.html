@@ -46,6 +46,8 @@
   .inv .t{font-family:ui-monospace,Menlo,monospace;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .muted{color:var(--muted)}
   .plat{border:1px solid var(--brand);background:var(--brand-bg)}
+  a.btn{text-decoration:none}
+  .nodo-modal label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
 </style>
 </head>
 <body>
@@ -126,8 +128,8 @@ function render(){
       <p class="desc">Miembros de esta cuenta${soyAdmin?' · como admin puedes invitar y quitar gente.':''}</p>
       ${members}
       ${soyAdmin?`<div class="row" style="margin-top:16px">
-        <button class="btn primary" data-team="${esc(a.id)}">${icon("users")} Generar código de equipo</button>
-        <span class="muted" style="font-size:12px">Compártelo con quien quieras sumar como operador.</span>
+        <button class="btn primary" data-team="${esc(a.id)}">${icon("users")} Invitar a alguien</button>
+        <span class="muted" style="font-size:12px">Le llega un link para entrar a esta cuenta como operador o admin.</span>
       </div><div id="teamBox-${esc(a.id)}"></div>`:''}
     </div>`;
   }).join("") || `<div class="card"><p class="muted">No perteneces a ninguna cuenta todavía.</p></div>`;
@@ -148,26 +150,65 @@ async function mkAccountLink(){
   $("acctLinkBox").innerHTML = codeBox("Link de invitación de cuenta", r.link, `Envíaselo a tu cliente. Solo sirve con ${esc(email)} y vence en 14 días.`);
   wireCopy($("acctLinkBox"), r.link);
 }
+// (6-nov, Rodrigo) «Invitar a alguien»: UNA ventana con correo + rol (antes eran dos preguntas seguidas) y el
+// resultado es UN link con «Enviar por WhatsApp» y «Copiar». Antes salían código y link a la vez y no quedaba claro
+// cuál mandar. El código queda abajo, chico, solo de respaldo (se pega en la página de registro o en Perfil).
+const ROLES = [
+  { value:"operador", label:"Operador", desc:"Atiende chats y pedidos, aprueba pagos. No cambia la configuración." },
+  { value:"admin", label:"Admin", desc:"Todo lo del operador + configuración, equipo y conexiones." } ];
+function pedirInvitacion(nombreCuenta){
+  return new Promise((resolve)=>{
+    const back = document.createElement("div"); back.className = "nodo-modal-back";
+    back.innerHTML = `<div class="nodo-modal" role="dialog" aria-modal="true">
+      <h3>Invitar a alguien${nombreCuenta?` a ${esc(nombreCuenta)}`:""}</h3>
+      <label for="ivMail">Su correo</label>
+      <input id="ivMail" type="email" placeholder="nombre@correo.com" autocomplete="off" />
+      <div class="muted" style="font-size:11.5px;margin:5px 0 12px">El link solo va a servir con este correo: el que la persona usa (o usará) para entrar a Nodo.</div>
+      <label>Qué podrá hacer</label>
+      <div class="nodo-choices">${ROLES.map(r=>`<button class="nodo-choice${r.value==="operador"?" on":""}" type="button" data-v="${r.value}">
+        <span class="nc-tx"><b>${r.label}</b><small>${r.desc}</small></span><span class="nc-ck">${icon("check")}</span></button>`).join("")}</div>
+      <div class="nb-acts"><button class="nb-btn" id="ivCancel" type="button">Cancelar</button><button class="nb-btn primary" id="ivOk" type="button">Crear invitación</button></div>
+    </div>`;
+    document.body.appendChild(back);
+    let rol = "operador", hecho = false;
+    const cerrar = (v)=>{ if(hecho) return; hecho = true; back.remove(); resolve(v); };
+    const mail = back.querySelector("#ivMail"), ok = back.querySelector("#ivOk");
+    const valido = ()=> /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail.value.trim());
+    const sync = ()=>{ ok.disabled = !valido(); ok.style.opacity = ok.disabled ? ".5" : ""; };
+    mail.addEventListener("input", sync); sync();
+    back.querySelectorAll(".nodo-choice").forEach(b=> b.onclick=()=>{ rol = b.dataset.v; back.querySelectorAll(".nodo-choice").forEach(x=>x.classList.toggle("on", x===b)); });
+    ok.onclick = ()=>{ if(valido()) cerrar({ email:mail.value.trim().toLowerCase(), role:rol }); else mail.focus(); };
+    back.querySelector("#ivCancel").onclick = ()=> cerrar(null);
+    back.addEventListener("mousedown", (e)=>{ if(e.target===back) cerrar(null); });
+    back.addEventListener("keydown", (e)=>{ if(e.key==="Escape") cerrar(null); if(e.key==="Enter" && e.target===mail){ e.preventDefault(); ok.click(); } });
+    setTimeout(()=> mail.focus(), 30);
+  });
+}
+function textoWhatsApp(negocio, rol, link, email){
+  return `Hola 👋 Te invito a ${negocio ? "*"+negocio+"*" : "mi negocio"} en Nodo como *${rol==="admin"?"Admin":"Operador"}*.\n\nEntra a este link para unirte:\n${link}\n\nSolo funciona con tu correo ${email}.`;
+}
+function cajaInvitacion({ email, role, link, code, negocio }){
+  const wa = "https://wa.me/?text=" + encodeURIComponent(textoWhatsApp(negocio, role, link, email));
+  return `<div class="codebox">
+    <div class="lbl">Invitación lista para <b style="color:var(--text)">${esc(email)}</b> · ${role==="admin"?"Admin":"Operador"}</div>
+    <div class="val" style="font-size:12.5px;font-weight:600">${esc(link)}</div>
+    <div class="copyrow" style="flex-wrap:wrap">
+      <a class="btn sm primary" href="${esc(wa)}" target="_blank" rel="noopener">${icon("message")} Enviar por WhatsApp</a>
+      <button class="btn sm" data-copy>${icon("copy")} Copiar link</button>
+    </div>
+    <div class="muted" style="font-size:11.5px;margin-top:10px;line-height:1.55">Sirve una sola vez y vence en 14 días. Si el link no abre, la persona puede pegar este código en la página de registro o en Perfil → «Unirme a un equipo»: <b style="font-family:ui-monospace,Menlo,monospace;color:var(--text)">${esc(code)}</b></div>
+  </div>`;
+}
 async function mkTeamCode(accId){
-  // Antes siempre «operador»: no había forma de sumar un segundo admin (y el aviso de «quitar al
-  // único admin» decía «primero suma otro admin»).
-  const role = await askChoice({ title:"¿Cómo lo sumas?", options:[
-    { value:"operador", label:"Operador", desc:"Atiende chats y pedidos, aprueba pagos. No cambia la configuración." },
-    { value:"admin", label:"Admin", desc:"Todo lo del operador + configuración, equipo y conexiones." } ], value:"operador" });
-  if(!role) return;
-  // El código es para UN correo (0121): sin esto, con un código válido cualquiera se registraba
-  // con el correo de otra persona y aparecía en el equipo con su nombre.
-  let email = await askText({ title:"¿Cuál es su correo?", message:"El código solo va a servir con este correo: el que la persona use para entrar a Nodo.",
-    placeholder:"nombre@correo.com", confirmText:"Generar código" });
-  if(email==null) return;
-  email = email.trim();
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast("Ese correo no parece válido.",true); return; }
-  const r = await callFn({ action:"create_team_invite", account_id:accId, role, email });
+  const acc = st.accounts.find(a=>a.id===accId);
+  const datos = await pedirInvitacion(acc?.nombre);
+  if(!datos) return;
+  const r = await callFn({ action:"create_team_invite", account_id:accId, role:datos.role, email:datos.email });
   if(!r) return;
   const box = $("teamBox-"+accId);
-  box.innerHTML = codeBox("Código de equipo", r.code, `Para ${esc(email)}: solo sirve con ese correo y se usa una sola vez. Genera otro para cada persona que sumes. También sirve el link de abajo. Vence en 14 días.`) +
-    `<div style="margin-top:8px" class="muted" data-link>${esc(r.link)}</div>`;
-  wireCopy(box, r.code);
+  box.innerHTML = cajaInvitacion({ email:datos.email, role:datos.role, link:r.link, code:r.code, negocio:acc?.nombre });
+  wireCopy(box, r.link);
+  loadInvites();
 }
 async function renameAccount(accId){
   const acc = st.accounts.find(a=>a.id===accId);
@@ -215,18 +256,22 @@ async function loadInvites(){
   card.innerHTML = invs.length ? `
     <div class="card">
       <h2>${icon("mail")} Invitaciones activas</h2>
-      <p class="desc">Links y códigos de tu equipo que aún no se usan.</p>
+      <p class="desc">Invitaciones que todavía nadie usó. Si la persona perdió el link, cópialo de aquí.</p>
       ${invs.map(i=>`<div class="inv">
-        <span class="badge">${i.kind==='new_account'?'Cuenta':'Equipo'}</span>
-        <span class="t">${esc(i.token)}${i.email?` <span class="muted" style="font-size:12px">· ${esc(i.email)}</span>`:""}</span>
+        <span class="badge">${i.kind==='new_account'?'Cuenta nueva':(i.role==='admin'?'Admin':'Operador')}</span>
+        <span class="t" style="font-family:var(--font);color:var(--text)">${esc(i.email||i.token)}<span class="muted" style="font-size:11.5px"> · vence el ${esc(new Date(i.expires_at).toLocaleDateString("es-PE",{day:"numeric",month:"short"}))}</span></span>
+        <button class="btn sm" data-cplink="${esc(linkDe(i))}">${icon("copy")} Copiar link</button>
         <button class="btn danger sm" data-rev="${esc(i.id)}">Revocar</button>
       </div>`).join("")}
     </div>` : "";
+  document.querySelectorAll("[data-cplink]").forEach(b=> b.onclick=async()=>{ try{ await navigator.clipboard.writeText(b.getAttribute("data-cplink")); toast("Link copiado"); }catch{ toast("No se pudo copiar",true); } });
   document.querySelectorAll("[data-rev]").forEach(b=> b.onclick=async()=>{
     await callFn({ action:"revoke", id:b.getAttribute("data-rev") }); loadInvites();
   });
 }
 
+const PANEL_URL = "https://trackmeta.github.io/Nodo/panel";
+function linkDe(i){ return `${PANEL_URL}/registro.html?${i.kind==="new_account"?"invite":"join"}=${encodeURIComponent(i.token)}`; }
 function codeBox(label, value, hint){
   return `<div class="codebox">
     <div class="lbl">${esc(label)}</div>

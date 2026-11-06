@@ -35,93 +35,181 @@
   .foot{margin-top:18px;font-size:12.5px;color:var(--muted);text-align:center}
   .foot a{color:var(--brand);text-decoration:none}
   .hidden{display:none!important}
+  .who{background:var(--brand-bg);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.5;margin:0 0 12px}
+  .who small{display:block;color:var(--muted);font-size:12px;margin-top:4px}
+  .in[readonly]{opacity:.75}
 </style>
 </head>
 <body>
   <form class="card" id="form" autocomplete="off">
     <div class="brand"><img src="../assets/logo-128.png" alt="Nodo" /><h1>Nodo</h1></div>
     <div class="pill" id="pill">Invitación</div>
+    <!-- (6-nov) Quién invita, a qué negocio y con qué rol: antes solo decía «Unirte a un equipo». -->
+    <div class="who hidden" id="who"></div>
     <p class="sub" id="sub">Completa tus datos para empezar.</p>
 
-    <div id="codeRow" class="hidden">
-      <label>Código de invitación</label>
-      <input class="in" id="code" placeholder="Pega tu código o link" />
-      <div class="hint">Te lo dio quien te invitó.</div>
+    <div id="campos">
+      <div id="codeRow" class="hidden">
+        <label>Código de invitación</label>
+        <input class="in" id="code" placeholder="Pega tu código o link" />
+        <div class="hint">Te lo dio quien te invitó.</div>
+      </div>
+
+      <div id="bizRow" class="hidden">
+        <label>Nombre de tu negocio</label>
+        <input class="in" id="business" placeholder="Ej: Mi Tienda" />
+        <div class="hint">Así se llamará tu cuenta en Nodo (lo puedes cambiar después).</div>
+      </div>
+
+      <div id="nombreRow">
+        <label>Tu nombre</label>
+        <input class="in" id="nombre" placeholder="Cómo te llamas" autocomplete="off" />
+      </div>
+
+      <label>Correo</label>
+      <input class="in" type="email" id="email" placeholder="tu@correo.com" autocomplete="off" />
+      <div class="hint hidden" id="emailHint">La invitación es para este correo.</div>
+
+      <label id="passLbl">Crea una contraseña</label>
+      <input class="in" type="password" id="password" placeholder="Mínimo 8 caracteres" autocomplete="new-password" />
     </div>
-
-    <div id="bizRow" class="hidden">
-      <label>Nombre de tu negocio</label>
-      <input class="in" id="business" placeholder="Ej: Mi Tienda" />
-      <div class="hint">Así se llamará tu cuenta en Nodo (lo puedes cambiar después).</div>
-    </div>
-
-    <label>Tu nombre</label>
-    <input class="in" id="nombre" placeholder="Cómo te llamas" autocomplete="off" />
-
-    <label>Correo</label>
-    <input class="in" type="email" id="email" placeholder="tu@correo.com" autocomplete="off" />
-
-    <label>Contraseña</label>
-    <input class="in" type="password" id="password" placeholder="Mínimo 8 caracteres" autocomplete="new-password" />
 
     <button class="btn" id="btn" type="submit">Crear mi cuenta</button>
     <div class="msg" id="msg"></div>
-    <div class="foot">¿Ya tienes cuenta? <a href="index.html">Inicia sesión</a></div>
+    <div class="foot" id="foot">¿Ya tienes cuenta? <a href="index.html">Inicia sesión</a></div>
   </form>
 
 <script type="module">
 import { supa } from "./shell.js";
 const $ = (id) => document.getElementById(id);
+const esc = (s) => (s ?? "").toString().replace(/[&<>"]/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]));
 const p = new URLSearchParams(location.search);
 // El token puede venir como link de cuenta (?invite=) o código de equipo (?join=).
 let urlToken = p.get("invite") || p.get("join") || "";
 const esCuenta = !!p.get("invite");
 const esEquipo = !!p.get("join");
+// Un código pegado puede ser el link entero: se saca el token de adentro.
+const tokenDe = (v) => { const t = String(v || "").trim(); const m = t.match(/[?&](?:join|invite)=([^&#\s]+)/); return m ? decodeURIComponent(m[1]) : t.toUpperCase(); };
 
-function setUI(){
-  if (esCuenta){
-    $("pill").textContent = "Cuenta nueva";
-    $("sub").textContent = "Crea tu cuenta de Nodo y serás su administrador.";
-    $("bizRow").classList.remove("hidden");
-    $("btn").textContent = "Crear mi cuenta";
-  } else if (esEquipo){
-    $("pill").textContent = "Unirte a un equipo";
-    $("sub").textContent = "Completa tus datos para unirte al equipo que te invitó.";
-    $("btn").textContent = "Unirme";
-  } else {
-    // Sin token en el link: que peguen el código. No sabemos el tipo hasta enviarlo.
-    $("pill").textContent = "Invitación";
-    $("sub").textContent = "Ingresa el código que te compartieron y tus datos.";
-    $("codeRow").classList.remove("hidden");
-    $("bizRow").classList.remove("hidden");
-    $("bizRow").querySelector(".hint").textContent = "Solo si tu invitación es para una cuenta nueva.";
-  }
-}
-setUI();
+// (6-nov, Rodrigo) Tres caminos con el MISMO link:
+//  · «nuevo»:  primera vez en Nodo → nombre + contraseña y entra.
+//  · «entrar»: ya usa Nodo con ese correo → su contraseña y queda dentro del equipo (antes tenía que ir a
+//              Perfil → «Unirme a un equipo» y pegar el código, cosa que nadie encontraba).
+//  · «sesion»: ya tiene la sesión abierta con ese correo → un botón «Aceptar invitación».
+let modo = "nuevo", info = null;
+const ROL = { admin:"Admin", operador:"Operador" };
+const ROL_DESC = { admin:"Podrás atender chats y pedidos, y también cambiar la configuración y el equipo.",
+                   operador:"Podrás atender chats y pedidos y aprobar pagos." };
 
 function show(text, ok){ const m = $("msg"); m.className = "msg " + (ok ? "ok" : "err"); m.textContent = text; }
 
+function pintar(){
+  const conInfo = !!info;
+  $("who").classList.toggle("hidden", !conInfo);
+  if (conInfo){
+    const neg = info.negocio ? `<b>${esc(info.negocio)}</b>` : "un negocio";
+    $("who").innerHTML = info.tipo === "new_account"
+      ? `Te invitaron a crear ${info.negocio ? `la cuenta ${neg}` : "tu cuenta"} en Nodo.`
+      : `${info.invita ? `<b>${esc(info.invita)}</b> te invitó` : "Te invitaron"} a ${neg} como <b>${esc(ROL[info.rol] || "Operador")}</b>.<small>${esc(ROL_DESC[info.rol] || ROL_DESC.operador)}</small>`;
+  }
+  if (info?.email){ $("email").value = info.email; $("email").readOnly = true; $("emailHint").classList.remove("hidden"); }
+  const cuenta = esCuenta || info?.tipo === "new_account";
+  $("pill").textContent = cuenta ? "Cuenta nueva" : (esEquipo || info) ? "Invitación a un equipo" : "Invitación";
+  $("codeRow").classList.toggle("hidden", !!urlToken);
+  $("bizRow").classList.toggle("hidden", !(cuenta && modo === "nuevo") && !!urlToken);
+  if (!urlToken) $("bizRow").querySelector(".hint").textContent = "Solo si tu invitación es para una cuenta nueva.";
+  $("nombreRow").classList.toggle("hidden", modo !== "nuevo");
+  $("campos").classList.toggle("hidden", modo === "sesion");
+  $("passLbl").textContent = modo === "nuevo" ? "Crea una contraseña" : "Tu contraseña de Nodo";
+  $("password").placeholder = modo === "nuevo" ? "Mínimo 8 caracteres" : "La que usas para entrar a Nodo";
+  $("password").autocomplete = modo === "nuevo" ? "new-password" : "current-password";
+  if (modo === "nuevo"){
+    $("sub").textContent = cuenta ? "Crea tu acceso y serás el administrador de la cuenta." : "Es tu primera vez en Nodo: pon tu nombre y crea una contraseña.";
+    $("btn").textContent = cuenta ? "Crear mi cuenta" : "Crear mi acceso y entrar";
+    $("foot").innerHTML = `¿Ya usas Nodo${info?.email ? " con este correo" : ""}? <a href="#" id="toEntrar">Entra y acepta</a>`;
+  } else if (modo === "entrar"){
+    $("sub").textContent = "Ya usas Nodo: entra con tu contraseña y quedarás dentro del equipo. Tus otros bots siguen igual.";
+    $("btn").textContent = "Entrar y aceptar";
+    $("foot").innerHTML = `¿Es tu primera vez en Nodo? <a href="#" id="toNuevo">Crea tu acceso</a>`;
+  } else {
+    $("sub").textContent = "Ya tienes la sesión abierta con este correo. Acepta y entra.";
+    $("btn").textContent = "Aceptar invitación";
+    $("foot").innerHTML = `<a href="index.html">Ahora no</a>`;
+  }
+  const te = $("toEntrar"), tn = $("toNuevo");
+  if (te) te.onclick = (e) => { e.preventDefault(); modo = "entrar"; show(""); pintar(); $("password").focus(); };
+  if (tn) tn.onclick = (e) => { e.preventDefault(); modo = "nuevo"; show(""); pintar(); };
+}
+
+async function canjear(token){
+  const { data, error } = await supa.functions.invoke("invites", { body: { action: "redeem", token } });
+  if (error){ let d = "No se pudo aceptar la invitación."; try{ d = (await error.context.json())?.detalle || d; }catch{} throw new Error(d); }
+  if (!data?.ok) throw new Error(data?.detalle || "No se pudo aceptar la invitación.");
+}
+
+async function iniciar(){
+  if (urlToken){
+    try{
+      const { data, error } = await supa.functions.invoke("signup", { body: { action: "info", token: urlToken } });
+      if (error){
+        // Solo «invite_invalida» corta el paso; cualquier otro error (p. ej. la función sin desplegar
+        // todavía) deja el formulario de siempre: el registro igual valida la invitación al enviar.
+        let j = {}; try{ j = await error.context.json(); }catch{}
+        if (j?.error === "invite_invalida"){ $("campos").classList.add("hidden"); $("btn").classList.add("hidden"); $("foot").innerHTML = `<a href="index.html">Ir a Nodo</a>`; show(j.detalle || "La invitación no es válida, ya fue usada o venció. Pide una nueva a quien te invitó."); return; }
+      }
+      if (data?.ok) info = data;
+    }catch(_){ /* sin datos de la invitación: el formulario de siempre */ }
+    // ¿Ya tiene la sesión abierta? Con el mismo correo, basta un botón.
+    try{
+      const { data: { session } } = await supa.auth.getSession();
+      const correo = session?.user?.email?.toLowerCase();
+      if (correo && (!info?.email || correo === info.email.toLowerCase())) modo = "sesion";
+      else if (correo && info?.email) show(`Tienes abierta la sesión de ${correo}, pero la invitación es para ${info.email}. Entra con ese correo.`);
+    }catch(_){}
+  }
+  pintar();
+}
+iniciar();
+
 $("form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const token = (urlToken || $("code").value || "").trim();
+  const token = urlToken || tokenDe($("code").value);
   const email = $("email").value.trim().toLowerCase();
   const password = $("password").value;
   const nombre = $("nombre").value.trim();
   const business_name = $("business").value.trim();
   if (!token){ show("Falta el código de invitación."); return; }
-  if (!nombre){ show("Escribe tu nombre."); return; }
-  if (!/.+@.+\..+/.test(email)){ show("Escribe un correo válido."); return; } // antes bastaba un "@" suelto
-  if (password.length < 8){ show("La contraseña debe tener al menos 8 caracteres."); return; }
 
-  $("btn").disabled = true; show("Creando tu cuenta…", true);
+  if (modo === "sesion"){
+    $("btn").disabled = true; show("Aceptando…", true);
+    try{ await canjear(token); show("¡Listo! Entrando…", true); location.href = "index.html"; }
+    catch(err){ show(String(err.message || err)); $("btn").disabled = false; }
+    return;
+  }
+  if (!/.+@.+\..+/.test(email)){ show("Escribe un correo válido."); return; }
+
+  if (modo === "entrar"){
+    if (!password){ show("Escribe tu contraseña."); return; }
+    $("btn").disabled = true; show("Entrando…", true);
+    const { error: le } = await supa.auth.signInWithPassword({ email, password });
+    if (le){ show(/invalid/i.test(le.message || "") ? "La contraseña no es correcta." : (le.message || "No se pudo entrar.")); $("btn").disabled = false; return; }
+    try{ await canjear(token); show("¡Listo! Ya eres parte del equipo. Entrando…", true); location.href = "index.html"; }
+    catch(err){ show(String(err.message || err)); $("btn").disabled = false; }
+    return;
+  }
+
+  if (!nombre){ show("Escribe tu nombre."); return; }
+  if (password.length < 8){ show("La contraseña debe tener al menos 8 caracteres."); return; }
+  $("btn").disabled = true; show("Creando tu acceso…", true);
   try{
     const { data, error } = await supa.functions.invoke("signup", {
       body: { token, email, password, nombre, business_name },
     });
     if (error){
-      let d = "No se pudo completar el registro.";
-      try{ d = (await error.context.json())?.detalle || d; }catch{}
-      show(d); $("btn").disabled = false; return;
+      let j = {}; try{ j = await error.context.json(); }catch{}
+      // Ya tiene usuario en Nodo: se pasa solo a «entrar con tu contraseña y aceptar».
+      if (j?.error === "email_existe"){ modo = "entrar"; pintar(); $("password").value = ""; show("Ese correo ya tiene usuario en Nodo: escribe tu contraseña para aceptar la invitación.", true); $("btn").disabled = false; $("password").focus(); return; }
+      show(j?.detalle || "No se pudo completar el registro."); $("btn").disabled = false; return;
     }
     if (!data?.ok){ show(data?.detalle || "No se pudo completar el registro."); $("btn").disabled = false; return; }
     // Registro OK → iniciar sesión y entrar al panel.

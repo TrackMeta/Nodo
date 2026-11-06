@@ -14,8 +14,33 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
-  let body: { token?: string; email?: string; password?: string; nombre?: string; business_name?: string };
+  let body: { action?: string; token?: string; email?: string; password?: string; nombre?: string; business_name?: string };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
+
+  // ── (6-nov) Qué dice la invitación, para que la página del link salude con datos reales:
+  // «Rodrigo te invitó a Prime Digital como Operador», con el correo ya puesto. No crea nada.
+  // Mismo mensaje para «no existe», «usada» y «vencida» (igual que abajo: no es un oráculo), y el
+  // código tiene 60 bits, así que no se pueden adivinar invitaciones ajenas probando.
+  if (body.action === "info") {
+    const tk = (body.token || "").trim();
+    const { data: iv } = tk ? await db.from("invitations")
+      .select("kind, role, email, nombre_sugerido, used_at, expires_at, account_id, created_by")
+      .eq("token", tk).maybeSingle() : { data: null };
+    const x = iv as any;
+    if (!x || x.used_at || new Date(x.expires_at) < new Date()) {
+      return json({ error: "invite_invalida", detalle: "La invitación no es válida, ya fue usada o venció. Pide una nueva a quien te invitó." }, 400);
+    }
+    const [{ data: acc }, { data: quien }] = await Promise.all([
+      x.account_id ? db.from("accounts").select("nombre").eq("id", x.account_id).maybeSingle() : Promise.resolve({ data: null }),
+      x.created_by ? db.from("app_users").select("nombre").eq("id", x.created_by).maybeSingle() : Promise.resolve({ data: null }),
+    ]);
+    return json({
+      ok: true, tipo: x.kind, rol: x.role, email: x.email || null,
+      negocio: (acc as any)?.nombre || x.nombre_sugerido || null,
+      invita: (quien as any)?.nombre || null,
+    });
+  }
+
   const token = (body.token || "").trim();
   const email = (body.email || "").trim().toLowerCase();
   const password = body.password || "";
@@ -48,7 +73,8 @@ Deno.serve(async (req) => {
   if (cErr || !created?.user) {
     const msg = cErr?.message || "";
     if (/already|exists|registered/i.test(msg)) {
-      return json({ error: "email_existe", detalle: "Ese correo ya tiene una cuenta. Inicia sesión y pégalo en Perfil → «Unirme a un equipo»." }, 400);
+      // La página del link pasa sola a «entrar con tu contraseña y aceptar» al ver este error.
+      return json({ error: "email_existe", detalle: "Ese correo ya tiene usuario en Nodo: entra con tu contraseña para aceptar la invitación." }, 400);
     }
     return json({ error: "crear_usuario", detalle: msg || "No se pudo crear el usuario." }, 400);
   }

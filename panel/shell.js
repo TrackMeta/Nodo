@@ -1559,9 +1559,17 @@ export async function mountShell({ active } = {}) {
   S.puedeCrear = true; let _sinCuenta = false;
   try {
     const { data: { session: _s } } = await supa.auth.getSession();
-    const { data: _ms } = await supa.from("account_members").select("role").eq("user_id", _s?.user?.id ?? "").eq("activo", true);
+    const { data: _ms } = await supa.from("account_members").select("role,account_id,accounts(nombre)").eq("user_id", _s?.user?.id ?? "").eq("activo", true);
     _sinCuenta = !(_ms || []).length;
     S.puedeCrear = (_ms || []).some((m) => m.role === "admin");
+    // (6-nov) Quien pertenece a 2+ negocios (su cuenta + el equipo al que lo invitaron) veía todos los bots
+    // mezclados en una sola lista, sin saber cuál era de qué negocio: el selector los separa por negocio.
+    S.cuentas = null; S.cuentaDe = null;
+    if ((_ms || []).length > 1) {
+      const { data: _cc } = await supa.from("channels").select("id,account_id").eq("activo", true);
+      S.cuentas = Object.fromEntries((_ms || []).map((m) => [m.account_id, m.accounts?.nombre || "Negocio"]));
+      S.cuentaDe = Object.fromEntries((_cc || []).map((c) => [c.id, c.account_id]));
+    }
   } catch (_) { /* sin dato → como antes */ }
   if (!S.channels.length) {
     if (_sinCuenta) toast("Ya no perteneces a ningún equipo de Nodo. Si te invitaron de nuevo, pega tu código en Perfil → «Unirme a un equipo».", true);
@@ -1580,7 +1588,19 @@ export async function mountShell({ active } = {}) {
       return x && x.pend ? `<b class="nb-cnt${x.urg ? " urg" : ""}" title="${x.pend} por atender">${x.pend > 99 ? "99+" : x.pend}</b>` : ""; };
     // (22-oct) Cada bot con su interruptor «encendido» (antes solo en Canales): se prende o apaga sin entrar a ninguna sección
     const sw = (c) => `<button class="nb-sw${c.bot_apagado ? "" : " on"}" type="button" role="switch" aria-checked="${c.bot_apagado ? "false" : "true"}" data-sw="${c.id}" title="${c.bot_apagado ? "Apagado: toca para encenderlo" : "Encendido: toca para apagarlo"}" aria-label="Encender o apagar ${escBot(c.nombre)}"></button>`;
-    botPop.innerHTML = S.channels.map((c) => `<div class="nb-row"><button class="nb-item${c.id === S.channelId ? " on" : ""}" type="button" data-id="${c.id}"><img src="${escBot(c.logo_url || FALLBACK_LOGO)}" alt="" /><span>${escBot(c.nombre)}</span>${cnt(c.id)}</button>${sw(c)}</div>`).join("")
+    const fila = (c) => `<div class="nb-row"><button class="nb-item${c.id === S.channelId ? " on" : ""}" type="button" data-id="${c.id}"><img src="${escBot(c.logo_url || FALLBACK_LOGO)}" alt="" /><span>${escBot(c.nombre)}</span>${cnt(c.id)}</button>${sw(c)}</div>`;
+    // Con 2+ negocios: un título por negocio (el del bot abierto primero). Con uno solo, igual que siempre.
+    const accs = S.cuentaDe ? [...new Set(S.channels.map((c) => S.cuentaDe[c.id] || ""))] : [];
+    if (accs.length > 1) {
+      const actual = S.cuentaDe[S.channelId] || "";
+      accs.sort((a, b) => (a === actual ? -1 : b === actual ? 1 : String(S.cuentas[a] || "").localeCompare(String(S.cuentas[b] || ""))));
+      if (!document.getElementById("nb-acc-css")) { const st = document.createElement("style"); st.id = "nb-acc-css";
+        st.textContent = ".nb-acc{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:8px 8px 4px}.nb-acc:not(:first-child){border-top:1px solid var(--border);margin-top:4px;padding-top:9px}.nodo-botpop.mini .nb-acc{font-size:0;padding:0;margin:4px 0}";
+        document.head.appendChild(st); }
+    }
+    botPop.innerHTML = (accs.length > 1
+      ? accs.map((a) => `<div class="nb-acc">${escBot(S.cuentas[a] || "Negocio")}</div>` + S.channels.filter((c) => (S.cuentaDe[c.id] || "") === a).map(fila).join("")).join("")
+      : S.channels.map(fila).join(""))
       + (S.puedeCrear !== false ? `<button class="nb-create" type="button">${svg("plus")}<span>Crear nuevo bot</span></button>` : "");
     botPop.querySelectorAll(".nb-item").forEach((b) => { b.onclick = async () => { if (b.dataset.id !== S.channelId && !(await _dirtyGate())) return; S.api.setChannel(b.dataset.id); closeBotPop(); }; });
     botPop.querySelectorAll(".nb-sw").forEach((b) => { b.onclick = async (e) => { e.stopPropagation(); await cambiarEncendido(b.dataset.sw, !b.classList.contains("on")); renderBotPop(); }; });
