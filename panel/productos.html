@@ -366,7 +366,7 @@ async function avPermitido(){
 let AV = false;
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, versionEnVista } from "./seq-editor.js?v=25";
+import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, versionEnVista } from "./seq-editor.js?v=26";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -447,8 +447,10 @@ async function boot(){
   };
   await loadProducts();
   // 🔗 Enlace directo a un producto (la campanita: «Revisar preguntas» → productos.html?p=…&preguntas=1).
+  // …y productos.html?vista=angulos abre la pestaña Ángulos (desde «Crea ángulos →» del saludo y de Secuencias).
   try{
     const qp=new URLSearchParams(location.search), pid=qp.get("p");
+    if(!pid && qp.get("vista")==="angulos"){ history.replaceState(null,"",location.pathname); st.gv="angulos"; renderGvToggle(); applyGvMode(); }
     if(pid){
       history.replaceState(null,"",location.pathname);
       if((st.list||[]).some(p=>String(p.id)===pid)){ if(qp.get("preguntas")==="1") st._abrirPreguntas=true; await openProduct(pid); }
@@ -4419,11 +4421,12 @@ function renderComposer(){
       <h4>${icon("compass")} Tu saludo según el anuncio</h4>
       <div style="font-size:12px;color:var(--faint);margin:4px 0 12px;line-height:1.55">Cada ángulo agrupa unos anuncios y tiene su propio saludo — el cliente recibe el que retoma el anuncio del que vino. El <b>General</b> es el respaldo.</div>
       ${!st.act.angulosOk?`<div style="font-size:12.5px;color:var(--amber);line-height:1.5">Para usar los ángulos falta aplicar la migración <b>0063</b> en la base de datos.</div>`:`
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+      ${angs.some(a=>a.slug) ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
         <button class="ang-tab" data-tab="" style="${actTabBtn(!tab)}">General</button>
         ${angs.filter(a=>a.slug).map(a=>`<button class="ang-tab" data-tab="${esc(a.slug)}" style="${actTabBtn(tab===a.slug)}">${esc(a.nombre||a.slug)}</button>`).join("")}
-        <button class="ang-tab" data-addang style="${actTabBtn(false)};border-style:dashed;color:var(--muted)">＋ ángulo</button>
-      </div>
+      </div>` : `<div style="font-size:11.5px;color:var(--faint);margin:-4px 0 12px">¿Quieres un saludo distinto según el anuncio del que viene? <a href="productos.html?vista=angulos" style="color:var(--brand);font-weight:600;text-decoration:none">Crea ángulos →</a></div>`}
+      <!-- (6-nov, Rodrigo: «un solo lugar») Sin «＋ ángulo»: los ángulos se crean solo en Productos → Ángulos, donde se
+           les asignan los anuncios (creado acá quedaba sin anuncios y no le llegaba a nadie). -->
       <div id="actTabBody"></div>`}
     </div>
 

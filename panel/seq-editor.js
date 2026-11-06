@@ -195,6 +195,10 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
     // «Todos» = las versiones sin ángulo (y las de un ángulo que ya no existe, que el motor trata igual).
     const enTab=(v)=> tab==="" ? (!v.angulo || !known.has(v.angulo)) : v.angulo===tab;
     const tabBtn=(on)=>`font-size:12px;padding:5px 12px;border-radius:999px;cursor:pointer;font-weight:${on?'700':'600'};border:${on?'none':'0.5px solid var(--border)'};background:${on?'var(--ia1,#8b5cf6)':'transparent'};color:${on?'#fff':'var(--muted)'}`;
+    // (6-nov, Rodrigo: «un solo lugar») Los ángulos se crean SOLO en Productos → Ángulos (ahí se les asignan los
+    // anuncios; un ángulo sin anuncios no le llega a nadie). Sin ángulos, este editor y el saludo del producto muestran
+    // el mismo enlace para crearlos; con ángulos, sus pestañas.
+    const sinAng = solo==null && !angulos.length ? `<div style="font-size:11.5px;color:var(--faint);margin:-2px 0 8px">¿Quieres un mensaje distinto según el anuncio del que viene? <a href="productos.html?vista=angulos" style="color:var(--brand);font-weight:600;text-decoration:none">Crea ángulos →</a></div>` : "";
     if(solo!=null){ box.innerHTML=`<div class="se-varlist"></div>`; }
     else box.innerHTML=`
       <div style="border:1px solid var(--border);border-radius:11px;background:var(--surface-2);padding:11px 12px;margin-top:10px">
@@ -202,6 +206,7 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
           <span style="flex:1;min-width:135px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px">${icon("message")} Mensaje del paso</span>
           ${tabs?``:`<span style="font-size:11.5px;color:var(--muted);font-weight:600">Varias versiones</span><div class="sw ${rot?'on':''}" data-rot title="Enviar una versión distinta cada vez"></div>`}
         </div>
+        ${sinAng}
         ${tabs?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
             <button type="button" class="se-tab" data-tab="" style="${tabBtn(tab==="")}">Todos</button>
             ${angulos.map(a=>{ const tiene=paso.variantes.some(v=>v.angulo===a.slug); return `<button type="button" class="se-tab" data-tab="${esc(a.slug)}" style="${tabBtn(tab===a.slug)}" title="${a.propia?"Tiene su propia secuencia: no recibe estos toques":tiene?"Tiene su propio mensaje":"Usa el mensaje de Todos"}">${esc(a.nombre||a.slug)}${a.propia?` <span style="opacity:.6;font-weight:500">· su secuencia</span>`:tiene?"":` <span style="opacity:.6;font-weight:500">· usa Todos</span>`}</button>`; }).join("")}
