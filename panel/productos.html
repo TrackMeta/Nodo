@@ -1916,43 +1916,23 @@ async function renderRemarketing(host){
   { const seen=new Set(); st.remAngulos=(angs||[]).filter(a=>a&&a.slug&&!seen.has(a.slug)&&seen.add(a.slug)); }
   const c=st.prod.config=st.prod.config||{};
   const seq=list.find(s=>s.id===c.remarketing_seq_id)||null;
-  const rm=(ch?.remarketing && typeof ch.remarketing==="object") ? {...ch.remarketing} : {};
-  const rm0=JSON.parse(JSON.stringify(rm));   // foto al abrir: al guardar solo se escribe lo que cambió ACÁ
+  // (5-nov) El horario, el anti-spam y los días de «Perdido» del BOT se mudaron a Secuencias → «Ajustes de todo el bot»
+  // (Rodrigo: lo del bot en general, en otro lado). Acá solo queda lo propio del producto: sus días de «Perdido».
+  const _dpB=Number(ch?.remarketing?.dias_perdido); const diasBot=Number.isFinite(_dpB)&&_dpB>0 ? Math.min(90,Math.max(1,Math.round(_dpB))) : 3;
   const opciones=(st.versions||[]).filter(v=>v.precio!=null&&v.precio!=="");
 
   b.innerHTML=`
     <p class="hint" style="margin:0 0 14px">Reengancha a quien se interesó en <b>${esc(st.prod.nombre)}</b> y no compró. Manda mensajes por <b>silencio</b> (cada paso espera un tiempo sin respuesta): si el cliente responde, se pausa sola; si compra, sale.</p>
 
     <div class="card" data-noguard>
-      <h4 style="display:flex;align-items:center;gap:7px;margin:0 0 8px">${icon("clock")} Horario de envío <span style="font-size:11px;color:var(--faint);font-weight:400">· aplica a TODO el remarketing del bot</span></h4>
-      <div style="display:flex;align-items:center;gap:10px">
-        <span class="sw ${rm.activo?'on':''}" id="hrTog"></span>
-        <span style="font-size:12.5px">Enviar solo dentro de un horario (hora del país de tu cliente)</span>
-      </div>
-      <div id="hrRange" style="display:${rm.activo?'flex':'none'};align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">
-        <span style="font-size:12.5px;color:var(--muted)">Desde</span>
-        <input class="in" id="hrDesde" type="time" value="${esc(rm.desde||'09:00')}" style="width:120px"/>
-        <span style="font-size:12.5px;color:var(--muted)">hasta</span>
-        <input class="in" id="hrHasta" type="time" value="${esc(rm.hasta||'21:00')}" style="width:120px"/>
-      </div>
-      <div style="display:flex;align-items:flex-start;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-        <span class="sw ${rm.antispam!==false?'on':''}" id="asTog" style="margin-top:2px"></span>
-        <div><div style="font-size:12.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">Anti-spam · máximo 1 mensaje automático cada
-            <input class="in" id="asHoras" type="number" min="1" max="72" value="${esc(rm.antispam_horas ?? 18)}" style="width:62px;height:28px;padding:2px 6px;text-align:center" ${rm.antispam===false?"disabled":""}/> h
-            <span style="font-size:9.5px;color:var(--green,var(--green));font-weight:800;letter-spacing:.4px;border:1px solid var(--green,var(--green));border-radius:20px;padding:1px 7px">RECOMENDADO</span></div>
-          <div style="font-size:11px;color:var(--faint);margin-top:3px;line-height:1.5">Protege tu número de un <b>baneo de WhatsApp</b> por sobre-envío: coordina secuencias, nudges y campañas para no encimarlos. Los avisos del pedido (va en camino, etc.) no cuentan. Apágalo solo si sabes lo que haces.
-            <b>Manda sobre la espera que pongas en cada secuencia:</b> si un toque está configurado más seguido que esto, sale cuando se cumplan las horas de acá.</div></div>
-      </div>
-      <div style="display:flex;align-items:flex-start;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-        <span style="width:34px;flex:none;display:flex;justify-content:center;color:var(--muted);margin-top:3px">${icon("clock")}</span>
-        <div><div style="font-size:12.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap">Pasar a «Perdido» después de
-            <input class="in" id="dpDias" type="number" min="1" max="90" value="${esc(rm.dias_perdido ?? 3)}" style="width:62px;height:28px;padding:2px 6px;text-align:center"/> días sin respuesta</div>
-          <div style="font-size:11px;color:var(--faint);margin-top:3px;line-height:1.5">Cuando termina el remarketing y el cliente no compró ni volvió a escribir en ese tiempo, pasa a la etapa «Perdido» del Embudo. Si después vuelve a escribir, sale solo de «Perdido».</div></div>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
-        <button class="btn primary" id="hrSave" style="background:var(--brand,#2b7fff);color:#fff;border:none">Guardar</button>
-        <span style="font-size:11px;color:var(--faint);flex:1">Apagado = a cualquier hora. Fuera del horario el mensaje no se pierde: espera a la próxima hora permitida.</span>
-      </div>
+      <h4 style="display:flex;align-items:center;gap:7px;margin:0 0 4px">${icon("clock")} Días para pasar a «Perdido» <span style="font-size:11px;color:var(--faint);font-weight:400">· solo este producto</span></h4>
+      <p class="hint" style="margin:0 0 10px">Cuando termina el remarketing y el cliente no compró ni volvió a escribir en ese tiempo, pasa a la etapa «Perdido» del Embudo. Si después vuelve a escribir, sale solo de «Perdido».</p>
+      <label style="display:flex;align-items:center;gap:9px;font-size:12.5px;margin:0 0 8px;cursor:pointer;font-weight:400;color:var(--text)">
+        <input type="radio" name="dpModo" value="bot" ${c.dias_perdido?"":"checked"}/> Igual que el bot (<span id="dpBot">${esc(diasBot)}</span> ${diasBot==1?"día":"días"})</label>
+      <label style="display:flex;align-items:center;gap:9px;font-size:12.5px;margin:0;cursor:pointer;font-weight:400;color:var(--text);flex-wrap:wrap">
+        <input type="radio" name="dpModo" value="propio" ${c.dias_perdido?"checked":""}/> Propio para este producto:
+        <input class="in" id="dpProd" type="number" min="1" max="90" value="${esc(c.dias_perdido||diasBot)}" style="width:62px;height:28px;padding:2px 6px;text-align:center" ${c.dias_perdido?"":"disabled"}/> días</label>
+      <div style="font-size:11px;color:var(--faint);margin-top:12px;line-height:1.5">Se guarda al instante. El horario de envío, el anti-spam y los días de todo el bot están en <a href="secuencias.html" style="color:var(--brand)">Secuencias → Ajustes de todo el bot</a>.</div>
     </div>
 
     <div class="card">
@@ -1965,44 +1945,20 @@ ${(()=>{ const ra=(c.remarketing_seqs_angulo&&typeof c.remarketing_seqs_angulo==
       <div style="font-size:11px;color:var(--faint);margin-top:12px">Crear, vincular o quitar una secuencia se guarda al instante. Sus pasos se editan con «Editar pasos» o en <a href="secuencias.html" style="color:var(--brand)">Secuencias</a>.</div>
     </div>`;
 
-  // ── Horario (global del canal) ──
-  const hrSw=$("hrTog");
-  if(hrSw) hrSw.onclick=()=>{ rm.activo=!rm.activo; hrSw.classList.toggle("on",rm.activo); $("hrRange").style.display=rm.activo?"flex":"none"; };
-  const asSw=$("asTog");
-  if(asSw) asSw.onclick=()=>{
-    rm.antispam=(rm.antispam===false); asSw.classList.toggle("on",rm.antispam!==false);
-    const inp=$("asHoras"); if(inp) inp.disabled=(rm.antispam===false);   // apagado, el número no pinta nada
+  // ── Días de «Perdido» de ESTE producto (products.config.dias_perdido; vacío = los del bot). Los lee marcar_perdidos (0143). ──
+  const dpInp=$("dpProd");
+  const guardarDp=async()=>{
+    const propio=(b.querySelector('input[name="dpModo"]:checked')||{}).value==="propio";
+    let n=Math.round(Number(dpInp.value)); n=Number.isFinite(n)&&n>0 ? Math.min(90,Math.max(1,n)) : diasBot; dpInp.value=n;
+    dpInp.disabled=!propio;
+    const r=await patchProductConfig(st.prod.id,(cfg)=>{ if(propio) cfg.dias_perdido=n; else delete cfg.dias_perdido; });
+    if(!r.ok){ toast("No se pudo guardar: "+(r.error?.message||"error"),true); return; }
+    if(propio) c.dias_perdido=n; else delete c.dias_perdido;
+    st._cfgOrig={ ...(st._cfgOrig||{}) }; if(propio) st._cfgOrig.dias_perdido=n; else delete st._cfgOrig.dias_perdido;
+    toast(propio ? `Este producto pasa a «Perdido» a los ${n} ${n===1?"día":"días"}` : `Este producto usa los días del bot (${diasBot})`);
   };
-  // Las horas se acotan a 1-72 igual que en el motor: por debajo de una hora deja de ser un
-  // freno y por encima de tres días la secuencia no termina nunca. Si el input queda vacío o
-  // con algo raro, se vuelve al defecto de 18 en vez de guardar basura.
-  const asH=$("asHoras");
-  if(asH) asH.onchange=()=>{
-    const n=Math.round(Number(asH.value));
-    rm.antispam_horas = Number.isFinite(n) && n>0 ? Math.min(72, Math.max(1, n)) : 18;
-    asH.value=rm.antispam_horas;
-  };
-  // (5-nov) Días para pasar a «Perdido» (los lee la regla horaria marcar_perdidos, migración 0142). 1–90; vacío = 3.
-  const dpD=$("dpDias");
-  if(dpD) dpD.onchange=()=>{ const n=Math.round(Number(dpD.value)); rm.dias_perdido = Number.isFinite(n) && n>0 ? Math.min(90, Math.max(1, n)) : 3; dpD.value=rm.dias_perdido; };
-  if($("hrSave")) $("hrSave").onclick=async(e)=>{
-    if(dpD) dpD.onchange();
-    rm.desde=$("hrDesde")?.value||rm.desde; rm.hasta=$("hrHasta")?.value||rm.hasta;
-    if(rm.activo && rm.desde && rm.hasta && rm.hasta<=rm.desde){ toast("La hora final debe ser mayor a la inicial",true); return; }
-    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
-    // Sobre el remarketing FRESCO (la copia de getChannel es de caché): otra pestaña pudo cambiar el
-    // horario o el anti-spam y guardar la copia vieja entera los revertía. Solo lo tocado acá.
-    let _rmW=rm;
-    try{ const { data:_fr }=await supa.from("channels").select("remarketing").eq("id",st.channelId).maybeSingle();
-      const base=(_fr&&_fr.remarketing&&typeof _fr.remarketing==="object")?{..._fr.remarketing}:{};
-      for(const k of Object.keys(rm)){ if(JSON.stringify(rm[k])!==JSON.stringify(rm0[k])) base[k]=rm[k]; }
-      _rmW=base; }catch(_){}
-    const { error }=await updateChannel(st.channelId, { remarketing:_rmW });
-    btn.disabled=false; btn.textContent=old;
-    if(error){ toast(/remarketing|column/.test(error.message)?"Falta aplicar la migración 0031":error.message,true); return; }
-    Object.assign(rm0, JSON.parse(JSON.stringify(rm)));   // lo guardado pasa a ser la nueva foto
-    toast("Guardado");
-  };
+  b.querySelectorAll('input[name="dpModo"]').forEach(r=> r.onchange=guardarDp);
+  if(dpInp) dpInp.onchange=guardarDp;
 
   // ── Secuencias por audiencia (mapa por producto) ──
   // "Provincia sin adelanto" es un segmento FÍSICO (pedido a provincia con

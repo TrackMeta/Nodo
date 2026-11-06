@@ -82,6 +82,22 @@
   @media(max-width:900px){ .sq-sel3{grid-template-columns:1fr} }
   .sq-sel3 label{margin:0 0 5px!important}
   .sq-sel3 .sel{width:100%;min-width:0!important}
+  /* (5-nov) Ajustes de todo el bot: horario, anti-spam y días de «Perdido» (antes dentro de cada producto) */
+  .botcfg{background:var(--surface);border:1px solid var(--border);border-radius:14px;margin:0 0 20px}
+  .bc-hd{display:flex;align-items:center;gap:12px;padding:12px 16px;flex-wrap:wrap}
+  .bc-ic{width:34px;height:34px;border-radius:10px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;flex:none}
+  .bc-ic svg{width:17px;height:17px}
+  .bc-tt{font-size:14px;font-weight:700}
+  .bc-sum{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.45}
+  .bc-body{border-top:1px solid var(--border);padding:4px 16px 14px}
+  .bc-row{display:flex;align-items:flex-start;gap:12px;padding:13px 0;border-bottom:1px solid var(--border)}
+  .bc-row .t{font-size:12.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .bc-row .d{font-size:11px;color:var(--faint);margin-top:3px;line-height:1.5}
+  .bc-row .in{width:auto}
+  .bc-num{width:62px!important;height:28px;padding:2px 6px!important;text-align:center}
+  .bc-time{width:120px!important;height:34px;padding:4px 8px!important}
+  .bc-ico{width:44px;flex:none;display:flex;justify-content:center;color:var(--muted);margin-top:2px}
+  .bc-ico svg{width:16px;height:16px}
 </style>
 </head>
 <body>
@@ -113,6 +129,7 @@
             <div class="ex-tx"><b>Pide que no le escriban</b><span>“ya no quiero”, “baja”, “stop”… se cancela y no vuelve a recibir remarketing nunca.</span></div></div>
         </div>
       </div>
+      <div class="botcfg" id="botCfg"></div>
       <div class="nodo-folders" id="folders"></div>
       <div class="nodo-cards" id="cards"></div>
     </div>
@@ -131,7 +148,7 @@
 </div>
 
 <script type="module">
-import { supa, mountShell, toast, icon, askText, confirmDialog, patchProductConfig } from "./shell.js";
+import { supa, mountShell, toast, icon, askText, confirmDialog, patchProductConfig, updateChannel } from "./shell.js";
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
 import { mountStepsEditor, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=23";
 import { mountFolders } from "./folder-bar.js?v=3";
@@ -191,8 +208,96 @@ async function boot(){
 function showGrid(){ $("gridView").style.display=""; $("detailView").style.display="none"; }
 function showDetail(){ $("gridView").style.display="none"; $("detailView").style.display=""; window.scrollTo(0,0); }
 
+// ── Ajustes de TODO el bot (channels.remarketing): horario de envío, anti-spam y días para pasar a «Perdido» ──
+// (5-nov) Antes vivían dentro de cada producto (Productos → Secuencias) aunque valían para todo el bot, y confundía.
+// Los días de «Perdido» se pueden afinar por producto (products.config.dias_perdido): acá se listan los que lo hacen.
+let _bcAbierto=false;
+async function renderBotCfg(){
+  const box=$("botCfg"); if(!box) return;
+  const chId=st.channelId;
+  const [{ data:ch },{ data:prods }]=await Promise.all([
+    supa.from("channels").select("remarketing").eq("id",chId).maybeSingle(),
+    supa.from("products").select("nombre,config").eq("channel_id",chId).order("nombre"),
+  ]);
+  if(chId!==st.channelId) return;   // cambiaste de bot mientras cargaba
+  const rm=(ch&&ch.remarketing&&typeof ch.remarketing==="object") ? {...ch.remarketing} : {};
+  const rm0=JSON.parse(JSON.stringify(rm));
+  const dias=()=>{ const n=Number(rm.dias_perdido); return Number.isFinite(n)&&n>0 ? Math.min(90,Math.max(1,Math.round(n))) : 3; };
+  const propios=(prods||[]).filter(p=>p.config&&Number(p.config.dias_perdido)>0);
+  const dTxt=(n)=>n+" "+(Number(n)===1?"día":"días");
+  const resumen=()=>[
+    rm.activo ? `Envía de ${esc(rm.desde||"09:00")} a ${esc(rm.hasta||"21:00")}` : "Envía a cualquier hora",
+    rm.antispam!==false ? `anti-spam 1 cada ${esc(rm.antispam_horas ?? 18)} h` : "anti-spam apagado",
+    `«Perdido» a los ${dTxt(dias())}`,
+  ].join(" · ");
+  const pinta=()=>{
+    box.innerHTML=`
+      <div class="bc-hd">
+        <span class="bc-ic">${icon("clock")}</span>
+        <div style="flex:1;min-width:220px"><div class="bc-tt">Ajustes de todo el bot</div><div class="bc-sum" id="bcSum">${resumen()}</div></div>
+        <button class="btn" id="bcTog" style="height:34px">${_bcAbierto?"Cerrar":"Cambiar"}</button>
+      </div>
+      <div class="bc-body" style="display:${_bcAbierto?"":"none"}">
+        <div class="bc-row">
+          <span class="sw ${rm.activo?"on":""}" id="hrTog" style="margin-top:2px"></span>
+          <div style="flex:1;min-width:0"><div class="t">Enviar solo dentro de un horario (hora del país de tu cliente)</div>
+            <div id="hrRange" style="display:${rm.activo?"flex":"none"};align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+              <span style="font-size:12.5px;color:var(--muted)">Desde</span><input class="in bc-time" id="hrDesde" type="time" value="${esc(rm.desde||"09:00")}"/>
+              <span style="font-size:12.5px;color:var(--muted)">hasta</span><input class="in bc-time" id="hrHasta" type="time" value="${esc(rm.hasta||"21:00")}"/>
+            </div>
+            <div class="d">Apagado = a cualquier hora. Fuera del horario el mensaje no se pierde: espera a la próxima hora permitida.</div></div>
+        </div>
+        <div class="bc-row">
+          <span class="sw ${rm.antispam!==false?"on":""}" id="asTog" style="margin-top:2px"></span>
+          <div style="flex:1;min-width:0"><div class="t">Anti-spam · máximo 1 mensaje automático cada
+              <input class="in bc-num" id="asHoras" type="number" min="1" max="72" value="${esc(rm.antispam_horas ?? 18)}" ${rm.antispam===false?"disabled":""}/> h
+              <span style="font-size:9.5px;color:var(--green);font-weight:800;letter-spacing:.4px;border:1px solid var(--green);border-radius:20px;padding:1px 7px">RECOMENDADO</span></div>
+            <div class="d">Protege tu número de un <b>baneo de WhatsApp</b> por sobre-envío: coordina secuencias, nudges y campañas para no encimarlos. Los avisos del pedido (va en camino, etc.) no cuentan. Apágalo solo si sabes lo que haces.
+              <b>Manda sobre la espera que pongas en cada secuencia:</b> si un toque está configurado más seguido que esto, sale cuando se cumplan las horas de acá.</div></div>
+        </div>
+        <div class="bc-row" style="border-bottom:none">
+          <span class="bc-ico">${icon("clock")}</span>
+          <div style="flex:1;min-width:0"><div class="t">Pasar a «Perdido» después de
+              <input class="in bc-num" id="dpDias" type="number" min="1" max="90" value="${esc(dias())}"/> días sin respuesta</div>
+            <div class="d">Cuando termina el remarketing y el cliente no compró ni volvió a escribir en ese tiempo, pasa a la etapa «Perdido» del Embudo. Si después vuelve a escribir, sale solo de «Perdido».
+              ${propios.length ? `<br>Con su propio número (en Productos → Secuencias): ${propios.map(p=>`<b>${esc(p.nombre)}</b> (${dTxt(Math.round(Number(p.config.dias_perdido)))})`).join(", ")}. Los demás productos usan el de acá.` : "Vale para todos los productos. Si uno necesita otro número, ponlo en Productos → ese producto → Secuencias."}</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+          <button class="btn primary" id="hrSave">Guardar</button>
+        </div>
+      </div>`;
+    $("bcTog").onclick=()=>{ _bcAbierto=!_bcAbierto; pinta(); };
+    if(!_bcAbierto) return;
+    $("hrTog").onclick=()=>{ rm.activo=!rm.activo; $("hrTog").classList.toggle("on",rm.activo); $("hrRange").style.display=rm.activo?"flex":"none"; };
+    $("asTog").onclick=()=>{ rm.antispam=(rm.antispam===false); $("asTog").classList.toggle("on",rm.antispam!==false); $("asHoras").disabled=(rm.antispam===false); };
+    // Mismos topes que el motor: anti-spam 1–72 h (vacío = 18); «Perdido» 1–90 días (vacío = 3).
+    const asH=$("asHoras"); asH.onchange=()=>{ const n=Math.round(Number(asH.value)); rm.antispam_horas = Number.isFinite(n)&&n>0 ? Math.min(72,Math.max(1,n)) : 18; asH.value=rm.antispam_horas; };
+    const dpD=$("dpDias"); dpD.onchange=()=>{ const n=Math.round(Number(dpD.value)); rm.dias_perdido = Number.isFinite(n)&&n>0 ? Math.min(90,Math.max(1,n)) : 3; dpD.value=rm.dias_perdido; };
+    $("hrSave").onclick=async(e)=>{
+      asH.onchange(); dpD.onchange();
+      rm.desde=$("hrDesde").value||rm.desde; rm.hasta=$("hrHasta").value||rm.hasta;
+      if(rm.activo && rm.desde && rm.hasta && rm.hasta<=rm.desde){ toast("La hora final debe ser mayor a la inicial",true); return; }
+      const btn=e.target; btn.disabled=true; btn.textContent="Guardando…";
+      // Sobre el remarketing FRESCO: solo se escribe lo que cambió acá (otra pestaña pudo tocar otra clave).
+      let w=rm;
+      try{ const { data:fr }=await supa.from("channels").select("remarketing").eq("id",chId).maybeSingle();
+        const base=(fr&&fr.remarketing&&typeof fr.remarketing==="object")?{...fr.remarketing}:{};
+        for(const k of Object.keys(rm)){ if(JSON.stringify(rm[k])!==JSON.stringify(rm0[k])) base[k]=rm[k]; }
+        w=base; }catch(_){}
+      const { error }=await updateChannel(chId,{ remarketing:w });
+      btn.disabled=false; btn.textContent="Guardar";
+      if(error){ toast(error.message,true); return; }
+      Object.assign(rm0, JSON.parse(JSON.stringify(rm)));
+      $("bcSum").innerHTML=resumen();
+      toast("Guardado para todo el bot");
+    };
+  };
+  pinta();
+}
+
 async function load(){
   const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
+  renderBotCfg();
   const [{ data:seqs },{ data:flows },{ data:tpl },{ data:prods },{ data:angs }]=await Promise.all([
     supa.from("sequences").select("*").eq("channel_id",st.channelId).order("created_at"),
     supa.from("flows").select("id,nombre,role,kind,estado").eq("channel_id",st.channelId).order("nombre"),
