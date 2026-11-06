@@ -10,7 +10,7 @@
 // El motor elige igual que antes: variante del ángulo del cliente → si no hay, la general.
 // ═════════════════════════════════════════════════════════════════════════
 import { supa, icon, toast, confirmDialog, askText, patchProductConfig, pageAll, getChannel } from "./shell.js";
-import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, newVariant, mountMensajeEditor, mountStepsEditor, versionEnVista } from "./seq-editor.js?v=24";
+import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, newVariant, mountMensajeEditor, mountStepsEditor, versionEnVista } from "./seq-editor.js?v=25";
 import { limpiaBotones } from "./bubble-buttons.js";
 import { gastoAdsEn, llevarAMoneda } from "./cambio.js?v=2";
 import * as O from "./orders.js";
@@ -892,7 +892,7 @@ function cargaCss() {
   .amx-salg.con-vista{grid-template-columns:minmax(0,1fr) 300px}
   .amx-salg.con-vista>.amx-prevbox{display:block}
   @media(max-width:760px){.amx-salg.con-vista{grid-template-columns:1fr}}
-  .amx-prevbox{max-height:520px;overflow:auto;border-radius:14px}
+  .amx-prevbox{max-height:calc(100vh - 120px);overflow:auto;border-radius:14px;position:sticky;top:12px}
   .amx-link small{font-weight:400;color:var(--muted);font-size:12px}
   .amx-link:focus{outline:none}.amx-link:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:6px}
   .amx-warnrow{display:flex;gap:7px;align-items:center;font-size:12.5px;color:var(--amber);background:rgba(240,169,43,.08);border-radius:10px;padding:8px 10px}

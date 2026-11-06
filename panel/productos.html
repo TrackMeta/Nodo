@@ -346,7 +346,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll, usuarioActual } from "./shell.js";
 import { mountFolders } from "./folder-bar.js?v=3";
-import { montarMapaAngulos } from "./angulos-mapa.js?v=25";
+import { montarMapaAngulos } from "./angulos-mapa.js?v=26";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
@@ -366,7 +366,7 @@ async function avPermitido(){
 let AV = false;
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, versionEnVista } from "./seq-editor.js?v=24";
+import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, versionEnVista } from "./seq-editor.js?v=25";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -4480,7 +4480,7 @@ function renderComposer(){
     tabVars();   // la pestaña arranca con una versión si no tiene
     const wrap=document.createElement("div");
     wrap.style.cssText="display:grid;grid-template-columns:minmax(0,1fr) minmax(200px,240px);gap:14px;align-items:start";
-    wrap.innerHTML=`<div class="act-ed"></div><div><div class="wlbl" style="font-size:11.5px;color:var(--muted);margin-bottom:6px">Así le llega</div><div class="wprev"></div></div>`;
+    wrap.innerHTML=`<div class="act-ed"></div><div style="position:sticky;top:12px"><div class="wlbl" style="font-size:11.5px;color:var(--muted);margin-bottom:6px">Así le llega</div><div class="wprev" style="max-height:calc(100vh - 120px);overflow:auto;border-radius:14px"></div></div>`;
     body.appendChild(wrap);
     const obj={ variantes:cfg.variantes, rotacion:true };   // el mismo arreglo: lo que cambie el editor queda en cfg
     const ed=wrap.querySelector(".act-ed");

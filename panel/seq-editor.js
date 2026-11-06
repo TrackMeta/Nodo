@@ -564,8 +564,8 @@ export function mountStepsEditor(el, opts){
         if(paso.rotacion===undefined) paso.rotacion=false;
         actBody.innerHTML=`<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,220px);gap:12px;align-items:start;margin-top:2px">
             <div class="se-comp"></div>
-            <div><div style="font-size:11px;color:var(--muted);margin-bottom:6px">Así le llega al cliente</div>
-              <div class="se-prev"></div></div>
+            <div style="position:sticky;top:12px"><div style="font-size:11px;color:var(--muted);margin-bottom:6px">Así le llega al cliente</div>
+              <div class="se-prev" style="max-height:calc(100vh - 120px);overflow:auto;border-radius:14px"></div></div>
           </div>`;
         composer(actBody.querySelector(".se-comp"), paso);
         const prev=actBody.querySelector(".se-prev");
