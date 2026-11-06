@@ -192,8 +192,8 @@
         <div class="masw"><button class="nodo-btn" id="masBtn" type="button" title="Ajustes de pagos y avisos de pedido" aria-label="Ajustes"></button>
           <div class="masmenu" id="masMenu">
             <button class="mi" data-ajp="adelantos" type="button"></button>
-            <button class="mi" data-ajp="logistica" type="button"></button>
             <button class="mi" data-ajp="avisos" type="button"></button>
+            <button class="mi" data-ajp="pagos" type="button"></button>
           </div></div>
       </div>
     </div>
@@ -314,7 +314,7 @@ const cap=(s)=>{ s=String(s||""); return s.charAt(0).toUpperCase()+s.slice(1); }
 
 async function abrirAjustesPedidosLazy(sec){
   // (?v=: al cambiar el módulo, súbelo; así nunca carga una copia vieja guardada en el navegador)
-  try{ const m=await import("./ajustes-pedidos.js?v=3"); await m.abrirAjustesPedidos(st.channelId, sec); }
+  try{ const m=await import("./ajustes-pedidos.js?v=4"); await m.abrirAjustesPedidos(st.channelId, sec); }
   catch(e){ console.error("[ajustes-pedidos]", e); toast("No se pudo abrir: recarga la página (Ctrl+F5)", true); }
 }
 function wireMas(){
@@ -325,10 +325,12 @@ function wireMas(){
   const v=$("vistaSel"); if(v) v.addEventListener("change",(e)=>{ st.vista=e.target.value||"all"; render(); });
   // (25-oct) «Pagos y avisos» ya no es una página larga: cada sección abre SU ventana (ajustes-pedidos.js).
   // (se importa recién al hacer clic: si el módulo fallara, solo falla esa ventana, nunca el tablero)
-  const SEC_AJP={ adelantos:["clock","Adelantos de provincia"], logistica:["truck","Agente de logística"], avisos:["message","Avisos de pedido"] };
+  // (6-nov) «Agente de logística» se fue: quién aprueba el adelanto y el saldo vive en Pagos por validar → Ajustes,
+  // junto con los demás pagos. Este menú lleva allá.
+  const SEC_AJP={ adelantos:["clock","Adelantos de provincia"], avisos:["message","Avisos de pedido"], pagos:["shield","Quién aprueba los pagos →"] };
   m.querySelectorAll("[data-ajp]").forEach(btn=>{
     const s=SEC_AJP[btn.dataset.ajp]; if(s) btn.innerHTML=`${icon(s[0])} ${s[1]}`;
-    btn.onclick=()=>{ m.classList.remove("show"); abrirAjustesPedidosLazy(btn.dataset.ajp); };
+    btn.onclick=()=>{ m.classList.remove("show"); if(btn.dataset.ajp==="pagos"){ location.href="copiloto.html?ajustes=1"; return; } abrirAjustesPedidosLazy(btn.dataset.ajp); };
   });
 }
 async function boot(){

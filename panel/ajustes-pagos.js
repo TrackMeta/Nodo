@@ -10,8 +10,17 @@ import { supa, toast, icon, confirmDialog, updateChannel, patchProductConfig } f
 import { asegurarEstilos } from "./ventana-ajustes.js";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// (6-nov, Rodrigo: «júntalo ahí») TODO lo de «¿quién aprueba el pago y con cuánta tolerancia?» vive acá, que es la
+// sección que tienen TODOS los bots y adonde caen todos los pagos por revisar: el digital, el adelanto de provincia y
+// el saldo en la agencia. Cada bot ve solo lo que vende (digital → Pagos digitales; físico → adelanto y saldo).
+// Antes el adelanto y el saldo se ajustaban en Pedidos (Adelantos de provincia y Agente de logística): tres «¿quién
+// aprueba?» repartidos en dos secciones. En Pedidos quedan el recordatorio y el vencimiento del adelanto (manejo del
+// pedido, no del pago). Mismas claves de pedidos_config (adelanto.validacion/tolerancia/revisar_sobre_sol y
+// log.modo/tolerancia): el motor no cambia.
 const DEF = {
   digital: { validacion: "auto", tolerancia: 1, revisar_sobre_sol: 50 },
+  adelanto: { validacion: "manual", tolerancia: 1 },
+  log: { modo: "manual", tolerancia: 1 },
   vuelto: { modo: "tranquilizar", mensaje: "" },
   rechazo: { mensaje: "" },
 };
@@ -39,8 +48,11 @@ export async function abrirAjustesPagos(channelId) {
   const digital = { ...DEF.digital, ...(src.digital || {}) };
   const vuelto = { ...DEF.vuelto, ...(src.vuelto || {}) }; if (!vuelto.modo) vuelto.modo = vuelto.activo === false ? "off" : "tranquilizar";
   const rechazo = { ...DEF.rechazo, ...(src.rechazo || {}) };
-  // «Pagos digitales» solo si el bot vende algo que no es físico (digital o micro app).
+  // «Pagos digitales» solo si el bot vende algo que no es físico (digital o micro app); adelanto y saldo, si vende algo físico.
   const vendeDigital = (prods || []).some((p) => p.tipo !== "fisico");
+  const vendeFisico = (prods || []).some((p) => p.tipo === "fisico");
+  const adelanto = { ...DEF.adelanto, ...(src.adelanto || {}) };
+  const log = { ...DEF.log, ...(src.log || {}) };
   const sym = (chm?.moneda || "PEN").toUpperCase() === "PEN" ? "S/" : "$";
   // (5-nov) Productos con su PROPIO Automático/Manual (Productos → el producto → ¿Cómo se entrega? → Validación del pago).
   // Ese ajuste manda sobre el del bot (digitalPagoModo en el motor): sin decirlo acá, pasar el bot a Manual dejaba esos
@@ -68,6 +80,27 @@ export async function abrirAjustesPagos(channelId) {
         <small>Con un producto de ${sym} 19 y esto en 1: si paga ${sym} 18 se acepta; si paga ${sym} 17, el bot le dice que le faltan ${sym} 2.</small></div>
       <div class="ajp-num">Si paga de más, que lo revise yo cuando se pase por más de <span class="box"><span>${sym}</span><input id="ajpRev" type="number" min="0" step="5" value="${Number(digital.revisar_sobre_sol ?? 50)}"></span>
         <small>Si se pasa un poco, entrega solo y la venta cuenta lo que pagó. Si se pasa mucho, te lo deja acá y lo que sobra queda como vuelto. Ponlo en 0 para revisar cualquier pago de más.</small></div>
+    </div>` : ""}
+
+    ${vendeFisico ? `<div class="ajp-card">
+      <h4>${icon("clock")} Adelanto de provincia</h4>
+      <div class="ajp-desc">El pedido de provincia se crea apenas el cliente te da sus datos, <b>antes de pagar</b>. Esto decide quién aprueba su adelanto.</div>
+      ${opt("adel", "manual", adelanto.validacion !== "auto", "Manual: cuando llegue un comprobante, avísame para aprobarlo yo", "La IA igual lo analiza y te deja su lectura hecha, pero no aprueba nada: la tarjeta te espera acá, en Pagos por validar.")}
+      ${opt("adel", "auto", adelanto.validacion === "auto", "Automático: si el monto cuadra, valida el adelanto sin consultarme", "Ante cualquier duda (monto, fraude o comprobante repetido) te lo deja igual acá.")}
+      <div class="ajp-num">Si paga de menos, perdonarle hasta <span class="box"><span>${sym}</span><input id="aTol" type="number" min="0" step="0.5" value="${Number(adelanto.tolerancia ?? 1)}"></span>
+        <small>Con un adelanto de ${sym} 20 y esto en 1: si manda ${sym} 19 se acepta y el pedido sale; si manda ${sym} 18, el bot le dice que le faltan ${sym} 2.</small></div>
+      <div class="ajp-num">Si el monto se pasa del TOTAL del pedido por más de <span class="box"><span>${sym}</span><input id="aRev" type="number" min="0" step="5" value="${Number(adelanto.revisar_sobre_sol ?? digital.revisar_sobre_sol ?? 50)}"></span>
+        <small>…lo revisas tú (por si el bot lee mal la captura). Si paga más que el adelanto, lo de más se descuenta de lo que paga en la agencia.</small></div>
+      <div class="ajp-hint">El recordatorio y el vencimiento si no paga siguen en Pedidos → Ajustes → Adelantos de provincia.</div>
+    </div>
+
+    <div class="ajp-card">
+      <h4>${icon("key")} Saldo en la agencia (clave de recojo)</h4>
+      <div class="ajp-desc">En la agencia el cliente no paga nada: antes de darle la clave de recojo te paga a ti el saldo. Esto decide quién aprueba ese pago.</div>
+      ${opt("log", "manual", log.modo !== "auto", "Manual: cuando recibas un pago, avísame para aprobarlo antes de dar la clave", "La IA te avisa cuando recibe un comprobante. Cuando lo apruebes, le da la clave de recojo.")}
+      ${opt("log", "auto", log.modo === "auto", "Automático: si paga el saldo, dale su clave sin consultarme", "La IA lee el comprobante y, si el monto coincide, entrega la clave sola. Ante cualquier duda te lo deja acá.")}
+      <div class="ajp-num">Si paga de menos, perdonarle hasta <span class="box"><span>${sym}</span><input id="lTol" type="number" min="0" step="0.5" value="${Number(log.tolerancia ?? 1)}"></span>
+        <small>Pagar de más siempre se acepta. Si no cuadra, el pago queda acá para que lo revises.</small></div>
     </div>` : ""}
 
     <div class="ajp-card">
@@ -111,6 +144,8 @@ export async function abrirAjustesPagos(channelId) {
   ov.querySelectorAll(".ajp-opt").forEach((o) => o.onclick = () => {
     ov.querySelectorAll(`.ajp-opt[data-grp="${o.dataset.grp}"]`).forEach((x) => x.classList.toggle("on", x === o));
     if (o.dataset.grp === "dig") digital.validacion = o.dataset.v;
+    if (o.dataset.grp === "adel") adelanto.validacion = o.dataset.v;
+    if (o.dataset.grp === "log") log.modo = o.dataset.v;
     if (o.dataset.grp === "vl") { vuelto.modo = o.dataset.v; $("ajpVlWrap").style.display = vuelto.modo === "tranquilizar" ? "block" : "none"; }
     sucio = true;
   });
@@ -129,10 +164,17 @@ export async function abrirAjustesPagos(channelId) {
     }
     rechazo.mensaje = $("ajpRz").value.trim();
     vuelto.mensaje = $("ajpVl").value.trim();
-    // Sobre lo FRESCO, y solo estas tres claves.
+    // Sobre lo FRESCO, y solo estas claves. Del adelanto y del saldo, solo lo del pago: el recordatorio y el vencimiento
+    // (adelanto.nudge / adelanto.vencimiento) y las instrucciones de logística (log.instr_*) se quedan como estaban.
     const { data: fresh } = await supa.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
     const base = (fresh?.pedidos_config && typeof fresh.pedidos_config === "object") ? fresh.pedidos_config : {};
-    const { error: e2 } = await updateChannel(channelId, { pedidos_config: { ...base, digital, rechazo, vuelto } });
+    const extra = {};
+    if (vendeFisico) {
+      extra.adelanto = { ...(base.adelanto || {}), validacion: adelanto.validacion,
+        tolerancia: Math.max(0, Number($("aTol").value) || 0), revisar_sobre_sol: Math.max(0, Number($("aRev").value) || 0) };
+      extra.log = { ...(base.log || {}), modo: log.modo, tolerancia: Math.max(0, Number($("lTol").value) || 0) };
+    }
+    const { error: e2 } = await updateChannel(channelId, { pedidos_config: { ...base, digital, rechazo, vuelto, ...extra } });
     btn.disabled = false;
     if (e2) { toast(e2.message || "No se pudo guardar", true); return; }
     toast("Ajustes de pagos guardados"); ov.remove();

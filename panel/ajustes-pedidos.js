@@ -12,7 +12,6 @@ import { asegurarEstilos } from "./ventana-ajustes.js";
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const D = {
   adelanto: { validacion: "manual", tolerancia: 1, nudge: { activo: false, horas: 12, mensaje: "" }, vencimiento: { activo: false, horas: 48 } },
-  log: { modo: "manual", tolerancia: 1, instr_cod: "", instr_ag: "" },
 };
 // Los momentos del pedido físico en que el bot le escribe al cliente por su cuenta (clave = estado del pedido).
 const MOMENTOS = [
@@ -20,9 +19,10 @@ const MOMENTOS = [
   ["despachado", "Pedido despachado", "Le mandas la guía cuando lo dejas en la agencia."],
   ["en_agencia", "Llegó a la agencia", "Le avisas que ya puede recogerlo y le pides el saldo."],
 ];
+// (6-nov) «Agente de logística» se fue: todo lo que tenía era quién aprueba el saldo, que ahora vive en Pagos por
+// validar → Ajustes junto con los demás pagos. De «Adelantos de provincia» quedan el recordatorio y el vencimiento.
 export const SECCIONES = [
   ["adelantos", "clock", "Adelantos de provincia"],
-  ["logistica", "truck", "Agente de logística"],
   ["avisos", "message", "Avisos de pedido"],
 ];
 
@@ -45,12 +45,14 @@ const opt = (grp, v, on, t, d) => `<div class="ajp-opt ${on ? "on" : ""}" data-g
 
 export async function abrirAjustesPedidos(channelId, seccion) {
   if (!channelId) return;
+  // Enlaces viejos a «Agente de logística»: ahora es Pagos por validar → Ajustes.
+  if (seccion === "logistica") { location.href = "copiloto.html?ajustes=1"; return; }
   const sec = SECCIONES.find((x) => x[0] === seccion); if (!sec) return;
   asegurarEstilos();
   const { data: ch, error } = await supa.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle();
   if (error) { toast("No se pudieron cargar los ajustes", true); return; }
   const src = (ch?.pedidos_config && typeof ch.pedidos_config === "object") ? ch.pedidos_config : {};
-  const tpls = seccion === "logistica" ? [] : await plantillas(channelId);
+  const tpls = await plantillas(channelId);
 
   let cuerpo = "", alGuardar = null, alMontar = null;
 
@@ -61,14 +63,7 @@ export async function abrirAjustesPedidos(channelId, seccion) {
     a.vencimiento = { ...D.adelanto.vencimiento, ...((src.adelanto || {}).vencimiento || {}) };
     cuerpo = `
       <div class="ajp-sub">El pedido de provincia se crea apenas el cliente te da sus datos, <b>antes de pagar</b>.</div>
-      <div class="ajp-card"><h4>${icon("shield")} ¿Quién aprueba el adelanto?</h4>
-        ${opt("adel", "manual", a.validacion !== "auto", "Manual: cuando llegue un comprobante, avísame para aprobarlo yo", "La IA igual lo analiza y te deja su lectura hecha, pero no aprueba nada: la tarjeta te espera en Pagos por validar.")}
-        ${opt("adel", "auto", a.validacion === "auto", "Automático: si el monto cuadra, valida el adelanto sin consultarme", "Ante cualquier duda (monto, fraude o comprobante repetido) te lo deriva igual a Pagos por validar.")}
-        <div class="ajp-num">Si paga de menos, perdonarle hasta <span class="box"><span>S/</span><input id="aTol" type="number" min="0" step="0.5" value="${Number(a.tolerancia ?? 1)}"></span>
-          <small>Con un adelanto de S/ 20 y esto en 1: si manda S/ 19 se acepta y el pedido sale; si manda S/ 18, el bot le dice que le faltan S/ 2.</small></div>
-        <div class="ajp-num">Si el monto se pasa del TOTAL del pedido por más de <span class="box"><span>S/</span><input id="aRev" type="number" min="0" step="5" value="${Number(a.revisar_sobre_sol ?? (src.digital || {}).revisar_sobre_sol ?? 50)}"></span>
-          <small>…lo revisas tú (por si el bot lee mal la captura). Si paga más que el adelanto también lo revisas tú: lo de más se descuenta de lo que paga en la agencia.</small></div>
-      </div>
+      <div class="ajp-nota" style="margin:0 0 12px">${icon("shield")}<span>Quién aprueba el adelanto y cuánto se le perdona si paga de menos se ajustan en <a href="copiloto.html?ajustes=1" style="color:var(--brand);font-weight:600">Pagos por validar → Ajustes</a>, junto con los demás pagos.</span></div>
       <div class="ajp-card"><h4>${icon("clock")} Si no paga</h4>
         <div class="ajp-desc">Mantiene limpia sola la columna «Esperando adelanto». Con las dos apagadas lo manejas a mano (el botón <b>Cancelar pedido</b> del menú ⋮ siempre está).</div>
         <div class="ajp-tog" id="aNudgeT"><b>Recordarle si no paga</b><span class="ajp-sw ${a.nudge.activo ? "on" : ""}" id="aNudgeSw"></span></div>
@@ -83,11 +78,8 @@ export async function abrirAjustesPedidos(channelId, seccion) {
     alMontar = (ov, marcar) => {
       ov.querySelector("#aNudgeT").onclick = () => { a.nudge.activo = !a.nudge.activo; ov.querySelector("#aNudgeSw").classList.toggle("on", a.nudge.activo); marcar(); };
       ov.querySelector("#aVencT").onclick = () => { a.vencimiento.activo = !a.vencimiento.activo; ov.querySelector("#aVencSw").classList.toggle("on", a.vencimiento.activo); marcar(); };
-      ov.querySelectorAll('.ajp-opt[data-grp="adel"]').forEach((o) => o.addEventListener("click", () => { a.validacion = o.dataset.v; }));
     };
     alGuardar = (ov, base) => {
-      a.tolerancia = Math.max(0, Number(ov.querySelector("#aTol").value) || 0);
-      a.revisar_sobre_sol = Math.max(0, Number(ov.querySelector("#aRev").value) || 0);
       a.nudge.horas = Math.max(1, parseInt(ov.querySelector("#aNudgeH").value, 10) || 12);
       a.nudge.mensaje = ov.querySelector("#aNudgeMsg").value.trim();
       const tsel = ov.querySelector("#aNudgeTpl");
@@ -98,24 +90,9 @@ export async function abrirAjustesPedidos(channelId, seccion) {
       a.vencimiento.horas = Math.max(1, parseInt(ov.querySelector("#aVencH").value, 10) || 48);
       if (a.nudge.activo && !a.nudge.mensaje) return "El recordatorio necesita un mensaje";
       if (a.vencimiento.activo && a.nudge.activo && a.vencimiento.horas <= a.nudge.horas) return "El vencimiento tiene que ser DESPUÉS del recordatorio";
-      base.adelanto = a;
+      // Solo lo de esta ventana: quién aprueba / tolerancia (Pagos por validar) quedan como estén en la base.
+      base.adelanto = { ...(base.adelanto || {}), nudge: a.nudge, vencimiento: a.vencimiento };
     };
-  }
-
-  // ── Agente de logística ────────────────────────────────────────────
-  if (seccion === "logistica") {
-    const l = { ...D.log, ...(src.log || {}) };
-    cuerpo = `
-      <div class="ajp-sub">Cómo el agente IA verifica el pago del saldo antes de entregar la <b>clave de recojo</b>.</div>
-      <div class="ajp-card"><h4>${icon("key")} ¿Cómo verifica los pagos para dar la clave?</h4>
-        ${opt("log", "manual", l.modo !== "auto", "Manual: cuando recibas un pago, notifícame para aprobarlo antes de dar la clave", "La IA te avisa cuando recibe un comprobante (WhatsApp o Telegram). Cuando lo apruebes, da la clave de recojo.")}
-        ${opt("log", "auto", l.modo === "auto", "Automático: si paga el saldo, dale su clave sin consultarme", "La IA analiza el comprobante. Si el monto coincide, entrega la clave sola.")}
-        <div class="ajp-num">Tolerancia del monto (modo automático) <span class="box"><span>S/</span><input id="lTol" type="number" min="0" step="0.5" value="${Number(l.tolerancia ?? 0)}"></span>
-          <small>Acepta el pago si es al menos el saldo menos esta diferencia. Pagar de más siempre se acepta. Si no cuadra, va a Pagos por validar.</small></div>
-        <div class="ajp-nota">${icon("shield")}<span>En automático, si hay cualquier duda (monto, fraude o comprobante repetido) el pago cae en <b>Pagos por validar</b> y te avisamos por <b>Telegram</b>.</span></div>
-      </div>`;
-    alMontar = (ov) => { ov.querySelectorAll('.ajp-opt[data-grp="log"]').forEach((o) => o.addEventListener("click", () => { l.modo = o.dataset.v; })); };
-    alGuardar = (ov, base) => { l.tolerancia = Math.max(0, Number(ov.querySelector("#lTol").value) || 0); base.log = l; };
   }
 
   // ── Avisos de pedido ───────────────────────────────────────────────
