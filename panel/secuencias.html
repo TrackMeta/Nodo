@@ -196,8 +196,10 @@ async function boot(){
   st.channelId=shell.channelId;
   // Aviso de trabajo sin guardar (el editor de secuencias no autoguarda), como el editor de flujos.
   const okDescartar=async()=> !st.dirty || await confirmDialog({title:"Cambios sin guardar",message:"Tienes cambios en esta secuencia que no guardaste. Si sales, se pierden.",confirmText:"Salir sin guardar",cancelText:"Seguir editando",danger:true});
+  // (6-nov) Un clic en un ENLACE (p. ej. «Crea ángulos →») no es un cambio: antes cualquier clic marcaba «sin guardar» y
+  // salir por el enlace preguntaba «¿Salir del sitio?» sin haber tocado nada.
   window.addEventListener("beforeunload",(e)=>{ if(st.dirty){ e.preventDefault(); e.returnValue=""; } });
-  ["input","change","click"].forEach(ev=> $("detailView").addEventListener(ev,(e)=>{ if(st.seq && !(e.target&&e.target.closest&&e.target.closest("#saveBtn,#backBtn,#delBtn"))) st.dirty=true; }));
+  ["input","change","click"].forEach(ev=> $("detailView").addEventListener(ev,(e)=>{ if(st.seq && !(e.target&&e.target.closest&&e.target.closest("#saveBtn,#backBtn,#delBtn,a[href]"))) st.dirty=true; }));
   shell.onChannel(async id=>{ if(!await okDescartar()) return; st.dirty=false; st.channelId=id; st.seq=null; showGrid(); load(); });
   $("addSeq").onclick=createSeq; $("saveBtn").onclick=saveSeq;
   $("exTog").onclick=(e)=>{ e.preventDefault(); const x=$("explain"); x.style.display=x.style.display==="none"?"":"none"; };
