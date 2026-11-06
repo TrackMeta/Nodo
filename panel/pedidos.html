@@ -314,7 +314,7 @@ const cap=(s)=>{ s=String(s||""); return s.charAt(0).toUpperCase()+s.slice(1); }
 
 async function abrirAjustesPedidosLazy(sec){
   // (?v=: al cambiar el módulo, súbelo; así nunca carga una copia vieja guardada en el navegador)
-  try{ const m=await import("./ajustes-pedidos.js?v=2"); await m.abrirAjustesPedidos(st.channelId, sec); }
+  try{ const m=await import("./ajustes-pedidos.js?v=3"); await m.abrirAjustesPedidos(st.channelId, sec); }
   catch(e){ console.error("[ajustes-pedidos]", e); toast("No se pudo abrir: recarga la página (Ctrl+F5)", true); }
 }
 function wireMas(){

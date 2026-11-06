@@ -152,7 +152,7 @@ export async function abrirAjustesPedidos(channelId, seccion) {
         const box = ov.querySelector(`[data-avmm="${k}"]`); if (!box) return;
         const m = (av[k] || {}).media;
         if (!m || !m.media_url) {
-          box.innerHTML = `<button class="ajp-btn" data-avadd="${k}" style="height:30px;padding:0 11px;font-size:12.5px">📎 Adjuntar imagen o audio</button>`;
+          box.innerHTML = `<button class="ajp-btn" data-avadd="${k}" style="height:30px;padding:0 11px;font-size:12.5px">Adjuntar imagen o audio</button>`;
           box.querySelector("[data-avadd]").onclick = () => subir(k, () => { pintarMM(k); marcar(); });
           return;
         }
