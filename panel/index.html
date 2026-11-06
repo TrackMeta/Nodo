@@ -916,20 +916,26 @@ const ENTREGA_ESTADO_K = Object.fromEntries(ENTREGA_PROV.flatMap(g => g.estados.
 const ENTREGA_LBL = Object.fromEntries(ENTREGA_PROV.map(g => [g.k, g]));
 // Comprador (dorado) que además tiene un pedido vivo = recompra en curso.
 const esRecompra = (c)=> !!c && c.stage==="comprado" && !!state.recompraSet && state.recompraSet.has(c.id);
+const esDeAnuncio = (c)=> c?.source==="ad";
+const esOrganico = (c)=> !!c && c.source!=="ad" && c.source!=="sim";
+const CONVS_TOPE = 5000;   // chats que carga la Bandeja (los filtros y contadores trabajan sobre lo cargado)
 async function loadConversations() {
   const gen=(state.loadGen=(state.loadGen||0)+1); // anti-carrera al cambiar de bot
   const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,window_type,requiere_humano,archivada,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage,source,fep_hasta${p?",product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado":""})`;
   // 1000 y no 200: los filtros («Requiere humano», fechas, archivados) y sus contadores trabajan sobre
   // lo cargado, y con más de 200 chats los que esperaban desde hace días simplemente no aparecían
   // (el Dashboard, que cuenta en la base, decía 37 y el filtro 12). Lo que sigue va por trozos.
-  let { data, error } = await supa.from("conversations").select(sel(true))
-    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(1000);
-  if (error) { ({ data } = await supa.from("conversations").select(sel(false))
-    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).limit(1000)); }
+  // (5-nov) Por partes y hasta CONVS_TOPE: con 1000 justos, Prime (1190 chats) dejaba 190 fuera de todos los filtros y
+  // contadores (36 compradores no contaban en «Comprado»). Orden con desempate por contact_id para que las páginas no
+  // repitan ni salten chats.
+  const pedir = (conProd) => pageAll((f,t)=>supa.from("conversations").select(sel(conProd))
+    .eq("channel_id", state.channelId).order("updated_at", { ascending: false }).order("contact_id").range(f,t), { max: CONVS_TOPE });
+  let { data, error } = await pedir(true);
+  if (error && !(data||[]).length) { ({ data } = await pedir(false)); }
   // Tope alcanzado: hay chats más viejos que no se cargaron. La lista lo avisa (renderConversations)
   // y los que «Requieren humano» se piden aparte al servidor: son los que no pueden quedar
   // escondidos por viejos, y así el filtro y su contador cuentan todos.
-  state.convsTope = (data||[]).length >= 1000;
+  state.convsTope = (data||[]).length >= CONVS_TOPE;
   if (state.convsTope && data) {
     try {
       const { data: rh } = await supa.from("conversations").select(sel(true))
@@ -1060,7 +1066,7 @@ async function loadConversations() {
 // ── Panel de filtros ──
 async function loadFilters(){
   const [pr, tg] = await Promise.all([
-    supa.from("products").select("id,nombre,emoji").eq("channel_id", state.channelId).order("nombre"),
+    supa.from("products").select("id,nombre,emoji,tipo").eq("channel_id", state.channelId).order("nombre"),
     supa.from("tags").select("id,nombre,color").eq("channel_id", state.channelId).order("nombre"),
   ]);
   state.products = pr.error ? [] : (pr.data||[]);
@@ -1128,8 +1134,8 @@ function renderFilters(){
     <button class="ftog ${f.metapend?"on":""}" id="fMeta" type="button" title="Ventas de anuncio ya cerradas que aún no llegaron a Meta (falló el envío o falta configurar el Pixel/token)"><span class="ftg-nm">Falta enviar a Meta</span><span class="fcount" id="cMeta"></span></button>
     <h4>Etapa del embudo</h4>
     ${EMBUDO_STAGES.map(s=>`<button class="ftog tagtog ${f.stages.has(s.k)?"on":""}" data-stage="${s.k}" type="button"><span class="tagdot" style="background:${s.color}"></span><span class="ftg-nm">${s.label}</span><span class="fcount" data-stagecount="${s.k}"></span></button>`).join("")}
-    <h4>Entrega · Provincia</h4>
-    ${ENTREGA_PROV.map(g=>`<button class="ftog tagtog ${f.entrega.has(g.k)?"on":""}" data-entrega="${g.k}" type="button"><span class="tagdot" style="background:${g.color}"></span><span class="ftg-nm">${g.lbl}</span><span class="fcount" data-entregacount="${g.k}"></span></button>`).join("")}
+    ${state.products.some(p=>p.tipo==="fisico") || f.entrega.size ? `<h4>Entrega · Provincia</h4>
+    ${ENTREGA_PROV.map(g=>`<button class="ftog tagtog ${f.entrega.has(g.k)?"on":""}" data-entrega="${g.k}" type="button"><span class="tagdot" style="background:${g.color}"></span><span class="ftg-nm">${g.lbl}</span><span class="fcount" data-entregacount="${g.k}"></span></button>`).join("")}` : ""}
     <h4>Etiquetas</h4>
     <div class="tagf" id="fTags">${
       state.tags.length ? state.tags.map(t=>{ const c=tagHex(t.color); return `<button class="ftog tagtog ${f.tags.has(t.id)?"on":""}" data-tag="${t.id}" type="button"><span class="tagdot" style="background:${c}"></span><span class="ftg-nm">${esc(t.nombre)}</span><span class="fcount" data-tagcount="${t.id}"></span></button>`; }).join("")
@@ -1167,17 +1173,27 @@ function loadSavedFilters(){ try{ return JSON.parse(localStorage.getItem(savedFi
 function persistSavedFilters(){ try{ localStorage.setItem(savedFiltersKey(), JSON.stringify(state.savedFilters||[])); }catch(_){}}
 async function saveCurrentFilter(){
   const f=state.filters;
-  const active=f.sinResponder||f.seguimiento||f.anuncio||f.organico||f.sinprod||f.conimg||f.archivado||f.recomprando||f.metapend||f.producto||f.tags.size||f.stages.size||f.entrega.size;
+  const active=f.range||f.sinResponder||f.seguimiento||f.anuncio||f.organico||f.sinprod||f.conimg||f.archivado||f.recomprando||f.metapend||f.producto||f.tags.size||f.stages.size||f.entrega.size;
   if(!active){ toast("Selecciona al menos un filtro para guardarlo",true); return; }
   const name=await askText({ title:"Guardar filtro", message:"Ponle un nombre a esta combinación de filtros para reusarla con un toque.", placeholder:"Ej. Interesados por anuncio", confirmText:"Guardar" });
   if(!name) return;
   state.savedFilters=state.savedFilters||[];
-  state.savedFilters.push({ name, f:{ sinResponder:f.sinResponder, seguimiento:f.seguimiento, anuncio:f.anuncio, organico:f.organico, sinprod:f.sinprod, conimg:f.conimg, archivado:f.archivado, recomprando:f.recomprando, metapend:f.metapend, producto:f.producto, tags:[...f.tags], stages:[...f.stages], entrega:[...f.entrega] } });
+  state.savedFilters.push({ name, f:{ sinResponder:f.sinResponder, seguimiento:f.seguimiento, anuncio:f.anuncio, organico:f.organico, sinprod:f.sinprod, conimg:f.conimg, archivado:f.archivado, recomprando:f.recomprando, metapend:f.metapend, producto:f.producto, tags:[...f.tags], stages:[...f.stages], entrega:[...f.entrega],
+    range: f.range ? (f.range.preset && f.range.preset!=="custom" ? { preset:f.range.preset } : { from:ymd(f.range.from), to:ymd(f.range.to), preset:"custom" }) : null } });
   persistSavedFilters(); renderFilters(); toast("Filtro guardado");
+}
+// Fechas de un filtro guardado: un atajo («Últimos 7 días») se recalcula hoy; un rango a mano vuelve tal cual.
+function rangoGuardado(r){
+  if(!r) return null;
+  try{
+    if(r.preset && r.preset!=="custom") return r.preset==="max" ? null : computePreset(r.preset);
+    if(r.from && r.to){ const d=(x)=>{ const [y,m,dd]=String(x).split("-").map(Number); return new Date(y,m-1,dd); }; return { from:d(r.from), to:d(r.to), preset:null }; }
+  }catch(_){}
+  return null;
 }
 function applySavedFilter(i){
   const s=(state.savedFilters||[])[i]; if(!s) return; const g=s.f||{};
-  state.filters={ sinResponder:!!g.sinResponder, seguimiento:!!g.seguimiento, anuncio:!!g.anuncio, organico:!!g.organico, sinprod:!!g.sinprod, conimg:!!g.conimg, archivado:!!g.archivado, recomprando:!!g.recomprando, metapend:!!g.metapend, producto:g.producto||"", range:null, tags:new Set(g.tags||[]), stages:new Set(g.stages||[]), entrega:new Set(g.entrega||[]) };
+  state.filters={ sinResponder:!!g.sinResponder, seguimiento:!!g.seguimiento, anuncio:!!g.anuncio, organico:!!g.organico, sinprod:!!g.sinprod, conimg:!!g.conimg, archivado:!!g.archivado, recomprando:!!g.recomprando, metapend:!!g.metapend, producto:g.producto||"", range:rangoGuardado(g.range), tags:new Set(g.tags||[]), stages:new Set(g.stages||[]), entrega:new Set(g.entrega||[]) };
   closeFilters(); renderFilters(); renderConversations();
 }
 async function delSavedFilter(i){
@@ -1193,8 +1209,8 @@ function updateFilterCounts(){
   set("cSin", convs.filter(cv=>cv.no_leidos>0 && !cv.archivada).length);
   set("cSeg", convs.filter(cv=>cv.requiere_humano && !cv.archivada).length);
   set("cRec", convs.filter(cv=>!cv.archivada && esRecompra(cv.contact)).length);
-  set("cAds", convs.filter(cv=>!!cv.contact.source && !cv.archivada).length);
-  set("cOrg", convs.filter(cv=>!cv.contact.source && !cv.archivada).length);
+  set("cAds", convs.filter(cv=>esDeAnuncio(cv.contact) && !cv.archivada).length);
+  set("cOrg", convs.filter(cv=>esOrganico(cv.contact) && !cv.archivada).length);
   set("cSinP", convs.filter(cv=>!cv.contact.product_id && cv.contact.stage!=="comprado" && cv.contact.stage!=="confirmado" && !cv.archivada).length);
   set("cImg", convs.filter(cv=>!!cv.contact.ultima_imagen_at && !cv.archivada).length);
   set("cArch", convs.filter(cv=>cv.archivada).length);
@@ -1520,8 +1536,9 @@ function applyFilters(cv){
   if (f.stages.size && !f.stages.has(c.stage||"nuevo")) return false;
   if (f.entrega.size){ const k=state.entregaMap.get(c.id); if(!k || !f.entrega.has(k)) return false; }
   if (f.metapend && !state.metaPendSet.has(c.id)) return false;
-  if (f.anuncio && !c.source) return false;
-  if (f.organico && !!c.source) return false;
+  // (5-nov) Por el VALOR del origen: antes «anuncio» era tener cualquier origen y las 24 pruebas («sim») contaban como anuncio.
+  if (f.anuncio && !esDeAnuncio(c)) return false;
+  if (f.organico && !esOrganico(c)) return false;
   if (f.sinprod && (c.product_id || c.stage==="comprado" || c.stage==="confirmado")) return false;
   if (f.conimg && !c.ultima_imagen_at) return false;
   if (f.range && cv.updated_at){ const dd=ymdLima(cv.updated_at); if(dd < ymd(f.range.from) || dd > ymd(f.range.to)) return false; }
@@ -1536,9 +1553,9 @@ function renderConversations(){
   const mt=$("modeToggle"); if(mt){ mt.querySelector('[data-mode="bot"]').innerHTML=icon("robot")+" Bot"; mt.querySelector('[data-mode="humano"]').innerHTML=icon("user")+" Humano"; }
   updateFilterCounts(); renderFilterChips(); updateFilterBadge();
   const anyFilter = state.filters.sinResponder||state.filters.seguimiento||state.filters.anuncio||state.filters.organico||state.filters.sinprod||state.filters.conimg||state.filters.range||state.filters.archivado||state.filters.recomprando||state.filters.producto||state.filters.tags.size||state.filters.stages.size||state.filters.entrega.size;
-  // La lista trae los 1000 chats más recientes: si llegó al tope, se dice (los filtros y
+  // La lista trae los CONVS_TOPE chats más recientes: si llegó al tope, se dice (los filtros y
   // contadores trabajan sobre lo cargado; la búsqueda sí pregunta al servidor).
-  const avisoTope = state.convsTope ? `<div class="empty" style="padding:14px 16px 18px;font-size:12px;text-align:center">Mostrando los 1000 chats más recientes. Usa la búsqueda para encontrar chats más antiguos.</div>` : "";
+  const avisoTope = state.convsTope ? `<div class="empty" style="padding:14px 16px 18px;font-size:12px;text-align:center">Mostrando los ${CONVS_TOPE} chats más recientes. Usa la búsqueda para encontrar chats más antiguos.</div>` : "";
   if(!list.length){ box.innerHTML=`<div class="empty" style="padding:40px 20px;font-size:13px">${state.search?`Ningún contacto coincide con “${esc(state.search)}”`:(anyFilter?"Ninguna conversación coincide con los filtros":(state.mode==="bot"?"Sin chats gestionados por el bot":"Sin chats atendidos por un humano"))}</div>${avisoTope}`; return; }
   list.forEach(cv => {
     const c = cv.contact;
