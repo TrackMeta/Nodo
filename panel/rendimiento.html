@@ -94,6 +94,21 @@
 
   /* Table */
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+  /* (5-nov) Por copy */
+  .cp-panel{margin-bottom:16px}
+  .cp-hd{padding:14px 15px 10px}
+  .cp-tt{font-weight:700;font-size:14px}
+  .cp-st{font-size:12px;color:var(--muted);margin-top:2px}
+  .cp-tabla{table-layout:fixed}
+  .cp-tabla td.cp-et{text-align:left;font-size:13px;color:var(--text);vertical-align:top}
+  .cp-tabla td.cp-tx{text-align:left;color:var(--muted);font-size:12.5px}
+  .cp-tabla td.cp-tx>div:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cp-tabla .cp-sub{font-size:10.5px;color:var(--faint);margin-top:1px}
+  .cp-tabla tr.cp-vieja td{opacity:.62}
+  .cp-tabla tr.cp-ver td{padding-top:0;white-space:normal}
+  .cp-gana{font-size:10px;font-weight:800;color:var(--green);border:1px solid var(--green);border-radius:20px;padding:0 6px;margin-left:2px}
+  .cp-aviso{display:flex;gap:9px;align-items:flex-start;margin:0 0 14px;padding:10px 13px;border-radius:11px;font-size:12.5px;line-height:1.55;color:var(--muted);background:var(--surface);border:1px solid var(--border)}
+  .cp-aviso svg{width:15px;height:15px;flex:none;margin-top:2px;color:var(--faint)}
   .scroll{overflow-x:auto}
   table{width:100%;border-collapse:collapse;min-width:760px}
   thead th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);font-weight:700;text-align:right;padding:12px 13px;border-bottom:1px solid var(--border);white-space:nowrap;background:var(--surface);position:sticky;top:0}
@@ -762,16 +777,24 @@ function nNecesario(x1,n1,x2,n2){
 // imposibles de seguir: medido, "«Vieja borrada» rinde mejor, súbele el peso" — de una
 // versión que ya no existe en el flujo, contra otra que ya estaba apagada. Lo que pasó
 // pasó y se muestra igual en la tabla, pero para DECIDIR solo cuentan las que están vivas.
+// (5-nov) Además de cuáles siguen vivas, el comienzo del texto de cada versión (st.copyTexto[id]) para mostrarlo en la
+// tabla: «Versión A» sola no decía qué mensaje era. Primer globo con texto; NFKC pasa las letras «negritas» de Unicode
+// (𝗘𝗻𝘁𝗿𝗲𝗻𝗮𝘀) a letras normales.
+function textoDeVariante(v){
+  const b=(v?.bubbles||[]).find(x=>x && typeof x.text==="string" && x.text.trim());
+  const t=String(b?.text ?? v?.texto ?? v?.text ?? "").normalize("NFKC").replace(/\s+/g," ").trim();
+  return t;
+}
 async function variantesVigentes(){
-  const vivas=new Set();
+  const vivas=new Set(); st.copyTexto=st.copyTexto||{};
   try{
     const { data:nodos }=await supa.from("flow_nodes")
       .select("config, flows!inner(channel_id)").eq("tipo","rotador").eq("flows.channel_id", st.channelId);
-    for(const n of nodos||[]) for(const v of (n.config?.variantes||[])) if(v?.id && v.activo!==false) vivas.add(v.id);
+    for(const n of nodos||[]) for(const v of (n.config?.variantes||[])){ if(v?.id){ const t=textoDeVariante(v); if(t) st.copyTexto[v.id]=t; } if(v?.id && v.activo!==false) vivas.add(v.id); }
   }catch(_){ /* sin flujos legibles → se comportan todas como vigentes */ }
   try{
     const { data:seqs }=await supa.from("sequences").select("pasos").eq("channel_id", st.channelId);
-    for(const s of seqs||[]) for(const p of (s.pasos||[])) for(const v of (p?.variantes||[])) if(v?.id && v.activo!==false) vivas.add(v.id);
+    for(const s of seqs||[]) for(const p of (s.pasos||[])) for(const v of (p?.variantes||[])){ if(v?.id){ const t=textoDeVariante(v); if(t) st.copyTexto[v.id]=t; } if(v?.id && v.activo!==false) vivas.add(v.id); }
   }catch(_){ }
   return vivas;
 }
@@ -891,38 +914,57 @@ function renderCopys(){
         <p style="max-width:52ch;margin:8px auto 0;line-height:1.6">Se llena solo: cada vez que el bot manda un saludo inicial o un paso de remarketing que tiene <b>varias versiones</b>, queda registrado cuál mandó y si el cliente contestó.<br><br>Si tus mensajes tienen una sola versión, no hay nada que comparar — agrega una segunda en el flujo o en la secuencia.</p></div>`;
       return;
     }
-    const grupos=[["inicial","Saludo inicial","El primer mensaje del bot. Decide si el cliente contesta o no."],
-                  ["secuencia","Remarketing","Los pasos que reenganchan al que se quedó callado."]];
-    // Una tabla por ÁMBITO y por PRODUCTO. Los copys de productos distintos no compiten
-    // por el mismo cliente: mezclarlos daba un "ganador" sin sentido — medido, el saludo del
-    // curso (1 cliente, 100%) salía encabezando la lista de las zapatillas.
-    box.innerHTML=grupos.flatMap(([amb,titulo,sub])=>{
-      const delAmb=filas.filter(f=>f.ambito===amb);
-      // …y, en remarketing, una por TOQUE: el toque 2 solo lo reciben los que ignoraron el 1.
-      const claves=[...new Set(delAmb.map(f=>(f.prod||"")+"#"+(f.paso??"")))];
-      return claves.map(k=>{ const [pid,ps]=k.split("#");
-        return [amb,titulo,sub,pid,delAmb.filter(f=>(f.prod||"")===pid && String(f.paso??"")===ps), ps]; });
-    }).map(([amb,titulo,sub,pid,gg,ps],idx,arr)=>{
-      // El subtitulo explica el ambito, no la tarjeta: repetido en cada producto/toque era
-      // ruido. Sale solo en la primera tarjeta de su ambito.
-      const primeraDelAmbito = arr.findIndex(r=>r[0]===amb)===idx;
-      const g=gg.sort((a,b)=>(b.resp/b.env)-(a.resp/a.env));
-      if(!g.length) return "";
+    // (5-nov, Rodrigo: «¿el diseño está bien? ¿está ordenado?») Rehecha. Antes era una tarjeta por toque, en el orden en
+    // que llegaban los datos (salía toque 2, 1, 3, 4), con el mismo aviso repetido en cada una, columnas que no cuadraban
+    // entre tarjetas y sin decir qué mensaje era «Versión A». Ahora: por producto, UNA tabla del saludo y UNA del
+    // remarketing con una fila por toque EN ORDEN y el comienzo de cada mensaje. Las versiones de un toque siguen sin
+    // competir con las de otro (cada toque tiene su público): si un toque tiene 2+, salen juntas debajo de él con su
+    // cintillo. El aviso de «una sola versión» se dice UNA vez arriba.
+    const AMBS=[["inicial","Saludo inicial","El primer mensaje del bot. Decide si el cliente contesta o no.","Contestaron"],
+                ["secuencia","Remarketing","Los toques que reenganchan al que se quedó callado, en el orden en que salen.","Reengancharon"]];
+    const pct=(f)=>f.env?Math.round(f.resp/f.env*100)+"%":"—";
+    const corta=(t,n=110)=>t.length>n?t.slice(0,n-1).trimEnd()+"…":t;
+    const cols=`<colgroup><col style="width:92px"><col><col style="width:104px"><col style="width:124px"><col style="width:76px"><col style="width:104px"><col style="width:104px"></colgroup>`;
+    const fila=(f,primera,etiqueta,nVers,ganador,amb)=>{
+      const tx=(st.copyTexto||{})[f.id]||"";
+      const nom = amb==="secuencia" && nVers>1 ?`<b style="font-weight:700">${esc(f.nombre)}</b>${ganador?` <span class="cp-gana">rinde más</span>`:""} · ` : "";
+      return `<tr${f.vigente?"":' class="cp-vieja"'}>
+        <td class="cp-et">${amb==="inicial" ? esc(f.nombre)+(ganador?' <span class="cp-gana">rinde más</span>':"") : (primera?etiqueta:"")}</td>
+        <td class="cp-tx" title="${esc(tx)}"><div>${nom}${tx?esc(corta(tx)):'<span style="color:var(--faint)">(sin texto: imagen o archivo)</span>'}</div>${f.vigente?"":'<div class="cp-sub">ya no está en uso</div>'}</td>
+        <td class="num">${f.env}</td><td class="num">${f.resp}</td>
+        <td class="num" style="font-weight:800;color:${f.resp===0?"var(--faint)":"var(--text)"}">${pct(f)}</td>
+        <td class="num">${f.compras}</td><td class="num">${money0(f.monto)}</td></tr>`;
+    };
+    const prods=[...new Set(filas.map(f=>f.prod||""))];
+    let todasUna=true;
+    const html=prods.flatMap(pid=>AMBS.map(([amb,titulo,sub,colResp])=>{
+      const delAmb=filas.filter(f=>f.ambito===amb && (f.prod||"")===pid);
+      if(!delAmb.length) return "";
+      // Toques en orden (null = sin toque, primero)
+      const pasos=[...new Set(delAmb.map(f=>f.paso??null))].sort((a,b)=>(a==null?-1:Number(a))-(b==null?-1:Number(b)));
+      const cuerpo=pasos.map(ps=>{
+        const g=delAmb.filter(f=>(f.paso??null)===ps).sort((a,b)=>(b.resp/b.env)-(a.resp/a.env));
+        const vivas=g.filter(f=>f.vigente);
+        if(vivas.length>1) todasUna=false;
+        const et = amb==="secuencia" && ps!=null ? `Toque ${Number(ps)+1}` : (g.length>1?"":"—");
+        const etiqueta = amb==="secuencia" ? `<b>${et}</b>` : "";
+        const ganador = vivas.length>1 ? (()=>{ const t=testProporciones(vivas[0],vivas[1]); return t.valido&&t.difiere ? vivas[0].id : null; })() : null;
+        let h=g.map((f,i)=>fila(f,i===0,etiqueta,g.length,f.id===ganador,amb)).join("");
+        // Cintillo solo cuando hay algo que decir de ESE toque (2+ versiones o todas apagadas)
+        if(vivas.length>1 || !vivas.length) h+=`<tr class="cp-ver"><td></td><td colspan="6">${veredictoHtml(g)}</td></tr>`;
+        return h;
+      }).join("");
       const nomProd=(window.__prodNombre||{})[pid];
-      return `<div class="panel" style="margin-bottom:16px">
-        <div style="padding:13px 15px 0"><div style="font-weight:700;font-size:14px">${titulo}${nomProd?` · <span style="color:var(--muted);font-weight:600">${esc(nomProd)}</span>`:""}${(ps!==""&&ps!=null&&amb==="secuencia")?` · <span style="color:var(--faint);font-weight:600">toque ${Number(ps)+1}</span>`:""}</div>
-${primeraDelAmbito?`<div style="font-size:12px;color:var(--muted);margin-top:2px">${sub}</div>`:""}
-          ${veredictoHtml(g)}</div>
-        <div class="scroll"><table><thead><tr>
-          <th>Versión</th><th>Recibieron</th><th>${amb==="secuencia"?"Reengancharon":"Contestaron"}</th>
+      return `<div class="panel cp-panel">
+        <div class="cp-hd"><div class="cp-tt">${titulo}${nomProd?` · <span style="color:var(--muted);font-weight:600">${esc(nomProd)}</span>`:""}</div>
+          <div class="cp-st">${sub}</div></div>
+        <div class="scroll"><table class="cp-tabla">${cols}<thead><tr>
+          <th>${amb==="secuencia"?"Toque":"Versión"}</th><th style="text-align:left">Mensaje</th><th>Recibieron</th><th>${colResp}</th>
           <th>Tasa</th><th>Compraron</th><th>Ingresos</th></tr></thead>
-        <tbody>${g.map(f=>`<tr${f.vigente?"":' style="opacity:.62"'}>
-          <td>${nameCell(f.nombre,"","",false)}${f.vigente?"":'<div style="font-size:10.5px;color:var(--faint);margin-top:1px">ya no está en uso</div>'}</td>
-          <td class="num">${f.env}</td><td class="num">${f.resp}</td>
-          <td class="num" style="font-weight:800;color:${f.resp===0?"var(--faint)":"var(--text)"}">${Math.round(f.resp/f.env*100)}%</td>
-          <td class="num">${f.compras}</td><td class="num">${money0(f.monto)}</td></tr>`).join("")}
-        </tbody></table></div></div>`;
-    }).join("") || `<div class="nodo-empty" style="border:none;padding:44px 20px"><p>Sin datos en este periodo.</p></div>`;
+        <tbody>${cuerpo}</tbody></table></div></div>`;
+    })).join("");
+    const avisoUna = todasUna ? `<div class="cp-aviso">${icon("clock")}<span>Cada mensaje tiene <b>una sola versión</b>, así que todavía no hay con qué compararlo. Agrega una segunda versión a un mensaje (en Secuencias o en el saludo del producto) y acá verás cuál rinde mejor.</span></div>` : "";
+    box.innerHTML = (html ? avisoUna+html : "") || `<div class="nodo-empty" style="border:none;padding:44px 20px"><p>Sin datos en este periodo.</p></div>`;
   }).catch(e=>{ box.innerHTML=`<div class="nodo-empty" style="border:none;padding:44px 20px"><p>No se pudo cargar: ${esc(String(e?.message||e))}</p></div>`; });
 }
 // El cintillo: qué se puede concluir HOY. Es la parte que más importa que sea honesta —
