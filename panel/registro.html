@@ -148,6 +148,7 @@ async function canjear(token){
 }
 
 async function iniciar(){
+  pintar();   // el formulario sale al toque; los datos de la invitación llegan después
   if (urlToken){
     try{
       const { data, error } = await supa.functions.invoke("signup", { body: { action: "info", token: urlToken } });
@@ -163,7 +164,9 @@ async function iniciar(){
     try{
       const { data: { session } } = await supa.auth.getSession();
       const correo = session?.user?.email?.toLowerCase();
-      if (correo && (!info?.email || correo === info.email.toLowerCase())) modo = "sesion";
+      // Solo si SABEMOS que la invitación es para este correo (sin el dato no se ofrece: el servidor
+      // igual rechazaría otro correo, pero el botón prometería algo que no va a pasar).
+      if (correo && info?.email && correo === info.email.toLowerCase()) modo = "sesion";
       else if (correo && info?.email) show(`Tienes abierta la sesión de ${correo}, pero la invitación es para ${info.email}. Entra con ese correo.`);
     }catch(_){}
   }
