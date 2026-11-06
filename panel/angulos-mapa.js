@@ -273,7 +273,7 @@ function pintaAds(p, a) {
   box.innerHTML = `<h3>${icon("megaphone")} Anuncios de ${esc(paisNom(pais))}</h3>
     <p class="amx-help">${a ? `Quien toque uno de estos anuncios cae en la versión de <b>${esc(paisNom(pais))}</b> y recibe el saludo y el gancho de este ángulo.` : `Llegan a la versión de <b>${esc(paisNom(pais))}</b> con el saludo general. Asígnales un ángulo para que el saludo retome el anuncio.`}</p>
     <div id="amxAdList">${ids.length ? fichasAds(p, a, ids) : `<div class="amx-emptyrow">${a ? "Este ángulo no tiene anuncios: nadie llega por aquí." : "No hay anuncios sin ángulo."}</div>`}</div>
-    ${sueltos.length ? `<div class="amx-sub">Sin ángulo en ${esc(paisNom(pais))}</div>${sueltos.map((id) => `<div class="amx-row soft"><span class="amx-rt">${esc(nomAd(id))}<small>${esc(id)}</small></span><button class="amx-btn sm" data-mover="${esc(id)}">Mover aquí</button></div>`).join("")}` : ""}
+    ${sueltos.length ? `<div class="amx-sub">Sin ángulo en ${esc(paisNom(pais))}</div><div id="amxAdSueltos">${fichasSueltos(sueltos)}</div>` : ""}
     <div class="amx-add">
       ${libres.length ? `<select class="amx-sel" id="amxAddSel"><option value="">＋ Elegir un anuncio de Meta…</option>${sug.length ? `<optgroup label="Sugeridos para ${esc(paisNom(pais))}">${sug.map(opt).join("")}</optgroup>` : ""}${resto.length ? `<optgroup label="${sug.length ? "Otros" : "Anuncios de Meta"}">${resto.map(opt).join("")}</optgroup>` : ""}</select>` : ""}
       <input class="amx-in" id="amxAddId" placeholder="…o pega el ID del anuncio" inputmode="numeric"/>
@@ -283,11 +283,13 @@ function pintaAds(p, a) {
   const slug = a ? a.slug : "";
   wireFichasAnuncio(box);
   // Título, texto, imagen y clientes de cada anuncio: llegan después (una consulta por anuncio) y se repintan solo las fichas.
-  const faltan = ids.filter((id) => !(S.adDatos || {})[id]);
+  const faltan = [...ids, ...sueltos].filter((id) => !(S.adDatos || {})[id]);
   if (faltan.length) datosAnuncios(supa, S.ctx.channelId, faltan).then((d) => {
     S.adDatos = { ...(S.adDatos || {}), ...d };
     const lst = document.getElementById("amxAdList"); if (!lst || !box.isConnected) return;
-    lst.innerHTML = fichasAds(p, a, ids); cablea();
+    if (ids.length) lst.innerHTML = fichasAds(p, a, ids);
+    const su = document.getElementById("amxAdSueltos"); if (su) su.innerHTML = fichasSueltos(sueltos);
+    cablea();
   }).catch(() => {});
   const cablea = () => {
   box.querySelectorAll("[data-suelta]").forEach((b) => (b.onclick = () => moverAd(p, b.dataset.suelta, "")));
@@ -308,6 +310,11 @@ function fichasAds(p, a, ids) {
     acciones: (a ? `<button class="amx-ib" data-suelta="${esc(id)}" title="Quitar de este ángulo (sigue llegando con el saludo general)">${icon("x")}</button>`
       : `<select class="amx-sel" data-asig="${esc(id)}"><option value="">Asignar a…</option>${angsDe(p.id).map((x) => `<option value="${esc(x.slug)}">${esc(x.nombre || x.slug)}</option>`).join("")}</select>`)
       + `<button class="amx-ib" data-saca="${esc(id)}" title="Sacar de ${esc(paisNom(pais))} (deja de llevar a este producto)">${icon("trash")}</button>` })).join("");
+}
+// (6-nov) «Sin ángulo en …» (dentro de un ángulo): la misma ficha, con «Mover aquí».
+function fichasSueltos(sueltos) {
+  return sueltos.map((id) => fichaAnuncioHtml({ id, meta: S.meta[String(id)], datos: (S.adDatos || {})[String(id)],
+    acciones: `<button class="amx-btn sm" data-mover="${esc(id)}">Mover aquí</button>` })).join("");
 }
 let _paisRe = null;
 function paisDeAd(m) {
