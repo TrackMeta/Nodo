@@ -912,8 +912,18 @@ const ENTREGA_PROV = [
   { k:"clave",        lbl:"Clave enviada", color:"#10b981", estados:["saldo_pagado"] },
   { k:"recogido",     lbl:"Recogido",      color:"#16a34a", estados:["recogido"] },
 ];
+// (5-nov) Entrega · Lima: los pasos del tablero de Lima en Pedidos (contraentrega con motorizado). Sus estados son
+// solo de Lima (confirmado, en_reparto…), así que el estado ya dice la zona. Claves con «l_» para no chocar con provincia.
+const ENTREGA_LIMA = [
+  { k:"l_repartir",  lbl:"Por repartir",  color:"#8b5cf6", estados:["confirmado"] },
+  { k:"l_reparto",   lbl:"En reparto",    color:"#3b82f6", estados:["en_reparto"] },
+  { k:"l_reprog",    lbl:"Reprogramado",  color:"#f59e0b", estados:["reprogramado"] },
+  { k:"l_entregado", lbl:"Entregado",     color:"#16a34a", estados:["entregado_cobrado"] },
+  { k:"l_rechazado", lbl:"Rechazado",     color:"#dc2626", estados:["rechazado"] },
+];
 const ENTREGA_ESTADO_K = Object.fromEntries(ENTREGA_PROV.flatMap(g => g.estados.map(e => [e, g.k])));
-const ENTREGA_LBL = Object.fromEntries(ENTREGA_PROV.map(g => [g.k, g]));
+const ENTREGA_LIMA_K = Object.fromEntries(ENTREGA_LIMA.flatMap(g => g.estados.map(e => [e, g.k])));
+const ENTREGA_LBL = Object.fromEntries([...ENTREGA_PROV, ...ENTREGA_LIMA].map(g => [g.k, g]));
 // Comprador (dorado) que además tiene un pedido vivo = recompra en curso.
 const esRecompra = (c)=> !!c && c.stage==="comprado" && !!state.recompraSet && state.recompraSet.has(c.id);
 const esDeAnuncio = (c)=> c?.source==="ad";
@@ -998,7 +1008,7 @@ async function loadConversations() {
   // Embudo de entrega · Provincia: mapa contact_id → grupo del estado ACTUAL de su
   // pedido de provincia (el más reciente). Alimenta el filtro y sus contadores.
   try {
-    const estados = Object.keys(ENTREGA_ESTADO_K);
+    const estados = [...Object.keys(ENTREGA_ESTADO_K), ...Object.keys(ENTREGA_LIMA_K)];
     const m = new Map();
     for (const trozo of enTrozos(idsVis)) {
       // Ídem: paginado, y con `id` como desempate del orden. Sin un orden ÚNICO la
@@ -1008,8 +1018,9 @@ async function loadConversations() {
         .eq("channel_id", state.channelId).in("estado", estados).in("contact_id", trozo)
         .order("created_at", { ascending: false }).order("id", { ascending: false }).range(f,t));
       for (const o of (eo||[])) {
-        if ((o.shipping||{}).zona !== "provincia") continue; // solo provincia (agencia)
-        if (!m.has(o.contact_id)) m.set(o.contact_id, ENTREGA_ESTADO_K[o.estado]); // el más reciente gana
+        // Provincia (agencia) por su zona; Lima por su estado, que solo existe en Lima. El pedido más reciente gana.
+        const g = (o.shipping||{}).zona === "provincia" ? ENTREGA_ESTADO_K[o.estado] : ENTREGA_LIMA_K[o.estado];
+        if (g && !m.has(o.contact_id)) m.set(o.contact_id, g);
       }
     }
     nEntrega = m;
@@ -1135,7 +1146,9 @@ function renderFilters(){
     <h4>Etapa del embudo</h4>
     ${EMBUDO_STAGES.map(s=>`<button class="ftog tagtog ${f.stages.has(s.k)?"on":""}" data-stage="${s.k}" type="button"><span class="tagdot" style="background:${s.color}"></span><span class="ftg-nm">${s.label}</span><span class="fcount" data-stagecount="${s.k}"></span></button>`).join("")}
     ${state.products.some(p=>p.tipo==="fisico") || f.entrega.size ? `<h4>Entrega · Provincia</h4>
-    ${ENTREGA_PROV.map(g=>`<button class="ftog tagtog ${f.entrega.has(g.k)?"on":""}" data-entrega="${g.k}" type="button"><span class="tagdot" style="background:${g.color}"></span><span class="ftg-nm">${g.lbl}</span><span class="fcount" data-entregacount="${g.k}"></span></button>`).join("")}` : ""}
+    ${ENTREGA_PROV.map(g=>`<button class="ftog tagtog ${f.entrega.has(g.k)?"on":""}" data-entrega="${g.k}" type="button"><span class="tagdot" style="background:${g.color}"></span><span class="ftg-nm">${g.lbl}</span><span class="fcount" data-entregacount="${g.k}"></span></button>`).join("")}
+    <h4>Entrega · Lima</h4>
+    ${ENTREGA_LIMA.map(g=>`<button class="ftog tagtog ${f.entrega.has(g.k)?"on":""}" data-entrega="${g.k}" type="button"><span class="tagdot" style="background:${g.color}"></span><span class="ftg-nm">${g.lbl}</span><span class="fcount" data-entregacount="${g.k}"></span></button>`).join("")}` : ""}
     <h4>Etiquetas</h4>
     <div class="tagf" id="fTags">${
       state.tags.length ? state.tags.map(t=>{ const c=tagHex(t.color); return `<button class="ftog tagtog ${f.tags.has(t.id)?"on":""}" data-tag="${t.id}" type="button"><span class="tagdot" style="background:${c}"></span><span class="ftg-nm">${esc(t.nombre)}</span><span class="fcount" data-tagcount="${t.id}"></span></button>`; }).join("")
