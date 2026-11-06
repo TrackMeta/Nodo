@@ -30,6 +30,7 @@ const META: Record<string, Meta> = {
   pago_digital_validar: { grupo: "pagos",    prioridad: "urgente",    porAtender: true },
   pago_extra_validar:   { grupo: "pagos",    prioridad: "urgente",    porAtender: true },
   prepago_lima_validar: { grupo: "pagos",    prioridad: "urgente",    porAtender: true },
+  adelanto_sin_datos:   { grupo: "pagos",    prioridad: "importante", porAtender: false },   // (6-nov) pagó y no dio sus datos: aún no hay pedido
   entrega_fallida:      { grupo: "pagos",    prioridad: "urgente",    porAtender: true },
   pide_humano:          { grupo: "atencion", prioridad: "urgente",    porAtender: true },
   envio_fallido:        { grupo: "atencion", prioridad: "urgente",    porAtender: true },

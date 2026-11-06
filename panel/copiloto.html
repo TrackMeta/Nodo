@@ -221,6 +221,23 @@ async function load(){
     if(lm&&lm.length){ const ids=new Set(st.list.map(o=>o.id)); lm.forEach(o=>{ const c=o.contact||{}; if(!ids.has(o.id) && c.wa_id!=="webchat-test" && c.source!=="sim") st.list.push(o); }); }
   }catch(_){ /* sin la marca aún */ }
 
+  // (6-nov, Rodrigo) Pagó el adelanto ANTES de dar sus datos: no hay pedido todavía, así que no estaba en ninguna lista
+  // y nadie se enteraba. El motor lo guarda en el contacto (_prepago_adel_*) y lo pega al pedido cuando da sus datos.
+  st.sinDatos=[];
+  try{
+    const { data:fv }=await supa.from("contact_field_values")
+      .select("contact_id,value,updated_at,custom_fields!inner(key,channel_id),contact:contact_id(nombre,wa_id,source,bot_activo)")
+      .eq("custom_fields.channel_id",st.channelId)
+      .in("custom_fields.key",["_prepago_adel_url","_prepago_adel_monto","_prepago_adel_oper","_prepago_adel_ok"]);
+    const por={};
+    (fv||[]).forEach(f=>{ const k=f.custom_fields&&f.custom_fields.key; if(!k) return;
+      const x=(por[f.contact_id]=por[f.contact_id]||{ contact_id:f.contact_id, contact:f.contact||{} });
+      x[k.replace("_prepago_adel_","")]=f.value; if(k==="_prepago_adel_url") x.at=f.updated_at; });
+    st.sinDatos=Object.values(por).filter(x=>String(x.url||"").trim() && x.contact.wa_id!=="webchat-test" && x.contact.source!=="sim")
+      .sort((a,b)=>new Date(a.at)-new Date(b.at));
+  }catch(_){ /* sin campos aún */ }
+  if(gen!==st.loadGen) return;
+
   const ids=[...new Set(st.list.map(o=>o.contact_id).filter(Boolean))];
   st.imgs={}; st.dudas={};
   if(ids.length){
@@ -297,7 +314,8 @@ function render(){
     return { et, items };
   });
   renderStats(groups);
-  if(!groups.some(g=>g.items.length)){
+  const sinDatos=st.sinDatos||[];
+  if(!groups.some(g=>g.items.length) && !sinDatos.length){
     box.innerHTML=`<div class="vacio"><span class="v-ic">${icon("check")}</span><div><b>Nada que decidir</b>
       <span>Cuando entre un comprobante que necesite tu visto bueno, aparece acá solo.
       ${document.documentElement.hasAttribute("data-bot-digital")
@@ -318,6 +336,13 @@ function render(){
     box.appendChild(sub);
     items.forEach(o=>box.appendChild(card(o,et)));
   });
+  if(sinDatos.length){
+    const h=document.createElement("div"); h.className="sect"; h.textContent=`Pagó el adelanto, faltan sus datos · ${sinDatos.length}`; box.appendChild(h);
+    const sub=document.createElement("div"); sub.style.cssText="font-size:12.5px;color:var(--muted);margin:-4px 0 12px";
+    sub.textContent="Mandaron su comprobante antes de darte sus datos de envío, así que todavía no hay pedido. Cuando te los den, el pago se pega solo a su pedido y aparece arriba para aprobarlo. Si se quedaron callados, escríbeles.";
+    box.appendChild(sub);
+    sinDatos.forEach(x=>box.appendChild(cardSinDatos(x)));
+  }
   renderHoy();
 }
 
@@ -458,6 +483,31 @@ function card(o,et){
   const cp=el.querySelector("[data-copy]");
   if(cp) cp.onclick=async()=>{ try{ await navigator.clipboard.writeText(copiable); toast("Datos copiados"); }catch(_){ toast("No se pudo copiar",true); } };
   acts.wire(el,o);
+  return el;
+}
+
+// Tarjeta de un adelanto pagado SIN datos (no hay pedido): foto, cuánto mandó, hace cuánto y «Abrir el chat».
+function cardSinDatos(x){
+  const c=x.contact||{}; const el=document.createElement("div"); el.className="acard";
+  const img=String(x.url||"").trim(); const chat=`index.html?c=${encodeURIComponent(x.contact_id||"")}`;
+  const hace=(()=>{ const m=Math.max(0,Math.round((Date.now()-new Date(x.at||Date.now()))/60000)); return m<60?`hace ${m} min`:m<1440?`hace ${Math.round(m/60)} h`:`hace ${Math.round(m/1440)} d`; })();
+  const ok=String(x.ok||"")==="si";
+  el.innerHTML=`
+    <img class="thumb" src="${esc(img)}" data-full="${esc(img)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/><div class="thumb none" style="display:none">${icon("alert")} No cargó el comprobante</div>
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+        <span class="pill neutra">Faltan sus datos</span>
+        <span style="font-weight:700;font-size:15px">${esc(c.nombre||"Cliente")}</span>
+        <span style="font-size:12px;color:var(--faint)">${/^\d{9,15}$/.test(String(c.wa_id||""))?"+"+esc(c.wa_id):""} · ${esc(hace)}</span>
+      </div>
+      <div style="display:flex;gap:22px;margin-top:11px;flex-wrap:wrap">
+        <div><div class="klbl">Mandó</div><div class="amt">${String(x.monto||"").trim()?`S/ ${esc(x.monto)}`:'<span style="color:var(--faint);font-size:14px;font-weight:600">—</span>'}</div></div>
+        ${String(x.oper||"").trim()?`<div><div class="klbl">Operación</div><div style="font-weight:700;padding-top:4px">${esc(x.oper)}</div></div>`:""}
+      </div>
+      <div class="ia ${ok?"ok":"duda"}">${icon("robot")}<div>${ok?"La IA lo leyó como un pago válido":"La IA no lo dio por bueno: míralo en la foto"}<br>Todavía no hay pedido: no se puede aprobar hasta que te dé su nombre, DNI y agencia.</div></div>
+      <div class="mrow"><a class="btn main" href="${chat}">${icon("message")} Abrir el chat</a></div>
+    </div>`;
+  const t=el.querySelector(".thumb[data-full]"); if(t) t.onclick=()=>{ $("lightImg").src=t.dataset.full; $("lightbox").classList.add("show"); };
   return el;
 }
 

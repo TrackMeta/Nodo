@@ -107,6 +107,22 @@ export const AVISOS: AvisoDef[] = [
       "⚠️ {{motivo}}",
   },
   {
+    // (6-nov) Pagó el adelanto ANTES de dar sus datos: todavía no hay pedido al que pegarlo.
+    clave: "adelanto_sin_datos", grupo: "pagos",
+    titulo: "Pagó el adelanto sin dar sus datos",
+    desc: "Un cliente de provincia mandó el comprobante del adelanto antes de darte sus datos de envío. Cuando los dé, el pago se pega solo a su pedido. Si se quedó callado, escríbele.",
+    comprobante: true,
+    vars: ["cliente", "telefono", "monto_leido", "operacion"],
+    texto:
+      "💰 *PAGÓ EL ADELANTO · FALTAN SUS DATOS*\n" +
+      "\n" +
+      "👤 {{cliente}}\n" +
+      "📱 {{telefono}}\n" +
+      "💵 Mandó: *{{moneda}} {{monto_leido}}*\n" +
+      "🧾 Operación: {{operacion}}\n" +
+      "⚠️ Todavía no hay pedido: cuando te dé sus datos, el pago se pega solo. Si se quedó callado, escríbele.",
+  },
+  {
     clave: "prepago_lima_validar", grupo: "pagos",
     titulo: "Pago adelantado de Lima por validar",
     desc: "Un cliente de Lima (contraentrega) pagó antes de recibir. Al aprobarlo baja lo que cobra el motorizado. Trae el botón para aprobar desde acá.",

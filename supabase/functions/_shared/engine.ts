@@ -14560,6 +14560,13 @@ async function stashPrepagoAdelanto(db: SupabaseClient, channelId: string, conta
   await setField(db, channelId, contactId, "_prepago_adel_oper", parsed?.operacion ? String(parsed.operacion).trim() : "");
   await setField(db, channelId, contactId, "_prepago_adel_ok", parsed?.valido ? "si" : "no");
   await logEvent(db, channelId, contactId, "nota", "Pago del adelanto recibido ANTES de sus datos", "Guardado — se engancha al crear el pedido");
+  // (6-nov, Rodrigo: «arréglalo») Y se avisa (Telegram + campanita) con la foto. Antes quedaba guardado en el contacto
+  // sin que nadie lo supiera: si el cliente no daba nunca sus datos, ese pago no aparecía en ningún lado (ni en Pagos
+  // por validar, que solo mira pedidos) y a los N días el cliente pasaba a «Perdido» con su plata adentro. Ahora
+  // también sale en Pagos por validar («Pagó el adelanto, faltan sus datos») y marcar_perdidos lo respeta (0144).
+  await avisar(db, channelId, contactId, "adelanto_sin_datos", {
+    monto_leido: _montoLeido ?? "", operacion: parsed?.operacion ? String(parsed.operacion).trim() : "",
+  }, { foto: url }).catch(() => {});
 
   // ⚠️ "¡Recibí tu pago!" a secas daba por bueno CUALQUIER monto. Medido: una clienta
   // yapeó S/10 de un adelanto de S/20 y el bot le contestó "¡Recibí tu pago!" sin
