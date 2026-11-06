@@ -92,7 +92,7 @@ export function fichaAnuncioHtml({ id, meta, datos, acciones = "", sinNombre = f
       <div class="adf-tx">
         ${sinNombre ? `<div class="adf-n">Así es el anuncio</div>` : `<div class="adf-n">${esc(nombre)} ${ESTADO(m.estado)}</div>`}
         ${!sinNombre && m.campaign_name ? `<div class="adf-s">Campaña: <b>${esc(m.campaign_name)}</b>${m.adset_name ? ` · Conjunto: <b>${esc(m.adset_name)}</b>` : ""}</div>` : ""}
-        ${leads != null ? `<div class="adf-s">${leads === 1 ? "1 cliente llegó" : `${Number(leads).toLocaleString("es-PE")} clientes llegaron`} por este anuncio</div>` : ""}
+        ${leads != null ? `<div class="adf-s">${leads === 1 ? "1 cliente llegó" : `${Number(leads).toLocaleString("es-PE")} clientes llegaron`} por este anuncio, en total</div>` : ""}
       </div>
       ${acciones ? `<div class="adf-acc">${acciones}</div>` : ""}
     </div>
