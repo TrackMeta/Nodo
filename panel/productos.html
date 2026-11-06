@@ -346,7 +346,7 @@
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll, usuarioActual } from "./shell.js";
 import { mountFolders } from "./folder-bar.js?v=3";
-import { montarMapaAngulos } from "./angulos-mapa.js?v=24";
+import { montarMapaAngulos } from "./angulos-mapa.js?v=25";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
@@ -366,7 +366,7 @@ async function avPermitido(){
 let AV = false;
 let Fbar = null;
 import { botonesHtml, wireBotones, limpiaBotones } from "./bubble-buttons.js";
-import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes } from "./seq-editor.js?v=23";
+import { mountStepsEditor, mountMensajeEditor, waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, versionEnVista } from "./seq-editor.js?v=24";
 const $ = (id) => document.getElementById(id);
 const st = { channelId:null, prod:null, versions:[], tab:"datos", list:[], folder:"__all", claseFilter:"todos", gv:"catalogo", hub:null };
 // Carpeta del producto (nombre con su emoji) para agrupar sus flujos y secuencias.
@@ -4480,17 +4480,20 @@ function renderComposer(){
     tabVars();   // la pestaña arranca con una versión si no tiene
     const wrap=document.createElement("div");
     wrap.style.cssText="display:grid;grid-template-columns:minmax(0,1fr) minmax(200px,240px);gap:14px;align-items:start";
-    wrap.innerHTML=`<div class="act-ed"></div><div><div style="font-size:11.5px;color:var(--muted);margin-bottom:6px">Así le llega</div><div class="wprev"></div></div>`;
+    wrap.innerHTML=`<div class="act-ed"></div><div><div class="wlbl" style="font-size:11.5px;color:var(--muted);margin-bottom:6px">Así le llega</div><div class="wprev"></div></div>`;
     body.appendChild(wrap);
     const obj={ variantes:cfg.variantes, rotacion:true };   // el mismo arreglo: lo que cambie el editor queda en cfg
     const ed=wrap.querySelector(".act-ed");
     mountMensajeEditor(ed, obj, { channelId:st.channelId, angulos:angs.filter(a=>a.slug), grupo:tab });
     const prev=wrap.querySelector(".wprev");
-    const upd=()=>{ const g=cfg.variantes.filter(v=>(v.angulo||"")===tab); prev.innerHTML=welcomePreview(g.find(v=>v.activo!==false)||g[0]); };
+    // (6-nov) Muestra la versión que estás editando (antes siempre la A) y dice cuál es si hay varias.
+    const lbl=wrap.querySelector(".wlbl");
+    const upd=()=>{ const g=cfg.variantes.filter(v=>(v.angulo||"")===tab); const v=versionEnVista(obj, g); prev.innerHTML=welcomePreview(v);
+      if(lbl) lbl.innerHTML = g.length>1 && v ? `Así le llega · <b style="color:var(--text)">${esc(v.nombre||"Versión")}</b>` : "Así le llega"; };
     // Cambios por clic (agregar burbuja, quitar, mover, el %) también cuentan como «sin guardar».
     if(st.act.fotoJson===undefined) st.act.fotoJson=JSON.stringify(cfg.variantes);
     const revisa=()=>setTimeout(()=>{ upd(); if(JSON.stringify(cfg.variantes)!==st.act.fotoJson) markDirty(); },0);
-    upd(); ["input","change","click"].forEach(ev=>ed.addEventListener(ev, revisa));
+    upd(); ["input","change","click","focusin"].forEach(ev=>ed.addEventListener(ev, revisa));
     seqBrand(st.channelId).then(b=>{ _welcomeBrand=b; upd(); }); // nombre/logo real en la cabecera
   }
 }

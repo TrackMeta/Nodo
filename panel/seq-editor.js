@@ -147,8 +147,7 @@ function previewHtml(paso, angulos=[]){
     const de=(t)=>todas.filter(v=> t==="" ? (!v.angulo || !known.has(v.angulo)) : v.angulo===t);
     todas = de(tab).length ? de(tab) : de("");
   }
-  const vs=todas.filter(v=>v.activo!==false && v.bubbles && v.bubbles.length);
-  const v=vs[0]||todas[0];
+  const v=versionEnVista(paso, todas);
   return waBubbles((v&&v.bubbles)||[], sample);
 }
 
@@ -165,6 +164,16 @@ export function mountMensajeEditor(box, paso, { channelId, angulos = [], soloAng
 // La pestaña elegida en cada paso. Va aparte (no dentro del paso) para que no se guarde en la base.
 const tabDe = new WeakMap();
 export const pestanaDe = (paso) => tabDe.get(paso) ?? "";
+// (6-nov, Rodrigo: «vista previa, versiones, B no se muestra») La vista previa enseñaba SIEMPRE la 1.ª versión activa
+// (la A) aunque estuvieras escribiendo la B. Ahora sigue a la versión que estás editando: la última tarjeta en la que
+// hiciste clic o escribiste (va aparte, como la pestaña, para que no se guarde). Sin elegir ninguna, la 1.ª activa.
+const verVista = new WeakMap();
+export function versionEnVista(paso, grupo){
+  const g = (grupo || []).filter(Boolean);
+  const e = verVista.get(paso);
+  if (e && g.includes(e)) return e;
+  return g.find((v) => v.activo !== false && v.bubbles && v.bubbles.length) || g[0] || null;
+}
 function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
   const enTabDe=(t,v)=>{ const known=new Set(angulos.map(a=>a.slug)); return t==="" ? (!v.angulo || !known.has(v.angulo)) : v.angulo===t; };
   // El grupo que se edita (null = todos, como en Secuencias): "" = las generales, "slug" = las de ese ángulo.
@@ -204,8 +213,12 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
       </div>`;
     box.querySelectorAll(".se-tab").forEach(b=> b.onclick=()=>{ tabDe.set(paso, b.dataset.tab); composer(box,paso); box.dispatchEvent(new Event("click",{bubbles:true})); });
     const rtog=box.querySelector("[data-rot]"); if(rtog) rtog.onclick=()=>{ paso.rotacion=!rot; composer(box,paso); };
-    const av=box.querySelector("[data-addvar]"); if(av) av.onclick=()=>{ paso.variantes.push({ ...newVariant(0), nombre:versionLibre(paso.variantes) }); composer(box,paso); };
+    const av=box.querySelector("[data-addvar]"); if(av) av.onclick=()=>{ const nv={ ...newVariant(0), nombre:versionLibre(paso.variantes) }; paso.variantes.push(nv); verVista.set(paso, nv); composer(box,paso); };
     const vl=box.querySelector(".se-varlist");
+    // La tarjeta que sale en la vista previa queda marcada (solo si hay 2+ versiones a la vista).
+    const marcarVista=()=>{ const cards=[...vl.querySelectorAll("[data-vcard]")]; const sel=cards.length>1 ? versionEnVista(paso, cards.map(c=>c.__v)) : null;
+      cards.forEach(c=>{ c.style.boxShadow = c.__v===sel ? "0 0 0 2px var(--brand)" : ""; c.title = c.__v===sel ? "Esta es la que ves en la vista previa" : ""; }); };
+    queueMicrotask(marcarVista);
 
     // Pinta una versión (tarjeta). `compite` = hay 2+ versiones activas en su
     // grupo → recién ahí aparece el control de frecuencia (Poco/Normal/Mucho) y
@@ -216,6 +229,9 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
     function renderCard(v, vi, compite, pesoG, groupActiveVs, unico){
       if(!Array.isArray(v.bubbles)||!v.bubbles.length) v.bubbles=[{text:""}];
       const card=document.createElement("div");
+      card.dataset.vcard="1"; card.__v=v;
+      const elegir=()=>{ if(verVista.get(paso)===v) return; verVista.set(paso, v); marcarVista(); };
+      card.addEventListener("pointerdown", elegir); card.addEventListener("focusin", elegir);
       if(rot && !(unico && v.activo!==false)){
         card.style.cssText="border:1px solid var(--border);border-radius:10px;padding:11px;background:var(--surface);margin-top:9px";
         const share=v.activo!==false?Math.round(Math.max(0,Number(v.peso??1))/pesoG*100):0;
@@ -282,7 +298,7 @@ function hazComposer({ channelId, angulos, soloAngulo = "", grupo = null }){
       if(tabs && tab!=="" && mias.length===1){ const q=document.createElement("button"); q.type="button"; q.className="btn"; q.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin:9px 8px 0 0;background:transparent;border:1px dashed var(--border);color:var(--muted)"; q.textContent="✕ Quitar y usar el de Todos"; q.onclick=async()=>{ if(!await confirmDialog({title:"Quitar el mensaje propio",message:"Los que llegan por este ángulo van a recibir el mensaje de Todos.",confirmText:"Quitar",danger:true})) return; paso.variantes.splice(mias[0].vi,1); composer(box,paso); box.dispatchEvent(new Event("input",{bubbles:true})); }; vl.appendChild(q); }
       const add=document.createElement("button"); add.className="btn"; add.style.cssText="height:28px;padding:0 11px;font-size:11.5px;margin-top:9px;background:transparent;border:1px dashed var(--border)";
       add.textContent="＋ Otra versión (el bot las rota)";
-      add.onclick=()=>{ const nv={ ...newVariant(0), nombre:versionLibre(mias.map(x=>x.v)) }; if(grupoVis) nv.angulo=grupoVis; paso.variantes.push(nv); paso.rotacion=true; composer(box,paso); };   // rotacion: el motor rota entre las versiones de un mismo grupo
+      add.onclick=()=>{ const nv={ ...newVariant(0), nombre:versionLibre(mias.map(x=>x.v)) }; if(grupoVis) nv.angulo=grupoVis; paso.variantes.push(nv); verVista.set(paso, nv); paso.rotacion=true; composer(box,paso); };   // rotacion: el motor rota entre las versiones de un mismo grupo
       vl.appendChild(add);
       return;
     }
@@ -554,7 +570,7 @@ export function mountStepsEditor(el, opts){
         composer(actBody.querySelector(".se-comp"), paso);
         const prev=actBody.querySelector(".se-prev");
         const upd=()=>{ if(!prev) return; const b=_brandCache[channelId]||{}; prev.innerHTML=waScreenHtml({ title:b.nombre, logoUrl:b.logo_url, bubblesHtml:previewHtml(paso, angulos) }); };
-        upd(); actBody.addEventListener("input", upd); actBody.addEventListener("click", ()=>setTimeout(upd,0));
+        upd(); actBody.addEventListener("input", upd); actBody.addEventListener("click", ()=>setTimeout(upd,0)); actBody.addEventListener("focusin", ()=>setTimeout(upd,0));
         seqBrand(channelId).then(upd); // rellena nombre/logo real y repinta
       }
     };

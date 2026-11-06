@@ -10,7 +10,7 @@
 // El motor elige igual que antes: variante del ángulo del cliente → si no hay, la general.
 // ═════════════════════════════════════════════════════════════════════════
 import { supa, icon, toast, confirmDialog, askText, patchProductConfig, pageAll, getChannel } from "./shell.js";
-import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, newVariant, mountMensajeEditor, mountStepsEditor } from "./seq-editor.js?v=23";
+import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, newVariant, mountMensajeEditor, mountStepsEditor, versionEnVista } from "./seq-editor.js?v=24";
 import { limpiaBotones } from "./bubble-buttons.js";
 import { gastoAdsEn, llevarAMoneda } from "./cambio.js?v=2";
 import * as O from "./orders.js";
@@ -366,8 +366,9 @@ function limpiaAngulo(vs, slug) {
 function montaEditor(cont, obj, p, slug) {
   const ed = cont.querySelector(".amx-ed"), pv = cont.querySelector(".amx-prev");
   mountMensajeEditor(ed, obj, { channelId: S.ctx.channelId, angulos: angsDe(p.id), soloAngulo: slug });
-  const upd = () => { if (pv) pv.innerHTML = vistaWa(primeraDe(obj.variantes, slug)); };
-  upd(); ed.addEventListener("input", upd); ed.addEventListener("click", () => setTimeout(upd, 0));
+  // (6-nov) La versión que estás editando, no siempre la primera.
+  const upd = () => { if (pv) pv.innerHTML = vistaWa(versionEnVista(obj, deAngulo(obj.variantes, slug))); };
+  upd(); ed.addEventListener("input", upd); ed.addEventListener("click", () => setTimeout(upd, 0)); ed.addEventListener("focusin", () => setTimeout(upd, 0));
 }
 
 // ── Saludo ────────────────────────────────────────────────────────────────
