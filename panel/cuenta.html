@@ -60,6 +60,13 @@
     <div id="accts" style="margin-top:20px"></div>
     <div id="invCard"></div>
     <div id="platCard"></div>
+    <!-- (6-nov, Rodrigo) Antes vivía en Perfil, entre «Cambiar contraseña» y «Cerrar sesión». Es el respaldo del link
+         de invitación: quien ya usa Nodo normalmente acepta desde el mismo link. -->
+    <div class="card">
+      <h2 id="joinTt">¿Te invitaron a otro equipo?</h2>
+      <p class="desc">Si te pasaron un código de equipo, pégalo aquí para entrar a esa cuenta. (Si te mandaron un link, ábrelo y acepta desde ahí.)</p>
+      <div class="row"><input class="in" id="joinCode" placeholder="Código o link de la invitación" autocomplete="off" style="flex:1;min-width:200px"/><button class="btn primary" id="joinBtn">Unirme</button></div>
+    </div>
   </div>
 </div>
 
@@ -73,7 +80,25 @@ const ini = (s) => (s||"?").trim().charAt(0).toUpperCase();
 async function boot(){
   const { data:{session} } = await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   await mountShell({ active:"cuenta" });
+  wireUnirme();
   await load();
+}
+
+// Canjear un código siendo un usuario YA registrado (se mudó de Perfil el 6-nov). Acepta también el link
+// entero pegado: se saca el código de adentro.
+function wireUnirme(){
+  $("joinTt").insertAdjacentHTML("afterbegin", icon("users"));
+  $("joinBtn").onclick = async ()=>{
+    const v = $("joinCode").value.trim(); const m = v.match(/[?&](?:join|invite)=([^&#\s]+)/);
+    const tok = (m ? decodeURIComponent(m[1]) : v).toUpperCase();
+    if(!tok){ toast("Pega el código",true); return; }
+    $("joinBtn").disabled = true;
+    const { data, error } = await supa.functions.invoke("invites",{ body:{ action:"redeem", token:tok } });
+    let det=""; if(error){ try{ const j=await error.context?.json?.(); det=j?.detalle||j?.error||""; }catch(_){} }
+    $("joinBtn").disabled = false;
+    if(error||!data||data.error){ toast(det||data?.detalle||"No se pudo usar ese código (¿vencido o ya usado?)",true); return; }
+    toast("Listo, ya eres parte de ese equipo"); setTimeout(()=>location.reload(),900);
+  };
 }
 
 async function load(){
@@ -192,7 +217,7 @@ function cajaInvitacion({ email, role, link, code }){
     <div class="copyrow" style="flex-wrap:wrap">
       <button class="btn sm primary" data-copy>${icon("copy")} Copiar link</button>
     </div>
-    <div class="muted" style="font-size:11.5px;margin-top:10px;line-height:1.55">Sirve una sola vez y vence en 14 días. Si el link no abre, la persona puede pegar este código en la página de registro o en Perfil → «Unirme a un equipo»: <b style="font-family:ui-monospace,Menlo,monospace;color:var(--text)">${esc(code)}</b></div>
+    <div class="muted" style="font-size:11.5px;margin-top:10px;line-height:1.55">Sirve una sola vez y vence en 14 días. Si el link no abre, la persona puede pegar este código en la página de registro o en Cuenta y equipo → «¿Te invitaron a otro equipo?»: <b style="font-family:ui-monospace,Menlo,monospace;color:var(--text)">${esc(code)}</b></div>
   </div>`;
 }
 async function mkTeamCode(accId){

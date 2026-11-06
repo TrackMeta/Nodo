@@ -1572,7 +1572,7 @@ export async function mountShell({ active } = {}) {
     }
   } catch (_) { /* sin dato → como antes */ }
   if (!S.channels.length) {
-    if (_sinCuenta) toast("Ya no perteneces a ningún equipo de Nodo. Si te invitaron de nuevo, pega tu código en Perfil → «Unirme a un equipo».", true);
+    if (_sinCuenta) toast("Ya no perteneces a ningún equipo de Nodo. Si te invitaron de nuevo, abre el link que te mandaron o pega el código en ⚙ → Cuenta y equipo.", true);
     else if (!S.puedeCrear) toast("Todavía no tienes ningún bot asignado. Pídele al administrador de tu equipo que te dé acceso.", true);
     else mostrarPrimerBot();
   }
