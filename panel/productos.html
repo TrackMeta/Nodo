@@ -1928,7 +1928,7 @@ async function renderRemarketing(host){
       <h4 style="display:flex;align-items:center;gap:7px;margin:0 0 4px">${icon("clock")} Días para pasar a «Perdido» <span style="font-size:11px;color:var(--faint);font-weight:400">· solo este producto</span></h4>
       <p class="hint" style="margin:0 0 10px">Cuando termina el remarketing y el cliente no compró ni volvió a escribir en ese tiempo, pasa a la etapa «Perdido» del Embudo. Si después vuelve a escribir, sale solo de «Perdido».</p>
       <label style="display:flex;align-items:center;gap:9px;font-size:12.5px;margin:0 0 8px;cursor:pointer;font-weight:400;color:var(--text)">
-        <input type="radio" name="dpModo" value="bot" ${c.dias_perdido?"":"checked"}/> Igual que el bot (<span id="dpBot">${esc(diasBot)}</span> ${diasBot==1?"día":"días"})</label>
+        <input type="radio" name="dpModo" value="bot" ${c.dias_perdido?"":"checked"}/> <span>Igual que el bot (${esc(diasBot)} ${diasBot==1?"día":"días"})</span></label>
       <label style="display:flex;align-items:center;gap:9px;font-size:12.5px;margin:0;cursor:pointer;font-weight:400;color:var(--text);flex-wrap:wrap">
         <input type="radio" name="dpModo" value="propio" ${c.dias_perdido?"checked":""}/> Propio para este producto:
         <input class="in" id="dpProd" type="number" min="1" max="90" value="${esc(c.dias_perdido||diasBot)}" style="width:62px;height:28px;padding:2px 6px;text-align:center" ${c.dias_perdido?"":"disabled"}/> días</label>
