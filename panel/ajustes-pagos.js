@@ -17,9 +17,18 @@ const DEF = {
 };
 
 
+// Estilos del aviso de productos con ajuste propio: van acá y no en ventana-ajustes.js, que el navegador guarda en
+// caché sin ?v= (un cambio ahí tarda en verse).
+const CSS_PROP = `.ajp-prop{display:flex;gap:9px;align-items:flex-start;margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--amber-bg,rgba(245,158,11,.12));color:var(--text);font-size:12px;line-height:1.5}
+.ajp-prop>svg{width:16px;height:16px;flex:none;color:var(--amber,#F59E0B);margin-top:1px}
+.ajp-prow{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;flex-wrap:wrap}
+.ajp-link{background:none;border:none;padding:0;color:var(--brand);font-size:12px;font-weight:600;cursor:pointer}
+.ajp-link:disabled{opacity:.5}`;
+
 export async function abrirAjustesPagos(channelId) {
   if (!channelId) return;
   asegurarEstilos();
+  if (!document.getElementById("ajp-prop-css")) { const st = document.createElement("style"); st.id = "ajp-prop-css"; st.textContent = CSS_PROP; document.head.appendChild(st); }
   const [{ data: ch, error }, { data: prods }, { data: chm }] = await Promise.all([
     supa.from("channels").select("pedidos_config").eq("id", channelId).maybeSingle(),
     supa.from("products").select("id,nombre,tipo,config").eq("channel_id", channelId).order("nombre"),
