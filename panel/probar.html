@@ -109,13 +109,12 @@
   .testbar.as-bot{background:linear-gradient(90deg,rgba(168,85,247,.09),rgba(236,72,153,.05))}
   .segbtn:not(.active):hover{color:var(--text)}
   .testbar.as-bot .segbtn.active{background:linear-gradient(135deg,#a855f7,#ec4899);box-shadow:0 2px 8px rgba(168,85,247,.32)}
+  .testhint[hidden]{display:none}
   .testhint{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:4px 11px 4px 9px}
   .testhint svg{width:13px;height:13px;flex:none}
-  .testbar.as-bot .testhint{color:#9333ea;background:rgba(168,85,247,.1);border-color:rgba(168,85,247,.28)}
   .composer.as-bot textarea#msgInput{border-color:rgba(168,85,247,.45);background:rgba(168,85,247,.05)}
   .composer.as-bot textarea#msgInput:focus{border-color:#a855f7}
   .composer.as-bot .send{background:linear-gradient(135deg,#a855f7,#ec4899)}
-  html:not([data-theme=light]) .testbar.as-bot .testhint{color:#d8b4fe}
 
   /* Compositor */
   /* Tira del archivo adjunto: el archivo espera acá hasta que le pongas el pie de
@@ -793,7 +792,9 @@ async function openSuggest(){
 function updateComposerMode(){
   const asBot=st.testAs==="bot";
   $("msgInput").placeholder=asBot?"Escribe como el BOT…":"Escribe como el cliente…";
-  $("testHint").innerHTML=asBot?icon("robot")+"<span>Sale como un mensaje del bot, en morado</span>":icon("play")+"<span>El bot lo recibe y responde con el flujo</span>";
+  // (6-nov, Rodrigo) En modo Bot sin cápsula: el violeta ya lo dice.
+  $("testHint").innerHTML=icon("play")+"<span>El bot lo recibe y responde con el flujo</span>";
+  $("testHint").hidden=asBot;
   $("testBar").classList.toggle("as-bot",asBot); document.querySelector(".composer")?.classList.toggle("as-bot",asBot);
   document.querySelectorAll(".segbtn").forEach(b=> b.classList.toggle("active", b.dataset.as===st.testAs));
 }
