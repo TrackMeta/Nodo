@@ -14,7 +14,7 @@ import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, newV
 import { limpiaBotones } from "./bubble-buttons.js";
 import { gastoAdsEn, llevarAMoneda } from "./cambio.js?v=2";
 import * as O from "./orders.js";
-import { datosAnuncios, fichaAnuncioHtml, wireFichasAnuncio } from "./anuncio-ficha.js";
+import { datosAnuncios, fichaAnuncioHtml, wireFichasAnuncio } from "./anuncio-ficha.js?v=2";
 
 const esc = (s) => (s ?? "").toString().replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
