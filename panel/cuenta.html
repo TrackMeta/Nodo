@@ -151,7 +151,7 @@ async function mkAccountLink(){
   wireCopy($("acctLinkBox"), r.link);
 }
 // (6-nov, Rodrigo) «Invitar a alguien»: UNA ventana con correo + rol (antes eran dos preguntas seguidas) y el
-// resultado es UN link con «Enviar por WhatsApp» y «Copiar». Antes salían código y link a la vez y no quedaba claro
+// resultado es UN link con «Copiar link». Antes salían código y link a la vez y no quedaba claro
 // cuál mandar. El código queda abajo, chico, solo de respaldo (se pega en la página de registro o en Perfil).
 const ROLES = [
   { value:"operador", label:"Operador", desc:"Atiende chats y pedidos, aprueba pagos. No cambia la configuración." },
@@ -184,17 +184,13 @@ function pedirInvitacion(nombreCuenta){
     setTimeout(()=> mail.focus(), 30);
   });
 }
-function textoWhatsApp(negocio, rol, link, email){
-  return `Hola 👋 Te invito a ${negocio ? "*"+negocio+"*" : "mi negocio"} en Nodo como *${rol==="admin"?"Admin":"Operador"}*.\n\nEntra a este link para unirte:\n${link}\n\nSolo funciona con tu correo ${email}.`;
-}
-function cajaInvitacion({ email, role, link, code, negocio }){
-  const wa = "https://wa.me/?text=" + encodeURIComponent(textoWhatsApp(negocio, role, link, email));
+// (6-nov, Rodrigo) Sin botón de WhatsApp: solo «Copiar link».
+function cajaInvitacion({ email, role, link, code }){
   return `<div class="codebox">
     <div class="lbl">Invitación lista para <b style="color:var(--text)">${esc(email)}</b> · ${role==="admin"?"Admin":"Operador"}</div>
     <div class="val" style="font-size:12.5px;font-weight:600">${esc(link)}</div>
     <div class="copyrow" style="flex-wrap:wrap">
-      <a class="btn sm primary" href="${esc(wa)}" target="_blank" rel="noopener">${icon("message")} Enviar por WhatsApp</a>
-      <button class="btn sm" data-copy>${icon("copy")} Copiar link</button>
+      <button class="btn sm primary" data-copy>${icon("copy")} Copiar link</button>
     </div>
     <div class="muted" style="font-size:11.5px;margin-top:10px;line-height:1.55">Sirve una sola vez y vence en 14 días. Si el link no abre, la persona puede pegar este código en la página de registro o en Perfil → «Unirme a un equipo»: <b style="font-family:ui-monospace,Menlo,monospace;color:var(--text)">${esc(code)}</b></div>
   </div>`;
