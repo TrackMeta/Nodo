@@ -56,7 +56,8 @@ const CSS = `
   background:transparent;color:var(--muted);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;
   display:inline-flex;align-items:center;gap:5px}
 .vpk-btn:hover{color:var(--text);border-color:var(--brand)}
-.vpk-back{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:18px}
+/* (6-nov) z-index 1000: las ventanas de ajustes (Pedidos, Pagos) van en 200 y la lista quedaba DETRÁS, invisible. */
+.vpk-back{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:18px}
 .vpk{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:430px;
   max-height:76vh;display:flex;flex-direction:column;overflow:hidden}
 .vpk h4{margin:0;padding:15px 17px 4px;font-size:15px}
@@ -103,10 +104,14 @@ async function camposDelCanal(supa, channelId) {
 }
 
 // Abre el selector. Devuelve la clave elegida (sin llaves) o null.
-export async function elegirVariable({ supa, channelId } = {}) {
+// `solo` (opcional): las claves que tienen sentido en ESE mensaje. Un aviso de pedido no usa «Link de entrega» ni
+// «Último comprobante», y con «Saldo» y «Saldo del pedido» juntos no se sabía cuál poner (6-nov, Rodrigo). Con
+// `solo` no salen los campos propios del negocio.
+export async function elegirVariable({ supa, channelId, solo } = {}) {
   ponerCss();
-  const propios = await camposDelCanal(supa, channelId);
-  const grupos = propios.length ? [...VAR_GRUPOS, { g: "Tus campos", items: propios }] : VAR_GRUPOS;
+  const propios = solo ? [] : await camposDelCanal(supa, channelId);
+  const base = solo ? VAR_GRUPOS.map((gr) => ({ g: gr.g, items: gr.items.filter(([k]) => solo.includes(k)) })).filter((gr) => gr.items.length) : VAR_GRUPOS;
+  const grupos = propios.length ? [...base, { g: "Tus campos", items: propios }] : base;
   return new Promise((resolve) => {
     const back = document.createElement("div");
     back.className = "vpk-back";
@@ -145,14 +150,14 @@ export async function elegirVariable({ supa, channelId } = {}) {
 // Pega el botón "Insertar dato" debajo de un <textarea>/<input> y lo inserta
 // EN EL CURSOR (no al final: si estás editando el medio de la frase, agregarlo
 // al final obliga a cortar y pegar).
-export function attachVarPicker(campo, { supa, channelId, onChange } = {}) {
+export function attachVarPicker(campo, { supa, channelId, onChange, solo } = {}) {
   ponerCss();
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "vpk-btn";
   btn.innerHTML = `<span style="font-size:13px;line-height:1">{ }</span> Insertar dato`;
   btn.onclick = async () => {
-    const k = await elegirVariable({ supa, channelId });
+    const k = await elegirVariable({ supa, channelId, solo });
     if (!k) return;
     const txt = `{{${k}}}`;
     const ini = campo.selectionStart ?? campo.value.length;
