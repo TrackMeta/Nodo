@@ -69,10 +69,7 @@
   td:first-child{font-weight:600;width:31%}
   td:nth-child(2){color:var(--muted);width:30%}
 
-  .nodo-back.en-franja{display:flex;color:rgba(255,255,255,.9);margin:0 0 6px -9px;height:28px}
-  .nodo-back.en-franja:hover{color:#fff;background:rgba(255,255,255,.16)}
-  html[data-ds="1"] .nodo-back.en-franja{color:var(--muted)}
-  html[data-ds="1"] .nodo-back.en-franja:hover{color:var(--text);background:var(--surface-2)}
+  #backBtn svg{width:15px;height:15px}
   .cierre{margin-top:34px;color:var(--faint);font-size:12.5px;line-height:1.6}
   @media (max-width:520px){ .paso{grid-template-columns:30px 1fr;gap:12px}
                             .n{width:28px;height:28px;font-size:12px} }
@@ -82,13 +79,17 @@
 <div class="nodo-page">
   <div class="nodo-wrap guia">
 
-    <!-- (6-nov) El «Volver» va DENTRO de la franja azul: la franja sube hasta el borde (margin-top negativo) y lo tapaba
-         cuando iba antes de ella. -->
+    <!-- (6-nov) El «Volver» va DENTRO de la franja azul, como botón a la derecha (igual que «Actualizar» en Rendimiento):
+         antes de la franja lo tapaba (sube hasta el borde con margin-top negativo), y en su propia línea arriba del
+         título la dejaba más gruesa que la de las otras secciones (126 px contra 75). Por lo mismo, la descripción va en
+         UNA línea. -->
     <div class="nodo-head">
       <div class="grow">
-        <button class="nodo-back en-franja" id="backBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Volver a Conexiones</button>
         <h1 class="nodo-title">Conectar WhatsApp</h1>
-        <p class="nodo-lead">Los pasos reales para poner un número de WhatsApp Business a responder desde Nodo, en el orden que funciona — con las trampas que ninguna guía oficial menciona.</p>
+        <p class="nodo-lead">Paso a paso para que tu WhatsApp responda desde Nodo, con las trampas que nadie cuenta.</p>
+      </div>
+      <div class="nodo-actions">
+        <button class="nodo-btn" id="backBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Volver a Conexiones</button>
       </div>
     </div>
 
