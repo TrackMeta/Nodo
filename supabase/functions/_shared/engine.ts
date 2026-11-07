@@ -25849,7 +25849,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             ? `TOTAL: *${_sym} ${_total}*. Confírmale en una línea lo que se lleva y el total. Los datos de pago con ese monto los manda el ` +
               "sistema solo, y al pagar le llegan los accesos de TODOS por este chat. No le pidas pagarlos por separado."
             : "Falta saber qué versión quiere de lo marcado «falta elegir»: pregúntaselo con esas opciones antes de cualquier otra cosa. " +
-              "No des un total todavía.") +
+              "No des un total todavía. " +
+              // (7-nov, examen YC3: a «el curso premium y el simulador, ¿cómo pago?» la IA escribió «te paso los datos…», el
+              //  sistema no los mandó —falta la versión— y el cliente se quedó con «mándame la captura» o con NADA)
+              "⛔ Aunque pregunte cómo pagar o diga que ya quiere pagar: los datos de pago salen recién cuando elija esa versión, " +
+              "así que NO le digas que se los pasas, NO pongas [[datos_pago]] y NO le pidas la captura. Dile que en cuanto elija " +
+              "le pasas el total y los datos, y pregúntale cuál quiere.") +
           " Si dice que mejor solo uno, respétalo.",
         );
       } catch (_) { /* sin el bloque → la IA pregunta */ }
@@ -28737,6 +28742,19 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 (_decR
                   ? ((run as any)._matSoloPregunta ? "Tu mensaje es solo tu pregunta para ayudarlo a decidir." : "Contesta en una línea lo otro que preguntó y termina con tu pregunta.")
                   : (RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? "")) ? "Si preguntó el precio, dile que ahí arriba los tiene 👆 y sigue con tu pregunta." : "Sigue con tu pregunta.")));
+            }
+          }
+          // 🛒 Combo con una versión por elegir (7-nov, examen YC3): los datos no salen hasta que elija; si la respuesta los
+          // anuncia o pide la captura, se queda prometiendo algo que no llega (o el recorte la deja vacía).
+          {
+            const _falta = comboDe(run).find((i) => !i.version_id && (i.versiones ?? []).length > 1);
+            const _sinM = sinFormato(String(txt ?? "")).replace(/\[\[[^\]]*\]\]/g, " ");
+            if (_falta && ((run as any)._iaDatosPago || /\[\[\s*datos[_ ]?(?:de[_ ])?pago\s*\]\]/i.test(String(txt ?? "")) || sinAnuncioDePago(_sinM) !== _sinM ||
+                RE_PIDE_CAPTURA.test(_sinM))) {
+              const _symF = simboloMoneda(ctx.moneda as string);
+              v.push(`Todavía falta que elija la versión de ${_falta.producto} (${(_falta.versiones ?? []).filter((x: any) => !x.oculta)
+                .map((x: any) => `${x.nombre} ${_symF} ${x.precio}`).join(" o ")}): pregúntale cuál quiere. No le digas que le pasas los datos ` +
+                "ni le pidas la captura: salen cuando elija.");
             }
           }
           // Digital sin versión: anunciar los datos de pago es prometer algo que no sale (ver _revDigitalSinVersion).
