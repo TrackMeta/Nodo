@@ -44,6 +44,7 @@
   html:not([data-ds="1"]) .nodo-head .nodo-btn.estado:hover{background:rgba(255,255,255,.86)!important;color:#0B4FB8!important}
   .nodo-btn .vivo{width:8px;height:8px;border-radius:50%;background:#22C079;flex:none;box-shadow:0 0 0 3px rgba(34,192,121,.2)}
   .nodo-btn.cargando svg{animation:girar .9s linear infinite}
+  .nodo-btn .vivo.off{background:#98A2B3;box-shadow:0 0 0 3px rgba(152,162,179,.22)}
   @keyframes girar{to{transform:rotate(360deg)}}
 
   .notice{margin:2px 0 18px;display:flex;gap:11px;align-items:flex-start;background:var(--brand-bg);border:1px solid #2b7fff55;border-radius:13px;padding:12px 15px;font-size:12.5px;line-height:1.5}
@@ -581,7 +582,7 @@ function renderStatus(){
   $("statusSlot").innerHTML = n
     ? `<span class="nodo-btn estado" title="Cuenta de anuncios de Meta conectada"><span class="vivo"></span>${n} cuenta${n>1?'s':''} conectada${n>1?'s':''}</span>
        <button class="nodo-btn" id="syncAds" title="Baja de Meta el gasto de ahora mismo, sin esperar a la próxima corrida">${icon("refresh")} Actualizar</button>`
-    : `<span class="demopill" style="background:var(--surface-2);color:var(--muted);border-color:var(--border)"><span class="d" style="background:var(--faint)"></span>SIN CONECTAR</span>`;
+    : `<span class="nodo-btn estado" title="No hay una cuenta de anuncios de Meta conectada (Conexiones → Meta)"><span class="vivo off"></span>Sin conectar</span>`;
   const bs=$("syncAds"); if(bs) bs.onclick=()=>sincronizarAhora(bs);
   $("noticeSlot").innerHTML = st.syncError && !_esCopy
     ? `<div class="notice" style="background:var(--red-bg);border-color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg><div><b>Tu token de anuncios dejó de funcionar.</b> ${esc(st.syncError)} Reconéctalo en <a href="canales.html?tab=meta">Conexiones → Meta</a>.</div></div>`
