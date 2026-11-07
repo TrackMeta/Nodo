@@ -19381,11 +19381,15 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
   if (run) delete run._listaArriba;
   if (_dec && !result.includes(`[[media:${_dec}]]`)) {
     const _mk = `[[media:${_dec}]]`;
+    // Va al COMIENZO de la oración que trae su última pregunta, nunca en medio de una oración: con «Claro, para ayudarte a
+    // elegir, ¿para qué lo quieres?» ponerlo justo antes del «¿» dejaba «Claro, para ayudarte a elegir» solo en su burbuja
+    // (examen VI1, 6-nov). Y si lo de antes es muy corto («Entiendo.», «¡Claro!»), el material primero y el mensaje entero
+    // después (examen VR1).
     const _iq = result.lastIndexOf("¿");
-    // (lo de antes de la pregunta muy corto —«Entiendo.», «¡Claro!»— no va solo en su burbuja: el material primero y
-    //  el mensaje entero después; examen VR1, 6-nov)
-    const _antesQ = _iq > 0 ? result.slice(0, _iq).replace(/[^\p{L}\d]/gu, "") : "";
-    result = _iq > 0 && _antesQ.length >= 20 ? `${result.slice(0, _iq).trimEnd()}\n${_mk}\n${result.slice(_iq)}`
+    let _ini = -1;
+    if (_iq > 0) { _ini = 0; for (const m of result.slice(0, _iq).matchAll(/[.!?…\n]/g)) _ini = (m.index ?? 0) + 1; }
+    const _antesQ = _ini > 0 ? result.slice(0, _ini).replace(/[^\p{L}\d]/gu, "") : "";
+    result = _ini > 0 && _antesQ.length >= 20 ? `${result.slice(0, _ini).trimEnd()}\n${_mk}\n${result.slice(_ini).trimStart()}`
       : _iq >= 0 ? `${_mk}\n${result}` : `${result.trimEnd()}\n${_mk}`;
   }
   if (run) { delete run._matDecidido; delete run._matSoloPregunta; }   // (una vez: no se cuela en otro emitIaText del mismo turno)
