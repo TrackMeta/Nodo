@@ -19375,24 +19375,10 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
   // Lo que decidió decideMaterialTurno: si la IA no puso la marca, va justo antes de su pregunta (su línea, el material,
   // su pregunta), o al final si no preguntó nada.
   const _dec = String(run?._matDecidido ?? "");
-  const _arriba = !!run?._listaArriba;
+  // (6-nov, Rodrigo: «¿le agregaste cortes de motor?») Acá había una tijera que borraba de la respuesta lo que repetía el
+  // material; ahora eso lo detecta el revisor y la IA lo reescribe UNA vez (ver «🎚️📋 Ya sale el material»), como con el
+  // bloque de pago. Lo que llega acá sale entero.
   if (run) delete run._listaArriba;
-  if ((_dec || _arriba) && ctx?._product_id) {
-    const _solo = !!_dec && !!run?._matSoloPregunta;
-    const _r = sinLoQueYaTiene(result.replace(/\[\[media:[\w-]+\]\]/g, (m) => `\n${m}\n`), await loadOpciones(db, run, String(ctx._product_id)), _solo);
-    if (_r.quito) {
-      await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ No le repitió lo que ya tiene encima",
-        `${_dec ? "Sale el material del dueño" : "El saludo ya traía la lista"}; se quitó de la respuesta: «${result.slice(0, 160)}» → «${_r.txt.slice(0, 120)}»`).catch(() => {});
-      // (la lista del saludo: su pregunta de precio queda contestada con un puntero a lo de arriba)
-      // (el puntero solo si preguntó el precio: con la palabra clave sola salía «Los precios te los dejé ahí arriba 👆» sin
-      //  que nadie los pidiera — examen VH2, 6-nov)
-      const _pidioPrecio = RE_CLIENTE_PIDE_PRECIO.test(String(ctx?.last_input ?? ""));
-      result = _dec || !_pidioPrecio ? _r.txt : `Los precios te los dejé ahí arriba 👆${_r.txt ? "\n\n" + _r.txt : ""}`;
-      // (y del texto crudo también: si no, repararMensajeCortado ve «frases quitadas» y hace reescribir el mensaje entero
-      //  — se perdía el «ahí arriba 👆» y volvía la duda; examen VD4, 6-nov)
-      if (ctx?._iaCrudo) ctx._iaCrudo = sinLoQueYaTiene(String(ctx._iaCrudo), await loadOpciones(db, run, String(ctx._product_id)), _solo).txt;
-    }
-  }
   if (_dec && !result.includes(`[[media:${_dec}]]`)) {
     const _mk = `[[media:${_dec}]]`;
     const _iq = result.lastIndexOf("¿");
@@ -19436,11 +19422,11 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
   }
   return out;
 }
-// ✂️ RESPALDO (6-nov, examen VD2): con el material saliendo —o la lista del saludo recién llegada— el modelo de venta
-// (gpt-4.1-mini) IGUAL describía las versiones o repetía los precios en su burbuja, aunque el prompt se lo prohibía en el
-// último bloque. Lo decide la IA (decideMaterialTurno); esto solo saca de SU texto lo que el cliente ya tiene encima,
-// medido con los DATOS de sus versiones: una oración (que no sea pregunta) que nombra una versión o trae uno de sus
-// precios se va, y también el encabezado («tiene dos versiones:») que quedó sin su lista. Las preguntas quedan siempre.
+// 🔎 DETECTOR (6-nov, examen VD2): con el material saliendo —o la lista del saludo recién llegada— el modelo de venta
+// (gpt-4.1-mini) IGUAL describía las versiones o repetía los precios en su burbuja, aunque el prompt se lo prohibía.
+// Mide con los DATOS de sus versiones si una oración (que no sea pregunta) nombra una versión o trae uno de sus precios.
+// Lo usa el revisor para pedir reescribir una vez; ya NO recorta lo que sale (Rodrigo: «¿le agregaste cortes de motor?»).
+// (`txt` devuelve cómo quedaría sin eso: solo para el evento y la prueba local.)
 function sinLoQueYaTiene(txt: string, ops: Opcion[], soloPreguntas = false): { txt: string; quito: boolean } {
   const norm = (x: string) => String(x ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const escRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -28709,6 +28695,23 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           const _rpV = (run as any)._recPre as RecomendacionTurno | null | undefined;
           if (_rpV && !recomendacionDicha(txt, _rpV)) {
             v.push(`Recomiéndale *${_rpV.op.nombre}* (esa, no otra ni dos opciones), sin la lista de precios, y termina con «¿Te lo dejo así?».`);
+          }
+          // 🎚️📋 Ya sale el material del dueño (carta / presentación de una versión) o la lista del saludo acaba de llegar:
+          // si la respuesta repite sus versiones o precios, se le pide reescribirla UNA vez (antes era una tijera). Igual
+          // que con el bloque de pago: lo manda el motor, la IA no lo repite. Si la segunda tampoco cumple, sale tal cual:
+          // repetir no es peligroso como un número de cuenta mal puesto.
+          {
+            const _decR = String((run as any)._matDecidido ?? "");
+            if ((_decR || (run as any)._listaArriba) && ctx._product_id
+                && sinLoQueYaTiene(txt, await loadOpciones(db, run, String(ctx._product_id))).quito) {
+              const _queTiene = _decR === TAG_CARTA ? "la carta de versiones que armó el dueño (trae todas, lo que incluye cada una y sus precios)"
+                : _decR ? "la presentación de esa versión que armó el dueño (trae lo que incluye y por qué vale la pena)"
+                : "el saludo con las versiones y sus precios (le acaba de llegar arriba)";
+              v.push(`Junto a tu mensaje el cliente ya tiene ${_queTiene}: no repitas las versiones, lo que traen ni sus precios. ` +
+                (_decR
+                  ? ((run as any)._matSoloPregunta ? "Tu mensaje es solo tu pregunta para ayudarlo a decidir." : "Contesta en una línea lo otro que preguntó y termina con tu pregunta.")
+                  : (RE_CLIENTE_PIDE_PRECIO.test(String(ctx.last_input ?? "")) ? "Si preguntó el precio, dile que ahí arriba los tiene 👆 y sigue con tu pregunta." : "Sigue con tu pregunta.")));
+            }
           }
           // Digital sin versión: anunciar los datos de pago es prometer algo que no sale (ver _revDigitalSinVersion).
           if ((run as any)._revDigitalSinVersion && /te\s+(?:paso|env[ií]o|mando|dejo)\s+(?:los\s+)?datos|datos\s+(?:de|para\s+el)\s+pago|te\s+llegan?\s+(?:los\s+)?datos/i.test(sinFormato(txt))) {
