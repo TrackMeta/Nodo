@@ -3956,9 +3956,11 @@ function renderOpciones(host){
       </div>
       <div style="font-size:11px;color:var(--faint);margin-top:6px">El <b>costo</b> es lo que te cuesta una unidad (en un pack de 2 se multiplica solo). El <b>empaque</b> (caja, bolsa, etiqueta) es un costo fijo por pedido. Ambos se descuentan de tu ganancia real; el cliente nunca los ve.</div>
     </div>`:""}
+    <div class="card" id="opCarta"></div>
     <div id="opList"></div>
     <div id="opWarn"></div>
     <button class="btn" id="opAdd">+ Presentación</button>`;
+  paintCarta();
   paintOpciones(fisico);
   $("opMoneda").onchange=(e)=>{ prodSetC("moneda", e.target.value===monedaAutoDe(Object.assign({},cfg,{moneda:undefined}))?undefined:e.target.value); renderOpciones(b); };
   { const ma=$("opMonAuto"); if(ma) ma.onclick=(e)=>{ e.preventDefault(); prodSetC("moneda", undefined); renderOpciones(b); }; }
@@ -3986,6 +3988,70 @@ function updateOpMargen(){
 // tag de su multimedia. Debe coincidir con slugAttr() del motor (engine.ts).
 function slugAttr(s){ return String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,32); }
 
+// ═══ 🎚️📋 Material para presentar las versiones (6-nov, Rodrigo: «no quiero depender de botones» y «enviar un bloque de
+// mensajes o una imagen, video o archivo para los clientes que pregunten o mencionen la premium o la básica»).
+// La IA decide cuándo mandarlo (escribe su marca) y el motor lo manda UNA vez por conversación (engine.ts →
+// materialVersiones). Se edita con el MISMO editor del saludo (seq-editor.js → mountMensajeEditor, grupo "").
+// {{precio:Nombre}} → el precio real de esa versión (con el descuento del cliente si tiene uno).
+function materialVacio(o){
+  if(!o||typeof o!=="object") return true;
+  const vs=Array.isArray(o.variantes)?o.variantes:[];
+  return !vs.some(x=>x&&x.activo!==false&&(x.bubbles||[]).some(b=>b&&(b.media_url||String(b.text||"").trim())));
+}
+// host: dónde va · get/set: dónde vive el objeto {variantes,rotacion} · titulo/boton/ayuda: los textos.
+function paintMaterial(host, { get, set, titulo, boton, ayuda }){
+  const abierto = !materialVacio(get()) || host._abierto;
+  if(!abierto){
+    host.innerHTML=`<button type="button" class="btn" data-mat-on style="height:32px;font-size:12.5px">${esc(boton)}</button>`;
+    host.querySelector("[data-mat-on]").onclick=()=>{ host._abierto=true; paintMaterial(host,{ get, set, titulo, boton, ayuda }); };
+    return;
+  }
+  if(!get()) set({ variantes:[], rotacion:true });
+  const obj=get();
+  const precios=(st.versions||[]).filter(x=>x.activo!==false&&String(x.nombre||"").trim());
+  host.innerHTML=`<div style="border:1px solid var(--border);border-radius:12px;background:var(--surface-2);padding:11px 12px">
+      <div style="display:flex;align-items:center;gap:8px"><b style="flex:1;font-size:13px;display:flex;align-items:center;gap:6px">${icon("message")} ${esc(titulo)}</b>
+        <button type="button" class="iconbtn" data-mat-off title="Quitar">${icon("trash")}</button></div>
+      <div style="font-size:11.5px;color:var(--muted);line-height:1.55;margin-top:4px">${ayuda}</div>
+      ${precios.length?`<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;font-size:11.5px;color:var(--faint)">Poner el precio de:
+        ${precios.map(x=>`<button type="button" class="chip" data-mat-pr="${esc(x.nombre)}" style="cursor:pointer;font-size:11.5px;padding:3px 9px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--text)" title="Inserta {{precio:${esc(x.nombre)}}}: sale el precio real, aunque lo cambies después">${esc(x.nombre)}</button>`).join("")}</div>`:""}
+      <div data-mat-ed></div>
+    </div>`;
+  const ed=host.querySelector("[data-mat-ed]");
+  mountMensajeEditor(ed, obj, { channelId:st.channelId, grupo:"" });
+  // El último cuadro de texto en el que estuvo: ahí entra el precio.
+  let ultimo=null;
+  ed.addEventListener("focusin",(e)=>{ const t=e.target; if(t&&(t.tagName==="TEXTAREA"||(t.tagName==="INPUT"&&(!t.type||t.type==="text")))) ultimo=t; });
+  host.querySelectorAll("[data-mat-pr]").forEach(b=>b.onclick=()=>{
+    const t=ultimo&&ultimo.isConnected?ultimo:ed.querySelector("textarea");
+    if(!t){ toast("Escribe primero un texto",true); return; }
+    const tok=`{{precio:${b.dataset.matPr}}}`;
+    const a=t.selectionStart??t.value.length, z=t.selectionEnd??a;
+    t.setRangeText(tok, a, z, "end"); t.focus();
+    t.dispatchEvent(new Event("input",{bubbles:true}));
+  });
+  host.querySelector("[data-mat-off]").onclick=async()=>{
+    if(!materialVacio(obj) && !await confirmDialog({title:"Quitar",message:"¿Quitar este material? El bot volverá a explicarlo con sus palabras.",confirmText:"Quitar",danger:true})) return;
+    set(null); host._abierto=false; paintMaterial(host,{ get, set, titulo, boton, ayuda }); markDirty();
+  };
+  // Cambios por clic (subir una imagen, quitar una burbuja) también cuentan como «sin guardar».
+  let foto=JSON.stringify(obj.variantes);
+  const revisa=()=>setTimeout(()=>{ const j=JSON.stringify(obj.variantes); if(j!==foto){ foto=j; markDirty(); } },0);
+  ["input","change","click"].forEach(ev=>ed.addEventListener(ev, revisa));
+}
+// La carta: todas las versiones juntas, para el que pregunta en general.
+function paintCarta(){
+  const host=document.getElementById("opCarta"); if(!host) return;
+  host.innerHTML=`<h4 style="display:flex;align-items:center;gap:7px;margin-top:0">${icon("message")} Carta de versiones <span style="font-weight:400;color:var(--faint);font-size:12px;text-transform:none">(opcional)</span></h4>
+    <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Lo que el bot manda cuando el cliente pregunta <b>qué opciones hay, cuánto cuesta o en qué se diferencian</b>: un texto, una imagen comparativa, un video… Sale una sola vez por cliente. Si no la armas, la IA las explica con sus palabras.</div>
+    <div data-carta style="margin-top:10px"></div>`;
+  paintMaterial(host.querySelector("[data-carta]"), {
+    get:()=>st.prod.config?.carta_versiones,
+    set:(o)=>{ st.prod.config=st.prod.config||{}; if(o) st.prod.config.carta_versiones=o; else delete st.prod.config.carta_versiones; },
+    titulo:"La carta", boton:"+ Armar la carta",
+    ayuda:(()=>{ const ns=(st.versions||[]).filter(x=>x.activo!==false&&String(x.nombre||"").trim()).slice(0,2).map(x=>x.nombre); return `Ej. «Tenemos ${ns.length||2} versiones 👇» + una imagen con lo que trae cada una${ns.length===2?` + «${esc(ns[0])} {{precio:${esc(ns[0])}}} · ${esc(ns[1])} {{precio:${esc(ns[1])}}}»`:""}. La pregunta final no hace falta: la IA la agrega.`; })(),
+  });
+}
 function paintOpciones(fisico){
   const box=$("opList"); box.innerHTML="";
   // Producto simple (1 sola presentación): UI reducida — solo precio (+ unidades)
@@ -4021,7 +4087,11 @@ function paintOpciones(fisico){
           Descripción para la IA <span style="color:var(--faint);font-weight:400">(para vender y reconocer ESTA presentación)</span>
         </label>
         <input class="in odesc" value="${esc(v.descripcion||"")}" placeholder="${fisico?"Ej. Incluye medias y bolso de regalo":"Ej. Incluye las plantillas editables y el bonus"}" style="margin-top:7px;border-color:rgba(168,85,247,.35)"/>
-      </div>`}
+        <label style="margin:11px 0 0;text-transform:none;font-weight:600;color:var(--text)">¿Para quién es? <span style="color:var(--faint);font-weight:400">(con esto la IA recomienda cuál le conviene)</span></label>
+        <input class="in opq" value="${esc(v.config?.para_quien||"")}" placeholder="${fisico?"Ej. Para quien lo usa a diario y quiere que le dure":"Ej. Para quien recién empieza y quiere lo esencial"}" style="margin-top:6px;border-color:rgba(168,85,247,.35)"/>
+        <label class="chk" style="margin:10px 0 0;text-transform:none;font-weight:600" title="Si el cliente no cuenta qué necesita, la IA le recomienda esta"><input type="checkbox" class="orec" ${v.config?.recomendada?"checked":""}/> ⭐ La recomiendo <span style="color:var(--faint);font-weight:400">(si el cliente no dice qué necesita, la IA le sugiere esta)</span></label>
+      </div>
+      <div class="opBloque" style="margin-top:12px"></div>`}
       ${fisico ? (i===0 ? `
       <div style="margin-top:12px;font-size:11.5px;color:var(--faint);line-height:1.55">
         Este producto se <b>envía</b>, así que no entrega nada por el chat: la venta termina cuando se crea el pedido.
@@ -4045,6 +4115,19 @@ function paintOpciones(fisico){
     // 🙈 Oferta OCULTA (ver memoria ofertas-ocultas): se guarda en product_versions.config.oculta.
     const ooc=el.querySelector(".ooc"); if(ooc) ooc.onchange=(e)=>{ v.config={...(v.config||{}), oculta:e.target.checked}; paintOpciones(fisico); };
     const odesc=el.querySelector(".odesc"); if(odesc) odesc.oninput=(e)=>{ v.descripcion=e.target.value; };
+    // 🎯 (6-nov) Para quién es y la recomendada: viven en product_versions.config (se guardan con el resto de la versión).
+    const opq=el.querySelector(".opq"); if(opq) opq.oninput=(e)=>{ v.config={...(v.config||{})}; const t=e.target.value; if(t.trim()) v.config.para_quien=t; else delete v.config.para_quien; };
+    const orec=el.querySelector(".orec"); if(orec) orec.onchange=(e)=>{
+      // Una sola recomendada: marcar una desmarca las demás.
+      st.versions.forEach(x=>{ if(x.config?.recomendada){ x.config={...x.config}; delete x.config.recomendada; } });
+      if(e.target.checked) v.config={...(v.config||{}), recomendada:true};
+      paintOpciones(fisico); markDirty();
+    };
+    const obq=el.querySelector(".opBloque"); if(obq) paintMaterial(obq, {
+      get:()=>v.config?.bloque, set:(o)=>{ v.config={...(v.config||{})}; if(o) v.config.bloque=o; else delete v.config.bloque; },
+      titulo:"Presentar esta versión", boton:"+ Presentar esta versión",
+      ayuda:`Lo que el bot manda cuando el cliente pregunta o duda por <b>${esc(v.nombre||"esta versión")}</b> («¿qué trae?», «¿vale la pena?»): texto, imagen, video o archivo. Sale una sola vez; si ya la eligió y va a pagar, no se manda.`,
+    });
     const oem=el.querySelector(".oemsg"); if(oem) oem.oninput=(e)=>{ v.entrega_mensaje=e.target.value; };
     const odel=el.querySelector(".odel"); if(odel) odel.onclick=async()=>{
       // ¿Clientes que la ELIGIERON y aún no pagan? `opcion_id` vive en la ficha del contacto
@@ -4931,6 +5014,7 @@ async function _saveProduct(){
     // no tiene contra qué medir. Se avisa (no se bloquea: puede ser a propósito).
     if((st.versions||[]).length && (st.versions||[]).every(v=>v.activo===false)) toast("Ojo: todas las presentaciones están desactivadas; el bot no podrá vender este producto hasta que actives una.",true);
   }
+  if(st.prod.config && materialVacio(st.prod.config.carta_versiones)) delete st.prod.config.carta_versiones;
   const base={ nombre:st.prod.nombre, config:st.prod.config||{}, updated_at:new Date().toISOString() };
   let { error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null, tipo:st.prod.tipo||"digital" }).eq("id",st.prod.id);
   if(e1 && /tipo|column/.test(e1.message)){ ({ error:e1 } = await supa.from("products").update({ ...base, folder:st.prod.folder||null, emoji:st.prod.emoji||null }).eq("id",st.prod.id)); if(!e1) toast("Guardado (aplica 0022 para el tipo físico)"); }
@@ -4979,7 +5063,7 @@ async function _saveProduct(){
       activo:v.activo!==false,
       price_list:v.price_list||[], drive_link:v.drive_link||null, // legado
       // `config` se manda entero (no solo `oculta`): el upsert reemplaza la columna.
-      config:{ ...(v.config||{}), oculta: st.versions.length>1 && v.config?.oculta===true },
+      config:(()=>{ const c={ ...(v.config||{}), oculta: st.versions.length>1 && v.config?.oculta===true }; if(materialVacio(c.bloque)) delete c.bloque; if(st.versions.length<2){ delete c.recomendada; } return c; })(),
     };
     if(v.id) row.id=v.id;
     let { data, error } = await supa.from("product_versions").upsert(row).select("id").single();

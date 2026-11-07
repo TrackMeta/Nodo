@@ -10593,7 +10593,13 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
   // más sensible). Si la IA además escribió texto, se envía + el acuse (handoff claro).
   try {
     const re = /\[\[media:([\w-]+)\]\]/g;
-    const catalog: any[] = Array.isArray(ctx?._ia_multimedia) ? ctx._ia_multimedia : [];
+    const catalog: any[] = Array.isArray(ctx?._ia_multimedia) ? [...ctx._ia_multimedia] : [];
+    // 🎚️📋 La carta / el bloque de una versión: su marca se abre en sus burbujas (ver abrirMaterialVersiones).
+    try { result = await abrirMaterialVersiones(db, run, ctx, result, catalog); }
+    catch (e) {
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 No se pudo armar el material de las versiones",
+        `Salió solo el texto de la IA: ${String((e as any)?.message ?? e).slice(0, 160)}`).catch(() => {});
+    }
     if (!re.test(result)) {
       // 📷 La promesa de foto SIN archivo cargado se quita ANTES de emitir y el bot sigue
       // vendiendo. Antes se emitía la promesa, se escalaba a una persona y el bot se apagaba:
@@ -10733,7 +10739,9 @@ async function emitIaText(db: SupabaseClient, run: any, result: string, ctx: any
       const before = result.slice(last, m.index).trim();
       if (before) await emit(db, run, { text: before, _noTpl: true }, ctx);
       const asset = catalog.find((x) => x && x.tag === m![1]);
-      if (asset && asset.media_url) {
+      if (asset && asset._burbuja) {
+        await emit(db, run, asset._burbuja, ctx);   // (burbuja del dueño: con sus {{variables}}, como el saludo)
+      } else if (asset && asset.media_url) {
         await emit(db, run, {
           media_kind: asset.media_kind, media_url: asset.media_url,
           mime: asset.mime, filename: asset.filename, caption: "",
@@ -19283,6 +19291,11 @@ type Opcion = {
   // muestra en la lista ni se ofrece sola. Aparece cuando el cliente pide más (`run.vars._ver_ocultas`) o nombra
   // esa cantidad. Se guarda en product_versions.config.oculta.
   oculta?: boolean;
+  // 🎯📋 (6-nov, Rodrigo) Para RECOMENDAR y PRESENTAR cada versión (product_versions.config): para quién es, si es la
+  // que recomienda cuando no sabe qué necesita el cliente, y su bloque de presentación (burbujas del editor del saludo).
+  para_quien?: string;
+  recomendada?: boolean;
+  bloque?: any;
 };
 
 // ⚠️ loadOpciones trae TODAS, también las ocultas: el cierre, el cobro, la validación del pago y el pedido tienen
@@ -19298,7 +19311,9 @@ async function loadOpciones(db: SupabaseClient, run: Run, productId: string): Pr
       .eq("product_id", productId).eq("activo", true).order("orden");
     list = ((data ?? []) as any[]).map((v) => {
       const { config, ...rest } = v ?? {};
-      return { ...rest, oculta: (config as any)?.oculta === true } as Opcion;
+      const c = (config ?? {}) as any;
+      return { ...rest, oculta: c.oculta === true, para_quien: String(c.para_quien ?? "").trim() || undefined,
+        recomendada: c.recomendada === true, bloque: c.bloque && typeof c.bloque === "object" ? c.bloque : undefined } as Opcion;
     });
   } catch (_) { /* columnas pendientes (0029) → sin opciones */ }
   (run as any)._opciones = { _pid: productId, list };
@@ -19311,6 +19326,88 @@ function opcionesVisibles(list: Opcion[], run: Run): Opcion[] {
   if ((run as any)?.vars?._ver_ocultas) return list;
   const elegida = String((run as any)?.vars?.opcion_id ?? "");
   return list.filter((o) => !o.oculta || (elegida && String(o.id) === elegida));
+}
+// 🎚️📋 (6-nov, Rodrigo: «no quiero depender de botones» y «enviar un bloque de mensajes o una imagen, video o archivo
+// para los clientes que pregunten o mencionen la premium o la básica») El MATERIAL que el dueño armó para presentar sus
+// versiones, con el mismo editor del saludo (texto, imagen, video, archivo):
+//   · la carta (products.config.carta_versiones) → `[[media:carta-versiones]]`: todas juntas, cuando pregunta en general.
+//   · el bloque de UNA versión (product_versions.config.bloque) → `[[media:version-<slug>]]`: cuando pregunta o duda por esa.
+// Decide la IA (escribe la marca, igual que con cualquier archivo de apoyo: esa marca ya sobrevive al revisor y a los
+// recortes); el motor abre la marca en sus burbujas (abrirMaterialVersiones), lo manda UNA vez por conversación
+// (run.vars._mat_env) y le dice en el prompt qué ya mandó, para que no lo repita.
+type MaterialVer = { key: string; tag: string; nombre: string; obj: any };
+const TAG_CARTA = "carta-versiones";
+function burbujasMaterial(obj: any): any[] {
+  if (!obj || typeof obj !== "object") return [];
+  const vs = Array.isArray(obj.variantes)
+    ? obj.variantes.filter((v: any) => v && v.activo !== false && Array.isArray(v.bubbles) && v.bubbles.length) : [];
+  const bs: any[] = vs.length ? (vs.length > 1 ? pickWeighted(vs) : vs[0]).bubbles : (Array.isArray(obj.bubbles) ? obj.bubbles : []);
+  return bs.filter((b) => b && (b.media_url || String(b.text ?? "").trim()));
+}
+function materialVersiones(ctx: any, ops: Opcion[]): MaterialVer[] {
+  const out: MaterialVer[] = [];
+  if (ops.length < 2) return out;
+  if (burbujasMaterial(ctx?._carta_versiones).length) out.push({ key: "carta", tag: TAG_CARTA, nombre: "", obj: ctx._carta_versiones });
+  const usados = new Set<string>();
+  for (const o of ops) {
+    if (!burbujasMaterial(o.bloque).length) continue;
+    let t = "version-" + (slugAttr(o.nombre).replace(/_/g, "-") || "x");
+    while (usados.has(t)) t += "-2";   // (dos versiones con el mismo nombre escrito distinto)
+    usados.add(t);
+    out.push({ key: "v:" + o.id, tag: t, nombre: o.nombre, obj: o.bloque });
+  }
+  return out;
+}
+// `{{precio:Premium}}` en la carta → el precio REAL de esa versión (con el descuento vigente del cliente, si tiene uno):
+// así la carta no queda con un precio viejo cuando el dueño lo cambia. Una versión que ya no existe → vacío (nunca la llave).
+function conPreciosDeVersiones(txt: string, ops: Opcion[], sym: string, oferta: any): string {
+  return String(txt ?? "").replace(/\{\{\s*precio\s*:\s*([^}]+?)\s*\}\}/giu, (_m: string, nom: string) => {
+    const o = ops.find((x) => slugAttr(x.nombre) === slugAttr(nom));
+    if (!o) return "";
+    const pr = oferta && oferta.opcion_id === o.id && Number.isFinite(Number(oferta.precio)) ? Number(oferta.precio) : o.precio;
+    return pr != null ? `${sym} ${pr}` : "";
+  });
+}
+// Abre `[[media:carta-versiones]]` / `[[media:version-…]]` en marcas de sus burbujas y las suma al catálogo que usa
+// emitIaText. Lo ya mandado no se repite, salvo que la marca sea lo ÚNICO que escribió (mejor repetir que callar).
+async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, result: string, catalog: any[]): Promise<string> {
+  const RE = /\[\[media:(carta-versiones|version-[\w-]+)\]\]/g;
+  if (!new RegExp(RE.source).test(result) || !ctx?._product_id) return result;
+  const todas = await loadOpciones(db, run, String(ctx._product_id));
+  const mat = materialVersiones(ctx, opcionesVisibles(todas, run));
+  const env: string[] = Array.isArray(run?.vars?._mat_env) ? run.vars._mat_env : [];
+  const oferta = await ofertaActiva(db, run).catch(() => null);
+  const sym = simboloMoneda(ctx.moneda as string);
+  const soloMarcas = !result.replace(/\[\[[^\]]*\]\]/g, "").trim();
+  const mandados: string[] = [];
+  const repetidos: string[] = [];
+  let n = 0;
+  const out = result.replace(RE, (_m: string, tag: string) => {
+    const x = mat.find((y) => y.tag === tag);
+    if (!x || mandados.includes(x.key)) return "";
+    if (env.includes(x.key) && !soloMarcas) { repetidos.push(x.nombre || "la carta"); return ""; }
+    mandados.push(x.key);
+    return "\n" + burbujasMaterial(x.obj).map((b) => {
+      const bb = { ...b };
+      if (bb.text) bb.text = conPreciosDeVersiones(bb.text, todas, sym, oferta);
+      if (bb.caption) bb.caption = conPreciosDeVersiones(bb.caption, todas, sym, oferta);
+      const t = `__mat${n++}`;
+      catalog.push({ tag: t, _burbuja: bb });
+      return `[[media:${t}]]`;
+    }).join("\n") + "\n";
+  });
+  if (mandados.length) {
+    run.vars = run.vars || {};
+    run.vars._mat_env = [...new Set([...env, ...mandados])];
+    const noms = mandados.map((k) => k === "carta" ? "la carta de versiones" : `la presentación de «${mat.find((y) => y.key === k)?.nombre ?? ""}»`);
+    await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 La IA mandó el material de las versiones",
+      `${noms.join(" y ")}, por «${String(ctx.last_input ?? "").slice(0, 100)}»`).catch(() => {});
+  }
+  if (repetidos.length) {
+    await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 No se repitió el material",
+      `Ya se lo había mandado (${repetidos.join(", ")}); salió solo el texto de la IA`).catch(() => {});
+  }
+  return out;
 }
 // El EMPUJE automático («llevando 2 te sale más barato») nunca usa las ocultas, aunque ya se hayan mostrado.
 function opcionesParaEmpujar(list: Opcion[], run: Run): Opcion[] {
@@ -25789,6 +25886,50 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // inclina por 2 unidades» partía el prefijo en el carácter ~17.400 de ~29.000).
         // (y también CÓMO listar los precios y con qué cerrar: dependen de si ya eligió y de qué decidió el motor para la
         //  cantidad en este turno —unaSolaOrdenDeCantidad—; dentro de la lista volvían a partir el prefijo, 6-oct)
+        // 🎯 (6-nov, Rodrigo: medido con el curso Básica/Premium) A «¿cuál me conviene? quiero empezar a trabajar con esto»
+        // contestó «la Premium es la mejor… si solo quieres lo básico, la Básica te sirve… ¿cuál prefieres?»: le devolvía la
+        // decisión. Solo con PRESENTACIONES (digital o versiones de 1 unidad); los packs de cantidad tienen su propio empuje.
+        const _esPres = esDigital(ctx) || ops.every((o) => Number(o.cantidad ?? 1) <= 1);
+        const _pq = ops.filter((o) => String(o.para_quien ?? "").trim());
+        const _rec = ops.find((o) => o.recomendada);
+        const _recTxt = !_esPres ? "" : "\n\n🎯 CUÁL LE CONVIENE" +
+          (_pq.length ? " — para quién es cada una (dato del dueño: úsalo para recomendar, no lo copies como lista):\n" +
+            _pq.map((o) => `- ${o.nombre}: ${String(o.para_quien).trim()}`).join("\n") + "\n" : ": ") +
+          "Si te pregunta cuál le conviene o duda entre ellas: si ya sabes para qué lo quiere, recomiéndale UNA con seguridad y " +
+          "dile por qué en una línea, con lo que te contó. ⛔ Nada de «cualquiera te sirve», «depende de ti» ni «si quieres lo " +
+          "básico, la básica; si quieres más, la otra»: eso le devuelve la decisión. Si no sabes para qué lo quiere, hazle UNA " +
+          "sola pregunta sobre eso y con su respuesta le recomiendas." +
+          (_rec ? ` Si no te lo quiere contar, recomiéndale «${_rec.nombre}».` : "");
+        const _mat = materialVersiones(ctx, ops);
+        const _matTxt = !_mat.length ? "" : "\n\n📋 MATERIAL PARA PRESENTARLAS (lo armó el dueño). Escribe la marca en una línea " +
+          "aparte, donde quieras que salga, y el sistema lo manda. Cada uno sale UNA sola vez en la conversación:\n" +
+          _mat.map((x) => x.key === "carta"
+            ? `- [[media:${TAG_CARTA}]] — la presentación de TODAS, con sus precios. Úsala cuando pregunte en general (qué ` +
+              "opciones hay, cuánto cuesta, qué diferencia hay) y aún no la recibió. ⛔ Si la pones, NO escribas tú la lista de " +
+              "precios: ya va ahí. Tu texto es una línea corta para acompañarla y, después, tu pregunta."
+            : `- [[media:${x.tag}]] — la presentación de «${x.nombre}». Úsala cuando pregunte o dude por ESA (qué trae, si vale ` +
+              "la pena, en qué se diferencia de la otra) y aún no la recibió. Si ya la eligió y va a pagar, no hace falta.").join("\n");
+        // 📋 Lo que ya le mandó (va en el bloque que cambia cada turno, no en el de arriba: ver la nota del caché).
+        const _env: string[] = Array.isArray((run.vars as any)?._mat_env) ? (run.vars as any)._mat_env : [];
+        const _yaMat = _mat.filter((x) => _env.includes(x.key));
+        const _yaMatTxt = !_yaMat.length ? "" : "\n\n📋 Ya le mandaste: " +
+          _yaMat.map((x) => x.key === "carta" ? "la carta de versiones" : `la presentación de «${x.nombre}»`).join(", ") +
+          ". No vuelvas a poner esa marca: si te pregunta algo de eso, contéstale tú en una o dos líneas.";
+        // 👀 (6-nov, medido) El saludo ya traía «Dos versiones: Básica S/ 39 · Premium S/ 79» y la IA, en la burbuja de al
+        // lado, volvía a listarlas enteras — y otra vez en el turno siguiente: tres veces la misma lista en dos turnos. Si un
+        // mensaje NUESTRO de las últimas 2 horas ya trae 2+ de sus precios, la lista ya está a la vista.
+        let _listaReciente = false;
+        if (_esPres && !String(ctx.opcion_elegida ?? "").trim()) {   // (los packs de cantidad no: su empuje está medido aparte)
+          try {
+            const { data: _outs } = await db.from("messages").select("content").eq("contact_id", run.contact_id).eq("direction", "out")
+              .gt("ts", new Date(Date.now() - 2 * 3600e3).toISOString()).order("ts", { ascending: false }).limit(4);
+            const _prs = [...new Set(ops.map((o) => o.precio).filter((x) => x != null).map((x) => String(x)))];
+            _listaReciente = _prs.length >= 2 && ((_outs ?? []) as any[]).some((mm) => {
+              const _t = `${mm?.content?.text ?? ""} ${mm?.content?.caption ?? ""}`;
+              return _prs.filter((pr) => new RegExp(`(?:S/|\\$)\\s?\\*?${pr.replace(".", "\\.")}(?![\\d.,])`).test(_t)).length >= 2;
+            });
+          } catch (_) { /* sin historial → como siempre */ }
+        }
         const _estadoEleccion = "## Qué eligió hasta ahora\n" + (ctx.opcion
           ? `Ahora mismo el cliente se inclina por: **${ctx.opcion}**${ctx.precio != null ? ` (${_symC} ${ctx.precio})` : ""}. ` +
             `Puede cambiar de opinión en cualquier momento: si lo hace, respétalo sin reprocharle.`
@@ -25802,6 +25943,11 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           (String(ctx.opcion_elegida ?? "").trim()
             ? "\n\n💰 Ya eligió: NO le vuelvas a listar las presentaciones. Si pregunta por un precio, " +
               "dile el de LO SUYO y sigue: las cifras exactas son las de «Opciones de compra», no inventes ninguna."
+            : _listaReciente
+            ? "\n\n💰 Ya le mostraste las opciones con sus precios hace un momento (en un mensaje tuyo de arriba). ⛔ NO se las " +
+              "vuelvas a listar: sería repetirle lo mismo. Contesta lo que preguntó; si hace falta nombrarlas, de pasada y sin " +
+              "lista. Solo si te las vuelve a pedir («¿cuáles eran?», «¿cuánto era?») se las repites." +
+              (esDigital(ctx) ? " Si todavía no eligió, cierras ayudándolo a decidir (tu pregunta para recomendarle o cuál quiere)." : "")
             : "\n\n💰 Cuando hables del PRECIO, nómbralas TODAS —aunque pregunte por una sola: es la " +
               "diferencia entre vender uno y vender dos— y ponlas EN LISTA, una por línea, nunca de corrido, " +
               "con el nombre y el precio tal como están en «Opciones de compra»." +
@@ -25838,8 +25984,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             : "\n🔢 CANTIDAD: se vende SOLO por estas presentaciones (cada una ya trae su número de unidades). " +
               "Si el cliente pide una cantidad que NO calza con ninguna (ej. pide 2 y solo hay una presentación de 1 unidad), " +
               "NO se la confirmes ni inventes un precio: dile con naturalidad qué presentaciones hay y que elija una. " +
-              "NUNCA cierres un pedido ni acuerdes una cantidad que no exista como presentación."));
-        parts.push(_estadoEleccion);
+              "NUNCA cierres un pedido ni acuerdes una cantidad que no exista como presentación.") + _recTxt + _matTxt);
+        parts.push(_estadoEleccion + _yaMatTxt);
       } else if (ops.length === 1) {
         // Una sola presentación: NO entra al bloque de arriba, así que la IA se
         // quedaba SIN el precio en su contexto y lo INVENTABA (ej. decía S/120 con
@@ -33991,6 +34137,8 @@ async function buildContext(db: SupabaseClient, run: Run) {
           // descontaba el stock. Solo pasaba con un producto que tuviera regalo.
           for (const a of attrs) for (const m of (a.media || [])) cat.push(m);
           if (cat.length) pc._ia_multimedia = cat;
+          // 🎚️📋 La carta de versiones (ver materialVersiones). Con «_» para no filtrarse a {{...}}.
+          { const cv = (p as any).config?.carta_versiones; if (cv && typeof cv === "object") pc._carta_versiones = cv; }
           const env = (p as any).config?.envio;
           if (env && typeof env === "object") {
             if (env.agencias && env.agencias.shalom) {
