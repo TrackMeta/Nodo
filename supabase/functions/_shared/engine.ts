@@ -19378,7 +19378,8 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
   const _arriba = !!run?._listaArriba;
   if (run) delete run._listaArriba;
   if ((_dec || _arriba) && ctx?._product_id) {
-    const _r = sinLoQueYaTiene(result.replace(/\[\[media:[\w-]+\]\]/g, (m) => `\n${m}\n`), await loadOpciones(db, run, String(ctx._product_id)));
+    const _solo = !!_dec && !!run?._matSoloPregunta;
+    const _r = sinLoQueYaTiene(result.replace(/\[\[media:[\w-]+\]\]/g, (m) => `\n${m}\n`), await loadOpciones(db, run, String(ctx._product_id)), _solo);
     if (_r.quito) {
       await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ No le repitió lo que ya tiene encima",
         `${_dec ? "Sale el material del dueño" : "El saludo ya traía la lista"}; se quitó de la respuesta: «${result.slice(0, 160)}» → «${_r.txt.slice(0, 120)}»`).catch(() => {});
@@ -19386,7 +19387,7 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
       result = _dec ? _r.txt : `Los precios te los dejé ahí arriba 👆${_r.txt ? "\n\n" + _r.txt : ""}`;
       // (y del texto crudo también: si no, repararMensajeCortado ve «frases quitadas» y hace reescribir el mensaje entero
       //  — se perdía el «ahí arriba 👆» y volvía la duda; examen VD4, 6-nov)
-      if (ctx?._iaCrudo) ctx._iaCrudo = sinLoQueYaTiene(String(ctx._iaCrudo), await loadOpciones(db, run, String(ctx._product_id))).txt;
+      if (ctx?._iaCrudo) ctx._iaCrudo = sinLoQueYaTiene(String(ctx._iaCrudo), await loadOpciones(db, run, String(ctx._product_id)), _solo).txt;
     }
   }
   if (_dec && !result.includes(`[[media:${_dec}]]`)) {
@@ -19394,7 +19395,7 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
     const _iq = result.lastIndexOf("¿");
     result = _iq > 0 ? `${result.slice(0, _iq).trimEnd()}\n${_mk}\n${result.slice(_iq)}` : _iq === 0 ? `${_mk}\n${result}` : `${result.trimEnd()}\n${_mk}`;
   }
-  if (run) delete run._matDecidido;   // (una vez: no se cuela en otro emitIaText del mismo turno)
+  if (run) { delete run._matDecidido; delete run._matSoloPregunta; }   // (una vez: no se cuela en otro emitIaText del mismo turno)
   if (!new RegExp(RE.source).test(result) || !ctx?._product_id) return result;
   const todas = await loadOpciones(db, run, String(ctx._product_id));   // (en caché del run)
   const mat = materialVersiones(ctx, opcionesVisibles(todas, run));
@@ -19437,7 +19438,7 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
 // último bloque. Lo decide la IA (decideMaterialTurno); esto solo saca de SU texto lo que el cliente ya tiene encima,
 // medido con los DATOS de sus versiones: una oración (que no sea pregunta) que nombra una versión o trae uno de sus
 // precios se va, y también el encabezado («tiene dos versiones:») que quedó sin su lista. Las preguntas quedan siempre.
-function sinLoQueYaTiene(txt: string, ops: Opcion[]): { txt: string; quito: boolean } {
+function sinLoQueYaTiene(txt: string, ops: Opcion[], soloPreguntas = false): { txt: string; quito: boolean } {
   const norm = (x: string) => String(x ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const escRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const nombres = ops.map((o) => norm(String(o.nombre ?? "").trim())).filter((n) => n.length >= 3);
@@ -19450,10 +19451,12 @@ function sinLoQueYaTiene(txt: string, ops: Opcion[]): { txt: string; quito: bool
   let quito = false;
   const pars = String(txt ?? "").split(/\n{2,}/).map((par) => par.split("\n").map((ln) => {
     // (oraciones: corta detrás de . ! … y delante de cada «¿»)
-    const ors = ln.split(/(?<=[.!…])\s+|(?=¿)/u);
+    // (y detrás de un emoji seguido de mayúscula: «Sí, es de por vida 🙌 La Premium trae…» son dos oraciones)
+    const ors = ln.split(/(?<=[.!…])\s+|(?<=\p{Extended_Pictographic}\u{FE0F}?)\s+(?=\p{Lu})|(?=¿)/u);
     const quedan = ors.filter((o) => {
       if (/[?¿]/.test(o) || !o.trim()) return true;
-      if (menciona(o)) { quito = true; return false; }
+      if (/^\s*\[\[media:[\w-]+\]\]\s*$/.test(o)) return true;   // (la marca del material)
+      if (soloPreguntas || menciona(o)) { quito = true; return false; }
       return true;
     });
     return quedan.join(" ").replace(/[ \t]{2,}/g, " ").trim();
@@ -19474,7 +19477,7 @@ function sinBloqueDesarrolla(b: string): string {
 // Así que la decisión va APARTE, en una llamada corta con respuesta cerrada (la misma IA, sin lista de palabras): «¿esto
 // lo contesta la carta, la presentación de X, o nada?». El motor la manda y a la IA de venta se le dice que va junto a su
 // mensaje, para que no repita lo que ya dice (ver «Si el motor decide algo y se calla, la IA rellena»).
-async function decideMaterialTurno(db: SupabaseClient, run: any, ctx: any, pend: MaterialVer[], listaReciente: boolean): Promise<MaterialVer | null> {
+async function decideMaterialTurno(db: SupabaseClient, run: any, ctx: any, pend: MaterialVer[], listaReciente: boolean): Promise<(MaterialVer & { otra: boolean }) | null> {
   const li = String(ctx?.last_input ?? "").trim();
   if (!pend.length || !li) return null;
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: run.channel_id, p_provider: null });
@@ -19492,20 +19495,22 @@ async function decideMaterialTurno(db: SupabaseClient, run: any, ctx: any, pend:
     "- \"nada\": si pregunta otra cosa, si ya eligió o quiere pagar, si solo saluda o da un dato. También si pide que le " +
     "recomiendes («¿cuál me conviene?», «¿cuál me recomiendas?») o cuenta para qué lo quiere: eso lo contesta el vendedor " +
     "recomendándole UNA, no un material (examen VE3, 6-nov: a «¿cuál me conviene? lo quiero para un hobby» salía la carta).\n" +
-    "Elige UNO. Ante la duda, \"nada\". Responde SOLO en JSON: {\"mandar\": \"...\"}.";
+    "Elige UNO. Ante la duda, \"nada\". Y en \"otra_pregunta\": true si en ese mismo mensaje pregunta además algo que ese " +
+    "material no contesta (si es de por vida, cómo se paga, si sirve para X…). Responde SOLO en JSON: {\"mandar\": \"...\", \"otra_pregunta\": false}.";
   const raw = await runAI({ db, channelId: run.channel_id, origen: "vender",
     provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system, maxTokens: 40,
     content: (hist ? `Conversación reciente:\n${hist}\n\n` : "") + `Último mensaje del cliente: «${li.slice(0, 400)}»`,
-    jsonSchema: { type: "object", properties: { mandar: { type: "string", enum: [...pend.map((x) => x.tag), "nada"] } },
-      required: ["mandar"], additionalProperties: false } as unknown as Record<string, unknown>,
+    jsonSchema: { type: "object", properties: { mandar: { type: "string", enum: [...pend.map((x) => x.tag), "nada"] },
+      otra_pregunta: { type: "boolean" } }, required: ["mandar", "otra_pregunta"], additionalProperties: false } as unknown as Record<string, unknown>,
   });
-  let tag = "";
-  try { tag = String(JSON.parse((/\{[\s\S]*\}/.exec(String(raw ?? "")) ?? ["{}"])[0])?.mandar ?? ""); }
+  let tag = "", otra = true;
+  try { const _j = JSON.parse((/\{[\s\S]*\}/.exec(String(raw ?? "")) ?? ["{}"])[0]); tag = String(_j?.mandar ?? ""); otra = _j?.otra_pregunta !== false; }
   catch (e) {
     await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 No se entendió la decisión del material",
       `Salió sin material: «${String(raw ?? "").slice(0, 120)}»`).catch(() => {});
   }
-  return pend.find((x) => x.tag === tag) ?? null;
+  const _x = pend.find((x) => x.tag === tag);
+  return _x ? { ..._x, otra } as MaterialVer & { otra: boolean } : null;
 }
 // El EMPUJE automático («llevando 2 te sale más barato») nunca usa las ocultas, aunque ya se hayan mostrado.
 function opcionesParaEmpujar(list: Opcion[], run: Run): Opcion[] {
@@ -26116,6 +26121,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             const _dm = await decideMaterialTurno(db, run, ctx, [...(_cartaPend ? [_cartaPend] : []), ..._verPend], _listaReciente);
             if (_dm) {
               (run as any)._matDecidido = _dm.tag;
+              (run as any)._matSoloPregunta = !_dm.otra;   // (no preguntó nada más: de su texto queda solo su pregunta)
               _bloqueTurno = sinBloqueDesarrolla(_bloqueTurno);
               _bloqueTurno += (_bloqueTurno ? "\n\n" : "") + "## Este turno: junto a tu mensaje sale el material del dueño\n" +
                 (_dm.key === "carta"
