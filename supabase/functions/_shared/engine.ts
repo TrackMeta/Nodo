@@ -25918,11 +25918,22 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           ". No vuelvas a poner esa marca: si te pregunta algo de eso, contéstale tú en una o dos líneas.";
         const _cartaPend = _mat.find((x) => x.key === "carta" && !_env.includes(x.key));
         const _verPend = _mat.filter((x) => x.key !== "carta" && !_env.includes(x.key));
-        const _pendTxt = String(ctx.opcion_elegida ?? "").trim() ? "" :
-          (_verPend.length ? "\n\n📋 Si en este mensaje te pregunta por " + _verPend.map((x) => `«${x.nombre}»`).join(" o ") +
-            " (qué trae, si vale la pena, en qué se diferencia de la otra), NO se lo expliques tú: pon " +
-            _verPend.map((x) => `[[media:${x.tag}]]`).join(" o ") + " (la de ESA versión) en una línea aparte y escribe tú solo " +
-            "una línea corta más tu pregunta. Lo que trae ya va ahí: no lo repitas." : "");
+        // 🔚 (6-nov, examen VC5) Con la orden en «Qué eligió» tampoco la usó: «Este turno SÍ es para vender» —que va al
+        // FINAL y dice «acá sí desarrollas el beneficio»— le ganaba. Esta va al final también, detrás de ese.
+        const _matTurnoDe = (): string => String(ctx.opcion_elegida ?? "").trim() || (!_cartaPend && !_verPend.length) ? "" :
+          "## Este turno: el material del dueño va primero\n" +
+          "El dueño armó mensajes para presentar las versiones. Cuando lo que vas a contestar ya está en uno de ellos, NO lo " +
+          "escribes tú: pones su marca en una línea aparte y el sistema lo manda. Tu texto queda en una línea corta antes y tu pregunta después.\n" +
+          (_cartaPend
+            ? (_listaReciente
+              // (las acaba de ver en un mensaje nuestro —el saludo trae la lista—: la carta encima sería la misma lista otra vez)
+              ? `- Las opciones y sus precios las acaba de ver arriba. Si en ESTE mensaje te pregunta el precio, dile que son esas 👆 ` +
+                `(sin carta y sin lista). Si en un mensaje siguiente te las vuelve a pedir («¿qué opciones hay?», «¿qué diferencia hay?») → [[media:${TAG_CARTA}]]`
+              : `- Pregunta qué opciones hay, cuánto cuesta o qué diferencia hay → [[media:${TAG_CARTA}]]`) +
+              " (trae todas con sus precios: no escribas tú ni los precios ni lo que trae cada una).\n" : "") +
+          _verPend.map((x) => `- Pregunta por «${x.nombre}» (qué trae, si vale la pena, en qué se diferencia) → [[media:${x.tag}]]` +
+            " (no le cuentes tú lo que trae: ya va ahí).\n").join("") +
+          "La forma, sin copiar palabras: una línea tuya / la marca sola en su línea / tu pregunta.";
         // 👀 (6-nov, medido) El saludo ya traía «Dos versiones: Básica S/ 39 · Premium S/ 79» y la IA, en la burbuja de al
         // lado, volvía a listarlas enteras — y otra vez en el turno siguiente: tres veces la misma lista en dos turnos. Si un
         // mensaje NUESTRO de las últimas 2 horas ya trae 2+ de sus precios, la lista ya está a la vista.
@@ -26001,7 +26012,8 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               "Si el cliente pide una cantidad que NO calza con ninguna (ej. pide 2 y solo hay una presentación de 1 unidad), " +
               "NO se la confirmes ni inventes un precio: dile con naturalidad qué presentaciones hay y que elija una. " +
               "NUNCA cierres un pedido ni acuerdes una cantidad que no exista como presentación.") + _recTxt + _matTxt);
-        parts.push(_estadoEleccion + _yaMatTxt + _pendTxt);
+        parts.push(_estadoEleccion + _yaMatTxt);
+        { const _matTurno = _matTurnoDe(); if (_matTurno) _bloqueTurno += (_bloqueTurno ? "\n\n" : "") + _matTurno; }
       } else if (ops.length === 1) {
         // Una sola presentación: NO entra al bloque de arriba, así que la IA se
         // quedaba SIN el precio en su contexto y lo INVENTABA (ej. decía S/120 con
