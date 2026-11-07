@@ -19382,7 +19382,11 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
   if (_dec && !result.includes(`[[media:${_dec}]]`)) {
     const _mk = `[[media:${_dec}]]`;
     const _iq = result.lastIndexOf("¿");
-    result = _iq > 0 ? `${result.slice(0, _iq).trimEnd()}\n${_mk}\n${result.slice(_iq)}` : _iq === 0 ? `${_mk}\n${result}` : `${result.trimEnd()}\n${_mk}`;
+    // (lo de antes de la pregunta muy corto —«Entiendo.», «¡Claro!»— no va solo en su burbuja: el material primero y
+    //  el mensaje entero después; examen VR1, 6-nov)
+    const _antesQ = _iq > 0 ? result.slice(0, _iq).replace(/[^\p{L}\d]/gu, "") : "";
+    result = _iq > 0 && _antesQ.length >= 20 ? `${result.slice(0, _iq).trimEnd()}\n${_mk}\n${result.slice(_iq)}`
+      : _iq >= 0 ? `${_mk}\n${result}` : `${result.trimEnd()}\n${_mk}`;
   }
   if (run) { delete run._matDecidido; delete run._matSoloPregunta; }   // (una vez: no se cuela en otro emitIaText del mismo turno)
   if (!new RegExp(RE.source).test(result) || !ctx?._product_id) return result;
