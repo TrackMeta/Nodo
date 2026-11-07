@@ -19375,6 +19375,17 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
   // Lo que decidió decideMaterialTurno: si la IA no puso la marca, va justo antes de su pregunta (su línea, el material,
   // su pregunta), o al final si no preguntó nada.
   const _dec = String(run?._matDecidido ?? "");
+  const _arriba = !!run?._listaArriba;
+  if (run) delete run._listaArriba;
+  if ((_dec || _arriba) && ctx?._product_id) {
+    const _r = sinLoQueYaTiene(result.replace(/\[\[media:[\w-]+\]\]/g, (m) => `\n${m}\n`), await loadOpciones(db, run, String(ctx._product_id)));
+    if (_r.quito) {
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "✂️ No le repitió lo que ya tiene encima",
+        `${_dec ? "Sale el material del dueño" : "El saludo ya traía la lista"}; se quitó de la respuesta: «${result.slice(0, 160)}» → «${_r.txt.slice(0, 120)}»`).catch(() => {});
+      // (la lista del saludo: su pregunta de precio queda contestada con un puntero a lo de arriba)
+      result = _dec ? _r.txt : `Los precios te los dejé ahí arriba 👆${_r.txt ? "\n\n" + _r.txt : ""}`;
+    }
+  }
   if (_dec && !result.includes(`[[media:${_dec}]]`)) {
     const _mk = `[[media:${_dec}]]`;
     const _iq = result.lastIndexOf("¿");
@@ -19382,7 +19393,7 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
   }
   if (run) delete run._matDecidido;   // (una vez: no se cuela en otro emitIaText del mismo turno)
   if (!new RegExp(RE.source).test(result) || !ctx?._product_id) return result;
-  const todas = await loadOpciones(db, run, String(ctx._product_id));
+  const todas = await loadOpciones(db, run, String(ctx._product_id));   // (en caché del run)
   const mat = materialVersiones(ctx, opcionesVisibles(todas, run));
   const env: string[] = Array.isArray(run?.vars?._mat_env) ? run.vars._mat_env : [];
   const oferta = await ofertaActiva(db, run).catch(() => null);
@@ -19417,6 +19428,38 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
       `Ya se lo había mandado (${repetidos.join(", ")}); salió solo el texto de la IA`).catch(() => {});
   }
   return out;
+}
+// ✂️ RESPALDO (6-nov, examen VD2): con el material saliendo —o la lista del saludo recién llegada— el modelo de venta
+// (gpt-4.1-mini) IGUAL describía las versiones o repetía los precios en su burbuja, aunque el prompt se lo prohibía en el
+// último bloque. Lo decide la IA (decideMaterialTurno); esto solo saca de SU texto lo que el cliente ya tiene encima,
+// medido con los DATOS de sus versiones: una oración (que no sea pregunta) que nombra una versión o trae uno de sus
+// precios se va, y también el encabezado («tiene dos versiones:») que quedó sin su lista. Las preguntas quedan siempre.
+function sinLoQueYaTiene(txt: string, ops: Opcion[]): { txt: string; quito: boolean } {
+  const norm = (x: string) => String(x ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const escRe = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const nombres = ops.map((o) => norm(String(o.nombre ?? "").trim())).filter((n) => n.length >= 3);
+  const precios = ops.map((o) => o.precio).filter((x) => x != null).map((x) => String(x));
+  const menciona = (frase: string) => {
+    const n = norm(frase);
+    return nombres.some((nm) => new RegExp(`(?<![\\p{L}\\d])${escRe(nm)}(?![\\p{L}\\d])`, "u").test(n)) ||
+      precios.some((pr) => new RegExp(`(?:s/|\\$)\\s?\\*?${escRe(pr)}(?![\\d.,])`).test(n));
+  };
+  let quito = false;
+  const pars = String(txt ?? "").split(/\n{2,}/).map((par) => par.split("\n").map((ln) => {
+    // (oraciones: corta detrás de . ! … y delante de cada «¿»)
+    const ors = ln.split(/(?<=[.!…])\s+|(?=¿)/u);
+    const quedan = ors.filter((o) => {
+      if (/[?¿]/.test(o) || !o.trim()) return true;
+      if (menciona(o)) { quito = true; return false; }
+      return true;
+    });
+    return quedan.join(" ").replace(/[ \t]{2,}/g, " ").trim();
+  }).filter((ln) => ln.replace(/[^\p{L}\d]/gu, "").length > 0).join("\n"));
+  if (!quito) return { txt, quito };
+  // El encabezado que se quedó sin su lista («El curso viene en dos opciones:») y lo que quedó solo con emojis.
+  const limpio = pars.map((par) => par.split("\n").filter((ln) => !/:\s*(?:[\p{Extended_Pictographic}\u{FE0F}]\s*)*$/u.test(ln) || /[?¿]/.test(ln)).join("\n"))
+    .filter((par) => par.replace(/[^\p{L}\d]/gu, "").length >= 3).join("\n\n").trim();
+  return { txt: limpio, quito };
 }
 // Quita «## Este turno SÍ es para vender» (una línea) del bloque del turno; el resto queda.
 function sinBloqueDesarrolla(b: string): string {
@@ -26057,6 +26100,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         parts.push(_estadoEleccion + _yaMatTxt);
         // 🧠 Decide la IA aparte (decideMaterialTurno) y a la de venta se le dice qué sale junto a su mensaje.
         if (op === "generar_texto" && !String(ctx.opcion_elegida ?? "").trim() && !(_cartaPend || _verPend.length) && _listaEsteTurno) {
+          (run as any)._listaArriba = true;
           _bloqueTurno = sinBloqueDesarrolla(_bloqueTurno);
           _bloqueTurno += (_bloqueTurno ? "\n\n" : "") + "## Este turno: las versiones ya salieron arriba\n" +
             "Justo antes de tu mensaje le llegó el saludo con las versiones y sus precios. ⛔ No le escribas otra vez ni los " +
@@ -26076,6 +26120,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
                 "mensaje es SOLO tu pregunta para ayudarlo a decidir (si aún no sabes para qué lo quiere, pregúntaselo), en una " +
                 "línea. Si además preguntó otra cosa que eso no responde, contéstala en una línea antes de la pregunta.";
             } else if (_listaEsteTurno) {
+              (run as any)._listaArriba = true;
               _bloqueTurno = sinBloqueDesarrolla(_bloqueTurno);
               _bloqueTurno += (_bloqueTurno ? "\n\n" : "") + "## Este turno: las versiones ya salieron arriba\n" +
                 "Justo antes de tu mensaje le llegó el saludo con las versiones y sus precios. ⛔ No le escribas otra vez ni los " +
