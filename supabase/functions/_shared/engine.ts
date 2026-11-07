@@ -19489,7 +19489,9 @@ async function decideMaterialTurno(db: SupabaseClient, run: any, ctx: any, pend:
     : `- "${x.tag}": la presentación de la versión «${x.nombre}». Va si pregunta qué trae ESA, si vale la pena o la compara.`).join("\n");
   const system = "Decides si, para contestar el ÚLTIMO mensaje del cliente, hay que mandarle uno de estos mensajes que armó el " +
     "negocio para presentar las versiones de un producto:\n" + opciones + "\n" +
-    "- \"nada\": si pregunta otra cosa, si ya eligió o quiere pagar, si solo saluda o da un dato.\n" +
+    "- \"nada\": si pregunta otra cosa, si ya eligió o quiere pagar, si solo saluda o da un dato. También si pide que le " +
+    "recomiendes («¿cuál me conviene?», «¿cuál me recomiendas?») o cuenta para qué lo quiere: eso lo contesta el vendedor " +
+    "recomendándole UNA, no un material (examen VE3, 6-nov: a «¿cuál me conviene? lo quiero para un hobby» salía la carta).\n" +
     "Elige UNO. Ante la duda, \"nada\". Responde SOLO en JSON: {\"mandar\": \"...\"}.";
   const raw = await runAI({ db, channelId: run.channel_id, origen: "vender",
     provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system, maxTokens: 40,
