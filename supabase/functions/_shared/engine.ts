@@ -19384,6 +19384,9 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
         `${_dec ? "Sale el material del dueño" : "El saludo ya traía la lista"}; se quitó de la respuesta: «${result.slice(0, 160)}» → «${_r.txt.slice(0, 120)}»`).catch(() => {});
       // (la lista del saludo: su pregunta de precio queda contestada con un puntero a lo de arriba)
       result = _dec ? _r.txt : `Los precios te los dejé ahí arriba 👆${_r.txt ? "\n\n" + _r.txt : ""}`;
+      // (y del texto crudo también: si no, repararMensajeCortado ve «frases quitadas» y hace reescribir el mensaje entero
+      //  — se perdía el «ahí arriba 👆» y volvía la duda; examen VD4, 6-nov)
+      if (ctx?._iaCrudo) ctx._iaCrudo = sinLoQueYaTiene(String(ctx._iaCrudo), await loadOpciones(db, run, String(ctx._product_id))).txt;
     }
   }
   if (_dec && !result.includes(`[[media:${_dec}]]`)) {
