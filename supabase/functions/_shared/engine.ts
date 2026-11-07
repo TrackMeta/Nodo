@@ -28576,7 +28576,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `1. Contesta lo que te escribió: «${String(ctx.last_input ?? "").slice(0, 300)}». Si preguntó cómo se paga: con los medios de pago de este producto ` +
             "(nómbralos tal cual, sin agregar otros), y el acceso le llega por este chat apenas valides su pago. Si algo no está en la ficha: en cómo se usa " +
             "o con qué funciona, contesta lo razonable con seguridad; en plata, garantías, plazos y cifras, dilo con honestidad.\n" +
-            "2. Todavía NO eligió cuál quiere: termina preguntándole, con tus palabras, cuál de las versiones prefiere. ⛔ NO digas que le " +
+            // (6-nov, examen VD4/VD5) «termina preguntándole cuál prefiere» —acá, en lo que más pesa— hacía que a «¿cuál me
+            //  conviene? quiero trabajar con esto» contestara «la Premium es la mejor para ti… ¿quieres la Premium o prefieres
+            //  la Básica?»: recomendaba y en la misma frase le devolvía la decisión (2 de 3 corridas).
+            "2. Todavía NO eligió cuál quiere: termina con UNA pregunta que lo acerque a elegir. Si en este mensaje le recomiendas una " +
+            "(porque te pidió consejo o ya sabes para qué lo quiere), la pregunta lo invita a quedarse con ESA, sin volver a ofrecerle " +
+            "la otra. Si todavía no sabes cuál le conviene, pregúntale cuál prefiere o para qué lo quiere. ⛔ NO digas que le " +
             "pasas los datos de pago ni que «ya te llegan»: salen solos cuando elija.";
         }
       } catch (_) { /* sin opciones → solo el revisor */ }
