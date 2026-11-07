@@ -25896,8 +25896,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           (_pq.length ? " — para quién es cada una (dato del dueño: úsalo para recomendar, no lo copies como lista):\n" +
             _pq.map((o) => `- ${o.nombre}: ${String(o.para_quien).trim()}`).join("\n") + "\n" : ": ") +
           "Si te pregunta cuál le conviene o duda entre ellas: si ya sabes para qué lo quiere, recomiéndale UNA con seguridad y " +
-          "dile por qué en una línea, con lo que te contó. ⛔ Nada de «cualquiera te sirve», «depende de ti» ni «si quieres lo " +
-          "básico, la básica; si quieres más, la otra»: eso le devuelve la decisión. Si no sabes para qué lo quiere, hazle UNA " +
+          "dile por qué en una línea, con lo que te contó, y cierra con una pregunta que lo lleve a quedarse con ESA, sin volver a " +
+          "ofrecerle la otra. ⛔ Nada de «cualquiera te sirve», «depende de ti», «¿o prefieres la otra?» ni «si quieres lo " +
+          "básico, la básica; si quieres más, la otra»: eso le devuelve la decisión. Si él mismo te pide la otra, respétalo. Si no sabes para qué lo quiere, hazle UNA " +
           "sola pregunta sobre eso y con su respuesta le recomiendas." +
           (_rec ? ` Si no te lo quiere contar, recomiéndale «${_rec.nombre}».` : "");
         const _mat = materialVersiones(ctx, ops);
@@ -25915,6 +25916,13 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _yaMatTxt = !_yaMat.length ? "" : "\n\n📋 Ya le mandaste: " +
           _yaMat.map((x) => x.key === "carta" ? "la carta de versiones" : `la presentación de «${x.nombre}»`).join(", ") +
           ". No vuelvas a poner esa marca: si te pregunta algo de eso, contéstale tú en una o dos líneas.";
+        const _cartaPend = _mat.find((x) => x.key === "carta" && !_env.includes(x.key));
+        const _verPend = _mat.filter((x) => x.key !== "carta" && !_env.includes(x.key));
+        const _pendTxt = String(ctx.opcion_elegida ?? "").trim() ? "" :
+          (_verPend.length ? "\n\n📋 Si en este mensaje te pregunta por " + _verPend.map((x) => `«${x.nombre}»`).join(" o ") +
+            " (qué trae, si vale la pena, en qué se diferencia de la otra), NO se lo expliques tú: pon " +
+            _verPend.map((x) => `[[media:${x.tag}]]`).join(" o ") + " (la de ESA versión) en una línea aparte y escribe tú solo " +
+            "una línea corta más tu pregunta. Lo que trae ya va ahí: no lo repitas." : "");
         // 👀 (6-nov, medido) El saludo ya traía «Dos versiones: Básica S/ 39 · Premium S/ 79» y la IA, en la burbuja de al
         // lado, volvía a listarlas enteras — y otra vez en el turno siguiente: tres veces la misma lista en dos turnos. Si un
         // mensaje NUESTRO de las últimas 2 horas ya trae 2+ de sus precios, la lista ya está a la vista.
@@ -25944,10 +25952,18 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             ? "\n\n💰 Ya eligió: NO le vuelvas a listar las presentaciones. Si pregunta por un precio, " +
               "dile el de LO SUYO y sigue: las cifras exactas son las de «Opciones de compra», no inventes ninguna."
             : _listaReciente
-            ? "\n\n💰 Ya le mostraste las opciones con sus precios hace un momento (en un mensaje tuyo de arriba). ⛔ NO se las " +
-              "vuelvas a listar: sería repetirle lo mismo. Contesta lo que preguntó; si hace falta nombrarlas, de pasada y sin " +
-              "lista. Solo si te las vuelve a pedir («¿cuáles eran?», «¿cuánto era?») se las repites." +
+            ? "\n\n💰 Las opciones con sus precios YA están en un mensaje tuyo de arriba, de hace un momento. ⛔ No las vuelvas a " +
+              "escribir, ni en lista ni de corrido, aunque te pregunte el precio: dile en pocas palabras que son las que le acabas " +
+              "de pasar 👆 y sigue con lo que falta, que es ayudarlo a decidir." +
+              (_cartaPend
+                ? " Si después te las vuelve a pedir («¿qué opciones hay?», «¿cuánto era?», «¿qué diferencia hay?»), NO las escribas: " +
+                  `pon [[media:${TAG_CARTA}]] en una línea aparte y tú solo una línea más tu pregunta.`
+                : " Solo si te las vuelve a pedir («¿cuáles eran?», «¿cuánto era?») se las repites.") +
               (esDigital(ctx) ? " Si todavía no eligió, cierras ayudándolo a decidir (tu pregunta para recomendarle o cuál quiere)." : "")
+            : _cartaPend
+            ? "\n\n💰 Cuando vayas a decirle las opciones o los precios (pregunta qué hay, cuánto cuesta o en qué se diferencian), " +
+              `NO los escribas tú: pon [[media:${TAG_CARTA}]] en una línea aparte, que es la carta que armó el dueño con todas y sus ` +
+              "precios. Tú escribe solo una línea corta para acompañarla y, debajo, tu pregunta para ayudarlo a decidir."
             : "\n\n💰 Cuando hables del PRECIO, nómbralas TODAS —aunque pregunte por una sola: es la " +
               "diferencia entre vender uno y vender dos— y ponlas EN LISTA, una por línea, nunca de corrido, " +
               "con el nombre y el precio tal como están en «Opciones de compra»." +
@@ -25985,7 +26001,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               "Si el cliente pide una cantidad que NO calza con ninguna (ej. pide 2 y solo hay una presentación de 1 unidad), " +
               "NO se la confirmes ni inventes un precio: dile con naturalidad qué presentaciones hay y que elija una. " +
               "NUNCA cierres un pedido ni acuerdes una cantidad que no exista como presentación.") + _recTxt + _matTxt);
-        parts.push(_estadoEleccion + _yaMatTxt);
+        parts.push(_estadoEleccion + _yaMatTxt + _pendTxt);
       } else if (ops.length === 1) {
         // Una sola presentación: NO entra al bloque de arriba, así que la IA se
         // quedaba SIN el precio en su contexto y lo INVENTABA (ej. decía S/120 con
