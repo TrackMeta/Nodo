@@ -22923,6 +22923,20 @@ function versionNombrada(texto: string, versiones: Array<{ id: string; nombre: s
       (w.length >= 5 && /[ao]$/.test(w) && t.includes(" " + w.slice(0, -1) + (w.endsWith("a") ? "o" : "a") + " "))));
   return hits.length === 1 ? hits[0] : null;
 }
+// 🛒 (7-nov, ronda de pruebas ZT7) Para la versión de OTRO producto, el nombre ENTERO: todas sus palabras. Con una sola
+// bastaba, y «quiero la premium, ¿cómo PAGO?» nombraba «PAGO único» del Simulador de Brevete → combo de S/ 108 en vez de
+// S/ 79. (Mismos géneros que versionNombrada: «básico» = «Basica».)
+function versionNombradaEntera(texto: string, versiones: Array<{ id: string; nombre: string; precio: number }>): { id: string; nombre: string; precio: number } | null {
+  if (versiones.length === 1) return versiones[0];
+  const t = " " + normalize(String(texto ?? "")).replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ") + " ";
+  const esta = (w: string) => t.includes(" " + w + " ") ||
+    (w.length >= 5 && /[ao]$/.test(w) && t.includes(" " + w.slice(0, -1) + (w.endsWith("a") ? "o" : "a") + " "));
+  const hits = versiones.filter((v) => {
+    const ws = normalize(v.nombre).replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+    return ws.length > 0 && ws.some((w) => w.length >= 4) && ws.every(esta);
+  });
+  return hits.length === 1 ? hits[0] : null;
+}
 async function detectarCombo(db: SupabaseClient, run: Run, ctx: any, texto: string): Promise<void> {
   if (!esDigital(ctx) || !ctx._product_id) return;
   if (String(ctx.pedido_creado ?? "") === "si" || String((run.vars as any)?._order_id ?? "").trim()) return;
@@ -22947,7 +22961,7 @@ async function detectarCombo(db: SupabaseClient, run: Run, ctx: any, texto: stri
     let cambio = false;
     for (const i of combo) {
       if (i.version_id || !i.versiones?.length) continue;
-      const v = versionNombrada(t, i.versiones);
+      const v = versionNombradaEntera(t, i.versiones);   // (7-nov: «¿cómo pago?» no elige «Pago único»)
       if (v) { i.version_id = v.id; i.precio = v.precio; i.nombre = `${i.producto} (${v.nombre})`; cambio = true; }
     }
     if (cambio) {
@@ -22991,9 +23005,12 @@ async function detectarCombo(db: SupabaseClient, run: Run, ctx: any, texto: stri
   if (_actP && !ids.includes(actual) && _actP.versiones?.length > 1 && versionNombrada(t, _actP.versiones)) ids = [...ids, actual];
   // …y lo mismo con OTRO producto: «la premium» es del curso aunque la venta abierta sea la plantilla
   // (D17b-ctres: combo de 29 en vez de 108). Solo si esa versión es de UN solo producto del catálogo.
+  // (7-nov) …pero solo cuando ENUMERA: en el mismo mensaje nombra otro producto («la premium, la plantilla y el protocolo»).
+  //  Sin eso, «quiero la premium, ¿cómo pago?» sumaba el Simulador por su versión «Pago único» (ver versionNombradaEntera).
   for (const p of cat) {
     if (p.id === actual || ids.includes(p.id) || !(p.versiones?.length > 1)) continue;
-    const v = versionNombrada(t, p.versiones);
+    if (!nombradosAhora.some((x) => x !== p.id)) continue;
+    const v = versionNombradaEntera(t, p.versiones);
     if (!v) continue;
     const _deOtros = cat.some((q) => q.id !== p.id && q.versiones?.length > 1 &&
       q.versiones.some((w) => normalize(w.nombre) === normalize(v.nombre)));
@@ -23022,7 +23039,8 @@ async function detectarCombo(db: SupabaseClient, run: Run, ctx: any, texto: stri
   for (const pid of otros) {
     const p = cat.find((x) => x.id === pid);
     if (!p) continue;
-    const v = versionNombrada(_txtVersion, p.versiones);
+    // (7-nov) Nombre entero: «el curso y el simulador, ¿cómo pago?» elegía sola la versión «Pago único» por la palabra «pago».
+    const v = versionNombradaEntera(_txtVersion, p.versiones);
     combo.push({
       product_id: p.id, producto: p.nombre,
       nombre: v && p.versiones.length > 1 ? `${p.nombre} (${v.nombre})` : p.nombre,
