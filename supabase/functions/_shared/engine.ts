@@ -19372,6 +19372,15 @@ function conPreciosDeVersiones(txt: string, ops: Opcion[], sym: string, oferta: 
 // emitIaText. Lo ya mandado no se repite, salvo que la marca sea lo ÚNICO que escribió (mejor repetir que callar).
 async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, result: string, catalog: any[]): Promise<string> {
   const RE = /\[\[media:(carta-versiones|version-[\w-]+)\]\]/g;
+  // Lo que decidió decideMaterialTurno: si la IA no puso la marca, va justo antes de su pregunta (su línea, el material,
+  // su pregunta), o al final si no preguntó nada.
+  const _dec = String(run?._matDecidido ?? "");
+  if (_dec && !result.includes(`[[media:${_dec}]]`)) {
+    const _mk = `[[media:${_dec}]]`;
+    const _iq = result.lastIndexOf("¿");
+    result = _iq > 0 ? `${result.slice(0, _iq).trimEnd()}\n${_mk}\n${result.slice(_iq)}` : _iq === 0 ? `${_mk}\n${result}` : `${result.trimEnd()}\n${_mk}`;
+  }
+  if (run) delete run._matDecidido;   // (una vez: no se cuela en otro emitIaText del mismo turno)
   if (!new RegExp(RE.source).test(result) || !ctx?._product_id) return result;
   const todas = await loadOpciones(db, run, String(ctx._product_id));
   const mat = materialVersiones(ctx, opcionesVisibles(todas, run));
@@ -19408,6 +19417,43 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
       `Ya se lo había mandado (${repetidos.join(", ")}); salió solo el texto de la IA`).catch(() => {});
   }
   return out;
+}
+// 🧠 QUIÉN DECIDE si va el material (6-nov, 3 tandas de examen VC5-VC9). Con la marca en el prompt —en el catálogo, en
+// «Qué eligió» y al FINAL del prompt, detrás de todo— el modelo de venta NUNCA la escribió: a «que opciones tienen?» y a
+// «que trae la premium?» contestó siempre con su propio texto. No es la redacción: es que la marca compite con escribir.
+// Así que la decisión va APARTE, en una llamada corta con respuesta cerrada (la misma IA, sin lista de palabras): «¿esto
+// lo contesta la carta, la presentación de X, o nada?». El motor la manda y a la IA de venta se le dice que va junto a su
+// mensaje, para que no repita lo que ya dice (ver «Si el motor decide algo y se calla, la IA rellena»).
+async function decideMaterialTurno(db: SupabaseClient, run: any, ctx: any, pend: MaterialVer[], listaReciente: boolean): Promise<MaterialVer | null> {
+  const li = String(ctx?.last_input ?? "").trim();
+  if (!pend.length || !li) return null;
+  const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: run.channel_id, p_provider: null });
+  const ai = Array.isArray(aiRows) ? aiRows[0] : aiRows;
+  if (!ai?.api_key) return null;
+  const hist = (await historial(db, run, 6)).split("\n").slice(-6).join("\n");
+  const opciones = pend.map((x) => x.key === "carta"
+    ? `- "${x.tag}": la carta con TODAS las versiones y sus precios. Va si pregunta en general qué opciones hay, cuánto ` +
+      "cuesta, qué incluye o qué diferencia hay entre ellas." +
+      (listaReciente ? " ⚠️ El negocio le acaba de mostrar la lista con los precios: si solo pregunta el precio, NO va (sería " +
+        "repetírsela); va si vuelve a pedir las opciones o pregunta la diferencia." : "")
+    : `- "${x.tag}": la presentación de la versión «${x.nombre}». Va si pregunta qué trae ESA, si vale la pena o la compara.`).join("\n");
+  const system = "Decides si, para contestar el ÚLTIMO mensaje del cliente, hay que mandarle uno de estos mensajes que armó el " +
+    "negocio para presentar las versiones de un producto:\n" + opciones + "\n" +
+    "- \"nada\": si pregunta otra cosa, si ya eligió o quiere pagar, si solo saluda o da un dato.\n" +
+    "Elige UNO. Ante la duda, \"nada\". Responde SOLO en JSON: {\"mandar\": \"...\"}.";
+  const raw = await runAI({ db, channelId: run.channel_id, origen: "vender",
+    provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system, maxTokens: 40,
+    content: (hist ? `Conversación reciente:\n${hist}\n\n` : "") + `Último mensaje del cliente: «${li.slice(0, 400)}»`,
+    jsonSchema: { type: "object", properties: { mandar: { type: "string", enum: [...pend.map((x) => x.tag), "nada"] } },
+      required: ["mandar"], additionalProperties: false } as unknown as Record<string, unknown>,
+  });
+  let tag = "";
+  try { tag = String(JSON.parse((/\{[\s\S]*\}/.exec(String(raw ?? "")) ?? ["{}"])[0])?.mandar ?? ""); }
+  catch (e) {
+    await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 No se entendió la decisión del material",
+      `Salió sin material: «${String(raw ?? "").slice(0, 120)}»`).catch(() => {});
+  }
+  return pend.find((x) => x.tag === tag) ?? null;
 }
 // El EMPUJE automático («llevando 2 te sale más barato») nunca usa las ocultas, aunque ya se hayan mostrado.
 function opcionesParaEmpujar(list: Opcion[], run: Run): Opcion[] {
@@ -25918,22 +25964,6 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           ". No vuelvas a poner esa marca: si te pregunta algo de eso, contéstale tú en una o dos líneas.";
         const _cartaPend = _mat.find((x) => x.key === "carta" && !_env.includes(x.key));
         const _verPend = _mat.filter((x) => x.key !== "carta" && !_env.includes(x.key));
-        // 🔚 (6-nov, examen VC5) Con la orden en «Qué eligió» tampoco la usó: «Este turno SÍ es para vender» —que va al
-        // FINAL y dice «acá sí desarrollas el beneficio»— le ganaba. Esta va al final también, detrás de ese.
-        const _matTurnoDe = (): string => String(ctx.opcion_elegida ?? "").trim() || (!_cartaPend && !_verPend.length) ? "" :
-          "## Este turno: el material del dueño va primero\n" +
-          "El dueño armó mensajes para presentar las versiones. Cuando lo que vas a contestar ya está en uno de ellos, NO lo " +
-          "escribes tú: pones su marca en una línea aparte y el sistema lo manda. Tu texto queda en una línea corta antes y tu pregunta después.\n" +
-          (_cartaPend
-            ? (_listaReciente
-              // (las acaba de ver en un mensaje nuestro —el saludo trae la lista—: la carta encima sería la misma lista otra vez)
-              ? `- Las opciones y sus precios las acaba de ver arriba. Si en ESTE mensaje te pregunta el precio, dile que son esas 👆 ` +
-                `(sin carta y sin lista). Si en un mensaje siguiente te las vuelve a pedir («¿qué opciones hay?», «¿qué diferencia hay?») → [[media:${TAG_CARTA}]]`
-              : `- Pregunta qué opciones hay, cuánto cuesta o qué diferencia hay → [[media:${TAG_CARTA}]]`) +
-              " (trae todas con sus precios: no escribas tú ni los precios ni lo que trae cada una).\n" : "") +
-          _verPend.map((x) => `- Pregunta por «${x.nombre}» (qué trae, si vale la pena, en qué se diferencia) → [[media:${x.tag}]]` +
-            " (no le cuentes tú lo que trae: ya va ahí).\n").join("") +
-          "La forma, sin copiar palabras: una línea tuya / la marca sola en su línea / tu pregunta.";
         // 👀 (6-nov, medido) El saludo ya traía «Dos versiones: Básica S/ 39 · Premium S/ 79» y la IA, en la burbuja de al
         // lado, volvía a listarlas enteras — y otra vez en el turno siguiente: tres veces la misma lista en dos turnos. Si un
         // mensaje NUESTRO de las últimas 2 horas ya trae 2+ de sus precios, la lista ya está a la vista.
@@ -26013,7 +26043,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               "NO se la confirmes ni inventes un precio: dile con naturalidad qué presentaciones hay y que elija una. " +
               "NUNCA cierres un pedido ni acuerdes una cantidad que no exista como presentación.") + _recTxt + _matTxt);
         parts.push(_estadoEleccion + _yaMatTxt);
-        { const _matTurno = _matTurnoDe(); if (_matTurno) _bloqueTurno += (_bloqueTurno ? "\n\n" : "") + _matTurno; }
+        // 🧠 Decide la IA aparte (decideMaterialTurno) y a la de venta se le dice qué sale junto a su mensaje.
+        if (op === "generar_texto" && !String(ctx.opcion_elegida ?? "").trim() && (_cartaPend || _verPend.length)) {
+          try {
+            const _dm = await decideMaterialTurno(db, run, ctx, [...(_cartaPend ? [_cartaPend] : []), ..._verPend], _listaReciente);
+            if (_dm) {
+              (run as any)._matDecidido = _dm.tag;
+              _bloqueTurno += (_bloqueTurno ? "\n\n" : "") + "## Este turno: junto a tu mensaje sale el material del dueño\n" +
+                (_dm.key === "carta"
+                  ? "Con tu mensaje el sistema le manda AHORA la carta que armó el dueño: trae TODAS las versiones, lo que incluye cada una y sus precios."
+                  : `Con tu mensaje el sistema le manda AHORA la presentación de «${_dm.nombre}» que armó el dueño: trae lo que incluye y por qué vale la pena.`) +
+                " ⛔ No repitas nada de eso (ni precios ni lo que incluye): saldría dos veces. Tu mensaje es UNA línea corta que " +
+                "lo acompañe y tu pregunta para ayudarlo a decidir (si aún no sabes para qué lo quiere, pregúntaselo).";
+            }
+          } catch (e) {
+            await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 No se pudo decidir el material",
+              `Siguió sin material: ${String((e as any)?.message ?? e).slice(0, 160)}`).catch(() => {});
+          }
+        }
       } else if (ops.length === 1) {
         // Una sola presentación: NO entra al bloque de arriba, así que la IA se
         // quedaba SIN el precio en su contexto y lo INVENTABA (ej. decía S/120 con
