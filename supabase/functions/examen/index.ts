@@ -472,6 +472,8 @@ Deno.serve(async (req) => {
     if (!a.ok) return json({ error: "forbidden" }, 403);
     // `postventa`: prende el soporte post-venta SOLO en esta corrida (y el bot no se apaga al vender) — engine.forzarPostventa.
     forzarPostventa(!!body?.postventa);
+    // `rx`: guarda el prompt ENTERO de cada turno en los eventos (ver qué le llega de verdad a la IA).
+    forzarRxPrompt(!!body?.rx);
     try {
       // `notif`: wa_id PRUEBA-NOTIF-… → sus avisos SÍ entran a la campanita (para ver qué le llega al dueño).
       const contactId = await contactoDePrueba(channelId,
