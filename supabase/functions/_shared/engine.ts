@@ -19418,6 +19418,10 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
   }
   return out;
 }
+// Quita «## Este turno SÍ es para vender» (una línea) del bloque del turno; el resto queda.
+function sinBloqueDesarrolla(b: string): string {
+  return String(b ?? "").replace(/## Este turno SÍ es para vender\n[^\n]*(?:\n\n)?/u, "").trim();
+}
 // 🧠 QUIÉN DECIDE si va el material (6-nov, 3 tandas de examen VC5-VC9). Con la marca en el prompt —en el catálogo, en
 // «Qué eligió» y al FINAL del prompt, detrás de todo— el modelo de venta NUNCA la escribió: a «que opciones tienen?» y a
 // «que trae la premium?» contestó siempre con su propio texto. No es la redacción: es que la marca compite con escribir.
@@ -25967,16 +25971,24 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         // 👀 (6-nov, medido) El saludo ya traía «Dos versiones: Básica S/ 39 · Premium S/ 79» y la IA, en la burbuja de al
         // lado, volvía a listarlas enteras — y otra vez en el turno siguiente: tres veces la misma lista en dos turnos. Si un
         // mensaje NUESTRO de las últimas 2 horas ya trae 2+ de sus precios, la lista ya está a la vista.
-        let _listaReciente = false;
+        let _listaReciente = false, _listaEsteTurno = false;
         if (_esPres && !String(ctx.opcion_elegida ?? "").trim()) {   // (los packs de cantidad no: su empuje está medido aparte)
           try {
-            const { data: _outs } = await db.from("messages").select("content").eq("contact_id", run.contact_id).eq("direction", "out")
+            const { data: _outs } = await db.from("messages").select("content, ts").eq("contact_id", run.contact_id).eq("direction", "out")
               .gt("ts", new Date(Date.now() - 2 * 3600e3).toISOString()).order("ts", { ascending: false }).limit(4);
             const _prs = [...new Set(ops.map((o) => o.precio).filter((x) => x != null).map((x) => String(x)))];
-            _listaReciente = _prs.length >= 2 && ((_outs ?? []) as any[]).some((mm) => {
+            const _traeLista = (mm: any) => {
               const _t = `${mm?.content?.text ?? ""} ${mm?.content?.caption ?? ""}`;
               return _prs.filter((pr) => new RegExp(`(?:S/|\\$)\\s?\\*?${pr.replace(".", "\\.")}(?![\\d.,])`).test(_t)).length >= 2;
-            });
+            };
+            _listaReciente = _prs.length >= 2 && ((_outs ?? []) as any[]).some(_traeLista);
+            // (y si salió DESPUÉS de su último mensaje, la tiene justo encima de lo que vamos a contestar: el saludo de recién)
+            if (_listaReciente) {
+              const { data: _ultIn } = await db.from("messages").select("ts").eq("contact_id", run.contact_id).eq("direction", "in")
+                .order("ts", { ascending: false }).limit(1).maybeSingle();
+              const _tIn = Date.parse(String((_ultIn as any)?.ts ?? ""));
+              _listaEsteTurno = Number.isFinite(_tIn) && ((_outs ?? []) as any[]).some((mm) => Date.parse(String(mm?.ts ?? "")) > _tIn && _traeLista(mm));
+            }
           } catch (_) { /* sin historial → como siempre */ }
         }
         const _estadoEleccion = "## Qué eligió hasta ahora\n" + (ctx.opcion
@@ -26044,17 +26056,31 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
               "NUNCA cierres un pedido ni acuerdes una cantidad que no exista como presentación.") + _recTxt + _matTxt);
         parts.push(_estadoEleccion + _yaMatTxt);
         // 🧠 Decide la IA aparte (decideMaterialTurno) y a la de venta se le dice qué sale junto a su mensaje.
-        if (op === "generar_texto" && !String(ctx.opcion_elegida ?? "").trim() && (_cartaPend || _verPend.length)) {
+        if (op === "generar_texto" && !String(ctx.opcion_elegida ?? "").trim() && !(_cartaPend || _verPend.length) && _listaEsteTurno) {
+          _bloqueTurno = sinBloqueDesarrolla(_bloqueTurno);
+          _bloqueTurno += (_bloqueTurno ? "\n\n" : "") + "## Este turno: las versiones ya salieron arriba\n" +
+            "Justo antes de tu mensaje le llegó el saludo con las versiones y sus precios. ⛔ No le escribas otra vez ni los " +
+            "precios ni las versiones. Si preguntó el precio, dile en pocas palabras que ahí arriba los tiene 👆 y sigue con " +
+            "UNA pregunta para ayudarlo a decidir (para qué lo quiere). Si preguntó otra cosa, contéstala en una línea.";
+        } else if (op === "generar_texto" && !String(ctx.opcion_elegida ?? "").trim() && (_cartaPend || _verPend.length)) {
           try {
             const _dm = await decideMaterialTurno(db, run, ctx, [...(_cartaPend ? [_cartaPend] : []), ..._verPend], _listaReciente);
             if (_dm) {
               (run as any)._matDecidido = _dm.tag;
+              _bloqueTurno = sinBloqueDesarrolla(_bloqueTurno);
               _bloqueTurno += (_bloqueTurno ? "\n\n" : "") + "## Este turno: junto a tu mensaje sale el material del dueño\n" +
                 (_dm.key === "carta"
                   ? "Con tu mensaje el sistema le manda AHORA la carta que armó el dueño: trae TODAS las versiones, lo que incluye cada una y sus precios."
                   : `Con tu mensaje el sistema le manda AHORA la presentación de «${_dm.nombre}» que armó el dueño: trae lo que incluye y por qué vale la pena.`) +
-                " ⛔ No repitas nada de eso (ni precios ni lo que incluye): saldría dos veces. Tu mensaje es UNA línea corta que " +
-                "lo acompañe y tu pregunta para ayudarlo a decidir (si aún no sabes para qué lo quiere, pregúntaselo).";
+                " ⛔ Tu mensaje NO cuenta nada de eso (ni precios, ni lo que incluye, ni para qué sirve): saldría dos veces. Tu " +
+                "mensaje es SOLO tu pregunta para ayudarlo a decidir (si aún no sabes para qué lo quiere, pregúntaselo), en una " +
+                "línea. Si además preguntó otra cosa que eso no responde, contéstala en una línea antes de la pregunta.";
+            } else if (_listaEsteTurno) {
+              _bloqueTurno = sinBloqueDesarrolla(_bloqueTurno);
+              _bloqueTurno += (_bloqueTurno ? "\n\n" : "") + "## Este turno: las versiones ya salieron arriba\n" +
+                "Justo antes de tu mensaje le llegó el saludo con las versiones y sus precios. ⛔ No le escribas otra vez ni los " +
+                "precios ni las versiones. Si preguntó el precio, dile en pocas palabras que ahí arriba los tiene 👆 y sigue con " +
+                "UNA pregunta para ayudarlo a decidir (para qué lo quiere). Si preguntó otra cosa, contéstala en una línea.";
             }
           } catch (e) {
             await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 No se pudo decidir el material",
