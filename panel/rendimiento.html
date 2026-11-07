@@ -39,10 +39,12 @@
   .pillbtn.cargando .ico{animation:girar .9s linear infinite}
   /* (7-nov, Rodrigo: «cambia el diseño de eso») Sobre la franja azul: el ESTADO no parece botón (vidrio translúcido, letras
      blancas y un punto verde de «conectado») y la ACCIÓN sí (blanco sólido, letras azules, sombra suave). Misma altura. */
-  html:not([data-ds="1"]) .nodo-head .okpill{background:rgba(255,255,255,.14)!important;border:1px solid rgba(255,255,255,.38)!important;
-    color:#fff!important;height:30px;padding:0 13px;font-size:12px;font-weight:600;gap:8px;backdrop-filter:blur(6px)}
-  html:not([data-ds="1"]) .nodo-head .okpill .vivo{width:7px;height:7px;border-radius:50%;background:#4ADE80;flex:none;
-    box-shadow:0 0 0 3px rgba(74,222,128,.28)}
+  /* (7-nov, «que combine con la app») El estado usa la pastilla de los botones SECUNDARIOS de la franja (blanco .86, letras
+     azules: shell.css) con el punto verde de «conectado», como el «● Encendido» del menú; Actualizar, la del principal. */
+  html:not([data-ds="1"]) .nodo-head .okpill{background:rgba(255,255,255,.86)!important;border:1px solid transparent!important;
+    color:#0B4FB8!important;height:30px;padding:0 13px;font-size:12px;font-weight:500;gap:8px;cursor:default}
+  html:not([data-ds="1"]) .nodo-head .okpill .vivo{width:7px;height:7px;border-radius:50%;background:#22C079;flex:none;
+    box-shadow:0 0 0 3px rgba(34,192,121,.18)}
   html:not([data-ds="1"]) .nodo-head .pillbtn{height:30px;padding:0 14px;background:#fff!important;color:#0B63E5!important;
     font-size:12px;font-weight:600;border-color:#fff!important;box-shadow:0 2px 8px rgba(0,30,120,.18)}
   html:not([data-ds="1"]) .nodo-head .pillbtn:hover:not(:disabled){background:#EEF4FF!important;color:#0044FE!important}
