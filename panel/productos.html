@@ -4089,7 +4089,7 @@ function paintOpciones(fisico){
         <input class="in odesc" value="${esc(v.descripcion||"")}" placeholder="${fisico?"Ej. Incluye medias y bolso de regalo":"Ej. Incluye las plantillas editables y el bonus"}" style="margin-top:7px;border-color:rgba(168,85,247,.35)"/>
         <label style="margin:11px 0 0;text-transform:none;font-weight:600;color:var(--text)">¿Para quién es? <span style="color:var(--faint);font-weight:400">(con esto la IA recomienda cuál le conviene)</span></label>
         <input class="in opq" value="${esc(v.config?.para_quien||"")}" placeholder="${fisico?"Ej. Para quien lo usa a diario y quiere que le dure":"Ej. Para quien recién empieza y quiere lo esencial"}" style="margin-top:6px;border-color:rgba(168,85,247,.35)"/>
-        <label class="chk" style="margin:10px 0 0;text-transform:none;font-weight:600" title="Si el cliente no cuenta qué necesita, la IA le recomienda esta"><input type="checkbox" class="orec" ${v.config?.recomendada?"checked":""}/> ⭐ La recomiendo <span style="color:var(--faint);font-weight:400">(si el cliente no dice qué necesita, la IA le sugiere esta)</span></label>
+        <label class="chk" style="margin:10px 0 0;text-transform:none;font-weight:600" title="Si el cliente no cuenta qué necesita, la IA le recomienda esta"><input type="checkbox" class="orec" ${v.config?.recomendada?"checked":""}/> <span style="display:inline-flex;color:var(--ia1,#a855f7);font-size:14px">${icon("star")}</span> La recomiendo <span style="color:var(--faint);font-weight:400">(si el cliente no dice qué necesita, la IA le sugiere esta)</span></label>
       </div>
       <div class="opBloque" style="margin-top:12px"></div>`}
       ${fisico ? (i===0 ? `
