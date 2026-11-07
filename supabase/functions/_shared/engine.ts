@@ -19392,7 +19392,7 @@ async function abrirMaterialVersiones(db: SupabaseClient, run: any, ctx: any, re
     result = _ini > 0 && _antesQ.length >= 20 ? `${result.slice(0, _ini).trimEnd()}\n${_mk}\n${result.slice(_ini).trimStart()}`
       : _iq >= 0 ? `${_mk}\n${result}` : `${result.trimEnd()}\n${_mk}`;
   }
-  if (run) { delete run._matDecidido; delete run._matSoloPregunta; }   // (una vez: no se cuela en otro emitIaText del mismo turno)
+  if (run) { delete run._matDecidido; delete run._matSoloPregunta; delete run._matCompara; }   // (una vez: no se cuela en otro emitIaText del mismo turno)
   if (!new RegExp(RE.source).test(result) || !ctx?._product_id) return result;
   const todas = await loadOpciones(db, run, String(ctx._product_id));   // (en caché del run)
   const mat = materialVersiones(ctx, opcionesVisibles(todas, run));
@@ -19474,7 +19474,7 @@ function sinBloqueDesarrolla(b: string): string {
 // Así que la decisión va APARTE, en una llamada corta con respuesta cerrada (la misma IA, sin lista de palabras): «¿esto
 // lo contesta la carta, la presentación de X, o nada?». El motor la manda y a la IA de venta se le dice que va junto a su
 // mensaje, para que no repita lo que ya dice (ver «Si el motor decide algo y se calla, la IA rellena»).
-async function decideMaterialTurno(db: SupabaseClient, run: any, ctx: any, pend: MaterialVer[], listaReciente: boolean): Promise<(MaterialVer & { otra: boolean }) | null> {
+async function decideMaterialTurno(db: SupabaseClient, run: any, ctx: any, pend: MaterialVer[], listaReciente: boolean): Promise<(MaterialVer & { otra: boolean; compara: boolean }) | null> {
   const li = String(ctx?.last_input ?? "").trim();
   if (!pend.length || !li) return null;
   const { data: aiRows } = await db.rpc("get_channel_ai_active", { p_channel_id: run.channel_id, p_provider: null });
@@ -19493,21 +19493,22 @@ async function decideMaterialTurno(db: SupabaseClient, run: any, ctx: any, pend:
     "recomiendes («¿cuál me conviene?», «¿cuál me recomiendas?») o cuenta para qué lo quiere: eso lo contesta el vendedor " +
     "recomendándole UNA, no un material (examen VE3, 6-nov: a «¿cuál me conviene? lo quiero para un hobby» salía la carta).\n" +
     "Elige UNO. Ante la duda, \"nada\". Y en \"otra_pregunta\": true si en ese mismo mensaje pregunta además algo que ese " +
-    "material no contesta (si es de por vida, cómo se paga, si sirve para X…). Responde SOLO en JSON: {\"mandar\": \"...\", \"otra_pregunta\": false}.";
+    "material no contesta (si es de por vida, cómo se paga, si sirve para X…). Y en \"compara\": true si pregunta en qué se " +
+    "diferencian o cuál es mejor entre ellas. Responde SOLO en JSON: {\"mandar\": \"...\", \"otra_pregunta\": false, \"compara\": false}.";
   const raw = await runAI({ db, channelId: run.channel_id, origen: "vender",
     provider: ai.provider as Provider, apiKey: ai.api_key, model: ai.model || undefined, system, maxTokens: 40,
     content: (hist ? `Conversación reciente:\n${hist}\n\n` : "") + `Último mensaje del cliente: «${li.slice(0, 400)}»`,
     jsonSchema: { type: "object", properties: { mandar: { type: "string", enum: [...pend.map((x) => x.tag), "nada"] },
-      otra_pregunta: { type: "boolean" } }, required: ["mandar", "otra_pregunta"], additionalProperties: false } as unknown as Record<string, unknown>,
+      otra_pregunta: { type: "boolean" }, compara: { type: "boolean" } }, required: ["mandar", "otra_pregunta", "compara"], additionalProperties: false } as unknown as Record<string, unknown>,
   });
-  let tag = "", otra = true;
-  try { const _j = JSON.parse((/\{[\s\S]*\}/.exec(String(raw ?? "")) ?? ["{}"])[0]); tag = String(_j?.mandar ?? ""); otra = _j?.otra_pregunta !== false; }
+  let tag = "", otra = true, compara = false;
+  try { const _j = JSON.parse((/\{[\s\S]*\}/.exec(String(raw ?? "")) ?? ["{}"])[0]); tag = String(_j?.mandar ?? ""); otra = _j?.otra_pregunta !== false; compara = _j?.compara === true; }
   catch (e) {
     await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 No se entendió la decisión del material",
       `Salió sin material: «${String(raw ?? "").slice(0, 120)}»`).catch(() => {});
   }
   const _x = pend.find((x) => x.tag === tag);
-  return _x ? { ..._x, otra } as MaterialVer & { otra: boolean } : null;
+  return _x ? { ..._x, otra, compara } as MaterialVer & { otra: boolean; compara: boolean } : null;
 }
 // El EMPUJE automático («llevando 2 te sale más barato») nunca usa las ocultas, aunque ya se hayan mostrado.
 function opcionesParaEmpujar(list: Opcion[], run: Run): Opcion[] {
@@ -26142,14 +26143,20 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             if (_dm) {
               (run as any)._matDecidido = _dm.tag;
               (run as any)._matSoloPregunta = !_dm.otra;   // (no preguntó nada más: de su texto queda solo su pregunta)
+              // (7-nov, Rodrigo: «ok dale») A «¿qué diferencia hay?» la IA decía en una línea para quién es cada una —eso la carta
+              //  no lo dice— y el revisor lo tomaba por repetición: pedía reescribir, la IA lo dejaba igual, y era una llamada perdida.
+              (run as any)._matCompara = _dm.key === "carta" && !!_dm.compara;
               _bloqueTurno = sinBloqueDesarrolla(_bloqueTurno);
               _bloqueTurno += (_bloqueTurno ? "\n\n" : "") + "## Este turno: junto a tu mensaje sale el material del dueño\n" +
                 (_dm.key === "carta"
                   ? "Con tu mensaje el sistema le manda AHORA la carta que armó el dueño: trae TODAS las versiones, lo que incluye cada una y sus precios."
                   : `Con tu mensaje el sistema le manda AHORA la presentación de «${_dm.nombre}» que armó el dueño: trae lo que incluye y por qué vale la pena.`) +
-                " ⛔ Tu mensaje NO cuenta nada de eso (ni precios, ni lo que incluye, ni para qué sirve): saldría dos veces. Tu " +
-                "mensaje es SOLO tu pregunta para ayudarlo a decidir (si aún no sabes para qué lo quiere, pregúntaselo), en una " +
-                "línea. Si además preguntó otra cosa que eso no responde, contéstala en una línea antes de la pregunta.";
+                ((run as any)._matCompara
+                  ? " Como pregunta la diferencia: antes de la carta dile en UNA línea para quién es cada una (eso la carta no lo dice), " +
+                    "sin precios ni la lista de lo que trae (eso ya va en la carta), y después tu pregunta para ayudarlo a decidir."
+                  : " ⛔ Tu mensaje NO cuenta nada de eso (ni precios, ni lo que incluye, ni para qué sirve): saldría dos veces. Tu " +
+                    "mensaje es SOLO tu pregunta para ayudarlo a decidir (si aún no sabes para qué lo quiere, pregúntaselo), en una " +
+                    "línea. Si además preguntó otra cosa que eso no responde, contéstala en una línea antes de la pregunta.");
             } else if (_listaEsteTurno) {
               (run as any)._listaArriba = true;
               _bloqueTurno = sinBloqueDesarrolla(_bloqueTurno);
@@ -28733,8 +28740,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           // repetir no es peligroso como un número de cuenta mal puesto.
           {
             const _decR = String((run as any)._matDecidido ?? "");
-            if ((_decR || (run as any)._listaArriba) && ctx._product_id
-                && sinLoQueYaTiene(txt, await loadOpciones(db, run, String(ctx._product_id))).quito) {
+            const _opsR = ctx._product_id ? await loadOpciones(db, run, String(ctx._product_id)) : [];
+            // (pregunta la diferencia: «la Básica es para hobby, la Premium para trabajar» está bien; los precios no)
+            const _repite = (run as any)._matCompara
+              ? sinLoQueYaTiene(txt, _opsR.map((o) => ({ ...o, nombre: "" }))).quito
+              : sinLoQueYaTiene(txt, _opsR).quito;
+            if ((_decR || (run as any)._listaArriba) && ctx._product_id && _repite) {
               const _queTiene = _decR === TAG_CARTA ? "la carta de versiones que armó el dueño (trae todas, lo que incluye cada una y sus precios)"
                 : _decR ? "la presentación de esa versión que armó el dueño (trae lo que incluye y por qué vale la pena)"
                 : "el saludo con las versiones y sus precios (le acaba de llegar arriba)";
