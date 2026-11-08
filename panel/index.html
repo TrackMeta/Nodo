@@ -31,8 +31,7 @@
      oscuro con brillos morados y al entrar parecía otra app. Mismos colores en los dos temas (todavía no hay usuario). */
   #login{height:100%;display:flex;align-items:center;justify-content:center;padding:24px;position:relative;overflow:hidden;
     background:#F3F6FC;color:#101828;color-scheme:light}
-  #login::before{content:"";position:absolute;left:0;right:0;top:0;height:42%;z-index:0;pointer-events:none;
-    background:linear-gradient(90deg,#0044FE 0%,#01AFFE 100%)}
+  /* (8-nov, Rodrigo: «el diseño de fondo no me gusta para nada») Fondo liso, el mismo del panel; sin el bloque azul */
   #login .logincard{position:relative;z-index:1;background:#fff;border:1px solid #E4E7EC;border-radius:18px;
     padding:32px 30px 26px;width:100%;max-width:400px;box-shadow:0 18px 50px rgba(0,30,120,.16)}
   #login .brand{display:flex;align-items:center;gap:13px;margin-bottom:6px}
@@ -71,8 +70,6 @@
   #login .err:empty{display:none}
   #login .aviso{margin-top:12px;font-size:12.5px;line-height:1.45;color:#067647;background:#ECFDF3;border:1px solid #ABEFC6;border-radius:10px;padding:9px 11px}
   #login .aviso:empty{display:none}
-  #login .pie{margin-top:20px;padding-top:16px;border-top:1px solid #EAECF0;font-size:12.5px;color:#667085;text-align:center;line-height:1.45}
-  #login .pie b{color:#344054;font-weight:600}
   /* La ventana «Recupera tu contraseña» abierta desde el inicio de sesión: clara como él (seguía el tema del navegador) */
   html:has(#login:not(.hidden)) .nodo-modal{background:#fff!important;color:#101828!important;border-color:#E4E7EC!important}
   html:has(#login:not(.hidden)) .nodo-modal h3{color:#101828!important}
@@ -698,7 +695,7 @@
     <button class="btn" id="loginBtn" type="submit">Ingresar</button>
     <div class="err" id="loginErr" role="alert"></div>
     <div class="aviso" id="loginInfo"></div>
-    <div class="pie">¿No tienes cuenta? <b>Pídele a tu equipo un link de invitación.</b></div>
+
   </form>
 </div>
 
