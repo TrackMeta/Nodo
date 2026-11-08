@@ -496,12 +496,19 @@
      manda el bot, así que van a la DERECHA) y apilados justo debajo, como en
      WhatsApp. Antes quedaban sueltos a la izquierda, como si los hubiera
      mandado el cliente. */
-  .btns{align-self:flex-end;width:230px;max-width:70%;display:flex;flex-direction:column;gap:3px;margin:3px 0 4px}
-  .btnchip{font-size:12.5px;padding:7px 12px;border:1px solid var(--brand);border-radius:10px;color:var(--brand);background:transparent;width:100%;text-align:center;cursor:pointer}
-  .btnchip:hover{background:var(--brand-bg)}
-  /* En un chat real son solo un reflejo de lo que vio el cliente, no un control. */
-  .btnchip.ro{opacity:.7;cursor:default}
-  .btnchip.ro:hover{background:transparent}
+  /* (8-nov, Rodrigo: «se ven azules y transparentes») Como en WhatsApp: filas BLANCAS sólidas pegadas debajo del mensaje,
+     borde suave, letras azules en negrita y la flechita de «responder». En un chat real se ven igual de nítidas (antes al
+     70 %, parecían apagadas); solo no reaccionan al mouse. */
+  .btns{align-self:flex-end;width:260px;max-width:72%;display:flex;flex-direction:column;gap:4px;margin:4px 0 6px}
+  .btnchip{display:flex;align-items:center;justify-content:center;gap:7px;font-size:13px;font-weight:600;padding:9px 12px;
+    border:1px solid var(--border);border-radius:10px;color:#0B63E5;background:var(--surface);width:100%;cursor:pointer;
+    box-shadow:0 1px 2px rgba(16,24,40,.08);font-family:inherit;transition:background .15s,border-color .15s}
+  .btnchip svg{width:15px;height:15px;flex:none}
+  .btnchip:hover{background:#EEF4FF;border-color:#B2CCFF}
+  html:not([data-theme="light"]) .btnchip{color:#7CB4FF}
+  html:not([data-theme="light"]) .btnchip:hover{background:rgba(11,99,229,.14);border-color:rgba(124,180,255,.4)}
+  .btnchip.ro{cursor:default}
+  .btnchip.ro:hover{background:var(--surface);border-color:var(--border)}
   .testtag{font-size:11px;background:var(--amber-bg);color:var(--amber);padding:2px 8px;border-radius:20px;margin-left:8px}
 
   /* Panel de contacto (derecha) */
@@ -2538,7 +2545,7 @@ function renderMsg(m, enVivo) {
     const bd = document.createElement("div"); bd.className = "btns";
     m.content.buttons.forEach((b) => {
       const chip = document.createElement("button");
-      chip.className = "btnchip"; chip.textContent = b.title;
+      chip.className = "btnchip"; chip.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>'; chip.appendChild(document.createTextNode(b.title));
       if (state.isTest) chip.onclick = () => sendButton(b.id, b.title);
       else { chip.disabled = true; chip.classList.add("ro"); }
       bd.appendChild(chip);
