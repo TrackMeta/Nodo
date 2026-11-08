@@ -92,6 +92,22 @@ export async function sendButtons(
   });
 }
 
+// 📍 (8-nov, Rodrigo) Texto + el botón «Enviar ubicación» de WhatsApp: el cliente lo toca y comparte su ubicación con un
+// toque (vuelve como un mensaje «location», que el webhook ya convierte en dirección). Solo dentro de las 24 h; solo texto
+// y ese botón (no admite imagen ni otros botones). Devuelve el wamid.
+export async function sendLocationRequest(
+  phoneNumberId: string,
+  accessToken: string,
+  toWaId: string,
+  bodyText: string,
+): Promise<string> {
+  return await postMessage(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp", recipient_type: "individual", to: toWaId,
+    type: "interactive",
+    interactive: { type: "location_request_message", body: { text: (bodyText || "…").slice(0, 1024) }, action: { name: "send_location" } },
+  });
+}
+
 // Envía una plantilla HSM (para escribir fuera de la ventana de 24h).
 // bodyParams: valores de las variables {{1}},{{2}}… del cuerpo.
 export async function sendTemplate(

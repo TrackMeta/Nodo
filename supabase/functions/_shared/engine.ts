@@ -14,7 +14,7 @@ import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate, sheetsBorrarFila, HOJAS } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { clienteDeTurno, despues, vaciarDespues } from "./turno.ts";
-import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendMedia, sendText } from "./meta.ts";
+import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendLocationRequest, sendMedia, sendText } from "./meta.ts";
 import {
   sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
   esSoloDepartamento, capitalizaNombresPropios,
@@ -5923,6 +5923,14 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   if (body) content.text = body;
   if (bubble.media_id) content.media_id = bubble.media_id;
   if (isInteractive) content.buttons = btns;
+  // 📍 (8-nov, Rodrigo: «solo en ese instante, junto con ese mensaje») La petición de datos de entrega trae el renglón que
+  // arma bloquePedirDatos cuando falta la dirección («📌 *Dirección y referencia* (o tu ubicación de WhatsApp 📍)»): a un
+  // cliente de LIMA, sin dirección todavía, ese mensaje sale con el botón «Enviar ubicación» de WhatsApp. No en provincia
+  // (ahí va la sede), no en digital, no con otros botones ni con media (WhatsApp no lo admite), no si pasa de 1024 letras.
+  const pideUbicacion = !isInteractive && !bubble.media_id && !!body && body.length <= 1024
+    && RE_RENGLON_DIRECCION.test(body) && !esDigital(ctx) && String(ctx?.zona_entrega ?? "") === "lima"
+    && !String(ctx?.direccion ?? (run?.vars as any)?.direccion ?? "").trim();
+  if (pideUbicacion) content.pedir_ubicacion = true;
 
   // Nada que enviar: burbuja sin texto, sin botones válidos y sin media. No
   // insertes un mensaje en blanco. Pasaba con "mensajes iniciales" cuyo texto
@@ -5958,7 +5966,17 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   let wamid = ""; let status = "sent"; let error: any = null;
   if (d?.mode === "whatsapp" && d.token && ctx.wa_id && (body || isInteractive)) {
     try {
-      wamid = isInteractive
+      if (pideUbicacion) {
+        // (si Meta rechaza el de ubicación —ventana, cliente en un WhatsApp viejo—, el mismo texto sale normal: el cliente
+        //  nunca se queda sin la petición; queda un evento para saberlo)
+        try { wamid = await sendLocationRequest(d.phoneNumberId, d.token, ctx.wa_id, body); }
+        catch (eU) {
+          delete content.pedir_ubicacion;
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "📍 El botón de ubicación no salió",
+            `Se mandó el mismo texto sin el botón: ${String((eU as any)?.message ?? eU).slice(0, 160)}`).catch(() => {});
+          wamid = await sendText(d.phoneNumberId, d.token, ctx.wa_id, body);
+        }
+      } else wamid = isInteractive
         ? await sendButtons(d.phoneNumberId, d.token, ctx.wa_id, body, btns)
         : await sendText(d.phoneNumberId, d.token, ctx.wa_id, body);
     } catch (e) {
@@ -5983,7 +6001,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   }
   await db.from("messages").insert({
     channel_id: run.channel_id, contact_id: run.contact_id,
-    direction: "out", type: isInteractive ? "interactive" : "text",
+    direction: "out", type: (isInteractive || content.pedir_ubicacion) ? "interactive" : "text",
     content: (_cubreHasta.get(claveSello(run)) ? { ...content, cubre_hasta: _cubreHasta.get(claveSello(run)) } : content),
     status, wamid: wamid || null, error, sent_by: "bot",
     ventana: await ventanaDeCobro(db, run.contact_id),
@@ -6094,6 +6112,8 @@ function resumenParaConfirmar(ctx: any, nombre: string): string {
   L.push("", "¿Lo confirmo? Si va a nombre de otra persona, escríbeme su nombre.");
   return L.join("\n");
 }
+// 📍 El renglón de la dirección que arma bloquePedirDatos: si está en un mensaje, ese mensaje es la petición de la dirección.
+const RE_RENGLON_DIRECCION = /📌 \*Direcci[oó]n y referencia\* \(o tu ubicaci[oó]n de WhatsApp 📍\)/u;
 function bloquePedirDatos(faltan: unknown, perfil = "", ctx: any = null): string {
   const _fs = (Array.isArray(faltan) ? faltan : []) as any[];
   // 👤 Con el nombre del perfil: el nombre no se pide en la lista; si es lo ÚNICO que falta, sale el resumen.
