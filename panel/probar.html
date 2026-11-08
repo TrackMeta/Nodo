@@ -25,13 +25,23 @@
   .av .ico,.bigav .ico{width:22px;height:22px}
   .segbtn .ico{width:14px;height:14px}
   .actline .ai .ico{width:13px;height:13px}
-  .nodo-page{height:100%}
-
-  #app{height:100%;display:flex;min-height:0}
+  /* (8-nov, Rodrigo: «que se parezca a las demás secciones») La franja azul de siempre, a todo lo ancho, dentro de su
+     .nodo-wrap (así el título cae donde en Embudo o Rendimiento); debajo, el chat y la ficha llenan lo que queda. */
+  .nodo-page{height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  #probarHead{flex:none;padding-bottom:0}
+  #probarHead .nodo-head{margin-bottom:0!important}
+  #probarHead .selwrap{display:inline-flex;align-items:center;gap:8px}
+  #probarHead .sel-lb{font-size:12.5px;font-weight:600;color:rgba(255,255,255,.92)}
+  #app{flex:1;display:flex;min-height:0}
+  /* Botones de la cabecera del chat: el botón de siempre del panel (.nodo-btn), un poco más bajo */
+  .hd .nodo-btn{height:32px;padding:0 12px;font-size:12.5px;margin-left:8px}
+  .hd .nodo-btn svg{width:15px;height:15px}
+  .hd .nodo-btn.active{background:var(--brand);border-color:var(--brand);color:#fff}
+  .hd .estado-bot{margin-left:auto}
+  .nodo-btn .vivo{width:8px;height:8px;border-radius:50%;background:#22C079;flex:none;box-shadow:0 0 0 3px rgba(34,192,121,.2)}
+  .nodo-btn .vivo.off{background:#F79009;box-shadow:0 0 0 3px rgba(247,144,9,.2)}
   /* Columna principal (chat) */
   .chat{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
-  .topbar{display:flex;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
-  .topbar .ttl{font-size:15px;font-weight:700;margin-right:auto;letter-spacing:-.2px}
   /* El único select del panel que se había quedado sin font-family: heredaba la
      fuente del SISTEMA (Segoe UI en Windows) mientras todo lo de al lado iba en Inter,
      y se notaba justo al costado del botón. De paso se le quita la flecha nativa, que
@@ -49,8 +59,6 @@
   .sel:hover{border-color:var(--brand)}
   .sel:focus-visible{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg)}
   .sel option{font-family:var(--font);background:var(--surface);color:var(--text)}
-  .testbtn{display:inline-flex;align-items:center;gap:7px;background:var(--brand-bg);color:var(--brand);border:1px solid var(--border);border-radius:10px;height:38px;padding:0 14px;font-size:13px;font-weight:600;white-space:nowrap}
-  .testbtn:hover{border-color:var(--brand)}
 
   .chat .hd{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
   .av{width:40px;height:40px;flex:none;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:16px}
@@ -94,7 +102,11 @@
   .btns{align-self:flex-end;width:230px;max-width:70%;display:flex;flex-direction:column;gap:3px;margin:3px 0 4px}
   .btnchip{font-size:12.5px;padding:7px 12px;border:1px solid var(--brand);border-radius:10px;color:var(--brand);background:transparent;width:100%;text-align:center;cursor:pointer}
   .btnchip:hover{background:var(--brand-bg)}
-  .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);flex-direction:column;gap:8px;text-align:center;padding:20px}
+  .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);flex-direction:column;gap:6px;text-align:center;padding:20px}
+  .empty .emptyIc{width:52px;height:52px;border-radius:14px;border:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:center;color:var(--text)!important;margin-bottom:6px}
+  .empty .emptyIc .ico{width:24px!important;height:24px!important}
+  .empty .et{font-size:16px;font-weight:700;color:var(--text)}
+  .empty .ed{font-size:13px;color:var(--muted);max-width:380px;line-height:1.5}
 
   /* Barra Cliente/Bot */
   .testbar{display:flex;align-items:center;gap:8px;padding:8px 16px;border-top:1px solid var(--border);background:var(--surface)}
@@ -238,18 +250,24 @@
 </head>
 <body>
 <div class="nodo-page">
+  <div class="nodo-wrap" id="probarHead">
+    <div class="nodo-head">
+      <div class="grow">
+        <h1 class="nodo-title">Probar flujos</h1><p class="nodo-lead">Habla con tu bot como si fueras un cliente. No le llega a nadie.</p>
+      </div>
+      <div class="nodo-actions">
+        <span class="selwrap"><span class="sel-lb">Flujo</span><select class="sel" id="flowSel"><option value="">Auto (por disparador)</option></select><svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+        <button class="nodo-btn primary" id="startBtn">Iniciar prueba</button>
+      </div>
+    </div>
+  </div>
   <div id="app">
     <div class="chat">
-      <div class="topbar">
-        <span class="ttl" id="pageTtl">Probar flujos</span>
-        <span class="selwrap"><select class="sel" id="flowSel"><option value="">Auto (por disparador)</option></select><svg class="cv" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
-        <button class="testbtn" id="startBtn">Iniciar / Reiniciar</button>
-      </div>
 
       <div id="chatEmpty" class="empty">
-        <div class="emptyIc" style="color:var(--faint)"></div>
-        <div>Pulsa “Iniciar / Reiniciar” para empezar una prueba</div>
-        <div style="font-size:12px;color:var(--faint);max-width:340px">Escribe como el cliente para disparar tus flujos, o como el bot para ensayar. Nada llega a un número real.</div>
+        <div class="emptyIc"></div>
+        <div class="et">Empieza una prueba</div>
+        <div class="ed">Toca «Iniciar prueba» arriba y escríbele a tu bot como lo haría un cliente, o como el bot para ensayar. Nada llega a un número real.</div>
       </div>
 
       <div id="chatView" class="hidden" style="flex:1;display:flex;flex-direction:column;min-height:0">
@@ -259,9 +277,9 @@
             <div class="nm" id="chName">Prueba (webchat)<span class="testtag">modo prueba</span></div>
             <div class="ph" id="chPhone">Escribes como el cliente</div>
           </div>
-          <span class="pill on" id="chBot" title="Pausar / activar el bot">● Bot activo</span>
-          <button class="hbtn" id="actToggle" title="Ver / ocultar la actividad del motor">Actividad</button>
-          <button class="hbtn" id="exportBtn" title="Exportar mensajes">Exportar</button>
+          <button class="nodo-btn estado-bot" id="chBot" title="Pausar / activar el bot"><span class="vivo"></span>Bot activo</button>
+          <button class="nodo-btn" id="actToggle" title="Ver / ocultar la actividad del motor">Actividad</button>
+          <button class="nodo-btn" id="exportBtn" title="Exportar mensajes">Exportar</button>
         </div>
         <div class="thread" id="thread"></div>
         <div class="testbar" id="testBar">
@@ -369,8 +387,7 @@ async function boot(){
   shell.onLeave?.(()=>{ clearTimeout(st.rtRetry); alDiaTimers.forEach(clearTimeout); window.__probarAlDia=null; if(st.rt){ const v=st.rt; st.rt=null; supa.removeChannel(v); } });
   st.channelId=shell.channelId;
   // Iconos del sistema (reemplazan emojis de interfaz).
-  $("pageTtl").innerHTML=icon("probar")+" Probar flujos";
-  $("startBtn").innerHTML=icon("refresh")+" Iniciar / Reiniciar";
+  botonInicio();
   $("actToggle").innerHTML=icon("activity")+" Actividad";
   $("exportBtn").innerHTML=icon("download")+" Exportar";
   $("chAv").innerHTML=icon("probar");
@@ -406,7 +423,9 @@ $("msgInput").addEventListener("input", autoGrow);
   await reloadAll();
   subscribe();
 }
-function reset(){ $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); }
+function reset(){ $("chatView").classList.add("hidden"); $("chatEmpty").classList.remove("hidden"); $("cpanel").classList.add("hidden"); botonInicio(); }
+// «Iniciar prueba» antes de la primera; «Reiniciar prueba» con una en curso (el mismo botón).
+function botonInicio(){ const enCurso=!$("chatView").classList.contains("hidden"); $("startBtn").innerHTML=icon(enCurso?"refresh":"play")+(enCurso?" Reiniciar prueba":" Iniciar prueba"); }
 async function reloadAll(){ await Promise.all([loadFlows(), loadQuickReplies(), loadInboxFlows()]); await loadExisting(); }
 
 async function loadFlows(){
@@ -427,7 +446,7 @@ async function loadExisting(){
 }
 async function openTest(contactId){
   st.contactId=contactId;
-  $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden");
+  $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden"); botonInicio();
   await Promise.all([ loadThread(), loadContactPanel({ id:contactId, wa_id:"webchat-test", nombre:st.contactName }) ]);
 }
 async function startTest(){
@@ -437,7 +456,7 @@ async function startTest(){
   if(!out.contact_id){ toast(out.detalle||out.error||"No se pudo iniciar",true); return; }
   st.contactId=out.contact_id;
   if(flowId){ const r=await callFn("webchat",{ channel_id:st.channelId, flow_id:flowId }); const o=await r.json().catch(()=>({})); if(!r.ok) toast(o.detalle||o.error||"No se pudo iniciar el flujo",true); }
-  $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden");
+  $("chatEmpty").classList.add("hidden"); $("chatView").classList.remove("hidden"); botonInicio();
   await loadThread();
   await loadContactPanel({ id:st.contactId, wa_id:"webchat-test", nombre:st.contactName });
   toast(flowId?"Flujo iniciado — responde como el cliente":"Prueba reiniciada");
@@ -946,7 +965,7 @@ function renderContactPanel(){
 }
 async function logEvent(contactId,tipo,titulo,detalle){ try{ await supa.from("contact_events").insert({ channel_id:st.channelId, contact_id:contactId, tipo, titulo, detalle:detalle||null }); }catch(_){} }
 // ── Acciones ──
-function setBotPill(on){ const p=$("chBot"); p.className="pill "+(on?"on":"off"); p.textContent=(on?"● Bot activo":"● Bot en pausa"); }
+function setBotPill(on){ const p=$("chBot"); p.innerHTML=`<span class="vivo${on?"":" off"}"></span>${on?"Bot activo":"Bot en pausa"}`; }
 async function toggleBot(){
   const on=panelData.contact ? panelData.contact.bot_activo!==false : true;
   await supa.from("contacts").update({ bot_activo:!on }).eq("id",st.contactId);
