@@ -73,6 +73,13 @@
   #login .aviso:empty{display:none}
   #login .pie{margin-top:20px;padding-top:16px;border-top:1px solid #EAECF0;font-size:12.5px;color:#667085;text-align:center;line-height:1.45}
   #login .pie b{color:#344054;font-weight:600}
+  /* La ventana «Recupera tu contraseña» abierta desde el inicio de sesión: clara como él (seguía el tema del navegador) */
+  html:has(#login:not(.hidden)) .nodo-modal{background:#fff!important;color:#101828!important;border-color:#E4E7EC!important}
+  html:has(#login:not(.hidden)) .nodo-modal h3{color:#101828!important}
+  html:has(#login:not(.hidden)) .nodo-modal p{color:#667085!important}
+  html:has(#login:not(.hidden)) .nodo-modal input{background:#fff!important;color:#101828!important;border-color:#D0D5DD!important}
+  html:has(#login:not(.hidden)) .nodo-modal .nb-btn:not(.primary){background:#fff!important;color:#344054!important;border-color:#D0D5DD!important}
+  html:has(#login:not(.hidden)) .nodo-modal .nb-btn.primary{background:#0B63E5!important;border-color:#0B63E5!important;color:#fff!important}
 
   /* ── App shell ── */
   #app{height:100%;display:flex;position:relative}
