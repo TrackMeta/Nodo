@@ -29,19 +29,50 @@
 
   /* ── Login ── (8-nov, Rodrigo: «sí, todas») Claro y con el azul de Nodo arriba, como la franja del panel: antes era
      oscuro con brillos morados y al entrar parecía otra app. Mismos colores en los dos temas (todavía no hay usuario). */
-  #login{height:100%;display:flex;align-items:center;justify-content:center;padding:24px;position:relative;overflow:hidden;
-    background:#F3F6FC;color:#101828;color-scheme:light}
-  /* (8-nov, Rodrigo: «el diseño de fondo no me gusta para nada») Fondo liso, el mismo del panel; sin el bloque azul */
-  #login .logincard{position:relative;z-index:1;background:#fff;border:1px solid #E4E7EC;border-radius:18px;
-    padding:32px 30px 26px;width:100%;max-width:400px;box-shadow:0 18px 50px rgba(0,30,120,.16)}
-  #login .brand{display:flex;align-items:center;gap:13px;margin-bottom:6px}
+  /* (8-nov, Rodrigo: «me gusta el dividido pero quiero algo con mejor diseño») Izquierda: el azul de Nodo (el de la franja)
+     con el logo, qué hace Nodo, tres beneficios y un chat de ejemplo. Derecha: blanco con el formulario, sin tarjeta.
+     En el celular la parte azul se esconde y queda solo el formulario (con su logo). */
+  #login{height:100%;display:flex;background:#fff;color:#101828;color-scheme:light}
+  #login .lgside{flex:1.05;position:relative;overflow:hidden;color:#fff;display:flex;flex-direction:column;justify-content:space-between;
+    padding:44px 52px;background:linear-gradient(140deg,#0044FE 0%,#0B6BF5 45%,#01AFFE 100%)}
+  #login .lgside::before,#login .lgside::after{content:"";position:absolute;border-radius:50%;pointer-events:none;border:1px solid rgba(255,255,255,.16)}
+  #login .lgside::before{width:520px;height:520px;right:-180px;top:-160px}
+  #login .lgside::after{width:380px;height:380px;left:-150px;bottom:-170px;background:rgba(255,255,255,.05)}
+  #login .lglogo{display:flex;align-items:center;gap:12px;position:relative;z-index:1}
+  #login .lglogo .lb{width:42px;height:42px;border-radius:12px;background:#fff;display:grid;place-items:center;box-shadow:0 6px 18px rgba(0,20,90,.25)}
+  #login .lglogo .lb img{width:28px;height:28px;border-radius:7px}
+  #login .lglogo b{font-size:20px;font-weight:750;letter-spacing:-.02em}
+  #login .lgcopy{position:relative;z-index:1;max-width:440px}
+  #login .lgcopy h2{font-size:34px;line-height:1.12;font-weight:750;letter-spacing:-.03em;margin:0 0 12px}
+  #login .lgcopy p{font-size:15px;line-height:1.55;margin:0 0 24px;color:rgba(255,255,255,.88)}
+  #login .lgben{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:12px}
+  #login .lgben li{display:flex;align-items:center;gap:11px;font-size:14px;font-weight:500}
+  #login .lgben .ic{width:30px;height:30px;border-radius:9px;background:rgba(255,255,255,.16);display:grid;place-items:center;flex:none}
+  #login .lgben .ic svg{width:16px;height:16px}
+  #login .lgchat{position:relative;z-index:1;max-width:340px;display:flex;flex-direction:column;gap:7px;margin-top:30px}
+  #login .lgchat .bb{font-size:13px;line-height:1.4;padding:9px 12px;border-radius:14px;max-width:85%;box-shadow:0 6px 16px rgba(0,20,90,.18)}
+  #login .lgchat .cli{align-self:flex-start;background:#fff;color:#101828;border-bottom-left-radius:4px}
+  #login .lgchat .bot{align-self:flex-end;background:#DCF8C6;color:#0B3B1D;border-bottom-right-radius:4px}
+  #login .lgchat .hr{display:block;font-size:10.5px;opacity:.55;text-align:right;margin-top:2px}
+  #login .lgpie{position:relative;z-index:1;font-size:12px;color:rgba(255,255,255,.7)}
+  #login .lgmain{flex:1;display:flex;align-items:center;justify-content:center;padding:32px 24px;background:#fff}
+  #login .logincard{width:100%;max-width:380px}
+  #login .brand{display:none}
+  @media(max-width:900px){
+    #login .lgside{display:none}
+    #login .lgmain{background:#F7F9FC}
+    #login .logincard{background:#fff;border:1px solid #E4E7EC;border-radius:18px;padding:30px 26px;box-shadow:0 12px 36px rgba(0,30,120,.10)}
+    #login .brand{display:flex}
+  }
+  @media(max-width:900px){ #login .brand{align-items:center;gap:13px;margin-bottom:6px} }
   #login .brand .logobadge{width:50px;height:50px;border-radius:14px;flex:none;display:grid;place-items:center;background:#EEF4FF;border:1px solid #D1E0FF}
   #login .brand .logobadge img{width:32px;height:32px;border-radius:8px}
   #login .brand h1{font-size:21px;font-weight:750;margin:0;letter-spacing:-.02em;color:#101828}
   #login .brand span{color:#667085;font-size:12.5px}
-  #login .loginhead{margin:22px 0 14px}
-  #login .loginhead h2{font-size:18px;font-weight:700;margin:0 0 5px;letter-spacing:-.02em;color:#101828}
-  #login .loginhead p{color:#667085;font-size:13px;margin:0;line-height:1.5}
+  #login .loginhead{margin:0 0 18px}
+  @media(max-width:900px){ #login .loginhead{margin-top:20px} }
+  #login .loginhead h2{font-size:26px;font-weight:750;margin:0 0 6px;letter-spacing:-.03em;color:#101828}
+  #login .loginhead p{color:#667085;font-size:14px;margin:0;line-height:1.5}
   #login label{display:block;font-size:12.5px;font-weight:600;color:#344054;margin:16px 0 7px}
   #login .lblrow{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
   #login .lblrow label{margin-bottom:7px}
@@ -672,6 +703,24 @@
 
 <!-- ── LOGIN ── -->
 <div id="login" class="hidden">
+  <aside class="lgside" aria-hidden="true">
+    <div class="lglogo"><span class="lb"><img src="../assets/logo-128.png" alt="" /></span><b>Nodo</b></div>
+    <div class="lgcopy">
+      <h2>Tu WhatsApp vende mientras tú descansas</h2>
+      <p>Nodo contesta, cobra y entrega por ti con IA, a cualquier hora.</p>
+      <ul class="lgben">
+        <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="10"/></svg></span>Responde en segundos, de día y de noche</li>
+        <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>Valida los pagos de Yape y transferencias</li>
+        <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></span>Ventas, pedidos y anuncios en un solo panel</li>
+      </ul>
+      <div class="lgchat">
+        <div class="bb cli">Hola, ¿cuánto cuesta el curso?<span class="hr">9:41 p. m.</span></div>
+        <div class="bb bot">¡Hola! Está a S/ 79 y te llega al instante por aquí. ¿Para qué lo quieres usar?<span class="hr">9:41 p. m.</span></div>
+      </div>
+    </div>
+    <div class="lgpie">Nodo · Tu WhatsApp con IA</div>
+  </aside>
+  <main class="lgmain">
   <form class="logincard" id="loginForm">
     <div class="brand">
       <div class="logobadge"><img src="../assets/logo-128.png" alt="Nodo" /></div>
@@ -695,8 +744,8 @@
     <button class="btn" id="loginBtn" type="submit">Ingresar</button>
     <div class="err" id="loginErr" role="alert"></div>
     <div class="aviso" id="loginInfo"></div>
-
   </form>
+  </main>
 </div>
 
 <!-- ── APP ── -->
