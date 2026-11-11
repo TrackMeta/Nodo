@@ -237,7 +237,9 @@
     </div>
 
     <!-- (11-nov, rediseño de Rodrigo) El embudo en una columna a la izquierda; a la derecha «De dónde salen las ventas»,
-         «Por anuncio», el «Resumen del embudo» (en vez de las dos tarjetas grandes de arriba) y «Dónde están ahora». -->
+         «Por anuncio», el «Resumen del embudo» y «Dónde están ahora». Las dos tarjetas grandes siguen arriba. -->
+    <div class="mets" id="metPanel"></div>
+
     <div class="emb-grid">
     <div class="panel emb-fun">
       <h3 class="eh"><span class="eh-ic" data-ic="filtro"></span>Cómo avanzan</h3>
@@ -259,7 +261,7 @@
 
     <div class="panel emb-res">
       <h3 class="eh"><span class="eh-ic" data-ic="barras"></span>Resumen del embudo</h3>
-      <div id="metPanel"></div>
+      <div id="resumen"></div>
     </div>
 
     <div class="panel emb-dist" id="distPanel">
@@ -517,7 +519,9 @@ function render(){
   fillVista();
   const cs=filtrados();
   const F=funnelDe(cs, ventasPeriodo(c=>pasaFiltros(c)));
-  renderMetricas(F, comparar());
+  const _cmp=comparar();
+  renderMetricas(F, _cmp);
+  renderResumen(F, _cmp);
   renderNeck(F);
   renderFunnel(F);
   renderPlata(cs);
@@ -554,6 +558,39 @@ function comparar(){
 
 function renderMetricas(F, cmp){
   const el=$("metPanel");
+  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="met low" style="flex:1 1 100%"><div class="num">—</div><div class="mtxt"><div class="mlbl">${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</div><div class="mdesc">${filt?"Prueba con otro anuncio, producto o fecha.":"Cuando lleguen clientes por WhatsApp verás aquí tu efectividad y tu conversión."}</div></div></div>`; return; }
+  const ef=F.efectividad, cv=F.conversion;
+  // En subvista por ZONA (Lima/Provincia) la base NO son "todos": los leads que aún no
+  // dijeron su ciudad quedan fuera, y como TODOS los compradores tienen zona, la
+  // conversión por zona sale inflada y NO es comparable con la de Total. El rótulo lo
+  // dice para no engañar (la matemática de zona es correcta para "de los que ya sé que
+  // son de X, cuántos compran", solo que no es la misma base que Total).
+  const zonaSub = (st.tipo==="fisico" && st.zona && st.zona!=="total");
+  const zonaNom = st.zona==="lima" ? "Lima" : "provincia";
+  const eCls = "mia"; // violeta fijo (tema IA), por elección de Rodrigo — ya no semáforo
+  // Primero la Conversión total y después la Efectividad de cierre — igual que el Dashboard (Rodrigo, 9-oct).
+  let cmpHtml="";
+  if(cmp && cmp.cv!=null && cv!=null){
+    const d=cv-cmp.cv;
+    cmpHtml=`<div class="mcmp">${d===0?"igual":`<span class="${d>0?"up":"down"}">${d>0?"▲":"▼"} ${Math.abs(d)} pts</span>`} vs ${esc(cmp.lbl)} (${cmp.cv}%)</div>`;
+  }
+  el.innerHTML=`
+    <div class="met ${F.total?"mconv":"low"}"><div class="num">${cv==null?"—":cv+"%"}</div><div class="mtxt">
+      <div class="mlbl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"}</div>
+      <div class="mbrk" title="Ventas hechas en estas fechas ÷ personas que te escribieron por primera vez en estas fechas. Es la misma cuenta que Inicio, Meta y Trakker: incluye la venta de alguien que te escribió antes.">${F.ventas} ${F.ventas===1?"venta":"ventas"} ÷ ${F.total} ${F.total===1?"chat nuevo":"chats nuevos"}${zonaSub?` de ${zonaNom}`:""}</div>
+      ${cmpHtml}
+    </div></div>
+    <div class="met ${eCls}"><div class="num">${ef==null?"—":ef+"%"}</div><div class="mtxt">
+      <div class="mlbl"><span class="miabadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>Efectividad de cierre</div>
+      <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes + F.perdidoVenta} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}</div>
+    </div></div>`;
+  igualarAlto(el);
+}
+
+// (11-nov, rediseño de Rodrigo) «Resumen del embudo» a la derecha. Las dos tarjetas grandes de arriba se quedan
+// (Rodrigo: «no quites las tarjetas»); acá van además chats, ventas y ticket, sin repetir la comparación.
+function renderResumen(F, cmp){
+  const el=$("resumen"); if(!el) return;
   if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="empty" style="padding:18px 0"><h4>${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</h4>${filt?"Prueba con otro anuncio, producto o fecha.":"Cuando lleguen clientes por WhatsApp verás aquí tu conversión y tu efectividad."}</div>`; return; }
   const ef=F.efectividad, cv=F.conversion;
   // En subvista por ZONA (Lima/Provincia) la base NO son "todos": los leads que aún no
@@ -568,15 +605,14 @@ function renderMetricas(F, cmp){
     const d=cv-cmp.cv;
     cmpHtml=`<div class="mcmp">${d===0?"igual":`<span class="${d>0?"up":"down"}">${d>0?"▲":"▼"} ${Math.abs(d)} pts</span>`} vs ${esc(cmp.lbl)} (${cmp.cv}%)</div>`;
   }
-  // (11-nov, rediseño de Rodrigo) «Resumen del embudo»: una lista con ícono en vez de las dos tarjetas grandes. Los mismos
-  // números (conversión total y efectividad de cierre, con su explicación al pasar el mouse) más chats, ventas y ticket.
+  // Lista con ícono: chats, ventas, conversión total, efectividad de cierre (con su explicación al pasar el mouse) y ticket.
   // (el ticket con céntimos, como en Inicio: «S/ 6.50», no «S/ 7»)
   const ticket = F.ventas>0 && F.montoVentas!=null ? (CUR_SYM[CUR]||CUR)+" "+(F.montoVentas/F.ventas).toFixed(2) : "—";
   const fila=(ic,cls,l,v,tip="",extra="")=>`<div class="rs-row"${tip?` title="${esc(tip)}"`:""}><span class="rs-ic ${cls}">${IC[ic]}</span><span class="rs-l">${l}${extra}</span><b>${v}</b></div>`;
   el.innerHTML=
     fila("chat","az","Chats nuevos", nf.format(F.total), "Personas que te escribieron por primera vez en estas fechas"+(zonaSub?` (de ${zonaNom})`:""))+
     fila("carro","az","Ventas", nf.format(F.ventas), "Ventas hechas en estas fechas (también de quien te escribió antes)")+
-    fila("pct","az", zonaSub?`Conversión de ${zonaNom}`:"Conversión total", cv==null?"—":cv+"%", `${F.ventas} ${F.ventas===1?"venta":"ventas"} ÷ ${F.total} ${F.total===1?"chat nuevo":"chats nuevos"}. La misma cuenta que Inicio, Meta y Trakker.`, cmpHtml)+
+    fila("pct","az", zonaSub?`Conversión de ${zonaNom}`:"Conversión total", cv==null?"—":cv+"%", `${F.ventas} ${F.ventas===1?"venta":"ventas"} ÷ ${F.total} ${F.total===1?"chat nuevo":"chats nuevos"}. La misma cuenta que Inicio, Meta y Trakker.`)+
     fila("mano","vi","Efectividad de cierre", ef==null?"—":ef+"%", `${F.niveles.compraron} cerraron de ${F.niveles.interes + F.perdidoVenta} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}. No cuenta a los curiosos que solo saludan.`)+
     fila("ticket","az","Ticket promedio", ticket, "Lo que paga en promedio cada venta de estas fechas");
 }
