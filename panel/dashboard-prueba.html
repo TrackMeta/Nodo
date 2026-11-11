@@ -234,8 +234,10 @@
   html:not([data-ds="1"]) .nodo-head.nd-head{padding-bottom:0;margin-bottom:18px}
   html:not([data-ds="1"]) .nodo-head.nd-head::before{bottom:64px}
   .nd-head .nodo-lead{margin:4px 0 0;font-size:13.5px;color:rgba(255,255,255,.9)}
-  .nd-kpis{flex-basis:100%;display:grid;grid-template-columns:1.45fr 1fr 1fr 1fr;gap:14px;margin:22px 0 0}
-  @media(max-width:980px){.nd-kpis{grid-template-columns:repeat(2,minmax(0,1fr))} .nd-kpi.gan{grid-column:1/-1}}
+  /* min-height: mientras cargan, la franja (que se corta 64 px antes del final) no se encoge hasta tapar el subtítulo */
+  .nd-kpis{flex-basis:100%;display:grid;grid-template-columns:1.45fr 1fr 1fr 1fr;gap:14px;margin:22px 0 0;min-height:106px}
+  @media(max-width:980px){.nd-kpis{grid-template-columns:repeat(3,minmax(0,1fr))} .nd-kpi.gan{grid-column:1/-1}}
+  @media(max-width:620px){.nd-kpis{grid-template-columns:1fr;gap:10px} .nd-kpi:not(.gan){padding:12px 16px} .nd-kpi:not(.gan) .n{font-size:26px}}
   .nd-kpi{display:flex;flex-direction:column;gap:3px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;min-width:0;
     box-shadow:0 10px 26px -14px rgba(16,40,120,.35)}
   .nd-kpi .h{display:flex;align-items:center;gap:10px;margin-bottom:6px}
