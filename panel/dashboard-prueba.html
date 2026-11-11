@@ -230,11 +230,20 @@
   /* ═══ Dashboard nuevo (Diseño 2, 10-oct) ═══ */
   /* ═══ (11-nov) Rediseño de Inicio que mandó Rodrigo: 4 tarjetas con ícono montadas sobre la franja azul (la ganancia
      neta azul y más ancha), cuadros con ícono, Gastos extra en franja con su total ═══ */
-  /* La franja azul llega solo hasta la mitad de las tarjetas: el ::before (shell.css) se corta abajo */
-  html:not([data-ds="1"]) .nodo-head.nd-head{padding-bottom:0;margin-bottom:18px}
-  html:not([data-ds="1"]) .nodo-head.nd-head::before{bottom:64px}
+  /* (11-nov, Rodrigo: «no una franja fija, un degradado muy bonito») La cabecera es un degradado azul con luces suaves que
+     se funde con la página detrás de las tarjetas, en vez de cortarse en seco. El ::before es el de shell.css (ancho y
+     posición), acá cambia el fondo y se le pone una máscara que lo desvanece hacia abajo. */
+  html:not([data-ds="1"]) .nodo-head.nd-head{padding-bottom:0;margin-bottom:22px}
+  html:not([data-ds="1"]) .nodo-head.nd-head::before{bottom:-40px;
+    background:
+      radial-gradient(38% 70% at 78% 8%,rgba(255,255,255,.26),transparent 70%),
+      radial-gradient(30% 60% at 52% 40%,rgba(120,210,255,.30),transparent 70%),
+      radial-gradient(45% 90% at 8% 0%,rgba(0,30,190,.55),transparent 70%),
+      linear-gradient(100deg,#0036E8 0%,#0B5FF0 32%,#1690FF 62%,#4DC2FF 100%);
+    -webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 46%,rgba(0,0,0,.6) 66%,rgba(0,0,0,.18) 84%,transparent 100%);
+    mask-image:linear-gradient(to bottom,#000 0%,#000 46%,rgba(0,0,0,.6) 66%,rgba(0,0,0,.18) 84%,transparent 100%)}
   .nd-head .nodo-lead{margin:4px 0 0;font-size:13.5px;color:rgba(255,255,255,.9)}
-  /* min-height: mientras cargan, la franja (que se corta 64 px antes del final) no se encoge hasta tapar el subtítulo */
+  /* min-height: mientras cargan, la cabecera no se encoge (el degradado se desvanece abajo y dejaría el subtítulo blanco sobre claro) */
   .nd-kpis{flex-basis:100%;display:grid;grid-template-columns:1.45fr 1fr 1fr 1fr;gap:14px;margin:22px 0 0;min-height:106px}
   @media(max-width:980px){.nd-kpis{grid-template-columns:repeat(3,minmax(0,1fr))} .nd-kpi.gan{grid-column:1/-1}}
   @media(max-width:620px){.nd-kpis{grid-template-columns:1fr;gap:10px} .nd-kpi:not(.gan){padding:12px 16px} .nd-kpi:not(.gan) .n{font-size:26px}}
@@ -249,6 +258,19 @@
   /* La ganancia neta: tarjeta azul, número grande y blanco */
   .nd-kpi.gan{background:radial-gradient(120% 140% at 100% 100%,rgba(1,175,254,.45),transparent 60%),linear-gradient(135deg,#0B63E5,#0044FE);border-color:rgba(255,255,255,.35);
     box-shadow:0 14px 30px -12px rgba(0,68,254,.55);color:#fff;justify-content:center}
+  /* (11-nov, Rodrigo: «la tarjeta de ganancia tiene un diseño y animación») Ondas de luz abajo a la derecha que se mueven
+     despacio, un brillo que la cruza cada tanto y el monto que sube contando al cargar (renderND). */
+  .nd-kpi.gan{position:relative;overflow:hidden;isolation:isolate}
+  .nd-kpi.gan > *{position:relative;z-index:2}
+  .nd-kpi.gan::before{content:"";position:absolute;left:-10%;right:-60%;bottom:-6px;height:78%;z-index:0;pointer-events:none;
+    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 120' preserveAspectRatio='none'%3E%3Cpath d='M0 70 C120 20 220 20 320 60 S520 110 600 50 V120 H0Z' fill='%23ffffff' fill-opacity='.10'/%3E%3Cpath d='M0 95 C140 45 260 60 360 85 S520 100 600 70 V120 H0Z' fill='%23ffffff' fill-opacity='.12'/%3E%3Cpath d='M0 70 C120 20 220 20 320 60 S520 110 600 50' fill='none' stroke='%23ffffff' stroke-opacity='.35' stroke-width='1.5'/%3E%3C/svg%3E") left bottom/100% 100% no-repeat;
+    animation:ganOla 10s ease-in-out infinite alternate}
+  .nd-kpi.gan::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+    background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.22) 48%,transparent 60%);transform:translateX(-120%);
+    animation:ganBrillo 7s ease-in-out 1.2s infinite}
+  @keyframes ganOla{from{transform:translateX(0)}to{transform:translateX(-30%)}}
+  @keyframes ganBrillo{0%{transform:translateX(-120%)}22%,100%{transform:translateX(120%)}}
+  @media (prefers-reduced-motion:reduce){.nd-kpi.gan::before,.nd-kpi.gan::after{animation:none}}
   .nd-kpi.gan .l{color:#fff}
   .nd-kpi.gan .n{color:#fff;font-size:46px}
   .nd-kpi.gan .s{color:rgba(255,255,255,.88)} .nd-kpi.gan .s:empty{display:none}
@@ -2087,6 +2109,20 @@ const ND_IC={
   naranja: _svg(`<path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/>`),
   megafono: _svg(`<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>`),
 };
+// La ganancia neta sube contando (~0,9 s) desde la cifra anterior (la 1.ª vez, desde 0). Termina siempre en money(fin),
+// el mismo texto de antes; sin animación si el sistema pide movimiento reducido.
+let _ganAnt=0, _ganAnim=0;
+function contarGanancia(nodo, fin){
+  if(!nodo) return;
+  const ini=_ganAnt; _ganAnt=fin; const id=++_ganAnim;
+  if(ini===fin || matchMedia("(prefers-reduced-motion: reduce)").matches){ nodo.textContent=money(fin); return; }
+  const t0=performance.now(), dur=900;
+  const paso=(t)=>{ if(id!==_ganAnim || !nodo.isConnected) return;
+    const k=Math.min(1,(t-t0)/dur), e=1-Math.pow(1-k,3);
+    nodo.textContent=money(k<1 ? ini+(fin-ini)*e : fin);
+    if(k<1) requestAnimationFrame(paso); };
+  requestAnimationFrame(paso);
+}
 const ndH=(ic,t)=>`<h4><span class="nd-ic azul sm">${ic}</span>${t}</h4>`;
 function renderND(v){
   const el=$("ndKpis"); if(!el) return;
@@ -2100,6 +2136,7 @@ function renderND(v){
     kpi("ven","azul","Ventas", v.compras, v.compras?"Ticket "+money(v.ticket):"sin ventas en estas fechas")+
     kpi("ing","verde","Ingresos", money(v.vendido), pctCob==null?"sin ventas":"cobrado "+pctCob+"%", pctCob===100?"ok":"")+
     kpi("","naranja","ROAS", v.hasAds&&v.roas>0?v.roas.toFixed(2)+"×":"—", v.hasAds?money(v.gastoAds)+" en Meta":"conecta Meta en Conexiones");
+  if(!v.brutaDesconocida) contarGanancia(el.querySelector(".nd-kpi.gan .n"), Number(v.neta)||0);
   const g=$("ndGroups"); if(!g) return;
   const ventas = `<div class="nd-card">${ndH(IC_CARRO,"Ventas")}`+
     ndRow("Chats nuevos",`<span id="ndChats">…</span>`)+
