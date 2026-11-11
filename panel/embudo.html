@@ -156,6 +156,12 @@
     grid-template-areas:"fun ori res" "fun ad res" "fun dist dist"}
   .emb-grid > .panel{margin:0;border-radius:16px}
   .emb-fun{grid-area:fun} .emb-ori{grid-area:ori} .emb-ad{grid-area:ad} .emb-res{grid-area:res} .emb-dist{grid-area:dist}
+  /* Si falta «Por anuncio» o «De dónde salen las ventas» (sin anuncios / sin ventas), el otro ocupa su lugar: sin hueco */
+  @media(min-width:1181px){
+    .emb-grid:has(#adPanel[style*="none"]){grid-template-areas:"fun ori res" "fun ori res" "fun dist dist"}
+    .emb-grid:has(#origenPanel[style*="none"]){grid-template-areas:"fun ad res" "fun ad res" "fun dist dist"}
+    .emb-grid:has(#adPanel[style*="none"]):has(#origenPanel[style*="none"]){grid-template-areas:"fun res res" "fun dist dist"}
+  }
   @media(max-width:1180px){.emb-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"fun res" "fun ori" "fun ad" "dist dist"}}
   @media(max-width:760px){.emb-grid{grid-template-columns:1fr;grid-template-areas:"res" "fun" "ori" "ad" "dist"}}
   /* Títulos con su ícono azul */
@@ -875,7 +881,9 @@ function renderAnuncios(){
   const base=st.contacts.filter(c=> predT(c) && enRango(c));
   const g=new Map();
   base.forEach(c=>{ const k=c.ad_id||"none"; (g.get(k)||g.set(k,[]).get(k)).push(c); });
-  if(g.size<2){ panel.style.display="none"; tbl.innerHTML=""; return; }
+  // (11-nov, Rodrigo: «cuando le puse ayer desapareció Por anuncio») Antes se escondía con menos de 2 filas: el día que
+  // los 23 chats vinieron todos del mismo anuncio, sin orgánicos, no salía. Ahora se esconde solo si ninguno vino de un anuncio.
+  if(![...g.keys()].some(k=>k!=="none")){ panel.style.display="none"; tbl.innerHTML=""; return; }
   panel.style.display="";
   const filas=[...g.entries()].map(([k,cs])=>{
     const v=ventasPeriodo(c=> predT(c) && (k==="none" ? !c.ad_id : c.ad_id===k));
