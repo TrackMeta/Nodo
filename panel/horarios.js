@@ -59,14 +59,17 @@ function css() {
   .hv-grid{position:absolute;left:0;right:0;border-top:1px dashed var(--border);pointer-events:none}
   .hv-b{position:relative;border:0;padding:0;border-radius:5px 5px 0 0;cursor:pointer;min-width:0;width:100%;transition:opacity .15s}
   .hv-b:hover,.hv-b.sel{opacity:.82;outline:2px solid var(--text);outline-offset:1px}
-  .hv-b.top{background:color-mix(in srgb,var(--green) 78%,var(--surface))}
-  .hv-b.med{background:color-mix(in srgb,var(--brand) 62%,var(--surface))}
-  .hv-b.baja{background:color-mix(in srgb,var(--amber) 60%,var(--surface))}
-  .hv-b.min{background:var(--border-strong)}
+  /* (11-nov, Rodrigo: «tonos del color de Nodo») Las 4 clases en azul Nodo, de fuerte a suave, en vez de
+     verde/azul/ámbar/gris. Mismos tonos en la leyenda. */
+  .hv{--hv-top:var(--brand);--hv-med:color-mix(in srgb,var(--brand) 62%,var(--surface));--hv-baja:color-mix(in srgb,var(--brand) 34%,var(--surface));--hv-min:color-mix(in srgb,var(--brand) 15%,var(--surface))}
+  .hv-b.top{background:var(--hv-top)}
+  .hv-b.med{background:var(--hv-med)}
+  .hv-b.baja{background:var(--hv-baja)}
+  .hv-b.min{background:var(--hv-min)}
   .hv-xax{display:grid;grid-template-columns:34px repeat(24,minmax(0,1fr));gap:0 4px;margin-top:4px}
   .hv-xax span{font-size:10px;color:var(--faint);text-align:center;white-space:nowrap}
   @media(max-width:560px){.hv-xax span:nth-child(2n+1):not(:first-child){visibility:hidden}.hv-plot{gap:2px}.hv-xax{gap:0 2px}.hv-yax,.hv-plot{height:170px}}
-  .hv-ley i.top{background:color-mix(in srgb,var(--green) 78%,var(--surface))}.hv-ley i.med{background:color-mix(in srgb,var(--brand) 62%,var(--surface))}.hv-ley i.baja{background:color-mix(in srgb,var(--amber) 60%,var(--surface))}.hv-ley i.min{background:var(--border-strong)}`;
+  .hv-ley i.top{background:var(--hv-top)}.hv-ley i.med{background:var(--hv-med)}.hv-ley i.baja{background:var(--hv-baja)}.hv-ley i.min{background:var(--hv-min)}`;
   document.head.appendChild(s);
 }
 
@@ -93,8 +96,8 @@ export async function montarHorarios(host, { supa, channelId, fromISO, toISO, ve
   const st = { bm: "ventas", selH: null };
   const totalV = vH.reduce((a, x) => a + x, 0), totalC = cH.reduce((a, x) => a + x, 0);
   const m = money || ((x) => "S/ " + Math.round(x));
-  // Barras «Ventas por hora del día (0–23 h)» de todas las fechas elegidas: las 3 mejores en verde, las flojas en
-  // ámbar y las casi vacías en gris (como el gráfico que mandó Rodrigo).
+  // Barras «Ventas por hora del día (0–23 h)» de todas las fechas elegidas: las 3 mejores en azul Nodo fuerte, y
+  // las normales, flojas y casi vacías en azules cada vez más suaves.
   function barras() {
     const vals = st.bm === "ventas" ? vH : iH, max = Math.max(0, ...vals);
     if (!max) return `<div class="hv-vacio">Sin ventas en estas fechas.</div>`;
