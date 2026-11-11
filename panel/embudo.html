@@ -148,6 +148,58 @@
   html:not([data-ds="1"]) .dbarwrap{border-radius:6px} html:not([data-ds="1"]) .dbar{border-radius:6px}
   html:not([data-ds="1"]) .react{box-shadow:none}
   html:not([data-ds="1"]) .pcard,html:not([data-ds="1"]) .dkpi{border-radius:12px}
+
+  /* ═══ (11-nov) Rediseño que mandó Rodrigo: el embudo en una columna a la izquierda; al medio «De dónde salen las ventas»
+     y «Por anuncio»; a la derecha el «Resumen del embudo»; abajo, a lo ancho de esas dos, «Dónde están ahora». ═══ */
+  .emb-grid{display:grid;gap:16px;margin-top:6px;margin-bottom:16px;
+    grid-template-columns:minmax(0,1.05fr) minmax(0,1.2fr) minmax(0,.85fr);
+    grid-template-areas:"fun ori res" "fun ad res" "fun dist dist"}
+  .emb-grid > .panel{margin:0;border-radius:16px}
+  .emb-fun{grid-area:fun} .emb-ori{grid-area:ori} .emb-ad{grid-area:ad} .emb-res{grid-area:res} .emb-dist{grid-area:dist}
+  @media(max-width:1180px){.emb-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"fun res" "fun ori" "fun ad" "dist dist"}}
+  @media(max-width:760px){.emb-grid{grid-template-columns:1fr;grid-template-areas:"res" "fun" "ori" "ad" "dist"}}
+  /* Títulos con su ícono azul */
+  .panel h3.eh{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:700;margin:0 0 14px}
+  .eh-ic{display:inline-flex;color:#0B63E5} .eh-ic svg{width:22px;height:22px}
+  html:not([data-theme="light"]) .eh-ic{color:#6EA8FF}
+  .emb-ori h3.eh,.emb-res h3.eh{margin-bottom:4px}
+  .emb-ori .osum{margin:0 0 12px 32px}
+  /* El embudo: barras con ícono, centradas, que se angostan */
+  .emb-fun .fun{gap:0;margin-top:4px}
+  html:not([data-ds="1"]) .emb-fun .fbar2{height:50px;border-radius:12px;padding:0 16px;min-width:0;color:#fff;box-shadow:0 6px 14px -8px rgba(16,24,40,.45)}
+  .emb-fun .fbar2 .fl{display:flex;align-items:center;gap:9px;font-weight:600;font-size:14.5px}
+  .emb-fun .fbar2 .fr{font-weight:700;font-size:18px}
+  .fic{display:inline-flex;flex:none} .fic svg{width:20px;height:20px}
+  .emb-fun .fstep{padding:8px 0;font-size:12.5px}
+  .emb-fun .fstep .fdrop{color:var(--muted)}
+  .fantes{display:flex;align-items:flex-start;gap:10px;text-align:left;margin:18px 0 0;padding:12px 14px;border-radius:12px;background:var(--surface-2);font-size:12.5px;line-height:1.5}
+  .fai{display:inline-flex;color:#0B63E5;flex:none;margin-top:1px} .fai svg{width:17px;height:17px}
+  html:not([data-theme="light"]) .fai{color:#6EA8FF}
+  .emb-fun #neck .neck{margin:12px 0 0;font-size:12.5px}
+  /* Resumen del embudo: filas con ícono en cajita */
+  .rs-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);font-size:14px}
+  .rs-row:last-child{border-bottom:0}
+  .rs-l{flex:1;min-width:0;color:var(--text)}
+  .rs-l .mcmp{font-size:11.5px;margin-top:2px}
+  .rs-row > b{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .rs-ic{width:36px;height:36px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+  .rs-ic svg{width:19px;height:19px}
+  .rs-ic.az{background:rgba(11,99,229,.09);color:#0B63E5} .rs-ic.vi{background:rgba(147,51,234,.1);color:#9333EA}
+  html:not([data-theme="light"]) .rs-ic.az{background:rgba(110,168,255,.14);color:#6EA8FF}
+  html:not([data-theme="light"]) .rs-ic.vi{background:rgba(192,132,252,.15);color:#C084FC}
+  /* De dónde salen las ventas / Dónde están ahora: barras más gruesas y redondas */
+  .emb-grid .dist,.emb-ori #origen{display:flex;flex-direction:column;gap:12px}
+  .emb-grid .dbarwrap{height:22px;border-radius:7px}
+  html:not([data-ds="1"]) .emb-grid .dbar,html:not([data-ds="1"]) .emb-grid .dbarwrap{border-radius:7px}
+  .emb-grid .dn{font-size:14px}
+  .emb-dist .dhead{width:120px}
+  .emb-dist .react{border:0;background:rgba(11,99,229,.08);color:#0B63E5;border-radius:10px;padding:8px 12px;font-size:12.5px}
+  .emb-dist .react:hover{background:rgba(11,99,229,.15)}
+  html:not([data-theme="light"]) .emb-dist .react{background:rgba(110,168,255,.12);color:#6EA8FF}
+  .emb-ad .adtbl td{padding:10px 6px}
+  .emb-ad .adtbl th{font-size:12px;padding:0 6px 8px}
+  .emb-ad .adtbl td:last-child,.emb-ad .adtbl th:last-child{padding-right:0}
+  .emb-ad .adtbl .adn{max-width:190px}
 </style>
 </head>
 <body>
@@ -184,36 +236,43 @@
       </div>
     </div>
 
-    <div class="mets" id="metPanel"></div>
-
-    <div class="panel">
-      <h3>Cómo avanzan</h3>
-            <div id="neck"></div>
+    <!-- (11-nov, rediseño de Rodrigo) El embudo en una columna a la izquierda; a la derecha «De dónde salen las ventas»,
+         «Por anuncio», el «Resumen del embudo» (en vez de las dos tarjetas grandes de arriba) y «Dónde están ahora». -->
+    <div class="emb-grid">
+    <div class="panel emb-fun">
+      <h3 class="eh"><span class="eh-ic" data-ic="filtro"></span>Cómo avanzan</h3>
       <div class="fun" id="fun"></div>
+      <div id="neck"></div>
       <div id="plata"></div>
     </div>
 
-    <div class="panel" id="origenPanel" style="display:none">
-      <h3>De dónde salen las ventas</h3>
+    <div class="panel emb-ori" id="origenPanel" style="display:none">
+      <h3 class="eh"><span class="eh-ic" data-ic="capas"></span>De dónde salen las ventas</h3>
       <div class="osum" id="origenSum"></div>
       <div id="origen"></div>
     </div>
 
-    <div class="panel" id="adPanel" style="display:none">
-      <h3>Por anuncio</h3>
+    <div class="panel emb-ad" id="adPanel" style="display:none">
+      <h3 class="eh"><span class="eh-ic" data-ic="megafono"></span>Por anuncio</h3>
       <div class="adwrap"><table class="adtbl" id="adTbl"></table></div>
     </div>
+
+    <div class="panel emb-res">
+      <h3 class="eh"><span class="eh-ic" data-ic="barras"></span>Resumen del embudo</h3>
+      <div id="metPanel"></div>
+    </div>
+
+    <div class="panel emb-dist" id="distPanel">
+      <h3 class="eh"><span class="eh-ic" data-ic="gente"></span>Dónde están ahora</h3>
+      <div class="dist" id="dist"></div>
+    </div>
+    </div><!-- /.emb-grid -->
     <div class="panel" id="entregaPanel" style="display:none">
       <h3>Embudo de entrega · Provincia</h3>
       <p class="ps">De los pedidos con adelanto, cuántos llegan a recoger en la agencia.</p>
       <div class="dkpis" id="entregaKpis"></div>
       <div class="fun" id="entregaFun"></div>
       <div id="entregaFuga"></div>
-    </div>
-
-    <div class="panel" id="distPanel">
-      <h3>Dónde están ahora</h3>
-            <div class="dist" id="dist"></div>
     </div>
 
     <div class="panel" id="provAhoraPanel" style="display:none">
@@ -238,6 +297,26 @@ import * as O from "./orders.js";
 import { mountDateRange, computePreset, rangeLabel, ymd, startOfDayLima, endOfDayLima, tzNombre } from "./date-range.js";
 
 const $=(id)=>document.getElementById(id);
+// (11-nov, rediseño) Íconos de trazo para los títulos, las barras del embudo y el resumen.
+const _sv=(p)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const IC={
+  filtro:_sv(`<path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>`),
+  capas:_sv(`<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>`),
+  megafono:_sv(`<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>`),
+  barras:_sv(`<path d="M5 21V12M10 21V5M15 21v-8M20 21V9"/>`),
+  gente:_sv(`<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>`),
+  chat:_sv(`<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h.01M12 10h.01M16 10h.01"/>`),
+  persona:_sv(`<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>`),
+  fuego:_sv(`<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>`),
+  reloj:_sv(`<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>`),
+  check:_sv(`<path d="M20 6 9 17l-5-5"/>`),
+  carro:_sv(`<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>`),
+  pct:_sv(`<path d="M19 5 5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>`),
+  mano:_sv(`<path d="m11 17 2 2a1 1 0 1 0 3-3"/><path d="m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4"/><path d="m21 3 1 11h-2"/><path d="M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3"/><path d="M3 4h8"/>`),
+  ticket:_sv(`<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/>`),
+  info:_sv(`<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>`),
+};
+document.querySelectorAll("[data-ic]").forEach(e=>{ e.innerHTML=IC[e.dataset.ic]||""; });
 const nf=new Intl.NumberFormat("es-PE");
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
@@ -475,7 +554,7 @@ function comparar(){
 
 function renderMetricas(F, cmp){
   const el=$("metPanel");
-  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="met low" style="flex:1 1 100%"><div class="num">—</div><div class="mtxt"><div class="mlbl">${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</div><div class="mdesc">${filt?"Prueba con otro anuncio, producto o fecha.":"Cuando lleguen clientes por WhatsApp verás aquí tu efectividad y tu conversión."}</div></div></div>`; return; }
+  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="empty" style="padding:18px 0"><h4>${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</h4>${filt?"Prueba con otro anuncio, producto o fecha.":"Cuando lleguen clientes por WhatsApp verás aquí tu conversión y tu efectividad."}</div>`; return; }
   const ef=F.efectividad, cv=F.conversion;
   // En subvista por ZONA (Lima/Provincia) la base NO son "todos": los leads que aún no
   // dijeron su ciudad quedan fuera, y como TODOS los compradores tienen zona, la
@@ -484,24 +563,22 @@ function renderMetricas(F, cmp){
   // son de X, cuántos compran", solo que no es la misma base que Total).
   const zonaSub = (st.tipo==="fisico" && st.zona && st.zona!=="total");
   const zonaNom = st.zona==="lima" ? "Lima" : "provincia";
-  const eCls = "mia"; // violeta fijo (tema IA), por elección de Rodrigo — ya no semáforo
-  // Primero la Conversión total y después la Efectividad de cierre — igual que el Dashboard (Rodrigo, 9-oct).
   let cmpHtml="";
   if(cmp && cmp.cv!=null && cv!=null){
     const d=cv-cmp.cv;
     cmpHtml=`<div class="mcmp">${d===0?"igual":`<span class="${d>0?"up":"down"}">${d>0?"▲":"▼"} ${Math.abs(d)} pts</span>`} vs ${esc(cmp.lbl)} (${cmp.cv}%)</div>`;
   }
-  el.innerHTML=`
-    <div class="met ${F.total?"mconv":"low"}"><div class="num">${cv==null?"—":cv+"%"}</div><div class="mtxt">
-      <div class="mlbl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"}</div>
-      <div class="mbrk" title="Ventas hechas en estas fechas ÷ personas que te escribieron por primera vez en estas fechas. Es la misma cuenta que Inicio, Meta y Trakker: incluye la venta de alguien que te escribió antes.">${F.ventas} ${F.ventas===1?"venta":"ventas"} ÷ ${F.total} ${F.total===1?"chat nuevo":"chats nuevos"}${zonaSub?` de ${zonaNom}`:""}</div>
-      ${cmpHtml}
-    </div></div>
-    <div class="met ${eCls}"><div class="num">${ef==null?"—":ef+"%"}</div><div class="mtxt">
-      <div class="mlbl"><span class="miabadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>Efectividad de cierre</div>
-      <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes + F.perdidoVenta} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}</div>
-    </div></div>`;
-  igualarAlto(el);
+  // (11-nov, rediseño de Rodrigo) «Resumen del embudo»: una lista con ícono en vez de las dos tarjetas grandes. Los mismos
+  // números (conversión total y efectividad de cierre, con su explicación al pasar el mouse) más chats, ventas y ticket.
+  // (el ticket con céntimos, como en Inicio: «S/ 6.50», no «S/ 7»)
+  const ticket = F.ventas>0 && F.montoVentas!=null ? (CUR_SYM[CUR]||CUR)+" "+(F.montoVentas/F.ventas).toFixed(2) : "—";
+  const fila=(ic,cls,l,v,tip="",extra="")=>`<div class="rs-row"${tip?` title="${esc(tip)}"`:""}><span class="rs-ic ${cls}">${IC[ic]}</span><span class="rs-l">${l}${extra}</span><b>${v}</b></div>`;
+  el.innerHTML=
+    fila("chat","az","Chats nuevos", nf.format(F.total), "Personas que te escribieron por primera vez en estas fechas"+(zonaSub?` (de ${zonaNom})`:""))+
+    fila("carro","az","Ventas", nf.format(F.ventas), "Ventas hechas en estas fechas (también de quien te escribió antes)")+
+    fila("pct","az", zonaSub?`Conversión de ${zonaNom}`:"Conversión total", cv==null?"—":cv+"%", `${F.ventas} ${F.ventas===1?"venta":"ventas"} ÷ ${F.total} ${F.total===1?"chat nuevo":"chats nuevos"}. La misma cuenta que Inicio, Meta y Trakker.`, cmpHtml)+
+    fila("mano","vi","Efectividad de cierre", ef==null?"—":ef+"%", `${F.niveles.compraron} cerraron de ${F.niveles.interes + F.perdidoVenta} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}. No cuenta a los curiosos que solo saludan.`)+
+    fila("ticket","az","Ticket promedio", ticket, "Lo que paga en promedio cada venta de estas fechas");
 }
 
 // El align-items:stretch del flex NO iguala las tarjetas en este codebase (quirk
@@ -556,19 +633,21 @@ function renderFunnel(F){
   if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>${filt?`<h4>Nada coincide</h4>Prueba con otro anuncio, producto o fecha.`:`<h4>Aún sin contactos</h4>Cuando lleguen mensajes a este canal, verás el embudo llenarse acá.`}</div>`; return; }
   const N=F.niveles;
   const niveles=[
-    { lbl:"Llegaron", n:N.llegaron, c:"var(--st-llegaron,#2b7fff)" },
-    { lbl:"Curiosos", n:N.curiosos, c:col("curioso") },
-    { lbl:"Interés", n:N.interes, c:col("interesado") },
-    { lbl:"Caliente", n:N.calientes, c:col("caliente") },
-    { lbl:"Confirmaron", n:N.confirmaron, c:col("confirmado"), t:"#1F2937" },   // amarillo: texto oscuro
-    { lbl:"Compraron", n:N.compraron, c:col("comprado") },
+    { lbl:"Llegaron", n:N.llegaron, c:"var(--st-llegaron,#2b7fff)", ic:"chat" },
+    { lbl:"Curiosos", n:N.curiosos, c:col("curioso"), ic:"persona" },
+    { lbl:"Interés", n:N.interes, c:col("interesado"), ic:"fuego" },
+    { lbl:"Caliente", n:N.calientes, c:col("caliente"), ic:"reloj" },
+    { lbl:"Confirmaron", n:N.confirmaron, c:col("confirmado"), ic:"check" },
+    { lbl:"Compraron", n:N.compraron, c:col("comprado"), ic:"carro" },
   ];
   const { saltos, peor }=fugas(F);
   let html="";
   niveles.forEach((lv,i)=>{
-    const w= N.llegaron>0 ? Math.max(12, Math.round(lv.n/N.llegaron*100)) : 12;
+    // (11-nov, rediseño) En la columna angosta el ancho va de 68 % a 100 % según cuántos quedan: se sigue viendo que se
+    // angosta, y hasta el escalón más chico tiene lugar para el nombre, el ícono y la cifra.
+    const w= N.llegaron>0 ? Math.round(68 + 32*lv.n/N.llegaron) : 68;
     const pc= pct(lv.n,N.llegaron);
-    html+=`<div class="flvl"><div class="fbar2" style="width:${w}%;background:${lv.c}${lv.t?";color:"+lv.t:""}"><span class="fl">${lv.lbl}</span><span class="fr">${nf.format(lv.n)}${pc!=null?` · ${pc}%`:""}</span></div></div>`;
+    html+=`<div class="flvl"><div class="fbar2" style="width:${w}%;background:${lv.c}"><span class="fl"><span class="fic">${IC[lv.ic]}</span>${lv.lbl}</span><span class="fr">${nf.format(lv.n)}${pc!=null?` · ${pc}%`:""}</span></div></div>`;
     if(i<niveles.length-1){
       const sa=saltos[i];
       const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
@@ -581,7 +660,7 @@ function renderFunnel(F){
   // «N ventas» de arriba pero no en «Compraron», que sigue solo a los que llegaron en estas fechas. Se dice, para que
   // «4 ventas» y «Compraron 3» no parezcan una contradicción.
   const antes=ventasPeriodo(c=>pasaFiltros(c) && !enRango(c)).n;
-  if(antes>0) html+=`<div class="fantes">+${nf.format(antes)} ${antes===1?"venta":"ventas"} de ${antes===1?"alguien que te escribió":"gente que te escribió"} antes de estas fechas · en total ${nf.format(F.ventas)} ${F.ventas===1?"venta":"ventas"}</div>`;
+  if(antes>0) html+=`<div class="fantes"><span class="fai">${IC.info}</span>+${nf.format(antes)} ${antes===1?"venta":"ventas"} de ${antes===1?"alguien que te escribió":"gente que te escribió"} antes de estas fechas · en total ${nf.format(F.ventas)} ${F.ventas===1?"venta":"ventas"}</div>`;
   el.innerHTML=html;
 }
 
