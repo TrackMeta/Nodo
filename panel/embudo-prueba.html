@@ -152,7 +152,7 @@
   /* ═══ (11-nov) Rediseño que mandó Rodrigo: el embudo en una columna a la izquierda; al medio «De dónde salen las ventas»
      y «Por anuncio»; a la derecha el «Resumen del embudo»; abajo, a lo ancho de esas dos, «Dónde están ahora». ═══ */
   .emb-grid{display:grid;gap:16px;margin-top:6px;margin-bottom:16px;
-    grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,.85fr);
+    grid-template-columns:minmax(0,1.05fr) minmax(0,1.2fr) minmax(0,.85fr);
     grid-template-areas:"fun ori res" "fun ad res" "fun dist dist"}
   .emb-grid > .panel{margin:0;border-radius:16px}
   .emb-fun{grid-area:fun} .emb-ori{grid-area:ori} .emb-ad{grid-area:ad} .emb-res{grid-area:res} .emb-dist{grid-area:dist}
@@ -167,7 +167,7 @@
   /* El embudo: barras con ícono, centradas, que se angostan */
   .emb-fun .fun{gap:0;margin-top:4px}
   html:not([data-ds="1"]) .emb-fun .fbar2{height:50px;border-radius:12px;padding:0 16px;min-width:0;color:#fff;box-shadow:0 6px 14px -8px rgba(16,24,40,.45)}
-  .emb-fun .fbar2 .fl{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
+  .emb-fun .fbar2 .fl{display:flex;align-items:center;gap:9px;font-weight:600;font-size:14.5px}
   .emb-fun .fbar2 .fr{font-weight:700;font-size:18px}
   .fic{display:inline-flex;flex:none} .fic svg{width:20px;height:20px}
   .emb-fun .fstep{padding:8px 0;font-size:12.5px}
@@ -568,7 +568,8 @@ function renderMetricas(F, cmp){
   }
   // (11-nov, rediseño de Rodrigo) «Resumen del embudo»: una lista con ícono en vez de las dos tarjetas grandes. Los mismos
   // números (conversión total y efectividad de cierre, con su explicación al pasar el mouse) más chats, ventas y ticket.
-  const ticket = F.ventas>0 && F.montoVentas!=null ? money(F.montoVentas/F.ventas) : "—";
+  // (el ticket con céntimos, como en Inicio: «S/ 6.50», no «S/ 7»)
+  const ticket = F.ventas>0 && F.montoVentas!=null ? (CUR_SYM[CUR]||CUR)+" "+(F.montoVentas/F.ventas).toFixed(2) : "—";
   const fila=(ic,cls,l,v,tip="",extra="")=>`<div class="rs-row"${tip?` title="${esc(tip)}"`:""}><span class="rs-ic ${cls}">${IC[ic]}</span><span class="rs-l">${l}${extra}</span><b>${v}</b></div>`;
   el.innerHTML=
     fila("chat","az","Chats nuevos", nf.format(F.total), "Personas que te escribieron por primera vez en estas fechas"+(zonaSub?` (de ${zonaNom})`:""))+
@@ -640,9 +641,9 @@ function renderFunnel(F){
   const { saltos, peor }=fugas(F);
   let html="";
   niveles.forEach((lv,i)=>{
-    // (11-nov, rediseño) En la columna angosta el ancho va de 58 % a 100 % según cuántos quedan: se sigue viendo que se
+    // (11-nov, rediseño) En la columna angosta el ancho va de 68 % a 100 % según cuántos quedan: se sigue viendo que se
     // angosta, y hasta el escalón más chico tiene lugar para el nombre, el ícono y la cifra.
-    const w= N.llegaron>0 ? Math.round(58 + 42*lv.n/N.llegaron) : 58;
+    const w= N.llegaron>0 ? Math.round(68 + 32*lv.n/N.llegaron) : 68;
     const pc= pct(lv.n,N.llegaron);
     html+=`<div class="flvl"><div class="fbar2" style="width:${w}%;background:${lv.c}"><span class="fl"><span class="fic">${IC[lv.ic]}</span>${lv.lbl}</span><span class="fr">${nf.format(lv.n)}${pc!=null?` · ${pc}%`:""}</span></div></div>`;
     if(i<niveles.length-1){
