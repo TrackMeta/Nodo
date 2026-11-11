@@ -228,24 +228,87 @@
   .aiact{margin-top:9px;height:32px;padding:0 13px;border:1px solid var(--border);border-radius:9px;background:transparent;color:var(--brand);font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
   .aiact:hover{border-color:var(--brand)}
   /* ═══ Dashboard nuevo (Diseño 2, 10-oct) ═══ */
-  .nd-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 16px}
-  @media(max-width:700px){.nd-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  /* (22-oct, diseño A) la ganancia neta, grande, dentro de la franja azul de la cabecera (como Hoy en la app) */
-  .nd-gan{flex-basis:100%;display:flex;flex-direction:column;gap:4px;color:#fff;margin-top:4px}
-  .nd-gan:empty{display:none}
-  .nd-kpi .n.azul{color:#0B63E5} html:not([data-theme="light"]) .nd-kpi .n.azul{color:#6EA8FF} .nd-kpi .n.verde{color:var(--green)}
-  .nd-gan .l{font-size:13.5px;font-weight:500;opacity:.92}
-  .nd-gan .n{font-size:56px;line-height:1;font-weight:600;letter-spacing:-.035em;font-variant-numeric:tabular-nums}
-  .nd-gan .s{font-size:13.5px;opacity:.92}
-  @media(max-width:720px){.nd-gan .n{font-size:44px}}
-  .nd-kpi{display:flex;flex-direction:column;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;min-width:0}
-  .nd-kpi .l{font-size:12px;color:var(--muted);font-weight:500}
-  .nd-kpi .n{font-size:28px;line-height:1.15;font-weight:600;letter-spacing:-.02em;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .nd-kpi .s{font-size:12px;color:var(--muted)} .nd-kpi .s.ok{color:var(--green)} .nd-kpi .s.bad{color:var(--red)}
-  .nd-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 16px}
+  /* ═══ (11-nov) Rediseño de Inicio que mandó Rodrigo: 4 tarjetas con ícono montadas sobre la franja azul (la ganancia
+     neta azul y más ancha), cuadros con ícono, Gastos extra en franja con su total ═══ */
+  /* (11-nov, Rodrigo: «no una franja fija, un degradado muy bonito») La cabecera es un degradado azul con luces suaves que
+     se funde con la página detrás de las tarjetas, en vez de cortarse en seco. El ::before es el de shell.css (ancho y
+     posición), acá cambia el fondo y se le pone una máscara que lo desvanece hacia abajo. */
+  html:not([data-ds="1"]) .nodo-head.nd-head{padding-bottom:0;margin-bottom:22px}
+  html:not([data-ds="1"]) .nodo-head.nd-head::before{bottom:-40px;
+    background:
+      radial-gradient(38% 70% at 78% 8%,rgba(255,255,255,.26),transparent 70%),
+      radial-gradient(30% 60% at 52% 40%,rgba(120,210,255,.30),transparent 70%),
+      radial-gradient(45% 90% at 8% 0%,rgba(0,30,190,.55),transparent 70%),
+      linear-gradient(100deg,#0036E8 0%,#0B5FF0 32%,#1690FF 62%,#4DC2FF 100%);
+    -webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 46%,rgba(0,0,0,.6) 66%,rgba(0,0,0,.18) 84%,transparent 100%);
+    mask-image:linear-gradient(to bottom,#000 0%,#000 46%,rgba(0,0,0,.6) 66%,rgba(0,0,0,.18) 84%,transparent 100%)}
+  .nd-head .nodo-lead{margin:4px 0 0;font-size:13.5px;color:rgba(255,255,255,.9)}
+  /* min-height: mientras cargan, la cabecera no se encoge (el degradado se desvanece abajo y dejaría el subtítulo blanco sobre claro) */
+  .nd-kpis{flex-basis:100%;display:grid;grid-template-columns:1.45fr 1fr 1fr 1fr;gap:14px;margin:22px 0 0;min-height:106px}
+  @media(max-width:980px){.nd-kpis{grid-template-columns:repeat(3,minmax(0,1fr))} .nd-kpi.gan{grid-column:1/-1}}
+  @media(max-width:620px){.nd-kpis{grid-template-columns:1fr;gap:10px} .nd-kpi:not(.gan){padding:12px 16px} .nd-kpi:not(.gan) .n{font-size:26px}}
+  .nd-kpi{display:flex;flex-direction:column;gap:3px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:16px 18px;min-width:0;
+    box-shadow:0 10px 26px -14px rgba(16,40,120,.35)}
+  .nd-kpi .h{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .nd-kpi .l{font-size:14px;color:var(--text);font-weight:600}
+  .nd-kpi .n{font-size:30px;line-height:1.1;font-weight:700;letter-spacing:-.02em;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nd-kpi .s{font-size:12.5px;color:var(--muted)} .nd-kpi .s.ok{color:var(--green)} .nd-kpi .s.bad{color:var(--red)}
+  .nd-kpi.ven .n{color:#0B63E5} html:not([data-theme="light"]) .nd-kpi.ven .n{color:#6EA8FF}
+  .nd-kpi.ing .n{color:var(--green)}
+  /* La ganancia neta: tarjeta azul, número grande y blanco */
+  .nd-kpi.gan{background:radial-gradient(120% 140% at 100% 100%,rgba(1,175,254,.45),transparent 60%),linear-gradient(135deg,#0B63E5,#0044FE);border-color:rgba(255,255,255,.35);
+    box-shadow:0 14px 30px -12px rgba(0,68,254,.55);color:#fff;justify-content:center}
+  /* (11-nov, Rodrigo: «la tarjeta de ganancia tiene un diseño y animación») Ondas de luz abajo a la derecha que se mueven
+     despacio, un brillo que la cruza cada tanto y el monto que sube contando al cargar (renderND). */
+  .nd-kpi.gan{position:relative;overflow:hidden;isolation:isolate}
+  .nd-kpi.gan > *{position:relative;z-index:2}
+  .nd-kpi.gan::before{content:"";position:absolute;left:28%;right:-55%;bottom:-6px;height:86%;z-index:0;pointer-events:none;
+    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 120' preserveAspectRatio='none'%3E%3Cpath d='M0 70 C120 20 220 20 320 60 S520 110 600 50 V120 H0Z' fill='%23ffffff' fill-opacity='.10'/%3E%3Cpath d='M0 95 C140 45 260 60 360 85 S520 100 600 70 V120 H0Z' fill='%23ffffff' fill-opacity='.12'/%3E%3Cpath d='M0 70 C120 20 220 20 320 60 S520 110 600 50' fill='none' stroke='%23ffffff' stroke-opacity='.35' stroke-width='1.5'/%3E%3C/svg%3E") left bottom/100% 100% no-repeat;
+    animation:ganOla 10s ease-in-out infinite alternate}
+  .nd-kpi.gan::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
+    background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.22) 48%,transparent 60%);transform:translateX(-120%);
+    animation:ganBrillo 7s ease-in-out 1.2s infinite}
+  @keyframes ganOla{from{transform:translateX(0)}to{transform:translateX(-30%)}}
+  @keyframes ganBrillo{0%{transform:translateX(-120%)}22%,100%{transform:translateX(120%)}}
+  @media (prefers-reduced-motion:reduce){.nd-kpi.gan::before,.nd-kpi.gan::after{animation:none}}
+  .nd-kpi.gan .l{color:#fff}
+  .nd-kpi.gan .n{color:#fff;font-size:46px}
+  .nd-kpi.gan .s{color:rgba(255,255,255,.88)} .nd-kpi.gan .s:empty{display:none}
+  @media(max-width:720px){.nd-kpi.gan .n{font-size:38px}}
+  /* Íconos en cajita de color suave */
+  .nd-ic{width:34px;height:34px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+  .nd-ic svg{width:19px;height:19px}
+  .nd-ic.sm{width:30px;height:30px;border-radius:9px} .nd-ic.sm svg{width:17px;height:17px}
+  .nd-ic.azul{background:rgba(11,99,229,.1);color:#0B63E5}
+  .nd-ic.verde{background:rgba(18,183,106,.12);color:#079455}
+  .nd-ic.naranja{background:rgba(247,144,9,.13);color:#E86B04}
+  .nd-ic.blanco{background:rgba(255,255,255,.2);color:#fff}
+  html:not([data-theme="light"]) .nd-ic.azul{background:rgba(110,168,255,.14);color:#6EA8FF}
+  html:not([data-theme="light"]) .nd-ic.verde{background:rgba(50,213,131,.14);color:#47CD89}
+  html:not([data-theme="light"]) .nd-ic.naranja{background:rgba(253,176,34,.14);color:#FDB022}
+  .nd-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:0 0 16px}
   @media(max-width:900px){.nd-groups{grid-template-columns:1fr}}
-  .nd-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 16px}
-  .nd-card h4{margin:2px 0 6px;font-size:14px;font-weight:600;color:var(--text)}
+  .nd-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px 18px}
+  .nd-card h4{display:flex;align-items:center;gap:10px;margin:2px 0 8px;font-size:15.5px;font-weight:650;color:var(--text)}
+  /* Gastos extra en una franja: ícono · título · total · botón */
+  .nd-gastos{border-radius:16px}
+  .ndg-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .ndg-row .nd-ic{width:46px;height:46px;border-radius:13px} .ndg-row .nd-ic svg{width:24px;height:24px}
+  .ndg-txt{flex:1;min-width:220px} .ndg-txt h3{margin:0 0 2px} .ndg-txt .ps{margin:0}
+  .ndg-tot{display:flex;flex-direction:column;align-items:flex-end;padding:0 20px;border-left:1px solid var(--border)}
+  .ndg-tot span{font-size:12px;color:var(--muted)} .ndg-tot b{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+  .ndg-btn{height:40px;padding:0 16px;border-radius:11px;background:rgba(11,99,229,.08);border-color:transparent;color:#0B63E5;font-size:13.5px}
+  .ndg-btn:hover{background:rgba(11,99,229,.14);border-color:transparent}
+  html:not([data-theme="light"]) .ndg-btn{background:rgba(110,168,255,.12);color:#6EA8FF}
+  @media(max-width:640px){.ndg-tot{border-left:0;padding:0;align-items:flex-start}}
+  #expenses:not(:empty){margin-top:14px}
+  /* El título del gráfico y Horarios con su ícono, como en el diseño */
+  #bitaTitle{display:flex;align-items:center;gap:10px}
+  #bitaTitle::before,#horariosPanel .hv-hd h3::before{content:"";width:22px;height:22px;flex:none;background:#0B63E5;-webkit-mask:var(--m) center/contain no-repeat;mask:var(--m) center/contain no-repeat}
+  html:not([data-theme="light"]) :is(#bitaTitle,#horariosPanel .hv-hd h3)::before{background:#6EA8FF}
+  #bitaTitle{--m:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='M5 21V11M10 21V5M15 21v-8M20 21V8'/%3E%3C/svg%3E")}
+  #horariosPanel .hv-hd h3{display:flex;align-items:center;gap:10px;--m:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 6v6l4 2'/%3E%3C/svg%3E")}
+  #horariosPanel .hv-hd p{padding-left:32px}
   .nd-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:7px 0;font-size:13px;color:var(--muted);border-top:1px solid var(--border)}
   .nd-card h4 + .nd-row{border-top:none}
   .nd-row b{font-weight:500;color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -290,9 +353,10 @@
 <body>
 <div class="nodo-page">
   <div class="nodo-wrap">
-    <div class="nodo-head franja-alta">
+    <div class="nodo-head franja-alta nd-head">
       <div class="grow">
         <h1 class="nodo-title" id="ndTitle">Inicio</h1>
+        <p class="nodo-lead">Resumen de tu negocio</p>
       </div>
       <div class="nodo-actions">
         <div class="dseg" id="tipoSeg" style="display:none">
@@ -307,7 +371,9 @@
           <div class="df-pop" id="dfPop"></div>
         </div>
       </div>
-      <div class="nd-gan" id="ndGan"></div>
+      <!-- (11-nov, rediseño de Rodrigo) Las 4 cifras en tarjetas montadas sobre el borde de la franja azul: van DENTRO de la
+           cabecera (la franja se corta a media altura de las tarjetas) para que el menú de fechas siga abriendo por encima -->
+      <div class="nd-kpis" id="ndKpis"></div>
     </div>
 
     <div id="efecPanel" hidden></div>
@@ -319,8 +385,6 @@
 
     <div class="pband" id="pband" hidden></div>
     <div class="kpis" id="kpis" hidden></div>
-
-    <div class="nd-kpis" id="ndKpis"></div>
 
     <!-- (9-oct, Rodrigo) Sin pestañas: la Bitácora va siempre a la vista, y debajo Rendimiento por producto y Gastos extra.
          Se quitaron Ventas confirmadas, el Embudo (tiene su propia sección) y Ventas extra. -->
@@ -343,24 +407,22 @@
 
     <div class="nd-groups" id="ndGroups"></div>
 
-    <!-- (13-oct) Horarios de venta: mapa de calor día × hora (panel/horarios.js, el mismo de la app) -->
-    <div class="panel" id="horariosPanel"></div>
-
+    <!-- (11-nov, Rodrigo) Sin «Rendimiento por producto». Gastos extra en una franja: ícono, total del periodo y el botón -->
     <div id="dashView">
-    <div class="panel">
-      <h3>Rendimiento por producto</h3><p class="ps">Unidades, ingresos, <b>publicidad</b> y <b>ganancia neta</b> por producto y variante · en las fechas de arriba · los gastos extra se restan solo en la franja</p>
-      <div id="productPerf"></div>
-    </div>
-
-      <div class="panel">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
-          <div><h3>Gastos extra</h3><p class="ps">Gastos operativos que registras tú (empaques, sueldos, local…) · se restan de tu ganancia</p></div>
-          <button class="expbtn primary" id="addExpBtn">+ Registrar</button>
+      <div class="panel nd-gastos">
+        <div class="ndg-row">
+          <span class="nd-ic naranja"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg></span>
+          <div class="ndg-txt"><h3>Gastos extra</h3><p class="ps">Gastos operativos que registras (empaques, sueldos, local…) · se restan de la ganancia</p></div>
+          <div class="ndg-tot"><span>Total del periodo</span><b id="expTotal">—</b></div>
+          <button class="expbtn ndg-btn" id="addExpBtn">+ Registrar gasto</button>
         </div>
         <div id="expForm" class="hidden"></div>
         <div id="expenses"></div>
       </div>
     </div><!-- /#dashView -->
+
+    <!-- (13-oct) Horarios de venta (panel/horarios.js, el mismo de la app) -->
+    <div class="panel" id="horariosPanel"></div>
   </div>
 </div>
 
@@ -1561,8 +1623,10 @@ async function load(){
 // ── Gastos extra (manuales) ────────────────────────────────────────
 function renderExpenses(list, tipo){
   const box=$("expenses"); if(!box) return;
-  if(!list.length){ box.innerHTML=`<div class="empty" style="padding:14px 0">Sin gastos extra en el periodo. Toca “+ Registrar” para agregar uno.</div>`; return; }
   const total=list.reduce((a,e)=>a+Number(e.monto||0),0);
+  // (11-nov) El total del periodo va a la derecha de la franja; sin gastos, la lista no muestra nada (el total dice 0)
+  { const t=$("expTotal"); if(t) t.textContent=money(total); }
+  if(!list.length){ box.innerHTML=""; return; }
   // Los gastos extra son overhead del negocio → solo se restan en la vista "Todo".
   // En Digital/Físico mostramos el total pero avisamos que NO se descuenta ahí, para
   // no dar a entender que la ganancia neta de ese segmento ya lo restó.
@@ -1578,7 +1642,7 @@ function renderExpenses(list, tipo){
 }
 function toggleExpForm(){
   const f=$("expForm");
-  if(!f.classList.contains("hidden")){ f.classList.add("hidden"); f.innerHTML=""; $("addExpBtn").textContent="+ Registrar"; return; }
+  if(!f.classList.contains("hidden")){ f.classList.add("hidden"); f.innerHTML=""; $("addExpBtn").textContent="+ Registrar gasto"; return; }
   // Fecha LOCAL (no toISOString, que da UTC → después de las 7pm en Lima proponía
   // mañana). El gasto se atribuye al día en que lo registras.
   const _n=new Date(), _p=x=>String(x).padStart(2,"0");
@@ -1951,6 +2015,7 @@ async function renderBitaChart(dayMes){
 }
 function renderProducts(prods, orders, vendido, unavailable, margenPorProd, gastoPorProd){
   const box=$("productPerf");
+  if(!box) return;   // (11-nov, Rodrigo) la tabla «Rendimiento por producto» se quitó de Inicio
   if(unavailable){ box.innerHTML=`<div class="empty">Aplica la migración <b>0017_orders</b> para ver el rendimiento por producto.</div>`; return; }
   // Agregar por producto y versión.
   const pmap={};
@@ -2033,20 +2098,47 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd, gast
 
 // ═══ Dashboard nuevo (Diseño 2, 10-oct) — mismos números que el de siempre, ordenados ═══
 function ndRow(lbl,val,cls=""){ return `<div class="nd-row"><span>${lbl}</span><b class="${cls}">${val}</b></div>`; }
+// Íconos de las tarjetas (trazo, como los del menú). La clase de color va en el .nd-ic que los envuelve.
+const _svg=(p)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+const IC_CARRO=_svg(`<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>`);
+const IC_CAPAS=_svg(`<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>`);
+const ND_IC={
+  blanco: IC_CAPAS,
+  azul: IC_CARRO,
+  verde: _svg(`<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>`),
+  naranja: _svg(`<path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/>`),
+  megafono: _svg(`<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>`),
+};
+// La ganancia neta sube contando (~0,9 s) desde la cifra anterior (la 1.ª vez, desde 0). Termina siempre en money(fin),
+// el mismo texto de antes; sin animación si el sistema pide movimiento reducido.
+let _ganAnt=0, _ganAnim=0;
+function contarGanancia(nodo, fin){
+  if(!nodo) return;
+  const ini=_ganAnt; _ganAnt=fin; const id=++_ganAnim;
+  if(ini===fin || matchMedia("(prefers-reduced-motion: reduce)").matches){ nodo.textContent=money(fin); return; }
+  const t0=performance.now(), dur=900;
+  const paso=(t)=>{ if(id!==_ganAnim || !nodo.isConnected) return;
+    const k=Math.min(1,(t-t0)/dur), e=1-Math.pow(1-k,3);
+    nodo.textContent=money(k<1 ? ini+(fin-ini)*e : fin);
+    if(k<1) requestAnimationFrame(paso); };
+  requestAnimationFrame(paso);
+}
+const ndH=(ic,t)=>`<h4><span class="nd-ic azul sm">${ic}</span>${t}</h4>`;
 function renderND(v){
   const el=$("ndKpis"); if(!el) return;
   const pctCob = v.vendido>0 ? Math.round(v.cobrado/v.vendido*100) : null;
   // La ganancia neta va en la franja azul, sola (22-oct: sin la cuenta de abajo, a pedido de Rodrigo; el desglose está
   // en la tarjeta Rentabilidad). Solo se explica el «—» cuando falta un costo.
-  const gan=$("ndGan");
-  if(gan) gan.innerHTML=`<span class="l">Ganancia neta</span><span class="n">${v.brutaDesconocida?"—":money(v.neta)}</span>`+
-    (v.brutaDesconocida?`<span class="s">falta registrar algún costo</span>`:"");
+  // (11-nov, rediseño de Rodrigo) Las 4 cifras en tarjetas iguales con su ícono: la ganancia neta, azul y más ancha.
+  const kpi=(cls,ic,l,n,s,sCls="")=>`<div class="nd-kpi ${cls}"><div class="h"><span class="nd-ic ${ic}">${ND_IC[ic]}</span><span class="l">${l}</span></div><span class="n">${n}</span><span class="s ${sCls}">${s}</span></div>`;
   el.innerHTML=
-    `<div class="nd-kpi"><span class="l">Ventas</span><span class="n azul">${v.compras}</span><span class="s">${v.compras?"ticket "+money(v.ticket):"sin ventas en estas fechas"}</span></div>`+
-    `<div class="nd-kpi"><span class="l">Ingresos</span><span class="n verde">${money(v.vendido)}</span><span class="s ${pctCob===100?"ok":""}">${pctCob==null?"sin ventas":"cobrado "+pctCob+"%"}</span></div>`+
-    `<div class="nd-kpi"><span class="l">ROAS</span><span class="n">${v.hasAds&&v.roas>0?v.roas.toFixed(2)+"×":"—"}</span><span class="s">${v.hasAds?money(v.gastoAds)+" en Meta":"conecta Meta en Conexiones"}</span></div>`;
+    kpi("gan","blanco","Ganancia neta", v.brutaDesconocida?"—":money(v.neta), v.brutaDesconocida?"falta registrar algún costo":"")+
+    kpi("ven","azul","Ventas", v.compras, v.compras?"Ticket "+money(v.ticket):"sin ventas en estas fechas")+
+    kpi("ing","verde","Ingresos", money(v.vendido), pctCob==null?"sin ventas":"cobrado "+pctCob+"%", pctCob===100?"ok":"")+
+    kpi("","naranja","ROAS", v.hasAds&&v.roas>0?v.roas.toFixed(2)+"×":"—", v.hasAds?money(v.gastoAds)+" en Meta":"conecta Meta en Conexiones");
+  if(!v.brutaDesconocida) contarGanancia(el.querySelector(".nd-kpi.gan .n"), Number(v.neta)||0);
   const g=$("ndGroups"); if(!g) return;
-  const ventas = `<div class="nd-card"><h4>Ventas</h4>`+
+  const ventas = `<div class="nd-card">${ndH(IC_CARRO,"Ventas")}`+
     ndRow("Chats nuevos",`<span id="ndChats">…</span>`)+
     // (11-oct) Conversión total = ventas de estas fechas ÷ chats nuevos de estas fechas: la misma cuenta que Meta y Trakker
     //  («chat → venta»). Distinta del «Cierre del bot», que sigue a cada cliente que conversó hasta ver si compró.
@@ -2055,7 +2147,7 @@ function renderND(v){
     ndRow("Ticket promedio", v.compras?money(v.ticket):"—")+
     (v.vendeFisico ? ndRow("Por cobrar", money(v.porCobrar)) + ndRow("Esperando adelanto", v.espAdel) : "")+
     `</div>`;
-  const pub = `<div class="nd-card"><h4>Publicidad</h4>`+
+  const pub = `<div class="nd-card">${ndH(ND_IC.megafono,"Publicidad")}`+
     (v.hasAds
       ? ndRow("Gasto en Meta", money(v.gastoAds)) + ndRow("Costo por chat",`<span id="ndCpc">…</span>`) + ndRow("Costo por venta", v.cpa==null?"—":money(v.cpa))
       // (22-oct) Meta conectado pero sin gasto en estas fechas (hoy temprano, Meta todavía no reporta): no es «conecta Meta»
@@ -2063,7 +2155,7 @@ function renderND(v){
         + `<div class="nd-note">Meta todavía no reporta gasto en estas fechas. Si es hoy, aparece en unas horas.</div>`
       : `<div class="nd-note">Conecta tus anuncios en <a href="canales.html?tab=meta">Conexiones → Meta</a> para ver cuánto te cuesta cada chat y cada venta.</div>`)+
     `</div>`;
-  const r = `<div class="nd-card"><h4>Rentabilidad</h4>`+
+  const r = `<div class="nd-card">${ndH(IC_CAPAS,"Rentabilidad")}`+
     ndRow(v.vendeFisico?"Ganancia bruta":"Ingresos cobrados", v.brutaDesconocida?"—":money(v.bruta))+
     (v.hasAds ? ndRow("− Publicidad", money(v.gastoAds), "neg") : "")+
     (v.gastoIa>0 ? ndRow("− IA", money(v.gastoIa), "neg") : "")+
