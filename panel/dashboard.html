@@ -259,18 +259,23 @@
   .nd-kpi.gan{background:radial-gradient(120% 140% at 100% 100%,rgba(1,175,254,.45),transparent 60%),linear-gradient(135deg,#0B63E5,#0044FE);border-color:rgba(255,255,255,.35);
     box-shadow:0 14px 30px -12px rgba(0,68,254,.55);color:#fff;justify-content:center}
   /* (11-nov, Rodrigo: «la tarjeta de ganancia tiene un diseño y animación») Ondas de luz abajo a la derecha que se mueven
-     despacio, un brillo que la cruza cada tanto y el monto que sube contando al cargar (renderND). */
+     despacio y el monto que sube contando al cargar (renderND). (11-nov) Sin el brillo: Rodrigo quiso solo las ondas, más fluidas. */
   .nd-kpi.gan{position:relative;overflow:hidden;isolation:isolate}
-  .nd-kpi.gan > *{position:relative;z-index:2}
-  .nd-kpi.gan::before{content:"";position:absolute;left:28%;right:-55%;bottom:-6px;height:86%;z-index:0;pointer-events:none;
-    background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 120' preserveAspectRatio='none'%3E%3Cpath d='M0 70 C120 20 220 20 320 60 S520 110 600 50 V120 H0Z' fill='%23ffffff' fill-opacity='.10'/%3E%3Cpath d='M0 95 C140 45 260 60 360 85 S520 100 600 70 V120 H0Z' fill='%23ffffff' fill-opacity='.12'/%3E%3Cpath d='M0 70 C120 20 220 20 320 60 S520 110 600 50' fill='none' stroke='%23ffffff' stroke-opacity='.35' stroke-width='1.5'/%3E%3C/svg%3E") left bottom/100% 100% no-repeat;
-    animation:ganOla 10s ease-in-out infinite alternate}
-  .nd-kpi.gan::after{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;
-    background:linear-gradient(115deg,transparent 35%,rgba(255,255,255,.22) 48%,transparent 60%);transform:translateX(-120%);
-    animation:ganBrillo 7s ease-in-out 1.2s infinite}
-  @keyframes ganOla{from{transform:translateX(0)}to{transform:translateX(-30%)}}
-  @keyframes ganBrillo{0%{transform:translateX(-120%)}22%,100%{transform:translateX(120%)}}
-  @media (prefers-reduced-motion:reduce){.nd-kpi.gan::before,.nd-kpi.gan::after{animation:none}}
+  .nd-kpi.gan > :not(.gan-olas){position:relative;z-index:2}
+  /* Tres capas de ondas (div .gan-olas que arma renderND) que se repiten sin costura y corren de lado a velocidades
+     distintas (una al revés) mientras suben y bajan un poco. Se mueven con transform (lo hace la tarjeta de video, sin
+     repintar): fluido. Se desvanecen hacia la izquierda para no tapar el monto. */
+  .gan-olas{position:absolute;left:0;right:0;bottom:-4px;height:80%;z-index:0;pointer-events:none;overflow:hidden;
+    -webkit-mask-image:linear-gradient(to right,transparent 0%,rgba(0,0,0,.4) 28%,#000 60%);mask-image:linear-gradient(to right,transparent 0%,rgba(0,0,0,.4) 28%,#000 60%)}
+  .gan-olas i{position:absolute;left:0;bottom:0;width:calc(100% + var(--t));will-change:transform;
+    background-repeat:repeat-x;background-position:0 100%;background-size:var(--t) 100%;
+    animation:ganOla var(--v) linear infinite,ganSube var(--s) ease-in-out infinite alternate}
+  .gan-olas .o1{--t:560px;--v:19s;--s:7s;height:96%;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='560' height='100' viewBox='0 0 560 100' preserveAspectRatio='none'%3E%3Cpath d='M0 56 C140 26 140 26 280 56 S420 86 560 56 V100 H0Z' fill='%2389d4ff' fill-opacity='.16'/%3E%3C/svg%3E")}
+  .gan-olas .o2{--t:420px;--v:13s;--s:6s;height:84%;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='100' viewBox='0 0 420 100' preserveAspectRatio='none'%3E%3Cpath d='M0 46 C105 16 105 16 210 46 S315 76 420 46 V100 H0Z' fill='%23ffffff' fill-opacity='.15'/%3E%3Cpath d='M0 46 C105 16 105 16 210 46 S315 76 420 46' fill='none' stroke='%23ffffff' stroke-opacity='.5' stroke-width='1.6'/%3E%3C/svg%3E");animation-direction:reverse,alternate}
+  .gan-olas .o3{--t:340px;--v:9s;--s:5s;height:58%;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='100' viewBox='0 0 340 100' preserveAspectRatio='none'%3E%3Cpath d='M0 68 C85 46 85 46 170 68 S255 90 340 68 V100 H0Z' fill='%23ffffff' fill-opacity='.17'/%3E%3Cpath d='M0 68 C85 46 85 46 170 68 S255 90 340 68' fill='none' stroke='%23ffffff' stroke-opacity='.3' stroke-width='1.2'/%3E%3C/svg%3E");animation-delay:0s,-2.5s}
+  @keyframes ganOla{from{transform:translateX(0)}to{transform:translateX(calc(-1 * var(--t)))}}
+  @keyframes ganSube{from{translate:0 4px}to{translate:0 -5px}}
+  @media (prefers-reduced-motion:reduce){.gan-olas i{animation:none}}
   .nd-kpi.gan .l{color:#fff}
   .nd-kpi.gan .n{color:#fff;font-size:46px}
   .nd-kpi.gan .s{color:rgba(255,255,255,.88)} .nd-kpi.gan .s:empty{display:none}
@@ -290,17 +295,37 @@
   @media(max-width:900px){.nd-groups{grid-template-columns:1fr}}
   .nd-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:14px 18px}
   .nd-card h4{display:flex;align-items:center;gap:10px;margin:2px 0 8px;font-size:15.5px;font-weight:650;color:var(--text)}
-  /* Gastos extra en una franja: ícono · título · total · botón */
-  .nd-gastos{border-radius:16px}
-  .ndg-row{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  /* Gastos extra (izquierda) y Rendimiento por producto (derecha), lado a lado */
+  .nd-duo{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.45fr);gap:14px;align-items:stretch;margin-bottom:16px}
+  .nd-duo > .panel{margin:0}
+  @media(max-width:1100px){.nd-duo{grid-template-columns:1fr}}
+  .nd-gastos{border-radius:16px;display:flex;flex-direction:column}
+  .ndg-row{display:flex;align-items:center;gap:14px}
   .ndg-row .nd-ic{width:46px;height:46px;border-radius:13px} .ndg-row .nd-ic svg{width:24px;height:24px}
-  .ndg-txt{flex:1;min-width:220px} .ndg-txt h3{margin:0 0 2px} .ndg-txt .ps{margin:0}
-  .ndg-tot{display:flex;flex-direction:column;align-items:flex-end;padding:0 20px;border-left:1px solid var(--border)}
-  .ndg-tot span{font-size:12px;color:var(--muted)} .ndg-tot b{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+  .ndg-txt{flex:1;min-width:0} .ndg-txt h3{margin:0 0 2px} .ndg-txt .ps{margin:0}
+  .ndg-pie{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:auto;padding-top:16px;border-top:1px solid var(--border)}
+  .nd-gastos .ndg-row{padding-bottom:16px}
+  .ndg-tot{display:flex;flex-direction:column}
+  .ndg-tot span{font-size:12.5px;color:var(--muted)} .ndg-tot b{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+  .nd-prod{border-radius:16px}
+  .ndp-hd{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+  .ndp-hd h3{display:flex;align-items:center;gap:10px;margin:0}
+  .pp-todos{border:0;background:none;color:#0B63E5;font:inherit;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:4px;cursor:pointer;padding:4px 2px}
+  .pp-todos svg{width:15px;height:15px}
+  html:not([data-theme="light"]) .pp-todos{color:#6EA8FF}
+  .pptab{width:100%;border-collapse:collapse;font-size:13px}
+  .pptab th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:0 10px 8px;border-bottom:1px solid var(--border);white-space:nowrap}
+  .pptab td{padding:9px 10px;border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .pptab tr:last-child td{border-bottom:0}
+  .pptab .r{text-align:right}
+  .pptab th:first-child,.pptab td:first-child{padding-left:0} .pptab th:last-child,.pptab td:last-child{padding-right:0}
+  .pp-n{display:flex;align-items:center;gap:10px;font-weight:500;max-width:280px}
+  .pp-n > span:last-child{overflow:hidden;text-overflow:ellipsis}
+  .pp-emo{width:28px;height:28px;border-radius:8px;background:var(--surface-2);display:inline-flex;align-items:center;justify-content:center;font-size:16px;flex:none}
+  .pp-emo.vacio{color:var(--faint)} .pp-emo svg{width:15px;height:15px}
   .ndg-btn{height:40px;padding:0 16px;border-radius:11px;background:rgba(11,99,229,.08);border-color:transparent;color:#0B63E5;font-size:13.5px}
   .ndg-btn:hover{background:rgba(11,99,229,.14);border-color:transparent}
   html:not([data-theme="light"]) .ndg-btn{background:rgba(110,168,255,.12);color:#6EA8FF}
-  @media(max-width:640px){.ndg-tot{border-left:0;padding:0;align-items:flex-start}}
   #expenses:not(:empty){margin-top:14px}
   /* El título del gráfico y Horarios con su ícono, como en el diseño */
   #bitaTitle{display:flex;align-items:center;gap:10px}
@@ -407,17 +432,26 @@
 
     <div class="nd-groups" id="ndGroups"></div>
 
-    <!-- (11-nov, Rodrigo) Sin «Rendimiento por producto». Gastos extra en una franja: ícono, total del periodo y el botón -->
-    <div id="dashView">
+    <!-- (11-nov, Rodrigo) Gastos extra y Rendimiento por producto lado a lado -->
+    <div id="dashView" class="nd-duo">
       <div class="panel nd-gastos">
         <div class="ndg-row">
           <span class="nd-ic naranja"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg></span>
           <div class="ndg-txt"><h3>Gastos extra</h3><p class="ps">Gastos operativos que registras (empaques, sueldos, local…) · se restan de la ganancia</p></div>
+        </div>
+        <div class="ndg-pie">
           <div class="ndg-tot"><span>Total del periodo</span><b id="expTotal">—</b></div>
           <button class="expbtn ndg-btn" id="addExpBtn">+ Registrar gasto</button>
         </div>
         <div id="expForm" class="hidden"></div>
         <div id="expenses"></div>
+      </div>
+      <div class="panel nd-prod">
+        <div class="ndp-hd">
+          <h3><span class="nd-ic azul sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.7 4.4a2 2 0 0 0 2 0L20.7 7"/></svg></span>Rendimiento por producto</h3>
+          <span id="ppVerTodos"></span>
+        </div>
+        <div id="productPerf"></div>
       </div>
     </div><!-- /#dashView -->
 
@@ -1048,7 +1082,7 @@ async function load(){
     // Mismo arreglo que ya llevaban Compras y Embudo. Orden estable (fecha + id) para no
     // repetir ni saltarse filas entre páginas.
     pageAll((f,t)=>supa.from("orders").select("contact_id,product_id,version_id,amount,currency,order_bumps,estado,shipping,created_at").eq("channel_id",channelId).gte("created_at",fromISO).lt("created_at",toISO).order("created_at",{ascending:false}).order("id",{ascending:false}).range(f,t)),
-    supa.from("products").select("id,nombre,clase,tipo,config,product_versions(id,nombre,cantidad)").eq("channel_id",channelId),
+    supa.from("products").select("id,nombre,emoji,clase,tipo,config,product_versions(id,nombre,cantidad)").eq("channel_id",channelId),
     supa.from("contacts").select("id",{count:"exact",head:true}).eq("channel_id",channelId).neq("wa_id","webchat-test"),
     pageAll((f,t)=>supa.from("ads_insights").select("ad_id,fecha,gasto").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.toDay)).order("fecha",{ascending:false}).order("ad_id",{ascending:false}).range(f,t)),
     pageAll((f,t)=>supa.from("manual_expenses").select("id,fecha,monto,descripcion,categoria").eq("channel_id",channelId).gte("fecha",ymd(r.from)).lte("fecha",ymd(r.toDay)).order("fecha",{ascending:false}).order("id",{ascending:false}).range(f,t)),
@@ -2015,11 +2049,11 @@ async function renderBitaChart(dayMes){
 }
 function renderProducts(prods, orders, vendido, unavailable, margenPorProd, gastoPorProd){
   const box=$("productPerf");
-  if(!box) return;   // (11-nov, Rodrigo) la tabla «Rendimiento por producto» se quitó de Inicio
+  if(!box) return;
   if(unavailable){ box.innerHTML=`<div class="empty">Aplica la migración <b>0017_orders</b> para ver el rendimiento por producto.</div>`; return; }
   // Agregar por producto y versión.
   const pmap={};
-  prods.forEach(p=>{ pmap[p.id]={ id:p.id, nombre:p.nombre, units:0, ing:0, versions:{} };
+  prods.forEach(p=>{ pmap[p.id]={ id:p.id, nombre:p.nombre, emoji:p.emoji||"", units:0, ing:0, versions:{} };
     (p.product_versions||[]).forEach(v=> pmap[p.id].versions[v.id]={ nombre:v.nombre, units:0, ing:0, cant:Number(v.cantidad)||1 }); });
   let sinProd={ units:0, ing:0 };
   orders.forEach(o=>{
@@ -2041,58 +2075,28 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd, gast
   const list=Object.values(pmap).filter(p=>p.units>0 || (GP && GP[p.id]>0));
   if(sinProd.units) list.push({ id:"_none", nombre:"Sin producto asignado", units:sinProd.units, ing:sinProd.ing, versions:{} });
   if(GP && GP._ads>0) list.push({ id:"_ads", nombre:"Anuncios sin producto (sin enlazar ni ventas)", units:0, ing:0, versions:{}, soloAds:true });
-  if(!list.length){ box.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg><h4>Sin ventas todavía</h4>Aún no hay ventas confirmadas en este período. Cuando cierres una, verás aquí el desempeño por producto.</div>`; return; }
+  if(!list.length){ { const h=$("ppVerTodos"); if(h) h.innerHTML=""; } box.innerHTML=`<div class="empty" style="padding:18px 0">Sin ventas en estas fechas. Cuando cierres una, verás aquí cuánto deja cada producto.</div>`; return; }
   const MG=margenPorProd||{};
   list.forEach(p=>{ p.margen = p.soloAds ? 0 : (MG[p.id]==null ? (p.units>0 ? null : 0) : MG[p.id]); p.ads = GP ? (GP[p.id]||0) : 0; });
   list.sort((a,b)=>b.ing-a.ing);
-  const maxIng=Math.max(...list.map(p=>p.ing),1);
-  // Margen DESCONOCIDO ≠ margen cero. Un pedido físico sin flete registrado no tiene
-  // margen calculable (orders.js devuelve null a propósito: mejor nada que un número
-  // inventado), pero acá ese null se volvía 0 y la tabla mostraba "S/ 0.00 · 0%" —
-  // se lee como "este producto no deja nada" cuando en realidad falta un dato. Con
-  // 10 ventas de zapatillas a S/129 y costo 45, decía margen 0%.
-  const mCol=(m,pct)=>{
-    if(m==null) return `<td class="r" style="color:var(--faint)" title="Falta registrar el flete de estos pedidos">—</td><td class="r" style="color:var(--faint)">—</td>`;
-    const c=m<0?"var(--red)":m>0?"var(--green)":"var(--faint)";
-    return `<td class="r money" style="color:${c}">${money(m)}</td><td class="r" style="color:${c}">${pct}%</td>`;
-  };
-  // Publicidad + ganancia neta (= ganancia − publicidad). Sin ads conectados, la tabla queda como antes.
-  const adsCols=(p)=>{
-    if(!GP) return "";
-    const neta=p.margen==null?null:p.margen-p.ads;
+  // (11-nov, rediseño de Rodrigo) Tabla compacta al lado de Gastos extra: producto (con su emoji), ventas, ingresos,
+  // gasto en Meta, ROAS y ganancia (ganancia neta = ganancia − publicidad). Los 3 que más venden; «Ver todos» despliega
+  // el resto. Sin desglose por versión ni fila de total (el total ya está en Rentabilidad).
+  // Margen DESCONOCIDO ≠ margen cero: un pedido físico sin flete registrado no tiene ganancia calculable → «—», no S/ 0.
+  const fila=(p)=>{
+    const neta=p.margen==null?null:p.margen-(p.ads||0);
     const c=neta==null?"var(--faint)":neta<0?"var(--red)":neta>0?"var(--green)":"var(--faint)";
-    return `<td class="r money" style="color:${p.ads>0?"var(--amber,#d97706)":"var(--faint)"}">${p.ads>0?money(p.ads):"—"}</td>`+
-      `<td class="r money" style="color:${c};font-weight:600">${neta==null?"—":money(neta)}</td>`;
+    const roas=(GP&&p.ads>0)?(p.ing/p.ads).toFixed(2)+"×":"—";
+    const ico=p.emoji?`<span class="pp-emo">${esc(p.emoji)}</span>`:`<span class="pp-emo vacio">${IC_CAJA}</span>`;
+    return `<tr><td class="pp-n">${ico}<span title="${esc(p.nombre)}">${esc(p.nombre)}</span></td><td class="r">${p.units}</td><td class="r">${money(p.ing)}</td>`+
+      (GP?`<td class="r">${p.ads>0?money(p.ads):"—"}</td><td class="r">${roas}</td>`:"")+
+      `<td class="r" style="color:${c};font-weight:600"${neta==null?` title="Falta registrar el costo o el flete de estos pedidos"`:""}>${neta==null?"—":money(neta)}</td></tr>`;
   };
-  const vacias=GP?`<td class="r"></td><td class="r"></td>`:"";
-  let rows="";
-  list.forEach(p=>{
-    const share=vendido?Math.round(p.ing/vendido*100):0;
-    const mpct=(p.margen!=null&&p.ing>0)?Math.round(p.margen/p.ing*100):0;
-    rows+=`<tr><td class="pname"><span class="bar-mini" style="width:${Math.round(p.ing/maxIng*44)}px"></span>${esc(p.nombre)}</td>
-      <td class="r">${p.units}</td><td class="r money">${money(p.ing)}</td>${mCol(p.margen,mpct)}${adsCols(p)}<td class="r">${share}%</td></tr>`;
-    // (22-oct) Con UNA sola versión no se desglosa: solo las ventas que guardaron esa versión caían ahí («↳ Única: 1»
-    // de 15) y parecía que se había vendido 1. La fila del producto ya lo dice todo.
-    if(Object.keys(p.versions).length>1) Object.values(p.versions).filter(v=>v.units>0).forEach(v=>{
-      rows+=`<tr><td class="vname">↳ ${esc(v.nombre)}</td><td class="r" style="color:var(--muted)">${v.units}</td><td class="r" style="color:var(--muted)">${money(v.ing)}</td><td class="r"></td><td class="r"></td>${vacias}<td class="r"></td></tr>`;
-    });
-  });
-  const totU=list.reduce((a,p)=>a+p.units,0), totI=list.reduce((a,p)=>a+p.ing,0);
-  // Si NINGÚN producto tiene margen calculable, el total también es desconocido (no 0).
-  const conMargen=list.filter(p=>p.margen!=null);
-  const totM=conMargen.length?conMargen.reduce((a,p)=>a+p.margen,0):null;
-  // El margen del TOTAL va sobre los ingresos de los productos que SÍ tienen ganancia
-  // conocida, no sobre todos. Dividir entre el total reintroducía por la puerta de
-  // atrás el error que la fila ya evita: con S/546 de ganancia conocida y S/1,975 de
-  // ingresos (S/1,429 de ellos con margen desconocido) mostraba "28%", como si las
-  // zapatillas no dejaran nada. Ahora es 100% sobre lo medible, y se avisa que es parcial.
-  const ingConMargen=conMargen.reduce((a,p)=>a+p.ing,0);
-  const totMpct=(totM!=null&&ingConMargen>0)?Math.round(totM/ingConMargen*100):0;
-  const parcial = totM!=null && conMargen.length<list.length;
-  const totAds=list.reduce((a,p)=>a+(p.ads||0),0);
-  rows+=`<tr class="total"><td>Total${parcial?` <span style="font-weight:400;color:var(--faint)">· margen solo de ${conMargen.length} de ${list.length} productos</span>`:""}</td><td class="r">${totU}</td><td class="r money">${money(totI)}</td>${mCol(totM,totMpct)}${GP?adsCols({margen:totM,ads:totAds}):""}<td class="r">100%</td></tr>`;
-  const thAds=GP?`<th class="r" title="Gasto en Meta de los anuncios de este producto, en las fechas de arriba">Publicidad</th><th class="r" title="Ganancia − publicidad">Ganancia neta</th>`:"";
-  box.innerHTML=`<div style="overflow-x:auto"><table class="ptable"><thead><tr><th>Producto / variante</th><th class="r">Unidades</th><th class="r">Ingresos</th><th class="r">Ganancia${GP?" bruta":""}</th><th class="r">Margen</th>${thAds}<th class="r">% del total</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const MAXP=3, todos=box.dataset.todos==="1";
+  const verTodos=list.length>MAXP?`<button type="button" class="pp-todos" id="ppTodos">${todos?"Ver menos":"Ver todos ("+list.length+")"} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>`:"";
+  { const h=$("ppVerTodos"); if(h) h.innerHTML=verTodos; }
+  box.innerHTML=`<div style="overflow-x:auto"><table class="pptab"><thead><tr><th>Producto</th><th class="r">Ventas</th><th class="r">Ingresos</th>${GP?`<th class="r" title="Gasto en Meta de los anuncios de este producto">Gasto</th><th class="r">ROAS</th>`:""}<th class="r" title="${GP?"Ganancia − publicidad":"Ganancia"}">Ganancia</th></tr></thead><tbody>${(todos?list:list.slice(0,MAXP)).map(fila).join("")}</tbody></table></div>`;
+  { const t=$("ppTodos"); if(t) t.onclick=()=>{ box.dataset.todos=todos?"0":"1"; renderProducts(prods, orders, vendido, unavailable, margenPorProd, gastoPorProd); }; }
 }
 
 
@@ -2123,6 +2127,7 @@ function contarGanancia(nodo, fin){
     if(k<1) requestAnimationFrame(paso); };
   requestAnimationFrame(paso);
 }
+const IC_CAJA=_svg(`<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.7 4.4a2 2 0 0 0 2 0L20.7 7"/>`);
 const ndH=(ic,t)=>`<h4><span class="nd-ic azul sm">${ic}</span>${t}</h4>`;
 function renderND(v){
   const el=$("ndKpis"); if(!el) return;
@@ -2130,7 +2135,7 @@ function renderND(v){
   // La ganancia neta va en la franja azul, sola (22-oct: sin la cuenta de abajo, a pedido de Rodrigo; el desglose está
   // en la tarjeta Rentabilidad). Solo se explica el «—» cuando falta un costo.
   // (11-nov, rediseño de Rodrigo) Las 4 cifras en tarjetas iguales con su ícono: la ganancia neta, azul y más ancha.
-  const kpi=(cls,ic,l,n,s,sCls="")=>`<div class="nd-kpi ${cls}"><div class="h"><span class="nd-ic ${ic}">${ND_IC[ic]}</span><span class="l">${l}</span></div><span class="n">${n}</span><span class="s ${sCls}">${s}</span></div>`;
+  const kpi=(cls,ic,l,n,s,sCls="")=>`<div class="nd-kpi ${cls}">${cls==="gan"?`<div class="gan-olas" aria-hidden="true"><i class="o1"></i><i class="o2"></i><i class="o3"></i></div>`:""}<div class="h"><span class="nd-ic ${ic}">${ND_IC[ic]}</span><span class="l">${l}</span></div><span class="n">${n}</span><span class="s ${sCls}">${s}</span></div>`;
   el.innerHTML=
     kpi("gan","blanco","Ganancia neta", v.brutaDesconocida?"—":money(v.neta), v.brutaDesconocida?"falta registrar algún costo":"")+
     kpi("ven","azul","Ventas", v.compras, v.compras?"Ticket "+money(v.ticket):"sin ventas en estas fechas")+
