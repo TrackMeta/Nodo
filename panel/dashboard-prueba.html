@@ -261,19 +261,21 @@
   /* (11-nov, Rodrigo: «la tarjeta de ganancia tiene un diseño y animación») Ondas de luz abajo a la derecha que se mueven
      despacio y el monto que sube contando al cargar (renderND). (11-nov) Sin el brillo: Rodrigo quiso solo las ondas, más fluidas. */
   .nd-kpi.gan{position:relative;overflow:hidden;isolation:isolate}
-  .nd-kpi.gan > *{position:relative;z-index:2}
-  /* Tres capas de ondas que se repiten sin costura y corren de lado a velocidades distintas (una al revés), y suben y bajan
-     un poco: movimiento continuo, sin saltos. Se desvanecen hacia la izquierda para no tapar el monto. */
-  .nd-kpi.gan::before,.nd-kpi.gan::after{content:"";position:absolute;left:0;right:0;bottom:-4px;z-index:0;pointer-events:none;
-    -webkit-mask-image:linear-gradient(to right,transparent 0%,rgba(0,0,0,.35) 30%,#000 62%);mask-image:linear-gradient(to right,transparent 0%,rgba(0,0,0,.35) 30%,#000 62%)}
-  .nd-kpi.gan::before{height:74%;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='560' height='100' viewBox='0 0 560 100' preserveAspectRatio='none'%3E%3Cpath d='M0 58 C140 30 140 30 280 58 S420 86 560 58 V100 H0Z' fill='%23ffffff' fill-opacity='.09'/%3E%3C/svg%3E") 0 100%/560px 100% repeat-x,url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='100' viewBox='0 0 420 100' preserveAspectRatio='none'%3E%3Cpath d='M0 46 C105 18 105 18 210 46 S315 74 420 46 V100 H0Z' fill='%23ffffff' fill-opacity='.11'/%3E%3Cpath d='M0 46 C105 18 105 18 210 46 S315 74 420 46' fill='none' stroke='%23ffffff' stroke-opacity='.38' stroke-width='1.6'/%3E%3C/svg%3E") 0 100%/420px 100% repeat-x;
-    animation:ganOlaA 16s linear infinite,ganSube 7s ease-in-out infinite alternate}
-  .nd-kpi.gan::after{height:52%;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='100' viewBox='0 0 340 100' preserveAspectRatio='none'%3E%3Cpath d='M0 70 C85 50 85 50 170 70 S255 90 340 70 V100 H0Z' fill='%23ffffff' fill-opacity='.13'/%3E%3Cpath d='M0 70 C85 50 85 50 170 70 S255 90 340 70' fill='none' stroke='%23ffffff' stroke-opacity='.22' stroke-width='1.2'/%3E%3C/svg%3E") 0 100%/340px 100% repeat-x;
-    animation:ganOlaB 11s linear infinite,ganSube 5.5s ease-in-out -2s infinite alternate-reverse}
-  @keyframes ganOlaA{from{background-position:0 100%,0 100%}to{background-position:-560px 100%,420px 100%}}
-  @keyframes ganOlaB{from{background-position:0 100%}to{background-position:-340px 100%}}
-  @keyframes ganSube{from{transform:translateY(3px)}to{transform:translateY(-5px)}}
-  @media (prefers-reduced-motion:reduce){.nd-kpi.gan::before,.nd-kpi.gan::after{animation:none}}
+  .nd-kpi.gan > :not(.gan-olas){position:relative;z-index:2}
+  /* Tres capas de ondas (div .gan-olas que arma renderND) que se repiten sin costura y corren de lado a velocidades
+     distintas (una al revés) mientras suben y bajan un poco. Se mueven con transform (lo hace la tarjeta de video, sin
+     repintar): fluido. Se desvanecen hacia la izquierda para no tapar el monto. */
+  .gan-olas{position:absolute;left:0;right:0;bottom:-4px;height:80%;z-index:0;pointer-events:none;overflow:hidden;
+    -webkit-mask-image:linear-gradient(to right,transparent 0%,rgba(0,0,0,.4) 28%,#000 60%);mask-image:linear-gradient(to right,transparent 0%,rgba(0,0,0,.4) 28%,#000 60%)}
+  .gan-olas i{position:absolute;left:0;bottom:0;width:calc(100% + var(--t));will-change:transform;
+    background-repeat:repeat-x;background-position:0 100%;background-size:var(--t) 100%;
+    animation:ganOla var(--v) linear infinite,ganSube var(--s) ease-in-out infinite alternate}
+  .gan-olas .o1{--t:560px;--v:19s;--s:7s;height:96%;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='560' height='100' viewBox='0 0 560 100' preserveAspectRatio='none'%3E%3Cpath d='M0 56 C140 26 140 26 280 56 S420 86 560 56 V100 H0Z' fill='%2389d4ff' fill-opacity='.16'/%3E%3C/svg%3E")}
+  .gan-olas .o2{--t:420px;--v:13s;--s:6s;height:84%;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='100' viewBox='0 0 420 100' preserveAspectRatio='none'%3E%3Cpath d='M0 46 C105 16 105 16 210 46 S315 76 420 46 V100 H0Z' fill='%23ffffff' fill-opacity='.15'/%3E%3Cpath d='M0 46 C105 16 105 16 210 46 S315 76 420 46' fill='none' stroke='%23ffffff' stroke-opacity='.5' stroke-width='1.6'/%3E%3C/svg%3E");animation-direction:reverse,alternate}
+  .gan-olas .o3{--t:340px;--v:9s;--s:5s;height:58%;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='100' viewBox='0 0 340 100' preserveAspectRatio='none'%3E%3Cpath d='M0 68 C85 46 85 46 170 68 S255 90 340 68 V100 H0Z' fill='%23ffffff' fill-opacity='.17'/%3E%3Cpath d='M0 68 C85 46 85 46 170 68 S255 90 340 68' fill='none' stroke='%23ffffff' stroke-opacity='.3' stroke-width='1.2'/%3E%3C/svg%3E");animation-delay:0s,-2.5s}
+  @keyframes ganOla{from{transform:translateX(0)}to{transform:translateX(calc(-1 * var(--t)))}}
+  @keyframes ganSube{from{translate:0 4px}to{translate:0 -5px}}
+  @media (prefers-reduced-motion:reduce){.gan-olas i{animation:none}}
   .nd-kpi.gan .l{color:#fff}
   .nd-kpi.gan .n{color:#fff;font-size:46px}
   .nd-kpi.gan .s{color:rgba(255,255,255,.88)} .nd-kpi.gan .s:empty{display:none}
@@ -2133,7 +2135,7 @@ function renderND(v){
   // La ganancia neta va en la franja azul, sola (22-oct: sin la cuenta de abajo, a pedido de Rodrigo; el desglose está
   // en la tarjeta Rentabilidad). Solo se explica el «—» cuando falta un costo.
   // (11-nov, rediseño de Rodrigo) Las 4 cifras en tarjetas iguales con su ícono: la ganancia neta, azul y más ancha.
-  const kpi=(cls,ic,l,n,s,sCls="")=>`<div class="nd-kpi ${cls}"><div class="h"><span class="nd-ic ${ic}">${ND_IC[ic]}</span><span class="l">${l}</span></div><span class="n">${n}</span><span class="s ${sCls}">${s}</span></div>`;
+  const kpi=(cls,ic,l,n,s,sCls="")=>`<div class="nd-kpi ${cls}">${cls==="gan"?`<div class="gan-olas" aria-hidden="true"><i class="o1"></i><i class="o2"></i><i class="o3"></i></div>`:""}<div class="h"><span class="nd-ic ${ic}">${ND_IC[ic]}</span><span class="l">${l}</span></div><span class="n">${n}</span><span class="s ${sCls}">${s}</span></div>`;
   el.innerHTML=
     kpi("gan","blanco","Ganancia neta", v.brutaDesconocida?"—":money(v.neta), v.brutaDesconocida?"falta registrar algún costo":"")+
     kpi("ven","azul","Ventas", v.compras, v.compras?"Ticket "+money(v.ticket):"sin ventas en estas fechas")+
