@@ -1330,6 +1330,9 @@ function ajustarFranja() {
     if ([...caja.querySelectorAll(".nodo-head")].find((x) => x.offsetParent) === h) caja.style.setProperty("--franja-h", Math.round(h.getBoundingClientRect().bottom - caja.getBoundingClientRect().top - caja.clientTop + caja.scrollTop) + "px");
   });
   medir();
+  // (12-nov) La página entra con una animación que la baja unos px: medida en ese momento, el azul quedaba corto.
+  // Se vuelve a medir cuando termina (el ResizeObserver no se entera de un transform).
+  heads().forEach((h) => { const c = h.closest(".nodo-page, .wrap"); if (c) c.addEventListener("animationend", medir); });
   if (!("ResizeObserver" in window)) return;
   if (_franjaRO) _franjaRO.disconnect();
   _franjaRO = new ResizeObserver(medir);   // menú comprimido, ventana más angosta, barra de scroll que aparece
