@@ -1280,36 +1280,38 @@ html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title{font-size:26px}
 
 /* El degradado: una capa propia (::before del área que hace scroll) detrás de la cabecera y del contenido, que se mueve
    con el scroll. (12-nov, Rodrigo: «hemos perdido el desvanecido» y «que nazca desde arriba y baje esa cabecera»)
-   · Desvanecido suave de 36 px (12-nov: con 24 px «se perdió el desvanecido»; con 56 px y la cabecera de 80 px, «acórtalo más:
+   · (12-nov, última) El azul TERMINA en la cabecera, justo bajo la descripción (Rodrigo: «más corto, que termine en la
+     descripción» sin perder el desvanecido): el desvanecido son los últimos 34 px y empieza ya dentro de la cabecera,
+     como en Inicio. Antes: desvanecido suave de 36 px (12-nov: con 24 px «se perdió el desvanecido»; con 56 px y la cabecera de 80 px, «acórtalo más:
      un poco más abajo de la descripción, nada más»). La cabecera mide 68 px. Para que no vuelva la rayita, llega al color de la página 6 px antes de que
      termine el azul (cada capa tiene su tamaño).
    · Al entrar a una sección la capa baja desde arriba (0,75 s, curva suave) y después aparece el texto. Es una capa
      aparte que se mueve con transform: la tarjeta de video la desliza sin repintar nada, por eso va fluida.
    · z-index:-1 la deja detrás de todo el contenido (la página no tiene fondo propio: el de body pinta el lienzo). */
-html:not([data-ds="1"]) :is(.nodo-page,body.nodo-shelled .wrap){--fx:36px}
+html:not([data-ds="1"]) :is(.nodo-page,body.nodo-shelled .wrap){--fx:0px}
 html:not([data-ds="1"]) .nodo-page:has(.nodo-head):not(:has(.nd-head)),
 html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head){position:relative}
 html:not([data-ds="1"]) .nodo-page:has(.nodo-head):not(:has(.nd-head))::before,
 html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head)::before{content:"";position:absolute;left:0;right:0;top:0;
   height:calc(var(--fh) + var(--fx));z-index:-1;pointer-events:none;
   background-image:linear-gradient(to bottom,
-      transparent var(--fh),
-      color-mix(in srgb,var(--bg) 22%,transparent) calc(var(--fh) + var(--fx) * .25),
-      color-mix(in srgb,var(--bg) 55%,transparent) calc(var(--fh) + var(--fx) * .5),
-      color-mix(in srgb,var(--bg) 85%,transparent) calc(var(--fh) + var(--fx) * .75),
-      var(--bg) calc(var(--fh) + var(--fx) - 6px)),
+      transparent calc(100% - 34px),
+      color-mix(in srgb,var(--bg) 18%,transparent) calc(100% - 26px),
+      color-mix(in srgb,var(--bg) 50%,transparent) calc(100% - 16px),
+      color-mix(in srgb,var(--bg) 84%,transparent) calc(100% - 8px),
+      var(--bg) calc(100% - 3px)),
     var(--franja-capas);
-  background-size:100% 100%,100% calc(100% - 4px),100% calc(100% - 4px),100% calc(100% - 4px),100% calc(100% - 4px);
+  background-size:100% 100%,100% calc(100% - 1px),100% calc(100% - 1px),100% calc(100% - 1px),100% calc(100% - 1px);
   background-repeat:no-repeat;background-position:0 0;
   transform-origin:50% 0;will-change:transform;animation:franjaBaja .75s cubic-bezier(.16,1,.3,1) both}
 html:not([data-ds="1"]) .nodo-page:has(.nodo-head.ia)::before,
 html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head.ia)::before{
   background-image:linear-gradient(to bottom,
-      transparent var(--fh),
-      color-mix(in srgb,var(--bg) 22%,transparent) calc(var(--fh) + var(--fx) * .25),
-      color-mix(in srgb,var(--bg) 55%,transparent) calc(var(--fh) + var(--fx) * .5),
-      color-mix(in srgb,var(--bg) 85%,transparent) calc(var(--fh) + var(--fx) * .75),
-      var(--bg) calc(var(--fh) + var(--fx) - 6px)),
+      transparent calc(100% - 34px),
+      color-mix(in srgb,var(--bg) 18%,transparent) calc(100% - 26px),
+      color-mix(in srgb,var(--bg) 50%,transparent) calc(100% - 16px),
+      color-mix(in srgb,var(--bg) 84%,transparent) calc(100% - 8px),
+      var(--bg) calc(100% - 3px)),
     var(--franja-capas-ia)}
 @keyframes franjaBaja{from{transform:translateY(-100%)}to{transform:none}}
 
