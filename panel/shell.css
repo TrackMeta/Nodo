@@ -1232,23 +1232,44 @@ html:not([data-ds="1"]) .nodo-head .neg-k{font-size:10.5px;margin-bottom:0}
 html:not([data-ds="1"]) .nodo-head.franja-alta{padding:24px 0 26px;margin-bottom:22px}
 html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title{font-size:26px}
 @media(max-width:720px){html:not([data-ds="1"]) .nodo-head.franja-alta{padding:20px 0 22px}}
-/* (12-nov, Rodrigo: «las cabeceras de todas las secciones igual que Inicio») El degradado de Inicio en TODAS las secciones:
-   azul con luces suaves que se desvanece hacia abajo y se funde con la página, en vez de cortarse en seco. Baja justo hasta
-   donde empieza el contenido (bottom = −margin-bottom), así no tapa nada; el texto queda en la parte sólida y el desvanecido
-   ocupa el relleno de abajo y el margen. Inicio (.nd-head) lo estira más porque sus tarjetas van montadas encima. */
-html:not([data-ds="1"]) .nodo-head{padding-bottom:24px;margin-bottom:14px}
-html:not([data-ds="1"]) .nodo-head.franja-alta{padding-bottom:34px}
-html:not([data-ds="1"]) .nodo-head::before{bottom:-14px;pointer-events:none;
-  background:
-    radial-gradient(38% 70% at 78% 8%,rgba(255,255,255,.22),transparent 70%),
-    radial-gradient(30% 60% at 52% 40%,rgba(120,210,255,.28),transparent 70%),
-    radial-gradient(45% 90% at 8% 0%,rgba(0,30,190,.5),transparent 70%),
+/* (12-nov, Rodrigo: «las cabeceras de todas las secciones igual que Inicio» y después «Inicio tiene una cabecera más larga,
+   me gusta más esa, iguálalas») Todas las secciones con la cabecera de Inicio: alta, el título grande y el degradado azul
+   con luces que sigue por DETRÁS del contenido y se desvanece hacia la página (como en Inicio, donde las tarjetas van
+   montadas encima). El desvanecido lo pinta el fondo del área que hace scroll (.nodo-page o .wrap, y se mueve con ella);
+   la cabecera pinta el mismo dibujo, del mismo tamaño y desde el mismo borde, así no se nota la unión (la cabecera tiene
+   que ir encima del contenido por sus menús, por eso no puede estirarse ella misma por detrás de las tarjetas).
+   Inicio (.nd-head) tiene su propia regla. En el celular la cabecera crece (botones en dos filas): ahí va azul entera. */
+html:not([data-ds="1"]){
+  --franja-capas:
+    radial-gradient(38% 70% at 78% 8%,rgba(255,255,255,.26),transparent 70%),
+    radial-gradient(30% 60% at 52% 40%,rgba(120,210,255,.30),transparent 70%),
+    radial-gradient(45% 90% at 8% 0%,rgba(0,30,190,.55),transparent 70%),
     linear-gradient(100deg,#0036E8 0%,#0B5FF0 32%,#1690FF 62%,#4DC2FF 100%);
-  -webkit-mask-image:linear-gradient(to bottom,#000 0,#000 calc(100% - 40px),rgba(0,0,0,.45) calc(100% - 20px),transparent 100%);
-  mask-image:linear-gradient(to bottom,#000 0,#000 calc(100% - 40px),rgba(0,0,0,.45) calc(100% - 20px),transparent 100%)}
-html:not([data-ds="1"]) .nodo-head.ia::before{
-  background:radial-gradient(38% 70% at 78% 8%,rgba(255,255,255,.18),transparent 70%),linear-gradient(90deg,#7C3AED 0%,#A21CAF 50%,#DB2777 max(85%,900px))}
-@media(max-width:720px){html:not([data-ds="1"]) .nodo-head{padding-bottom:22px}}
+  --franja-capas-ia:
+    radial-gradient(38% 70% at 78% 8%,rgba(255,255,255,.2),transparent 70%),
+    radial-gradient(45% 90% at 8% 0%,rgba(76,29,149,.45),transparent 70%),
+    linear-gradient(100deg,#7C3AED 0%,#A21CAF 50%,#DB2777 100%)}
+html:not([data-ds="1"]) .nodo-head{padding:24px 0 30px;margin-bottom:22px}
+html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-head > .grow h1{font-size:26px;line-height:1.23}
+html:not([data-ds="1"]) .nodo-head .nodo-lead,html:not([data-ds="1"]) .nodo-head > .grow p{margin-top:4px;font-size:13.5px}
+html:not([data-ds="1"]) .nodo-head::before,
+html:not([data-ds="1"]) .nodo-page:has(> .nodo-wrap > .nodo-head:not(.nd-head)),
+html:not([data-ds="1"]) body.nodo-shelled .wrap:has(> .nodo-head){
+  background-image:linear-gradient(to bottom,transparent 46%,color-mix(in srgb,var(--bg) 40%,transparent) 66%,color-mix(in srgb,var(--bg) 82%,transparent) 84%,var(--bg) 100%),var(--franja-capas);
+  background-size:100% 320px;background-repeat:no-repeat;background-position:0 0}
+html:not([data-ds="1"]) .nodo-head::before{bottom:0;pointer-events:none}
+html:not([data-ds="1"]) .nodo-page:has(> .nodo-wrap > .nodo-head:not(.nd-head)),
+html:not([data-ds="1"]) body.nodo-shelled .wrap:has(> .nodo-head){background-attachment:local}
+html:not([data-ds="1"]) .nodo-head.ia::before,
+html:not([data-ds="1"]) .nodo-page:has(> .nodo-wrap > .nodo-head.ia),
+html:not([data-ds="1"]) body.nodo-shelled .wrap:has(> .nodo-head.ia){
+  background-image:linear-gradient(to bottom,transparent 46%,color-mix(in srgb,var(--bg) 40%,transparent) 66%,color-mix(in srgb,var(--bg) 82%,transparent) 84%,var(--bg) 100%),var(--franja-capas-ia)}
+@media(max-width:720px){
+  html:not([data-ds="1"]) .nodo-head{padding:20px 0 22px}
+  html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-head > .grow h1{font-size:23px}
+  html:not([data-ds="1"]) .nodo-head::before{background-image:var(--franja-capas);background-size:100% 100%}
+  html:not([data-ds="1"]) .nodo-head.ia::before{background-image:var(--franja-capas-ia)}
+  html:not([data-ds="1"]) .nodo-page:has(> .nodo-wrap > .nodo-head),html:not([data-ds="1"]) body.nodo-shelled .wrap:has(> .nodo-head){background-image:none}}
 /* (22-oct) El nombre del bot en el menú se cortaba («Prime D…»): le faltaban ~15 px. Menos separación, el botón de comprimir
    un poco más chico y la letra a 13,5 px; un nombre largo igual se corta, con el nombre completo al pasar el mouse. */
 html:not([data-ds="1"]) .nodo-brand{gap:4px}
@@ -1314,3 +1335,20 @@ html.tema-vt::view-transition-new(root){z-index:2}
    círculo: cambiaba de golpe y por encima. Mientras cambia el TEMA, va con el resto de la pantalla. */
 html.tema-vt .nodo-nav{view-transition-name:none}
 html.tema-suave,html.tema-suave *,html.tema-suave *::before,html.tema-suave *::after{transition:background-color .4s ease,color .4s ease,border-color .4s ease,fill .4s ease,stroke .4s ease!important}
+
+/* (11-nov) Ondas de la ganancia de Inicio; desde el 12-nov también en la conversión del Embudo (Rodrigo: «el mismo diseño y
+   animación que la ganancia»). La tarjeta que las lleva necesita position:relative;overflow:hidden y su contenido z-index:2. */
+/* Tres capas de ondas (div .gan-olas que arma renderND) que se repiten sin costura y corren de lado a velocidades
+   distintas (una al revés) mientras suben y bajan un poco. Se mueven con transform (lo hace la tarjeta de video, sin
+   repintar): fluido. Se desvanecen hacia la izquierda para no tapar el monto. */
+.gan-olas{position:absolute;left:0;right:0;bottom:-4px;height:80%;z-index:0;pointer-events:none;overflow:hidden;
+  -webkit-mask-image:linear-gradient(to right,transparent 0%,rgba(0,0,0,.4) 28%,#000 60%);mask-image:linear-gradient(to right,transparent 0%,rgba(0,0,0,.4) 28%,#000 60%)}
+.gan-olas i{position:absolute;left:0;bottom:0;width:calc(100% + var(--t));will-change:transform;
+  background-repeat:repeat-x;background-position:0 100%;background-size:var(--t) 100%;
+  animation:ganOla var(--v) linear infinite,ganSube var(--s) ease-in-out infinite alternate}
+.gan-olas .o1{--t:560px;--v:19s;--s:7s;height:96%;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='560' height='100' viewBox='0 0 560 100' preserveAspectRatio='none'%3E%3Cpath d='M0 56 C140 26 140 26 280 56 S420 86 560 56 V100 H0Z' fill='%2389d4ff' fill-opacity='.16'/%3E%3C/svg%3E")}
+.gan-olas .o2{--t:420px;--v:13s;--s:6s;height:84%;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='420' height='100' viewBox='0 0 420 100' preserveAspectRatio='none'%3E%3Cpath d='M0 46 C105 16 105 16 210 46 S315 76 420 46 V100 H0Z' fill='%23ffffff' fill-opacity='.15'/%3E%3Cpath d='M0 46 C105 16 105 16 210 46 S315 76 420 46' fill='none' stroke='%23ffffff' stroke-opacity='.5' stroke-width='1.6'/%3E%3C/svg%3E");animation-direction:reverse,alternate}
+.gan-olas .o3{--t:340px;--v:9s;--s:5s;height:58%;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='340' height='100' viewBox='0 0 340 100' preserveAspectRatio='none'%3E%3Cpath d='M0 68 C85 46 85 46 170 68 S255 90 340 68 V100 H0Z' fill='%23ffffff' fill-opacity='.17'/%3E%3Cpath d='M0 68 C85 46 85 46 170 68 S255 90 340 68' fill='none' stroke='%23ffffff' stroke-opacity='.3' stroke-width='1.2'/%3E%3C/svg%3E");animation-delay:0s,-2.5s}
+@keyframes ganOla{from{transform:translateX(0)}to{transform:translateX(calc(-1 * var(--t)))}}
+@keyframes ganSube{from{translate:0 4px}to{translate:0 -5px}}
+@media (prefers-reduced-motion:reduce){.gan-olas i{animation:none}}
