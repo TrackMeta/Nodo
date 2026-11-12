@@ -134,7 +134,7 @@
   @media(max-width:620px){.ekpis{grid-template-columns:1fr}}
   .ekpi{position:relative;overflow:hidden;isolation:isolate;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:18px 22px;min-height:124px;
     border-radius:16px;border:1px solid var(--border);background:var(--surface);min-width:0;box-shadow:0 12px 28px -18px rgba(16,40,120,.35)}
-  .ekpi > :not(.gan-olas):not(.ef-luz){position:relative;z-index:2}
+  .ekpi > :not(.gan-olas):not(.ef-luz):not(.tk-barras){position:relative;z-index:2}
   .ekpi .kl{display:flex;align-items:center;gap:9px;font-size:14.5px;font-weight:600;color:var(--text)}
   .ekpi .kn{font-size:38px;font-weight:700;letter-spacing:-.03em;line-height:1.1;white-space:nowrap;font-variant-numeric:tabular-nums;color:#0B63E5}
   html:not([data-theme="light"]) .ekpi .kn{color:#6EA8FF}
@@ -170,9 +170,19 @@
   @keyframes efLuz2{from{transform:translate(0,0) scale(1)}to{transform:translate(60px,-30px) scale(.88)}}
   @keyframes efLuz3{from{transform:translate(0,0)}to{transform:translate(-40px,-26px)}}
   @keyframes efDestello{0%,100%{opacity:0;transform:scale(.4)}45%{opacity:1;transform:scale(1)}60%{opacity:.9;transform:scale(.85)}}
-  /* Ticket */
-  .ekpi.tick{border-color:rgba(59,130,246,.22);background:linear-gradient(135deg,rgba(59,130,246,.06),transparent 60%),var(--surface)}
-  @media (prefers-reduced-motion:reduce){.ef-luz i,.ef-luz b,.miabadge::after{animation:none}}
+  /* Ticket promedio (12-nov, Rodrigo: «ponle un diseño bonito»): celeste del logo, el número en degradado azul → celeste
+     que sube contando y, a la derecha, unas barritas que crecen y bajan despacio, como un gráfico de lo que deja cada pedido. */
+  .ekpi.tick{border-color:rgba(1,175,254,.32);background:radial-gradient(90% 120% at 100% 100%,rgba(1,175,254,.16),transparent 65%),linear-gradient(135deg,rgba(11,99,229,.06),transparent 60%),var(--surface);box-shadow:0 14px 30px -16px rgba(1,140,254,.45)}
+  .ekpi.tick .kn{background:linear-gradient(120deg,#0B63E5,#01AFFE);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+  html:not([data-theme="light"]) .ekpi.tick .kn{background-image:linear-gradient(120deg,#6EA8FF,#67E8F9)}
+  .tk-barras{position:absolute;right:20px;top:26px;bottom:0;display:flex;align-items:flex-end;gap:7px;z-index:0;pointer-events:none;
+    -webkit-mask-image:linear-gradient(to top,#000 35%,transparent 100%);mask-image:linear-gradient(to top,#000 35%,transparent 100%)}
+  .tk-barras i{width:11px;border-radius:6px 6px 0 0;background:linear-gradient(to top,rgba(1,175,254,.45),rgba(11,99,229,.16));transform-origin:50% 100%;will-change:transform;animation:tkBarra 3.4s ease-in-out infinite alternate}
+  .tk-barras i:nth-child(1){height:34%;animation-delay:-.4s} .tk-barras i:nth-child(2){height:58%;animation-delay:-1.6s}
+  .tk-barras i:nth-child(3){height:44%;animation-delay:-2.6s} .tk-barras i:nth-child(4){height:76%;animation-delay:-.9s}
+  .tk-barras i:nth-child(5){height:62%;animation-delay:-2.1s} .tk-barras i:nth-child(6){height:90%;animation-delay:-3s}
+  @keyframes tkBarra{from{transform:scaleY(.55)}to{transform:scaleY(1)}}
+  @media (prefers-reduced-motion:reduce){.ef-luz i,.ef-luz b,.miabadge::after,.tk-barras i{animation:none}}
   /* Cuadros: título con ícono y subtítulo */
   .emb-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:16px;margin-bottom:16px;align-items:stretch}
   @media(max-width:1000px){.emb-grid{grid-template-columns:1fr}}
@@ -674,21 +684,22 @@ function renderMetricas(F, cmp){
       <div class="kl"><span class="miabadge">${BOT}</span>Efectividad de cierre</div>
       <span class="kn">${ef==null?"—":ef+"%"}</span>
       <div class="ks">${nf.format(F.niveles.compraron)} cerraron de ${nf.format(F.niveles.interes + F.perdidoVenta)} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}</div></div>`+
-    `<div class="ekpi tick"><div class="kl">Ticket promedio</div><span class="kn">${ticket}</span><div class="ks">Valor por pedido</div></div>`;
+    `<div class="ekpi tick"><div class="tk-barras" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="kl">Ticket promedio</div><span class="kn">${ticket}</span><div class="ks">Valor por pedido</div></div>`;
   // Los dos porcentajes suben contando, como la ganancia de Inicio
   if(cv!=null) contar(el.querySelector(".ekpi.conv .kn"), cv, "cv");
   if(ef!=null) contar(el.querySelector(".ekpi.efec .kn"), ef, "ef");
+  if(ticket!=="—") contar(el.querySelector(".ekpi.tick .kn"), F.montoVentas/F.ventas, "tk", (n)=>(CUR_SYM[CUR]||CUR)+" "+n.toFixed(2));
 }
 // Sube contando (~0,9 s) desde la cifra anterior (la 1.ª vez, desde 0) y termina en el mismo texto de siempre.
 const _cont={};
-function contar(nodo, fin, k){
+function contar(nodo, fin, k, fmt=(n)=>Math.round(n)+"%"){
   if(!nodo) return;
   const c=_cont[k]||(_cont[k]={ ant:0, id:0 }); const ini=c.ant; c.ant=fin; const id=++c.id;
-  if(ini===fin || matchMedia("(prefers-reduced-motion: reduce)").matches){ nodo.textContent=fin+"%"; return; }
+  if(ini===fin || matchMedia("(prefers-reduced-motion: reduce)").matches){ nodo.textContent=fmt(fin); return; }
   const t0=performance.now(), dur=900;
   const paso=(t)=>{ if(id!==c.id || !nodo.isConnected) return;
     const x=Math.min(1,(t-t0)/dur), e=1-Math.pow(1-x,3);
-    nodo.textContent=Math.round(x<1 ? ini+(fin-ini)*e : fin)+"%";
+    nodo.textContent=fmt(x<1 ? ini+(fin-ini)*e : fin);
     if(x<1) requestAnimationFrame(paso); };
   requestAnimationFrame(paso);
 }

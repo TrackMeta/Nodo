@@ -802,3 +802,33 @@ body.app *::-webkit-scrollbar{display:none;width:0;height:0}
 .plg.cerrado .plg-tog svg{transform:rotate(-90deg)}
 .plg.cerrado .plg-cuerpo{display:none}
 .plg .plg-cuerpo{padding-top:0}
+
+/* ═══ (12-nov, Rodrigo: «a la app también ponle esa cabecera en Inicio, pero que se vea bien» y «a las demás secciones
+   también, pero del tamaño de su cabecera») El degradado del Inicio web en la app: el azul del logo con luces suaves que
+   se desvanece hacia la página, siguiendo sin costura a la barra de arriba (.top, mismo azul de base). Las luces van más
+   abajo para no marcar la unión con la barra. ═══ */
+.view{--hfade:var(--bg)}
+html[data-theme="light"] .view{--hfade:#F3F6FC}
+/* Inicio: la ganancia sobre el degradado, que se desvanece detrás de las tarjetas (van montadas encima, como en la web) */
+.hero.gan.pegada{padding:6px 16px 66px;
+  background:
+    linear-gradient(to bottom,transparent calc(100% - 64px),color-mix(in srgb,var(--hfade) 45%,transparent) calc(100% - 32px),var(--hfade) 100%),
+    radial-gradient(42% 70% at 84% 60%,rgba(255,255,255,.22),transparent 70%),
+    radial-gradient(36% 60% at 46% 78%,rgba(120,210,255,.30),transparent 70%),
+    radial-gradient(40% 60% at 6% 85%,rgba(0,30,190,.35),transparent 70%),
+    linear-gradient(90deg,#0044FE 0%,#01AFFE 100%)}
+.hero.gan.pegada + #hoyEspera:empty + .kpis,.hero.gan.pegada + #hoyEspera:not(:empty){margin-top:-56px;position:relative;z-index:1}
+.hero.gan.pegada + #hoyEspera:not(:empty) + .kpis{position:relative;z-index:1}
+.hero.gan.pegada ~ .kpis .kpi{box-shadow:0 10px 24px -14px rgba(16,40,120,.4)}
+/* Chats, Pagos, Ventas/Pedidos y Más: el degradado mide justo lo que su cabecera (título y subtítulo, o los filtros y el
+   buscador en Chats) y 56 px más para desvanecerse. app.js mide la cabecera (--hh) y marca sus textos (.en-cab). */
+.pad[data-cab]{
+  background-image:
+    linear-gradient(to bottom,transparent var(--hh),color-mix(in srgb,var(--hfade) 45%,transparent) calc(var(--hh) + 26px),var(--hfade) calc(var(--hh) + 56px)),
+    radial-gradient(45% 80% at 84% 70%,rgba(255,255,255,.2),transparent 70%),
+    radial-gradient(38% 70% at 44% 85%,rgba(120,210,255,.28),transparent 70%),
+    linear-gradient(90deg,#0044FE 0%,#01AFFE 100%);
+  background-size:100% calc(var(--hh) + 56px);background-repeat:no-repeat}
+.pad[data-cab] .h.en-cab{color:#fff}
+.pad[data-cab] .sub.en-cab{color:rgba(255,255,255,.88)}
+.pad[data-cab] > .search{background:var(--surface)}

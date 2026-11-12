@@ -504,3 +504,26 @@ const SIN_SW = "nodo.app.sinSW";
 addEventListener("online", () => A.ch && emit("resync"));
 
 boot().catch((e) => { console.error(e); quitarBoot(); toast("No se pudo abrir la app: " + (e?.message || e), true); });
+
+// (12-nov, Rodrigo) Cada sección con el degradado del tamaño de SU cabecera: el título y su subtítulo (Pagos, Ventas,
+// Pedidos, Accesos, Más) o los filtros y el buscador (Chats). Se mide al pintar la sección y cuando cambia de tamaño
+// (también al mostrarla: escondida mide 0 y se salta). El CSS (.pad[data-cab]) pinta el degradado hasta --hh y lo desvanece.
+function medirCabecera(pad) {
+  if (!pad || !pad.offsetParent) return;
+  pad.querySelectorAll(".en-cab").forEach((e) => e.classList.remove("en-cab"));
+  const h = pad.querySelector(":scope > .h, :scope > div > .h");
+  let fin = null;
+  if (h) {
+    const cont = h.parentElement === pad ? h : h.parentElement, sig = cont.nextElementSibling;
+    fin = sig && sig.classList.contains("sub") ? sig : cont;
+    h.classList.add("en-cab"); if (fin !== cont) fin.classList.add("en-cab");
+  } else fin = pad.querySelector(":scope > .search");
+  if (!fin) { pad.removeAttribute("data-cab"); return; }
+  const alto = Math.round(fin.getBoundingClientRect().bottom - pad.getBoundingClientRect().top + 14);
+  pad.style.setProperty("--hh", alto + "px"); pad.dataset.cab = "1";
+}
+["chatsPad", "pagosPad", "t4Pad", "masPad"].forEach((id) => {
+  const pad = document.getElementById(id); if (!pad) return;
+  new MutationObserver(() => requestAnimationFrame(() => medirCabecera(pad))).observe(pad, { childList: true });
+  if ("ResizeObserver" in window) new ResizeObserver(() => medirCabecera(pad)).observe(pad);
+});
