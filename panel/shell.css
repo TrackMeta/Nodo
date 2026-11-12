@@ -1416,3 +1416,4 @@ html:not([data-ds="1"]) .nodo-head .nodo-back{color:#fff;background:rgba(255,255
 html:not([data-ds="1"]) .nodo-head .nodo-back:hover{color:#fff;background:rgba(255,255,255,.24)}
 html:not([data-ds="1"]) .nodo-head .del-btn{background:rgba(255,255,255,.86);border-color:transparent;color:#D92D20}
 html:not([data-ds="1"]) .nodo-head .del-btn:hover{background:#fff;color:#B42318}
+html:not([data-ds="1"]) .nodo-head > .nodo-actions:last-child{margin-left:auto}
