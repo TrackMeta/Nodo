@@ -1232,18 +1232,21 @@ html:not([data-ds="1"]) .nodo-head .neg-k{font-size:10.5px;margin-bottom:0}
 html:not([data-ds="1"]) .nodo-head.franja-alta{padding:24px 0 26px;margin-bottom:22px}
 html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title{font-size:26px}
 @media(max-width:720px){html:not([data-ds="1"]) .nodo-head.franja-alta{padding:20px 0 22px}}
-/* (12-nov) Cabeceras con el degradado de Inicio, en DOS ALTURAS y el mismo dibujo (Rodrigo: «quiero conservar la armonía y
-   simetría»; él eligió esta regla, la misma que la app):
-   · ALTA: solo Inicio (12-nov, Rodrigo: «solo Inicio tiene alta»), con sus tarjetas montadas encima (.nd-head, su regla).
-     La clase .franja-alta de abajo queda por si otra sección de resumen la necesita.
-   · DEL TAMAÑO DE SU CABECERA (todas las demás): azul hasta donde acaba su descripción, un poquito más abajo, y se
-     desvanece en 36 px (12-nov: «un poco más corto»). Vale también para cabeceras metidas en otra caja (Productos).
-   shell.js (ajustarFranja) mide dónde termina la cabecera y lo pone en --franja-h del área que hace scroll. Ese fondo
-   (.nodo-page o .wrap, se mueve con el scroll) pinta el desvanecido por DETRÁS del contenido; el ::before de la cabecera pinta
-   el mismo dibujo, del mismo tamaño y desde el mismo borde, así no se ve la unión (la cabecera va encima del contenido
-   por sus menús: si se estirara ella, taparía las tarjetas). Como el alto se mide, el texto siempre queda sobre azul
-   entero, aunque los botones bajen a otra fila en el celular. Inicio (.nd-head) tiene su propia regla. */
-html:not([data-ds="1"]){
+/* (12-nov) Cabeceras con el degradado de Inicio. Versión final de ese día (Rodrigo: «deja el mismo tamaño para todas las
+   secciones, que todas queden del mismo tamaño y córtalo más», «arregla la animación, que se vea bonito y fluido» y una
+   rayita que salía en el borde de abajo):
+   · Inicio (.nd-head) es la única alta y tiene su propia regla.
+   · Las demás, en computadora (≥1024 px), miden TODAS lo mismo: la cabecera tiene alto fijo (--franja-fija, 80 px), con
+     el título y la descripción centrados (la descripción en hasta 2 líneas) y los botones a la derecha sin bajar de fila.
+     El azul llega hasta ahí y se desvanece en 24 px.
+   · En pantallas más angostas los botones pueden bajar de fila: ahí se usa el alto medido (--franja-h, ajustarFranja en
+     shell.js) para que el texto nunca quede sobre la parte que se desvanece.
+   · El degradado lo pinta SOLO el fondo del área que hace scroll (.nodo-page o .wrap, se mueve con el scroll), por
+     detrás de la cabecera y del contenido. Antes también lo pintaba el ::before de la cabecera: al entrar la página
+     (que baja 9 px y sube) los dos dibujos se separaban y se veía el corte.
+   · La rayita: el azul y el desvanecido terminaban en la misma fila de píxeles y en ese borde se colaba un hilo azul.
+     Ahora el desvanecido llega al color de la página 8 px antes y el azul termina 6 px antes, por debajo de él. */
+html:not([data-ds="1"]){--franja-fija:80px;
   --franja-capas:
     radial-gradient(38% 70% at 78% 8%,rgba(255,255,255,.26),transparent 70%),
     radial-gradient(30% 60% at 52% 40%,rgba(120,210,255,.30),transparent 70%),
@@ -1253,59 +1256,58 @@ html:not([data-ds="1"]){
     radial-gradient(38% 70% at 78% 8%,rgba(255,255,255,.2),transparent 70%),
     radial-gradient(45% 90% at 8% 0%,rgba(76,29,149,.45),transparent 70%),
     linear-gradient(100deg,#7C3AED 0%,#A21CAF 50%,#DB2777 100%)}
-html:not([data-ds="1"]) :is(.nodo-page,body.nodo-shelled .wrap){--fx:36px;--fs:0px}
-html:not([data-ds="1"]) :is(.nodo-page:has(.nodo-head.franja-alta),body.nodo-shelled .wrap:has(.nodo-head.franja-alta)){--fx:200px;--fs:24px}
-/* Del tamaño de su cabecera */
-html:not([data-ds="1"]) .nodo-head{padding:18px 0 14px;margin-bottom:18px}
-html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-head > .grow h1{font-size:24px;line-height:1.23}
-html:not([data-ds="1"]) .nodo-head .nodo-lead,html:not([data-ds="1"]) .nodo-head > .grow p{margin-top:4px;font-size:13.5px}
-/* Alta */
+html:not([data-ds="1"]) :is(.nodo-page,body.nodo-shelled .wrap){--fh:var(--franja-h,100px);--fx:24px}
+@media(min-width:1024px){html:not([data-ds="1"]) :is(.nodo-page,body.nodo-shelled .wrap){--fh:var(--franja-fija)}}
+
+/* La cabecera (todas menos Inicio) */
+html:not([data-ds="1"]) .nodo-head:not(.nd-head){padding:14px 0 12px;margin-bottom:16px}
+html:not([data-ds="1"]) .nodo-head:not(.nd-head)::before{content:none}
+html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-head > .grow h1{font-size:22px;line-height:1.23;margin:0}
+html:not([data-ds="1"]) .nodo-head .nodo-lead,html:not([data-ds="1"]) .nodo-head > .grow p{margin:3px 0 0!important;font-size:13px;line-height:1.35}
+html:not([data-ds="1"]) .nodo-head > .grow > a:first-child{font-size:11.5px!important;margin-bottom:1px!important}
+html:not([data-ds="1"]) .nodo-head .neg-k,html:not([data-ds="1"]) .nodo-head .ia-k{margin-bottom:0}
+@media(min-width:1024px){
+  html:not([data-ds="1"]) .nodo-head:not(.nd-head){height:var(--franja-fija);box-sizing:border-box;padding:0;flex-wrap:nowrap;align-items:center}
+  html:not([data-ds="1"]) .nodo-head:not(.nd-head) > .grow{min-width:0;flex:1}
+  html:not([data-ds="1"]) .nodo-head:not(.nd-head) > :not(.grow){flex:none}
+  html:not([data-ds="1"]) .nodo-head:not(.nd-head) .nodo-actions{flex-wrap:nowrap}
+  html:not([data-ds="1"]) .nodo-head:not(.nd-head) :is(.nodo-title,.grow h1){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  html:not([data-ds="1"]) .nodo-head:not(.nd-head) :is(.nodo-lead,.grow p){display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}}
+/* Inicio, la alta */
 html:not([data-ds="1"]) .nodo-head.franja-alta{padding:24px 0 28px;margin-bottom:22px}
-html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title,html:not([data-ds="1"]) .nodo-head.franja-alta > .grow h1{font-size:26px}
-@media(max-width:720px){
-  html:not([data-ds="1"]) .nodo-head{padding:14px 0 12px}
-  html:not([data-ds="1"]) .nodo-head.franja-alta{padding:20px 0 22px}
-  html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-head > .grow h1{font-size:22px}}
-html:not([data-ds="1"]) .nodo-head::before,
+html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title{font-size:26px}
+@media(max-width:720px){html:not([data-ds="1"]) .nodo-head.franja-alta{padding:20px 0 22px}}
+
+/* El degradado, en el fondo del área que hace scroll */
 html:not([data-ds="1"]) .nodo-page:has(.nodo-head):not(:has(.nd-head)),
 html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head){
-  --fh:var(--franja-h,120px);
   background-image:linear-gradient(to bottom,
-      transparent calc(var(--fh) + var(--fs)),
-      color-mix(in srgb,var(--bg) 40%,transparent) calc(var(--fh) + var(--fs) + (var(--fx) - var(--fs)) * .45),
-      color-mix(in srgb,var(--bg) 82%,transparent) calc(var(--fh) + var(--fs) + (var(--fx) - var(--fs)) * .75),
-      var(--bg) calc(var(--fh) + var(--fx))),
+      transparent var(--fh),
+      color-mix(in srgb,var(--bg) 40%,transparent) calc(var(--fh) + var(--fx) * .35),
+      color-mix(in srgb,var(--bg) 82%,transparent) calc(var(--fh) + var(--fx) * .7),
+      var(--bg) calc(var(--fh) + var(--fx) - 8px)),
     var(--franja-capas);
-  background-size:100% calc(var(--fh) + var(--fx));background-repeat:no-repeat;background-position:0 0}
-html:not([data-ds="1"]) .nodo-head::before{bottom:0;pointer-events:none}
-html:not([data-ds="1"]) .nodo-page:has(.nodo-head):not(:has(.nd-head)),
-html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head){background-attachment:local}
-/* IA: su violeta → rosado (la regla vieja .nodo-head.ia::before usa el atajo background: hay que repetir tamaño y posición) */
-html:not([data-ds="1"]) .nodo-head.ia::before,
+  background-size:100% calc(var(--fh) + var(--fx)),100% calc(var(--fh) + var(--fx) - 6px),100% calc(var(--fh) + var(--fx) - 6px),100% calc(var(--fh) + var(--fx) - 6px),100% calc(var(--fh) + var(--fx) - 6px);
+  background-repeat:no-repeat;background-position:0 0;background-attachment:local}
 html:not([data-ds="1"]) .nodo-page:has(.nodo-head.ia),
 html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head.ia){
   background-image:linear-gradient(to bottom,
-      transparent calc(var(--fh) + var(--fs)),
-      color-mix(in srgb,var(--bg) 40%,transparent) calc(var(--fh) + var(--fs) + (var(--fx) - var(--fs)) * .45),
-      color-mix(in srgb,var(--bg) 82%,transparent) calc(var(--fh) + var(--fs) + (var(--fx) - var(--fs)) * .75),
-      var(--bg) calc(var(--fh) + var(--fx))),
-    var(--franja-capas-ia);
-  background-size:100% calc(var(--fh) + var(--fx));background-repeat:no-repeat;background-position:0 0}
-/* (12-nov, Rodrigo: «agrega una transición y animación de esta cabecera al cambiar entre secciones») Al entrar a una
-   sección, las luces del degradado se acomodan deslizándose a su lugar (0,9 s), el título entra desde la izquierda y los
-   botones desde la derecha. La cabecera y el fondo del área de scroll animan lo mismo a la vez, así no se ve la unión.
-   Capas: 1 = desvanecido, 2-4 = luces, 5 = azul de base (en IA son 3 capas de dibujo: las posiciones de más se ignoran). */
-@keyframes franjaLuces{from{background-position:0 0,-140px -30px,110px -10px,-70px 0,0 0}to{background-position:0 0,0 0,0 0,0 0,0 0}}
-@keyframes franjaLucesIni{from{background-position:-140px -30px,110px -10px,-70px 0,0 0}to{background-position:0 0,0 0,0 0,0 0}}
-@keyframes cabTexto{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}
-@keyframes cabBotones{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
-html:not([data-ds="1"]) .nodo-head:not(.nd-head)::before,
-html:not([data-ds="1"]) .nodo-page:has(.nodo-head):not(:has(.nd-head)),
-html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head){animation:franjaLuces .9s cubic-bezier(.2,.8,.2,1) both}
-html:not([data-ds="1"]) .nodo-head.nd-head::before{animation:franjaLucesIni .9s cubic-bezier(.2,.8,.2,1) both}
-html:not([data-ds="1"]) .nodo-head > .grow{animation:cabTexto .45s cubic-bezier(.2,.8,.2,1) both}
-html:not([data-ds="1"]) .nodo-head > :not(.grow):not(.nd-kpis){animation:cabBotones .45s .06s cubic-bezier(.2,.8,.2,1) both}
-@media (prefers-reduced-motion:reduce){html:not([data-ds="1"]) .nodo-head::before,html:not([data-ds="1"]) .nodo-head > *,html:not([data-ds="1"]) .nodo-page,html:not([data-ds="1"]) body.nodo-shelled .wrap{animation:none!important}}
+      transparent var(--fh),
+      color-mix(in srgb,var(--bg) 40%,transparent) calc(var(--fh) + var(--fx) * .35),
+      color-mix(in srgb,var(--bg) 82%,transparent) calc(var(--fh) + var(--fx) * .7),
+      var(--bg) calc(var(--fh) + var(--fx) - 8px)),
+    var(--franja-capas-ia)}
+
+/* Animación al entrar a una sección: el título, la descripción y los botones aparecen subiendo con un leve desenfoque que
+   se aclara, uno detrás del otro (0,55 s, curva suave). Solo opacidad, transform y filtro: los mueve la tarjeta de
+   video, sin repintar el fondo, así va fluido. El degradado queda quieto como escenario. */
+@keyframes cabEntra{from{opacity:0;transform:translateY(10px);filter:blur(5px)}to{opacity:1;transform:none;filter:none}}
+@keyframes cabBotones{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+html:not([data-ds="1"]) .nodo-head > .grow > *,html:not([data-ds="1"]) .nodo-head > .ia-ic{animation:cabEntra .55s cubic-bezier(.16,1,.3,1) both}
+html:not([data-ds="1"]) .nodo-head > .grow > :nth-child(2){animation-delay:.07s}
+html:not([data-ds="1"]) .nodo-head > .grow > :nth-child(n+3){animation-delay:.14s}
+html:not([data-ds="1"]) .nodo-head > :not(.grow):not(.nd-kpis):not(.ia-ic){animation:cabBotones .5s .12s cubic-bezier(.16,1,.3,1) both}
+@media (prefers-reduced-motion:reduce){html:not([data-ds="1"]) .nodo-head > *,html:not([data-ds="1"]) .nodo-head > .grow > *{animation:none!important}}
 /* (22-oct) El nombre del bot en el menú se cortaba («Prime D…»): le faltaban ~15 px. Menos separación, el botón de comprimir
    un poco más chico y la letra a 13,5 px; un nombre largo igual se corta, con el nombre completo al pasar el mouse. */
 html:not([data-ds="1"]) .nodo-brand{gap:4px}
