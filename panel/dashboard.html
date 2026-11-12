@@ -2095,7 +2095,7 @@ function renderProducts(prods, orders, vendido, unavailable, margenPorProd, gast
   const MAXP=3, todos=box.dataset.todos==="1";
   const verTodos=list.length>MAXP?`<button type="button" class="pp-todos" id="ppTodos">${todos?"Ver menos":"Ver todos ("+list.length+")"} <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>`:"";
   { const h=$("ppVerTodos"); if(h) h.innerHTML=verTodos; }
-  box.innerHTML=`<div style="overflow-x:auto"><table class="pptab"><thead><tr><th>Producto</th><th class="r">Ventas</th><th class="r">Ingresos</th>${GP?`<th class="r" title="Gasto en Meta de los anuncios de este producto">Gasto</th><th class="r">ROAS</th>`:""}<th class="r" title="${GP?"Ganancia − publicidad":"Ganancia"}">Ganancia</th></tr></thead><tbody>${(todos?list:list.slice(0,MAXP)).map(fila).join("")}</tbody></table></div>`;
+  box.innerHTML=`<div style="overflow-x:auto"><table class="pptab"><thead><tr><th>Producto</th><th class="r" title="Unidades vendidas en estas fechas">Unidades</th><th class="r">Ingresos</th>${GP?`<th class="r" title="Gasto en Meta de los anuncios de este producto">Gasto</th><th class="r">ROAS</th>`:""}<th class="r" title="${GP?"Ganancia − publicidad":"Ganancia"}">Ganancia</th></tr></thead><tbody>${(todos?list:list.slice(0,MAXP)).map(fila).join("")}</tbody></table></div>`;
   { const t=$("ppTodos"); if(t) t.onclick=()=>{ box.dataset.todos=todos?"0":"1"; renderProducts(prods, orders, vendido, unavailable, margenPorProd, gastoPorProd); }; }
 }
 
@@ -2138,8 +2138,8 @@ function renderND(v){
   const kpi=(cls,ic,l,n,s,sCls="")=>`<div class="nd-kpi ${cls}">${cls==="gan"?`<div class="gan-olas" aria-hidden="true"><i class="o1"></i><i class="o2"></i><i class="o3"></i></div>`:""}<div class="h"><span class="nd-ic ${ic}">${ND_IC[ic]}</span><span class="l">${l}</span></div><span class="n">${n}</span><span class="s ${sCls}">${s}</span></div>`;
   el.innerHTML=
     kpi("gan","blanco","Ganancia neta", v.brutaDesconocida?"—":money(v.neta), v.brutaDesconocida?"falta registrar algún costo":"")+
-    kpi("ven","azul","Ventas", v.compras, v.compras?"Ticket "+money(v.ticket):"sin ventas en estas fechas")+
-    kpi("ing","verde","Ingresos", money(v.vendido), pctCob==null?"sin ventas":"cobrado "+pctCob+"%", pctCob===100?"ok":"")+
+    kpi("ven","azul","Pedidos", v.compras, v.compras?"Ticket "+money(v.ticket):"sin pedidos en estas fechas")+
+    kpi("ing","verde","Ingresos", money(v.vendido), pctCob==null?"sin pedidos":"cobrado "+pctCob+"%", pctCob===100?"ok":"")+
     kpi("","naranja","ROAS", v.hasAds&&v.roas>0?v.roas.toFixed(2)+"×":"—", v.hasAds?money(v.gastoAds)+" en Meta":"conecta Meta en Conexiones");
   if(!v.brutaDesconocida) contarGanancia(el.querySelector(".nd-kpi.gan .n"), Number(v.neta)||0);
   const g=$("ndGroups"); if(!g) return;
@@ -2183,7 +2183,7 @@ async function ndChats({ fromISO, toISO, gastoAds, hasAds, cid, compras }){
     const tot=all.count||0, deAd=ad.count||0;
     if($("ndChats")){ $("ndChats").textContent=tot; $("ndChats").title=`${deAd} por anuncio · ${tot-deAd} orgánicos`; }
     if($("ndCpc")) $("ndCpc").textContent = hasAds && deAd ? money(gastoAds/deAd) : "—";
-    { const e=$("ndConv"); if(e){ e.textContent = tot ? Math.round((compras||0)/tot*100)+"%" : "—"; e.title = tot ? `${compras||0} ventas de ${tot} chats nuevos en estas fechas (como Meta y Trakker)` : ""; } }
+    { const e=$("ndConv"); if(e){ e.textContent = tot ? Math.round((compras||0)/tot*100)+"%" : "—"; e.title = tot ? `${compras||0} pedidos de ${tot} chats nuevos en estas fechas (como Meta y Trakker)` : ""; } }
   }catch(_){ /* sin conteo → se queda en «…» */ }
 }
 

@@ -237,7 +237,7 @@
           <button class="helpbtn" id="helpBtn" type="button" title="¿Cómo lee las fechas?" aria-label="¿Cómo lee las fechas?"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
           <div id="dateHelp" class="datehelp" hidden>
             <h4>Cómo leer el embudo</h4>
-            <b>Conversión total:</b> las ventas de estas fechas ÷ las personas que te escribieron por primera vez en estas fechas (curiosos incluidos). Cuenta también la venta de alguien que te escribió antes. Es la misma cuenta que Inicio, Meta y Trakker.<br>
+            <b>Conversión total:</b> los pedidos de estas fechas ÷ las personas que te escribieron por primera vez en estas fechas (curiosos incluidos). Cuenta también el pedido de alguien que te escribió antes. En físico, un pedido cuenta desde que el cliente lo confirma (Lima) o paga el adelanto (provincia); «Compraron» son los que ya lo completaron. Es la misma cuenta que Inicio, Meta y Trakker.<br>
             <b>Efectividad de cierre:</b> de los que se interesaron de verdad, cuántos cierra el bot. No cuenta a los curiosos que solo saludan.<br>
             <b>Comparación:</b> contra el período anterior del mismo largo y «a la misma altura» (ej. con «Hoy», ayer hasta esta misma hora), para que sea justo.
             <h4 style="margin-top:14px">Las fechas</h4>
@@ -268,7 +268,7 @@
     </div>
 
     <div class="panel emb-ori" id="origenPanel" style="display:none">
-      <h3 class="eh"><span class="eh-ic" data-ic="capas"></span>De dónde salen las ventas</h3>
+      <h3 class="eh"><span class="eh-ic" data-ic="capas"></span>De dónde salen los pedidos</h3>
       <div class="osum" id="origenSum"></div>
       <div id="origen"></div>
     </div>
@@ -604,7 +604,7 @@ function renderMetricas(F, cmp){
   el.innerHTML=`
     <div class="met ${F.total?"mconv":"low"}"><div class="num">${cv==null?"—":cv+"%"}</div><div class="mtxt">
       <div class="mlbl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"}</div>
-      <div class="mbrk" title="Ventas hechas en estas fechas ÷ personas que te escribieron por primera vez en estas fechas. Es la misma cuenta que Inicio, Meta y Trakker: incluye la venta de alguien que te escribió antes.">${F.ventas} ${F.ventas===1?"venta":"ventas"} ÷ ${F.total} ${F.total===1?"chat nuevo":"chats nuevos"}${zonaSub?` de ${zonaNom}`:""}</div>
+      <div class="mbrk" title="Pedidos hechos en estas fechas ÷ personas que te escribieron por primera vez en estas fechas. Es la misma cuenta que Inicio, Meta y Trakker: incluye el pedido de alguien que te escribió antes.">${F.ventas} ${F.ventas===1?"pedido":"pedidos"} ÷ ${F.total} ${F.total===1?"chat nuevo":"chats nuevos"}${zonaSub?` de ${zonaNom}`:""}</div>
       ${cmpHtml}
     </div></div>
     <div class="met ${eCls}"><div class="num">${ef==null?"—":ef+"%"}</div><div class="mtxt">
@@ -638,10 +638,10 @@ function renderResumen(F, cmp){
   const fila=(ic,cls,l,v,tip="",extra="")=>`<div class="rs-row"${tip?` title="${esc(tip)}"`:""}><span class="rs-ic ${cls}">${IC[ic]}</span><span class="rs-l">${l}${extra}</span><b>${v}</b></div>`;
   el.innerHTML=
     fila("chat","az","Chats nuevos", nf.format(F.total), "Personas que te escribieron por primera vez en estas fechas"+(zonaSub?` (de ${zonaNom})`:""))+
-    fila("carro","az","Ventas", nf.format(F.ventas), "Ventas hechas en estas fechas (también de quien te escribió antes)")+
-    fila("pct","az", zonaSub?`Conversión de ${zonaNom}`:"Conversión total", cv==null?"—":cv+"%", `${F.ventas} ${F.ventas===1?"venta":"ventas"} ÷ ${F.total} ${F.total===1?"chat nuevo":"chats nuevos"}. La misma cuenta que Inicio, Meta y Trakker.`)+
+    fila("carro","az","Pedidos", nf.format(F.ventas), "Pedidos hechos en estas fechas (también de quien te escribió antes)")+
+    fila("pct","az", zonaSub?`Conversión de ${zonaNom}`:"Conversión total", cv==null?"—":cv+"%", `${F.ventas} ${F.ventas===1?"pedido":"pedidos"} ÷ ${F.total} ${F.total===1?"chat nuevo":"chats nuevos"}. La misma cuenta que Inicio, Meta y Trakker.`)+
     fila("mano","vi","Efectividad de cierre", ef==null?"—":ef+"%", `${F.niveles.compraron} cerraron de ${F.niveles.interes + F.perdidoVenta} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}. No cuenta a los curiosos que solo saludan.`)+
-    fila("ticket","az","Ticket promedio", ticket, "Lo que paga en promedio cada venta de estas fechas");
+    fila("ticket","az","Ticket promedio", ticket, "Lo que paga en promedio cada pedido de estas fechas");
 }
 
 // El align-items:stretch del flex NO iguala las tarjetas en este codebase (quirk
@@ -684,7 +684,7 @@ function renderNeck(F){
   if(F.total===0){ el.innerHTML=""; return; }
   const { peor, enCurso }=fugas(F);
   const enCursoTxt=enCurso>0
-    ? `<div class="neck ok" style="margin-top:8px">${icon("truck")||icon("check")}<div>${nf.format(enCurso)} ${enCurso===1?"venta confirmada sigue":"ventas confirmadas siguen"} en curso · <a href="pedidos.html" style="color:var(--brand)">ver en Pedidos</a></div></div>`
+    ? `<div class="neck ok" style="margin-top:8px">${icon("truck")||icon("check")}<div>${nf.format(enCurso)} ${enCurso===1?"pedido sigue":"pedidos siguen"} en curso · <a href="pedidos.html" style="color:var(--brand)">ver en Pedidos</a></div></div>`
     : "";
   el.innerHTML=(peor
     ? `<div class="neck"><span class="ni">${icon("alert")}</span><div><b>Mayor fuga:</b> ${peor.de} → ${peor.a}, se van ${nf.format(peor.seCae)} (${peor.drop}%). ${peor.tip}</div></div>`
@@ -723,7 +723,7 @@ function renderFunnel(F){
   // «N ventas» de arriba pero no en «Compraron», que sigue solo a los que llegaron en estas fechas. Se dice, para que
   // «4 ventas» y «Compraron 3» no parezcan una contradicción.
   const antes=ventasPeriodo(c=>pasaFiltros(c) && !enRango(c)).n;
-  if(antes>0) html+=`<div class="fantes"><span class="fai">${IC.info}</span>+${nf.format(antes)} ${antes===1?"venta":"ventas"} de ${antes===1?"alguien que te escribió":"gente que te escribió"} antes de estas fechas · en total ${nf.format(F.ventas)} ${F.ventas===1?"venta":"ventas"}</div>`;
+  if(antes>0) html+=`<div class="fantes"><span class="fai">${IC.info}</span>+${nf.format(antes)} ${antes===1?"pedido":"pedidos"} de ${antes===1?"alguien que te escribió":"gente que te escribió"} antes de estas fechas · en total ${nf.format(F.ventas)} ${F.ventas===1?"pedido":"pedidos"}</div>`;
   el.innerHTML=html;
 }
 
@@ -913,7 +913,7 @@ function renderAnuncios(){
     const F=funnelDe(cs, v);
     return { k, n:F.total, compraron:v.n, cv:F.conversion, plata:v.monto };
   }).sort((a,b)=> (a.k==="none")-(b.k==="none") || b.n-a.n);
-  tbl.innerHTML=`<thead><tr><th>Anuncio</th><th>Llegaron</th><th>Ventas</th><th>Conversión</th><th>Monto</th></tr></thead><tbody>`+
+  tbl.innerHTML=`<thead><tr><th>Anuncio</th><th>Llegaron</th><th>Pedidos</th><th>Conversión</th><th>Monto</th></tr></thead><tbody>`+
     filas.map(f=>`<tr data-ad="${esc(f.k)}" class="${st.ad===f.k?"on":""}" title="Ver el embudo de este anuncio"><td class="adn">${st.adEstado[f.k]?`<span class="addot${st.adEstado[f.k]==="ACTIVE"?" on":""}" title="${st.adEstado[f.k]==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}"></span>`:""}${esc(adNombre(f.k))}</td><td>${nf.format(f.n)}</td><td>${nf.format(f.compraron)}</td><td class="adcv">${f.cv==null?"—":f.cv+"%"}</td><td>${money(f.plata)}</td></tr>`).join("")+`</tbody>`;
   tbl.querySelectorAll("tr[data-ad]").forEach(tr=> tr.onclick=()=>{ const k=tr.dataset.ad, v= k==="none" ? "none" : "a:"+k;
     ponerVista(st.vista===v ? (pt==="all" ? "all" : "p:"+pt) : v); render(); });
@@ -964,7 +964,7 @@ function renderProductos(){
         <div class="pc-kpi"><div class="pc-kv ${efC}">${F.efectividad==null?"—":F.efectividad+"%"}</div><div class="pc-kl">Efectividad</div></div>
       </div>
       <div class="pc-mini">${seg(N.compraron,col("comprado"))}${seg(N.confirmaron-N.compraron,col("confirmado"))}${seg(N.interes-N.confirmaron,col("interesado"))}${seg(N.llegaron-N.interes,"var(--st-resto,#3a4453)")}</div>
-      <div class="pc-foot">${nf.format(F.ventas)} ${F.ventas===1?"venta":"ventas"} · ${nf.format(N.llegaron)} chats nuevos</div>
+      <div class="pc-foot">${nf.format(F.ventas)} ${F.ventas===1?"pedido":"pedidos"} · ${nf.format(N.llegaron)} chats nuevos</div>
     </div>`;
   }).join("");
 }

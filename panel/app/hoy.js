@@ -240,7 +240,7 @@ function pintar(r, n, apps) {
   $("#hoyPad").innerHTML = `<div class="hero gan pegada" id="verGanancia" role="button" tabindex="0"><div class="gtxt"><small>Ganancia neta ${ic("help")}</small><div class="big num">${n.sinCosto ? "—" : m(n.neta)}</div>${n.sinCosto ? `<small class="gfalta">falta registrar algún costo</small>` : ""}</div>${botonFechas(r)}</div>
     <div id="hoyEspera"></div>
     <div class="kpis">
-      <div class="kpi"><small>Ventas</small><b class="num kv-azul">${n.ventas}</b><span class="mutc">${n.ventas ? "ticket " + m(n.vendido / n.ventas) : "sin ventas en estas fechas"}</span></div>
+      <div class="kpi"><small>Pedidos</small><b class="num kv-azul">${n.ventas}</b><span class="mutc">${n.ventas ? "ticket " + m(n.vendido / n.ventas) : "sin pedidos en estas fechas"}</span></div>
       <div class="kpi"><small>Ingresos</small><b class="num up">${m(n.vendido)}</b><span class="${pctCob === 100 ? "up" : "mutc"}">${pctCob == null ? "sin ventas" : "cobrado " + pctCob + "%"}</span></div>
     </div>
     ${tablero(n, m)}
