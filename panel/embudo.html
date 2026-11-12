@@ -126,32 +126,53 @@
      a la izquierda «Cómo avanzan los clientes» con el paso en una píldora de color y su barra al lado; a la derecha
      «De dónde salen los pedidos», «Por anuncio», «Estado de los clientes» y los avisos. Con «Provincia», debajo, su
      embudo de entrega: 3 tarjetas, «Proceso de entrega» y «Pedidos por estado». (Sin el «Tu embudo fluye bien».) ═══ */
-  .emb-tit{display:flex;align-items:center;gap:14px}
-  .emb-hic{width:46px;height:46px;border-radius:13px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);display:inline-flex;align-items:center;justify-content:center;flex:none;color:#fff}
-  .emb-hic svg{width:24px;height:24px}
   /* Las 3 tarjetas de arriba */
-  .ekpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:4px 0 18px}
-  @media(max-width:980px){.ekpis{grid-template-columns:1fr}}
-  .ekpi{display:flex;align-items:center;gap:16px;padding:20px;border-radius:16px;border:1px solid var(--border);background:var(--surface);min-width:0;
-    box-shadow:0 12px 28px -18px rgba(16,40,120,.35)}
-  .ekpi.conv{background:linear-gradient(135deg,rgba(11,99,229,.07),transparent 60%),var(--surface);border-color:rgba(11,99,229,.22)}
-  .ekpi.efec{background:linear-gradient(135deg,rgba(168,85,247,.08),transparent 60%),var(--surface);border-color:rgba(168,85,247,.24)}
-  .ekpi.tick{background:linear-gradient(135deg,rgba(59,130,246,.06),transparent 60%),var(--surface);border-color:rgba(59,130,246,.2)}
-  .ekpi .ki{width:56px;height:56px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:#fff}
-  .ekpi .ki svg{width:28px;height:28px}
-  .ekpi.conv .ki{background:linear-gradient(135deg,#2F7BFF,#0B5FF0);box-shadow:0 8px 18px -8px rgba(11,95,240,.7)}
-  .ekpi.efec .ki{background:linear-gradient(135deg,#A855F7,#D946EF);box-shadow:0 8px 18px -8px rgba(168,85,247,.7)}
-  .ekpi.tick .ki{background:linear-gradient(135deg,#5B9BFF,#7FB2FF);box-shadow:0 8px 18px -8px rgba(59,130,246,.6)}
-  .ekpi.vacio .ki{background:var(--surface-2);color:var(--faint);box-shadow:none}
-  .ekpi .kn{font-size:clamp(26px,2.1vw,38px);font-weight:700;letter-spacing:-.03em;line-height:1;white-space:nowrap;font-variant-numeric:tabular-nums;color:#0B63E5}
+  /* (12-nov, Rodrigo) Sin íconos. La conversión con el diseño y las ondas de la ganancia de Inicio; la efectividad de
+     cierre como antes, con su botcito de IA, en violeta con luces que flotan y destellos; el ticket, limpio. */
+  .ekpis{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:16px;margin:0 0 18px}
+  @media(max-width:1100px){.ekpis{grid-template-columns:1fr 1fr} .ekpi.conv{grid-column:1/-1}}
+  @media(max-width:620px){.ekpis{grid-template-columns:1fr}}
+  .ekpi{position:relative;overflow:hidden;isolation:isolate;display:flex;flex-direction:column;justify-content:center;gap:4px;padding:18px 22px;min-height:124px;
+    border-radius:16px;border:1px solid var(--border);background:var(--surface);min-width:0;box-shadow:0 12px 28px -18px rgba(16,40,120,.35)}
+  .ekpi > :not(.gan-olas):not(.ef-luz){position:relative;z-index:2}
+  .ekpi .kl{display:flex;align-items:center;gap:9px;font-size:14.5px;font-weight:600;color:var(--text)}
+  .ekpi .kn{font-size:38px;font-weight:700;letter-spacing:-.03em;line-height:1.1;white-space:nowrap;font-variant-numeric:tabular-nums;color:#0B63E5}
   html:not([data-theme="light"]) .ekpi .kn{color:#6EA8FF}
-  .ekpi.efec .kn{background:linear-gradient(120deg,#A855F7,#D946EF);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+  .ekpi .ks{font-size:12.5px;color:var(--muted);line-height:1.4}
+  .ekpi .mcmp{font-size:11.5px;margin-top:0}
   .ekpi.vacio .kn{color:var(--faint)}
-  .ekpi .kt{min-width:0;flex:1}
-  .ekpi .kl{font-size:15px;font-weight:600;color:var(--text);line-height:1.25}
-  .ekpi .ks{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.4}
-  .ekpi .mcmp{font-size:11.5px;margin-top:3px}
-  @media(max-width:620px){.ekpi{padding:14px 16px;gap:14px} .ekpi .ki{width:46px;height:46px} .ekpi .kn{font-size:32px}}
+  /* Conversión: la tarjeta azul de la ganancia, con sus ondas (shell.css) y el número que sube contando */
+  .ekpi.conv{background:radial-gradient(120% 140% at 100% 100%,rgba(1,175,254,.45),transparent 60%),linear-gradient(135deg,#0B63E5,#0044FE);
+    border-color:rgba(255,255,255,.35);box-shadow:0 14px 30px -12px rgba(0,68,254,.55);color:#fff}
+  .ekpi.conv .kl,html:not([data-theme="light"]) .ekpi.conv .kn,.ekpi.conv .kn{color:#fff}
+  .ekpi.conv .kn{font-size:46px}
+  .ekpi.conv .ks{color:rgba(255,255,255,.88)}
+  .ekpi.conv .mcmp{color:rgba(255,255,255,.85)} .ekpi.conv .mcmp .up{color:#BBF7D0;font-weight:600} .ekpi.conv .mcmp .down{color:#FECACA;font-weight:600}
+  @media(max-width:720px){.ekpi.conv .kn{font-size:38px}}
+  /* Efectividad de cierre: lo que hace la IA */
+  .ekpi.efec{border-color:rgba(168,85,247,.32);background:linear-gradient(135deg,rgba(168,85,247,.08),rgba(236,72,153,.05) 70%),var(--surface);box-shadow:0 14px 30px -16px rgba(168,85,247,.45)}
+  .ekpi.efec .kn{background:linear-gradient(120deg,#9333EA,#DB2777);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+  html:not([data-theme="light"]) .ekpi.efec .kn{background-image:linear-gradient(120deg,#C084FC,#F472B6)}
+  .miabadge{position:relative;width:25px;height:25px;border-radius:8px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex:none;box-shadow:0 3px 10px rgba(168,85,247,.45)}
+  .miabadge svg{width:15px;height:15px}
+  .miabadge::after{content:"";position:absolute;inset:0;border-radius:8px;border:2px solid rgba(168,85,247,.6);animation:iaAro 2.8s ease-out infinite}
+  @keyframes iaAro{0%{transform:scale(1);opacity:.9}70%,100%{transform:scale(1.7);opacity:0}}
+  /* Luces violeta y rosada que flotan despacio (con transform, sin repintar) y destellos que titilan */
+  .ef-luz{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+  .ef-luz i{position:absolute;border-radius:50%;filter:blur(26px);will-change:transform}
+  .ef-luz .l1{width:200px;height:200px;right:-60px;top:-100px;background:rgba(168,85,247,.40);animation:efLuz1 9s ease-in-out infinite alternate}
+  .ef-luz .l2{width:170px;height:170px;right:60px;bottom:-110px;background:rgba(236,72,153,.30);animation:efLuz2 12s ease-in-out infinite alternate}
+  .ef-luz .l3{width:120px;height:120px;right:-10px;top:40px;background:rgba(99,102,241,.24);animation:efLuz3 7s ease-in-out infinite alternate}
+  .ef-luz b{position:absolute;width:5px;height:5px;border-radius:50%;background:#fff;box-shadow:0 0 8px 2px rgba(216,180,254,.9);opacity:0;animation:efDestello 3.6s ease-in-out infinite}
+  .ef-luz b:nth-of-type(1){right:18%;top:24%} .ef-luz b:nth-of-type(2){right:9%;top:62%;animation-delay:1.2s}
+  .ef-luz b:nth-of-type(3){right:30%;top:72%;animation-delay:2.3s;width:4px;height:4px} .ef-luz b:nth-of-type(4){right:24%;top:12%;animation-delay:.6s;width:3px;height:3px}
+  @keyframes efLuz1{from{transform:translate(0,0) scale(1)}to{transform:translate(-70px,34px) scale(1.18)}}
+  @keyframes efLuz2{from{transform:translate(0,0) scale(1)}to{transform:translate(60px,-30px) scale(.88)}}
+  @keyframes efLuz3{from{transform:translate(0,0)}to{transform:translate(-40px,-26px)}}
+  @keyframes efDestello{0%,100%{opacity:0;transform:scale(.4)}45%{opacity:1;transform:scale(1)}60%{opacity:.9;transform:scale(.85)}}
+  /* Ticket */
+  .ekpi.tick{border-color:rgba(59,130,246,.22);background:linear-gradient(135deg,rgba(59,130,246,.06),transparent 60%),var(--surface)}
+  @media (prefers-reduced-motion:reduce){.ef-luz i,.ef-luz b,.miabadge::after{animation:none}}
   /* Cuadros: título con ícono y subtítulo */
   .emb-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:16px;margin-bottom:16px;align-items:stretch}
   @media(max-width:1000px){.emb-grid{grid-template-columns:1fr}}
@@ -230,16 +251,13 @@
   .pkpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px}
   .pkpis:empty{display:none}
   @media(max-width:900px){.pkpis{grid-template-columns:1fr}}
-  .pkpi{display:flex;align-items:flex-start;gap:16px;padding:18px 20px;border:1px solid var(--border);border-radius:16px;background:var(--surface);min-width:0}
-  .pkpi .pi{width:52px;height:52px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;background:rgba(11,99,229,.09);color:#0B63E5}
-  .pkpi .pi svg{width:26px;height:26px}
-  html:not([data-theme="light"]) .pkpi .pi{background:rgba(110,168,255,.14);color:#6EA8FF}
-  .pkpi .pn{font-size:32px;font-weight:700;letter-spacing:-.02em;line-height:1;color:#0B63E5;font-variant-numeric:tabular-nums}
+  .pkpi{padding:18px 22px;border:1px solid var(--border);border-radius:16px;background:var(--surface);min-width:0;box-shadow:0 12px 28px -18px rgba(16,40,120,.3)}
+  .pkpi .pn{font-size:34px;font-weight:700;letter-spacing:-.02em;line-height:1.1;color:#0B63E5;font-variant-numeric:tabular-nums}
   html:not([data-theme="light"]) .pkpi .pn{color:#6EA8FF}
-  .pkpi .pl{font-size:15px;font-weight:600;margin-top:6px}
+  .pkpi .pl{font-size:15px;font-weight:600;margin-top:4px}
   .pkpi .pd{font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.4}
-  .pkpi.mal .pi{background:rgba(220,38,38,.1);color:#DC2626} .pkpi.mal .pn{color:#DC2626}
-  html:not([data-theme="light"]) .pkpi.mal .pn,html:not([data-theme="light"]) .pkpi.mal .pi{color:#F87171}
+  .pkpi.mal{border-color:rgba(220,38,38,.25)} .pkpi.mal .pn{color:#DC2626}
+  html:not([data-theme="light"]) .pkpi.mal .pn{color:#F87171}
   .pkpi.cero .pn{color:var(--faint)}
   .emb-prov{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
   .emb-prov:has(#provAhoraPanel[style*="none"]){grid-template-columns:1fr}
@@ -268,9 +286,9 @@
 <div class="nodo-page">
   <div class="nodo-wrap">
     <div class="nodo-head">
-      <div class="grow emb-tit"><span class="emb-hic" data-ic="filtro"></span><div>
+      <div class="grow">
         <h1 class="nodo-title">Embudo</h1><p class="nodo-lead">Cómo avanzan tus clientes desde que escriben hasta que compran, y en qué paso se te van.</p>
-      </div></div>
+      </div>
       <div class="nodo-actions" style="flex-wrap:wrap;gap:8px">
         <div class="dseg" id="tipoSeg" style="display:none"><button data-t="all" class="on">Todo</button><button data-t="digital">Digital</button><button data-t="fisico">Físico</button><button data-t="microapp">Micro apps</button></div>
         <div class="dseg" id="zonaSeg" style="display:none"><button data-z="total" class="on">Total</button><button data-z="lima">Lima</button><button data-z="provincia">Provincia</button></div>
@@ -627,11 +645,11 @@ function comparar(){
   return { cv:pct(compro,prev.length), compro, total:prev.length, lbl };
 }
 
-// (12-nov, rediseño 2 de Rodrigo) 3 tarjetas con ícono: conversión, efectividad de cierre y ticket promedio. Reemplazan a
+// (12-nov, rediseño 2 de Rodrigo) 3 tarjetas: conversión (como la ganancia de Inicio), efectividad de cierre (IA) y ticket. Reemplazan a
 // las 2 tarjetas grandes y al «Resumen del embudo» (los chats y los pedidos van debajo de la conversión).
 function renderMetricas(F, cmp){
   const el=$("metPanel");
-  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="ekpi vacio" style="grid-column:1/-1"><span class="ki">${IC.filtro}</span><span class="kn">—</span><div class="kt"><div class="kl">${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</div><div class="ks">${filt?"Prueba con otro anuncio, producto o fecha.":"Cuando lleguen clientes por WhatsApp verás aquí tu conversión y tu efectividad."}</div></div></div>`; return; }
+  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="ekpi vacio" style="grid-column:1/-1"><div class="kl">${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</div><span class="kn">—</span><div class="ks">${filt?"Prueba con otro anuncio, producto o fecha.":"Cuando lleguen clientes por WhatsApp verás aquí tu conversión y tu efectividad."}</div></div>`; return; }
   const ef=F.efectividad, cv=F.conversion;
   // En subvista por ZONA (Lima/Provincia) la base NO son "todos": los leads que aún no
   // dijeron su ciudad quedan fuera, y como TODOS los compradores tienen zona, la
@@ -646,16 +664,33 @@ function renderMetricas(F, cmp){
   }
   // (el ticket con céntimos, como en Inicio: «S/ 6.50», no «S/ 7»)
   const ticket = F.ventas>0 && F.montoVentas!=null ? (CUR_SYM[CUR]||CUR)+" "+(F.montoVentas/F.ventas).toFixed(2) : "—";
+  const BOT=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>`;
   el.innerHTML=
-    `<div class="ekpi conv"><span class="ki">${IC.pct}</span><span class="kn">${cv==null?"—":cv+"%"}</span><div class="kt">
+    `<div class="ekpi conv"><div class="gan-olas" aria-hidden="true"><i class="o1"></i><i class="o2"></i><i class="o3"></i></div>
       <div class="kl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"}</div>
-      <div class="ks" title="Pedidos hechos en estas fechas ÷ personas que te escribieron por primera vez en estas fechas. Es la misma cuenta que Inicio, Meta y Trakker: incluye el pedido de alguien que te escribió antes.">${nf.format(F.ventas)} ${F.ventas===1?"pedido":"pedidos"} ÷ ${nf.format(F.total)} ${F.total===1?"chat nuevo":"chats nuevos"}</div>${cmpHtml}</div></div>`+
-    `<div class="ekpi efec" title="De los que se interesaron de verdad, cuántos cierra el bot. No cuenta a los curiosos que solo saludan."><span class="ki">${IC.diana}</span><span class="kn">${ef==null?"—":ef+"%"}</span><div class="kt">
-      <div class="kl">Efectividad de cierre</div>
-      <div class="ks">${nf.format(F.niveles.compraron)} cerraron de ${nf.format(F.niveles.interes + F.perdidoVenta)} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}</div></div></div>`+
-    `<div class="ekpi tick"><span class="ki">${IC.etiqueta}</span><span class="kn">${ticket}</span><div class="kt">
-      <div class="kl">Ticket promedio</div>
-      <div class="ks">Valor por pedido</div></div></div>`;
+      <span class="kn">${cv==null?"—":cv+"%"}</span>
+      <div class="ks" title="Pedidos hechos en estas fechas ÷ personas que te escribieron por primera vez en estas fechas. Es la misma cuenta que Inicio, Meta y Trakker: incluye el pedido de alguien que te escribió antes.">${nf.format(F.ventas)} ${F.ventas===1?"pedido":"pedidos"} ÷ ${nf.format(F.total)} ${F.total===1?"chat nuevo":"chats nuevos"}</div>${cmpHtml}</div>`+
+    `<div class="ekpi efec" title="De los que se interesaron de verdad, cuántos cierra el bot. No cuenta a los curiosos que solo saludan."><div class="ef-luz" aria-hidden="true"><i class="l1"></i><i class="l2"></i><i class="l3"></i><b></b><b></b><b></b><b></b></div>
+      <div class="kl"><span class="miabadge">${BOT}</span>Efectividad de cierre</div>
+      <span class="kn">${ef==null?"—":ef+"%"}</span>
+      <div class="ks">${nf.format(F.niveles.compraron)} cerraron de ${nf.format(F.niveles.interes + F.perdidoVenta)} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}</div></div>`+
+    `<div class="ekpi tick"><div class="kl">Ticket promedio</div><span class="kn">${ticket}</span><div class="ks">Valor por pedido</div></div>`;
+  // Los dos porcentajes suben contando, como la ganancia de Inicio
+  if(cv!=null) contar(el.querySelector(".ekpi.conv .kn"), cv, "cv");
+  if(ef!=null) contar(el.querySelector(".ekpi.efec .kn"), ef, "ef");
+}
+// Sube contando (~0,9 s) desde la cifra anterior (la 1.ª vez, desde 0) y termina en el mismo texto de siempre.
+const _cont={};
+function contar(nodo, fin, k){
+  if(!nodo) return;
+  const c=_cont[k]||(_cont[k]={ ant:0, id:0 }); const ini=c.ant; c.ant=fin; const id=++c.id;
+  if(ini===fin || matchMedia("(prefers-reduced-motion: reduce)").matches){ nodo.textContent=fin+"%"; return; }
+  const t0=performance.now(), dur=900;
+  const paso=(t)=>{ if(id!==c.id || !nodo.isConnected) return;
+    const x=Math.min(1,(t-t0)/dur), e=1-Math.pow(1-x,3);
+    nodo.textContent=Math.round(x<1 ? ini+(fin-ini)*e : fin)+"%";
+    if(x<1) requestAnimationFrame(paso); };
+  requestAnimationFrame(paso);
 }
 
 // Los 5 saltos con cuánta gente se pierde en cada uno. El último (confirmados → comprar) solo
@@ -782,11 +817,11 @@ function renderEntrega(cs){
   const tasa=pct(recogieron,resueltos);
   const enProceso=conAdelanto-resueltos; // aún en camino / en agencia / con clave sin recoger
   kEl.innerHTML=
-    `<div class="pkpi${tasa==null?" cero":""}"><span class="pi">${IC.caja}</span><div><div class="pn">${tasa==null?"—":tasa+"%"}</div><div class="pl">Tasa de recojo</div>
+    `<div class="pkpi${tasa==null?" cero":""}"><div><div class="pn">${tasa==null?"—":tasa+"%"}</div><div class="pl">Tasa de recojo</div>
       <div class="pd">${tasa==null?"Aún sin desenlaces (nadie recogió ni se cayó todavía)":`${nf.format(recogieron)} recogieron de ${nf.format(resueltos)} ya resueltos`}</div></div></div>`+
-    `<div class="pkpi${enRiesgo>0?"":" cero"}"><span class="pi">${IC.pin}</span><div><div class="pn">${nf.format(enRiesgo)}</div><div class="pl">En agencia ahora</div>
+    `<div class="pkpi${enRiesgo>0?"":" cero"}"><div><div class="pn">${nf.format(enRiesgo)}</div><div class="pl">En agencia ahora</div>
       <div class="pd">${enRiesgo>0?"Llegaron y esperan que paguen el saldo y recojan":"Nada esperando en agencia"}</div></div></div>`+
-    `<div class="pkpi${noRecogido>0?" mal":" cero"}"><span class="pi">${noRecogido>0?IC.equis:IC.check}</span><div><div class="pn">${nf.format(noRecogido)}</div><div class="pl">No recogieron</div>
+    `<div class="pkpi${noRecogido>0?" mal":" cero"}"><div><div class="pn">${nf.format(noRecogido)}</div><div class="pl">No recogieron</div>
       <div class="pd">${noRecogido>0?`Llegaron pero nunca recogieron${fleteCaido>0?` · flete perdido ${money(fleteCaido)}`:""}`:"Nadie se cayó — excelente"}</div></div></div>`;
 
   const niveles=[
