@@ -1408,3 +1408,11 @@ html.tema-suave,html.tema-suave *,html.tema-suave *::before,html.tema-suave *::a
 /* (12-nov) Con la cabecera alta, las pestañas que van justo debajo (IA, Negocio, Canales, Campos, Palabras clave) quedan
    sobre el degradado: van en una barra blanca, como las tarjetas de Inicio, para que se lean. */
 html:not([data-ds="1"]) :is(.nodo-head + .tabs, .nodo-head + [hidden] + .tabs){background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0 8px;box-shadow:0 10px 24px -16px rgba(16,40,120,.4)}
+
+/* (12-nov) Lo que va SOBRE el degradado de las cabeceras: «← Volver a…» en blanco y la papelera en blanco translúcido
+   con el ícono rojo (estaban pensados para fondo claro y no se leían: captura de Rodrigo del editor de producto).
+   Las barras de arriba de los editores (Productos, Respuestas, Secuencias, Plantillas) ahora son .nodo-head. */
+html:not([data-ds="1"]) .nodo-head .nodo-back{color:#fff;background:rgba(255,255,255,.14);border-radius:10px;padding:8px 12px;margin:0}
+html:not([data-ds="1"]) .nodo-head .nodo-back:hover{color:#fff;background:rgba(255,255,255,.24)}
+html:not([data-ds="1"]) .nodo-head .del-btn{background:rgba(255,255,255,.86);border-color:transparent;color:#D92D20}
+html:not([data-ds="1"]) .nodo-head .del-btn:hover{background:#fff;color:#B42318}
