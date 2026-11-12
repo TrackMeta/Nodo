@@ -519,7 +519,7 @@ function medirCabecera(pad) {
     h.classList.add("en-cab"); if (fin !== cont) fin.classList.add("en-cab");
   } else fin = pad.querySelector(":scope > .search");
   if (!fin) { pad.removeAttribute("data-cab"); return; }
-  const alto = Math.round(fin.getBoundingClientRect().bottom - pad.getBoundingClientRect().top + 14);
+  const alto = Math.round(fin.getBoundingClientRect().bottom - pad.getBoundingClientRect().top + 8);
   pad.style.setProperty("--hh", alto + "px"); pad.dataset.cab = "1";
 }
 ["chatsPad", "pagosPad", "t4Pad", "masPad"].forEach((id) => {

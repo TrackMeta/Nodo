@@ -821,14 +821,14 @@ html[data-theme="light"] .view{--hfade:#F3F6FC}
 .hero.gan.pegada + #hoyEspera:not(:empty) + .kpis{position:relative;z-index:1}
 .hero.gan.pegada ~ .kpis .kpi{box-shadow:0 10px 24px -14px rgba(16,40,120,.4)}
 /* Chats, Pagos, Ventas/Pedidos y Más: el degradado mide justo lo que su cabecera (título y subtítulo, o los filtros y el
-   buscador en Chats) y 56 px más para desvanecerse. app.js mide la cabecera (--hh) y marca sus textos (.en-cab). */
+   buscador en Chats) y 34 px más para desvanecerse: Inicio es la única alta (12-nov, Rodrigo: «aplica lo de la altura para las demás secciones»). app.js mide la cabecera (--hh) y marca sus textos (.en-cab). */
 .pad[data-cab]{
   background-image:
-    linear-gradient(to bottom,transparent var(--hh),color-mix(in srgb,var(--hfade) 45%,transparent) calc(var(--hh) + 26px),var(--hfade) calc(var(--hh) + 56px)),
+    linear-gradient(to bottom,transparent var(--hh),color-mix(in srgb,var(--hfade) 45%,transparent) calc(var(--hh) + 16px),var(--hfade) calc(var(--hh) + 34px)),
     radial-gradient(45% 80% at 84% 70%,rgba(255,255,255,.2),transparent 70%),
     radial-gradient(38% 70% at 44% 85%,rgba(120,210,255,.28),transparent 70%),
     linear-gradient(90deg,#0044FE 0%,#01AFFE 100%);
-  background-size:100% calc(var(--hh) + 56px);background-repeat:no-repeat}
+  background-size:100% calc(var(--hh) + 34px);background-repeat:no-repeat}
 .pad[data-cab] .h.en-cab{color:#fff}
 .pad[data-cab] .sub.en-cab{color:rgba(255,255,255,.88)}
 .pad[data-cab] > .search{background:var(--surface)}
