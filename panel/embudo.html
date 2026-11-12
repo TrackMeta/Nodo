@@ -270,7 +270,7 @@
   html:not([data-theme="light"]) .pkpi.mal .pn{color:#F87171}
   .pkpi.cero .pn{color:var(--faint)}
   .emb-prov{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
-  .emb-prov:has(#provAhoraPanel[style*="none"]){grid-template-columns:1fr}
+  .emb-prov:has(#provAhoraPanel[style*="none"]),.emb-prov:has(#limaAhoraPanel[style*="none"]){grid-template-columns:1fr}
   @media(max-width:1000px){.emb-prov{grid-template-columns:1fr}}
   .prow{display:grid;grid-template-columns:36px 118px minmax(0,1fr) 78px;align-items:center;gap:12px;padding:3px 0}
   .prow .pc{width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff}
@@ -370,6 +370,23 @@
           <div class="eh2"><span class="eh-ic" data-ic="caja"></span><div><h3>Pedidos por estado</h3><p>En qué etapa del envío está cada pedido ahora.</p></div></div>
           <div class="erows" id="provAhora"></div>
           <div id="entregaFuga"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- (12-nov, Rodrigo: «agrégale el embudo de Lima») Con «Lima» elegido: el embudo de entrega contraentrega -->
+    <section class="eprov" id="limaPanel" style="display:none">
+      <div class="eprov-h"><span class="eh-ic" data-ic="camion"></span><div><h2>Embudo de entrega · Lima</h2><p>De los pedidos confirmados, cuántos salen a reparto y se entregan cobrados.</p></div></div>
+      <div class="pkpis" id="limaKpis"></div>
+      <div class="emb-prov">
+        <div class="panel prov-fun">
+          <div class="eh2"><span class="eh-ic" data-ic="caja"></span><div><h3>Proceso de entrega</h3></div></div>
+          <div id="limaFun"></div>
+        </div>
+        <div class="panel prov-ahora" id="limaAhoraPanel" style="display:none">
+          <div class="eh2"><span class="eh-ic" data-ic="caja"></span><div><h3>Pedidos por estado</h3><p>En qué paso del reparto está cada pedido ahora.</p></div></div>
+          <div class="erows" id="limaAhora"></div>
+          <div id="limaFuga"></div>
         </div>
       </div>
     </section>
@@ -628,6 +645,7 @@ function render(){
   renderAnuncios();
   renderEntrega(cs);
   renderProvinciaAhora(cs);
+  renderEntregaLima(cs);
   renderDist(F);
   renderProductos();
   $("dateNote").innerHTML="";   // (10-oct) la explicación vive en el «?» de arriba
@@ -874,6 +892,74 @@ function renderEntrega(cs){
 // ACTUAL (snapshot, no acumulado): cuántos hay ahora mismo esperando adelanto,
 // por despachar, en camino, en agencia (por cobrar saldo), etc. Cuenta pedidos
 // (no personas) de los contactos ya filtrados. Se oculta si no hay provincia.
+// ── Embudo de ENTREGA de Lima (contraentrega) ─────────────────────────
+// (12-nov, Rodrigo: «agrégale el embudo de Lima») Como el de provincia, con los pasos de Lima: el pedido se confirma, sale
+// a reparto (el reprogramado también salió) y se entrega cobrado, o lo rechazan en la puerta (se pierde el flete). Cuenta
+// PEDIDOS de Lima de los contactos ya filtrados (fecha/producto/anuncio), igual que provincia.
+function renderEntregaLima(cs){
+  const panel=$("limaPanel"), ahoraP=$("limaAhoraPanel");
+  if(st.zona!=="lima"){ panel.style.display="none"; return; }
+  panel.style.display="";
+  const ids=new Set(cs.map(c=>c.id)); const cnt={}; let fleteCaido=0;
+  Object.entries(st.ordersBy).forEach(([cid,ords])=>{ if(!ids.has(cid)) return;
+    ords.forEach(o=>{ if(!O.esFisico(o) || O.zonaDe(o)!=="lima") return;
+      cnt[o.estado]=(cnt[o.estado]||0)+1;
+      if(o.estado==="rechazado" && enMoneda(o)) fleteCaido+=Number((o.shipping||{}).flete||0); }); });
+  const g=(k)=>cnt[k]||0;
+  const confirmados=g("confirmado")+g("en_reparto")+g("reprogramado")+g("entregado_cobrado")+g("rechazado");
+  const salieron=g("en_reparto")+g("reprogramado")+g("entregado_cobrado")+g("rechazado");
+  const entregados=g("entregado_cobrado"), rechazados=g("rechazado"), enReparto=g("en_reparto"), reprog=g("reprogramado");
+  const kEl=$("limaKpis"), fEl=$("limaFun"), fugaEl=$("limaFuga");
+  if(confirmados===0){
+    kEl.innerHTML=""; fugaEl.innerHTML=""; ahoraP.style.display="none";
+    fEl.innerHTML=`<div class="empty"><svg class="eic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg><h4>Sin pedidos de Lima todavía</h4>Cuando confirmes pedidos de Lima en estas fechas, verás aquí cuántos se entregan cobrados.</div>`;
+    return;
+  }
+  // Tasa de entrega = de los que ya tuvieron desenlace (entregado vs rechazado), cuántos se entregaron.
+  const resueltos=entregados+rechazados, tasa=pct(entregados,resueltos);
+  kEl.innerHTML=
+    `<div class="pkpi${tasa==null?" cero":""}"><div><div class="pn">${tasa==null?"—":tasa+"%"}</div><div class="pl">Tasa de entrega</div>
+      <div class="pd">${tasa==null?"Aún sin desenlaces (nadie recibió ni rechazó todavía)":`${nf.format(entregados)} entregados y cobrados de ${nf.format(resueltos)} ya resueltos`}</div></div></div>`+
+    `<div class="pkpi${enReparto>0?"":" cero"}"><div><div class="pn">${nf.format(enReparto)}</div><div class="pl">En reparto ahora</div>
+      <div class="pd">${enReparto>0?"Con el motorizado, camino al cliente":"Nada en la calle ahora"}${reprog>0?` · ${nf.format(reprog)} reprogramado${reprog===1?"":"s"}`:""}</div></div></div>`+
+    `<div class="pkpi${rechazados>0?" mal":" cero"}"><div><div class="pn">${nf.format(rechazados)}</div><div class="pl">Rechazados</div>
+      <div class="pd">${rechazados>0?`No lo recibieron en la puerta${fleteCaido>0?` · flete perdido ${money(fleteCaido)}`:""}`:"Nadie rechazó — excelente"}</div></div></div>`;
+  const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
+  const niveles=[
+    { lbl:"Confirmados", n:confirmados, c:"var(--pv-1,#475467)", ic:"check" },
+    { lbl:"Salieron a reparto", n:salieron, c:"var(--pv-3,#3D68BD)", ic:"camion" },
+    { lbl:"Entregados y cobrados", n:entregados, c:"var(--pv-6,#16A34A)", ic:"moneda" },
+  ];
+  const pasos=[pct(salieron,confirmados), pct(entregados,salieron)];
+  let html="";
+  niveles.forEach((lv,i)=>{
+    const w=Math.round(lv.n/confirmados*100), pc=pct(lv.n,confirmados);
+    html+=`<div class="prow"><span class="pc" style="background:${lv.c}">${IC[lv.ic]}</span><span class="pln">${lv.lbl}</span><div class="et"><div class="ef" style="width:${w}%;background:${lv.c}${lv.n?"":";min-width:0"}"></div></div><div class="ev">${nf.format(lv.n)}${pc!=null?`<i>·</i>${pc}%`:""}</div></div>`;
+    if(i<niveles.length-1){ const pp=pasos[i];
+      html+= pp==null ? `<div class="pstep"><span>${arrow}—</span></div>`
+        : `<div class="pstep"><span>${arrow}<span class="keep">pasa el ${pp}%</span><span class="sep">·</span><span class="drop">se cae el ${100-pp}%</span></span></div>`;
+    }
+  });
+  fEl.innerHTML=html;
+  // Aviso: la fuga de Lima es el rechazo en la puerta; si no hay, los que esperan salir o volver a salir.
+  const porSalir=g("confirmado");
+  if(rechazados>0) fugaEl.innerHTML=`<div class="einfo warn"><span class="eii">${IC.alerta}</span><div><b>Tu fuga de Lima:</b> ${nf.format(rechazados)} pedido(s) <b>rechazados en la puerta</b>${fleteCaido>0?` — ${money(fleteCaido)} de flete perdido`:""}. Confirma por WhatsApp la dirección y la hora antes de mandar al motorizado.</div></div>`;
+  else if(porSalir+reprog>0) fugaEl.innerHTML=`<div class="einfo"><span class="eii">${IC.info}</span><div><b>${nf.format(porSalir+reprog)}</b> esperando salir a reparto${reprog>0?` (${nf.format(reprog)} reprogramado${reprog===1?"":"s"})`:""} · <a href="pedidos.html">ver en Pedidos</a></div></div>`;
+  else fugaEl.innerHTML="";
+  // Pedidos por estado (lo de AHORA, no acumulado)
+  const rows=[
+    { label:"Confirmado", desc:"Confirmado; todavía no sale a reparto", color:"var(--pv-1,#475467)", n:g("confirmado") },
+    { label:"En reparto", desc:"Con el motorizado", color:"var(--pv-3,#3D68BD)", n:enReparto },
+    { label:"Reprogramado", desc:"Salió y se pasó para otro día", color:"var(--pv-4,#D97706)", n:reprog },
+    { label:"Entregado", desc:"Entregado y cobrado — cerrado", color:"var(--pv-6,#16A34A)", n:entregados },
+    { label:"Rechazado", desc:"No lo recibió", color:"var(--st-perdido,#DC2626)", n:rechazados },
+  ];
+  const total=rows.reduce((a,r)=>a+r.n,0);
+  ahoraP.style.display="";
+  $("limaAhora").innerHTML=rows.map(r=>{ const pc=pct(r.n,total);
+    return `<div class="erow" title="${esc(r.desc)}"><span class="en"><span class="ed" style="background:${r.color}"></span>${esc(r.label)}</span><div class="et"><div class="ef${r.n?"":" cero"}" style="width:${pc||0}%;background:${r.color}"></div></div><div class="ev">${nf.format(r.n)}<i>·</i><small>${pc!=null?pc+"%":"0%"}</small></div></div>`; }).join("");
+}
+
 function renderProvinciaAhora(cs){
   const panel=$("provAhoraPanel"), el=$("provAhora");
   // Solo en el toggle de Provincia (igual que el Embudo de entrega).
