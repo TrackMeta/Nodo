@@ -1263,7 +1263,8 @@ html:not([data-ds="1"]) body.nodo-shelled .wrap:has(> .nodo-head){background-att
 html:not([data-ds="1"]) .nodo-head.ia::before,
 html:not([data-ds="1"]) .nodo-page:has(> .nodo-wrap > .nodo-head.ia),
 html:not([data-ds="1"]) body.nodo-shelled .wrap:has(> .nodo-head.ia){
-  background-image:linear-gradient(to bottom,transparent 46%,color-mix(in srgb,var(--bg) 40%,transparent) 66%,color-mix(in srgb,var(--bg) 82%,transparent) 84%,var(--bg) 100%),var(--franja-capas-ia)}
+  background-image:linear-gradient(to bottom,transparent 46%,color-mix(in srgb,var(--bg) 40%,transparent) 66%,color-mix(in srgb,var(--bg) 82%,transparent) 84%,var(--bg) 100%),var(--franja-capas-ia);
+  background-size:100% 320px;background-repeat:no-repeat;background-position:0 0}
 @media(max-width:720px){
   html:not([data-ds="1"]) .nodo-head{padding:20px 0 22px}
   html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-head > .grow h1{font-size:23px}
