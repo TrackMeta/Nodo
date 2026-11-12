@@ -36,22 +36,6 @@
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   .nodo-btn.spin svg{animation:rspin .8s linear infinite}
   @keyframes rspin{to{transform:rotate(360deg)}}
-  /* KPIs grandes: Efectividad + Conversión (con explicación completa) */
-  .mets{display:flex;gap:14px;margin:6px 0 18px;align-items:stretch}
-  .met{flex:1 1 0;min-width:0;box-sizing:border-box;background:var(--surface);border:1px solid var(--border);border-left:5px solid var(--green);border-radius:18px;padding:20px 22px;display:flex;gap:20px;align-items:center;align-self:stretch}
-  .met.mid{border-left-color:var(--amber)} .met.low{border-left-color:var(--border)} .met.mconv{border-left-color:var(--brand)}
-  .met.mia{border-left-color:#a855f7;border-color:rgba(168,85,247,.34);background:radial-gradient(130% 150% at 0% 0%,rgba(168,85,247,.14),transparent 55%),var(--surface);box-shadow:0 10px 34px -14px rgba(168,85,247,.55)}
-  .met .num{font-size:52px;font-weight:750;letter-spacing:-2px;line-height:.9;color:var(--green);flex:none;min-width:96px;text-align:center}
-  .met.mid .num{color:var(--amber)} .met.low .num{color:var(--muted)} .met.mconv .num{color:var(--brand)}
-  .met.mia .num{background:linear-gradient(120deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
-  .miabadge{width:27px;height:27px;border-radius:8px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:inline-flex;align-items:center;justify-content:center;flex:none;box-shadow:0 3px 10px rgba(168,85,247,.45)}
-  .miabadge svg{width:16px;height:16px}
-  .met .mtxt{flex:1;min-width:0}
-  .met .mlbl{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-  .met .mtag{font-size:10px;font-weight:600;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 9px;white-space:nowrap}
-  .met .mdesc{font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.5}
-  .met .mbrk{font-size:12.5px;color:var(--muted);margin-top:6px}
-  @media(max-width:720px){ .mets{flex-direction:column} .met .num{font-size:42px;min-width:76px} }
   .panel{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:20px 22px;margin-bottom:16px}
   .panel h3{margin:0 0 2px;font-size:16px;font-weight:650;letter-spacing:-.2px}
   .panel .ps{color:var(--muted);font-size:12.5px;margin:0 0 16px}
@@ -89,7 +73,6 @@
   .osum{font-size:12.5px;color:var(--muted);margin:2px 0 14px} .osum b{color:var(--text)}
   .fstep .fdrop{color:var(--faint)} .fstep.peor .fdrop{color:var(--red);font-weight:600}
   .mcmp{font-size:12px;margin-top:6px;color:var(--muted)} .mcmp .up{color:var(--green);font-weight:600} .mcmp .down{color:var(--red);font-weight:600}
-  .met.mconv .mcmp{color:var(--hero-muted,#98A2B3)} .met.mconv .mcmp .up{color:#BBF7D0;font-weight:600} .met.mconv .mcmp .down{color:#FECACA;font-weight:600}
   /* Por anuncio */
   .adtbl{width:100%;border-collapse:collapse;font-size:13px}
   .adtbl th{font-size:11px;font-weight:600;color:var(--muted);text-align:right;padding:0 10px 8px;white-space:nowrap}
@@ -128,16 +111,6 @@
   /* ── Diseño 2 (10-oct): mismo dibujo y mismos 6 pasos; solo la paleta.
      Etapas: gris (frío) → azul (se acerca) → verde (plata que entró). Provincia: ámbar = esperando validar. ── */
   /* (los colores de etapa --st-* y --pv-* viven en shell.css: los comparten Embudo y Directo) */
-  html:not([data-ds="1"]) .met{border:1px solid var(--border);border-radius:12px;box-shadow:none;background:var(--surface)}
-  html:not([data-ds="1"]) .met .num{font-weight:600;letter-spacing:-.03em;font-size:46px}
-  /* Conversión = el único número destacado: (22-oct, diseño A) con el degradado azul del logo, como la ganancia del Dashboard */
-  html:not([data-ds="1"]) .met.mconv{background:linear-gradient(135deg,#0044FE,#01AFFE);border-color:transparent;--hero-text:#fff;--hero-muted:rgba(255,255,255,.88)}
-  html:not([data-ds="1"]) .met.mconv .num,html:not([data-ds="1"]) .met.mconv .mlbl{color:var(--hero-text)}
-  html:not([data-ds="1"]) .met.mconv .mdesc,html:not([data-ds="1"]) .met.mconv .mbrk{color:var(--hero-muted)}
-  html:not([data-ds="1"]) .met.mconv .mdesc b{color:var(--hero-text)}
-  html:not([data-ds="1"]) .met.mconv .mtag{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.3);color:#fff}
-  /* Efectividad de cierre = lo que hace la IA: conserva su degradado violeta → rosado */
-  html:not([data-ds="1"]) .met.mia{border-color:rgba(168,85,247,.34);background:radial-gradient(130% 150% at 0% 0%,rgba(168,85,247,.14),transparent 55%),var(--surface)}
   html:not([data-ds="1"]) .panel{border-radius:12px}
   html:not([data-ds="1"]) .fbar2{border-radius:8px;height:50px}
   html:not([data-ds="1"]) .fbar2 .fl{font-weight:500}
@@ -149,85 +122,155 @@
   html:not([data-ds="1"]) .react{box-shadow:none}
   html:not([data-ds="1"]) .pcard,html:not([data-ds="1"]) .dkpi{border-radius:12px}
 
-  /* ═══ (11-nov) Rediseño que mandó Rodrigo: el embudo en una columna a la izquierda; al medio «De dónde salen las ventas»
-     y «Por anuncio»; a la derecha el «Resumen del embudo»; abajo, a lo ancho de esas dos, «Dónde están ahora». ═══ */
-  .emb-grid{display:grid;gap:16px;margin-top:6px;margin-bottom:16px;
-    grid-template-columns:minmax(0,1.05fr) minmax(0,1.2fr) minmax(0,.85fr);
-    grid-template-areas:"fun ori res" "fun ad res" "fun dist dist"}
-  .emb-grid > .panel{margin:0;border-radius:16px}
-  .emb-fun{grid-area:fun} .emb-ori{grid-area:ori} .emb-ad{grid-area:ad} .emb-res{grid-area:res} .emb-dist{grid-area:dist}
-  /* Si falta «Por anuncio» o «De dónde salen las ventas» (sin anuncios / sin ventas), el otro ocupa su lugar: sin hueco */
-  @media(min-width:1181px){
-    .emb-grid:has(#adPanel[style*="none"]){grid-template-areas:"fun ori res" "fun ori res" "fun dist dist"}
-    .emb-grid:has(#origenPanel[style*="none"]){grid-template-areas:"fun ad res" "fun ad res" "fun dist dist"}
-    .emb-grid:has(#adPanel[style*="none"]):has(#origenPanel[style*="none"]){grid-template-areas:"fun res res" "fun dist dist"}
-  }
-  @media(max-width:1180px){.emb-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"fun res" "fun ori" "fun ad" "dist dist"}}
-  @media(max-width:760px){.emb-grid{grid-template-columns:1fr;grid-template-areas:"res" "fun" "ori" "ad" "dist"}}
-  /* Títulos con su ícono azul */
-  .panel h3.eh{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:700;margin:0 0 14px}
-  .eh-ic{display:inline-flex;color:#0B63E5} .eh-ic svg{width:22px;height:22px}
+  /* ═══ (12-nov) Rediseño 2 que mandó Rodrigo (vía ChatGPT): arriba 3 tarjetas con ícono (conversión, efectividad, ticket);
+     a la izquierda «Cómo avanzan los clientes» con el paso en una píldora de color y su barra al lado; a la derecha
+     «De dónde salen los pedidos», «Por anuncio», «Estado de los clientes» y los avisos. Con «Provincia», debajo, su
+     embudo de entrega: 3 tarjetas, «Proceso de entrega» y «Pedidos por estado». (Sin el «Tu embudo fluye bien».) ═══ */
+  .emb-tit{display:flex;align-items:center;gap:14px}
+  .emb-hic{width:46px;height:46px;border-radius:13px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);display:inline-flex;align-items:center;justify-content:center;flex:none;color:#fff}
+  .emb-hic svg{width:24px;height:24px}
+  /* Las 3 tarjetas de arriba */
+  .ekpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:4px 0 18px}
+  @media(max-width:980px){.ekpis{grid-template-columns:1fr}}
+  .ekpi{display:flex;align-items:center;gap:16px;padding:20px;border-radius:16px;border:1px solid var(--border);background:var(--surface);min-width:0;
+    box-shadow:0 12px 28px -18px rgba(16,40,120,.35)}
+  .ekpi.conv{background:linear-gradient(135deg,rgba(11,99,229,.07),transparent 60%),var(--surface);border-color:rgba(11,99,229,.22)}
+  .ekpi.efec{background:linear-gradient(135deg,rgba(168,85,247,.08),transparent 60%),var(--surface);border-color:rgba(168,85,247,.24)}
+  .ekpi.tick{background:linear-gradient(135deg,rgba(59,130,246,.06),transparent 60%),var(--surface);border-color:rgba(59,130,246,.2)}
+  .ekpi .ki{width:56px;height:56px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:#fff}
+  .ekpi .ki svg{width:28px;height:28px}
+  .ekpi.conv .ki{background:linear-gradient(135deg,#2F7BFF,#0B5FF0);box-shadow:0 8px 18px -8px rgba(11,95,240,.7)}
+  .ekpi.efec .ki{background:linear-gradient(135deg,#A855F7,#D946EF);box-shadow:0 8px 18px -8px rgba(168,85,247,.7)}
+  .ekpi.tick .ki{background:linear-gradient(135deg,#5B9BFF,#7FB2FF);box-shadow:0 8px 18px -8px rgba(59,130,246,.6)}
+  .ekpi.vacio .ki{background:var(--surface-2);color:var(--faint);box-shadow:none}
+  .ekpi .kn{font-size:clamp(28px,2.5vw,38px);font-weight:700;letter-spacing:-.03em;line-height:1;white-space:nowrap;font-variant-numeric:tabular-nums;color:#0B63E5}
+  html:not([data-theme="light"]) .ekpi .kn{color:#6EA8FF}
+  .ekpi.efec .kn{background:linear-gradient(120deg,#A855F7,#D946EF);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent}
+  .ekpi.vacio .kn{color:var(--faint)}
+  .ekpi .kt{min-width:0;flex:1}
+  .ekpi .kl{font-size:15px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ekpi .ks{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.4}
+  .ekpi .mcmp{font-size:11.5px;margin-top:3px}
+  @media(max-width:620px){.ekpi{padding:14px 16px;gap:14px} .ekpi .ki{width:46px;height:46px} .ekpi .kn{font-size:32px}}
+  /* Cuadros: título con ícono y subtítulo */
+  .emb-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:16px;margin-bottom:16px;align-items:stretch}
+  @media(max-width:1000px){.emb-grid{grid-template-columns:1fr}}
+  .emb-grid .panel,.eprov .panel{margin:0;border-radius:16px}
+  .emb-side{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .emb-side:empty{display:none}
+  .eh2{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px}
+  .eh2 h3{margin:0;font-size:17px;font-weight:700;letter-spacing:-.2px}
+  .eh2 p{margin:3px 0 0;font-size:12.5px;color:var(--muted)}
+  .eh-ic{display:inline-flex;color:#0B63E5;flex:none;margin-top:1px} .eh-ic svg{width:24px;height:24px}
   html:not([data-theme="light"]) .eh-ic{color:#6EA8FF}
-  .emb-ori h3.eh,.emb-res h3.eh{margin-bottom:4px}
-  .emb-ori .osum{margin:0 0 12px 32px}
-  /* El embudo: barras con ícono, centradas, que se angostan */
-  :is(.emb-fun,.prov-fun) .fun{gap:0;margin-top:4px}
-  html:not([data-ds="1"]) :is(.emb-fun,.prov-fun) .fbar2{height:50px;border-radius:12px;padding:0 16px;min-width:0;color:#fff;box-shadow:0 6px 14px -8px rgba(16,24,40,.45)}
-  :is(.emb-fun,.prov-fun) .fbar2 .fl{display:flex;align-items:center;gap:9px;font-weight:600;font-size:14.5px}
-  :is(.emb-fun,.prov-fun) .fbar2 .fr{font-weight:700;font-size:18px}
-  .fic{display:inline-flex;flex:none} .fic svg{width:20px;height:20px}
-  :is(.emb-fun,.prov-fun) .fstep{padding:8px 0;font-size:12.5px}
-  .emb-fun .fstep .fdrop{color:var(--muted)}
-  .fantes{display:flex;align-items:flex-start;gap:10px;text-align:left;margin:18px 0 0;padding:12px 14px;border-radius:12px;background:var(--surface-2);font-size:12.5px;line-height:1.5}
+  /* Cómo avanzan: píldora | barra | cifra */
+  .fun2{display:flex;flex-direction:column}
+  .frow{display:grid;grid-template-columns:150px minmax(0,1fr) 92px;align-items:center;gap:14px;padding:4px 0}
+  .fpill{display:flex;align-items:center;gap:10px;height:40px;padding:0 14px;border-radius:10px;color:#fff;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;box-shadow:0 6px 14px -8px rgba(16,24,40,.55)}
+  .fpill .fic{display:inline-flex;flex:none} .fpill .fic svg{width:20px;height:20px}
+  .ftrack{height:18px;border-radius:9px;background:var(--st-resto,#E4E7EC);overflow:hidden}
+  .ffill{height:100%;border-radius:9px;min-width:6px;transition:width .5s ease}
+  .fval{text-align:right;font-size:16px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .fval i{font-style:normal;color:var(--faint);font-weight:500;margin:0 3px}
+  .fstep2{display:grid;grid-template-columns:150px minmax(0,1fr) 92px;gap:14px;align-items:center;min-height:30px;border-bottom:1px solid var(--border);margin-bottom:4px}
+  .fstep2 > span{grid-column:2;display:flex;align-items:center;justify-content:center;gap:8px;font-size:12px;color:var(--muted)}
+  .fstep2 svg{width:13px;height:13px;color:var(--muted)}
+  .fchip{padding:2px 8px;border-radius:6px;background:rgba(22,163,74,.12);color:#15803D;font-weight:600}
+  html:not([data-theme="light"]) .fchip{color:#4ADE80}
+  .fstep2.peor .fchip{background:rgba(220,38,38,.12);color:#DC2626}
+  html:not([data-theme="light"]) .fstep2.peor .fchip{color:#F87171}
+  @media(max-width:620px){.frow,.fstep2{grid-template-columns:118px minmax(0,1fr) 74px;gap:10px} .fpill{font-size:13.5px;padding:0 10px;gap:7px} .fval{font-size:14px}}
+  .fantes{display:flex;align-items:flex-start;gap:10px;text-align:left;margin:16px 0 0;padding:12px 14px;border-radius:12px;background:var(--surface-2);font-size:12.5px;line-height:1.5}
   .fai{display:inline-flex;color:#0B63E5;flex:none;margin-top:1px} .fai svg{width:17px;height:17px}
   html:not([data-theme="light"]) .fai{color:#6EA8FF}
-  :is(.emb-fun #neck,.prov-fun #entregaFuga) .neck{margin:12px 0 0;font-size:12.5px}
-  /* Resumen del embudo: filas con ícono en cajita */
-  .rs-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);font-size:14px}
-  .rs-row:last-child{border-bottom:0}
-  .rs-l{flex:1;min-width:0;color:var(--text)}
-  .rs-l .mcmp{font-size:11.5px;margin-top:2px}
-  .rs-row > b{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
-  .rs-ic{width:36px;height:36px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;flex:none}
-  .rs-ic svg{width:19px;height:19px}
-  .rs-ic.az{background:rgba(11,99,229,.09);color:#0B63E5} .rs-ic.vi{background:rgba(147,51,234,.1);color:#9333EA}
-  html:not([data-theme="light"]) .rs-ic.az{background:rgba(110,168,255,.14);color:#6EA8FF}
-  html:not([data-theme="light"]) .rs-ic.vi{background:rgba(192,132,252,.15);color:#C084FC}
-  /* De dónde salen las ventas / Dónde están ahora: barras más gruesas y redondas */
-  .emb-grid .dist,.emb-ori #origen{display:flex;flex-direction:column;gap:12px}
-  .emb-grid .dbarwrap{height:22px;border-radius:7px}
-  html:not([data-ds="1"]) .emb-grid .dbar,html:not([data-ds="1"]) .emb-grid .dbarwrap{border-radius:7px}
-  .emb-grid .dn{font-size:14px}
-  .emb-dist .dhead{width:120px}
-  .emb-dist .react{border:0;background:rgba(11,99,229,.08);color:#0B63E5;border-radius:10px;padding:8px 12px;font-size:12.5px}
-  .emb-dist .react:hover{background:rgba(11,99,229,.15)}
-  html:not([data-theme="light"]) .emb-dist .react{background:rgba(110,168,255,.12);color:#6EA8FF}
+  /* Filas con punto, barra y cifra (estado de los clientes, pedidos por estado) */
+  .erows{display:flex;flex-direction:column;gap:4px}
+  .erow{display:grid;grid-template-columns:130px minmax(0,1fr) 78px;align-items:center;gap:14px;padding:7px 8px;margin:0 -8px;border-radius:10px}
+  .erow .en{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .erow .ed{width:11px;height:11px;border-radius:50%;flex:none}
+  .erow .et{height:18px;border-radius:9px;background:var(--st-resto,#E4E7EC);overflow:hidden}
+  .erow .ef{height:100%;border-radius:9px;min-width:6px}
+  .erow .ef.cero{min-width:0}
+  .erow .ev{text-align:right;font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .erow .ev i{font-style:normal;color:var(--faint);font-weight:500;margin:0 3px} .erow .ev small{font-size:12.5px;font-weight:500;color:var(--muted)}
+  a.erow{color:inherit;text-decoration:none;cursor:pointer} a.erow:hover{background:var(--surface-2)}
+  @media(max-width:620px){.erow{grid-template-columns:104px minmax(0,1fr) 66px;gap:10px}}
+  /* De dónde salen los pedidos: cada precio en su cajita */
+  .emb-ori .osum{margin:-8px 0 12px 36px;font-size:12.5px;color:var(--muted)} .emb-ori .osum b{color:var(--text)}
+  .orow{display:grid;grid-template-columns:minmax(84px,auto) minmax(0,1fr) 40px 84px;align-items:center;gap:16px;padding:12px 16px;border:1px solid var(--border);border-radius:12px}
+  .orow + .orow{margin-top:8px}
+  .orow .op{display:flex;align-items:center;gap:12px}
+  .orow .op b{display:block;font-size:15px} .orow .op small{display:block;font-size:11.5px;color:var(--muted)}
+  .orow .et{height:18px;border-radius:9px;background:var(--st-resto,#E4E7EC);overflow:hidden} .orow .ef{height:100%;border-radius:9px;min-width:6px}
+  .orow .ed{width:11px;height:11px;border-radius:50%;flex:none}
+  .orow .n{text-align:right;font-weight:700;font-size:15px} .orow .m{text-align:right;font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}
+  @media(max-width:620px){.orow{grid-template-columns:minmax(70px,auto) minmax(0,1fr) 30px 70px;gap:10px;padding:10px 12px}}
+  /* Avisos (en curso, mayor fuga, plata en juego, fuga de provincia) */
+  .einfo{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-radius:14px;background:rgba(22,163,74,.07);border:1px solid rgba(22,163,74,.2);font-size:13px;line-height:1.5}
+  .einfo + .einfo{margin-top:10px}
+  .einfo .eii{display:inline-flex;flex:none;color:#0B63E5;margin-top:1px} .einfo .eii svg{width:20px;height:20px}
+  html:not([data-theme="light"]) .einfo .eii{color:#6EA8FF}
+  .einfo a{color:#0B63E5} html:not([data-theme="light"]) .einfo a{color:#6EA8FF}
+  .einfo.warn{background:rgba(245,158,11,.09);border-color:rgba(245,158,11,.28)}
+  .einfo.warn .eii{color:#D97706}
+  .einfo b{color:var(--text)}
+  .einfo .pv{font-weight:700;color:#D97706}
+  #avisos:empty{display:none}
+  /* Por anuncio */
   .emb-ad .adtbl td{padding:10px 6px}
   .emb-ad .adtbl th{font-size:12px;padding:0 6px 8px}
   .emb-ad .adtbl td:last-child,.emb-ad .adtbl th:last-child{padding-right:0}
   .emb-ad .adtbl .adn{max-width:190px}
-  /* (11-nov) Provincia: embudo de entrega (izquierda) y pedidos ahora (derecha); embudo por producto debajo, con el mismo estilo */
-  .emb-prov{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1.2fr);gap:16px;margin-bottom:16px}
-  .emb-prov:not(:has(> .panel:not([style*="none"]))){display:none}
-  .emb-prov > .panel{margin:0;border-radius:16px}
+  /* ── Provincia: embudo de entrega ── */
+  .eprov{border-top:1px solid var(--border);margin-top:26px;padding-top:24px;margin-bottom:16px}
+  .eprov-h{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+  .eprov-h .eh-ic svg{width:34px;height:34px}
+  .eprov-h h2{margin:0;font-size:21px;font-weight:700;letter-spacing:-.3px}
+  .eprov-h p{margin:3px 0 0;font-size:13px;color:var(--muted)}
+  .pkpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px}
+  .pkpis:empty{display:none}
+  @media(max-width:900px){.pkpis{grid-template-columns:1fr}}
+  .pkpi{display:flex;align-items:flex-start;gap:16px;padding:18px 20px;border:1px solid var(--border);border-radius:16px;background:var(--surface);min-width:0}
+  .pkpi .pi{width:52px;height:52px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;background:rgba(11,99,229,.09);color:#0B63E5}
+  .pkpi .pi svg{width:26px;height:26px}
+  html:not([data-theme="light"]) .pkpi .pi{background:rgba(110,168,255,.14);color:#6EA8FF}
+  .pkpi .pn{font-size:32px;font-weight:700;letter-spacing:-.02em;line-height:1;color:#0B63E5;font-variant-numeric:tabular-nums}
+  html:not([data-theme="light"]) .pkpi .pn{color:#6EA8FF}
+  .pkpi .pl{font-size:15px;font-weight:600;margin-top:6px}
+  .pkpi .pd{font-size:12.5px;color:var(--muted);margin-top:2px;line-height:1.4}
+  .pkpi.mal .pi{background:rgba(220,38,38,.1);color:#DC2626} .pkpi.mal .pn{color:#DC2626}
+  html:not([data-theme="light"]) .pkpi.mal .pn,html:not([data-theme="light"]) .pkpi.mal .pi{color:#F87171}
+  .pkpi.cero .pn{color:var(--faint)}
+  .emb-prov{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
   .emb-prov:has(#provAhoraPanel[style*="none"]){grid-template-columns:1fr}
-  @media(max-width:900px){.emb-prov{grid-template-columns:1fr}}
-  .panel h3.eh + .eh-ps{margin:-8px 0 14px 32px}
-  .prov-fun .dkpis{gap:10px;margin-bottom:16px}
-  .prov-fun .dkpi{border-radius:14px;padding:12px 14px;min-width:120px}
-  .prov-fun .dkpi .dv{font-size:24px;font-weight:700}
-  .prov-fun .fstep .keep,.prov-fun .fstep .drop{font-weight:600}
-  .prov-ahora .dhead{width:130px}
+  @media(max-width:1000px){.emb-prov{grid-template-columns:1fr}}
+  .prow{display:grid;grid-template-columns:36px 118px minmax(0,1fr) 78px;align-items:center;gap:12px;padding:3px 0}
+  .prow .pc{width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff}
+  .prow .pc svg{width:18px;height:18px}
+  .prow .pln{font-size:14.5px;font-weight:600;white-space:nowrap}
+  .prow .et{height:18px;border-radius:9px;background:var(--st-resto,#E4E7EC);overflow:hidden} .prow .ef{height:100%;border-radius:9px;min-width:6px}
+  .prow .ev{text-align:right;font-size:15px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums} .prow .ev i{font-style:normal;color:var(--faint);font-weight:500;margin:0 3px}
+  .pstep{display:grid;grid-template-columns:36px 118px minmax(0,1fr) 78px;gap:12px;min-height:26px;align-items:center;border-bottom:1px solid var(--border);margin-bottom:3px}
+  .pstep > span{grid-column:3;display:flex;align-items:center;justify-content:center;gap:6px;font-size:11.5px;font-weight:600}
+  .pstep svg{width:12px;height:12px;color:var(--muted)}
+  .pstep .keep{color:#15803D} .pstep .drop{color:#DC2626} .pstep .sep{color:var(--faint)}
+  html:not([data-theme="light"]) .pstep .keep{color:#4ADE80} html:not([data-theme="light"]) .pstep .drop{color:#F87171}
+  @media(max-width:620px){.prow,.pstep{grid-template-columns:30px 96px minmax(0,1fr) 64px;gap:8px} .prow .pc{width:30px;height:30px} .prow .pln{font-size:13px}}
+  #entregaFuga:not(:empty){margin-top:16px}
   .emb-prod{border-radius:16px}
-  .emb-prod .pcard{border-radius:14px}</style>
+  .emb-prod .pcard{border-radius:14px}
+  #avisos > div:empty{display:none} #avisos > div:not(:empty) + div:not(:empty){margin-top:10px}
+  .emb-side > #avisos:not(:has(.einfo)){display:none}
+  .emb-ori .osum:empty{display:none}
+</style>
 </head>
 <body>
 <div class="nodo-page">
   <div class="nodo-wrap">
     <div class="nodo-head">
-      <div class="grow">
+      <div class="grow emb-tit"><span class="emb-hic" data-ic="filtro"></span><div>
         <h1 class="nodo-title">Embudo</h1><p class="nodo-lead">Cómo avanzan tus clientes desde que escriben hasta que compran, y en qué paso se te van.</p>
-      </div>
+      </div></div>
       <div class="nodo-actions" style="flex-wrap:wrap;gap:8px">
         <div class="dseg" id="tipoSeg" style="display:none"><button data-t="all" class="on">Todo</button><button data-t="digital">Digital</button><button data-t="fisico">Físico</button><button data-t="microapp">Micro apps</button></div>
         <div class="dseg" id="zonaSeg" style="display:none"><button data-z="total" class="on">Total</button><button data-z="lima">Lima</button><button data-z="provincia">Provincia</button></div>
@@ -255,58 +298,56 @@
       </div>
     </div>
 
-    <!-- (11-nov, rediseño de Rodrigo) El embudo en una columna a la izquierda; a la derecha «De dónde salen las ventas»,
-         «Por anuncio», el «Resumen del embudo» y «Dónde están ahora». Las dos tarjetas grandes siguen arriba. -->
-    <div class="mets" id="metPanel"></div>
+    <!-- (12-nov, rediseño 2 de Rodrigo) Arriba 3 tarjetas; el embudo a la izquierda; a la derecha de dónde salen los
+         pedidos, por anuncio, el estado de los clientes y los avisos. Con «Provincia», su embudo de entrega debajo. -->
+    <div class="ekpis" id="metPanel"></div>
 
     <div class="emb-grid">
     <div class="panel emb-fun">
-      <h3 class="eh"><span class="eh-ic" data-ic="filtro"></span>Cómo avanzan</h3>
-      <div class="fun" id="fun"></div>
-      <div id="neck"></div>
-      <div id="plata"></div>
+      <div class="eh2"><span class="eh-ic" data-ic="filtro"></span><div><h3>Cómo avanzan los clientes</h3><p>Embudo de conversación desde el primer chat hasta la compra.</p></div></div>
+      <div class="fun2" id="fun"></div>
     </div>
 
+    <div class="emb-side">
     <div class="panel emb-ori" id="origenPanel" style="display:none">
-      <h3 class="eh"><span class="eh-ic" data-ic="capas"></span>De dónde salen los pedidos</h3>
+      <div class="eh2"><span class="eh-ic" data-ic="capas"></span><div><h3>De dónde salen los pedidos</h3><p>Pedidos por precio y origen.</p></div></div>
       <div class="osum" id="origenSum"></div>
       <div id="origen"></div>
     </div>
 
     <div class="panel emb-ad" id="adPanel" style="display:none">
-      <h3 class="eh"><span class="eh-ic" data-ic="megafono"></span>Por anuncio</h3>
+      <div class="eh2"><span class="eh-ic" data-ic="megafono"></span><div><h3>Por anuncio</h3><p>Toca un anuncio para ver su embudo.</p></div></div>
       <div class="adwrap"><table class="adtbl" id="adTbl"></table></div>
     </div>
 
-    <div class="panel emb-res">
-      <h3 class="eh"><span class="eh-ic" data-ic="barras"></span>Resumen del embudo</h3>
-      <div id="resumen"></div>
+    <div class="panel emb-dist" id="distPanel">
+      <div class="eh2"><span class="eh-ic" data-ic="gente"></span><div><h3>Estado de los clientes</h3><p>Situación actual de los chats en curso.</p></div></div>
+      <div class="erows" id="dist"></div>
     </div>
 
-    <div class="panel emb-dist" id="distPanel">
-      <h3 class="eh"><span class="eh-ic" data-ic="gente"></span>Dónde están ahora</h3>
-      <div class="dist" id="dist"></div>
+    <div id="avisos"><div id="neck"></div><div id="plata"></div></div>
     </div>
     </div><!-- /.emb-grid -->
-    <!-- (11-nov) Con «Provincia» elegido: el embudo de entrega a la izquierda y dónde están los pedidos a la derecha -->
-    <div class="emb-prov">
-    <div class="panel prov-fun" id="entregaPanel" style="display:none">
-      <h3 class="eh"><span class="eh-ic" data-ic="camion"></span>Embudo de entrega · Provincia</h3>
-      <p class="ps eh-ps">De los pedidos con adelanto, cuántos llegan a recoger en la agencia.</p>
-      <div class="dkpis" id="entregaKpis"></div>
-      <div class="fun" id="entregaFun"></div>
-      <div id="entregaFuga"></div>
-    </div>
 
-    <div class="panel prov-ahora" id="provAhoraPanel" style="display:none">
-      <h3 class="eh"><span class="eh-ic" data-ic="caja"></span>Tus pedidos de provincia · ahora</h3>
-      <p class="ps eh-ps">En qué paso del envío está cada pedido ahora.</p>
-      <div class="dist" id="provAhora"></div>
-    </div>
-    </div><!-- /.emb-prov -->
+    <!-- Con «Provincia» elegido: el embudo de entrega (3 tarjetas, el proceso y los pedidos por estado) -->
+    <section class="eprov" id="entregaPanel" style="display:none">
+      <div class="eprov-h"><span class="eh-ic" data-ic="camion"></span><div><h2>Embudo de entrega · Provincia</h2><p>De los pedidos con adelanto, cuántos llegan a recoger en la agencia.</p></div></div>
+      <div class="pkpis" id="entregaKpis"></div>
+      <div class="emb-prov">
+        <div class="panel prov-fun">
+          <div class="eh2"><span class="eh-ic" data-ic="caja"></span><div><h3>Proceso de entrega</h3></div></div>
+          <div id="entregaFun"></div>
+        </div>
+        <div class="panel prov-ahora" id="provAhoraPanel" style="display:none">
+          <div class="eh2"><span class="eh-ic" data-ic="caja"></span><div><h3>Pedidos por estado</h3><p>En qué etapa del envío está cada pedido ahora.</p></div></div>
+          <div class="erows" id="provAhora"></div>
+          <div id="entregaFuga"></div>
+        </div>
+      </div>
+    </section>
 
     <div class="panel emb-prod" id="prodPanel" style="display:none">
-      <h3 class="eh"><span class="eh-ic" data-ic="caja"></span>Embudo por producto</h3>
+      <div class="eh2"><span class="eh-ic" data-ic="caja"></span><div><h3>Embudo por producto</h3></div></div>
       <div class="pgrid" id="prodFunnels"></div>
     </div>
 
@@ -343,6 +384,12 @@ const IC={
   caja:_sv(`<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.7 4.4a2 2 0 0 0 2 0L20.7 7"/>`),
   tienda:_sv(`<path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/><path d="M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7"/>`),
   llave:_sv(`<path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/>`),
+  diana:_sv(`<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>`),
+  etiqueta:_sv(`<path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>`),
+  pin:_sv(`<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>`),
+  equis:_sv(`<path d="M18 6 6 18M6 6l12 12"/>`),
+  alerta:_sv(`<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/>`),
+  billetera:_sv(`<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>`),
   moneda:_sv(`<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>`),
 };
 document.querySelectorAll("[data-ic]").forEach(e=>{ e.innerHTML=IC[e.dataset.ic]||""; });
@@ -362,8 +409,6 @@ async function boot(){
   st.range=computePreset("hoy");   // (todas las fechas arrancan en Hoy — Rodrigo, 10-oct)
   shell.onLeave?.(()=>{ if(st.rt){ try{ supa.removeChannel(st.rt); }catch(_){} st.rt=null; } });
   shell.onLeave?.(()=>recargarPronto.parar()); // sin recarga pendiente corriendo sobre la página nueva
-  const onResize=()=>igualarAlto($("metPanel")); window.addEventListener("resize",onResize);
-  shell.onLeave?.(()=>window.removeEventListener("resize",onResize));
   shell.onChannel(id=>{ st.channelId=id; subscribe(); load(); });
   st.dr=mountDateRange($("dateHost"), { valor:st.range, nota:`Por fecha de llegada del contacto · hora de ${tzNombre()}`, onChange:(r)=>{ st.range=r; render(); } });
   $("tipoSeg").querySelectorAll("button").forEach(b=> b.onclick=()=>{ st.tipo=b.dataset.t; $("tipoSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x===b)); ponerVista("all"); st.zona="total"; $("zonaSeg").style.display= st.tipo==="fisico"?"":"none"; $("zonaSeg").querySelectorAll("button").forEach(x=>x.classList.toggle("on",x.dataset.z==="total")); render(); });
@@ -548,7 +593,6 @@ function render(){
   const F=funnelDe(cs, ventasPeriodo(c=>pasaFiltros(c)));
   const _cmp=comparar();
   renderMetricas(F, _cmp);
-  renderResumen(F, _cmp);
   renderNeck(F);
   renderFunnel(F);
   renderPlata(cs);
@@ -583,48 +627,16 @@ function comparar(){
   return { cv:pct(compro,prev.length), compro, total:prev.length, lbl };
 }
 
+// (12-nov, rediseño 2 de Rodrigo) 3 tarjetas con ícono: conversión, efectividad de cierre y ticket promedio. Reemplazan a
+// las 2 tarjetas grandes y al «Resumen del embudo» (los chats y los pedidos van debajo de la conversión).
 function renderMetricas(F, cmp){
   const el=$("metPanel");
-  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="met low" style="flex:1 1 100%"><div class="num">—</div><div class="mtxt"><div class="mlbl">${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</div><div class="mdesc">${filt?"Prueba con otro anuncio, producto o fecha.":"Cuando lleguen clientes por WhatsApp verás aquí tu efectividad y tu conversión."}</div></div></div>`; return; }
+  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="ekpi vacio" style="grid-column:1/-1"><span class="ki">${IC.filtro}</span><span class="kn">—</span><div class="kt"><div class="kl">${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</div><div class="ks">${filt?"Prueba con otro anuncio, producto o fecha.":"Cuando lleguen clientes por WhatsApp verás aquí tu conversión y tu efectividad."}</div></div></div>`; return; }
   const ef=F.efectividad, cv=F.conversion;
   // En subvista por ZONA (Lima/Provincia) la base NO son "todos": los leads que aún no
   // dijeron su ciudad quedan fuera, y como TODOS los compradores tienen zona, la
   // conversión por zona sale inflada y NO es comparable con la de Total. El rótulo lo
-  // dice para no engañar (la matemática de zona es correcta para "de los que ya sé que
-  // son de X, cuántos compran", solo que no es la misma base que Total).
-  const zonaSub = (!!st.zona && st.zona!=="total");
-  const zonaNom = st.zona==="lima" ? "Lima" : "provincia";
-  const eCls = "mia"; // violeta fijo (tema IA), por elección de Rodrigo — ya no semáforo
-  // Primero la Conversión total y después la Efectividad de cierre — igual que el Dashboard (Rodrigo, 9-oct).
-  let cmpHtml="";
-  if(cmp && cmp.cv!=null && cv!=null){
-    const d=cv-cmp.cv;
-    cmpHtml=`<div class="mcmp">${d===0?"igual":`<span class="${d>0?"up":"down"}">${d>0?"▲":"▼"} ${Math.abs(d)} pts</span>`} vs ${esc(cmp.lbl)} (${cmp.cv}%)</div>`;
-  }
-  el.innerHTML=`
-    <div class="met ${F.total?"mconv":"low"}"><div class="num">${cv==null?"—":cv+"%"}</div><div class="mtxt">
-      <div class="mlbl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"}</div>
-      <div class="mbrk" title="Pedidos hechos en estas fechas ÷ personas que te escribieron por primera vez en estas fechas. Es la misma cuenta que Inicio, Meta y Trakker: incluye el pedido de alguien que te escribió antes.">${F.ventas} ${F.ventas===1?"pedido":"pedidos"} ÷ ${F.total} ${F.total===1?"chat nuevo":"chats nuevos"}${zonaSub?` de ${zonaNom}`:""}</div>
-      ${cmpHtml}
-    </div></div>
-    <div class="met ${eCls}"><div class="num">${ef==null?"—":ef+"%"}</div><div class="mtxt">
-      <div class="mlbl"><span class="miabadge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>Efectividad de cierre</div>
-      <div class="mbrk">${F.niveles.compraron} cerraron de ${F.niveles.interes + F.perdidoVenta} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}</div>
-    </div></div>`;
-  igualarAlto(el);
-}
-
-// (11-nov, rediseño de Rodrigo) «Resumen del embudo» a la derecha. Las dos tarjetas grandes de arriba se quedan
-// (Rodrigo: «no quites las tarjetas»); acá van además chats, ventas y ticket, sin repetir la comparación.
-function renderResumen(F, cmp){
-  const el=$("resumen"); if(!el) return;
-  if(F.total===0){ const filt=st.contacts.length>0; el.innerHTML=`<div class="empty" style="padding:18px 0"><h4>${filt?"Sin contactos con estos filtros":"Aún sin contactos"}</h4>${filt?"Prueba con otro anuncio, producto o fecha.":"Cuando lleguen clientes por WhatsApp verás aquí tu conversión y tu efectividad."}</div>`; return; }
-  const ef=F.efectividad, cv=F.conversion;
-  // En subvista por ZONA (Lima/Provincia) la base NO son "todos": los leads que aún no
-  // dijeron su ciudad quedan fuera, y como TODOS los compradores tienen zona, la
-  // conversión por zona sale inflada y NO es comparable con la de Total. El rótulo lo
-  // dice para no engañar (la matemática de zona es correcta para "de los que ya sé que
-  // son de X, cuántos compran", solo que no es la misma base que Total).
+  // dice para no engañar.
   const zonaSub = (!!st.zona && st.zona!=="total");
   const zonaNom = st.zona==="lima" ? "Lima" : "provincia";
   let cmpHtml="";
@@ -632,30 +644,18 @@ function renderResumen(F, cmp){
     const d=cv-cmp.cv;
     cmpHtml=`<div class="mcmp">${d===0?"igual":`<span class="${d>0?"up":"down"}">${d>0?"▲":"▼"} ${Math.abs(d)} pts</span>`} vs ${esc(cmp.lbl)} (${cmp.cv}%)</div>`;
   }
-  // Lista con ícono: chats, ventas, conversión total, efectividad de cierre (con su explicación al pasar el mouse) y ticket.
   // (el ticket con céntimos, como en Inicio: «S/ 6.50», no «S/ 7»)
   const ticket = F.ventas>0 && F.montoVentas!=null ? (CUR_SYM[CUR]||CUR)+" "+(F.montoVentas/F.ventas).toFixed(2) : "—";
-  const fila=(ic,cls,l,v,tip="",extra="")=>`<div class="rs-row"${tip?` title="${esc(tip)}"`:""}><span class="rs-ic ${cls}">${IC[ic]}</span><span class="rs-l">${l}${extra}</span><b>${v}</b></div>`;
   el.innerHTML=
-    fila("chat","az","Chats nuevos", nf.format(F.total), "Personas que te escribieron por primera vez en estas fechas"+(zonaSub?` (de ${zonaNom})`:""))+
-    fila("carro","az","Pedidos", nf.format(F.ventas), "Pedidos hechos en estas fechas (también de quien te escribió antes)")+
-    fila("pct","az", zonaSub?`Conversión de ${zonaNom}`:"Conversión total", cv==null?"—":cv+"%", `${F.ventas} ${F.ventas===1?"pedido":"pedidos"} ÷ ${F.total} ${F.total===1?"chat nuevo":"chats nuevos"}. La misma cuenta que Inicio, Meta y Trakker.`)+
-    fila("mano","vi","Efectividad de cierre", ef==null?"—":ef+"%", `${F.niveles.compraron} cerraron de ${F.niveles.interes + F.perdidoVenta} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}. No cuenta a los curiosos que solo saludan.`)+
-    fila("ticket","az","Ticket promedio", ticket, "Lo que paga en promedio cada pedido de estas fechas");
-}
-
-// El align-items:stretch del flex NO iguala las tarjetas en este codebase (quirk
-// ya visto en el Dashboard; hasta min-height dispara un stretch raro). Se iguala
-// por JS con `height` EXPLÍCITO (tamaño definido que el flex ya no puede estirar):
-// medir el natural de ambas y fijarlas al máximo. A prueba de cualquier texto/ancho.
-function igualarAlto(el){
-  const cards=[...el.querySelectorAll(".met")];
-  if(cards.length<2){ cards.forEach(c=>c.style.height="auto"); return; }
-  requestAnimationFrame(()=>{
-    cards.forEach(c=>c.style.height="auto");
-    const mx=Math.max(...cards.map(c=>c.offsetHeight)); // offsetHeight fuerza el reflow → alto natural
-    cards.forEach(c=>c.style.height=mx+"px");
-  });
+    `<div class="ekpi conv"><span class="ki">${IC.pct}</span><span class="kn">${cv==null?"—":cv+"%"}</span><div class="kt">
+      <div class="kl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"}</div>
+      <div class="ks" title="Pedidos hechos en estas fechas ÷ personas que te escribieron por primera vez en estas fechas. Es la misma cuenta que Inicio, Meta y Trakker: incluye el pedido de alguien que te escribió antes.">${nf.format(F.ventas)} ${F.ventas===1?"pedido":"pedidos"} ÷ ${nf.format(F.total)} ${F.total===1?"chat nuevo":"chats nuevos"}</div>${cmpHtml}</div></div>`+
+    `<div class="ekpi efec" title="De los que se interesaron de verdad, cuántos cierra el bot. No cuenta a los curiosos que solo saludan."><span class="ki">${IC.diana}</span><span class="kn">${ef==null?"—":ef+"%"}</span><div class="kt">
+      <div class="kl">Efectividad de cierre</div>
+      <div class="ks">${nf.format(F.niveles.compraron)} cerraron de ${nf.format(F.niveles.interes + F.perdidoVenta)} interesados${F.c.confirmado?` · ${F.c.confirmado} en curso`:""}</div></div></div>`+
+    `<div class="ekpi tick"><span class="ki">${IC.etiqueta}</span><span class="kn">${ticket}</span><div class="kt">
+      <div class="kl">Ticket promedio</div>
+      <div class="ks">Valor por pedido</div></div></div>`;
 }
 
 // Los 5 saltos con cuánta gente se pierde en cada uno. El último (confirmados → comprar) solo
@@ -684,11 +684,12 @@ function renderNeck(F){
   if(F.total===0){ el.innerHTML=""; return; }
   const { peor, enCurso }=fugas(F);
   const enCursoTxt=enCurso>0
-    ? `<div class="neck ok" style="margin-top:8px">${icon("truck")||icon("check")}<div>${nf.format(enCurso)} ${enCurso===1?"pedido sigue":"pedidos siguen"} en curso · <a href="pedidos.html" style="color:var(--brand)">ver en Pedidos</a></div></div>`
+    ? `<div class="einfo"><span class="eii">${IC.info}</span><div>${nf.format(enCurso)} ${enCurso===1?"pedido sigue":"pedidos siguen"} en curso · <a href="pedidos.html">ver en Pedidos</a></div></div>`
     : "";
+  // (12-nov, Rodrigo: «menos lo que dice tu embudo fluye bien») Solo se avisa la mayor fuga (si la hay) y los pedidos en curso.
   el.innerHTML=(peor
-    ? `<div class="neck"><span class="ni">${icon("alert")}</span><div><b>Mayor fuga:</b> ${peor.de} → ${peor.a}, se van ${nf.format(peor.seCae)} (${peor.drop}%). ${peor.tip}</div></div>`
-    : `<div class="neck ok">${icon("check")}<div>Tu embudo fluye bien.</div></div>`)+enCursoTxt;
+    ? `<div class="einfo warn"><span class="eii">${IC.alerta}</span><div><b>Mayor fuga:</b> ${peor.de} → ${peor.a}, se van ${nf.format(peor.seCae)} (${peor.drop}%). ${peor.tip}</div></div>`
+    : "")+enCursoTxt;
 }
 
 function renderFunnel(F){
@@ -704,19 +705,18 @@ function renderFunnel(F){
     { lbl:"Compraron", n:N.compraron, c:col("comprado"), ic:"carro" },
   ];
   const { saltos, peor }=fugas(F);
+  const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
   let html="";
   niveles.forEach((lv,i)=>{
-    // (11-nov, rediseño) En la columna angosta el ancho va de 68 % a 100 % según cuántos quedan: se sigue viendo que se
-    // angosta, y hasta el escalón más chico tiene lugar para el nombre, el ícono y la cifra.
-    const w= N.llegaron>0 ? Math.round(68 + 32*lv.n/N.llegaron) : 68;
+    // (12-nov, rediseño 2) El paso en una píldora de color y al lado su barra, larga según qué parte de los que llegaron sigue ahí.
+    const w= N.llegaron>0 ? Math.round(lv.n/N.llegaron*100) : 0;
     const pc= pct(lv.n,N.llegaron);
-    html+=`<div class="flvl"><div class="fbar2" style="width:${w}%;background:${lv.c}"><span class="fl"><span class="fic">${IC[lv.ic]}</span>${lv.lbl}</span><span class="fr">${nf.format(lv.n)}${pc!=null?` · ${pc}%`:""}</span></div></div>`;
+    html+=`<div class="frow"><div class="fpill" style="background:${lv.c}"><span class="fic">${IC[lv.ic]}</span>${lv.lbl}</div><div class="ftrack"><div class="ffill" style="width:${w}%;background:${lv.c}${lv.n?"":";min-width:0"}"></div></div><div class="fval">${nf.format(lv.n)}${pc!=null?`<i>·</i>${pc}%`:""}</div></div>`;
     if(i<niveles.length-1){
       const sa=saltos[i];
-      const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
-      // (10-oct) Solo cuánto se cae; en rojo únicamente la mayor fuga.
-      html+= sa.drop==null ? `<div class="fstep">${arrow}—</div>`
-        : `<div class="fstep${peor&&peor.i===i?" peor":""}" title="Pasa el ${100-sa.drop}% · se van ${sa.seCae}">${arrow}<span class="fdrop">${sa.drop>0?"−"+sa.drop+"%":"sin caída"}</span></div>`;
+      // Solo cuánto se cae; en rojo únicamente la mayor fuga.
+      html+= sa.drop==null ? `<div class="fstep2"><span>${arrow}—</span></div>`
+        : `<div class="fstep2${peor&&peor.i===i?" peor":""}" title="Pasa el ${100-sa.drop}% · se van ${sa.seCae}"><span>${arrow}${sa.drop>0?`<span class="fchip">−${sa.drop}%</span>`:"sin caída"}</span></div>`;
     }
   });
   // (5-nov) Las ventas de estas fechas de gente que te escribió ANTES (el remarketing que cierra días después): cuentan en
@@ -736,9 +736,9 @@ function renderPlata(cs){
   let porCobrar=0, conPed=0;
   confirmados.forEach(c=>{ const ords=st.ordersBy[c.id]||[]; let s=0; ords.forEach(o=>{ if(!enMoneda(o)) return; s+=O.porCobrar(o); }); if(s>0){ porCobrar+=s; conPed++; } });
   const otras=Object.entries(st.otrasMonedas||{}).filter(([,k])=>k.porCobrar>0);
-  const avisoOtras=otras.length?`<div class="plata" style="margin-top:10px;border-color:var(--amber,#f59e0b);background:rgba(245,158,11,.08)"><span style="font-size:17px">${icon("alert")}</span><div>${otras.map(([c,k])=>`<b>${k.n}</b> pedido${k.n>1?"s":""} en <b>${c}</b> (${(CUR_SYM[c]||c)+" "+Math.round(k.porCobrar).toLocaleString("es-PE")} por cobrar)`).join(" · ")} ${otras.reduce((a,[,k])=>a+k.n,0)>1?"quedan":"queda"} fuera de esta suma: el negocio ahora factura en <b>${CUR}</b>. Los ves con su moneda en Pedidos.</div></div>`:"";
+  const avisoOtras=otras.length?`<div class="einfo warn"><span class="eii">${IC.alerta}</span><div>${otras.map(([c,k])=>`<b>${k.n}</b> pedido${k.n>1?"s":""} en <b>${c}</b> (${(CUR_SYM[c]||c)+" "+Math.round(k.porCobrar).toLocaleString("es-PE")} por cobrar)`).join(" · ")} ${otras.reduce((a,[,k])=>a+k.n,0)>1?"quedan":"queda"} fuera de esta suma: el negocio ahora factura en <b>${CUR}</b>. Los ves con su moneda en Pedidos.</div></div>`:"";
   if(porCobrar<=0){ el.innerHTML=avisoOtras; return; }
-  el.innerHTML=`<div class="plata"><span style="font-size:17px">${icon("dollar")}</span><div>Plata en juego: <span class="pv">${money(porCobrar)}</span> comprometidos por <b>${conPed}</b> confirmado(s) que todavía no pagan el saldo. Ciérralos en <a href="pedidos.html" style="color:var(--brand)">Pedidos</a>.</div></div>`;
+  el.innerHTML=`<div class="einfo warn"><span class="eii">${IC.moneda}</span><div>Plata en juego: <span class="pv">${money(porCobrar)}</span> comprometidos por <b>${conPed}</b> confirmado(s) que todavía no pagan el saldo. Ciérralos en <a href="pedidos.html">Pedidos</a>.</div></div>`+avisoOtras;
 }
 
 // ── Embudo de ENTREGA (solo provincia) ────────────────────────────────
@@ -781,17 +781,16 @@ function renderEntrega(cs){
   const resueltos=recogieron+noRecogido;
   const tasa=pct(recogieron,resueltos);
   const enProceso=conAdelanto-resueltos; // aún en camino / en agencia / con clave sin recoger
-  const tasaCls = tasa==null?"" : (tasa>=85?"good":tasa>=65?"warn":"bad");
-  kEl.innerHTML=`
-    <div class="dkpi ${tasaCls}"><div class="dv">${tasa==null?"—":tasa+"%"}</div><div class="dl">Tasa de recojo</div>
-      <div class="dd">${tasa==null?"Aún sin desenlaces (nadie recogió ni se cayó todavía)":`${nf.format(recogieron)} recogieron de ${nf.format(resueltos)} ya resueltos`}</div></div>
-    <div class="dkpi ${enRiesgo>0?"warn":""}"><div class="dv">${nf.format(enRiesgo)}</div><div class="dl">En agencia ahora</div>
-      <div class="dd">${enRiesgo>0?"Llegaron y esperan que paguen el saldo y recojan — empújalos":"Nada esperando en agencia"}</div></div>
-    <div class="dkpi ${noRecogido>0?"bad":""}"><div class="dv">${nf.format(noRecogido)}</div><div class="dl">No recogieron</div>
-      <div class="dd">${noRecogido>0?`Llegaron pero nunca recogieron${fleteCaido>0?` · flete perdido ${money(fleteCaido)}`:""}`:"Nadie se cayó — excelente"}</div></div>`;
+  kEl.innerHTML=
+    `<div class="pkpi${tasa==null?" cero":""}"><span class="pi">${IC.caja}</span><div><div class="pn">${tasa==null?"—":tasa+"%"}</div><div class="pl">Tasa de recojo</div>
+      <div class="pd">${tasa==null?"Aún sin desenlaces (nadie recogió ni se cayó todavía)":`${nf.format(recogieron)} recogieron de ${nf.format(resueltos)} ya resueltos`}</div></div></div>`+
+    `<div class="pkpi${enRiesgo>0?"":" cero"}"><span class="pi">${IC.pin}</span><div><div class="pn">${nf.format(enRiesgo)}</div><div class="pl">En agencia ahora</div>
+      <div class="pd">${enRiesgo>0?"Llegaron y esperan que paguen el saldo y recojan":"Nada esperando en agencia"}</div></div></div>`+
+    `<div class="pkpi${noRecogido>0?" mal":" cero"}"><span class="pi">${noRecogido>0?IC.equis:IC.check}</span><div><div class="pn">${nf.format(noRecogido)}</div><div class="pl">No recogieron</div>
+      <div class="pd">${noRecogido>0?`Llegaron pero nunca recogieron${fleteCaido>0?` · flete perdido ${money(fleteCaido)}`:""}`:"Nadie se cayó — excelente"}</div></div></div>`;
 
   const niveles=[
-    { lbl:"Con adelanto", n:conAdelanto,  c:"var(--pv-1,#8b5cf6)", ic:"moneda" },
+    { lbl:"Con adelanto", n:conAdelanto,  c:"var(--pv-1,#8b5cf6)", ic:"billetera" },
     { lbl:"Enviados",  n:despachados,  c:"var(--pv-2,#3b82f6)", ic:"camion" },
     { lbl:"En agencia",   n:enAgencia,    c:"var(--pv-3,#0ea5e9)", ic:"tienda" },
     { lbl:"Pagaron saldo",n:pagaronSaldo, c:"var(--pv-4,#f59e0b)", ic:"ticket" },
@@ -802,21 +801,22 @@ function renderEntrega(cs){
   const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
   let html="";
   niveles.forEach((lv,i)=>{
-    const w=Math.round(68 + 32*lv.n/conAdelanto);   // (11-nov) como el embudo de venta: de 68 % a 100 %, con ícono
+    // (12-nov, rediseño 2) Ícono en un círculo de color, el paso, su barra y la cifra
+    const w=Math.round(lv.n/conAdelanto*100);
     const pc=pct(lv.n,conAdelanto);
-    html+=`<div class="flvl"><div class="fbar2" style="width:${w}%;background:${lv.c}"><span class="fl"><span class="fic">${IC[lv.ic]}</span>${lv.lbl}</span><span class="fr">${nf.format(lv.n)}${pc!=null?` · ${pc}%`:""}</span></div></div>`;
+    html+=`<div class="prow"><span class="pc" style="background:${lv.c}">${IC[lv.ic]}</span><span class="pln">${lv.lbl}</span><div class="et"><div class="ef" style="width:${w}%;background:${lv.c}${lv.n?"":";min-width:0"}"></div></div><div class="ev">${nf.format(lv.n)}${pc!=null?`<i>·</i>${pc}%`:""}</div></div>`;
     if(i<niveles.length-1){ const p=pasos[i];
-      html+= p==null ? `<div class="fstep">${arrow}—</div>`
-        : `<div class="fstep">${arrow}<span class="keep">pasa el ${p}%</span> · <span class="drop">se cae el ${100-p}%</span></div>`;
+      html+= p==null ? `<div class="pstep"><span>${arrow}—</span></div>`
+        : `<div class="pstep"><span>${arrow}<span class="keep">pasa el ${p}%</span><span class="sep">·</span><span class="drop">se cae el ${100-p}%</span></span></div>`;
     }
   });
   fEl.innerHTML=html;
 
   // Aviso de la fuga principal (el no-recojo, si lo hay).
   if(noRecogido>0){
-    fugaEl.innerHTML=`<div class="neck"><span class="ni">${icon("alert")}</span><div><b>Tu fuga de provincia:</b> ${nf.format(noRecogido)} pedido(s) llegaron a la agencia y <b>nunca se recogieron</b>${fleteCaido>0?` — ${money(fleteCaido)} de flete perdido`:""}. Sube el adelanto o afina qué agencias usas para bajar el no-recojo.</div></div>`;
+    fugaEl.innerHTML=`<div class="einfo warn"><span class="eii">${IC.alerta}</span><div><b>Tu fuga de provincia:</b> ${nf.format(noRecogido)} pedido(s) llegaron a la agencia y <b>nunca se recogieron</b>${fleteCaido>0?` — ${money(fleteCaido)} de flete perdido`:""}. Sube el adelanto o afina qué agencias usas para bajar el no-recojo.</div></div>`;
   } else if(enRiesgo>0){
-    fugaEl.innerHTML=`<div class="neck ok">${icon("check")}<div><b>${nf.format(enRiesgo)}</b> esperando en la agencia y ninguno caído aún. Avísales que paguen el saldo para cerrar el recojo.</div></div>`;
+    fugaEl.innerHTML=`<div class="einfo"><span class="eii">${IC.info}</span><div><b>${nf.format(enRiesgo)}</b> esperando en la agencia y ninguno caído aún. Avísales que paguen el saldo para cerrar el recojo.</div></div>`;
   } else fugaEl.innerHTML="";
 }
 
@@ -850,17 +850,12 @@ function renderProvinciaAhora(cs){
     { label:"Recojo",        desc:"Recogieron su pedido — cerrado",                    color:"var(--pv-6,#16a34a)", n:recojo },
   ];
   const total=rows.reduce((s,r)=>s+r.n,0);
-  if(total===0){ panel.style.display="none"; return; }
+  if(total===0 && !$("entregaFuga").innerHTML){ panel.style.display="none"; return; }
   panel.style.display="";
-  const max=Math.max(1,...rows.map(r=>r.n));
   // Se muestran TODAS las barras (los 6 pasos), aunque estén en 0: así ves de un
   // vistazo dónde están tus pedidos y qué pasos están vacíos.
-  el.innerHTML=rows.map(r=>`<div class="drow">
-    <div class="dhead" title="${esc(r.desc)}"><span class="ddot" style="background:${r.color}"></span><div class="dname">${esc(r.label)}</div></div>
-    <div class="dbarwrap"><div class="dbar" style="width:${Math.round(r.n/max*100)}%;background:${r.color}"></div></div>
-    <div class="dn">${nf.format(r.n)}</div>
-    <div class="dpct">${pct(r.n,total)!=null?pct(r.n,total)+"%":""}</div>
-  </div>`).join("");
+  el.innerHTML=rows.map(r=>{ const pc=pct(r.n,total);
+    return `<div class="erow" title="${esc(r.desc)}"><span class="en"><span class="ed" style="background:${r.color}"></span>${esc(r.label)}</span><div class="et"><div class="ef${r.n?"":" cero"}" style="width:${pc||0}%;background:${r.color}"></div></div><div class="ev">${nf.format(r.n)}<i>·</i><small>${pc!=null?pc+"%":"0%"}</small></div></div>`; }).join("");
 }
 
 // 💸 (10-oct, Rodrigo) Por precio de compra: el más alto es el normal; los demás salen de las ofertas (remarketing).
@@ -886,14 +881,10 @@ function renderOrigen(){
   const plata=filas.reduce((a,[,g])=>a+g.sum,0), deOfertas=filas.filter(([,g])=>!g.normal).reduce((a,[,g])=>a+g.sum,0);
   $("origenSum").innerHTML= deOfertas>0 && plata>0
     ? `Las ofertas trajeron <b>${money(deOfertas)}</b> · ${Math.round(deOfertas/plata*100)}% de los ${money(plata)} vendidos`
-    : `<b>${money(plata)}</b> vendidos, todos a precio normal`;
+    : "";   // (12-nov) todo a precio normal: el subtítulo ya basta
   const nor=(g)=>g.normal;
-  el.innerHTML=filas.map(([p,g],i)=>`<div class="drow">
-      <div class="dhead"><span class="ddot" style="background:${nor(g)?"var(--fill-verde,#16A34A)":"var(--fill-ambar,#F59E0B)"}"></span><div><div class="dname">${money(p)}</div><div class="dsub">${nor(g)?"Precio normal":"Oferta"}</div></div></div>
-      <div class="dbarwrap"><div class="dbar" style="width:${Math.round(g.n/max*100)}%;background:${nor(g)?"var(--fill-verde,#16A34A)":"var(--fill-ambar,#F59E0B)"}"></div></div>
-      <div class="dn">${nf.format(g.n)}</div>
-      <div class="dmoney">${money(g.sum)}</div>
-    </div>`).join("");
+  el.innerHTML=filas.map(([p,g])=>{ const c=nor(g)?"var(--fill-verde,#16A34A)":"var(--fill-ambar,#F59E0B)";
+    return `<div class="orow"><div class="op"><span class="ed" style="background:${c}"></span><div><b>${money(p)}</b><small>${nor(g)?"Precio normal":"Oferta"}</small></div></div><div class="et"><div class="ef" style="width:${Math.round(g.n/max*100)}%;background:${c}"></div></div><div class="n">${nf.format(g.n)}</div><div class="m">${money(g.sum)}</div></div>`; }).join("");
 }
 
 function renderAnuncios(){
@@ -931,15 +922,10 @@ function renderDist(F){
     const n=c[s.k]||0;
     const reactivable=(s.k==="curioso"||s.k==="interesado"||s.k==="caliente"||s.k==="confirmado");
     const p=pct(n,F.total);
-    return `<div class="drow">
-      <div class="dhead"><span class="ddot" style="background:${col(s.k)}"></span><div class="dname">${esc(s.label)}</div></div>
-      <div class="dbarwrap"><div class="dbar" style="width:${Math.round(n/max*100)}%;background:${col(s.k)}"></div></div>
-      <div class="dn">${nf.format(n)}</div>
-      <div class="dpct">${p!=null?p+"%":""}</div>
-      ${reactivable?`<button class="react" data-k="${s.k}">Reactivar ${n} →</button>`:`<span class="reactsp"></span>`}
-    </div>`;
+    const dentro=`<span class="en"><span class="ed" style="background:${col(s.k)}"></span>${esc(s.label)}</span><div class="et"><div class="ef" style="width:${p||0}%;background:${col(s.k)}"></div></div><div class="ev">${nf.format(n)}<i>·</i><small>${p!=null?p+"%":""}</small></div>`;
+    // (12-nov) Sin el botón «Reactivar»: la fila entera lleva a esos contactos (los que todavía se pueden reactivar)
+    return reactivable ? `<a class="erow" href="contactos.html?stage=${s.k}" title="Ver y reactivar a estos ${n}">${dentro}</a>` : `<div class="erow">${dentro}</div>`;
   }).join("");
-  el.querySelectorAll("[data-k]").forEach(b=> b.onclick=()=> location.href="contactos.html?stage="+b.dataset.k);
 }
 
 function renderProductos(){
