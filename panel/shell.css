@@ -1232,6 +1232,23 @@ html:not([data-ds="1"]) .nodo-head .neg-k{font-size:10.5px;margin-bottom:0}
 html:not([data-ds="1"]) .nodo-head.franja-alta{padding:24px 0 26px;margin-bottom:22px}
 html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title{font-size:26px}
 @media(max-width:720px){html:not([data-ds="1"]) .nodo-head.franja-alta{padding:20px 0 22px}}
+/* (12-nov, Rodrigo: «las cabeceras de todas las secciones igual que Inicio») El degradado de Inicio en TODAS las secciones:
+   azul con luces suaves que se desvanece hacia abajo y se funde con la página, en vez de cortarse en seco. Baja justo hasta
+   donde empieza el contenido (bottom = −margin-bottom), así no tapa nada; el texto queda en la parte sólida y el desvanecido
+   ocupa el relleno de abajo y el margen. Inicio (.nd-head) lo estira más porque sus tarjetas van montadas encima. */
+html:not([data-ds="1"]) .nodo-head{padding-bottom:24px;margin-bottom:14px}
+html:not([data-ds="1"]) .nodo-head.franja-alta{padding-bottom:34px}
+html:not([data-ds="1"]) .nodo-head::before{bottom:-14px;pointer-events:none;
+  background:
+    radial-gradient(38% 70% at 78% 8%,rgba(255,255,255,.22),transparent 70%),
+    radial-gradient(30% 60% at 52% 40%,rgba(120,210,255,.28),transparent 70%),
+    radial-gradient(45% 90% at 8% 0%,rgba(0,30,190,.5),transparent 70%),
+    linear-gradient(100deg,#0036E8 0%,#0B5FF0 32%,#1690FF 62%,#4DC2FF 100%);
+  -webkit-mask-image:linear-gradient(to bottom,#000 0,#000 calc(100% - 40px),rgba(0,0,0,.45) calc(100% - 20px),transparent 100%);
+  mask-image:linear-gradient(to bottom,#000 0,#000 calc(100% - 40px),rgba(0,0,0,.45) calc(100% - 20px),transparent 100%)}
+html:not([data-ds="1"]) .nodo-head.ia::before{
+  background:radial-gradient(38% 70% at 78% 8%,rgba(255,255,255,.18),transparent 70%),linear-gradient(90deg,#7C3AED 0%,#A21CAF 50%,#DB2777 max(85%,900px))}
+@media(max-width:720px){html:not([data-ds="1"]) .nodo-head{padding-bottom:22px}}
 /* (22-oct) El nombre del bot en el menú se cortaba («Prime D…»): le faltaban ~15 px. Menos separación, el botón de comprimir
    un poco más chico y la letra a 13,5 px; un nombre largo igual se corta, con el nombre completo al pasar el mouse. */
 html:not([data-ds="1"]) .nodo-brand{gap:4px}
