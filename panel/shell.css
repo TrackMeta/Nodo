@@ -1237,7 +1237,7 @@ html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title{font-size:26px}
    · ALTA: solo Inicio (12-nov, Rodrigo: «solo Inicio tiene alta»), con sus tarjetas montadas encima (.nd-head, su regla).
      La clase .franja-alta de abajo queda por si otra sección de resumen la necesita.
    · DEL TAMAÑO DE SU CABECERA (todas las demás): azul hasta donde acaba su descripción, un poquito más abajo, y se
-     desvanece en 56 px.
+     desvanece en 36 px (12-nov: «un poco más corto»). Vale también para cabeceras metidas en otra caja (Productos).
    shell.js (ajustarFranja) mide dónde termina la cabecera y lo pone en --franja-h del área que hace scroll. Ese fondo
    (.nodo-page o .wrap, se mueve con el scroll) pinta el desvanecido por DETRÁS del contenido; el ::before de la cabecera pinta
    el mismo dibujo, del mismo tamaño y desde el mismo borde, así no se ve la unión (la cabecera va encima del contenido
@@ -1253,22 +1253,22 @@ html:not([data-ds="1"]){
     radial-gradient(38% 70% at 78% 8%,rgba(255,255,255,.2),transparent 70%),
     radial-gradient(45% 90% at 8% 0%,rgba(76,29,149,.45),transparent 70%),
     linear-gradient(100deg,#7C3AED 0%,#A21CAF 50%,#DB2777 100%)}
-html:not([data-ds="1"]) :is(.nodo-page,body.nodo-shelled .wrap){--fx:56px;--fs:0px}
-html:not([data-ds="1"]) :is(.nodo-page:has(> .nodo-wrap > .nodo-head.franja-alta),body.nodo-shelled .wrap:has(> .nodo-head.franja-alta)){--fx:200px;--fs:24px}
+html:not([data-ds="1"]) :is(.nodo-page,body.nodo-shelled .wrap){--fx:36px;--fs:0px}
+html:not([data-ds="1"]) :is(.nodo-page:has(.nodo-head.franja-alta),body.nodo-shelled .wrap:has(.nodo-head.franja-alta)){--fx:200px;--fs:24px}
 /* Del tamaño de su cabecera */
-html:not([data-ds="1"]) .nodo-head{padding:20px 0 20px;margin-bottom:20px}
+html:not([data-ds="1"]) .nodo-head{padding:18px 0 14px;margin-bottom:18px}
 html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-head > .grow h1{font-size:24px;line-height:1.23}
 html:not([data-ds="1"]) .nodo-head .nodo-lead,html:not([data-ds="1"]) .nodo-head > .grow p{margin-top:4px;font-size:13.5px}
 /* Alta */
 html:not([data-ds="1"]) .nodo-head.franja-alta{padding:24px 0 28px;margin-bottom:22px}
 html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title,html:not([data-ds="1"]) .nodo-head.franja-alta > .grow h1{font-size:26px}
 @media(max-width:720px){
-  html:not([data-ds="1"]) .nodo-head{padding:16px 0 16px}
+  html:not([data-ds="1"]) .nodo-head{padding:14px 0 12px}
   html:not([data-ds="1"]) .nodo-head.franja-alta{padding:20px 0 22px}
   html:not([data-ds="1"]) .nodo-head .nodo-title,html:not([data-ds="1"]) .nodo-head > .grow h1{font-size:22px}}
 html:not([data-ds="1"]) .nodo-head::before,
-html:not([data-ds="1"]) .nodo-page:has(> .nodo-wrap > .nodo-head:not(.nd-head)),
-html:not([data-ds="1"]) body.nodo-shelled .wrap:has(> .nodo-head){
+html:not([data-ds="1"]) .nodo-page:has(.nodo-head):not(:has(.nd-head)),
+html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head){
   --fh:var(--franja-h,120px);
   background-image:linear-gradient(to bottom,
       transparent calc(var(--fh) + var(--fs)),
@@ -1278,12 +1278,12 @@ html:not([data-ds="1"]) body.nodo-shelled .wrap:has(> .nodo-head){
     var(--franja-capas);
   background-size:100% calc(var(--fh) + var(--fx));background-repeat:no-repeat;background-position:0 0}
 html:not([data-ds="1"]) .nodo-head::before{bottom:0;pointer-events:none}
-html:not([data-ds="1"]) .nodo-page:has(> .nodo-wrap > .nodo-head:not(.nd-head)),
-html:not([data-ds="1"]) body.nodo-shelled .wrap:has(> .nodo-head){background-attachment:local}
+html:not([data-ds="1"]) .nodo-page:has(.nodo-head):not(:has(.nd-head)),
+html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head){background-attachment:local}
 /* IA: su violeta → rosado (la regla vieja .nodo-head.ia::before usa el atajo background: hay que repetir tamaño y posición) */
 html:not([data-ds="1"]) .nodo-head.ia::before,
-html:not([data-ds="1"]) .nodo-page:has(> .nodo-wrap > .nodo-head.ia),
-html:not([data-ds="1"]) body.nodo-shelled .wrap:has(> .nodo-head.ia){
+html:not([data-ds="1"]) .nodo-page:has(.nodo-head.ia),
+html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head.ia){
   background-image:linear-gradient(to bottom,
       transparent calc(var(--fh) + var(--fs)),
       color-mix(in srgb,var(--bg) 40%,transparent) calc(var(--fh) + var(--fs) + (var(--fx) - var(--fs)) * .45),
@@ -1291,6 +1291,21 @@ html:not([data-ds="1"]) body.nodo-shelled .wrap:has(> .nodo-head.ia){
       var(--bg) calc(var(--fh) + var(--fx))),
     var(--franja-capas-ia);
   background-size:100% calc(var(--fh) + var(--fx));background-repeat:no-repeat;background-position:0 0}
+/* (12-nov, Rodrigo: «agrega una transición y animación de esta cabecera al cambiar entre secciones») Al entrar a una
+   sección, las luces del degradado se acomodan deslizándose a su lugar (0,9 s), el título entra desde la izquierda y los
+   botones desde la derecha. La cabecera y el fondo del área de scroll animan lo mismo a la vez, así no se ve la unión.
+   Capas: 1 = desvanecido, 2-4 = luces, 5 = azul de base (en IA son 3 capas de dibujo: las posiciones de más se ignoran). */
+@keyframes franjaLuces{from{background-position:0 0,-140px -30px,110px -10px,-70px 0,0 0}to{background-position:0 0,0 0,0 0,0 0,0 0}}
+@keyframes franjaLucesIni{from{background-position:-140px -30px,110px -10px,-70px 0,0 0}to{background-position:0 0,0 0,0 0,0 0}}
+@keyframes cabTexto{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:none}}
+@keyframes cabBotones{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+html:not([data-ds="1"]) .nodo-head:not(.nd-head)::before,
+html:not([data-ds="1"]) .nodo-page:has(.nodo-head):not(:has(.nd-head)),
+html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head){animation:franjaLuces .9s cubic-bezier(.2,.8,.2,1) both}
+html:not([data-ds="1"]) .nodo-head.nd-head::before{animation:franjaLucesIni .9s cubic-bezier(.2,.8,.2,1) both}
+html:not([data-ds="1"]) .nodo-head > .grow{animation:cabTexto .45s cubic-bezier(.2,.8,.2,1) both}
+html:not([data-ds="1"]) .nodo-head > :not(.grow):not(.nd-kpis){animation:cabBotones .45s .06s cubic-bezier(.2,.8,.2,1) both}
+@media (prefers-reduced-motion:reduce){html:not([data-ds="1"]) .nodo-head::before,html:not([data-ds="1"]) .nodo-head > *,html:not([data-ds="1"]) .nodo-page,html:not([data-ds="1"]) body.nodo-shelled .wrap{animation:none!important}}
 /* (22-oct) El nombre del bot en el menú se cortaba («Prime D…»): le faltaban ~15 px. Menos separación, el botón de comprimir
    un poco más chico y la letra a 13,5 px; un nombre largo igual se corta, con el nombre completo al pasar el mouse. */
 html:not([data-ds="1"]) .nodo-brand{gap:4px}
