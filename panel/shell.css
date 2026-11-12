@@ -1292,28 +1292,18 @@ html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title{font-size:26px}
 html:not([data-ds="1"]) :is(.nodo-page,body.nodo-shelled .wrap){--fx:44px}
 html:not([data-ds="1"]) .nodo-page:has(.nodo-head):not(:has(.nd-head)),
 html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head){position:relative}
+/* (12-nov, opción A que eligió Rodrigo entre 4 imágenes) El desvanecido es una MÁSCARA: el azul se vuelve transparente
+   poco a poco y deja ver la página. Antes se pintaba encima un color «igual al fondo» que no quedaba idéntico: salía una
+   franja casi blanca (y antes, una rayita). Azul firme hasta la descripción (--fh) y 44 px de desvanecido (--fx). */
 html:not([data-ds="1"]) .nodo-page:has(.nodo-head):not(:has(.nd-head))::before,
 html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head)::before{content:"";position:absolute;left:0;right:0;top:0;
   height:calc(var(--fh) + var(--fx));z-index:-1;pointer-events:none;
-  background-image:linear-gradient(to bottom,
-      transparent calc(100% - var(--fx)),
-      color-mix(in srgb,var(--bg) 16%,transparent) calc(100% - var(--fx) * .72),
-      color-mix(in srgb,var(--bg) 48%,transparent) calc(100% - var(--fx) * .45),
-      color-mix(in srgb,var(--bg) 82%,transparent) calc(100% - var(--fx) * .2),
-      var(--bg) calc(100% - 2px)),
-    var(--franja-capas);
-  background-size:100% 100%,100% calc(100% - 1px),100% calc(100% - 1px),100% calc(100% - 1px),100% calc(100% - 1px);
-  background-repeat:no-repeat;background-position:0 0;
+  background:var(--franja-capas);
+  -webkit-mask-image:linear-gradient(to bottom,#000 var(--fh),rgba(0,0,0,.6) calc(var(--fh) + var(--fx) * .36),rgba(0,0,0,.15) calc(var(--fh) + var(--fx) * .73),transparent 100%);
+  mask-image:linear-gradient(to bottom,#000 var(--fh),rgba(0,0,0,.6) calc(var(--fh) + var(--fx) * .36),rgba(0,0,0,.15) calc(var(--fh) + var(--fx) * .73),transparent 100%);
   transform-origin:50% 0;will-change:transform;animation:franjaBaja .75s cubic-bezier(.16,1,.3,1) both}
 html:not([data-ds="1"]) .nodo-page:has(.nodo-head.ia)::before,
-html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head.ia)::before{
-  background-image:linear-gradient(to bottom,
-      transparent calc(100% - var(--fx)),
-      color-mix(in srgb,var(--bg) 16%,transparent) calc(100% - var(--fx) * .72),
-      color-mix(in srgb,var(--bg) 48%,transparent) calc(100% - var(--fx) * .45),
-      color-mix(in srgb,var(--bg) 82%,transparent) calc(100% - var(--fx) * .2),
-      var(--bg) calc(100% - 2px)),
-    var(--franja-capas-ia)}
+html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head.ia)::before{background:var(--franja-capas-ia)}
 @keyframes franjaBaja{from{transform:translateY(-100%)}to{transform:none}}
 
 /* El texto entra cuando la capa ya bajó casi entera: el título, la descripción y los botones aparecen bajando un poco
