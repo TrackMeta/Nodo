@@ -1325,6 +1325,9 @@ function ajustarFranja() {
     const caja = h.closest(".nodo-page, .wrap"); if (!caja) return;
     h.style.setProperty("--franja-x", (h.getBoundingClientRect().left - caja.getBoundingClientRect().left - caja.clientLeft) + "px");
     h.style.setProperty("--franja-w", caja.clientWidth + "px");
+    // (12-nov) Dónde termina la cabecera, medido desde arriba del área que hace scroll: hasta ahí va el azul entero y desde
+    // ahí se desvanece (shell.css, --franja-h). Solo la primera cabecera del área.
+    if (caja.querySelector(".nodo-head") === h) caja.style.setProperty("--franja-h", Math.round(h.getBoundingClientRect().bottom - caja.getBoundingClientRect().top - caja.clientTop + caja.scrollTop) + "px");
   });
   medir();
   if (!("ResizeObserver" in window)) return;
