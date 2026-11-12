@@ -281,6 +281,7 @@
   .pstep{display:grid;grid-template-columns:36px 118px minmax(0,1fr) 78px;gap:12px;min-height:26px;align-items:center;border-bottom:1px solid var(--border);margin-bottom:3px}
   .pstep > span{grid-column:3;display:flex;align-items:center;justify-content:center;gap:6px;font-size:11.5px;font-weight:600}
   .pstep svg{width:12px;height:12px;color:var(--muted)}
+  .pstep > span{white-space:nowrap}
   .pstep .keep{color:#15803D} .pstep .drop{color:#DC2626} .pstep .sep{color:var(--faint)}
   html:not([data-theme="light"]) .pstep .keep{color:#4ADE80} html:not([data-theme="light"]) .pstep .drop{color:#F87171}
   @media(max-width:620px){.prow,.pstep{grid-template-columns:30px 96px minmax(0,1fr) 64px;gap:8px} .prow .pc{width:30px;height:30px} .prow .pln{font-size:13px}}
@@ -927,8 +928,8 @@ function renderEntregaLima(cs){
   const arrow=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>`;
   const niveles=[
     { lbl:"Confirmados", n:confirmados, c:"var(--pv-1,#475467)", ic:"check" },
-    { lbl:"Salieron a reparto", n:salieron, c:"var(--pv-3,#3D68BD)", ic:"camion" },
-    { lbl:"Entregados y cobrados", n:entregados, c:"var(--pv-6,#16A34A)", ic:"moneda" },
+    { lbl:"Salieron", n:salieron, c:"var(--pv-3,#3D68BD)", ic:"camion" },
+    { lbl:"Entregados", n:entregados, c:"var(--pv-6,#16A34A)", ic:"moneda" },
   ];
   const pasos=[pct(salieron,confirmados), pct(entregados,salieron)];
   let html="";
