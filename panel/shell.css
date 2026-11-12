@@ -1417,3 +1417,31 @@ html:not([data-ds="1"]) .nodo-head .nodo-back:hover{color:#fff;background:rgba(2
 html:not([data-ds="1"]) .nodo-head .del-btn{background:rgba(255,255,255,.86);border-color:transparent;color:#D92D20}
 html:not([data-ds="1"]) .nodo-head .del-btn:hover{background:#fff;color:#B42318}
 html:not([data-ds="1"]) .nodo-head > .nodo-actions:last-child{margin-left:auto}
+
+/* ═══ (12-nov, Rodrigo: «igualá todo») UN SOLO ESTILO POR CONTROL en todas las secciones del panel ═══
+   Medido antes en las 26 secciones: 3 buscadores, 5 desplegables, 2 tamaños de fecha en la cabecera, 4 botones azules
+   y ~12 botones secundarios distintos (cada página traía su propio CSS). Estas reglas ganan a las de cada página
+   (más específicas) y fijan:
+   · Barra de herramientas (buscador, desplegable de filtro, fechas): blanco, borde suave, 40 px, esquinas 10.
+   · Desplegable de formulario (select.in, junto a los campos .in): gris como esos campos, mismo tamaño.
+   · Botón principal: azul, 40 px. Secundario: blanco con borde, 40 px. Chico (.sm/.mini): 32 px.
+     Los de un tipo especial conservan su color (IA violeta, verde de aprobar, rojo de borrar), con la misma forma.
+   · En la cabecera azul todos los controles miden 38 px.
+   Lo de la cabecera (.nodo-head) tiene sus colores propios: estas reglas no la tocan. */
+html:not([data-ds="1"]) body.nodo-shelled :is(input[type="search"],#pSearch):not(.nodo-head *){height:40px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13.5px;color:var(--text);box-sizing:border-box}
+html:not([data-ds="1"]) body.nodo-shelled select:not([multiple]):not([size]):not(.nodo-head *){height:40px;background-color:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13.5px;color:var(--text);box-sizing:border-box;padding-left:12px}
+html:not([data-ds="1"]) body.nodo-shelled select.in:not([multiple]):not([size]):not(.nodo-head *){background-color:var(--surface-2)}
+html:not([data-ds="1"]) body.nodo-shelled .drtrigger:not(.nodo-head *){height:40px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13.5px}
+html:not([data-ds="1"]) body.nodo-shelled .nodo-head :is(select,.drtrigger,.df-btn,.nodo-btn,.btn,.helpbtn,.dseg){height:38px;box-sizing:border-box}
+html:not([data-ds="1"]) body.nodo-shelled .nodo-head :is(select,.drtrigger,.df-btn){font-size:13px;border-radius:10px}
+html:not([data-ds="1"]) body.nodo-shelled .nodo-head .dseg button{height:100%;box-sizing:border-box}
+/* Botones: forma única */
+html:not([data-ds="1"]) body.nodo-shelled :is(.btn,.nodo-btn):not(.nodo-head *):not(.sm):not(.mini){height:40px;padding:0 16px;border-radius:10px;font-size:13.5px;font-weight:600;box-sizing:border-box}
+html:not([data-ds="1"]) body.nodo-shelled :is(.btn,.nodo-btn):is(.sm,.mini):not(.nodo-head *){height:32px;padding:0 12px;border-radius:9px;font-size:12.5px;font-weight:600;box-sizing:border-box}
+/* Principal: azul */
+html:not([data-ds="1"]) body.nodo-shelled :is(.btn.primary,.nodo-btn.primary,.btn.main.blue):not(.nodo-head *){background:var(--brand);border:1px solid transparent;color:#fff}
+html:not([data-ds="1"]) body.nodo-shelled :is(.btn.primary,.nodo-btn.primary,.btn.main.blue):not(.nodo-head *):hover{background:var(--brand-2,#0044FE)}
+/* Secundario: blanco con borde (también .ghost/.outline de .btn, que en cada página era otra cosa) */
+html:not([data-ds="1"]) body.nodo-shelled :is(.btn,.nodo-btn):not(.primary):not(.blue):not(.main):not(.ia):not(.danger):not(.nodo-head *),
+html:not([data-ds="1"]) body.nodo-shelled .nodo-btn.ghost:not(.nodo-head *){background:var(--surface);border:1px solid var(--border-strong,#D0D5DD);color:var(--text)}
+html:not([data-ds="1"]) body.nodo-shelled :is(.btn,.nodo-btn):not(.primary):not(.blue):not(.main):not(.ia):not(.danger):not(.nodo-head *):hover{border-color:var(--brand);background:var(--surface)}
