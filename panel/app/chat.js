@@ -382,7 +382,7 @@ async function cargarQR() {
 async function mostrarQR(filtro, conBuscador) {
   await cargarQR();
   const q = $("#qr"); q.dataset.modo = "qr"; q.hidden = false;
-  q.innerHTML = `<div class="qrh">Respuestas rápidas</div>` + (conBuscador && C.qr.length ? `<div class="qrs"><input id="qrSearch" class="inpt" placeholder="Buscar respuesta…" autocomplete="off"></div>` : "") + `<div id="qrList"></div>`;
+  q.innerHTML = `<div class="qrh">Respuestas rápidas</div>` + (conBuscador && C.qr.length ? `<div class="qrs"><label class="search">${ic("search")}<input id="qrSearch" type="search" placeholder="Buscar respuesta…" autocomplete="off"></label></div>` : "") + `<div id="qrList"></div>`;
   listaQR(String(filtro || ""), !conBuscador);
   const s = $("#qrSearch"); if (s) s.oninput = () => listaQR(s.value, false);
 }

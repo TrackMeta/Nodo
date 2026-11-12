@@ -104,7 +104,7 @@ function pintaVentas() {
   $("#t4Pad").innerHTML = `<h2 class="h">Ventas</h2><p class="sub">Ventas digitales cobradas (confirmadas).</p>
     ${botonFechas(r)}
     <div class="kpis"><div class="kpi"><small>Ventas</small><b class="num">${T.ventas.length}</b></div><div class="kpi"><small>Cobrado</small><b class="num">${sol(total)}</b></div></div>
-    <input class="inpt" id="ventasQ" type="search" placeholder="Buscar cliente, teléfono o nº de operación" value="${esc(T.qv)}" autocomplete="off" style="margin:0">
+    <label class="search">${ic("search")}<input id="ventasQ" type="search" placeholder="Buscar cliente, teléfono o nº de operación" value="${esc(T.qv)}" autocomplete="off"></label>
     <div class="list" id="ventasList">${listaVentas()}</div>
     <p class="note">Toca una venta para abrir el chat, ver el comprobante o anularla.</p>`;
   const qi = $("#ventasQ"); if (qi) qi.oninput = () => { T.qv = qi.value; $("#ventasList").innerHTML = listaVentas(); };

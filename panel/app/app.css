@@ -835,3 +835,18 @@ html[data-theme="light"] .view{--hfade:#F3F6FC}
 .tab.on .pill.salta{animation:pillSalta .3s cubic-bezier(.3,1.6,.5,1)}
 @keyframes pillSalta{0%{transform:scale(.82)}100%{transform:scale(1)}}
 @media (prefers-reduced-motion:reduce){.view > .pad.entra,.tab.on .pill.salta{animation:none}}
+
+/* (12-nov, Rodrigo: «iguálalos») Toda la app con un mismo buscador y un mismo selector de opciones:
+   · Buscador: el de Chats (gris, con lupa, sin borde) también en Ventas y en Respuestas rápidas (antes un campo de
+     formulario con borde, sin lupa y de otro alto).
+   · Selector de opciones (Pedidos: Lima/Provincia/…, Más: tema, ficha: estado y envío): pastillas como Humano/Bot de
+     Chats (blancas con borde; la elegida en azul). Antes era una barra gris con la elegida en blanco. */
+.search .i{width:18px;height:18px;flex:none}
+.qr .qrs .search{padding:8px 12px}
+.qr .qrs .search input{font-size:16px}
+.seg{background:none;padding:0;gap:6px;border-radius:0}
+.seg button{background:var(--surface);border:1px solid var(--border-strong);border-radius:999px;color:var(--text);padding:8px 6px;box-shadow:none}
+.seg button.on{background:var(--azul);border-color:var(--azul);color:#fff;box-shadow:none}
+.seg button b{background:var(--surface-2);color:var(--muted)}
+.seg button.on b{background:rgba(255,255,255,.25);color:#fff}
+.mtema .seg button.on{color:#fff}
