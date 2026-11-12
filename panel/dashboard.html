@@ -243,6 +243,13 @@
     -webkit-mask-image:linear-gradient(to bottom,#000 0%,#000 46%,rgba(0,0,0,.6) 66%,rgba(0,0,0,.18) 84%,transparent 100%);
     mask-image:linear-gradient(to bottom,#000 0%,#000 46%,rgba(0,0,0,.6) 66%,rgba(0,0,0,.18) 84%,transparent 100%)}
   .nd-head .nodo-lead{margin:4px 0 0;font-size:13.5px;color:rgba(255,255,255,.9)}
+  /* (12-nov) Animación de entrada de Inicio, como las demás secciones: el degradado baja desde arriba (su ::before, con
+     transform: fluido), después el título (shell.css) y luego las 4 tarjetas, una detrás de otra. */
+  html:not([data-ds="1"]) .nodo-head.nd-head::before{transform-origin:50% 0;will-change:transform;animation:franjaBaja .8s cubic-bezier(.16,1,.3,1) both}
+  @keyframes kpiEntra{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
+  .nd-kpis.kentra > .nd-kpi{animation:kpiEntra .6s cubic-bezier(.16,1,.3,1) both;animation-delay:.32s}
+  .nd-kpis.kentra > .nd-kpi:nth-child(2){animation-delay:.4s} .nd-kpis.kentra > .nd-kpi:nth-child(3){animation-delay:.48s} .nd-kpis.kentra > .nd-kpi:nth-child(4){animation-delay:.56s}
+  @media (prefers-reduced-motion:reduce){html:not([data-ds="1"]) .nodo-head.nd-head::before,.nd-kpis.kentra > .nd-kpi{animation:none}}
   /* min-height: mientras cargan, la cabecera no se encoge (el degradado se desvanece abajo y dejaría el subtítulo blanco sobre claro) */
   .nd-kpis{flex-basis:100%;display:grid;grid-template-columns:1.45fr 1fr 1fr 1fr;gap:14px;margin:22px 0 0;min-height:106px}
   @media(max-width:980px){.nd-kpis{grid-template-columns:repeat(3,minmax(0,1fr))} .nd-kpi.gan{grid-column:1/-1}}
@@ -2129,6 +2136,9 @@ function renderND(v){
     kpi("ing","verde","Ingresos", money(v.vendido), pctCob==null?"sin pedidos":"cobrado "+pctCob+"%", pctCob===100?"ok":"")+
     kpi("","naranja","ROAS", v.hasAds&&v.roas>0?v.roas.toFixed(2)+"×":"—", v.hasAds?money(v.gastoAds)+" en Meta":"conecta Meta en Conexiones");
   if(!v.brutaDesconocida) contarGanancia(el.querySelector(".nd-kpi.gan .n"), Number(v.neta)||0);
+  // (12-nov, Rodrigo: «a la cabecera de Inicio también ponle animación») La 1.ª vez que se pintan, las 4 tarjetas suben una
+  // detrás de otra; cuando se vuelven a pintar (datos nuevos) ya no, para que no salten a cada rato.
+  if(!el.dataset.entro){ el.dataset.entro="1"; el.classList.add("kentra"); setTimeout(()=>el.classList.remove("kentra"), 1400); }
   const g=$("ndGroups"); if(!g) return;
   const ventas = `<div class="nd-card">${ndH(IC_CARRO,"Ventas")}`+
     ndRow("Chats nuevos",`<span id="ndChats">…</span>`)+
