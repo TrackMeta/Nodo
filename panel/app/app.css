@@ -820,15 +820,18 @@ html[data-theme="light"] .view{--hfade:#F3F6FC}
 .hero.gan.pegada + #hoyEspera:empty + .kpis,.hero.gan.pegada + #hoyEspera:not(:empty){margin-top:-56px;position:relative;z-index:1}
 .hero.gan.pegada + #hoyEspera:not(:empty) + .kpis{position:relative;z-index:1}
 .hero.gan.pegada ~ .kpis .kpi{box-shadow:0 10px 24px -14px rgba(16,40,120,.4)}
-/* Chats, Pagos, Ventas/Pedidos y Más: el degradado mide justo lo que su cabecera (título y subtítulo, o los filtros y el
-   buscador en Chats) y 34 px más para desvanecerse: Inicio es la única alta (12-nov, Rodrigo: «aplica lo de la altura para las demás secciones»). app.js mide la cabecera (--hh) y marca sus textos (.en-cab). */
-.pad[data-cab]{
-  background-image:
-    linear-gradient(to bottom,transparent var(--hh),color-mix(in srgb,var(--hfade) 45%,transparent) calc(var(--hh) + 16px),var(--hfade) calc(var(--hh) + 34px)),
-    radial-gradient(45% 80% at 84% 70%,rgba(255,255,255,.2),transparent 70%),
-    radial-gradient(38% 70% at 44% 85%,rgba(120,210,255,.28),transparent 70%),
-    linear-gradient(90deg,#0044FE 0%,#01AFFE 100%);
-  background-size:100% calc(var(--hh) + 34px);background-repeat:no-repeat}
-.pad[data-cab] .h.en-cab{color:#fff}
-.pad[data-cab] .sub.en-cab{color:rgba(255,255,255,.88)}
-.pad[data-cab] > .search{background:var(--surface)}
+/* (12-nov, Rodrigo: «solo Inicio tiene alta; las demás secciones hasta donde dice Bot encendido, hasta la campanita, un
+   poquito más») En Chats, Pagos, Ventas/Pedidos/Accesos y Más el azul es solo la barra de arriba (.top) y sigue un poquito
+   debajo, desvaneciéndose. Lo pinta el arriba de cada sección (mismo azul de base que la barra: sin costura) y se mueve
+   con el scroll. */
+#chatsPad,#pagosPad,#t4Pad,#masPad{padding-top:20px;
+  background-image:linear-gradient(to bottom,transparent 0,color-mix(in srgb,var(--hfade) 50%,transparent) 11px,var(--hfade) 24px),linear-gradient(90deg,#0044FE 0%,#01AFFE 100%);
+  background-size:100% 24px;background-repeat:no-repeat}
+/* (12-nov, Rodrigo: «una transición bonita y rápida a cada sección») Al tocar una pestaña de abajo, la sección entra en
+   0,22 s: aparece y se desliza un poco desde el lado de la pestaña (de la derecha si está más a la derecha). La pastilla
+   de la pestaña elegida hace un pequeño rebote. */
+.view > .pad.entra{animation:vistaEntra .22s cubic-bezier(.2,.8,.2,1) both}
+@keyframes vistaEntra{from{opacity:0;transform:translateX(var(--dx,0)) translateY(6px)}to{opacity:1;transform:none}}
+.tab.on .pill.salta{animation:pillSalta .3s cubic-bezier(.3,1.6,.5,1)}
+@keyframes pillSalta{0%{transform:scale(.82)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.view > .pad.entra,.tab.on .pill.salta{animation:none}}

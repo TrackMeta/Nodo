@@ -1234,10 +1234,10 @@ html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title{font-size:26px}
 @media(max-width:720px){html:not([data-ds="1"]) .nodo-head.franja-alta{padding:20px 0 22px}}
 /* (12-nov) Cabeceras con el degradado de Inicio, en DOS ALTURAS y el mismo dibujo (Rodrigo: «quiero conservar la armonía y
    simetría»; él eligió esta regla, la misma que la app):
-   · ALTA (.franja-alta: Inicio, Embudo, Rendimiento, las de resumen con tarjetas arriba): el degradado sigue ~200 px por
-     detrás de las tarjetas y se desvanece despacio.
-   · DEL TAMAÑO DE SU CABECERA (todas las demás, que empiezan con una lista o un formulario): azul justo hasta donde
-     termina la cabecera y se desvanece en 56 px.
+   · ALTA: solo Inicio (12-nov, Rodrigo: «solo Inicio tiene alta»), con sus tarjetas montadas encima (.nd-head, su regla).
+     La clase .franja-alta de abajo queda por si otra sección de resumen la necesita.
+   · DEL TAMAÑO DE SU CABECERA (todas las demás): azul hasta donde acaba su descripción, un poquito más abajo, y se
+     desvanece en 56 px.
    shell.js (ajustarFranja) mide dónde termina la cabecera y lo pone en --franja-h del área que hace scroll. Ese fondo
    (.nodo-page o .wrap, se mueve con el scroll) pinta el desvanecido por DETRÁS del contenido; el ::before de la cabecera pinta
    el mismo dibujo, del mismo tamaño y desde el mismo borde, así no se ve la unión (la cabecera va encima del contenido
