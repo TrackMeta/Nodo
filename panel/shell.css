@@ -1246,7 +1246,7 @@ html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title{font-size:26px}
      (que baja 9 px y sube) los dos dibujos se separaban y se veía el corte.
    · La rayita: el azul y el desvanecido terminaban en la misma fila de píxeles y en ese borde se colaba un hilo azul.
      Ahora el desvanecido llega al color de la página 8 px antes y el azul termina 6 px antes, por debajo de él. */
-html:not([data-ds="1"]){--franja-fija:80px;
+html:not([data-ds="1"]){--franja-fija:68px;
   --franja-capas:
     radial-gradient(38% 70% at 78% 8%,rgba(255,255,255,.26),transparent 70%),
     radial-gradient(30% 60% at 52% 40%,rgba(120,210,255,.30),transparent 70%),
@@ -1280,12 +1280,13 @@ html:not([data-ds="1"]) .nodo-head.franja-alta .nodo-title{font-size:26px}
 
 /* El degradado: una capa propia (::before del área que hace scroll) detrás de la cabecera y del contenido, que se mueve
    con el scroll. (12-nov, Rodrigo: «hemos perdido el desvanecido» y «que nazca desde arriba y baje esa cabecera»)
-   · Desvanecido largo y suave (56 px). Para que no vuelva la rayita, llega al color de la página 6 px antes de que
+   · Desvanecido suave de 36 px (12-nov: con 24 px «se perdió el desvanecido»; con 56 px y la cabecera de 80 px, «acórtalo más:
+     un poco más abajo de la descripción, nada más»). La cabecera mide 68 px. Para que no vuelva la rayita, llega al color de la página 6 px antes de que
      termine el azul (cada capa tiene su tamaño).
    · Al entrar a una sección la capa baja desde arriba (0,75 s, curva suave) y después aparece el texto. Es una capa
      aparte que se mueve con transform: la tarjeta de video la desliza sin repintar nada, por eso va fluida.
    · z-index:-1 la deja detrás de todo el contenido (la página no tiene fondo propio: el de body pinta el lienzo). */
-html:not([data-ds="1"]) :is(.nodo-page,body.nodo-shelled .wrap){--fx:56px}
+html:not([data-ds="1"]) :is(.nodo-page,body.nodo-shelled .wrap){--fx:36px}
 html:not([data-ds="1"]) .nodo-page:has(.nodo-head):not(:has(.nd-head)),
 html:not([data-ds="1"]) body.nodo-shelled .wrap:has(.nodo-head){position:relative}
 html:not([data-ds="1"]) .nodo-page:has(.nodo-head):not(:has(.nd-head))::before,
