@@ -1353,3 +1353,7 @@ html.tema-suave,html.tema-suave *,html.tema-suave *::before,html.tema-suave *::a
 @keyframes ganOla{from{transform:translateX(0)}to{transform:translateX(calc(-1 * var(--t)))}}
 @keyframes ganSube{from{translate:0 4px}to{translate:0 -5px}}
 @media (prefers-reduced-motion:reduce){.gan-olas i{animation:none}}
+
+/* (12-nov) Con la cabecera alta, las pestañas que van justo debajo (IA, Negocio, Canales, Campos, Palabras clave) quedan
+   sobre el degradado: van en una barra blanca, como las tarjetas de Inicio, para que se lean. */
+html:not([data-ds="1"]) :is(.nodo-head + .tabs, .nodo-head + [hidden] + .tabs){background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:0 8px;box-shadow:0 10px 24px -16px rgba(16,40,120,.4)}
