@@ -1428,7 +1428,7 @@ html:not([data-ds="1"]) .nodo-head > .nodo-actions:last-child{margin-left:auto}
      Los de un tipo especial conservan su color (IA violeta, verde de aprobar, rojo de borrar), con la misma forma.
    · En la cabecera azul todos los controles miden 38 px.
    Lo de la cabecera (.nodo-head) tiene sus colores propios: estas reglas no la tocan. */
-html:not([data-ds="1"]) body.nodo-shelled :is(input[type="search"],#pSearch):not(.nodo-head *){height:40px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13.5px;color:var(--text);box-sizing:border-box}
+html:not([data-ds="1"]) body.nodo-shelled :is(input[type="search"],#pSearch,.search input,input[placeholder^="Buscar"]):not(.nodo-head *){height:40px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13.5px;color:var(--text);box-sizing:border-box}
 html:not([data-ds="1"]) body.nodo-shelled select:not([multiple]):not([size]):not(.nodo-head *){height:40px;background-color:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13.5px;color:var(--text);box-sizing:border-box;padding-left:12px}
 html:not([data-ds="1"]) body.nodo-shelled select.in:not([multiple]):not([size]):not(.nodo-head *){background-color:var(--surface-2)}
 html:not([data-ds="1"]) body.nodo-shelled .drtrigger:not(.nodo-head *){height:40px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13.5px}
