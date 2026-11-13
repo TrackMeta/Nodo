@@ -658,49 +658,76 @@ export async function abrirPerfil() {
   const uid = session.user.id, correo = session.user.email || "", cache = readMeCache() || {};
   let foto = cache.avatar || null, fotoNueva;   // fotoNueva: undefined = no se tocó · null = quitar · dataURL = nueva
   const ini = (n) => ((n || correo || "?").trim().charAt(0) || "?").toUpperCase();
+  // (12-nov) Diseño que mandó Rodrigo: cabecera con ícono y subtítulo, foto grande con su botoncito de cámara, campos con
+  // ícono, «Cambiar contraseña» y «Cerrar sesión» como filas-tarjeta, y Guardar con ícono.
+  const _i = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
+  const NP = {
+    user: _i('<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
+    camara: _i('<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>'),
+    salir: _i('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>'),
+    guardar: _i('<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>'),
+  };
   const { back, close } = mountModal(`
     <div class="nodo-modal nodo-perfil" id="nodoPerfilFlot" role="dialog" aria-modal="true" aria-label="Tu perfil">
-      <div class="np-cab"><h3>Tu perfil</h3><button class="np-x" type="button" id="npX" aria-label="Cerrar">${svg("x")}</button></div>
-      <div class="np-foto">
-        <span class="np-av" id="npAv"></span>
-        <div class="np-fbtns">
-          <button class="nb-btn" type="button" id="npSubir"></button>
-          <button class="nb-btn np-quitar" type="button" id="npQuitar">Quitar</button>
-          <input type="file" id="npFile" accept="image/png,image/jpeg,image/webp" hidden />
-        </div>
+      <div class="np-cab">
+        <span class="np-cab-ic">${NP.user}</span>
+        <div class="np-cab-tx"><h3>Tu perfil</h3><p>Gestiona tu información y seguridad</p></div>
+        <button class="np-x" type="button" id="npX" aria-label="Cerrar">${svg("x")}</button>
       </div>
-      <label class="np-campo">Tu nombre<input id="npNombre" maxlength="60" placeholder="Ej.: Rodrigo" value="${escAttr(cache.name && cache.name !== correo.split("@")[0] ? cache.name : "")}" /></label>
-      <div class="np-info"><span>${escHtml(correo)}</span><span class="np-rol">${escHtml(cache.role || "")}</span></div>
-      <details class="np-pw"><summary>Cambiar contraseña</summary>
-        <input id="npPwCur" type="password" placeholder="Contraseña actual" autocomplete="current-password" />
-        <input id="npPwNew" type="password" placeholder="Nueva (mínimo 8 caracteres)" autocomplete="new-password" />
-        <input id="npPwNew2" type="password" placeholder="Repite la nueva" autocomplete="new-password" />
-        <button class="nb-btn" type="button" id="npPwOk">Cambiar contraseña</button>
-      </details>
-      <div class="nb-acts np-pie">
-        <button class="nb-btn np-salir" type="button" id="npSalir">Cerrar sesión</button>
-        <span style="flex:1"></span>
+      <div class="np-cuerpo">
+        <div class="np-foto">
+          <div class="np-avw"><span class="np-av" id="npAv"></span><button class="np-cam" type="button" id="npCam" aria-label="Cambiar foto" title="Cambiar foto">${NP.camara}</button></div>
+          <span class="np-sep"></span>
+          <div class="np-fbtns">
+            <button class="np-bfoto" type="button" id="npSubir">${NP.camara}<span id="npSubirTx">Cambiar foto</span></button>
+            <button class="np-bquitar" type="button" id="npQuitar">${svg("trash")}<span>Quitar</span></button>
+            <input type="file" id="npFile" accept="image/png,image/jpeg,image/webp" hidden />
+          </div>
+        </div>
+        <label class="np-lbl" for="npNombre"><span class="np-lic">${NP.user}</span>Tu nombre</label>
+        <input class="np-in" id="npNombre" maxlength="60" placeholder="Ej.: Rodrigo" value="${escAttr(cache.name && cache.name !== correo.split("@")[0] ? cache.name : "")}" />
+        <div class="np-lbl"><span class="np-lic">${svg("mail")}</span>Correo electrónico</div>
+        <div class="np-in np-ro"><span class="np-mail">${escHtml(correo)}</span>${cache.role ? `<span class="np-rol">${svg("shield")}${escHtml(cache.role)}</span>` : ""}</div>
+        <button class="np-fila" type="button" id="npPwTog" aria-expanded="false">
+          <span class="np-fic">${svg("lock")}</span>
+          <span class="np-ftx"><b>Cambiar contraseña</b><small>Actualiza la contraseña de tu cuenta</small></span>
+          <span class="np-chev">${svg("chevronRight")}</span>
+        </button>
+        <div class="np-pw" id="npPw" hidden>
+          <input class="np-in" id="npPwCur" type="password" placeholder="Contraseña actual" autocomplete="current-password" />
+          <input class="np-in" id="npPwNew" type="password" placeholder="Nueva (mínimo 8 caracteres)" autocomplete="new-password" />
+          <input class="np-in" id="npPwNew2" type="password" placeholder="Repite la nueva" autocomplete="new-password" />
+          <button class="nb-btn primary" type="button" id="npPwOk">Cambiar contraseña</button>
+        </div>
+        <button class="np-fila np-fila-salir" type="button" id="npSalir">
+          <span class="np-fic">${NP.salir}</span>
+          <span class="np-ftx"><b>Cerrar sesión</b><small>Finaliza tu sesión en este dispositivo</small></span>
+          <span class="np-chev">${svg("chevronRight")}</span>
+        </button>
+      </div>
+      <div class="np-pie">
         <button class="nb-btn" type="button" id="npCancel">Cancelar</button>
-        <button class="nb-btn primary" type="button" id="npOk">Guardar</button>
+        <button class="nb-btn primary np-guardar" type="button" id="npOk">${NP.guardar}<span>Guardar</span></button>
       </div>
     </div>`);
   const $p = (id) => back.querySelector("#" + id);
   const pintar = () => {
     const f = fotoNueva === undefined ? foto : fotoNueva;
     const av = $p("npAv"); if (f) { av.innerHTML = '<img alt="" />'; av.querySelector("img").src = f; } else av.textContent = ini($p("npNombre").value);
-    $p("npSubir").textContent = f ? "Cambiar foto" : "Subir foto"; $p("npQuitar").hidden = !f;
+    $p("npSubirTx").textContent = f ? "Cambiar foto" : "Subir foto"; $p("npQuitar").hidden = !f;
   };
   pintar();
   $p("npNombre").addEventListener("input", pintar);
   $p("npX").onclick = close; $p("npCancel").onclick = close;
   back.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
-  $p("npSubir").onclick = () => $p("npFile").click();
+  $p("npSubir").onclick = $p("npCam").onclick = () => $p("npFile").click();
+  $p("npPwTog").onclick = () => { const pw = $p("npPw"), abrir = pw.hidden; pw.hidden = !abrir; $p("npPwTog").setAttribute("aria-expanded", String(abrir)); if (abrir) setTimeout(() => $p("npPwCur").focus(), 30); };
   $p("npQuitar").onclick = () => { fotoNueva = null; pintar(); };
   $p("npFile").onchange = async (e) => { const f = e.target.files[0]; if (!f) return;
     if (f.size > 4 * 1024 * 1024) { toast("La imagen pesa mucho (máximo 4 MB)", true); return; }
     try { fotoNueva = await achicarFoto(f); pintar(); } catch (err) { toast(err.message, true); } };
   $p("npOk").onclick = async () => {
-    const b = $p("npOk"); b.disabled = true; b.textContent = "Guardando…";
+    const b = $p("npOk"), bt = b.querySelector("span"); b.disabled = true; bt.textContent = "Guardando…";
     const patch = { nombre: $p("npNombre").value.trim() || null };
     if (fotoNueva === null) patch.avatar_url = null;
     else if (fotoNueva) {
@@ -708,7 +735,7 @@ export async function abrirPerfil() {
         patch.avatar_url = up?.url || fotoNueva; } catch { patch.avatar_url = fotoNueva; }
     }
     const { error } = await supa.from("app_users").update(patch).eq("id", uid);
-    b.disabled = false; b.textContent = "Guardar";
+    b.disabled = false; bt.textContent = "Guardar";
     if (error) { toast(error.message, true); return; }
     refreshUserChip({ name: patch.nombre || correo.split("@")[0] || "Perfil", avatar: "avatar_url" in patch ? patch.avatar_url : foto });
     toast("Listo, tu perfil quedó guardado"); close();
@@ -724,7 +751,7 @@ export async function abrirPerfil() {
     const { error: e2 } = await supa.auth.updateUser({ password: nw });
     b.disabled = false; b.textContent = "Cambiar contraseña";
     if (e2) { toast(e2.message, true); return; }
-    $p("npPwCur").value = $p("npPwNew").value = $p("npPwNew2").value = ""; back.querySelector(".np-pw").open = false;
+    $p("npPwCur").value = $p("npPwNew").value = $p("npPwNew2").value = ""; $p("npPw").hidden = true; $p("npPwTog").setAttribute("aria-expanded", "false");
     toast("Contraseña actualizada");
   };
   $p("npSalir").onclick = async () => {
