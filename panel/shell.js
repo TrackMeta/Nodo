@@ -642,6 +642,98 @@ async function loadMe(nav) {
     writeMeCache(info); paintUserChip(info);
   } catch (e) { console.error("[me]", e); }
 }
+// 👤 (12-nov, Rodrigo: «quiero que Perfil del propietario sea flotante al igual que Nova») Tocar tu nombre en el pie del
+// menú abre una VENTANA FLOTANTE en vez de ir a otra página: foto (subir/quitar), nombre, tu correo y rol, cambiar la
+// contraseña (plegado) y cerrar sesión. Mismo guardado que perfil.html (app_users + media-upload), que sigue existiendo.
+function achicarFoto(file, size = 128) {
+  return new Promise((res, rej) => { const img = new Image(); const u = URL.createObjectURL(file);
+    img.onload = () => { const c = document.createElement("canvas"); c.width = size; c.height = size; const ctx = c.getContext("2d");
+      const k = Math.max(size / img.width, size / img.height), w = img.width * k, h = img.height * k;
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h); URL.revokeObjectURL(u); res(c.toDataURL("image/jpeg", 0.85)); };
+    img.onerror = () => { URL.revokeObjectURL(u); rej(new Error("No se pudo abrir esa imagen")); }; img.src = u; });
+}
+export async function abrirPerfil() {
+  if (document.getElementById("nodoPerfilFlot")) return;
+  const { data: { session } } = await supa.auth.getSession(); if (!session) return;
+  const uid = session.user.id, correo = session.user.email || "", cache = readMeCache() || {};
+  let foto = cache.avatar || null, fotoNueva;   // fotoNueva: undefined = no se tocó · null = quitar · dataURL = nueva
+  const ini = (n) => ((n || correo || "?").trim().charAt(0) || "?").toUpperCase();
+  const { back, close } = mountModal(`
+    <div class="nodo-modal nodo-perfil" id="nodoPerfilFlot" role="dialog" aria-modal="true" aria-label="Tu perfil">
+      <div class="np-cab"><h3>Tu perfil</h3><button class="np-x" type="button" id="npX" aria-label="Cerrar">${svg("x")}</button></div>
+      <div class="np-foto">
+        <span class="np-av" id="npAv"></span>
+        <div class="np-fbtns">
+          <button class="nb-btn" type="button" id="npSubir"></button>
+          <button class="nb-btn np-quitar" type="button" id="npQuitar">Quitar</button>
+          <input type="file" id="npFile" accept="image/png,image/jpeg,image/webp" hidden />
+        </div>
+      </div>
+      <label class="np-campo">Tu nombre<input id="npNombre" maxlength="60" placeholder="Ej.: Rodrigo" value="${escAttr(cache.name && cache.name !== correo.split("@")[0] ? cache.name : "")}" /></label>
+      <div class="np-info"><span>${escHtml(correo)}</span><span class="np-rol">${escHtml(cache.role || "")}</span></div>
+      <details class="np-pw"><summary>Cambiar contraseña</summary>
+        <input id="npPwCur" type="password" placeholder="Contraseña actual" autocomplete="current-password" />
+        <input id="npPwNew" type="password" placeholder="Nueva (mínimo 8 caracteres)" autocomplete="new-password" />
+        <input id="npPwNew2" type="password" placeholder="Repite la nueva" autocomplete="new-password" />
+        <button class="nb-btn" type="button" id="npPwOk">Cambiar contraseña</button>
+      </details>
+      <div class="nb-acts np-pie">
+        <button class="nb-btn np-salir" type="button" id="npSalir">Cerrar sesión</button>
+        <span style="flex:1"></span>
+        <button class="nb-btn" type="button" id="npCancel">Cancelar</button>
+        <button class="nb-btn primary" type="button" id="npOk">Guardar</button>
+      </div>
+    </div>`);
+  const $p = (id) => back.querySelector("#" + id);
+  const pintar = () => {
+    const f = fotoNueva === undefined ? foto : fotoNueva;
+    const av = $p("npAv"); if (f) { av.innerHTML = '<img alt="" />'; av.querySelector("img").src = f; } else av.textContent = ini($p("npNombre").value);
+    $p("npSubir").textContent = f ? "Cambiar foto" : "Subir foto"; $p("npQuitar").hidden = !f;
+  };
+  pintar();
+  $p("npNombre").addEventListener("input", pintar);
+  $p("npX").onclick = close; $p("npCancel").onclick = close;
+  back.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  $p("npSubir").onclick = () => $p("npFile").click();
+  $p("npQuitar").onclick = () => { fotoNueva = null; pintar(); };
+  $p("npFile").onchange = async (e) => { const f = e.target.files[0]; if (!f) return;
+    if (f.size > 4 * 1024 * 1024) { toast("La imagen pesa mucho (máximo 4 MB)", true); return; }
+    try { fotoNueva = await achicarFoto(f); pintar(); } catch (err) { toast(err.message, true); } };
+  $p("npOk").onclick = async () => {
+    const b = $p("npOk"); b.disabled = true; b.textContent = "Guardando…";
+    const patch = { nombre: $p("npNombre").value.trim() || null };
+    if (fotoNueva === null) patch.avatar_url = null;
+    else if (fotoNueva) {
+      try { const { data: up } = await supa.functions.invoke("media-upload", { body: { channel_id: S.channelId, filename: "avatar.jpg", content_type: "image/jpeg", data: fotoNueva } });
+        patch.avatar_url = up?.url || fotoNueva; } catch { patch.avatar_url = fotoNueva; }
+    }
+    const { error } = await supa.from("app_users").update(patch).eq("id", uid);
+    b.disabled = false; b.textContent = "Guardar";
+    if (error) { toast(error.message, true); return; }
+    refreshUserChip({ name: patch.nombre || correo.split("@")[0] || "Perfil", avatar: "avatar_url" in patch ? patch.avatar_url : foto });
+    toast("Listo, tu perfil quedó guardado"); close();
+  };
+  $p("npPwOk").onclick = async () => {
+    const cur = $p("npPwCur").value, nw = $p("npPwNew").value, nw2 = $p("npPwNew2").value;
+    if (!cur || !nw) { toast("Completa la contraseña actual y la nueva", true); return; }
+    if (nw.length < 8) { toast("La nueva contraseña debe tener al menos 8 caracteres", true); return; }
+    if (nw !== nw2) { toast("Las contraseñas nuevas no coinciden", true); return; }
+    const b = $p("npPwOk"); b.disabled = true; b.textContent = "Cambiando…";
+    const { error: e1 } = await supa.auth.signInWithPassword({ email: correo, password: cur });
+    if (e1) { b.disabled = false; b.textContent = "Cambiar contraseña"; toast("La contraseña actual no es correcta", true); return; }
+    const { error: e2 } = await supa.auth.updateUser({ password: nw });
+    b.disabled = false; b.textContent = "Cambiar contraseña";
+    if (e2) { toast(e2.message, true); return; }
+    $p("npPwCur").value = $p("npPwNew").value = $p("npPwNew2").value = ""; back.querySelector(".np-pw").open = false;
+    toast("Contraseña actualizada");
+  };
+  $p("npSalir").onclick = async () => {
+    if (!(await confirmDialog({ title: "¿Cerrar sesión?", message: "Vas a salir de Nodo en este dispositivo.", confirmText: "Cerrar sesión", danger: true }))) return;
+    try { localStorage.removeItem("nodo.me"); localStorage.removeItem("nodo.brand"); localStorage.removeItem("nodo.avanzado"); localStorage.removeItem("nodo.channelId"); } catch {}
+    await supa.auth.signOut(); location.href = "index.html";
+  };
+  setTimeout(() => $p("npNombre").focus(), 40);
+}
 // Permite que Perfil refresque el chip tras editar nombre/foto (merge con lo cacheado).
 export function refreshUserChip(info) {
   const merged = Object.assign({}, readMeCache() || {}, info || {});
@@ -1462,6 +1554,11 @@ export async function mountShell({ active } = {}) {
   document.body.insertBefore(nav, document.body.firstChild);
   S.nav = nav;
   revelaActivo();
+  // 👤 Tu nombre en el pie del menú abre «Tu perfil» flotante (12-nov, como Nova). El link a perfil.html queda para abrirlo
+  // en otra pestaña (clic del medio / Ctrl+clic).
+  { const u = nav.querySelector(".nodo-user"); if (u) u.addEventListener("click", (e) => {
+      if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      e.preventDefault(); e.stopPropagation(); abrirPerfil(); }); }
 
   // ⚙ Configuración (Diseño 2): abre/cierra su menú; se cierra al elegir o al tocar afuera.
   const confBtn = nav.querySelector("#nodoConf"), confPop = nav.querySelector("#nodoConfPop");

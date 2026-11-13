@@ -1445,3 +1445,30 @@ html:not([data-ds="1"]) body.nodo-shelled :is(.btn.primary,.nodo-btn.primary,.bt
 html:not([data-ds="1"]) body.nodo-shelled :is(.btn,.nodo-btn):not(.primary):not(.blue):not(.main):not(.ia):not(.danger):not(.nodo-head *),
 html:not([data-ds="1"]) body.nodo-shelled .nodo-btn.ghost:not(.nodo-head *){background:var(--surface);border:1px solid var(--border-strong,#D0D5DD);color:var(--text)}
 html:not([data-ds="1"]) body.nodo-shelled :is(.btn,.nodo-btn):not(.primary):not(.blue):not(.main):not(.ia):not(.danger):not(.nodo-head *):hover{border-color:var(--brand);background:var(--surface)}
+
+/* 👤 (12-nov) «Tu perfil» flotante, como en Nova */
+.nodo-modal.nodo-perfil{max-width:420px;border-radius:20px;padding:22px}
+.np-cab{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.np-cab h3{margin:0}
+.np-x{width:34px;height:34px;border-radius:10px;border:0;background:transparent;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+.np-x:hover{background:var(--surface-2);color:var(--text)} .np-x svg{width:18px;height:18px;stroke-width:2.2}
+.np-foto{display:flex;align-items:center;gap:16px;margin-bottom:16px}
+.np-av{width:76px;height:76px;border-radius:50%;flex:none;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;background:var(--brand-bg);color:var(--brand);font-size:30px;font-weight:700;border:1px solid var(--border)}
+.np-av img{width:100%;height:100%;object-fit:cover}
+.np-fbtns{display:flex;gap:8px;flex-wrap:wrap}
+.np-quitar{color:var(--red)!important}
+.np-campo{display:block;font-size:13px;font-weight:600;color:var(--muted)}
+.np-campo input{display:block;width:100%;box-sizing:border-box;margin-top:6px;height:42px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font:inherit;font-size:14px;font-weight:500}
+.np-campo input:focus{outline:none;border-color:var(--brand)}
+.np-info{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:12.5px;color:var(--muted)}
+.np-rol{font-weight:600;color:var(--brand);background:var(--brand-bg);border-radius:999px;padding:2px 10px}
+.np-rol:empty{display:none}
+.np-pw{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
+.np-pw summary{cursor:pointer;font-size:13.5px;font-weight:600;color:var(--text);list-style:none;display:flex;align-items:center;gap:6px}
+.np-pw summary::-webkit-details-marker{display:none}
+.np-pw summary::after{content:"›";margin-left:auto;color:var(--muted);transition:transform .2s}
+.np-pw[open] summary::after{transform:rotate(90deg)}
+.np-pw input{display:block;width:100%;box-sizing:border-box;margin-top:8px;height:40px;padding:0 12px;border-radius:10px;border:1px solid var(--border);background:var(--surface-2);color:var(--text);font:inherit;font-size:13.5px}
+.np-pw .nb-btn{margin-top:10px}
+.np-pie{align-items:center}
+.np-salir{color:var(--red)!important;border-color:transparent!important;padding:0 10px!important}
