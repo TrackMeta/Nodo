@@ -689,12 +689,13 @@ function renderMetricas(F, cmp){
   let cmpHtml="";
   if(cmp && cmp.cv!=null && cv!=null){
     const d=cv-cmp.cv;
-    cmpHtml=`<div class="mcmp">${d===0?"igual":`<span class="${d>0?"up":"down"}">${d>0?"▲":"▼"} ${Math.abs(d)} pts</span>`} vs ${esc(cmp.lbl)} (${cmp.cv}%)</div>`;
+    const corto=cmp.lbl.replace(" a esta hora","").replace(" (a la misma altura)","");
+    cmpHtml=`<div class="mcmp" title="vs ${esc(cmp.lbl)}: ${cmp.cv}%">${d===0?"igual":`<span class="${d>0?"up":"down"}">${d>0?"▲":"▼"} ${Math.abs(d)} pts</span>`} vs ${esc(corto)}</div>`;
   }
   // (12-nov, Rodrigo: «¿por qué sale 40% si en el embudo nadie compró?») Los pedidos de estas fechas de gente que escribió
   // ANTES cuentan aquí pero no en el embudo (que sigue solo a los que llegaron en estas fechas): la tarjeta lo dice.
   const antes = ventasPeriodo(c=>pasaFiltros(c) && !enRango(c)).n;
-  const antesHtml = antes>0 ? `<div class="ks">${antes===F.ventas ? (antes===1 ? "es de alguien que escribió antes de estas fechas" : (antes===2 ? "los 2 son" : "los "+nf.format(antes)+" son")+" de gente que escribió antes de estas fechas") : nf.format(antes)+" de "+(antes===1?"alguien que escribió":"gente que escribió")+" antes de estas fechas"}</div>` : "";
+  const antesHtml = antes>0 ? ` · ${nf.format(antes)} de antes` : "";
   // (el ticket con céntimos, como en Inicio: «S/ 6.50», no «S/ 7»)
   const ticket = F.ventas>0 && F.montoVentas!=null ? (CUR_SYM[CUR]||CUR)+" "+(F.montoVentas/F.ventas).toFixed(2) : "—";
   const BOT=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>`;
@@ -702,7 +703,7 @@ function renderMetricas(F, cmp){
     `<div class="ekpi conv"><div class="gan-olas" aria-hidden="true"><i class="o1"></i><i class="o2"></i><i class="o3"></i></div>
       <div class="kl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"}</div>
       <span class="kn">${cv==null?"—":cv+"%"}</span>
-      <div class="ks" title="Pedidos hechos en estas fechas ÷ personas que te escribieron por primera vez en estas fechas. Es la misma cuenta que Inicio, Meta y Trakker: incluye el pedido de alguien que te escribió antes.">${nf.format(F.ventas)} ${F.ventas===1?"pedido":"pedidos"} ÷ ${nf.format(F.total)} ${F.total===1?"chat nuevo":"chats nuevos"}</div>${antesHtml}${cmpHtml}</div>`+
+      <div class="ks" title="Pedidos hechos en estas fechas ÷ personas que te escribieron por primera vez en estas fechas (la misma cuenta que Inicio, Meta y Trakker).${antes>0?` ${nf.format(antes)} de esos pedidos son de gente que te escribió antes de estas fechas: cuentan aquí pero no en el embudo de abajo.`:""}">${nf.format(F.ventas)} ${F.ventas===1?"pedido":"pedidos"} ÷ ${nf.format(F.total)} chats${antesHtml}</div>${cmpHtml}</div>`+
     `<div class="ekpi efec" title="De los que se interesaron de verdad, cuántos cierra el bot. No cuenta a los curiosos que solo saludan."><div class="ef-luz" aria-hidden="true"><i class="l1"></i><i class="l2"></i><i class="l3"></i><b></b><b></b><b></b><b></b></div>
       <div class="kl"><span class="miabadge">${BOT}</span>Efectividad de cierre</div>
       <span class="kn">${ef==null?"—":ef+"%"}</span>
