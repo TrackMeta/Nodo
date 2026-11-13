@@ -1496,3 +1496,6 @@ input.np-in:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px va
 .np-pie .nb-btn{height:46px;padding:0 22px;border-radius:12px;font-size:15px;font-weight:600}
 .np-guardar{display:inline-flex;align-items:center;gap:8px} .np-guardar svg{width:18px;height:18px}
 @media(max-width:520px){.np-foto{gap:14px} .np-sep{display:none} .np-av{width:76px;height:76px}}
+.nodo-modal.nodo-perfil .np-lbl{font-size:13.5px;font-weight:600;color:var(--text);margin:4px 0 8px}
+.nodo-modal.nodo-perfil svg{stroke-width:2}
+.nodo-modal.nodo-perfil .np-x svg{stroke-width:2.2}
