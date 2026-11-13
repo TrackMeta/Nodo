@@ -217,6 +217,9 @@
   .aifab{position:relative;border:none;cursor:pointer;border-radius:24px;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-weight:700;font-size:13.5px;padding:12px 18px;display:inline-flex;align-items:center;gap:9px;box-shadow:0 8px 24px rgba(168,85,247,.4)}
   .aifab:hover{filter:brightness(1.06)}
   .aifab svg{width:18px;height:18px}
+  /* (12-nov, Rodrigo: «quita el texto Asesor IA y deja solo el ícono de robot en una bolita flotante») */
+  .aifab{width:54px;height:54px;padding:0;border-radius:50%;justify-content:center;box-shadow:0 10px 26px rgba(168,85,247,.45)}
+  .aifab svg{width:24px;height:24px}
   .aifloat:not(.collapsed) .aifab{display:none}
   .aiclose{border:none;background:var(--surface-2);color:var(--muted);border-radius:8px;width:26px;height:26px;cursor:pointer;font-size:14px;flex:none}
   .aiclose:hover{color:var(--text)}
@@ -399,7 +402,7 @@
 
     <div id="aiFloat" class="aifloat collapsed">
       <div id="asesorPanel" class="aipop"></div>
-      <button id="aiFab" class="aifab" title="Abrir el Asesor IA"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg><span>Asesor IA</span></button>
+      <button id="aiFab" class="aifab" title="Asesor IA" aria-label="Abrir el Asesor IA"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></button>
     </div>
 
     <div class="pband" id="pband" hidden></div>

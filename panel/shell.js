@@ -707,7 +707,7 @@ export async function abrirPerfil() {
       </div>
       <div class="np-pie">
         <button class="nb-btn" type="button" id="npCancel">Cancelar</button>
-        <button class="nb-btn primary np-guardar" type="button" id="npOk">${NP.guardar}<span>Guardar</span></button>
+        <button class="nb-btn primary np-guardar" type="button" id="npOk"><span>Guardar</span></button>
       </div>
     </div>`);
   const $p = (id) => back.querySelector("#" + id);
