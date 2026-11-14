@@ -797,6 +797,9 @@ function mostrarPrimerBot() {
 //   · «Un equipo nuevo para este bot» — solo el admin de plataforma (RPC crear_bot_en_equipo_nuevo, migración 0146), y
 //     marcada de entrada para él. A un cliente no se le ofrece: con un equipo nuevo se saltaría su límite de tipos.
 //   · Cada equipo donde eres admin. Con un solo equipo y sin la opción de nuevo, no se pregunta (como siempre).
+// Color propio de cada equipo sin foto (el mismo que en Tu equipo, cuenta.html), para reconocerlo en los dos lados.
+const COLORES_EQ = ["#2563eb","#7c3aed","#db2777","#ea580c","#16a34a","#0891b2","#ca8a04","#4f46e5"];
+function colorEquipo(t) { let h = 0; for (const ch of String(t || "")) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return COLORES_EQ[h % COLORES_EQ.length]; }
 async function openCreateBot() {
   if (document.getElementById("nb-modal")) return;
   let soyDueno = false;
@@ -826,7 +829,7 @@ async function openCreateBot() {
       <div class="nb-hint">El de tu tienda o marca: así te presenta la IA a tus clientes.</div>
       ${preguntar ? `<label style="margin-top:14px">¿En qué equipo va?</label>
       <div class="nodo-choices nb-eq" id="nbEquipos">${opciones.map((o) => `<button class="nodo-choice${o.v === elegido ? " on" : ""}" type="button" data-v="${escAttr(o.v)}">
-        <span class="nc-ic">${o.foto ? `<img src="${escAttr(o.foto)}" alt="">` : svg(o.ic)}</span><span class="nc-tx"><b>${escHtml(o.t)}</b><small>${escHtml(o.d)}</small></span><span class="nc-ck">${svg("check")}</span></button>`).join("")}</div>` : ""}
+        <span class="nc-ic"${o.v !== "__nuevo" && !o.foto ? ` style="background:${colorEquipo(o.t)};color:#fff;font-weight:800;font-size:12px"` : ""}>${o.foto ? `<img src="${escAttr(o.foto)}" alt="">` : o.v === "__nuevo" ? svg(o.ic) : escHtml((o.t || "E").trim().charAt(0).toUpperCase())}</span><span class="nc-tx"><b>${escHtml(o.t)}</b><small>${escHtml(o.d)}</small></span><span class="nc-ck">${svg("check")}</span></button>`).join("")}</div>` : ""}
       <div class="nb-acts">
         <button class="nb-btn" id="nbCancel" type="button">Cancelar</button>
         <button class="nb-btn primary" id="nbCreate" type="button">Crear bot</button>
