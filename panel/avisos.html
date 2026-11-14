@@ -147,7 +147,7 @@ async function boot(){
 // Los CRÍTICOS salen siempre (el motor no los deja apagar): el panel los muestra encendidos y fijos,
 // en vez de «apagados» mientras se siguen enviando.
 // 🧩 (13-nov) Cuenta por tipos: sin los avisos de los tipos de producto que la cuenta no vende.
-const AVISO_TP={ pago_digital_validar:"digital", entrega_fallida:"digital", venta_digital:"digital", microapp_sin_correo:"microapp", cuenta_compartida:"microapp",
+const AVISO_TP={ pago_digital_validar:"digital", pago_auto_aprobado:"digital", entrega_fallida:"digital", venta_digital:"digital", microapp_sin_correo:"microapp", cuenta_compartida:"microapp",
   adelanto_validar:"fisico", saldo_validar:"fisico", prepago_lima_validar:"fisico", adelanto_sin_datos:"fisico", adelanto_auto:"fisico", saldo_auto:"fisico",
   pedido_lima:"fisico", pedido_provincia:"fisico", cambio_tras_despacho:"fisico", entrega_pedida:"fisico", stock_agotado:"fisico", stock_bajo:"fisico" };
 const avisoDeOtroTipo=(k)=>!!(AVISO_TP[k] && document.documentElement.hasAttribute("data-sin-"+AVISO_TP[k]));
