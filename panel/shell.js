@@ -2179,7 +2179,9 @@ async function _navigateNow(href, { push = true } = {}) {
   try {
     let html = pageCache.get(dest.pathname);
     if (html == null) {
-      const res = await fetch(dest.href, { credentials: "same-origin" });
+      // (14-nov) Se pide la página SIN el ?… (el HTML es el mismo): con «ia.html?tab=…» el navegador guardaba copias
+      // aparte por cada dirección y podía servir una vieja después de publicar.
+      const res = await fetch(dest.origin + dest.pathname, { credentials: "same-origin" });
       if (!res.ok) throw new Error("fetch " + res.status);
       html = await res.text();
       pageCache.set(dest.pathname, html);
@@ -2236,7 +2238,7 @@ function prefetchPage(href) {
     if (dest.pathname === location.pathname) return;   // ya estás aquí
     if (pageCache.has(dest.pathname) || _prefetching.has(dest.pathname)) return;
     _prefetching.add(dest.pathname);
-    fetch(dest.href, { credentials: "same-origin" })
+    fetch(dest.origin + dest.pathname, { credentials: "same-origin" })
       .then((r) => (r.ok ? r.text() : null))
       .then((html) => { if (html != null) pageCache.set(dest.pathname, html); })
       .catch(() => {})
