@@ -35,7 +35,7 @@ export function pintarTabsBot(pagina, activo) {
     const cont = `${IC[t.ic]}<span>${t.l}</span>`;
     return t.p === pagina
       ? `<button class="tab${t.k === act ? " active" : ""}" type="button" data-t="${t.k}" id="${t.id}">${cont}</button>`
-      : `<a class="tab tab-ext" data-k="${t.k}" id="${t.id}" href="${t.p}.html?tab=${t.k}">${cont}</a>`;
+      : `<a class="tab tab-ext" data-spa data-k="${t.k}" id="${t.id}" href="${t.p}.html?tab=${t.k}">${cont}</a>`;
   }).join("");
 }
 

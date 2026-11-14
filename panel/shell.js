@@ -2003,10 +2003,13 @@ function onNavClick(e) {
   const a = e.target.closest("a[href]");
   if (!a) return;
   const navEl = a.closest(".nodo-nav");
-  if (!navEl || navEl.classList.contains("minimal")) return; // solo sidebar completo
+  // (14-nov) Además del menú, los enlaces marcados con data-spa (las pestañas de la sección «Bot» que viven en la otra
+  // página) cambian sin recargar: antes recargaban todo y se veía un instante en blanco con el título borroso.
+  const spa = a.hasAttribute("data-spa") && S.nav && !S.nav.classList.contains("minimal");
+  if (!spa && (!navEl || navEl.classList.contains("minimal"))) return; // solo sidebar completo
   if (a.target === "_blank") return;
   const href = a.getAttribute("href");
-  if (!href || !href.endsWith(".html")) return;
+  if (!href || !new URL(href, location.href).pathname.endsWith(".html")) return;
   if (BOUNDARY.has(fileOf(href))) return; // Bandeja/Editor = navegación normal
   const dest = new URL(href, location.href);
   if (dest.origin !== location.origin) return;
