@@ -1004,7 +1004,7 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-toast:hover .nn-tx,.nn-toast .nn-tx:hover{opacity:1}
 .nn-toast .nn-tx:hover{background:color-mix(in srgb,var(--text) 8%,transparent)}
 .nn-toast .nn-tx svg{width:14px;height:14px}
-.nn-toast.nn-simple{padding:10px 8px 10px 14px;gap:10px}
+.nn-toast.nn-simple{padding:10px 8px 10px 10px;gap:10px}
 .nn-toast.nn-simple .nn-ic{width:30px;height:30px;border-radius:8px;flex:none;display:grid;place-items:center}
 .nn-toast.nn-simple .nn-ic svg{width:16px;height:16px;stroke-width:2.4}
 .nn-toast.nn-simple:not(.err) .nn-ic{background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--green)}
