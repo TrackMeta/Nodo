@@ -342,7 +342,7 @@ function pintaPicks(){
   $("m_tagsWrap").style.display=tags.length?"":"none";
   $("m_tags").innerHTML=tags.map(t=>{const h=tagHex(t.color);return `<span class="pk ${st.pickTags.has(t.nombre)?'on':''}" data-t="${esc(t.nombre)}"><span class="d" style="background:${h}"></span>${esc(t.nombre)}${n(C?.tag[t.nombre])}</span>`;}).join("");
   $("m_ostWrap").style.display=(st.soloDigital && !st.pickOStates.size)?"none":"";
-  $("m_ostates").innerHTML=ORDER_STATES.map(([s,l])=>`<span class="pk ${st.pickOStates.has(s)?'on':''}" data-o="${s}">${l}</span>`).join("");
+  $("m_ostates").innerHTML=ORDER_STATES.filter(([s])=>s!=="confirmada"||!document.documentElement.hasAttribute("data-sin-digital")).map(([s,l])=>`<span class="pk ${st.pickOStates.has(s)?'on':''}" data-o="${s}">${l}</span>`).join("");
   const tog=(set,v)=>{ if(set.has(v)) set.delete(v); else set.add(v); estimarAudiencia(); pintaPicks(); };
   $("m_stages").querySelectorAll(".pk").forEach(el=> el.onclick=()=>tog(st.pickStages,el.dataset.s));
   $("m_tags").querySelectorAll(".pk").forEach(el=> el.onclick=()=>tog(st.pickTags,el.dataset.t));

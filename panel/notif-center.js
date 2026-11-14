@@ -20,38 +20,38 @@
 // una persona esperando: los mismos que Telegram no deja apagar). Un tipo que el motor
 // estrene mañana y no esté acá igual se muestra (con el icono de su grupo).
 const TIPOS = {
-  adelanto_validar:     { g: "pagos",    lb: "Adelanto por validar",          ic: "banknote", crit: 1 },
-  saldo_validar:        { g: "pagos",    lb: "Saldo por validar",             ic: "banknote", crit: 1 },
-  pago_digital_validar: { g: "pagos",    lb: "Pago digital por validar",      ic: "banknote", crit: 1 },
+  adelanto_validar:     { g: "pagos", tp: "fisico",    lb: "Adelanto por validar",          ic: "banknote", crit: 1 },
+  saldo_validar:        { g: "pagos", tp: "fisico",    lb: "Saldo por validar",             ic: "banknote", crit: 1 },
+  pago_digital_validar: { g: "pagos", tp: "digital",    lb: "Pago digital por validar",      ic: "banknote", crit: 1 },
   pago_extra_validar:   { g: "pagos",    lb: "Pago de un extra por validar",  ic: "banknote", crit: 1 },
-  prepago_lima_validar: { g: "pagos",    lb: "Prepago de Lima por validar",   ic: "banknote", crit: 1 },
-  adelanto_sin_datos:   { g: "pagos",    lb: "Pagó el adelanto sin dar sus datos", ic: "banknote" },
+  prepago_lima_validar: { g: "pagos", tp: "fisico",    lb: "Prepago de Lima por validar",   ic: "banknote", crit: 1 },
+  adelanto_sin_datos:   { g: "pagos", tp: "fisico",    lb: "Pagó el adelanto sin dar sus datos", ic: "banknote" },
   pago_auto_aprobado:   { g: "pagos",    lb: "Pago aprobado solo (nadie lo revisó)", ic: "check" },
-  entrega_fallida:      { g: "pagos",    lb: "Entrega digital que falló",     ic: "alert",    crit: 1 },
+  entrega_fallida:      { g: "pagos", tp: "digital",    lb: "Entrega digital que falló",     ic: "alert",    crit: 1 },
   reclama_vuelto:       { g: "pagos",    lb: "Cliente reclama su vuelto",     ic: "dollar" },
   pago_de_mas:          { g: "pagos",    lb: "Pagó de más",                   ic: "dollar" },
-  adelanto_auto:        { g: "pagos",    lb: "Adelanto aprobado solo",        ic: "check" },
-  saldo_auto:           { g: "pagos",    lb: "Saldo aprobado solo",           ic: "check" },
-  venta_digital:        { g: "ventas",   lb: "Venta digital",                 ic: "party" },
-  pedido_lima:          { g: "ventas",   lb: "Pedido nuevo de Lima",          ic: "truck" },
-  pedido_provincia:     { g: "ventas",   lb: "Pedido nuevo de provincia",     ic: "truck" },
+  adelanto_auto:        { g: "pagos", tp: "fisico",    lb: "Adelanto aprobado solo",        ic: "check" },
+  saldo_auto:           { g: "pagos", tp: "fisico",    lb: "Saldo aprobado solo",           ic: "check" },
+  venta_digital:        { g: "ventas", tp: "digital",   lb: "Venta digital",                 ic: "party" },
+  pedido_lima:          { g: "ventas", tp: "fisico",   lb: "Pedido nuevo de Lima",          ic: "truck" },
+  pedido_provincia:     { g: "ventas", tp: "fisico",   lb: "Pedido nuevo de provincia",     ic: "truck" },
   venta_extra:          { g: "ventas",   lb: "Venta de un extra",             ic: "gift" },
   pide_humano:          { g: "atencion", lb: "Cliente pide una persona",      ic: "user",     crit: 1 },
   envio_fallido:        { g: "atencion", lb: "Mensaje que no salió",          ic: "alert",    crit: 1 },
-  cambio_tras_despacho: { g: "atencion", lb: "Cambio con el pedido ya enviado", ic: "truck",  crit: 1 },
+  cambio_tras_despacho: { g: "atencion", tp: "fisico", lb: "Cambio con el pedido ya enviado", ic: "truck",  crit: 1 },
   pedido_cancelado:     { g: "atencion", lb: "Pedido cancelado",              ic: "ban" },
   mayorista:            { g: "atencion", lb: "Piden precio por mayor",        ic: "users" },
-  entrega_pedida:       { g: "atencion", lb: "Cliente pide cambiar la entrega", ic: "calendar" },
+  entrega_pedida:       { g: "atencion", tp: "fisico", lb: "Cliente pide cambiar la entrega", ic: "calendar" },
   organico_sin_atender: { g: "atencion", lb: "Cliente orgánico sin atender",  ic: "message" },
   pregunta_cliente:     { g: "atencion", lb: "Preguntas de clientes",         ic: "help" },
   whatsapp_salud:       { g: "sistema",  lb: "Salud de tu WhatsApp",          ic: "shield",   crit: 1 },
   campana_detenida:     { g: "sistema",  lb: "Campaña detenida",              ic: "megaphone", crit: 1 },
   problema:             { g: "sistema",  lb: "Algo falló",                    ic: "alert",    crit: 1 },
   anuncio_sin_producto: { g: "sistema",  lb: "Anuncio sin producto",          ic: "megaphone" },
-  stock_agotado:        { g: "sistema",  lb: "Stock agotado",                 ic: "box" },
-  microapp_sin_correo:  { g: "atencion", lb: "Pagó la app sin dar su correo", ic: "mail" },
-  cuenta_compartida:    { g: "sistema",  lb: "Cuenta compartida",             ic: "key" },
-  stock_bajo:           { g: "sistema",  lb: "Stock bajo",                    ic: "box" },
+  stock_agotado:        { g: "sistema", tp: "fisico",  lb: "Stock agotado",                 ic: "box" },
+  microapp_sin_correo:  { g: "atencion", tp: "microapp", lb: "Pagó la app sin dar su correo", ic: "mail" },
+  cuenta_compartida:    { g: "sistema", tp: "microapp",  lb: "Cuenta compartida",             ic: "key" },
+  stock_bajo:           { g: "sistema", tp: "fisico",  lb: "Stock bajo",                    ic: "box" },
   aviso:                { g: "sistema",  lb: "Otros avisos",                  ic: "bell" },
 };
 const GRUPOS = [
@@ -1049,7 +1049,8 @@ function pintarPrefs(d) {
   const sw = (attrs, on, dis) => `<label class="nn-sw${dis ? " dis" : ""}"><input type="checkbox" ${attrs}${on ? " checked" : ""}${dis ? " disabled" : ""}><i></i></label>`;
   const ocultos = new Set(N.prefs.ocultos || []);
   const bloques = GRUPOS.map((g) => {
-    const filas = Object.entries(TIPOS).filter(([, t]) => t.g === g.k).map(([k, t]) => `
+    // 🧩 (13-nov) Cuenta por tipos: sin las filas de los tipos de producto que la cuenta no vende.
+    const filas = Object.entries(TIPOS).filter(([, t]) => t.g === g.k && !(t.tp && document.documentElement.hasAttribute("data-sin-" + t.tp))).map(([k, t]) => `
       <div class="nn-prow">
         <span class="nn-pl">${esc(t.lb)}</span>
         ${t.crit ? `<span class="nn-lock" title="Es plata o un cliente esperando: no se puede ocultar">${I("lock")}Siempre</span>` : sw(`data-p="tipo" value="${k}"`, !ocultos.has(k), false)}
@@ -1097,7 +1098,7 @@ function seccionVenta(sw) {
   const v = ventaPrefs(), off = !v.sonido;
   return `<section class="nn-psec nn-venta${off ? " off" : ""}">
     <div class="nn-prow big">
-      <span class="nn-pl"><b>Sonido de venta</b><small>Suena cuando entra plata: venta digital, pedido de Lima confirmado, adelanto de provincia aprobado o un extra vendido.</small></span>
+      <span class="nn-pl"><b>Sonido de venta</b><small>Suena cuando entra plata: ${[document.documentElement.hasAttribute("data-sin-digital") ? "" : "venta digital", document.documentElement.hasAttribute("data-sin-fisico") ? "" : "pedido de Lima confirmado, adelanto de provincia aprobado"].filter(Boolean).join(", ")} o un extra vendido.</small></span>
       ${sw('data-p="venta-sonido"', v.sonido)}
     </div>
     ${barraTonos(TONOS_VENTA, v.tono, "venta-tono", off)}

@@ -48,6 +48,15 @@
   .plat{border:1px solid var(--brand);background:var(--brand-bg)}
   a.btn{text-decoration:none}
   .nodo-modal label{display:block;font-size:12px;color:var(--muted);margin:10px 0 6px}
+  /* (13-nov) Tipos de producto que vende la cuenta */
+  .tchips{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .tchip{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;user-select:none}
+  .tchip input{display:none}
+  .tchip .ck{width:16px;height:16px;border-radius:5px;border:1.5px solid var(--border);display:inline-flex;align-items:center;justify-content:center;color:#fff}
+  .tchip .ck svg{width:11px;height:11px;opacity:0}
+  .tchip.on{border-color:var(--brand);background:var(--brand-bg);color:var(--brand)}
+  .tchip.on .ck{background:var(--brand);border-color:var(--brand)} .tchip.on .ck svg{opacity:1}
+  .badge.tipos{background:var(--brand-bg);color:var(--brand);border-color:transparent}
 </style>
 </head>
 <body>
@@ -106,8 +115,8 @@ async function load(){
   const { data: me } = await supa.from("app_users").select("id,nombre,platform_admin").eq("id",st.uid).maybeSingle();
   st.me = me || {};
   const { data: mems } = await supa.from("account_members")
-    .select("account_id,role,accounts(id,nombre,plan)").eq("user_id",st.uid).eq("activo",true);
-  st.accounts = (mems||[]).map(m=>({ id:m.account_id, role:m.role, nombre:m.accounts?.nombre, plan:m.accounts?.plan, members:[] }));
+    .select("account_id,role,accounts(id,nombre,plan,features)").eq("user_id",st.uid).eq("activo",true);
+  st.accounts = (mems||[]).map(m=>({ id:m.account_id, role:m.role, nombre:m.accounts?.nombre, plan:m.accounts?.plan, tipos:tiposDe(m.accounts?.features), members:[] }));
   for(const a of st.accounts){
     const { data: ms } = await supa.from("account_members")
       .select("user_id,role,app_users(nombre)").eq("account_id",a.id).eq("activo",true);
@@ -115,6 +124,48 @@ async function load(){
   }
   render();
   loadInvites();
+}
+
+// 🧩 (13-nov, Rodrigo) Cuentas por TIPO de producto: «que solo puedan vender ese tipo y desaparezca todo rastro de
+// los otros». Lo elige el admin de plataforma al crear el link de cuenta, y lo puede cambiar después en la tarjeta de
+// cada cuenta. Se guarda en accounts.features.tipos (sin la clave = vende de todo); la base no deja crear un producto de
+// otro tipo (trigger, migración 0145) y el panel esconde todo lo de los tipos que no vende (shell.js).
+const TIPOS = [ { v:"fisico", l:"Físicos" }, { v:"digital", l:"Digitales" }, { v:"microapp", l:"Micro apps" } ];
+function tiposDe(f){ const t = Array.isArray(f?.tipos) ? f.tipos.filter(x=>TIPOS.some(y=>y.v===x)) : []; return t.length ? t : null; }
+function chipsTipos(sel, id){
+  const on = sel || TIPOS.map(t=>t.v);
+  return `<div class="tchips" id="${id}">${TIPOS.map(t=>`<label class="tchip${on.includes(t.v)?" on":""}"><input type="checkbox" value="${t.v}"${on.includes(t.v)?" checked":""}/><span class="ck">${icon("check")}</span>${t.l}</label>`).join("")}</div>`;
+}
+function wireChips(box){ box.querySelectorAll(".tchip input").forEach(i=> i.onchange=()=>{
+  if(!box.querySelector("input:checked")){ i.checked = true; toast("La cuenta tiene que vender al menos un tipo",true); }
+  box.querySelectorAll(".tchip").forEach(l=> l.classList.toggle("on", l.querySelector("input").checked)); }); }
+const leerChips = (box)=> [...box.querySelectorAll("input:checked")].map(i=>i.value);
+const nombreTipos = (t)=> !t ? "" : t.map(v=>TIPOS.find(x=>x.v===v)?.l).filter(Boolean).join(" + ");
+function pedirTipos(acc){
+  return new Promise((resolve)=>{
+    const back = document.createElement("div"); back.className = "nodo-modal-back";
+    back.innerHTML = `<div class="nodo-modal" role="dialog" aria-modal="true">
+      <h3>Qué vende ${esc(acc?.nombre||"esta cuenta")}</h3>
+      <div class="muted" style="font-size:12.5px;margin:4px 0 14px;line-height:1.5">Lo que no marques desaparece del panel y de la app de esa cuenta: no lo ven ni pueden crear productos de ese tipo.</div>
+      ${chipsTipos(acc?.tipos, "ptChips")}
+      <div class="nb-acts"><button class="nb-btn" id="ptCancel" type="button">Cancelar</button><button class="nb-btn primary" id="ptOk" type="button">Guardar</button></div>
+    </div>`;
+    document.body.appendChild(back);
+    const box = back.querySelector("#ptChips"); wireChips(box);
+    let hecho=false; const cerrar=(v)=>{ if(hecho) return; hecho=true; back.remove(); resolve(v); };
+    back.querySelector("#ptOk").onclick = ()=> cerrar(leerChips(box));
+    back.querySelector("#ptCancel").onclick = ()=> cerrar(null);
+    back.addEventListener("mousedown", (e)=>{ if(e.target===back) cerrar(null); });
+    back.addEventListener("keydown", (e)=>{ if(e.key==="Escape") cerrar(null); });
+  });
+}
+async function cambiarTipos(accId){
+  const acc = st.accounts.find(a=>a.id===accId);
+  const t = await pedirTipos(acc); if(!t) return;
+  const { error } = await supa.rpc("set_account_tipos", { p_account:accId, p_tipos:t });
+  if(error){ toast(error.message,true); return; }
+  try { localStorage.removeItem("nodo.tiposCuenta"); } catch {}
+  toast(t.length===TIPOS.length ? "Listo: esta cuenta vende de todo" : "Listo: esta cuenta solo vende "+nombreTipos(t).toLowerCase()); load();
 }
 
 function render(){
@@ -128,10 +179,11 @@ function render(){
         <input class="in" id="bizName" placeholder="Nombre del negocio (opcional)" style="flex:1;min-width:200px"/>
         <button class="btn primary" id="mkAccount">Generar link de cuenta</button>
       </div>
+      <div style="margin-top:12px"><div class="muted" style="font-size:12px;font-weight:600;margin-bottom:6px">Qué va a poder vender</div>${chipsTipos(null,"bizTipos")}</div>
       <p class="muted" style="font-size:12px;margin:6px 0 0">El link solo va a servir con ese correo: así nadie se registra a nombre de otra persona.</p>
       <div id="acctLinkBox"></div>
     </div>` : "";
-  if(st.me.platform_admin) $("mkAccount").onclick = mkAccountLink;
+  if(st.me.platform_admin){ $("mkAccount").onclick = mkAccountLink; wireChips($("bizTipos")); }
 
   // Cada cuenta del usuario.
   $("accts").innerHTML = st.accounts.map(a=>{
@@ -149,7 +201,9 @@ function render(){
     return `<div class="card" data-acc="${esc(a.id)}">
       <h2>${icon("building")} <span class="acctName">${esc(a.nombre||"Mi cuenta")}</span>
         <span class="badge plan">${esc(a.plan||"trial")}</span>
-        ${soyAdmin?`<button class="btn sm" data-rename="${esc(a.id)}" style="margin-left:auto">Renombrar</button>`:''}</h2>
+        ${a.tipos?`<span class="badge tipos">Solo ${esc(nombreTipos(a.tipos).toLowerCase())}</span>`:""}
+        ${st.me.platform_admin?`<button class="btn sm" data-tipos="${esc(a.id)}" style="margin-left:auto">Qué vende</button>`:""}
+        ${soyAdmin?`<button class="btn sm" data-rename="${esc(a.id)}"${st.me.platform_admin?"":' style="margin-left:auto"'}>Renombrar</button>`:''}</h2>
       <p class="desc">Miembros de esta cuenta${soyAdmin?' · como admin puedes invitar y quitar gente.':''}</p>
       ${members}
       ${soyAdmin?`<div class="row" style="margin-top:16px">
@@ -160,6 +214,7 @@ function render(){
   }).join("") || `<div class="card"><p class="muted">No perteneces a ninguna cuenta todavía.</p></div>`;
 
   // Wiring.
+  document.querySelectorAll("[data-tipos]").forEach(b=> b.onclick=()=>cambiarTipos(b.getAttribute("data-tipos")));
   document.querySelectorAll("[data-rename]").forEach(b=> b.onclick=()=>renameAccount(b.getAttribute("data-rename")));
   document.querySelectorAll("[data-team]").forEach(b=> b.onclick=()=>mkTeamCode(b.getAttribute("data-team")));
   document.querySelectorAll("[data-rm]").forEach(b=> b.onclick=()=>removeMember(b.getAttribute("data-acc"), b.getAttribute("data-rm")));
@@ -170,9 +225,14 @@ async function mkAccountLink(){
   const nombre = $("bizName").value.trim();
   const email = $("bizEmail").value.trim();
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast("Escribe el correo de tu cliente: el link solo va a servir con ese correo.",true); $("bizEmail").focus(); return; }
-  const r = await callFn({ action:"create_account_invite", nombre_sugerido:nombre, email });
+  const tipos = leerChips($("bizTipos"));
+  const r = await callFn({ action:"create_account_invite", nombre_sugerido:nombre, email, tipos });
   if(!r) return;
-  $("acctLinkBox").innerHTML = codeBox("Link de invitación de cuenta", r.link, `Envíaselo a tu cliente. Solo sirve con ${esc(email)} y vence en 14 días.`);
+  if(tipos.length < TIPOS.length){
+    const { error } = await supa.rpc("set_invite_tipos", { p_token:r.token, p_tipos:tipos });
+    if(error){ toast("El link se creó, pero no se pudo guardar qué vende: "+error.message,true); return; }
+  }
+  $("acctLinkBox").innerHTML = codeBox("Link de invitación de cuenta", r.link, `Envíaselo a tu cliente. Solo sirve con ${esc(email)} y vence en 14 días.${tipos.length<TIPOS.length?` Su cuenta solo va a vender ${esc(nombreTipos(tipos).toLowerCase())}.`:""}`);
   wireCopy($("acctLinkBox"), r.link);
 }
 // (6-nov, Rodrigo) «Invitar a alguien»: UNA ventana con correo + rol (antes eran dos preguntas seguidas) y el

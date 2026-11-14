@@ -110,7 +110,12 @@ async function camposDelCanal(supa, channelId) {
 export async function elegirVariable({ supa, channelId, solo } = {}) {
   ponerCss();
   const propios = solo ? [] : await camposDelCanal(supa, channelId);
-  const base = solo ? VAR_GRUPOS.map((gr) => ({ g: gr.g, items: gr.items.filter(([k]) => solo.includes(k)) })).filter((gr) => gr.items.length) : VAR_GRUPOS;
+  // 🧩 (13-nov) Cuenta por tipos: sin «Link de entrega» si no vende digital; sin lo del pedido (envío, agencia…) si no vende físicos.
+  const _sin = (t) => document.documentElement.hasAttribute("data-sin-" + t);
+  const FISICAS = new Set(["total_cobrar", "adelanto", "saldo"]);
+  const _vale = ([k]) => !(k === "link_entrega" && _sin("digital")) && !((FISICAS.has(k) || k.startsWith("pedido_")) && _sin("fisico"));
+  const _grupos = VAR_GRUPOS.map((gr) => ({ g: gr.g, items: gr.items.filter(_vale) })).filter((gr) => gr.items.length);
+  const base = solo ? _grupos.map((gr) => ({ g: gr.g, items: gr.items.filter(([k]) => solo.includes(k)) })).filter((gr) => gr.items.length) : _grupos;
   const grupos = propios.length ? [...base, { g: "Tus campos", items: propios }] : base;
   return new Promise((resolve) => {
     const back = document.createElement("div");

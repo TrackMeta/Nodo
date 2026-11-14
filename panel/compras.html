@@ -328,11 +328,13 @@ async function load(){
   render();
 }
 
+// 🧩 (13-nov) Cuenta que no vende digital: sin el chip «Digital».
+const _vendeDig=()=>!document.documentElement.hasAttribute("data-sin-digital");
 const TIPOS=[["all","Todas"],["digital","Digital"],["lima","Lima"],["provincia","Provincia"]];
 const hayFisico=()=> st.list.some(o=>tipoDe(o)!=="digital");
 function renderChips(){
   $("tipoChips").style.display = hayFisico() ? "" : "none";
-  $("tipoChips").innerHTML=TIPOS.map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("");
+  $("tipoChips").innerHTML=TIPOS.filter(([v])=>v!=="digital"||_vendeDig()).map(([v,l])=>`<button class="chip ${st.tipo===v?'on':''}" data-t="${v}">${l}</button>`).join("");
   $("tipoChips").querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{ st.tipo=b.dataset.t; renderChips(); render(); });
 }
 
@@ -447,7 +449,7 @@ function render(){
   if(!st.list.length){
     box.classList.remove("lista");
     box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1;border:none"><div class="e-ic">${icon("pedidos")}</div>
-      <h3>Aún no hay compras cerradas</h3><p>Cuando una venta se complete al 100% —un digital pagado, un pedido de Lima entregado y cobrado, o un saldo de provincia pagado— aparece acá con su comprobante.</p></div>`;
+      <h3>Aún no hay compras cerradas</h3><p>Cuando una venta se complete al 100% —${[_vendeDig()?"un digital pagado":"", document.documentElement.hasAttribute("data-sin-fisico")?"":"un pedido de Lima entregado y cobrado, o un saldo de provincia pagado"].filter(Boolean).join(", ")}— aparece acá con su comprobante.</p></div>`;
     return;
   }
   if(!list.length){ box.classList.remove("lista"); box.innerHTML=`<div class="nodo-empty" style="grid-column:1/-1;border:none"><div class="e-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></div><h3>Nada coincide</h3><p>Ninguna compra coincide con el filtro o la búsqueda. Prueba otro tipo o ampliar el rango de fechas.</p><div id="opAviso"></div></div>`; buscarOperacionUsada(st.q); return; }

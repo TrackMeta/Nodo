@@ -1112,6 +1112,12 @@ html:not([data-ds="1"]) .nodo-userrow .nodo-icnbtn svg,html:not([data-ds="1"]) .
 html[data-bot-digital] .nodo-link[data-nav="pedidos"]{display:none!important}
 html[data-bot-sin-microapps] .nodo-link[data-nav="accesos"]{display:none!important}
 html[data-bot-tipo-pend] .nodo-link[data-nav="pedidos"],html[data-bot-tipo-pend] .nodo-link[data-nav="accesos"]{display:none!important}   /* Accesos = solo micro apps */
+/* 🧩 (13-nov) Cuentas por TIPO (marcarTiposCuenta en shell.js): lo que la cuenta no vende no deja rastro. */
+html[data-sin-fisico] .nodo-link[data-nav="pedidos"],html[data-sin-microapp] .nodo-link[data-nav="accesos"]{display:none!important}
+html[data-sin-fisico] [data-vende="fisico"],html[data-sin-digital] [data-vende="digital"],html[data-sin-microapp] [data-vende="microapp"],
+html[data-sin-digital][data-sin-microapp] [data-vende="digital microapp"],html[data-sin-fisico][data-sin-digital] [data-vende="fisico digital"]{display:none!important}
+/* data-y="fisico digital": el conector («o», «y») entre dos frases de tipo: solo si vende los dos */
+html[data-sin-fisico] [data-y~="fisico"],html[data-sin-digital] [data-y~="digital"],html[data-sin-microapp] [data-y~="microapp"]{display:none!important}
 
 /* (10-oct) Colores de ETAPA del embudo, compartidos por todo el panel (antes solo en embudo.html).
    Temperatura (Rodrigo, 10-oct): gris (frío) · azul (interesado) · naranja (caliente) · amarillo (confirmado) ·

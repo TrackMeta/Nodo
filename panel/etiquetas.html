@@ -206,7 +206,9 @@ async function load(){
 const nCont=(t)=>(st.nTag&&st.nTag[t.id]!=null)?`${st.nTag[t.id]} contacto${st.nTag[t.id]===1?"":"s"}`:"";
 function render(){
   const tuyas=st.tags.filter(t=>!etiquetaAuto(t.nombre));
-  const autos=ETIQUETAS_AUTO.map(e=>st.tags.find(t=>String(t.nombre||"").trim()===e.nombre)).filter(Boolean);
+  // 🧩 (13-nov) Cuenta por tipos: sin las automáticas de lo que no vende («Digital»; «Lima»/«Provincia» si no vende físicos).
+  const _sinT={ Digital:"digital", Lima:"fisico", Provincia:"fisico" };
+  const autos=ETIQUETAS_AUTO.filter(e=>!(_sinT[e.nombre] && document.documentElement.hasAttribute("data-sin-"+_sinT[e.nombre]))).map(e=>st.tags.find(t=>String(t.nombre||"").trim()===e.nombre)).filter(Boolean);
   $("tagCount").textContent=tuyas.length?`${tuyas.length} etiqueta${tuyas.length===1?"":"s"}`:"";
   renderAuto(autos);
   const box=$("list");

@@ -345,7 +345,7 @@ const NEG_CUADROS=[
     va:"Cómo se llama y qué vendes, a quién y por qué te eligen, en 1 o 2 frases.",
     no:"Lo de cada producto (qué incluye, precio): eso va en su ficha.",
     campos:[["nombre","Nombre del negocio","input","Ej. Mi Negocio"],
-            ["rubro","¿Qué vendes y a quién?","ta","Ej. Programas digitales de entrenamiento para gente que quiere ponerse en forma en casa, sin gimnasio."]] },
+            ["rubro","¿Qué vendes y a quién?","ta",(document.documentElement.hasAttribute("data-sin-digital")?"Ej. Lámparas y accesorios prácticos para el hogar, para gente que quiere su casa más cómoda y segura.":"Ej. Programas digitales de entrenamiento para gente que quiere ponerse en forma en casa, sin gimnasio.")]] },
   { n:2, ico:"pago", req:"pagos", titulo:"Cómo se paga y cómo se entrega",
     va:"Solo lo general: qué medios aceptas y cómo llega lo que vendes.",
     no:"Los números de Yape y cuentas (van en IA → Validador de comprobantes) ni los costos y zonas de envío (van en Entrega).",

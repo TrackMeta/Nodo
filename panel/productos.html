@@ -345,6 +345,10 @@
 
 <script type="module">
 import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guardUnsaved, markClean, markDirty, isDirty, updateChannel, patchProductConfig, pageAll, usuarioActual } from "./shell.js";
+// 🧩 (13-nov) Tipos que vende la cuenta: se leen de las marcas que pone shell.js en <html> (data-sin-fisico/digital/microapp).
+// No se importan de shell.js a propósito: con un shell.js viejo en caché, un import nuevo tumbaría la página entera.
+const tiposCuenta=()=>{ const t=["fisico","digital","microapp"].filter(x=>!document.documentElement.hasAttribute("data-sin-"+x)); return t.length?t:["fisico","digital","microapp"]; };
+const vendeTipo=(t)=>tiposCuenta().includes(t);
 import { mountFolders } from "./folder-bar.js?v=3";
 import { montarMapaAngulos } from "./angulos-mapa.js?v=29";
 import * as O from "./orders.js";
@@ -605,7 +609,9 @@ function renderCards(){
 // Devuelve {tipo, clase, nombre, emoji} o null.
 function nuevoProductoModal(){
   return new Promise((resolve)=>{
-    let tipo=null, clase="principal", emoji=null, emojiPropio=false;
+    // 🧩 (13-nov) Cuenta que vende un solo tipo: no se pregunta «¿Qué vendes?» (ya viene elegido); con dos, solo esos dos.
+    const permitidos=tiposCuenta(), unSolo=permitidos.length===1;
+    let tipo=unSolo?permitidos[0]:null, clase="principal", emoji=null, emojiPropio=false;
     const EMO_DEF={ fisico:"📦", digital:"💻", microapp:"📱" };
     const emojiAuto=()=> clase==="regalo" ? "🎁" : (EMO_DEF[tipo]||"📦");
     const ov=document.createElement("div");
@@ -636,7 +642,7 @@ function nuevoProductoModal(){
     </style>
     <div class="npm" role="dialog" aria-label="Nuevo producto">
       <div style="font-size:19px;font-weight:800;letter-spacing:-.3px">Nuevo producto</div>
-      <div style="font-size:13px;color:var(--muted);margin-top:3px">Tres preguntas y listo. El precio, la entrega y lo demás lo llenas adentro.</div>
+      <div style="font-size:13px;color:var(--muted);margin-top:3px">${unSolo?"Dos":"Tres"} preguntas y listo. El precio, la entrega y lo demás lo llenas adentro.</div>
 
       <div class="np-st"><div class="np-q"><span class="np-n">1</span>¿Cómo se llama?</div>
         <div style="display:flex;gap:8px;position:relative">
@@ -649,15 +655,15 @@ function nuevoProductoModal(){
         </div>
         <div class="np-err" id="npErrN"></div></div>
 
-      <div class="np-st"><div class="np-q"><span class="np-n">2</span>¿Qué vendes?</div>
-        <div class="np-g">
-          ${op("t","fisico","truck","Físico","Se envía a Lima o a provincia")}
-          ${op("t","digital","file","Digital","Le llega un link o archivo al pagar")}
-          ${op("t","microapp","phone","Micro app","Una app con acceso por su correo")}
+      <div class="np-st"${unSolo?" hidden":""}><div class="np-q"><span class="np-n">2</span>¿Qué vendes?</div>
+        <div class="np-g"${permitidos.length===2?' style="grid-template-columns:repeat(2,minmax(0,1fr))"':""}>
+          ${vendeTipo("fisico")?op("t","fisico","truck","Físico","Se envía a Lima o a provincia"):""}
+          ${vendeTipo("digital")?op("t","digital","file","Digital","Le llega un link o archivo al pagar"):""}
+          ${vendeTipo("microapp")?op("t","microapp","phone","Micro app","Una app con acceso por su correo"):""}
         </div>
         <div class="np-err" id="npErrT"></div></div>
 
-      <div class="np-st"><div class="np-q"><span class="np-n">3</span>¿Cómo lo vendes?</div>
+      <div class="np-st"><div class="np-q"><span class="np-n">${unSolo?2:3}</span>¿Cómo lo vendes?</div>
         <div class="np-g">
           ${op("c","principal","star","Solo","Tiene su anuncio y su propia venta")}
           ${op("c","extra","plus","Extra","Se ofrece junto a otro producto")}
@@ -2535,7 +2541,7 @@ async function renderRegaloVenta(host){
   b.innerHTML=`
     <div class="card" style="border-color:rgba(168,85,247,.4);margin-bottom:0">
       <h4 style="margin-top:0">${icon("gift")} Regalo con la compra</h4>
-      <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Un obsequio <b>gratis</b> que se entrega solo al <b>cerrar la venta</b> de este producto — no se cobra ni se pregunta. El <b>digital</b> le llega al chat; el <b>físico</b> viaja en el mismo paquete. ${esFisico?"":"<b>Ojo:</b> como este producto es digital, elige regalos digitales (un regalo físico necesitaría su propio envío)."}</div>
+      <div style="font-size:12.5px;color:var(--muted);line-height:1.6">Un obsequio <b>gratis</b> que se entrega solo al <b>cerrar la venta</b> de este producto — no se cobra ni se pregunta. ${vendeTipo("digital")?"El <b>digital</b> le llega al chat; el <b>físico</b> viaja en el mismo paquete. ":"Viaja en el mismo paquete del pedido. "}${esFisico?"":"<b>Ojo:</b> como este producto es digital, elige regalos digitales (un regalo físico necesitaría su propio envío)."}</div>
       <div id="regList" style="margin-top:12px"></div>
       <button class="btn" id="regAdd" ${regCat.length?"":"disabled"} style="margin-top:8px">+ Agregar regalo</button>
       ${regCat.length?"":`<div style="font-size:12px;color:var(--faint);margin-top:8px">Primero crea un producto de clase <b>Regalo</b> (botón <b>Nuevo producto</b>) con su entrega.</div>`}
@@ -3913,7 +3919,7 @@ function renderOpciones(host){
         </div>
         <div style="font-size:11.5px;color:var(--faint);margin-top:8px">El <b>costo</b> es lo que te cuesta ${fisico?"una unidad":"cada venta"} — el cliente nunca lo ve; sirve para calcular tu ganancia real.${fisico?"":" En un digital suele ser 0."}</div>
         ${fisico
-          ? `<div style="font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.55">Este producto se <b>envía</b>: la venta termina cuando se crea el pedido (no entrega nada por el chat). ¿Regalar algo digital con la compra? Va en <a href="#" class="oGoExtra" style="color:var(--brand)">Ventas extra →</a>.</div>`
+          ? `<div style="font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.55">Este producto se <b>envía</b>: la venta termina cuando se crea el pedido (no entrega nada por el chat).${vendeTipo("digital")?' ¿Regalar algo digital con la compra? Va en <a href="#" class="oGoExtra" style="color:var(--brand)">Ventas extra →</a>.':""}</div>`
           : `<div style="font-size:11.5px;color:var(--faint);margin-top:12px;line-height:1.55">El <b>link o archivo</b> que recibe el cliente lo configuras en <a href="#" class="oGoEnt" style="color:var(--brand)">¿Cómo se entrega? →</a>.</div>`}
       </div>
       <div style="display:flex;align-items:flex-start;gap:9px;flex-wrap:wrap;margin:0 4px 14px;font-size:12.5px;color:var(--muted)">
@@ -4095,8 +4101,8 @@ function paintOpciones(fisico){
       ${fisico ? (i===0 ? `
       <div style="margin-top:12px;font-size:11.5px;color:var(--faint);line-height:1.55">
         Este producto se <b>envía</b>, así que no entrega nada por el chat: la venta termina cuando se crea el pedido.
-        ¿Quieres regalar algo digital con la compra? Va en <a href="#" class="oGoExtra" style="color:var(--brand)">Ventas extra →</a>,
-        que sí lo manda cuando el pedido está pagado del todo.
+        ${vendeTipo("digital")?`¿Quieres regalar algo digital con la compra? Va en <a href="#" class="oGoExtra" style="color:var(--brand)">Ventas extra →</a>,
+        que sí lo manda cuando el pedido está pagado del todo.`:""}
       </div>` : "")
       : `
       <label style="margin-top:12px">Qué entrega <span style="color:var(--faint);font-weight:400">(links, archivos, imágenes o videos — se envían al confirmar el pago)</span></label>
@@ -5145,7 +5151,7 @@ function armRenderBrief(){
     <p style="font-size:13px;color:var(--muted);line-height:1.6;margin:0 0 12px">Cuéntame de tu producto en tus palabras (o pega una descripción). La IA arma un <b>borrador</b> de toda la ficha; tú lo revisas y guardas. <b>No inventa</b> precios ni tu Yape — esos los marca para que los completes.</p>
     <textarea class="in" id="armBrief" rows="6" style="min-height:130px;line-height:1.55;font-family:var(--font);resize:vertical" placeholder="${esc(ej)}"></textarea>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
-      <button class="armchip" data-ins="Es un producto físico, lo envío por agencia a provincia.">+ físico / envío</button>
+      ${!vendeTipo("fisico")?"":`<button class="armchip" data-ins="Es un producto físico, lo envío por agencia a provincia.">+ físico / envío</button>`}
       <button class="armchip" data-ins="Tengo variantes con distinto precio (básico y premium).">+ variantes</button>
       <button class="armchip" data-ins="Ofrezco un descuento si compran 2 o más.">+ oferta</button>
     </div>`;
@@ -5220,6 +5226,7 @@ async function armAplicar(d){
   const presCuradas=(st.versions||[]).filter(v=> Number(v.precio)>0 || String(v.descripcion??"").trim() || (Number(v.cantidad)>1) || (String(v.nombre??"").trim() && String(v.nombre).trim().toLowerCase()!=="única"));
   const pisaPres=(Array.isArray(d.presentaciones)&&d.presentaciones.length) && presCuradas.length>0;
   const pisaNombre=!!(d.nombre && String(p.nombre??"").trim() && String(p.nombre).trim()!==String(d.nombre).trim());
+  if(d.tipo && !vendeTipo(d.tipo)) d.tipo=null;   // 🧩 (13-nov) la IA no puede pasar el producto a un tipo que la cuenta no vende
   const pisaTipo=!!((d.tipo==="fisico"||d.tipo==="digital") && p.tipo && p.tipo!=="microapp" && p.tipo!==d.tipo);   // (una micro app sigue siéndolo) // digital↔físico reconfigura todo
   let reemplazar=true;
   if(pisaAtr||pisaIa.length||pisaPres||pisaNombre||pisaTipo){

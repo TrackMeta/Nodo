@@ -1195,6 +1195,12 @@ export function setFavicon(href) {
 // ═══════════════════════════════════════════════════════════════════
 const BOUNDARY = new Set(); // todo navega por SPA (la Bandeja colapsa el sidebar en vez de recargar)
 const pageCache = new Map();  // pathname → html (para navegaciones repetidas)
+// 🧩 (13-nov) Marcas de tipos de la cuenta lo antes posible (lo guardado de la visita anterior), para que las pantallas
+// que arman textos al cargar ya las vean. marcarTiposCuenta las confirma después.
+try {
+  const _id = localStorage.getItem("nodo.channelId"), _t = JSON.parse(localStorage.getItem("nodo.tiposCuenta." + _id) || "null");
+  if (Array.isArray(_t) && _t.length) for (const x of ["fisico", "digital", "microapp"]) if (!_t.includes(x)) document.documentElement.setAttribute("data-sin-" + x, "");
+} catch { /* sin storage */ }
 const S = {
   nav: null, api: null, botSel: null, logo: null, brandName: null,
   paintBrand: null, subs: [], leaves: [],
@@ -1671,7 +1677,7 @@ export async function mountShell({ active } = {}) {
   let saved = localStorage.getItem("nodo.channelId");
   if (!S.channels.find((c) => c.id === saved)) saved = S.channels[0]?.id || null;
   S.channelId = saved;
-  if (saved) marcarTipoBot(saved);
+  if (saved) { const pT = marcarTipoBot(saved); if (!S.tiposSabidos) await Promise.race([pT, new Promise((r) => setTimeout(r, 2500))]); }
   // Zona horaria del NEGOCIO (la que se elige en Ajustes). El panel calculaba todas sus
   // fechas con Lima fija; el motor sí respeta esta columna, así que un negocio fuera de
   // Perú veía sus reportes cortados a una hora que no era la suya. Se publica acá para que
@@ -2309,7 +2315,40 @@ export async function getUsdRate(channelId) {
 // vacío y confunde, así que se esconde del menú (html[data-bot-digital], ver shell.css). Se aplica primero lo último que se
 // supo (localStorage, sin parpadeo) y se corrige al leer los productos del bot.
 // Accesos es solo de MICRO APPS: sin productos micro app también se esconde (html[data-bot-sin-microapps]).
+// 🧩 (13-nov, Rodrigo) CUENTAS POR TIPO: una cuenta puede vender solo algunos tipos (accounts.features.tipos, lo pone el
+// admin de plataforma en Cuenta y equipo; migración 0145). Lo que no vende desaparece de todo el panel y la app:
+//   · html[data-sin-fisico] / [data-sin-digital] / [data-sin-microapp] → shell.css esconde los elementos marcados con
+//     data-vende="fisico" (o "digital", "microapp", "digital microapp" = se esconde solo si no vende ninguno de los dos);
+//   · tiposCuenta() / vendeTipo(t) para las pantallas que arman opciones en JS (escuchan el evento «nodo:tipos»).
+// La frontera real es la base (trigger: no deja crear un producto de otro tipo); esto es para que no quede rastro.
+const TIPOS_TODOS = ["fisico", "digital", "microapp"];
+export function tiposCuenta() { return Array.isArray(S.tiposCuenta) && S.tiposCuenta.length ? S.tiposCuenta : TIPOS_TODOS; }
+export const vendeTipo = (t) => tiposCuenta().includes(t);
+function aplicarTiposCuenta(arr) {
+  const t = (Array.isArray(arr) ? arr : []).filter((x) => TIPOS_TODOS.includes(x));
+  S.tiposCuenta = t.length ? t : TIPOS_TODOS.slice();
+  for (const x of TIPOS_TODOS) {
+    if (S.tiposCuenta.includes(x)) document.documentElement.removeAttribute("data-sin-" + x);
+    else document.documentElement.setAttribute("data-sin-" + x, "");
+  }
+  try { document.dispatchEvent(new CustomEvent("nodo:tipos", { detail: S.tiposCuenta })); } catch { /* */ }
+}
+// Devuelve una promesa (la consulta) y deja S.tiposSabidos=true si ya había algo guardado en este navegador.
+function marcarTiposCuenta(id) {
+  const kt = "nodo.tiposCuenta." + id;
+  S.tiposSabidos = false;
+  try { const c = JSON.parse(localStorage.getItem(kt) || "null"); if (Array.isArray(c)) { aplicarTiposCuenta(c); S.tiposSabidos = true; } else aplicarTiposCuenta(null); } catch { aplicarTiposCuenta(null); }
+  return supa.from("channels").select("account_id").eq("id", id).maybeSingle().then(async ({ data }) => {
+    if (!data?.account_id) return;
+    const { data: t, error } = await supa.rpc("tipos_de_cuenta", { p_account: data.account_id });
+    if (error || !Array.isArray(t)) return;
+    try { localStorage.setItem(kt, JSON.stringify(t)); } catch { /* */ }
+    if (S.channelId === id) aplicarTiposCuenta(t);
+  }, () => {});
+}
+
 function marcarTipoBot(id) {
+  const pTipos = marcarTiposCuenta(id);
   const k = "nodo.botDigital." + id, km = "nodo.botSinMicro." + id;
   const flag = (attr, v) => { if (v === "1") document.documentElement.setAttribute(attr, ""); else document.documentElement.removeAttribute(attr); };
   // (10-oct) Sin lo guardado de una visita anterior, Pedidos y Accesos se esconden MIENTRAS se pregunta
@@ -2325,6 +2364,7 @@ function marcarTipoBot(id) {
     if (S.channelId === id) { flag("data-bot-digital", v); flag("data-bot-sin-microapps", vm); }
     document.documentElement.removeAttribute("data-bot-tipo-pend");
   }, () => { document.documentElement.removeAttribute("data-bot-tipo-pend"); });
+  return pTipos;
 }
 
 // ── Selector bonito, en TODO el panel (10-oct-2026) ──────────────────

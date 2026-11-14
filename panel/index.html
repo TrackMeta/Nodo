@@ -1245,8 +1245,8 @@ function renderFilters(){
     ${EMBUDO_STAGES.map(s=>`<button class="ftog tagtog ${f.stages.has(s.k)?"on":""}" data-stage="${s.k}" type="button"><span class="tagdot" style="background:${s.color}"></span><span class="ftg-nm">${s.label}</span><span class="fcount" data-stagecount="${s.k}"></span></button>`).join("")}
     ${state.products.some(p=>p.tipo==="fisico") || f.entrega.size ? `<h4>Entrega · Provincia</h4>
     ${ENTREGA_PROV.map(g=>`<button class="ftog tagtog ${f.entrega.has(g.k)?"on":""}" data-entrega="${g.k}" type="button"><span class="tagdot" style="background:${g.color}"></span><span class="ftg-nm">${g.lbl}</span><span class="fcount" data-entregacount="${g.k}"></span></button>`).join("")}
-    <h4>Entrega · Lima</h4>
-    ${ENTREGA_LIMA.map(g=>`<button class="ftog tagtog ${f.entrega.has(g.k)?"on":""}" data-entrega="${g.k}" type="button"><span class="tagdot" style="background:${g.color}"></span><span class="ftg-nm">${g.lbl}</span><span class="fcount" data-entregacount="${g.k}"></span></button>`).join("")}` : ""}
+    <h4 data-vende="fisico">Entrega · Lima</h4>
+    ${document.documentElement.hasAttribute("data-sin-fisico") && !f.entrega.size ? "" : ENTREGA_LIMA.map(g=>`<button class="ftog tagtog ${f.entrega.has(g.k)?"on":""}" data-entrega="${g.k}" type="button"><span class="tagdot" style="background:${g.color}"></span><span class="ftg-nm">${g.lbl}</span><span class="fcount" data-entregacount="${g.k}"></span></button>`).join("")}` : ""}
     <h4>Etiquetas</h4>
     <div class="tagf" id="fTags">${
       state.tags.length ? state.tags.map(t=>{ const c=tagHex(t.color); return `<button class="ftog tagtog ${f.tags.has(t.id)?"on":""}" data-tag="${t.id}" type="button"><span class="tagdot" style="background:${c}"></span><span class="ftg-nm">${esc(t.nombre)}</span><span class="fcount" data-tagcount="${t.id}"></span></button>`; }).join("")

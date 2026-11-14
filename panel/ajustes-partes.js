@@ -470,11 +470,11 @@ function renderGsOauth(box, g){
              style="flex:none;display:inline-flex;align-items:center;gap:7px;text-decoration:none">${icon("link")} Abrir</a>`:""}
         </div>
         <div style="border:1px solid var(--border);border-radius:11px;padding:12px 13px;margin-top:14px;font-size:12.5px;color:var(--muted);line-height:1.6">
-          <b style="color:var(--text)">No tienes que preparar nada.</b> Nodo usa tres pestañas en tu hoja:
+          <b style="color:var(--text)">No tienes que preparar nada.</b> Nodo usa ${["digital","fisico","fisico"].filter(t=>!document.documentElement.hasAttribute("data-sin-"+t)).length===1?"una pestaña":["digital","fisico","fisico"].filter(t=>!document.documentElement.hasAttribute("data-sin-"+t)).length===2?"dos pestañas":"tres pestañas"} en tu hoja:
           <div class="tabpills">
-            <span class="tabpill"><i style="background:#8c5cb3"></i>Digital</span>
-            <span class="tabpill"><i style="background:#2b80ff"></i>Lima</span>
-            <span class="tabpill"><i style="background:#1c9e75"></i>Provincia</span>
+            <span class="tabpill" data-vende="digital"><i style="background:#8c5cb3"></i>Digital</span>
+            <span class="tabpill" data-vende="fisico"><i style="background:#2b80ff"></i>Lima</span>
+            <span class="tabpill" data-vende="fisico"><i style="background:#1c9e75"></i>Provincia</span>
           </div>
           Una fila por <b>venta cobrada</b>; lo que está en proceso o se cayó no entra.
         </div>
@@ -521,7 +521,7 @@ function renderGsOauth(box, g){
       const nuevas=(r.creadas||[]);
       out.innerHTML=`<span style="color:var(--green)">Tu hoja está lista.</span>
         ${nuevas.length?`Se crearon las pestañas <b>${nuevas.map(esc).join("</b>, <b>")}</b>.`
-                       :`Las pestañas <b>Digital</b>, <b>Lima</b> y <b>Provincia</b> ya estaban.`}
+                       :`Las pestañas ${document.documentElement.hasAttribute("data-sin-digital")?"<b>Lima</b> y <b>Provincia</b>":document.documentElement.hasAttribute("data-sin-fisico")?"<b>Digital</b>":"<b>Digital</b>, <b>Lima</b> y <b>Provincia</b>"} ya estaban.`}
         Los encabezados quedaron puestos y la primera fila fija.`;
     }catch(err){ out.innerHTML=`<span style="color:var(--red)">${esc(err.message||"error")}</span>`; }
   };
@@ -530,7 +530,7 @@ function renderGsOauth(box, g){
   const crearNueva=async(btn, sinPreguntar)=>{
     const tiene=!!g.spreadsheet_id;
     if(tiene && !sinPreguntar && !await confirmDialog({ title:"Crear una hoja nueva",
-      message:"Se crea una hoja nueva con las pestañas Digital, Lima y Provincia en orden, y las ventas empiezan a ir ahí. La hoja actual no se borra: se queda en tu Drive con lo que ya tiene.",
+      message:"Se crea una hoja nueva con las pestañas "+(document.documentElement.hasAttribute("data-sin-digital")?"Lima y Provincia":document.documentElement.hasAttribute("data-sin-fisico")?"Digital":"Digital, Lima y Provincia")+" en orden, y las ventas empiezan a ir ahí. La hoja actual no se borra: se queda en tu Drive con lo que ya tiene.",
       confirmText:"Crear hoja" })) return;
     const out=$("gsoOut"); const old=btn?btn.innerHTML:""; if(btn){ btn.disabled=true; btn.textContent="Creando…"; }
     out.innerHTML=`<span style="color:var(--muted)">Creando tu hoja en Google…</span>`;

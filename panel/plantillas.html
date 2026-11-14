@@ -216,7 +216,7 @@ async function loadList(){
   st.list=data||[];
   if(!Fbar){ Fbar=await mountFolders({ el:$("folders"), tipo:"template", table:"wa_templates", channelId:st.channelId, items:()=>st.list, onChange:()=>{ renderCards(); renderReco(); }, labelAll:"Todas", trailingTabs:()=>[{ v:"__reco", label:"Recomendadas físico", cls:"reco", count:()=>recoPend("__reco").length, icon:RECO_ICO }, { v:"__recoDig", label:"Recomendadas digital", cls:"reco", count:()=>recoPend("__recoDig").length, icon:RECO_ICO }, { v:"__recoApps", label:"Recomendadas Mini Apps", cls:"reco", count:()=>recoPend("__recoApps").length, icon:RECO_ICO }]
       // (10-oct) Solo las recomendadas que le sirven a este bot: físico si vende físico, Mini Apps si vende micro apps.
-      .filter(t=> (Fbar&&Fbar.current===t.v) || (st.tipos ? (t.v==="__reco" ? st.tipos.fisico : t.v==="__recoApps" ? st.tipos.apps : (st.tipos.digital || !st.tipos.fisico)) : true)) }); }
+      .filter(t=> !document.documentElement.hasAttribute("data-sin-"+(t.v==="__reco"?"fisico":t.v==="__recoApps"?"microapp":"digital")) || !String(t.v).startsWith("__reco")).filter(t=> (Fbar&&Fbar.current===t.v) || (st.tipos ? (t.v==="__reco" ? st.tipos.fisico : t.v==="__recoApps" ? st.tipos.apps : (st.tipos.digital || !st.tipos.fisico)) : true)) }); }
   else if(Fbar.channelId()!==st.channelId){ await Fbar.setChannel(st.channelId); }
   else { await Fbar.reload(); }
   renderCards(); renderReco();
