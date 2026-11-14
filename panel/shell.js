@@ -2130,6 +2130,9 @@ function esqueletoDeCarga() {
     if (!document.body.contains(wrap)) { _skCorta(); return; }
     for (const m of muts) {
       if (m.target && m.target.closest && m.target.closest("#nodo-sk")) continue;
+      // (14-nov) La barra de pestañas de la sección Bot (7 pestañas, ~70 letras) no es «contenido»: contaba como cargado y
+      // el esqueleto se quitaba al instante, dejando la pantalla en negro mientras llegaban los datos.
+      if (m.target && m.target.closest && m.target.closest(".tabs")) continue;
       for (const n of m.addedNodes) _pintado += (n.textContent || "").trim().length;
     }
     if (_pintado >= 25) _skCorta();

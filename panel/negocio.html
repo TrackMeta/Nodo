@@ -260,7 +260,7 @@ async function load(){
     if(te) te.style.display = st.soloDigital ? "none" : "";
     // (31-oct) La barra ya no se esconde en un bot solo digital: queda «Nombre, país y moneda» al lado de Conocimiento.
     // (10-oct) Bot solo digital: la logística queda a un enlace, por si empieza a vender físico.
-    { const fl=$("fisLink"); if(fl){ fl.style.display=st.soloDigital&&st.tab==="conocimiento"?"":"none"; const a=fl.querySelector("a"); a.onclick=(e)=>{ e.preventDefault(); if(te){ te.style.display=""; te.click(); } fl.style.display="none"; window.scrollTo(0,0); }; } }
+    { const fl=$("fisLink"); if(fl){ fl.style.display=st.soloDigital&&st.tab==="conocimiento"?"":"none"; const a=fl.querySelector("a"); a.onclick=(e)=>{ e.preventDefault(); if(te){ te.classList.add("ent-ver"); te.style.display=""; te.click(); } fl.style.display="none"; window.scrollTo(0,0); }; } }
     if(st.soloDigital && st.tab==="entrega") marcaTab("conocimiento"); }
   markClean();
   render();
