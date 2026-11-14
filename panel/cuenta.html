@@ -284,7 +284,7 @@ function render(){
         ${fotoEquipo(a)}
         <span class="eq-tx"><b><span class="acctName">${esc(a.nombre||"Mi equipo")}</span>${aqui?'<span class="eq-aqui">Estás aquí</span>':""}</b>
           <small>${nB} bot${nB===1?"":"s"} · ${nP} persona${nP===1?"":"s"}${nB?" · "+esc((a.bots||[]).map((b)=>b.nombre).join(", ")):""}</small></span>
-        <span class="eq-badges"><span class="badge plan">${esc(a.plan||"trial")}</span>${a.tipos?`<span class="badge tipos">Solo ${esc(nombreTipos(a.tipos).toLowerCase())}</span>`:""}</span>
+        <span class="eq-badges">${a.tipos?`<span class="badge tipos">Solo ${esc(nombreTipos(a.tipos).toLowerCase())}</span>`:""}</span>
         <span class="eq-chev">${icon("chevronRight")}</span>
       </button>
       <div class="eq-body">
