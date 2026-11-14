@@ -303,7 +303,7 @@ function mostrarLogin() {
   $("#lOlvide").onclick = async () => {
     const email = $("#lEmail").value.trim();
     if (!email) { msg("Escribe tu correo arriba y vuelve a tocar «¿Olvidaste tu contraseña?»"); return; }
-    const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: new URL("../index.html", location.href).href });
+    const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: new URL("../nueva-contrasena.html", location.href).href });
     msg(error ? "No se pudo enviar: " + error.message : "Listo: si ese correo tiene cuenta, te llegó un enlace para crear una contraseña nueva (revisa también spam).", !error);
   };
 }

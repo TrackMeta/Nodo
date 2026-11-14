@@ -901,7 +901,7 @@ $("forgotBtn").onclick = async () => {
   const email = await askText({ title: "Recupera tu contraseña", message: "Te mandamos un enlace a tu correo para crear una contraseña nueva.",
     placeholder: "tucorreo@ejemplo.com", value: $("email").value.trim(), confirmText: "Enviar enlace" });
   if (email == null) return;
-  const { error } = await supa.auth.resetPasswordForEmail(String(email).trim(), { redirectTo: location.origin + location.pathname });
+  const { error } = await supa.auth.resetPasswordForEmail(String(email).trim(), { redirectTo: new URL("nueva-contrasena.html", location.href).href });   // (14-nov) su propia página
   if (error) { $("loginErr").textContent = /fetch|network/i.test(error.message) ? "No hay conexión. Revisa tu internet e intenta otra vez." : "No se pudo enviar el enlace. Intenta otra vez en unos minutos."; return; }
   $("email").value = String(email).trim();
   $("loginInfo").textContent = "Listo: si ese correo tiene cuenta, te llegó un enlace para crear una contraseña nueva. Revisa también la carpeta de spam.";
@@ -918,14 +918,10 @@ const OJO_TACHADO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 // Bandeja (SPA) y sumaba una suscripción más por visita (la recuperación preguntaba N veces).
 const { data: { subscription: _authSub } = {} } = supa.auth.onAuthStateChange(async (ev) => {
   if (ev !== "PASSWORD_RECOVERY") return;
-  for (let i = 0; i < 3; i++) {
-    const pw = await askText({ title: "Crea tu nueva contraseña", placeholder: "Mínimo 8 caracteres", confirmText: "Guardar", password: true });
-    if (pw == null) return;
-    if (String(pw).length < 8) { toast("Mínimo 8 caracteres", true); continue; }
-    const { error } = await supa.auth.updateUser({ password: String(pw) });
-    if (error) { toast("No se pudo cambiar: " + error.message, true); continue; }
-    toast("Contraseña cambiada"); boot(); return;
-  }
+  // (14-nov) La contraseña nueva se pone en su PROPIA página (nueva-contrasena.html), no en una ventanita encima del
+  // panel ya abierto. Esto queda para los enlaces que todavía apuntan aquí (correos enviados antes del cambio).
+  try { sessionStorage.setItem("nodo.recuperando", "1"); } catch {}
+  location.replace("nueva-contrasena.html");
 });
 $("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
