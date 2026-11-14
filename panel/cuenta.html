@@ -93,7 +93,7 @@
   <div class="nodo-wrap" style="--nodo-max:var(--nodo-form)">
     <div class="nodo-head"><div class="grow">
       <h1 class="nodo-title">Tu equipo</h1>
-      <p class="nodo-lead">Cada equipo reúne sus bots y a las personas que pueden entrar.</p>
+      <p class="nodo-lead">El equipo del bot que tienes abierto: sus bots y quién puede entrar. Para ver otro, cambia de bot arriba.</p>
     </div></div>
     <div id="accts" style="margin-top:20px"></div>
     <div id="invCard"></div>
@@ -118,7 +118,9 @@ const ini = (s) => (s||"?").trim().charAt(0).toUpperCase();
 
 async function boot(){
   const { data:{session} } = await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
-  await mountShell({ active:"cuenta" });
+  const shell = await mountShell({ active:"cuenta" });
+  // Al cambiar de bot arriba, se muestra el equipo de ese bot.
+  shell?.onChannel?.((id) => { st.botActual = id; st.abiertos.clear(); load(); });
   wireUnirme();
   await load();
 }
@@ -160,7 +162,12 @@ async function load(){
   // Primero el equipo del bot en el que estás (abierto); los demás, por nombre y cerrados. Con un solo equipo, abierto.
   const deAqui = (a) => (a.bots||[]).some((b) => b.id === st.botActual);
   st.accounts.sort((x, y) => (deAqui(y) - deAqui(x)) || String(x.nombre||"").localeCompare(String(y.nombre||"")));
-  if (!st.abiertos.size){ const ini = st.accounts.find(deAqui) || st.accounts[0]; if (ini) st.abiertos.add(ini.id); }
+  // (14-nov, Rodrigo: «no me debe aparecer un equipo que no estoy gestionando, o sea, no estoy dentro de su bot») Solo
+  // se muestra el equipo del bot abierto arriba; al cambiar de bot, cambia. Si el bot no es de ningún equipo tuyo, todos.
+  const mio = st.accounts.filter(deAqui);
+  st.visibles = mio.length ? mio : st.accounts;
+  if (st.visibles.length === 1) st.abiertos.add(st.visibles[0].id);
+  else if (!st.abiertos.size && st.visibles[0]) st.abiertos.add(st.visibles[0].id);
   render();
   loadInvites();
 }
@@ -259,7 +266,7 @@ function render(){
   if(st.me.platform_admin){ $("mkAccount").onclick = mkAccountLink; wireChips($("bizTipos")); }
 
   // Cada cuenta del usuario.
-  $("accts").innerHTML = st.accounts.map(a=>{
+  $("accts").innerHTML = (st.visibles || st.accounts).map(a=>{
     const soyAdmin = a.role === "admin";
     const members = a.members.map(m=>{
       const yo = m.user_id === st.uid;
@@ -271,7 +278,7 @@ function render(){
         ${(soyAdmin && !yo) ? `<button class="btn sm" data-rol="${esc(m.user_id)}" data-acc="${esc(a.id)}" data-actual="${esc(m.role)}">${m.role==='admin'?'Pasar a operador':'Hacer admin'}</button><button class="btn danger sm" data-rm="${esc(m.user_id)}" data-acc="${esc(a.id)}">Quitar</button>` : ''}
       </div>`;
     }).join("");
-    const nB = (a.bots||[]).length, nP = a.members.length, aqui = (a.bots||[]).some((b)=>b.id===st.botActual);
+    const nB = (a.bots||[]).length, nP = a.members.length, aqui = (st.visibles||st.accounts).length > 1 && (a.bots||[]).some((b)=>b.id===st.botActual);
     return `<div class="card eq${st.abiertos.has(a.id)?" abierto":""}" data-acc="${esc(a.id)}">
       <button class="eq-cab" type="button" data-abrir="${esc(a.id)}" aria-expanded="${st.abiertos.has(a.id)}">
         ${fotoEquipo(a)}
