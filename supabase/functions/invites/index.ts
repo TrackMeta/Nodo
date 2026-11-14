@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
   try {
     // ── Crear link de CUENTA nueva (solo admin de plataforma) ─────────
     if (action === "create_account_invite") {
-      if (!(me as any).platform_admin) return json({ error: "forbidden", detalle: "Solo el admin de plataforma crea cuentas." }, 403);
+      if (!(me as any).platform_admin) return json({ error: "forbidden", detalle: "Solo el admin de plataforma crea equipos." }, 403);
       const email = correoInvitado(body.email);
       if (!email) return json({ error: "falta_correo", detalle: "Escribe el correo de tu cliente: la invitación solo va a servir con ese correo." }, 400);
       const tok = linkToken();
@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
       if (!accountId) return json({ error: "falta_cuenta" }, 400);
       const { data: mem } = await db.from("account_members")
         .select("role").eq("account_id", accountId).eq("user_id", uid).eq("activo", true).maybeSingle();
-      if (!mem || (mem as any).role !== "admin") return json({ error: "forbidden", detalle: "Debes ser admin de esta cuenta." }, 403);
+      if (!mem || (mem as any).role !== "admin") return json({ error: "forbidden", detalle: "Debes ser admin de este equipo." }, 403);
       const email = correoInvitado(body.email);
       if (!email) return json({ error: "falta_correo", detalle: "Escribe el correo de la persona: el código solo va a servir con ese correo." }, 400);
       const code = teamCode();
@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
           .eq("user_id", uid).eq("activo", true).maybeSingle();
         puede = (adm as any)?.role === "admin";
       }
-      if (!puede) return json({ error: "forbidden", detalle: "Solo un admin de esa cuenta puede anular este código." }, 403);
+      if (!puede) return json({ error: "forbidden", detalle: "Solo un admin de ese equipo puede anular este código." }, 403);
       const { error } = await db.from("invitations").delete().eq("id", body.id);
       if (error) return json({ error: "revocar", detalle: error.message }, 400);
       return json({ ok: true });

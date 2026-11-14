@@ -438,7 +438,7 @@ const NAV_GROUPS = [
     // (31-oct, Rodrigo) «Canales» pasó a llamarse Conexiones (WhatsApp, Telegram, Meta y Google Sheets) y Ajustes
     // desapareció: lo suyo se repartió entre Conexiones y Negocio → «Nombre, país y moneda».
     { id:"canales",     label:"Conexiones",           href:"canales.html",    icon:"link" },
-    { id:"cuenta",      label:"Cuenta y equipo",      href:"cuenta.html",     icon:"users" },
+    { id:"cuenta",      label:"Equipo",               href:"cuenta.html",     icon:"users" },
   ]},
 ];
 
@@ -1703,12 +1703,12 @@ export async function mountShell({ active } = {}) {
     S.cuentas = null; S.cuentaDe = null;
     if ((_ms || []).length > 1) {
       const { data: _cc } = await supa.from("channels").select("id,account_id").eq("activo", true);
-      S.cuentas = Object.fromEntries((_ms || []).map((m) => [m.account_id, m.accounts?.nombre || "Negocio"]));
+      S.cuentas = Object.fromEntries((_ms || []).map((m) => [m.account_id, m.accounts?.nombre || "Equipo"]));
       S.cuentaDe = Object.fromEntries((_cc || []).map((c) => [c.id, c.account_id]));
     }
   } catch (_) { /* sin dato → como antes */ }
   if (!S.channels.length) {
-    if (_sinCuenta) toast("Ya no perteneces a ningún equipo de Nodo. Si te invitaron de nuevo, abre el link que te mandaron o pega el código en ⚙ → Cuenta y equipo.", true);
+    if (_sinCuenta) toast("Ya no perteneces a ningún equipo de Nodo. Si te invitaron de nuevo, abre el link que te mandaron o pega el código en ⚙ → Equipo.", true);
     else if (!S.puedeCrear) toast("Todavía no tienes ningún bot asignado. Pídele al administrador de tu equipo que te dé acceso.", true);
     else mostrarPrimerBot();
   }
@@ -1735,7 +1735,7 @@ export async function mountShell({ active } = {}) {
         document.head.appendChild(st); }
     }
     botPop.innerHTML = (accs.length > 1
-      ? accs.map((a) => `<div class="nb-acc">${escBot(S.cuentas[a] || "Negocio")}</div>` + S.channels.filter((c) => (S.cuentaDe[c.id] || "") === a).map(fila).join("")).join("")
+      ? accs.map((a) => `<div class="nb-acc">${escBot(S.cuentas[a] || "Equipo")}</div>` + S.channels.filter((c) => (S.cuentaDe[c.id] || "") === a).map(fila).join("")).join("")
       : S.channels.map(fila).join(""))
       + (S.puedeCrear !== false ? `<button class="nb-create" type="button">${svg("plus")}<span>Crear nuevo bot</span></button>` : "");
     botPop.querySelectorAll(".nb-item").forEach((b) => { b.onclick = async () => { if (b.dataset.id !== S.channelId && !(await _dirtyGate())) return; S.api.setChannel(b.dataset.id); closeBotPop(); }; });

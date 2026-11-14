@@ -117,9 +117,9 @@
       </div>
 
       <div id="bizRow" class="hidden">
-        <label for="business">Nombre de tu negocio</label>
+        <label for="business">Nombre de tu equipo</label>
         <div class="infield"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9v11h18V9"/><path d="M3 9h18"/><path d="M9 20v-6h6v6"/></svg><input class="in" id="business" placeholder="Ej: Mi Tienda" /></div>
-        <div class="hint">Así se llamará tu cuenta en Nodo (lo puedes cambiar después).</div>
+        <div class="hint">Así se llamará tu equipo en Nodo; puede ser el nombre de tu tienda (lo cambias después).</div>
       </div>
 
       <div id="nombreRow">
@@ -184,7 +184,7 @@ const IC = {
 const PUEDE = {
   operador: [["chat", "Atender los chats con tus clientes"], ["caja", "Ver y mover los pedidos"], ["pago", "Aprobar los pagos que llegan"]],
   admin: [["chat", "Atender chats, pedidos y pagos"], ["ajustes", "Cambiar la configuración y el bot"], ["equipo", "Invitar y quitar gente del equipo"]],
-  cuenta: [["chispa", "Tu propio bot de WhatsApp con IA"], ["caja", "Tus ventas y pedidos en un solo lugar"], ["escudo", "Tu cuenta, aislada de las demás"]],
+  cuenta: [["chispa", "Tu propio bot de WhatsApp con IA"], ["caja", "Tus ventas y pedidos en un solo lugar"], ["escudo", "Tu equipo, aislado de los demás"]],
 };
 // Ver la contraseña (el mismo ojo del login).
 const OJO = SV('<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>');
@@ -201,15 +201,15 @@ function pintar(){
   $("who").classList.toggle("hidden", !conInfo);
   const nueva = info?.tipo === "new_account" || esCuenta;
   if (conInfo){
-    const neg = esc(info.negocio || (nueva ? "tu cuenta" : "un negocio"));
+    const neg = esc(info.negocio || (nueva ? "tu equipo" : "un equipo"));
     $("who").innerHTML = nueva
-      ? `Te invitaron a crear<span class="neg">${neg}</span><small>Serás el administrador de tu propia cuenta de Nodo.</small>`
-      : `${info.invita ? `<b>${esc(info.invita)}</b> te invitó a` : "Te invitaron a"}<span class="neg">${neg}</span><span class="rolchip">${IC.escudo}${esc(ROL[info.rol] || "Operador")}</span><small>${esc(ROL_DESC[info.rol] || ROL_DESC.operador)}</small>`;
+      ? `Te invitaron a crear<span class="neg">${neg}</span><small>Serás el administrador de tu propio equipo en Nodo.</small>`
+      : `${info.invita ? `<b>${esc(info.invita)}</b> te invitó al equipo` : "Te invitaron al equipo"}<span class="neg">${neg}</span><span class="rolchip">${IC.escudo}${esc(ROL[info.rol] || "Operador")}</span><small>${esc(ROL_DESC[info.rol] || ROL_DESC.operador)}</small>`;
   }
   // Lado azul (computadora): quién, a qué negocio, el rol y qué podrá hacer.
   { const quien = info?.invita || "";
     $("sAv").textContent = (quien || info?.negocio || "N").trim().charAt(0).toUpperCase() || "N";
-    $("sQuien").innerHTML = nueva ? "Te invitaron a crear tu cuenta" : quien ? `<span><b>${esc(quien)}</b> te invitó a</span>` : "Te invitaron a";
+    $("sQuien").innerHTML = nueva ? "Te invitaron a crear tu equipo en" : quien ? `<span><b>${esc(quien)}</b> te invitó al equipo</span>` : "Te invitaron al equipo";
     $("sNeg").textContent = nueva ? (info?.negocio || "Nodo") : (info?.negocio || "un equipo de Nodo");
     const rol = nueva ? "" : (ROL[info?.rol] || (info ? "Operador" : ""));
     $("sRol").classList.toggle("hidden", !rol); $("sRol").innerHTML = rol ? IC.escudo + "Entras como " + esc(rol) : "";
@@ -217,19 +217,19 @@ function pintar(){
     $("sPuede").innerHTML = lista.map(([i, t]) => `<li><span class="ic">${IC[i]}</span>${esc(t)}</li>`).join(""); }
   if (info?.email){ $("email").value = info.email; $("email").readOnly = true; $("emailHint").classList.remove("hidden"); }
   const cuenta = esCuenta || info?.tipo === "new_account";
-  $("pill").innerHTML = cuenta ? IC.chispa + "Cuenta nueva" : (esEquipo || info) ? IC.equipo + "Invitación a un equipo" : IC.sobre + "Invitación";
+  $("pill").innerHTML = cuenta ? IC.chispa + "Equipo nuevo" : (esEquipo || info) ? IC.equipo + "Invitación a un equipo" : IC.sobre + "Invitación";
   $("codeRow").classList.toggle("hidden", !!urlToken);
   $("bizRow").classList.toggle("hidden", !(cuenta && modo === "nuevo") && !!urlToken);
-  if (!urlToken) $("bizRow").querySelector(".hint").textContent = "Solo si tu invitación es para una cuenta nueva.";
+  if (!urlToken) $("bizRow").querySelector(".hint").textContent = "Solo si tu invitación es para un equipo nuevo.";
   $("nombreRow").classList.toggle("hidden", modo !== "nuevo");
   $("campos").classList.toggle("hidden", modo === "sesion");
   $("passLbl").textContent = modo === "nuevo" ? "Crea una contraseña" : "Tu contraseña de Nodo";
   $("password").placeholder = modo === "nuevo" ? "Mínimo 8 caracteres" : "La que usas para entrar a Nodo";
   $("password").autocomplete = modo === "nuevo" ? "new-password" : "current-password";
   $("pwHint").classList.toggle("hidden", modo !== "nuevo");
-  $("titulo").textContent = modo === "sesion" ? "Acepta la invitación" : modo === "entrar" ? "Entra y acepta" : cuenta ? "Crea tu cuenta" : "Crea tu acceso";
+  $("titulo").textContent = modo === "sesion" ? "Acepta la invitación" : modo === "entrar" ? "Entra y acepta" : cuenta ? "Crea tu equipo" : "Crea tu acceso";
   if (modo === "nuevo"){
-    $("sub").textContent = cuenta ? "Crea tu acceso y serás el administrador de la cuenta." : "Es tu primera vez en Nodo: pon tu nombre y crea una contraseña.";
+    $("sub").textContent = cuenta ? "Crea tu acceso y serás el administrador del equipo." : "Es tu primera vez en Nodo: pon tu nombre y crea una contraseña.";
     $("btn").textContent = cuenta ? "Crear mi cuenta" : "Crear mi acceso y entrar";
     $("foot").innerHTML = `¿Ya usas Nodo${info?.email ? " con este correo" : ""}? <a href="#" id="toEntrar">Entra y acepta</a>`;
   } else if (modo === "entrar"){
