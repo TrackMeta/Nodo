@@ -118,7 +118,7 @@
 
       <div id="bizRow" class="hidden">
         <label for="business">Nombre de tu equipo</label>
-        <div class="infield"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9v11h18V9"/><path d="M3 9h18"/><path d="M9 20v-6h6v6"/></svg><input class="in" id="business" placeholder="Ej: Mi Tienda" /></div>
+        <div class="infield"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9v11h18V9"/><path d="M3 9h18"/><path d="M9 20v-6h6v6"/></svg><input class="in" id="business" placeholder="Ej: Tienda Sofía" /></div>
         <div class="hint">Así se llamará tu equipo en Nodo; puede ser el nombre de tu tienda (lo cambias después).</div>
       </div>
 
@@ -216,6 +216,9 @@ function pintar(){
     const lista = nueva ? PUEDE.cuenta : PUEDE[info?.rol === "admin" ? "admin" : "operador"];
     $("sPuede").innerHTML = lista.map(([i, t]) => `<li><span class="ic">${IC[i]}</span>${esc(t)}</li>`).join(""); }
   if (info?.email){ $("email").value = info.email; $("email").readOnly = true; $("emailHint").classList.remove("hidden"); }
+  // (14-nov, Rodrigo) Si quien te invitó ya le puso nombre al equipo, el campo viene ESCRITO con ese nombre (antes salía
+  // vacío aunque arriba dijera «Te invitaron a crear Tienda Sofía», y parecía que había que escribirlo otra vez).
+  if (nueva && info?.negocio && !$("business").dataset.puesto){ $("business").value = info.negocio; $("business").dataset.puesto = "1"; }
   const cuenta = esCuenta || info?.tipo === "new_account";
   $("pill").innerHTML = cuenta ? IC.chispa + "Equipo nuevo" : (esEquipo || info) ? IC.equipo + "Invitación a un equipo" : IC.sobre + "Invitación";
   $("codeRow").classList.toggle("hidden", !!urlToken);
