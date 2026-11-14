@@ -212,6 +212,7 @@
   .acts .mas{position:relative}
   .dmenu{position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 14px 36px rgba(0,0,0,.25);padding:6px;display:none}
   .dmenu.show{display:block}
+  .dmenu.arriba{top:auto;bottom:calc(100% + 6px)}
   .dmenu button,.dmenu a{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:none;color:var(--text);font:inherit;font-size:13px;padding:8px 10px;border-radius:8px;cursor:pointer;text-decoration:none}
   .dmenu button:hover,.dmenu a:hover{background:var(--surface-2)} .dmenu svg{width:15px;height:15px;color:var(--muted)}
   @media(max-width:920px){
@@ -679,7 +680,11 @@ function rowEl(c){
   el.querySelector("[data-info]").onclick=(e)=>{ e.stopPropagation(); openInfo(c); };
   el.querySelector("[data-reg]").onclick=(e)=>{ e.stopPropagation(); openReg(c); };
   el.querySelectorAll("[data-asig],[data-asig2]").forEach(b=> b.onclick=(e)=>{ e.stopPropagation(); asignar(c); });
-  el.querySelector("[data-mas]").onclick=(e)=>{ e.stopPropagation(); const m=el.querySelector(".dmenu"); const ab=m.classList.contains("show"); document.querySelectorAll(".dmenu.show").forEach(x=>x.classList.remove("show")); if(!ab) m.classList.add("show"); };
+  el.querySelector("[data-mas]").onclick=(e)=>{ e.stopPropagation(); const m=el.querySelector(".dmenu"); const ab=m.classList.contains("show"); document.querySelectorAll(".dmenu.show").forEach(x=>x.classList.remove("show")); if(!ab){ m.classList.remove("arriba"); m.classList.add("show");
+    // (13-nov, captura de Rodrigo) En las últimas filas el menú se cortaba: la tabla recorta lo que sale de ella. Si no
+    // entra hacia abajo (dentro de la tabla y de la pantalla), se abre hacia arriba.
+    const t=el.closest(".table"), mr=m.getBoundingClientRect(), lim=Math.min(window.innerHeight, t?t.getBoundingClientRect().bottom:window.innerHeight);
+    if(mr.bottom>lim-4) m.classList.add("arriba"); } };
   return el;
 }
 
