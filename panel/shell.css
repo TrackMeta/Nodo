@@ -1536,3 +1536,16 @@ input.np-in:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px va
 .nodo-modal.nodo-perfil .np-lbl{display:flex;align-items:center;gap:8px}
 .nodo-modal.nodo-perfil input.np-in{background:var(--surface);border:1px solid var(--border-strong,#D0D5DD)}
 .nodo-modal.nodo-perfil input.np-in:focus{border-color:var(--brand)}
+
+/* 🤖 (14-nov) Sección «Bot» (negocio.html + ia.html): misma cabecera (foto y nombre del bot) y misma barra de pestañas.
+   Ancho normal de las demás secciones (antes 820 px, Rodrigo: «que el espacio sea el mismo que los demás»). */
+.neg-id{display:flex;align-items:center;gap:14px}
+.neg-id img{width:52px;height:52px;border-radius:14px;object-fit:cover;border:1px solid var(--border);background:var(--surface-2);flex:none}
+.neg-id .nodo-title{margin:0}
+.tabs.bot-tabs{gap:4px}
+.tabs.bot-tabs .tab{font-size:13.5px;padding:11px 12px;text-decoration:none;white-space:nowrap}
+.tabs.bot-tabs .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+html[data-bot-digital] .bot-tabs .tab-ext[data-k="entrega"],html[data-sin-fisico] .bot-tabs [data-k="entrega"]{display:none!important}
+.av-seg{display:inline-flex;gap:4px;padding:4px;margin:0 0 16px;border-radius:12px;background:var(--surface-2);border:1px solid var(--border)}
+.av-seg button{height:32px;padding:0 14px;border:0;border-radius:9px;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.av-seg button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(15,23,42,.12)}

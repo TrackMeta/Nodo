@@ -229,7 +229,7 @@ function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<"
 // Ninguno mira lo contrario: NO pasó nada y ya lleva demasiado. Estos tres estados
 // son los que se atascan, y el que cuesta plata es «en agencia»: Shalom guarda el
 // paquete unos días y después lo devuelve — flete pagado y venta hecha que se cae.
-// Los días los pone el dueño en Negocio → Entrega; acá van los valores por defecto.
+// Los días los pone el dueño en Bot → Entrega; acá van los valores por defecto.
 const PARADO_DEF={ esperando_adelanto:2, despachado:3, en_agencia:5 };
 const PARADO_TX={
   esperando_adelanto:(d)=>`sin adelanto hace ${d} día${d>1?"s":""}`,
@@ -580,7 +580,7 @@ function wireRealtime(){
 async function load(){
   if(!st.channelId){ st.list=[]; render(); return; }
   const gen=(st.loadGen=(st.loadGen||0)+1); // anti-carrera al cambiar de bot
-  // Remitente del rótulo = nombre del NEGOCIO (Negocio → Conocimiento), no el
+  // Remitente del rótulo = nombre del NEGOCIO (Bot → Tu negocio), no el
   // del canal/bot; si no está, cae al nombre del canal.
   getChannel(st.channelId).then((data)=>{
     st.entregas=data?.entregas||null; st.channelName=data?.nombre||"";
@@ -726,7 +726,7 @@ function render(){
         style="display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border-radius:10px;cursor:pointer;
         border:1.5px solid ${st.soloParados?"var(--red)":"rgba(239,68,68,.45)"};
         background:${st.soloParados?"var(--red)":"transparent"};color:${st.soloParados?"#fff":"var(--red)"};
-        font-weight:700;font-size:13px" title="Pedidos que nadie movió hace demasiado. Los días se ajustan en Negocio → Entrega.">&#9203;
+        font-weight:700;font-size:13px" title="Pedidos que nadie movió hace demasiado. Los días se ajustan en Bot → Entrega.">&#9203;
         ${nParados} parado${nParados>1?"s":""}</button>`:"")
     +(nTurno?`<a class="turnobar" href="copiloto.html" style="margin-left:auto">${icon("robot")}
        ${nTurno===1?"1 pago por validar":`${nTurno} pagos por validar`}</a>`:"");
@@ -1003,7 +1003,7 @@ function rotuloInner(o){
       row("Pedido", pedido)+
       row("Detalle", atrLine, true)+
       row("Incluye", bumpsTxt, true)+
-      // Si el delivery lleva POS (Negocio → Entrega), el rótulo lo dice: quien entrega
+      // Si el delivery lleva POS (Bot → Entrega), el rótulo lo dice: quien entrega
       // sabe que puede cobrar con tarjeta y no discute en la puerta por el efectivo.
       row("A COBRAR", money(O.porCobrarPuerta(o),o.currency)+"  ·  CONTRAENTREGA"
         +(st.entregas&&st.entregas.pos_tarjeta===true?"  ·  EFECTIVO O TARJETA (POS)":""), true);

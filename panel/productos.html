@@ -1433,10 +1433,10 @@ function renderEntrega(host){
     return;
   }
   // Físico: TODA la logística (zonas, agencias, envío gratis, costos, adelanto
-  // por defecto) vive en Negocio → Entrega y logística, igual para todos los
+  // por defecto) vive en Bot → Entrega, igual para todos los
   // productos. Acá solo el ADELANTO override, por si ESTE producto necesita otro.
   b.innerHTML=`
-    <p class="hint" style="margin:0 0 14px">La entrega física —zonas de Lima, agencias, envío gratis, corte y el <b>adelanto por defecto</b>— se configura una vez en <a href="negocio.html" style="color:var(--brand)">Negocio → Entrega y logística</a> y vale para todos tus productos.</p>
+    <p class="hint" style="margin:0 0 14px">La entrega física —zonas de Lima, agencias, envío gratis, corte y el <b>adelanto por defecto</b>— se configura una vez en <a href="negocio.html" style="color:var(--brand)">Bot → Entrega</a> y vale para todos tus productos.</p>
     ${st.prod.clase==="extra"
       ? `<div style="display:flex;gap:8px;align-items:flex-start;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:11px;padding:12px 13px;font-size:12.5px;color:var(--muted);line-height:1.55"><span style="color:#0e9f6e;flex:none;display:inline-flex;margin-top:1px">${icon("box")}</span><div>Este es un <b>complemento</b>: se envía <b>junto con el pedido principal</b>, en el mismo envío. No lleva adelanto ni envío propios — usa los del pedido al que se sume.</div></div>`
       : `
@@ -1547,13 +1547,13 @@ function renderProductoIA(host){
       <span class="glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
       <div>
         <div class="tt">Venta con IA</div>
-        <div class="ds">Solo lo que únicamente tú sabes de <b>este</b> producto. Escribe cada dato <b>una sola vez</b>: los pagos, el precio, las ofertas y la entrega ya los maneja Nodo. (La personalidad del vendedor va en <a href="ia.html">IA → Vendedor IA</a>.)</div>
+        <div class="ds">Solo lo que únicamente tú sabes de <b>este</b> producto. Escribe cada dato <b>una sola vez</b>: los pagos, el precio, las ofertas y la entrega ya los maneja Nodo. (La personalidad del vendedor va en <a href="ia.html">Bot → Cómo vende IA</a>.)</div>
       </div>
     </div>
     <div class="card ia-card">
       ${progHtml()}
       ${caja(1,"caja","¿Qué es y qué incluye?","Qué es, para quién es y qué trae. Lo primero que el bot cuenta cuando le preguntan.",
-        "el precio, los pagos ni la entrega (los maneja Nodo), ni lo que vale para todo tu negocio (va en Negocio).",
+        "el precio, los pagos ni la entrega (los maneja Nodo), ni lo que vale para todo tu negocio (va en Bot → Tu negocio).",
         taBox("detalle", fisico
           ? "Ej. Adaptador que convierte tu taladro en cortadora de láminas. Para talleres y hogar. Trae 2 cuchillas y estuche."
           : "Ej. Plan de 21 días para ganar fuerza con tu propio peso, sin gimnasio. Para quien empieza o está estancado. Incluye rutinas en video, comunidad y acceso de por vida."))}
@@ -1609,7 +1609,7 @@ function renderProductoIA(host){
           <input class="in" id="pEmojis" value="${esc(c.emojis||"")}" placeholder="👟🔥⚡ (fuera de esta lista no usa ninguno)"/>
           <details style="margin-top:12px;border-top:1px solid var(--border);padding-top:6px">
             <summary style="cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 2px;list-style:none">Medios de pago propios de este producto</summary>
-            <div style="font-size:11.5px;color:var(--muted);margin:6px 0 8px;line-height:1.5">Normalmente se cobra con los medios de <a href="ia.html" style="color:var(--brand)">IA → Validador de comprobantes</a>. Si cargas medios acá, <b>este producto se cobra SOLO con estos</b>: el bloque de pago que manda el bot, lo que nombra la IA y el validador de comprobantes usan estos en vez de los del bot. Sirve, por ejemplo, para vender este producto en otro país con su propia cuenta (ponle también su moneda en ¿Cuánto cuesta?).</div>
+            <div style="font-size:11.5px;color:var(--muted);margin:6px 0 8px;line-height:1.5">Normalmente se cobra con los medios de <a href="ia.html" style="color:var(--brand)">Bot → Pagos</a>. Si cargas medios acá, <b>este producto se cobra SOLO con estos</b>: el bloque de pago que manda el bot, lo que nombra la IA y el validador de comprobantes usan estos en vez de los del bot. Sirve, por ejemplo, para vender este producto en otro país con su propia cuenta (ponle también su moneda en ¿Cuánto cuesta?).</div>
             <div id="ppList"></div>
             <button class="btn" id="ppAdd" type="button" style="margin-top:6px;height:34px">+ Agregar medio de pago</button>
           </details>
@@ -1789,7 +1789,7 @@ function renderPreguntasClientes(){
       </div></div>`;
   } else {
     host.innerHTML=`<div class="pc-card">${hd}<div class="pc-list">${vis.map(itemPregunta).join("")}</div>
-      <div class="pc-foot"><span>Lo que agregas queda en <b>Venta con IA → Preguntas frecuentes</b> y el bot lo responde así desde ese momento.</span>
+      <div class="pc-foot"><span>Lo que agregas queda en <b>Venta con Bot → Tu negocio → Preguntas frecuentes</b> y el bot lo responde así desde ese momento.</span>
       <button class="pc-link" data-pc="cerrar">Ocultar</button></div></div>`;
   }
   host.onclick=onClickPregunta;
@@ -3007,7 +3007,7 @@ function renderSalud(ready){
   if(!conPrecio.length) errs.push("Ninguna presentación tiene precio: el validador no puede saber cuánto debe pagar el cliente.");
   // 🌎 La versión de otro país sin sus medios de pago cobraría con los del bot (el Yape de Perú a un mexicano).
   { const c=st.prod.config||{}; if(c.pais && String(c.pais).toUpperCase()!==_paisBot && !((c.pago_propio&&c.pago_propio.metodos)||[]).length)
-    errs.push(`Es la versión para ${banderaDe(c.pais)} ${esc(c.pais)}: ponle sus <b>medios de pago propios</b> (Venta con IA → Avanzado). Sin ellos cobraría con los del bot.`); }
+    errs.push(`Es la versión para ${banderaDe(c.pais)} ${esc(c.pais)}: ponle sus <b>medios de pago propios</b> (Venta con Bot → Avanzado). Sin ellos cobraría con los del bot.`); }
   // 📱 Micro app: no entrega links, entrega un ACCESO — lo que no puede faltar es la conexión con la app.
   if(st.prod.tipo==="microapp"){ if(!String(st.prod.config?.microapp?.conexion?.url||"").trim()) errs.push("La app no está conectada: pon su link en «Correo, renovación y conexión». El cliente pagaría y no tendría a dónde entrar."); }
   else if(!fisico){
@@ -3035,7 +3035,7 @@ function renderSalud(ready){
     const viejo=st.prod.config?.envio?.agencias?.shalom?.adelanto_valor;
     const def=st.receta?.ch?.entregas?.adelanto_default;
     const hay = propio || (viejo!=null&&String(viejo).trim()!=="") || (def!=null&&String(def).trim()!=="");
-    if(!hay) errs.push(`Sin adelanto: el pedido a provincia le pediría <b>“un adelanto de ${curSym(st.prod&&st.prod.config)} ”</b> con el monto en blanco. Ponlo en Negocio → Entrega, o solo para este producto en su pestaña Entrega.`);
+    if(!hay) errs.push(`Sin adelanto: el pedido a provincia le pediría <b>“un adelanto de ${curSym(st.prod&&st.prod.config)} ”</b> con el monto en blanco. Ponlo en Bot → Entrega, o solo para este producto en su pestaña Entrega.`);
   }
   // OJO: "sin palabra clave / sin mensajes iniciales / sin conocimiento" ya se
   // ven como filas naranjas del hub (Tu venta) → no repetir acá. Solo lo que NO

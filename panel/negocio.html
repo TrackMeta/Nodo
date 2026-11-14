@@ -167,18 +167,15 @@
 </head>
 <body>
 <div class="nodo-page">
-  <div class="nodo-wrap" style="--nodo-max:var(--nodo-form)">
+  <div class="nodo-wrap">
     <div class="nodo-head">
       <div class="grow">
-        <div class="neg-id"><img id="negLogo" alt="" style="display:none"/><div style="min-width:0"><h1 class="nodo-title" id="negNombre">Negocio</h1></div></div>
-        <p class="nodo-lead" style="margin-top:8px">Lo que tu bot sabe de tu negocio y usa en todas sus conversaciones. Lo de cada producto va en su ficha.</p>
+        <div class="neg-id"><img id="negLogo" alt="" style="display:none"/><div style="min-width:0"><h1 class="nodo-title" id="negNombre">Bot</h1></div></div>
+        <p class="nodo-lead" style="margin-top:8px">Lo que sabe tu bot y cómo vende. Lo de cada producto va en su ficha.</p>
       </div>
     </div>
-    <div class="tabs">
-      <button class="tab active" data-t="conocimiento" id="tabCon"></button>
-      <button class="tab" data-t="entrega" id="tabEnt"></button>
-      <button class="tab" data-t="datos" id="tabDatos"></button>
-    </div>
+    <!-- 🤖 (14-nov) Barra de la sección «Bot» (Negocio + IA), compartida con ia.html: bot-seccion.js -->
+    <div class="tabs bot-tabs" id="botTabs"></div>
     <div id="body"></div>
     <div id="fisLink" style="display:none;margin:18px 2px 0;font-size:12.5px;color:var(--muted)">¿Vas a vender productos físicos? <a href="#" style="color:var(--brand);text-decoration:none;font-weight:600">Configura la entrega y logística</a></div>
   </div>
@@ -203,6 +200,7 @@
 <script type="module">
 import { revisarNegocio, avisosHtml } from "./revisar-textos.js";
 import { TONOS, compileNegocio, fusionarNegocio } from "./negocio-texto.js";
+import { pintarTabsBot, tabDeUrl } from "./bot-seccion.js";
 import { supa, mountShell, toast, icon, askText, guardUnsaved, markClean, markDirty, isDirty, confirmDialog, confirmDescartar, updateChannel, usuarioActual } from "./shell.js";
 import { cargarListas } from "./courier-export.js";
 import { montarAjustes, desmontarAjustes } from "./ajustes-partes.js?v=6";
@@ -213,13 +211,13 @@ function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<
 
 async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
-  $("tabCon").innerHTML=IC.book+"<span>Conocimiento del negocio</span>";
-  $("tabEnt").innerHTML=icon("truck")+"<span>Entrega y logística</span>";
-  // (31-oct) Lo que era Ajustes → Tu negocio: nombre y logo del bot, país, moneda de los reportes y tipo de cambio.
-  $("tabDatos").innerHTML=icon("globe")+"<span>Nombre, país y moneda</span>";
+  // 🤖 (14-nov) Pestañas de la sección «Bot»: Tu negocio (conocimiento) · Entrega · Datos del bot viven aquí; Cómo vende,
+  // Atención, Pagos y Avanzado son enlaces a ia.html. ?tab=… elige cuál abrir (desde ia.html o enlaces viejos).
+  st.tab = tabDeUrl(["conocimiento","entrega","datos"], "conocimiento");
+  pintarTabsBot("negocio", st.tab);
   // Cambiar de pestaña rehace el formulario desde el snapshot: si hay cambios sin guardar, se pregunta.
-  document.querySelectorAll(".tab").forEach(b=> b.onclick=async()=>{ if(st.tab===b.dataset.t) return; if(!await confirmDescartar()) return; marcaTab(b.dataset.t); render(); });
-  const shell=await mountShell({ active:"negocio" });
+  document.querySelectorAll(".tab[data-t]").forEach(b=> b.onclick=async()=>{ if(st.tab===b.dataset.t) return; if(!await confirmDescartar()) return; marcaTab(b.dataset.t); render(); });
+  const shell=await mountShell({ active:"bot" });
   st.shell=shell;
   st.channelId=shell.channelId;
   guardUnsaved(".nodo-page"); // avisa si sales con el formulario a medio editar
@@ -229,20 +227,18 @@ async function boot(){
   cargarListas().then(l=>{ st.listas=l; if(st.tab==="entrega" && !isDirty()) render(); });
   // 🔗 La campanita («Revisar preguntas» del negocio) abre acá con la tarjeta desplegada.
   try{ const qp=new URLSearchParams(location.search); if(qp.get("preguntas")==="1"){ st._abrirPreguntas=true; history.replaceState(null,"",location.pathname); } }catch(_){}
-  // Los enlaces viejos a Ajustes (y «La foto se cambia en…») llegan con ?tab=datos.
-  try{ if(new URLSearchParams(location.search).get("tab")==="datos"){ marcaTab("datos"); history.replaceState(null,"",location.pathname); } }catch(_){}
   // Guardaste nombre o logo en «Nombre, país y moneda»: el encabezado de arriba se pone al día sin recargar.
   window.addEventListener("nodo:marca",(e)=>{ const c=(st.shell&&st.shell.channels||[]).find(x=>x.id===st.channelId); if(c){ c.nombre=e.detail.nombre; c.logo_url=e.detail.logo_url; } st.channel.nombre=e.detail.nombre; pintaIdentidad(); });
   if(st.channelId) await load();
 }
-function marcaTab(t){ st.tab=t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t===t)); }
+function marcaTab(t){ st.tab=t; document.querySelectorAll(".tab[data-t]").forEach(x=>x.classList.toggle("active",x.dataset.t===t)); }
 // (10-oct, Rodrigo) Arriba, la foto y el nombre del negocio (el del bot), como el Dashboard. La foto se cambia en la pestaña «Nombre, país y moneda».
 function pintaIdentidad(){
   const c=(st.shell&&st.shell.channels||[]).find(x=>x.id===st.channelId)||{};
   const nf=(st.channel&&st.channel.negocio_form&&typeof st.channel.negocio_form==="object")?st.channel.negocio_form:{};
-  const nom=String(nf.nombre||st.channel.nombre||c.nombre||"Negocio").trim();
+  const nom=String(nf.nombre||st.channel.nombre||c.nombre||"Bot").trim();
   const n=$("negNombre"); if(n) n.textContent=nom;
-  const img=$("negLogo"); if(img){ if(c.logo_url){ img.src=c.logo_url; img.style.display=""; img.title="La foto se cambia en «Nombre, país y moneda»"; img.style.cursor="pointer"; img.onclick=async()=>{ if(st.tab==="datos"||!await confirmDescartar()) return; marcaTab("datos"); render(); }; } else img.style.display="none"; }
+  const img=$("negLogo"); if(img){ if(c.logo_url){ img.src=c.logo_url; img.style.display=""; img.title="La foto se cambia en «Datos del bot»"; img.style.cursor="pointer"; img.onclick=async()=>{ if(st.tab==="datos"||!await confirmDescartar()) return; marcaTab("datos"); render(); }; } else img.style.display="none"; }
 }
 async function load(){
   // Anti-carrera al cambiar de bot: si la respuesta del bot ANTERIOR llegaba después, la
@@ -270,7 +266,7 @@ async function load(){
   render();
 }
 // Antes de escribir negocio_form ENTERO se re-lee lo fresco y solo se pisa lo que ESTA
-// página cambió respecto de su snapshot: IA → Vendedor y Negocio escriben la misma columna
+// página cambió respecto de su snapshot: Bot → Cómo vende y Negocio escriben la misma columna
 // desde snapshots distintos (dos pestañas del navegador), y el último en guardar revertía
 // lo del otro (nombre de la IA, tono, retraso…). Devuelve { form, retraso } listos para guardar.
 async function mezclarConFresco(form, retraso){
@@ -348,7 +344,7 @@ const NEG_CUADROS=[
             ["rubro","¿Qué vendes y a quién?","ta",(document.documentElement.hasAttribute("data-sin-digital")?"Ej. Lámparas y accesorios prácticos para el hogar, para gente que quiere su casa más cómoda y segura.":"Ej. Programas digitales de entrenamiento para gente que quiere ponerse en forma en casa, sin gimnasio.")]] },
   { n:2, ico:"pago", req:"pagos", titulo:"Cómo se paga y cómo se entrega",
     va:"Solo lo general: qué medios aceptas y cómo llega lo que vendes.",
-    no:"Los números de Yape y cuentas (van en IA → Validador de comprobantes) ni los costos y zonas de envío (van en Entrega).",
+    no:"Los números de Yape y cuentas (van en Bot → Pagos) ni los costos y zonas de envío (van en Entrega).",
     campos:[["pagos","","ta","Ej. Plin también: se paga al mismo número de Yape. No aceptamos tarjeta ni efectivo. Físico: contraentrega en Lima, adelanto en provincia."]] },
   { n:3, ico:"escudo", req:"politicas", titulo:"Políticas y lo que nunca se promete",
     va:"Garantía, cambios, devoluciones, factura, y lo que el bot no debe prometer en ningún producto.",
@@ -1148,7 +1144,7 @@ async function guardarEntregas(){
 let armDraft=null;
 const ARM_CHK='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
 const ARM_ALERT='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
-function armGoConocimiento(){ if(st.tab!=="conocimiento"){ st.tab="conocimiento"; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t==="conocimiento")); render(); } }
+function armGoConocimiento(){ if(st.tab!=="conocimiento"){ st.tab="conocimiento"; document.querySelectorAll(".tab[data-t]").forEach(x=>x.classList.toggle("active",x.dataset.t==="conocimiento")); render(); } }
 function armOpen(){ armDraft=null; armGoConocimiento(); armRenderBrief(); $("armOv").classList.add("on"); setTimeout(()=>{ const t=$("armBrief"); if(t) t.focus(); },80); }
 function armClose(){ const o=$("armOv"); if(o) o.classList.remove("on"); }
 function armRenderBrief(){
@@ -1229,7 +1225,7 @@ async function armAplicar(d){
   CAMPOS.forEach(k=>{ if(d[k] && (reemplazar || !String(f[k]??"").trim())) f[k]=String(d[k]); });
   if(Array.isArray(d.faq)&&d.faq.length && (reemplazar || !pisaFaq)){ f.faq=d.faq.filter(x=>x&&x.q&&x.a).map(x=>({q:String(x.q),a:String(x.a)})); }
   st.tab="conocimiento";
-  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t==="conocimiento"));
+  document.querySelectorAll(".tab[data-t]").forEach(x=>x.classList.toggle("active",x.dataset.t==="conocimiento"));
   render(); armClose();
   markDirty();   // igual que en productos: el borrador entra por código y el guard no lo ve
   toast("Borrador aplicado — revisa y Guarda el conocimiento");

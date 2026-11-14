@@ -179,7 +179,7 @@ export async function volverDeGoogle(channelId){
   }
 }
 
-// ── Entregas movidas a la sección Negocio → Entrega y logística (negocio.html).
+// ── Entregas movidas a la sección Bot → Entrega (negocio.html).
 
 // Monedas frecuentes (código ISO + símbolo + país). Igual que en Productos.
 const CURRENCIES=[

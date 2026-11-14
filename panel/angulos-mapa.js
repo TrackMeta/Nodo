@@ -71,7 +71,7 @@ async function cargar(gen) {
   }
   S.seqs = Object.fromEntries((seqR.data || []).map((s) => [s.id, { ...s, pasos: Array.isArray(s.pasos) ? s.pasos : [] }]));
   S.meta = Object.fromEntries((metaR.data || []).map((m) => [String(m.ad_id), m]));
-  // Plata en la moneda de tus reportes (Negocio → Nombre, país y moneda), con el cambio del día de cada cosa, como Inicio.
+  // Plata en la moneda de tus reportes (Bot → Datos del bot), con el cambio del día de cada cosa, como Inicio.
   S.cur = ch?.moneda_reporte === "USD" ? "USD" : String(ch?.moneda || "PEN").toUpperCase();
   const ads = await gastoAdsEn(metaR.data || [], S.cur, Number(ch?.usd_rate) || 0);
   const prueba = (c) => c && (c.wa_id === "webchat-test" || c.source === "sim");

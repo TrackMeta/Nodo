@@ -4,7 +4,7 @@
 // físicos, y en un bot digital Pedidos ni aparece): quién aprueba un pago digital, el mensaje al rechazar un
 // comprobante y qué hacer si reclama un vuelto. Las claves siguen siendo las mismas de channels.pedidos_config
 // (digital, rechazo, vuelto): el motor no cambia. Se guarda sobre el config FRESCO y solo esas tres claves, así no
-// pisa lo que se edita en Pagos y avisos ni en IA → Atención.
+// pisa lo que se edita en Pagos y avisos ni en Bot → Atención.
 // ═════════════════════════════════════════════════════════════════════════
 import { supa, toast, icon, confirmDialog, updateChannel, patchProductConfig } from "./shell.js";
 import { asegurarEstilos } from "./ventana-ajustes.js";

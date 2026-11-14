@@ -3,7 +3,7 @@
 // (25-oct, Rodrigo) «Pagos y avisos» era una página larga; ahora cada sección se elige en el menú «⋯» y abre SU
 // ventana: Adelantos de provincia · Agente de logística · Avisos de pedido. Las claves de channels.pedidos_config
 // no cambian (adelanto, log, avisos): el motor ni se entera. Cada ventana guarda SOLO su clave, sobre el config
-// FRESCO, así no pisa a las otras ni a «Ajustes de pagos» (Pagos por validar) ni a IA → Atención.
+// FRESCO, así no pisa a las otras ni a «Ajustes de pagos» (Pagos por validar) ni a Bot → Atención.
 // ═════════════════════════════════════════════════════════════════════════
 import { supa, toast, icon, confirmDialog, updateChannel } from "./shell.js";
 import { attachVarPicker } from "./var-picker.js?v=2";

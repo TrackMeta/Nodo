@@ -150,26 +150,23 @@
 </head>
 <body>
 <div class="nodo-page">
-  <div class="nodo-wrap" style="--nodo-max:var(--nodo-form)">
-    <div class="ia-top nodo-head ia">
-      <span class="ia-ic" id="iaIc"></span>
-      <div class="grow" style="min-width:0"><h1 class="ia-tt">Inteligencia Artificial</h1>
-        <p>Cómo habla y atiende tu bot, cómo revisa los pagos y cuánto gasta su IA.</p></div>
+  <div class="nodo-wrap">
+    <!-- 🤖 (14-nov) Misma cabecera que negocio.html: la sección «Bot» es una sola para el usuario. -->
+    <div class="nodo-head">
+      <div class="grow">
+        <div class="neg-id"><img id="negLogo" alt="" style="display:none"/><div style="min-width:0"><h1 class="nodo-title" id="negNombre">Bot</h1></div></div>
+        <p class="nodo-lead" style="margin-top:8px">Lo que sabe tu bot y cómo vende. Lo de cada producto va en su ficha.</p>
+      </div>
     </div>
     <span id="iaBadge" hidden></span>
-    <div class="tabs">
-      <button class="tab active" data-t="vendedor" id="tabVend"></button>
-      <button class="tab" data-t="atencion" id="tabAten"></button>
-      <button class="tab" data-t="validador" id="tabVal"></button>
-      <button class="tab" data-t="perfiles" id="tabPerf"></button>
-      <button class="tab" data-t="proveedores" id="tabProv"></button>
-    </div>
+    <div class="tabs bot-tabs" id="botTabs"></div>
     <div id="body"></div>
   </div>
 </div>
 
 <script type="module">
 import { revisarNegocio, avisosHtml } from "./revisar-textos.js";
+import { pintarTabsBot, tabDeUrl, pintarIdentidadBot } from "./bot-seccion.js";
 import { TONOS, compileNegocio, fusionarNegocio } from "./negocio-texto.js";
 import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, guardUnsaved, markClean, confirmDescartar, updateChannel, pageAll } from "./shell.js";
 import { mountDateRange, computePreset, ymd as ymdDia, startOfDayTZ, endOfDayTZ } from "./date-range.js";
@@ -280,18 +277,17 @@ async function boot(){
   const { data:{ session } } = await supa.auth.getSession();
   if(!session){ location.href="index.html"; return; }
   $("iaBadge").innerHTML=IC.robot+"<span>Centro de IA</span>";
-  $("tabVend").innerHTML=IC.robot+"<span>Vendedor</span>";
-  $("tabAten").innerHTML=IC.agent+"<span>Atención</span>";
-  $("tabVal").innerHTML=IC.shield+"<span>Validador de pagos</span>";
-  $("tabPerf").innerHTML=IC.sliders+"<span>Modelos</span>";
-  $("tabProv").innerHTML=IC.spark+"<span>Cuentas y gasto</span>";
-  $("iaIc").innerHTML=IC.robot;
+  // 🤖 (14-nov) Pestañas de la sección «Bot»: Cómo vende · Atención · Pagos · Avanzado (Modelos y Cuentas y gasto) viven
+  // aquí; Tu negocio, Entrega y Datos del bot son enlaces a negocio.html.
+  st.tab = tabDeUrl(["vendedor","atencion","validador","perfiles","proveedores"], "vendedor");
+  pintarTabsBot("ia", st.tab);
   // Cambiar de pestaña rehace el formulario desde el snapshot: si hay cambios sin guardar, se pregunta.
-  document.querySelectorAll(".tab").forEach(b=> b.onclick=async()=>{ if(st.tab===b.dataset.t) return; if(!await confirmDescartar()) return; st.tab=b.dataset.t; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x===b)); render(); });
-  const shell=await mountShell({ active:"ia" });
+  document.querySelectorAll(".tab[data-t]").forEach(b=> b.onclick=async()=>{ if(st.tab===b.dataset.t) return; if(!await confirmDescartar()) return; st.tab=b.dataset.t; document.querySelectorAll(".tab[data-t]").forEach(x=>x.classList.toggle("active",x===b)); render(); });
+  const shell=await mountShell({ active:"bot" });
   st.channelId=shell.channelId;
+  st.shell=shell; pintarIdentidadBot(shell, st.channelId);
   guardUnsaved(".nodo-page"); // avisa si sales con un formulario de IA a medio editar
-  shell.onChannel(id=>{ st.channelId=id; loadCfg(); });
+  shell.onChannel(id=>{ st.channelId=id; pintarIdentidadBot(shell, id); loadCfg(); });
   if(st.channelId) await loadCfg();
 }
 async function loadCfg(){
@@ -360,6 +356,14 @@ function render(){
   else if(st.tab==="validador") renderValidador(b);
   else renderProveedores(b);
   ponerAyudas(b);
+  // 🤖 (14-nov) «Avanzado» junta Modelos y Cuentas y gasto (antes eran dos pestañas): un selector chico arriba.
+  if(st.tab==="perfiles"||st.tab==="proveedores"){
+    const tp=$("tabPerf"); if(tp) tp.classList.add("active");
+    const seg=document.createElement("div"); seg.className="av-seg";
+    seg.innerHTML=`<button type="button" data-av="perfiles" class="${st.tab==="perfiles"?"on":""}">Modelos</button><button type="button" data-av="proveedores" class="${st.tab==="proveedores"?"on":""}">Cuentas y gasto</button>`;
+    seg.querySelectorAll("[data-av]").forEach(x=> x.onclick=async()=>{ if(st.tab===x.dataset.av) return; if(!await confirmDescartar()) return; st.tab=x.dataset.av; render(); });
+    b.prepend(seg);
+  }
 }
 // (10-oct) Cada tarjeta con explicaciones largas (.ay) las esconde detrás de un «?» en su título.
 function ponerAyudas(root){
@@ -371,7 +375,7 @@ function ponerAyudas(root){
     hd.appendChild(q);
   });
 }
-function goTab(name){ st.tab=name; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.t===name)); render(); }
+function goTab(name){ st.tab=name; document.querySelectorAll(".tab[data-t]").forEach(x=>x.classList.toggle("active",x.dataset.t===name)); render(); }
 
 // ── Atención al cliente ──────────────────────────────────────────────
 // Cómo CONVERSA el bot: cuándo pasa el chat a un asesor y el modo soporte

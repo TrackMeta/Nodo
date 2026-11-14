@@ -152,7 +152,7 @@ async function load(){
   render();
 }
 // El campo de datos de pago lo genera el Validador — acá va solo de lectura.
-const GENERADOS={ datos_pago:"IA → Validador de comprobantes" };
+const GENERADOS={ datos_pago:"Bot → Pagos" };
 function renderTabs(){
   const T=[["dinamico","Capturados",IC_VAR],["fijo","Fijos",IC_BOT]];
   $("tabs").innerHTML=T.map(([v,l,ic])=>`<button class="tab ${st.tab===v?'active':''}" data-t="${v}">${ic}<span>${l}</span></button>`).join("");
@@ -264,7 +264,7 @@ async function save(){
   // Un DELETE que la RLS no deja (operador: solo el admin cambia los campos, 0107) afecta 0 filas SIN
   // error: se comprueba lo borrado y se dice la verdad en vez de «Guardado».
   if(st.deleted.length){ const { data:_bor, error }=await supa.from("custom_fields").delete().in("id",st.deleted).select("id"); if(error){ toast(error.message,true); return; } if((_bor||[]).length<st.deleted.length){ toast("Solo un administrador puede cambiar los campos del bot",true); return; } st.deleted=[]; }
-  // `datos_pago` se muestra solo de lectura acá (lo arma Negocio → Pagos): NO se reescribe. Si se
+  // `datos_pago` se muestra solo de lectura acá (lo arma Bot → Tu negocio): NO se reescribe. Si se
   // incluía, una pestaña de Campos abierta desde antes devolvía el número VIEJO al guardar cualquier
   // otra cosa, y el bot dictaba un Yape que el validador ya no acepta.
   const rows=editables.filter(f=>String(f.key||"").trim()!=="datos_pago").map(f=>{

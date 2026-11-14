@@ -409,10 +409,11 @@ const NAV_GROUPS = [
     { id:"copiloto",    label:"Pagos por validar",    href:"copiloto.html",   icon:"compass" },
     { id:"accesos",     label:"Accesos",              href:"accesos.html",    icon:"key" },
   ]},
-  { key:"negocio", sec:"Tu negocio", items:[
+  // 🤖 (14-nov, Rodrigo) «Negocio» e «IA» son UNA sección: «Bot» (lo que sabe tu bot y cómo vende). Por dentro siguen
+  // siendo negocio.html e ia.html con la misma barra de pestañas (bot-seccion.js); las dos marcan «Bot» en el menú.
+  { key:"negocio", sec:"Tu bot", items:[
     { id:"productos",   label:"Productos",            href:"productos.html",  icon:"productos" },
-    { id:"negocio",     label:"Negocio",              href:"negocio.html",    icon:"building" },
-    { id:"ia",          label:"IA",                   href:"ia.html",         icon:"robot", special:"ia" },
+    { id:"bot",         label:"Bot",                  href:"negocio.html",    icon:"robot", special:"ia" },
   ]},
   { key:"marketing", sec:"Marketing", items:[
     { id:"contactos",   label:"Contactos",            href:"contactos.html",  icon:"contactos" },
@@ -436,7 +437,7 @@ const NAV_GROUPS = [
   ]},
   { key:"conf", sec:"Configuración", items:[
     // (31-oct, Rodrigo) «Canales» pasó a llamarse Conexiones (WhatsApp, Telegram, Meta y Google Sheets) y Ajustes
-    // desapareció: lo suyo se repartió entre Conexiones y Negocio → «Nombre, país y moneda».
+    // desapareció: lo suyo se repartió entre Conexiones y Bot → «Datos del bot».
     { id:"canales",     label:"Conexiones",           href:"canales.html",    icon:"link" },
     { id:"cuenta",      label:"Equipo",               href:"cuenta.html",     icon:"users" },
   ]},
@@ -1107,7 +1108,7 @@ export async function confirmDescartar() {
 }
 // Escribe en `channels` y COMPRUEBA que tocó la fila: la tabla es solo-admin por RLS, así
 // que a un OPERADOR el UPDATE le afecta 0 filas SIN error y la pantalla decía «guardado»
-// sin guardar (Negocio, IA → Vendedor/Atención/Perfiles/Validador). Devuelve { error }.
+// sin guardar (Negocio, Bot → Cómo vende/Atención/Perfiles/Validador). Devuelve { error }.
 // 🚨 Salud del número de WhatsApp: si Meta baneó, restringió o marcó la calidad (lo guardan el
 // webhook y el sondeo del scheduler en `wa_alerta`), una tarjeta fija abajo a la derecha en
 // TODAS las pantallas. «Entendido» la oculta en esta sesión; el admin además la apaga para todos.

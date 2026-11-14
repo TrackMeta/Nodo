@@ -19,7 +19,7 @@ const RE_PIDE_COBRAR =
 // (la `u` y el lookahead por letra: con `\b` ASCII, «asesoría médica» contaba como «asesor»)
 const RE_PERSONA =
   /(?<![\p{L}])asesor(?:a|\(a\)|es|as)?(?![\p{L}])|te\s+(?:va|van)\s+a\s+(?:llamar|escribir|contactar)|(?:un|una)\s+persona\s+(?:real|del\s+equipo)\s+te|no\s+soy\s+(?:un\s+)?(?:bot|robot)|soy\s+(?:una\s+)?persona\b/iu;
-// Números de cuenta o de Yape escritos en la ficha (van en IA → Validador de comprobantes).
+// Números de cuenta o de Yape escritos en la ficha (van en Bot → Pagos).
 const RE_NUMERO_CUENTA = /(?<!\d)(?:9\d{2}[\s.-]?\d{3}[\s.-]?\d{3}|\d{10,20})(?!\d)/;
 // 2) Montos escritos: «S/ 7», «S/7», «7 soles», «$ 5», «$49.900», «49.900 pesos».
 // (25-oct: con miles —Colombia, Chile— «$49.900» se leía 49,9 y avisaba de un monto que SÍ era el precio)
@@ -61,7 +61,7 @@ function avisoNumeros(campos) {
   const en = Object.keys(campos).filter((k) => RE_NUMERO_CUENTA.test(campos[k]));
   return en.length ? [{
     campo: en[0], titulo: "Hay un número de cuenta o de Yape escrito en el texto",
-    detalle: `En ${lista(en)}. Los números de cobro van en IA → Validador de comprobantes: de ahí los manda el sistema ` +
+    detalle: `En ${lista(en)}. Los números de cobro van en Bot → Pagos: de ahí los manda el sistema ` +
       `bien armados (para copiar de un toque) y de ahí se valida el pago. Escritos acá, el bot los pega en medio de una frase.`,
   }] : [];
 }

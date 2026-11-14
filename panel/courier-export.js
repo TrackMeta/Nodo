@@ -136,7 +136,7 @@ async function revisarShalom(orders, cfg) {
   const listas = await cargarListas();
   const ags = listas && listas.shalom && listas.shalom.destino;
   const oficiales = new Set((ags || []).map(_norm).filter(Boolean));
-  if (!sh.origen) p.push("Falta tu oficina de ORIGEN Shalom (Negocio → Entrega → Exportar a couriers).");
+  if (!sh.origen) p.push("Falta tu oficina de ORIGEN Shalom (Bot → Entrega → Exportar a couriers).");
   orders.forEach((o) => {
     const c = o.contact || {}, s = o.shipping || {}, q = c.nombre || s.cliente || s.dni || "un pedido";
     // Formato, no solo presencia: un DNI de 7 dígitos o un celular de 6 pasaban el pre-chequeo
