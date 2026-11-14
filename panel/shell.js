@@ -804,10 +804,14 @@ async function openCreateBot() {
     const { data: me } = await supa.from("app_users").select("platform_admin").eq("id", session?.user?.id ?? "").maybeSingle();
     soyDueno = me?.platform_admin === true; } catch (_) { /* sin dato: sin la opción de equipo nuevo */ }
   const equipos = S.equiposAdmin || [];
+  // (14-nov) La foto de cada equipo (accounts.logo_url, se pone en Tu equipo), para distinguirlos aquí.
+  const fotos = {};
+  if (equipos.length) { try { const { data: fs } = await supa.from("accounts").select("id,logo_url").in("id", equipos.map((e) => e.id));
+    for (const x of fs || []) if (x.logo_url) fotos[x.id] = x.logo_url; } catch (_) { /* sin fotos: el ícono de siempre */ } }
   const botsDe = (acc) => S.cuentaDe ? S.channels.filter((c) => S.cuentaDe[c.id] === acc).length : (equipos.length === 1 ? S.channels.length : 0);
   const opciones = [
     ...(soyDueno ? [{ v: "__nuevo", ic: "plus", t: "Equipo nuevo", d: "solo para este bot" }] : []),
-    ...equipos.map((e) => { const n = botsDe(e.id); return { v: e.id, ic: "users", t: e.nombre, d: n ? `${n} bot${n === 1 ? "" : "s"}` : "sin bots" }; }),
+    ...equipos.map((e) => { const n = botsDe(e.id); return { v: e.id, ic: "users", foto: fotos[e.id] || null, t: e.nombre, d: n ? `${n} bot${n === 1 ? "" : "s"}` : "sin bots" }; }),
   ];
   const preguntar = opciones.length > 1;
   let elegido = opciones[0]?.v || null;
@@ -822,7 +826,7 @@ async function openCreateBot() {
       <div class="nb-hint">El de tu tienda o marca: así te presenta la IA a tus clientes.</div>
       ${preguntar ? `<label style="margin-top:14px">¿En qué equipo va?</label>
       <div class="nodo-choices nb-eq" id="nbEquipos">${opciones.map((o) => `<button class="nodo-choice${o.v === elegido ? " on" : ""}" type="button" data-v="${escAttr(o.v)}">
-        <span class="nc-ic">${svg(o.ic)}</span><span class="nc-tx"><b>${escHtml(o.t)}</b><small>${escHtml(o.d)}</small></span><span class="nc-ck">${svg("check")}</span></button>`).join("")}</div>` : ""}
+        <span class="nc-ic">${o.foto ? `<img src="${escAttr(o.foto)}" alt="">` : svg(o.ic)}</span><span class="nc-tx"><b>${escHtml(o.t)}</b><small>${escHtml(o.d)}</small></span><span class="nc-ck">${svg("check")}</span></button>`).join("")}</div>` : ""}
       <div class="nb-acts">
         <button class="nb-btn" id="nbCancel" type="button">Cancelar</button>
         <button class="nb-btn primary" id="nbCreate" type="button">Crear bot</button>

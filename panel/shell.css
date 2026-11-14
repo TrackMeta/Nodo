@@ -407,6 +407,7 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
 .nb-eq .nodo-choice{padding:8px 12px;gap:10px;border-radius:10px}
 .nb-eq .nodo-choice .nc-ic{width:26px;height:26px;border-radius:7px}
 .nb-eq .nodo-choice .nc-ic svg{width:15px;height:15px}
+.nb-eq .nodo-choice .nc-ic{overflow:hidden} .nb-eq .nodo-choice .nc-ic img{width:100%;height:100%;object-fit:cover}
 .nb-eq .nodo-choice .nc-tx{flex-direction:row;align-items:baseline;gap:8px}
 .nb-eq .nodo-choice .nc-tx b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nb-eq .nodo-choice .nc-tx small{white-space:nowrap;font-size:12px}

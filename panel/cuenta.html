@@ -63,6 +63,27 @@
   .botchip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px 0 5px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);font-size:12.5px;font-weight:600;color:var(--text)}
   .botchip img,.botchip svg{width:20px;height:20px;border-radius:50%;object-fit:cover;flex:none}
   .botchip svg{padding:3px;background:var(--brand-bg);color:var(--brand)}
+  /* 👥 (14-nov, Rodrigo: «ahora ves lo confuso, me aparecen todos mis equipos y mis bots… agrega una foto a mi equipo»)
+     Cada equipo es una fila compacta (foto, nombre, cuántos bots y personas) que se abre al tocarla. Abierto de entrada:
+     el equipo del bot en el que estás. */
+  .card.eq{padding:0;overflow:hidden;margin-bottom:10px}
+  .eq-cab{all:unset;box-sizing:border-box;width:100%;display:flex;align-items:center;gap:14px;padding:14px 18px;cursor:pointer}
+  .eq-cab:hover{background:var(--surface-2)}
+  .eq-cab:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+  .eq-foto{width:44px;height:44px;border-radius:12px;flex:none;display:grid;place-items:center;overflow:hidden;color:#fff;font-weight:800;font-size:18px}
+  .eq-foto img{width:100%;height:100%;object-fit:cover}
+  .eq-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+  .eq-tx b{font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:8px}
+  .eq-tx small{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .eq-aqui{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--brand-bg);color:var(--brand);flex:none}
+  .eq-badges{display:flex;gap:6px;flex:none}
+  .eq-chev{width:28px;height:28px;flex:none;display:grid;place-items:center;color:var(--muted);transition:transform .2s}
+  .eq-chev svg{width:16px;height:16px}
+  .card.eq.abierto .eq-chev{transform:rotate(90deg)}
+  .eq-body{display:none;padding:4px 18px 18px;border-top:1px solid var(--border)}
+  .card.eq.abierto .eq-body{display:block}
+  .eq-acciones{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 12px}
+  @media(max-width:640px){ .eq-badges{display:none} .eq-cab{padding:12px 14px;gap:12px} .eq-body{padding:4px 14px 14px} }
   .nodo-modal label.tchip{display:inline-flex;margin:0;font-size:13px;color:var(--text)}   /* la regla de label de .nodo-modal la volvía bloque */
   .nodo-modal label.tchip.on{color:var(--brand)}
 </style>
@@ -90,7 +111,8 @@
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog, askChoice, usuarioActual } from "./shell.js";
 const $ = (id) => document.getElementById(id);
-const st = { uid:null, me:null, accounts:[] };
+const st = { uid:null, me:null, accounts:[], abiertos:new Set(), botActual:null };
+try { st.botActual = localStorage.getItem("nodo.channelId"); } catch {}
 const esc = (s) => (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const ini = (s) => (s||"?").trim().charAt(0).toUpperCase();
 
@@ -123,8 +145,8 @@ async function load(){
   const { data: me } = await supa.from("app_users").select("id,nombre,platform_admin").eq("id",st.uid).maybeSingle();
   st.me = me || {};
   const { data: mems } = await supa.from("account_members")
-    .select("account_id,role,accounts(id,nombre,plan,features)").eq("user_id",st.uid).eq("activo",true);
-  st.accounts = (mems||[]).map(m=>({ id:m.account_id, role:m.role, nombre:m.accounts?.nombre, plan:m.accounts?.plan, tipos:tiposDe(m.accounts?.features), members:[] }));
+    .select("account_id,role,accounts(id,nombre,plan,features,logo_url)").eq("user_id",st.uid).eq("activo",true);
+  st.accounts = (mems||[]).map(m=>({ id:m.account_id, role:m.role, nombre:m.accounts?.nombre, plan:m.accounts?.plan, logo:m.accounts?.logo_url||null, tipos:tiposDe(m.accounts?.features), members:[] }));
   for(const a of st.accounts){
     const { data: ms } = await supa.from("account_members")
       .select("user_id,role,app_users(nombre)").eq("account_id",a.id).eq("activo",true);
@@ -135,8 +157,42 @@ async function load(){
   let { data: chs, error: eCh } = await supa.from("channels").select("id,nombre,account_id,logo_url").eq("activo", true).order("nombre");
   if (eCh) ({ data: chs } = await supa.from("channels").select("id,nombre,account_id").eq("activo", true).order("nombre"));
   for (const a of st.accounts) a.bots = (chs || []).filter((c) => c.account_id === a.id);
+  // Primero el equipo del bot en el que estás (abierto); los demás, por nombre y cerrados. Con un solo equipo, abierto.
+  const deAqui = (a) => (a.bots||[]).some((b) => b.id === st.botActual);
+  st.accounts.sort((x, y) => (deAqui(y) - deAqui(x)) || String(x.nombre||"").localeCompare(String(y.nombre||"")));
+  if (!st.abiertos.size){ const ini = st.accounts.find(deAqui) || st.accounts[0]; if (ini) st.abiertos.add(ini.id); }
   render();
   loadInvites();
+}
+// Foto del equipo (o su inicial sobre un color propio, para que se distingan aunque no tengan foto).
+const COLORES_EQ = ["#2563eb","#7c3aed","#db2777","#ea580c","#16a34a","#0891b2","#ca8a04","#4f46e5"];
+function colorEquipo(t){ let h=0; for (const ch of String(t||"")) h=(h*31+ch.charCodeAt(0))>>>0; return COLORES_EQ[h%COLORES_EQ.length]; }
+function fotoEquipo(a){
+  return a.logo ? `<span class="eq-foto"><img src="${esc(a.logo)}" alt=""></span>`
+    : `<span class="eq-foto" style="background:${colorEquipo(a.nombre||a.id)}">${esc(ini(a.nombre||"E"))}</span>`;
+}
+function achicarImagen(file, size = 128){
+  return new Promise((res, rej) => { const img = new Image(), u = URL.createObjectURL(file);
+    img.onload = () => { const c = document.createElement("canvas"); c.width = size; c.height = size; const ctx = c.getContext("2d");
+      const k = Math.max(size / img.width, size / img.height), w = img.width * k, h = img.height * k;
+      ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h); URL.revokeObjectURL(u); res(c.toDataURL("image/jpeg", 0.85)); };
+    img.onerror = () => { URL.revokeObjectURL(u); rej(new Error("No se pudo abrir esa imagen")); }; img.src = u; });
+}
+function ponerFoto(accId){
+  const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/png,image/jpeg,image/webp";
+  inp.onchange = async () => { const file = inp.files[0]; if (!file) return;
+    if (file.size > 6 * 1024 * 1024){ toast("La imagen pesa mucho (máximo 6 MB)", true); return; }
+    try { const url = await achicarImagen(file);
+      const { error } = await supa.from("accounts").update({ logo_url: url }).eq("id", accId);
+      if (error){ toast(error.message, true); return; }
+      toast("Listo, el equipo ya tiene su foto"); load();
+    } catch (e){ toast(e.message || "No se pudo poner la foto", true); } };
+  inp.click();
+}
+async function quitarFoto(accId){
+  const { error } = await supa.from("accounts").update({ logo_url: null }).eq("id", accId);
+  if (error){ toast(error.message, true); return; }
+  toast("Foto quitada"); load();
 }
 function botsHtml(a){
   const bs = a.bots || [];
@@ -215,23 +271,39 @@ function render(){
         ${(soyAdmin && !yo) ? `<button class="btn sm" data-rol="${esc(m.user_id)}" data-acc="${esc(a.id)}" data-actual="${esc(m.role)}">${m.role==='admin'?'Pasar a operador':'Hacer admin'}</button><button class="btn danger sm" data-rm="${esc(m.user_id)}" data-acc="${esc(a.id)}">Quitar</button>` : ''}
       </div>`;
     }).join("");
-    return `<div class="card" data-acc="${esc(a.id)}">
-      <h2>${icon("building")} <span class="acctName">${esc(a.nombre||"Mi equipo")}</span>
-        <span class="badge plan">${esc(a.plan||"trial")}</span>
-        ${a.tipos?`<span class="badge tipos">Solo ${esc(nombreTipos(a.tipos).toLowerCase())}</span>`:""}
-        ${st.me.platform_admin?`<button class="btn sm" data-tipos="${esc(a.id)}" style="margin-left:auto">Qué vende</button>`:""}
-        ${soyAdmin?`<button class="btn sm" data-rename="${esc(a.id)}"${st.me.platform_admin?"":' style="margin-left:auto"'}>Renombrar</button>`:''}</h2>
-      ${botsHtml(a)}
-      <p class="desc">Personas que entran${soyAdmin?' · como admin puedes invitar y quitar gente.':''}</p>
-      ${members}
-      ${soyAdmin?`<div class="row" style="margin-top:16px">
-        <button class="btn primary" data-team="${esc(a.id)}">${icon("users")} Invitar a alguien</button>
-        <span class="muted" style="font-size:12px">Le llega un link para entrar a este equipo como operador o admin.</span>
-      </div><div id="teamBox-${esc(a.id)}"></div>`:''}
+    const nB = (a.bots||[]).length, nP = a.members.length, aqui = (a.bots||[]).some((b)=>b.id===st.botActual);
+    return `<div class="card eq${st.abiertos.has(a.id)?" abierto":""}" data-acc="${esc(a.id)}">
+      <button class="eq-cab" type="button" data-abrir="${esc(a.id)}" aria-expanded="${st.abiertos.has(a.id)}">
+        ${fotoEquipo(a)}
+        <span class="eq-tx"><b><span class="acctName">${esc(a.nombre||"Mi equipo")}</span>${aqui?'<span class="eq-aqui">Estás aquí</span>':""}</b>
+          <small>${nB} bot${nB===1?"":"s"} · ${nP} persona${nP===1?"":"s"}${nB?" · "+esc((a.bots||[]).map((b)=>b.nombre).join(", ")):""}</small></span>
+        <span class="eq-badges"><span class="badge plan">${esc(a.plan||"trial")}</span>${a.tipos?`<span class="badge tipos">Solo ${esc(nombreTipos(a.tipos).toLowerCase())}</span>`:""}</span>
+        <span class="eq-chev">${icon("chevronRight")}</span>
+      </button>
+      <div class="eq-body">
+        ${soyAdmin||st.me.platform_admin?`<div class="eq-acciones">
+          ${soyAdmin?`<button class="btn sm" data-foto="${esc(a.id)}">${icon("image")} ${a.logo?"Cambiar foto":"Poner foto"}</button>`:""}
+          ${soyAdmin&&a.logo?`<button class="btn sm danger" data-sinfoto="${esc(a.id)}">Quitar foto</button>`:""}
+          ${soyAdmin?`<button class="btn sm" data-rename="${esc(a.id)}">Renombrar</button>`:""}
+          ${st.me.platform_admin?`<button class="btn sm" data-tipos="${esc(a.id)}">Qué vende</button>`:""}
+        </div>`:""}
+        ${botsHtml(a)}
+        <p class="desc">Personas que entran${soyAdmin?' · como admin puedes invitar y quitar gente.':''}</p>
+        ${members}
+        ${soyAdmin?`<div class="row" style="margin-top:16px">
+          <button class="btn primary" data-team="${esc(a.id)}">${icon("users")} Invitar a alguien</button>
+          <span class="muted" style="font-size:12px">Le llega un link para entrar a este equipo como operador o admin.</span>
+        </div><div id="teamBox-${esc(a.id)}"></div>`:''}
+      </div>
     </div>`;
   }).join("") || `<div class="card"><p class="muted">No perteneces a ningún equipo todavía.</p></div>`;
 
   // Wiring.
+  document.querySelectorAll("[data-abrir]").forEach(b=> b.onclick=()=>{ const id=b.getAttribute("data-abrir"), c=b.closest(".card.eq");
+    const abre=!c.classList.contains("abierto"); c.classList.toggle("abierto",abre); b.setAttribute("aria-expanded",abre);
+    if(abre) st.abiertos.add(id); else st.abiertos.delete(id); });
+  document.querySelectorAll("[data-foto]").forEach(b=> b.onclick=()=>ponerFoto(b.getAttribute("data-foto")));
+  document.querySelectorAll("[data-sinfoto]").forEach(b=> b.onclick=()=>quitarFoto(b.getAttribute("data-sinfoto")));
   document.querySelectorAll("[data-tipos]").forEach(b=> b.onclick=()=>cambiarTipos(b.getAttribute("data-tipos")));
   document.querySelectorAll("[data-rename]").forEach(b=> b.onclick=()=>renameAccount(b.getAttribute("data-rename")));
   document.querySelectorAll("[data-team]").forEach(b=> b.onclick=()=>mkTeamCode(b.getAttribute("data-team")));
