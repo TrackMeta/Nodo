@@ -1725,8 +1725,10 @@ export async function mountShell({ active } = {}) {
     // (22-oct) Cada bot con su interruptor «encendido» (antes solo en Canales): se prende o apaga sin entrar a ninguna sección
     const sw = (c) => `<button class="nb-sw${c.bot_apagado ? "" : " on"}" type="button" role="switch" aria-checked="${c.bot_apagado ? "false" : "true"}" data-sw="${c.id}" title="${c.bot_apagado ? "Apagado: toca para encenderlo" : "Encendido: toca para apagarlo"}" aria-label="Encender o apagar ${escBot(c.nombre)}"></button>`;
     const fila = (c) => `<div class="nb-row"><button class="nb-item${c.id === S.channelId ? " on" : ""}" type="button" data-id="${c.id}"><img src="${escBot(c.logo_url || FALLBACK_LOGO)}" alt="" /><span>${escBot(c.nombre)}</span>${cnt(c.id)}</button>${sw(c)}</div>`;
-    // Con 2+ negocios: un título por negocio (el del bot abierto primero). Con uno solo, igual que siempre.
-    const accs = S.cuentaDe ? [...new Set(S.channels.map((c) => S.cuentaDe[c.id] || ""))] : [];
+    // Con 2+ equipos: un título por equipo (el del bot abierto primero). Con uno solo, igual que siempre.
+    let accs = S.cuentaDe ? [...new Set(S.channels.map((c) => S.cuentaDe[c.id] || ""))] : [];
+    // (14-nov) Con un equipo por bot, los títulos repetían cada nombre dos veces: solo se agrupa si algún equipo tiene 2+ bots.
+    if (accs.length > 1 && !accs.some((a) => S.channels.filter((c) => (S.cuentaDe[c.id] || "") === a).length > 1)) accs = [];
     if (accs.length > 1) {
       const actual = S.cuentaDe[S.channelId] || "";
       accs.sort((a, b) => (a === actual ? -1 : b === actual ? 1 : String(S.cuentas[a] || "").localeCompare(String(S.cuentas[b] || ""))));

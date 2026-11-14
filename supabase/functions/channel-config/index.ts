@@ -164,8 +164,12 @@ async function archivosDelBot(db: ReturnType<typeof serviceClient>, channelId: s
     for (const c of (data ?? []) as Array<{ id: string }>) contactos.push(c.id);
     if ((data?.length ?? 0) < 1000) break;
   }
-  const m = await listar("media", [`acct/${acc}/chat/${channelId}/`]);
-  const c = await listar("comprobantes", contactos.map((id) => `${acc}/${id}/`));
+  // (14-nov) «%» = cualquier equipo: un bot que se mudó de equipo tiene sus archivos viejos en la carpeta del anterior
+  // (las URL guardadas en mensajes y productos apuntan ahí, así que no se pueden mover). El canal y el contacto son
+  // únicos, así que no se cuela nada de otro bot.
+  void acc;
+  const m = await listar("media", [`acct/%/chat/${channelId}/`]);
+  const c = await listar("comprobantes", contactos.map((id) => `%/${id}/`));
   return { media: m.out, comprobantes: c.out, bytes: m.bytes + c.bytes };
 }
 
@@ -241,8 +245,12 @@ Deno.serve(async (req) => {
       // este registro le robaba el del otro — sus botones llegaban acá y decían «no encontré ese
       // pedido», y sus códigos de vinculación se validaban contra el canal equivocado.
       {
+        // (14-nov) Con un equipo por bot, el mismo Telegram puede estar en un bot de OTRO equipo tuyo: se revisan los
+        // bots de todos tus equipos (y siempre el del propio bot).
         const { data: cMe } = await db.from("channels").select("account_id").eq("id", channel_id).maybeSingle();
-        const { data: otros } = await db.from("channels").select("id, nombre").eq("account_id", (cMe as any)?.account_id ?? "").neq("id", channel_id);
+        const { data: misEq } = await db.from("account_members").select("account_id").eq("user_id", uid).eq("activo", true);
+        const equipos = [...new Set([(cMe as any)?.account_id, ...((misEq ?? []) as any[]).map((m) => m.account_id)].filter(Boolean))];
+        const { data: otros } = await db.from("channels").select("id, nombre").in("account_id", equipos.length ? equipos : [""]).neq("id", channel_id);
         for (const o of (otros ?? []) as any[]) {
           const s2 = await getChannelSecrets(db, o.id).catch(() => null);
           if (s2?.telegram_bot_token && s2.telegram_bot_token === token) {
@@ -550,9 +558,12 @@ Deno.serve(async (req) => {
         // Se cuenta dentro de SU cuenta: `db` es service_role y salta RLS, así que sin el
         // filtro por account_id los canales de otro negocio harían de red de seguridad — el
         // usuario archivaría el último suyo y se quedaría fuera.
+        // (14-nov) Con un equipo por bot, contar solo dentro del equipo no dejaba archivar NINGUNO (cada uno era «el
+        // último»). Se cuentan los bots activos de todos los equipos donde estás (y el del propio bot).
         const { data: cAct } = await db.from("channels").select("account_id").eq("id", channel_id).maybeSingle();
-        const cuenta = (cAct as any)?.account_id;
-        const { data: activos } = await db.from("channels").select("id").eq("activo", true).eq("account_id", cuenta ?? "");
+        const { data: misEqA } = await db.from("account_members").select("account_id").eq("user_id", uid).eq("activo", true);
+        const equiposA = [...new Set([(cAct as any)?.account_id, ...((misEqA ?? []) as any[]).map((m) => m.account_id)].filter(Boolean))];
+        const { data: activos } = await db.from("channels").select("id").eq("activo", true).in("account_id", equiposA.length ? equiposA : [""]);
         const otros = (activos ?? []).filter((c: any) => c.id !== channel_id);
         if (!otros.length) {
           return json({ error: "ultimo_canal", detalle: "Es tu único bot activo. Crea otro antes de archivar este." }, 400);
