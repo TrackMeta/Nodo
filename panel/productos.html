@@ -826,7 +826,7 @@ function renderDetail(){
   const d=$("detail"); if(!st.prod) return;
   const esExtra = st.prod.clase==="extra";
   const esRegalo = st.prod.clase==="regalo";
-  { const pb=$("paisBtn"); if(pb){ pb.style.display=(esExtra||esRegalo)?"none":""; const pc=String(st.prod.config&&st.prod.config.pais||"").toUpperCase(); pb.textContent=(pc&&pc!==_paisBot)||(st.prod.config&&(st.prod.config.familia||st.prod.config.hermano_de))?`${banderaDe(pc||_paisBot)} ${(PAIS_INFO[pc||_paisBot]||[pc])[0]} · Países`:"🌎 Países"; } }
+  { const pb=$("paisBtn"); if(pb){ pb.style.display=(esExtra||esRegalo||st.prod.tipo==="fisico")?"none":"";   /* (13-nov, Rodrigo) los físicos solo se venden en el país del bot: sin «Países» */ const pc=String(st.prod.config&&st.prod.config.pais||"").toUpperCase(); pb.textContent=(pc&&pc!==_paisBot)||(st.prod.config&&(st.prod.config.familia||st.prod.config.hermano_de))?`${banderaDe(pc||_paisBot)} ${(PAIS_INFO[pc||_paisBot]||[pc])[0]} · Países`:"🌎 Países"; } }
   const EXTRA_TABS=["inicio","producto","opciones","entrega","ia","stock"];
   // Un regalo NO se vende: no lleva "venta con IA", activación, ventas extra ni
   // remarketing. Solo qué es (producto) y qué entrega (opciones → Qué entrega).
