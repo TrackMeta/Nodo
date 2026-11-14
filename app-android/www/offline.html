@@ -1,8 +1,90 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Sin conexión</title>
-<style>html,body{margin:0;height:100%;background:#0B0F17;color:#E6E9EF;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-main{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px 16px;text-align:center}
-.l{width:56px;height:56px;border-radius:16px;background:#2563EB;display:grid;place-items:center;font-weight:800;font-size:26px;color:#fff}
-h1{font-size:20px;margin:8px 0 0}p{margin:0;color:#98A2B3;font-size:14px;max-width:300px;line-height:1.5}
-button{margin-top:10px;font:inherit;font-size:15px;font-weight:600;padding:12px 22px;border-radius:12px;border:0;background:#2563EB;color:#fff}</style></head>
-<body><main><div class="l">N</div><h1>Sin conexión</h1><p>Nodo necesita internet para mostrar tus chats. Revisa tus datos o el wifi.</p>
-<button onclick="location.replace('https://trackmeta.github.io/Nodo/panel/app/')">Reintentar</button></main></body></html>
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Sin conexión · Nodo</title>
+<!-- Pantalla «Sin conexión» del APK (Capacitor → server.errorPath). Va DENTRO del APK, así que no puede cargar nada de
+     internet: logo, ícono y estilos van aquí mismo. (14-nov, Rodrigo: «mejora el diseño de sin conexión»)
+     · Logo real de Nodo (la N de nodos) y un ícono de wifi cortado.
+     · Qué revisar, en 3 pasos cortos.
+     · Se abre SOLA cuando vuelve el internet (evento «online» + un intento cada 6 s); «Reintentar» dice si todavía no hay. -->
+<style>
+:root{--bg:#0B1120;--card:#151E32;--line:rgba(148,163,184,.14);--text:#F1F5F9;--muted:#94A3B8;--brand:#007dfd;--ok:#22c55e;--warn:#f59e0b}
+@media (prefers-color-scheme: light){:root{--bg:#F6F7FB;--card:#FFFFFF;--line:#E4E7EC;--text:#0F172A;--muted:#55627A;--brand:#0071e6}}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+main{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 20px calc(32px + env(safe-area-inset-bottom));text-align:center}
+.logo{position:relative;width:76px;height:76px;border-radius:20px;background:linear-gradient(135deg,#0044FE,#01AFFE);box-shadow:0 14px 34px rgba(0,70,255,.30);display:grid;place-items:center;animation:entra .5s cubic-bezier(.3,1.3,.5,1) both}
+.logo svg{width:64px;height:64px}
+.logo svg line{stroke:#fff;stroke-width:7;stroke-linecap:round} .logo svg circle{fill:#fff}
+.sinwifi{position:absolute;right:-8px;bottom:-8px;width:32px;height:32px;border-radius:50%;background:var(--card);border:3px solid var(--bg);display:grid;place-items:center;color:var(--warn)}
+.sinwifi svg{width:16px;height:16px}
+h1{font-size:22px;font-weight:700;letter-spacing:-.3px;margin:26px 0 8px;animation:sube .5s ease .1s both}
+.sub{margin:0;color:var(--muted);font-size:14.5px;line-height:1.55;max-width:310px;animation:sube .5s ease .16s both}
+.pasos{list-style:none;margin:24px 0 0;padding:6px 16px;width:100%;max-width:340px;background:var(--card);border:1px solid var(--line);border-radius:16px;text-align:left;animation:sube .5s ease .22s both}
+.pasos li{display:flex;align-items:center;gap:12px;padding:11px 0;font-size:14px;line-height:1.4}
+.pasos li+li{border-top:1px solid var(--line)}
+.pasos .ic{flex:none;width:32px;height:32px;border-radius:10px;background:rgba(0,125,253,.14);color:var(--brand);display:grid;place-items:center}
+.pasos .ic svg{width:17px;height:17px}
+.pasos small{display:block;color:var(--muted);font-size:12.5px;margin-top:1px}
+button{margin-top:22px;width:100%;max-width:340px;height:50px;font:inherit;font-size:15.5px;font-weight:700;border-radius:12px;border:0;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;gap:9px;cursor:pointer;animation:sube .5s ease .28s both}
+button:active{transform:scale(.98)}
+button svg{width:18px;height:18px}
+button.girando svg{animation:gira .9s linear infinite}
+.estado{margin-top:14px;display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);min-height:18px;animation:sube .5s ease .34s both}
+.estado i{width:8px;height:8px;border-radius:50%;background:var(--warn);animation:late 1.6s ease-in-out infinite}
+.estado.ok i{background:var(--ok);animation:none}
+@keyframes entra{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+@keyframes sube{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+@keyframes gira{to{transform:rotate(360deg)}}
+@keyframes late{0%,100%{opacity:1}50%{opacity:.3}}
+@media (prefers-reduced-motion: reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<main>
+  <div class="logo" aria-hidden="true">
+    <svg viewBox="0 0 128 128"><line x1="35.75" y1="30.25" x2="35.75" y2="88.5"/><line x1="36.5" y1="30.25" x2="89.25" y2="98.75"/><line x1="89.25" y1="41.5" x2="89.25" y2="98.75"/><circle cx="36.5" cy="30.25" r="10"/><circle cx="63.25" cy="64.25" r="8.3"/><circle cx="89.5" cy="41.5" r="8.6"/><circle cx="35.75" cy="88.5" r="9"/><circle cx="89.25" cy="98.75" r="10"/></svg>
+    <span class="sinwifi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"/><path d="M8.5 16.5a5 5 0 0 1 7 0"/><path d="M5 12.9a10 10 0 0 1 5.2-2.8"/><path d="M19 12.9a10 10 0 0 0-2.3-1.7"/><path d="M2 8.8a15 15 0 0 1 4.2-2.7"/><path d="M22 8.8A15 15 0 0 0 11 5"/><path d="M12 20h.01"/></svg></span>
+  </div>
+
+  <h1>Estás sin internet</h1>
+  <p class="sub">Nodo necesita conexión para traer tus chats y pedidos. Apenas vuelva, la app se abre sola.</p>
+
+  <ul class="pasos">
+    <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.6a10 10 0 0 1 14 0"/><path d="M8.5 16.1a5 5 0 0 1 7 0"/><path d="M2 9a15 15 0 0 1 20 0"/><path d="M12 20h.01"/></svg></span>
+      <span>Revisa el wifi<small>Que esté prendido y conectado</small></span></li>
+    <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg></span>
+      <span>O tus datos móviles<small>Que tengas saldo o megas</small></span></li>
+    <li><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg></span>
+      <span>Que no esté en modo avión<small>Se quita deslizando desde arriba</small></span></li>
+  </ul>
+
+  <button id="otra" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg><span>Reintentar</span></button>
+  <div class="estado" id="estado" aria-live="polite"><i></i><span>Esperando conexión…</span></div>
+</main>
+<script>
+var APP = "https://trackmeta.github.io/Nodo/panel/app/";
+var btn = document.getElementById("otra"), est = document.getElementById("estado"), txt = est.querySelector("span"), probando = false;
+function estado(t, ok) { txt.textContent = t; est.classList.toggle("ok", !!ok); }
+// ¿Hay internet de verdad? (navigator.onLine dice «sí» con wifi sin salida): se pide la app sin caché.
+function hay() {
+  return fetch(APP + "manifest.webmanifest?p=" + Date.now(), { cache: "no-store", mode: "no-cors" }).then(function () { return true; }, function () { return false; });
+}
+function probar(aMano) {
+  if (probando) return; probando = true;
+  if (aMano) { btn.classList.add("girando"); btn.querySelector("span").textContent = "Probando…"; }
+  hay().then(function (ok) {
+    probando = false; btn.classList.remove("girando"); btn.querySelector("span").textContent = "Reintentar";
+    if (ok) { estado("¡Volvió el internet! Abriendo Nodo…", true); location.replace(APP); }
+    else if (aMano) estado("Todavía sin internet. Lo seguimos intentando solo.");
+  });
+}
+btn.onclick = function () { probar(true); };
+addEventListener("online", function () { probar(false); });
+setInterval(function () { if (!document.hidden) probar(false); }, 6000);
+</script>
+</body>
+</html>
