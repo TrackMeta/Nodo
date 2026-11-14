@@ -806,8 +806,8 @@ async function openCreateBot() {
   const equipos = S.equiposAdmin || [];
   const botsDe = (acc) => S.cuentaDe ? S.channels.filter((c) => S.cuentaDe[c.id] === acc).length : (equipos.length === 1 ? S.channels.length : 0);
   const opciones = [
-    ...(soyDueno ? [{ v: "__nuevo", ic: "plus", t: "Un equipo nuevo para este bot", d: "Tendrá su propio equipo, con el mismo nombre del bot" }] : []),
-    ...equipos.map((e) => { const n = botsDe(e.id); return { v: e.id, ic: "users", t: "Equipo " + e.nombre, d: n ? `Ya tiene ${n} bot${n === 1 ? "" : "s"}` : "Sin bots todavía" }; }),
+    ...(soyDueno ? [{ v: "__nuevo", ic: "plus", t: "Equipo nuevo", d: "solo para este bot" }] : []),
+    ...equipos.map((e) => { const n = botsDe(e.id); return { v: e.id, ic: "users", t: e.nombre, d: n ? `${n} bot${n === 1 ? "" : "s"}` : "sin bots" }; }),
   ];
   const preguntar = opciones.length > 1;
   let elegido = opciones[0]?.v || null;
@@ -816,12 +816,12 @@ async function openCreateBot() {
   back.innerHTML = `
     <div class="nodo-modal" role="dialog" aria-modal="true" aria-label="Crear nuevo bot">
       <h3>Crear nuevo bot</h3>
-      <p>Cada bot tiene su propia bandeja, contactos, productos y configuración. El número de WhatsApp lo conectas después, en Conexiones.</p>
+      <p>Tendrá su propia bandeja, contactos y productos. El WhatsApp lo conectas después.</p>
       <label for="nbName">Nombre del bot</label>
       <input id="nbName" placeholder="Ej. Tienda Sofía" maxlength="60" autocomplete="off" />
-      <div class="nb-hint">Ponle el nombre de tu tienda o marca: así te presenta la IA a tus clientes («soy el asistente de …») y así lo ves en el menú. El nombre de tu asistente lo eliges después, en IA.</div>
-      ${preguntar ? `<label style="margin-top:16px">¿En qué equipo va?</label>
-      <div class="nodo-choices" id="nbEquipos">${opciones.map((o) => `<button class="nodo-choice${o.v === elegido ? " on" : ""}" type="button" data-v="${escAttr(o.v)}">
+      <div class="nb-hint">El de tu tienda o marca: así te presenta la IA a tus clientes.</div>
+      ${preguntar ? `<label style="margin-top:14px">¿En qué equipo va?</label>
+      <div class="nodo-choices nb-eq" id="nbEquipos">${opciones.map((o) => `<button class="nodo-choice${o.v === elegido ? " on" : ""}" type="button" data-v="${escAttr(o.v)}">
         <span class="nc-ic">${svg(o.ic)}</span><span class="nc-tx"><b>${escHtml(o.t)}</b><small>${escHtml(o.d)}</small></span><span class="nc-ck">${svg("check")}</span></button>`).join("")}</div>` : ""}
       <div class="nb-acts">
         <button class="nb-btn" id="nbCancel" type="button">Cancelar</button>

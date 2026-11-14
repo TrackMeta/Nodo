@@ -401,6 +401,16 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
 .nodo-choice .nc-ck{width:18px;height:18px;flex:none;color:var(--brand);opacity:0;transition:opacity var(--t-fast)}
 .nodo-choice .nc-ck svg{width:18px;height:18px;stroke-width:2.4}
 .nodo-choice.on .nc-ck{opacity:1}
+/* (14-nov, Rodrigo: «muy larga esa ventana») «¿En qué equipo va?» de Crear nuevo bot: filas de una línea, lista con scroll
+   si hay muchos equipos, y pasar el mouse ya no se ve igual que lo elegido (parecía que había dos marcadas). */
+.nodo-choices.nb-eq{gap:6px;max-height:228px;overflow-y:auto;padding:2px}
+.nb-eq .nodo-choice{padding:8px 12px;gap:10px;border-radius:10px}
+.nb-eq .nodo-choice .nc-ic{width:26px;height:26px;border-radius:7px}
+.nb-eq .nodo-choice .nc-ic svg{width:15px;height:15px}
+.nb-eq .nodo-choice .nc-tx{flex-direction:row;align-items:baseline;gap:8px}
+.nb-eq .nodo-choice .nc-tx b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nb-eq .nodo-choice .nc-tx small{white-space:nowrap;font-size:12px}
+.nb-eq .nodo-choice:not(.on):hover{background:var(--surface-2);border-color:var(--brand)}
 @keyframes nbFade{from{opacity:0}to{opacity:1}}
 
 /* ── Sección IA: resalte distintivo (violeta/fucsia robot) ─────────── */
