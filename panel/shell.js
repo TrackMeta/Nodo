@@ -561,7 +561,8 @@ export function toast(msg, err) {
   const el = document.createElement("div");
   el.className = "nn-simple" + (err ? " err" : "");
   el.setAttribute("role", err ? "alert" : "status");
-  el.innerHTML = `<div class="nn-tb"><b></b></div><button class="nn-tx" type="button" title="Cerrar" aria-label="Cerrar">${svg("x")}</button>`;
+  // (14-nov, Rodrigo) Forma de Nodo: rectángulo de esquinas 12 (como «Asesor IA»), ícono a la izquierda y la X fija a la derecha.
+  el.innerHTML = `<span class="nn-ic">${svg(err ? "alert" : "check")}</span><div class="nn-tb"><b></b></div><button class="nn-tx" type="button" title="Cerrar" aria-label="Cerrar">${svg("x")}</button>`;
   el.querySelector("b").textContent = clean;
   el.querySelector(".nn-tx").onclick = (e) => { e.stopPropagation(); el._quitar && el._quitar(); };
   mazo(el, err ? 6000 : 3500);

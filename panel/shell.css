@@ -996,6 +996,22 @@ body.nodo-shelled > #app{flex:1;min-width:0}
 .nn-toast:hover .nn-tx{opacity:1}
 .nn-toast .nn-tx:hover{color:var(--text)}
 .nn-toast .nn-tx svg{width:12px;height:12px}
+/* (14-nov, Rodrigo: «que tenga la misma forma característica de Nodo, como el rectángulo de Asesor IA, y que la X esté a
+   la derecha») Rectángulo de esquinas 12; la X ya no flota en la esquina izquierda (y solo al pasar el mouse): va fija a
+   la derecha, dentro del aviso. El aviso chico lleva su ícono (✓ verde / ⚠ rojo) en un cuadrito de esquinas 8. */
+.nn-toast{border-radius:12px}
+.nn-toast .nn-tx{position:static;flex:none;width:28px;height:28px;border:none;border-radius:8px;background:transparent;box-shadow:none;opacity:.65;align-self:center}
+.nn-toast:hover .nn-tx,.nn-toast .nn-tx:hover{opacity:1}
+.nn-toast .nn-tx:hover{background:color-mix(in srgb,var(--text) 8%,transparent)}
+.nn-toast .nn-tx svg{width:14px;height:14px}
+.nn-toast.nn-simple{padding:10px 8px 10px 10px;gap:10px}
+.nn-toast.nn-simple .nn-ic{width:30px;height:30px;border-radius:8px;flex:none;display:grid;place-items:center}
+.nn-toast.nn-simple .nn-ic svg{width:16px;height:16px;stroke-width:2.4}
+.nn-toast.nn-simple:not(.err) .nn-ic{background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--green)}
+.nn-toast.nn-simple.err .nn-ic{background:color-mix(in srgb,var(--red) 16%,transparent);color:var(--red)}
+.nn-toast.nn-simple .nn-tx{color:inherit}
+.nn-toast.nn-simple:not(.err) .nn-tx{color:var(--green)} .nn-toast.nn-simple.err .nn-tx{color:var(--red)}
+#nodoNotifToasts.exp .nn-toast.atras:hover>.nn-tx,#nodoNotifToasts.exp .nn-toast.atras>.nn-tx{opacity:.65}
 @media (prefers-reduced-motion:reduce){.nodo-bell.ring svg{animation:none}.nn-toast,#nodoNotifToasts{transition:none}.nn-drawer{transition:none}}
 /* 🖼️ Visor de la foto del comprobante (campanita): encima del cajón */
 .nn-visor{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.82);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px;cursor:zoom-out}
