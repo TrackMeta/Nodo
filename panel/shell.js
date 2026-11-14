@@ -792,17 +792,37 @@ function mostrarPrimerBot() {
   back.querySelector("#pbCrear").onclick = () => { back.remove(); openCreateBot(); };
 }
 
-function openCreateBot() {
+// 🤖 (14-nov, Rodrigo: «un equipo por bot») «Crear nuevo bot» pregunta EN QUÉ EQUIPO va. Antes no preguntaba y el bot caía
+// en tu equipo más antiguo (trigger set_channel_account). Opciones:
+//   · «Un equipo nuevo para este bot» — solo el admin de plataforma (RPC crear_bot_en_equipo_nuevo, migración 0146), y
+//     marcada de entrada para él. A un cliente no se le ofrece: con un equipo nuevo se saltaría su límite de tipos.
+//   · Cada equipo donde eres admin. Con un solo equipo y sin la opción de nuevo, no se pregunta (como siempre).
+async function openCreateBot() {
   if (document.getElementById("nb-modal")) return;
+  let soyDueno = false;
+  try { const { data: { session } } = await supa.auth.getSession();
+    const { data: me } = await supa.from("app_users").select("platform_admin").eq("id", session?.user?.id ?? "").maybeSingle();
+    soyDueno = me?.platform_admin === true; } catch (_) { /* sin dato: sin la opción de equipo nuevo */ }
+  const equipos = S.equiposAdmin || [];
+  const botsDe = (acc) => S.cuentaDe ? S.channels.filter((c) => S.cuentaDe[c.id] === acc).length : (equipos.length === 1 ? S.channels.length : 0);
+  const opciones = [
+    ...(soyDueno ? [{ v: "__nuevo", ic: "plus", t: "Un equipo nuevo para este bot", d: "Tendrá su propio equipo, con el mismo nombre del bot" }] : []),
+    ...equipos.map((e) => { const n = botsDe(e.id); return { v: e.id, ic: "users", t: "Equipo " + e.nombre, d: n ? `Ya tiene ${n} bot${n === 1 ? "" : "s"}` : "Sin bots todavía" }; }),
+  ];
+  const preguntar = opciones.length > 1;
+  let elegido = opciones[0]?.v || null;
   const back = document.createElement("div");
   back.id = "nb-modal"; back.className = "nodo-modal-back";
   back.innerHTML = `
     <div class="nodo-modal" role="dialog" aria-modal="true" aria-label="Crear nuevo bot">
       <h3>Crear nuevo bot</h3>
-      <p>Cada bot es un <b>espacio independiente</b> dentro de tu cuenta: su propia bandeja, contactos, flujos, productos, configuración y pixel. El número de WhatsApp y el pixel se conectan después, en <b>Conexiones</b>.</p>
-      <label for="nbName">Nombre de tu negocio</label>
+      <p>Cada bot tiene su propia bandeja, contactos, productos y configuración. El número de WhatsApp lo conectas después, en Conexiones.</p>
+      <label for="nbName">Nombre del bot</label>
       <input id="nbName" placeholder="Ej. Tienda Sofía" maxlength="60" autocomplete="off" />
-      <div class="nb-hint">Así te presenta la IA a tus clientes («soy el asistente de …») y así lo ves en el menú. El nombre de tu asistente lo eliges después, en IA.</div>
+      <div class="nb-hint">Ponle el nombre de tu tienda o marca: así te presenta la IA a tus clientes («soy el asistente de …») y así lo ves en el menú. El nombre de tu asistente lo eliges después, en IA.</div>
+      ${preguntar ? `<label style="margin-top:16px">¿En qué equipo va?</label>
+      <div class="nodo-choices" id="nbEquipos">${opciones.map((o) => `<button class="nodo-choice${o.v === elegido ? " on" : ""}" type="button" data-v="${escAttr(o.v)}">
+        <span class="nc-ic">${svg(o.ic)}</span><span class="nc-tx"><b>${escHtml(o.t)}</b><small>${escHtml(o.d)}</small></span><span class="nc-ck">${svg("check")}</span></button>`).join("")}</div>` : ""}
       <div class="nb-acts">
         <button class="nb-btn" id="nbCancel" type="button">Cancelar</button>
         <button class="nb-btn primary" id="nbCreate" type="button">Crear bot</button>
@@ -813,22 +833,44 @@ function openCreateBot() {
   const close = () => back.remove();
   back.addEventListener("click", (e) => { if (e.target === back) close(); });
   back.querySelector("#nbCancel").onclick = close;
+  back.querySelectorAll("#nbEquipos .nodo-choice").forEach((b) => { b.onclick = () => { elegido = b.dataset.v;
+    back.querySelectorAll("#nbEquipos .nodo-choice").forEach((x) => x.classList.toggle("on", x === b)); }; });
   const create = async () => {
     const nombre = input.value.trim();
     if (!nombre) { input.focus(); return; }
     const btn = back.querySelector("#nbCreate"); if (btn.disabled) return;   // doble Enter = dos bots: el keydown no miraba el botón
     btn.disabled = true; btn.textContent = "Creando…";
-    // (4-nov) Un solo nombre: el del bot ES el del negocio. Se guarda también en la ficha del negocio y en el texto
-    // que lee la IA; antes un bot nuevo no sabía cómo se llamaba su negocio hasta que alguien guardaba Negocio.
-    let { data, error } = await supa.from("channels").insert({ nombre, negocio_form: { nombre }, negocio: "# " + nombre }).select("id,nombre").single();
-    if (error && /negocio/.test(error.message || "")) ({ data, error } = await supa.from("channels").insert({ nombre }).select("id,nombre").single());
-    if (error) { btn.disabled = false; btn.textContent = "Crear bot"; toast(error.message || "No se pudo crear el bot", true); return; }
+    let data = null, error = null, acc = null;
+    if (elegido === "__nuevo") {
+      // Equipo nuevo + bot, en un solo paso en la base.
+      const r = await supa.rpc("crear_bot_en_equipo_nuevo", { p_nombre: nombre });
+      error = r.error;
+      if (!error) { data = { id: r.data, nombre };
+        const { data: c } = await supa.from("channels").select("account_id").eq("id", r.data).maybeSingle(); acc = c?.account_id || null; }
+    } else {
+      // (4-nov) Un solo nombre: el del bot ES el del negocio. Se guarda también en la ficha del negocio y en el texto
+      // que lee la IA; antes un bot nuevo no sabía cómo se llamaba su negocio hasta que alguien guardaba Negocio.
+      acc = elegido || null;
+      const fila = { nombre, negocio_form: { nombre }, negocio: "# " + nombre, ...(acc ? { account_id: acc } : {}) };
+      ({ data, error } = await supa.from("channels").insert(fila).select("id,nombre").single());
+      if (error && /negocio/.test(error.message || "")) ({ data, error } = await supa.from("channels").insert({ nombre, ...(acc ? { account_id: acc } : {}) }).select("id,nombre").single());
+    }
+    if (error) { btn.disabled = false; btn.textContent = "Crear bot"; toast(/solo_admin/.test(error.message || "") ? "Solo el dueño de Nodo puede crear equipos nuevos" : (error.message || "No se pudo crear el bot"), true); return; }
     // Las etiquetas automáticas existen desde el primer día (etiquetas-auto.js); si falla, la pantalla de Etiquetas las crea.
     try { const m = await import("./etiquetas-auto.js"); await m.asegurarEtiquetasAuto(supa, data.id); } catch (_) {}
     S.channels.push({ id: data.id, nombre: data.nombre, logo_url: null });
     S.channels.sort((a, b) => (a.nombre || "").localeCompare(b.nombre || ""));
+    // El selector agrupa por equipo: que sepa dónde quedó el bot (y el equipo nuevo, si lo hubo).
+    if (acc) {
+      if (elegido === "__nuevo") { S.equiposAdmin = [...(S.equiposAdmin || []), { id: acc, nombre }]; S.equiposTodos = { ...(S.equiposTodos || {}), [acc]: nombre }; }
+      if (!S.cuentaDe && Object.keys(S.equiposTodos || {}).length > 1) {
+        const { data: _cc } = await supa.from("channels").select("id,account_id").eq("activo", true);
+        S.cuentaDe = Object.fromEntries((_cc || []).map((c) => [c.id, c.account_id]));
+      }
+      if (S.cuentaDe) { S.cuentaDe[data.id] = acc; S.cuentas = { ...(S.equiposTodos || S.cuentas || {}) }; }
+    }
     close();
-    toast("Bot creado — conéctalo en Conexiones");
+    toast(elegido === "__nuevo" ? "Bot creado en su propio equipo — conéctalo en Conexiones" : "Bot creado — conéctalo en Conexiones");
     // Guard de cambios sin guardar ANTES de cambiar de bot (setChannel recarga la página y
     // descartaría ediciones en silencio): el selector de bot existente ya lo respeta, esta
     // ruta no. Si hay cambios y el operador cancela, el bot queda creado y sigue en su página.
@@ -1698,6 +1740,8 @@ export async function mountShell({ active } = {}) {
     const { data: _ms } = await supa.from("account_members").select("role,account_id,accounts(nombre)").eq("user_id", _s?.user?.id ?? "").eq("activo", true);
     _sinCuenta = !(_ms || []).length;
     S.puedeCrear = (_ms || []).some((m) => m.role === "admin");
+    S.equiposAdmin = (_ms || []).filter((m) => m.role === "admin").map((m) => ({ id: m.account_id, nombre: m.accounts?.nombre || "Equipo" }));
+    S.equiposTodos = Object.fromEntries((_ms || []).map((m) => [m.account_id, m.accounts?.nombre || "Equipo"]));
     // (6-nov) Quien pertenece a 2+ negocios (su cuenta + el equipo al que lo invitaron) veía todos los bots
     // mezclados en una sola lista, sin saber cuál era de qué negocio: el selector los separa por negocio.
     S.cuentas = null; S.cuentaDe = null;
