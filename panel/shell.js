@@ -1429,7 +1429,7 @@ function setIaBackdrop(active) {
     neb.id = "nodo-nebula"; neb.className = "nodo-nebula"; neb.setAttribute("aria-hidden", "true");
     document.body.insertBefore(neb, document.body.firstChild);
   }
-  const on = active === "ia";
+  const on = active === "ia" || active === "bot";   // (14-nov) la sección Bot conserva el fondo violeta de IA
   const was = document.documentElement.dataset.ia === "on";
   document.documentElement.dataset.ia = on ? "on" : "";
   if (on !== was && FX.built) fxRetheme(); // recolorea las estrellas al entrar/salir de IA
@@ -2010,6 +2010,9 @@ function onNavClick(e) {
   if (a.target === "_blank") return;
   const href = a.getAttribute("href");
   if (!href || !new URL(href, location.href).pathname.endsWith(".html")) return;
+  // (14-nov, Rodrigo: «al cambiar entre pestañas del bot parece que abriera una sección nueva») Entre pestañas de la MISMA
+  // sección no se repiten las animaciones de entrada (la franja que baja, el título que aparece): html.nav-interna.
+  if (spa) { document.documentElement.classList.add("nav-interna"); clearTimeout(window.__navInt); window.__navInt = setTimeout(() => document.documentElement.classList.remove("nav-interna"), 1600); }
   if (BOUNDARY.has(fileOf(href))) return; // Bandeja/Editor = navegación normal
   const dest = new URL(href, location.href);
   if (dest.origin !== location.origin) return;

@@ -1556,3 +1556,14 @@ html[data-sin-fisico] .bot-tabs [data-k="entrega"]{display:none!important}
 .av-seg{display:inline-flex;gap:4px;padding:4px;margin:0 0 16px;border-radius:12px;background:var(--surface-2);border:1px solid var(--border)}
 .av-seg button{height:32px;padding:0 14px;border:0;border-radius:9px;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
 .av-seg button.on{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(15,23,42,.12)}
+
+/* 🤖 (14-nov, Rodrigo: «no conservaste los colores y botones de la sección IA… las uniste literalmente») Toda la
+   sección Bot (las dos páginas, también Tu negocio, Entrega y Datos del bot) lleva el estilo de IA: acento violeta en
+   vez del azul (botones, enlaces, interruptores, foco) y los botones principales con el degradado violeta→fucsia. */
+body:has(#botTabs) .nodo-page{--brand:#a855f7;--brand-2:#9333ea;--brand-bg:rgba(168,85,247,.12);--brand-border:rgba(168,85,247,.4)}
+html[data-theme="light"] body:has(#botTabs) .nodo-page{--brand:#9333ea;--brand-2:#7e22ce;--brand-bg:rgba(147,51,234,.10)}
+body:has(#botTabs) .nodo-page :is(.btn,.nodo-btn,.nb-btn).primary{background:linear-gradient(90deg,#a855f7,#ec4899)!important;border-color:transparent!important;color:#fff!important}
+body:has(#botTabs) .nodo-page :is(.btn,.nodo-btn,.nb-btn).primary:hover{filter:brightness(1.07)}
+/* Cambio de pestaña dentro de la misma sección: sin animaciones de entrada (no es una sección nueva). */
+html.nav-interna .nodo-page,html.nav-interna .nodo-page *,html.nav-interna .nodo-page::before,html.nav-interna .nodo-page *::before,
+html.nav-interna body.nodo-shelled .wrap::before{animation:none!important}

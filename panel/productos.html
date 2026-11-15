@@ -818,13 +818,36 @@ async function deleteProduct(){
   // a mano. Se cuenta antes para poder decirlo.
   let flIds=[]; try{ const {data:fs}=await supa.from("flows").select("id").eq("product_id",st.prod.id); flIds=(fs||[]).map(f=>f.id); }catch(_){}
   const vivasP = await charlasVivas(null, flIds);
-  if(!await confirmDialog({title:"Eliminar producto",messageHtml:`¿Eliminar "${esc(st.prod.nombre)}"? Se eliminarán también sus versiones y sus flujos. Esta acción no se puede deshacer.`+(vivasP?`<br><br>${icon("alert")} Hay <b>${vivasP} conversación${vivasP===1?"":"es"}</b> a mitad de sus flujos ahora mismo: ${vivasP===1?"se queda":"se quedan"} sin flujo y ${vivasP===1?"pasa":"pasan"} a un humano. Los pedidos ya hechos no se borran.`:""),confirmText:"Eliminar",danger:true})) return;
+  // 🧹 (14-nov, Rodrigo: «aparecen secuencias que no deberían estar») Las secuencias de remarketing de ESTE producto se van
+  // con él: las que enlaza (remarketing_seq_id, remarketing_seqs, remarketing_seqs_angulo) y las de su carpeta, siempre que
+  // ningún otro producto del bot las use. Antes quedaban huérfanas (en Prime, 2 vacías de un producto ya borrado).
+  let seqsMias=[];
+  try{
+    const cf=st.prod.config||{};
+    const enlazadas=new Set([cf.remarketing_seq_id, ...Object.values(cf.remarketing_seqs||{}), ...Object.values(cf.remarketing_seqs_angulo||{})].filter(Boolean).map(String));
+    const [{ data:seqs },{ data:otros }]=await Promise.all([
+      supa.from("sequences").select("id,folder").eq("channel_id",st.channelId),
+      supa.from("products").select("config").eq("channel_id",st.channelId).neq("id",st.prod.id) ]);
+    const usadas=new Set(); const txt=(otros||[]).map(p=>JSON.stringify(p.config||{})).join(" ");
+    (seqs||[]).forEach(q=>{ if(txt.includes(q.id)) usadas.add(q.id); });
+    seqsMias=(seqs||[]).filter(q=>(enlazadas.has(q.id) || (q.folder && q.folder===prodFolder())) && !usadas.has(q.id)).map(q=>q.id);
+  }catch(_){ seqsMias=[]; }
+  if(!await confirmDialog({title:"Eliminar producto",messageHtml:`¿Eliminar "${esc(st.prod.nombre)}"? Se eliminarán también sus versiones, sus flujos${seqsMias.length?` y sus ${seqsMias.length} secuencia${seqsMias.length===1?"":"s"} de remarketing`:""}. Esta acción no se puede deshacer.`+(vivasP?`<br><br>${icon("alert")} Hay <b>${vivasP} conversación${vivasP===1?"":"es"}</b> a mitad de sus flujos ahora mismo: ${vivasP===1?"se queda":"se quedan"} sin flujo y ${vivasP===1?"pasa":"pasan"} a un humano. Los pedidos ya hechos no se borran.`:""),confirmText:"Eliminar",danger:true})) return;
   // Igual que al borrar un flujo: product_versions cuelga del producto con `on delete
   // cascade` (migración 0005). Borrarlas a mano ANTES y sin mirar el error significaba que,
   // si el delete del producto fallaba, el producto quedaba vivo pero SIN presentaciones ni
   // precios — el usuario leía "no se pudo eliminar" con el producto ya destrozado.
   const { error }=await supa.from("products").delete().eq("id",st.prod.id);
   if(error){ toast(error.message,true); return; }
+  if(seqsMias.length){
+    const carpeta=prodFolder();
+    const { error:eS }=await supa.from("sequences").delete().in("id",seqsMias);
+    if(eS) toast("El producto se eliminó, pero no sus secuencias: bórralas en Secuencias",true);
+    else if(carpeta){ try{   // y su carpeta en Secuencias, si quedó vacía
+      const { count }=await supa.from("sequences").select("id",{ count:"exact", head:true }).eq("channel_id",st.channelId).eq("folder",carpeta);
+      if(!count) await supa.from("folders").delete().eq("channel_id",st.channelId).eq("tipo","sequence").eq("nombre",carpeta);
+    }catch(_){} }
+  }
   st.prod=null; toast("Producto eliminado"); showGrid(); await loadProducts();
 }
 

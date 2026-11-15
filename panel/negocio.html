@@ -177,7 +177,8 @@
     <!-- 🤖 (14-nov) Barra de la sección «Bot» (Negocio + IA), compartida con ia.html: bot-seccion.js -->
     <div class="tabs bot-tabs" id="botTabs"></div>
     <div id="body"></div>
-    <div id="fisLink" style="display:none;margin:18px 2px 0;font-size:12.5px;color:var(--muted)">¿Vas a vender productos físicos? <a href="#" style="color:var(--brand);text-decoration:none;font-weight:600">Configura la entrega y logística</a></div>
+    <!-- (14-nov, Rodrigo) Se quitó «¿Vas a vender productos físicos? Configura la entrega y logística»: Entrega aparece
+         sola en cuanto el bot tiene un producto físico. -->
   </div>
 </div>
 
@@ -213,6 +214,8 @@ async function boot(){
   const { data:{session} }=await supa.auth.getSession(); if(!session){ location.href="index.html"; return; }
   // 🤖 (14-nov) Pestañas de la sección «Bot»: Tu negocio (conocimiento) · Entrega · Datos del bot viven aquí; Cómo vende,
   // Atención, Pagos y Avanzado son enlaces a ia.html. ?tab=… elige cuál abrir (desde ia.html o enlaces viejos).
+  // «Armar con IA» desde una pestaña de IA llega con ?armar=1: se abre en cuanto carga.
+  try{ const qa=new URLSearchParams(location.search); if(qa.get("armar")==="1"){ st._abrirArmar=true; qa.delete("armar"); history.replaceState(null,"",location.pathname+(qa.toString()?"?"+qa:"")); } }catch(_){}
   st.tab = tabDeUrl(["conocimiento","entrega","datos"], "conocimiento");
   pintarTabsBot("negocio", st.tab);
   // Cambiar de pestaña rehace el formulario desde el snapshot: si hay cambios sin guardar, se pregunta.
@@ -230,6 +233,7 @@ async function boot(){
   // Guardaste nombre o logo en «Nombre, país y moneda»: el encabezado de arriba se pone al día sin recargar.
   window.addEventListener("nodo:marca",(e)=>{ const c=(st.shell&&st.shell.channels||[]).find(x=>x.id===st.channelId); if(c){ c.nombre=e.detail.nombre; c.logo_url=e.detail.logo_url; } st.channel.nombre=e.detail.nombre; pintaIdentidad(); });
   if(st.channelId) await load();
+  if(st._abrirArmar){ st._abrirArmar=false; try{ armOpen(); }catch(_){} }
 }
 function marcaTab(t){ st.tab=t; document.querySelectorAll(".tab[data-t]").forEach(x=>x.classList.toggle("active",x.dataset.t===t)); }
 // (10-oct, Rodrigo) Arriba, la foto y el nombre del negocio (el del bot), como el Dashboard. La foto se cambia en la pestaña «Nombre, país y moneda».
@@ -309,7 +313,9 @@ let _armObs=null;
 function sincronizaFab(){
   const fab=$("armFab"); if(!fab) return;
   if(_armObs){ _armObs.disconnect(); _armObs=null; }
-  if(st.tab==="datos"){ fab.style.display="none"; return; }   // «Armar con IA» arma el conocimiento, no el nombre ni el país
+  // (14-nov, Rodrigo: «Armar con IA también desaparece en algunas pestañas») Se ve SIEMPRE, en todas las pestañas de
+  // la sección Bot (en las de IA también: ia.html tiene el mismo botón y trae aquí). Arma el conocimiento del negocio.
+  fab.style.display=""; return;
   const hero=document.querySelector(".armhero");
   if(!hero){ fab.style.display=""; return; }   // sin franja (form ya lleno) → flotante solo
   // El que scrollea es .nodo-page, no la ventana: con root nulo el observador
