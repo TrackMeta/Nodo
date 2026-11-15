@@ -912,7 +912,11 @@ async function renderGastoIa(){
     .eq("channel_id", st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim")
     .gte("created_at", startOfDayTZ(gastoRango.from).toISOString()).lte("created_at", endOfDayTZ(gastoRango.to).toISOString())
     .then((r)=>r, ()=>({ count:0 }));
-  const [rHay, rData, rChats] = await Promise.all([pHay, pData, pChats]);
+  // 💱 (15-nov, Rodrigo: «si está en soles, ¿ese panel de gasto se puede ver en soles?») La moneda sigue a «Tus reportes
+  // en» (Bot → Datos del bot): en la moneda del bot se convierte con su tipo de cambio (usd_rate, se actualiza solo cada
+  // día); en dólares, o si no hubiera tipo de cambio, queda en dólares como lo cobran ChatGPT y Claude.
+  const pCh = supa.from("channels").select("moneda,moneda_reporte,usd_rate").eq("id", st.channelId).maybeSingle().then((r)=>r, ()=>({}));
+  const [rHay, rData, rChats, rCh] = await Promise.all([pHay, pData, pChats, pCh]);
   if(rHay){ gastoIaHay = rHay.error ? false : (rHay.count||0)>0; }   // sin tabla (migración pendiente) → sin tarjeta
   if(!gastoIaHay){ box.innerHTML=""; return; }
   const { data, error }=rData;
@@ -926,11 +930,16 @@ async function renderGastoIa(){
   // Con centavos, redondear a 2 decimales convierte todo lo pequeño en "$0.00" y la
   // tarjeta parece rota justo cuando recién empiezas a medir. Bajo un dólar se muestran
   // los céntimos de verdad.
-  const usd=(n)=>{
-    if(!(n>0)) return "$0.00";
-    if(n>=1) return "$"+n.toFixed(2);
-    if(n>=0.01) return "$"+n.toFixed(3);
-    return "$"+n.toFixed(4);
+  const chM=(rCh&&rCh.data)||{}, monBot=String(chM.moneda||"USD").toUpperCase();
+  const tasa=(chM.moneda_reporte!=="USD" && monBot!=="USD" && Number(chM.usd_rate)>0) ? Number(chM.usd_rate) : 0;
+  const SIMB={PEN:"S/ ",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs ",EUR:"€",BRL:"R$ ",UYU:"$U ",PYG:"₲ ",GTQ:"Q ",CRC:"₡",DOP:"RD$ ",PAB:"B/. "};
+  const sim = tasa ? (SIMB[monBot]||monBot+" ") : "$";
+  const usd=(n0)=>{
+    const n = tasa ? n0*tasa : n0;
+    if(!(n>0)) return sim+"0.00";
+    if(n>=1) return sim+n.toFixed(2);
+    if(n>=0.01) return sim+n.toFixed(tasa?2:3);
+    return sim+n.toFixed(4);
   };
   // Por para-qué, de mayor a menor: el orden cuenta la historia solo.
   const porOrigen={}; mes.forEach(r=>{ porOrigen[r.origen]=(porOrigen[r.origen]||0)+Number(r.costo_usd||0); });
@@ -949,7 +958,7 @@ async function renderGastoIa(){
     <div class="card">
       <div class="chd"><span class="nm">Lo que gasta tu IA</span>
         <span id="gastoIaDr" style="margin-left:auto"></span></div>
-      <div class="desc ay">Lo que llevas consumido con tu propia cuenta de IA. El cobro real siempre lo manda tu proveedor; esto es para que no tengas que salir de acá para saber cómo vas.</div>
+      <div class="desc ay">Lo que llevas consumido con tu propia cuenta de IA. El cobro real siempre lo manda tu proveedor (en dólares); esto es para que no tengas que salir de acá para saber cómo vas.${tasa?` Se muestra en tu moneda con el tipo de cambio de hoy (1 USD = ${sim}${tasa.toFixed(4)}); para verlo en dólares, cambia «Tus reportes en» en Datos del bot.`:""}</div>
       <div style="display:flex;gap:26px;flex-wrap:wrap;margin:14px 0 4px">
         <div><div style="font-size:11.5px;color:var(--muted);font-weight:700">GASTO</div>
              <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${usd(totalMes)}</div></div>
@@ -966,7 +975,7 @@ async function renderGastoIa(){
           <div style="flex:0 0 190px;font-size:12.5px;color:var(--text)">${esc(USO_NOMBRES[k]||k)}</div>
           <div style="flex:1;height:8px;background:var(--surface-2);border-radius:6px;overflow:hidden">
             <div style="height:100%;width:${Math.max(3,Math.round(v/maxV*100))}%;background:linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899))"></div></div>
-          <div style="flex:0 0 62px;text-align:right;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums">${usd(v)}</div>
+          <div style="flex:0 0 74px;text-align:right;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">${usd(v)}</div>
         </div>`).join("")}</div>`:""}
     </div>`;
   const host=$("gastoIaDr");
