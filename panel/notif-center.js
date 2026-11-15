@@ -788,7 +788,7 @@ function acciones(n) {
     const pid = String(n.datos?.product_id || "");
     // (las del NEGOCIO —garantía, devoluciones, factura— se contestan en Bot → Tu negocio: 0126)
     A.push({ k: "ir", lb: "Revisar preguntas", ic: "help",
-      href: n.datos?.ambito === "negocio" ? "negocio.html?preguntas=1"
+      href: n.datos?.ambito === "negocio" ? "bot.html?preguntas=1"
         : pid ? `productos.html?p=${encodeURIComponent(pid)}&preguntas=1` : "productos.html" });
   }
   else {

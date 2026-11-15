@@ -409,11 +409,11 @@ const NAV_GROUPS = [
     { id:"copiloto",    label:"Pagos por validar",    href:"copiloto.html",   icon:"compass" },
     { id:"accesos",     label:"Accesos",              href:"accesos.html",    icon:"key" },
   ]},
-  // 🤖 (14-nov, Rodrigo) «Negocio» e «IA» son UNA sección: «Bot» (lo que sabe tu bot y cómo vende). Por dentro siguen
-  // siendo negocio.html e ia.html con la misma barra de pestañas (bot-seccion.js); las dos marcan «Bot» en el menú.
+  // 🤖 (14-nov, Rodrigo) «Negocio» e «IA» son UNA sección y UNA página: bot.html (bot-negocio.js + bot-ia.js).
+  // negocio.html e ia.html quedaron solo como redirecciones para los enlaces viejos.
   { key:"negocio", sec:"Tu bot", items:[
     { id:"productos",   label:"Productos",            href:"productos.html",  icon:"productos" },
-    { id:"bot",         label:"Bot",                  href:"negocio.html",    icon:"robot", special:"ia" },
+    { id:"bot",         label:"Bot",                  href:"bot.html",        icon:"robot", special:"ia" },
   ]},
   { key:"marketing", sec:"Marketing", items:[
     { id:"contactos",   label:"Contactos",            href:"contactos.html",  icon:"contactos" },

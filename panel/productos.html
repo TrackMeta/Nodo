@@ -1459,7 +1459,7 @@ function renderEntrega(host){
   // por defecto) vive en Bot → Entrega, igual para todos los
   // productos. Acá solo el ADELANTO override, por si ESTE producto necesita otro.
   b.innerHTML=`
-    <p class="hint" style="margin:0 0 14px">La entrega física —zonas de Lima, agencias, envío gratis, corte y el <b>adelanto por defecto</b>— se configura una vez en <a href="negocio.html" style="color:var(--brand)">Bot → Entrega</a> y vale para todos tus productos.</p>
+    <p class="hint" style="margin:0 0 14px">La entrega física —zonas de Lima, agencias, envío gratis, corte y el <b>adelanto por defecto</b>— se configura una vez en <a href="bot.html" style="color:var(--brand)">Bot → Entrega</a> y vale para todos tus productos.</p>
     ${st.prod.clase==="extra"
       ? `<div style="display:flex;gap:8px;align-items:flex-start;background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:11px;padding:12px 13px;font-size:12.5px;color:var(--muted);line-height:1.55"><span style="color:#0e9f6e;flex:none;display:inline-flex;margin-top:1px">${icon("box")}</span><div>Este es un <b>complemento</b>: se envía <b>junto con el pedido principal</b>, en el mismo envío. No lleva adelanto ni envío propios — usa los del pedido al que se sume.</div></div>`
       : `
@@ -1520,7 +1520,7 @@ function renderEntrega(host){
       if(eh){
         const modo=E.envio_modo || (E.envio_gratis!==false?"incluido":"suma");
         const txt={incluido:"incluido en el precio",suma:"se suma al total",agencia:"lo paga en la agencia"}[modo]||modo;
-        eh.innerHTML=`Tu negocio hoy dice: <b>${esc(txt)}</b>. <a href="negocio.html" style="color:var(--brand)">Cambiarlo para todos →</a>`;
+        eh.innerHTML=`Tu negocio hoy dice: <b>${esc(txt)}</b>. <a href="bot.html" style="color:var(--brand)">Cambiarlo para todos →</a>`;
       }
     }).catch(()=>{});
 }

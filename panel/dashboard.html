@@ -583,7 +583,7 @@ const esc=(s)=>(s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 let channelId=null;
 let asesorResumen=null;
 // ── Asesor IA (Mide + Aconseja): panel arriba del Dashboard ──
-const ASECC={ campanas:"campanas.html", productos:"productos.html", remarketing:"productos.html", pedidos:"pedidos.html", negocio:"negocio.html", ia:"ia.html", rendimiento:"rendimiento.html" };
+const ASECC={ campanas:"campanas.html", productos:"productos.html", remarketing:"productos.html", pedidos:"pedidos.html", negocio:"bot.html?tab=conocimiento", ia:"bot.html?tab=vendedor", rendimiento:"rendimiento.html" };
 const AI_SPARK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>';
 function renderAsesor(){
   const box=$("asesorPanel"); if(!box) return;
@@ -1016,12 +1016,12 @@ async function renderOnboarding(cid){
   ]);
   const cd=ch.data||{};
   const pasos=[
-    { ok:!!(cd.negocio&&String(cd.negocio).trim()), t:"Cuéntale a la IA de tu negocio", h:"negocio.html", d:"Qué vendes, a quién, cómo hablas" },
+    { ok:!!(cd.negocio&&String(cd.negocio).trim()), t:"Cuéntale a la IA de tu negocio", h:"bot.html?tab=conocimiento", d:"Qué vendes, a quién, cómo hablas" },
     { ok:(prod.count||0)>0, t:"Crea tu primer producto", h:"productos.html", d:"Con su precio, entrega y presentaciones" },
     // 🔐 Sin «Avanzado» el editor de flujos no existe para esta cuenta: el paso se cumple
     // igual (el flujo lo genera el producto), así que el atajo lleva a Productos.
     { ok:(flows.count||0)>0, t:"Activa un flujo de venta", h:AV?"editor.html":"productos.html", d:"La conversación que vende ese producto" },
-    { ok:(ai.count||0)>0, t:"Conecta la IA (API key)", h:"ia.html", d:"Sin esto el vendedor IA no puede responder" },
+    { ok:(ai.count||0)>0, t:"Conecta la IA (API key)", h:"bot.html?tab=proveedores", d:"Sin esto el vendedor IA no puede responder" },
     { ok:!!cd.phone_number_id, t:"Conecta tu WhatsApp", h:"canales.html", d:"El último paso para salir a clientes reales" },
   ];
   const hechos=pasos.filter(p=>p.ok).length;
