@@ -898,17 +898,24 @@ let gastoRango=computePreset("hoy");   // (todas las fechas arrancan en Hoy — 
 let gastoIaHay=null;
 async function renderGastoIa(){
   const box=$("gastoIa"); if(!box) return;
-  if(gastoIaHay===null){
-    const { count, error:e0 }=await supa.from("ai_usage").select("dia",{count:"exact",head:true}).eq("channel_id", st.channelId);
-    gastoIaHay = e0 ? false : (count||0)>0;   // sin tabla (migración pendiente) → sin tarjeta
-  }
-  if(!gastoIaHay){ box.innerHTML=""; return; }
+  // ⚡ (15-nov, Rodrigo: «¿por qué tarda en cargar?») Las tres consultas (¿alguna vez usó IA?, el gasto del rango y los
+  // chats nuevos) iban una detrás de otra: ~1 s. Ahora salen al mismo tiempo y tarda lo que tarda una.
   const desde=ymdDia(gastoRango.from), hasta=ymdDia(gastoRango.to);
+  const pHay = gastoIaHay===null ? supa.from("ai_usage").select("dia",{count:"exact",head:true}).eq("channel_id", st.channelId) : null;
   // PAGINADO: son ~20 filas por día; con «Máximo» pasaba de 1000 y el gasto salía corto (y distinto
   // del Dashboard, que sí pagina).
-  const { data, error }=await pageAll((f,t)=>supa.from("ai_usage")
+  const pData = pageAll((f,t)=>supa.from("ai_usage")
     .select("dia,origen,model,llamadas,tokens_in,tokens_out,costo_usd")
     .eq("channel_id", st.channelId).gte("dia", desde).lte("dia", hasta).order("dia",{ascending:false}).order("origen").order("model").range(f,t));
+  // Chats nuevos del rango (para «por conversación»). Corte del día en la zona del NEGOCIO y sin contactos de prueba.
+  const pChats = supa.from("contacts").select("id",{count:"exact",head:true})
+    .eq("channel_id", st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim")
+    .gte("created_at", startOfDayTZ(gastoRango.from).toISOString()).lte("created_at", endOfDayTZ(gastoRango.to).toISOString())
+    .then((r)=>r, ()=>({ count:0 }));
+  const [rHay, rData, rChats] = await Promise.all([pHay, pData, pChats]);
+  if(rHay){ gastoIaHay = rHay.error ? false : (rHay.count||0)>0; }   // sin tabla (migración pendiente) → sin tarjeta
+  if(!gastoIaHay){ box.innerHTML=""; return; }
+  const { data, error }=rData;
   if(error || !Array.isArray(data)){ box.innerHTML=""; return; }
   const sum=(rows,campo)=>rows.reduce((a,r)=>a+Number(r[campo]||0),0);
   const mes=data;
@@ -936,14 +943,8 @@ async function renderGastoIa(){
   // que el total del mes. Se divide entre los chats que empezaron este mes (los contactos
   // nuevos), que es la unidad en la que uno piensa el negocio.
   let porChat="";
-  try{
-    const { count }=await supa.from("contacts").select("id",{count:"exact",head:true})
-      // Corte del día en la zona del NEGOCIO (antes UTC: a las 22:00 de Lima «Hoy» perdía los chats
-      // de las 19:00 en adelante y sumaba los de anoche) y sin contactos de prueba.
-      .eq("channel_id", st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim")
-      .gte("created_at", startOfDayTZ(gastoRango.from).toISOString()).lte("created_at", endOfDayTZ(gastoRango.to).toISOString());
-    if(count>0) porChat=usd(totalMes/count)+` <span style="font-weight:600;color:var(--muted)">por conversación</span>`;
-  }catch(_){ /* sin el dato, la tarjeta va igual */ }
+  { const count=(rChats&&rChats.count)||0;
+    if(count>0) porChat=usd(totalMes/count)+` <span style="font-weight:600;color:var(--muted)">por conversación</span>`; }
   box.innerHTML=`
     <div class="card">
       <div class="chd"><span class="nm">Lo que gasta tu IA</span>
