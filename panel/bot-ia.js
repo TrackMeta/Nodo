@@ -938,7 +938,8 @@ async function renderGastoIa(){
     const n = tasa ? n0*tasa : n0;
     if(!(n>0)) return sim+"0.00";
     if(n>=1) return sim+n.toFixed(2);
-    if(n>=0.01) return sim+n.toFixed(tasa?2:3);
+    if(n>=0.1) return sim+n.toFixed(tasa?2:3);
+    if(n>=0.01) return sim+n.toFixed(3);   // S/ 0.015, no «S/ 0.01»
     return sim+n.toFixed(4);
   };
   // Por para-qué, de mayor a menor: el orden cuenta la historia solo.
