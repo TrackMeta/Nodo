@@ -1,0 +1,1042 @@
+import { revisarNegocio, avisosHtml } from "./revisar-textos.js";
+import { TONOS, compileNegocio, fusionarNegocio } from "./negocio-texto.js";
+import { supa, mountShell, toast, icon, confirmDialog, askChoice, askText, guardUnsaved, markClean, confirmDescartar, updateChannel, pageAll } from "./shell.js";
+import { mountDateRange, computePreset, ymd as ymdDia, startOfDayTZ, endOfDayTZ } from "./date-range.js";
+const $ = (id) => document.getElementById(id);
+// ── Catálogo de modelos (nombre bonito → ID exacto y FUNCIONAL) ─────
+// Claude: IDs vigentes de la Messages API (el backend no manda temperature
+// ni budget_tokens, así que todos responden). OpenAI: solo modelos de Chat
+// Completions compatibles con max_tokens (los o1/o3 usan otro parámetro y se
+// omiten para no romper). El botón "Probar" verifica la conexión real.
+const MODELS = {
+  anthropic: [
+    { id:"claude-opus-4-8",   nm:"Claude Opus 4.8",   tag:"El más capaz · recomendado" },
+    { id:"claude-sonnet-5",   nm:"Claude Sonnet 5",   tag:"Equilibrio calidad/costo" },
+    { id:"claude-haiku-4-5",  nm:"Claude Haiku 4.5",  tag:"El más rápido y económico" },
+    { id:"claude-opus-4-7",   nm:"Claude Opus 4.7",   tag:"Generación anterior de Opus" },
+    { id:"claude-opus-4-6",   nm:"Claude Opus 4.6",   tag:"" },
+    { id:"claude-sonnet-4-6", nm:"Claude Sonnet 4.6", tag:"" },
+    { id:"claude-fable-5",    nm:"Claude Fable 5",    tag:"El más potente (premium)" },
+  ],
+  // ⚠️ El orden y las etiquetas IMPORTAN: el de arriba con "recomendado" es el que la gente
+  // elige. Decía "GPT-4o · Multimodal · recomendado" cuando el bot corre en gpt-4.1-mini,
+  // que ve imágenes IGUAL y cuesta SEIS veces menos (0.40 la entrada contra 2.50). O sea que
+  // el panel empujaba a encarecer la factura por seis para no ganar nada.
+  openai: [
+    { id:"gpt-4.1-mini", nm:"GPT-4.1 mini", tag:"Equilibrado · recomendado para el bot" },
+    { id:"gpt-4.1",      nm:"GPT-4.1",      tag:"El más capaz · ideal para leer comprobantes" },
+    { id:"gpt-4.1-nano", nm:"GPT-4.1 nano", tag:"El más barato · solo tareas simples" },
+    { id:"gpt-4o",       nm:"GPT-4o",       tag:"Generación anterior · más caro" },
+    { id:"gpt-4o-mini",  nm:"GPT-4o mini",  tag:"Generación anterior · económico" },
+    { id:"gpt-4-turbo",  nm:"GPT-4 Turbo",  tag:"" },
+  ],
+};
+const PROV_LABEL = { anthropic:"Claude", openai:"ChatGPT" };
+function modelName(provider, id){
+  if(!id) return "";
+  const m=(MODELS[provider]||[]).find(x=>x.id===id); if(m) return m.nm;
+  for(const p of Object.keys(MODELS)){ const h=MODELS[p].find(x=>x.id===id); if(h) return h.nm; }
+  return id; // ID personalizado escrito a mano
+}
+// Selector nativo de modelo (por proveedor). Devuelve el ID elegido o null si cancela.
+async function pickModel(provider, current){
+  const opts=(MODELS[provider]||[]).map(m=>({ value:m.id, label:m.nm, desc:m.id+(m.tag?" · "+m.tag:""), icon:"sparkles" }));
+  opts.push({ value:"__custom__", label:"Otro modelo…", desc:"Escribir un ID exacto del proveedor", icon:"edit" });
+  const chosen=await askChoice({ title:"Elegir modelo de IA", message:"Se guarda el ID exacto tal como lo publica el proveedor.", options:opts, value:current });
+  if(!chosen) return null;
+  if(chosen==="__custom__"){
+    const custom=current&&!(MODELS[provider]||[]).some(m=>m.id===current)?current:"";
+    const v=await askText({ title:"ID del modelo", message:"Respeta mayúsculas, minúsculas y guiones.", label:"Identificador del modelo", placeholder:(MODELS[provider]||[])[0]?.id||"", value:custom, confirmText:"Usar modelo" });
+    return v||null;
+  }
+  return chosen;
+}
+// Selector de modelo para un perfil (permite "por defecto" y ambos proveedores).
+async function pickPerfilModel(current){
+  const opts=[{ value:"__default__", label:"Por defecto del proveedor", desc:"Usa el modelo configurado del proveedor", icon:"sliders" }];
+  for(const p of Object.keys(MODELS)) for(const m of MODELS[p]) opts.push({ value:m.id, label:m.nm, desc:PROV_LABEL[p]+" · "+m.id, icon:"sparkles" });
+  opts.push({ value:"__custom__", label:"Otro modelo…", desc:"Escribir un ID manualmente", icon:"edit" });
+  const chosen=await askChoice({ title:"Modelo para esta tarea", options:opts, value:current||"__default__" });
+  if(chosen==null) return undefined; // cancelado → sin cambios
+  if(chosen==="__default__") return "";
+  if(chosen==="__custom__"){ const v=await askText({ title:"ID del modelo", label:"Identificador exacto", value:current||"", confirmText:"Usar modelo" }); return v==null?undefined:(v||""); }
+  return chosen;
+}
+const IC={
+  robot:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>',
+  spark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 4.2 12 2l2.1 2.2L17 5l-1 3 1 3-2.9.8L12 14l-2.1-2.2L7 11l1-3-1-3z"/><path d="M18 16l.7 2.3L21 19l-2.3.7L18 22l-.7-2.3L15 19l2.3-.7z"/></svg>',
+  book:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>',
+  sliders:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>',
+  bot:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="12" x="3" y="8" rx="2"/><path d="M12 2v6M9 14h.01M15 14h.01M8 8V6M16 8V6"/></svg>',
+  shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>',
+  truck:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.62l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>',
+  doc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><path d="M14 2v5h5M9 13h6M9 17h6"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+  agent:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14h3a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M18 14h3v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1z"/><path d="M4 14a8 8 0 0 1 16 0"/><path d="M20 17v2a4 4 0 0 1-4 4h-4"/></svg>',
+  support:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.9" y1="4.9" x2="9.2" y2="9.2"/><line x1="14.8" y1="14.8" x2="19.1" y2="19.1"/><line x1="14.8" y1="9.2" x2="19.1" y2="4.9"/><line x1="4.9" y1="19.1" x2="9.2" y2="14.8"/></svg>',
+};
+const LOGO={ claude:"../assets/apps/claude.png", chatgpt:"../assets/apps/chatgpt.png" };
+const PROVIDERS = [
+  // Nota de las notas de voz: transcribirlas (STT) es de OpenAI, así que un canal SOLO con
+  // Claude no puede escuchar los audios. El motor ya no deja mudo al cliente (le pide que lo
+  // escriba), pero conviene saberlo ANTES de elegir: en Perú media conversación es por audio.
+  { id:"anthropic", nm:"Claude (Anthropic)", logo:LOGO.claude, desc:"Muy bueno en razonamiento, redacción y lectura de comprobantes (OCR). Para escuchar notas de voz hace falta además una clave de OpenAI: sin ella el bot le pide al cliente que escriba.",
+    keyHint:"sk-ant-...", models:["claude-opus-4-8","claude-sonnet-5","claude-haiku-4-5"] },
+  { id:"openai", nm:"ChatGPT (OpenAI)", logo:LOGO.chatgpt, desc:"Modelos GPT de OpenAI.",
+    keyHint:"sk-...", models:["gpt-4o","gpt-4o-mini"] },
+];
+// Las 3 tareas corresponden 1:1 a las 3 operaciones del nodo IA del motor
+// (generar_texto / analizar_imagen / extraer). Son las necesarias y suficientes.
+const PERFILES=[
+  ["ventas","Conversación y ventas","La IA que asesora, responde dudas y cierra ventas por chat (operación “generar texto”). Es la que más se usa."],
+  ["ocr","Validar comprobantes (OCR)","La IA que lee las capturas de pago (Yape, Plin, transferencias) y valida el pago (operación “analizar imagen”). Se apoya en la pestaña Validador de comprobantes."],
+  ["extraccion","Extraer datos","La IA que saca datos ordenados de un texto: nombre, dirección, distrito, etc. (operación “extraer”). También la usa el Router de intención de Palabras clave."],
+  ["asistente","Asistente (Armar · Aconseja · Opera)","La IA que arma productos y el negocio desde un brief, da consejos en Inicio y ejecuta tus órdenes. No es el bot en vivo: es una tarea ocasional que tú revisas, así que conviene tu mejor modelo (Claude suele redactar mejor). Si dejas 'Por defecto del bot', usa el proveedor por defecto del canal."],
+];
+const st = { channelId:null, tab:"vendedor", iaProvider:null, cfg:{}, channel:{}, pick:{}, perfMod:{}, form:{}, ocr:null, campos:{ fields:[], deleted:[], loaded:false } };
+function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function slug(s){ return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,40); }
+const CAMPO_SUGERIDOS=[
+  ["nombre_negocio","Nombre del negocio"],["datos_pago","Datos de pago (Yape/Plin)"],
+  ["transferencia_bancaria","Transferencia bancaria (CCI)"],["cuenta_bancaria","Cuenta bancaria (nº)"],
+  ["whatsapp_contacto","WhatsApp de contacto"],["horario_atencion","Horario de atención"],
+  ["direccion","Dirección / local"],["web","Página web"],["instagram","Instagram"],
+  ["tiempo_entrega","Tiempo de entrega"],["politica_devolucion","Política de devolución"],
+];
+
+// 🤖 (14-nov, Rodrigo: «hazla una sola») Este módulo es la parte «IA» de la sección Bot (bot.html): las pestañas
+// Cómo vende, Atención, Pagos y Avanzado (Modelos + Cuentas y gasto). Antes era la página ia.html; ahora bot.html lo carga
+// una sola vez. Mientras no está activo no dibuja nada.
+let activo=false, _listo=null;
+export function preparar(shell){
+  if(_listo) return _listo;
+  const bd=$("iaBadge"); if(bd) bd.innerHTML=IC.robot+"<span>Centro de IA</span>";
+  st.shell=shell; st.channelId=shell.channelId;
+  _listo = st.channelId ? loadCfg() : Promise.resolve();
+  return _listo;
+}
+export async function abrir(tab){ activo=true; try{ await _listo; }catch(_){} st.tab=tab; document.querySelectorAll(".tab[data-t]").forEach(x=>x.classList.toggle("active",x.dataset.t===tab)); render(); }
+export function salir(){ activo=false; const b=$("bodyI"); if(b) b.innerHTML=""; }
+export function cambiarBot(id){ st.channelId=id; _listo=loadCfg(); return _listo; }
+async function loadCfg(){
+  // Anti-carrera al cambiar de bot (misma guardia que Negocio): la respuesta lenta del bot
+  // anterior no debe pintarse —ni guardarse— sobre el nuevo.
+  const gen=(st.gen=(st.gen||0)+1);
+  let { data:ch, error:chErr } = await supa.from("channels")
+    .select("nombre,ia_provider,negocio,negocio_form,ia_perfiles,ocr_config,buffer_default_seg,pedidos_config").eq("id",st.channelId).maybeSingle();
+  if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,ia_provider,negocio,negocio_form,ia_perfiles,ocr_config,buffer_default_seg").eq("id",st.channelId).maybeSingle()); }
+  if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,ia_provider,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle()); }
+  if(chErr){ ({ data:ch } = await supa.from("channels").select("nombre,ia_provider").eq("id",st.channelId).maybeSingle()); }
+  if(gen!==st.gen) return;
+  st.iaProvider = ch?.ia_provider ?? null; st.channel = ch || {}; st.perfMod={};
+  const { data:rows } = await supa.from("channel_ai").select("provider,model,updated_at").eq("channel_id",st.channelId);
+  if(gen!==st.gen) return;
+  st.cfg = {}; (rows||[]).forEach(r=> st.cfg[r.provider] = { model:r.model, updated_at:r.updated_at });
+  markClean();
+  render();
+}
+// (10-oct) El gasto de HOY, a la vista arriba (antes solo en la última pestaña, junto a las claves).
+async function pintaGastoHoy(gen){
+  const el=$("iaGastoHoy"); if(!el) return;
+  try{
+    const hoy=new Intl.DateTimeFormat("en-CA",{timeZone:"America/Lima"}).format(new Date());
+    const [{ data:u },{ data:ch }]=await Promise.all([
+      supa.from("ai_usage").select("costo_usd,llamadas").eq("channel_id",st.channelId).eq("dia",hoy),
+      supa.from("channels").select("usd_rate").eq("id",st.channelId).maybeSingle() ]);
+    if(gen!==st.gen) return;
+    const usdV=(u||[]).reduce((a,r)=>a+Number(r.costo_usd||0),0), ll=(u||[]).reduce((a,r)=>a+Number(r.llamadas||0),0);
+    if(!(usdV>0||ll>0)){ el.style.display="none"; return; }
+    const rate=Number(ch&&ch.usd_rate)||0;
+    const usdTxt="US$ "+usdV.toLocaleString("es-PE",{minimumFractionDigits:usdV<1?3:2,maximumFractionDigits:usdV<1?3:2});
+    el.innerHTML=`<b>${usdTxt}</b> hoy${rate>0?` <span>(≈ S/ ${(usdV*rate).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2})})</span>`:""} · ${ll.toLocaleString("es-PE")} llamadas`;
+    el.style.display="";
+  }catch(_){ el.style.display="none"; }
+}
+// Antes de escribir negocio_form ENTERO se re-lee lo fresco y solo se pisa lo que ESTA
+// página cambió respecto de su snapshot (Negocio escribe la misma columna desde otro
+// snapshot; el último en guardar revertía al otro). Espejo de negocio.html.
+async function mezclarConFresco(form, retraso){
+  const J=(v)=>JSON.stringify(v===undefined?null:v);
+  try{
+    const { data:fresh }=await supa.from("channels").select("negocio_form,buffer_default_seg").eq("id",st.channelId).maybeSingle();
+    const fr=(fresh&&fresh.negocio_form&&typeof fresh.negocio_form==="object")?fresh.negocio_form:null;
+    const snap=st.snap||{};
+    if(fr){
+      const merged={...fr};
+      for(const k of new Set([...Object.keys(form),...Object.keys(snap)])){
+        // Conflicto: OTRA pestaña cambió este dato desde que abrimos (fresco ≠ foto) y acá solo hay
+        // un valor VACÍO de relleno (faq:[], multimedia:[] que se ponen por defecto): gana el fresco.
+        // Sin esto, abrir IA en una cuenta nueva y guardar borraba las FAQ y archivos de Negocio.
+        const _vacio=(v)=>v===undefined||v===null||v===""||(Array.isArray(v)&&!v.length);
+        if(J(form[k])!==J(snap[k])){ if(J(fr[k])!==J(snap[k]) && _vacio(form[k]) && !_vacio(fr[k])) continue; if(form[k]===undefined) delete merged[k]; else merged[k]=form[k]; }
+      }
+      form=merged;
+    }
+    if(fresh && fresh.buffer_default_seg!=null && retraso===(st.snapRetraso??4)) retraso=fresh.buffer_default_seg;
+  }catch(_){ /* sin lo fresco, se guarda tal cual */ }
+  return { form, retraso };
+}
+function render(){
+  if(!activo) return;   // la parte de Negocio está a la vista: esta caja queda vacía
+  const b=$("bodyI");
+  if(st.tab==="vendedor") renderVendedor(b);
+  else if(st.tab==="atencion") renderAtencion(b);
+  else if(st.tab==="perfiles") renderPerfiles(b);
+  else if(st.tab==="validador") renderValidador(b);
+  else renderProveedores(b);
+  ponerAyudas(b);
+  // 🤖 (14-nov) «Avanzado» junta Modelos y Cuentas y gasto (antes eran dos pestañas): un selector chico arriba.
+  if(st.tab==="perfiles"||st.tab==="proveedores"){
+    const tp=$("tabPerf"); if(tp) tp.classList.add("active");
+    const seg=document.createElement("div"); seg.className="av-seg";
+    seg.innerHTML=`<button type="button" data-av="perfiles" class="${st.tab==="perfiles"?"on":""}">Modelos</button><button type="button" data-av="proveedores" class="${st.tab==="proveedores"?"on":""}">Cuentas y gasto</button>`;
+    seg.querySelectorAll("[data-av]").forEach(x=> x.onclick=async()=>{ if(st.tab===x.dataset.av) return; if(!await confirmDescartar()) return; st.tab=x.dataset.av; render(); });
+    b.prepend(seg);
+  }
+}
+// (10-oct) Cada tarjeta con explicaciones largas (.ay) las esconde detrás de un «?» en su título.
+function ponerAyudas(root){
+  root.querySelectorAll(".card").forEach(card=>{
+    if(!card.querySelector(".ay") || card.querySelector(".qm")) return;
+    const hd=card.querySelector(".chd"); if(!hd) return;
+    const q=document.createElement("button"); q.type="button"; q.className="qm"; q.textContent="?"; q.title="Ver la explicación";
+    q.onclick=(e)=>{ e.stopPropagation(); card.classList.toggle("ver-ayuda"); q.classList.toggle("on",card.classList.contains("ver-ayuda")); };
+    hd.appendChild(q);
+  });
+}
+function goTab(name){ st.tab=name; document.querySelectorAll(".tab[data-t]").forEach(x=>x.classList.toggle("active",x.dataset.t===name)); render(); }
+
+// ── Atención al cliente ──────────────────────────────────────────────
+// Cómo CONVERSA el bot: cuándo pasa el chat a un asesor y el modo soporte
+// post-venta. Vive en channels.pedidos_config (humano/postventa), lo mismo
+// que lee el motor; "Pagos y avisos" maneja el resto de esa config. Al
+// guardar hacemos merge para no pisar las otras claves.
+function renderAtencion(b){
+  const src = (st.channel.pedidos_config && typeof st.channel.pedidos_config==="object") ? st.channel.pedidos_config : {};
+  const Dh={ reclamos:true, horario:{ activo:false, desde:"09:00", hasta:"20:00", dias:{lun:true,mar:true,mie:true,jue:true,vie:true,sab:true,dom:false} }, aviso_dentro:"", aviso_fuera:"", aviso_venta:"" };
+  const Dp={ activo:true, instrucciones:"", cierre:"" };
+  const p={
+    humano:{ ...Dh, ...(src.humano||{}),
+      horario:{ ...Dh.horario, ...((src.humano||{}).horario||{}),
+        dias:{ ...Dh.horario.dias, ...(((src.humano||{}).horario||{}).dias||{}) } } },
+    postventa:{ ...Dp, ...(src.postventa||{}) },
+  };
+  const ta=(v,ph,rows)=>`<textarea class="in" rows="${rows||4}" style="min-height:${(rows||4)*24+8}px;line-height:1.5;font-family:var(--font);resize:vertical" placeholder="${esc(ph)}">${esc(v||"")}</textarea>`;
+  b.innerHTML=`
+    <p class="sub">A quién atiende el bot, cuándo le pasa el chat a una persona y cómo atiende a quien ya compró.</p>
+
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${icon("megaphone")}</span><span class="nm">A quién atiende</span></div>
+      <div id="soloAdsRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:6px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span><span style="font-weight:600;font-size:13px">Responder solo a clientes que llegan por anuncio</span>
+        <div style="font-size:11.5px;color:var(--faint);margin-top:2px">Los que escriben sin venir de un anuncio quedan en la Bandeja para que los atienda una persona. Se guarda al instante.</div></span>
+        <span class="sw" id="soloAdsSw" role="switch" aria-checked="false" style="flex:none"></span>
+      </div>
+    </div>
+
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.agent}</span><span class="nm">Cuándo pasar a un asesor</span></div>
+      <div class="desc ay">El bot atiende <b>toda</b> la conversación por defecto. Solo te pasa el chat en pocos casos y <b>nunca deja al cliente en el aire</b>: le dice que un asesor lo verá (y cuándo, si defines tu horario). El bot ya escala solo cuando el cliente <b>pide una persona</b> o cuando la IA no puede resolverlo.</div>
+
+      <div id="huRecRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span><span style="font-weight:600;font-size:13px">Pasar a un asesor si el cliente reclama o está molesto</span>
+        <div class="ay" style="font-size:11.5px;color:var(--faint);margin-top:2px">Ante enojo o disputa fuerte (estafa, denuncia, exige devolución) el bot deja de responder y te lo pasa, para que no discuta por su cuenta. Lo sutil lo sigue detectando la IA.</div></span>
+        <span class="sw ${p.humano.reclamos!==false?'on':''}" id="huRecSw" style="flex:none"></span>
+      </div>
+
+      <div id="huVentaRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span><span style="font-weight:600;font-size:13px">Pasar a un asesor cuando se concreta la venta</span>
+        <div class="ay" style="font-size:11.5px;color:var(--faint);margin-top:2px">Apenas el bot cierra la venta <span data-vende="fisico">(pedido confirmado en un físico</span><span data-y="fisico digital">, o </span><span data-vende="digital">pago validado en un digital</span>) le manda el mensaje de abajo, deja de responder y te cede el chat, para que tú hagas el cierre/seguimiento a mano. El soporte post-venta automático no corre en ese contacto. Apagado = el bot sigue atendiendo (soporte).</div></span>
+        <span class="sw ${p.humano.al_vender?'on':''}" id="huVentaSw" style="flex:none"></span>
+      </div>
+      <div id="huVentaBox" style="display:${p.humano.al_vender?'block':'none'}">
+        <div id="huSilRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+          <span><span style="font-weight:600;font-size:13px">Sin mensaje</span>
+          <div class="ay" style="font-size:11.5px;color:var(--faint);margin-top:2px">El cliente recibe solo el mensaje de la entrega (o la confirmación del pedido) y el bot se apaga en ese chat sin decirle nada más.</div></span>
+          <span class="sw ${p.humano.aviso_venta_silencio?'on':''}" id="huSilSw" style="flex:none"></span>
+        </div>
+        <div id="huVentaMsg" style="display:${p.humano.aviso_venta_silencio?'none':'block'}">
+        <label style="margin-top:12px">Mensaje al concretar la venta <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+        ${ta(p.humano.aviso_venta,"¡Listo! Ya tienes tu acceso 🙌 Cualquier duda te la contesta una persona del equipo por acá.",3).replace('class="in"','class="in" id="huVenta"')}
+        <div style="font-size:11px;color:var(--faint);margin-top:6px">Sale después <span data-vende="digital">del acceso (digital)</span><span data-y="fisico digital"> o </span><span data-vende="fisico">de confirmar el pedido (físico)</span>. Si lo dejas vacío, el bot usa el «Mensaje al pasar a un asesor» de más abajo; y si ese también está vacío, el de fábrica: «¡Gracias! 🙌 En un momento te atiende un asesor de nuestro equipo por aquí. 🙂».</div>
+        </div>
+      </div>
+
+      <div id="huHorRow" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span><span style="font-weight:600;font-size:13px">Definir un horario de atención</span>
+        <div class="ay" style="font-size:11.5px;color:var(--faint);margin-top:2px">Dentro del horario el bot dice “en un momento te atiende un asesor”. Fuera, le dice cuándo vuelves (ej. “mañana a las 9:00 a.m.”), sin dejarlo esperando en silencio. Apagado = siempre “en un momento”.</div></span>
+        <span class="sw ${p.humano.horario.activo?'on':''}" id="huHorSw" style="flex:none"></span>
+      </div>
+
+      <div id="huHorBox" style="display:${p.humano.horario.activo?'block':'none'}">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">
+          <label style="margin:0;font-size:12.5px;font-weight:700">Atiendo de</label>
+          <input class="in" id="huDesde" type="time" value="${esc(p.humano.horario.desde||'09:00')}" style="width:120px"/>
+          <span style="font-size:12.5px;color:var(--muted)">a</span>
+          <input class="in" id="huHasta" type="time" value="${esc(p.humano.horario.hasta||'20:00')}" style="width:120px"/>
+          <span style="font-size:12px;color:var(--faint)">hora de tu negocio</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px">
+          <label style="margin:0;font-size:12.5px;font-weight:700;margin-right:4px">Días</label>
+          ${[["lun","L"],["mar","M"],["mie","X"],["jue","J"],["vie","V"],["sab","S"],["dom","D"]].map(([k,l])=>`<button class="hudia" data-dia="${k}" style="width:34px;height:34px;border-radius:9px;border:1.5px solid ${p.humano.horario.dias[k]!==false?'var(--ia)':'var(--border)'};background:${p.humano.horario.dias[k]!==false?'var(--ia)':'transparent'};color:${p.humano.horario.dias[k]!==false?'#fff':'var(--muted)'};font-weight:700;font-size:12px;cursor:pointer">${l}</button>`).join("")}
+        </div>
+        <label style="margin-top:14px">Mensaje FUERA de horario <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+        ${ta(p.humano.aviso_fuera,"¡Gracias por escribir! 🙌 Ahora no hay un asesor en línea, pero te responde apenas volvamos. Déjame tu consulta por aquí. 🙏",3).replace('class="in"','class="in" id="huFuera"')}
+        <div style="font-size:11px;color:var(--faint);margin-top:6px">Si lo dejas vacío, el bot arma uno solo y le dice la hora exacta en que vuelves.</div>
+      </div>
+
+      <label style="margin-top:14px">Mensaje al pasar a un asesor${p.humano.horario.activo?" (dentro del horario)":""} <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+      ${ta(p.humano.aviso_dentro,"¡Gracias! 🙌 En un momento te atiende un asesor de nuestro equipo por aquí. 🙂",3).replace('class="in"','class="in" id="huDentro"')}
+    </div>
+
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.support}</span><span class="nm">Atención post-venta</span></div>
+      <div class="desc" style="margin-top:6px">Al cliente que ya compró lo atiende como soporte, sin volver a venderle.</div>
+      <div class="desc ay">Cuando un cliente que <b>ya compró</b> vuelve a escribir, el bot lo atiende como <b>soporte</b> (reenvía su acceso/link, le da el estado de su pedido, lo ayuda a usarlo o con un cambio) en vez de re-venderle lo mismo. Si quiere <b>comprar de nuevo</b> o más unidades, el bot le arma un pedido nuevo automáticamente.</div>
+
+      <div style="display:flex;gap:9px;align-items:flex-start;margin-top:12px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px">
+        <span style="color:var(--ia);flex:none;margin-top:1px;line-height:0"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></span>
+        <span style="font-size:11.5px;color:var(--muted);line-height:1.5">No choca con las <b>ventas extra</b>: esas las ofrece el bot <b>durante</b> la venta (te pregunta y espera la respuesta), así que el post-venta ni se activa en ese momento. El post-venta solo entra cuando el cliente ya compró y <b>no hay nada pendiente</b>. Y si es un pedido de provincia que aún debe el <b>saldo</b>, el bot cobra ese saldo primero y no ofrece otros productos hasta cerrarlo.</span>
+      </div>
+
+      <div id="pvRow2" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;border:1px solid var(--border);border-radius:11px;padding:11px 12px;cursor:pointer">
+        <span><span style="font-weight:600;font-size:13px">Activar el modo soporte post-venta</span>
+        <div class="ay" style="font-size:11.5px;color:var(--faint);margin-top:2px">Apagado = tras la compra el bot vuelve a su modo normal (puede re-ofrecer el producto).</div></span>
+        <span class="sw ${p.postventa.activo!==false?'on':''}" id="pvSw2" style="flex:none"></span>
+      </div>
+
+      <label style="margin-top:14px">Indicaciones para la post-venta <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+      ${ta(p.postventa.instrucciones,"Ej. Si preguntan por la garantía, son 30 días por defecto de fábrica. Para cambios de talla, dentro de 7 días y sin uso.",3).replace('class="in"','class="in" id="pvInstr"')}
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">Lo que quieras que el bot tenga presente al atender a un comprador (garantía, cambios, cómo usar el producto…).</div>
+
+      <label style="margin-top:16px">Mensaje de cierre <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+      ${ta(p.postventa.cierre,"Ej. ¡Gracias a ti! 🙌 Que lo disfrutes, aquí estaré si necesitas algo.",2).replace('class="in"','class="in" id="pvCierre"')}
+      <div style="font-size:11px;color:var(--faint);margin-top:6px">Cuando el cliente <b>solo agradece o se despide</b> (ya no pide nada), el bot cierra la conversación <b>corto y cálido</b> con esto — sin ofrecer más ni preguntar "¿algo más?". Vacío = la IA lo redacta con tu tono. No lo mutea: si el cliente vuelve con una duda, el bot responde igual.</div>
+    </div>
+
+    <div class="acts"><button class="btn ia" id="atSave">Guardar cambios</button></div>`;
+  // (22-oct) «Responder solo a clientes que llegan por anuncio» se movió acá desde Canales (es a quién atiende el bot,
+  // no la conexión). Igual que allá: se guarda al instante, mezclado sobre el ia_router FRESCO (Palabras clave escribe
+  // en el mismo objeto y una copia vieja le revertiría sus ajustes).
+  const pintaSoloAds=(on)=>{ const s=$("soloAdsSw"); if(s){ s.classList.toggle("on",on); s.setAttribute("aria-checked",on?"true":"false"); } };
+  supa.from("channels").select("ia_router").eq("id",st.channelId).maybeSingle().then(({data})=>pintaSoloAds(!!data?.ia_router?.solo_anuncios),()=>{});
+  $("soloAdsRow").onclick=async()=>{
+    const on=!$("soloAdsSw").classList.contains("on");
+    let actual={};
+    try{ const { data:fresh }=await supa.from("channels").select("ia_router").eq("id",st.channelId).maybeSingle(); if(fresh&&fresh.ia_router&&typeof fresh.ia_router==="object") actual=fresh.ia_router; }catch(_){ /* */ }
+    const { error }=await updateChannel(st.channelId, { ia_router:{ ...actual, solo_anuncios:on } });
+    if(error){ toast(error.message,true); return; }
+    pintaSoloAds(on);
+    toast(on?"El bot ahora solo responde a clientes de anuncios":"El bot vuelve a responder a todos");
+  };
+  $("huRecRow").onclick=()=>{ p.humano.reclamos=!(p.humano.reclamos!==false); $("huRecSw").classList.toggle("on",p.humano.reclamos!==false); };
+  $("huVentaRow").onclick=()=>{ p.humano.al_vender=!p.humano.al_vender; $("huVentaSw").classList.toggle("on",!!p.humano.al_vender); const vb=$("huVentaBox"); if(vb) vb.style.display=p.humano.al_vender?"block":"none"; };
+  $("huSilRow").onclick=()=>{ p.humano.aviso_venta_silencio=!p.humano.aviso_venta_silencio; $("huSilSw").classList.toggle("on",!!p.humano.aviso_venta_silencio); const m=$("huVentaMsg"); if(m) m.style.display=p.humano.aviso_venta_silencio?"none":"block"; };
+  $("huHorRow").onclick=()=>{ p.humano.horario.activo=!p.humano.horario.activo; $("huHorSw").classList.toggle("on",p.humano.horario.activo); const box=$("huHorBox"); if(box) box.style.display=p.humano.horario.activo?"block":"none"; };
+  b.querySelectorAll(".hudia").forEach(x=> x.onclick=()=>{
+    const k=x.dataset.dia; const on=!(p.humano.horario.dias[k]!==false); p.humano.horario.dias[k]=on;
+    x.style.borderColor=on?"var(--ia)":"var(--border)"; x.style.background=on?"var(--ia)":"transparent"; x.style.color=on?"#fff":"var(--muted)";
+  });
+  $("pvRow2").onclick=()=>{ p.postventa.activo=!(p.postventa.activo!==false); $("pvSw2").classList.toggle("on",p.postventa.activo!==false); };
+  $("atSave").onclick=async(e)=>{
+    if($("huDesde")) p.humano.horario.desde=$("huDesde").value||"09:00";
+    if($("huHasta")) p.humano.horario.hasta=$("huHasta").value||"20:00";
+    if($("huDentro")) p.humano.aviso_dentro=$("huDentro").value.trim();
+    if($("huFuera")) p.humano.aviso_fuera=$("huFuera").value.trim();
+    if($("huVenta")) p.humano.aviso_venta=$("huVenta").value.trim();
+    if($("pvInstr")) p.postventa.instrucciones=$("pvInstr").value.trim();
+    if($("pvCierre")) p.postventa.cierre=$("pvCierre").value.trim();
+    // Merge: no pisar las claves de pago/avisos que maneja "Pagos y avisos". Se re-lee
+    // pedidos_config FRESCO del server antes de mergear: esa columna también la escribe
+    // "Pagos y avisos", y con el snapshot rancio (`src`) el spread REVERTÍA los cambios
+    // que el operador hiciera ahí tras cargar esta pestaña. Solo se tocan humano/postventa.
+    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    let base=src;
+    try{ const { data:fresh }=await supa.from("channels").select("pedidos_config").eq("id",st.channelId).maybeSingle(); if(fresh&&fresh.pedidos_config&&typeof fresh.pedidos_config==="object") base=fresh.pedidos_config; }catch(_){}
+    const full={ ...base, humano:p.humano, postventa:p.postventa };
+    const { error }=await updateChannel(st.channelId, { pedidos_config:full });
+    btn.disabled=false; btn.textContent=old;
+    if(error){ toast(/pedidos_config|column/.test(error.message)&&!error.soloAdmin?"Falta aplicar la migración de pedidos_config (0027)":error.message,true); return; }
+    st.channel.pedidos_config=full; markClean(); toast("Atención guardada");
+  };
+}
+
+// ── Campos del Bot (variables globales fijas que la IA usa) ─────────
+async function renderCampos(b){
+  b.innerHTML=`
+    <h2>Campos del Bot</h2>
+    <p class="sub">Variables globales con un <b>valor fijo</b> para este bot (nombre del negocio, datos de pago, horarios…). La IA y los flujos las usan con <code style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:1px 6px;font-size:12px;color:var(--ia)">{{clave}}</code>.</p>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.bot}</span><span class="nm">Variables fijas del bot</span>
+        <button class="btn" id="camAdd" style="margin-left:auto">+ Nuevo campo</button></div>
+      <div class="desc" style="margin-top:0">Sugeridos (clic para agregar la información que la IA suele necesitar):</div>
+      <div id="camSug" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 6px"></div>
+      <div id="camList" style="margin-top:6px"><div class="desc">Cargando…</div></div>
+      <div class="acts"><button class="btn ia" id="camSave">Guardar campos</button></div>
+    </div>`;
+  $("camSug").innerHTML=CAMPO_SUGERIDOS.map(([k,n])=>`<button class="btn camsug" data-k="${k}" data-n="${esc(n)}" style="height:30px;padding:0 11px;font-size:12px;border:1px solid var(--border)">+ ${esc(n)}</button>`).join("");
+  $("camSug").querySelectorAll(".camsug").forEach(btn=> btn.onclick=()=>{
+    const k=btn.dataset.k;
+    if(st.campos.fields.some(f=>f.key===k)){ toast("Ese campo ya existe",true); return; }
+    st.campos.fields.push({ _new:true, nombre:btn.dataset.n, key:k, tipo:"text", modo:"fijo", valor:"", descripcion:"" }); paintCampos();
+  });
+  $("camAdd").onclick=()=>{ st.campos.fields.push({ _new:true, nombre:"", key:"", tipo:"text", modo:"fijo", valor:"", descripcion:"" }); paintCampos(); };
+  $("camSave").onclick=saveCampos;
+  if(!st.campos.loaded){
+    const { data }=await supa.from("custom_fields").select("*").eq("channel_id",st.channelId).order("created_at");
+    st.campos.fields=(data||[]).filter(f=>(f.modo||"dinamico")==="fijo"); st.campos.deleted=[]; st.campos.loaded=true;
+  }
+  paintCampos();
+}
+function paintCampos(){
+  const box=$("camList"); if(!box) return;
+  if(!st.campos.fields.length){ box.innerHTML=`<div class="desc" style="padding:14px 0">Aún no hay campos del bot. Crea el primero con “Nuevo campo”.</div>`; return; }
+  box.innerHTML="";
+  st.campos.fields.forEach(f=>{
+    const el=document.createElement("div");
+    el.style.cssText="border-top:1px solid var(--border);padding:14px 0 2px;margin-top:6px";
+    el.innerHTML=`
+      <div class="campgrid">
+        <div class="cf"><label>Nombre</label><input class="in cNom" value="${esc(f.nombre)}" placeholder="Ej. Datos de pago"/></div>
+        <div class="cf"><label>Clave (variable)</label><input class="in cKey" value="${esc(f.key)}" placeholder="clave" ${f._new?"":"disabled"}/>
+          <div style="font-size:11px;color:var(--faint);margin-top:5px">se usa como <b style="color:var(--ia)">{{${esc(f.key||'clave')}}}</b></div></div>
+        <div class="campvalrow">
+          <div class="cf"><label>Valor</label><input class="in cVal" value="${esc(f.valor||'')}" placeholder="Ej. Yape 900 000 000 (Juan Pérez)"/></div>
+          <div class="cf"><label>Descripción (opcional)</label><input class="in cDesc" value="${esc(f.descripcion||'')}" placeholder="Para qué sirve"/></div>
+          <button class="btn danger camdel" title="Eliminar">${icon("trash")}</button>
+        </div>
+      </div>`;
+    const nom=el.querySelector(".cNom"), key=el.querySelector(".cKey"), hint=el.querySelector("b");
+    nom.oninput=(e)=>{ f.nombre=e.target.value; if(f._new && !f._keyEdited){ f.key=slug(e.target.value); key.value=f.key; hint.textContent=`{{${f.key||'clave'}}}`; } };
+    key.oninput=(e)=>{ f._keyEdited=true; f.key=slug(e.target.value); e.target.value=f.key; hint.textContent=`{{${f.key||'clave'}}}`; };
+    el.querySelector(".cVal").oninput=(e)=>f.valor=e.target.value;
+    el.querySelector(".cDesc").oninput=(e)=>f.descripcion=e.target.value;
+    el.querySelector("button.danger").onclick=()=>{ if(f.id) st.campos.deleted.push(f.id); st.campos.fields=st.campos.fields.filter(x=>x!==f); paintCampos(); };
+    box.appendChild(el);
+  });
+}
+async function saveCampos(e){
+  const btn=e.target; for(const f of st.campos.fields){ if(!f.nombre.trim()||!f.key.trim()){ toast("Cada campo necesita nombre y clave",true); return; } }
+  btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+  if(st.campos.deleted.length){ const { data:_bor, error }=await supa.from("custom_fields").delete().in("id",st.campos.deleted).select("id"); if(error){ btn.disabled=false; btn.textContent=old; toast(error.message,true); return; } if((_bor||[]).length<st.campos.deleted.length){ btn.disabled=false; btn.textContent=old; toast("Solo un administrador puede cambiar los campos del bot",true); return; } st.campos.deleted=[]; }
+  const rows=st.campos.fields.map(f=>{ const r={ channel_id:st.channelId, nombre:f.nombre.trim(), key:f.key.trim(), tipo:f.tipo||"text", modo:"fijo", valor:f.valor||null, descripcion:f.descripcion||null }; if(f.id) r.id=f.id; return r; });
+  if(rows.length){ const { error }=await supa.from("custom_fields").upsert(rows);
+    if(error){ btn.disabled=false; btn.textContent=old; toast(/valor|descripcion|column/.test(error.message)?"Falta aplicar la migración 0013 (valor/descripcion)":/row-level security/i.test(error.message)?"Solo un administrador puede cambiar los campos del bot":error.message.includes("duplicate")?"Hay claves repetidas":error.message,true); return; } }
+  btn.disabled=false; btn.textContent=old; st.campos.loaded=false; markClean(); toast("Campos guardados"); renderCampos($("bodyI"));
+}
+
+// ── Conocimiento del negocio — FORMULARIO estructurado ──────────────
+// El usuario llena un formulario ordenado; al guardar se compila a un texto
+// bien estructurado (Markdown) en channels.negocio (lo que lee el motor) y se
+// conserva el formulario en channels.negocio_form para poder re-editarlo.
+// (6-oct) Los campos, el tono y el armado del texto del negocio viven en negocio-texto.js, compartido con
+// negocio.html: eran dos copias de la misma función y ya se habían desincronizado una vez.
+// Semilla común del formulario del negocio, compartida por las pestañas
+// "Vendedor IA" (personalidad + retraso) y "Conocimiento" (identidad/negocio).
+// Ambas guardan el formulario COMPLETO, así que editar una preserva la otra.
+function seedForm(){
+  const c=st.channel||{};
+  // Copia profunda + snapshot aparte (ver negocio.html seedForm).
+  const base=c.negocio_form && typeof c.negocio_form==="object" ? c.negocio_form : {};
+  st.snap=JSON.parse(JSON.stringify(base));
+  st.snapRetraso=c.buffer_default_seg ?? 4;
+  let form=JSON.parse(JSON.stringify(base));
+  if(!c.negocio_form && c.negocio) form.extra=c.negocio; // migra el texto libre anterior
+  if(!form.nombre && c.nombre) form.nombre=c.nombre; // igual que negocio.html: canal nuevo con nombre
+  fusionarNegocio(form);   // ficha del negocio de 4 cuadros (negocio-texto.js)
+  if(!Array.isArray(form.multimedia)) form.multimedia=[];
+  if(!Array.isArray(form.faq)) form.faq=[];
+  if(form.negritas===undefined) form.negritas=true;
+  if(form.emoji_min===undefined) form.emoji_min=0;
+  if(form.emoji_max===undefined) form.emoji_max=2;
+  if(form.tono===undefined) form.tono="cercano";
+  st.retraso = c.buffer_default_seg ?? 4;
+  st.form=form;
+  return form;
+}
+// Guarda el formulario completo + retraso (la única fuente de ambos es st).
+async function saveForm(btn){
+  // 🔎 Textos que hacen equivocar al bot («un asesor te contactará», pedirle que pase el Yape, números de cuenta
+  // sueltos): avisa con el porqué y deja guardar igual (revisar-textos.js, auditoría del prompt digital 6-oct).
+  // Lo que ya aceptó con «Guardar igual» en esta visita no se vuelve a preguntar.
+  { const vistos=(st._avisosVistos=st._avisosVistos||new Set());
+    const nuevos=revisarNegocio(st.form||{}).filter(a=>!vistos.has(a.titulo));
+    if(nuevos.length){
+      const ok=await confirmDialog({ title:"Antes de guardar, revisa esto", messageHtml:avisosHtml(nuevos, esc), confirmText:"Guardar igual", cancelText:"Corregir" });
+      if(!ok) return false;
+      nuevos.forEach(a=>vistos.add(a.titulo));
+    } }
+  const old=btn.textContent; btn.disabled=true; btn.textContent="Guardando…";
+  const cid=st.channelId;
+  const { form, retraso }=await mezclarConFresco(st.form, st.retraso);
+  fusionarNegocio(form);   // (lo fresco de la base puede traer los casilleros viejos: se juntan antes de compilar)
+  const negocio=compileNegocio(form).trim()||null;
+  // updateChannel comprueba que la fila se tocó (a un operador el UPDATE afecta 0 filas sin error).
+  let { error }=await updateChannel(cid, { negocio, negocio_form:form, buffer_default_seg:retraso });
+  if(error && /negocio_form|column/.test(error.message)){ ({ error }=await updateChannel(cid, { negocio, buffer_default_seg:retraso })); }
+  if(error && /buffer_default_seg|column/.test(error.message)){ ({ error }=await updateChannel(cid, { negocio })); }
+  btn.disabled=false; btn.textContent=old;
+  if(error){ toast(/negocio|column/.test(error.message)&&!error.soloAdmin?"Falta aplicar la migración 0023":error.message,true); return false; }
+  if(cid!==st.channelId) return true;
+  st.form=form; st.retraso=retraso;
+  st.channel.negocio=negocio; st.channel.negocio_form=form; st.channel.buffer_default_seg=retraso;
+  st.snap=JSON.parse(JSON.stringify(form)); st.snapRetraso=retraso;
+  markClean();
+  return true;
+}
+
+// ── Vendedor IA: personalidad del bot + retraso de respuesta ─────────
+function renderVendedor(b){
+  const form=seedForm();
+  const retraso=st.retraso;
+  b.innerHTML=`
+    <p class="sub">Quién es tu vendedor y cómo habla en todas las conversaciones.</p>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.robot}</span><span class="nm">Personalidad del bot (vendedor IA)</span></div>
+      <label style="margin-top:6px">Nombre de la IA — cómo se llama tu vendedor</label>
+      <input class="in" id="nf_nombre_ia" value="${esc(form.nombre_ia||"")}" placeholder="Ej. Valentina, Carlos, Sofía…"/>
+      <div class="row" style="margin-top:14px">
+        <div class="f"><label style="margin-top:0">Tono de conversación</label>
+          <select class="in" id="pf_tono">${Object.entries(TONOS).map(([k,v])=>`<option value="${k}" ${form.tono===k?"selected":""}>${v}</option>`).join("")}<option value="" ${!form.tono?"selected":""}>Personalizado (usa el detalle)</option></select></div>
+        <div class="f"><label style="margin-top:0">Detalle del tono (opcional)</label><input class="in" id="pf_tono_detalle" value="${esc(form.tono_detalle||"")}" placeholder="Ej. respuestas cortas, sin sonar robótico"/></div>
+      </div>
+      <div class="row" style="margin-top:14px;align-items:flex-end;gap:24px">
+        <div class="f" style="flex:0 0 auto"><label style="margin-top:0">Negritas</label>
+          <div style="display:flex;align-items:center;gap:9px;height:42px"><div class="sw ${form.negritas?'on':''}" id="pf_negritas"></div><span style="font-size:12.5px;color:var(--muted);white-space:nowrap">Resaltar con *negritas*</span></div></div>
+        <div class="f" style="min-width:220px"><label style="margin-top:0">Emojis por mensaje <span style="color:var(--faint);font-weight:400">(mín / máx)</span></label>
+          <div style="display:flex;align-items:center;gap:8px;height:42px"><input class="in" id="pf_emin" type="number" min="0" max="10" value="${Number(form.emoji_min)||0}" style="width:74px;text-align:center"/><span style="color:var(--muted)">a</span><input class="in" id="pf_emax" type="number" min="0" max="10" value="${Number(form.emoji_max)}" style="width:74px;text-align:center"/><span style="font-size:11px;color:var(--faint);margin-left:8px;white-space:nowrap">0 = sin emojis</span></div></div>
+      </div>
+    </div>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.sliders}</span><span class="nm">Espera antes de responder</span></div>
+      <div class="desc" style="margin-top:6px">Junta los mensajes que llegan seguidos y responde una sola vez.</div>
+      <div class="desc ay">Cuando llega un mensaje, el bot espera este tiempo por si el cliente sigue escribiendo en ráfaga, y le pasa a la IA todos los textos juntos como una sola pregunta («hola» + «cuánto cuesta» = una respuesta que saluda y da el precio). No es lo que tarda en responder: es una espera que se <b>suma</b> a los segundos que la IA usa para escribir. Si un mensaje llega después de esta espera, mientras el bot está escribiendo, no recibe dos respuestas: la que ya estaba en camino no se manda (quedó vieja) y el bot contesta todo junto, lo de antes y lo nuevo. <b>0</b> = sin espera; cada mensaje va solo a la IA. Solo en conversaciones individuales.</div>
+      <label>Segundos</label>
+      <input class="in" id="pf_retraso" type="number" min="0" max="60" value="${Number(retraso)}" style="max-width:140px"/>
+    </div>
+    <div class="acts"><button class="btn ia" id="saveVend">Guardar vendedor</button>
+      <button class="btn" id="previewVend" style="border:1px solid var(--border)">Ver cómo lo lee la IA</button></div>`;
+  $("pf_negritas").onclick=()=>{ form.negritas=!form.negritas; $("pf_negritas").classList.toggle("on",form.negritas); };
+  const harvest=()=>{
+    form.nombre_ia=$("nf_nombre_ia").value; form.tono=$("pf_tono").value; form.tono_detalle=$("pf_tono_detalle").value;
+    form.emoji_min=Math.max(0,Number($("pf_emin").value)||0); form.emoji_max=Math.max(0,Number($("pf_emax").value)||0);
+    st.retraso=Math.max(0,parseInt($("pf_retraso").value||"0",10));
+  };
+  $("previewVend").onclick=()=>{ harvest(); const md=compileNegocio(form)||"(vacío)"; askText({title:"Contexto que recibe la IA",message:"Así se arma el conocimiento del negocio que la IA usa en cada chat.",label:"Texto compilado",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
+  $("saveVend").onclick=async(e)=>{ harvest(); if(await saveForm(e.target)) toast("Vendedor guardado"); };
+}
+
+// El Conocimiento del negocio se movió a la sección Negocio (negocio.html).
+// Los helpers seedForm/compileNegocio/compilePersona/saveForm/NEG_FIELDS/TONOS
+// se conservan porque el Vendedor IA (renderVendedor) los sigue usando: ambas
+// pantallas guardan el mismo channels.negocio_form completo.
+
+// ── Perfiles de IA por tarea (§6-OCTIES) ────────────────────────────
+function renderPerfiles(b){
+  const perf=(st.channel&&st.channel.ia_perfiles)||{};
+  // Sincroniza el estado local de modelos con lo guardado la 1ª vez.
+  PERFILES.forEach(([k])=>{ if(st.perfMod[k]===undefined) st.perfMod[k]=(perf[k]||{}).modelo||""; });
+  b.innerHTML=`
+    <p class="sub">Qué modelo de IA hace cada tarea. Lo normal es dejarlo todo en «Por defecto».</p>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.sliders}</span><span class="nm">Modelo por tipo de tarea</span></div>
+      ${PERFILES.map(([k,nm,d])=>{
+        const v=perf[k]||{}; const mod=st.perfMod[k]||"";
+        return `<div class="pf-row">
+          <div class="pf-n">${nm}<div class="ay" style="font-size:11.5px;color:var(--faint);font-weight:400;margin-top:2px">${d}</div></div>
+          <div class="pf-c">
+            <div class="f"><select class="in" id="pf_prov_${k}" title="Proveedor">
+                <option value="" ${!v.proveedor?"selected":""}>Por defecto del bot</option>
+                <option value="anthropic" ${v.proveedor==="anthropic"?"selected":""}>Claude (Anthropic)</option>
+                <option value="openai" ${v.proveedor==="openai"?"selected":""}>ChatGPT (OpenAI)</option>
+              </select></div>
+            <div class="f"><button class="modelpick" data-pm="${k}" title="Modelo">
+                <span class="mp-tx"><b>${mod?esc(modelName("",mod)):"Por defecto del proveedor"}</b>${mod?`<small>${esc(mod)}</small>`:""}</span>
+                ${icon("chevron")}
+              </button></div>
+          </div>
+        </div>`;
+      }).join("")}
+      <div class="acts"><button class="btn ia" id="savePerfiles">Guardar perfiles</button></div>
+    </div>`;
+  b.querySelectorAll("[data-pm]").forEach(btn=> btn.onclick=async()=>{
+    const k=btn.dataset.pm;
+    const res=await pickPerfilModel(st.perfMod[k]||"");
+    if(res!==undefined){ st.perfMod[k]=res; renderPerfiles(b); }
+  });
+  const gv=b.querySelector(".goval"); if(gv) gv.onclick=()=>goTab("validador");
+  $("savePerfiles").onclick=async(e)=>{
+    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    const ia_perfiles={};
+    PERFILES.forEach(([k])=>{
+      const prov=$("pf_prov_"+k).value, mod=(st.perfMod[k]||"").trim();
+      if(prov||mod) ia_perfiles[k]={ ...(prov?{proveedor:prov}:{}), ...(mod?{modelo:mod}:{}) };
+    });
+    const { error }=await updateChannel(st.channelId, { ia_perfiles });
+    btn.disabled=false; btn.textContent=old;
+    if(error){ toast(/ia_perfiles|column/.test(error.message)&&!error.soloAdmin?"Falta aplicar la migración 0023":error.message,true); return; }
+    st.channel.ia_perfiles=ia_perfiles; markClean(); toast("Perfiles guardados");
+  };
+}
+
+// ── Validador de comprobantes (OCR) ────────────────────────────────
+// Sube una imagen (referencia de comprobante) al bucket media y la agrega.
+function pickImg(arr, after){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*";
+  inp.onchange=async()=>{
+    const file=inp.files&&inp.files[0]; if(!file) return; toast("Subiendo…");
+    try{
+      const dataURL=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); });
+      const { data,error }=await supa.functions.invoke("media-upload",{ body:{ channel_id:st.channelId, filename:file.name, content_type:file.type, data:dataURL } });
+      if(error||!data?.url){ toast("No se pudo subir la imagen",true); return; }
+      arr.push({ url:data.url, mime:file.type, filename:file.name }); toast("Imagen agregada"); after&&after();
+    }catch(e){ toast("Error al subir",true); }
+  };
+  inp.click();
+}
+function defaultOcr(){ return { activo:true, metodos:[], reglas:{ verificar_titular:true, verificar_monto:true, tolerancia_monto:0, verificar_fecha:true, fecha_max_horas:48, operacion_unica:true, rechazar_editados:true, exigencia:"media" }, instrucciones:"", gen_datos:true, datos_pago:"" }; }
+// Arma el {{datos_pago}} (mensaje de cobro) a partir de los métodos válidos.
+// El cliente tiene que hacer UNA cosa con este mensaje: copiar el número. Por eso el
+// número va SOLO en su línea — en el celular, mantener pulsado selecciona la línea entera
+// y se copia limpio; pegado a "Yape:" y al titular, como estaba, termina copiando de más
+// y el pago se traba justo al final.
+// 🔒 El número va en DÍGITOS NORMALES, nunca en las letras "bonitas" de Unicode (𝟵𝟳𝟳…):
+// se ven en negrita pero NO son dígitos, así que al pegarlas en Yape no funcionan y la
+// venta se cae en el último paso sin que nadie se entere. Para resaltar se usa la negrita
+// nativa de WhatsApp (*así*), que se copia bien y la leen los lectores de pantalla.
+function genDatosPago(mets){
+  const val=(mets||[]).filter(m=>m&&(m.app||m.numero||m.titular));
+  // En Perú el MISMO número recibe por Yape y por Plin, así que el dueño suele cargar los
+  // dos con el mismo dato. Sin agrupar, al cliente le llegaban dos bloques idénticos salvo
+  // el nombre de la app — se lee como si el mensaje estuviera mal copiado. Se juntan por
+  // (número + titular) y las apps van separadas por "o".
+  const grupos=new Map();
+  for(const m of val){
+    const clave=String(m.numero||"").trim()+"|"+String(m.titular||"").trim();
+    if(!grupos.has(clave)) grupos.set(clave,{apps:[],numero:m.numero,titular:m.titular,notas:m.notas});
+    const g=grupos.get(clave);
+    const app=String(m.app||"").trim();
+    if(app && !g.apps.includes(app)) g.apps.push(app);
+    if(!g.notas && m.notas) g.notas=m.notas;
+  }
+  return [...grupos.values()].map(g=>{
+    const apps=g.apps.length?g.apps.map(a=>"*"+a+"*").join(" o "):"*Pago*";
+    const lineas=["✅ "+apps];
+    if(g.numero) lineas.push(String(g.numero).trim());            // solo, para copiarlo de un toque
+    if(g.titular) lineas.push("*"+String(g.titular).trim()+"*"); // a nombre de quién: le confirma que no es una estafa
+    if(g.notas) lineas.push(String(g.notas).trim());
+    return lineas.join("\n");
+  }).filter(Boolean).join("\n\n");   // un bloque por destino, separados
+}
+const OCR_PRESETS=["Yape","Plin","BCP","BBVA","Interbank","Scotiabank","Transferencia"];
+// Catálogo de billeteras y bancos por país (para agregar métodos de pago).
+const PAY_CATALOG=[
+  {pais:"Perú", flag:"🇵🇪", wallets:["Yape","Plin"], banks:["BCP","BBVA","Interbank","Scotiabank","BanBif","Banco de la Nación"]},
+  {pais:"Colombia", flag:"🇨🇴", wallets:["Nequi","Daviplata"], banks:["Bancolombia","Davivienda","BBVA","Banco de Bogotá","Banco de Occidente"]},
+  {pais:"México", flag:"🇲🇽", wallets:["Mercado Pago","Spin by OXXO"], banks:["BBVA","Banorte","Santander","Citibanamex","HSBC","Banco Azteca"]},
+  {pais:"Chile", flag:"🇨🇱", wallets:["MACH","Mercado Pago","Tenpo"], banks:["BancoEstado","Banco de Chile","Santander","BCI","Scotiabank"]},
+  {pais:"Argentina", flag:"🇦🇷", wallets:["Mercado Pago","Ualá","Naranja X"], banks:["Banco Nación","Banco Galicia","Santander","BBVA","Banco Provincia"]},
+  {pais:"Ecuador", flag:"🇪🇨", wallets:["DeUna","Peigo"], banks:["Banco Pichincha","Banco Guayaquil","Produbanco","Banco del Pacífico","Banco Bolivariano"]},
+  {pais:"Bolivia", flag:"🇧🇴", wallets:["Tigo Money","Yolo"], banks:["Banco Unión","BNB","Banco Mercantil Santa Cruz","BCP Bolivia","Banco FIE"]},
+  {pais:"Venezuela", flag:"🇻🇪", wallets:["Pago Móvil","Zelle"], banks:["Banesco","Mercantil","BBVA Provincial","Banco de Venezuela","Bancamiga"]},
+  {pais:"Paraguay", flag:"🇵🇾", wallets:["Tigo Money","Billetera Personal"], banks:["Banco Continental","Itaú","Ueno Bank","Banco Nacional de Fomento"]},
+  {pais:"Uruguay", flag:"🇺🇾", wallets:["Mercado Pago","Prex"], banks:["BROU","Itaú","Santander","Scotiabank"]},
+  {pais:"Costa Rica", flag:"🇨🇷", wallets:["SINPE Móvil"], banks:["BAC","Banco Nacional","BCR","Scotiabank","Banco Popular"]},
+  {pais:"Panamá", flag:"🇵🇦", wallets:["Yappy","Nequi"], banks:["Banco General","Banistmo","BAC","Global Bank"]},
+  {pais:"Guatemala", flag:"🇬🇹", wallets:["Zigi"], banks:["Banco Industrial","Banrural","BAC","G&T Continental"]},
+  {pais:"El Salvador", flag:"🇸🇻", wallets:["Wompi","N1CO"], banks:["Banco Agrícola","Davivienda","BAC","Banco Cuscatlán"]},
+  {pais:"Honduras", flag:"🇭🇳", wallets:["Tengo","Tigo Money"], banks:["Banco Atlántida","BAC","Banpaís","Ficohsa"]},
+  {pais:"Rep. Dominicana", flag:"🇩🇴", wallets:["tPago","Azul"], banks:["Banreservas","Banco Popular","BHD","Scotiabank"]},
+  {pais:"España", flag:"🇪🇸", wallets:["Bizum"], banks:["BBVA","Santander","CaixaBank","Sabadell"]},
+  {pais:"Estados Unidos", flag:"🇺🇸", wallets:["Zelle","Cash App","Venmo","PayPal"], banks:["Bank of America","Chase","Wells Fargo","Citibank"]},
+];
+const payNorm=(s)=>(s??"").toString().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
+function ocrPreview(o){
+  if(o.activo===false) return "";
+  const r=o.reglas||{}; const L=[];
+  const mets=(o.metodos||[]).filter(m=>m.app||m.titular||m.numero);
+  const paises=[...new Set(mets.map(m=>String(m.pais||"").trim()).filter(Boolean))];
+  const apps=[...new Set(mets.map(m=>String(m.app||"").trim()).filter(Boolean))].slice(0,10);
+  L.push(`Eres un validador experto de comprobantes de pago${paises.length?" de "+paises.join(", "):""}${apps.length?` (${apps.join(", ")}, y transferencias bancarias)`:""}. Analiza la captura con máximo detalle y criterio anti-fraude.`);
+  if(mets.length) L.push("## Métodos de pago VÁLIDOS\n"+mets.map(m=>"- "+[m.app&&`App/Banco: ${m.app}`,m.titular&&`Titular: ${m.titular}`,m.numero&&`Número/cuenta: ${m.numero}`,m.notas&&`(${m.notas})`].filter(Boolean).join(" · ")).join("\n"));
+  const rls=[];
+  if(mets.length&&r.verificar_titular!==false) rls.push("El destinatario debe coincidir con un método válido, si no → INVÁLIDO.");
+  if(r.verificar_monto) rls.push("Extrae el monto y verifica que cubra lo acordado.");
+  if(r.verificar_fecha) rls.push(`La fecha debe ser reciente (máx ${Number(r.fecha_max_horas??48)} h).`);
+  if(r.operacion_unica) rls.push("Extrae el número de operación (clave anti-reuso).");
+  if(r.rechazar_editados) rls.push("Detecta montajes/ediciones; ante duda → INVÁLIDO.");
+  rls.push("Exigencia: "+(r.exigencia||"media")+".");
+  L.push("## Reglas\n"+rls.map(x=>"- "+x).join("\n"));
+  L.push("## Consideraciones\n- Billeteras y transferencias suelen ser interoperables: una billetera puede recibir de otra distinta y las transferencias cruzan bancos. No invalides por app/banco de origen distinto si el dinero llega a una cuenta válida.\n- El destinatario puede salir parcial/enmascarado (PER FLO, P*** F****, iniciales); vale si coincide razonablemente.\n- Un «pago programado/en proceso» no ejecutado NO es válido.");
+  const ejOk=(o.ejemplos||[]).filter(x=>x&&x.url&&x.tipo!=="fraude");
+  const ejBad=(o.ejemplos||[]).filter(x=>x&&x.url&&x.tipo==="fraude");
+  if(ejOk.length) L.push(`## Imágenes de referencia (VÁLIDOS)\nTe adjunto ${ejOk.length} comprobante(s) buenos de ejemplo. Son SOLO referencia; si el que llega es de otro método/app, ignóralos y valida por las reglas.`);
+  if(ejBad.length) L.push(`## Ejemplos de FRAUDE\nTe adjunto ${ejBad.length} comprobante(s) fraudulentos/editados que ya recibiste. Si el del cliente se parece (mismas señales de montaje), es INVÁLIDO.`);
+  if(o.instrucciones&&o.instrucciones.trim()) L.push("## Instrucciones del negocio\n"+o.instrucciones.trim());
+  L.push('Responde en JSON: {"valido":bool,"monto":number,"operacion":"...","fecha":"...","titular":"...","banco":"...","motivo":"..."}.');
+  return L.join("\n\n");
+}
+function renderValidador(b){
+  st.ocr = (st.channel.ocr_config && typeof st.channel.ocr_config==="object")
+    ? { ...defaultOcr(), ...st.channel.ocr_config, reglas:{ ...defaultOcr().reglas, ...(st.channel.ocr_config.reglas||{}) } }
+    : defaultOcr();
+  if(!Array.isArray(st.ocr.metodos)) st.ocr.metodos=[];
+  if(!Array.isArray(st.ocr.ejemplos)) st.ocr.ejemplos=[];
+  // Foto de los ejemplos AL ABRIR. Sirve para distinguir, al guardar, entre "esto lo borró el
+  // usuario" y "esto apareció después" — ver el merge en ocrSave.
+  st.ocrEjOrig = st.ocr.ejemplos.map(e=>e&&e.url).filter(Boolean);
+  const o=st.ocr, r=o.reglas;
+  const chk=(key,label,desc)=>`<label class="ocrchk"><input type="checkbox" data-r="${key}" ${r[key]?"checked":""}/> <span><b>${label}</b><small>${desc}</small></span></label>`;
+  b.innerHTML=`
+    <p class="sub">Cómo revisa la IA las capturas de pago: a qué número debe llegar, el monto, la fecha y si está editada. <span class="qm-l" title="Cuando llega una captura de pago, la IA la lee y verifica que el destinatario sea uno de tus métodos válidos, que el monto, la fecha y el nº de operación tengan sentido, y detecta montajes o ediciones. Devuelve válido / inválido con el motivo, y con eso el bot aprueba o te lo pasa a Pagos por validar.">¿Cómo funciona?</span></p>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.shield}</span><span class="nm">Validador inteligente</span>
+        <div class="sw ${o.activo!==false?'on':''}" id="ocrSw" title="Activar/desactivar" style="margin-left:auto"></div></div>
+      <div class="desc">Con esto activo, cada OCR valida con las reglas de abajo. Apágalo para que la IA solo lea lo que le pidas en el prompt del nodo.</div>
+    </div>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${icon("dollar")}</span><span class="nm">Métodos de pago aceptados</span></div>
+      <div class="desc">A qué cuentas/números debe llegar el pago. Si el comprobante va a otro destinatario, la IA lo marca inválido. Busca tu <b>país</b> y agrega las billeteras y bancos que usas.</div>
+      <div id="ocrMet" style="margin-top:8px"></div>
+      <div id="payPick" style="margin-top:12px"></div>
+    </div>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${icon("message")}</span><span class="nm">Mensaje de cobro (lo que el bot le pide al cliente)</span>
+        <div class="sw ${o.gen_datos!==false?'on':''}" id="dpSw" title="Generar automáticamente" style="margin-left:auto"></div></div>
+      <div class="desc">Se arma <b>solo con tus métodos de arriba</b> y queda disponible como <b style="color:var(--ia)">{{datos_pago}}</b> para usar en flujos y mensajes. Así lo llenas una sola vez. Apaga el switch si prefieres escribirlo tú.</div>
+      <div id="dpBody" style="margin-top:8px"></div>
+    </div>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${icon("alert")}</span><span class="nm">Reglas de validación</span></div>
+      <div class="ocrgrid">
+        ${chk("verificar_titular","Verificar destinatario","El titular/número debe coincidir con un método válido.")}
+        ${chk("verificar_monto","Verificar monto","Extrae el monto y comprueba que cubra lo acordado.")}
+        ${chk("verificar_fecha","Verificar fecha","El comprobante debe ser reciente.")}
+        ${chk("operacion_unica","Número de operación","Extrae la constancia/operación (anti-reuso).")}
+        ${chk("rechazar_editados","Detectar montajes","Sospecha de capturas editadas o alteradas.")}
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div class="f"><label style="margin-top:0">Antigüedad máx. (horas)</label><input class="in" id="ocrHoras" type="number" min="1" max="720" value="${Number(r.fecha_max_horas??48)}" style="max-width:150px"/></div>
+        <div class="f"><label style="margin-top:0">Nivel de exigencia</label>
+          <select class="in" id="ocrExig" style="max-width:260px">
+            <option value="baja" ${r.exigencia==="baja"?"selected":""}>Baja — aprueba si lo esencial coincide</option>
+            <option value="media" ${(!r.exigencia||r.exigencia==="media")?"selected":""}>Media — equilibrio (recomendado)</option>
+            <option value="alta" ${r.exigencia==="alta"?"selected":""}>Alta — rechaza ante cualquier duda</option>
+          </select></div>
+      </div>
+    </div>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${icon("image")}</span><span class="nm">Imágenes de referencia (opcional)</span></div>
+      <div class="desc">Sube capturas de comprobantes válidos como <b>referencia</b> (ej. un Yape tuyo) para que la IA sepa cómo lucen tus pagos. <b>No son el único método</b>: si llega otro (Plin, transferencia…), la IA los ignora y valida por las reglas.</div>
+      <div id="ocrEj" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px"></div>
+      <button class="btn" id="ocrEjAdd" style="margin-top:10px;border:1px solid var(--border)">${icon("upload")} Subir imagen de referencia</button>
+    </div>
+    <div class="card ia">
+      <div class="chd"><span class="ico iaic">${IC.book}</span><span class="nm">Instrucciones extra para la IA</span></div>
+      <textarea class="in" id="ocrInstr" rows="4" style="min-height:80px;line-height:1.5;resize:vertical" placeholder="Ej.: Aceptamos solo pagos en soles. Si el nombre está parcialmente tapado pero el número coincide, apruébalo. Rechaza capturas de 'pago programado' aún no ejecutado.">${esc(o.instrucciones||"")}</textarea>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
+      <button class="btn ia" id="ocrSave">Guardar validador</button>
+      <button class="btn" id="ocrPrev" style="border:1px solid var(--border)">Ver instrucciones que recibe la IA</button>
+    </div>`;
+  $("ocrSw").onclick=()=>{ o.activo=!(o.activo!==false); $("ocrSw").classList.toggle("on",o.activo); };
+  b.querySelectorAll("[data-r]").forEach(cb=> cb.onchange=()=>{ r[cb.dataset.r]=cb.checked; });
+  $("ocrHoras").oninput=(e)=>r.fecha_max_horas=Math.max(1,Number(e.target.value)||48);
+  $("ocrExig").onchange=(e)=>r.exigencia=e.target.value;
+  $("ocrInstr").oninput=(e)=>o.instrucciones=e.target.value;
+  const paintDp=()=>{
+    const box=$("dpBody"); if(!box) return; const gen=o.gen_datos!==false;
+    box.innerHTML = gen
+      ? `<div style="white-space:pre-wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:11px 13px;font-size:13px;color:var(--text);min-height:44px">${esc(genDatosPago(o.metodos)||"(agrega tus métodos de pago arriba)")}</div>`
+      : `<textarea class="in" id="dpManual" rows="3" style="min-height:64px;line-height:1.5;resize:vertical" placeholder="Ej. Yápeame al 900 000 000 a nombre de Juan Pérez">${esc(o.datos_pago||"")}</textarea>`;
+    const tm=$("dpManual"); if(tm) tm.oninput=(e)=>o.datos_pago=e.target.value;
+  };
+  const metRow=(m,i)=>{
+    const el=document.createElement("div"); el.style.cssText="border:1px solid var(--border);border-radius:11px;padding:11px;margin-bottom:8px";
+    el.innerHTML=`<div class="row">
+      <div class="f"><label style="margin-top:0">App / Banco</label><input class="in mApp" value="${esc(m.app||"")}" placeholder="Ej. Yape, BBVA, Nequi…"/></div>
+      <div class="f"><label style="margin-top:0">Titular esperado</label><input class="in mTit" value="${esc(m.titular||"")}" placeholder="Juan Pérez"/></div>
+      <div class="f"><label style="margin-top:0">Número / cuenta</label><input class="in mNum" value="${esc(m.numero||"")}" placeholder="Número, cuenta, CCI o CLABE"/></div>
+      <button class="btn danger" style="align-self:flex-end;border:1px solid var(--border)">${icon("trash")}</button>
+    </div>
+    <input class="in mNot" value="${esc(m.notas||"")}" placeholder="Notas (opcional): ej. solo en moneda local, no aceptar de terceros" style="margin-top:8px"/>`;
+    el.querySelector(".mApp").oninput=(e)=>{ m.app=e.target.value; paintDp(); };
+    el.querySelector(".mTit").oninput=(e)=>{ m.titular=e.target.value; paintDp(); };
+    el.querySelector(".mNum").oninput=(e)=>{ m.numero=e.target.value; paintDp(); };
+    el.querySelector(".mNot").oninput=(e)=>m.notas=e.target.value;
+    el.querySelector("button.danger").onclick=()=>{ o.metodos.splice(i,1); paintMet(); paintDp(); paintPayPick(); };
+    return el;
+  };
+  const paintMet=()=>{
+    const box=$("ocrMet"); box.innerHTML="";
+    if(!o.metodos.length){ box.innerHTML=`<div class="desc" style="padding:6px 0">Aún no agregas métodos. Busca tu país abajo y toca las billeteras/bancos que usas.</div>`; return; }
+    const groups={};
+    o.metodos.forEach((m,i)=>{ const k=m.pais||"Otros"; (groups[k]=groups[k]||[]).push(i); });
+    Object.entries(groups).forEach(([pais,idxs])=>{
+      const cat=PAY_CATALOG.find(c=>c.pais===pais);
+      const hd=document.createElement("div"); hd.className="paygrouphd"; hd.textContent=(cat?cat.flag+" ":"")+pais;
+      box.appendChild(hd);
+      idxs.forEach(i=> box.appendChild(metRow(o.metodos[i],i)));
+    });
+  };
+  function addMet(app,pais){ o.metodos.push({ app, pais, titular:"", numero:"", notas:"" }); paintMet(); paintDp(); paintPayPick(); toast(app+" agregado"); }
+  const paintPayPick=()=>{
+    const box=$("payPick"); if(!box) return;
+    const q=payNorm(st.paySearch);
+    const list=PAY_CATALOG.filter(c=> !q || payNorm(c.pais).includes(q) || c.wallets.concat(c.banks).some(m=>payNorm(m).includes(q)));
+    const chip=(m,pais)=>`<button class="paychip" data-add="${esc(m)}" data-pais="${esc(pais)}">+ ${esc(m)}</button>`;
+    box.innerHTML=`
+      <div class="paysearch"><input class="in" id="paySearchIn" placeholder="Busca tu país o método (Yape, Nequi, BBVA…)" value="${esc(st.paySearch||"")}"/></div>
+      <div class="paylist">${
+        list.length ? list.map(c=>{
+          const open = st.payOpen===c.pais || !!q;
+          const wl = q ? c.wallets.filter(m=>payNorm(m).includes(q)||payNorm(c.pais).includes(q)) : c.wallets;
+          const bk = q ? c.banks.filter(m=>payNorm(m).includes(q)||payNorm(c.pais).includes(q)) : c.banks;
+          return `<div class="paycard">
+            <button class="payhead" data-pais="${esc(c.pais)}"><span>${c.flag} ${esc(c.pais)}</span><span class="paycnt">${c.wallets.length+c.banks.length}</span></button>
+            ${open?`<div class="paybody">
+              ${wl.length?`<div class="paylbl">Billeteras</div><div class="paychips">${wl.map(m=>chip(m,c.pais)).join("")}</div>`:""}
+              ${bk.length?`<div class="paylbl">Bancos</div><div class="paychips">${bk.map(m=>chip(m,c.pais)).join("")}</div>`:""}
+              <button class="paychip custom" data-custom="${esc(c.pais)}">+ Otro (banco o billetera)</button>
+            </div>`:""}
+          </div>`;
+        }).join("")
+        : `<div class="desc" style="padding:8px 2px">Sin coincidencias. Elige un país y usa <b>+ Otro</b>, o escribe el método a mano en la tarjeta de arriba.</div>`
+      }</div>`;
+    const si=$("paySearchIn");
+    if(si){ si.oninput=(e)=>{ const p=e.target.selectionStart; st.paySearch=e.target.value; paintPayPick(); const n=$("paySearchIn"); if(n){ n.focus(); try{n.setSelectionRange(p,p);}catch(_){} } }; }
+    box.querySelectorAll(".payhead").forEach(h=> h.onclick=()=>{ st.payOpen = st.payOpen===h.dataset.pais?null:h.dataset.pais; paintPayPick(); });
+    box.querySelectorAll("[data-add]").forEach(bt=> bt.onclick=()=> addMet(bt.dataset.add,bt.dataset.pais));
+    box.querySelectorAll("[data-custom]").forEach(bt=> bt.onclick=async()=>{ const nm=await askText({title:"Agregar método", message:`Banco o billetera de ${bt.dataset.custom} que no está en la lista`, placeholder:"Ej. Banco XYZ / MiBilletera", confirmText:"Agregar"}); if(nm && nm.trim()) addMet(nm.trim(), bt.dataset.custom); });
+  };
+  paintMet(); paintDp(); paintPayPick();
+  $("dpSw").onclick=()=>{ o.gen_datos=!(o.gen_datos!==false); $("dpSw").classList.toggle("on",o.gen_datos!==false); paintDp(); };
+  const paintEj=()=>{
+    const box=$("ocrEj"); box.innerHTML="";
+    if(!o.ejemplos.length){ box.innerHTML=`<div class="desc" style="padding:2px 0">Sin imágenes de referencia.</div>`; }
+    o.ejemplos.forEach((ej,i)=>{
+      const esFraude = ej.tipo==="fraude";
+      const el=document.createElement("div"); el.style.cssText="position:relative;border:1px solid var(--border);border-radius:10px;padding:6px;background:var(--surface-2)";
+      el.innerHTML=`<img src="${esc(ej.url)}" style="width:104px;height:150px;object-fit:cover;border-radius:6px;display:block"/>
+        <button class="btn danger ejdel" style="position:absolute;top:5px;right:5px;width:26px;height:26px;padding:0;border:1px solid var(--border);background:var(--surface)">${icon("trash")}</button>
+        <button class="ejtipo" title="Marca si este es un ejemplo de pago VÁLIDO o de un FRAUDE/montaje" style="width:104px;margin-top:6px;height:26px;border-radius:6px;border:1px solid var(--border);cursor:pointer;font-size:11.5px;font-weight:700;${esFraude?"background:rgba(239,68,68,.14);color:#ef4444":"background:rgba(34,197,120,.14);color:#22c078"}">${esFraude?icon("alert")+" Fraude":icon("check")+" Válido"}</button>`;
+      el.querySelector("button.ejdel").onclick=()=>{ o.ejemplos.splice(i,1); paintEj(); };
+      el.querySelector(".ejtipo").onclick=()=>{ ej.tipo = esFraude?"valido":"fraude"; paintEj(); };
+      box.appendChild(el);
+    });
+  };
+  paintEj();
+  $("ocrEjAdd").onclick=()=>pickImg(o.ejemplos, paintEj);
+  $("ocrPrev").onclick=()=>{ const md=ocrPreview(o)||"(el validador está desactivado)"; askText({title:"Instrucciones del validador",message:"Esto es lo que la IA recibe al analizar un comprobante.",label:"Contexto",value:md,multiline:true,confirmText:"Cerrar",cancelText:"Cerrar"}); };
+  $("ocrSave").onclick=async(e)=>{
+    const btn=e.target; btn.disabled=true; const old=btn.textContent; btn.textContent="Guardando…";
+    o.metodos=o.metodos.filter(m=>m.app||m.titular||m.numero);
+    // 🔒 Los EJEMPLOS del validador no son solo de esta pantalla: "Pagos por validar" los
+    // agrega solo cada vez que rechazas un comprobante falso (así el validador aprende). Al
+    // guardar acá el objeto entero con la lista que se cargó al abrir, esos ejemplos nuevos
+    // se borraban — el validador desaprendía justo lo que le acababas de enseñar.
+    // Se mezcla contra lo FRESCO respetando lo que hiciste: lo que borraste a mano se va,
+    // lo que agregaste se queda, y lo que apareció mientras tenías la pestaña abierta se
+    // conserva. Si no se puede leer lo fresco, se guarda como antes (no bloquear el guardado).
+    try{
+      const { data:fresh } = await supa.from("channels").select("ocr_config").eq("id",st.channelId).maybeSingle();
+      const dbEj = Array.isArray(fresh?.ocr_config?.ejemplos) ? fresh.ocr_config.ejemplos : null;
+      if(dbEj){
+        const orig=new Set(st.ocrEjOrig||[]);
+        const ahora=new Set((o.ejemplos||[]).map(e=>e&&e.url).filter(Boolean));
+        const borrados=new Set([...orig].filter(u=>!ahora.has(u)));      // los quitó el usuario
+        const merged=dbEj.filter(e=>e&&e.url&&!borrados.has(e.url));     // base: lo de la BD, sin lo borrado
+        for(const e of (o.ejemplos||[])){                                 // + lo que agregó acá
+          if(e&&e.url&&!merged.some(x=>x&&x.url===e.url)) merged.push(e);
+        }
+        o.ejemplos=merged;
+      }
+    }catch(_){ /* sin lo fresco, se guarda tal cual */ }
+    // Si esto no escribe (operador: 0 filas sin error), se ABORTA antes del upsert de
+    // custom_fields, que sí le está permitido: si no, {{datos_pago}} quedaba con el Yape nuevo
+    // y el validador seguía aceptando comprobantes con el titular/número viejo.
+    const { error }=await updateChannel(st.channelId, { ocr_config:o });
+    if(error){ btn.disabled=false; btn.textContent=old; toast(/ocr_config|column/.test(error.message)&&!error.soloAdmin?"Falta aplicar la migración 0026":error.message,true); return; }
+    st.channel.ocr_config=o;
+    // Fuente única: sincroniza el campo del bot {{datos_pago}} (para el mensaje de cobro).
+    const datos = (o.gen_datos!==false) ? genDatosPago(o.metodos) : (o.datos_pago||"").trim();
+    let extra="";
+    // El builder de supabase-js NO lanza en error de BD (resuelve con {error}); hay que
+    // LEERLO — el try/catch solo atrapa throws de red, así que antes decía "actualizado ✓"
+    // aunque el upsert fallara y el bot seguía mostrando el Yape viejo. Y si `datos` quedó
+    // VACÍO (borró los métodos), se LIMPIA el valor en vez de saltarlo, para no dejar un
+    // número de pago rancio (que además no es editable desde Campos).
+    try{
+      const { error:eDp } = datos
+        ? await supa.from("custom_fields").upsert(
+            { channel_id:st.channelId, key:"datos_pago", nombre:"Datos de pago", tipo:"text", modo:"fijo", valor:datos, descripcion:"Generado desde el Validador de comprobantes" },
+            { onConflict:"channel_id,key" })
+        : await supa.from("custom_fields").update({ valor:null }).eq("channel_id",st.channelId).eq("key","datos_pago");
+      if(eDp) extra=" (no se pudo actualizar {{datos_pago}})";
+      else { st.campos.loaded=false; extra=datos?" · {{datos_pago}} actualizado":" · {{datos_pago}} limpiado"; }
+    }catch(_){ extra=" (no se pudo actualizar {{datos_pago}})"; }
+    btn.disabled=false; btn.textContent=old; markClean(); toast("Validador guardado"+extra);
+  };
+}
+
+// ── Cuánto gasta tu IA ──────────────────────────────────────────────
+// El consumo se acumula por día y por para-qué (ai_usage, migración 0087). Acá se lee de
+// una: hoy, este mes, en qué se va y —el número que de verdad decide si escalas— cuánto
+// cuesta en promedio cada conversación.
+// Si la tabla todavía no existe (migración sin aplicar) la tarjeta simplemente no se
+// dibuja: nadie ve un error por una función que aún no está.
+const USO_NOMBRES={ vender:"Vender y responder", ocr:"Leer comprobantes", stt:"Escuchar audios",
+  extraer:"Tomar los datos del pedido", clasificar:"Entender qué quiso decir", asistente:"Asistentes del panel",
+  memoria:"Recordar a cada cliente", recepcion:"Recibir a quien escribe sin palabra clave", examen:"Exámenes de prueba (calificador)", otro:"Otros" };
+// El rango que se está mirando (mismo selector que Inicio, por si compara).
+let gastoRango=computePreset("hoy");   // (todas las fechas arrancan en Hoy — Rodrigo, 10-oct)
+// ¿Este canal llegó a consumir IA alguna vez? Se pregunta UNA vez y aparte del rango:
+// si se dedujera del periodo elegido, elegir un mes sin consumo haría desaparecer la
+// tarjeta entera —y con ella el selector— y ya no habría cómo volver a otro periodo.
+let gastoIaHay=null;
+async function renderGastoIa(){
+  const box=$("gastoIa"); if(!box) return;
+  if(gastoIaHay===null){
+    const { count, error:e0 }=await supa.from("ai_usage").select("dia",{count:"exact",head:true}).eq("channel_id", st.channelId);
+    gastoIaHay = e0 ? false : (count||0)>0;   // sin tabla (migración pendiente) → sin tarjeta
+  }
+  if(!gastoIaHay){ box.innerHTML=""; return; }
+  const desde=ymdDia(gastoRango.from), hasta=ymdDia(gastoRango.to);
+  // PAGINADO: son ~20 filas por día; con «Máximo» pasaba de 1000 y el gasto salía corto (y distinto
+  // del Dashboard, que sí pagina).
+  const { data, error }=await pageAll((f,t)=>supa.from("ai_usage")
+    .select("dia,origen,model,llamadas,tokens_in,tokens_out,costo_usd")
+    .eq("channel_id", st.channelId).gte("dia", desde).lte("dia", hasta).order("dia",{ascending:false}).order("origen").order("model").range(f,t));
+  if(error || !Array.isArray(data)){ box.innerHTML=""; return; }
+  const sum=(rows,campo)=>rows.reduce((a,r)=>a+Number(r[campo]||0),0);
+  const mes=data;
+  // Días con consumo dentro del rango: el promedio se saca sobre los días que
+  // realmente operaron, no sobre los del calendario. Con "Máximo" (que arranca en
+  // 2020) dividir entre 2.000 días daría un promedio de cero y no diría nada.
+  const diasCon=new Set(data.filter(r=>Number(r.costo_usd||0)>0 || Number(r.llamadas||0)>0).map(r=>r.dia)).size;
+  // Con centavos, redondear a 2 decimales convierte todo lo pequeño en "$0.00" y la
+  // tarjeta parece rota justo cuando recién empiezas a medir. Bajo un dólar se muestran
+  // los céntimos de verdad.
+  const usd=(n)=>{
+    if(!(n>0)) return "$0.00";
+    if(n>=1) return "$"+n.toFixed(2);
+    if(n>=0.01) return "$"+n.toFixed(3);
+    return "$"+n.toFixed(4);
+  };
+  // Por para-qué, de mayor a menor: el orden cuenta la historia solo.
+  const porOrigen={}; mes.forEach(r=>{ porOrigen[r.origen]=(porOrigen[r.origen]||0)+Number(r.costo_usd||0); });
+  const filas=Object.entries(porOrigen).sort((a,b)=>b[1]-a[1]).filter(([,v])=>v>0);
+  const totalMes=sum(mes,"costo_usd");
+  const porDia=diasCon>0 ? totalMes/diasCon : 0;
+  const llamadasMes=sum(mes,"llamadas");
+  const maxV=filas.length?filas[0][1]:1;
+  // 💬 Cuánto cuesta CADA conversación: es el número con el que se decide si escalar, más
+  // que el total del mes. Se divide entre los chats que empezaron este mes (los contactos
+  // nuevos), que es la unidad en la que uno piensa el negocio.
+  let porChat="";
+  try{
+    const { count }=await supa.from("contacts").select("id",{count:"exact",head:true})
+      // Corte del día en la zona del NEGOCIO (antes UTC: a las 22:00 de Lima «Hoy» perdía los chats
+      // de las 19:00 en adelante y sumaba los de anoche) y sin contactos de prueba.
+      .eq("channel_id", st.channelId).neq("wa_id","webchat-test").or("source.is.null,source.neq.sim")
+      .gte("created_at", startOfDayTZ(gastoRango.from).toISOString()).lte("created_at", endOfDayTZ(gastoRango.to).toISOString());
+    if(count>0) porChat=usd(totalMes/count)+` <span style="font-weight:600;color:var(--muted)">por conversación</span>`;
+  }catch(_){ /* sin el dato, la tarjeta va igual */ }
+  box.innerHTML=`
+    <div class="card">
+      <div class="chd"><span class="nm">Lo que gasta tu IA</span>
+        <span id="gastoIaDr" style="margin-left:auto"></span></div>
+      <div class="desc ay">Lo que llevas consumido con tu propia cuenta de IA. El cobro real siempre lo manda tu proveedor; esto es para que no tengas que salir de acá para saber cómo vas.</div>
+      <div style="display:flex;gap:26px;flex-wrap:wrap;margin:14px 0 4px">
+        <div><div style="font-size:11.5px;color:var(--muted);font-weight:700">GASTO</div>
+             <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${usd(totalMes)}</div></div>
+        ${diasCon>1?`<div><div style="font-size:11.5px;color:var(--muted);font-weight:700">POR DÍA</div>
+             <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${usd(porDia)}</div></div>`:""}
+        <div><div style="font-size:11.5px;color:var(--muted);font-weight:700">LLAMADAS</div>
+             <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${llamadasMes.toLocaleString("es-PE")}</div></div>
+        ${porChat?`<div><div style="font-size:11.5px;color:var(--muted);font-weight:700">CADA CHAT</div>
+             <div style="font-size:23px;font-weight:800;letter-spacing:-.5px">${porChat}</div></div>`:""}
+      </div>
+      ${llamadasMes?"":`<div class="desc" style="margin-top:10px">Sin consumo en este periodo.</div>`}
+      ${filas.length?`<div style="margin-top:12px">${filas.map(([k,v])=>`
+        <div style="display:flex;align-items:center;gap:10px;margin:7px 0">
+          <div style="flex:0 0 190px;font-size:12.5px;color:var(--text)">${esc(USO_NOMBRES[k]||k)}</div>
+          <div style="flex:1;height:8px;background:var(--surface-2);border-radius:6px;overflow:hidden">
+            <div style="height:100%;width:${Math.max(3,Math.round(v/maxV*100))}%;background:linear-gradient(90deg,var(--ia1,#a855f7),var(--ia2,#ec4899))"></div></div>
+          <div style="flex:0 0 62px;text-align:right;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums">${usd(v)}</div>
+        </div>`).join("")}</div>`:""}
+    </div>`;
+  const host=$("gastoIaDr");
+  if(host) mountDateRange(host, { valor:gastoRango, nota:"Por día de consumo · hora de tu negocio",
+    onChange:(r)=>{ gastoRango=r; renderGastoIa(); } });
+  ponerAyudas(box);   // la tarjeta se dibuja después del render: su «?» se pone acá
+}
+
+// ── Proveedores (API keys) ──────────────────────────────────────────
+function renderProveedores(box){
+  box.innerHTML=`
+    <p class="sub">Lo que gasta la IA de este bot y las cuentas (API keys) con las que trabaja.</p>
+    <div id="gastoIa"></div>
+    <div id="cards"></div>`;
+  renderGastoIa();
+  const cont=$("cards");
+  PROVIDERS.forEach(p=>{
+    const cfg=st.cfg[p.id], isDef=st.iaProvider===p.id;
+    const def=(MODELS[p.id]||[])[0]?.id||"";
+    const curModel=st.pick[p.id] ?? cfg?.model ?? def;
+    const card=document.createElement("div"); card.className="card"+(cfg?" on":"");
+    card.innerHTML=`
+      <div class="chd"><span class="ico" style="background:transparent;border:1px solid var(--border)"><img src="${p.logo}" alt=""/></span>
+        <span class="nm">${esc(p.nm)}</span>
+        ${cfg?'<span class="badge on">Configurada</span>':'<span class="badge">Sin configurar</span>'}
+        ${isDef?'<span class="badge def">Por defecto</span>':''}</div>
+      <div class="desc">${esc(p.desc)}</div>
+      <label>API key ${cfg?'<span style="color:var(--faint)">(vacía para conservar la actual)</span>':''}</label>
+      <input class="in" type="password" id="key_${p.id}" autocomplete="off" placeholder="${cfg?'•••••••• guardada':p.keyHint}"/>
+      <label>Modelo por defecto</label>
+      <button class="modelpick" data-mp="${p.id}">
+        <span class="mp-tx"><b>${esc(modelName(p.id,curModel))}</b><small>${esc(curModel)}</small></span>
+        ${icon("chevron")}
+      </button>
+      <div class="acts">
+        <button class="btn ia" data-a="save" data-p="${p.id}">Guardar</button>
+        <button class="btn" data-a="test" data-p="${p.id}" ${cfg?'':'disabled'}>Probar</button>
+        ${!isDef&&cfg?`<button class="btn ghost" data-a="default" data-p="${p.id}">Usar por defecto</button>`:''}
+        ${cfg?`<button class="btn danger" data-a="delete" data-p="${p.id}">Eliminar</button>`:''}
+      </div>`;
+    cont.appendChild(card);
+  });
+  cont.querySelectorAll("button[data-a]").forEach(b=> b.onclick=()=>onAction(b.dataset.a,b.dataset.p,b));
+  cont.querySelectorAll("[data-mp]").forEach(b=> b.onclick=async()=>{
+    const p=b.dataset.mp; const def=(MODELS[p]||[])[0]?.id||"";
+    const cur=st.pick[p] ?? st.cfg[p]?.model ?? def;
+    const chosen=await pickModel(p,cur);
+    if(chosen){ st.pick[p]=chosen; renderProveedores(box); }
+  });
+}
+async function call(body){
+  const { data, error } = await supa.functions.invoke("ai-config", { body });
+  if(error){ let d=""; try{ d=(await error.context?.json?.())?.detalle||""; }catch{} throw new Error(d||error.message||"error"); }
+  return data;
+}
+async function onAction(action, provider, btn){
+  const key=$("key_"+provider)?.value?.trim()||null;
+  const def=(MODELS[provider]||[])[0]?.id||null;
+  const model=st.pick[provider] ?? st.cfg[provider]?.model ?? def;
+  btn.disabled=true; const old=btn.textContent;
+  try{
+    if(action==="save"){
+      if(!key && !st.cfg[provider]){ toast("Pega la API key primero",true); return; }
+      await call({ action:"save", channel_id:st.channelId, provider, api_key:key, model, make_default:!st.iaProvider });
+      toast("Guardado");
+    } else if(action==="test"){
+      btn.textContent="Probando…";
+      const r=await call({ action:"test", channel_id:st.channelId, provider });
+      if(r?.ok) toast("IA responde"); else toast("Falló: "+(r?.detalle||r?.error||""),true); return;
+    } else if(action==="default"){ await call({ action:"default", channel_id:st.channelId, provider }); toast("Proveedor por defecto"); }
+    else if(action==="delete"){ if(!await confirmDialog({title:"Eliminar configuración",message:"¿Eliminar la configuración de "+provider+"?",confirmText:"Eliminar",danger:true})) return; await call({ action:"delete", channel_id:st.channelId, provider }); toast("Eliminado"); }
+    await loadCfg(); markClean();
+  }catch(e){ toast(e.message||"error",true); }
+  finally{ btn.disabled=false; btn.textContent=old; }
+}

@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<title>Nodo · Bot</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
+<link rel="stylesheet" href="shell.css" />
+<!-- 🤖 Sección «Bot» en UNA página (14-nov-2026, Rodrigo: «hazla una sola»). Antes eran negocio.html + ia.html con la misma
+     barra: pasar de una pestaña de Negocio a una de IA era cambiar de página (recargar datos, «cargando», volver arriba).
+     Ahora los datos se cargan una vez y cambiar de pestaña solo cambia la caja de abajo. Cada parte trae sus estilos de
+     siempre: el de la parte que NO está a la vista se apaga (cssN / cssI), así cada pestaña se ve igual que antes. -->
+<style id="cssBot">
+  /* Asistente "Armar con IA": botón flotante + drawer lateral */
+  .armfab{position:fixed;right:22px;bottom:22px;z-index:80;display:inline-flex;align-items:center;gap:8px;height:48px;padding:0 18px;border:none;border-radius:12px;background:linear-gradient(90deg,#a855f7,#ec4899);color:#fff;font-weight:700;font-size:14px;cursor:pointer;box-shadow:0 8px 24px rgba(168,85,247,.35)}
+  .armfab svg{width:19px;height:19px}
+  .armfab:hover{filter:brightness(1.06)}
+  .armov{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.45);display:none}
+  .armov.on{display:block}
+  .armdr{position:fixed;top:0;right:0;bottom:0;width:440px;max-width:100%;background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;box-shadow:-12px 0 40px rgba(0,0,0,.3)}
+  .armhd{padding:15px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:11px}
+  .armhd .gl{width:32px;height:32px;flex:none;border-radius:9px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center}
+  .armhd .gl svg{width:18px;height:18px}
+  .armbody{flex:1;overflow-y:auto;padding:16px 18px}
+  .armft{padding:12px 18px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px}
+  .armchip{font-size:12px;border:1px solid var(--border);border-radius:20px;padding:6px 11px;color:var(--muted);cursor:pointer;background:transparent}
+  .armchip:hover{border-color:#a855f7;color:#a855f7}
+  .armhero{border:1px solid rgba(168,85,247,.4);background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.12),transparent 60%),var(--surface);border-radius:14px;padding:15px 16px;margin-bottom:16px;display:flex;gap:12px;align-items:center}
+  .armhero .hg{width:38px;height:38px;flex:none;border-radius:11px;background:linear-gradient(135deg,#a855f7,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center}
+  .armhero .hg svg{width:20px;height:20px}
+</style>
+<style id="cssN">
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --red:#e2564a; --red-bg:#2c1615;
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  .tabs{display:flex;gap:4px;margin:0 0 22px;border-bottom:1px solid var(--border);flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{background:transparent;border:none;color:var(--muted);font-size:13.5px;font-weight:600;padding:11px 12px;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:7px;white-space:nowrap;flex:none}
+  .tab:hover{color:var(--text)}
+  .tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+  .tab svg{width:17px;height:17px}
+  h2{font-size:18px;margin:0 0 4px;font-weight:700;letter-spacing:-.2px}
+  h3{font-size:16px;margin:0 0 4px;font-weight:700}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 20px;line-height:1.55;max-width:660px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:16px}
+  /* Tres perillas de días, una al lado de otra; se apilan solas en pantalla angosta. */
+  .row3{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
+  .row3 .in{width:100%;margin-top:6px}
+  .row3 .hint{display:block;font-size:11.5px;color:var(--faint);line-height:1.5;margin-top:5px}
+  .chd{display:flex;align-items:center;gap:13px;margin-bottom:4px}
+  .chd .ico{width:46px;height:46px;border-radius:13px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
+  .chd .ico svg{width:22px;height:22px}
+  .chd .nm{font-weight:700;font-size:16px;letter-spacing:-.1px}
+  .desc{color:var(--muted);font-size:12.5px;margin:12px 0 4px;line-height:1.55}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:14px 0 6px;font-weight:700}
+  .in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:11px 13px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .in:focus{border-color:var(--brand)}
+  .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+  .row>.f{flex:1;min-width:170px}
+  .acts{display:flex;gap:8px;margin-top:18px;align-items:center;flex-wrap:wrap}
+  .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:7px}
+  .btn svg{width:16px;height:16px;flex:none}
+  .btn.primary{background:var(--brand);border:none;color:#fff}
+  .btn.primary:hover{background:var(--brand-2)}
+  .btn.danger{color:var(--red);border-color:transparent}
+  /* Entrega: switches y checks propios, prefijo ent- (una clase genérica choca) */
+  .ent-sw{width:38px;height:21px;border-radius:999px;background:var(--border);position:relative;flex:none;transition:background .18s;cursor:pointer}
+  .ent-sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;transition:transform .18s}
+  .ent-sw.on{background:var(--brand)}
+  .ent-sw.on::after{transform:translateX(17px)}
+  .ent-chk{display:inline-flex;align-items:center;gap:5px;cursor:pointer;user-select:none;color:var(--muted)}
+  .ent-chk input{accent-color:var(--brand);cursor:pointer;margin:0}
+  /* 🧩 Ficha del negocio en 4 cuadros (prefijo nq-). Mismo lenguaje que el resto: superficie, borde fino, ícono en
+     cuadradito con el color de marca, y verde SOLO para lo que ya está listo. */
+  .nq-prog{display:flex;align-items:center;gap:10px;margin:14px 0 4px;font-size:12.5px;color:var(--muted)}
+  .nq-prog .bar{flex:1;max-width:220px;height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+  .nq-prog .bar i{display:block;height:100%;border-radius:99px;background:var(--brand);transition:width .25s}
+  .nq-prog.ok .bar i{background:var(--green)}
+  .nq-prog b{color:var(--text)}
+  .nq-prog .okt{color:var(--green);font-weight:600}
+  /* (22-oct) «Listo» como puntito verde (antes ✓), sin píldora */
+  .nq.lleno .nq-st{width:9px;height:9px;padding:0;border-radius:50%;background:var(--fill-verde,#16A34A)!important;font-size:0;color:transparent!important;margin:0 3px}
+  .nq-prog .okt{display:inline-flex;align-items:center;gap:7px}
+  .nq-prog .okt::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--fill-verde,#16A34A);flex:none}
+  /* cuadros plegados cuando los 4 están completos */
+  .nq.plegado:not(.abierto){padding:12px 16px}
+  .nq.plegado:not(.abierto) .nq-va,.nq.plegado:not(.abierto) .nq-no,.nq.plegado:not(.abierto) label,
+  .nq.plegado:not(.abierto) input,.nq.plegado:not(.abierto) textarea,.nq.plegado:not(.abierto)>div[style*="height:10px"]{display:none}
+  .nq.plegado .nq-hd{cursor:pointer}
+  .nq.plegado.abierto .nq-res{display:none}
+  .nq-res{font-size:12.5px;color:var(--muted);margin:6px 0 0 47px;line-height:1.5}
+  .nq-chev{color:var(--faint);font-size:18px;line-height:1;transition:transform .15s;flex:none}
+  .nq.abierto .nq-chev{transform:rotate(90deg)}
+  .nq{border:1px solid var(--border);border-radius:14px;padding:14px 16px 16px;margin-top:12px;background:var(--surface);transition:border-color .15s,box-shadow .15s}
+  .nq:focus-within{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg)}
+  .nq-hd{display:flex;align-items:center;gap:11px}
+  .nq-ic{width:36px;height:36px;border-radius:10px;background:var(--brand-bg);color:var(--brand);display:grid;place-items:center;flex:none;position:relative}
+  .nq-ic svg{width:18px;height:18px}
+  .nq-ic .n{position:absolute;right:-5px;bottom:-5px;width:17px;height:17px;border-radius:50%;background:var(--surface);border:1px solid var(--border);color:var(--muted);font-size:10px;font-weight:800;display:grid;place-items:center}
+  .nq-tt{font-weight:700;font-size:14.5px;letter-spacing:-.1px;flex:1;min-width:0}
+  .nq-st{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--surface-2);color:var(--faint);flex:none}
+  .nq.lleno .nq-st{background:var(--green-bg);color:var(--green)}
+  .nq-va{font-size:12.5px;color:var(--muted);line-height:1.5;margin:9px 0 0}
+  .nq-no{display:flex;gap:7px;align-items:flex-start;font-size:11.5px;color:var(--faint);line-height:1.5;margin:5px 0 2px}
+  .nq-no svg{width:13px;height:13px;flex:none;margin-top:2px}
+  .nq label{margin:12px 0 6px}
+  .nq textarea.in{line-height:1.55;resize:vertical}
+  .nq-adv{border:1px solid var(--border);border-radius:14px;padding:0 16px;margin-top:14px;background:var(--surface)}
+  .nq-adv>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:14px 0;font-weight:700;font-size:13.5px}
+  .nq-adv>summary::-webkit-details-marker{display:none}
+  .nq-adv>summary .chev{width:16px;height:16px;color:var(--muted);transition:transform .2s;flex:none}
+  .nq-adv[open]>summary .chev{transform:rotate(90deg)}
+  .nq-adv>summary span{font-weight:400;color:var(--faint);font-size:12.5px}
+  /* 🙋 Preguntas de clientes del NEGOCIO (mismos estilos que la tarjeta de Productos) */
+  .pc-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--amber);border-radius:16px;padding:14px 16px;margin:-4px 0 16px}
+  .pc-hd{display:flex;align-items:center;gap:11px;flex-wrap:wrap}
+  .pc-ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--amber-bg);color:var(--amber);flex:none}
+  .pc-ico svg{width:17px;height:17px}
+  .pc-tt{font-weight:800;font-size:14px}
+  .pc-sub{font-size:12px;color:var(--muted);margin-top:1px}
+  .pc-badge{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:20px;background:var(--amber-bg);color:var(--amber)}
+  .pc-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .pc-chip{font-size:12px;padding:4px 10px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--text);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pc-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+  .pc-item{border:1px solid var(--border);border-radius:12px;padding:11px 12px;background:var(--surface-2)}
+  .pc-q{font-weight:700;font-size:13.5px}
+  .pc-meta{font-size:11.5px;color:var(--faint);margin-top:2px}
+  .pc-lbl{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-top:9px}
+  .pc-a{font-size:13px;line-height:1.5;margin-top:3px;padding:7px 10px;border-radius:9px;background:var(--surface);border:1px solid var(--border)}
+  .pc-a.vacia{color:var(--muted);font-style:italic}
+  .pc-cita{font-size:11.5px;color:var(--faint);margin-top:6px}
+  .pc-acts{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+  .pc-acts .btn{height:32px;padding:0 12px;font-size:12.5px;display:inline-flex;align-items:center;gap:6px}
+  .pc-acts .btn svg{width:14px;height:14px}
+  .pc-acts a.btn{text-decoration:none;color:var(--text)}
+  .pc-cita a{color:var(--brand);text-decoration:none;font-weight:600}
+  .pc-acts .btn.ok{border-color:rgba(34,192,121,.45);color:var(--green)}
+  .pc-acts .btn.no{border-color:rgba(239,68,68,.4);color:var(--red)}
+  .pc-edit{width:100%;min-height:62px;margin-top:8px;padding:8px 10px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit;font-size:13px;line-height:1.5;resize:vertical}
+  .pc-edit:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-bg,rgba(99,102,241,.15))}
+  .pc-done{font-size:12.5px;line-height:1.55;margin-top:8px;padding:8px 10px;border-radius:9px}
+  .pc-done.ok{background:rgba(34,192,121,.10);color:var(--green)}
+  .pc-done.no{background:var(--red-bg);color:var(--text)}
+  .pc-done a{color:var(--brand);font-weight:600}
+  /* (31-oct, Rodrigo: «que no estorbe») Cerrada, la tarjeta es UNA franja: cuántas hay, las primeras preguntas
+     cortadas y el botón. La explicación larga y la lista se ven al abrirla. Toda la franja abre. */
+  .pc-franja{display:flex;align-items:center;gap:10px;min-width:0;cursor:pointer;background:var(--surface);border:1px solid var(--border);
+    border-left:3px solid var(--amber);border-radius:12px;padding:8px 10px 8px 12px;transition:border-color .15s}
+  .pc-franja:hover{border-color:var(--amber)}
+  .pc-franja .pc-fic{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:var(--amber-bg);color:var(--amber);flex:none}
+  .pc-franja .pc-fic svg{width:13px;height:13px}
+  .pc-franja b{font-size:13px;font-weight:700;white-space:nowrap}
+  .pc-franja .pc-fq{flex:1;min-width:0;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pc-franja .pc-fbtn{flex:none;height:28px;padding:0 12px;border-radius:8px;border:none;background:var(--brand);color:#fff;font-size:12.5px;font-weight:600;cursor:pointer}
+  .pc-franja.ok{border-left-color:var(--green)}
+  .pc-franja.ok .pc-fic{background:rgba(34,192,121,.12);color:var(--green)}
+  @media(max-width:560px){.pc-franja .pc-fq{display:none}}
+  .pc-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted)}
+  .pc-link{background:none;border:none;padding:0;color:var(--brand);font-weight:600;font-size:12.5px;cursor:pointer}
+  .neg-id{display:flex;align-items:center;gap:14px}
+  .neg-id img{width:52px;height:52px;border-radius:14px;object-fit:cover;border:1px solid var(--border);background:var(--surface-2);flex:none}
+  .neg-k{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);margin-bottom:2px}
+  .neg-id .nodo-title{margin:0}
+
+</style>
+<style id="cssI">
+  :root{
+    --bg:#0e1116; --surface:#151a21; --surface-2:#1b222c; --border:#232b36;
+    --text:#e7ecf2; --muted:#8a97a8; --faint:#5c6675;
+    --brand:#2b7fff; --brand-2:#1e6ff0; --brand-bg:#12233f;
+    --green:#22c079; --green-bg:#10281d; --amber:#f0a92b; --red:#e2564a; --red-bg:#2c1615;
+    /* Acento IA (violeta/fucsia robot) */
+    --ia:#a855f7; --ia-2:#ec4899; --ia-bg:rgba(168,85,247,.12); --ia-border:rgba(168,85,247,.4);
+    --font:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
+  button{font-family:inherit;cursor:pointer}
+  /* Hero distintivo de la sección IA */
+  .ia-hero{position:relative;overflow:hidden;border:1px solid var(--ia-border);border-radius:18px;
+    padding:22px 24px;margin:6px 0 26px;background:
+      radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.18),transparent 55%),
+      radial-gradient(120% 140% at 100% 100%,rgba(236,72,153,.14),transparent 55%),
+      var(--surface)}
+  .ia-hero .ia-badge{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;font-weight:700;
+    letter-spacing:.02em;text-transform:uppercase;color:var(--ia);background:var(--ia-bg);
+    border:1px solid var(--ia-border);border-radius:999px;padding:5px 12px;margin-bottom:12px}
+  .ia-hero .ia-badge svg{width:15px;height:15px}
+  .ia-hero h1{margin:0 0 6px;font-size:27px;font-weight:800;letter-spacing:-.5px;
+    background:linear-gradient(90deg,var(--ia),var(--ia-2));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+  .ia-hero p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.55;max-width:680px}
+  .ia-hero .glow{position:absolute;right:-40px;top:-40px;width:180px;height:180px;border-radius:50%;
+    background:radial-gradient(circle,rgba(168,85,247,.35),transparent 70%);filter:blur(20px);pointer-events:none}
+
+  /* Una sola fila con scroll horizontal (7 pestañas no entran en 2 filas sin que
+     "Proveedores" quede descolgada). Mismo patrón que config.html. */
+  .tabs{display:flex;gap:2px;margin:0 0 22px;border-bottom:1px solid var(--border);flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{background:transparent;border:none;color:var(--muted);font-size:13px;font-weight:600;padding:10px 11px;border-bottom:2px solid transparent;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex:none}
+  .tab:hover{color:var(--text)}
+  .tab.active{color:var(--ia);border-bottom-color:var(--ia)}
+  .tab svg{width:17px;height:17px}
+  .tab img{width:18px;height:18px;border-radius:5px;object-fit:cover}
+
+  h2{font-size:18px;margin:0 0 4px;font-weight:700;letter-spacing:-.2px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 20px;line-height:1.55;max-width:640px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px 22px;margin-bottom:16px}
+  .card.on{border-color:var(--green)}
+  .card.ia{border-color:var(--ia-border);background:linear-gradient(180deg,var(--ia-bg),transparent 40%),var(--surface)}
+  .chd{display:flex;align-items:center;gap:13px;margin-bottom:4px}
+  .chd .ico{width:46px;height:46px;border-radius:13px;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
+  .chd .ico.iaic{background:var(--ia-bg);color:var(--ia)}
+  .chd .ico svg{width:22px;height:22px}
+  .chd .ico img{width:100%;height:100%;object-fit:cover}
+  .chd .nm{font-weight:700;font-size:16px;letter-spacing:-.1px}
+  .badge{font-size:10.5px;padding:3px 10px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--muted);font-weight:700}
+  .badge.on{background:var(--green-bg);color:var(--green);border-color:transparent}
+  .badge.def{background:var(--ia-bg);color:var(--ia);border-color:transparent}
+  .desc{color:var(--muted);font-size:12.5px;margin:12px 0 4px;line-height:1.55}
+  label{display:block;font-size:11.5px;color:var(--muted);margin:14px 0 6px;font-weight:700}
+  .in{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;color:var(--text);padding:11px 13px;font-size:13.5px;outline:none;font-family:var(--font)}
+  .in:focus{border-color:var(--ia)}
+  .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+  .row>.f{flex:1;min-width:170px}
+  .acts{display:flex;gap:8px;margin-top:18px;align-items:center;flex-wrap:wrap}
+  .btn{height:40px;padding:0 16px;border-radius:11px;border:1px solid var(--border);background:transparent;color:var(--text);font-size:13.5px;font-weight:600;display:inline-flex;align-items:center;justify-content:center;gap:7px}
+  .btn svg{width:16px;height:16px;flex:none}
+  .btn.primary{background:var(--brand);border:none;color:#fff}
+  .btn.primary:hover{background:var(--brand-2)}
+  .btn.ia{background:linear-gradient(90deg,var(--ia),var(--ia-2));border:none;color:#fff}
+  .btn.ia:hover{filter:brightness(1.07)}
+  .btn.ghost{color:var(--muted)} .btn.danger{color:var(--red);border-color:transparent}
+  /* Métodos de pago por país (picker) */
+  .paysearch input{margin-bottom:10px}
+  .paylist{display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto}
+  .paycard{border:1px solid var(--border);border-radius:11px;overflow:hidden;background:var(--surface-2);flex:none}
+  .payhead{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:none;border:none;color:var(--text);font-size:13.5px;font-weight:600;padding:11px 13px;cursor:pointer;font-family:inherit}
+  .payhead:hover{background:var(--surface)}
+  .payhead .paycnt{font-size:11px;font-weight:700;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:1px 8px}
+  .paybody{padding:2px 13px 13px;display:flex;flex-direction:column;gap:7px}
+  .paylbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);margin-top:6px}
+  .paychips{display:flex;flex-wrap:wrap;gap:6px}
+  .paychip{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;transition:border-color .12s,color .12s}
+  .paychip:hover{border-color:var(--ia);color:var(--ia)}
+  .paychip.custom{border-style:dashed;color:var(--muted);align-self:flex-start;margin-top:4px}
+  .paygrouphd{font-size:12px;font-weight:700;color:var(--muted);margin:10px 0 6px;display:flex;align-items:center;gap:6px}
+  /* Validador de comprobantes */
+  .ia-hero2{border:1px solid var(--ia-border);border-radius:14px;padding:14px 16px;margin:0 0 18px;
+    background:radial-gradient(120% 140% at 0% 0%,rgba(168,85,247,.14),transparent 60%),var(--surface)}
+  .ia-badge2{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.02em;color:var(--ia);background:var(--ia-bg);border:1px solid var(--ia-border);border-radius:999px;padding:4px 11px;margin-bottom:9px}
+  .ia-badge2 svg{width:14px;height:14px}
+  .ia-hero2 p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.55}
+  .ocrgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
+  @media(max-width:640px){.ocrgrid{grid-template-columns:1fr}}
+  .ocrchk{display:flex;align-items:flex-start;gap:9px;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer}
+  .ocrchk input{margin-top:2px;accent-color:var(--ia);width:16px;height:16px;flex:none}
+  .ocrchk span{display:flex;flex-direction:column;gap:2px}
+  .ocrchk b{font-size:13px;font-weight:650} .ocrchk small{font-size:11.5px;color:var(--muted);line-height:1.4}
+  /* Campos del Bot — cuadrícula alineada */
+  .campgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  .campgrid .cf{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .campgrid .cf label{margin:0}
+  .campvalrow{grid-column:1/-1;display:grid;grid-template-columns:2fr 1fr 40px;gap:12px;align-items:end}
+  .camdel{height:40px;width:40px;padding:0;border:1px solid var(--border)!important;flex:none;align-self:flex-end}
+  @media(max-width:640px){.campgrid,.campvalrow{grid-template-columns:1fr}}
+  .sw{width:44px;height:25px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);position:relative;transition:.15s;flex:none;cursor:pointer}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:var(--muted);transition:.15s}
+  .sw.on{background:var(--ia-bg);border-color:var(--ia-border)} .sw.on::after{left:20px;background:var(--ia)}
+  /* Selector de modelo (abre el picker nativo) */
+  .modelpick{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--surface-2);
+    border:1px solid var(--border);border-radius:11px;padding:11px 14px;color:var(--text);cursor:pointer;transition:border-color .12s}
+  .modelpick:hover{border-color:var(--ia)}
+  .modelpick .mp-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .modelpick .mp-tx b{font-size:14px;font-weight:650}
+  .modelpick .mp-tx small{font-size:11.5px;color:var(--faint);font-family:monospace}
+  .modelpick svg{width:18px;height:18px;color:var(--muted);flex:none}
+  /* (10-oct) cabecera compacta, chip de gasto, ayudas «?» y filas de Modelos */
+  .ia-top{display:flex;align-items:center;gap:16px;padding:4px 0 18px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+  .ia-ic{width:56px;height:56px;border-radius:16px;flex:none;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,#a855f7,#ec4899);box-shadow:0 8px 22px -10px rgba(168,85,247,.7)}
+  .ia-ic svg{width:28px;height:28px}
+  .ia-k{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;background:linear-gradient(90deg,#a855f7,#ec4899);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:2px}
+  .ia-tt{margin:0;font-size:26px;font-weight:700;letter-spacing:-.4px;color:var(--text)}
+  .ia-top p{margin:4px 0 0;color:var(--muted);font-size:13.5px}
+  /* (22-oct) Diseño A: la cabecera de IA es la franja de borde a borde con su violeta → rosado (shell.css, .nodo-head.ia) */
+  html:not([data-ds="1"]) .ia-top.nodo-head{border-bottom:0;gap:16px;flex-wrap:nowrap}
+  html:not([data-ds="1"]) .ia-top.nodo-head .ia-k{background:none;-webkit-text-fill-color:currentColor;color:rgba(255,255,255,.85)}
+  html:not([data-ds="1"]) .ia-top.nodo-head .ia-ic{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);box-shadow:none;width:40px;height:40px;border-radius:12px}
+  html:not([data-ds="1"]) .ia-top.nodo-head .ia-ic svg{width:20px;height:20px}
+  html:not([data-ds="1"]) .ia-top.nodo-head{gap:12px}
+  html:not([data-ds="1"]) .ia-top.nodo-head .ia-k{font-size:10.5px;margin-bottom:0}
+  .card:not(.ver-ayuda) .ay{display:none}
+  .qm{margin-left:auto;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:var(--surface-2);color:var(--muted);font:inherit;font-size:12px;font-weight:700;cursor:pointer;flex:none;display:inline-flex;align-items:center;justify-content:center}
+  /* (11-oct) Si la cabecera ya tiene algo empujado a la derecha (el selector de fechas), el «?» va pegado a eso:
+     con dos margin-left:auto el espacio se repartía y el selector quedaba al centro. */
+  .chd [style*="margin-left:auto"] ~ .qm{margin-left:8px}
+  .qm:hover,.qm.on{border-color:#a855f7;color:#a855f7}
+  .qm-l{color:#a855f7;cursor:help;border-bottom:1px dotted currentColor;white-space:nowrap}
+  .sub{margin-bottom:16px}
+  .pf-row{display:flex;align-items:center;gap:14px;padding:12px 0;border-top:1px solid var(--border);flex-wrap:wrap}
+  .pf-row:first-of-type{border-top:none}
+  .pf-n{flex:1 1 200px;font-weight:600;font-size:13.5px;min-width:0}
+  .pf-c{display:flex;gap:8px;flex:1 1 360px;align-items:center}
+  .pf-c .f{flex:1;min-width:0;margin:0} .pf-c .modelpick{padding:8px 12px}
+
+</style>
+</head>
+<body>
+<div class="nodo-page">
+  <div class="nodo-wrap">
+    <div class="nodo-head ia">
+      <div class="grow">
+        <div class="neg-id"><img id="negLogo" alt="" style="display:none"/><div style="min-width:0"><h1 class="nodo-title" id="negNombre">Bot</h1></div></div>
+        <p class="nodo-lead" style="margin-top:8px">Lo que sabe tu bot y cómo vende. Lo de cada producto va en su ficha.</p>
+      </div>
+    </div>
+    <span id="iaBadge" hidden></span>
+    <div class="tabs bot-tabs" id="botTabs"></div>
+    <div id="bodyN"></div>
+    <div id="bodyI" hidden></div>
+  </div>
+</div>
+
+<button class="armfab" id="armFab">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>
+  Armar con IA
+</button>
+<div class="armov" id="armOv">
+  <div class="armdr">
+    <div class="armhd">
+      <span class="gl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg></span>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px">Armar con IA</div><div style="font-size:12px;color:var(--muted)">Describe tu negocio y la IA lo arma</div></div>
+      <button id="armClose" title="Cerrar" style="flex:none;background:transparent;border:none;color:var(--muted);cursor:pointer"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="armbody" id="armBody"></div>
+    <div class="armft" id="armFt"></div>
+  </div>
+</div>
+
+<script type="module">
+import { supa, mountShell, guardUnsaved, confirmDescartar } from "./shell.js";
+import { pintarTabsBot, tabDeUrl, pintarIdentidadBot, GRUPO_BOT } from "./bot-seccion.js";
+import * as N from "./bot-negocio.js";
+import * as I from "./bot-ia.js";
+const $ = (id) => document.getElementById(id);
+const MOD = { N, I };
+let grupo = null, tabActual = null, shellRef = null;
+
+// Muestra la parte (Negocio o IA) que tiene esa pestaña, apaga los estilos de la otra y le pide abrir la pestaña.
+function ponerGrupo(g){
+  for (const [id, gg] of [["cssN","N"],["cssI","I"]]) { const el = $(id); if (el) { el.disabled = gg !== g; if (el.sheet) el.sheet.disabled = gg !== g; } }
+  $("bodyN").hidden = g !== "N"; $("bodyI").hidden = g !== "I";
+}
+async function abrir(tab, { preguntar = true } = {}){
+  if (tab === tabActual) return true;
+  if (preguntar && !(await confirmDescartar())) return false;
+  const g = GRUPO_BOT[tab] || "N";
+  if (g !== grupo) { if (grupo) MOD[grupo].salir(); ponerGrupo(g); grupo = g; }
+  tabActual = tab;
+  document.querySelectorAll("#botTabs .tab[data-t]").forEach((x) => x.classList.toggle("active", x.dataset.t === tab || (tab === "proveedores" && x.dataset.t === "perfiles")));
+  try { const q = new URLSearchParams(location.search); q.set("tab", tab); history.replaceState(null, "", location.pathname + "?" + q); } catch (_) {}
+  await MOD[g].abrir(tab);
+  return true;
+}
+window.__botAbrir = (t) => abrir(t);
+
+async function boot(){
+  const { data:{ session } } = await supa.auth.getSession(); if (!session) { location.href = "index.html"; return; }
+  let armar = false;
+  try { const qa = new URLSearchParams(location.search); if (qa.get("armar") === "1") { armar = true; qa.delete("armar"); history.replaceState(null, "", location.pathname + (qa.toString() ? "?" + qa : "")); } } catch (_) {}
+  const t0 = tabDeUrl(Object.keys(GRUPO_BOT), "conocimiento");
+  pintarTabsBot(t0);
+  ponerGrupo(GRUPO_BOT[t0] || "N");   // al toque, antes de esperar nada: sin mezcla de estilos
+  document.querySelectorAll("#botTabs .tab[data-t]").forEach((b) => b.onclick = () => abrir(b.dataset.t));
+  const shell = await mountShell({ active:"bot" }); shellRef = shell;
+  guardUnsaved(".nodo-page");   // avisa si sales con un formulario a medio editar
+  pintarIdentidadBot(shell, shell.channelId);
+  // Las dos partes cargan sus datos UNA vez, en paralelo; cambiar de pestaña después es instantáneo.
+  N.preparar(shell); I.preparar(shell);
+  shell.onChannel(async (id) => {
+    pintarIdentidadBot(shell, id);
+    const pN = N.cambiarBot(id), pI = I.cambiarBot(id);
+    await (grupo === "I" ? pI : pN); if (tabActual) await MOD[grupo].abrir(tabActual);
+  });
+  // «Armar con IA»: arma el conocimiento del negocio (desde cualquier pestaña lleva a Tu negocio).
+  $("armFab").onclick = async () => { if (GRUPO_BOT[tabActual] !== "N" || tabActual !== "conocimiento") { if (!(await abrir("conocimiento"))) return; } N.armOpen(); };
+  await abrir(t0, { preguntar:false });
+  if (armar) { if (tabActual !== "conocimiento") await abrir("conocimiento", { preguntar:false }); N.armOpen(); }
+}
+boot();
+</script>
+</body>
+</html>

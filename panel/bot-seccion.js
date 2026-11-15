@@ -1,10 +1,8 @@
-// 🤖 Sección «Bot» (14-nov-2026, Rodrigo: «renombrar Negocio a Bot y unirlo con IA»).
-// Para el usuario es UNA sola sección (un ítem «Bot» en el menú, con el robot), pero por dentro siguen siendo dos páginas
-// —negocio.html e ia.html— para no romper lo que ya funciona. Este módulo les da la MISMA cabecera (foto y nombre del
-// bot) y la MISMA barra de pestañas, en el orden que eligió Rodrigo («por uso»):
+// 🤖 Sección «Bot» (14-nov-2026, Rodrigo: «renombrar Negocio a Bot y unirlo con IA»; luego «hazla una sola»).
+// Una sola página (bot.html) con dos partes: bot-negocio.js (Tu negocio, Entrega, Datos del bot) y bot-ia.js (Cómo vende,
+// Atención, Pagos, Avanzado). Este módulo dibuja la cabecera y la barra de pestañas, en el orden «por uso»:
 //   Tu negocio · Cómo vende · Atención · Pagos · Entrega · Datos del bot · Avanzado
-// Las pestañas de la propia página son <button data-t> (cada página las maneja como siempre); las de la otra página son
-// enlaces (<a class="tab tab-ext">) a «otra.html?tab=…». Por eso las páginas buscan `.tab[data-t]`, no `.tab`.
+// Todas las pestañas son <button data-t>; bot.html decide qué parte mostrar (GRUPO_BOT).
 
 const SV = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 const IC = {
@@ -27,16 +25,21 @@ export const TABS_BOT = [
   { k: "perfiles",     p: "ia",      id: "tabPerf",  l: "Avanzado",      ic: "ajustes" },   // Modelos + Cuentas y gasto
 ];
 
-// Dibuja la barra en #botTabs. `pagina` = "negocio" | "ia"; `activo` = la pestaña abierta.
-export function pintarTabsBot(pagina, activo) {
+// Qué parte tiene cada pestaña: N = bot-negocio.js, I = bot-ia.js («proveedores» = Avanzado → Cuentas y gasto).
+export const GRUPO_BOT = { conocimiento:"N", entrega:"N", datos:"N", vendedor:"I", atencion:"I", validador:"I", perfiles:"I", proveedores:"I" };
+
+// Dibuja la barra en #botTabs con `activo` marcada.
+// Con DOS argumentos (pagina, activo) dibuja la barra vieja de negocio.html / ia.html: las pestañas de la otra página como
+// enlaces. Queda mientras esas páginas sigan en uso.
+export function pintarTabsBot(activo, activo2) {
   const box = document.getElementById("botTabs"); if (!box) return;
+  if (activo2 !== undefined) { const pagina = activo, act2 = activo2 === "proveedores" ? "perfiles" : activo2;
+    box.innerHTML = TABS_BOT.map((t) => { const cont = `${IC[t.ic]}<span>${t.l}</span>`; return t.p === pagina
+      ? `<button class="tab${t.k === act2 ? " active" : ""}" type="button" data-t="${t.k}" data-k="${t.k}" id="${t.id}">${cont}</button>`
+      : `<a class="tab tab-ext" data-spa data-k="${t.k}" id="${t.id}" href="${t.p}.html?tab=${t.k}">${cont}</a>`; }).join("");
+    return; }
   const act = activo === "proveedores" ? "perfiles" : activo;
-  box.innerHTML = TABS_BOT.map((t) => {
-    const cont = `${IC[t.ic]}<span>${t.l}</span>`;
-    return t.p === pagina
-      ? `<button class="tab${t.k === act ? " active" : ""}" type="button" data-t="${t.k}" data-k="${t.k}" id="${t.id}">${cont}</button>`
-      : `<a class="tab tab-ext" data-spa data-k="${t.k}" id="${t.id}" href="${t.p}.html?tab=${t.k}">${cont}</a>`;
-  }).join("");
+  box.innerHTML = TABS_BOT.map((t) => `<button class="tab${t.k === act ? " active" : ""}" type="button" data-t="${t.k}" data-k="${t.k}" id="${t.id}">${IC[t.ic]}<span>${t.l}</span></button>`).join("");
 }
 
 // ¿Llegaste con ?tab=…? (desde la otra página o un enlace viejo). Devuelve la pestaña y limpia la dirección.
