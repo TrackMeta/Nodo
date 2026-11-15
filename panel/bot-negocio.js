@@ -12,16 +12,19 @@ function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<
 // Tu negocio (conocimiento), Entrega y Datos del bot. Antes era la página negocio.html; ahora bot.html lo carga una sola
 // vez y le pide abrir/salir de sus pestañas. Mientras no está activo no dibuja nada (su caja queda vacía, así no hay ids
 // repetidos con la parte de IA).
-let activo=false, _listo=null;
+let activo=false, _listo=null, _unaVez=false;
+// Se llama CADA vez que se entra a la sección (el módulo queda en memoria entre visitas): vuelve a cargar el bot abierto,
+// que pudo cambiar en otra sección mientras tanto.
 export function preparar(shell){
-  if(_listo) return _listo;
+  activo=false;
   st.shell=shell; st.channelId=shell.channelId;
   // Si ya estabas editando Entregas cuando llega la lista, NO se redibuja (se perdía lo editado).
   cargarListas().then(l=>{ st.listas=l; if(activo && st.tab==="entrega" && !isDirty()) render(); });
   // 🔗 La campanita («Revisar preguntas» del negocio) abre acá con la tarjeta desplegada.
   try{ const qp=new URLSearchParams(location.search); if(qp.get("preguntas")==="1"){ st._abrirPreguntas=true; qp.delete("preguntas"); history.replaceState(null,"",location.pathname+(qp.toString()?"?"+qp:"")); } }catch(_){}
   // Guardaste nombre o logo en «Datos del bot»: el encabezado de arriba se pone al día sin recargar.
-  window.addEventListener("nodo:marca",(e)=>{ const c=(st.shell&&st.shell.channels||[]).find(x=>x.id===st.channelId); if(c){ c.nombre=e.detail.nombre; c.logo_url=e.detail.logo_url; } st.channel.nombre=e.detail.nombre; pintaIdentidad(); });
+  if(!_unaVez) window.addEventListener("nodo:marca",(e)=>{ const c=(st.shell&&st.shell.channels||[]).find(x=>x.id===st.channelId); if(c){ c.nombre=e.detail.nombre; c.logo_url=e.detail.logo_url; } st.channel.nombre=e.detail.nombre; pintaIdentidad(); });
+  _unaVez=true;
   _listo = st.channelId ? load() : Promise.resolve();
   return _listo;
 }

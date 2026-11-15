@@ -109,8 +109,9 @@ const CAMPO_SUGERIDOS=[
 // Cómo vende, Atención, Pagos y Avanzado (Modelos + Cuentas y gasto). Antes era la página ia.html; ahora bot.html lo carga
 // una sola vez. Mientras no está activo no dibuja nada.
 let activo=false, _listo=null;
+// Se llama CADA vez que se entra a la sección: vuelve a cargar el bot abierto (pudo cambiar en otra sección).
 export function preparar(shell){
-  if(_listo) return _listo;
+  activo=false;
   const bd=$("iaBadge"); if(bd) bd.innerHTML=IC.robot+"<span>Centro de IA</span>";
   st.shell=shell; st.channelId=shell.channelId;
   _listo = st.channelId ? loadCfg() : Promise.resolve();
