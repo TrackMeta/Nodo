@@ -56,7 +56,7 @@ async function pickModel(provider, current){
 // Selector de modelo para un perfil (permite "por defecto" y ambos proveedores).
 async function pickPerfilModel(current){
   const opts=[{ value:"__default__", label:"Por defecto del proveedor", desc:"Usa el modelo configurado del proveedor", icon:"sliders" }];
-  for(const p of Object.keys(MODELS)) for(const m of MODELS[p]) opts.push({ value:m.id, label:m.nm, desc:PROV_LABEL[p]+" · "+m.id, icon:"sparkles" });
+  for(const p of Object.keys(MODELS)) for(const m of MODELS[p]) opts.push({ value:m.id, label:m.nm, desc:PROV_LABEL[p]+" · "+m.id, ...(p==="anthropic" ? { img:LOGO.claude } : p==="openai" ? { img:LOGO.chatgpt } : { icon:"sparkles" }) });   // (16-nov) logo del proveedor
   opts.push({ value:"__custom__", label:"Otro modelo…", desc:"Escribir un ID manualmente", icon:"edit" });
   const chosen=await askChoice({ title:"Modelo para esta tarea", options:opts, value:current||"__default__" });
   if(chosen==null) return undefined; // cancelado → sin cambios
