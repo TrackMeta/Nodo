@@ -1028,7 +1028,7 @@ export function askChoice(opts = {}) {
     let settled = false;
     const rows = (opts.options || []).map((op) => `
       <button class="nodo-choice${op.value === opts.value ? " on" : ""}" type="button" data-v="${escAttr(op.value)}">
-        ${op.icon ? `<span class="nc-ic">${icon(op.icon)}</span>` : ""}
+        ${op.img ? `<span class="nc-ic nc-img"><img src="${escAttr(op.img)}" alt="" /></span>` : op.icon ? `<span class="nc-ic">${icon(op.icon)}</span>` : ""}
         <span class="nc-tx"><b>${escHtml(op.label)}</b>${op.desc ? `<small>${escHtml(op.desc)}</small>` : ""}</span>
         <span class="nc-ck">${svg("check")}</span>
       </button>`).join("");

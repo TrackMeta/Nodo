@@ -40,7 +40,9 @@ function modelName(provider, id){
 }
 // Selector nativo de modelo (por proveedor). Devuelve el ID elegido o null si cancela.
 async function pickModel(provider, current){
-  const opts=(MODELS[provider]||[]).map(m=>({ value:m.id, label:m.nm, desc:m.id+(m.tag?" · "+m.tag:""), icon:"sparkles" }));
+  // (16-nov, Rodrigo: «mejora el ícono de los modelos») Cada modelo con el logo de su proveedor (ChatGPT / Claude), no una chispa genérica.
+  const logoProv = provider==="anthropic" ? LOGO.claude : provider==="openai" ? LOGO.chatgpt : null;
+  const opts=(MODELS[provider]||[]).map(m=>({ value:m.id, label:m.nm, desc:m.id+(m.tag?" · "+m.tag:""), ...(logoProv ? { img:logoProv } : { icon:"sparkles" }) }));
   opts.push({ value:"__custom__", label:"Otro modelo…", desc:"Escribir un ID exacto del proveedor", icon:"edit" });
   const chosen=await askChoice({ title:"Elegir modelo de IA", message:"Se guarda el ID exacto tal como lo publica el proveedor.", options:opts, value:current });
   if(!chosen) return null;
