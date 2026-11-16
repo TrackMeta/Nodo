@@ -455,7 +455,12 @@ async function atender(msg: any, ctx: Ctx): Promise<any | null> {
   switch (msg.method) {
     case "initialize":
       return ok({ protocolVersion: msg.params?.protocolVersion ?? "2025-06-18", capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "nodo", title: "Nodo", version: "1.0.0" }, instructions: INSTRUCCIONES });
+        serverInfo: { name: "nodo", title: "Nodo", version: "1.0.0", websiteUrl: "https://trackmeta.github.io/Nodo/panel/",
+          // (16-nov, Rodrigo) El logo de Nodo, campo `icons` del MCP. Que se vea depende de cada IA (ChatGPT en modo
+          // desarrollador puede ignorarlo y poner su ícono genérico).
+          icons: [{ src: "https://trackmeta.github.io/Nodo/assets/logo-512.png", mimeType: "image/png", sizes: ["512x512"] },
+                  { src: "https://trackmeta.github.io/Nodo/assets/logo-128.png", mimeType: "image/png", sizes: ["128x128"] }] },
+        instructions: INSTRUCCIONES });
     case "ping": return ok({});
     case "tools/list":
       return ok({ tools: TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema,
