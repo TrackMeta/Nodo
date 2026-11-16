@@ -5,6 +5,8 @@
 // Cada persona crea su ENLACE PERSONAL (functions/v1/mcp/<llave>) y lo pega en su IA como conector. La llave se muestra
 // UNA sola vez: la base guarda solo su huella (mcp_tokens.token_hash, migración 0149).
 // (16-nov, Rodrigo) Textos y diseño rehechos; solo Claude y ChatGPT (sin «Otra IA»).
+// (16-nov, Rodrigo eligió comodidad) «Ver»: la llave también se guarda cifrada en Vault (migración 0150) y su dueño
+// puede volver a verla. Las creadas antes de 0150 no tienen copia: esas no muestran «Ver».
 import { supa, SUPABASE_URL, toast, icon, askChoice, confirmDialog, mountModal } from "./shell.js";
 
 const BASE = `${SUPABASE_URL}/functions/v1/mcp/`;
@@ -47,7 +49,11 @@ export function abrirMcp() {
     ${cabecera(false)}<div class="mcp-skel">Cargando…</div></div></div>`);
   back.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
   const pintar = async () => {
-    const { data, error } = await supa.from("mcp_tokens").select("id,nombre,prefijo,created_at,last_used_at").is("revoked_at", null).order("created_at", { ascending: false });
+    const [{ data, error }, { data: vis }] = await Promise.all([
+      supa.from("mcp_tokens").select("id,nombre,prefijo,created_at,last_used_at").is("revoked_at", null).order("created_at", { ascending: false }),
+      supa.rpc("mcp_tokens_visibles"),
+    ]);
+    const visibles = new Set((vis || []).map((x) => typeof x === "string" ? x : Object.values(x)[0]));
     const caja = back.querySelector(".mcp-cuerpo"); if (!caja) return;
     const lista = error ? [] : (data || []);
     caja.innerHTML = `
@@ -56,8 +62,8 @@ export function abrirMcp() {
         y <b>siempre te pregunta antes de cambiar algo</b>.</p>
 
       ${nueva ? `<div class="mcp-nueva">
-        <div class="nv-t">${icon("check")}<b>Listo: tu enlace para ${esc(nueva.nombre)}</b></div>
-        <small>Ya está copiado. Pégalo en ${esc(nueva.nombre)} con los pasos de abajo. Guárdalo bien: por seguridad no se vuelve a mostrar.</small>
+        <div class="nv-t">${icon(nueva.visto ? "link" : "check")}<b>${nueva.visto ? "Tu enlace" : "Listo: tu enlace"} para ${esc(nueva.nombre)}</b></div>
+        <small>Ya está copiado. Pégalo en ${esc(nueva.nombre)} con los pasos de abajo. Si lo necesitas otra vez, toca «Ver» en tus enlaces.</small>
         <div class="mcp-copy"><input readonly value="${esc(BASE + nueva.llave)}"/>
           <button type="button" id="mcpCopy" title="Copiar">${icon("copy")}</button></div>
       </div>` : ""}
@@ -67,6 +73,7 @@ export function abrirMcp() {
         <div class="mcp-key"><span class="kimg">${logo(k.nombre)}</span>
           <div class="tx"><b>${esc(k.nombre)}</b><small>Creado el ${fechaCorta(k.created_at)} · <code>${esc(k.prefijo)}…</code></small></div>
           <span class="uso ${k.last_used_at ? "on" : ""}">${k.last_used_at ? "Usado " + haceCuanto(k.last_used_at) : "Sin usar"}</span>
+          ${visibles.has(k.id) ? `<button class="mcp-ver" type="button" data-ver="${k.id}" data-nm="${esc(k.nombre)}" title="Ver y copiar el enlace">${icon("eye")}Ver</button>` : ""}
           <button class="mcp-off" type="button" data-revocar="${k.id}" data-nm="${esc(k.nombre)}" title="Desactivar este enlace">Desactivar</button></div>`).join("")}</div>`
         : `<div class="mcp-vacio">Todavía no tienes un enlace. Créalo y pégalo en tu IA en un minuto.</div>`}
 
@@ -81,6 +88,7 @@ export function abrirMcp() {
     const cp = caja.querySelector("#mcpCopy"); if (cp) cp.onclick = () => copiar(BASE + nueva.llave);
     caja.querySelector("#mcpCrear").onclick = crear;
     caja.querySelectorAll("[data-revocar]").forEach((b) => { b.onclick = () => revocar(b.dataset.revocar, b.dataset.nm); });
+    caja.querySelectorAll("[data-ver]").forEach((b) => { b.onclick = () => ver(b.dataset.ver, b.dataset.nm); });
   };
   const crear = async () => {
     const nombre = await askChoice({ title: "¿En qué IA lo vas a usar?", message: "Así te mostramos los pasos para conectarla.", options: [
@@ -98,9 +106,17 @@ export function abrirMcp() {
     await pintar();
     copiar(BASE + data);
   };
+  const ver = async (id, nombre) => {
+    const { data, error } = await supa.rpc("mcp_token_ver", { p_id: id });
+    if (error || !data) { toast("No se pudo mostrar este enlace", true); return; }
+    nueva = { llave: data, nombre, visto: true };
+    await pintar();
+    back.querySelector(".mcp-nueva")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    copiar(BASE + data);
+  };
   const revocar = async (id, nombre) => {
     const ok = await confirmDialog({ title: `¿Desactivar el enlace de ${nombre}?`,
-      messageHtml: `${esc(nombre)} <b>dejará de tener acceso a Nodo</b> al instante. No se puede volver a activar: si lo necesitas, creas uno nuevo.`,
+      messageHtml: `${esc(nombre)} <b>dejará de tener acceso a Nodo</b> al instante y el enlace se borra. No se puede volver a activar: si lo necesitas, creas uno nuevo.`,
       confirmText: "Sí, desactivar", danger: true });
     if (!ok) return;
     const { error } = await supa.rpc("mcp_token_revocar", { p_id: id });
