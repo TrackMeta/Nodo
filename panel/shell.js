@@ -361,6 +361,8 @@ const P = {
   file:'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
   upload:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>',
   key:'<circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>',
+  // (16-nov) «Cable» (lucide cable): el MCP, conectar Nodo con tu IA.
+  cable:'<path d="M17 21v-2a1 1 0 0 1-1-1v-1a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1a1 1 0 0 1-1 1"/><path d="M19 15V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V9"/><path d="M21 21v-2h-4"/><path d="M3 5h4V3"/><path d="M7 5a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1V3"/>',
   link:'<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
   search:'<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
   sheet:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/>',
@@ -953,7 +955,7 @@ export function abrirAppCelular() {
   }).catch(() => { const box = back.querySelector("#acQr"); if (box) box.remove(); });
 }
 
-function mountModal(html, { onClose } = {}) {
+export function mountModal(html, { onClose } = {}) {
   const back = document.createElement("div");
   back.className = "nodo-modal-back";
   back.innerHTML = html;
@@ -1608,7 +1610,7 @@ export async function mountShell({ active } = {}) {
     ? `<button class="nodo-icnbtn" id="nodoConf" type="button" title="Configuración" aria-label="Configuración">${svg("config")}</button>`
     : "";
   const confPopHTML = DS2 && _confG
-    ? `<div class="nodo-confpop" id="nodoConfPop" hidden><div class="ncp-t">Configuración</div>${_confG.items.map(itemHTML).join("")}<div class="ncp-sep"></div><button class="nodo-link" id="nodoAppCel" type="button" title="Descarga la app de Nodo para tu celular Android">${svg("phone")}<span class="nodo-lbl">App para celular</span></button></div>`
+    ? `<div class="nodo-confpop" id="nodoConfPop" hidden><div class="ncp-t">Configuración</div>${_confG.items.map(itemHTML).join("")}<div class="ncp-sep"></div><button class="nodo-link" id="nodoAppCel" type="button" title="Descarga la app de Nodo para tu celular Android">${svg("phone")}<span class="nodo-lbl">App para celular</span></button><button class="nodo-link" id="nodoMcp" type="button" title="Usa Nodo desde Claude o ChatGPT">${svg("cable")}<span class="nodo-lbl">MCP</span></button></div>`
     : "";
   nav.innerHTML = `
     <div class="nodo-brand">
@@ -1651,6 +1653,9 @@ export async function mountShell({ active } = {}) {
     confPop.addEventListener("click", (e) => { if (e.target.closest("a")) confPop.hidden = true; });
     const appBtn = confPop.querySelector("#nodoAppCel");
     if (appBtn) appBtn.onclick = () => { confPop.hidden = true; abrirAppCelular(); };
+    // ✨ MCP (16-nov): es de la PERSONA, no del bot → aquí y no en Conexiones (mcp-enlace.js).
+    const mcpBtn = confPop.querySelector("#nodoMcp");
+    if (mcpBtn) mcpBtn.onclick = () => { confPop.hidden = true; import("./mcp-enlace.js?v=1").then((m) => m.abrirMcp()).catch(() => toast("No se pudo abrir", true)); };
     document.addEventListener("click", (e) => { if (!confPop.hidden && !e.target.closest("#nodoConfPop,#nodoConf")) confPop.hidden = true; });
   }
 
