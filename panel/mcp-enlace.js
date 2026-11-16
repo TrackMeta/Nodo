@@ -33,7 +33,7 @@ async function copiar(txt) {
 const logo = (nombre) => IA[nombre] ? `<img src="${IA[nombre].img}" alt=""/>` : icon("cable");
 const cabecera = (conX) => `
   <div class="mcp-cab"><span class="mcp-ic">${icon("cable")}</span>
-    <div><h3>Conecta Nodo con tu IA</h3><small>Claude o ChatGPT revisan y manejan Nodo por ti</small></div>
+    <div><h3>MCP</h3><small>Claude o ChatGPT revisan y manejan Nodo por ti</small></div>
     ${conX ? `<button class="mcp-x" type="button" title="Cerrar" aria-label="Cerrar">${icon("x")}</button>` : ""}</div>`;
 const guia = (nombre, abierta) => `
   <details class="mcp-guia" ${abierta ? "open" : ""}>
