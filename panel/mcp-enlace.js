@@ -18,7 +18,6 @@ const IA = {
     `Toca <b>Crear</b>. Nombre: <b>Nodo</b>. URL: <b>pega tu enlace</b>. Autenticación: <b>ninguna</b>.`,
     `En un chat, toca <b>+</b>, elige <b>Nodo</b> y pregúntale lo que quieras.`] },
 };
-const EJEMPLOS = ["¿Cómo me fue esta semana?", "¿Qué clientes están por comprar?", "¿Hay algo que deba atender?", "Sube el precio del curso a S/ 15"];
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function haceCuanto(iso) {
   const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
@@ -55,8 +54,6 @@ export function abrirMcp() {
       ${cabecera(true)}
       <p class="mcp-intro">Pega tu enlace en Claude o ChatGPT y háblale como a un asistente: revisa los bots de todos tus equipos
         y <b>siempre te pregunta antes de cambiar algo</b>.</p>
-      <div class="mcp-t">Pídele cosas como</div>
-      <div class="mcp-ej">${EJEMPLOS.map((e) => `<span>«${esc(e)}»</span>`).join("")}</div>
 
       ${nueva ? `<div class="mcp-nueva">
         <div class="nv-t">${icon("check")}<b>Listo: tu enlace para ${esc(nueva.nombre)}</b></div>
