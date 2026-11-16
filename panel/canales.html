@@ -149,7 +149,22 @@
   [data-ctab=whatsapp] #waCard,[data-ctab=telegram] #tgCard,[data-ctab=meta] #secMeta,[data-ctab=sheets] #secSheets,
   [data-ctab=avanzado] #usoPanel,[data-ctab=avanzado] #archCard{display:block}
   [data-ctab=avanzado] #usoPanel:empty{display:none}
-  #ajxCard .sec{margin-top:0;padding-top:0;border-top:0}   /* sin separadores: ya no van una debajo de otra */
+  #ajxCard .sec{margin-top:0;padding-top:0;border-top:0}
+  /* (16-nov) Pestaña MCP: el enlace personal para usar Nodo desde Claude o ChatGPT. Es del USUARIO, no del bot. */
+  [data-ctab] #mcpCard{display:none} [data-ctab=mcp] #mcpCard{display:block}
+  .mcp-ej{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 2px}
+  .mcp-ej span{font-size:12px;padding:6px 11px;border-radius:20px;background:var(--surface-2);border:1px solid var(--border);color:var(--text)}
+  .mcp-new{border-color:rgba(34,192,121,.45);background:var(--green-bg)}
+  .mcp-new .mt{color:var(--green)}
+  .mcp-keys{display:flex;flex-direction:column;gap:8px}
+  .mcp-key{display:flex;align-items:center;gap:12px;padding:11px 13px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)}
+  .mcp-key .kimg{width:34px;height:34px;border-radius:10px;overflow:hidden;flex:none;background:var(--surface);display:grid;place-items:center;border:1px solid var(--border)}
+  .mcp-key .kimg img{width:100%;height:100%;object-fit:cover}
+  .mcp-key .kimg svg{width:17px;height:17px;color:var(--muted)}
+  .mcp-key .tx{flex:1;min-width:0}
+  .mcp-key .tx b{display:block;font-size:13px}
+  .mcp-key .tx small{display:block;color:var(--muted);font-size:11.5px;margin-top:1px}
+  .mcp-key code{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;color:var(--faint);font-weight:500}   /* sin separadores: ya no van una debajo de otra */
 </style>
 </head>
 <body>
@@ -166,12 +181,14 @@
       <button class="tab" data-c="telegram"><img src="../assets/apps/telegram.png" alt=""/><span>Telegram</span></button>
       <button class="tab" data-c="meta"><img src="../assets/apps/meta.png" alt=""/><span>Meta</span></button>
       <button class="tab" data-c="sheets"><img src="../assets/apps/sheets.png" alt=""/><span>Google Sheets</span></button>
+      <button class="tab" data-c="mcp" id="cTabMcp"><span>MCP</span></button>
       <button class="tab" data-c="avanzado" id="cTabAv"><span>Avanzado</span></button>
     </div>
     <div id="waCard"></div>
     <div id="tgCard"></div>
     <!-- (31-oct) Lo que era Ajustes → Conexiones: Meta, Google Sheets y uso de Supabase (ajustes-partes.js) -->
     <div id="ajxCard"></div>
+    <div id="mcpCard"></div>
     <div id="archCard"></div>
   </div>
 </div>
@@ -195,8 +212,9 @@ async function boot(){
   // Google, o WhatsApp. «Avanzado» = uso de Supabase (solo el dueño) + dar de baja el bot.
   { const qp=new URLSearchParams(location.search), pedida=qp.get("tab");
     $("cTabAv").insertAdjacentHTML("afterbegin", icon("wrench"));
+    $("cTabMcp").insertAdjacentHTML("afterbegin", icon("sparkles"));
     document.querySelectorAll("#cTabs .tab").forEach(b=> b.onclick=()=>abrirTab(b.dataset.c));
-    abrirTab(qp.has("gs") ? "sheets" : (["whatsapp","telegram","meta","sheets","avanzado"].includes(pedida) ? pedida : "whatsapp"));
+    abrirTab(qp.has("gs") ? "sheets" : (["whatsapp","telegram","meta","sheets","mcp","avanzado"].includes(pedida) ? pedida : "whatsapp"));
     if(pedida){ qp.delete("tab"); const q=qp.toString(); history.replaceState(null,"",location.pathname+(q?"?"+q:"")); } }
   shell.onChannel(id=>{ clearInterval(st.pairTimer); st.channelId=id; load(); });  // el sondeo de vinculación es del bot ANTERIOR: sin cortarlo, daba «Telegram vinculado» en el nuevo
   // Al salir por SPA, el sondeo de vinculación de Telegram no queda colgado (seguía llamando a
@@ -237,6 +255,7 @@ async function load(){
 }
 function abrirTab(t){
   const w=document.querySelector(".nodo-wrap"); if(w) w.dataset.ctab=t;
+  if(t==="mcp" && !st.mcpCargado) renderMcp();   // es del usuario (no del bot): se carga una vez, al abrirla
   document.querySelectorAll("#cTabs .tab").forEach(x=>x.classList.toggle("active",x.dataset.c===t));
 }
 function badge(on){ return on?'<span class="badge on">Configurado</span>':'<span class="badge">Sin configurar</span>'; }
@@ -383,6 +402,96 @@ function renderWA(){
   const disc=$("waDisc"); if(disc) disc.onclick=()=>desconectarWA(disc);
   // Si el número está conectado, trae y muestra la tarjeta bonita apenas se abre.
   if(conn) cargarNumeroHero();
+}
+// ── MCP: usar Nodo desde Claude o ChatGPT (16-nov) ─────────────────────────────────────────────────────────
+// Cada persona crea su ENLACE PERSONAL (functions/v1/mcp/<llave>) y lo pega en su IA como conector. La llave se
+// muestra UNA sola vez: la base guarda solo su huella (mcp_tokens.token_hash, migración 0149). Ve los bots de TODOS
+// los equipos de la persona, por eso no depende del bot elegido arriba.
+const MCP_BASE=`${SUPABASE_URL}/functions/v1/mcp/`;
+const MCP_IA={ Claude:{ img:"../assets/apps/claude.png" }, ChatGPT:{ img:"../assets/apps/chatgpt.png" } };
+function haceCuanto(iso){
+  if(!iso) return "";
+  const min=Math.round((Date.now()-Date.parse(iso))/60000);
+  if(min<2) return "hace un momento"; if(min<60) return `hace ${min} min`;
+  const h=Math.round(min/60); if(h<24) return `hace ${h} h`;
+  const d=Math.round(h/24); return d===1?"ayer":`hace ${d} días`;
+}
+const fechaCorta=(iso)=>new Date(iso).toLocaleDateString("es-PE",{ day:"numeric", month:"short", timeZone:"America/Lima" });
+async function renderMcp(){
+  const card=$("mcpCard"); if(!card) return;
+  st.mcpCargado=true;
+  const { data:keys, error }=await supa.from("mcp_tokens").select("id,nombre,prefijo,created_at,last_used_at").is("revoked_at",null).order("created_at",{ ascending:false });
+  if(!$("mcpCard")) return;
+  const lista=error?[]:(keys||[]), nueva=st.mcpNueva;
+  card.innerHTML=`
+    <div class="card">
+      <div class="chd"><span class="ico">${icon("sparkles")}</span>
+        <div><div class="nm">Usa Nodo desde tu IA</div><div class="sub2">Claude o ChatGPT trabajan en Nodo por ti</div></div>
+        <span class="st ${lista.length?"on":""}">${lista.length?"Conectado":"Sin conectar"}</span></div>
+      <div class="desc">Pega tu enlace personal en Claude o ChatGPT y pídele las cosas con tus palabras. Ve los bots de todos tus equipos y,
+        <b>antes de cambiar algo, te muestra lo que va a hacer y espera tu «sí»</b>.</div>
+      <div class="mcp-ej"><span>¿Cómo me fue esta semana?</span><span>¿Hay algo que deba atender?</span><span>Muéstrame el chat de Juan</span>
+        <span>Sube el precio del curso a S/ 15</span><span>Agrega mi Yape</span><span>Crea un producto nuevo</span></div>
+
+      ${nueva?`<div class="metabox mcp-new">
+        <div class="mt">Tu enlace de ${esc(nueva.nombre)} · cópialo ahora</div>
+        <div class="mh">Por seguridad Nodo no lo vuelve a mostrar. Si lo pierdes, crea otro.</div>
+        <div class="copyrow"><input class="in" readonly value="${esc(MCP_BASE+nueva.llave)}"/>
+          <button class="copybtn" id="mcpCopy" title="Copiar">${icon("copy")}</button></div>
+      </div>`:""}
+
+      ${lista.length?`<label>Tus enlaces</label><div class="mcp-keys">${lista.map(k=>`
+        <div class="mcp-key"><span class="kimg">${MCP_IA[k.nombre]?`<img src="${MCP_IA[k.nombre].img}" alt=""/>`:icon("sparkles")}</span>
+          <div class="tx"><b>${esc(k.nombre)} <code>${esc(k.prefijo)}…</code></b>
+            <small>Creado el ${fechaCorta(k.created_at)} · ${k.last_used_at?"usado "+haceCuanto(k.last_used_at):"todavía sin usar"}</small></div>
+          <button class="btn danger mini" data-revocar="${k.id}" data-nm="${esc(k.nombre)}">Desactivar</button></div>`).join("")}</div>`:""}
+
+      <div class="acts"><button class="btn ${lista.length?"":"primary"}" id="mcpCrear">${lista.length?"Crear otro enlace":"Crear mi enlace"}</button></div>
+
+      <details class="avanzado" ${nueva&&nueva.nombre==="Claude"?"open":""} style="margin-top:18px">
+        <summary>Cómo pegarlo en Claude</summary>
+        <div class="wadonde"><span class="n">1</span><span class="tx">En claude.ai entra a <b>Configuración → Conectores</b></span>
+          <a href="https://claude.ai/settings/connectors" target="_blank" rel="noopener">Abrir &nearr;</a></div>
+        <div class="wadonde"><span class="n">2</span><span class="tx"><b>Agregar conector personalizado</b> · nombre: <b>Nodo</b> · URL: tu enlace</span></div>
+        <div class="wadonde"><span class="n">3</span><span class="tx">En un chat nuevo, activa <b>Nodo</b> en el botón de herramientas y pregúntale lo que quieras</span></div>
+      </details>
+      <details class="avanzado" ${nueva&&nueva.nombre==="ChatGPT"?"open":""}>
+        <summary>Cómo pegarlo en ChatGPT</summary>
+        <div class="wadonde"><span class="n">1</span><span class="tx"><b>Configuración → Aplicaciones y conectores → Configuración avanzada</b> → activa <b>Modo desarrollador</b></span>
+          <a href="https://chatgpt.com/#settings/Connectors" target="_blank" rel="noopener">Abrir &nearr;</a></div>
+        <div class="wadonde"><span class="n">2</span><span class="tx"><b>Crear</b> · nombre: <b>Nodo</b> · URL del servidor MCP: tu enlace · autenticación: <b>ninguna</b></span></div>
+        <div class="wadonde"><span class="n">3</span><span class="tx">En un chat nuevo, elige <b>Nodo</b> en el menú <b>+</b> y pregúntale lo que quieras</span></div>
+      </details>
+
+      <div class="desc" style="margin-top:14px">Conectar WhatsApp y poner las claves de IA se sigue haciendo aquí en el panel.
+        <b>Quien tenga tu enlace puede usar Nodo como tú</b>: no lo compartas, y si crees que se filtró, desactívalo.</div>
+    </div>`;
+  const cp=$("mcpCopy"); if(cp) cp.onclick=()=>copiar(MCP_BASE+nueva.llave);
+  $("mcpCrear").onclick=crearMcp;
+  card.querySelectorAll("[data-revocar]").forEach(b=> b.onclick=()=>revocarMcp(b.dataset.revocar,b.dataset.nm));
+}
+async function crearMcp(){
+  const nombre=await askChoice({ title:"¿Dónde vas a usar Nodo?", message:"Es solo para reconocer el enlace después.", options:[
+    { value:"Claude", label:"Claude", desc:"claude.ai o la app de Claude", img:MCP_IA.Claude.img },
+    { value:"ChatGPT", label:"ChatGPT", desc:"Necesita un plan de pago con modo desarrollador", img:MCP_IA.ChatGPT.img },
+    { value:"Otra IA", label:"Otra IA", desc:"Cualquier app compatible con MCP", icon:"sparkles" } ] });
+  if(!nombre) return;
+  const btn=$("mcpCrear"); if(btn){ btn.disabled=true; btn.textContent="Creando…"; }
+  const { data, error }=await supa.rpc("mcp_token_crear",{ p_nombre:nombre });
+  if(error){ if(btn){ btn.disabled=false; btn.textContent="Crear mi enlace"; }
+    toast(/demasiadas_llaves/.test(error.message||"")?"Tienes 5 enlaces activos: desactiva uno para crear otro":(error.message||"No se pudo crear el enlace"),true); return; }
+  st.mcpNueva={ llave:data, nombre };
+  await renderMcp();
+  copiar(MCP_BASE+data);
+}
+async function revocarMcp(id,nombre){
+  const ok=await confirmDialog({ title:`Desactivar el enlace de ${nombre}`,
+    messageHtml:"La IA donde lo pegaste <b>deja de tener acceso a Nodo</b> al instante. No se puede volver a activar: si lo necesitas, creas otro.",
+    confirmText:"Sí, desactivar", danger:true });
+  if(!ok) return;
+  const { error }=await supa.rpc("mcp_token_revocar",{ p_id:id });
+  if(error){ toast(error.message||"No se pudo desactivar",true); return; }
+  st.mcpNueva=null; toast("Enlace desactivado"); renderMcp();
 }
 async function copiar(txt){
   try{ await navigator.clipboard.writeText(txt); toast("Copiado"); }

@@ -129,3 +129,8 @@ verify_jwt = false   # = producción (18-oct); la función valida la sesión por
 
 [functions.push]
 verify_jwt = false
+
+# mcp (16-nov-2026): conector MCP para Claude / ChatGPT. PÚBLICA a propósito: la seguridad es la llave personal del
+# enlace (…/functions/v1/mcp/<llave>, o «Authorization: Bearer <llave>»), que la función valida contra mcp_tokens.
+[functions.mcp]
+verify_jwt = false
