@@ -7,6 +7,7 @@
 // (16-nov, Rodrigo) Textos y diseño rehechos; solo Claude y ChatGPT (sin «Otra IA»).
 // (16-nov, Rodrigo eligió comodidad) «Ver»: la llave también se guarda cifrada en Vault (migración 0150) y su dueño
 // puede volver a verla. Las creadas antes de 0150 no tienen copia: esas no muestran «Ver».
+// (16-nov) «Descargar complemento (.zip)» en la caja verde: el paquete de Claude/ChatGPT con el enlace adentro (mcp-zip.js).
 import { supa, SUPABASE_URL, toast, icon, askChoice, confirmDialog, mountModal } from "./shell.js";
 
 const BASE = `${SUPABASE_URL}/functions/v1/mcp/`;
@@ -14,11 +15,14 @@ const IA = {
   Claude: { img: "../assets/apps/claude.png", abrir: "https://claude.ai/settings/connectors", pasos: [
     `Entra a <b>claude.ai → Configuración → Conectores</b>.`,
     `Toca <b>Agregar conector personalizado</b>. Nombre: <b>Nodo</b>. URL: <b>pega tu enlace</b>.`,
-    `En un chat, abre el botón de <b>herramientas</b>, activa <b>Nodo</b> y pregúntale lo que quieras.`] },
-  ChatGPT: { img: "../assets/apps/chatgpt.png", abrir: "https://chatgpt.com/#settings/Connectors", pasos: [
-    `Entra a <b>chatgpt.com → Configuración → Aplicaciones y conectores → Configuración avanzada</b> y activa el <b>Modo desarrollador</b>.`,
-    `Toca <b>Crear</b>. Nombre: <b>Nodo</b>. URL: <b>pega tu enlace</b>. Autenticación: <b>ninguna</b>.`,
-    `En un chat, toca <b>+</b>, elige <b>Nodo</b> y pregúntale lo que quieras.`] },
+    `En un chat, abre el botón de <b>herramientas</b>, activa <b>Nodo</b> y pregúntale lo que quieras.`],
+    zip: `<b>Con el complemento (.zip):</b> en claude.ai entra a <b>Personalizar → Plugins → Añadir → Subir plugin</b>, sube <b>nodo-claude.zip</b> y conéctalo en su pestaña <b>Conectores</b>.` },
+  // (16-nov) Pasos de ChatGPT según su pantalla nueva (captura de Rodrigo): «Complementos → Añadir».
+  ChatGPT: { img: "../assets/apps/chatgpt.png", abrir: "https://chatgpt.com/plugins", pasos: [
+    `Entra a <b>chatgpt.com → Complementos</b> y toca <b>Añadir</b> (arriba a la derecha).`,
+    `Elige <b>Añadir servidor MCP personalizado</b>. Nombre: <b>Nodo</b>. URL: <b>pega tu enlace</b>. Autenticación: <b>ninguna</b>.`,
+    `En un chat, toca <b>+</b>, elige <b>Nodo</b> y pregúntale lo que quieras.`],
+    zip: `<b>Con el complemento (.zip):</b> en <b>Añadir</b> elige <b>Subir archivo comprimido del complemento</b> y sube <b>nodo-chatgpt.zip</b>.` },
 };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function haceCuanto(iso) {
@@ -41,6 +45,7 @@ const guia = (nombre, abierta) => `
   <details class="mcp-guia" ${abierta ? "open" : ""}>
     <summary><span class="kimg">${logo(nombre)}</span><span class="g-tx">Conectarlo en <b>${nombre}</b></span>${icon("chevronRight", "g-ch")}</summary>
     <ol>${IA[nombre].pasos.map((p, i) => `<li><span class="n">${i + 1}</span><span>${p}${i === 0 ? ` <a href="${IA[nombre].abrir}" target="_blank" rel="noopener">Abrir ↗</a>` : ""}</span></li>`).join("")}</ol>
+    <div class="g-zip">${icon("download")}<span>${IA[nombre].zip}</span></div>
   </details>`;
 
 export function abrirMcp() {
@@ -66,6 +71,8 @@ export function abrirMcp() {
         <small>Ya está copiado. Pégalo en ${esc(nueva.nombre)} con los pasos de abajo. Si lo necesitas otra vez, toca «Ver» en tus enlaces.</small>
         <div class="mcp-copy"><input readonly value="${esc(BASE + nueva.llave)}"/>
           <button type="button" id="mcpCopy" title="Copiar">${icon("copy")}</button></div>
+        ${IA[nueva.nombre] ? `<button type="button" class="mcp-zipbtn" id="mcpZip">${icon("download")}Descargar complemento para ${esc(nueva.nombre)} (.zip)</button>
+        <small class="zip-nota">Trae tu enlace adentro: cuídalo igual que el enlace.</small>` : ""}
       </div>` : ""}
 
       <div class="mcp-t">Tus enlaces</div>
@@ -86,6 +93,13 @@ export function abrirMcp() {
     caja.querySelector(".mcp-x").onclick = close;
     caja.querySelector("#mcpCerrar").onclick = close;
     const cp = caja.querySelector("#mcpCopy"); if (cp) cp.onclick = () => copiar(BASE + nueva.llave);
+    const zb = caja.querySelector("#mcpZip");
+    if (zb) zb.onclick = async () => {
+      zb.disabled = true;
+      try { const m = await import("./mcp-zip.js?v=1"); await m.descargarComplemento(nueva.nombre, BASE + nueva.llave); toast("Complemento descargado"); }
+      catch (e) { toast("No se pudo armar el complemento", true); }
+      zb.disabled = false;
+    };
     caja.querySelector("#mcpCrear").onclick = crear;
     caja.querySelectorAll("[data-revocar]").forEach((b) => { b.onclick = () => revocar(b.dataset.revocar, b.dataset.nm); });
     caja.querySelectorAll("[data-ver]").forEach((b) => { b.onclick = () => ver(b.dataset.ver, b.dataset.nm); });
