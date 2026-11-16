@@ -86,7 +86,10 @@ async function reiniciar(channelId: string, contactId: string): Promise<void> {
 }
 
 // Un turno del cliente: guarda el mensaje, corre el motor y devuelve las burbujas que salieron.
-async function turno(channelId: string, contactId: string, texto: string): Promise<string[]> {
+// `adId` (opcional): el mensaje llega como si viniera de ese ANUNCIO (referral fresco), igual que por el webhook. Sirve para
+// probar el ruteo por anuncio, también con un anuncio que no está asignado a ningún producto (16-nov).
+async function turno(channelId: string, contactId: string, texto: string, adId?: string, rapido?: boolean): Promise<string[]> {
+  if (adId) await db.from("contacts").update({ ad_id: adId, source: "ad", fep_hasta: new Date(Date.now() + 72 * 3600_000).toISOString() }).eq("id", contactId);
   await db.from("contacts").update({
     last_input: texto, last_input_type: "text",
     ultimo_mensaje_at: new Date().toISOString(), ultimo_mensaje_cliente_at: new Date().toISOString(),
@@ -98,7 +101,7 @@ async function turno(channelId: string, contactId: string, texto: string): Promi
   // Igual que el webhook: con el bot apagado en este contacto (pasó a una persona) el motor no corre.
   const { data: _ba } = await db.from("contacts").select("bot_activo").eq("id", contactId).maybeSingle();
   if ((_ba as any)?.bot_activo === false) return ["(bot apagado en este chat: lo atiende una persona)"];
-  await runEngine(db, channelId, contactId, { type: "message", text: texto, msgType: "text", msgTs: ts } as any);
+  await runEngine(db, channelId, contactId, { type: "message", text: texto, msgType: "text", msgTs: ts, ...(adId ? { adId } : {}), ...(rapido ? { rapido: true } : {}) } as any);   // rapido = carril rápido del webhook (contacto nuevo que solo escribió la frase de entrada)
   const { data: out } = await db.from("messages").select("content, type, ts").eq("contact_id", contactId)
     .eq("direction", "out").gt("ts", ts).order("ts", { ascending: true }).limit(20);
   return ((out ?? []) as any[]).map((o) => String(o?.content?.text ?? o?.content?.caption ?? `[${o?.type ?? "media"}]`));
@@ -518,7 +521,7 @@ Deno.serve(async (req) => {
             .eq("direction", "out").gt("ts", ts).order("ts", { ascending: true }).limit(20);
           tr.push({ c: "[imagen]", b: ((out ?? []) as any[]).map((o) => String(o?.content?.text ?? o?.content?.caption ?? `[${o?.type}]`)) });
         } else {
-          tr.push({ c: String(p?.texto ?? ""), b: await turno(channelId, contactId, String(p?.texto ?? "")) });
+          tr.push({ c: String(p?.texto ?? ""), b: await turno(channelId, contactId, String(p?.texto ?? ""), p?.ad_id ? String(p.ad_id) : undefined, !!p?.rapido) });
         }
       }
       const { data: evs } = await db.from("contact_events").select("titulo, detalle").eq("contact_id", contactId).order("created_at");
