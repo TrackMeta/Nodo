@@ -77,8 +77,6 @@ export function abrirMcp() {
       ${guia("Claude", nueva?.nombre === "Claude")}
       ${guia("ChatGPT", nueva?.nombre === "ChatGPT")}
 
-      <div class="mcp-seg">${icon("lock")}<span>Tu enlace es como una contraseña: <b>quien lo tenga puede usar Nodo como tú</b>.
-        No lo compartas, y si crees que se filtró, desactívalo y crea otro.</span></div>
       <div class="nb-acts"><button class="nb-btn" type="button" id="mcpCerrar">Cerrar</button>
         <button class="nb-btn primary" type="button" id="mcpCrear">${icon("plus")}${lista.length ? "Crear otro enlace" : "Crear mi enlace"}</button></div>`;
     caja.querySelector(".mcp-x").onclick = close;

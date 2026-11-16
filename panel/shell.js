@@ -1655,7 +1655,7 @@ export async function mountShell({ active } = {}) {
     if (appBtn) appBtn.onclick = () => { confPop.hidden = true; abrirAppCelular(); };
     // ✨ MCP (16-nov): es de la PERSONA, no del bot → aquí y no en Conexiones (mcp-enlace.js).
     const mcpBtn = confPop.querySelector("#nodoMcp");
-    if (mcpBtn) mcpBtn.onclick = () => { confPop.hidden = true; import("./mcp-enlace.js?v=2").then((m) => m.abrirMcp()).catch(() => toast("No se pudo abrir", true)); };
+    if (mcpBtn) mcpBtn.onclick = () => { confPop.hidden = true; import("./mcp-enlace.js?v=3").then((m) => m.abrirMcp()).catch(() => toast("No se pudo abrir", true)); };
     document.addEventListener("click", (e) => { if (!confPop.hidden && !e.target.closest("#nodoConfPop,#nodoConf")) confPop.hidden = true; });
   }
 
