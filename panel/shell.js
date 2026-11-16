@@ -1036,7 +1036,7 @@ export function askChoice(opts = {}) {
       <div class="nodo-modal" role="dialog" aria-modal="true">
         <h3>${escHtml(opts.title || "Elige una opción")}</h3>
         ${dlgMsg(opts)}
-        <div class="nodo-choices">${rows}</div>
+        <div class="nodo-choices${(opts.options || []).length > 6 ? " muchas" : ""}">${rows}</div>
         <div class="nb-acts"><button class="nb-btn" id="nmCancel" type="button">Cancelar</button></div>
       </div>`, { onClose: () => { if (!settled) { settled = true; resolve(null); } } });
     back.querySelectorAll(".nodo-choice").forEach((b) => b.onclick = () => { settled = true; resolve(b.dataset.v); back.remove(); });
