@@ -28,7 +28,7 @@ const jres = (body: unknown, status = 200) =>
 
 // ── Quién llama ─────────────────────────────────────────────────────────────────────────────────────────────────
 type Ctx = {
-  uid: string; nombre: string; tokenId: string; headers?: Record<string, string>;
+  uid: string; nombre: string; tokenId: string;
   equipos: Map<string, { nombre: string; rol: string; tipos: string[] | null }>;
   bots: Array<{ id: string; nombre: string; account_id: string; equipo: string; rol: string; bot_apagado: boolean; timezone: string; moneda: string; wa: boolean; usd_rate: number }>;
 };
@@ -458,7 +458,7 @@ async function atender(msg: any, ctx: Ctx): Promise<any | null> {
       // hay reportes de que ChatGPT solo lee el logo (icons) con la versión 2025-11-25.
       const p = msg.params ?? {};
       await db.from("mcp_tokens").update({ ultimo_cliente: { protocolVersion: p.protocolVersion ?? null, clientInfo: p.clientInfo ?? null,
-        capabilities: p.capabilities ?? {}, meta: p._meta ?? null, headers: ctx.headers ?? null, at: new Date().toISOString() } }).eq("id", ctx.tokenId).then(() => {}, () => {});
+        capabilities: Object.keys(p.capabilities ?? {}), at: new Date().toISOString() } }).eq("id", ctx.tokenId).then(() => {}, () => {});
       return ok({ protocolVersion: p.protocolVersion ?? "2025-06-18", capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "nodo", title: "Nodo", version: "1.0.0", websiteUrl: "https://trackmeta.github.io/Nodo/panel/",
           description: "Tu CRM de ventas por WhatsApp con IA: ventas, chats, clientes, pedidos y pagos de tus bots.",
@@ -476,9 +476,6 @@ async function atender(msg: any, ctx: Ctx): Promise<any | null> {
     case "tools/call": {
       const t = TOOLS.find((x) => x.name === msg.params?.name);
       if (!t) return err(-32602, `No existe la herramienta «${msg.params?.name}».`);
-      // (16/17-nov) Se mide si ChatGPT manda el ID de su aplicación (asdk_app_…) en _meta o encabezados (migración 0152).
-      await db.from("mcp_tokens").update({ ultima_llamada: { metodo: msg.method, herramienta: t.name, meta: msg.params?._meta ?? null,
-        headers: ctx.headers ?? null, at: new Date().toISOString() } }).eq("id", ctx.tokenId).then(() => {}, () => {});
       try {
         const r = await t.run(ctx, msg.params?.arguments ?? {});
         return ok({ content: [{ type: "text", text: JSON.stringify(r, null, 1) }], structuredContent: r });
@@ -501,12 +498,6 @@ Deno.serve(async (req) => {
   const llave = llaveDe(req);
   if (!llave) return jres({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Falta la llave de Nodo en el enlace. Cópiala de Conexiones → MCP." } }, 401);
   const ctx = await contexto(llave);
-  // Encabezados SIN secretos (para medir qué identifica a la IA); la llave del enlace se tapa.
-  if (ctx) {
-    const h: Record<string, string> = {};
-    req.headers.forEach((v, k) => { if (!/^(authorization|cookie|apikey|x-api-key|proxy-authorization)$/i.test(k)) h[k] = v.replace(/nodo_[a-f0-9]{48}/g, "nodo_…").slice(0, 300); });
-    ctx.headers = h;
-  }
   if (!ctx) return jres({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "La llave no es válida o fue desactivada. Genera otra en Conexiones → MCP." } }, 401);
   let body: any;
   try { body = await req.json(); } catch { return jres({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "JSON inválido" } }, 400); }
