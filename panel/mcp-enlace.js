@@ -96,7 +96,7 @@ export function abrirMcp() {
     const zb = caja.querySelector("#mcpZip");
     if (zb) zb.onclick = async () => {
       zb.disabled = true;
-      try { const m = await import("./mcp-zip.js?v=1"); await m.descargarComplemento(nueva.nombre, BASE + nueva.llave); toast("Complemento descargado"); }
+      try { const m = await import("./mcp-zip.js?v=2"); await m.descargarComplemento(nueva.nombre, BASE + nueva.llave); toast("Complemento descargado"); }
       catch (e) { toast("No se pudo armar el complemento", true); }
       zb.disabled = false;
     };

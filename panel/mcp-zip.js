@@ -8,6 +8,7 @@
 // ZIP sin compresión (método «store»): son 5 archivos chicos, no hace falta una librería.
 
 const VERSION = "1.0.0";
+const VERSION_CHATGPT = "1.0.1";
 const WEB = "https://trackmeta.github.io/Nodo/panel/";
 const DESC = "Nodo es tu CRM de ventas por WhatsApp con IA. Pregúntale cómo te fue, qué clientes están por comprar, " +
   "qué pagos faltan validar o pídele cambiar un precio: revisa los bots de todos tus equipos y te pregunta antes de cambiar algo.";
@@ -78,7 +79,7 @@ export async function descargarComplemento(ia, url) {
     archivos = [
       { nombre: "plugin.json", datos: json({
         $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-        name: "nodo", version: VERSION, description: DESC,
+        name: "nodo", version: VERSION_CHATGPT, description: DESC,
         author: { name: "Nodo", url: WEB }, homepage: WEB, keywords: ["crm", "whatsapp", "ventas"],
         extensions: { "com.openai": { interface: {
           displayName: "Nodo", shortDescription: "Tu CRM de WhatsApp con IA", longDescription: DESC,
@@ -89,7 +90,10 @@ export async function descargarComplemento(ia, url) {
       }) },
       { nombre: "mcp.json", datos: json({
         $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-        mcpServers: { nodo: { type: "streamable-http", url, extensions: { "com.openai": { auth: { type: "none" } } } } },
+        // El cargador de ChatGPT Desktop 26.1111 rechaza `extensions` en el servidor
+        // ("unknown field `extensions`, expected `url` or `headers`") y descarta el MCP.
+        // No necesitamos declarar auth: este enlace personal ya autoriza la conexión.
+        mcpServers: { nodo: { type: "streamable-http", url } },
       }) },
       { nombre: "skills/nodo/SKILL.md", datos: txt(SKILL) },
       { nombre: "assets/icon.png", datos: logo },
