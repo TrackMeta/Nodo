@@ -32,12 +32,13 @@
   /* (17-nov, Rodrigo: «mejora esta tarjeta, parecida a Nova, más bonita») Tarjeta de producto: cabecera con ícono +
      nombre + estado, una fila de números (ventas e ingresos de 7 días, precio) y «Ver producto» abajo. */
   .pcard{padding:16px 16px 14px;gap:0;min-height:0}
-  .pc-cab{display:flex;align-items:flex-start;gap:12px}
+  .pc-cab{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .pc-nom{margin-top:12px}
   .pc-ic{width:44px;height:44px;border-radius:13px;flex:none;display:grid;place-items:center;background:var(--brand-bg);color:var(--brand);border:1px solid var(--brand-border,var(--border))}
   .pc-ic span{font-size:23px;line-height:1}.pc-ic svg{width:20px;height:20px}
   .pc-ic.ex{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.3);color:#0e9f6e}
   .pc-ic.rg{background:rgba(168,85,247,.12);border-color:rgba(168,85,247,.3);color:#a855f7}
-  .pc-tx{flex:1;min-width:0}
+  .pc-tx{min-width:0}
   .pc-tx b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:15px;font-weight:700;letter-spacing:-.2px;line-height:1.3;color:var(--text)}
   .pc-tx small{display:block;font-size:12px;color:var(--muted);margin-top:3px}
   .pc-est{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:650;padding:3px 9px;border-radius:999px;background:var(--surface-2);color:var(--muted);white-space:nowrap}
@@ -46,12 +47,14 @@
   .pc-est.wa{background:rgba(240,169,43,.13);color:var(--amber)}
   .pc-est.ex{background:rgba(16,185,129,.12);color:#0e9f6e}
   .pc-est.rg{background:rgba(168,85,247,.12);color:#a855f7}
-  .pc-num{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px;padding:11px 12px;border-radius:12px;background:var(--surface-2)}
+  .pc-num{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 8px;margin-top:14px;padding:10px 12px 11px;border-radius:12px;background:var(--surface-2)}
+  .pc-num .pc-cap{grid-column:1/-1;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
   .pc-num div{min-width:0}
   .pc-num small{display:block;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .pc-num b{display:block;font-size:16px;font-weight:800;letter-spacing:-.3px;color:var(--text);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
   .pc-num b.cero{color:var(--faint);font-weight:700}
   .pc-pie{display:flex;align-items:center;gap:8px;margin-top:12px;min-height:30px}
+  .pc-pie [data-cardfolder]{min-width:0;flex:1}
   .pc-ver{margin-left:auto;display:inline-flex;align-items:center;gap:3px;font-size:12.5px;font-weight:700;color:var(--brand);white-space:nowrap}
   .pc-ver svg{width:14px;height:14px;transition:transform .15s}
   .pcard:hover .pc-ver svg{transform:translateX(2px)}
@@ -640,10 +643,10 @@ function renderCards(){
     const nV=(_v&&_v.n)||0, plata=(_v&&_v.plata)||0;
     const nums = (rg||ex)
       ? `<div class="pc-num" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><small>Precio</small><b class="${precio?"":"cero"}">${precio||(rg?"Gratis":"—")}</b></div><div><small>Opciones</small><b>${ops.length||1}</b></div></div>`
-      : `<div class="pc-num"><div><small>Ventas · 7 días</small><b class="${nV?"":"cero"}">${nV}</b></div><div><small>Ingresos · 7 días</small><b class="${plata?"":"cero"}">${$s} ${Math.round(plata).toLocaleString("es-PE")}</b></div><div><small>Precio</small><b class="${precio?"":"cero"}">${precio||"—"}</b></div></div>`;
+      : `<div class="pc-num"><span class="pc-cap">Últimos 7 días</span><div><small>Ventas</small><b class="${nV?"":"cero"}">${nV}</b></div><div><small>Ingresos</small><b class="${plata?"":"cero"}">${$s} ${Math.round(plata).toLocaleString("es-PE")}</b></div><div><small>Precio</small><b class="${precio?"":"cero"}">${precio||"—"}</b></div></div>`;
     el.innerHTML=`
-      <div class="pc-cab"><div class="pc-ic${ex?" ex":rg?" rg":""}">${emIc}</div>
-        <div class="pc-tx"><b title="${esc(p.nombre)}">${esc(p.nombre)}</b><small>${subTx}${paisTx}</small></div>${est}</div>
+      <div class="pc-cab"><div class="pc-ic${ex?" ex":rg?" rg":""}">${emIc}</div>${est}</div>
+      <div class="pc-tx pc-nom"><b title="${esc(p.nombre)}">${esc(p.nombre)}</b><small>${subTx}${paisTx}</small></div>
       ${nums}
       <div class="pc-pie"><span data-cardfolder></span><span class="pc-ver">Ver producto ${icon("chevronRight")}</span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
