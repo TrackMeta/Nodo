@@ -115,7 +115,7 @@ export function abrirMcp() {
       <div class="w-paso ${est(false, p2)}" data-paso="3">
         <div class="w-n">3</div>
         <div class="w-cuerpo"><b>Instala el complemento con el logo</b>
-          <small>En ChatGPT: <b>Complementos → Añadir → Subir archivo comprimido del complemento</b> y sube <b>nodo-chatgpt.zip</b>. Después, en un chat nuevo escribe <b>@Nodo</b>.</small>
+          <small>En ChatGPT: <b>Complementos → Añadir → Subir archivo comprimido del complemento</b> y sube <b>nodo-chatgpt.zip</b>. Cuando se abra la ficha de Nodo, toca <b>Instalar complemento</b>. Después, en un chat nuevo escribe <b>@Nodo</b>.</small>
           <button type="button" class="mcp-zipbtn" id="mcpZip" ${p2 ? "" : "disabled"}>${icon("download")}Descargar complemento (.zip)</button>
           <small class="zip-nota">No borres <b>${NOMBRE_CONEXION}</b> en ChatGPT: el complemento la usa para leer tus datos.</small>
         </div>
