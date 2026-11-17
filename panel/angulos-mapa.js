@@ -9,7 +9,7 @@
 // rotador de los mensajes iniciales, sequences.pasos[].variantes[].angulo). Lo que cambies acá se ve allá y al revés.
 // El motor elige igual que antes: variante del ángulo del cliente → si no hay, la general.
 // (17-nov, Rodrigo: «que ángulos no sea una pestaña sino que esté dentro de cada producto», como en Nova) Con
-// ctx.producto se monta DENTRO del producto (sección «Sus ángulos»): solo su familia de países, una lista de tarjetas en
+// ctx.producto se monta DENTRO del producto (pestaña «Ángulos» del producto, 17-nov): solo su familia de países, una lista de tarjetas en
 // vez del mapa, y la misma ficha de siempre. La pestaña «Ángulos» de Productos se quitó.
 // ═════════════════════════════════════════════════════════════════════════
 import { supa, icon, toast, confirmDialog, askText, patchProductConfig, pageAll, getChannel } from "./shell.js";
@@ -280,7 +280,7 @@ function pintaFicha(pid, slug) {
   const ids = a ? a.ad_ids : sinAngulo(p);
   const x = statsDe(ids), rem = a ? remEstado(p, slug) : null;
   const chip = (ok, txt) => `<span class="amx-chip ${ok ? "ok" : "wa"}">${ok ? icon("check") : ""}${esc(txt)}</span>`;
-  let h = `<div class="amx"><button class="amx-back" data-volver>${icon("chevronLeft")} ${S.ctx.producto ? "Volver a sus ángulos" : "Volver al mapa"}</button>
+  let h = `<div class="amx"><button class="amx-back" data-volver>${icon("chevronLeft")} ${S.ctx.producto ? "Volver a los ángulos" : "Volver al mapa"}</button>
     <div class="amx-card amx-head"><div style="flex:1;min-width:0"><h2>${a ? esc(a.nombre || a.slug) : "Anuncios sin ángulo"}</h2>${a ? "" : `<p style="margin:3px 0 0">Estos anuncios llegan con el saludo general. Asígnales un ángulo para que el bot retome la idea del anuncio.</p>`}
       <p>${esc(p.nombre)} · <b>${esc(paisNom(pais))}</b></p></div>
       ${otros.length && a ? `<div class="amx-paises">${fam.map((m) => { const tiene = !!angDe(m.id, slug); return `<button class="amx-pais ${String(m.id) === String(pid) ? "on" : ""}" ${tiene ? `data-ir="${esc(m.id)}"` : "disabled title=\"Este ángulo no existe en ese país\""}>${esc(paisNom(paisDe(m)))}</button>`; }).join("")}</div>` : ""}

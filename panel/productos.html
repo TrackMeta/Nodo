@@ -284,6 +284,14 @@
   @media(max-width:560px){.pc-franja .pc-fq{display:none}}
   .pc-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted)}
   .pc-link{background:none;border:none;padding:0;color:var(--brand);font-weight:600;font-size:12.5px;cursor:pointer}
+  /* (17-nov, Rodrigo: «separado pero en la misma página») Pestañas del producto: Producto | Ángulos. */
+  .pvtabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin:0 0 16px}
+  .pvtab{background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);font:inherit;font-size:13.5px;font-weight:600;padding:10px 12px;margin-bottom:-1px;display:inline-flex;align-items:center;gap:7px;cursor:pointer}
+  .pvtab:hover{color:var(--text)}
+  .pvtab.on{color:var(--brand);border-bottom-color:var(--brand)}
+  .pvtab svg{width:16px;height:16px}
+  .pvtab .pvn{font-size:11px;font-weight:700;min-width:18px;height:18px;padding:0 5px;border-radius:9px;display:inline-grid;place-items:center;background:var(--surface-2);color:var(--muted)}
+  .pvtab.on .pvn{background:var(--brand-bg);color:var(--brand)}
 </style>
 </head>
 <body>
@@ -351,7 +359,7 @@ import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guar
 const tiposCuenta=()=>{ const t=["fisico","digital","microapp"].filter(x=>!document.documentElement.hasAttribute("data-sin-"+x)); return t.length?t:["fisico","digital","microapp"]; };
 const vendeTipo=(t)=>tiposCuenta().includes(t);
 import { mountFolders } from "./folder-bar.js?v=3";
-import { montarMapaAngulos } from "./angulos-mapa.js?v=30";
+import { montarMapaAngulos } from "./angulos-mapa.js?v=31";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
@@ -452,19 +460,20 @@ async function boot(){
   };
   // (17-nov) «Crea ángulos →» (saludo y remarketing del producto) abre «Sus ángulos» de ESTE producto, sin salir.
   { const dv=$("detailView"); if(dv) dv.addEventListener("click",(e)=>{ const a=e.target.closest('a[href="productos.html?vista=angulos"]');
-      if(!a || !st.prod) return; e.preventDefault(); accOpen("angulos"); }); }
+      if(!a || !st.prod) return; e.preventDefault(); cambiarPv("angulos"); }); }
   await loadProducts();
   // 🔗 Enlace directo a un producto (la campanita: «Revisar preguntas» → productos.html?p=…&preguntas=1).
   // …y productos.html?vista=angulos abre la pestaña Ángulos (desde «Crea ángulos →» del saludo y de Secuencias).
   try{
     const qp=new URLSearchParams(location.search), pid=qp.get("p");
     // (17-nov) Los ángulos ahora están dentro de cada producto. El enlace viejo (Secuencias, guardados) explica dónde.
-    if(!pid && qp.get("vista")==="angulos"){ history.replaceState(null,"",location.pathname); toast("Los ángulos ahora están dentro de cada producto: ábrelo y entra a «Sus ángulos»"); }
+    if(!pid && qp.get("vista")==="angulos"){ history.replaceState(null,"",location.pathname); toast("Los ángulos ahora están dentro de cada producto: ábrelo y toca la pestaña «Ángulos»"); }
     const secPedida=qp.get("sec");
     if(pid){
       history.replaceState(null,"",location.pathname);
       if((st.list||[]).some(p=>String(p.id)===pid)){ if(qp.get("preguntas")==="1") st._abrirPreguntas=true; await openProduct(pid);
-        if(secPedida){ for(let i=0;i<40;i++){ if(document.querySelector('.acc[data-t="'+secPedida+'"]')){ accOpen(secPedida); break; } await new Promise(r=>setTimeout(r,100)); } } }
+        if(secPedida==="angulos") cambiarPv("angulos");
+        else if(secPedida){ for(let i=0;i<40;i++){ if(document.querySelector('.acc[data-t="'+secPedida+'"]')){ accOpen(secPedida); break; } await new Promise(r=>setTimeout(r,100)); } } }
       else toast("Ese producto no está en este bot",true);
     }
   }catch(_){ /* sin enlace → la grilla de siempre */ }
@@ -492,13 +501,13 @@ function ctxAngulos(){
   // La ficha del producto termina de pintarse después de openProduct: se espera a que exista la sección (hasta 4 s).
   const abrir=async(pid, sec)=>{
     // (17-nov) Desde «Sus ángulos» del MISMO producto: se abre la sección aquí mismo (antes recargaba la ficha).
-    if(st.prod && String(st.prod.id)===String(pid)){ if(sec==="activacion") accInvalidate("activacion"); accOpen(sec); return; }
+    if(st.prod && String(st.prod.id)===String(pid)){ if(st.pv==="angulos"){ st.pv="producto"; aplicarPv(); } if(sec==="activacion") accInvalidate("activacion"); accOpen(sec); return; }
     await openProduct(pid);
     for(let i=0;i<40;i++){ if(!st.prod || String(st.prod.id)!==String(pid)) return; if(document.querySelector('.acc[data-t="'+sec+'"]')){ accOpen(sec); return; } await new Promise(r=>setTimeout(r,100)); } };
   return { channelId:st.channelId, list:st.list, paisBot:_paisBot, PAIS_INFO,
     abrirSaludo:(pid,slug)=>{ st._angTab=slug||""; return abrir(pid,"activacion"); },
     abrirRemarketing:(pid)=>abrir(pid,"remarketing"),
-    alCambiar:(n)=>{ if(st.receta){ st.receta.nAng=n; if(st._refreshRow) st._refreshRow("angulos"); } } };
+    alCambiar:(n)=>{ if(st.receta) st.receta.nAng=n; badgeAngulos(n); } };
 }
 // Muestra el panel del modo activo (catálogo o hub de ángulos).
 function applyGvMode(){
@@ -765,6 +774,7 @@ async function openProduct(id){
   // de B → se pintaba B pero con las versiones/config de A (y un guardado escribía
   // el set mezclado). Mismo patrón que loadProducts.
   const gen=(st.openGen=(st.openGen||0)+1);
+  if(!st.prod || String(st.prod.id)!==String(id)) st.pv="producto";   // pestaña Producto | Ángulos
   const { data:p } = await supa.from("products").select("*").eq("id",id).maybeSingle();
   const { data:vs } = await supa.from("product_versions").select("*").eq("product_id",id).order("orden");
   if(gen!==st.openGen) return; // otra apertura más nueva ya ganó
@@ -888,15 +898,22 @@ function renderDetail(){
   const onHub = st.tab==="inicio";
   // "¿Lo armo por ti?" es este FAB de abajo a la derecha, visible en todo el editor.
   const _fab=$("armFab"); if(_fab) _fab.style.display="inline-flex";
+  // (17-nov) Producto principal: pestañas «Producto | Ángulos» (los ángulos, aparte pero en la misma página).
+  const conAngulos = onHub && !esExtra && !esRegalo;
+  if(!conAngulos){ st.pv="producto"; const sb=$("saveBtn"); if(sb) sb.style.display=""; }
   d.innerHTML = onHub
-    ? `<div id="tabBody"></div>`
+    ? (conAngulos ? `<div class="pvtabs" id="pvTabs">
+          <button class="pvtab" data-pv="producto">${icon("box")}Producto</button>
+          <button class="pvtab" data-pv="angulos">${icon("compass")}Ángulos<span class="pvn" id="pvAngN" hidden></span></button>
+        </div><div id="tabBody"></div><div id="angBody" hidden></div>` : `<div id="tabBody"></div>`)
     : `<div class="pdet-secbar">
          <button class="pdet-back" id="backHub">${CHEV}Inicio</button>
          <span class="pdet-crumb">${esc(st.prod.nombre)}</span><span class="pdet-crumb-sep">›</span><span class="pdet-crumb-cur">${SEC[st.tab]||""}</span>
        </div>
        <div id="tabBody"></div>`;
   const bh=$("backHub"); if(bh) bh.onclick=()=>{ st.tab="inicio"; renderDetail(); };
-  if(st.tab==="inicio") renderInicio();
+  if(conAngulos){ $("pvTabs").querySelectorAll("[data-pv]").forEach(b=> b.onclick=()=>cambiarPv(b.dataset.pv)); }
+  if(st.tab==="inicio"){ renderInicio(); if(conAngulos) aplicarPv(); }
   else if(st.tab==="producto") renderProducto();
   else if(st.tab==="entrega") renderEntrega();
   else if(st.tab==="ia") renderProductoIA();
@@ -907,6 +924,22 @@ function renderDetail(){
   else if(st.tab==="stock") renderStock();
   else renderActivacion();
 }
+// ── Pestañas Producto | Ángulos (17-nov) ──
+// «Ángulos» monta angulos-mapa.js solo con este producto (su familia de países). Se vuelve a montar cada vez que entras,
+// así refleja lo que cambiaste en el saludo o las secuencias. En Ángulos no hay «Guardar cambios» ni «Armar con IA»:
+// cada parte de la ficha guarda la suya.
+function aplicarPv(){
+  const pv=st.pv==="angulos"?"angulos":"producto";
+  const tb=$("tabBody"), ab=$("angBody"), tabs=$("pvTabs"); if(!tb||!ab||!tabs) return;
+  tabs.querySelectorAll("[data-pv]").forEach(b=>b.classList.toggle("on", b.dataset.pv===pv));
+  tb.hidden = pv!=="producto"; ab.hidden = pv!=="angulos";
+  const sb=$("saveBtn"); if(sb) sb.style.display = pv==="angulos" ? "none" : "";
+  const fab=$("armFab"); if(fab) fab.style.display = pv==="angulos" ? "none" : "inline-flex";
+  if(pv==="angulos") montarMapaAngulos(ab, { ...ctxAngulos(), producto:st.prod.id });
+}
+function cambiarPv(pv){ if(st.pv===pv && pv!=="angulos") return; st.pv=pv; aplicarPv(); window.scrollTo({top:0,behavior:"smooth"}); }
+function badgeAngulos(n){ const el=$("pvAngN"); if(!el) return; el.hidden=!n; el.textContent=n||""; }
+
 // FAQ del producto: editor de pares P/R que compila a config.faq (texto que
 // lee el motor). Se conserva config.faq_items para poder re-editarlo.
 function parseFaq(txt){
@@ -2666,9 +2699,7 @@ function paintExtras(){
 // Reusa las funciones de sección pasándoles el panel (.acc-body) como contenedor.
 const ACC_RENDER={ producto:renderProducto, opciones:renderOpciones, entrega:renderEntrega,
   ia:renderProductoIA, activacion:renderActivacion, extras:renderExtras, remarketing:renderRemarketing,
-  regalos:renderRegaloVenta, stock:renderStock,
-  // (17-nov, Rodrigo) Los ángulos DENTRO del producto: su lista y la misma ficha de siempre (angulos-mapa.js).
-  angulos:(body)=>montarMapaAngulos(body, { ...ctxAngulos(), producto:st.prod.id }) };
+  regalos:renderRegaloVenta, stock:renderStock };
 function accToggle(wrap){
   if(!wrap) return;
   const t=wrap.dataset.t, body=wrap.querySelector(".acc-body");
@@ -2726,6 +2757,7 @@ async function renderInicio(){
   const { data:ch } = await supa.from("channels").select("negocio,ocr_config,gsheets,entregas").eq("id",st.channelId).maybeSingle();
   let nAng=0; try{ const { data:angsP } = await supa.from("angulos").select("slug").eq("product_id",st.prod.id); nAng=new Set((angsP||[]).map(a=>a.slug)).size; }catch(_){}
   st.receta={ flows:flows||[], fIni, fVenta, trigs, ch:ch||{}, nAng };
+  badgeAngulos(nAng);
 
   // Estado por sección (para los puntitos y el X/Y de cada fase).
   const est=(t)=>{
@@ -2753,7 +2785,6 @@ async function renderInicio(){
     if(t==="remarketing"){ const ok=!!c.remarketing_seq_id; return {ok,opt:true,msg:ok?"Secuencia enlazada":"Sin secuencia (opcional)"}; }
     if(t==="regalos"){ const n=(c.regalos||[]).length; return {ok:n>0,opt:true,msg:n>0?`${n} regalo(s)`:"Sin regalo (opcional)"}; }
     if(t==="flujos") return {ok:true,opt:true,msg:"Editor visual (avanzado)"};
-    if(t==="angulos"){ const n=(st.receta&&st.receta.nAng)||0; return {ok:n>0,opt:true,msg:n?`${n} ángulo${n===1?"":"s"} · saluda según el anuncio`:"Un saludo distinto según el anuncio (opcional)"}; }
     if(t==="stock"){ const s=(c.stock&&typeof c.stock==="object")?c.stock:{}; const ks=Object.keys(s); const tot=ks.reduce((a,k)=>a+(Number(s[k])||0),0); return {ok:ks.length>0,opt:true,msg:ks.length?`${tot} unidad(es) en stock`:"Sin stock cargado (opcional)"}; }
     return {ok:false,msg:""};
   };
@@ -2856,7 +2887,6 @@ async function renderInicio(){
     : rowHtml("entrega",{label:"¿Cómo se entrega?",sub:est("entrega").ok?"Entrega configurada":"Falta el link o archivo",warn:!est("entrega").ok});
   const rIA = rowHtml("ia",{label:"La IA sabe venderlo",sub:est("ia").ok?"La IA ya sabe venderlo":"Falta describir tu producto",warn:!est("ia").ok,tone:"ia"});
   const rAct = rowHtml("activacion",{label:"Cómo llegan los clientes",sub:est("activacion").msg,warn:!est("activacion").ok,tone:"green"});   // (10-oct) violeta solo para la IA
-  const rAng = rowHtml("angulos",{label:"Sus ángulos",sub:est("angulos").msg,opt:true,tone:"green"});
 
   // Poner a vender
   // Con el flujo ya creado, «Regenerar» dejó de ser algo que tengas que decidir tú: Guardar
@@ -2927,7 +2957,7 @@ async function renderInicio(){
     b.innerHTML=`${headCard}
       <div id="pregCli"></div>
       ${group("Tu producto",fisico?[qCuesta,qVar]:[qCuesta,qVar,qEs])}
-      ${group("Tu venta",[rIA,rAct,rAng])}
+      ${group("Tu venta",[rIA,rAct])}
       ${mas}
       <div style="margin-top:18px">${sellCard}</div>`;
   }
@@ -2973,7 +3003,6 @@ async function renderInicio(){
     if(t==="extras"){ return { ok:est("extras").ok, tone:"gold", sub:est("extras").msg }; }
     if(t==="remarketing"){ return { ok:est("remarketing").ok, tone:"gold", sub:est("remarketing").msg }; }
     if(t==="regalos"){ return { ok:est("regalos").ok, tone:"gold", sub:est("regalos").msg }; }
-    if(t==="angulos"){ return { ok:est("angulos").ok, tone:"green", sub:est("angulos").msg }; }
     return null;
   };
   const applyRow=(t)=>{
