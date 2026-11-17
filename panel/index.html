@@ -4,6 +4,12 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script>try{document.documentElement.dataset.theme=localStorage.getItem("nodo.theme")||"dark"}catch(e){}</script>
+<script>
+// (17-nov, Rodrigo: «que abra Inicio en vez de Bandeja») Entrar a Nodo por su dirección (…/Nodo/ → …/panel/) con la
+// sesión abierta lleva a Inicio ANTES de pintar nada. La Bandeja sigue en «index.html» (menú, avisos con ?…), y sin
+// sesión aquí sale el ingreso, que también termina en Inicio.
+try{ if(/\/panel\/?$/.test(location.pathname) && !location.search && !location.hash && localStorage.getItem("sb-ahoxdyffbwjlshmdezwi-auth-token")) location.replace("dashboard.html"); }catch(e){}
+</script>
 <title>Nodo · Bandeja</title>
 <link rel="icon" type="image/png" sizes="32x32" href="../assets/favicon-32x32.png" />
 <link rel="icon" type="image/png" sizes="16x16" href="../assets/favicon-16x16.png" />
@@ -935,6 +941,8 @@ $("loginForm").addEventListener("submit", async (e) => {
       : "Correo o contraseña incorrectos.";
     return;
   }
+  // (17-nov) Al ingresar se abre Inicio, salvo que viniera a algo puntual de la Bandeja (un aviso con ?contacto…).
+  if (!location.search && !location.hash) { location.replace("dashboard.html"); return; }
   boot();
 });
 async function boot() {
