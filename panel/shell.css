@@ -1449,6 +1449,60 @@ html:not([data-theme="light"]) .nodo-botsel .nb-est.off{color:#F04438}
 .nodo-mcp .mcp-nueva .nv-t svg{width:16px;height:16px;color:var(--green,#22c079)}
 .nodo-mcp .mcp-nueva b{font-size:13.5px;color:var(--green,#22c079)}
 .nodo-mcp .mcp-nueva small{font-size:12px;color:var(--muted);line-height:1.5}
+/* 🔌 MCP · pasos guiados de ChatGPT (17-nov, mcp-enlace.js pasosChatGPT): conectar enlace → pegar ID → subir .zip. */
+.nodo-mcp .mcp-wiz{border:1px solid var(--border);border-radius:14px;margin:0 0 18px;overflow:hidden;background:var(--surface)}
+.nodo-mcp .w-tit{display:flex;align-items:center;gap:8px;padding:11px 14px;border-bottom:1px solid var(--border);background:var(--surface-2)}
+.nodo-mcp .w-tit svg{width:16px;height:16px;color:var(--brand)}
+.nodo-mcp .w-tit b{flex:1;font-size:13.5px;color:var(--text)}
+.nodo-mcp .w-tit span{font-size:11.5px;font-weight:600;color:var(--brand);background:var(--brand-bg);padding:3px 9px;border-radius:20px}
+.nodo-mcp .w-paso{display:flex;gap:12px;padding:13px 14px;border-bottom:1px solid var(--border);opacity:.5}
+.nodo-mcp .w-paso:last-child{border-bottom:0}
+.nodo-mcp .w-paso.activo,.nodo-mcp .w-paso.hecho{opacity:1}
+.nodo-mcp .w-paso.activo{background:linear-gradient(90deg,var(--brand-bg),transparent 60%)}
+.nodo-mcp .w-n{width:24px;height:24px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:12px;font-weight:700;
+  background:var(--surface-2);color:var(--muted);border:1px solid var(--border-strong)}
+.nodo-mcp .w-paso.activo .w-n{background:var(--brand);color:#fff;border-color:var(--brand)}
+.nodo-mcp .w-paso.hecho .w-n{background:var(--green,#22c079);color:#fff;border-color:transparent}
+.nodo-mcp .w-n svg{width:13px;height:13px}
+.nodo-mcp .w-cuerpo{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.nodo-mcp .w-cuerpo>b{font-size:13.5px;color:var(--text)}
+.nodo-mcp .w-cuerpo small{font-size:12px;color:var(--muted);line-height:1.55}
+.nodo-mcp .w-cuerpo small b,.nodo-mcp .w-mini b{color:var(--text);font-weight:600}
+.nodo-mcp .w-mini{margin:0;padding-left:18px;font-size:12px;color:var(--muted);line-height:1.7}
+.nodo-mcp .w-chip{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;margin-left:4px;border-radius:7px;border:1px solid var(--border-strong);
+  background:var(--surface);color:var(--muted);font:inherit;font-size:11px;font-weight:600;cursor:pointer;vertical-align:middle}
+.nodo-mcp .w-chip:hover{color:var(--brand);border-color:var(--brand)}
+.nodo-mcp .w-chip svg{width:12px;height:12px}
+.nodo-mcp .w-cuerpo .mcp-copy{margin-top:2px}
+.nodo-mcp .w-acc{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.nodo-mcp .w-btn{height:32px;padding:0 12px;border-radius:9px;background:var(--brand);color:#fff;font-size:12.5px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center}
+.nodo-mcp .w-btn:hover{background:var(--brand-2)}
+.nodo-mcp .w-est{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--green,#22c079);min-height:18px}
+.nodo-mcp .w-est svg{width:14px;height:14px}
+.nodo-mcp .w-est .w-mal{color:#f04747;font-weight:600}
+.nodo-mcp #wEst1:has(.w-spin){color:var(--muted);font-weight:500}
+.nodo-mcp .w-spin{width:12px;height:12px;border-radius:50%;border:2px solid var(--border-strong);border-top-color:var(--brand);animation:mcpGira .8s linear infinite;display:inline-block}
+@keyframes mcpGira{to{transform:rotate(360deg)}}
+.nodo-mcp .w-in{width:100%;height:40px;font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px}
+.nodo-mcp .mcp-zipbtn:disabled{opacity:.45;cursor:not-allowed}
+/* Dibujo de la pantalla de ChatGPT (datos de ejemplo) */
+.nodo-mcp .mcp-dib{border-radius:11px;background:#171b26;border:1px solid #2a3142;padding:10px 12px;color:#c9d1e0;font-size:11.5px;margin:2px 0}
+.nodo-mcp .mcp-dib .d-cab{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.nodo-mcp .mcp-dib .d-cab b{flex:1;color:#fff;font-size:12.5px}
+.nodo-mcp .mcp-dib .d-ok{width:20px;height:20px;border-radius:50%;background:#22c079;display:grid;place-items:center;color:#fff}
+.nodo-mcp .mcp-dib .d-ok svg{width:12px;height:12px}
+.nodo-mcp .mcp-dib .d-btn{font-size:10.5px;padding:2px 8px;border-radius:7px;border:1px solid #39415a;color:#c9d1e0}
+.nodo-mcp .mcp-dib .d-sec{font-weight:700;color:#fff;margin:2px 0 4px}
+.nodo-mcp .mcp-dib .d-fila{display:grid;grid-template-columns:120px 1fr auto;gap:8px;align-items:center;padding:5px 6px;border-top:1px solid #262c3b;font-family:ui-monospace,"SF Mono",Menlo,monospace}
+.nodo-mcp .mcp-dib .d-fila span:first-child{font-family:var(--font,inherit);color:#8b95aa}
+.nodo-mcp .mcp-dib .d-fila em{font-style:normal;font-family:var(--font,inherit);font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:20px;display:inline-flex;align-items:center;gap:3px}
+.nodo-mcp .mcp-dib .d-fila em svg{width:10px;height:10px}
+.nodo-mcp .mcp-dib .d-fila.no{opacity:.55}
+.nodo-mcp .mcp-dib .d-fila.no em{color:#f08a8a;border:1px solid rgba(240,71,71,.4)}
+.nodo-mcp .mcp-dib .d-fila.si{background:rgba(43,127,255,.14);border-radius:7px;border-top-color:transparent;outline:1.5px solid rgba(43,127,255,.7)}
+.nodo-mcp .mcp-dib .d-fila.si span:nth-child(2){color:#fff}
+.nodo-mcp .mcp-dib .d-fila.si em{background:#2b7fff;color:#fff}
+@media (max-width:520px){ .nodo-mcp .mcp-dib .d-fila{grid-template-columns:1fr auto} .nodo-mcp .mcp-dib .d-fila span:first-child{grid-column:1/-1} }
 .nodo-mcp .mcp-zipbtn{align-self:flex-start;margin-top:10px;height:34px;padding:0 13px;border-radius:9px;border:1px solid rgba(34,192,121,.5);background:var(--surface);color:var(--text);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
 .nodo-mcp .mcp-zipbtn:hover{border-color:var(--green,#22c079);color:var(--green,#22c079)}
 .nodo-mcp .mcp-zipbtn svg{width:15px;height:15px}
