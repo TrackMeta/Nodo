@@ -107,7 +107,7 @@ export async function descargarComplemento(ia, url, appId = "") {
         name: "nodo", displayName: "Nodo", version: VERSION, description: DESC,
         author: { name: "Nodo", url: WEB }, homepage: WEB, keywords: ["crm", "whatsapp", "ventas"], icon: "./logo.png",
       }) },
-      { nombre: ".mcp.json", datos: json({ mcpServers: { nodo: { type: "http", url } } }) },
+      { nombre: ".mcp.json", datos: json({ mcpServers: { Nodo: { type: "http", url } } }) },   // la clave es el nombre que muestra Claude
       { nombre: "skills/nodo/SKILL.md", datos: txt(SKILL) },
       { nombre: "logo.png", datos: logo },
     ];

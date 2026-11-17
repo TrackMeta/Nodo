@@ -5,6 +5,7 @@
 // Cada persona crea su ENLACE PERSONAL (functions/v1/mcp/<llave>) y lo pega en su IA como conector.
 // (16-nov, Rodrigo eligió comodidad) «Ver»: la llave también se guarda cifrada en Vault (migración 0150) y su dueño
 // puede volver a verla. Las creadas antes de 0150 no tienen copia: esas no muestran «Ver».
+// (17-nov) Claude también con 3 pasos: descargar el .zip (lleva el enlace), subirlo, Conectar → Sin inicio de sesión.
 // (17-nov, Rodrigo) Sin la guía «Cómo conectarlo»: los pasos salen al crear o «Ver» un enlace. ChatGPT = enlace + complemento .zip con logo (mcp-zip.js). El .zip se VINCULA a la conexión que el cliente
 // crea con su enlace (ID asdk_app_…). ChatGPT no manda ese ID al conectarse (medido el 17-nov), así que el cliente lo
 // pega una vez y Nodo lo guarda (mcp_tokens.app_id, migración 0154). Rodrigo eligió este camino y pidió:
@@ -16,7 +17,7 @@ import { supa, SUPABASE_URL, toast, icon, askChoice, confirmDialog, mountModal }
 const BASE = `${SUPABASE_URL}/functions/v1/mcp/`;
 const NOMBRE_CONEXION = "Conexión Nodo";
 const IA = {
-  Claude: { img: "../assets/apps/claude.png", abrir: "https://claude.ai/settings/connectors", pasos: [
+  Claude: { img: "../assets/apps/claude.png", abrir: "https://claude.ai", pasos: [
     `Entra a <b>claude.ai → Configuración → Conectores</b>.`,
     `Toca <b>Agregar conector personalizado</b>. Nombre: <b>Nodo</b>. URL: <b>pega tu enlace</b>.`,
     `En un chat, abre el botón de <b>herramientas</b>, activa <b>Nodo</b> y pregúntale lo que quieras.`],
@@ -62,7 +63,7 @@ export function abrirMcp() {
   back.addEventListener("mousedown", (e) => { if (e.target === back) clearInterval(sondeo); });
 
   const descargar = async (ia, url, appId) => {
-    const m = await import("./mcp-zip.js?v=6");
+    const m = await import("./mcp-zip.js?v=7");
     await m.descargarComplemento(ia, url, appId);
     toast("Complemento descargado");
   };
@@ -111,6 +112,44 @@ export function abrirMcp() {
     </div>`;
   };
 
+  // ── Los 3 pasos de Claude (17-nov, capturas de Rodrigo): el .zip lleva el enlace adentro, así que no hay ID que
+  // copiar. Claude abre «Agregar conector personalizado» ya llenado; se deja «Sin inicio de sesión» (sale «Detectado»).
+  const pasosClaude = (n) => {
+    const p1 = !!n.descargado || !!n.usado, p3 = !!n.usado;
+    const est = (hecho, activo) => hecho ? "hecho" : activo ? "activo" : "";
+    return `<div class="mcp-wiz">
+      <div class="w-tit">${icon("link")}<b>Conectar Nodo en Claude</b><span>Paso ${p3 ? 3 : p1 ? 2 : 1} de 3</span></div>
+
+      <div class="w-paso ${est(p1, true)}" data-paso="1">
+        <div class="w-n">${p1 ? icon("check") : "1"}</div>
+        <div class="w-cuerpo"><b>Descarga el complemento de Nodo</b>
+          <small>Trae tu enlace adentro: cuídalo igual que una contraseña.</small>
+          <button type="button" class="mcp-zipbtn" id="mcpZip">${icon("download")}Descargar complemento (.zip)</button>
+        </div>
+      </div>
+
+      <div class="w-paso ${est(p3, p1)}" data-paso="2">
+        <div class="w-n">${p3 ? icon("check") : "2"}</div>
+        <div class="w-cuerpo"><b>Súbelo a Claude</b>
+          <small>En claude.ai: <b>Personalizar → Plugins → Añadir → Subir plugin</b> y elige <b>nodo-claude.zip</b>.</small>
+          <div class="w-acc"><a class="w-btn" href="${IA.Claude.abrir}" target="_blank" rel="noopener">Abrir Claude ↗</a></div>
+        </div>
+      </div>
+
+      <div class="w-paso ${est(p3, p1)}" data-paso="3">
+        <div class="w-n">${p3 ? icon("check") : "3"}</div>
+        <div class="w-cuerpo"><b>Conecta Nodo</b>
+          <ol class="w-mini">
+            <li>En el plugin <b>Nodo</b>, en <b>Conectores</b>, toca <b>Conectar</b> junto a <b>Nodo</b>.</li>
+            <li>Toca <b>Continuar</b>, deja <b>Sin inicio de sesión</b> y toca <b>Agregar</b>.</li>
+            <li>En un chat nuevo pregúntale lo que quieras: «¿Cómo me fue esta semana?».</li>
+          </ol>
+          <span class="w-est" id="wEst1">${p3 ? `${icon("check")}Claude ya se conectó` : `<i class="w-spin"></i>Esperando que Claude se conecte…`}</span>
+        </div>
+      </div>
+    </div>`;
+  };
+
   const pintar = async () => {
     const [{ data, error }, { data: vis }] = await Promise.all([
       supa.from("mcp_tokens").select("id,nombre,prefijo,created_at,last_used_at,app_id").is("revoked_at", null).order("created_at", { ascending: false }),
@@ -120,13 +159,13 @@ export function abrirMcp() {
     const caja = back.querySelector(".mcp-cuerpo"); if (!caja) return;
     const lista = error ? [] : (data || []);
     if (nueva) { const k = lista.find((x) => x.id === nueva.id); if (k) { nueva.usado = nueva.usado || !!k.last_used_at; nueva.appId = nueva.appId || k.app_id || ""; } }
-    const esGPT = nueva?.nombre === "ChatGPT";
+    const esGPT = nueva?.nombre === "ChatGPT", esClaude = nueva?.nombre === "Claude";
     caja.innerHTML = `
       ${cabecera(true)}
       <p class="mcp-intro">Pega tu enlace en Claude o ChatGPT y háblale como a un asistente: revisa los bots de todos tus equipos
         y <b>siempre te pregunta antes de cambiar algo</b>.</p>
 
-      ${esGPT ? pasosChatGPT(nueva) : nueva ? `<div class="mcp-nueva">
+      ${esGPT ? pasosChatGPT(nueva) : esClaude ? pasosClaude(nueva) : nueva ? `<div class="mcp-nueva">
         <div class="nv-t">${icon(nueva.visto ? "link" : "check")}<b>${nueva.visto ? "Tu enlace" : "Listo: tu enlace"} para ${esc(nueva.nombre)}</b></div>
         <small>Ya está copiado. Si lo necesitas otra vez, toca «Ver» en tus enlaces.</small>
         <div class="mcp-copy"><input readonly value="${esc(BASE + nueva.llave)}"/>
@@ -163,11 +202,11 @@ export function abrirMcp() {
     const zb = caja.querySelector("#mcpZip");
     if (zb) zb.onclick = async () => {
       zb.disabled = true;
-      try { await descargar(nueva.nombre, BASE + nueva.llave, nueva.appId); }
+      try { await descargar(nueva.nombre, BASE + nueva.llave, nueva.appId); if (esClaude && !nueva.descargado) { nueva.descargado = true; pintar(); return; } }
       catch (e) { toast(e.message || "No se pudo armar el complemento", true); }
       finally { zb.disabled = esGPT && !nueva.appId; }
     };
-    if (esGPT) cablearPasos(caja);
+    if (esGPT || esClaude) cablearPasos(caja);
   };
 
   // Paso 1 (sondeo de la conexión) y paso 2 (pegar el ID) sin repintar todo, para no perder lo que se escribe.
@@ -177,7 +216,7 @@ export function abrirMcp() {
     if (!nueva.usado && nueva.id) sondeo = setInterval(async () => {
       if (!back.isConnected) { clearInterval(sondeo); return; }
       const { data } = await supa.from("mcp_tokens").select("last_used_at").eq("id", nueva.id).maybeSingle();
-      if (data?.last_used_at) { clearInterval(sondeo); nueva.usado = true; toast("ChatGPT ya se conectó: sigue con el paso 2"); pintar(); }
+      if (data?.last_used_at) { clearInterval(sondeo); nueva.usado = true; toast(nueva.nombre === "ChatGPT" ? "ChatGPT ya se conectó: sigue con el paso 2" : "Claude ya se conectó: ¡listo!"); pintar(); }
     }, 4000);
     const inp = caja.querySelector("#mcpAppId"), est = caja.querySelector("#wEst2");
     if (!inp) return;
@@ -214,7 +253,7 @@ export function abrirMcp() {
     const { data: fila } = await supa.from("mcp_tokens").select("id").eq("prefijo", String(data).slice(0, 11)).is("revoked_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
     nueva = { id: fila?.id || null, llave: data, nombre, usado: false, appId: "" };
     await pintar();
-    copiar(BASE + data);
+    if (nombre === "ChatGPT") copiar(BASE + data);
   };
   const ver = async (id, nombre) => {
     const { data, error } = await supa.rpc("mcp_token_ver", { p_id: id });
@@ -222,7 +261,7 @@ export function abrirMcp() {
     nueva = { id, llave: data, nombre, visto: true };
     await pintar();
     back.querySelector(".mcp-wiz, .mcp-nueva")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    if (nombre !== "ChatGPT") copiar(BASE + data);
+
   };
   const revocar = async (id, nombre) => {
     const ok = await confirmDialog({ title: `¿Desactivar el enlace de ${nombre}?`,
