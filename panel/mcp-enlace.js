@@ -74,7 +74,7 @@ export function abrirMcp() {
   back.addEventListener("mousedown", (e) => { if (e.target === back) clearInterval(sondeo); });
 
   const descargar = async (ia, url, appId) => {
-    const m = await import("./mcp-zip.js?v=5");
+    const m = await import("./mcp-zip.js?v=6");
     await m.descargarComplemento(ia, url, appId);
     toast("Complemento descargado");
   };
