@@ -8,6 +8,9 @@
 // No hay datos nuevos: edita lo mismo que las pantallas de siempre (tabla angulos, products.config.ad_bank, el nodo
 // rotador de los mensajes iniciales, sequences.pasos[].variantes[].angulo). Lo que cambies acá se ve allá y al revés.
 // El motor elige igual que antes: variante del ángulo del cliente → si no hay, la general.
+// (17-nov, Rodrigo: «que ángulos no sea una pestaña sino que esté dentro de cada producto», como en Nova) Con
+// ctx.producto se monta DENTRO del producto (sección «Sus ángulos»): solo su familia de países, una lista de tarjetas en
+// vez del mapa, y la misma ficha de siempre. La pestaña «Ángulos» de Productos se quitó.
 // ═════════════════════════════════════════════════════════════════════════
 import { supa, icon, toast, confirmDialog, askText, patchProductConfig, pageAll, getChannel } from "./shell.js";
 import { waScreenHtml, waBubbles, seqBrand, subeRevSiCambio, fotoVariantes, newVariant, mountMensajeEditor, mountStepsEditor, versionEnVista } from "./seq-editor.js?v=26";
@@ -29,7 +32,8 @@ let S = null;   // estado de la pantalla (uno a la vez)
 // host: dónde pintar. ctx: { channelId, list (productos de la grilla), paisBot, PAIS_INFO, abrirSaludo(pid,slug), abrirRemarketing(pid) }
 export async function montarMapaAngulos(host, ctx) {
   const gen = (S?.gen || 0) + 1;
-  S = { host, ctx, gen, vista: S?.ctx?.channelId === ctx.channelId ? (S.vista || { tipo: "mapa" }) : { tipo: "mapa" } };
+  const mismo = S?.ctx?.channelId === ctx.channelId && String(S?.ctx?.producto || "") === String(ctx.producto || "");
+  S = { host, ctx, gen, vista: mismo ? (S.vista || { tipo: "mapa" }) : { tipo: "mapa" } };
   cargaCss();
   host.innerHTML = `<div class="amx"><div class="amx-empty">Cargando ángulos…</div></div>`;
   try { await cargar(gen); } catch (e) { if (gen === S.gen && S.host) S.host.innerHTML = `<div class="amx"><div class="amx-empty">No se pudieron cargar los ángulos: ${esc(e?.message || e)}</div></div>`; return; }
@@ -40,7 +44,12 @@ export async function montarMapaAngulos(host, ctx) {
 // ── Datos ─────────────────────────────────────────────────────────────────
 async function cargar(gen) {
   const { channelId, list } = S.ctx;
-  const prods = (list || []).filter((p) => p.clase !== "extra" && p.clase !== "regalo");
+  let prods = (list || []).filter((p) => p.clase !== "extra" && p.clase !== "regalo");
+  if (S.ctx.producto) {
+    const yo = prods.find((p) => String(p.id) === String(S.ctx.producto));
+    const fam = (p) => String((p.config && (p.config.familia || p.config.hermano_de)) || p.id);
+    prods = yo ? prods.filter((p) => fam(p) === fam(yo)) : [];
+  }
   const desdeISO = new Date(Date.now() - DIAS * 864e5).toISOString();
   const [angR, flR, seqR, metaR, insR, ordR, conR, ch] = await Promise.all([
     supa.from("angulos").select("id,product_id,nombre,slug,ad_ids,gancho_ia,orden").eq("channel_id", channelId).order("orden"),
@@ -162,12 +171,12 @@ function pinta() {
   const v = S.vista;
   if (v.tipo === "ficha" && prodDe(v.pid) && (v.slug === "" || angDe(v.pid, v.slug))) return pintaFicha(v.pid, v.slug);
   S.vista = { tipo: "mapa" };
-  pintaMapa();
+  if (S.ctx.producto) pintaLista(); else pintaMapa();
 }
 function ir(vista) {
   S.vista = vista; S.trabajo = null; S.trabajoRem = null; S.trabajoProp = null; pinta();
   const el = vista.foco && document.getElementById(vista.foco);
-  if (!el) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+  if (!el) { if (S.ctx.producto) S.host.scrollIntoView({ behavior: "smooth", block: "start" }); else window.scrollTo({ top: 0, behavior: "smooth" }); return; }
   if (el.classList.contains("amx-cerrado")) el.classList.remove("amx-cerrado");   // el saludo plegado se abre
   el.scrollIntoView({ behavior: "smooth", block: "start" });
   el.classList.add("amx-foco"); setTimeout(() => el.classList.remove("amx-foco"), 2200);
@@ -210,13 +219,68 @@ function pintaMapa() {
   S.host.querySelectorAll("[data-nuevo]").forEach((b) => (b.onclick = () => nuevoAngulo(familias().find((f) => famDe(f[0]) === b.dataset.nuevo) || [])));
 }
 
+// Dentro de un producto (17-nov): tarjetas en vez del mapa. Un solo país = una lista; varios países = una fila por
+// ángulo con una casilla por país (como el mapa, sin el encabezado del producto, que ya está arriba).
+function pintaLista() {
+  const fam = familias()[0] || [];
+  const multi = fam.length > 1;
+  const slugs = [];
+  for (const m of fam) for (const a of angsDe(m.id)) if (!slugs.some((x) => x.slug === a.slug)) slugs.push({ slug: a.slug, nombre: a.nombre });
+  S.ctx.alCambiar?.(slugs.length);
+  const nuevo = (txt, cls) => `<button class="amx-btn ${cls}" data-nuevo>${icon("plus")} ${txt}</button>`;
+  let h = `<div class="amx amx-emb">
+    <div class="amx-eh"><p>Cada ángulo es una <b>idea con la que anuncias</b> este producto: el dolor que resuelve, el ahorro, un regalo… El bot saluda y vende <b>retomando el anuncio del que vino</b> el cliente.</p>
+      ${slugs.length ? nuevo("Nuevo ángulo", "pri sm") : ""}</div>`;
+  if (!fam.length) h += `<div class="amx-empty">Guarda el producto primero para crearle ángulos.</div>`;
+  else if (!slugs.length) {
+    h += `<div class="amx-vacio"><span class="amx-vic">${icon("compass")}</span><b>Todavía no tiene ángulos</b>
+      <p>Crea uno por cada idea de tus anuncios y asígnale sus anuncios. Mientras tanto, todos los clientes reciben el saludo general.</p>
+      <div class="amx-ej"><span>Dolor</span><span>Ahorro</span><span>Regalo</span><span>Resultado rápido</span></div>
+      ${nuevo("Crear el primer ángulo", "pri")}</div>`;
+  } else if (!multi) {
+    const p = fam[0];
+    h += `<div class="amx-lista">${angsDe(p.id).map((a) => {
+      const e = estadoCelda(p, a), x = statsDe(a.ad_ids);
+      const num = x.v ? `${plata(x.g / x.v)} por venta` : x.g ? `${plata(x.g)} sin ventas` : "";
+      const n = a.ad_ids.length;
+      return `<button type="button" class="amx-it ${e.tono}" data-pid="${esc(p.id)}" data-slug="${esc(a.slug)}" data-foco="${e.foco}">
+        <span class="amx-ito">${icon(e.ic)}</span>
+        <span class="amx-itx"><b>${esc(a.nombre || a.slug)}</b><small>${a.gancho_ia ? esc(a.gancho_ia) : "Sin gancho para la IA todavía"}</small></span>
+        <span class="amx-itm"><span class="amx-est ${e.tono}">${esc(e.txt)}</span><small>${n} anuncio${n === 1 ? "" : "s"}${seqPropiaId(p, a.slug) ? " · secuencia propia" : ""}${num ? " · " + num : ""}</small></span>
+        <span class="amx-chev">${icon("chevronRight")}</span></button>`;
+    }).join("")}</div>`;
+  } else {
+    h += `<div class="amx-tw"><table class="amx-mx"><thead><tr><th>Ángulo</th>${fam.map((m) => `<th>${esc(paisNom(paisDe(m)))}</th>`).join("")}</tr></thead><tbody>`;
+    for (const sl of slugs) {
+      const gancho = fam.map((m) => angDe(m.id, sl.slug)?.gancho_ia).find(Boolean) || "";
+      h += `<tr><td class="amx-an"><b>${esc(sl.nombre || sl.slug)}</b>${gancho ? `<span>${esc(gancho)}</span>` : ""}</td>`;
+      for (const m of fam) {
+        const a = angDe(m.id, sl.slug);
+        if (!a) { h += `<td><button class="amx-cell no" data-crear="${esc(m.id)}" data-slug="${esc(sl.slug)}"><span>${icon("plus")} Crear en ${esc(paisNom(paisDe(m)))}</span><small>Copia el de otro país</small></button></td>`; continue; }
+        const e = estadoCelda(m, a), x = statsDe(a.ad_ids);
+        const num = x.v ? `${plata(x.g / x.v)} por venta` : x.g ? `${plata(x.g)} sin ventas` : "";
+        h += `<td><button class="amx-cell ${e.tono}" data-pid="${esc(m.id)}" data-slug="${esc(sl.slug)}" data-foco="${e.foco}"><span>${icon(e.ic)} ${esc(e.txt)}</span><small>${a.ad_ids.length} anuncio${a.ad_ids.length === 1 ? "" : "s"}${num ? " · " + num : ""}</small></button></td>`;
+      }
+      h += `</tr>`;
+    }
+    h += `</tbody></table></div>`;
+  }
+  const sueltos = fam.map((m) => ({ m, n: sinAngulo(m).length })).filter((x) => x.n);
+  h += sueltos.map(({ m, n }) => `<button type="button" class="amx-sueltos" data-pid="${esc(m.id)}" data-slug="">${icon("megaphone")}<span><b>${n} anuncio${n === 1 ? "" : "s"}${multi ? ` de ${esc(paisNom(paisDe(m)))}` : ""} sin ángulo</b> · llega${n === 1 ? "" : "n"} con el saludo general</span><span class="amx-sueltos-cta">Asignar →</span></button>`).join("");
+  h += `</div>`;
+  S.host.innerHTML = h;
+  S.host.querySelectorAll("[data-pid]").forEach((b) => (b.onclick = () => ir({ tipo: "ficha", pid: b.dataset.pid, slug: b.dataset.slug, foco: b.dataset.foco || "" })));
+  S.host.querySelectorAll("[data-crear]").forEach((b) => (b.onclick = () => crearEnPais(b.dataset.crear, b.dataset.slug)));
+  S.host.querySelectorAll("[data-nuevo]").forEach((b) => (b.onclick = () => nuevoAngulo(fam)));
+}
+
 function pintaFicha(pid, slug) {
   const p = prodDe(pid), a = slug ? angDe(pid, slug) : null, fam = famDeProd(pid), pais = paisDe(p);
   const otros = fam.filter((m) => String(m.id) !== String(pid));
   const ids = a ? a.ad_ids : sinAngulo(p);
   const x = statsDe(ids), rem = a ? remEstado(p, slug) : null;
   const chip = (ok, txt) => `<span class="amx-chip ${ok ? "ok" : "wa"}">${ok ? icon("check") : ""}${esc(txt)}</span>`;
-  let h = `<div class="amx"><button class="amx-back" data-volver>${icon("chevronLeft")} Volver al mapa</button>
+  let h = `<div class="amx"><button class="amx-back" data-volver>${icon("chevronLeft")} ${S.ctx.producto ? "Volver a sus ángulos" : "Volver al mapa"}</button>
     <div class="amx-card amx-head"><div style="flex:1;min-width:0"><h2>${a ? esc(a.nombre || a.slug) : "Anuncios sin ángulo"}</h2>${a ? "" : `<p style="margin:3px 0 0">Estos anuncios llegan con el saludo general. Asígnales un ángulo para que el bot retome la idea del anuncio.</p>`}
       <p>${esc(p.nombre)} · <b>${esc(paisNom(pais))}</b></p></div>
       ${otros.length && a ? `<div class="amx-paises">${fam.map((m) => { const tiene = !!angDe(m.id, slug); return `<button class="amx-pais ${String(m.id) === String(pid) ? "on" : ""}" ${tiene ? `data-ir="${esc(m.id)}"` : "disabled title=\"Este ángulo no existe en ese país\""}>${esc(paisNom(paisDe(m)))}</button>`; }).join("")}</div>` : ""}
@@ -816,6 +880,33 @@ function cargaCss() {
   const s = document.getElementById("amxCss") || document.head.appendChild(Object.assign(document.createElement("style"), { id: "amxCss" }));
   s.textContent = `
   .amx{display:flex;flex-direction:column;gap:14px}
+  .amx-emb{gap:12px}
+  .amx-eh{display:flex;align-items:flex-start;gap:14px}
+  .amx-eh p{flex:1;margin:0;font-size:12.5px;color:var(--muted);line-height:1.55}.amx-eh p b{color:var(--text);font-weight:600}
+  .amx-eh .amx-btn{margin-top:0;flex:none}
+  .amx-vacio{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:22px 18px;border:1px dashed var(--border-strong,var(--border));border-radius:14px;background:var(--surface-2)}
+  .amx-vic{width:44px;height:44px;border-radius:13px;display:grid;place-items:center;background:var(--brand-bg);color:var(--brand);margin-bottom:4px}
+  .amx-vic svg{width:22px;height:22px}
+  .amx-vacio b{font-size:14.5px}.amx-vacio p{margin:0;max-width:420px;font-size:12.5px;color:var(--muted);line-height:1.55}
+  .amx-ej{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin:6px 0 2px}
+  .amx-ej span{font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+  .amx-lista{display:flex;flex-direction:column;gap:8px}
+  .amx-it{display:flex;align-items:center;gap:12px;width:100%;text-align:left;font:inherit;color:var(--text);cursor:pointer;padding:12px 14px;border-radius:13px;border:1px solid var(--border);background:var(--surface);transition:border-color .15s,box-shadow .15s}
+  .amx-it:hover{border-color:var(--brand);box-shadow:0 2px 10px -6px rgba(43,127,255,.6)}
+  .amx-ito{width:32px;height:32px;border-radius:10px;flex:none;display:grid;place-items:center;background:var(--surface-2);color:var(--muted)}
+  .amx-ito svg{width:16px;height:16px}
+  .amx-it.ok .amx-ito{background:rgba(34,192,121,.14);color:var(--green)}
+  .amx-it.wa .amx-ito{background:rgba(240,169,43,.15);color:var(--amber)}
+  .amx-itx{flex:1;min-width:0}
+  .amx-itx b{display:block;font-size:13.5px}
+  .amx-itx small{display:block;font-size:12px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .amx-itm{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:3px;max-width:46%}
+  .amx-itm small{font-size:11.5px;color:var(--muted);text-align:right}
+  .amx-est{font-size:11.5px;font-weight:650;padding:2px 9px;border-radius:999px;background:var(--surface-2);color:var(--muted);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .amx-est.ok{background:rgba(34,192,121,.12);color:var(--green)}
+  .amx-est.wa{background:rgba(240,169,43,.13);color:var(--amber)}
+  .amx-chev{flex:none;color:var(--faint);display:grid;place-items:center}.amx-chev svg{width:16px;height:16px}
+  @media (max-width:560px){ .amx-eh{flex-direction:column} .amx-itm{display:none} }
   .amx-empty{padding:28px;text-align:center;color:var(--muted);font-size:13px}
   .amx-intro{display:flex;gap:12px;align-items:flex-start;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px}
   .amx-intro>svg{width:24px;height:24px;color:var(--brand);flex:none;margin-top:2px}
