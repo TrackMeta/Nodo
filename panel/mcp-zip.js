@@ -1,14 +1,15 @@
 // 📦 Complemento de Nodo en .zip para Claude o ChatGPT (16-nov-2026, Rodrigo: «a ver que se pueda para ChatGPT y Claude»).
-// Se arma EN EL NAVEGADOR con el enlace personal adentro: es tan secreto como el enlace (quien tenga el .zip entra como
-// esa persona). Por eso no se publica en ningún directorio: cada quien sube el suyo a su cuenta.
-//   ChatGPT (developers.openai.com/plugins/build/plugins): plugin.json + mcp.json + skills/ + assets/ en la raíz;
-//     lo propio de OpenAI va en extensions["com.openai"]; servidor remoto type "streamable-http".
+// Se arma EN EL NAVEGADOR para la cuenta de cada persona.
+//   ChatGPT: plugin.json + .app.json + skills/ + assets/. La app se registra antes por enlace en ChatGPT.
+//     Un mcp.json remoto funciona en Codex, pero no bastó para el chat normal; app vinculada probada el 16-nov.
+//     El ZIP solo lleva el ID de esa app, no la llave de Nodo. No fijar un ID personal en este generador público.
 //   Claude (claude.com/docs/plugins/build): .claude-plugin/plugin.json + .mcp.json (type "http") + skills/ + logo.png.
-//     En claude.ai el servidor aparece en la pestaña «Connectors» del complemento y hay que conectarlo ahí.
+//     Lleva el enlace personal adentro: quien tenga ese ZIP entra como esa persona. No publicarlo.
+//     En claude.ai hay que conectarlo en la pestaña «Connectors» del complemento.
 // ZIP sin compresión (método «store»): son 5 archivos chicos, no hace falta una librería.
 
 const VERSION = "1.0.0";
-const VERSION_CHATGPT = "1.0.1";
+const VERSION_CHATGPT = "1.0.2";
 const WEB = "https://trackmeta.github.io/Nodo/panel/";
 const DESC = "Nodo es tu CRM de ventas por WhatsApp con IA. Pregúntale cómo te fue, qué clientes están por comprar, " +
   "qué pagos faltan validar o pídele cambiar un precio: revisa los bots de todos tus equipos y te pregunta antes de cambiar algo.";
@@ -70,10 +71,17 @@ function zip(archivos) {   // [{ nombre, datos: Uint8Array }]
 const json = (o) => new TextEncoder().encode(JSON.stringify(o, null, 2) + "\n");
 const txt = (s) => new TextEncoder().encode(s);
 
-// Arma el .zip para «Claude» o «ChatGPT» con la URL personal del MCP y lo descarga.
-export async function descargarComplemento(ia, url) {
+// ChatGPT requiere el ID de la app registrada; Claude conserva la URL personal del MCP.
+export async function descargarComplemento(ia, url, appId = "") {
+  if (ia !== "ChatGPT" && ia !== "Claude") throw new Error("Elige ChatGPT o Claude para descargar el complemento.");
+  appId = String(appId).trim();
+  if (ia === "ChatGPT" && !/^asdk_app_[a-zA-Z0-9]+$/.test(appId)) {
+    throw new Error("Pega el ID de la aplicación de NODO MCP: empieza con asdk_app_. No uses el ID de versión ni tu enlace personal.");
+  }
   // Logo chico (80×80, 7,9 KB): ChatGPT pide íconos livianos y cuadrados de al menos 48 px.
-  const logo = new Uint8Array(await (await fetch(new URL("../assets/logo-chatgpt.png", import.meta.url))).arrayBuffer());
+  const respuesta = await fetch(new URL("../assets/logo-chatgpt.png", import.meta.url));
+  if (!respuesta.ok) throw new Error("No se pudo cargar el logo del complemento. Vuelve a intentarlo.");
+  const logo = new Uint8Array(await respuesta.arrayBuffer());
   let archivos;
   if (ia === "ChatGPT") {
     archivos = [
@@ -81,20 +89,14 @@ export async function descargarComplemento(ia, url) {
         $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
         name: "nodo", version: VERSION_CHATGPT, description: DESC,
         author: { name: "Nodo", url: WEB }, homepage: WEB, keywords: ["crm", "whatsapp", "ventas"],
-        extensions: { "com.openai": { interface: {
+        extensions: { "com.openai": { apps: "./.app.json", interface: {
           displayName: "Nodo", shortDescription: "Tu CRM de WhatsApp con IA", longDescription: DESC,
           developerName: "Nodo", category: "Productivity",
           capabilities: ["Ver ventas y conversión", "Revisar chats y clientes", "Atender pendientes", "Cambiar precios y configuración"],
           websiteURL: WEB, defaultPrompt: ["¿Cómo me fue esta semana?", "¿Hay algo que deba atender?", "¿Qué clientes están por comprar?"],
           brandColor: "#2B7FFF", composerIcon: "./assets/icon.png", logo: "./assets/logo.png" } } },
       }) },
-      { nombre: "mcp.json", datos: json({
-        $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-        // El cargador de ChatGPT Desktop 26.1111 rechaza `extensions` en el servidor
-        // ("unknown field `extensions`, expected `url` or `headers`") y descarta el MCP.
-        // No necesitamos declarar auth: este enlace personal ya autoriza la conexión.
-        mcpServers: { nodo: { type: "streamable-http", url } },
-      }) },
+      { nombre: ".app.json", datos: json({ apps: { nodo: { id: appId, required: true } } }) },
       { nombre: "skills/nodo/SKILL.md", datos: txt(SKILL) },
       { nombre: "assets/icon.png", datos: logo },
       { nombre: "assets/logo.png", datos: logo },

@@ -7,7 +7,7 @@
 // (16-nov, Rodrigo) Textos y diseño rehechos; solo Claude y ChatGPT (sin «Otra IA»).
 // (16-nov, Rodrigo eligió comodidad) «Ver»: la llave también se guarda cifrada en Vault (migración 0150) y su dueño
 // puede volver a verla. Las creadas antes de 0150 no tienen copia: esas no muestran «Ver».
-// (16-nov) «Descargar complemento (.zip)» en la caja verde: el paquete de Claude/ChatGPT con el enlace adentro (mcp-zip.js).
+// (16-nov) ZIP: Claude lleva el enlace; ChatGPT requiere el ID de una app registrada en su cuenta (mcp-zip.js).
 import { supa, SUPABASE_URL, toast, icon, askChoice, confirmDialog, mountModal } from "./shell.js";
 
 const BASE = `${SUPABASE_URL}/functions/v1/mcp/`;
@@ -20,9 +20,11 @@ const IA = {
   // (16-nov) Pasos de ChatGPT según su pantalla nueva (captura de Rodrigo): «Complementos → Añadir».
   ChatGPT: { img: "../assets/apps/chatgpt.png", abrir: "https://chatgpt.com/plugins", pasos: [
     `Entra a <b>chatgpt.com → Complementos</b> y toca <b>Añadir</b> (arriba a la derecha).`,
-    `Elige <b>Añadir servidor MCP personalizado</b>. Nombre: <b>Nodo</b>. URL: <b>pega tu enlace</b>. Autenticación: <b>ninguna</b>.`,
-    `En un chat, toca <b>+</b>, elige <b>Nodo</b> y pregúntale lo que quieras.`],
-    zip: `<b>Con el complemento (.zip):</b> en <b>Añadir</b> elige <b>Subir archivo comprimido del complemento</b> y sube <b>nodo-chatgpt.zip</b>.` },
+    `Elige <b>Añadir servidor MCP personalizado</b>. Nombre: <b>NODO MCP</b>. URL: <b>pega tu enlace</b>. Autenticación: <b>ninguna</b>. Crea e instala la conexión. Si ya la tienes con este enlace, úsala.`,
+    `Abre la información de <b>NODO MCP</b> y copia el <b>ID de la aplicación</b> (empieza con <b>asdk_app_</b>). Pégalo en el campo de esta ventana.`,
+    `Descarga el complemento. En ChatGPT, entra a <b>Complementos → Añadir → Subir archivo comprimido del complemento</b> y sube <b>nodo-chatgpt.zip</b>.`,
+    `Abre un chat nuevo, selecciona <b>@Nodo</b> y escribe <b>«Muéstrame mis bots»</b>.`],
+    zip: `El complemento trae el logo y las instrucciones de Nodo. <b>Conserva la conexión NODO MCP</b>: el complemento la necesita para consultar tus datos.` },
 };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function haceCuanto(iso) {
@@ -71,8 +73,12 @@ export function abrirMcp() {
         <small>Ya está copiado. Pégalo en ${esc(nueva.nombre)} con los pasos de abajo. Si lo necesitas otra vez, toca «Ver» en tus enlaces.</small>
         <div class="mcp-copy"><input readonly value="${esc(BASE + nueva.llave)}"/>
           <button type="button" id="mcpCopy" title="Copiar">${icon("copy")}</button></div>
+        ${nueva.nombre === "ChatGPT" ? `<small>Primero registra este enlace en ChatGPT siguiendo los pasos de abajo. Luego copia el ID desde la información de esa conexión.</small>
+        <label for="mcpAppId">ID de la aplicación en ChatGPT</label>
+        <div class="mcp-copy"><input class="in" id="mcpAppId" value="${esc(nueva.appId || "")}" placeholder="asdk_app_…" autocomplete="off" spellcheck="false" aria-describedby="mcpAppAyuda"/></div>
+        <small id="mcpAppAyuda">Usa «ID de la aplicación», no «ID de versión» ni tu enlace personal.</small>` : ""}
         ${IA[nueva.nombre] ? `<button type="button" class="mcp-zipbtn" id="mcpZip">${icon("download")}Descargar complemento para ${esc(nueva.nombre)} (.zip)</button>
-        <small class="zip-nota">Trae tu enlace adentro: cuídalo igual que el enlace.</small>` : ""}
+        <small class="zip-nota">${nueva.nombre === "ChatGPT" ? "Conserva NODO MCP en ChatGPT: este complemento usa esa conexión." : "Trae tu enlace adentro: cuídalo igual que el enlace."}</small>` : ""}
       </div>` : ""}
 
       <div class="mcp-t">Tus enlaces</div>
@@ -93,12 +99,18 @@ export function abrirMcp() {
     caja.querySelector(".mcp-x").onclick = close;
     caja.querySelector("#mcpCerrar").onclick = close;
     const cp = caja.querySelector("#mcpCopy"); if (cp) cp.onclick = () => copiar(BASE + nueva.llave);
+    const appInput = caja.querySelector("#mcpAppId");
+    if (appInput) appInput.oninput = () => { nueva.appId = appInput.value; };
     const zb = caja.querySelector("#mcpZip");
     if (zb) zb.onclick = async () => {
+      const seleccion = nueva;
       zb.disabled = true;
-      try { const m = await import("./mcp-zip.js?v=2"); await m.descargarComplemento(nueva.nombre, BASE + nueva.llave); toast("Complemento descargado"); }
-      catch (e) { toast("No se pudo armar el complemento", true); }
-      zb.disabled = false;
+      try {
+        const m = await import("./mcp-zip.js?v=3");
+        await m.descargarComplemento(seleccion.nombre, BASE + seleccion.llave, seleccion.appId);
+        toast("Complemento descargado");
+      } catch (e) { toast(e.message || "No se pudo armar el complemento", true); appInput?.focus(); }
+      finally { zb.disabled = false; }
     };
     caja.querySelector("#mcpCrear").onclick = crear;
     caja.querySelectorAll("[data-revocar]").forEach((b) => { b.onclick = () => revocar(b.dataset.revocar, b.dataset.nm); });
