@@ -74,7 +74,7 @@ export function abrirMcp() {
   back.addEventListener("mousedown", (e) => { if (e.target === back) clearInterval(sondeo); });
 
   const descargar = async (ia, url, appId) => {
-    const m = await import("./mcp-zip.js?v=4");
+    const m = await import("./mcp-zip.js?v=5");
     await m.descargarComplemento(ia, url, appId);
     toast("Complemento descargado");
   };
@@ -90,9 +90,10 @@ export function abrirMcp() {
         <div class="w-n">${p1 ? icon("check") : "1"}</div>
         <div class="w-cuerpo"><b>Conecta tu enlace en ChatGPT</b>
           <ol class="w-mini">
-            <li>En ChatGPT: <b>Complementos → Añadir → Añadir servidor MCP personalizado</b>.</li>
+            <li>En ChatGPT: <b>Complementos → Añadir → Agregar servidor MCP personalizado</b>.</li>
             <li>Nombre: <b>${NOMBRE_CONEXION}</b> <button type="button" class="w-chip" id="wNombre">${icon("copy")}Copiar</button></li>
-            <li>URL: tu enlace · Autenticación: <b>Ninguna</b> → <b>Crear</b>.</li>
+            <li>URL del servidor: tu enlace · Autenticación: <b>Sin autenticación</b>.</li>
+            <li>Marca <b>Entiendo y quiero continuar</b> y toca <b>Crear como complemento</b>.</li>
           </ol>
           <div class="mcp-copy"><input readonly value="${esc(BASE + n.llave)}"/>
             <button type="button" id="mcpCopy" title="Copiar enlace">${icon("copy")}</button></div>

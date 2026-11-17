@@ -75,7 +75,8 @@ const txt = (s) => new TextEncoder().encode(s);
 export async function descargarComplemento(ia, url, appId = "") {
   if (ia !== "ChatGPT" && ia !== "Claude") throw new Error("Elige ChatGPT o Claude para descargar el complemento.");
   appId = String(appId).trim();
-  if (ia === "ChatGPT" && !/^asdk_app_[a-zA-Z0-9]+$/.test(appId)) {
+  const sinVincular = ia === "ChatGPT" && appId === "sin-vincular";
+  if (ia === "ChatGPT" && !sinVincular && !/^asdk_app_[a-zA-Z0-9]+$/.test(appId)) {
     throw new Error("Pega el ID de la aplicación de NODO MCP: empieza con asdk_app_. No uses el ID de versión ni tu enlace personal.");
   }
   // Logo chico (80×80, 7,9 KB): ChatGPT pide íconos livianos y cuadrados de al menos 48 px.
@@ -89,14 +90,14 @@ export async function descargarComplemento(ia, url, appId = "") {
         $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
         name: "nodo", version: VERSION_CHATGPT, description: DESC,
         author: { name: "Nodo", url: WEB }, homepage: WEB, keywords: ["crm", "whatsapp", "ventas"],
-        extensions: { "com.openai": { apps: "./.app.json", interface: {
+        extensions: { "com.openai": { ...(sinVincular ? {} : { apps: "./.app.json" }), interface: {
           displayName: "Nodo", shortDescription: "Tu CRM de WhatsApp con IA", longDescription: DESC,
           developerName: "Nodo", category: "Productivity",
           capabilities: ["Ver ventas y conversión", "Revisar chats y clientes", "Atender pendientes", "Cambiar precios y configuración"],
           websiteURL: WEB, defaultPrompt: ["¿Cómo me fue esta semana?", "¿Hay algo que deba atender?", "¿Qué clientes están por comprar?"],
           brandColor: "#2B7FFF", composerIcon: "./assets/icon.png", logo: "./assets/logo.png" } } },
       }) },
-      { nombre: ".app.json", datos: json({ apps: { nodo: { id: appId, required: true } } }) },
+      ...(sinVincular ? [] : [{ nombre: ".app.json", datos: json({ apps: { nodo: { id: appId, required: true } } }) }]),
       { nombre: "skills/nodo/SKILL.md", datos: txt(SKILL) },
       { nombre: "assets/icon.png", datos: logo },
       { nombre: "assets/logo.png", datos: logo },
