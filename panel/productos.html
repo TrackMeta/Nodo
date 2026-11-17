@@ -29,6 +29,32 @@
   body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:14px}
   button{font-family:inherit;cursor:pointer}
   .pcard .c-tt{font-size:16.5px;font-weight:700;letter-spacing:-.2px}
+  /* (17-nov, Rodrigo: «mejora esta tarjeta, parecida a Nova, más bonita») Tarjeta de producto: cabecera con ícono +
+     nombre + estado, una fila de números (ventas e ingresos de 7 días, precio) y «Ver producto» abajo. */
+  .pcard{padding:16px 16px 14px;gap:0;min-height:0}
+  .pc-cab{display:flex;align-items:flex-start;gap:12px}
+  .pc-ic{width:44px;height:44px;border-radius:13px;flex:none;display:grid;place-items:center;background:var(--brand-bg);color:var(--brand);border:1px solid var(--brand-border,var(--border))}
+  .pc-ic span{font-size:23px;line-height:1}.pc-ic svg{width:20px;height:20px}
+  .pc-ic.ex{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.3);color:#0e9f6e}
+  .pc-ic.rg{background:rgba(168,85,247,.12);border-color:rgba(168,85,247,.3);color:#a855f7}
+  .pc-tx{flex:1;min-width:0}
+  .pc-tx b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:15px;font-weight:700;letter-spacing:-.2px;line-height:1.3;color:var(--text)}
+  .pc-tx small{display:block;font-size:12px;color:var(--muted);margin-top:3px}
+  .pc-est{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:650;padding:3px 9px;border-radius:999px;background:var(--surface-2);color:var(--muted);white-space:nowrap}
+  .pc-est i{width:7px;height:7px;border-radius:50%;background:currentColor}
+  .pc-est.on{background:rgba(18,183,106,.12);color:#12b76a}
+  .pc-est.wa{background:rgba(240,169,43,.13);color:var(--amber)}
+  .pc-est.ex{background:rgba(16,185,129,.12);color:#0e9f6e}
+  .pc-est.rg{background:rgba(168,85,247,.12);color:#a855f7}
+  .pc-num{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px;padding:11px 12px;border-radius:12px;background:var(--surface-2)}
+  .pc-num div{min-width:0}
+  .pc-num small{display:block;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pc-num b{display:block;font-size:16px;font-weight:800;letter-spacing:-.3px;color:var(--text);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+  .pc-num b.cero{color:var(--faint);font-weight:700}
+  .pc-pie{display:flex;align-items:center;gap:8px;margin-top:12px;min-height:30px}
+  .pc-ver{margin-left:auto;display:inline-flex;align-items:center;gap:3px;font-size:12.5px;font-weight:700;color:var(--brand);white-space:nowrap}
+  .pc-ver svg{width:14px;height:14px;transition:transform .15s}
+  .pcard:hover .pc-ver svg{transform:translateX(2px)}
   /* Hub "Inicio": fases clickeables */
   .ini-ph{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px;margin-bottom:14px}
   .ini-ph-hd{display:flex;align-items:center;gap:12px;padding:12px 12px 10px;cursor:pointer;border-radius:10px}
@@ -599,16 +625,27 @@ function renderCards(){
       : precios.length===1 ? `${$s} ${esc(precios[0])}`
       : (p.config&&p.config.precio?`${$s} ${esc(p.config.precio)}`:"");
     const multi=ops.length>1;
-    const emIc = p.emoji ? `<span style="font-size:24px;line-height:1">${esc(p.emoji)}</span>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`;
+    const emIc = p.emoji ? `<span>${esc(p.emoji)}</span>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`;
     const _ev=st.estadoVenta[p.id], _v=st.ventas7[p.id];
     const estadoHtml = (esReg(p)||esEx(p)) ? "" : `<div class="c-est">${_ev==="activo"
         ? `<span class="dot on"></span>Vendiendo${_v&&_v.n?` · <b>${_v.n}</b> ${_v.n===1?"venta":"ventas"} · <b>${$s} ${Math.round(_v.plata).toLocaleString("es-PE")}</b> en 7 días`:" · sin ventas en 7 días"}`
         : _ev ? `<span class="dot"></span>En pausa` : `<span class="dot warn"></span>Todavía no está a la venta`}</div>`;
+    // (17-nov) Tarjeta nueva, al estilo de Nova: cabecera (ícono · nombre · estado), números y «Ver producto».
+    const ex=esEx(p), rg=esReg(p);
+    const tipoTx = p.tipo==="fisico"?"Físico":p.tipo==="microapp"?"Micro app":"Digital";
+    const paisTx = p.config&&p.config.pais&&String(p.config.pais).toUpperCase()!==_paisBot ? ` · ${banderaDe(p.config.pais)} ${esc(p.config.pais)}` : "";
+    const subTx = rg ? "Regalo · gratis con la compra" : ex ? `Extra · ${tipoTx.toLowerCase()}` : `${tipoTx} · ${multi?`${ops.length} opciones`:"1 opción"}`;
+    const est = rg ? `<span class="pc-est rg">${icon("gift")}Regalo</span>` : ex ? `<span class="pc-est ex">Extra</span>`
+      : _ev==="activo" ? `<span class="pc-est on"><i></i>Vendiendo</span>` : _ev ? `<span class="pc-est"><i></i>En pausa</span>` : `<span class="pc-est wa"><i></i>Sin vender</span>`;
+    const nV=(_v&&_v.n)||0, plata=(_v&&_v.plata)||0;
+    const nums = (rg||ex)
+      ? `<div class="pc-num" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><small>Precio</small><b class="${precio?"":"cero"}">${precio||(rg?"Gratis":"—")}</b></div><div><small>Opciones</small><b>${ops.length||1}</b></div></div>`
+      : `<div class="pc-num"><div><small>Ventas · 7 días</small><b class="${nV?"":"cero"}">${nV}</b></div><div><small>Ingresos · 7 días</small><b class="${plata?"":"cero"}">${$s} ${Math.round(plata).toLocaleString("es-PE")}</b></div><div><small>Precio</small><b class="${precio?"":"cero"}">${precio||"—"}</b></div></div>`;
     el.innerHTML=`
-      <div class="c-ic">${emIc}</div>
-      <div class="c-tt">${esc(p.nombre)}</div>
-      <div class="c-sub">${esReg(p)?"Regalo · gratis con la compra":esEx(p)?"Complemento · para ventas extra":(p.tipo==="fisico"?"Producto físico":p.tipo==="microapp"?"Micro app":"Producto digital")}</div>
-      <div class="c-foot">${esReg(p)?`<span class="nodo-pill" style="background:rgba(168,85,247,.14);color:#a855f7;border-color:rgba(168,85,247,.3)">${icon("gift")} Regalo</span>`:esEx(p)?`<span class="nodo-pill" style="background:rgba(16,185,129,.14);color:#0e9f6e;border-color:rgba(16,185,129,.3)">${icon("plus")} Extra</span>`:''}<span class="nodo-pill neutral">${p.tipo==="fisico"?icon("box")+"Físico":p.tipo==="microapp"?icon("phone")+"Micro app":icon("download")+"Digital"}</span>${p.config&&p.config.pais&&String(p.config.pais).toUpperCase()!==_paisBot?`<span class="nodo-pill neutral" title="Se vende en ${esc((PAIS_INFO[String(p.config.pais).toUpperCase()]||[p.config.pais])[0])}">${banderaDe(p.config.pais)} ${esc(p.config.pais)}</span>`:''}<span class="nodo-pill neutral">${multi?`${ops.length} opciones`:'1 opción'}</span>${precio?`<span class="nodo-pill neutral">${precio}</span>`:''}<span data-cardfolder style="margin-left:auto"></span></div>${estadoHtml}`;
+      <div class="pc-cab"><div class="pc-ic${ex?" ex":rg?" rg":""}">${emIc}</div>
+        <div class="pc-tx"><b title="${esc(p.nombre)}">${esc(p.nombre)}</b><small>${subTx}${paisTx}</small></div>${est}</div>
+      ${nums}
+      <div class="pc-pie"><span data-cardfolder></span><span class="pc-ver">Ver producto ${icon("chevronRight")}</span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
     if(fslot && Fbar && Fbar.metas().length){
       const pk=Fbar.picker({ current:p.folder||null, onPick:async(v)=>{
