@@ -28,7 +28,7 @@ const jres = (body: unknown, status = 200) =>
 
 // ── Quién llama ─────────────────────────────────────────────────────────────────────────────────────────────────
 type Ctx = {
-  uid: string; nombre: string;
+  uid: string; nombre: string; tokenId: string;
   equipos: Map<string, { nombre: string; rol: string; tipos: string[] | null }>;
   bots: Array<{ id: string; nombre: string; account_id: string; equipo: string; rol: string; bot_apagado: boolean; timezone: string; moneda: string; wa: boolean; usd_rate: number }>;
 };
@@ -66,7 +66,7 @@ async function contexto(llave: string): Promise<Ctx | null> {
     id: c.id, nombre: c.nombre, account_id: c.account_id, equipo: equipos.get(c.account_id)?.nombre ?? "", rol: equipos.get(c.account_id)?.rol ?? "operador",
     bot_apagado: !!c.bot_apagado, timezone: c.timezone || "America/Lima", moneda: c.moneda || "PEN", wa: !!c.phone_number_id, usd_rate: Number(c.usd_rate) || 0,
   }));
-  return { uid, nombre: (u as any).nombre ?? "", equipos, bots };
+  return { uid, nombre: (u as any).nombre ?? "", tokenId: String((t as any).id), equipos, bots };
 }
 
 // ── Utilidades ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -453,14 +453,22 @@ async function atender(msg: any, ctx: Ctx): Promise<any | null> {
   if (!msg || msg.jsonrpc !== "2.0" || typeof msg.method !== "string") return id === undefined ? null : err(-32600, "Pedido inválido");
   if (id === undefined || id === null) return null;   // notificación (initialized, cancelled…): no lleva respuesta
   switch (msg.method) {
-    case "initialize":
-      return ok({ protocolVersion: msg.params?.protocolVersion ?? "2025-06-18", capabilities: { tools: { listChanged: false } },
+    case "initialize": {
+      // (16-nov) Se MIDE qué versión del protocolo pide cada IA (migración 0151) antes de tocar la negociación:
+      // hay reportes de que ChatGPT solo lee el logo (icons) con la versión 2025-11-25.
+      const p = msg.params ?? {};
+      await db.from("mcp_tokens").update({ ultimo_cliente: { protocolVersion: p.protocolVersion ?? null, clientInfo: p.clientInfo ?? null,
+        capabilities: Object.keys(p.capabilities ?? {}), at: new Date().toISOString() } }).eq("id", ctx.tokenId).then(() => {}, () => {});
+      return ok({ protocolVersion: p.protocolVersion ?? "2025-06-18", capabilities: { tools: { listChanged: false } },
         serverInfo: { name: "nodo", title: "Nodo", version: "1.0.0", websiteUrl: "https://trackmeta.github.io/Nodo/panel/",
+          description: "Tu CRM de ventas por WhatsApp con IA: ventas, chats, clientes, pedidos y pagos de tus bots.",
           // (16-nov, Rodrigo) El logo de Nodo, campo `icons` del MCP. Que se vea depende de cada IA (ChatGPT en modo
           // desarrollador puede ignorarlo y poner su ícono genérico).
           icons: [{ src: "https://trackmeta.github.io/Nodo/assets/logo-512.png", mimeType: "image/png", sizes: ["512x512"] },
-                  { src: "https://trackmeta.github.io/Nodo/assets/logo-128.png", mimeType: "image/png", sizes: ["128x128"] }] },
+                  { src: "https://trackmeta.github.io/Nodo/assets/logo-128.png", mimeType: "image/png", sizes: ["128x128"] },
+                  { src: "https://trackmeta.github.io/Nodo/assets/logo-96.png", mimeType: "image/png", sizes: ["96x96"] }] },
         instructions: INSTRUCCIONES });
+    }
     case "ping": return ok({});
     case "tools/list":
       return ok({ tools: TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema,
