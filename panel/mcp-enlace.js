@@ -5,7 +5,7 @@
 // Cada persona crea su ENLACE PERSONAL (functions/v1/mcp/<llave>) y lo pega en su IA como conector.
 // (16-nov, Rodrigo eligió comodidad) «Ver»: la llave también se guarda cifrada en Vault (migración 0150) y su dueño
 // puede volver a verla. Las creadas antes de 0150 no tienen copia: esas no muestran «Ver».
-// (16/17-nov) ChatGPT = enlace + complemento .zip con logo (mcp-zip.js). El .zip se VINCULA a la conexión que el cliente
+// (17-nov, Rodrigo) Sin la guía «Cómo conectarlo»: los pasos salen al crear o «Ver» un enlace. ChatGPT = enlace + complemento .zip con logo (mcp-zip.js). El .zip se VINCULA a la conexión que el cliente
 // crea con su enlace (ID asdk_app_…). ChatGPT no manda ese ID al conectarse (medido el 17-nov), así que el cliente lo
 // pega una vez y Nodo lo guarda (mcp_tokens.app_id, migración 0154). Rodrigo eligió este camino y pidió:
 //   1) pasos guiados 1-2-3; 2) detectar solo que ChatGPT ya se conectó (last_used_at); 3) sacar el ID de cualquier texto
@@ -28,12 +28,6 @@ const IA = {
     zip: `Si ya hiciste los pasos y perdiste el complemento, tócalo en <b>Tus enlaces → Complemento</b> y vuelve a subirlo.` },
 };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-function haceCuanto(iso) {
-  const min = Math.round((Date.now() - Date.parse(iso)) / 60000);
-  if (min < 2) return "hace un momento"; if (min < 60) return `hace ${min} min`;
-  const h = Math.round(min / 60); if (h < 24) return `hace ${h} h`;
-  const d = Math.round(h / 24); return d === 1 ? "ayer" : `hace ${d} días`;
-}
 const fechaCorta = (iso) => new Date(iso).toLocaleDateString("es-PE", { day: "numeric", month: "short", timeZone: "America/Lima" });
 async function copiar(txt, aviso = "Enlace copiado") {
   try { await navigator.clipboard.writeText(txt); toast(aviso); }
@@ -47,12 +41,6 @@ const cabecera = (conX) => `
   <div class="mcp-cab"><span class="mcp-ic">${icon("cable")}</span>
     <div><h3>MCP</h3><small>Claude o ChatGPT revisan y manejan Nodo por ti</small></div>
     ${conX ? `<button class="mcp-x" type="button" title="Cerrar" aria-label="Cerrar">${icon("x")}</button>` : ""}</div>`;
-const guia = (nombre, abierta) => `
-  <details class="mcp-guia" ${abierta ? "open" : ""}>
-    <summary><span class="kimg">${logo(nombre)}</span><span class="g-tx">Conectarlo en <b>${nombre}</b></span>${icon("chevronRight", "g-ch")}</summary>
-    <ol>${IA[nombre].pasos.map((p, i) => `<li><span class="n">${i + 1}</span><span>${p}${i === 0 && nombre === "Claude" ? ` <a href="${IA[nombre].abrir}" target="_blank" rel="noopener">Abrir ↗</a>` : ""}</span></li>`).join("")}</ol>
-    <div class="g-zip">${icon("download")}<span>${IA[nombre].zip}</span></div>
-  </details>`;
 
 // Dibujo (con datos de ejemplo) de la pantalla de ChatGPT donde está el ID: «este sí» / «este no».
 const dibujoId = `
@@ -140,11 +128,12 @@ export function abrirMcp() {
 
       ${esGPT ? pasosChatGPT(nueva) : nueva ? `<div class="mcp-nueva">
         <div class="nv-t">${icon(nueva.visto ? "link" : "check")}<b>${nueva.visto ? "Tu enlace" : "Listo: tu enlace"} para ${esc(nueva.nombre)}</b></div>
-        <small>Ya está copiado. Pégalo en ${esc(nueva.nombre)} con los pasos de abajo. Si lo necesitas otra vez, toca «Ver» en tus enlaces.</small>
+        <small>Ya está copiado. Si lo necesitas otra vez, toca «Ver» en tus enlaces.</small>
         <div class="mcp-copy"><input readonly value="${esc(BASE + nueva.llave)}"/>
           <button type="button" id="mcpCopy" title="Copiar">${icon("copy")}</button></div>
+        <ol class="w-mini">${IA[nueva.nombre].pasos.map((p) => `<li>${p}</li>`).join("")}</ol>
         <button type="button" class="mcp-zipbtn" id="mcpZip">${icon("download")}Descargar complemento para ${esc(nueva.nombre)} (.zip)</button>
-        <small class="zip-nota">Trae tu enlace adentro: cuídalo igual que el enlace.</small>
+        <small class="zip-nota">${IA[nueva.nombre].zip} Trae tu enlace adentro: cuídalo igual que el enlace.</small>
       </div>` : ""}
 
       <div class="mcp-t">Tus enlaces</div>
@@ -157,10 +146,6 @@ export function abrirMcp() {
             ${visibles.has(k.id) ? `<button class="mcp-ver" type="button" data-ver="${k.id}" data-nm="${esc(k.nombre)}" title="Ver el enlace${k.nombre === "ChatGPT" ? " y los pasos" : ""}">${icon("eye")}Ver</button>` : ""}
             <button class="mcp-off" type="button" data-revocar="${k.id}" data-nm="${esc(k.nombre)}" title="Desactivar este enlace">Desactivar</button></div></div>`).join("")}</div>`
         : `<div class="mcp-vacio">Todavía no tienes un enlace. Créalo y pégalo en tu IA en un minuto.</div>`}
-
-      <div class="mcp-t">Cómo conectarlo</div>
-      ${guia("Claude", nueva?.nombre === "Claude")}
-      ${guia("ChatGPT", false)}
 
       <div class="nb-acts"><button class="nb-btn" type="button" id="mcpCerrar">Cerrar</button>
         <button class="nb-btn primary" type="button" id="mcpCrear">${icon("plus")}${lista.length ? "Crear otro enlace" : "Crear mi enlace"}</button></div>`;
