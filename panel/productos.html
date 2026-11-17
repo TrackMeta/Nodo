@@ -55,9 +55,6 @@
   .pc-num b.cero{color:var(--faint);font-weight:700}
   .pc-pie{display:flex;align-items:center;gap:8px;margin-top:12px;min-height:30px}
   .pc-pie [data-cardfolder]{min-width:0;flex:1}
-  .pc-ver{margin-left:auto;display:inline-flex;align-items:center;gap:3px;font-size:12.5px;font-weight:700;color:var(--brand);white-space:nowrap}
-  .pc-ver svg{width:14px;height:14px;transition:transform .15s}
-  .pcard:hover .pc-ver svg{transform:translateX(2px)}
   /* Hub "Inicio": fases clickeables */
   .ini-ph{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:6px;margin-bottom:14px}
   .ini-ph-hd{display:flex;align-items:center;gap:12px;padding:12px 12px 10px;cursor:pointer;border-radius:10px}
@@ -321,6 +318,7 @@
   .pvtab svg{width:16px;height:16px}
   .pvtab .pvn{font-size:11px;font-weight:700;min-width:18px;height:18px;padding:0 5px;border-radius:9px;display:inline-grid;place-items:center;background:var(--surface-2);color:var(--muted)}
   .pvtab.on .pvn{background:var(--brand-bg);color:var(--brand)}
+  .pvtab .pvn[hidden]{display:none}   /* sin ángulos: nada (el display:inline-grid le ganaba a hidden y salía un círculo vacío) */
 </style>
 </head>
 <body>
@@ -648,7 +646,7 @@ function renderCards(){
       <div class="pc-cab"><div class="pc-ic${ex?" ex":rg?" rg":""}">${emIc}</div>${est}</div>
       <div class="pc-tx pc-nom"><b title="${esc(p.nombre)}">${esc(p.nombre)}</b><small>${subTx}${paisTx}</small></div>
       ${nums}
-      <div class="pc-pie"><span data-cardfolder></span><span class="pc-ver">Ver producto ${icon("chevronRight")}</span></div>`;
+      <div class="pc-pie"><span data-cardfolder></span></div>`;
     const fslot=el.querySelector("[data-cardfolder]");
     if(fslot && Fbar && Fbar.metas().length){
       const pk=Fbar.picker({ current:p.folder||null, onPick:async(v)=>{
