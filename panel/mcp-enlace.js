@@ -150,11 +150,12 @@ export function abrirMcp() {
       <div class="mcp-t">Tus enlaces</div>
       ${lista.length ? `<div class="mcp-keys">${lista.map((k) => `
         <div class="mcp-key"><span class="kimg">${logo(k.nombre)}</span>
-          <div class="tx"><b>${esc(k.nombre)}</b><small>Creado el ${fechaCorta(k.created_at)} · <code>${esc(k.prefijo)}…</code></small></div>
-          <span class="uso ${k.last_used_at ? "on" : ""}">${k.last_used_at ? "Usado " + haceCuanto(k.last_used_at) : "Sin usar"}</span>
-          ${k.nombre === "ChatGPT" && k.app_id ? `<button class="mcp-ver" type="button" data-zip="${k.id}" title="Volver a descargar el complemento con logo">${icon("download")}Complemento</button>` : ""}
-          ${visibles.has(k.id) ? `<button class="mcp-ver" type="button" data-ver="${k.id}" data-nm="${esc(k.nombre)}" title="Ver el enlace${k.nombre === "ChatGPT" ? " y los pasos" : ""}">${icon("eye")}Ver</button>` : ""}
-          <button class="mcp-off" type="button" data-revocar="${k.id}" data-nm="${esc(k.nombre)}" title="Desactivar este enlace">Desactivar</button></div>`).join("")}</div>`
+          <div class="tx" title="${esc(k.prefijo)}…"><b>${esc(k.nombre)}</b>
+            <small>Creado el ${fechaCorta(k.created_at)} · <span class="uso-t ${k.last_used_at ? "on" : ""}">${k.last_used_at ? "Usado " + haceCuanto(k.last_used_at) : "Sin usar"}</span></small></div>
+          <div class="k-acc">
+            ${k.nombre === "ChatGPT" && k.app_id ? `<button class="mcp-ver" type="button" data-zip="${k.id}" title="Volver a descargar el complemento con logo">${icon("download")}Complemento</button>` : ""}
+            ${visibles.has(k.id) ? `<button class="mcp-ver" type="button" data-ver="${k.id}" data-nm="${esc(k.nombre)}" title="Ver el enlace${k.nombre === "ChatGPT" ? " y los pasos" : ""}">${icon("eye")}Ver</button>` : ""}
+            <button class="mcp-off" type="button" data-revocar="${k.id}" data-nm="${esc(k.nombre)}" title="Desactivar este enlace">Desactivar</button></div></div>`).join("")}</div>`
         : `<div class="mcp-vacio">Todavía no tienes un enlace. Créalo y pégalo en tu IA en un minuto.</div>`}
 
       <div class="mcp-t">Cómo conectarlo</div>

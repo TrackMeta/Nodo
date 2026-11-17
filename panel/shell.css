@@ -1530,6 +1530,13 @@ html:not([data-theme="light"]) .nodo-botsel .nb-est.off{color:#F04438}
 .nodo-mcp .mcp-ver{height:30px;padding:0 10px;border-radius:9px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);font:inherit;font-size:12px;font-weight:600;cursor:pointer;flex:none;display:inline-flex;align-items:center;gap:5px}
 .nodo-mcp .mcp-ver:hover{border-color:var(--brand);color:var(--brand)}
 .nodo-mcp .mcp-ver svg{width:14px;height:14px}
+/* (17-nov) Fila de enlace: los botones bajan a otra línea si no entran, en vez de apretar el nombre y la fecha. */
+.nodo-mcp .mcp-key{flex-wrap:wrap;row-gap:8px}
+.nodo-mcp .mcp-key .tx{flex:1 1 150px}
+.nodo-mcp .mcp-key .k-acc{display:flex;align-items:center;gap:6px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+.nodo-mcp .uso-t{white-space:nowrap}
+.nodo-mcp .uso-t.on{color:var(--green,#22c079);font-weight:600}
+.nodo-mcp .uso-t.on::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor;margin:0 4px 1px 0;vertical-align:middle}
 .nodo-mcp .mcp-off{height:30px;padding:0 10px;border-radius:9px;border:0;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:600;cursor:pointer;flex:none}
 .nodo-mcp .mcp-off:hover{background:rgba(240,71,71,.12);color:#f04747}
 .nodo-mcp .mcp-vacio{font-size:12.5px;color:var(--muted);padding:13px 14px;border:1px dashed var(--border-strong);border-radius:13px;margin-bottom:18px;text-align:center}
