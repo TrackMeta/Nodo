@@ -105,7 +105,7 @@ export function abrirMcp() {
       <div class="w-paso ${est(p2, p1)}" data-paso="2">
         <div class="w-n">${p2 ? icon("check") : "2"}</div>
         <div class="w-cuerpo"><b>Copia el «ID de la aplicación»</b>
-          <small>En ChatGPT abre <b>${NOMBRE_CONEXION}</b>, baja a <b>Información</b> y copia el <b>ID de la aplicación</b>. También puedes copiar toda esa pantalla: Nodo saca el ID solo.</small>
+          <small>En ChatGPT abre <b>${NOMBRE_CONEXION}</b>, toca <b>Administrar</b>, baja a <b>Información</b> y copia el <b>ID de la aplicación</b>. También puedes copiar toda esa pantalla: Nodo saca el ID solo.</small>
           ${dibujoId}
           <input class="in w-in" id="mcpAppId" value="${esc(n.appId || "")}" placeholder="Pega aquí el ID (asdk_app_…) o el texto de esa pantalla" autocomplete="off" spellcheck="false"/>
           <span class="w-est" id="wEst2">${p2 ? `${icon("check")}ID guardado` : ""}</span>
