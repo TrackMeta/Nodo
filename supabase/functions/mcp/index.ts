@@ -899,22 +899,25 @@ const NUEVAS: Tool[] = [
   // Las MISMAS reglas del ⋮ de Pedidos (panel/pedidos.html openMenu/confirmSet) y el MISMO camino que el panel, el Copiloto
   // de Telegram y courier-sync: order-update con la llave interna (avisos, flujos, stock, CAPI, hoja, candados). Como ese
   // camino interno no revisa de quién es el pedido, se revisa acá: solo pedidos de los bots de esta persona.
-  // A propósito NO: marcar pagos como recibidos (adelanto validado / saldo pagado = aprobar un pago) ni anular una venta ya
-  // cobrada (pide el motivo en el panel). Los pedidos digitales se aprueban/anulan en Pagos por validar y Compras.
-  { name: "mover_pedido", escribe: true, description: "Mueve un pedido FÍSICO (Lima o provincia) a otro estado, como el menú ⋮ de Pedidos. Lima: confirmado, en_reparto, entregado_cobrado, reprogramado, rechazado. Provincia: esperando_adelanto, despachado (con guía), en_agencia, recogido (solo después de saldo pagado), no_recogido. Cualquiera: cancelado. Al cliente le llega el aviso de ese estado salvo avisar:false. Pide confirmación. NO marca pagos como recibidos (adelanto validado, saldo pagado) ni anula ventas ya cobradas: eso se hace en el panel.",
+  // (18-nov, Rodrigo «sí, agrégalo») También APRUEBA pagos físicos: adelanto validado y saldo pagado (con la clave de recojo),
+  // igual que los botones de Pagos por validar (contact-extras.js aprobar). El candado anti-reúso, el crédito al saldo, el
+  // stock y la clave los hace order-update. A propósito NO: anular una venta ya cobrada (pide el motivo en el panel) ni
+  // pedidos digitales (Pagos por validar y Compras).
+  { name: "mover_pedido", escribe: true, description: "Mueve un pedido FÍSICO (Lima o provincia) a otro estado, como el menú ⋮ de Pedidos. Lima: confirmado, en_reparto, entregado_cobrado, reprogramado, rechazado. Provincia: esperando_adelanto, adelanto_validado (APRUEBA el adelanto), despachado (con guía), en_agencia, saldo_pagado (APRUEBA el saldo y le manda la clave de recojo: pide clave_recojo si el pedido no la tiene), recogido (solo después de saldo pagado), no_recogido. Cualquiera: cancelado. Aprobar un pago es solo si la persona VIO que la plata llegó: la vista previa muestra lo que leyó el comprobante. Al cliente le llega el aviso de ese estado salvo avisar:false. Pide confirmación. No anula ventas ya cobradas ni toca pedidos digitales: eso se hace en el panel.",
     inputSchema: S({ bot: P_BOT, pedido: { type: "string", description: "id del pedido (sale en la herramienta pedidos) o nombre/teléfono del cliente (se toma su último pedido físico)." },
-      estado: { type: "string", enum: ["confirmado", "en_reparto", "entregado_cobrado", "reprogramado", "rechazado", "esperando_adelanto", "despachado", "en_agencia", "recogido", "no_recogido", "cancelado"] },
+      estado: { type: "string", enum: ["confirmado", "en_reparto", "entregado_cobrado", "reprogramado", "rechazado", "esperando_adelanto", "adelanto_validado", "despachado", "en_agencia", "saldo_pagado", "recogido", "no_recogido", "cancelado"] },
       avisar: { type: "boolean", description: "false = moverlo sin avisarle al cliente. Por defecto se le avisa (como el panel)." },
       guia: { type: "string", description: "Número de guía de la agencia (al despachar)." },
+      clave_recojo: { type: "string", description: "Al pasar a saldo_pagado: la clave que va a pedir la agencia (el bot se la manda al cliente). Nunca la inventes: pregúntala." },
       flete: { type: "number", description: "Lima, al cerrar (entregado y cobrado / rechazado): lo que le pagaste al motorizado. Si no lo mandas, se usa el costo de su zona." },
       confirmar: P_CONF }, ["pedido", "estado"]),
     run: async (ctx, a) => {
       const b = botDe(ctx, a?.bot);
       const estado = String(a?.estado ?? "");
       const LIMA = ["confirmado", "en_reparto", "entregado_cobrado", "reprogramado", "rechazado"];
-      const PROV = ["esperando_adelanto", "despachado", "en_agencia", "recogido", "no_recogido"];
-      if (estado === "adelanto_validado" || estado === "por_despachar" || estado === "saldo_pagado" || estado === "confirmada")
-        throw new Fallo(`«${O.label(estado)}» es marcar un pago como recibido: eso se aprueba en el panel (Pagos por validar o Pedidos), no desde aquí.`);
+      const PROV = ["esperando_adelanto", "adelanto_validado", "despachado", "en_agencia", "saldo_pagado", "recogido", "no_recogido"];
+      if (estado === "por_despachar") throw new Fallo("Usa adelanto_validado (es el mismo paso).");
+      if (estado === "confirmada") throw new Fallo("Los pagos digitales se aprueban en el panel (Pagos por validar), no desde aquí.");
       if (![...LIMA, ...PROV, "cancelado"].includes(estado)) throw new Fallo(`«${estado}» no es un estado que se pueda poner desde aquí. Lima: ${LIMA.join(", ")}. Provincia: ${PROV.join(", ")}. O cancelado.`);
       // El pedido: por id, o el último pedido físico del cliente.
       const COLS = "id, estado, amount, order_bumps, shipping, created_at, contact_id, contacts(nombre, wa_id, ultimo_mensaje_cliente_at), product:product_id(nombre, tipo), product_versions(nombre)";
@@ -936,10 +939,10 @@ const NUEVAS: Tool[] = [
       if (LIMA.includes(estado) && z !== "lima") throw new Fallo(`«${O.label(estado)}» es de pedidos de Lima y el de ${cliente} es de provincia.`);
       if (PROV.includes(estado) && z !== "provincia") throw new Fallo(`«${O.label(estado)}» es de pedidos de provincia y el de ${cliente} es de Lima.`);
       // Saltos que se saltan pasos de plata o de entrega (los mismos que el panel no ofrece).
-      const PRE: Record<string, string[]> = { recogido: ["saldo_pagado"], entregado_cobrado: ["en_reparto", "confirmado"], no_recogido: ["despachado", "en_agencia", "saldo_pagado"] };
+      const PRE: Record<string, string[]> = { saldo_pagado: ["despachado", "en_agencia"], recogido: ["saldo_pagado"], entregado_cobrado: ["en_reparto", "confirmado"], no_recogido: ["despachado", "en_agencia", "saldo_pagado"] };
       if (PRE[estado] && !PRE[estado].includes(origen))
         throw new Fallo(`Un pedido «${O.label(origen)}» no puede pasar directo a «${O.label(estado)}»: antes tiene que estar ${PRE[estado].map((e) => `«${O.label(e)}»`).join(" o ")}.` +
-          (estado === "recogido" ? " El saldo pagado se marca en el panel (ahí se da la clave de recojo)." : ""));
+          (estado === "recogido" ? " Primero apruébale el saldo (saldo_pagado, con la clave de recojo)." : ""));
       if (estado === "cancelado" && O.EST[origen]?.cobro === "todo")
         throw new Fallo(`El pedido de ${cliente} ya está cobrado («${O.label(origen)}»): eso no se cancela, se ANULA la venta en el panel (Pedidos → ⋮ → Anular venta), que pide el motivo.`);
       const CERRADOS = ["recogido", "entregado_cobrado"], SALIDAS = ["anulada", "cancelado", "devuelto", "rechazado", "no_recogido", ...CERRADOS];
@@ -947,6 +950,13 @@ const NUEVAS: Tool[] = [
       // Datos que se guardan con el cambio.
       const ship: Record<string, unknown> = {};
       if (a?.guia && String(a.guia).trim()) ship.guia = String(a.guia).trim();
+      // Saldo pagado sin clave: el aviso no sale y el cliente queda pagado y sin poder recoger (igual que el panel, se exige).
+      const claveYa = String(sh.clave_recojo ?? "").trim();
+      if (estado === "saldo_pagado") {
+        const cl = String(a?.clave_recojo ?? "").trim();
+        if (cl) ship.clave_recojo = cl;
+        else if (!claveYa) throw new Fallo(`El pedido de ${cliente} no tiene clave de recojo. Pregúntale a la persona cuál es (la que va a pedir la agencia) y vuelve a llamar con clave_recojo: sin ella el cliente paga y no puede recoger.`);
+      }
       let flete: number | null = null;
       if (z === "lima" && (estado === "entregado_cobrado" || estado === "rechazado") && sh.flete == null) {
         if (typeof a?.flete === "number" && a.flete >= 0) flete = a.flete;
@@ -965,6 +975,25 @@ const NUEVAS: Tool[] = [
         const lineas = [
           `Pedido de ${cliente} (${[o.product?.nombre, o.product_versions?.nombre].filter(Boolean).join(" · ") || "pedido"}, ${dinero(O.total(o), b.moneda)}, ${z === "lima" ? "Lima" : "provincia"}): de «${O.label(origen)}» a «${O.label(estado)}» (bot «${b.nombre}»).`,
           ...(ship.guia ? [`Guía: ${ship.guia}.`] : []),
+          ...(estado === "adelanto_validado" || estado === "saldo_pagado" ? (() => {
+            const ad = estado === "adelanto_validado", px = ad ? "adelanto" : "saldo";
+            const esperado = Number(ad ? sh.adelanto : sh.saldo) || 0;
+            const leido = Number(sh[`${px}_abonado`] ?? sh[`${px}_monto_leido`]);
+            const op = String(sh[`${px}_operacion`] || sh[`${px}_operacion_leida`] || "").trim();
+            const comp = !!(sh[`${px}_comprobante`] || sh[`${px}_recibido_at`]);
+            const l = [`💰 Esto APRUEBA el ${px}${esperado ? ` de ${dinero(esperado, b.moneda)}` : ""}: confírmalo solo si viste que la plata llegó a tu cuenta.`,
+              comp ? `Comprobante: ${Number.isFinite(leido) && leido > 0 ? `leído ${dinero(leido, b.moneda)}` : "monto no leído"}${op ? `, operación N° ${op}` : ", sin número de operación"}.` : "El cliente no mandó comprobante por el chat.",
+              ...(!op ? ["Sin número de operación, el candado contra pagos repetidos no lo puede revisar (queda anotado en la Actividad del cliente)."] : [])];
+            if (ad) {
+              // La MISMA cuenta que order-update (saldoTrasAdelanto + freno de sobrepago + no re-acreditar el mismo pago).
+              const sAct = Number(sh.saldo) || 0, debe = esperado + sAct;
+              let pag = Number.isFinite(leido) && leido > 0 ? leido : esperado;
+              if (debe > 0 && pag > debe + 50) pag = esperado;
+              const resto = Number(sh.pago_acreditado_adelanto) === pag ? sAct : Math.max(0, Math.round((debe - pag) * 100) / 100);
+              l.push(resto > 0.009 ? `Saldo que quedará por cobrar en la agencia: ${dinero(resto, b.moneda)}.` : "Con esto queda pagado completo: no debe saldo en la agencia.");
+            }
+            else l.push(`Clave de recojo que se le manda: ${ship.clave_recojo ?? claveYa}.`);
+            return l; })() : []),
           ...(z === "lima" && (estado === "entregado_cobrado" || estado === "rechazado") && sh.flete == null
             ? [flete != null ? `Costo del motorizado: ${dinero(flete, b.moneda)}${typeof a?.flete === "number" ? "" : " (el de su zona; dime otro si fue distinto)"}.` : "Costo del motorizado: no está registrado (dímelo si quieres que cuente en tu ganancia)."] : []),
           ...((estado === "despachado" || estado === "en_agencia") && sh.sede_por_confirmar ? [`⚠️ La agencia «${sh.sede ?? "—"}» la anotó el bot tal como la dijo el cliente y está POR CONFIRMAR: si no existe, al cliente le llega ese nombre igual. Mejor confírmala primero en Pedidos.`] : []),
