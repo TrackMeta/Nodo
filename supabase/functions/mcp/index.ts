@@ -895,6 +895,93 @@ const NUEVAS: Tool[] = [
         llegan_chats_pero_venden_poco: flojas.map((x) => ({ hora: lbl(x.h), chats: x.chats, ventas: x.ventas })),
         por_hora: H.filter((x) => x.ventas || x.chats).map((x) => ({ hora: lbl(x.h), ventas: x.ventas, ingresos: din(x.ingresos), chats_nuevos: x.chats })) };
     } },
+  // ─────── Mover pedidos (18-nov, Rodrigo: «mover pedidos de estado si dale») ───────
+  // Las MISMAS reglas del ⋮ de Pedidos (panel/pedidos.html openMenu/confirmSet) y el MISMO camino que el panel, el Copiloto
+  // de Telegram y courier-sync: order-update con la llave interna (avisos, flujos, stock, CAPI, hoja, candados). Como ese
+  // camino interno no revisa de quién es el pedido, se revisa acá: solo pedidos de los bots de esta persona.
+  // A propósito NO: marcar pagos como recibidos (adelanto validado / saldo pagado = aprobar un pago) ni anular una venta ya
+  // cobrada (pide el motivo en el panel). Los pedidos digitales se aprueban/anulan en Pagos por validar y Compras.
+  { name: "mover_pedido", escribe: true, description: "Mueve un pedido FÍSICO (Lima o provincia) a otro estado, como el menú ⋮ de Pedidos. Lima: confirmado, en_reparto, entregado_cobrado, reprogramado, rechazado. Provincia: esperando_adelanto, despachado (con guía), en_agencia, recogido (solo después de saldo pagado), no_recogido. Cualquiera: cancelado. Al cliente le llega el aviso de ese estado salvo avisar:false. Pide confirmación. NO marca pagos como recibidos (adelanto validado, saldo pagado) ni anula ventas ya cobradas: eso se hace en el panel.",
+    inputSchema: S({ bot: P_BOT, pedido: { type: "string", description: "id del pedido (sale en la herramienta pedidos) o nombre/teléfono del cliente (se toma su último pedido físico)." },
+      estado: { type: "string", enum: ["confirmado", "en_reparto", "entregado_cobrado", "reprogramado", "rechazado", "esperando_adelanto", "despachado", "en_agencia", "recogido", "no_recogido", "cancelado"] },
+      avisar: { type: "boolean", description: "false = moverlo sin avisarle al cliente. Por defecto se le avisa (como el panel)." },
+      guia: { type: "string", description: "Número de guía de la agencia (al despachar)." },
+      flete: { type: "number", description: "Lima, al cerrar (entregado y cobrado / rechazado): lo que le pagaste al motorizado. Si no lo mandas, se usa el costo de su zona." },
+      confirmar: P_CONF }, ["pedido", "estado"]),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot);
+      const estado = String(a?.estado ?? "");
+      const LIMA = ["confirmado", "en_reparto", "entregado_cobrado", "reprogramado", "rechazado"];
+      const PROV = ["esperando_adelanto", "despachado", "en_agencia", "recogido", "no_recogido"];
+      if (estado === "adelanto_validado" || estado === "por_despachar" || estado === "saldo_pagado" || estado === "confirmada")
+        throw new Fallo(`«${O.label(estado)}» es marcar un pago como recibido: eso se aprueba en el panel (Pagos por validar o Pedidos), no desde aquí.`);
+      if (![...LIMA, ...PROV, "cancelado"].includes(estado)) throw new Fallo(`«${estado}» no es un estado que se pueda poner desde aquí. Lima: ${LIMA.join(", ")}. Provincia: ${PROV.join(", ")}. O cancelado.`);
+      // El pedido: por id, o el último pedido físico del cliente.
+      const COLS = "id, estado, amount, order_bumps, shipping, created_at, contact_id, contacts(nombre, wa_id, ultimo_mensaje_cliente_at), product:product_id(nombre, tipo), product_versions(nombre)";
+      const ref = String(a?.pedido ?? "").trim();
+      let o: any = null;
+      if (/^[0-9a-f-]{36}$/i.test(ref)) {
+        const { data } = await db.from("orders").select(COLS).eq("id", ref).eq("channel_id", b.id).maybeSingle();
+        o = data;
+      }
+      if (!o) {
+        const k = await contactoDe(b.id, ref);
+        const { data } = await db.from("orders").select(COLS).eq("channel_id", b.id).eq("contact_id", k.id).order("created_at", { ascending: false }).limit(10);
+        o = ((data ?? []) as any[]).find((x) => O.esFisico(x)) ?? null;
+        if (!o) throw new Fallo(`${k.nombre ?? "Ese cliente"} no tiene pedidos físicos en «${b.nombre}».`);
+      }
+      const z = O.zonaDe(o), sh = o.shipping ?? {}, origen = String(o.estado ?? ""), cliente = o.contacts?.nombre ?? sh.cliente ?? "el cliente";
+      if (z === "digital") throw new Fallo("Es un pedido digital: esos se aprueban o anulan en Pagos por validar y Compras del panel.");
+      if (origen === estado) throw new Fallo(`El pedido de ${cliente} ya está «${O.label(estado)}».`);
+      if (LIMA.includes(estado) && z !== "lima") throw new Fallo(`«${O.label(estado)}» es de pedidos de Lima y el de ${cliente} es de provincia.`);
+      if (PROV.includes(estado) && z !== "provincia") throw new Fallo(`«${O.label(estado)}» es de pedidos de provincia y el de ${cliente} es de Lima.`);
+      // Saltos que se saltan pasos de plata o de entrega (los mismos que el panel no ofrece).
+      const PRE: Record<string, string[]> = { recogido: ["saldo_pagado"], entregado_cobrado: ["en_reparto", "confirmado"], no_recogido: ["despachado", "en_agencia", "saldo_pagado"] };
+      if (PRE[estado] && !PRE[estado].includes(origen))
+        throw new Fallo(`Un pedido «${O.label(origen)}» no puede pasar directo a «${O.label(estado)}»: antes tiene que estar ${PRE[estado].map((e) => `«${O.label(e)}»`).join(" o ")}.` +
+          (estado === "recogido" ? " El saldo pagado se marca en el panel (ahí se da la clave de recojo)." : ""));
+      if (estado === "cancelado" && O.EST[origen]?.cobro === "todo")
+        throw new Fallo(`El pedido de ${cliente} ya está cobrado («${O.label(origen)}»): eso no se cancela, se ANULA la venta en el panel (Pedidos → ⋮ → Anular venta), que pide el motivo.`);
+      const CERRADOS = ["recogido", "entregado_cobrado"], SALIDAS = ["anulada", "cancelado", "devuelto", "rechazado", "no_recogido", ...CERRADOS];
+      const reabre = CERRADOS.includes(origen) && !SALIDAS.includes(estado);
+      // Datos que se guardan con el cambio.
+      const ship: Record<string, unknown> = {};
+      if (a?.guia && String(a.guia).trim()) ship.guia = String(a.guia).trim();
+      let flete: number | null = null;
+      if (z === "lima" && (estado === "entregado_cobrado" || estado === "rechazado") && sh.flete == null) {
+        if (typeof a?.flete === "number" && a.flete >= 0) flete = a.flete;
+        else { const { data: ch } = await db.from("channels").select("entregas").eq("id", b.id).maybeSingle(); flete = O.costoZonaLima((ch as any)?.entregas, sh.zona_nombre || sh.distrito); }
+        if (flete != null) ship.flete = flete;
+      }
+      const avisar = a?.avisar !== false;
+      const URL_OU = `${Deno.env.get("SUPABASE_URL")}/functions/v1/order-update`;
+      const llamar = (body: Record<string, unknown>) => fetch(URL_OU, { method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""}` },
+        body: JSON.stringify({ order_id: o.id, ...body }) }).then(async (x) => { try { return await x.json(); } catch { return { error: `HTTP ${x.status}` }; } }).catch((e) => ({ error: String(e) }));
+      const ult = o.contacts?.ultimo_mensaje_cliente_at, enVentana = !!ult && Date.now() - Date.parse(ult) < 24 * 3600_000;
+      if (a?.confirmar !== true) {
+        let msj = "";
+        if (avisar) { const p: any = await llamar({ estado, preview: true }); msj = String(p?.preview ?? "").trim(); }
+        const lineas = [
+          `Pedido de ${cliente} (${[o.product?.nombre, o.product_versions?.nombre].filter(Boolean).join(" · ") || "pedido"}, ${dinero(O.total(o), b.moneda)}, ${z === "lima" ? "Lima" : "provincia"}): de «${O.label(origen)}» a «${O.label(estado)}» (bot «${b.nombre}»).`,
+          ...(ship.guia ? [`Guía: ${ship.guia}.`] : []),
+          ...(z === "lima" && (estado === "entregado_cobrado" || estado === "rechazado") && sh.flete == null
+            ? [flete != null ? `Costo del motorizado: ${dinero(flete, b.moneda)}${typeof a?.flete === "number" ? "" : " (el de su zona; dime otro si fue distinto)"}.` : "Costo del motorizado: no está registrado (dímelo si quieres que cuente en tu ganancia)."] : []),
+          ...((estado === "despachado" || estado === "en_agencia") && sh.sede_por_confirmar ? [`⚠️ La agencia «${sh.sede ?? "—"}» la anotó el bot tal como la dijo el cliente y está POR CONFIRMAR: si no existe, al cliente le llega ese nombre igual. Mejor confírmala primero en Pedidos.`] : []),
+          ...(reabre ? ["⚠️ Es una venta ya cerrada: si la mueves, deja de contar como venta en Inicio y al cliente le puede llegar el aviso de ese estado."] : []),
+          !avisar ? "Al cliente NO se le avisa." :
+            !enVentana ? "Al cliente no se le puede avisar por WhatsApp: no escribe hace más de 24 h (haría falta una plantilla, desde el panel). El pedido se mueve igual." :
+            msj ? `Al cliente le llega:\n«${msj}»` : "Al cliente le llega el aviso o el flujo que tengas para ese estado (si no tienes ninguno, no se le manda nada).",
+        ];
+        return confirmacion(a, lineas.join("\n"));
+      }
+      const r: any = await llamar({ estado, ...(Object.keys(ship).length ? { shipping: ship } : {}), aviso: { modo: avisar ? "mensaje" : "ninguno" }, ...(reabre ? { forzar: true } : {}) });
+      if (r?.error) throw new Fallo(`No se pudo mover: ${r.detalle ?? r.error}`);
+      if (r?.deduped) return { ok: true, hecho: "Ese pedido ya lo movió alguien más justo ahora: no se cambió nada." };
+      return { ok: true, hecho: `Listo: el pedido de ${cliente} quedó «${O.label(estado)}».`,
+        aviso_al_cliente: !avisar ? "no se le avisó (así lo pediste)" : r.aviso_error ? `NO salió: ${r.aviso_error}` : r.flow_started ? "el bot le está escribiendo (flujo de ese estado)" : r.aviso_enviado ? "se le avisó" : "no había aviso para ese estado",
+        ...(Array.isArray(r.stock_alerts) && r.stock_alerts.length ? { stock: r.stock_alerts } : {}) };
+    } },
 ];
 
 const TODAS: Tool[] = [...TOOLS, ...NUEVAS];
