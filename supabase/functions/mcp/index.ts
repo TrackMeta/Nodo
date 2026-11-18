@@ -14,6 +14,9 @@ import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
 import { sendText, MetaApiError } from "../_shared/meta.ts";
 import { finVentanaAnuncio } from "../_shared/fep.ts";
 import { resumirPedidos } from "../_shared/order-stats.ts";
+import { appsApi, appsConfigurada } from "../_shared/microapps.ts";
+// Las MISMAS reglas de pedidos que el panel (estados, cobrado, margen, zona): panel/orders.js no importa nada.
+import * as O from "../../../panel/orders.js";
 // El MISMO armado del texto del negocio que usa el panel al guardar (Bot → Tu negocio), para no tener dos versiones.
 import { compileNegocio, fusionarNegocio } from "../../../panel/negocio-texto.js";
 
@@ -172,72 +175,25 @@ const TOOLS: Tool[] = [
   { name: "mis_bots", description: "Lista tus bots de Nodo: equipo, tu rol, si está encendido y si tiene WhatsApp conectado. Úsala primero para saber qué bots hay.",
     inputSchema: S({}), run: async (ctx) => ({ usuario: ctx.nombre, bots: ctx.bots.map((b) => ({ id: b.id, nombre: b.nombre, equipo: b.equipo, tu_rol: b.rol, encendido: !b.bot_apagado, whatsapp_conectado: b.wa, moneda: b.moneda })) }) },
 
-  { name: "resumen", description: "Cómo le va a un bot (o a todos) en un periodo, con las MISMAS cuentas que Inicio del panel: chats nuevos, ventas, ingresos cobrados, ticket, conversión, gasto en Meta, costo por chat, costo por venta, ROAS, costos, gasto de IA, ganancia bruta y GANANCIA NETA. Usa estos números tal cual; no los recalcules.",
-    inputSchema: S({ bot: { type: "string", description: "Bot; omítelo para ver todos tus bots." }, periodo: P_PER, desde: P_D, hasta: P_D }),
+  { name: "resumen", description: "Cómo le va a un bot (o a todos) en un periodo, con las MISMAS cuentas que Inicio del panel: chats nuevos, ventas, ingresos cobrados, ticket, conversión, cierre del bot, gasto en Meta, costo por chat, costo por interesado, costo por venta, ROAS, ROI, costos, gasto de IA, ganancia bruta y GANANCIA NETA. Con comparar:true también trae el periodo anterior del mismo largo. Usa estos números tal cual; no los recalcules.",
+    inputSchema: S({ bot: { type: "string", description: "Bot; omítelo para ver todos tus bots." }, periodo: P_PER, desde: P_D, hasta: P_D, comparar: { type: "boolean", description: "true = también el periodo anterior (p. ej. esta semana vs la pasada)." } }),
     run: async (ctx, a) => {
-      // (18-nov, Rodrigo: «ChatGPT no me pudo decir mi ganancia ni mi costo por chat, lo calculó él») Misma cuenta que
-      // Inicio y el resumen de Telegram (_shared/order-stats.ts › resumirPedidos + _shared/resumen.ts):
-      //   ganancia neta = bruta − anuncios − gastos extra − IA (en la moneda del bot, con su tipo de cambio);
-      //   costo por chat = gasto en Meta ÷ personas que escribieron por un anuncio (primera_interaccion en las fechas).
+      // (18-nov) Misma cuenta que Inicio y el resumen de Telegram (order-stats.ts › resumirPedidos): ver traer()/cuentas().
       const bots = a?.bot ? [botDe(ctx, a.bot)] : ctx.bots;
       const filas = [];
       for (const b of bots) {
         const r = periodo(b.timezone, a?.periodo, a?.desde, a?.hasta);
-        const [ks, os, ia, ads, gx, am, cuentas] = await Promise.all([
-          // Chats nuevos = primera_interaccion en las fechas (created_at si falta), como Inicio y el Embudo.
-          paginar<any>((f, t) => db.from("contacts").select("wa_id, source, ad_id").eq("channel_id", b.id).or(`and(primera_interaccion.gte.${r.desde},primera_interaccion.lte.${r.hasta}),and(primera_interaccion.is.null,created_at.gte.${r.desde},created_at.lte.${r.hasta})`).range(f, t)),
-          paginar<any>((f, t) => db.from("orders").select("contact_id, amount, currency, order_bumps, estado, shipping, created_at, product:product_id(tipo), contacts(wa_id, source)").eq("channel_id", b.id).gte("created_at", r.desde).lte("created_at", r.hasta).order("created_at").order("id").range(f, t)),
-          paginar<any>((f, t) => db.from("ai_usage").select("costo_usd").eq("channel_id", b.id).gte("dia", r.dDesde).lte("dia", r.dHasta).range(f, t)),
-          paginar<any>((f, t) => db.from("ads_insights").select("ad_id, gasto").eq("channel_id", b.id).gte("fecha", r.dDesde).lte("fecha", r.dHasta).order("ad_id").range(f, t)).catch(() => [] as any[]),
-          paginar<any>((f, t) => db.from("manual_expenses").select("monto").eq("channel_id", b.id).gte("fecha", r.dDesde).lte("fecha", r.dHasta).order("id").range(f, t)).catch(() => [] as any[]),
-          paginar<any>((f, t) => db.from("ads_meta").select("ad_id, account_id, account_currency").eq("channel_id", b.id).order("ad_id").range(f, t)).catch(() => [] as any[]),
-          db.from("ad_accounts").select("account_id").eq("channel_id", b.id).eq("activo", true).then((x: any) => x, () => ({ data: null })),
-        ]);
-        const cur = String(b.moneda || "PEN").toUpperCase(), tasa = b.usd_rate || 0;
-        // Pedidos de prueba fuera; y los de otra moneda no se suman como si fueran de la del bot (como Inicio).
-        const pedidos = os.filter((o) => !esPrueba(o.contacts) && String(o.currency || "PEN").toUpperCase() === cur);
-        const dg = resumirPedidos(pedidos as any);
-        // Gasto de Meta en la moneda del bot (misma regla que resumen.ts) y sin las cuentas publicitarias quitadas.
-        const monedas = [...new Set(am.map((m: any) => String(m.account_currency || "").toUpperCase()).filter(Boolean))];
-        let factor = 1, sinConvertir = ads.length > 0;
-        if (monedas.length && !am.some((m: any) => !m.account_currency)) {
-          if (monedas.every((m) => m === cur)) sinConvertir = false;
-          else if (monedas.length === 1 && monedas[0] === "USD" && cur !== "USD" && tasa > 0) { factor = tasa; sinConvertir = false; }
+        const c = cuentas(b, await traer(b, r));
+        const fila: Record<string, unknown> = { bot: b.nombre, periodo: r.etiqueta, moneda: String(b.moneda || "PEN").toUpperCase(), ...filaResumen(b, c) };
+        const notas = notasDe(c); if (notas.length) fila.notas = notas;
+        if (a?.comparar === true) {
+          const r2 = periodoAnterior(r); const c2 = cuentas(b, await traer(b, r2 as any));
+          const dif = (x: number, y: number) => (y ? `${x >= y ? "+" : ""}${Math.round(((x - y) / Math.abs(y)) * 100)}%` : x ? "nuevo" : "igual");
+          fila.periodo_anterior = { periodo: r2.etiqueta, ...filaResumen(b, c2) };
+          fila.cambio = { ventas: dif(c.dg.ventas, c2.dg.ventas), ingresos: dif(c.dg.ingresos, c2.dg.ingresos), chats_nuevos: dif(c.chats, c2.chats), gasto_meta: dif(c.gastoAds, c2.gastoAds),
+            ganancia_neta: c.neta != null && c2.neta != null ? dif(c.neta, c2.neta) : "—",
+            costo_por_chat: c.chatsAds && c2.chatsAds && c2.gastoAds ? dif(c.gastoAds / c.chatsAds, c2.gastoAds / c2.chatsAds) : "—" };
         }
-        const activas = (cuentas as any)?.data ? new Set(((cuentas as any).data as any[]).map((x) => String(x.account_id))) : null;
-        const fuera = new Set(activas ? am.filter((m: any) => m.account_id && !activas.has(String(m.account_id))).map((m: any) => String(m.ad_id)) : []);
-        const gastoAds = ads.filter((x) => !fuera.has(String(x.ad_id))).reduce((s, x) => s + Number(x.gasto || 0), 0) * factor;
-        const gastosExtra = gx.reduce((s, x) => s + Number(x.monto || 0), 0);
-        const iaUsd = ia.reduce((s, x) => s + Number(x.costo_usd || 0), 0);
-        const gastoIa = cur === "USD" ? iaUsd : tasa > 0 ? iaUsd * tasa : 0;
-        const neta = dg.ganancia != null ? dg.ganancia - gastoAds - gastosExtra - gastoIa : null;
-        const contactos = ks.filter((k) => !esPrueba(k));
-        const chats = contactos.length, chatsAds = contactos.filter((k) => k.ad_id).length;
-        const din = (n: number) => dinero(n, b.moneda);
-        const fila: Record<string, unknown> = {
-          bot: b.nombre, periodo: r.etiqueta, moneda: cur,
-          chats_nuevos: chats, chats_de_anuncios: chatsAds,
-          ventas: dg.ventas, ingresos_cobrados: din(dg.ingresos),
-          ...(dg.porCobrar > 0 ? { por_cobrar: din(dg.porCobrar) } : {}),
-          ticket_promedio: dg.ventas ? din(dg.ticket) : "—",
-          conversion: chats ? `${Math.round((dg.ventas / chats) * 1000) / 10}%` : "—",
-          gasto_meta: din(gastoAds),
-          costo_por_chat: gastoAds && chatsAds ? din(gastoAds / chatsAds) : "—",
-          costo_por_venta: gastoAds && dg.ventas ? din(gastoAds / dg.ventas) : "—",
-          roas: gastoAds ? `${(dg.ingresos / gastoAds).toFixed(2)}×` : "—",
-          ...(dg.costoProd > 0 ? { costo_de_productos: din(dg.costoProd) } : {}),
-          ...(dg.envio > 0 ? { gasto_de_envios: din(dg.envio) } : {}),
-          ...(gastosExtra > 0 ? { gastos_extra: din(gastosExtra) } : {}),
-          gasto_ia: gastoIa ? din(gastoIa) : `$${iaUsd.toFixed(3)}`,
-          ganancia_bruta: dg.ganancia != null ? din(dg.ganancia) : "—",
-          ganancia_neta: neta != null ? din(neta) : "—",
-        };
-        const notas: string[] = [];
-        if (neta == null && dg.ventas) notas.push("Ninguna venta tiene sus costos registrados: la ganancia no se puede calcular.");
-        if (dg.gananciaSinDatos) notas.push(`${dg.gananciaSinDatos} pedido(s) físico(s) sin costo o flete no entran en la ganancia.`);
-        if (iaUsd > 0 && !gastoIa) notas.push("El gasto de IA está en dólares y el bot no tiene tipo de cambio: no se restó de la ganancia.");
-        if (sinConvertir && gastoAds) notas.push("No se pudo confirmar la moneda de la cuenta de Meta: el gasto va sin convertir.");
-        if (notas.length) fila.notas = notas;
         filas.push(fila);
       }
       return { resumen: filas };
@@ -247,13 +203,14 @@ const TOOLS: Tool[] = [
     inputSchema: S({ bot: P_BOT, etapa: { type: "string" }, buscar: { type: "string" }, limite: { type: "number", description: "Máximo 50 (por defecto 20)." } }),
     run: async (ctx, a) => {
       const b = botDe(ctx, a?.bot);
-      let q = db.from("contacts").select("id, nombre, wa_id, stage, created_at, ultimo_mensaje_at, bot_activo, source, product_id, products(nombre)").eq("channel_id", b.id);
+      let q = db.from("contacts").select("id, nombre, wa_id, stage, created_at, ultimo_mensaje_at, bot_activo, source, product_id, products(nombre), orders(estado, amount, order_bumps, shipping)").eq("channel_id", b.id);
       if (a?.etapa) q = q.eq("stage", norm(a.etapa));
       if (a?.buscar) { const d = String(a.buscar).replace(/\D/g, ""); q = d.length >= 6 ? q.ilike("wa_id", `%${d}%`) : q.ilike("nombre", `%${String(a.buscar).replace(/[%_]/g, "")}%`); }
       const { data } = await q.order("ultimo_mensaje_at", { ascending: false, nullsFirst: false }).limit(Math.min(Number(a?.limite) || 20, 50) + 10);
       const lista = ((data ?? []) as any[]).filter((k) => !esPrueba(k)).slice(0, Math.min(Number(a?.limite) || 20, 50));
       return { bot: b.nombre, contactos: lista.map((k) => ({ id: k.id, nombre: k.nombre, telefono: k.wa_id, etapa: k.stage, producto: k.products?.nombre ?? null,
-        llego: horaLocal(k.created_at, b.timezone), ultimo_mensaje: horaLocal(k.ultimo_mensaje_at, b.timezone), desde_anuncio: k.source === "ad" || k.source === "ctwa", bot_atiende: k.bot_activo !== false })) };
+        llego: horaLocal(k.created_at, b.timezone), ultimo_mensaje: horaLocal(k.ultimo_mensaje_at, b.timezone), desde_anuncio: k.source === "ad" || k.source === "ctwa", bot_atiende: k.bot_activo !== false,
+        compras: ((k.orders ?? []) as any[]).filter((o) => O.esVenta(o) && !O.esPerdido(o)).length, total_gastado: dinero(((k.orders ?? []) as any[]).filter((o) => O.esVenta(o) && !O.esPerdido(o)).reduce((s, o) => s + O.cobrado(o), 0), b.moneda) })) };
     } },
 
   { name: "conversacion", description: "Los últimos mensajes de la conversación con un cliente (quién escribió, cuándo y qué).",
@@ -271,17 +228,33 @@ const TOOLS: Tool[] = [
       return { bot: b.nombre, cliente: { id: k.id, nombre: k.nombre, telefono: k.wa_id, etapa: k.stage, bot_atiende: k.bot_activo !== false }, mensajes: msgs };
     } },
 
-  { name: "pedidos", description: "Pedidos de un bot en un periodo, con su estado, monto, cliente y producto. Puedes filtrar por estado.",
-    inputSchema: S({ bot: P_BOT, estado: { type: "string" }, periodo: P_PER, desde: P_D, hasta: P_D, limite: { type: "number" } }),
+  { name: "pedidos", description: "Pedidos de un bot (como Pedidos): estado, monto, adelanto y saldo, Lima o provincia, agencia/sede, guía, distrito y dirección, extras. Con parados:true trae SOLO los que llevan demasiados días sin moverse (sin adelanto, en camino o en agencia, que Shalom puede devolver). Con zona: lima | provincia | digital.",
+    inputSchema: S({ bot: P_BOT, estado: { type: "string" }, zona: { type: "string", enum: ["lima", "provincia", "digital"] }, parados: { type: "boolean" }, periodo: P_PER, desde: P_D, hasta: P_D, limite: { type: "number" } }),
     run: async (ctx, a) => {
       const b = botDe(ctx, a?.bot); const r = periodo(b.timezone, a?.periodo ?? "30dias", a?.desde, a?.hasta);
-      let q = db.from("orders").select("id, estado, amount, created_at, contacts(nombre, wa_id, source), products(nombre), product_versions(nombre)")
-        .eq("channel_id", b.id).gte("created_at", r.desde).lte("created_at", r.hasta);
+      // Parados: días desde la última actualización (desde que se creó si espera el adelanto). Umbrales de Bot → Entrega
+      // (channels.entregas.parado), por defecto 2 / 3 / 5 como Pedidos; 0 = no vigilar.
+      const { data: ch } = await db.from("channels").select("entregas").eq("id", b.id).maybeSingle();
+      const par = ((ch as any)?.entregas?.parado ?? {}) as Record<string, number>;
+      const UMB: Record<string, number> = { esperando_adelanto: par.esperando_adelanto ?? 2, despachado: par.despachado ?? 3, en_agencia: par.en_agencia ?? 5 };
+      const diasParado = (o: any) => { const u = UMB[o.estado]; if (!u) return null; const desde = o.estado === "esperando_adelanto" ? o.created_at : (o.updated_at || o.created_at); const d = Math.floor((Date.now() - Date.parse(desde)) / 864e5); return d >= u ? d : null; };
+      let q = db.from("orders").select("id, estado, amount, order_bumps, shipping, created_at, updated_at, contacts(nombre, wa_id, source), product:product_id(nombre, tipo), product_versions(nombre)").eq("channel_id", b.id);
+      if (a?.parados === true) q = q.in("estado", Object.keys(UMB).filter((k) => UMB[k] > 0)); else q = q.gte("created_at", r.desde).lte("created_at", r.hasta);
       if (a?.estado) q = q.eq("estado", String(a.estado));
-      const { data } = await q.order("created_at", { ascending: false }).limit(Math.min(Number(a?.limite) || 30, 100));
-      const lista = ((data ?? []) as any[]).filter((o) => !esPrueba(o.contacts));
-      return { bot: b.nombre, periodo: r.etiqueta, pedidos: lista.map((o) => ({ id: o.id, estado: o.estado, monto: dinero(o.amount, b.moneda), cliente: o.contacts?.nombre ?? null,
-        telefono: o.contacts?.wa_id ?? null, producto: [o.products?.nombre, o.product_versions?.nombre].filter(Boolean).join(" · "), fecha: horaLocal(o.created_at, b.timezone) })) };
+      const { data } = await q.order("created_at", { ascending: false }).limit(a?.parados === true ? 300 : Math.min(Number(a?.limite) || 30, 100));
+      let lista = ((data ?? []) as any[]).filter((o) => !esPrueba(o.contacts));
+      if (a?.zona) lista = lista.filter((o) => O.zonaDe(o) === a.zona);
+      if (a?.parados === true) lista = lista.filter((o) => diasParado(o) != null);
+      const din = (n: number) => dinero(n, b.moneda);
+      return { bot: b.nombre, periodo: a?.parados === true ? "todos los pedidos abiertos" : r.etiqueta, cantidad: lista.length,
+        pedidos: lista.slice(0, Math.min(Number(a?.limite) || 30, 100)).map((o) => { const sh = o.shipping || {}, z = O.zonaDe(o), ad = O.adelantoDe(o), dp = diasParado(o);
+          return { id: o.id, estado: O.label(o.estado), zona: z, total: din(O.total(o)), cobrado: din(O.cobrado(o)), ...(O.porCobrar(o) > 0 ? { por_cobrar: din(O.porCobrar(o)) } : {}),
+            ...(z === "provincia" && ad ? { adelanto: din(Number(ad) || 0) } : {}),
+            cliente: o.contacts?.nombre ?? sh.cliente ?? null, telefono: o.contacts?.wa_id ?? null, producto: [o.product?.nombre, o.product_versions?.nombre].filter(Boolean).join(" · "),
+            ...((o.order_bumps ?? []).length ? { extras: (o.order_bumps as any[]).map((x) => x.nombre ?? x.titulo ?? "extra").join(", ") } : {}),
+            ...(z === "provincia" ? { agencia: sh.agencia ?? null, sede: sh.sede ?? sh.destino ?? sh.ciudad ?? null, guia: sh.guia ?? null, aereo: !!sh.aereo } : {}),
+            ...(z === "lima" ? { distrito: sh.distrito ?? null, direccion: sh.direccion ?? null, referencia: sh.referencia ?? null } : {}),
+            ...(dp != null ? { parado: `${dp} días sin moverse` } : {}), fecha: horaLocal(o.created_at, b.timezone) }; }) };
     } },
 
   { name: "pendientes", description: "Lo que necesita atención: pagos por validar, clientes que piden una persona, mensajes que no salieron, anuncios sin producto, avisos de WhatsApp y si el bot está apagado. Sin bot, revisa todos.",
@@ -310,14 +283,21 @@ const TOOLS: Tool[] = [
     run: async (ctx, a) => {
       const b = botDe(ctx, a?.bot);
       const [{ data: ps }, { data: trg }] = await Promise.all([
-        db.from("products").select("id, nombre, tipo, clase, product_versions(id, nombre, precio, activo, orden)").eq("channel_id", b.id).order("created_at"),
+        db.from("products").select("id, nombre, tipo, clase, config, product_versions(id, nombre, precio, activo, orden, costo)").eq("channel_id", b.id).order("created_at"),
         db.from("flow_triggers").select("config, activo, flows!inner(product_id)").eq("channel_id", b.id).eq("tipo", "keyword"),
       ]);
+      // Ventas de los últimos 7 días por producto (como la tarjeta de Productos).
+      const os7 = await paginar<any>((f, t) => db.from("orders").select("product_id, amount, order_bumps, estado, shipping, contacts(wa_id, source)").eq("channel_id", b.id).gte("created_at", new Date(Date.now() - 7 * 864e5).toISOString()).range(f, t));
+      const v7 = new Map<string, { n: number; plata: number }>();
+      for (const o of os7) { if (esPrueba(o.contacts) || !O.esVenta(o) || O.esPerdido(o)) continue; const x = v7.get(o.product_id) ?? { n: 0, plata: 0 }; x.n++; x.plata += O.total(o); v7.set(o.product_id, x); }
       const claves = new Map<string, string[]>();
       for (const t of (trg ?? []) as any[]) { const pid = t.flows?.product_id; if (!pid || t.activo === false) continue; claves.set(pid, [...(claves.get(pid) ?? []), ...((t.config?.keywords ?? []) as string[])]); }
-      return { bot: b.nombre, productos: ((ps ?? []) as any[]).map((p) => ({ id: p.id, nombre: p.nombre, tipo: p.tipo, clase: p.clase, palabras_clave: claves.get(p.id) ?? [],
-        vendiendo: claves.has(p.id),
-        presentaciones: ((p.product_versions ?? []) as any[]).sort((x, y) => (x.orden ?? 0) - (y.orden ?? 0)).map((v) => ({ id: v.id, nombre: v.nombre, precio: dinero(v.precio, b.moneda), activa: v.activo !== false })) })) };
+      return { bot: b.nombre, productos: ((ps ?? []) as any[]).map((p) => { const stock = p.config?.stock && typeof p.config.stock === "object" ? p.config.stock as Record<string, number> : null; const x = v7.get(p.id);
+        return { id: p.id, nombre: p.nombre, tipo: p.tipo, clase: p.clase, palabras_clave: claves.get(p.id) ?? [], vendiendo: claves.has(p.id),
+          ventas_7_dias: x?.n ?? 0, ingresos_7_dias: dinero(x?.plata ?? 0, b.moneda),
+          ...(Number(p.config?.costo) > 0 ? { costo: dinero(Number(p.config.costo), b.moneda) } : {}),
+          ...(stock && Object.keys(stock).length ? { stock: Object.fromEntries(Object.entries(stock).map(([k, v]) => [k === "_" || k === "" ? "total" : k, Number(v) || 0])), stock_total: Object.values(stock).reduce((s, v) => s + (Number(v) || 0), 0) } : {}),
+          presentaciones: ((p.product_versions ?? []) as any[]).sort((x, y) => (x.orden ?? 0) - (y.orden ?? 0)).map((v) => ({ id: v.id, nombre: v.nombre, precio: dinero(v.precio, b.moneda), ...(Number(v.costo) > 0 ? { costo: dinero(Number(v.costo), b.moneda) } : {}), activa: v.activo !== false })) }; }) };
     } },
 
   { name: "configuracion", description: "Cómo está configurado un bot: lo que sabe del negocio, tono, medios de pago (sin números completos), modelo de IA y remarketing.",
@@ -481,9 +461,368 @@ const TOOLS: Tool[] = [
     } },
 ];
 
+
+// ═════════ 18-nov-2026 · Todo lo que el panel muestra y el MCP no daba (Rodrigo: «dale todo», tras la revisión
+// pantalla por pantalla). Cada cuenta copia la de su pantalla: Inicio (calcular), Rendimiento, Embudo, Pedidos,
+// Compras, Pagos por validar, Directo, ficha del cliente, Accesos, Campañas, Secuencias y Horarios. ═════════
+
+// ── Datos de un periodo (una sola vez) y sus cuentas, iguales a Inicio ──
+type Filas = { contactos: any[]; pedidos: any[]; ia: any[]; ads: any[]; gx: any[]; am: any[]; activas: Set<string> | null };
+async function traer(b: Ctx["bots"][0], r: ReturnType<typeof periodo>): Promise<Filas> {
+  const [contactos, pedidos, ia, ads, gx, am, cuentas] = await Promise.all([
+    paginar<any>((f, t) => db.from("contacts").select("id, wa_id, source, ad_id, stage, etapa_previa, primera_interaccion, created_at, orders(id)").eq("channel_id", b.id).or(`and(primera_interaccion.gte.${r.desde},primera_interaccion.lte.${r.hasta}),and(primera_interaccion.is.null,created_at.gte.${r.desde},created_at.lte.${r.hasta})`).order("id").range(f, t)),
+    paginar<any>((f, t) => db.from("orders").select("id, contact_id, product_id, version_id, amount, currency, order_bumps, estado, shipping, created_at, product:product_id(id, nombre, tipo, config), contacts(wa_id, source)").eq("channel_id", b.id).gte("created_at", r.desde).lte("created_at", r.hasta).order("created_at").order("id").range(f, t)),
+    paginar<any>((f, t) => db.from("ai_usage").select("dia, costo_usd").eq("channel_id", b.id).gte("dia", r.dDesde).lte("dia", r.dHasta).order("dia").range(f, t)),
+    paginar<any>((f, t) => db.from("ads_insights").select("ad_id, fecha, gasto, impresiones, alcance, clics, clics_link").eq("channel_id", b.id).gte("fecha", r.dDesde).lte("fecha", r.dHasta).order("fecha").order("ad_id").range(f, t)).catch(() => [] as any[]),
+    paginar<any>((f, t) => db.from("manual_expenses").select("fecha, monto, descripcion").eq("channel_id", b.id).gte("fecha", r.dDesde).lte("fecha", r.dHasta).order("id").range(f, t)).catch(() => [] as any[]),
+    paginar<any>((f, t) => db.from("ads_meta").select("ad_id, account_id, account_currency, ad_name, campaign_name, adset_name, estado").eq("channel_id", b.id).order("ad_id").range(f, t)).catch(() => [] as any[]),
+    db.from("ad_accounts").select("account_id").eq("channel_id", b.id).eq("activo", true).then((x: any) => x, () => ({ data: null })),
+  ]);
+  const cur = String(b.moneda || "PEN").toUpperCase();
+  const act = (cuentas as any)?.data ? new Set<string>(((cuentas as any).data as any[]).map((x) => String(x.account_id))) : null;
+  return {
+    contactos: contactos.filter((k) => !esPrueba(k)),
+    pedidos: pedidos.filter((o) => !esPrueba(o.contacts) && String(o.currency || "PEN").toUpperCase() === cur),
+    ia, ads, gx, am, activas: act,
+  };
+}
+// Factor del gasto de Meta a la moneda del bot (misma regla que resumen.ts / Inicio) y anuncios de cuentas quitadas.
+function reglaAds(b: Ctx["bots"][0], fl: Filas) {
+  const cur = String(b.moneda || "PEN").toUpperCase(), tasa = b.usd_rate || 0;
+  const monedas = [...new Set(fl.am.map((m) => String(m.account_currency || "").toUpperCase()).filter(Boolean))];
+  let factor = 1, sinConvertir = fl.ads.length > 0;
+  if (monedas.length && !fl.am.some((m) => !m.account_currency)) {
+    if (monedas.every((m) => m === cur)) sinConvertir = false;
+    else if (monedas.length === 1 && monedas[0] === "USD" && cur !== "USD" && tasa > 0) { factor = tasa; sinConvertir = false; }
+  }
+  const fuera = new Set(fl.activas ? fl.am.filter((m) => m.account_id && !fl.activas!.has(String(m.account_id))).map((m) => String(m.ad_id)) : []);
+  return { factor, sinConvertir, fuera };
+}
+const INTERES = ["interesado", "caliente", "confirmado"];
+function cuentas(b: Ctx["bots"][0], fl: Filas) {
+  const cur = String(b.moneda || "PEN").toUpperCase(), tasa = b.usd_rate || 0;
+  const dg = resumirPedidos(fl.pedidos as any);
+  const { factor, sinConvertir, fuera } = reglaAds(b, fl);
+  const gastoAds = fl.ads.filter((x) => !fuera.has(String(x.ad_id))).reduce((s, x) => s + Number(x.gasto || 0), 0) * factor;
+  const gastosExtra = fl.gx.reduce((s, x) => s + Number(x.monto || 0), 0);
+  const iaUsd = fl.ia.reduce((s, x) => s + Number(x.costo_usd || 0), 0);
+  const gastoIa = cur === "USD" ? iaUsd : tasa > 0 ? iaUsd * tasa : 0;
+  const neta = dg.ganancia != null ? dg.ganancia - gastoAds - gastosExtra - gastoIa : null;
+  const chats = fl.contactos.length;
+  const deAds = fl.contactos.filter((k) => k.ad_id);
+  const interesAds = deAds.filter((k) => [...INTERES, "comprado", "perdido"].includes(k.stage)).length;
+  // Cierre del bot (Inicio): compraron ÷ (se interesaron + compraron + perdidos que se habían interesado o tuvieron pedido).
+  const compraron = fl.contactos.filter((k) => k.stage === "comprado").length;
+  const base = fl.contactos.filter((k) => [...INTERES, "comprado"].includes(k.stage)
+    || (k.stage === "perdido" && (INTERES.includes(k.etapa_previa) || (k.orders || []).length > 0))).length;
+  const inversion = dg.costoProd + dg.envio + gastoAds + gastosExtra + gastoIa;
+  const perdidos = fl.pedidos.filter((o) => O.esPerdido(o));
+  const esperando = fl.pedidos.filter((o) => o.estado === "esperando_adelanto");
+  const vuelto = fl.pedidos.reduce((s, o) => s + (Number(o.shipping?.vuelto) || 0), 0);
+  return { dg, gastoAds, gastosExtra, iaUsd, gastoIa, neta, chats, chatsAds: deAds.length, interesAds, compraron, base, inversion,
+    perdidos: perdidos.length, esperando: esperando.length, esperandoMonto: esperando.reduce((s, o) => s + O.total(o), 0), vuelto, sinConvertir };
+}
+type Cuentas = ReturnType<typeof cuentas>;
+const pct1 = (a: number, b: number) => (b ? `${Math.round((a / b) * 1000) / 10}%` : "—");
+function filaResumen(b: Ctx["bots"][0], c: Cuentas) {
+  const din = (n: number) => dinero(n, b.moneda), dg = c.dg;
+  return {
+    chats_nuevos: c.chats, chats_de_anuncios: c.chatsAds,
+    ventas: dg.ventas, ingresos_cobrados: din(dg.ingresos),
+    ...(dg.porCobrar > 0 ? { por_cobrar: din(dg.porCobrar) } : {}),
+    ticket_promedio: dg.ventas ? din(dg.ticket) : "—",
+    conversion: pct1(dg.ventas, c.chats),
+    cierre_del_bot: c.base ? `${Math.round((c.compraron / c.base) * 100)}% (${c.compraron} de ${c.base} interesados compraron)` : "—",
+    gasto_meta: din(c.gastoAds),
+    costo_por_chat: c.gastoAds && c.chatsAds ? din(c.gastoAds / c.chatsAds) : "—",
+    costo_por_interesado: c.gastoAds && c.interesAds ? din(c.gastoAds / c.interesAds) : "—",
+    costo_por_venta: c.gastoAds && dg.ventas ? din(c.gastoAds / dg.ventas) : "—",
+    roas: c.gastoAds ? `${(dg.ingresos / c.gastoAds).toFixed(2)}×` : "—",
+    ...(dg.costoProd > 0 ? { costo_de_productos: din(dg.costoProd) } : {}),
+    ...(dg.envio > 0 ? { gasto_de_envios: din(dg.envio) } : {}),
+    ...(c.gastosExtra > 0 ? { gastos_extra: din(c.gastosExtra) } : {}),
+    gasto_ia: c.gastoIa ? din(c.gastoIa) : `$${c.iaUsd.toFixed(3)}`,
+    ganancia_bruta: dg.ganancia != null ? din(dg.ganancia) : "—",
+    ganancia_neta: c.neta != null ? din(c.neta) : "—",
+    roi: c.neta != null && c.inversion > 0 ? `${Math.round((c.neta / c.inversion) * 100)}%` : "—",
+    ...(c.perdidos ? { pedidos_perdidos: c.perdidos } : {}),
+    ...(c.esperando ? { esperando_adelanto: `${c.esperando} (${din(c.esperandoMonto)})` } : {}),
+    ...(c.vuelto > 0 ? { vuelto_por_devolver: din(c.vuelto) } : {}),
+  };
+}
+function notasDe(c: Cuentas): string[] {
+  const n: string[] = [];
+  if (c.neta == null && c.dg.ventas) n.push("Ninguna venta tiene sus costos registrados: la ganancia no se puede calcular.");
+  if (c.dg.gananciaSinDatos) n.push(`${c.dg.gananciaSinDatos} pedido(s) físico(s) sin costo o flete no entran en la ganancia.`);
+  if (c.iaUsd > 0 && !c.gastoIa) n.push("El gasto de IA está en dólares y el bot no tiene tipo de cambio: no se restó.");
+  if (c.sinConvertir && c.gastoAds) n.push("No se pudo confirmar la moneda de la cuenta de Meta: el gasto va sin convertir.");
+  return n;
+}
+// El periodo anterior del mismo largo (para comparar «esta semana vs la pasada»).
+function periodoAnterior(r: ReturnType<typeof periodo>) {
+  const len = Date.parse(r.hasta) - Date.parse(r.desde) + 1;
+  const desde = new Date(Date.parse(r.desde) - len).toISOString(), hasta = new Date(Date.parse(r.desde) - 1).toISOString();
+  const dias = Math.round(len / 864e5);
+  const a = new Date(Date.parse(r.dDesde + "T00:00:00Z") - dias * 864e5), z = new Date(Date.parse(r.dDesde + "T00:00:00Z") - 864e5);
+  return { desde, hasta, dDesde: ymd(a), dHasta: ymd(z), etiqueta: `${ymd(a)} a ${ymd(z)} (periodo anterior)` };
+}
+// Día local (YYYY-MM-DD) de un instante, en la zona del bot.
+const diaLocal = (iso: string, tz: string) => ymd(new Date(Date.parse(iso) + desfase(tz, new Date(iso)) * 60_000));
+
+// ── Rendimiento (como la pantalla Rendimiento: ventas atribuidas por shipping.ad_id) ──
+function nombreAd(am: any[], id: string) { const m = am.find((x) => String(x.ad_id) === id); return m ? (m.ad_name || id) : id; }
+
+const NUEVAS: Tool[] = [
+  { name: "rendimiento", description: "Cómo le va a cada ANUNCIO, ÁNGULO o PRODUCTO en un periodo (como la pantalla Rendimiento): gasto, impresiones, CTR, CPM, chats, costo por chat, interesados, calientes, ventas, CPA, ingresos, ROAS y ganancia neta. Ordenado por gasto. Úsalo para «¿qué anuncio apago?», «¿qué ángulo vende más barato?».",
+    inputSchema: S({ bot: P_BOT, por: { type: "string", enum: ["anuncio", "angulo", "producto"], description: "Por defecto: anuncio." }, periodo: P_PER, desde: P_D, hasta: P_D, limite: { type: "number", description: "Máximo 40 filas (por defecto 15)." } }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); const r = periodo(b.timezone, a?.periodo ?? "7dias", a?.desde, a?.hasta);
+      const por = ["angulo", "producto"].includes(a?.por) ? a.por : "anuncio";
+      const fl = await traer(b, r);
+      const { factor, fuera } = reglaAds(b, fl);
+      const [{ data: angs }, { data: prods }] = await Promise.all([
+        db.from("angulos").select("nombre, slug, ad_ids, product_id").eq("channel_id", b.id),
+        db.from("products").select("id, nombre, config").eq("channel_id", b.id),
+      ]);
+      // Anuncio → ángulo y → producto (por el ángulo o el banco de anuncios del producto).
+      const angDe = new Map<string, string>(), prodDe = new Map<string, string>();
+      for (const g of (angs ?? []) as any[]) for (const id of (g.ad_ids ?? []) as string[]) { angDe.set(String(id), g.nombre || g.slug); if (g.product_id) prodDe.set(String(id), g.product_id); }
+      for (const p of (prods ?? []) as any[]) for (const id of ((p.config?.ad_bank ?? []) as string[])) if (!prodDe.has(String(id))) prodDe.set(String(id), p.id);
+      const nomProd = new Map(((prods ?? []) as any[]).map((p) => [p.id, p.nombre]));
+      const claveDe = (ad: string, prodPedido?: string) => por === "anuncio" ? ad
+        : por === "angulo" ? (angDe.get(ad) ?? "Sin ángulo")
+        : (nomProd.get(prodDe.get(ad) ?? prodPedido ?? "") ?? "Sin producto");
+      const filas = new Map<string, any>();
+      const fila = (k: string) => { if (!filas.has(k)) filas.set(k, { k, gasto: 0, impr: 0, clicsLink: 0, imprLink: 0, chats: 0, interes: 0, calientes: 0, compraron: 0, conf: 0, ventas: 0, ingresos: 0, margen: 0, sinMargen: 0 }); return filas.get(k); };
+      for (const i of fl.ads) { const ad = String(i.ad_id); if (fuera.has(ad)) continue; const x = fila(claveDe(ad)); x.gasto += Number(i.gasto || 0) * factor; x.impr += Number(i.impresiones || 0); if (i.clics_link != null) { x.clicsLink += Number(i.clics_link || 0); x.imprLink += Number(i.impresiones || 0); } }
+      for (const k of fl.contactos) { if (!k.ad_id || fuera.has(String(k.ad_id))) continue; const x = fila(claveDe(String(k.ad_id))); const s = k.stage || "nuevo"; x.chats++;
+        if ([...INTERES, "comprado"].includes(s)) x.interes++; if (["caliente", "confirmado", "comprado"].includes(s)) x.calientes++; if (s === "comprado") x.compraron++; }
+      for (const o of fl.pedidos) { const ad = o.shipping?.ad_id; if (!ad) continue; const x = fila(claveDe(String(ad), o.product_id)); const e = O.EST[o.estado] || {};
+        if (e.venta && !e.perdido) x.conf++;
+        if (e.cobro === "todo") { x.ventas++; x.ingresos += O.total(o); const m = !O.esFisico(o) ? O.cobrado(o) - (O.costoProducto(o, o.product, 1) || 0) : O.margen(o, o.product, 1); if (m != null) x.margen += m; else x.sinMargen++; } }
+      const din = (n: number) => dinero(n, b.moneda);
+      const lista = [...filas.values()].sort((p, q) => q.gasto - p.gasto || q.ventas - p.ventas).slice(0, Math.min(Number(a?.limite) || 15, 40));
+      const tot = [...filas.values()].reduce((s, x) => ({ gasto: s.gasto + x.gasto, ventas: s.ventas + x.ventas, ingresos: s.ingresos + x.ingresos, margen: s.margen + x.margen, chats: s.chats + x.chats }), { gasto: 0, ventas: 0, ingresos: 0, margen: 0, chats: 0 });
+      return { bot: b.nombre, periodo: r.etiqueta, por, nota: "Solo cuenta ventas que llegaron por un anuncio (como Rendimiento). Ganancia neta = margen de esas ventas − su gasto.",
+        total: { gasto: din(tot.gasto), chats: tot.chats, ventas: tot.ventas, ingresos: din(tot.ingresos), cpa: tot.ventas ? din(tot.gasto / tot.ventas) : "—", roas: tot.gasto ? `${(tot.ingresos / tot.gasto).toFixed(2)}×` : "—", ganancia_neta: din(tot.margen - tot.gasto) },
+        filas: lista.map((x) => {
+          const m = por === "anuncio" ? fl.am.find((y) => String(y.ad_id) === x.k) : null;
+          return {
+            [por]: por === "anuncio" ? nombreAd(fl.am, x.k) : x.k,
+            ...(m ? { campana: m.campaign_name, conjunto: m.adset_name, estado_en_meta: m.estado, id: x.k, angulo: angDe.get(x.k) ?? "Sin ángulo" } : {}),
+            gasto: din(x.gasto), impresiones: x.impr, ctr: x.imprLink ? `${((x.clicsLink / x.imprLink) * 100).toFixed(2)}%` : "—", cpm: x.impr ? din((x.gasto / x.impr) * 1000) : "—",
+            chats: x.chats, costo_por_chat: x.chats ? din(x.gasto / x.chats) : "—", interesados: x.interes, calientes: x.calientes,
+            confirmaciones: x.conf, ventas: x.ventas, cpa: x.ventas ? din(x.gasto / x.ventas) : "—", ingresos: din(x.ingresos),
+            roas: x.gasto ? `${(x.ingresos / x.gasto).toFixed(2)}×` : "—", ganancia_neta: din(x.margen - x.gasto),
+            ...(x.sinMargen ? { aviso: `${x.sinMargen} venta(s) sin costo registrado no entran en la ganancia` } : {}),
+          };
+        }) };
+    } },
+
+  { name: "embudo", description: "El embudo de un periodo (como la pantalla Embudo): de los que llegaron, cuántos fueron curiosos, se interesaron, se pusieron calientes, confirmaron y compraron, con el % que se cae en cada paso y la MAYOR FUGA. Más el estado actual de los clientes y la conversión por anuncio.",
+    inputSchema: S({ bot: P_BOT, periodo: P_PER, desde: P_D, hasta: P_D }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); const r = periodo(b.timezone, a?.periodo ?? "7dias", a?.desde, a?.hasta);
+      const fl = await traer(b, r);
+      // Escalera acumulada (como el Embudo): la etapa de hoy (o la de antes de perderse) cuenta para todos los pasos previos.
+      const ORDEN = ["nuevo", "curioso", "interesado", "caliente", "confirmado", "comprado"];
+      const nivel = (k: any) => { const s = k.stage === "perdido" ? (k.etapa_previa || "nuevo") : (k.stage || "nuevo"); const i = ORDEN.indexOf(s); return i < 0 ? 0 : i; };
+      const PASOS: [string, number][] = [["Llegaron", 0], ["Curiosos", 1], ["Se interesaron", 2], ["Calientes", 3], ["Confirmaron", 4], ["Compraron", 5]];
+      const n = PASOS.map(([nom, i]) => [nom, fl.contactos.filter((k) => nivel(k) >= i).length] as [string, number]);
+      let fuga = { paso: "", se_fueron: 0, pct: 0 };
+      const pasos = n.map(([nom, c], i) => {
+        const prev = i ? n[i - 1][1] : c, cae = prev - c, pc = prev ? Math.round((cae / prev) * 100) : 0;
+        if (i && cae > fuga.se_fueron) fuga = { paso: `${n[i - 1][0]} → ${nom}`, se_fueron: cae, pct: pc };
+        return { paso: nom, personas: c, del_total: n[0][1] ? `${Math.round((c / n[0][1]) * 100)}%` : "—", ...(i ? { se_cayeron_aqui: `${cae} (${pc}%)` } : {}) };
+      });
+      const estado: Record<string, number> = {};
+      for (const k of fl.contactos) estado[k.stage || "nuevo"] = (estado[k.stage || "nuevo"] || 0) + 1;
+      const porAd = new Map<string, { llegaron: number; pedidos: number; monto: number }>();
+      for (const k of fl.contactos) if (k.ad_id) { const x = porAd.get(String(k.ad_id)) ?? { llegaron: 0, pedidos: 0, monto: 0 }; x.llegaron++; porAd.set(String(k.ad_id), x); }
+      for (const o of fl.pedidos) { const ad = o.shipping?.ad_id; if (!ad || !O.esVenta(o) || O.esPerdido(o)) continue; const x = porAd.get(String(ad)) ?? { llegaron: 0, pedidos: 0, monto: 0 }; x.pedidos++; x.monto += O.total(o); porAd.set(String(ad), x); }
+      const c = cuentas(b, fl);
+      return { bot: b.nombre, periodo: r.etiqueta, nota: "Cuenta a las personas que te escribieron por primera vez en estas fechas, con la etapa que tienen hoy.",
+        conversion_total: pct1(c.dg.ventas, c.chats), efectividad_de_cierre: c.base ? `${Math.round((c.compraron / c.base) * 100)}%` : "—",
+        pasos, mayor_fuga: fuga.paso ? fuga : null, estado_actual: estado,
+        por_anuncio: [...porAd.entries()].sort((p, q) => q[1].llegaron - p[1].llegaron).slice(0, 12).map(([id, x]) => ({ anuncio: nombreAd(fl.am, id), llegaron: x.llegaron, pedidos: x.pedidos, conversion: pct1(x.pedidos, x.llegaron), monto: dinero(x.monto, b.moneda) })) };
+    } },
+
+  { name: "ganancia_por_dia", description: "Ganancia neta, ventas, ingresos, gasto en Meta e IA de cada día del periodo (como el «Profit diario» de Inicio). Máximo 62 días.",
+    inputSchema: S({ bot: P_BOT, periodo: P_PER, desde: P_D, hasta: P_D }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); const r = periodo(b.timezone, a?.periodo ?? "mes", a?.desde, a?.hasta);
+      const dias: string[] = []; for (let d = Date.parse(r.dDesde + "T00:00:00Z"); d <= Date.parse(r.dHasta + "T00:00:00Z") && dias.length < 62; d += 864e5) dias.push(ymd(new Date(d)));
+      const fl = await traer(b, r);
+      const din = (n: number) => dinero(n, b.moneda);
+      const filas = dias.map((d) => {
+        const sub: Filas = { ...fl,
+          contactos: fl.contactos.filter((k) => diaLocal(k.primera_interaccion || k.created_at, b.timezone) === d),
+          pedidos: fl.pedidos.filter((o) => diaLocal(o.created_at, b.timezone) === d),
+          ia: fl.ia.filter((x) => x.dia === d), ads: fl.ads.filter((x) => x.fecha === d), gx: fl.gx.filter((x) => x.fecha === d) };
+        const c = cuentas(b, sub);
+        return { dia: d, ventas: c.dg.ventas, ingresos: din(c.dg.ingresos), gasto_meta: din(c.gastoAds), gasto_ia: din(c.gastoIa), ganancia_neta: c.neta != null ? din(c.neta) : "—", _n: c.neta ?? 0 };
+      });
+      const verdes = filas.filter((f) => f._n > 0).length, mejor = filas.reduce((m, f) => (f._n > m._n ? f : m), filas[0]);
+      return { bot: b.nombre, periodo: r.etiqueta, dias_en_verde: `${verdes} de ${filas.length}`, mejor_dia: mejor ? `${mejor.dia} (${mejor.ganancia_neta})` : "—",
+        total_ganancia_neta: din(filas.reduce((s, f) => s + f._n, 0)), dias: filas.map(({ _n, ...f }) => f) };
+    } },
+
+  { name: "compras", description: "Los pagos que ENTRARON en un periodo (como la pantalla Compras): ventas cobradas al 100%, con cliente, producto, monto, medio de pago, número de operación y si ya se verificó con el banco.",
+    inputSchema: S({ bot: P_BOT, periodo: P_PER, desde: P_D, hasta: P_D, limite: { type: "number" } }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); const r = periodo(b.timezone, a?.periodo ?? "7dias", a?.desde, a?.hasta);
+      const os = await paginar<any>((f, t) => db.from("orders").select("id, amount, currency, order_bumps, estado, created_at, shipping, product:product_id(nombre, tipo), version:version_id(nombre), contacts(nombre, wa_id, source)").eq("channel_id", b.id).gte("created_at", r.desde).lte("created_at", r.hasta).order("created_at", { ascending: false }).order("id").range(f, t));
+      const cerr = os.filter((o) => !esPrueba(o.contacts) && O.esCerrado(o));
+      const din = (n: number) => dinero(n, b.moneda);
+      const sh = (o: any) => o.shipping || {};
+      const verif = cerr.filter((o) => !!sh(o).conciliacion).length;
+      return { bot: b.nombre, periodo: r.etiqueta, compras: cerr.length, cobrado: din(cerr.reduce((s, o) => s + O.cobrado(o), 0)), verificadas_con_el_banco: `${verif} de ${cerr.length}`,
+        lista: cerr.slice(0, Math.min(Number(a?.limite) || 30, 100)).map((o) => ({ fecha: horaLocal(o.created_at, b.timezone), cliente: o.contacts?.nombre ?? null, telefono: o.contacts?.wa_id ?? null,
+          producto: [o.product?.nombre, o.version?.nombre].filter(Boolean).join(" · "), monto: din(O.total(o)), zona: O.zonaDe(o),
+          medio: sh(o).digital_metodo || sh(o).saldo_metodo || sh(o).adelanto_metodo || null, operacion: sh(o).digital_operacion || sh(o).saldo_operacion || sh(o).adelanto_operacion || null,
+          verificada: !!sh(o).conciliacion, ...(Number(sh(o).vuelto) > 0 ? { vuelto_a_favor_del_cliente: din(Number(sh(o).vuelto)) } : {}) })) };
+    } },
+
+  { name: "pagos_por_validar", description: "Los pagos que esperan que una persona los revise (como Pagos por validar): cliente, monto que pagó, monto esperado, número de operación, por qué la IA no lo aprobó sola y hace cuánto espera. Solo lectura: aprobarlos se hace en el panel.",
+    inputSchema: S({ bot: { type: "string", description: "Bot; omítelo para revisar todos." } }),
+    run: async (ctx, a) => {
+      const bots = a?.bot ? [botDe(ctx, a.bot)] : ctx.bots;
+      const TIPOS = ["adelanto_validar", "saldo_validar", "pago_digital_validar", "pago_extra_validar", "prepago_lima_validar"];
+      const NOM: Record<string, string> = { adelanto_validar: "Adelanto", saldo_validar: "Saldo", pago_digital_validar: "Pago digital", pago_extra_validar: "Pago de una venta extra", prepago_lima_validar: "Pago adelantado de Lima" };
+      const out = [];
+      for (const b of bots) {
+        const { data } = await db.from("notificaciones").select("tipo, datos, detalle, created_at, contacts(nombre, wa_id)").eq("channel_id", b.id).in("tipo", TIPOS).eq("por_atender", true).is("resuelta_at", null).order("created_at");
+        const din = (x: unknown) => (x == null || x === "" ? null : /^\d/.test(String(x)) ? dinero(Number(x), b.moneda) : String(x));
+        const lista = ((data ?? []) as any[]).map((n) => ({ tipo: NOM[n.tipo] ?? n.tipo, cliente: n.contacts?.nombre ?? n.datos?.cliente ?? null, telefono: n.contacts?.wa_id ?? null,
+          pago: din(n.datos?.monto_leido), esperado: din(n.datos?.monto_esperado ?? n.datos?.monto), por_cobrar: din(n.datos?.por_cobrar),
+          operacion: n.datos?.operacion ?? null, producto: n.datos?.producto ?? null, por_que_revisar: n.datos?.motivo ?? null, espera_desde: horaLocal(n.created_at, b.timezone) }));
+        out.push({ bot: b.nombre, esperando: lista.length, pagos: lista });
+      }
+      return { pagos_por_validar: out, nota: "Para aprobar o rechazar, entra a Nodo → Pagos por validar." };
+    } },
+
+  { name: "cliente", description: "La ficha completa de UN cliente: etapa, producto que le interesa, cuánto ha gastado y cuántas compras, su último pedido, sus etiquetas, la MEMORIA IA (quién es y cómo tratarlo), de qué anuncio vino (nombre, campaña) y si el bot lo atiende.",
+    inputSchema: S({ bot: P_BOT, cliente: P_CLI }, ["cliente"]),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); const k0 = await contactoDe(b.id, a?.cliente);
+      const [{ data: k }, { data: os }, { data: tg }] = await Promise.all([
+        db.from("contacts").select("id, nombre, wa_id, telefono, stage, etapa_previa, source, ad_id, ad_ref, bot_activo, bloqueado, no_remarketing, memoria_ia, created_at, primera_interaccion, ultimo_mensaje_at, products(nombre)").eq("id", k0.id).maybeSingle(),
+        db.from("orders").select("id, estado, amount, order_bumps, shipping, created_at, product:product_id(nombre, tipo)").eq("contact_id", k0.id).order("created_at", { ascending: false }).limit(20),
+        db.from("contact_tags").select("tags(nombre)").eq("contact_id", k0.id),
+      ]);
+      const c: any = k ?? k0, ords = (os ?? []) as any[];
+      const din = (n: number) => dinero(n, b.moneda);
+      const ventas = ords.filter((o) => O.esVenta(o) && !O.esPerdido(o));
+      let anuncio: any = null;
+      if (c.ad_id) { const { data: m } = await db.from("ads_meta").select("ad_name, campaign_name, adset_name, estado").eq("channel_id", b.id).eq("ad_id", c.ad_id).maybeSingle();
+        anuncio = { id: c.ad_id, nombre: (m as any)?.ad_name ?? null, campana: (m as any)?.campaign_name ?? null, conjunto: (m as any)?.adset_name ?? null, estado: (m as any)?.estado ?? null, titulo: c.ad_ref?.headline ?? c.ad_ref?.title ?? null }; }
+      const mem = c.memoria_ia && typeof c.memoria_ia === "object" ? c.memoria_ia : {};
+      const u = ords[0];
+      return { bot: b.nombre, cliente: { id: c.id, nombre: c.nombre, telefono: c.wa_id, etapa: c.stage, ...(c.stage === "perdido" && c.etapa_previa ? { etapa_antes_de_perderse: c.etapa_previa } : {}),
+        producto_que_le_interesa: c.products?.nombre ?? null, llego: horaLocal(c.primera_interaccion || c.created_at, b.timezone), ultimo_mensaje: horaLocal(c.ultimo_mensaje_at, b.timezone),
+        origen: c.ad_id ? "anuncio" : "orgánico", anuncio, bot_atiende: c.bot_activo !== false, bloqueado: !!c.bloqueado, fuera_del_remarketing: !!c.no_remarketing,
+        etiquetas: ((tg ?? []) as any[]).map((x) => x.tags?.nombre).filter(Boolean),
+        compras: ventas.length, total_gastado: din(ventas.reduce((s, o) => s + O.cobrado(o), 0)),
+        ultimo_pedido: u ? { estado: O.label(u.estado), monto: din(O.total(u)), producto: u.product?.nombre ?? null, fecha: horaLocal(u.created_at, b.timezone), zona: O.zonaDe(u) } : null,
+        memoria_ia: { quien_es: mem.quien_es ?? null, como_tratarlo: mem.como_tratar ?? null } } };
+    } },
+
+  { name: "directo", description: "La cola de Directo: clientes que conviene llamar o escribir HOY, primero los más urgentes (dio sus datos y no pagó, pidió una persona, seguimiento vencido). Con su etapa, último mensaje, intentos y próximo contacto.",
+    inputSchema: S({ bot: P_BOT, limite: { type: "number", description: "Máximo 40 (por defecto 15)." } }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot);
+      const cs = await paginar<any>((f, t) => db.from("contacts").select("id, nombre, wa_id, stage, bot_activo, directo, ultimo_mensaje_at, created_at, source, products(nombre), orders(estado, amount, created_at), conversations(archivada)").eq("channel_id", b.id).in("stage", ["interesado", "caliente", "confirmado"]).order("ultimo_mensaje_at", { ascending: false, nullsFirst: false }).range(f, t), 3000);
+      const hoy = ymd(new Date(Date.now() + desfase(b.timezone) * 60_000));
+      const dir = (c: any) => (c.directo && typeof c.directo === "object" ? c.directo : {});
+      const ult = (c: any) => ((c.orders || []) as any[]).sort((p, q) => String(q.created_at).localeCompare(String(p.created_at)))[0];
+      const W: Record<string, number> = { confirmado: 3, caliente: 2, interesado: 1 };
+      const urg = (c: any) => { const o = ult(c); if (!o) return c.bot_activo === false ? 3 : 2; if (["esperando_adelanto", "pendiente"].includes(o.estado)) return 3; const m = O.EST[o.estado] || {}; return m.perdido || m.cobro === "todo" ? 0 : 1; };
+      const lista = cs.filter((c) => !esPrueba(c) && !(Array.isArray(c.conversations) ? c.conversations[0]?.archivada : c.conversations?.archivada) && !["cerrado", "descartado"].includes(dir(c).estado))
+        .map((c) => ({ c, vence: dir(c).next_call_at && String(dir(c).next_call_at).slice(0, 10) <= hoy ? 0 : 1, u: urg(c) }))
+        .sort((p, q) => p.vence - q.vence || q.u - p.u || (W[q.c.stage] ?? 0) - (W[p.c.stage] ?? 0) || String(q.c.ultimo_mensaje_at || "").localeCompare(String(p.c.ultimo_mensaje_at || "")))
+        .slice(0, Math.min(Number(a?.limite) || 15, 40));
+      const MOT = ["", "pedido en curso", "sin pedido, todavía se puede vender", "dio sus datos y no pagó el adelanto: urge"];
+      return { bot: b.nombre, clientes: lista.map(({ c, vence, u }) => { const d = dir(c), o = ult(c), ints = (d.intentos || []) as any[];
+        return { nombre: c.nombre, telefono: c.wa_id, etapa: c.stage, producto: c.products?.nombre ?? null, por_que: vence === 0 ? "seguimiento para hoy o vencido" : (!o && c.bot_activo === false) ? "pidió hablar con una persona (bot en pausa): urge" : MOT[u] || "",
+          ultimo_mensaje: horaLocal(c.ultimo_mensaje_at, b.timezone), pedido: o ? `${O.label(o.estado)} · ${dinero(Number(o.amount) || 0, b.moneda)}` : null,
+          intentos: ints.length, ultimo_intento: ints.length ? (ints[ints.length - 1].resultado ?? ints[ints.length - 1].r ?? null) : null, proximo_contacto: d.next_call_at ?? null, bot_atiende: c.bot_activo !== false }; }) };
+    } },
+
+  { name: "accesos", description: "Micro apps (como Accesos): accesos mensuales que vencen esta semana, vencidos, ingreso mensual fijo, % que renovó; pago único vendidas, ingresos del mes, quién usa la app y quién nunca la abrió; y los que pagaron y aún no tienen acceso.",
+    inputSchema: S({ bot: P_BOT }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot);
+      const { data: prods } = await db.from("products").select("id, nombre, product_versions(precio, activo, config)").eq("channel_id", b.id).eq("tipo", "microapp");
+      if (!(prods ?? []).length) return { bot: b.nombre, nota: "Este bot no vende micro apps." };
+      if (!appsConfigurada()) return { bot: b.nombre, nota: "Nodo todavía no está conectado con la base de Apps." };
+      const r: any = await appsApi("listar", { channel_id: b.id }, 20000);
+      if (!r?.ok) throw new Fallo("No se pudieron traer los accesos: " + (r?.error ?? "error"));
+      const precios: Record<string, { mes: number; unico: number; nombre: string }> = {};
+      for (const p of (prods ?? []) as any[]) { const vs = (p.product_versions ?? []).filter((v: any) => v.activo !== false);
+        precios[p.id] = { mes: Number(vs.find((v: any) => v.config?.modalidad === "mensual" && (Number(v.config?.meses) || 1) === 1)?.precio) || 0, unico: Number(vs.find((v: any) => v.config?.modalidad !== "mensual")?.precio) || 0, nombre: p.nombre }; }
+      const ahora = Date.now(), DIA = 864e5, acc = (r.accesos ?? []) as any[];
+      const men = acc.filter((x) => x.tipo === "mensual"), uni = acc.filter((x) => x.tipo === "unico");
+      const viejos = men.filter((x) => ahora - Date.parse(x.creado_at) > 30 * DIA);
+      const iniMes = new Date(); iniMes.setUTCDate(1); iniMes.setUTCHours(5, 0, 0, 0);
+      const { data: pend } = await db.from("microapp_entregas").select("estado, created_at, contacts(nombre, wa_id), products(nombre)").eq("channel_id", b.id).in("estado", ["falta_correo", "falta_telefono", "error", "a_humano"]).order("created_at", { ascending: false }).limit(50);
+      const din = (n: number) => dinero(n, b.moneda);
+      return { bot: b.nombre,
+        mensual: { vencen_esta_semana: men.filter((x) => x.estado === "activo" && x.vence_at && Date.parse(x.vence_at) - ahora < 7 * DIA).length, vencidos: men.filter((x) => x.estado === "vencido").length,
+          ingreso_mensual_fijo: din(men.filter((x) => x.estado === "activo").reduce((s, x) => s + (precios[x.product_id]?.mes || 0), 0)),
+          renovaron: viejos.length ? `${Math.round((viejos.filter((x) => x.estado === "activo").length / viejos.length) * 100)}%` : "— (aún no cumplen un mes)" },
+        pago_unico: { vendidas: uni.length, ingresos_del_mes: din(uni.filter((x) => Date.parse(x.creado_at) >= iniMes.getTime()).reduce((s, x) => s + (precios[x.product_id]?.unico || 0), 0)) },
+        usan_la_app_7_dias: acc.filter((x) => x.ultimo_uso_at && ahora - Date.parse(x.ultimo_uso_at) < 7 * DIA).length,
+        nunca_abrieron_su_link: acc.filter((x) => !x.ultimo_uso_at && x.estado !== "bloqueado").length,
+        pagaron_sin_acceso: ((pend ?? []) as any[]).map((p) => ({ cliente: p.contacts?.nombre ?? null, telefono: p.contacts?.wa_id ?? null, app: p.products?.nombre ?? null, falta: p.estado, desde: horaLocal(p.created_at, b.timezone) })),
+        por_vencer: men.filter((x) => x.estado === "activo" && x.vence_at && Date.parse(x.vence_at) - ahora < 7 * DIA).slice(0, 20).map((x) => ({ cliente: x.nombre ?? x.correo, app: x.app, vence: horaLocal(x.vence_at, b.timezone) })) };
+    } },
+
+  { name: "campanas_y_secuencias", description: "Cómo van las campañas (enviados, fallidos, si se detuvo y por qué) y las secuencias de remarketing (activa o pausada, a quién le llega y cuántas personas la están recibiendo ahora).",
+    inputSchema: S({ bot: P_BOT }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot);
+      const [{ data: camps }, { data: seqs }, subs] = await Promise.all([
+        db.from("campaigns").select("nombre, estado, total, enviados, fallidos, programada_at, motivo, created_at").eq("channel_id", b.id).order("created_at", { ascending: false }).limit(15),
+        db.from("sequences").select("id, nombre, activo, segmento, modo, pasos").eq("channel_id", b.id).order("created_at"),
+        paginar<any>((f, t) => db.from("sequence_subscriptions").select("sequence_id").eq("channel_id", b.id).eq("estado", "activa").range(f, t)).catch(() => [] as any[]),
+      ]);
+      const enCurso: Record<string, number> = {}; for (const s of subs) enCurso[s.sequence_id] = (enCurso[s.sequence_id] || 0) + 1;
+      return { bot: b.nombre,
+        campanas: ((camps ?? []) as any[]).map((c) => ({ nombre: c.nombre, estado: c.estado, enviados: `${c.enviados ?? 0} de ${c.total ?? 0}`, fallidos: c.fallidos ?? 0, sale: horaLocal(c.programada_at, b.timezone), ...(c.motivo ? { se_detuvo_por: c.motivo } : {}) })),
+        secuencias: ((seqs ?? []) as any[]).map((s) => ({ nombre: s.nombre, activa: s.activo !== false, a_quien: s.segmento ?? null, modo: s.modo ?? null, pasos: Array.isArray(s.pasos) ? s.pasos.length : 0, recibiendola_ahora: enCurso[s.id] || 0 })) };
+    } },
+
+  { name: "horarios", description: "En qué horas y días se vende más (como «Horarios de venta» de Inicio): ventas, ingresos y chats nuevos por hora del día, las mejores horas, el mejor día de la semana y las horas con muchos chats pero pocas ventas.",
+    inputSchema: S({ bot: P_BOT, periodo: P_PER, desde: P_D, hasta: P_D }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); const r = periodo(b.timezone, a?.periodo ?? "30dias", a?.desde, a?.hasta);
+      const fl = await traer(b, r);
+      const off = desfase(b.timezone);
+      const hora = (iso: string) => new Date(Date.parse(iso) + off * 60_000).getUTCHours();
+      const dow = (iso: string) => new Date(Date.parse(iso) + off * 60_000).getUTCDay();
+      const H = Array.from({ length: 24 }, (_, h) => ({ h, ventas: 0, ingresos: 0, chats: 0 }));
+      const D = Array.from({ length: 7 }, () => ({ ventas: 0, ingresos: 0 }));
+      for (const o of fl.pedidos) if (O.esVenta(o) && !O.esPerdido(o)) { const t = O.total(o); H[hora(o.created_at)].ventas++; H[hora(o.created_at)].ingresos += t; D[dow(o.created_at)].ventas++; D[dow(o.created_at)].ingresos += t; }
+      for (const k of fl.contactos) H[hora(k.primera_interaccion || k.created_at)].chats++;
+      const DN = ["domingos", "lunes", "martes", "miércoles", "jueves", "viernes", "sábados"];
+      const din = (n: number) => dinero(n, b.moneda), lbl = (h: number) => `${h}:00–${h + 1}:00`;
+      const mejores = [...H].filter((x) => x.ventas).sort((p, q) => q.ventas - p.ventas || q.ingresos - p.ingresos).slice(0, 3);
+      const flojas = [...H].filter((x) => x.chats >= 3 && x.ventas / x.chats < 0.1).sort((p, q) => q.chats - p.chats).slice(0, 3);
+      const md = D.map((x, i) => ({ ...x, i })).sort((p, q) => q.ventas - p.ventas)[0];
+      return { bot: b.nombre, periodo: r.etiqueta, zona_horaria: b.timezone,
+        mejores_horas: mejores.map((x) => ({ hora: lbl(x.h), ventas: x.ventas, ingresos: din(x.ingresos), compro: pct1(x.ventas, x.chats) })),
+        mejor_dia: md && md.ventas ? `los ${DN[md.i]} · ${md.ventas} ventas · ${din(md.ingresos)}` : "—",
+        llegan_chats_pero_venden_poco: flojas.map((x) => ({ hora: lbl(x.h), chats: x.chats, ventas: x.ventas })),
+        por_hora: H.filter((x) => x.ventas || x.chats).map((x) => ({ hora: lbl(x.h), ventas: x.ventas, ingresos: din(x.ingresos), chats_nuevos: x.chats })) };
+    } },
+];
+
+const TODAS: Tool[] = [...TOOLS, ...NUEVAS];
+
 const INSTRUCCIONES = [
   "Eres un asistente con acceso a Nodo, el CRM de ventas por WhatsApp con IA de esta persona. Habla en español sencillo (Perú, tuteo).",
   "Usa mis_bots primero si no sabes qué bots hay. Las horas que devuelven las herramientas ya están en la zona del bot.",
+  "Los números (ganancia, costo por chat, ROAS…) salen calculados igual que en el panel: úsalos tal cual, no los recalcules. Para «¿cómo me fue?» usa resumen; para comparar, resumen con comparar:true; por anuncio/ángulo/producto, rendimiento; dónde se pierden clientes, embudo.",
   "Las herramientas que cambian algo devuelven primero una vista previa: muéstrasela a la persona y vuelve a llamar con confirmar:true SOLO si te dice que sí.",
   "Nunca inventes números de pago, precios ni datos del negocio: pregúntalos. Conectar WhatsApp y poner claves de IA se hace en el panel, no aquí.",
 ].join("\n");
@@ -514,10 +853,10 @@ async function atender(msg: any, ctx: Ctx): Promise<any | null> {
     }
     case "ping": return ok({});
     case "tools/list":
-      return ok({ tools: TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema,
+      return ok({ tools: TODAS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema,
         annotations: { readOnlyHint: !t.escribe, destructiveHint: false, openWorldHint: false } })) });
     case "tools/call": {
-      const t = TOOLS.find((x) => x.name === msg.params?.name);
+      const t = TODAS.find((x) => x.name === msg.params?.name);
       if (!t) return err(-32602, `No existe la herramienta «${msg.params?.name}».`);
       try {
         const r = await t.run(ctx, msg.params?.arguments ?? {});
