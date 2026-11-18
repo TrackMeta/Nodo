@@ -13,6 +13,7 @@
 import { serviceClient, getChannelSecrets } from "../_shared/db.ts";
 import { sendText, MetaApiError } from "../_shared/meta.ts";
 import { finVentanaAnuncio } from "../_shared/fep.ts";
+import { resumirPedidos } from "../_shared/order-stats.ts";
 // El MISMO armado del texto del negocio que usa el panel al guardar (Bot → Tu negocio), para no tener dos versiones.
 import { compileNegocio, fusionarNegocio } from "../../../panel/negocio-texto.js";
 
@@ -171,31 +172,73 @@ const TOOLS: Tool[] = [
   { name: "mis_bots", description: "Lista tus bots de Nodo: equipo, tu rol, si está encendido y si tiene WhatsApp conectado. Úsala primero para saber qué bots hay.",
     inputSchema: S({}), run: async (ctx) => ({ usuario: ctx.nombre, bots: ctx.bots.map((b) => ({ id: b.id, nombre: b.nombre, equipo: b.equipo, tu_rol: b.rol, encendido: !b.bot_apagado, whatsapp_conectado: b.wa, moneda: b.moneda })) }) },
 
-  { name: "resumen", description: "Cómo le va a un bot (o a todos) en un periodo: chats nuevos, ventas, ingresos, conversión (ventas ÷ chats nuevos), gasto en Meta y gasto de IA. Los números oficiales están en Inicio del panel; esto es el mismo cálculo básico.",
+  { name: "resumen", description: "Cómo le va a un bot (o a todos) en un periodo, con las MISMAS cuentas que Inicio del panel: chats nuevos, ventas, ingresos cobrados, ticket, conversión, gasto en Meta, costo por chat, costo por venta, ROAS, costos, gasto de IA, ganancia bruta y GANANCIA NETA. Usa estos números tal cual; no los recalcules.",
     inputSchema: S({ bot: { type: "string", description: "Bot; omítelo para ver todos tus bots." }, periodo: P_PER, desde: P_D, hasta: P_D }),
     run: async (ctx, a) => {
+      // (18-nov, Rodrigo: «ChatGPT no me pudo decir mi ganancia ni mi costo por chat, lo calculó él») Misma cuenta que
+      // Inicio y el resumen de Telegram (_shared/order-stats.ts › resumirPedidos + _shared/resumen.ts):
+      //   ganancia neta = bruta − anuncios − gastos extra − IA (en la moneda del bot, con su tipo de cambio);
+      //   costo por chat = gasto en Meta ÷ personas que escribieron por un anuncio (primera_interaccion en las fechas).
       const bots = a?.bot ? [botDe(ctx, a.bot)] : ctx.bots;
       const filas = [];
       for (const b of bots) {
         const r = periodo(b.timezone, a?.periodo, a?.desde, a?.hasta);
-        const [ks, os, ia, ads] = await Promise.all([
+        const [ks, os, ia, ads, gx, am, cuentas] = await Promise.all([
           // Chats nuevos = primera_interaccion en las fechas (created_at si falta), como Inicio y el Embudo.
-          paginar<any>((f, t) => db.from("contacts").select("wa_id, source").eq("channel_id", b.id).or(`and(primera_interaccion.gte.${r.desde},primera_interaccion.lte.${r.hasta}),and(primera_interaccion.is.null,created_at.gte.${r.desde},created_at.lte.${r.hasta})`).range(f, t)),
-          paginar<any>((f, t) => db.from("orders").select("amount, estado, contact_id, contacts(wa_id, source)").eq("channel_id", b.id).gte("created_at", r.desde).lte("created_at", r.hasta).range(f, t)),
+          paginar<any>((f, t) => db.from("contacts").select("wa_id, source, ad_id").eq("channel_id", b.id).or(`and(primera_interaccion.gte.${r.desde},primera_interaccion.lte.${r.hasta}),and(primera_interaccion.is.null,created_at.gte.${r.desde},created_at.lte.${r.hasta})`).range(f, t)),
+          paginar<any>((f, t) => db.from("orders").select("contact_id, amount, currency, order_bumps, estado, shipping, created_at, product:product_id(tipo), contacts(wa_id, source)").eq("channel_id", b.id).gte("created_at", r.desde).lte("created_at", r.hasta).order("created_at").order("id").range(f, t)),
           paginar<any>((f, t) => db.from("ai_usage").select("costo_usd").eq("channel_id", b.id).gte("dia", r.dDesde).lte("dia", r.dHasta).range(f, t)),
-          paginar<any>((f, t) => db.from("ads_insights").select("ad_id, gasto").eq("channel_id", b.id).gte("fecha", r.dDesde).lte("fecha", r.dHasta).range(f, t)).catch(() => []),
+          paginar<any>((f, t) => db.from("ads_insights").select("ad_id, gasto").eq("channel_id", b.id).gte("fecha", r.dDesde).lte("fecha", r.dHasta).order("ad_id").range(f, t)).catch(() => [] as any[]),
+          paginar<any>((f, t) => db.from("manual_expenses").select("monto").eq("channel_id", b.id).gte("fecha", r.dDesde).lte("fecha", r.dHasta).order("id").range(f, t)).catch(() => [] as any[]),
+          paginar<any>((f, t) => db.from("ads_meta").select("ad_id, account_id, account_currency").eq("channel_id", b.id).order("ad_id").range(f, t)).catch(() => [] as any[]),
+          db.from("ad_accounts").select("account_id").eq("channel_id", b.id).eq("activo", true).then((x: any) => x, () => ({ data: null })),
         ]);
-        // Meta factura en la moneda de la cuenta publicitaria: si es dólar y el bot reporta en otra, se convierte.
-        const { data: am } = ads.length ? await db.from("ads_meta").select("account_currency").eq("channel_id", b.id).not("account_currency", "is", null).limit(1) : { data: [] as any[] };
-        const monAds = String((am as any)?.[0]?.account_currency ?? b.moneda).toUpperCase();
-        const gastoAds = ads.reduce((s, x) => s + Number(x.gasto || 0), 0) * (monAds === "USD" && b.moneda !== "USD" ? (b.usd_rate || 1) : 1);
-        const chats = ks.filter((k) => !esPrueba(k)).length;
-        const ped = os.filter((o) => !esPrueba(o.contacts) && VENTA.has(String(o.estado)));
-        const ingresos = ped.reduce((s, o) => s + Number(o.amount || 0), 0);
-        filas.push({ bot: b.nombre, periodo: r.etiqueta, chats_nuevos: chats, ventas: ped.length, ingresos: dinero(ingresos, b.moneda),
-          conversion: chats ? `${Math.round((ped.length / chats) * 1000) / 10}%` : "—",
-          gasto_meta: dinero(gastoAds, b.moneda),
-          gasto_ia_usd: `$${ia.reduce((s, x) => s + Number(x.costo_usd || 0), 0).toFixed(3)}` });
+        const cur = String(b.moneda || "PEN").toUpperCase(), tasa = b.usd_rate || 0;
+        // Pedidos de prueba fuera; y los de otra moneda no se suman como si fueran de la del bot (como Inicio).
+        const pedidos = os.filter((o) => !esPrueba(o.contacts) && String(o.currency || "PEN").toUpperCase() === cur);
+        const dg = resumirPedidos(pedidos as any);
+        // Gasto de Meta en la moneda del bot (misma regla que resumen.ts) y sin las cuentas publicitarias quitadas.
+        const monedas = [...new Set(am.map((m: any) => String(m.account_currency || "").toUpperCase()).filter(Boolean))];
+        let factor = 1, sinConvertir = ads.length > 0;
+        if (monedas.length && !am.some((m: any) => !m.account_currency)) {
+          if (monedas.every((m) => m === cur)) sinConvertir = false;
+          else if (monedas.length === 1 && monedas[0] === "USD" && cur !== "USD" && tasa > 0) { factor = tasa; sinConvertir = false; }
+        }
+        const activas = (cuentas as any)?.data ? new Set(((cuentas as any).data as any[]).map((x) => String(x.account_id))) : null;
+        const fuera = new Set(activas ? am.filter((m: any) => m.account_id && !activas.has(String(m.account_id))).map((m: any) => String(m.ad_id)) : []);
+        const gastoAds = ads.filter((x) => !fuera.has(String(x.ad_id))).reduce((s, x) => s + Number(x.gasto || 0), 0) * factor;
+        const gastosExtra = gx.reduce((s, x) => s + Number(x.monto || 0), 0);
+        const iaUsd = ia.reduce((s, x) => s + Number(x.costo_usd || 0), 0);
+        const gastoIa = cur === "USD" ? iaUsd : tasa > 0 ? iaUsd * tasa : 0;
+        const neta = dg.ganancia != null ? dg.ganancia - gastoAds - gastosExtra - gastoIa : null;
+        const contactos = ks.filter((k) => !esPrueba(k));
+        const chats = contactos.length, chatsAds = contactos.filter((k) => k.ad_id).length;
+        const din = (n: number) => dinero(n, b.moneda);
+        const fila: Record<string, unknown> = {
+          bot: b.nombre, periodo: r.etiqueta, moneda: cur,
+          chats_nuevos: chats, chats_de_anuncios: chatsAds,
+          ventas: dg.ventas, ingresos_cobrados: din(dg.ingresos),
+          ...(dg.porCobrar > 0 ? { por_cobrar: din(dg.porCobrar) } : {}),
+          ticket_promedio: dg.ventas ? din(dg.ticket) : "—",
+          conversion: chats ? `${Math.round((dg.ventas / chats) * 1000) / 10}%` : "—",
+          gasto_meta: din(gastoAds),
+          costo_por_chat: gastoAds && chatsAds ? din(gastoAds / chatsAds) : "—",
+          costo_por_venta: gastoAds && dg.ventas ? din(gastoAds / dg.ventas) : "—",
+          roas: gastoAds ? `${(dg.ingresos / gastoAds).toFixed(2)}×` : "—",
+          ...(dg.costoProd > 0 ? { costo_de_productos: din(dg.costoProd) } : {}),
+          ...(dg.envio > 0 ? { gasto_de_envios: din(dg.envio) } : {}),
+          ...(gastosExtra > 0 ? { gastos_extra: din(gastosExtra) } : {}),
+          gasto_ia: gastoIa ? din(gastoIa) : `$${iaUsd.toFixed(3)}`,
+          ganancia_bruta: dg.ganancia != null ? din(dg.ganancia) : "—",
+          ganancia_neta: neta != null ? din(neta) : "—",
+        };
+        const notas: string[] = [];
+        if (neta == null && dg.ventas) notas.push("Ninguna venta tiene sus costos registrados: la ganancia no se puede calcular.");
+        if (dg.gananciaSinDatos) notas.push(`${dg.gananciaSinDatos} pedido(s) físico(s) sin costo o flete no entran en la ganancia.`);
+        if (iaUsd > 0 && !gastoIa) notas.push("El gasto de IA está en dólares y el bot no tiene tipo de cambio: no se restó de la ganancia.");
+        if (sinConvertir && gastoAds) notas.push("No se pudo confirmar la moneda de la cuenta de Meta: el gasto va sin convertir.");
+        if (notas.length) fila.notas = notas;
+        filas.push(fila);
       }
       return { resumen: filas };
     } },
