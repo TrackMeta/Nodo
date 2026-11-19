@@ -138,7 +138,7 @@ function render(){
 // Supabase; va en Conexiones). Se vuelve a llamar al cambiar de bot.
 export async function montarAjustes(box, parte, channelId){
   if(!document.getElementById("ajxCss")){
-    const l=document.createElement("link"); l.id="ajxCss"; l.rel="stylesheet"; l.href=new URL("./ajustes-partes.css?v=4", import.meta.url).href;
+    const l=document.createElement("link"); l.id="ajxCss"; l.rel="stylesheet"; l.href=new URL("./ajustes-partes.css?v=5", import.meta.url).href;
     document.head.appendChild(l);
   }
   st.box=box; st.parte=parte; st.channelId=channelId;
@@ -215,10 +215,8 @@ function renderDatos(b){
         <button type="button" class="dlogo" id="d_drop" title="Cambiar el logo (o suelta una imagen acá)"><img id="d_logo" src="${esc(logo)}" alt=""/><span class="dcam">${icon("camera","")}</span></button>
         <div class="dbot-f">
           <label for="d_nombre">Nombre de tu negocio</label>
-          <input class="in" id="d_nombre" value="${esc(c.nombre||"")}" maxlength="40" autocomplete="off"/>
-          <!-- (19-nov, Rodrigo: «igual que Tu perfil, quita eso de pegar una URL») El logo se cambia con la camarita del logo
-               (o soltando una imagen); queda solo «Quitar» (vuelve al logo de Nodo). La URL vieja, si había, se conserva oculta. -->
-          <div class="dlinks"><button type="button" class="np-bquitar" id="d_quitar" style="height:38px;padding:0 14px;font-size:13px${c.logo_url?"":";display:none"}">${icon("trash","")}<span>Quitar</span></button></div>
+          <!-- (19-nov, Rodrigo: «¿por qué una barra tan grande para un nombre? y Quitar ponlo al lado») -->
+          <div class="dnom"><input class="in" id="d_nombre" value="${esc(c.nombre||"")}" maxlength="40" autocomplete="off"/><button type="button" class="np-bquitar" id="d_quitar" style="${c.logo_url?"":"display:none"}">${icon("trash","")}<span>Quitar</span></button></div>
           <input class="in" id="d_logoUrl" value="${esc(urlVal)}" hidden/>
         </div>
       </div>
