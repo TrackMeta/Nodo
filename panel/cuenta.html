@@ -123,7 +123,9 @@
   .card.eq.abierto .eq-chev{transform:rotate(90deg)}
   .eq-body{display:none;padding:4px 22px 22px;border-top:1px solid var(--border)}
   .card.eq.abierto .eq-body{display:block}
-  .eq-acciones{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 4px}
+  .eq-hacts{display:flex;gap:8px;flex:none;align-items:center}
+  .eq-hacts .eqb:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  @media(max-width:760px){ .eq-hacts .eqb-tx{display:none} .eq-hacts .eqb.sm{width:34px;padding:0;justify-content:center} }
   @media(max-width:640px){ .eq-badges{display:none} .eq-cab{padding:12px 14px;gap:12px} .eq-body{padding:4px 14px 14px} }
   .nodo-modal label.tchip{display:inline-flex;margin:0;font-size:13px;color:var(--text)}   /* la regla de label de .nodo-modal la volvía bloque */
   .nodo-modal label.tchip.on{color:var(--brand)}
@@ -343,14 +345,14 @@ function render(){
         <span class="eq-tx"><b><span class="acctName">${esc(a.nombre||"Mi equipo")}</span>${aqui?'<span class="eq-aqui">Estás aquí</span>':""}</b>
           <small>${nB} bot${nB===1?"":"s"} · ${nP} persona${nP===1?"":"s"}${nB?" · "+esc((a.bots||[]).map((b)=>b.nombre).join(", ")):""}</small></span>
         <span class="eq-badges">${a.tipos?`<span class="badge tipos">Solo ${esc(nombreTipos(a.tipos).toLowerCase())}</span>`:""}</span>
+        ${soyAdmin||st.me.platform_admin?`<span class="eq-hacts">
+          ${soyAdmin&&a.logo?`<span class="eqb sm rojo" role="button" tabindex="0" data-sinfoto="${esc(a.id)}" title="Quitar la foto del equipo">${icon("trash")}<span class="eqb-tx">Quitar foto</span></span>`:""}
+          ${soyAdmin?`<span class="eqb sm" role="button" tabindex="0" data-rename="${esc(a.id)}" title="Cambiar el nombre del equipo">${icon("edit")}<span class="eqb-tx">Renombrar</span></span>`:""}
+          ${st.me.platform_admin?`<span class="eqb sm" role="button" tabindex="0" data-tipos="${esc(a.id)}" title="Qué tipo de productos puede vender este equipo">${icon("box")}<span class="eqb-tx">Qué vende</span></span>`:""}
+        </span>`:""}
         <span class="eq-chev">${icon("chevronRight")}</span>
       </button>
       <div class="eq-body">
-        ${soyAdmin||st.me.platform_admin?`<div class="eq-acciones">
-          ${soyAdmin&&a.logo?`<button class="eqb rojo" data-sinfoto="${esc(a.id)}">${icon("trash")} Quitar foto</button>`:""}
-          ${soyAdmin?`<button class="eqb" data-rename="${esc(a.id)}">${icon("edit")} Renombrar</button>`:""}
-          ${st.me.platform_admin?`<button class="eqb" data-tipos="${esc(a.id)}">${icon("box")} Qué vende</button>`:""}
-        </div>`:""}
         ${botsHtml(a)}
         <div class="eq-lbl">${icon("users")} Personas<span>${soyAdmin?' · como admin puedes invitar y quitar gente':''}</span></div>
         <div class="eqfs">${members}</div>
@@ -386,6 +388,8 @@ function render(){
   document.querySelectorAll("[data-reac]").forEach(b=> b.onclick=()=>{ const x = botDe(b.dataset.reac); if (x) conBoton(b, () => reactivarBot({ id: x.id, nombre: x.nombre || "" })); });
   document.querySelectorAll("[data-sinfoto]").forEach(b=> b.onclick=()=>quitarFoto(b.getAttribute("data-sinfoto")));
   document.querySelectorAll("[data-tipos]").forEach(b=> b.onclick=()=>cambiarTipos(b.getAttribute("data-tipos")));
+  document.querySelectorAll(".eq-hacts").forEach(h=>{ h.addEventListener("click", (e)=>{ e.stopPropagation(); e.preventDefault(); });
+    h.querySelectorAll("[role=button]").forEach(x=> x.addEventListener("keydown", (e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); e.stopPropagation(); x.click(); } })); });
   document.querySelectorAll("[data-rename]").forEach(b=> b.onclick=()=>renameAccount(b.getAttribute("data-rename")));
   document.querySelectorAll("[data-team]").forEach(b=> b.onclick=()=>mkTeamCode(b.getAttribute("data-team")));
   document.querySelectorAll("[data-rm]").forEach(b=> b.onclick=()=>removeMember(b.getAttribute("data-acc"), b.getAttribute("data-rm")));
