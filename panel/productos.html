@@ -311,13 +311,20 @@
   .pc-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;font-size:12px;color:var(--muted)}
   .pc-link{background:none;border:none;padding:0;color:var(--brand);font-weight:600;font-size:12.5px;cursor:pointer}
   /* (17-nov, Rodrigo: «separado pero en la misma página») Pestañas del producto: Producto | Ángulos. */
-  .pvtabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin:0 0 16px}
-  .pvtab{background:transparent;border:none;border-bottom:2px solid transparent;color:var(--muted);font:inherit;font-size:13.5px;font-weight:600;padding:10px 12px;margin-bottom:-1px;display:inline-flex;align-items:center;gap:7px;cursor:pointer}
+  /* (18-nov, Rodrigo: «mejora el diseño de este selector») Mismas pestañas, en la barra blanca de las que van bajo la
+     cabecera (Bot, IA, Canales: shell.css), con la raya de la elegida más marcada y redondeada. */
+  .pvtabs{display:flex;gap:2px;margin:0 0 18px;padding:0 6px;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 24px -16px rgba(16,40,120,.4);overflow-x:auto;scrollbar-width:none}
+  .pvtabs::-webkit-scrollbar{display:none}
+  .pvtab{position:relative;background:transparent;border:none;color:var(--muted);font:inherit;font-size:13.5px;font-weight:600;padding:13px 14px;display:inline-flex;align-items:center;gap:8px;cursor:pointer;white-space:nowrap;transition:color .15s ease-out}
+  .pvtab::after{content:"";position:absolute;left:10px;right:10px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:transparent;transition:background-color .15s ease-out}
   .pvtab:hover{color:var(--text)}
-  .pvtab.on{color:var(--brand);border-bottom-color:var(--brand)}
-  .pvtab svg{width:16px;height:16px}
-  .pvtab .pvn{font-size:11px;font-weight:700;min-width:18px;height:18px;padding:0 5px;border-radius:9px;display:inline-grid;place-items:center;background:var(--surface-2);color:var(--muted)}
-  .pvtab.on .pvn{background:var(--brand-bg);color:var(--brand)}
+  .pvtab:hover::after{background:var(--border)}
+  .pvtab.on{color:var(--brand)}
+  .pvtab.on::after{background:var(--brand)}
+  .pvtab svg{width:16px;height:16px;flex:none}
+  .pvtab:focus-visible{outline:2px solid var(--brand);outline-offset:-4px;border-radius:8px}
+  .pvtab .pvn{font-size:11px;font-weight:700;min-width:20px;height:20px;padding:0 6px;border-radius:10px;display:inline-grid;place-items:center;background:var(--surface-2);color:var(--muted)}
+  .pvtab.on .pvn{background:var(--brand);color:#fff}
   .pvtab .pvn[hidden]{display:none}   /* sin ángulos: nada (el display:inline-grid le ganaba a hidden y salía un círculo vacío) */
 </style>
 </head>
