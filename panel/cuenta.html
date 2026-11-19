@@ -63,6 +63,20 @@
   .botchip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px 0 5px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);font-size:12.5px;font-weight:600;color:var(--text)}
   .botchip img,.botchip svg{width:20px;height:20px;border-radius:50%;object-fit:cover;flex:none}
   .botchip svg{padding:3px;background:var(--brand-bg);color:var(--brand)}
+  /* 🗑️ (19-nov) Filas de bots (admin): Apagar / Reactivar / Eliminar bot */
+  .botrows{display:flex;flex-direction:column;gap:6px;margin:0 0 16px}
+  .botrow{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+  .botrow.off{background:var(--surface-2)}
+  .botrow.off .br-logo,.botrow.off .br-nm{opacity:.65}
+  .br-logo{flex:none;display:inline-grid;place-items:center}
+  .br-logo img,.br-logo svg{width:30px;height:30px;border-radius:50%;object-fit:cover}
+  .br-logo svg{padding:6px;background:var(--brand-bg);color:var(--brand)}
+  .br-nm{flex:1;min-width:0;font-size:13.5px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .br-aqui,.br-off{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;flex:none}
+  .br-aqui{background:var(--brand-bg);color:var(--brand)}
+  .br-off{background:var(--surface);color:var(--muted);border:1px solid var(--border)}
+  .botrow .btn.sm svg{width:14px;height:14px}
+  @media (max-width:560px){ .botrow{flex-wrap:wrap} .br-nm{flex-basis:calc(100% - 44px)} }
   /* 👥 (14-nov, Rodrigo: «ahora ves lo confuso, me aparecen todos mis equipos y mis bots… agrega una foto a mi equipo»)
      Cada equipo es una fila compacta (foto, nombre, cuántos bots y personas) que se abre al tocarla. Abierto de entrada:
      el equipo del bot en el que estás. */
@@ -110,6 +124,7 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog, askChoice, usuarioActual } from "./shell.js";
+import { eliminarBot, apagarBot, reactivarBot } from "./bots-baja.js?v=1";
 const $ = (id) => document.getElementById(id);
 const st = { uid:null, me:null, accounts:[], abiertos:new Set(), botActual:null };
 try { st.botActual = localStorage.getItem("nodo.channelId"); } catch {}
@@ -159,6 +174,9 @@ async function load(){
   let { data: chs, error: eCh } = await supa.from("channels").select("id,nombre,account_id,logo_url").eq("activo", true).order("nombre");
   if (eCh) ({ data: chs } = await supa.from("channels").select("id,nombre,account_id").eq("activo", true).order("nombre"));
   for (const a of st.accounts) a.bots = (chs || []).filter((c) => c.account_id === a.id);
+  // 🗑️ (19-nov) Los apagados (archivados) de cada equipo, para Reactivar o Eliminar aquí (antes, al final de Conexiones).
+  try { const { data: off } = await supa.from("channels").select("id,nombre,account_id,logo_url").eq("activo", false).order("nombre");
+    for (const a of st.accounts) a.apagados = (off || []).filter((c) => c.account_id === a.id); } catch { /* sin apagados */ }
   // Primero el equipo del bot en el que estás (abierto); los demás, por nombre y cerrados. Con un solo equipo, abierto.
   const deAqui = (a) => (a.bots||[]).some((b) => b.id === st.botActual);
   st.accounts.sort((x, y) => (deAqui(y) - deAqui(x)) || String(x.nombre||"").localeCompare(String(y.nombre||"")));
@@ -203,7 +221,17 @@ async function quitarFoto(accId){
 }
 function botsHtml(a){
   const bs = a.bots || [];
-  return `<div class="bots"><span class="bots-t">${bs.length===1?"Bot":"Bots"}</span>${bs.length ? bs.map((b) => `<span class="botchip">${b.logo_url?`<img src="${esc(b.logo_url)}" alt="">`:icon("robot")}${esc(b.nombre||"Bot")}</span>`).join("") : '<span class="muted" style="font-size:12.5px">Todavía no tiene bots</span>'}</div>`;
+  const logo = (b) => b.logo_url ? `<img src="${esc(b.logo_url)}" alt="">` : icon("robot");
+  // Operador: solo los ve. Admin: cada bot en su fila con «Apagar» y «Eliminar bot» (19-nov, Rodrigo: «ubícalo dentro de Equipo»).
+  if (a.role !== "admin") return `<div class="bots"><span class="bots-t">${bs.length===1?"Bot":"Bots"}</span>${bs.length ? bs.map((b) => `<span class="botchip">${logo(b)}${esc(b.nombre||"Bot")}</span>`).join("") : '<span class="muted" style="font-size:12.5px">Todavía no tiene bots</span>'}</div>`;
+  const off = a.apagados || [];
+  const fila = (b, apagado) => `<div class="botrow${apagado?" off":""}"><span class="br-logo">${logo(b)}</span>
+      <span class="br-nm">${esc(b.nombre||"Bot")}${!apagado && b.id===st.botActual ? '<span class="br-aqui">Abierto</span>' : ""}${apagado ? '<span class="br-off">Apagado</span>' : ""}</span>
+      ${apagado ? `<button class="btn sm" data-reac="${esc(b.id)}">Reactivar</button>`
+        : `<button class="btn sm" data-apagar="${esc(b.id)}" title="Deja de responder y sale de tu lista, sin borrar nada. Lo reactivas aquí.">Apagar</button>`}
+      <button class="btn sm danger" data-elim="${esc(b.id)}" data-activo="${apagado?"0":"1"}">${icon("trash")} Eliminar bot</button></div>`;
+  return `<div class="bots-t" style="margin:6px 0 8px">${bs.length===1?"Bot":"Bots"}</div>
+    <div class="botrows">${bs.length ? bs.map((b) => fila(b, false)).join("") : '<div class="muted" style="font-size:12.5px;padding:6px 0">Todavía no tiene bots activos</div>'}${off.map((b) => fila(b, true)).join("")}</div>`;
 }
 
 // 🧩 (13-nov, Rodrigo) Cuentas por TIPO de producto: «que solo puedan vender ese tipo y desaparezca todo rastro de
@@ -310,6 +338,12 @@ function render(){
     const abre=!c.classList.contains("abierto"); c.classList.toggle("abierto",abre); b.setAttribute("aria-expanded",abre);
     if(abre) st.abiertos.add(id); else st.abiertos.delete(id); });
   document.querySelectorAll("[data-foto]").forEach(b=> b.onclick=()=>ponerFoto(b.getAttribute("data-foto")));
+  // 🗑️ Bots: apagar / reactivar / eliminar (bots-baja.js).
+  const botDe = (id) => { for (const a of st.accounts) { const b = [...(a.bots||[]), ...(a.apagados||[])].find((x) => x.id === id); if (b) return b; } return null; };
+  const conBoton = async (btn, fn) => { const t = btn.innerHTML; btn.disabled = true; try { if (await fn()) await load(); } finally { if (btn.isConnected) { btn.disabled = false; btn.innerHTML = t; } } };
+  document.querySelectorAll("[data-elim]").forEach(b=> b.onclick=()=>{ const x = botDe(b.dataset.elim); if (x) conBoton(b, () => eliminarBot({ id: x.id, nombre: x.nombre || "", activo: b.dataset.activo === "1" })); });
+  document.querySelectorAll("[data-apagar]").forEach(b=> b.onclick=()=>{ const x = botDe(b.dataset.apagar); if (x) conBoton(b, () => apagarBot({ id: x.id, nombre: x.nombre || "" })); });
+  document.querySelectorAll("[data-reac]").forEach(b=> b.onclick=()=>{ const x = botDe(b.dataset.reac); if (x) conBoton(b, () => reactivarBot({ id: x.id, nombre: x.nombre || "" })); });
   document.querySelectorAll("[data-sinfoto]").forEach(b=> b.onclick=()=>quitarFoto(b.getAttribute("data-sinfoto")));
   document.querySelectorAll("[data-tipos]").forEach(b=> b.onclick=()=>cambiarTipos(b.getAttribute("data-tipos")));
   document.querySelectorAll("[data-rename]").forEach(b=> b.onclick=()=>renameAccount(b.getAttribute("data-rename")));

@@ -172,7 +172,6 @@
     <div id="tgCard"></div>
     <!-- (31-oct) Lo que era Ajustes → Conexiones: Meta, Google Sheets y uso de Supabase (ajustes-partes.js) -->
     <div id="ajxCard"></div>
-    <div id="archCard"></div>
   </div>
 </div>
 
@@ -232,7 +231,7 @@ async function load(){
   // lecturas por `supa` las cancela shell.js al salir, pero la de arriba va por Edge
   // Function y esas no se pueden cancelar a ciegas (muchas escriben).
   if(!$("waCard")) return;
-  renderWA(); renderTG(); renderArchivo();
+  renderWA(); renderTG();
   montarAjustes($("ajxCard"),"conexiones",forChannel);
 }
 function abrirTab(t){
@@ -388,118 +387,8 @@ async function copiar(txt){
   try{ await navigator.clipboard.writeText(txt); toast("Copiado"); }
   catch{ toast("No se pudo copiar — selecciónalo a mano",true); }
 }
-// ── Archivar un bot ────────────────────────────────────────────────────────────────
-// No hay "eliminar" a propósito: de un canal cuelgan en cascada más de treinta tablas
-// (contactos, conversaciones, mensajes, pedidos, productos, flujos, pagos, atribución),
-// así que borrar la fila se lleva el historial entero de un negocio, de golpe y sin
-// papelera. Archivar lo apaga —el webhook y el motor lo ignoran— y deja todo intacto.
-async function renderArchivo(){
-  const box=$("archCard"); if(!box) return;
-  let arch=[];
-  try{
-    const { data }=await supa.from("channels").select("id,nombre").eq("activo",false).order("nombre");
-    arch=data||[];
-  }catch(_){}
-  if(!$("archCard")) return;  // te fuiste de la pantalla mientras cargaba
-  box.innerHTML=`
-    <div class="card" style="border-color:rgba(240,71,71,.28)">
-      <div class="chd"><span class="ico baja">${icon("archive", "")}</span>
-        <div><div class="nm">Dar de baja este bot</div><div class="sub2">Se apaga, no se borra</div></div></div>
-      <div class="desc">Archivar <b>${esc(st.channelNombre||"este bot")}</b> deja de responder y de gastar. <b>No se borra nada</b> y puedes reactivarlo cuando quieras.</div>
-      <div class="acts"><button class="btn danger" id="archBtn">Archivar este bot</button></div>
-      ${arch.length?`
-        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-          <div class="mt" style="font-weight:700;font-size:12.5px;margin-bottom:10px">Bots archivados</div>
-          ${arch.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border)">
-            <span style="flex:1;min-width:0;font-size:13.5px;font-weight:600" data-nm>${esc(c.nombre)}</span>
-            <button class="btn mini" data-rea="${esc(c.id)}">Reactivar</button>
-            <button class="btn mini" data-del="${esc(c.id)}" style="color:#f04747;border-color:rgba(240,71,71,.45)" title="Eliminar para siempre">Eliminar</button></div>`).join("")}
-          <div class="desc" style="margin-top:12px">Eliminar <b>no se puede deshacer</b> y se lleva todo lo del bot: contactos,
-            conversaciones, pedidos, productos y flujos. Solo aparece en los archivados — un bot en uso no se puede borrar.</div>
-        </div>`:""}
-    </div>`;
-  $("archBtn").onclick=(e)=>archivarBot(e.target);
-  box.querySelectorAll("[data-rea]").forEach(b=>{
-    b.onclick=()=>reactivarBot(b.getAttribute("data-rea"), b.parentElement.querySelector("[data-nm]").textContent, b);
-  });
-  box.querySelectorAll("[data-del]").forEach(b=>{
-    b.onclick=()=>eliminarBot(b.getAttribute("data-del"), b.parentElement.querySelector("[data-nm]").textContent, b);
-  });
-}
-// Eliminar de verdad. Solo sobre un bot ya archivado: el camino obliga a apagarlo,
-// comprobar que no lo necesitas, y recién entonces borrarlo. Antes de preguntar se
-// CUENTA lo que hay dentro — un «esto no se puede deshacer» genérico no informa de
-// nada; «2.480 conversaciones y 312 pedidos» sí.
-async function eliminarBot(id, nombre, btn){
-  const old=btn.textContent; btn.disabled=true; btn.textContent="…";
-  let pv;
-  try{ pv=await callFn("channel-config",{ action:"channel_delete_preview", channel_id:id }); }
-  catch(e){ toast(e.message||"No se pudo leer el bot",true); btn.disabled=false; btn.textContent=old; return; }
-  btn.disabled=false; btn.textContent=old;
-  const n=(x)=> x==null ? "?" : Number(x).toLocaleString("es-PE");
-  const c=pv.cuentas||{};
-  const mb=(b)=> b>=1048576 ? `${(b/1048576).toFixed(1)} MB` : `${Math.max(1,Math.round(b/1024))} KB`;
-  const a=pv.archivos;
-  const filas=[["contactos",c.contactos],["conversaciones",c.conversaciones],["mensajes",c.mensajes],
-               ["pedidos",c.pedidos],["productos",c.productos],["flujos",c.flujos]]
-    .filter(([,v])=>v)   // no se listan los que están en cero: ensucian y no asustan de nada
-    .map(([k,v])=>`<b>${n(v)}</b> ${k}`)
-    // Los archivos de Storage (fotos, audios, comprobantes, adjuntos) se van con el bot.
-    .concat(a&&a.n ? [`<b>${n(a.n)}</b> archivos (${mb(a.bytes||0)}: fotos, audios, comprobantes y adjuntos)`] : [])
-    .join("<br>");
-  const v=await askText({ title:`Eliminar «${nombre}» para siempre`,
-    messageHtml:`Esto <b>no se puede deshacer</b> y no hay copia de seguridad.<br><br>
-      ${filas?`Se borra ahora mismo:<br>${filas}<br><br>`:"Este bot está vacío: no tiene contactos, pedidos ni productos.<br><br>"}
-      Si solo quieres que deje de funcionar, <b>ya está archivado</b> — no hace falta borrarlo.<br><br>
-      Escribe <b>${esc(nombre)}</b> para confirmar.`,
-    label:"Nombre del bot", placeholder:nombre, confirmText:"Eliminar para siempre" });
-  if(v===null) return;
-  if(v.trim().toLowerCase()!==nombre.trim().toLowerCase()){ toast("El nombre no coincide — no se borró nada",true); return; }
-  btn.disabled=true; btn.textContent="Eliminando…";
-  try{
-    const r=await callFn("channel-config",{ action:"channel_delete", channel_id:id, confirmar:v.trim() });
-    const ar=r&&r.archivos;
-    toast(`«${nombre}» se eliminó${ar&&ar.borrados?` con ${n(ar.borrados)} archivos`:""}${ar&&ar.fallidos?` · ${n(ar.fallidos)} archivos no se pudieron borrar`:""}`, !!(ar&&ar.fallidos));
-    await renderArchivo();
-  }catch(err){
-    toast(err.message||"No se pudo eliminar",true);
-    btn.disabled=false; btn.textContent=old;
-  }
-}
-async function archivarBot(btn){
-  // Se exige escribir el nombre: archivar no borra, pero apaga un negocio entero, y el
-  // clic de confirmación solo comprueba que sepas hacer clic — no que sepas cuál elegiste.
-  const nombre=st.channelNombre||"";
-  const v=await askText({ title:`Archivar «${nombre}»`,
-    messageHtml:`Este bot <b>deja de responder</b> a partir de ahora y desaparece del selector.<br><br>
-      <b>No se borra nada</b>: contactos, conversaciones, pedidos, productos y flujos quedan intactos, y lo puedes
-      reactivar desde Canales, en cualquier otro bot.<br><br>Escribe <b>${esc(nombre)}</b> para confirmar.`,
-    label:"Nombre del bot", placeholder:nombre, confirmText:"Archivar" });
-  if(v===null) return;
-  if(v.trim().toLowerCase()!==nombre.trim().toLowerCase()){ toast("El nombre no coincide — no se archivó nada",true); return; }
-  btn.disabled=true; btn.textContent="Archivando…";
-  try{
-    await callFn("channel-config",{ action:"channel_archive", channel_id:st.channelId, archivar:true });
-    toast(`«${nombre}» quedó archivado`);
-    // El shell solo lista los activos: se recarga para que salte al primero que quede.
-    try{ localStorage.removeItem("nodo.channelId"); }catch(_){}
-    location.href="canales.html";
-  }catch(err){
-    toast(err.message||"No se pudo archivar",true);
-    btn.disabled=false; btn.textContent="Archivar este bot";
-  }
-}
-async function reactivarBot(id, nombre, btn){
-  btn.disabled=true; btn.textContent="Reactivando…";
-  try{
-    await callFn("channel-config",{ action:"channel_archive", channel_id:id, archivar:false });
-    toast(`«${nombre}» volvió a estar activo`);
-    location.reload();   // el selector del shell se arma al cargar
-  }catch(err){
-    toast(err.message||"No se pudo reactivar",true);
-    btn.disabled=false; btn.textContent="Reactivar";
-  }
-}
+// 🗑️ (19-nov, Rodrigo: «ubícalo dentro de Equipo») Apagar / reactivar / eliminar un bot se mudó a Equipo (cuenta.html +
+// bots-baja.js). Aquí ya no está la tarjeta «Dar de baja este bot».
 
 // Desconectar el número (para poner otro tras un baneo). NO borra datos del
 // canal — solo quita phone_number_id/waba_id + los secretos del número.
