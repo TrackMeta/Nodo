@@ -1180,9 +1180,13 @@ async function runEngineInner(
     marcaArranque(contactId, "chequeos");
     let decision = await routeDecision(db, channelId, event.text, adIdRuteo);
     marcaArranque(contactId, "ruteo");
-    // 📣 Llegó por un anuncio que NO está asignado a ningún producto (ni banco ni ángulo): el lead cae
-    // en la Recepción y el dueño no se entera de que tiene que asignarlo. Un aviso por anuncio al día.
-    if (event.adId && decision.tier !== "anuncio" && decision.tier !== "referral") {
+    // 📣 Llegó por un anuncio que NO está asignado a ningún producto (ni banco ni ángulo) Y el bot tampoco
+    // supo qué venderle por otro lado: el lead cae en la Recepción y el dueño no se entera de que tiene que
+    // asignarlo. Un aviso por anuncio al día.
+    // (18-nov, Rodrigo) Solo si NO hubo producto (`!decision.flow`): antes saltaba también cuando la palabra
+    // clave del mensaje del anuncio ya lo llevaba al producto correcto, y el aviso («o el bot no sabe qué
+    // venderle») asustaba sin razón — en Recursos Digitales parecía la causa de un silencio que no lo era.
+    if (event.adId && !decision.flow && decision.tier !== "anuncio" && decision.tier !== "referral") {
       try {
         if (!(await flowPorAnuncio(db, channelId, event.adId))) {
           const desde = new Date(Date.now() - 864e5).toISOString();

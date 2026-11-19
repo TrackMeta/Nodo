@@ -266,6 +266,9 @@ function pintaLista() {
     h += `</tbody></table></div>`;
   }
   const sueltos = fam.map((m) => ({ m, n: sinAngulo(m).length })).filter((x) => x.n);
+  // (18-nov, Rodrigo «¿dónde se asigna?») Sin ningún anuncio suelto, la única puerta para poner un anuncio en el producto
+  // era crear un ángulo: el que solo quiere que su anuncio lleve a este producto no la encontraba. Misma ficha de siempre.
+  if (fam.length && !sueltos.length) h += fam.map((m) => `<button type="button" class="amx-sueltos amx-sueltos-add" data-pid="${esc(m.id)}" data-slug="">${icon("megaphone")}<span><b>Agregar un anuncio sin ángulo${multi ? ` · ${esc(paisNom(paisDe(m)))}` : ""}</b> · quien lo toque cae en este producto, con el saludo general</span><span class="amx-sueltos-cta">Agregar →</span></button>`).join("");
   h += sueltos.map(({ m, n }) => `<button type="button" class="amx-sueltos" data-pid="${esc(m.id)}" data-slug="">${icon("megaphone")}<span><b>${n} anuncio${n === 1 ? "" : "s"}${multi ? ` de ${esc(paisNom(paisDe(m)))}` : ""} sin ángulo</b> · llega${n === 1 ? "" : "n"} con el saludo general</span><span class="amx-sueltos-cta">Asignar →</span></button>`).join("");
   h += `</div>`;
   S.host.innerHTML = h;
@@ -924,6 +927,7 @@ function cargaCss() {
   .amx-an b{display:block;font-size:13px}.amx-an span{display:block;font-size:11.5px;color:var(--muted);line-height:1.4;margin-top:2px}
   .amx-sueltos{display:flex;align-items:center;gap:9px;width:100%;margin-top:8px;padding:9px 12px;border-radius:11px;border:1px dashed rgba(240,169,43,.55);background:rgba(240,169,43,.06);color:var(--text);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
   .amx-sueltos:hover{border-style:solid}
+  .amx-sueltos-add{border-color:var(--border);background:transparent}.amx-sueltos-add>svg{color:var(--muted)}
   .amx-sueltos>svg{width:15px;height:15px;color:var(--amber);flex:none}
   .amx-sueltos>span:nth-child(2){flex:1;min-width:0;color:var(--muted)}.amx-sueltos b{color:var(--text)}
   .amx-sueltos-cta{font-weight:700;color:var(--brand);white-space:nowrap}
