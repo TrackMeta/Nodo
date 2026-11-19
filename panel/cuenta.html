@@ -345,10 +345,9 @@ function render(){
         <span class="eq-tx"><b><span class="acctName">${esc(a.nombre||"Mi equipo")}</span>${aqui?'<span class="eq-aqui">Estás aquí</span>':""}</b>
           <small>${nB} bot${nB===1?"":"s"} · ${nP} persona${nP===1?"":"s"}${nB?" · "+esc((a.bots||[]).map((b)=>b.nombre).join(", ")):""}</small></span>
         <span class="eq-badges">${a.tipos?`<span class="badge tipos">Solo ${esc(nombreTipos(a.tipos).toLowerCase())}</span>`:""}</span>
-        ${soyAdmin||st.me.platform_admin?`<span class="eq-hacts">
+        ${soyAdmin?`<span class="eq-hacts">
           ${soyAdmin&&a.logo?`<span class="eqb sm rojo" role="button" tabindex="0" data-sinfoto="${esc(a.id)}" title="Quitar la foto del equipo">${icon("trash")}<span class="eqb-tx">Quitar foto</span></span>`:""}
           ${soyAdmin?`<span class="eqb sm" role="button" tabindex="0" data-rename="${esc(a.id)}" title="Cambiar el nombre del equipo">${icon("edit")}<span class="eqb-tx">Renombrar</span></span>`:""}
-          ${st.me.platform_admin?`<span class="eqb sm" role="button" tabindex="0" data-tipos="${esc(a.id)}" title="Qué tipo de productos puede vender este equipo">${icon("box")}<span class="eqb-tx">Qué vende</span></span>`:""}
         </span>`:""}
         <span class="eq-chev">${icon("chevronRight")}</span>
       </button>
