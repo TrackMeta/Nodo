@@ -1610,7 +1610,7 @@ export async function mountShell({ active } = {}) {
     ? `<button class="nodo-icnbtn" id="nodoConf" type="button" title="Configuración" aria-label="Configuración">${svg("config")}</button>`
     : "";
   const confPopHTML = DS2 && _confG
-    ? `<div class="nodo-confpop" id="nodoConfPop" hidden><div class="ncp-t">Configuración</div>${_confG.items.map(itemHTML).join("")}<div class="ncp-sep"></div><button class="nodo-link" id="nodoAppCel" type="button" title="Descarga la app de Nodo para tu celular Android">${svg("phone")}<span class="nodo-lbl">App para celular</span></button><button class="nodo-link" id="nodoMcp" type="button" title="Usa Nodo desde Claude o ChatGPT">${svg("cable")}<span class="nodo-lbl">MCP</span></button></div>`
+    ? `<div class="nodo-confpop" id="nodoConfPop" hidden><div class="ncp-t">Configuración</div>${_confG.items.map(itemHTML).join("")}<div class="ncp-sep"></div><button class="nodo-link" id="nodoMcp" type="button" title="Usa Nodo desde Claude o ChatGPT">${svg("cable")}<span class="nodo-lbl">MCP</span></button><button class="nodo-link" id="nodoAppCel" type="button" title="Descarga la app de Nodo para tu celular Android">${svg("phone")}<span class="nodo-lbl">App para celular</span></button></div>`
     : "";
   nav.innerHTML = `
     <div class="nodo-brand">
