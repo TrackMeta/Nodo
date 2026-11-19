@@ -107,6 +107,12 @@ function bancoDe(p) {
   const cfg = Array.isArray(p?.config?.ad_bank) ? p.config.ad_bank.map(String) : [];
   return [...new Set([...cfg, ...angsDe(p.id).flatMap((a) => a.ad_ids)])];
 }
+// (18-nov, Rodrigo «¿no sería Banco de anuncios?») Una sola puerta a TODOS los anuncios del producto (con o sin ángulo).
+function franjaBanco(m, multi, siempre) {
+  const n = bancoDe(m).length, su = sinAngulo(m).length;
+  if (!n && !siempre) return "";
+  return `<button type="button" class="amx-sueltos amx-banco" data-pid="${esc(m.id)}" data-slug="">${icon("megaphone")}<span><b>Banco de anuncios${multi ? ` · ${esc(paisNom(paisDe(m)))}` : ""}</b> · ${n ? `${n} anuncio${n === 1 ? "" : "s"}${su && angsDe(m.id).length ? ` (${su} sin ángulo)` : ""}` : "todavía no tiene: quien toque un anuncio de aquí cae en este producto"}</span><span class="amx-sueltos-cta">${n ? "Ver →" : "Agregar →"}</span></button>`;
+}
 const sinAngulo = (p) => { const asig = new Set(angsDe(p.id).flatMap((a) => a.ad_ids)); return bancoDe(p).filter((id) => !asig.has(id)); };
 function familias() {
   const m = new Map();
@@ -206,10 +212,9 @@ function pintaMapa() {
       }
       h += `</tr>`;
     }
-    // (1-nov, Rodrigo) «Sin ángulo» no es un ángulo: va como franja debajo, y solo si hay anuncios sueltos.
-    const sueltos = ms.map((m) => ({ m, n: sinAngulo(m).length })).filter((x) => x.n);
+    // (1-nov) «Sin ángulo» no es un ángulo: va como franja debajo. (18-nov) Es el Banco de anuncios: todos los del producto.
     h += `</tbody></table></div>
-      ${sueltos.map(({ m, n }) => `<button type="button" class="amx-sueltos" data-pid="${esc(m.id)}" data-slug="">${icon("megaphone")}<span><b>${n} anuncio${n === 1 ? "" : "s"}${multi ? ` de ${esc(paisNom(paisDe(m)))}` : ""} sin ángulo</b> · llega${n === 1 ? "" : "n"} con el saludo general</span><span class="amx-sueltos-cta">Asignar →</span></button>`).join("")}
+      ${ms.map((m) => franjaBanco(m, multi, false)).join("")}
       <button class="amx-btn" data-nuevo="${esc(famDe(p0))}">${icon("plus")} Ángulo</button></div>`;
   }
   h += `</div>`;
@@ -226,10 +231,12 @@ function pintaLista() {
   const multi = fam.length > 1;
   const slugs = [];
   for (const m of fam) for (const a of angsDe(m.id)) if (!slugs.some((x) => x.slug === a.slug)) slugs.push({ slug: a.slug, nombre: a.nombre });
-  S.ctx.alCambiar?.(slugs.length);
+  // (18-nov) La pestaña se llama «Anuncios»: su numerito es cuántos anuncios tiene ESTE producto (los ángulos, aparte).
+  S.ctx.alCambiar?.(slugs.length, bancoDe(prodDe(S.ctx.producto) || fam[0] || { id: "" }).length);
   const nuevo = (txt, cls) => `<button class="amx-btn ${cls}" data-nuevo>${icon("plus")} ${txt}</button>`;
-  let h = `<div class="amx amx-emb">
-    <div class="amx-eh"><p>Cada ángulo es una <b>idea con la que anuncias</b> este producto: el dolor que resuelve, el ahorro, un regalo… El bot saluda y vende <b>retomando el anuncio del que vino</b> el cliente.</p>
+  // (18-nov, Rodrigo: la pestaña es «Anuncios») Primero el Banco de anuncios (donde se asignan), después los ángulos (opcionales).
+  let h = `<div class="amx amx-emb">${fam.map((m) => franjaBanco(m, multi, true)).join("")}
+    <div class="amx-eh" style="margin-top:18px"><p><b>Ángulos (opcional):</b> cada ángulo es una <b>idea con la que anuncias</b> este producto: el dolor que resuelve, el ahorro, un regalo… El bot saluda y vende <b>retomando el anuncio del que vino</b> el cliente.</p>
       ${slugs.length ? nuevo("Nuevo ángulo", "pri sm") : ""}</div>`;
   if (!fam.length) h += `<div class="amx-empty">Guarda el producto primero para crearle ángulos.</div>`;
   else if (!slugs.length) {
@@ -265,11 +272,6 @@ function pintaLista() {
     }
     h += `</tbody></table></div>`;
   }
-  const sueltos = fam.map((m) => ({ m, n: sinAngulo(m).length })).filter((x) => x.n);
-  // (18-nov, Rodrigo «¿dónde se asigna?») Sin ningún anuncio suelto, la única puerta para poner un anuncio en el producto
-  // era crear un ángulo: el que solo quiere que su anuncio lleve a este producto no la encontraba. Misma ficha de siempre.
-  if (fam.length && !sueltos.length) h += fam.map((m) => `<button type="button" class="amx-sueltos amx-sueltos-add" data-pid="${esc(m.id)}" data-slug="">${icon("megaphone")}<span><b>Agregar un anuncio sin ángulo${multi ? ` · ${esc(paisNom(paisDe(m)))}` : ""}</b> · quien lo toque cae en este producto, con el saludo general</span><span class="amx-sueltos-cta">Agregar →</span></button>`).join("");
-  h += sueltos.map(({ m, n }) => `<button type="button" class="amx-sueltos" data-pid="${esc(m.id)}" data-slug="">${icon("megaphone")}<span><b>${n} anuncio${n === 1 ? "" : "s"}${multi ? ` de ${esc(paisNom(paisDe(m)))}` : ""} sin ángulo</b> · llega${n === 1 ? "" : "n"} con el saludo general</span><span class="amx-sueltos-cta">Asignar →</span></button>`).join("");
   h += `</div>`;
   S.host.innerHTML = h;
   S.host.querySelectorAll("[data-pid]").forEach((b) => (b.onclick = () => ir({ tipo: "ficha", pid: b.dataset.pid, slug: b.dataset.slug, foco: b.dataset.foco || "" })));
@@ -280,11 +282,11 @@ function pintaLista() {
 function pintaFicha(pid, slug) {
   const p = prodDe(pid), a = slug ? angDe(pid, slug) : null, fam = famDeProd(pid), pais = paisDe(p);
   const otros = fam.filter((m) => String(m.id) !== String(pid));
-  const ids = a ? a.ad_ids : sinAngulo(p);
+  const ids = a ? a.ad_ids : bancoDe(p);
   const x = statsDe(ids), rem = a ? remEstado(p, slug) : null;
   const chip = (ok, txt) => `<span class="amx-chip ${ok ? "ok" : "wa"}">${ok ? icon("check") : ""}${esc(txt)}</span>`;
-  let h = `<div class="amx"><button class="amx-back" data-volver>${icon("chevronLeft")} ${S.ctx.producto ? "Volver a los ángulos" : "Volver al mapa"}</button>
-    <div class="amx-card amx-head"><div style="flex:1;min-width:0"><h2>${a ? esc(a.nombre || a.slug) : "Anuncios sin ángulo"}</h2>${a ? "" : `<p style="margin:3px 0 0">Estos anuncios llegan con el saludo general. Asígnales un ángulo para que el bot retome la idea del anuncio.</p>`}
+  let h = `<div class="amx"><button class="amx-back" data-volver>${icon("chevronLeft")} ${S.ctx.producto ? "Volver a Anuncios" : "Volver al mapa"}</button>
+    <div class="amx-card amx-head"><div style="flex:1;min-width:0"><h2>${a ? esc(a.nombre || a.slug) : "Banco de anuncios"}</h2>${a ? "" : `<p style="margin:3px 0 0">Todos los anuncios que llevan a este producto: quien toque uno cae aquí, escriba lo que escriba.${angsDe(pid).length ? " Si el anuncio tiene ángulo, el bot saluda retomando esa idea; si no, con el saludo general." : ""}</p>`}
       <p>${esc(p.nombre)} · <b>${esc(paisNom(pais))}</b></p></div>
       ${otros.length && a ? `<div class="amx-paises">${fam.map((m) => { const tiene = !!angDe(m.id, slug); return `<button class="amx-pais ${String(m.id) === String(pid) ? "on" : ""}" ${tiene ? `data-ir="${esc(m.id)}"` : "disabled title=\"Este ángulo no existe en ese país\""}>${esc(paisNom(paisDe(m)))}</button>`; }).join("")}</div>` : ""}
     </div>`;
@@ -327,7 +329,7 @@ function pintaFicha(pid, slug) {
 // ── Anuncios ──────────────────────────────────────────────────────────────
 function pintaAds(p, a) {
   const box = document.getElementById("amxAds"); if (!box) return;
-  const pais = paisDe(p), ids = a ? a.ad_ids : sinAngulo(p), sueltos = a ? sinAngulo(p) : [];
+  const pais = paisDe(p), ids = a ? a.ad_ids : bancoDe(p), sueltos = a ? sinAngulo(p) : [];
   const enOtro = new Map();
   for (const q of S.prods) if (String(q.id) !== String(p.id)) for (const id of bancoDe(q)) enOtro.set(id, q);
   const enEste = new Set(bancoDe(p));
@@ -338,8 +340,8 @@ function pintaAds(p, a) {
   const resto = libres.filter((m) => !sug.includes(m));
   const opt = (m) => `<option value="${esc(m.ad_id)}">${esc(m.ad_name || m.ad_id)}${m.campaign_name ? " · " + esc(m.campaign_name) : ""}</option>`;
   box.innerHTML = `<h3>${icon("megaphone")} Anuncios de ${esc(paisNom(pais))}</h3>
-    <p class="amx-help">${a ? `Quien toque uno de estos anuncios cae en la versión de <b>${esc(paisNom(pais))}</b> y recibe el saludo y el gancho de este ángulo.` : `Llegan a la versión de <b>${esc(paisNom(pais))}</b> con el saludo general. Asígnales un ángulo para que el saludo retome el anuncio.`}</p>
-    <div id="amxAdList">${ids.length ? fichasAds(p, a, ids) : `<div class="amx-emptyrow">${a ? "Este ángulo no tiene anuncios: nadie llega por aquí." : "No hay anuncios sin ángulo."}</div>`}</div>
+    <p class="amx-help">${a ? `Quien toque uno de estos anuncios cae en la versión de <b>${esc(paisNom(pais))}</b> y recibe el saludo y el gancho de este ángulo.` : `Quien toque uno de estos anuncios cae en la versión de <b>${esc(paisNom(pais))}</b> de este producto.${angsDe(p.id).length ? " Elige a qué ángulo va cada uno (o déjalo sin ángulo)." : ""}`}</p>
+    <div id="amxAdList">${ids.length ? fichasAds(p, a, ids) : `<div class="amx-emptyrow">${a ? "Este ángulo no tiene anuncios: nadie llega por aquí." : "Este producto todavía no tiene anuncios. Agrégalos aquí abajo."}</div>`}</div>
     ${sueltos.length ? `<div class="amx-sub">Sin ángulo en ${esc(paisNom(pais))}</div><div id="amxAdSueltos">${fichasSueltos(sueltos)}</div>` : ""}
     <div class="amx-add">
       ${libres.length ? `<select class="amx-sel" id="amxAddSel"><option value="">＋ Elegir un anuncio de Meta…</option>${sug.length ? `<optgroup label="Sugeridos para ${esc(paisNom(pais))}">${sug.map(opt).join("")}</optgroup>` : ""}${resto.length ? `<optgroup label="${sug.length ? "Otros" : "Anuncios de Meta"}">${resto.map(opt).join("")}</optgroup>` : ""}</select>` : ""}
@@ -361,7 +363,7 @@ function pintaAds(p, a) {
   const cablea = () => {
   box.querySelectorAll("[data-suelta]").forEach((b) => (b.onclick = () => moverAd(p, b.dataset.suelta, "")));
   box.querySelectorAll("[data-mover]").forEach((b) => (b.onclick = () => moverAd(p, b.dataset.mover, slug)));
-  box.querySelectorAll("[data-asig]").forEach((s) => (s.onchange = () => s.value && moverAd(p, s.dataset.asig, s.value)));
+  box.querySelectorAll("[data-asig]").forEach((s) => (s.onchange = () => s.value !== (s.dataset.act || "") && moverAd(p, s.dataset.asig, s.value)));
   box.querySelectorAll("[data-saca]").forEach((b) => (b.onclick = () => sacarAd(p, b.dataset.saca)));
   };
   cablea();
@@ -375,7 +377,8 @@ function fichasAds(p, a, ids) {
   const pais = paisDe(p);
   return ids.map((id) => fichaAnuncioHtml({ id, meta: S.meta[String(id)], datos: (S.adDatos || {})[String(id)],
     acciones: (a ? `<button class="amx-ib" data-suelta="${esc(id)}" title="Quitar de este ángulo (sigue llegando con el saludo general)">${icon("x")}</button>`
-      : `<select class="amx-sel" data-asig="${esc(id)}"><option value="">Asignar a…</option>${angsDe(p.id).map((x) => `<option value="${esc(x.slug)}">${esc(x.nombre || x.slug)}</option>`).join("")}</select>`)
+      : angsDe(p.id).length ? (() => { const act = angsDe(p.id).find((x) => x.ad_ids.includes(String(id)))?.slug || "";
+          return `<select class="amx-sel" data-asig="${esc(id)}" data-act="${esc(act)}"><option value=""${act ? "" : " selected"}>Sin ángulo</option>${angsDe(p.id).map((x) => `<option value="${esc(x.slug)}"${x.slug === act ? " selected" : ""}>Ángulo: ${esc(x.nombre || x.slug)}</option>`).join("")}</select>`; })() : "")
       + `<button class="amx-ib" data-saca="${esc(id)}" title="Sacar de ${esc(paisNom(pais))} (deja de llevar a este producto)">${icon("trash")}</button>` })).join("");
 }
 // (6-nov) «Sin ángulo en …» (dentro de un ángulo): la misma ficha, con «Mover aquí».
@@ -404,8 +407,9 @@ async function moverAd(p, id, slug) {
       if (tenia && !debe) { a.ad_ids = a.ad_ids.filter((x) => x !== id); cambiados.push(a); }
       if (!tenia && debe) { a.ad_ids = [...a.ad_ids, id]; cambiados.push(a); }
     }
+    const nuevo = !bancoDe(p).includes(id);
     await escribeAds(p, [...new Set([...bancoDe(p), id])], cambiados);
-    toast(slug ? `Anuncio asignado a «${angDe(p.id, slug)?.nombre || slug}»` : "Anuncio sin ángulo: llega con el saludo general");
+    toast(nuevo && !slug ? "Anuncio agregado: quien lo toque cae en este producto" : slug ? `Anuncio asignado a «${angDe(p.id, slug)?.nombre || slug}»` : "Anuncio sin ángulo: llega con el saludo general");
   } catch (e) { toast(e.message || "No se pudo guardar", true); }
   pinta();
 }
@@ -927,7 +931,7 @@ function cargaCss() {
   .amx-an b{display:block;font-size:13px}.amx-an span{display:block;font-size:11.5px;color:var(--muted);line-height:1.4;margin-top:2px}
   .amx-sueltos{display:flex;align-items:center;gap:9px;width:100%;margin-top:8px;padding:9px 12px;border-radius:11px;border:1px dashed rgba(240,169,43,.55);background:rgba(240,169,43,.06);color:var(--text);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
   .amx-sueltos:hover{border-style:solid}
-  .amx-sueltos-add{border-color:var(--border);background:transparent}.amx-sueltos-add>svg{color:var(--muted)}
+  .amx-banco{border:1px solid var(--border);background:transparent}.amx-banco>svg{color:var(--brand)}
   .amx-sueltos>svg{width:15px;height:15px;color:var(--amber);flex:none}
   .amx-sueltos>span:nth-child(2){flex:1;min-width:0;color:var(--muted)}.amx-sueltos b{color:var(--text)}
   .amx-sueltos-cta{font-weight:700;color:var(--brand);white-space:nowrap}

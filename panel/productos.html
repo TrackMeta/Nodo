@@ -386,7 +386,7 @@ import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guar
 const tiposCuenta=()=>{ const t=["fisico","digital","microapp"].filter(x=>!document.documentElement.hasAttribute("data-sin-"+x)); return t.length?t:["fisico","digital","microapp"]; };
 const vendeTipo=(t)=>tiposCuenta().includes(t);
 import { mountFolders } from "./folder-bar.js?v=3";
-import { montarMapaAngulos } from "./angulos-mapa.js?v=32";
+import { montarMapaAngulos } from "./angulos-mapa.js?v=34";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
@@ -494,7 +494,7 @@ async function boot(){
   try{
     const qp=new URLSearchParams(location.search), pid=qp.get("p");
     // (17-nov) Los ángulos ahora están dentro de cada producto. El enlace viejo (Secuencias, guardados) explica dónde.
-    if(!pid && qp.get("vista")==="angulos"){ history.replaceState(null,"",location.pathname); toast("Los ángulos ahora están dentro de cada producto: ábrelo y toca la pestaña «Ángulos»"); }
+    if(!pid && qp.get("vista")==="angulos"){ history.replaceState(null,"",location.pathname); toast("Los ángulos ahora están dentro de cada producto: ábrelo y toca la pestaña «Anuncios»"); }
     const secPedida=qp.get("sec");
     if(pid){
       history.replaceState(null,"",location.pathname);
@@ -534,7 +534,7 @@ function ctxAngulos(){
   return { channelId:st.channelId, list:st.list, paisBot:_paisBot, PAIS_INFO,
     abrirSaludo:(pid,slug)=>{ st._angTab=slug||""; return abrir(pid,"activacion"); },
     abrirRemarketing:(pid)=>abrir(pid,"remarketing"),
-    alCambiar:(n)=>{ if(st.receta) st.receta.nAng=n; badgeAngulos(n); } };
+    alCambiar:(n, nAds)=>{ if(st.receta) st.receta.nAng=n; badgeAngulos(nAds||0); } };
 }
 // Muestra el panel del modo activo (catálogo o hub de ángulos).
 function applyGvMode(){
@@ -942,7 +942,7 @@ function renderDetail(){
   d.innerHTML = onHub
     ? (conAngulos ? `<div class="pvtabs" id="pvTabs">
           <button class="pvtab" data-pv="producto">${icon("box")}Producto</button>
-          <button class="pvtab" data-pv="angulos">${icon("compass")}Ángulos<span class="pvn" id="pvAngN" hidden></span></button>
+          <button class="pvtab" data-pv="angulos">${icon("megaphone")}Anuncios<span class="pvn" id="pvAngN" hidden></span></button>
         </div><div id="tabBody"></div><div id="angBody" hidden></div>` : `<div id="tabBody"></div>`)
     : `<div class="pdet-secbar">
          <button class="pdet-back" id="backHub">${CHEV}Inicio</button>
@@ -2793,9 +2793,11 @@ async function renderInicio(){
   let trigs=[];
   if(fIni){ const { data:t } = await supa.from("flow_triggers").select("id,tipo,activo").eq("flow_id",fIni.id); trigs=t||[]; }
   const { data:ch } = await supa.from("channels").select("negocio,ocr_config,gsheets,entregas").eq("id",st.channelId).maybeSingle();
-  let nAng=0; try{ const { data:angsP } = await supa.from("angulos").select("slug").eq("product_id",st.prod.id); nAng=new Set((angsP||[]).map(a=>a.slug)).size; }catch(_){}
+  // (18-nov) El numerito de la pestaña «Anuncios» = anuncios del producto (banco + los de sus ángulos); nAng sigue contando ángulos.
+  let nAng=0, nAds=0; try{ const { data:angsP } = await supa.from("angulos").select("slug,ad_ids").eq("product_id",st.prod.id); nAng=new Set((angsP||[]).map(a=>a.slug)).size;
+    nAds=new Set([...((st.prod.config||{}).ad_bank||[]).map(String), ...(angsP||[]).flatMap(a=>(a.ad_ids||[]).map(String))]).size; }catch(_){}
   st.receta={ flows:flows||[], fIni, fVenta, trigs, ch:ch||{}, nAng };
-  badgeAngulos(nAng);
+  badgeAngulos(nAds);
 
   // Estado por sección (para los puntitos y el X/Y de cada fase).
   const est=(t)=>{
@@ -4723,7 +4725,7 @@ function renderComposer(){
           <button class="iconbtn ang-del" title="Eliminar ángulo">${icon("trash")}</button>
         </div>
         ${ganchoIAHtml(angActivo.gancho_ia, "ang-gancho")}
-        <div style="font-size:11px;color:var(--faint);margin-top:8px;line-height:1.5">${icon("megaphone")} ${nAds?`<b style="color:var(--muted)">${nAds}</b> anuncio${nAds>1?"s":""} asignado${nAds>1?"s":""} a este ángulo.`:"Sin anuncios asignados."} Los anuncios se manejan en el <b style="color:var(--muted)">Banco de anuncios</b> (pestaña <b style="color:var(--muted)">Ángulos</b> del catálogo).</div>`;
+        <div style="font-size:11px;color:var(--faint);margin-top:8px;line-height:1.5">${icon("megaphone")} ${nAds?`<b style="color:var(--muted)">${nAds}</b> anuncio${nAds>1?"s":""} asignado${nAds>1?"s":""} a este ángulo.`:"Sin anuncios asignados."} Los anuncios se manejan en el <b style="color:var(--muted)">Banco de anuncios</b> (pestaña <b style="color:var(--muted)">Anuncios</b> del producto).</div>`;
       body.appendChild(ang);
       ang.querySelector(".ang-del").onclick=async()=>{ if(!await confirmDialog({title:"Eliminar ángulo",message:"¿Eliminar este ángulo y su saludo?",confirmText:"Eliminar",danger:true}))return; harvest(); harvestAngulos(); const slug=angActivo.slug; st.act.angulos.splice(angIdx,1);
         // Se BORRAN sus saludos, como dice el diálogo. Antes quedaban con angulo="" y el motor
