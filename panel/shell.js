@@ -681,9 +681,9 @@ export async function abrirPerfil() {
       <div class="np-cuerpo">
         <div class="np-foto">
           <div class="np-avw"><span class="np-av" id="npAv"></span><button class="np-cam" type="button" id="npCam" aria-label="Cambiar foto" title="Cambiar foto">${NP.camara}</button></div>
-          <span class="np-sep"></span>
+          <span class="np-sep" id="npSep"></span>
           <div class="np-fbtns">
-            <button class="np-bfoto" type="button" id="npSubir">${NP.camara}<span id="npSubirTx">Cambiar foto</span></button>
+            <!-- (19-nov, Rodrigo) Sin «Cambiar foto»: la camarita sobre la foto ya lo hace. -->
             <button class="np-bquitar" type="button" id="npQuitar">${svg("trash")}<span>Quitar</span></button>
             <input type="file" id="npFile" accept="image/png,image/jpeg,image/webp" hidden />
           </div>
@@ -718,13 +718,13 @@ export async function abrirPerfil() {
   const pintar = () => {
     const f = fotoNueva === undefined ? foto : fotoNueva;
     const av = $p("npAv"); if (f) { av.innerHTML = '<img alt="" />'; av.querySelector("img").src = f; } else av.textContent = ini($p("npNombre").value);
-    $p("npSubirTx").textContent = f ? "Cambiar foto" : "Subir foto"; $p("npQuitar").hidden = !f;
+    $p("npQuitar").hidden = !f; $p("npSep").hidden = !f;
   };
   pintar();
   $p("npNombre").addEventListener("input", pintar);
   $p("npX").onclick = close; $p("npCancel").onclick = close;
   back.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
-  $p("npSubir").onclick = $p("npCam").onclick = () => $p("npFile").click();
+  $p("npCam").onclick = () => $p("npFile").click();
   $p("npPwTog").onclick = () => { const pw = $p("npPw"), abrir = pw.hidden; pw.hidden = !abrir; $p("npPwTog").setAttribute("aria-expanded", String(abrir)); if (abrir) setTimeout(() => $p("npPwCur").focus(), 30); };
   $p("npQuitar").onclick = () => { fotoNueva = null; pintar(); };
   $p("npFile").onchange = async (e) => { const f = e.target.files[0]; if (!f) return;

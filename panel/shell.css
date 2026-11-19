@@ -1657,7 +1657,7 @@ html:not([data-ds="1"]) body.nodo-shelled :is(.btn,.nodo-btn):not(.primary):not(
 .np-bfoto:hover{border-color:var(--brand)}
 .np-bquitar{background:color-mix(in srgb,var(--red,#e2564a) 9%,var(--surface));border:1px solid color-mix(in srgb,var(--red,#e2564a) 30%,transparent);color:var(--red,#D92D20)}
 .np-bquitar:hover{border-color:var(--red,#D92D20)}
-.np-bquitar[hidden]{display:none}
+.np-bquitar[hidden],.np-sep[hidden]{display:none}
 .np-lbl{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;color:var(--text);margin:4px 0 8px}
 .np-lic{display:inline-flex;color:var(--brand)} .np-lic svg{width:17px;height:17px}
 .np-in{display:flex;align-items:center;width:100%;box-sizing:border-box;height:46px;padding:0 14px;border-radius:12px;border:1px solid var(--border-strong,#D0D5DD);background:var(--surface);color:var(--text);font:inherit;font-size:15px;margin-bottom:14px}

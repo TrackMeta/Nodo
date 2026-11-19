@@ -216,12 +216,10 @@ function renderDatos(b){
         <div class="dbot-f">
           <label for="d_nombre">Nombre de tu negocio</label>
           <input class="in" id="d_nombre" value="${esc(c.nombre||"")}" maxlength="40" autocomplete="off"/>
-          <div class="dlinks">
-            <button type="button" class="linkish" id="d_cambiar">Cambiar logo</button>
-            <button type="button" class="linkish" id="d_url">${urlVal?"Ocultar la URL":"Pegar una URL"}</button>
-            <button type="button" class="linkish" id="d_quitar" style="color:var(--muted)">Usar el de Nodo</button>
-          </div>
-          <input class="in" id="d_logoUrl" value="${esc(urlVal)}" placeholder="https://.../logo.png" style="margin-top:8px;${urlVal?"":"display:none"}"/>
+          <!-- (19-nov, Rodrigo: «igual que Tu perfil, quita eso de pegar una URL») El logo se cambia con la camarita del logo
+               (o soltando una imagen); queda solo «Quitar» (vuelve al logo de Nodo). La URL vieja, si había, se conserva oculta. -->
+          <div class="dlinks"><button type="button" class="np-bquitar" id="d_quitar" style="height:38px;padding:0 14px;font-size:13px${c.logo_url?"":";display:none"}">${icon("trash","")}<span>Quitar</span></button></div>
+          <input class="in" id="d_logoUrl" value="${esc(urlVal)}" hidden/>
         </div>
       </div>
       <p class="fhelp" style="margin-top:12px">La IA usa este nombre con tus clientes («soy el asistente de …») y es el que ves en el menú. El logo solo lo ves tú.</p>
@@ -251,18 +249,16 @@ function renderDatos(b){
   const pintaLogo=(src)=>{ $("d_logo").src=src||"../assets/logo-128.png"; };
   const logoAhora=()=> st.pendingLogo || (st.removeLogo ? "" : ($("d_logoUrl").value.trim() || (String(c.logo_url||"").startsWith("data:")?String(c.logo_url):"")));
   $("d_drop").onclick=()=>$("d_file").click();
-  $("d_cambiar").onclick=()=>$("d_file").click();
-  $("d_file").onchange=(e)=>handleLogoFile(e.target.files[0],(d)=>{ pintaLogo(d); revisa(); });
+  $("d_file").onchange=(e)=>handleLogoFile(e.target.files[0],(d)=>{ pintaLogo(d); $("d_quitar").style.display=""; revisa(); });
   // Arrastrar y soltar: es como se mueve un logo de verdad, sin pasar por el explorador.
   const dz=$("d_drop");
   ["dragenter","dragover"].forEach(ev=>dz.addEventListener(ev,(e)=>{ e.preventDefault(); dz.classList.add("over"); }));
   ["dragleave","drop"].forEach(ev=>dz.addEventListener(ev,(e)=>{ e.preventDefault(); dz.classList.remove("over"); }));
-  dz.addEventListener("drop",(e)=>{ const f=e.dataTransfer?.files?.[0]; if(f) handleLogoFile(f,(d)=>{ pintaLogo(d); revisa(); }); });
-  $("d_url").onclick=()=>{ const i=$("d_logoUrl"); const ver=i.style.display==="none"; i.style.display=ver?"":"none"; $("d_url").textContent=ver?"Ocultar la URL":"Pegar una URL"; if(ver) i.focus(); };
+  dz.addEventListener("drop",(e)=>{ const f=e.dataTransfer?.files?.[0]; if(f) handleLogoFile(f,(d)=>{ pintaLogo(d); $("d_quitar").style.display=""; revisa(); }); });
   $("d_logoUrl").oninput=()=>{ st.pendingLogo=null; st.removeLogo=false; pintaLogo($("d_logoUrl").value.trim()); revisa(); };
   // «Usar el de Nodo» manda logo_url:null a propósito: si el actual es una imagen subida, vaciar la URL no alcanza
   // (el guardado conserva la imagen justo para no borrarla sin querer).
-  $("d_quitar").onclick=()=>{ st.pendingLogo=null; st.removeLogo=true; $("d_logoUrl").value=""; pintaLogo(""); revisa(); };
+  $("d_quitar").onclick=()=>{ st.pendingLogo=null; st.removeLogo=true; $("d_logoUrl").value=""; pintaLogo(""); $("d_quitar").style.display="none"; revisa(); };
   $("d_nombre").oninput=()=>revisa();
 
   // ── País y hora ── la zona es la de la capital, o la que elija si su país tiene varias. Sin país reconocido, la de antes.
