@@ -76,6 +76,7 @@
   .br-aqui{background:var(--brand-bg);color:var(--brand)}
   .br-off{background:var(--surface);color:var(--muted);border:1px solid var(--border)}
   .botrow .btn.sm svg{width:14px;height:14px}
+  .botrow .nb-sw{margin:0 6px}
   @media (max-width:560px){ .botrow{flex-wrap:wrap} .br-nm{flex-basis:calc(100% - 44px)} }
   /* 👥 (14-nov, Rodrigo: «ahora ves lo confuso, me aparecen todos mis equipos y mis bots… agrega una foto a mi equipo»)
      Cada equipo es una fila compacta (foto, nombre, cuántos bots y personas) que se abre al tocarla. Abierto de entrada:
@@ -124,7 +125,9 @@
 
 <script type="module">
 import { supa, mountShell, toast, icon, askText, confirmDialog, askChoice, usuarioActual } from "./shell.js";
-import { eliminarBot, apagarBot, reactivarBot } from "./bots-baja.js?v=1";
+// encenderBot es nuevo (19-nov): por namespace, para que un shell.js viejo en caché no rompa la página (import con nombre = error).
+import * as Shell from "./shell.js";
+import { eliminarBot, reactivarBot } from "./bots-baja.js?v=2";
 const $ = (id) => document.getElementById(id);
 const st = { uid:null, me:null, accounts:[], abiertos:new Set(), botActual:null };
 try { st.botActual = localStorage.getItem("nodo.channelId"); } catch {}
@@ -171,7 +174,7 @@ async function load(){
   }
   // 🏢 (14-nov, Rodrigo: «es confuso, me dice Nodo Systems y Soluciones Prácticas») Cada tarjeta muestra SUS bots: sin eso no
   // se entendía qué agrupa un equipo. (La RLS solo devuelve los bots de los equipos donde estás.)
-  let { data: chs, error: eCh } = await supa.from("channels").select("id,nombre,account_id,logo_url").eq("activo", true).order("nombre");
+  let { data: chs, error: eCh } = await supa.from("channels").select("id,nombre,account_id,logo_url,bot_apagado").eq("activo", true).order("nombre");
   if (eCh) ({ data: chs } = await supa.from("channels").select("id,nombre,account_id").eq("activo", true).order("nombre"));
   for (const a of st.accounts) a.bots = (chs || []).filter((c) => c.account_id === a.id);
   // 🗑️ (19-nov) Los apagados (archivados) de cada equipo, para Reactivar o Eliminar aquí (antes, al final de Conexiones).
@@ -228,7 +231,7 @@ function botsHtml(a){
   const fila = (b, apagado) => `<div class="botrow${apagado?" off":""}"><span class="br-logo">${logo(b)}</span>
       <span class="br-nm">${esc(b.nombre||"Bot")}${!apagado && b.id===st.botActual ? '<span class="br-aqui">Abierto</span>' : ""}${apagado ? '<span class="br-off">Apagado</span>' : ""}</span>
       ${apagado ? `<button class="btn sm" data-reac="${esc(b.id)}">Reactivar</button>`
-        : `<button class="btn sm" data-apagar="${esc(b.id)}" title="Deja de responder y sale de tu lista, sin borrar nada. Lo reactivas aquí.">Apagar</button>`}
+        : `<button class="nb-sw${b.bot_apagado ? "" : " on"}" type="button" role="switch" aria-checked="${b.bot_apagado ? "false" : "true"}" data-encender="${esc(b.id)}" title="${b.bot_apagado ? "Apagado: toca para encenderlo" : "Encendido: toca para apagarlo"}" aria-label="Encender o apagar ${esc(b.nombre||"el bot")}"></button>`}
       <button class="btn sm danger" data-elim="${esc(b.id)}" data-activo="${apagado?"0":"1"}">${icon("trash")} Eliminar bot</button></div>`;
   return `<div class="bots-t" style="margin:6px 0 8px">${bs.length===1?"Bot":"Bots"}</div>
     <div class="botrows">${bs.length ? bs.map((b) => fila(b, false)).join("") : '<div class="muted" style="font-size:12.5px;padding:6px 0">Todavía no tiene bots activos</div>'}${off.map((b) => fila(b, true)).join("")}</div>`;
@@ -342,7 +345,16 @@ function render(){
   const botDe = (id) => { for (const a of st.accounts) { const b = [...(a.bots||[]), ...(a.apagados||[])].find((x) => x.id === id); if (b) return b; } return null; };
   const conBoton = async (btn, fn) => { const t = btn.innerHTML; btn.disabled = true; try { if (await fn()) await load(); } finally { if (btn.isConnected) { btn.disabled = false; btn.innerHTML = t; } } };
   document.querySelectorAll("[data-elim]").forEach(b=> b.onclick=()=>{ const x = botDe(b.dataset.elim); if (x) conBoton(b, () => eliminarBot({ id: x.id, nombre: x.nombre || "", activo: b.dataset.activo === "1" })); });
-  document.querySelectorAll("[data-apagar]").forEach(b=> b.onclick=()=>{ const x = botDe(b.dataset.apagar); if (x) conBoton(b, () => apagarBot({ id: x.id, nombre: x.nombre || "" })); });
+  // El mismo interruptor «Bot encendido» del selector de bots (shell.js encenderBot: confirma al apagar).
+  const encenderAMano = async (x, prender) => {
+    if (!prender && !(await confirmDialog({ title: "Apagar el bot", message: `El bot de «${x.nombre}» deja de escribirle a todos: mensajes iniciales, IA, remarketing y recordatorios. Lo enciendes cuando quieras.`, confirmText: "Apagar", danger: true }))) return false;
+    const { error } = await supa.from("channels").update({ bot_apagado: !prender }).eq("id", x.id);
+    if (error) { toast(error.message, true); return false; } toast(prender ? `${x.nombre}: encendido` : `${x.nombre}: apagado`); return true; };
+  document.querySelectorAll("[data-encender]").forEach(b=> b.onclick=async()=>{ const x = botDe(b.dataset.encender); if (!x) return;
+    const prender = !b.classList.contains("on"); b.disabled = true;
+    const ok = Shell.encenderBot ? await Shell.encenderBot(x.id, prender) : await encenderAMano(x, prender);
+    try { if (ok) { x.bot_apagado = !prender; b.classList.toggle("on", prender); b.setAttribute("aria-checked", String(prender));
+      b.title = prender ? "Encendido: toca para apagarlo" : "Apagado: toca para encenderlo"; } } finally { b.disabled = false; } });
   document.querySelectorAll("[data-reac]").forEach(b=> b.onclick=()=>{ const x = botDe(b.dataset.reac); if (x) conBoton(b, () => reactivarBot({ id: x.id, nombre: x.nombre || "" })); });
   document.querySelectorAll("[data-sinfoto]").forEach(b=> b.onclick=()=>quitarFoto(b.getAttribute("data-sinfoto")));
   document.querySelectorAll("[data-tipos]").forEach(b=> b.onclick=()=>cambiarTipos(b.getAttribute("data-tipos")));

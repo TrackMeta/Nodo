@@ -1534,6 +1534,8 @@ function pintarEncendido() {
   el.innerHTML = `<span class="bo-dot"></span><span class="bo-tx"><b>El bot de ${escHtml(c.nombre)} está apagado</b> · no le contesta a nadie (ni IA, ni remarketing)</span><button type="button" class="bo-btn">Encender</button>`;
   el.querySelector(".bo-btn").onclick = () => cambiarEncendido(c.id, true);
 }
+// (19-nov) Lo usa también Equipo (cuenta.html): el MISMO interruptor que el selector de bots, con su confirmación al apagar.
+export async function encenderBot(id, prender) { return cambiarEncendido(id, prender); }
 async function cambiarEncendido(id, prender) {
   const c = S.channels.find((x) => x.id === id); if (!c) return false;
   if (!prender && !(await confirmDialog({ title: "Apagar el bot",

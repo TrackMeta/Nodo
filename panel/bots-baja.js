@@ -6,7 +6,8 @@
 // servidor (channel-config channel_delete) solo borra un bot ya apagado. Las mismas protecciones de siempre: se CUENTA
 // lo que se va a borrar antes de preguntar, hay que escribir el nombre (y el servidor lo vuelve a comprobar), y no se
 // puede dejar a nadie sin ningún bot activo (channel_archive → «ultimo_canal»).
-// «Apagar» (archivar) queda como opción chica: deja de responder y de gastar, no borra nada y se reactiva.
+// (19-nov, Rodrigo: «quita lo de apagar o ponle ese toggle») Ya no hay «Apagar» (archivar) en la fila: va el mismo interruptor
+// «Bot encendido» del selector de bots (bot_apagado). Los que ya estaban archivados siguen con Reactivar / Eliminar.
 // ═════════════════════════════════════════════════════════════════════════
 import { supa, toast, askText } from "./shell.js";
 
@@ -40,7 +41,7 @@ export async function eliminarBot({ id, nombre, activo }) {
   const v = await askText({ title: `Eliminar «${nombre}» para siempre`,
     messageHtml: `Esto <b>no se puede deshacer</b> y no hay copia de seguridad: las ventas de este bot también salen de Inicio y de Compras.<br><br>
       ${filas ? `Se borra ahora mismo:<br>${filas}<br><br>` : "Este bot está vacío: no tiene contactos, pedidos ni productos.<br><br>"}
-      ${activo ? "Si solo quieres que deje de responder, usa <b>Apagar</b>: no borra nada.<br><br>" : ""}Escribe <b>${esc(nombre)}</b> para confirmar.`,
+      ${activo ? "Si solo quieres que deje de responder, apágalo con su interruptor: no borra nada.<br><br>" : ""}Escribe <b>${esc(nombre)}</b> para confirmar.`,
     label: "Nombre del bot", placeholder: nombre, confirmText: "Eliminar para siempre" });
   if (v === null) return false;
   if (!igual(v, nombre)) { toast("El nombre no coincide: no se borró nada", true); return false; }
@@ -58,22 +59,6 @@ export async function eliminarBot({ id, nombre, activo }) {
     return false;
   }
   if (soltarSiEsElAbierto(id)) { location.reload(); return true; }
-  return true;
-}
-
-// Apagar (archivar): no borra nada. Devuelve true si lo apagó.
-export async function apagarBot({ id, nombre }) {
-  const v = await askText({ title: `Apagar «${nombre}»`,
-    messageHtml: `Este bot <b>deja de responder</b> a partir de ahora y sale de tu lista de bots.<br><br>
-      <b>No se borra nada</b>: contactos, chats, pedidos y productos quedan intactos, y lo puedes reactivar aquí mismo, en Equipo.<br><br>
-      Escribe <b>${esc(nombre)}</b> para confirmar.`,
-    label: "Nombre del bot", placeholder: nombre, confirmText: "Apagar" });
-  if (v === null) return false;
-  if (!igual(v, nombre)) { toast("El nombre no coincide: no se apagó nada", true); return false; }
-  try { await callFn("channel-config", { action: "channel_archive", channel_id: id, archivar: true }); }
-  catch (e) { toast((e.message || "No se pudo apagar").replace("antes de archivar este", "antes de apagar este"), true); return false; }
-  toast(`«${nombre}» quedó apagado`);
-  if (soltarSiEsElAbierto(id)) location.reload();
   return true;
 }
 
