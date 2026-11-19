@@ -63,41 +63,61 @@
   .botchip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px 0 5px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border);font-size:12.5px;font-weight:600;color:var(--text)}
   .botchip img,.botchip svg{width:20px;height:20px;border-radius:50%;object-fit:cover;flex:none}
   .botchip svg{padding:3px;background:var(--brand-bg);color:var(--brand)}
-  /* 🗑️ (19-nov) Filas de bots (admin): Apagar / Reactivar / Eliminar bot */
-  .botrows{display:flex;flex-direction:column;gap:6px;margin:0 0 16px}
-  .botrow{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+  /* 🎨 (19-nov, Rodrigo: «mejora el diseño… que tenga armonía, que se parezca a Tu perfil») Mismas piezas que la ventana
+     «Tu perfil» (shell.css .np-*): botones suaves azul/rojo con ícono, etiquetas con ícono azul y filas-tarjeta con su cuadrito. */
+  .eqb{display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 15px;border-radius:12px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;transition:border-color .15s,background-color .15s}
+  .eqb svg{width:17px;height:17px;flex:none}
+  .eqb:hover{border-color:var(--brand)}
+  .eqb.sm{height:34px;padding:0 12px;font-size:12.5px;border-radius:10px} .eqb.sm svg{width:15px;height:15px}
+  .eqb.azul{background:var(--brand-bg);border-color:color-mix(in srgb,var(--brand) 30%,transparent);color:var(--brand)}
+  .eqb.rojo{background:color-mix(in srgb,var(--red,#e2564a) 9%,var(--surface));border-color:color-mix(in srgb,var(--red,#e2564a) 30%,transparent);color:var(--red,#D92D20)}
+  .eqb.rojo:hover{border-color:var(--red,#D92D20)}
+  .eqb.primario{height:44px;padding:0 18px;background:var(--brand);border-color:var(--brand);color:#fff;font-size:14px}
+  .eqb.primario:hover{background:var(--brand-2)}
+  .eqb:disabled{opacity:.6;cursor:default}
+  .eq-lbl{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;color:var(--text);margin:18px 0 10px}
+  .eq-lbl svg{width:17px;height:17px;color:var(--brand)}
+  .eq-lbl span{font-weight:400;font-size:12.5px;color:var(--muted)}
+  .eqfs{display:flex;flex-direction:column;gap:8px}
+  .eqf{display:flex;align-items:center;gap:14px;padding:12px 14px;border:1px solid var(--border);border-radius:14px;background:var(--surface)}
+  .eqf-ic{width:42px;height:42px;border-radius:12px;flex:none;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;background:var(--brand-bg);color:var(--brand)}
+  .eqf-ic img{width:100%;height:100%;object-fit:cover}
+  .eqf-ic svg{width:20px;height:20px}
+  .eqf-av{font-weight:700;font-size:15px}
+  .eqf-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .eqf-tx b{font-size:14.5px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .eqf-tx small{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .eqf-tu{font-weight:400;color:var(--muted)}
+  .eqf-acts{display:flex;gap:8px;flex:none}
+  .eq-rol{display:inline-flex;align-items:center;gap:5px;flex:none;font-size:12.5px;font-weight:600;color:var(--brand);background:var(--brand-bg);border-radius:999px;padding:4px 10px}
+  .eq-rol svg{width:14px;height:14px}
+  .eq-rol.op{color:var(--muted);background:var(--surface-2)}
   .botrow.off{background:var(--surface-2)}
-  .botrow.off .br-logo,.botrow.off .br-nm{opacity:.65}
-  .br-logo{flex:none;display:inline-grid;place-items:center}
-  .br-logo img,.br-logo svg{width:30px;height:30px;border-radius:50%;object-fit:cover}
-  .br-logo svg{padding:6px;background:var(--brand-bg);color:var(--brand)}
-  .br-nm{flex:1;min-width:0;font-size:13.5px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .br-aqui,.br-off{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;flex:none}
-  .br-aqui{background:var(--brand-bg);color:var(--brand)}
-  .br-off{background:var(--surface);color:var(--muted);border:1px solid var(--border)}
-  .botrow .btn.sm svg{width:14px;height:14px}
-  .botrow .nb-sw{margin:0 6px}
-  @media (max-width:560px){ .botrow{flex-wrap:wrap} .br-nm{flex-basis:calc(100% - 44px)} }
+  .botrow.off .eqf-ic,.botrow.off .eqf-tx b{opacity:.6}
+  .br-aqui{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;flex:none;background:var(--brand-bg);color:var(--brand)}
+  .botrow .nb-sw{margin:0 4px}
+  @media (max-width:600px){ .eqf{flex-wrap:wrap} .eqf-tx{flex-basis:calc(100% - 56px)} .eqf-acts{width:100%;justify-content:flex-end} }
   /* 👥 (14-nov, Rodrigo: «ahora ves lo confuso, me aparecen todos mis equipos y mis bots… agrega una foto a mi equipo»)
      Cada equipo es una fila compacta (foto, nombre, cuántos bots y personas) que se abre al tocarla. Abierto de entrada:
      el equipo del bot en el que estás. */
-  .card.eq{padding:0;overflow:hidden;margin-bottom:10px}
-  .eq-cab{all:unset;box-sizing:border-box;width:100%;display:flex;align-items:center;gap:14px;padding:14px 18px;cursor:pointer}
+  .card.eq{padding:0;overflow:hidden;margin-bottom:12px;border-radius:20px}
+  .eq-cab{all:unset;box-sizing:border-box;width:100%;display:flex;align-items:center;gap:14px;padding:18px 22px;cursor:pointer}
   .eq-cab:hover{background:var(--surface-2)}
   .eq-cab:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
-  .eq-foto{width:44px;height:44px;border-radius:12px;flex:none;display:grid;place-items:center;overflow:hidden;color:#fff;font-weight:800;font-size:18px}
+  .eq-foto{width:48px;height:48px;border-radius:14px;flex:none;display:grid;place-items:center;overflow:hidden;color:#fff;font-weight:800;font-size:18px}
   .eq-foto img{width:100%;height:100%;object-fit:cover}
   .eq-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
-  .eq-tx b{font-size:15px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:8px}
+  .eq-tx b{font-size:17px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:8px}
   .eq-tx small{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .eq-aqui{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--brand-bg);color:var(--brand);flex:none}
   .eq-badges{display:flex;gap:6px;flex:none}
-  .eq-chev{width:28px;height:28px;flex:none;display:grid;place-items:center;color:var(--muted);transition:transform .2s}
+  .eq-chev{width:36px;height:36px;border-radius:10px;flex:none;display:grid;place-items:center;color:var(--muted);transition:transform .2s,background-color .15s}
+  .eq-cab:hover .eq-chev{background:var(--surface);color:var(--text)}
   .eq-chev svg{width:16px;height:16px}
   .card.eq.abierto .eq-chev{transform:rotate(90deg)}
-  .eq-body{display:none;padding:4px 18px 18px;border-top:1px solid var(--border)}
+  .eq-body{display:none;padding:4px 22px 22px;border-top:1px solid var(--border)}
   .card.eq.abierto .eq-body{display:block}
-  .eq-acciones{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 12px}
+  .eq-acciones{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 4px}
   @media(max-width:640px){ .eq-badges{display:none} .eq-cab{padding:12px 14px;gap:12px} .eq-body{padding:4px 14px 14px} }
   .nodo-modal label.tchip{display:inline-flex;margin:0;font-size:13px;color:var(--text)}   /* la regla de label de .nodo-modal la volvía bloque */
   .nodo-modal label.tchip.on{color:var(--brand)}
@@ -228,13 +248,14 @@ function botsHtml(a){
   // Operador: solo los ve. Admin: cada bot en su fila con «Apagar» y «Eliminar bot» (19-nov, Rodrigo: «ubícalo dentro de Equipo»).
   if (a.role !== "admin") return `<div class="bots"><span class="bots-t">${bs.length===1?"Bot":"Bots"}</span>${bs.length ? bs.map((b) => `<span class="botchip">${logo(b)}${esc(b.nombre||"Bot")}</span>`).join("") : '<span class="muted" style="font-size:12.5px">Todavía no tiene bots</span>'}</div>`;
   const off = a.apagados || [];
-  const fila = (b, apagado) => `<div class="botrow${apagado?" off":""}"><span class="br-logo">${logo(b)}</span>
-      <span class="br-nm">${esc(b.nombre||"Bot")}${!apagado && b.id===st.botActual ? '<span class="br-aqui">Abierto</span>' : ""}${apagado ? '<span class="br-off">Apagado</span>' : ""}</span>
-      ${apagado ? `<button class="btn sm" data-reac="${esc(b.id)}">Reactivar</button>`
+  const estado = (b, apagado) => apagado ? "Guardado: no responde ni sale en tu lista" : b.bot_apagado ? "Apagado: no le escribe a nadie" : "Encendido: atiende solo";
+  const fila = (b, apagado) => `<div class="eqf botrow${apagado?" off":""}"><span class="eqf-ic br-logo">${logo(b)}</span>
+      <span class="eqf-tx"><b>${esc(b.nombre||"Bot")}${!apagado && b.id===st.botActual ? '<span class="br-aqui">Abierto</span>' : ""}</b><small class="br-est">${estado(b, apagado)}</small></span>
+      ${apagado ? `<button class="eqb sm azul" data-reac="${esc(b.id)}">Reactivar</button>`
         : `<button class="nb-sw${b.bot_apagado ? "" : " on"}" type="button" role="switch" aria-checked="${b.bot_apagado ? "false" : "true"}" data-encender="${esc(b.id)}" title="${b.bot_apagado ? "Apagado: toca para encenderlo" : "Encendido: toca para apagarlo"}" aria-label="Encender o apagar ${esc(b.nombre||"el bot")}"></button>`}
-      <button class="btn sm danger" data-elim="${esc(b.id)}" data-activo="${apagado?"0":"1"}">${icon("trash")} Eliminar bot</button></div>`;
-  return `<div class="bots-t" style="margin:6px 0 8px">${bs.length===1?"Bot":"Bots"}</div>
-    <div class="botrows">${bs.length ? bs.map((b) => fila(b, false)).join("") : '<div class="muted" style="font-size:12.5px;padding:6px 0">Todavía no tiene bots activos</div>'}${off.map((b) => fila(b, true)).join("")}</div>`;
+      <button class="eqb sm rojo" data-elim="${esc(b.id)}" data-activo="${apagado?"0":"1"}">${icon("trash")} Eliminar</button></div>`;
+  return `<div class="eq-lbl">${icon("robot")} ${bs.length===1?"Bot":"Bots"}</div>
+    <div class="eqfs botrows">${bs.length ? bs.map((b) => fila(b, false)).join("") : '<div class="muted" style="font-size:12.5px;padding:6px 0">Todavía no tiene bots activos</div>'}${off.map((b) => fila(b, true)).join("")}</div>`;
 }
 
 // 🧩 (13-nov, Rodrigo) Cuentas por TIPO de producto: «que solo puedan vender ese tipo y desaparezca todo rastro de
@@ -302,11 +323,11 @@ function render(){
     const members = a.members.map(m=>{
       const yo = m.user_id === st.uid;
       const nm = m.app_users?.nombre || "(sin nombre)";
-      return `<div class="mem">
-        <div class="av">${esc(ini(nm))}</div>
-        <div style="flex:1;min-width:0"><div class="nm">${esc(nm)}${yo?' <span class="muted">· tú</span>':''}</div></div>
-        <span class="badge ${m.role==='admin'?'admin':''}">${m.role==='admin'?'Admin':'Operador'}</span>
-        ${(soyAdmin && !yo) ? `<button class="btn sm" data-rol="${esc(m.user_id)}" data-acc="${esc(a.id)}" data-actual="${esc(m.role)}">${m.role==='admin'?'Pasar a operador':'Hacer admin'}</button><button class="btn danger sm" data-rm="${esc(m.user_id)}" data-acc="${esc(a.id)}">Quitar</button>` : ''}
+      return `<div class="eqf">
+        <span class="eqf-ic eqf-av">${esc(ini(nm))}</span>
+        <span class="eqf-tx"><b>${esc(nm)}${yo?' <span class="eqf-tu">· tú</span>':''}</b><small>${m.role==='admin'?'Puede configurar el bot e invitar gente':'Atiende chats y pedidos'}</small></span>
+        <span class="eq-rol${m.role==='admin'?'':' op'}">${icon(m.role==='admin'?'shield':'user')}${m.role==='admin'?'Administrador':'Operador'}</span>
+        ${(soyAdmin && !yo) ? `<span class="eqf-acts"><button class="eqb sm" data-rol="${esc(m.user_id)}" data-acc="${esc(a.id)}" data-actual="${esc(m.role)}">${m.role==='admin'?'Pasar a operador':'Hacer admin'}</button><button class="eqb sm rojo" data-rm="${esc(m.user_id)}" data-acc="${esc(a.id)}">Quitar</button></span>` : ''}
       </div>`;
     }).join("");
     const nB = (a.bots||[]).length, nP = a.members.length, aqui = (st.visibles||st.accounts).length > 1 && (a.bots||[]).some((b)=>b.id===st.botActual);
@@ -320,16 +341,16 @@ function render(){
       </button>
       <div class="eq-body">
         ${soyAdmin||st.me.platform_admin?`<div class="eq-acciones">
-          ${soyAdmin?`<button class="btn sm" data-foto="${esc(a.id)}">${icon("image")} ${a.logo?"Cambiar foto":"Poner foto"}</button>`:""}
-          ${soyAdmin&&a.logo?`<button class="btn sm danger" data-sinfoto="${esc(a.id)}">Quitar foto</button>`:""}
-          ${soyAdmin?`<button class="btn sm" data-rename="${esc(a.id)}">Renombrar</button>`:""}
-          ${st.me.platform_admin?`<button class="btn sm" data-tipos="${esc(a.id)}">Qué vende</button>`:""}
+          ${soyAdmin?`<button class="eqb azul" data-foto="${esc(a.id)}">${icon("camera")} ${a.logo?"Cambiar foto":"Poner foto"}</button>`:""}
+          ${soyAdmin&&a.logo?`<button class="eqb rojo" data-sinfoto="${esc(a.id)}">${icon("trash")} Quitar foto</button>`:""}
+          ${soyAdmin?`<button class="eqb" data-rename="${esc(a.id)}">${icon("edit")} Renombrar</button>`:""}
+          ${st.me.platform_admin?`<button class="eqb" data-tipos="${esc(a.id)}">${icon("box")} Qué vende</button>`:""}
         </div>`:""}
         ${botsHtml(a)}
-        <p class="desc">Personas que entran${soyAdmin?' · como admin puedes invitar y quitar gente.':''}</p>
-        ${members}
+        <div class="eq-lbl">${icon("users")} Personas<span>${soyAdmin?' · como admin puedes invitar y quitar gente':''}</span></div>
+        <div class="eqfs">${members}</div>
         ${soyAdmin?`<div class="row" style="margin-top:16px">
-          <button class="btn primary" data-team="${esc(a.id)}">${icon("users")} Invitar a alguien</button>
+          <button class="eqb primario" data-team="${esc(a.id)}">${icon("plus")} Invitar a alguien</button>
           <span class="muted" style="font-size:12px">Le llega un link para entrar a este equipo como operador o admin.</span>
         </div><div id="teamBox-${esc(a.id)}"></div>`:''}
       </div>
@@ -354,7 +375,8 @@ function render(){
     const prender = !b.classList.contains("on"); b.disabled = true;
     const ok = Shell.encenderBot ? await Shell.encenderBot(x.id, prender) : await encenderAMano(x, prender);
     try { if (ok) { x.bot_apagado = !prender; b.classList.toggle("on", prender); b.setAttribute("aria-checked", String(prender));
-      b.title = prender ? "Encendido: toca para apagarlo" : "Apagado: toca para encenderlo"; } } finally { b.disabled = false; } });
+      b.title = prender ? "Encendido: toca para apagarlo" : "Apagado: toca para encenderlo";
+      const est = b.closest(".botrow")?.querySelector(".br-est"); if (est) est.textContent = prender ? "Encendido: atiende solo" : "Apagado: no le escribe a nadie"; } } finally { b.disabled = false; } });
   document.querySelectorAll("[data-reac]").forEach(b=> b.onclick=()=>{ const x = botDe(b.dataset.reac); if (x) conBoton(b, () => reactivarBot({ id: x.id, nombre: x.nombre || "" })); });
   document.querySelectorAll("[data-sinfoto]").forEach(b=> b.onclick=()=>quitarFoto(b.getAttribute("data-sinfoto")));
   document.querySelectorAll("[data-tipos]").forEach(b=> b.onclick=()=>cambiarTipos(b.getAttribute("data-tipos")));
