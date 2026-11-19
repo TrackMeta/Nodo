@@ -106,6 +106,12 @@
   .eq-cab:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
   .eq-foto{width:48px;height:48px;border-radius:14px;flex:none;display:grid;place-items:center;overflow:hidden;color:#fff;font-weight:800;font-size:18px}
   .eq-foto img{width:100%;height:100%;object-fit:cover}
+  /* (19-nov) Camarita sobre la foto del equipo, como la de «Tu perfil» (.np-cam) */
+  .eq-fotow{position:relative;flex:none;display:inline-flex}
+  .eq-cam{position:absolute;right:-6px;bottom:-6px;width:24px;height:24px;border-radius:50%;border:2px solid var(--surface);background:var(--brand);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+  .eq-cam svg{width:12px;height:12px}
+  .eq-cam:hover{background:var(--brand-2)}
+  .eq-cam:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
   .eq-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
   .eq-tx b{font-size:17px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:8px}
   .eq-tx small{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -333,7 +339,7 @@ function render(){
     const nB = (a.bots||[]).length, nP = a.members.length, aqui = (st.visibles||st.accounts).length > 1 && (a.bots||[]).some((b)=>b.id===st.botActual);
     return `<div class="card eq${st.abiertos.has(a.id)?" abierto":""}" data-acc="${esc(a.id)}">
       <button class="eq-cab" type="button" data-abrir="${esc(a.id)}" aria-expanded="${st.abiertos.has(a.id)}">
-        ${fotoEquipo(a)}
+        <span class="eq-fotow">${fotoEquipo(a)}${soyAdmin?`<span class="eq-cam" role="button" tabindex="0" data-foto="${esc(a.id)}" title="${a.logo?"Cambiar la foto del equipo":"Poner una foto al equipo"}" aria-label="${a.logo?"Cambiar la foto del equipo":"Poner una foto al equipo"}">${icon("camera")}</span>`:""}</span>
         <span class="eq-tx"><b><span class="acctName">${esc(a.nombre||"Mi equipo")}</span>${aqui?'<span class="eq-aqui">Estás aquí</span>':""}</b>
           <small>${nB} bot${nB===1?"":"s"} · ${nP} persona${nP===1?"":"s"}${nB?" · "+esc((a.bots||[]).map((b)=>b.nombre).join(", ")):""}</small></span>
         <span class="eq-badges">${a.tipos?`<span class="badge tipos">Solo ${esc(nombreTipos(a.tipos).toLowerCase())}</span>`:""}</span>
@@ -341,7 +347,6 @@ function render(){
       </button>
       <div class="eq-body">
         ${soyAdmin||st.me.platform_admin?`<div class="eq-acciones">
-          ${soyAdmin?`<button class="eqb azul" data-foto="${esc(a.id)}">${icon("camera")} ${a.logo?"Cambiar foto":"Poner foto"}</button>`:""}
           ${soyAdmin&&a.logo?`<button class="eqb rojo" data-sinfoto="${esc(a.id)}">${icon("trash")} Quitar foto</button>`:""}
           ${soyAdmin?`<button class="eqb" data-rename="${esc(a.id)}">${icon("edit")} Renombrar</button>`:""}
           ${st.me.platform_admin?`<button class="eqb" data-tipos="${esc(a.id)}">${icon("box")} Qué vende</button>`:""}
@@ -361,7 +366,8 @@ function render(){
   document.querySelectorAll("[data-abrir]").forEach(b=> b.onclick=()=>{ const id=b.getAttribute("data-abrir"), c=b.closest(".card.eq");
     const abre=!c.classList.contains("abierto"); c.classList.toggle("abierto",abre); b.setAttribute("aria-expanded",abre);
     if(abre) st.abiertos.add(id); else st.abiertos.delete(id); });
-  document.querySelectorAll("[data-foto]").forEach(b=> b.onclick=()=>ponerFoto(b.getAttribute("data-foto")));
+  document.querySelectorAll("[data-foto]").forEach(b=>{ b.onclick=(e)=>{ e.stopPropagation(); e.preventDefault(); ponerFoto(b.getAttribute("data-foto")); };
+    b.onkeydown=(e)=>{ if(e.key==="Enter"||e.key===" "){ e.stopPropagation(); e.preventDefault(); ponerFoto(b.getAttribute("data-foto")); } }; });
   // 🗑️ Bots: apagar / reactivar / eliminar (bots-baja.js).
   const botDe = (id) => { for (const a of st.accounts) { const b = [...(a.bots||[]), ...(a.apagados||[])].find((x) => x.id === id); if (b) return b; } return null; };
   const conBoton = async (btn, fn) => { const t = btn.innerHTML; btn.disabled = true; try { if (await fn()) await load(); } finally { if (btn.isConnected) { btn.disabled = false; btn.innerHTML = t; } } };
