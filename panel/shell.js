@@ -594,7 +594,10 @@ export function conEfectoTema(aplicar, ev) {
   const t = document.startViewTransition(() => aplicar());
   t.ready.then(() => {
     root.animate({ clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radio}px at ${x}px ${y}px)`] },
-      { duration: 620, easing: "cubic-bezier(.4,0,.2,1)", pseudoElement: "::view-transition-new(root)" });
+      // (20-nov, Rodrigo: «mejora la fluidez de la animación de modo oscuro y claro de la app») Arranca rápido y frena
+      // suave (ease-out): se siente más fluido que el ease-in-out de antes, que empezaba lento justo después del cuadro
+      // trabado de la captura.
+      { duration: 560, easing: "cubic-bezier(.22,.61,.36,1)", pseudoElement: "::view-transition-new(root)" });
   }).catch(() => {});
   t.finished.finally(() => root.classList.remove("tema-vt"));
 }

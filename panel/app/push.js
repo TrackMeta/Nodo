@@ -6,7 +6,13 @@ import { A, on, emit, supa, callFn, toast, cambiarBot, ir } from "./app.js";
 // Barra del celular (hora, señal, batería): del mismo color que la cabecera y con los íconos legibles.
 // En Android 15 la barra ya no se pinta: se ve el fondo de la ventana. NodoNativo.barras pinta ese fondo
 // y elige íconos claros u oscuros; StatusBar queda de respaldo para celulares más viejos.
+// (20-nov) Si el cambio viene con el círculo (html.tema-vt), la barra nativa cambia al final y no a mitad: antes saltaba
+// de color de golpe arriba mientras el círculo recién salía del botón (y la llamada nativa caía en plena animación).
 function barra(t) {
+  if (document.documentElement.classList.contains("tema-vt")) { setTimeout(() => barraYa(t), 420); return; }
+  barraYa(t);
+}
+function barraYa(t) {
   const claro = t === "light", color = claro ? "#FFFFFF" : "#131A26";
   // (1.0.23+) arriba, el mismo degradado que la cabecera (diseño A); los APK de antes lo ignoran
   const NN = window.Capacitor?.Plugins?.NodoNativo;

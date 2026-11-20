@@ -1574,6 +1574,10 @@ html.tema-vt::view-transition-new(root){z-index:2}
 /* El menú tiene su propio view-transition-name (para no parpadear al cambiar de sección) y así quedaba fuera del
    círculo: cambiaba de golpe y por encima. Mientras cambia el TEMA, va con el resto de la pantalla. */
 html.tema-vt .nodo-nav{view-transition-name:none}
+/* (20-nov) MEDIDO en la app: al cambiar de tema, 6 transiciones de color (interruptores, pastillas) corrían DENTRO del
+   círculo: la pantalla nueva se volvía a dibujar en cada cuadro y los colores llegaban «lavados». Mientras dura el
+   círculo, todo cambia de una vez y el círculo es lo único que se mueve. */
+html.tema-vt *,html.tema-vt *::before,html.tema-vt *::after{transition:none!important}
 html.tema-suave,html.tema-suave *,html.tema-suave *::before,html.tema-suave *::after{transition:background-color .4s ease,color .4s ease,border-color .4s ease,fill .4s ease,stroke .4s ease!important}
 
 /* (11-nov) Ondas de la ganancia de Inicio; desde el 12-nov también en la conversión del Embudo (Rodrigo: «el mismo diseño y
