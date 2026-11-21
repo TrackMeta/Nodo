@@ -29147,7 +29147,12 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
       // los tuyos—. Lo que decide son los HECHOS que el código comprueba (número y nombre tuyos) y que el rechazo no hable de
       // otra cosa (monto, fecha, edición, operación…). Las palabras solo eligen el camino de «revisión sin acusar».
       const _motivoT0 = String(result ?? "").replace(/\{[\s\S]*$/, "");
-      const _hablaDeQuienT = /(destinatari|titular|beneficiari|otra\s+cuenta|otro\s+n[uú]mero|a\s+nombre\s+de|destino|n[uú]mero)/i.test(_motivoT0);
+      // (21-nov, OSCAR en Prime) «El comprobante no tiene número de operación visible» (el teclado tapaba el final del Yape):
+      // el «número» de «número de operación» se leía como «número DESTINO» → aviso falso «rechazó por el nombre del
+      // destinatario». Las frases que hablan de la OPERACIÓN se miran aparte.
+      const _sinFrasesOpT = _motivoT0.replace(/(?:(?!\s(?:y|e|pero)\s)[^.;,\n]){0,45}?operaci[oó]n(?:(?!\s(?:y|e|pero)\s)[^.;,\n]){0,25}/gi, " ");
+      const _hablaDeOperacionT = _sinFrasesOpT !== _motivoT0;
+      const _hablaDeQuienT = /(destinatari|titular|beneficiari|otra\s+cuenta|otro\s+n[uú]mero|a\s+nombre\s+de|destino|n[uú]mero)/i.test(_sinFrasesOpT);
       if (/PAGO_NO/i.test(String(result ?? "")) && !/‹antes›/.test(String(result ?? ""))) {
         const _ocrCfgT = (info as any)?.ocr;
         const _destT = String(_ocrLeyo?.destino ?? "");
@@ -29184,6 +29189,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
           }
           await logEvent(db, run.channel_id, run.contact_id, "nota", "👤 El validador dudó del titular, pero el número y el nombre son tuyos",
             `Destino «${_destT}» y titular «${String(_nomT ?? "")}» calzan con tus datos: se acepta. Había dicho: «${_antesT.replace(/\{[\s\S]*\}/, "").slice(0, 140)}»`).catch(() => {});
+        } else if (_numOk && _titOk && _ocrLeyo && _hablaDeOperacionT && !String(_ocrLeyo?.operacion ?? "").trim()
+          && !/(monto|menor|fecha|edit|alterad|borros|ilegible|proceso|pendiente|duplic|usad|vencid|antig|fals[oa]|sospech|posterior|futur|moneda|d[oó]lar|no\s+(?:es|parece)\s+(?:un\s+)?(?:comprobante|yape|plin|pago))/i.test(_sinFrasesOpT)) {
+          // 💳 (21-nov, Rodrigo: «el pago nunca llegó a Pagos por validar») Pago a TU número y a TU nombre al que SOLO le
+          // falta el número de operación (tapado por el teclado, recortado): antes era PAGO_NO → «Te necesita a ti», el bot
+          // en pausa y nada en Pagos por validar. Ahora sigue como PAGO_OK y, como no hay operación, el bloque de abajo lo
+          // ESTACIONA en Pagos por validar (sinOpVerificable: nunca se entrega solo, porque sin operación no hay candado
+          // anti-reúso). Ahí corren igual los frenos de monto, fecha y Yape viejo.
+          const _antesT = String(result ?? "");
+          result = `PAGO_OK\n${JSON.stringify(_ocrLeyo)}`;
+          if (cfg.guardar_en) {
+            run.vars[cfg.guardar_en] = result;
+            await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, result);
+          }
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "🔎 Solo faltaba el número de operación: va a Pagos por validar",
+            `Destino «${_destT}» y titular «${String(_nomT ?? "")}» son tuyos; el validador dijo: «${_antesT.replace(/\{[\s\S]*\}/, "").slice(0, 140)}». Sin número de operación no se entrega solo: lo apruebas tú.`).catch(() => {});
         } else if (_numOk && _titOk && _hablaDeQuienT) {
           const _antesT = String(result ?? "");
           result = "PAGO_NO Déjame confirmarlo con calma 🙌 En un momento te aviso por acá.";
