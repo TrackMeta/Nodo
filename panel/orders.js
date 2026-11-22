@@ -295,7 +295,7 @@ export function costoZonaLima(entregas, zonaNombre){
 // ✍️ Lo que el bot le dice al cliente cuando TÚ rechazas su comprobante y eliges «Que el bot le pida otro»
 // (7-oct, Rodrigo). La frase de siempre se cambia en Pagos por validar → Ajustes; y en cada rechazo se puede
 // reescribir para ese cliente («ese pago es de otro producto», «te faltan S/ 3»…). El bot lo manda tal cual,
-// entre el «Mmm, revisé tu comprobante 🤔» y el cierre del flujo. Devuelve el texto, o null si cancelas.
+// entre el «Revisé tu captura 🙏» y el cierre del flujo. Devuelve el texto, o null si cancelas.
 export const MOTIVO_RECHAZO_DEF = "No pude validar ese comprobante. ¿Me lo reenvías, por favor?";
 export async function pedirMotivoRechazo(supa, askText, channelId, nombre) {
   let def = MOTIVO_RECHAZO_DEF;
@@ -309,7 +309,7 @@ export async function pedirMotivoRechazo(supa, askText, channelId, nombre) {
   if (typeof askText !== "function") return def;
   return await askText({
     title: "¿Qué le dice el bot?",
-    message: `${nombre || "Cliente"} — se lo manda tal cual, después de «Mmm, revisé tu comprobante 🤔». Déjalo así o escríbele el motivo.`,
+    message: `${nombre || "Cliente"} — se lo manda tal cual, después de «Revisé tu captura 🙏». Déjalo así o escríbele el motivo.`,
     value: def, multiline: true, confirmText: "Rechazar y enviar",
   });
 }

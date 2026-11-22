@@ -117,7 +117,7 @@ export async function abrirAjustesPagos(channelId) {
       <div class="ajp-desc">Si rechazas un pago acá o en la ficha del cliente y eliges <b>«Que el bot le pida otro»</b>, el bot le escribe esto. Al rechazar te lo mostramos igual, por si ese cliente necesita otro motivo.</div>
       <span class="ajp-lbl">Lo que le dice el bot</span>
       <textarea id="ajpRz" rows="3" placeholder="No pude validar ese comprobante. ¿Me lo reenvías, por favor?">${esc(rechazo.mensaje || "")}</textarea>
-      <div class="ajp-hint">Le llega así: «Mmm, revisé tu comprobante 🤔», después esta frase y al final el cierre de tu flujo. Vacío = la frase de ejemplo.</div>
+      <div class="ajp-hint">Le llega así: «Revisé tu captura 🙏», después esta frase y al final el cierre de tu flujo. Vacío = la frase de ejemplo.</div>
     </div>
 
     <div class="ajp-card">

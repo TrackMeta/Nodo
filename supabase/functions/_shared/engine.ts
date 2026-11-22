@@ -29138,10 +29138,10 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _noFutura = fechaLeidaNoEsFutura(_ocrLeyo?.fecha, await tzDe(db, run));
         if (_noFutura !== false) {
           const _antes = String(result ?? "");
-          // El flujo antepone «Mmm, revisé tu comprobante 🤔», así que la frase tiene que
+          // El flujo antepone el saludo (ahora «¡Gracias! 🙌 Ya tengo tu captura.»), así que la frase tiene que
           // continuar esa, no repetirla (salía «revisé tu comprobante… estoy revisando tu
           // comprobante»). Medido en PV-k6.
-          result = "PAGO_NO Déjame confirmarlo con calma 🙌 En un momento te aviso por acá.";
+          result = "PAGO_NO La estoy revisando y en un momento te confirmo por acá.";
           // ⚠️ El nodo YA guardó el veredicto crudo unas líneas más arriba, y el mensaje que le
           // llega al cliente sale de ESE campo ({{pago_resultado_motivo}}), no de esta variable:
           // sin re-escribirlo, el evento quedaba registrado pero el cliente igual recibía la
@@ -29226,7 +29226,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
             `Destino «${_destT}» y titular «${String(_nomT ?? "")}» son tuyos; el validador dijo: «${_antesT.replace(/\{[\s\S]*\}/, "").slice(0, 140)}». Sin número de operación no se entrega solo: lo apruebas tú.`).catch(() => {});
         } else if (_numOk && _titOk && _hablaDeQuienT) {
           const _antesT = String(result ?? "");
-          result = "PAGO_NO Déjame confirmarlo con calma 🙌 En un momento te aviso por acá.";
+          result = "PAGO_NO La estoy revisando y en un momento te confirmo por acá.";
           if (cfg.guardar_en) {
             run.vars[cfg.guardar_en] = result;
             await setField(db, run.channel_id, run.contact_id, cfg.guardar_en, result);
@@ -34582,7 +34582,8 @@ async function buildContext(db: SupabaseClient, run: Run) {
     if (s.includes("‹manual›") || s.includes("‹antes›")) {
       ctx[k + "_motivo"] = s.replace(/\{[\s\S]*\}/g, "").replace(/\bPAGO_(OK|NO)\b\s*[:.-]?\s*/gi, "").replace(/‹(?:manual|antes)›/, "").trim();
       // (‹antes›: un Yape viejo a tu número — probablemente ya te compró; nada de «Mmm…» con cara de sospecha)
-      ctx[k + "_intro"] = s.includes("‹antes›") ? "Revisé tu captura 🙏" : "Mmm, revisé tu comprobante 🤔";
+      // (22-nov, Rodrigo: «sí, cámbialo») Sin el «Mmm… 🤔»: sonaba a desconfianza y les llegaba a clientes que pagaron bien.
+      ctx[k + "_intro"] = "Revisé tu captura 🙏";
       continue;
     }
     ctx[k + "_motivo"] = s
@@ -34627,9 +34628,14 @@ async function buildContext(db: SupabaseClient, run: Run) {
       ctx[k + "_motivo"] = `Ese pago salió a otra cuenta${_aQ} 🙏 ` +
         "Fíjate que sea al número de los datos que te pasé y mándame la nueva captura.";
     }
+    // (22-nov, Rodrigo: «sí, cámbialo») El «Mmm, revisé tu comprobante 🤔» sonaba a desconfianza (10 clientes en 30 días, varios
+    // con pagos buenos, como OSCAR con el número de operación tapado). Ahora: si solo se está revisando, «¡Gracias! Ya tengo
+    // tu captura»; si hay que pedir otra o explicar algo, «Revisé tu captura 🙏».
     ctx[k + "_intro"] = /recib[ií]|abono|van s\/|faltan/i.test(_mot)
       ? "¡Gracias! 🙌"
-      : "Mmm, revisé tu comprobante 🤔";
+      : /^la estoy revisando/i.test(_mot)
+        ? "¡Gracias! 🙌 Ya tengo tu captura."
+        : "Revisé tu captura 🙏";
   }
 
   // 5) Opción de compra elegida (unifica versión/pack/cantidad). Su precio PISA
