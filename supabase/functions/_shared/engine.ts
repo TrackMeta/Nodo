@@ -16090,6 +16090,27 @@ async function maybeAdelanto(db: SupabaseClient, channelId: string, contactId: s
 // 📵 Pagó a OTRA cuenta (adelanto o saldo físico): como en digital (D15), se le dice qué pasó en vez
 // de «estoy verificando» y silencio (F5-potronum, 2026-09-26: Yape a «Juana P. Rojas M.» → solo
 // «Estoy verificando»). Igual queda en Pagos por validar: si ese número SÍ es del negocio, se aprueba.
+// 📵 (21-nov, Baba Yaga en Prime) A qué cuenta fue el pago, dicho con el NÚMERO y no con el nombre. Yape/Plin enmascaran el
+// número («*** *** 814»): solo se ven 3 dígitos y la regla de antes pedía 6, así que caía al NOMBRE — y el nombre era el
+// nuestro («salió a otra cuenta (a nombre de Percy Flo*)»): se contradecía y al que quiere engañar le daba pie a «pero si
+// es a tu nombre». Ahora: «fue al número que termina en 814 y el nuestro termina en 092». Sin número legible, el nombre
+// solo si NO es el nuestro; si no, nada.
+async function aQuienFueElPago(db: SupabaseClient, channelId: string, destino: unknown, nombre: unknown): Promise<string> {
+  let cfg: any = null;
+  try { const { data } = await db.from("channels").select("ocr_config").eq("id", channelId).maybeSingle(); cfg = (data as any)?.ocr_config ?? null; } catch (_) { /* sin config */ }
+  const crudo = String(destino ?? ""), d = crudo.replace(/\D/g, "");
+  const legible = d.length >= 6 || (d.length >= 3 && /[*•xX·]/.test(crudo));
+  if (legible) {
+    const metodos: any[] = Array.isArray(cfg?.metodos) ? cfg.metodos : [];
+    // El nuestro: primero un celular (Yape/Plin, 9 dígitos), si no cualquier número cargado.
+    const nums = metodos.map((m) => String(m?.numero ?? "").replace(/\D/g, "")).filter((n) => n.length >= 6);
+    const nuestro = nums.find((n) => n.length === 9) ?? nums[0] ?? "";
+    return ` (al número que termina en *${d.slice(-3)}*${nuestro ? `, y el nuestro termina en *${nuestro.slice(-3)}*` : ""})`;
+  }
+  const q = String(nombre ?? "").trim();
+  if (q && titularCasa(cfg, q) !== true) return ` (a nombre de *${q}*)`;
+  return "";
+}
 async function avisoPagoOtraCuenta(db: SupabaseClient, channelId: string, contactId: string, parsed: any, freno: string | null, opts?: { digital?: boolean }): Promise<boolean> {
   const otra = (!!freno && /n[uú]meros que tienes cargados|no coincide con ninguno de tus titulares/i.test(freno)) ||
     (!parsed?.valido && /(destinatari|titular|beneficiari)[^.]{0,60}\bno\s+(es|coincide|corresponde)|no\s+(es|coincide|corresponde)[^.]{0,40}(destinatari|titular)|otra cuenta|otro n[uú]mero/i.test(String(parsed?.motivo ?? "")));
@@ -16113,14 +16134,13 @@ async function avisoPagoOtraCuenta(db: SupabaseClient, channelId: string, contac
   const quien = String(parsed?.destinatario ?? "").trim();
   // El NÚMERO manda sobre el nombre: con el nombre de nuestro titular y otro número salía «salió a otra cuenta (a
   // nombre de *Percy Rodrigo Flores Nuñez*), no a la nuestra» — nuestro propio nombre (F13-yapeotro, 2026-09-29).
-  const _destN = String(parsed?.destino ?? "").replace(/\D/g, "");
-  const _aQuien = _destN.length >= 6 ? ` (al número que termina en *${_destN.slice(-3)}*)` : quien ? ` (a nombre de *${quien}*)` : "";
+  const _aQuien = await aQuienFueElPago(db, channelId, parsed?.destino, quien);
   await deliverMessage(db, channelId, contactId,
-    `Revisé tu captura 🙏 Ese pago salió a otra cuenta${_aQuien}, no a la nuestra. ` +
+    `Revisé tu captura 🙏 Ese pago salió a otra cuenta${_aQuien}. ` +
     "Fíjate que sea al número de los datos que te pasé y mándame la nueva captura. " +
     "Si lo mandaste bien, tranquilo: una persona del equipo lo revisa y te confirma por acá.").catch(() => {});
   await logEvent(db, channelId, contactId, "nota", "📵 Se le dijo que el pago fue a otra cuenta",
-    quien ? `A nombre de ${quien}` : "Destino que no es ninguno de tus números").catch(() => {});
+    `Destino: ${String(parsed?.destino ?? "") || "—"}${quien ? ` · a nombre de ${quien}` : ""}${_aQuien ? ` · se le dijo${_aQuien}` : ""}`).catch(() => {});
   return true;
 }
 
@@ -34595,15 +34615,16 @@ async function buildContext(db: SupabaseClient, run: Run) {
     // Percy Rodrigo Flores Nuñez ni coincide razonablemente con su nombre») y al «ya te pagué» la
     // IA solo pedía la captura otra vez, sin que el cliente entendiera qué pasó (D15-potronumero).
     if (/(destinatari|titular|beneficiari)[^.]{0,60}\bno\s+(es|coincide|corresponde)|no\s+(es|coincide|corresponde)[^.]{0,40}(destinatari|titular)|otra cuenta|otro n[uú]mero/i.test(_mot)) {
-      let _quien = "", _numD = "";
+      let _quien = "", _numD = "", _j_dest = "";
       try {
         const _j = JSON.parse(s.match(/\{[\s\S]*\}/)?.[0] ?? "{}");
         _quien = String(_j?.titular ?? _j?.destinatario ?? "").trim();
-        _numD = String(_j?.destino ?? "").replace(/\D/g, "");
+        _j_dest = String(_j?.destino ?? "");
+        _numD = _j_dest.replace(/\D/g, "");
       } catch (_) { /* sin JSON */ }
       // (el número manda sobre el nombre — ver avisoPagoOtraCuenta, F13-yapeotro)
-      const _aQ = _numD.length >= 6 ? ` (al número que termina en *${_numD.slice(-3)}*)` : _quien ? ` (a nombre de *${_quien}*)` : "";
-      ctx[k + "_motivo"] = `Ese pago salió a otra cuenta${_aQ}, no a la nuestra 🙏 ` +
+      const _aQ = await aQuienFueElPago(db, run.channel_id, _numD ? (_j_dest || _numD) : "", _quien);
+      ctx[k + "_motivo"] = `Ese pago salió a otra cuenta${_aQ} 🙏 ` +
         "Fíjate que sea al número de los datos que te pasé y mándame la nueva captura.";
     }
     ctx[k + "_intro"] = /recib[ií]|abono|van s\/|faltan/i.test(_mot)
