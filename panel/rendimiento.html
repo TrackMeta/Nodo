@@ -498,7 +498,7 @@ const sumAds=(arr)=>{ const k=["gasto","impr","clics","clicsAll","imprLink","gas
 // El robot de la tarjeta «Efectividad de cierre» del Dashboard.
 const ROBOT=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>`;
 const COLS=[
-  {k:"gasto",  l:"Gasto",         g:"Inversión", fix:true,  cell:m=>`<td class="num money">${money0(m.gasto)}</td>`},
+  {k:"gasto",  l:"Gasto",         g:"Inversión", fix:true,  cell:m=>`<td class="num money">${money(m.gasto)}</td>`},   // (23-nov, Rodrigo) con céntimos: «S/ 3» eran S/ 2.56
   {k:"impr",   l:"Impresiones",   g:"Entrega",   cell:m=>`<td class="num">${nf(m.impr)}</td>`},
   {k:"alcance",l:"Alcance",       g:"Entrega",   t:"Personas distintas que lo vieron en el periodo (lo pide a Meta para el rango completo). En un grupo de anuncios no se suma: «—»", cell:m=>`<td class="num">${oDash(m.alcance,nf)}</td>`},
   {k:"frec",   l:"Frecuencia",    g:"Entrega",   cell:m=>`<td class="num">${oDash(m.frec,v=>nf(v,2))}</td>`},
@@ -736,7 +736,7 @@ function renderKpis(){
   const m=metrics(sumAds(visibleRows()));
   const it=(l,v,c="")=>`<span>${l} <b class="${c}">${v}</b></span>`;
   $("kpis").innerHTML=[
-    it("En anuncios",money0(m.gasto)),
+    it("En anuncios",money(m.gasto)),
     it("Ventas de anuncios",nf(m.ventas)),
     it("CPA",oDash(m.cpaReal,money)),
     it("ROAS de anuncios",oDash(m.roas,v=>nf(v,2)+"×")),
@@ -1283,10 +1283,10 @@ async function renderDetail(){
   let resumen;
   if(pre.length){
     const T=S.filter(d=>!d.pre).reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; o.m+=d._margen||0; o.sm+=d._sinMargen||0; return o; },{g:0,i:0,v:0,m:0,sm:0});
-    resumen=[ it("Gasto",money0(T.g)), it("Ventas",nf(T.v)), it("CPA",T.v?money(T.g/T.v):"—"), it("ROAS",T.g?nf(T.i/T.g,2)+"×":"—"),
+    resumen=[ it("Gasto",money(T.g)), it("Ventas",nf(T.v)), it("CPA",T.v?money(T.g/T.v):"—"), it("ROAS",T.g?nf(T.i/T.g,2)+"×":"—"),
       it("Ganancia neta",T.sm?"—":money(T.m-T.g),T.sm?"":T.m-T.g<0?"neg":"pos") ].join('<i class="sep">·</i>');
   } else resumen=[
-    it("Gasto",money0(m.gasto)), it("Chats",nf(m.chats)), it("Costo/chat",oDash(m.cpr,money)),
+    it("Gasto",money(m.gasto)), it("Chats",nf(m.chats)), it("Costo/chat",oDash(m.cpr,money)),
     it("Ventas",nf(m.ventas)), it("CPA",oDash(m.cpaReal,money)), it("ROAS",oDash(m.roas,x=>nf(x,2)+"×")),
     it("Ganancia neta",m.neta==null?"—":money(m.neta),m.neta==null?"":m.neta<0?"neg":"pos"),
   ].join('<i class="sep">·</i>');
@@ -1363,7 +1363,7 @@ function pintarDetChart(S){
   // resumen de la métrica en el periodo
   const T=S.filter(d=>!d.pre).reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; o.m+=d._margen||0; o.sm+=d._sinMargen||0; if(d.clics!=null){ o.im+=d.impr; o.c+=d.clics; } return o; },{g:0,i:0,v:0,im:0,c:0,m:0,sm:0});
   sumEl.innerHTML = M==="ganancia" ? (T.sm ? `Ganancia neta: <b>—</b> (hay ventas sin costo registrado)` : `Ganancia neta (ventas − costo del producto − publicidad): <b class="${T.m-T.g<0?"neg":"pos"}">${money(T.m-T.g)}</b>`)
-    : M==="gastoing" ? `<span class="lg"><i style="background:var(--muted);opacity:.55"></i>Gasto ${money0(T.g)}</span><span class="lg"><i style="background:var(--green)"></i>Ingresos ${money0(T.i)}</span>`
+    : M==="gastoing" ? `<span class="lg"><i style="background:var(--muted);opacity:.55"></i>Gasto ${money(T.g)}</span><span class="lg"><i style="background:var(--green)"></i>Ingresos ${money0(T.i)}</span>`
     : M==="cpa" ? `CPA del periodo: <b>${T.v?money(T.g/T.v):"—"}</b>`
     : `CTR del periodo: <b>${T.im?nf(T.c/T.im*100,2)+"%":"—"}</b>`;
   if(S.some(d=>d.pre)) sumEl.innerHTML+=`<span class="lg"><i style="background:var(--border-strong,#D0D5DD);height:6px"></i>antes de Nodo</span>`;
