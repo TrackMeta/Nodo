@@ -2161,7 +2161,13 @@ function renderND(v){
       : `<div class="nd-note">Conecta tus anuncios en <a href="canales.html?tab=meta">Conexiones → Meta</a> para ver cuánto te cuesta cada chat y cada venta.</div>`)+
     `</div>`;
   const r = `<div class="nd-card">${ndH(IC_CAPAS,"Rentabilidad")}`+
-    ndRow(v.vendeFisico?"Ganancia bruta":"Ingresos cobrados", v.brutaDesconocida?"—":money(v.bruta))+
+    // (23-nov, Antonella) Sin físicos, el renglón decía «Ingresos cobrados» pero mostraba la bruta (ya sin el costo del
+    // producto): con «Tu costo» = precio salía «Ingresos cobrados S/ 0.00» con S/ 10 cobrados. Ahora lo cobrado y el costo
+    // van en renglones separados.
+    (v.vendeFisico || v.brutaDesconocida
+      ? ndRow(v.vendeFisico?"Ganancia bruta":"Ingresos cobrados", v.brutaDesconocida?"—":money(v.bruta))
+      : ndRow("Ingresos cobrados", money(v.cobrado)) +
+        ((Number(v.cobrado)||0) - (Number(v.bruta)||0) > 0.005 ? ndRow("− Costo del producto", money((Number(v.cobrado)||0) - (Number(v.bruta)||0)), "neg") : ""))+
     (v.hasAds ? ndRow("− Publicidad", money(v.gastoAds), "neg") : "")+
     (v.gastoIa>0 ? ndRow("− IA", money(v.gastoIa), "neg") : "")+
     (v.gastosExtra>0 ? ndRow("− Gastos extra", money(v.gastosExtra), "neg") : "")+
