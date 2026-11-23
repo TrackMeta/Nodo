@@ -298,7 +298,8 @@ function pintaFicha(pid, slug) {
     ${S.avisoGasto && x.g ? `<p class="amx-help">${icon("alert")} El gasto puede no estar convertido: ${esc(S.avisoGasto)}.</p>` : ""}
     <p class="amx-help">Ventas cobradas de clientes que llegaron por estos anuncios. <a href="rendimiento.html">Ver en Rendimiento →</a></p></div>`;
   // 2) Anuncios
-  h += `<div class="amx-card" id="amxAds"></div>`;
+  // (23-nov, Rodrigo) Los anuncios se guardan al instante: elegir uno o escribir su ID no es «un cambio sin guardar».
+  h += `<div class="amx-card" id="amxAds" data-noguard></div>`;
   if (a) {
     // 3) Nombre y gancho
     // Con el violeta/rosa de la IA (como «Gancho para la IA» en el producto): es lo que lee la IA, no un dato del cliente.
