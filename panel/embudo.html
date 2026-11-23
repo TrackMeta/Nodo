@@ -442,7 +442,8 @@ document.querySelectorAll("[data-ic]").forEach(e=>{ e.innerHTML=IC[e.dataset.ic]
 const nf=new Intl.NumberFormat("es-PE");
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
-let CUR="PEN"; const money=(n)=>(CUR_SYM[CUR]||CUR)+" "+Math.round(Number(n||0)).toLocaleString("es-PE");
+// (23-nov, Rodrigo: «con céntimos») Antes redondeaba al sol.
+let CUR="PEN"; const money=(n)=>(CUR_SYM[CUR]||CUR)+" "+Number(n||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2});
 const stMap=Object.fromEntries(STAGES.map(s=>[s.k,s]));
 const col=(k)=>`var(--st-${k},${stMap[k]?.color||"#888"})`; // Diseño 2: la paleta la pone el CSS
 
@@ -806,7 +807,7 @@ function renderPlata(cs){
   let porCobrar=0, conPed=0;
   confirmados.forEach(c=>{ const ords=st.ordersBy[c.id]||[]; let s=0; ords.forEach(o=>{ if(!enMoneda(o)) return; s+=O.porCobrar(o); }); if(s>0){ porCobrar+=s; conPed++; } });
   const otras=Object.entries(st.otrasMonedas||{}).filter(([,k])=>k.porCobrar>0);
-  const avisoOtras=otras.length?`<div class="einfo warn"><span class="eii">${IC.alerta}</span><div>${otras.map(([c,k])=>`<b>${k.n}</b> pedido${k.n>1?"s":""} en <b>${c}</b> (${(CUR_SYM[c]||c)+" "+Math.round(k.porCobrar).toLocaleString("es-PE")} por cobrar)`).join(" · ")} ${otras.reduce((a,[,k])=>a+k.n,0)>1?"quedan":"queda"} fuera de esta suma: el negocio ahora factura en <b>${CUR}</b>. Los ves con su moneda en Pedidos.</div></div>`:"";
+  const avisoOtras=otras.length?`<div class="einfo warn"><span class="eii">${IC.alerta}</span><div>${otras.map(([c,k])=>`<b>${k.n}</b> pedido${k.n>1?"s":""} en <b>${c}</b> (${(CUR_SYM[c]||c)+" "+Number(k.porCobrar||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2})} por cobrar)`).join(" · ")} ${otras.reduce((a,[,k])=>a+k.n,0)>1?"quedan":"queda"} fuera de esta suma: el negocio ahora factura en <b>${CUR}</b>. Los ves con su moneda en Pedidos.</div></div>`:"";
   if(porCobrar<=0){ el.innerHTML=avisoOtras; return; }
   el.innerHTML=`<div class="einfo warn"><span class="eii">${IC.moneda}</span><div>Plata en juego: <span class="pv">${money(porCobrar)}</span> comprometidos por <b>${conPed}</b> confirmado(s) que todavía no pagan el saldo. Ciérralos en <a href="pedidos.html">Pedidos</a>.</div></div>`+avisoOtras;
 }

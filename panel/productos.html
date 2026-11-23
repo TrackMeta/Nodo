@@ -393,7 +393,7 @@ import { supa, getChannel, mountShell, toast, icon, askText, confirmDialog, guar
 const tiposCuenta=()=>{ const t=["fisico","digital","microapp"].filter(x=>!document.documentElement.hasAttribute("data-sin-"+x)); return t.length?t:["fisico","digital","microapp"]; };
 const vendeTipo=(t)=>tiposCuenta().includes(t);
 import { mountFolders } from "./folder-bar.js?v=3";
-import { montarMapaAngulos } from "./angulos-mapa.js?v=34";
+import { montarMapaAngulos } from "./angulos-mapa.js?v=35";
 import * as O from "./orders.js";
 import { renderCobroMicroapp, renderConfigMicroapp, estadoConfigMicroapp } from "./microapp-producto.js";
 import { revisarFicha, avisosHtml } from "./revisar-textos.js";
@@ -636,7 +636,7 @@ function renderCards(){
     const emIc = p.emoji ? `<span>${esc(p.emoji)}</span>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>`;
     const _ev=st.estadoVenta[p.id], _v=st.ventas7[p.id];
     const estadoHtml = (esReg(p)||esEx(p)) ? "" : `<div class="c-est">${_ev==="activo"
-        ? `<span class="dot on"></span>Vendiendo${_v&&_v.n?` · <b>${_v.n}</b> ${_v.n===1?"venta":"ventas"} · <b>${$s} ${Math.round(_v.plata).toLocaleString("es-PE")}</b> en 7 días`:" · sin ventas en 7 días"}`
+        ? `<span class="dot on"></span>Vendiendo${_v&&_v.n?` · <b>${_v.n}</b> ${_v.n===1?"venta":"ventas"} · <b>${$s} ${Number(_v.plata||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2})}</b> en 7 días`:" · sin ventas en 7 días"}`
         : _ev ? `<span class="dot"></span>En pausa` : `<span class="dot warn"></span>Todavía no está a la venta`}</div>`;
     // (17-nov) Tarjeta nueva, al estilo de Nova: cabecera (ícono · nombre · estado), números y «Ver producto».
     const ex=esEx(p), rg=esReg(p);
@@ -648,7 +648,7 @@ function renderCards(){
     const nV=(_v&&_v.n)||0, plata=(_v&&_v.plata)||0;
     const nums = (rg||ex)
       ? `<div class="pc-num" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div><small>Precio</small><b class="${precio?"":"cero"}">${precio||(rg?"Gratis":"—")}</b></div><div><small>Opciones</small><b>${ops.length||1}</b></div></div>`
-      : `<div class="pc-num"><span class="pc-cap">Últimos 7 días</span><div><small>Ventas</small><b class="${nV?"":"cero"}">${nV}</b></div><div><small>Ingresos</small><b class="${plata?"":"cero"}">${$s} ${Math.round(plata).toLocaleString("es-PE")}</b></div><div><small>Precio</small><b class="${precio?"":"cero"}">${precio||"—"}</b></div></div>`;
+      : `<div class="pc-num"><span class="pc-cap">Últimos 7 días</span><div><small>Ventas</small><b class="${nV?"":"cero"}">${nV}</b></div><div><small>Ingresos</small><b class="${plata?"":"cero"}">${$s} ${Number(plata||0).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2})}</b></div><div><small>Precio</small><b class="${precio?"":"cero"}">${precio||"—"}</b></div></div>`;
     el.innerHTML=`
       <div class="pc-cab"><div class="pc-ic${ex?" ex":rg?" rg":""}">${emIc}</div>${est}</div>
       <div class="pc-tx pc-nom"><b title="${esc(p.nombre)}">${esc(p.nombre)}</b><small>${subTx}${paisTx}</small></div>

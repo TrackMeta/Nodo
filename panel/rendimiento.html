@@ -266,6 +266,7 @@ function prodDeAngulo(r){ return r.angProd || r.prod || ""; }
 const CUR_SYM={PEN:"S/",USD:"$",MXN:"$",COP:"$",ARS:"$",CLP:"$",BOB:"Bs",EUR:"€",BRL:"R$",UYU:"$U",PYG:"₲",VES:"Bs",GTQ:"Q",CRC:"₡",DOP:"RD$",HNL:"L",NIO:"C$",PAB:"B/.",GBP:"£",CAD:"$"};
 let CUR="PEN"; let USD_RATE=0; const curSym=()=>CUR_SYM[CUR]||CUR;
 const money=(v)=>{ const s=v<0?"-":""; return s+curSym()+" "+Math.abs(v).toLocaleString("es-PE",{minimumFractionDigits:2,maximumFractionDigits:2}); };
+// (23-nov, Rodrigo: «con céntimos») Ya no se usa para plata: gasto e ingresos van con money (2 decimales).
 const money0=(v)=>curSym()+" "+Math.round(v).toLocaleString("es-PE");
 const nf=(v,d=0)=>Number(v).toLocaleString("es-PE",{minimumFractionDigits:d,maximumFractionDigits:d});
 const pct=(v)=>nf(v*100,2)+"%";
@@ -524,7 +525,7 @@ const COLS=[
   {k:"cpaReal",l:"CPA",           g:"Ventas",    t:"Verde: ganas con holgura · ámbar: cerca del máximo · rojo: pierdes plata en cada venta", cell:m=>{ const c=semCpa(m.cpaReal,m.cpaMax); return `<td class="num"${m.cpaMax!=null?` title="Máximo para no perder: ${money(m.cpaMax)}"`:""}>${m.cpaReal==null?"—":c?`<span class="roas ${c}"><span class="rd"></span>${money(m.cpaReal)}</span>`:money(m.cpaReal)}</td>`; }},
   {k:"cpaMax", l:"CPA máximo",    g:"Ventas",    t:"Lo que deja cada venta antes de pagar anuncios. Si el CPA real lo pasa, pierdes plata", cell:m=>`<td class="num">${oDash(m.cpaMax,money)}</td>`},
   {k:"ticket", l:"Ticket prom.",  g:"Dinero",    t:"Ingresos ÷ ventas de este anuncio (solo ventas de anuncios; el de Inicio cuenta todas)", cell:m=>`<td class="num money">${oDash(m.ticket,money)}</td>`},
-  {k:"ingresos",l:"Ingresos",     g:"Dinero",    cell:m=>`<td class="num money">${money0(m.ingresos)}</td>`},
+  {k:"ingresos",l:"Ingresos",     g:"Dinero",    cell:m=>`<td class="num money">${money(m.ingresos)}</td>`},
   {k:"roas",   l:"ROAS",          g:"Dinero",    cell:m=>{ if(m.roas==null) return `<td class="num">—</td>`; const c=m.roas>=2?'g':m.roas>=1?'a':'r'; return `<td class="num"><span class="roas ${c}"><span class="rd"></span>${nf(m.roas,2)}×</span></td>`; }},
   {k:"neta",   l:"Ganancia neta", g:"Dinero",    cell:m=>m.neta==null?`<td class="num money" title="Hay ventas físicas sin costo o flete registrado: sin eso no se puede afirmar la ganancia">—</td>`:`<td class="num money ${m.neta<0?'neg':'pos'}">${money(m.neta)}</td>`},
 ];
@@ -1012,7 +1013,7 @@ function pintarCopys(filas){
         <td class="cp-tx" title="${esc(tx)}"><div>${nom}${f.ang && !(st.copyAng||{})[f.id] ? '<span class="cp-gen" title="Este ángulo no tiene una versión propia de este mensaje: le llega la general">general</span> ' : ""}${tx?esc(corta(tx)):'<span style="color:var(--faint)">(sin texto: imagen o archivo)</span>'}</div>${f.vigente?"":'<div class="cp-sub">ya no está en uso</div>'}</td>
         <td class="num">${f.env}</td><td class="num">${f.resp}</td>
         <td class="num" style="font-weight:800;color:${f.resp===0?"var(--faint)":"var(--text)"}">${pct(f)}</td>
-        <td class="num">${f.compras}</td><td class="num">${money0(f.monto)}</td></tr>`;
+        <td class="num">${f.compras}</td><td class="num">${money(f.monto)}</td></tr>`;
     };
     // (5-nov) Por PRODUCTO: los del que más envíos tuvo primero, cada uno con su encabezado, y un selector arriba
     // cuando hay 2 o más (los copys de productos distintos nunca compiten entre sí).
@@ -1363,7 +1364,7 @@ function pintarDetChart(S){
   // resumen de la métrica en el periodo
   const T=S.filter(d=>!d.pre).reduce((o,d)=>{ o.g+=d.gasto; o.i+=d.ingresos; o.v+=d.ventas; o.m+=d._margen||0; o.sm+=d._sinMargen||0; if(d.clics!=null){ o.im+=d.impr; o.c+=d.clics; } return o; },{g:0,i:0,v:0,im:0,c:0,m:0,sm:0});
   sumEl.innerHTML = M==="ganancia" ? (T.sm ? `Ganancia neta: <b>—</b> (hay ventas sin costo registrado)` : `Ganancia neta (ventas − costo del producto − publicidad): <b class="${T.m-T.g<0?"neg":"pos"}">${money(T.m-T.g)}</b>`)
-    : M==="gastoing" ? `<span class="lg"><i style="background:var(--muted);opacity:.55"></i>Gasto ${money(T.g)}</span><span class="lg"><i style="background:var(--green)"></i>Ingresos ${money0(T.i)}</span>`
+    : M==="gastoing" ? `<span class="lg"><i style="background:var(--muted);opacity:.55"></i>Gasto ${money(T.g)}</span><span class="lg"><i style="background:var(--green)"></i>Ingresos ${money(T.i)}</span>`
     : M==="cpa" ? `CPA del periodo: <b>${T.v?money(T.g/T.v):"—"}</b>`
     : `CTR del periodo: <b>${T.im?nf(T.c/T.im*100,2)+"%":"—"}</b>`;
   if(S.some(d=>d.pre)) sumEl.innerHTML+=`<span class="lg"><i style="background:var(--border-strong,#D0D5DD);height:6px"></i>antes de Nodo</span>`;

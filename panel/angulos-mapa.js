@@ -155,7 +155,7 @@ function statsDe(ids) {
   for (const id of ids) { const x = S.stats[id]; if (x) { r.g += x.g; r.c += x.c; r.v += x.v; r.i += x.i; } }
   return r;
 }
-const plata = (n) => { const s = SIMB[S.cur] || S.cur + " "; return s + (s.endsWith(" ") ? "" : " ") + Number(n || 0).toLocaleString("es-PE", { maximumFractionDigits: Math.abs(n) < 100 ? 2 : 0 }); };
+const plata = (n) => { const s = SIMB[S.cur] || S.cur + " "; return s + (s.endsWith(" ") ? "" : " ") + Number(n || 0).toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 const nomAd = (id) => { const m = S.meta[String(id)]; return m ? (m.ad_name || m.ad_id) : String(id); };
 function estadoCelda(p, a) {
   const nAds = a.ad_ids.length, rem = remEstado(p, a.slug), falta = [];
