@@ -83,7 +83,12 @@ export async function invoke(name, body) {
 
 // ── Formatos ──
 const COL = ["#2563EB", "#7C3AED", "#0E9F6E", "#D97706", "#DB2777", "#0891B2", "#4F46E5", "#B42318"];
-export const iniciales = (n, wa) => { const s = String(n || wa || "?").trim(); const p = s.split(/\s+/).filter(Boolean); return ((p[0]?.[0] || "?") + (p[1]?.[0] || "")).toUpperCase(); };
+// (23-nov) Sin partir los emojis (un nombre «😜» salía «◆?»).
+export const iniciales = (N, W) => { const _s=String(N||W||"?").trim();
+  const _l=_s.split(/\s+/).filter(Boolean).map((w)=>Array.from(w).find((ch)=>/[\p{L}\p{N}]/u.test(ch))).filter(Boolean);
+  if(_l.length) return (_l[0]+(_l[1]||"")).toUpperCase();
+  try{ if(typeof Intl!=="undefined"&&Intl.Segmenter){ const g=[...new Intl.Segmenter("es",{granularity:"grapheme"}).segment(_s)][0]; if(g) return g.segment; } }catch(_){}
+  return Array.from(_s)[0]||"?"; };
 export const colorDe = (id) => { let h = 0; for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return COL[h % COL.length]; };
 const WHO = { bot: ["robot", "Lo atiende el bot"], yo: ["user", "Lo atiende una persona"], espera: ["clock", "Espera que alguien lo tome"] };
 export const quienDe = (c) => (c?.bot_activo !== false ? "bot" : c?.requiere_humano ? "espera" : "yo");

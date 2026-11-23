@@ -325,7 +325,11 @@ const STAGE_W={ caliente:6, confirmado:5, interesado:4, curioso:3, nuevo:2, comp
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 const AVA=["#2b7fff","#22c079","#f0a92b","#e2564a","#9b6cf0","#18b7be","#e264a8","#e0803a","#6d8ea0","#7c8cf8"];
 function avaColor(s){ const str=String(s||"?"); let h=0; for(let i=0;i<str.length;i++) h=(h*31+str.charCodeAt(i))>>>0; return AVA[h%AVA.length]; }
-function ini(s){ return String(s||"?").trim().charAt(0).toUpperCase()||"?"; }
+function ini(s){ const N=s, W=""; const _s=String(N||W||"?").trim();
+  const _l=_s.split(/\s+/).filter(Boolean).map((w)=>Array.from(w).find((ch)=>/[\p{L}\p{N}]/u.test(ch))).filter(Boolean);
+  if(_l.length) return _l[0].toUpperCase();
+  try{ if(typeof Intl!=="undefined"&&Intl.Segmenter){ const g=[...new Intl.Segmenter("es",{granularity:"grapheme"}).segment(_s)][0]; if(g) return g.segment; } }catch(_){}
+  return Array.from(_s)[0]||"?"; }
 // "Hoy" en la zona del CANAL, no la del navegador. Esta misma pantalla ya filtraba el rango
 // de fechas con la zona del canal (ymdLima), así que tener dos criterios de fecha en el
 // mismo sitio era pedir problemas: para un operador en otro huso, las llamadas "de hoy" y

@@ -214,10 +214,12 @@ try{ if(/\/panel\/?$/.test(location.pathname) && !location.search && !location.h
   @media (prefers-reduced-motion: reduce){ .conv.bought::after{display:none} .conv.bought{animation:none} }
   .conv.bought .av{box-shadow:0 0 0 2px #f0a92b, 0 0 14px rgba(255,190,50,.85);
     background:linear-gradient(135deg,#ffe8a3,#f0a92b);color:#5a3a00}
-  .avwrap{position:relative;flex:none}
+  /* (23-nov, Rodrigo: «el emoji descolocado») La foto no se estira con la fila: el badge del producto se medía desde el
+     fondo de una fila alta (dos líneas de etiquetas) y quedaba lejos de la foto. */
+  .avwrap{position:relative;flex:none;align-self:flex-start;height:40px}
   .av{width:40px;height:40px;flex:none;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
   /* Badge del producto: círculo limpio con aro y sombra (se ve intencional) */
-  .av-emoji{position:absolute;right:-2px;bottom:13px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;
+  .av-emoji{position:absolute;right:-4px;bottom:-3px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;
     font-size:12px;line-height:1;background:var(--surface);border-radius:50%;
     box-shadow:0 0 0 1.5px var(--border), 0 1px 3px rgba(0,0,0,.18)}
   .conv .dots{display:flex;gap:5px;margin-top:4px;align-items:center;flex-wrap:wrap}
@@ -230,6 +232,12 @@ try{ if(/\/panel\/?$/.test(location.pathname) && !location.search && !location.h
      (el de IA) para que resalte SOBRE el dorado y lo ubiques al toque. */
   .idot.recompra{background:linear-gradient(135deg,#a855f7,#6366f1);color:#fff;font-weight:800;box-shadow:0 1px 6px rgba(124,92,247,.5)}
   .idot.recompra svg{width:11px;height:11px}
+  /* (23-nov, Rodrigo: «en modo oscuro las etiquetas no se ven bien») Sobre el dorado de «Compró», los fondos oscuros
+     (azul, verde, ámbar) quedaban turbios. En oscuro van como pastilla oscura translúcida con el texto más claro. */
+  html:not([data-theme="light"]) .conv.bought .idot.human{background:rgba(10,18,40,.55);color:#8ab8ff;box-shadow:inset 0 0 0 1px rgba(138,184,255,.35)}
+  html:not([data-theme="light"]) .conv.bought .idot.fep,html:not([data-theme="light"]) .conv.bought .idot.ad{background:rgba(6,30,20,.55);color:#5ee39a;box-shadow:inset 0 0 0 1px rgba(94,227,154,.35)}
+  html:not([data-theme="light"]) .conv.bought .idot.paused{background:rgba(40,24,4,.6);color:#ffc65a;box-shadow:inset 0 0 0 1px rgba(255,198,90,.4)}
+  html:not([data-theme="light"]) .conv.bought .idot.bot{background:rgba(30,10,50,.55);color:#d4a8ff;box-shadow:inset 0 0 0 1px rgba(212,168,255,.35)}
   .modewrap{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px;flex:1}
   .modebtn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:700;padding:7px 0;border-radius:8px}
   .modebtn.active{background:var(--brand);color:#fff}
@@ -895,7 +903,12 @@ const state = { channelId: null, contactId: null, rt: null, testAs: "cliente", m
   filters: { sinResponder:false, seguimiento:false, anuncio:false, organico:false, sinprod:false, conimg:false, archivado:false, recomprando:false, metapend:false, producto:"", range:null, tags:new Set(), stages:new Set(), entrega:new Set() }, products:[], tags:[], quickReplies:[], inboxFlows:[], entregaMap:new Map(), metaPendSet:new Set(), metaSalud:{total:0,enviadas:0} };
 const $ = (id) => document.getElementById(id);
 
-function initials(name, wa){ const s=(name||wa||"?").trim(); const p=s.split(/\s+/); return ((p[0]?.[0]||"")+(p[1]?.[0]||"")).toUpperCase()||s.slice(0,2).toUpperCase(); }
+// (23-nov) Sin partir los emojis: un nombre que es solo «😜» salía «◆?» en la foto.
+function initials(name, wa){ const _s=String(name||wa||"?").trim();
+  const _l=_s.split(/\s+/).filter(Boolean).map((w)=>Array.from(w).find((ch)=>/[\p{L}\p{N}]/u.test(ch))).filter(Boolean);
+  if(_l.length) return (_l[0]+(_l[1]||"")).toUpperCase();
+  try{ if(typeof Intl!=="undefined"&&Intl.Segmenter){ const g=[...new Intl.Segmenter("es",{granularity:"grapheme"}).segment(_s)][0]; if(g) return g.segment; } }catch(_){}
+  return Array.from(_s)[0]||"?"; }
 function tagHex(c){ const N={blue:"#2b7fff",green:"#22c079",amber:"#f0a92b",red:"#e2564a",purple:"#9b6cf0",teal:"#18b7be",pink:"#e264a8",gray:"#8a97a8"}; if(!c) return "#2b7fff"; return /^#[0-9a-f]{3,8}$/i.test(c)?c:(N[c]||"#2b7fff"); }
 
 // ── Auth ──
