@@ -531,8 +531,20 @@ function renderMsg(m, enVivo){
   if(m.direction==="out" && m.content?.pedir_ubicacion){
     const bd=document.createElement("div"); bd.className="btns";
     const chip=document.createElement("button"); chip.className="btnchip"; chip.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>'; chip.appendChild(document.createTextNode("Enviar ubicación"));
-    chip.title="Prueba: manda una ubicación de ejemplo en Miraflores";
-    chip.onclick=async()=>{ await callFn("webchat",{ channel_id:st.channelId, location:{ lat:-12.1211, lng:-77.0297, name:"", address:"" } }); ponerAlDia(); };
+    // (24-nov, Rodrigo: «la real») Manda TU ubicación real (el navegador la pide la primera vez). Si no la das o no sale,
+    // va el punto de ejemplo de siempre (Miraflores, Parque Kennedy) y te lo dice.
+    chip.title="Prueba: manda tu ubicación actual (si el navegador no la da, una de ejemplo en Miraflores)";
+    chip.onclick=async()=>{
+      if(chip.disabled) return; chip.disabled=true;
+      const pos=await new Promise(res=>{
+        if(!navigator.geolocation) return res(null);
+        navigator.geolocation.getCurrentPosition(p=>res(p.coords), ()=>res(null), { enableHighAccuracy:true, timeout:12000, maximumAge:60000 });
+      });
+      const loc=pos ? { lat:+pos.latitude.toFixed(6), lng:+pos.longitude.toFixed(6), name:"", address:"" } : { lat:-12.1211, lng:-77.0297, name:"", address:"" };
+      if(!pos) toast("No se pudo leer tu ubicación: va una de ejemplo (Miraflores)");
+      try{ await callFn("webchat",{ channel_id:st.channelId, location:loc }); } finally { chip.disabled=false; }
+      ponerAlDia();
+    };
     bd.appendChild(chip); t.appendChild(bd);
   }
   // 📋 (24-nov) La LISTA de agencias/distritos que en WhatsApp se abre con «Ver agencias»: acá, un botón por opción.
