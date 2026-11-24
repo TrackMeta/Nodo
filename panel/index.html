@@ -246,8 +246,8 @@ try{ if(/\/panel\/?$/.test(location.pathname) && !location.search && !location.h
   /* (24-nov, Rodrigo: «Humano choca con el borde») Sin padding lateral, «👤 Humano» llenaba su mitad justa y el texto
      tocaba el borde de la pastilla azul. Con 14px a los lados el selector se ensanchaba y empujaba «Filtros» a otra fila
      («quedó feo»): mitades IGUALES (flex 1 1 0), 8px de aire y el ícono un poco más pegado — entra en la misma fila. */
-  .modebtn{flex:1 1 0;min-width:0;display:inline-flex;align-items:center;justify-content:center;gap:5px;background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:700;padding:7px 8px;border-radius:8px;white-space:nowrap}
-  .modewrap{min-width:176px}
+  .modebtn{flex:1 1 0;min-width:max-content;display:inline-flex;align-items:center;justify-content:center;gap:4px;background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:700;padding:7px 6px;border-radius:8px;white-space:nowrap}
+  .modebtn .ico{width:14px!important;height:14px!important}
   .modebtn.active{background:var(--brand);color:#fff}
   /* El "Bot" toma el diseño de la sección IA (violeta→fucsia); "Humano" queda azul. */
   .modebtn.active[data-mode="bot"]{background:linear-gradient(135deg,#a855f7,#ec4899);box-shadow:0 2px 8px rgba(168,85,247,.32)}
