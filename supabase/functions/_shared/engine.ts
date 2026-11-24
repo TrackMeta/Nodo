@@ -8336,7 +8336,9 @@ function bloqueEnvioExplicado(texto: string, courier: string, modo: string, sede
 // (aunque la IA ya haya dicho «te llega por agencia Shalom», la referencia, la clave y el envío gratis no
 // los dijo — simulación A, 2026-10-01).
 function bloqueEnvio(courier: string, modo: string, sede?: { l: string; ref?: string; dir?: string } | null, envio?: { monto: number; sym: string } | null): string {
-  const quien = String(courier ?? "").trim() || "la agencia";
+  // 🏷️ (24-nov, Rodrigo) Sin courier configurado decía «la sede X de *la agencia*» (y sin sede, «por *agencia la agencia*»).
+  // Las oficinas que el motor nombra salen todas del padrón de Shalom, así que el relleno es Shalom.
+  const quien = String(courier ?? "").trim() || "Shalom";
   // Quién paga el flete va acá, ANTES de que dé sus datos y de que mande el adelanto.
   // Es el momento honesto para decirlo: después ya es una sorpresa en el mostrador.
   const costo = modo === "agencia"
