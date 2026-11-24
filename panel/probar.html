@@ -535,6 +535,13 @@ function renderMsg(m, enVivo){
     chip.onclick=async()=>{ await callFn("webchat",{ channel_id:st.channelId, location:{ lat:-12.1211, lng:-77.0297, name:"", address:"" } }); ponerAlDia(); };
     bd.appendChild(chip); t.appendChild(bd);
   }
+  // 📋 (24-nov) La LISTA de agencias/distritos que en WhatsApp se abre con «Ver agencias»: acá, un botón por opción.
+  if(m.direction==="out" && m.content?.lista_sedes?.length){
+    const bd=document.createElement("div"); bd.className="btns";
+    const pre=m.content._lista_tipo==="distrito"?"op:":"sede:";
+    m.content.lista_sedes.forEach(n=>{ const chip=document.createElement("button"); chip.className="btnchip"; chip.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>'; chip.appendChild(document.createTextNode(n)); chip.onclick=()=>sendButton(pre+n,n); bd.appendChild(chip); });
+    t.appendChild(bd);
+  }
   if(m.direction==="out" && m.content?.buttons?.length){
     const bd=document.createElement("div"); bd.className="btns";
     m.content.buttons.forEach(b=>{ const chip=document.createElement("button"); chip.className="btnchip"; chip.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>'; chip.appendChild(document.createTextNode(b.title)); chip.onclick=()=>sendButton(b.id,b.title); bd.appendChild(chip); });
