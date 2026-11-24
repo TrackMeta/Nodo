@@ -272,6 +272,10 @@
   .chat .hd .nodo-btn svg{width:15px;height:15px}
   .thread{background:var(--surface-2)}
   .chat .empty{background:var(--surface-2)}
+  /* (24-nov, Rodrigo: «no se ven las burbujas del cliente») En claro la burbuja del cliente era --surface-2, el MISMO
+     color que el fondo del chat: el texto flotaba sin burbuja. Blanca con sombra, como en WhatsApp y la Bandeja. */
+  .in-m{box-shadow:0 1px 1px rgba(0,0,0,.08)}
+  html[data-theme="light"] .in-m{background:var(--surface);border:1px solid var(--border)}
   .cpanel{padding-top:18px}
 </style>
 </head>
