@@ -8,7 +8,7 @@
 // una entrada acá con su hoja/tabla y su función de filas. Nada más.
 // ═══════════════════════════════════════════════════════════════════
 import * as O from "./orders.js";
-import { ubicacionDe, direccionEscrita } from "./rotulo-qr.js?v=2";
+import { ubicacionDe, direccionEscrita } from "./rotulo-qr.js?v=3";
 import { leerZip, textoDe, entradaPorNombre, ponerTexto, rellenarSheet, ajustarTablaRef, escribirZip, descargar } from "./xlsx-fill.js";
 
 // Redondeado a 2 decimales: total − adelanto en JS deja colas tipo 66.67000000000002 y así
@@ -85,7 +85,7 @@ async function revisarEva(orders) {
   const p = [];
   orders.forEach((o) => {
     const c = o.contact || {}, s = o.shipping || {}, q = c.nombre || s.cliente || "un pedido";
-    if (!s.direccion && ubicacionDe(s)) p.push(`${q}: falta escribir la dirección (su ubicación sí va en la columna Maps/GPS).`);
+    if (!s.direccion && ubicacionDe(s)) p.push(`${q}: falta escribir la dirección (sus coordenadas sí van en la columna Maps/GPS).`);
     else if (!s.direccion) p.push(`${q}: falta dirección.`);
     // 📍 El cliente compartió su UBICACIÓN por WhatsApp en vez de escribir la calle: el motor
     // la guarda como un enlace de mapa, que es lo mejor que hay para el chat pero NO es una
@@ -93,7 +93,7 @@ async function revisarEva(orders) {
     // repartidor no tiene a dónde ir. Se avisa antes de subirlo, que es cuando se puede
     // arreglar (pedirle la calle o pasarle el pin al motorizado aparte).
     else if (/^https?:\/\//i.test(String(s.direccion).trim()))
-      p.push(`${q}: solo compartió su ubicación — escribe la dirección en Editar pedido (la ubicación ya va en la columna Maps/GPS).`);
+      p.push(`${q}: solo compartió su ubicación — escribe la dirección en Editar pedido (sus coordenadas ya van en la columna Maps/GPS).`);
     if (!s.distrito) p.push(`${q}: falta distrito.`);
     // Pagó por adelantado y nadie lo validó: el IMPORTE A COBRAR sale con el total y el
     // motorizado le cobraría otra vez lo que ya pagó. Se valida en Pagos por validar.
@@ -146,8 +146,8 @@ export function faltanObligatorios(o) {
   if (z === "lima") {
     if (!direccionEscrita(s)) f.push(ubicacionDe(s) ? "la dirección (mandó su ubicación: ábrela en el mapa y escríbela)" : "la dirección");
     // 📍 (24-nov, Rodrigo: «los delivery de Lima piden las coordenadas») Si el cliente mandó su ubicación, sale de ahí sola;
-    // si solo escribió la dirección, el equipo la busca en Google Maps y pega el enlace en «Ubicación» (Editar pedido).
-    if (!ubicacionDe(s)) f.push("la ubicación (búscala en Google Maps y pega el enlace en Editar pedido)");
+    // si solo escribió la dirección, el equipo la busca en Google Maps y pega el enlace en «Coordenadas» (Editar pedido).
+    if (!ubicacionDe(s)) f.push("las coordenadas (busca su dirección en Google Maps y pega el enlace en Editar pedido)");
     if (s.pago_adelantado_por_validar === true) f.push("validar su pago adelantado (Pagos por validar)");
   } else if (z === "provincia") {
     const dni = String(s.dni || "").trim();

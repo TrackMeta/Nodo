@@ -215,9 +215,9 @@
 import { supa, getChannel, mountShell, toast, icon, confirmDialog, askText, askChoice, norm, pageAll, esUbicacionCompartida } from "./shell.js";
 import * as O from "./orders.js";
 import { inicioDeHoyTZ } from "./date-range.js";
-import { ubicacionDe, direccionEscrita, filaQR, QR_CSS, QR_HEAD, QR_SCRIPT } from "./rotulo-qr.js?v=2";
+import { ubicacionDe, direccionEscrita, filaQR, QR_CSS, QR_HEAD, QR_SCRIPT } from "./rotulo-qr.js?v=3";
 import { openDespachoModal, openEditarPedido, elegirPedidosDespacho, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
-import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia, faltanObligatorios } from "./courier-export.js?v=2";
+import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia, faltanObligatorios } from "./courier-export.js?v=3";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", soloParados:false, entregas:null, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}

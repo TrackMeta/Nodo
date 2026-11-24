@@ -29,8 +29,8 @@ const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 // Fila del rótulo con el QR (vacía si no compartió ubicación). El dibujo lo hace QR_SCRIPT al abrir la hoja.
 export function filaQR(url) {
   if (!url) return "";
-  return `<tr><td class="k">Ubicación</td><td class="v"><div class="qrbox"><div class="qr" data-u="${esc(url)}"></div>`
-    + `<div class="qrtx">Escanéalo con la cámara del celular: abre el mapa en el punto exacto que mandó el cliente.</div></div></td></tr>`;
+  return `<tr><td class="k">Coordenadas</td><td class="v"><div class="qrbox"><div class="qr" data-u="${esc(url)}"></div>`
+    + `<div class="qrtx">Escanéalo con la cámara del celular: abre el mapa en el punto exacto de la entrega.</div></div></td></tr>`;
 }
 
 // Va en el <head> y al final del <body> de la hoja del rótulo. Si la librería no carga (sin internet), la fila

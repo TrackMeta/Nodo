@@ -15,8 +15,8 @@
 // ═══════════════════════════════════════════════════════════════════
 import * as O from "./orders.js";
 import { toast, icon, norm, esUbicacionCompartida, ventanaAnuncio } from "./shell.js";
-import { cargarListas, sugerirAgencia, faltanObligatorios } from "./courier-export.js?v=2";
-import { ubicacionDe, direccionEscrita, aUrlMapa, filaQR, QR_CSS, QR_HEAD, QR_SCRIPT } from "./rotulo-qr.js?v=2";
+import { cargarListas, sugerirAgencia, faltanObligatorios } from "./courier-export.js?v=3";
+import { ubicacionDe, direccionEscrita, aUrlMapa, filaQR, QR_CSS, QR_HEAD, QR_SCRIPT } from "./rotulo-qr.js?v=3";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 const cap = (s) => { s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1); };
@@ -360,8 +360,8 @@ export function pedidoResumenHtml(o) {
     cliLines.push(mkLine("Dirección", _dirE ? esc(_dirE)
       : _ubi ? '<span style="color:#c2410c;font-weight:700">⚠ Falta escribirla (Editar pedido)</span>' : ""));
     // (24-nov) La ubicación es OBLIGATORIA en Lima (los deliverys piden las coordenadas): si no la mandó, se avisa acá.
-    cliLines.push(mkLine("Ubicación", _ubi ? `<a href="${esc(_ubi)}" target="_blank" rel="noopener noreferrer">📍 Abrir la ubicación en el mapa</a>`
-      : '<span style="color:#c2410c;font-weight:700">⚠ Falta: búscala en Google Maps y pega el enlace (Editar pedido)</span>'));
+    cliLines.push(mkLine("Coordenadas", _ubi ? `<a href="${esc(_ubi)}" target="_blank" rel="noopener noreferrer">📍 Abrir en el mapa</a>`
+      : '<span style="color:#c2410c;font-weight:700">⚠ Faltan: busca su dirección en Google Maps y pega el enlace (Editar pedido)</span>'));
     cliLines.push(mkLine("Distrito", distReal ? esc(cap(distReal)) : ""));
     cliLines.push(mkLine("Provincia", esc(s.provincia || "Lima")));
     cliLines.push(mkLine("Referencia", s.referencia ? esc(s.referencia) : ""));
@@ -1845,13 +1845,13 @@ export async function openEditarPedido(o, deps) {
         <div class="pm-sec" id="eLima" ${zona !== "lima" ? 'style="display:none"' : ""}>
           <div class="pm-sec-h">${icon("pin","cxi")} Entrega en Lima</div>
           <label>Dirección</label><input id="eDir" value="${esc(direccionEscrita(s))}" placeholder="${ubicacionDe(s) ? "Escríbela mirando el mapa de su ubicación" : ""}"/>
-          ${ubicacionDe(s) ? `<div style="font-size:12px;margin:-4px 0 8px"><a href="${esc(ubicacionDe(s))}" target="_blank" rel="noopener noreferrer">📍 Abrir la ubicación que compartió</a> — va en el rótulo como QR</div>` : ""}
+          ${ubicacionDe(s) ? `<div style="font-size:12px;margin:-4px 0 8px"><a href="${esc(ubicacionDe(s))}" target="_blank" rel="noopener noreferrer">📍 Abrir la ubicación que compartió</a> — sus coordenadas van en el rótulo como QR</div>` : ""}
           <div class="row2">
             <div><label>Distrito</label><input id="eDist" list="dlDistrito" value="${esc(s.distrito || "")}"/><datalist id="dlDistrito">${dl(EV.distrito)}</datalist></div>
             <div><label>Referencia</label><input id="eRef" value="${esc(s.referencia || "")}"/></div>
           </div>
           <div class="row2">
-            <div><label>Ubicación <span style="color:var(--faint,var(--muted));font-weight:400">(enlace de Maps o «lat, long»)</span></label><input id="eGps" value="${esc(ubicacionDe(s))}" placeholder="Obligatoria: pega el enlace de Google Maps de su dirección"/></div>
+            <div><label>Coordenadas <span style="color:var(--faint,var(--muted));font-weight:400">(enlace de Maps o «lat, long»)</span></label><input id="eGps" value="${esc(ubicacionDe(s))}" placeholder="Obligatorias: pega el enlace de Google Maps de su dirección"/></div>
             <div><label>Importe a cobrar (S/)</label><input id="eAmountL" type="number" step="0.1" value="${esc(o.amount ?? "")}"/></div>
           </div>
           <div class="row2">
@@ -2007,7 +2007,7 @@ export async function openEditarPedido(o, deps) {
         // (enlace o «lat, long»). Va a la ficha, al QR del rótulo y a la columna Maps/GPS del Excel. La vieja «Maps / GPS»
         // (`gps`) se vacía: ya vive acá. Si la borran a propósito, se borra.
         const _ubiTxt = g("#eGps").value.trim(), _ubiUrl = aUrlMapa(_ubiTxt);
-        if (_ubiTxt && !_ubiUrl) { toast("La ubicación tiene que ser un enlace de Maps o coordenadas «lat, long»", true); return; }
+        if (_ubiTxt && !_ubiUrl) { toast("Las coordenadas tienen que ser un enlace de Google Maps o «lat, long» (ej. -12.13, -76.97)", true); return; }
         Object.assign(ship, { direccion: g("#eDir").value.trim(), distrito: g("#eDist").value.trim(),
           referencia: g("#eRef").value.trim(), ubicacion: _ubiUrl || null, gps: null, flete: numU("#eFleteL"), empaque: numU("#eEmpaqueL") });
         // Igual que la sede en provincia: si el operador ya puso el distrito, la marca de
