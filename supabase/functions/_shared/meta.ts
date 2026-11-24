@@ -108,6 +108,23 @@ export async function sendLocationRequest(
   });
 }
 
+// 👀✅ (24-nov, Rodrigo) Reacción con un emoji a un mensaje del cliente (p. ej. a la captura de su pago). Mandar otra reacción al
+// mismo mensaje la REEMPLAZA (👀 al llegar → ✅ al aprobarse); emoji "" la quita. Solo dentro de las 24 h.
+export async function sendReaction(phoneNumberId: string, accessToken: string, toWaId: string, wamid: string, emoji: string): Promise<string> {
+  return await postMessage(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp", recipient_type: "individual", to: toWaId,
+    type: "reaction", reaction: { message_id: wamid, emoji },
+  });
+}
+
+// ✍️ (24-nov, Rodrigo) Marca el mensaje del cliente como LEÍDO y le muestra «escribiendo…» mientras el bot arma la respuesta. Meta
+// lo apaga solo al salir la respuesta (o a los ~25 s). No crea ningún mensaje.
+export async function markReadTyping(phoneNumberId: string, accessToken: string, wamid: string): Promise<void> {
+  await postMessage(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp", status: "read", message_id: wamid, typing_indicator: { type: "text" },
+  });
+}
+
 // Envía una plantilla HSM (para escribir fuera de la ventana de 24h).
 // bodyParams: valores de las variables {{1}},{{2}}… del cuerpo.
 export async function sendTemplate(

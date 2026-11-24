@@ -14,7 +14,7 @@ import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate, sheetsBorrarFila, HOJAS } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { clienteDeTurno, despues, vaciarDespues } from "./turno.ts";
-import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendLocationRequest, sendMedia, sendText } from "./meta.ts";
+import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendLocationRequest, sendMedia, sendText, sendReaction } from "./meta.ts";
 import {
   sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
   esSoloDepartamento, capitalizaNombresPropios,
@@ -5607,6 +5607,31 @@ async function execute(db: SupabaseClient, run: Run) {
     delete (run.vars as any)._await; run.wake_at = null;
     try { await saveRun(db, run); } catch (_) { /* nada más que hacer */ }
     try { await pasarAHumano(db, run.channel_id, run.contact_id, "El bot tropezó procesando el flujo — te paso con un humano.", { aviso: true }); } catch (_) {}
+  }
+}
+
+// 👀✅ (24-nov, Rodrigo: «una reacción a la captura») Reacciona a la ÚLTIMA imagen/documento que mandó el cliente (48 h): 👀 cuando
+// el bot empieza a revisar el comprobante, ✅ cuando el pago queda aprobado (solo o por una persona). La segunda reemplaza a la
+// primera. Nunca frena nada: si falla, no pasa nada. Contactos de prueba / simulados: nada.
+export async function reaccionarComprobante(db: SupabaseClient, channelId: string, contactId: string, emoji: string): Promise<void> {
+  try {
+    const [{ data: ch }, { data: k }] = await Promise.all([
+      db.from("channels").select("channel_type, phone_number_id").eq("id", channelId).maybeSingle(),
+      db.from("contacts").select("wa_id, source").eq("id", contactId).maybeSingle(),
+    ]);
+    if ((ch as any)?.channel_type !== "whatsapp" || !(ch as any)?.phone_number_id) return;
+    if (!(k as any)?.wa_id || (k as any).wa_id === "webchat-test" || (k as any).source === "sim") return;
+    const { data: img } = await db.from("messages").select("wamid").eq("contact_id", contactId).eq("direction", "in")
+      .in("type", ["image", "document"]).not("wamid", "is", null)
+      .gte("created_at", new Date(Date.now() - 48 * 3600_000).toISOString())
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (!(img as any)?.wamid) return;
+    const sec = await getChannelSecrets(db, channelId);
+    if (!sec?.access_token) return;
+    await sendReaction((ch as any).phone_number_id, sec.access_token, (k as any).wa_id, (img as any).wamid, emoji);
+  } catch (e) {
+    // Una reacción que no sale no frena la venta; queda una nota para saber si Meta la rechaza.
+    await db.from("contact_events").insert({ channel_id: channelId, contact_id: contactId, tipo: "nota", titulo: `${emoji} La reacción a la captura no salió`, detalle: String((e as any)?.message ?? e).slice(0, 200) }).then(() => {}, () => {});
   }
 }
 
@@ -12776,6 +12801,7 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     run.vars.pedido_creado = "si";
     await setField(db, run.channel_id, run.contact_id, "pedido_creado", "si").catch(() => {});
     await logEvent(db, run.channel_id, run.contact_id, "nota", "Pedido creado", a.estado || "carrito");
+    if (a.estado === "confirmada") void reaccionarComprobante(db, run.channel_id, run.contact_id, "✅");   // pago digital aprobado solo
     if (ship.reprogramacion_pedida) {
       await logEvent(db, run.channel_id, run.contact_id, "nota", "📅 Pide reprogramar la entrega",
         String(ship.reprogramacion_pedida)).catch(() => {});
@@ -28414,6 +28440,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
   }
   // OCR: inyecta el "Validador de comprobantes" del canal (métodos válidos +
   // reglas anti-fraude) para que la IA reconozca pagos con criterio de negocio.
+  if (op === "analizar_imagen") void reaccionarComprobante(db, run.channel_id, run.contact_id, "👀");   // 👀 «lo estoy viendo»
   if (op === "analizar_imagen" && cfg.usar_validador !== false) {
     // El monto esperado sale del contexto (opción elegida + oferta activa): así
     // la IA valida contra lo que ESTE cliente debe pagar, y puede decir si el

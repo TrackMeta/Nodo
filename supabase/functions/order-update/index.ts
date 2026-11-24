@@ -8,7 +8,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, userOwnsChannel } from "../_shared/db.ts";
-import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, canalesQueCobranIgual, enviarClaveRecojo, mensajeEstadoDefault, demoraProvincia, saldoTrasAdelanto, avisarPagadoTotal, ventana24hAbierta, avisarEnvioFallido, resolverPrepagoLima, normOperacion } from "../_shared/engine.ts";
+import { startFlowRun, syncPedidoSheet, resumeAfterApproval, rejectDigitalPending, entregarExtrasDigitales, resumeIntoExtras, cerrarConversacionVenta, moverEtapa, stageDeEstado, recomputeStageOnLoss, deliverStep, aplicarStock, reservarStockPedido, reconciliarStockManual, registrarOperacion, canalesQueCobranIgual, enviarClaveRecojo, mensajeEstadoDefault, demoraProvincia, saldoTrasAdelanto, avisarPagadoTotal, ventana24hAbierta, avisarEnvioFallido, resolverPrepagoLima, normOperacion, reaccionarComprobante } from "../_shared/engine.ts";
 import { maybePurchase } from "../_shared/capi.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 import { EST } from "../_shared/order-stats.ts";
@@ -926,6 +926,10 @@ Deno.serve(async (req) => {
     } catch (e) { console.error("[order-update] reconciliar stock:", (e as any)?.message ?? e); }
   }
 
+  // ✅ (24-nov) Pago aprobado por una persona: la captura del cliente pasa de 👀 a ✅.
+  if (newEstado && ["confirmada", "adelanto_validado", "saldo_pagado"].includes(newEstado) && (order as any).contact_id) {
+    await reaccionarComprobante(db, (order as any).channel_id, (order as any).contact_id, "✅");
+  }
   return json({ ok: true, estado: newEstado ?? (order as any).estado, flow_started: flowStarted, resumed, rejected, entrega_pendiente: entregaPendiente,
     aviso_enviado: avisoEnviado, aviso_error: avisoError, stock_alerts: stockAlerts });
 });

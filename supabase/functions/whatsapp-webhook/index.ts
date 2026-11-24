@@ -4,7 +4,7 @@
 //   POST → recepción de mensajes/estados, validando firma por canal.
 // ═══════════════════════════════════════════════════════════════════
 import { serviceClient, getChannelSecrets, accountOfChannel } from "../_shared/db.ts";
-import { fetchMediaBytes } from "../_shared/meta.ts";
+import { fetchMediaBytes, markReadTyping } from "../_shared/meta.ts";
 import { transcribeAudio } from "../_shared/ai.ts";
 import { verifyMetaSignature } from "../_shared/crypto.ts";
 import { urlArchivo } from "../_shared/archivo.ts";
@@ -661,6 +661,22 @@ async function processInbound(
     } catch (e) { console.error("[webhook] fold texto→imagen:", (e as any)?.message ?? e); }
   }
   marcaArranque(contact.id, "webhook_ok");
+  // ✍️ (24-nov, Rodrigo) Leído + «escribiendo…» mientras el bot arma la respuesta (llegar acá = bot encendido y activo en
+  // este chat). Sin esperar: no puede retrasar la respuesta ni frenarla si falla.
+  if (msg.id) void (async () => {
+    try {
+      const { data: chT } = await db.from("channels").select("phone_number_id").eq("id", channelId).maybeSingle();
+      const secT = await getChannelSecrets(db, channelId);
+      if ((chT as any)?.phone_number_id && secT?.access_token) await markReadTyping((chT as any).phone_number_id, secT.access_token, msg.id);
+    } catch (e) {
+      // Sin «escribiendo…» el bot contesta igual; queda UNA nota al día por chat para saber si Meta lo rechaza.
+      try {
+        const desde = new Date(Date.now() - 864e5).toISOString();
+        const { data: ya } = await db.from("contact_events").select("id").eq("contact_id", contact.id).eq("titulo", "✍️ «Escribiendo…» no salió").gte("created_at", desde).limit(1).maybeSingle();
+        if (!ya) await db.from("contact_events").insert({ channel_id: channelId, contact_id: contact.id, tipo: "nota", titulo: "✍️ «Escribiendo…» no salió", detalle: String((e as any)?.message ?? e).slice(0, 200) });
+      } catch (_) { /* nada */ }
+    }
+  })();
   const task = runEngineTask(channelId, contact.id, event, msg.id, debounce ? bufferSeg : 0);
   // Responder 200 a Meta ya; el motor sigue en segundo plano.
   if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(task);
