@@ -363,8 +363,15 @@ async function loadData(){
   try{ const {data:angs}=await supa.from("angulos").select("slug,nombre,ad_ids,product:product_id(tipo,nombre,emoji)").eq("channel_id",cid).order("slug");
     (angs||[]).forEach(a=>{ const t=a.product?(a.product.tipo==="fisico"?"fisico":"digital"):null;
       (a.ad_ids||[]).forEach(id=>{ const k=String(id); if(!angMap[k]) angMap[k]={slug:a.slug,nombre:a.nombre,tipo:t,prod:a.product?((a.product.emoji?a.product.emoji+" ":"")+(a.product.nombre||"")):null}; }); }); }catch(_){}
+  // 🏦 (24-nov, Rodrigo: «explícame esto de sin producto») El BANCO de anuncios del producto (config.ad_bank) también dice de
+  // qué producto es un anuncio —es lo que rutea el motor y lo que usa Inicio—. Antes solo contaban los ángulos o las ventas:
+  // un anuncio asignado pero sin ventas todavía salía «— sin producto —» (Anuncio 1 de Antonella).
+  const bankMap={};
+  try{ const {data:prB}=await supa.from("products").select("nombre,emoji,tipo,config").eq("channel_id",cid);
+    (prB||[]).forEach(p=>{ const nm=(p.emoji?p.emoji+" ":"")+(p.nombre||""), t=p.tipo==="fisico"?"fisico":"digital";
+      ((p.config&&p.config.ad_bank)||[]).forEach(id=>{ const k=String(id); if(!bankMap[k]) bankMap[k]={prod:nm,tipo:t}; }); }); }catch(_){}
   const byAd={};
-  const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; const ang=angMap[String(adId)]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), angulo:ang.nombre||"— Sin ángulo —", anguloSlug:ang.slug||null, angProd:ang.prod||null, tag:null, prod:null, prodTag:null, gasto:0,impr:0,alcance:null,clics:0,clicsAll:0,imprLink:0,gastoLink:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, chats:0,interes:0,calientes:0,compraron:0,perdidos:0,vRemarketing:0, daily:{} }; } return byAd[adId]; };
+  const getRow=(adId)=>{ if(!byAd[adId]){ const m=meta[adId]||{}; const ang=angMap[String(adId)]||{}; const bk=bankMap[String(adId)]||{}; byAd[adId]={ ad_id:adId, account_id:m.account_id||null, campaign:m.campaign_name||"— sin campaña —", adset:m.adset_name||"—", name:m.ad_name||("Anuncio "+String(adId).slice(-6)), angulo:ang.nombre||"— Sin ángulo —", anguloSlug:ang.slug||null, angProd:ang.prod||bk.prod||null, tag:(ang.prod?ang.tipo:bk.tipo)||null, prod:ang.prod||bk.prod||null, prodTag:(ang.prod?ang.tipo:bk.tipo)||null, gasto:0,impr:0,alcance:null,clics:0,clicsAll:0,imprLink:0,gastoLink:0,clicsWA:0,conf:0,ventas:0,ingresos:0,_margen:0,neta:0, chats:0,interes:0,calientes:0,compraron:0,perdidos:0,vRemarketing:0, daily:{} }; } return byAd[adId]; };
   const day=(row,f)=>{ if(!row.daily[f]) row.daily[f]={gasto:0,impr:0,clics:null,clicsAll:0,conf:0,ventas:0,ingresos:0,_margen:0,_sinMargen:0}; return row.daily[f]; };
   // El gasto llega en la moneda de la CUENTA de Meta. Se lleva a la del negocio con
   // la misma regla que el Dashboard (factorAds, en shell.js): si Meta ya factura en tu
