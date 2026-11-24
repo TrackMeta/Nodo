@@ -3572,13 +3572,15 @@ async function sincronizarFlujo(){
   }
   const [vivas, hoy] = await Promise.all([charlasVivas(fVenta.id), hashNodos(fVenta.id)]);
   const aMano = !!(guardado.nodos && guardado.nodos !== hoy);
-  if(!vivas && !aMano){
+  // ♻️ (24-nov) Con los pasos reutilizados, las conversaciones vivas siguen donde iban: ya no hay que preguntar por ellas.
+  // Solo se pregunta si el flujo se editó a mano (eso sí se pierde al reescribirlo).
+  if(!aMano){
     await generarFlujoVenta(true);                          // en silencio: no hay nada que decidir
     toast("Guardado. El bot ya vende con los cambios");
     return;
   }
   const motivos = []
-    .concat(vivas ? [`${icon("alert")} Hay <b>${vivas} conversación${vivas===1?"":"es"}</b> a mitad de este flujo: al actualizarlo ${vivas===1?"pasa":"pasan"} a un humano y ${vivas===1?"tendrás":"tendrás"} que retomar${vivas===1?"la":"las"} tú.`] : [])
+    .concat(vivas ? [`Hay <b>${vivas} conversación${vivas===1?"":"es"}</b> a mitad de este flujo: siguen donde iban.`] : [])
     .concat(aMano ? [`${icon("alert")} Este flujo lo <b>editaste a mano</b> en el editor visual. Al actualizarlo se reescribe entero y esos cambios se pierden.`] : []);
   const ok = await confirmDialog({
     title: "Tu cambio necesita actualizar el flujo",
@@ -3614,7 +3616,7 @@ async function generarFlujoVenta(skipConfirm){
   // El aviso lleva <b>, así que va por messageHtml (message se escapa) y el nombre del
   // flujo —texto del usuario— se escapa a mano con esc().
   const msgRegen = `Esto REESCRIBE por completo "${esc(ya?.nombre||"")}". Si lo editaste a mano en el editor visual, esos cambios se pierden.`
-    + (vivas?`<br><br>${icon("alert")} Hay <b>${vivas} conversación${vivas===1?"":"es"}</b> a mitad de este flujo ahora mismo. Al regenerarlo ${vivas===1?"pasa":"pasan"} a un humano y vas a tener que retomar${vivas===1?"la":"las"} tú.`:"");
+    + (vivas?`<br><br>${icon("alert")} Hay <b>${vivas} conversación${vivas===1?"":"es"}</b> a mitad de este flujo ahora mismo. Siguen donde iban: el bot conserva los pasos que no cambian.`:"");
   if(skipConfirm!==true && !await confirmDialog({
     title: ya?"Regenerar flujo de venta":"Generar flujo de venta",
     ...(ya ? { messageHtml: msgRegen }
@@ -3631,6 +3633,8 @@ async function generarFlujoVenta(skipConfirm){
   }
 
   toast("Generando…");
+  // ♻️ Pasos del flujo anterior que se reutilizan (tipo|nombre → ids) y los que sobran al final.
+  let reusar=null, sobran=null;
   try{
     let flowId=ya?.id;
     if(flowId){
@@ -3639,10 +3643,18 @@ async function generarFlujoVenta(skipConfirm){
       // vendiendo, comportándose de forma impredecible — y sin que nadie se entere,
       // porque el error se tragaba. Mejor abortar: el flujo anterior sigue intacto.
       // (Lo recoge el catch de abajo, que sí avisa.)
+      // ♻️ (24-nov, Rodrigo: «que reutilice los mismos casilleros») Antes se BORRABAN todos los pasos y se creaban otros
+      // con ids nuevos: el cliente que esperaba en «Escuchar al cliente» quedaba apuntando a un id borrado (Valeria + 21
+      // chats en el bot de Antonella tras UN guardado). Ahora los pasos que vuelven a salir (mismo tipo y nombre) se
+      // ACTUALIZAN conservando su id; solo se borran los que ya no van y se crean los que son nuevos. Las flechas sí se
+      // rehacen (nadie apunta a ellas).
+      const { data:viejos, error:eV }=await supa.from("flow_nodes").select("id,tipo,nombre").eq("flow_id",flowId);
+      if(eV) throw new Error("no se pudo leer el flujo anterior — "+eV.message);
+      reusar=new Map();
+      for(const v of viejos||[]){ const k=v.tipo+"|"+(v.nombre||""); if(!reusar.has(k)) reusar.set(k,[]); reusar.get(k).push(v.id); }
+      sobran=new Set((viejos||[]).map(v=>v.id));
       const { error:eDel1 }=await supa.from("flow_edges").delete().eq("flow_id",flowId);
       if(eDel1) throw new Error("no se pudo limpiar el flujo anterior — "+eDel1.message);
-      const { error:eDel2 }=await supa.from("flow_nodes").delete().eq("flow_id",flowId);
-      if(eDel2) throw new Error("no se pudo limpiar el flujo anterior — "+eDel2.message);
       // Al REGENERAR no se toca el estado: si el flujo ya estaba vendiendo, se
       // lo dejaba en borrador y el producto se quedaba mudo sin avisar.
       await supa.from("flows").update({ nombre:`Venta · ${st.prod.nombre}`, folder:prodFolder() }).eq("id",flowId);
@@ -3663,11 +3675,28 @@ async function generarFlujoVenta(skipConfirm){
     }
 
     const N=async(tipo,nombre,config,es_inicial,x,y)=>{
+      // ♻️ Mismo paso que ya existía → se actualiza y CONSERVA su id (los clientes que esperan ahí siguen donde iban).
+      const lista=reusar && reusar.get(tipo+"|"+(nombre||""));
+      const idViejo=lista && lista.length ? lista.shift() : null;
+      if(idViejo){
+        const { error } = await supa.from("flow_nodes")
+          .update({ config, es_inicial:!!es_inicial, pos_x:x, pos_y:y }).eq("id",idViejo);
+        if(error) throw new Error(error.message);
+        sobran.delete(idViejo);
+        return idViejo;
+      }
       const { data,error } = await supa.from("flow_nodes")
         .insert({ flow_id:flowId, tipo, nombre, config, es_inicial:!!es_inicial, pos_x:x, pos_y:y })
         .select("id").single();
       if(error) throw new Error(error.message);
       return data.id;
+    };
+    // Al terminar de armar: se borran los pasos viejos que ya no salieron.
+    const limpiarSobrantes=async()=>{
+      if(!sobran || !sobran.size) return;
+      const { error }=await supa.from("flow_nodes").delete().in("id",[...sobran]);
+      if(error) throw new Error("no se pudieron quitar los pasos que ya no van — "+error.message);
+      sobran.clear();
     };
     const E=async(from,handle,to)=>{
       const { error }=await supa.from("flow_edges")
@@ -3679,6 +3708,7 @@ async function generarFlujoVenta(skipConfirm){
     // pedido. Lo demás (despacho, guía, saldo, clave) lo opera un humano.
     if((st.prod.tipo||"digital")==="fisico"){
       await generarFlujoFisico(flowId, N, E);
+      await limpiarSobrantes();
       await enlazarInicialesConVenta(flowId);
       await sellarFlujo(flowId);
       // Sin toast cuando lo pide el código (sincronizarFlujo o el harness): el que llama ya
@@ -3948,6 +3978,7 @@ async function generarFlujoVenta(skipConfirm){
       }
     }
 
+    await limpiarSobrantes();
     await enlazarInicialesConVenta(flowId);
     await sellarFlujo(flowId);
     if(skipConfirm!==true) toast("Flujo de venta generado");
