@@ -243,7 +243,9 @@ try{ if(/\/panel\/?$/.test(location.pathname) && !location.search && !location.h
   html:not([data-theme="light"]) .conv.bought .idot.paused{background:rgba(40,24,4,.6);color:#ffc65a;box-shadow:inset 0 0 0 1px rgba(255,198,90,.4)}
   html:not([data-theme="light"]) .conv.bought .idot.bot{background:rgba(30,10,50,.55);color:#d4a8ff;box-shadow:inset 0 0 0 1px rgba(212,168,255,.35)}
   .modewrap{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:2px;flex:1}
-  .modebtn{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:700;padding:7px 0;border-radius:8px}
+  /* (24-nov, Rodrigo: «Humano choca con el borde») Sin padding lateral, «👤 Humano» llenaba su mitad justa y el texto
+     tocaba el borde de la pastilla azul. Ahora con aire a los lados y sin partirse en dos líneas. */
+  .modebtn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:transparent;border:none;color:var(--muted);font-size:12.5px;font-weight:700;padding:7px 14px;border-radius:8px;white-space:nowrap}
   .modebtn.active{background:var(--brand);color:#fff}
   /* El "Bot" toma el diseño de la sección IA (violeta→fucsia); "Humano" queda azul. */
   .modebtn.active[data-mode="bot"]{background:linear-gradient(135deg,#a855f7,#ec4899);box-shadow:0 2px 8px rgba(168,85,247,.32)}
