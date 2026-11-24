@@ -6165,6 +6165,13 @@ function afirmaResumen(texto: string): boolean {
   if (/(?<![\p{L}])(?:no|pero|nombre|cambi\p{L}*|otr[oa]|mejor|espera|todav[ií]a)(?![\p{L}])/iu.test(t)) return false;
   return /^[\s¡!]*(?:s[ií]+p?|ok(?:ey|i|a)?|dale|listo|correcto|confirm\p{L}*|conforme|as[ií]\s+(?:es|est[aá]\s+bien)|est[aá]\s+bien|todo\s+(?:bien|ok|correcto|perfecto)|perfecto|de\s+acuerdo|exacto|claro|ya|va|bueno|genial|excelente|de\s+una)(?![\p{L}])/iu.test(t);
 }
+// 📍 (24-nov, Rodrigo: «que no salga el link si te compartió la ubicación») El enlace del mapa sirve al motorizado (aviso
+// del pedido, rótulo, Excel); al cliente, que acaba de mandar su ubicación, se le confirma con palabras y su distrito.
+function lineaDireccionCliente(dir: string, distrito?: unknown): string {
+  if (!/https?:\/\//i.test(dir)) return `📍 *${dir}*`;
+  const d = enTitulo(String(distrito ?? "").trim());
+  return d ? `📍 *${d}* — con la ubicación que me compartiste ✅` : "📍 Con la ubicación que me compartiste ✅";
+}
 // El resumen que se le muestra para que confirme. Lo que ya sabemos, en el orden en que lo lee: quién, qué, dónde.
 function resumenParaConfirmar(ctx: any, nombre: string): string {
   const sym = simboloMoneda(ctx?.moneda as string);
@@ -6178,7 +6185,7 @@ function resumenParaConfirmar(ctx: any, nombre: string): string {
   if (queLleva) L.push(`📦 *${queLleva}*${Number.isFinite(precio) && precio > 0 ? ` — *${sym} ${precio}*` : ""}`);
   if (String(ctx?.zona_entrega ?? "") === "lima") {
     const dir = direccionBonita(String(ctx?.direccion ?? ""));
-    if (dir) L.push(/https?:\/\//i.test(dir) ? `📍 ${dir}` : `📍 *${dir}*`);
+    if (dir) L.push(lineaDireccionCliente(dir, ctx?.distrito || ctx?.zona_nombre));
     const ref = refBonita(String(ctx?.referencia ?? ""));
     if (ref) L.push(`🏠 Referencia: ${ref}`);
   } else {
@@ -13806,7 +13813,7 @@ function resumenPedido(o: any, sym: string, producto?: string | null, cuando?: s
     // motorizado llegue (Rodrigo, 4-oct-2026).
     const dir = direccionBonita(String(s.direccion || ""));
     const ref = refBonita(String(s.referencia || ""));
-    if (dir) L.push(/https?:\/\//i.test(dir) ? `📍 ${dir}` : `📍 *${dir}*`);
+    if (dir) L.push(lineaDireccionCliente(dir, s.distrito || s.zona_nombre));
     if (ref) L.push(`🏠 Referencia: ${ref}`);
   } else {
     const ciudad = enTitulo(String(s.ciudad || ""));
