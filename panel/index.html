@@ -860,6 +860,9 @@ try{ if(/\/panel\/?$/.test(location.pathname) && !location.search && !location.h
         <button class="ctool" id="attachBtn" title="Adjuntar imagen, audio o archivo">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
         </button>
+        <button class="ctool" id="ubicBtn" title="Pedir su ubicación (le llega un botón «Enviar ubicación»)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+        </button>
         <button class="ctool ctool-ia" id="suggestBtn" title="Sugerencias de respuesta (IA)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>
         </button>
@@ -3232,6 +3235,30 @@ async function enviarAdjuntoConTexto(caption) {
 }
 // ── Adjuntar media (imagen / audio / video / archivo) ──
 $("attachBtn").addEventListener("click", () => { if (state.contactId) $("fileInput").click(); });
+// 📍 (24-nov, Rodrigo: «un botón para pedir la ubicación con un clic») Le manda al cliente el botón «Enviar ubicación» de
+// WhatsApp. Si escribiste algo en la caja, va ese texto; si no, uno por defecto. Solo con la ventana de 24 h abierta.
+$("ubicBtn").addEventListener("click", async () => {
+  if (!state.contactId) return;
+  const caja=$("msgInput"), txt=(caja.value||"").trim();
+  const texto = txt || "¿Me compartes tu ubicación? 📍 Toca el botón de abajo y me llega al toque.";
+  if (!await confirmDialog({ title:"Pedir su ubicación", message:`Le llega este mensaje con el botón «Enviar ubicación»:\n\n«${texto}»`, confirmText:"Enviar" })) return;
+  const b=$("ubicBtn"); b.disabled=true;
+  try{
+    if(state.isTest){
+      // Chat de prueba: no hay WhatsApp; se deja la burbuja (con su botón) para ver cómo queda.
+      const { error }=await supa.from("messages").insert({ channel_id:state.channelId, contact_id:state.contactId, direction:"out", type:"interactive", content:{ text:texto, pedir_ubicacion:true }, status:"sent", sent_by:"human" });
+      if(error){ toast(error.message,true); return; }
+    } else {
+      const res=await callFn("whatsapp-send", { channel_id:state.channelId, contact_id:state.contactId, text:texto, pedir_ubicacion:true });
+      const o=await res.json().catch(()=>({}));
+      if(!res.ok){ toast(errorMetaLegible(o)||"No se pudo enviar",true); return; }
+      setBotPill(false); avisoSinGuardar(o);
+    }
+    if(txt){ caja.value=""; caja.dispatchEvent(new Event("input")); }
+    toast("Listo: le llegó el botón para mandar su ubicación");
+  }catch{ toast("Error de red al enviar",true); }
+  finally{ b.disabled=false; }
+});
 $("fileInput").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) prepararAdjunto(f); });
 $("adjX").addEventListener("click", quitarAdjunto);
 function fileToDataURL(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }

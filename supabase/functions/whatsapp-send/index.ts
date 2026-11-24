@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
 import { serviceClient, userClient, getChannelSecrets, userOwnsChannel } from "../_shared/db.ts";
-import { sendText, sendMedia, MetaApiError } from "../_shared/meta.ts";
+import { sendText, sendMedia, sendLocationRequest, MetaApiError } from "../_shared/meta.ts";
 import { sendTemplateToContact } from "../_shared/campaigns.ts";
 import { urlDirecta } from "../_shared/archivo.ts";
 import { finVentanaAnuncio } from "../_shared/fep.ts";
@@ -40,9 +40,13 @@ Deno.serve(async (req) => {
     channel_id?: string; contact_id?: string; text?: string;
     media?: { kind?: string; url?: string; caption?: string; filename?: string };
     template?: { name?: string; language?: string };
+    // 📍 (24-nov, Rodrigo) Desde la Bandeja: el texto sale con el botón «Enviar ubicación» de WhatsApp.
+    pedir_ubicacion?: boolean;
   };
   try { body = await req.json(); } catch { return json({ error: "bad_json" }, 400); }
-  const { channel_id, contact_id, text, media, template } = body;
+  const { channel_id, contact_id, media, template } = body;
+  const pideUbic = body.pedir_ubicacion === true && !media?.url && !template?.name;
+  const text = pideUbic && !body.text?.trim() ? "¿Me compartes tu ubicación? 📍 Toca el botón de abajo y me llega al toque." : body.text;
   const mediaKind = media?.url ? (["image", "audio", "video", "document"].includes(media.kind || "") ? media.kind! : "document") : null;
   if (!channel_id || !contact_id || (!text?.trim() && !mediaKind && !template?.name)) {
     return json({ error: "faltan_campos" }, 400);
@@ -136,14 +140,15 @@ Deno.serve(async (req) => {
   if (!secrets?.access_token) return json({ error: "sin_token" }, 500);
 
   const caption = text?.trim() || "";
-  const msgType = mediaKind ?? "text";
+  const msgType = mediaKind ?? (pideUbic ? "interactive" : "text");
   const outContent = mediaKind
     ? { media_url: media!.url, caption, mime: "", filename: media?.filename }
-    : { text: caption };
+    : pideUbic ? { text: caption.slice(0, 1024), pedir_ubicacion: true } : { text: caption };
 
   try {
     const wamid = mediaKind
       ? await sendMedia(channel.phone_number_id, secrets.access_token, contact.wa_id, mediaKind as any, await urlDirecta(media!.url!), caption, media?.filename)
+      : pideUbic ? await sendLocationRequest(channel.phone_number_id, secrets.access_token, contact.wa_id, caption)
       : await sendText(channel.phone_number_id, secrets.access_token, contact.wa_id, caption);
     // 💵 Sello de cobro (fep | servicio), igual que el motor y campañas: los mensajes que
     // escribe el OPERADOR también los cobra Meta desde el 01/10/2026 y quedaban con ventana
