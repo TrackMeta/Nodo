@@ -359,7 +359,9 @@ export function pedidoResumenHtml(o) {
     const _ubi = ubicacionDe(s), _dirE = direccionEscrita(s);
     cliLines.push(mkLine("Dirección", _dirE ? esc(_dirE)
       : _ubi ? '<span style="color:#c2410c;font-weight:700">⚠ Falta escribirla (Editar pedido)</span>' : ""));
-    if (_ubi) cliLines.push(mkLine("Ubicación", `<a href="${esc(_ubi)}" target="_blank" rel="noopener noreferrer">📍 Abrir la ubicación que compartió</a>`));
+    // (24-nov) La ubicación es OBLIGATORIA en Lima (los deliverys piden las coordenadas): si no la mandó, se avisa acá.
+    cliLines.push(mkLine("Ubicación", _ubi ? `<a href="${esc(_ubi)}" target="_blank" rel="noopener noreferrer">📍 Abrir la ubicación en el mapa</a>`
+      : '<span style="color:#c2410c;font-weight:700">⚠ Falta: búscala en Google Maps y pega el enlace (Editar pedido)</span>'));
     cliLines.push(mkLine("Distrito", distReal ? esc(cap(distReal)) : ""));
     cliLines.push(mkLine("Provincia", esc(s.provincia || "Lima")));
     cliLines.push(mkLine("Referencia", s.referencia ? esc(s.referencia) : ""));
@@ -1849,7 +1851,7 @@ export async function openEditarPedido(o, deps) {
             <div><label>Referencia</label><input id="eRef" value="${esc(s.referencia || "")}"/></div>
           </div>
           <div class="row2">
-            <div><label>Ubicación <span style="color:var(--faint,var(--muted));font-weight:400">(enlace de Maps o «lat, long»)</span></label><input id="eGps" value="${esc(ubicacionDe(s))}" placeholder="La que mandó el cliente, o pega una"/></div>
+            <div><label>Ubicación <span style="color:var(--faint,var(--muted));font-weight:400">(enlace de Maps o «lat, long»)</span></label><input id="eGps" value="${esc(ubicacionDe(s))}" placeholder="Obligatoria: pega el enlace de Google Maps de su dirección"/></div>
             <div><label>Importe a cobrar (S/)</label><input id="eAmountL" type="number" step="0.1" value="${esc(o.amount ?? "")}"/></div>
           </div>
           <div class="row2">

@@ -145,6 +145,9 @@ export function faltanObligatorios(o) {
   const s = (o && o.shipping) || {}, z = O.zonaDe(o), f = [];
   if (z === "lima") {
     if (!direccionEscrita(s)) f.push(ubicacionDe(s) ? "la dirección (mandó su ubicación: ábrela en el mapa y escríbela)" : "la dirección");
+    // 📍 (24-nov, Rodrigo: «los delivery de Lima piden las coordenadas») Si el cliente mandó su ubicación, sale de ahí sola;
+    // si solo escribió la dirección, el equipo la busca en Google Maps y pega el enlace en «Ubicación» (Editar pedido).
+    if (!ubicacionDe(s)) f.push("la ubicación (búscala en Google Maps y pega el enlace en Editar pedido)");
     if (s.pago_adelantado_por_validar === true) f.push("validar su pago adelantado (Pagos por validar)");
   } else if (z === "provincia") {
     const dni = String(s.dni || "").trim();
