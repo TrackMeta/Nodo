@@ -8,6 +8,7 @@
 // una entrada acá con su hoja/tabla y su función de filas. Nada más.
 // ═══════════════════════════════════════════════════════════════════
 import * as O from "./orders.js";
+import { ubicacionDe, direccionEscrita } from "./rotulo-qr.js?v=2";
 import { leerZip, textoDe, entradaPorNombre, ponerTexto, rellenarSheet, ajustarTablaRef, escribirZip, descargar } from "./xlsx-fill.js";
 
 // Redondeado a 2 decimales: total − adelanto en JS deja colas tipo 66.67000000000002 y así
@@ -68,8 +69,9 @@ function filasEva(orders) {
     f[1] = s.cliente || c.nombre || "";        // B DESTINATARIO (editable: shipping.cliente manda)
     f[2] = tel9(telCliente(c, s));             // C CELULAR (capturado; nunca el BSUID de un sin-número)
     f[3] = (s.distrito || "").toUpperCase();    // D DISTRITO ENTREGA
-    f[4] = s.direccion || "";                   // E DIRECCIÓN
+    f[4] = direccionEscrita(s);                 // E DIRECCIÓN (la escrita; un enlace de mapa no es dirección)
     f[5] = s.referencia || "";                  // F REFERENCIA
+    f[6] = ubicacionDe(s);                      // G MAPS/GPS (24-nov: la ubicación que mandó el cliente o pegó el equipo)
     f[7] = "EFECTIVO";                          // H MÉTODO DE COBRANZA
     f[8] = N(O.porCobrarPuerta(o));             // I IMPORTE A COBRAR (contraentrega): lo que FALTA, no el total (si hubo adelanto, no cobrar de nuevo)
     f[10] = productoDesc(o);                    // K DESCRIPCIÓN DEL PRODUCTO
@@ -83,14 +85,15 @@ async function revisarEva(orders) {
   const p = [];
   orders.forEach((o) => {
     const c = o.contact || {}, s = o.shipping || {}, q = c.nombre || s.cliente || "un pedido";
-    if (!s.direccion) p.push(`${q}: falta dirección.`);
+    if (!s.direccion && ubicacionDe(s)) p.push(`${q}: falta escribir la dirección (su ubicación sí va en la columna Maps/GPS).`);
+    else if (!s.direccion) p.push(`${q}: falta dirección.`);
     // 📍 El cliente compartió su UBICACIÓN por WhatsApp en vez de escribir la calle: el motor
     // la guarda como un enlace de mapa, que es lo mejor que hay para el chat pero NO es una
     // dirección — al Excel del courier le entraría una URL en la columna DIRECCIÓN y el
     // repartidor no tiene a dónde ir. Se avisa antes de subirlo, que es cuando se puede
     // arreglar (pedirle la calle o pasarle el pin al motorizado aparte).
     else if (/^https?:\/\//i.test(String(s.direccion).trim()))
-      p.push(`${q}: solo compartió su ubicación (un enlace de mapa), no una dirección escrita — el courier no puede usarla.`);
+      p.push(`${q}: solo compartió su ubicación — escribe la dirección en Editar pedido (la ubicación ya va en la columna Maps/GPS).`);
     if (!s.distrito) p.push(`${q}: falta distrito.`);
     // Pagó por adelantado y nadie lo validó: el IMPORTE A COBRAR sale con el total y el
     // motorizado le cobraría otra vez lo que ya pagó. Se valida en Pagos por validar.

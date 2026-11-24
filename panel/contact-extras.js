@@ -16,7 +16,7 @@
 import * as O from "./orders.js";
 import { toast, icon, norm, esUbicacionCompartida, ventanaAnuncio } from "./shell.js";
 import { cargarListas, sugerirAgencia } from "./courier-export.js";
-import { ubicacionDe, direccionEscrita, filaQR, QR_CSS, QR_HEAD, QR_SCRIPT } from "./rotulo-qr.js?v=1";
+import { ubicacionDe, direccionEscrita, aUrlMapa, filaQR, QR_CSS, QR_HEAD, QR_SCRIPT } from "./rotulo-qr.js?v=2";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 const cap = (s) => { s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1); };
@@ -1845,7 +1845,7 @@ export async function openEditarPedido(o, deps) {
             <div><label>Referencia</label><input id="eRef" value="${esc(s.referencia || "")}"/></div>
           </div>
           <div class="row2">
-            <div><label>Maps / GPS <span style="color:var(--faint,var(--muted));font-weight:400">(opcional)</span></label><input id="eGps" value="${esc(s.gps || "")}" placeholder="URL de Maps o lat, long"/></div>
+            <div><label>Ubicación <span style="color:var(--faint,var(--muted));font-weight:400">(enlace de Maps o «lat, long»)</span></label><input id="eGps" value="${esc(ubicacionDe(s))}" placeholder="La que mandó el cliente, o pega una"/></div>
             <div><label>Importe a cobrar (S/)</label><input id="eAmountL" type="number" step="0.1" value="${esc(o.amount ?? "")}"/></div>
           </div>
           <div class="row2">
@@ -1997,10 +1997,13 @@ export async function openEditarPedido(o, deps) {
           flete: numU("#eFlete"), empaque: numU("#eEmpaqueP") });
         if (dst) ship.sede_por_confirmar = null;
       } else {
-        // 📍 La ubicación se queda en SU casilla (pedidos de antes la tenían en la dirección: se muda antes de pisarla).
-        { const _u0 = ubicacionDe(s); if (_u0 && !ship.ubicacion) ship.ubicacion = _u0; }
+        // 📍 (24-nov, Rodrigo: «júntalas») UNA sola casilla de ubicación: la que mandó el cliente o la que pegue el equipo
+        // (enlace o «lat, long»). Va a la ficha, al QR del rótulo y a la columna Maps/GPS del Excel. La vieja «Maps / GPS»
+        // (`gps`) se vacía: ya vive acá. Si la borran a propósito, se borra.
+        const _ubiTxt = g("#eGps").value.trim(), _ubiUrl = aUrlMapa(_ubiTxt);
+        if (_ubiTxt && !_ubiUrl) { toast("La ubicación tiene que ser un enlace de Maps o coordenadas «lat, long»", true); return; }
         Object.assign(ship, { direccion: g("#eDir").value.trim(), distrito: g("#eDist").value.trim(),
-          referencia: g("#eRef").value.trim(), gps: g("#eGps").value.trim(), flete: numU("#eFleteL"), empaque: numU("#eEmpaqueL") });
+          referencia: g("#eRef").value.trim(), ubicacion: _ubiUrl || null, gps: null, flete: numU("#eFleteL"), empaque: numU("#eEmpaqueL") });
         // Igual que la sede en provincia: si el operador ya puso el distrito, la marca de
         // "confírmalo" deja de tener sentido. Sin esto el aviso se quedaba pegado para
         // siempre en un pedido ya corregido.

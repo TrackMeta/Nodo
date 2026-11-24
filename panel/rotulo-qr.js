@@ -5,12 +5,18 @@
 
 const ES_LINK = /^https?:\/\//i;
 
-// El enlace del mapa del pedido: la casilla propia `ubicacion` o, en pedidos de antes, el que quedó en la dirección.
+// Lo que alguien pega como ubicación → enlace de mapa. Acepta un enlace (de Maps o el que sea) o coordenadas
+// «-12.15, -76.97». Cualquier otra cosa → "" (no es una ubicación).
+export function aUrlMapa(txt) {
+  const t = String(txt || "").trim();
+  if (ES_LINK.test(t)) return (t.match(/^\S+/) || [""])[0];
+  const m = /^(-?\d{1,3}\.\d+)\s*[,;\s]\s*(-?\d{1,3}\.\d+)$/.exec(t);
+  return m ? `https://maps.google.com/?q=${m[1]},${m[2]}` : "";
+}
+// El enlace del mapa del pedido: la casilla `ubicacion` (la mandó el cliente o la pegó el equipo); en pedidos de antes,
+// el que quedó en la dirección o en la vieja casilla «Maps / GPS» (`gps`).
 export function ubicacionDe(s) {
-  const u = String(s?.ubicacion || "").trim();
-  if (ES_LINK.test(u)) return (u.match(/^\S+/) || [""])[0];
-  const d = String(s?.direccion || "").trim();
-  return ES_LINK.test(d) ? (d.match(/^\S+/) || [""])[0] : "";
+  return aUrlMapa(s?.ubicacion) || aUrlMapa(s?.gps) || (ES_LINK.test(String(s?.direccion || "").trim()) ? aUrlMapa(s.direccion) : "");
 }
 // La dirección ESCRITA (vacía si lo único que hay es el enlace del mapa).
 export function direccionEscrita(s) {
