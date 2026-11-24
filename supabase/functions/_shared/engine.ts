@@ -5004,6 +5004,25 @@ async function resumeRun(db: SupabaseClient, run: Run, event: EngineEvent): Prom
   const chkNodo = aw?.node_id
     ? await db.from("flow_nodes").select("id").eq("id", aw.node_id).maybeSingle()
     : null;
+  // 🔄 (24-nov, Valeria en Recursos Digitales) Guardar el producto REHACE el flujo de venta con nodos nuevos (sincronizarFlujo)
+  // y los clientes que esperaban en «Escuchar al cliente» quedaban apuntando a un nodo borrado: al contestar —incluso para
+  // pagar— se los pasaba a humano y el bot se callaba (21 chats varados en ese bot tras UN guardado). Si el flujo sigue
+  // existiendo y tiene UN solo paso de ese tipo (el que espera lo que escribe el cliente), se retoma ahí y la venta sigue.
+  // Solo para la espera de un MENSAJE: botones, reintentos y aprobaciones de pago siguen yendo a una persona.
+  if (chkNodo && !chkNodo.error && !chkNodo.data && aw?.type === "input" && run.flow_id) {
+    const { data: equiv, error: eEq } = await db.from("flow_nodes").select("id, nombre, tipo, config").eq("flow_id", run.flow_id).eq("tipo", "pregunta");
+    if (!eEq && Array.isArray(equiv) && equiv.length === 1) {
+      const n0 = equiv[0] as any;
+      // Se cambia EN el mismo objeto (`aw` lo sigue usando el resto de resumeRun para saber desde dónde avanzar).
+      aw.node_id = n0.id; if (n0.config?.guardar_en) aw.guardar_en = n0.config.guardar_en;
+      run.vars._await = aw;
+      run.current_node_id = n0.id;
+      await saveRun(db, run);
+      await logEvent(db, run.channel_id, run.contact_id, "nota", "🔄 El flujo se actualizó: retomo donde iba",
+        `El paso donde esperaba se rehízo al guardar el producto. Sigo desde «${n0.nombre ?? "Escuchar al cliente"}».`).catch(() => {});
+      chkNodo.data = { id: n0.id } as any;   // sigue el camino normal, como si nunca se hubiera borrado
+    }
+  }
   if (chkNodo && !chkNodo.error && !chkNodo.data) {
     run.estado = "completado"; run.current_node_id = null;
     delete run.vars._await;
