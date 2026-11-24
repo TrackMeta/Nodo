@@ -391,6 +391,11 @@ export function printRotulo(o, remitente) {
   if (!o) { toast("Este contacto todavía no tiene un pedido", true); return; }
   const c = o.contact || {}, p = o.product || {}, v = o.version || {}, s = o.shipping || {};
   const zona = O.zonaDe(o);
+  // 🔒 (24-nov, Rodrigo: obligatorio) Lima sin dirección ESCRITA: no se imprime (mismo criterio que pedidos.html).
+  if (zona === "lima" && !direccionEscrita(s)) {
+    toast(ubicacionDe(s) ? "Falta escribir la dirección: abre su ubicación en el mapa y escríbela en Editar pedido." : "Falta la dirección: escríbela en Editar pedido.", true);
+    return;
+  }
   const rem = (remitente || "").trim() || "Remitente";
   // Teléfono del rótulo: el CAPTURADO (shipping.tel) manda — es el que el courier
   // llama. Clave para el cliente sin número (username/BSUID): ahí c.wa_id es un

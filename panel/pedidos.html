@@ -507,8 +507,18 @@ function abrirExport(courier){
     // seleccionados", el Excel salía con TODOS los marcados de sesiones/períodos previos
     // (los ya despachados que siguen en por_despachar) → doble envío / doble flete.
     // Nunca exportar aéreos, aunque por algún motivo quedaran marcados.
-    const sel=filtrar().filter(o=>S.sel.has(o.id) && !esAer(o));
+    let sel=filtrar().filter(o=>S.sel.has(o.id) && !esAer(o));
     if(!sel.length) return;
+    // 🔒 Sin dirección escrita no sale al courier (obligatorio): se exportan solo los completos, o ninguno.
+    { const sinDir=sel.filter(faltaDirLima);
+      if(sinDir.length){
+        const lista=sinDir.slice(0,8).map(o=>`• ${esc(nombreDe(o))}${ubicacionDe(o.shipping||{})?" — mandó su ubicación":""}`).join("<br>")+(sinDir.length>8?`<br>…y ${sinDir.length-8} más`:"");
+        const resto=sel.length-sinDir.length;
+        if(!resto){ await confirmDialog({title:"Falta la dirección",messageHtml:`Estos pedidos no tienen la dirección escrita:<br><br>${lista}<br><br>Ábrelos con <b>Editar</b>, escríbela (si mandó su ubicación, ábrela en el mapa) y vuelve a exportar.`,confirmText:"Entendido",cancelText:"Cerrar"}); return; }
+        const ok=await confirmDialog({title:"Falta la dirección",messageHtml:`Estos pedidos no tienen la dirección escrita y <b>no van</b> en el Excel:<br><br>${lista}<br><br>Escríbela con <b>Editar</b> y expórtalos después. ¿Exporto los otros ${resto}?`,confirmText:`Exportar los ${resto} completos`});
+        if(!ok) return;
+        sel=sel.filter(o=>!faltaDirLima(o));
+      } }
     const repes=sel.filter(yaExp);
     if(repes.length){
       const lista=repes.slice(0,6).map(o=>`• ${esc((o.shipping||{}).cliente||(o.contact||{}).nombre||"—")} (exportado ${esc(expTxt(o))})`).join("<br>");
@@ -931,6 +941,10 @@ const ROTULO_CSS=`
 // sirven a quien lleva el paquete. El flujo real es que Rodrigo abre ese link al alistar el
 // pedido y escribe la dirección él; entonces un rótulo con el pin significa que ese paso se
 // saltó, y lo que hay que hacer es que salte a la vista mientras todavía se está empacando.
+// 🔒 (24-nov, Rodrigo: «quiero que sea obligatorio») Un pedido de LIMA sin dirección ESCRITA no se exporta al courier
+// ni se imprime su rótulo. Si el cliente solo mandó su ubicación, la dirección la escribe el equipo en Editar pedido.
+const faltaDirLima=(o)=> zonaDe(o)==="lima" && !direccionEscrita(o.shipping||{});
+const nombreDe=(o)=> (o.shipping||{}).cliente||(o.contact||{}).nombre||"un pedido";
 function dirRotulo(dir){
   const d=String(dir||"").trim();
   // (24-nov) La dirección la escribe el equipo mirando el mapa; la ubicación va aparte, como QR (fila «Ubicación»).
@@ -1025,6 +1039,16 @@ function rotuloInner(o){
 // Abre una ventana e imprime uno o varios rótulos (uno por hoja).
 function printRotulos(orders){
   if(!orders||!orders.length) return;
+  // 🔒 Sin dirección escrita no se imprime (obligatorio). Los completos salen; de los otros se dice cuáles faltan.
+  const sinDir=orders.filter(faltaDirLima);
+  if(sinDir.length){
+    const nombres=sinDir.slice(0,4).map(nombreDe).join(", ")+(sinDir.length>4?` y ${sinDir.length-4} más`:"");
+    orders=orders.filter(o=>!faltaDirLima(o));
+    toast(orders.length
+      ? `No imprimí ${sinDir.length===1?"el rótulo":"los rótulos"} de ${nombres}: falta escribir la dirección (Editar pedido).`
+      : `Falta escribir la dirección de ${nombres} (Editar pedido). Sin dirección no se imprime el rótulo.`, true);
+    if(!orders.length) return;
+  }
   const cuerpo=orders.map(rotuloInner).join("");
   const nro1=(orders[0].order_id||orders[0].id||"").toString().slice(0,8).toUpperCase();
   const titulo=orders.length===1?`Rótulo ${esc(nro1)}`:`${orders.length} rótulos`;
