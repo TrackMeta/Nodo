@@ -23397,8 +23397,12 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
       const { data: previos } = await db.from("messages")
         .select("content, ts").eq("contact_id", run.contact_id).eq("direction", "in")
         .order("ts", { ascending: false }).limit(5);
+      // 🔑 (24-nov, Rodrigo: «arréglalo») Sin las PALABRAS CLAVE del canal: el mensaje del anuncio queda guardado entero
+      // y «info lampara» se leía como «1 lámpara» (la opción se llama así) → «Listo: 1 lámpara a S/ 79» sin que él dijera
+      // cuántas. La palabra clave solo enruta; nunca elige (Probar flujos, Soluciones).
+      const _kwsH = await keywordsDelCanal(db, run.channel_id);
       const lineas = (previos ?? []).reverse()
-        .map((m: any) => String(m.content?.text ?? m.content?.caption ?? "").trim())
+        .map((m: any) => _kwsH.reduce((acc, k) => sinLaPalabraClave(acc, k), String(m.content?.text ?? m.content?.caption ?? "")).trim())
         .filter(Boolean)
         // «2 cortes», «3 metros», «4 perros»: el número es de OTRA cosa, no la cantidad (Probar flujos, 3-oct).
         .map((l) => l.replace(/(?<![\p{L}\p{N}])\d{1,3}\s+(?=(?:cortes?|metros?|m2|mts?|cm|mm|veces|horas?|d[ií]as?|semanas?|meses|años?|anos?|plantas?|perros?|gatos?|animales|hect[aá]reas?|cuartos?|ambientes?|pisos?|ventanas?|puertas?|kilos?|kg|litros?|personas?|hijos?|soles)(?![\p{L}]))/giu, ""));
