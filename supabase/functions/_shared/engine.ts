@@ -313,6 +313,36 @@ export async function runEngine(
 async function runEngineInner(
   db: SupabaseClient, channelId: string, contactId: string, event: EngineEvent,
 ) {
+  // 🔑 (24-nov, Rodrigo: «arréglalo») La palabra clave del anuncio se contesta AL TOQUE (sin buffer) y el mensaje que él
+  // escribe segundos después se pliega con ella en la ráfaga: «info lampara\nde san juan de miraflores». Ese renglón ya
+  // tuvo su turno y solo enruta — releído acá sellaba «1 lámpara» sin que dijera cuántas. Con varios renglones, el que es
+  // SOLO palabra clave se descarta (si escribió algo más en ese renglón, queda entero) — y solo si ese mensaje YA FUE
+  // CONTESTADO (hay una respuesta del bot después): una palabra clave nueva, de otro producto, sigue eligiendo el flujo.
+  if (event.type === "message" && String(event.text ?? "").includes("\n")) {
+    try {
+      // (la más LARGA primero: «lampara» suelta se comía media «info lampara» y quedaba «info»)
+      const _kwsR = (await keywordsDelCanal(db, channelId)).sort((a, b) => b.length - a.length);
+      if (_kwsR.length) {
+        const _ren = String(event.text).split("\n");
+        const _soloClave = (l: string) => !!l.trim() && _kwsR.reduce((acc, k) => sinLaPalabraClave(acc, k), l).replace(/[^\p{L}\p{N}]+/gu, "").length === 0;
+        const _yaContestado = async (l: string) => {
+          const { data: mi } = await db.from("messages").select("created_at").eq("contact_id", contactId).eq("direction", "in")
+            .eq("content->>text", l).order("created_at", { ascending: false }).limit(1).maybeSingle();
+          if (!(mi as any)?.created_at) return false;
+          const { data: mo } = await db.from("messages").select("id").eq("contact_id", contactId).eq("direction", "out")
+            .gt("created_at", (mi as any).created_at).limit(1).maybeSingle();
+          return !!mo;
+        };
+        const _quedan: string[] = [];
+        for (const l of _ren) if (!(_soloClave(l) && await _yaContestado(l))) _quedan.push(l);
+        if (_quedan.some((l) => l.trim()) && _quedan.length < _ren.length) {
+          event = { ...event, text: _quedan.join("\n").trim() };
+          void logEvent(db, channelId, contactId, "nota", "🔑 Palabra clave fuera de la ráfaga",
+            `Ya tuvo su turno; queda: "${String(event.text).slice(0, 90)}"`).catch(() => {});
+        }
+      }
+    } catch (_) { /* sin palabras clave legibles → la ráfaga entera, como antes */ }
+  }
   // "Solo anuncios": si el canal lo tiene activado, el bot atiende únicamente
   // a los contactos que llegaron por un anuncio CTWA (tienen la ventana gratis
   // de 72h). Un contacto orgánico no recibe respuesta automática: su mensaje
@@ -6169,8 +6199,10 @@ function afirmaResumen(texto: string): boolean {
 // del pedido, rótulo, Excel); al cliente, que acaba de mandar su ubicación, se le confirma con palabras y su distrito.
 function lineaDireccionCliente(dir: string, distrito?: unknown): string {
   if (!/https?:\/\//i.test(dir)) return `📍 *${dir}*`;
-  const d = enTitulo(String(distrito ?? "").trim());
-  return d ? `📍 *${d}* — con la ubicación que me compartiste ✅` : "📍 Con la ubicación que me compartiste ✅";
+  // (el padrón guarda el distrito en MAYÚSCULAS y enTitulo respeta las palabras de ≤3 letras como siglas: «SAN Juan…»)
+  const raw = String(distrito ?? "").trim();
+  const d = enTitulo(raw.length > 4 && raw === raw.toLocaleUpperCase("es") ? raw.toLocaleLowerCase("es") : raw);
+  return d ?`📍 *${d}* — con la ubicación que me compartiste ✅` : "📍 Con la ubicación que me compartiste ✅";
 }
 // El resumen que se le muestra para que confirme. Lo que ya sabemos, en el orden en que lo lee: quién, qué, dónde.
 function resumenParaConfirmar(ctx: any, nombre: string): string {
@@ -23407,7 +23439,7 @@ async function detectarOpcion(db: SupabaseClient, run: Run, ctx: any, texto: str
       // 🔑 (24-nov, Rodrigo: «arréglalo») Sin las PALABRAS CLAVE del canal: el mensaje del anuncio queda guardado entero
       // y «info lampara» se leía como «1 lámpara» (la opción se llama así) → «Listo: 1 lámpara a S/ 79» sin que él dijera
       // cuántas. La palabra clave solo enruta; nunca elige (Probar flujos, Soluciones).
-      const _kwsH = await keywordsDelCanal(db, run.channel_id);
+      const _kwsH = (await keywordsDelCanal(db, run.channel_id)).sort((a, b) => b.length - a.length);
       const lineas = (previos ?? []).reverse()
         .map((m: any) => _kwsH.reduce((acc, k) => sinLaPalabraClave(acc, k), String(m.content?.text ?? m.content?.caption ?? "")).trim())
         .filter(Boolean)
