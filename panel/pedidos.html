@@ -217,7 +217,7 @@ import * as O from "./orders.js";
 import { inicioDeHoyTZ } from "./date-range.js";
 import { ubicacionDe, direccionEscrita, filaQR, QR_CSS, QR_HEAD, QR_SCRIPT } from "./rotulo-qr.js?v=2";
 import { openDespachoModal, openEditarPedido, elegirPedidosDespacho, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
-import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia } from "./courier-export.js";
+import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia, faltanObligatorios } from "./courier-export.js?v=2";
 const $=(id)=>document.getElementById(id);
 const st={ channelId:null, channelName:"", remitente:"", list:[], q:"", kbZona:"lima", soloParados:false, entregas:null, rt:null };
 function esc(s){return (s??"").toString().replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -509,13 +509,13 @@ function abrirExport(courier){
     // Nunca exportar aéreos, aunque por algún motivo quedaran marcados.
     let sel=filtrar().filter(o=>S.sel.has(o.id) && !esAer(o));
     if(!sel.length) return;
-    // 🔒 Sin dirección escrita no sale al courier (obligatorio): se exportan solo los completos, o ninguno.
+    // 🔒 Sin los datos obligatorios no sale al courier: se exportan solo los completos, o ninguno.
     { const sinDir=sel.filter(faltaDirLima);
       if(sinDir.length){
-        const lista=sinDir.slice(0,8).map(o=>`• ${esc(nombreDe(o))}${ubicacionDe(o.shipping||{})?" — mandó su ubicación":""}`).join("<br>")+(sinDir.length>8?`<br>…y ${sinDir.length-8} más`:"");
+        const lista=sinDir.slice(0,8).map(o=>`• <b>${esc(nombreDe(o))}</b>: falta ${esc(queFalta(o))}`).join("<br>")+(sinDir.length>8?`<br>…y ${sinDir.length-8} más`:"");
         const resto=sel.length-sinDir.length;
-        if(!resto){ await confirmDialog({title:"Falta la dirección",messageHtml:`Estos pedidos no tienen la dirección escrita:<br><br>${lista}<br><br>Ábrelos con <b>Editar</b>, escríbela (si mandó su ubicación, ábrela en el mapa) y vuelve a exportar.`,confirmText:"Entendido",cancelText:"Cerrar"}); return; }
-        const ok=await confirmDialog({title:"Falta la dirección",messageHtml:`Estos pedidos no tienen la dirección escrita y <b>no van</b> en el Excel:<br><br>${lista}<br><br>Escríbela con <b>Editar</b> y expórtalos después. ¿Exporto los otros ${resto}?`,confirmText:`Exportar los ${resto} completos`});
+        if(!resto){ await confirmDialog({title:"Faltan datos",messageHtml:`Estos pedidos no pueden salir todavía:<br><br>${lista}<br><br>Complétalos con <b>Editar</b> (o valida el pago) y vuelve a exportar.`,confirmText:"Entendido",cancelText:"Cerrar"}); return; }
+        const ok=await confirmDialog({title:"Faltan datos",messageHtml:`Estos pedidos <b>no van</b> en el Excel:<br><br>${lista}<br><br>Complétalos con <b>Editar</b> y expórtalos después. ¿Exporto los otros ${resto}?`,confirmText:`Exportar los ${resto} completos`});
         if(!ok) return;
         sel=sel.filter(o=>!faltaDirLima(o));
       } }
@@ -941,9 +941,11 @@ const ROTULO_CSS=`
 // sirven a quien lleva el paquete. El flujo real es que Rodrigo abre ese link al alistar el
 // pedido y escribe la dirección él; entonces un rótulo con el pin significa que ese paso se
 // saltó, y lo que hay que hacer es que salte a la vista mientras todavía se está empacando.
-// 🔒 (24-nov, Rodrigo: «quiero que sea obligatorio») Un pedido de LIMA sin dirección ESCRITA no se exporta al courier
-// ni se imprime su rótulo. Si el cliente solo mandó su ubicación, la dirección la escribe el equipo en Editar pedido.
-const faltaDirLima=(o)=> zonaDe(o)==="lima" && !direccionEscrita(o.shipping||{});
+// 🔒 (24-nov, Rodrigo: obligatorio) Sin los datos de faltanObligatorios (courier-export.js) un pedido no se exporta al
+// courier ni se imprime su rótulo: Lima sin dirección escrita o con pago adelantado sin validar; provincia sin DNI de 8
+// dígitos o sin agencia de destino.
+const faltaDirLima=(o)=> faltanObligatorios(o).length>0;
+const queFalta=(o)=> faltanObligatorios(o).join(" y ");
 const nombreDe=(o)=> (o.shipping||{}).cliente||(o.contact||{}).nombre||"un pedido";
 function dirRotulo(dir){
   const d=String(dir||"").trim();
@@ -1039,14 +1041,12 @@ function rotuloInner(o){
 // Abre una ventana e imprime uno o varios rótulos (uno por hoja).
 function printRotulos(orders){
   if(!orders||!orders.length) return;
-  // 🔒 Sin dirección escrita no se imprime (obligatorio). Los completos salen; de los otros se dice cuáles faltan.
+  // 🔒 Sin los datos obligatorios no se imprime. Los completos salen; de los otros se dice qué falta.
   const sinDir=orders.filter(faltaDirLima);
   if(sinDir.length){
-    const nombres=sinDir.slice(0,4).map(nombreDe).join(", ")+(sinDir.length>4?` y ${sinDir.length-4} más`:"");
+    const det=sinDir.slice(0,3).map(o=>`${nombreDe(o)} (falta ${queFalta(o)})`).join(" · ")+(sinDir.length>3?` y ${sinDir.length-3} más`:"");
     orders=orders.filter(o=>!faltaDirLima(o));
-    toast(orders.length
-      ? `No imprimí ${sinDir.length===1?"el rótulo":"los rótulos"} de ${nombres}: falta escribir la dirección (Editar pedido).`
-      : `Falta escribir la dirección de ${nombres} (Editar pedido). Sin dirección no se imprime el rótulo.`, true);
+    toast(orders.length ? `No imprimí: ${det}. Complétalo en Editar pedido.` : `No se puede imprimir: ${det}. Complétalo en Editar pedido.`, true);
     if(!orders.length) return;
   }
   const cuerpo=orders.map(rotuloInner).join("");

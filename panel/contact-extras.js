@@ -15,7 +15,7 @@
 // ═══════════════════════════════════════════════════════════════════
 import * as O from "./orders.js";
 import { toast, icon, norm, esUbicacionCompartida, ventanaAnuncio } from "./shell.js";
-import { cargarListas, sugerirAgencia } from "./courier-export.js";
+import { cargarListas, sugerirAgencia, faltanObligatorios } from "./courier-export.js?v=2";
 import { ubicacionDe, direccionEscrita, aUrlMapa, filaQR, QR_CSS, QR_HEAD, QR_SCRIPT } from "./rotulo-qr.js?v=2";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
@@ -391,11 +391,10 @@ export function printRotulo(o, remitente) {
   if (!o) { toast("Este contacto todavía no tiene un pedido", true); return; }
   const c = o.contact || {}, p = o.product || {}, v = o.version || {}, s = o.shipping || {};
   const zona = O.zonaDe(o);
-  // 🔒 (24-nov, Rodrigo: obligatorio) Lima sin dirección ESCRITA: no se imprime (mismo criterio que pedidos.html).
-  if (zona === "lima" && !direccionEscrita(s)) {
-    toast(ubicacionDe(s) ? "Falta escribir la dirección: abre su ubicación en el mapa y escríbela en Editar pedido." : "Falta la dirección: escríbela en Editar pedido.", true);
-    return;
-  }
+  // 🔒 (24-nov, Rodrigo: obligatorio) Sin los datos obligatorios no se imprime (mismo criterio que pedidos.html y el
+  // Excel: faltanObligatorios en courier-export.js).
+  { const _f = faltanObligatorios(o);
+    if (_f.length) { toast(`No se puede imprimir: falta ${_f.join(" y ")}. Complétalo en Editar pedido.`, true); return; } }
   const rem = (remitente || "").trim() || "Remitente";
   // Teléfono del rótulo: el CAPTURADO (shipping.tel) manda — es el que el courier
   // llama. Clave para el cliente sin número (username/BSUID): ahí c.wa_id es un

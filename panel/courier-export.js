@@ -134,6 +134,27 @@ function filasShalom(orders, cfg, listas) {
     return f;
   });
 }
+// 🔒 (24-nov, Rodrigo: «quiero que sea obligatorio» → «los que sugieres») Lo que FALTA para que un pedido pueda salir:
+// sin esto no se exporta al courier ni se imprime su rótulo (los demás datos raros siguen siendo solo aviso). Son los que
+// cuestan plata o un envío rechazado:
+//  · Lima: la dirección ESCRITA (si mandó solo su ubicación, la escribe el equipo) y el pago adelantado sin validar (el
+//    Excel y el rótulo saldrían con el total → el motorizado le cobra lo que ya pagó).
+//  · Provincia: el DNI (8 dígitos: Shalom rechaza otro) y la agencia de destino.
+// Devuelve frases cortas («el DNI», «la agencia de destino»…); vacío = puede salir.
+export function faltanObligatorios(o) {
+  const s = (o && o.shipping) || {}, z = O.zonaDe(o), f = [];
+  if (z === "lima") {
+    if (!direccionEscrita(s)) f.push(ubicacionDe(s) ? "la dirección (mandó su ubicación: ábrela en el mapa y escríbela)" : "la dirección");
+    if (s.pago_adelantado_por_validar === true) f.push("validar su pago adelantado (Pagos por validar)");
+  } else if (z === "provincia") {
+    const dni = String(s.dni || "").trim();
+    if (!dni) f.push("el DNI");
+    else if (!/^\d{8}$/.test(dni)) f.push(`un DNI de 8 dígitos (tiene «${dni}»)`);
+    if (!String(s.destino || s.sede || "").trim()) f.push("la agencia de destino");
+  }
+  return f;
+}
+
 async function revisarShalom(orders, cfg) {
   const sh = (cfg && cfg.shalom) || {}, p = [];
   const listas = await cargarListas();
