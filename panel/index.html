@@ -1204,7 +1204,18 @@ async function loadFilters(){
   ]);
   state.products = pr.error ? [] : (pr.data||[]);
   state.tags = tg.data||[];
+  // 📣 (24-nov) Nombres y estado de los anuncios, para el selector «Producto y anuncio» (como Contactos/Inicio/Embudo).
+  try{ const { data:am }=await supa.from("ads_meta").select("ad_id,ad_name,estado").eq("channel_id", state.channelId);
+    state.adNombre={}; state.adEstado={}; (am||[]).forEach(a=>{ if(!a.ad_id) return; state.adNombre[a.ad_id]=a.ad_name||""; if(a.estado) state.adEstado[a.ad_id]=a.estado; }); }catch(_){ state.adNombre={}; state.adEstado={}; }
   state.savedFilters = loadSavedFilters();
+  // 📣 (24-nov) «Ver chats» desde Rendimiento: index.html?anuncio=<ad_id> abre la Bandeja ya filtrada por ese anuncio.
+  try{
+    const _qa=new URLSearchParams(location.search).get("anuncio");
+    if(_qa && !state._anuncioUrl){
+      state._anuncioUrl=true; state.filters.producto="a:"+_qa;
+      const u=new URL(location.href); u.searchParams.delete("anuncio"); history.replaceState(history.state, "", u.pathname+u.search+u.hash);
+    }
+  }catch(_){}
   renderFilters();
   // Wiring del drawer (elementos estáticos → una vez basta; onclick es idempotente).
   const fb=$("filtersBtn"), ov=$("filtersOv");
@@ -1235,7 +1246,7 @@ function renderFilterChips(){
   f.stages.forEach(k=>{ const s=EMBUDO_STAGES.find(x=>x.k===k); add(s?s.label:k, s?s.color:null, ()=>f.stages.delete(k)); });
   f.entrega.forEach(k=>{ const g=ENTREGA_LBL[k]; add(g?g.lbl:k, g?g.color:null, ()=>f.entrega.delete(k)); });
   f.tags.forEach(id=>{ const t=state.tags.find(x=>x.id===id); add(t?t.nombre:"etiqueta", t?tagHex(t.color):null, ()=>f.tags.delete(id)); });
-  if(f.producto){ const p=state.products.find(x=>x.id===f.producto); add(p?p.nombre:"Producto", null, ()=>f.producto=""); }
+  if(f.producto) add((f.producto.startsWith("a:")?"Anuncio: ":"")+nombreVista(f.producto), null, ()=>f.producto="");
   box.innerHTML = chips.map((c,i)=>`<span class="fchip">${c.color?`<span class="fchip-dot" style="background:${c.color}"></span>`:""}${esc(c.label)}<span class="fchip-x" data-ci="${i}" title="Quitar">×</span></span>`).join("")
     + (chips.length>1?`<span class="fchip clearall" id="chipClear">Limpiar todo</span>`:"");
   box.querySelectorAll("[data-ci]").forEach(x=> x.onclick=()=>{ chips[+x.dataset.ci].onDel(); renderFilters(); renderConversations(); });
@@ -1276,8 +1287,8 @@ function renderFilters(){
       state.tags.length ? state.tags.map(t=>{ const c=tagHex(t.color); return `<button class="ftog tagtog ${f.tags.has(t.id)?"on":""}" data-tag="${t.id}" type="button"><span class="tagdot" style="background:${c}"></span><span class="ftg-nm">${esc(t.nombre)}</span><span class="fcount" data-tagcount="${t.id}"></span></button>`; }).join("")
         : '<span class="cmuted">Sin etiquetas en este canal</span>'
     }</div>
-    <h4>Producto</h4>
-    <select class="fsel" id="fProd"><option value="">Todos</option>${state.products.map(p=>`<option value="${p.id}" ${f.producto===p.id?"selected":""}>${p.emoji?esc(p.emoji)+" ":""}${esc(p.nombre)}</option>`).join("")}</select>
+    <h4>Producto y anuncio</h4>
+    <select class="fsel" id="fProd" title="Producto o anuncio"><option value="">Todo</option></select>
     <button class="fcreate" id="fCreate" type="button">${icon("bookmark")} Guardar como filtro</button>
     <button class="fclear" id="fClear">Limpiar filtros</button>`;
   $("fSin").onclick=()=>{ f.sinResponder=!f.sinResponder; $("fSin").classList.toggle("on",f.sinResponder); renderConversations(); };
@@ -1292,6 +1303,7 @@ function renderFilters(){
   box.querySelectorAll("[data-stage]").forEach(btn=> btn.onclick=()=>{ const k=btn.dataset.stage; f.stages.has(k)?f.stages.delete(k):f.stages.add(k); btn.classList.toggle("on"); renderConversations(); });
   box.querySelectorAll("[data-entrega]").forEach(btn=> btn.onclick=()=>{ const k=btn.dataset.entrega; f.entrega.has(k)?f.entrega.delete(k):f.entrega.add(k); btn.classList.toggle("on"); renderConversations(); });
   $("fClose").onclick=closeFilters;
+  fillVistaBandeja();
   $("fProd").onchange=(e)=>{ f.producto=e.target.value; renderConversations(); };
   box.querySelectorAll("#fTags [data-tag]").forEach(btn=> btn.onclick=()=>{ const id=btn.dataset.tag; f.tags.has(id)?f.tags.delete(id):f.tags.add(id); btn.classList.toggle("on"); renderConversations(); });
   box.querySelectorAll(".mfchip").forEach(btn=> btn.onclick=(e)=>{ if(e.target.closest("[data-mfdel]")){ delSavedFilter(+e.target.closest("[data-mfdel]").dataset.mfdel); return; } applySavedFilter(+btn.dataset.mf); });
@@ -1337,6 +1349,52 @@ async function delSavedFilter(i){
   state.savedFilters.splice(i,1); persistSavedFilters(); renderFilters();
 }
 // Conteo por filtro dentro del modo actual (Bot/Humano).
+// 📣 (24-nov, Rodrigo: «filtros de bandeja por anuncio», con el mismo selector de Contactos/Inicio) Producto → sus
+// anuncios → orgánico, con cuántos chats hay en cada uno. f.producto guarda: "" (todo) · <id de producto> (como antes,
+// así los filtros guardados siguen valiendo) · "a:<ad_id>" (un anuncio) · "none" (sin anuncio). El anuncio de un chat es
+// el ÚLTIMO que tocó (contacts.ad_id), el mismo de su ficha.
+function vistaOk(c, v){
+  if(!v) return true;
+  if(v==="none") return esOrganico(c);
+  if(v.startsWith("a:")) return String(c.ad_id||"")===v.slice(2);
+  return c.product_id===v;
+}
+function nombreVista(v){
+  if(v==="none") return "Sin anuncio (orgánico)";
+  if(v.startsWith("a:")){ const a=v.slice(2); return (state.adNombre||{})[a]||("Anuncio …"+a.slice(-6)); }
+  const p=state.products.find(x=>x.id===v); return p?p.nombre:"Producto";
+}
+function fillVistaBandeja(){
+  const sel=$("fProd"); if(!sel) return;
+  const inMode=(cv)=> state.mode==="bot" ? cv.contact.bot_activo!==false : cv.contact.bot_activo===false;
+  const vivos=(state.convs||[]).filter(cv=>inMode(cv) && !cv.archivada).map(cv=>cv.contact);
+  const n={}; const sum=(k)=>{ n[k]=(n[k]||0)+1; };
+  vivos.forEach(c=>{ sum("all"); if(c.product_id) sum(c.product_id); if(c.ad_id) sum("a:"+c.ad_id); if(esOrganico(c)) sum("none"); });
+  // Cada anuncio va debajo del producto con el que más chats trae.
+  const cnt={}; (state.convs||[]).forEach(cv=>{ const c=cv.contact; if(!c.ad_id) return; const m=(cnt[c.ad_id]||(cnt[c.ad_id]={})); m[c.product_id||""]=(m[c.product_id||""]||0)+1; });
+  const adsDe={}; Object.entries(cnt).forEach(([a,m])=>{ const p=Object.entries(m).sort((x,y)=>y[1]-x[1])[0][0]; (adsDe[p]||(adsDe[p]=[])).push(a); });
+  Object.values(adsDe).forEach(l=>l.sort((x,y)=>(n["a:"+y]||0)-(n["a:"+x]||0)));
+  const nn=(k)=>String(n[k]||0);
+  const est=(a)=>{ const e=(state.adEstado||{})[a]; return e?` data-dot="${e==="ACTIVE"?"on":"off"}" data-titulo="${e==="ACTIVE"?"Activo en Meta":"Pausado en Meta"}"`:""; };
+  const opAd=(a)=>`<option value="a:${esc(a)}" data-ico="megaphone" data-sub="1"${est(a)} data-n="${nn("a:"+a)}">${esc((state.adNombre||{})[a]||("Anuncio …"+String(a).slice(-6)))}</option>`;
+  let h=`<option value="" data-ico="inbox" data-n="${nn("all")}">Todo</option>`;
+  const prods=state.products.filter(p=>n[p.id]||adsDe[p.id]).sort((a,b)=>(n[b.id]||0)-(n[a.id]||0));
+  prods.forEach(p=>{
+    const ads=adsDe[p.id]||[];
+    h+=`<optgroup label=""><option value="${esc(p.id)}" data-ico="box" data-n="${nn(p.id)}">${esc(p.nombre||"Producto")}</option>`;
+    // Los anuncios se listan si dicen algo distinto que el producto: varios, o uno pero el producto también tiene chats sin él.
+    if(ads.length>1 || (ads.length===1 && (n[p.id]||0)>(n["a:"+ads[0]]||0))) h+=ads.map(opAd).join("");
+    h+=`</optgroup>`;
+  });
+  if((adsDe[""]||[]).length) h+=`<optgroup label="Sin producto">${adsDe[""].map(opAd).join("")}</optgroup>`;
+  if(n.none) h+=`<optgroup label=""><option value="none" data-ico="user" data-n="${nn("none")}">Sin anuncio (orgánico)</option></optgroup>`;
+  const f=state.filters;
+  if(f.producto && !h.includes(`value="${esc(f.producto)}"`))
+    h+=`<option value="${esc(f.producto)}" data-n="0">${esc(nombreVista(f.producto))}</option>`;   // el elegido sigue visible aunque hoy no tenga chats
+  // Se rearma solo si cambió algo: renderConversations corre con cada mensaje que entra.
+  if(sel._h!==h){ sel.innerHTML=h; sel._h=h; }
+  sel.value=f.producto||"";
+}
 function updateFilterCounts(){
   const inMode = (cv)=> state.mode==="bot" ? cv.contact.bot_activo!==false : cv.contact.bot_activo===false;
   const convs = (state.convs||[]).filter(inMode);
@@ -1350,6 +1408,7 @@ function updateFilterCounts(){
   set("cImg", convs.filter(cv=>!!cv.contact.ultima_imagen_at && !cv.archivada).length);
   set("cArch", convs.filter(cv=>cv.archivada).length);
   set("cMeta", convs.filter(cv=>!cv.archivada && state.metaPendSet.has(cv.contact.id)).length);
+  fillVistaBandeja();
   const mh=$("metaHealthHost"); if(mh) mh.innerHTML=saludMetaHtml();
   const sbox=$("filters");
   if(sbox) sbox.querySelectorAll("[data-stagecount]").forEach(el=>{ const k=el.dataset.stagecount; el.textContent=convs.filter(cv=>!cv.archivada && (cv.contact.stage||"nuevo")===k).length; });
@@ -1677,7 +1736,7 @@ function applyFilters(cv){
   if (f.sinprod && (c.product_id || c.stage==="comprado" || c.stage==="confirmado")) return false;
   if (f.conimg && !c.ultima_imagen_at) return false;
   if (f.range && cv.updated_at){ const dd=ymdLima(cv.updated_at); if(dd < ymd(f.range.from) || dd > ymd(f.range.to)) return false; }
-  if (f.producto && c.product_id !== f.producto) return false;
+  if (f.producto && !vistaOk(c, f.producto)) return false;
   if (f.tags.size){ const ids=(c.contact_tags||[]).map(t=>t.tag_id); if(![...f.tags].some(t=>ids.includes(t))) return false; }
   return true;
 }
