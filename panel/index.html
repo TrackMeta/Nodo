@@ -1053,7 +1053,7 @@ const esOrganico = (c)=> !!c && c.source!=="ad" && c.source!=="sim";
 const CONVS_TOPE = 5000;   // chats que carga la Bandeja (los filtros y contadores trabajan sobre lo cargado)
 async function loadConversations() {
   const gen=(state.loadGen=(state.loadGen||0)+1); // anti-carrera al cambiar de bot
-  const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,window_type,requiere_humano,archivada,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage,source,fep_hasta${p?",product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado":""})`;
+  const sel = (p)=> `contact_id,no_leidos,updated_at,expira_at,window_type,requiere_humano,archivada,contact:contacts(id,nombre,wa_id,last_input,bot_activo,stage,source,ad_id,fep_hasta${p?",product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado":""})`;
   // 1000 y no 200: los filtros («Requiere humano», fechas, archivados) y sus contadores trabajan sobre
   // lo cargado, y con más de 200 chats los que esperaban desde hace días simplemente no aparecían
   // (el Dashboard, que cuenta en la base, decía 37 y el filtro 12). Lo que sigue va por trozos.
@@ -2428,7 +2428,7 @@ async function buscarEnServidor(raw){
   const seguro=q.replace(/[,()*%]/g," ").trim();
   const ors=[`nombre.ilike.*${seguro}*`]; if(qd.length>=3) ors.push(`wa_id.ilike.*${qd}*`);
   const base="contact_id,no_leidos,updated_at,expira_at,window_type,requiere_humano,archivada";
-  const sel=(p)=>`${base},contact:contacts!inner(id,nombre,wa_id,last_input,bot_activo,stage,source${p?",product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado":""})`;
+  const sel=(p)=>`${base},contact:contacts!inner(id,nombre,wa_id,last_input,bot_activo,stage,source,ad_id${p?",product_id,ultima_imagen_at,product:products(emoji),contact_tags(tag_id),bloqueado":""})`;
   const pedir=(p)=>supa.from("conversations").select(sel(p)).eq("channel_id",state.channelId)
     .or(ors.join(","),{ referencedTable:"contacts", foreignTable:"contacts" }).order("updated_at",{ascending:false}).limit(30);
   try{
