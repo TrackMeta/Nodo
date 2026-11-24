@@ -217,6 +217,9 @@ try{ if(/\/panel\/?$/.test(location.pathname) && !location.search && !location.h
   /* (23-nov, Rodrigo: «el emoji descolocado») La foto no se estira con la fila: el badge del producto se medía desde el
      fondo de una fila alta (dos líneas de etiquetas) y quedaba lejos de la foto. */
   .avwrap{position:relative;flex:none;align-self:flex-start;height:40px}
+  /* 📍 (24-nov, Rodrigo) «Pedir ubicación» solo en bots que venden FÍSICOS (data-bot-digital = tiene productos y ninguno físico;
+     data-sin-fisico = la cuenta no vende físicos; mientras se averigua, escondido para que no parpadee). */
+  html[data-bot-digital] #ubicBtn, html[data-bot-tipo-pend] #ubicBtn, html[data-sin-fisico] #ubicBtn{display:none}
   .av{width:40px;height:40px;flex:none;border-radius:50%;background:var(--brand-bg);color:var(--brand);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
   /* Badge del producto: círculo limpio con aro y sombra (se ve intencional) */
   .av.av-emo{font-size:21px;line-height:1}   /* nombre que es solo un emoji: se ve entero y a buen tamaño */

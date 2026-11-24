@@ -14,7 +14,7 @@ import { sendTemplateToContact } from "./campaigns.ts";
 import { getAccessToken, sheetsAppend, sheetsUpdate, sheetsBorrarFila, HOJAS } from "./gsheets.ts";
 import { getChannelSecrets, accountOfChannel } from "./db.ts";
 import { clienteDeTurno, despues, vaciarDespues } from "./turno.ts";
-import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendLocationRequest, sendMedia, sendText, sendReaction } from "./meta.ts";
+import { fetchMediaAsDataUri, fetchMediaBytes, MetaApiError, motivoLegible, sendButtons, sendLocationRequest, sendMedia, sendText, sendReaction, sendList } from "./meta.ts";
 import {
   sedeReconocida, candidatasAgencia, agenciasDeCiudad, otrosDistritosConAgencia,
   esSoloDepartamento, capitalizaNombresPropios,
@@ -379,7 +379,11 @@ async function runEngineInner(
   // arista que lo esperara caía al buffer y el cliente se quedaba sin respuesta.
   if (event.type === "button") {
     if (!(await esperaEsteBoton(db, contactId, event.buttonId))) {
-      event = { type: "message", text: event.title ?? event.buttonId, msgType: "text" };
+      // 📋 (24-nov) Agencia elegida de la LISTA de sedes: el id trae el nombre completo (el título viene cortado a 24 letras).
+      const _bid = String(event.buttonId ?? "");
+      const _sedeLista = _bid.startsWith("sede:") ? _bid.slice(5).trim() : _bid.startsWith("op:") ? _bid.slice(3).trim() : "";
+      event = { type: "message", text: _sedeLista || (event.title ?? event.buttonId), msgType: "text" };
+      if (_sedeLista) await db.from("contacts").update({ last_input: _sedeLista }).eq("id", contactId).then(() => {}, () => {});
     }
   }
 
@@ -5979,6 +5983,26 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
     && RE_RENGLON_DIRECCION.test(body) && !esDigital(ctx) && String(ctx?.zona_entrega ?? "") === "lima"
     && !String(ctx?.direccion ?? (run?.vars as any)?.direccion ?? "").trim();
   if (pideUbicacion) content.pedir_ubicacion = true;
+  // 📋 (24-nov, Rodrigo: «arma la lista de agencias de Shalom») La burbuja de oficinas (la arma bloqueDeSedes con listaSedes:
+  // renglones «📍 *Nombre* — referencia») sale como LISTA de WhatsApp: un botón «Ver agencias» que abre las oficinas y el cliente
+  // toca la suya — sin escribirla mal. Entre 2 y 10 (tope de WhatsApp); si no, o si Meta la rechaza, sale el texto de siempre.
+  let listaAg: { id: string; title: string; description?: string }[] = [];
+  let cuerpoLista = "";
+  if (!isInteractive && !pideUbicacion && !bubble.media_id && body && !esDigital(ctx)) {
+    const reAg = /^📍\s*\*([^*]+)\*(?:\s*[—–-]\s*(.+))?\s*$/;
+    const lineas = body.split("\n");
+    const ags = lineas.map((l) => l.trim().match(reAg)).filter(Boolean) as RegExpMatchArray[];
+    if (ags.length >= 2 && ags.length <= 10) {
+      // Con muchas oficinas el bot pregunta primero el DISTRITO con el mismo formato: entonces es una lista de distritos.
+      const _esDist = /distrit/i.test(body);
+      (content as any)._lista_tipo = _esDist ? "distrito" : "sede";
+      listaAg = ags.map((m) => ({ id: (_esDist ? "op:" : "sede:") + m[1].trim(), title: m[1].trim(), description: (m[2] ?? "").trim() || undefined }));
+      cuerpoLista = lineas.filter((l) => !reAg.test(l.trim())).join("\n").replace(/\n{3,}/g, "\n\n").trim()
+        || ((content as any)._lista_tipo === "distrito" ? "¿En qué distrito estás? 👇" : "Elige la agencia Shalom donde vas a recoger 👇");
+      if (!/👇|toca|elige/i.test(cuerpoLista)) cuerpoLista += (content as any)._lista_tipo === "distrito" ? "\n\nToca *Ver distritos* y elige el tuyo 👇" : "\n\nToca *Ver agencias* y elige la tuya 👇";
+      content.lista_sedes = listaAg.map((r) => r.title);
+    }
+  }
 
   // Nada que enviar: burbuja sin texto, sin botones válidos y sin media. No
   // insertes un mensaje en blanco. Pasaba con "mensajes iniciales" cuyo texto
@@ -6014,7 +6038,16 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   let wamid = ""; let status = "sent"; let error: any = null;
   if (d?.mode === "whatsapp" && d.token && ctx.wa_id && (body || isInteractive)) {
     try {
-      if (pideUbicacion) {
+      if (listaAg.length) {
+        const _dist = (content as any)._lista_tipo === "distrito";
+        try { wamid = await sendList(d.phoneNumberId, d.token, ctx.wa_id, cuerpoLista, _dist ? "Ver distritos" : "Ver agencias", _dist ? "Distritos con agencia" : "Agencias Shalom", listaAg); }
+        catch (eL) {
+          delete content.lista_sedes;
+          await logEvent(db, run.channel_id, run.contact_id, "nota", "📋 La lista de agencias no salió",
+            `Se mandó como texto: ${String((eL as any)?.message ?? eL).slice(0, 160)}`).catch(() => {});
+          wamid = await sendText(d.phoneNumberId, d.token, ctx.wa_id, body);
+        }
+      } else if (pideUbicacion) {
         // (si Meta rechaza el de ubicación —ventana, cliente en un WhatsApp viejo—, el mismo texto sale normal: el cliente
         //  nunca se queda sin la petición; queda un evento para saberlo)
         try { wamid = await sendLocationRequest(d.phoneNumberId, d.token, ctx.wa_id, body); }
@@ -6049,7 +6082,7 @@ async function emit(db: SupabaseClient, run: any, bubble: any, ctx: any): Promis
   }
   await db.from("messages").insert({
     channel_id: run.channel_id, contact_id: run.contact_id,
-    direction: "out", type: (isInteractive || content.pedir_ubicacion) ? "interactive" : "text",
+    direction: "out", type: (isInteractive || content.pedir_ubicacion || content.lista_sedes) ? "interactive" : "text",
     content: (_cubreHasta.get(claveSello(run)) ? { ...content, cubre_hasta: _cubreHasta.get(claveSello(run)) } : content),
     status, wamid: wamid || null, error, sent_by: "bot",
     ventana: await ventanaDeCobro(db, run.contact_id),

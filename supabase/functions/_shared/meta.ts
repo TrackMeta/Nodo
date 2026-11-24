@@ -108,6 +108,29 @@ export async function sendLocationRequest(
   });
 }
 
+// 📋 (24-nov, Rodrigo: «arma la lista de agencias de Shalom») Mensaje con un botón que abre una LISTA de hasta 10 opciones
+// (título ≤24, detalle ≤72). Lo que el cliente elige vuelve como interactive.list_reply {id, title}. Solo dentro de las 24 h.
+export async function sendList(
+  phoneNumberId: string, accessToken: string, toWaId: string, bodyText: string, buttonText: string,
+  sectionTitle: string, rows: { id: string; title: string; description?: string }[],
+): Promise<string> {
+  const corta = (t: string, n: number) => { const a = Array.from(String(t ?? "").trim()); return a.length > n ? a.slice(0, n - 1).join("") + "…" : a.join(""); };
+  return await postMessage(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp", recipient_type: "individual", to: toWaId,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: (bodyText || "…").slice(0, 1024) },
+      action: {
+        button: corta(buttonText, 20),
+        sections: [{ title: corta(sectionTitle, 24), rows: rows.slice(0, 10).map((r) => ({
+          id: String(r.id).slice(0, 200), title: corta(r.title, 24), ...(r.description ? { description: corta(r.description, 72) } : {}),
+        })) }],
+      },
+    },
+  });
+}
+
 // 👀✅ (24-nov, Rodrigo) Reacción con un emoji a un mensaje del cliente (p. ej. a la captura de su pago). Mandar otra reacción al
 // mismo mensaje la REEMPLAZA (👀 al llegar → ✅ al aprobarse); emoji "" la quita. Solo dentro de las 24 h.
 export async function sendReaction(phoneNumberId: string, accessToken: string, toWaId: string, wamid: string, emoji: string): Promise<string> {
