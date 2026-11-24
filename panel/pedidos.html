@@ -215,6 +215,7 @@
 import { supa, getChannel, mountShell, toast, icon, confirmDialog, askText, askChoice, norm, pageAll, esUbicacionCompartida } from "./shell.js";
 import * as O from "./orders.js";
 import { inicioDeHoyTZ } from "./date-range.js";
+import { ubicacionDe, direccionEscrita, filaQR, QR_CSS, QR_HEAD, QR_SCRIPT } from "./rotulo-qr.js?v=1";
 import { openDespachoModal, openEditarPedido, elegirPedidosDespacho, openDespachoLoteModal, pedirAviso, avisoMsg } from "./contact-extras.js";
 import { COURIERS, prontoDeZona, couriersDeZona, porDespachar, POR_DESPACHAR, generar, cargarListas, sugerirAgencia } from "./courier-export.js";
 const $=(id)=>document.getElementById(id);
@@ -932,7 +933,8 @@ const ROTULO_CSS=`
 // saltó, y lo que hay que hacer es que salte a la vista mientras todavía se está empacando.
 function dirRotulo(dir){
   const d=String(dir||"").trim();
-  return esUbicacionCompartida(d) ? "⚠ FALTA — el cliente mandó su ubicación, ábrela en el chat" : d;
+  // (24-nov) La dirección la escribe el equipo mirando el mapa; la ubicación va aparte, como QR (fila «Ubicación»).
+  return esUbicacionCompartida(d) ? "⚠ FALTA — escríbela en Editar pedido (abre la ubicación que mandó)" : d;
 }
 function rotuloInner(o){
   const c=o.contact||{}, p=o.product||{}, v=o.version||{}, s=o.shipping||{};
@@ -997,9 +999,11 @@ function rotuloInner(o){
       // mapa. En el chat sirve (se abre de un toque), pero en un papel impreso una URL de 60
       // caracteres es inservible: el motorizado no la puede tocar ni tipear entera. Se imprimen
       // las coordenadas, que es lo único de ahí que puede copiar a su GPS.
-      row("Dirección", dirRotulo(s.direccion), true)+
+      row("Dirección", direccionEscrita(s) || (ubicacionDe(s) ? dirRotulo(s.direccion||ubicacionDe(s)) : ""), true)+
       row("Distrito", s.distrito||"")+
       row("Referencia", s.referencia||"")+
+      // 🔳 (24-nov, Rodrigo) Si compartió su ubicación: QR que el motorizado escanea y le abre el mapa en el punto exacto.
+      filaQR(ubicacionDe(s))+
       row("Pedido", pedido)+
       row("Detalle", atrLine, true)+
       row("Incluye", bumpsTxt, true)+
@@ -1027,8 +1031,9 @@ function printRotulos(orders){
   const btnTxt=orders.length>1?`${icon("printer")} Imprimir los ${orders.length} rótulos`:`${icon("printer")} Imprimir`;
   const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"/>
     <title>${titulo}</title>
-    <style>${ROTULO_CSS}</style></head><body>
+    <style>${ROTULO_CSS}${QR_CSS}</style>${QR_HEAD}</head><body>
     ${cuerpo}
+    ${QR_SCRIPT}
     <div class="noprint"><button onclick="window.print()">${btnTxt}</button></div>
     <script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script>
     </body></html>`;

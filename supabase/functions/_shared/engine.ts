@@ -12532,6 +12532,13 @@ async function crearPedido(db: SupabaseClient, run: Run, a: any, ctx: any) {
     delete (run.vars as any)._extra_tarde;
     const ship: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(a.datos ?? {})) ship[k] = resolve(String(v ?? ""), ctx);
+    // 📍 (24-nov) La ubicación que compartió, en su propia casilla del pedido (el rótulo la imprime como QR). Si solo
+    // quedó en la dirección (pedidos del flujo de antes), se toma de ahí.
+    {
+      const _u = String((ctx as any)._ubicacion ?? "").trim()
+        || ((/^https?:\/\/\S*maps\S*/i.exec(String(ship.direccion ?? "").trim()) ?? [""])[0]);
+      if (_u) ship.ubicacion = _u;
+    }
 
     // Datos del pago que ya validó el OCR, por si el nodo del flujo no los mapeó. El flujo
     // digital generado solo guarda `opcion` y `comprobante`, así que la venta auto-aprobada
@@ -21585,6 +21592,23 @@ async function extraerDatos(db: SupabaseClient, run: Run, cfg: any, ctx: any): P
     }
   }
   const texto = String(ctx.last_input ?? "");
+  // 📍 (24-nov, Rodrigo: «la dirección la completamos nosotros» + QR en el rótulo) La UBICACIÓN que mandó se guarda en su
+  // PROPIA casilla (`_ubicacion`), SIEMPRE — aunque ya haya escrito su dirección o el flujo ya no la esté pidiendo. La
+  // dirección es lo que escribe una persona (él, o el equipo en Editar pedido); la ubicación es el punto exacto, que el
+  // rótulo imprime como QR. Antes vivían en la misma casilla y al escribir la dirección el punto se perdía.
+  if (String(ctx.last_input_type ?? "") === "location") {
+    const _cU = /^(-?\d{1,3}\.\d+)[,\s]+(-?\d{1,3}\.\d+)$/.exec(texto.replace(/^\[ubicaci[oó]n\]\s*/i, "").trim());
+    if (_cU) {
+      const _url = `https://maps.google.com/?q=${_cU[1]},${_cU[2]}`;
+      if (String((ctx as any)._ubicacion ?? "") !== _url) {
+        (ctx as any)._ubicacion = _url;
+        await setField(db, run.channel_id, run.contact_id, "_ubicacion", _url).catch(() => {});
+        // Si el pedido ya nació (mandó el pin después), se le agrega ahí también.
+        const _oid = String((run.vars as any)?._order_id ?? "").trim();
+        if (_oid) await patchShipping(db, _oid, { ubicacion: _url }).catch(() => {});
+      }
+    }
+  }
   if (!campos.length || !texto) return;
 
   // 📍 Mandó su UBICACIÓN de WhatsApp → ESO es su dirección. Decisión de Rodrigo: para

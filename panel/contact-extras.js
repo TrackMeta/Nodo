@@ -16,6 +16,7 @@
 import * as O from "./orders.js";
 import { toast, icon, norm, esUbicacionCompartida, ventanaAnuncio } from "./shell.js";
 import { cargarListas, sugerirAgencia } from "./courier-export.js";
+import { ubicacionDe, direccionEscrita, filaQR, QR_CSS, QR_HEAD, QR_SCRIPT } from "./rotulo-qr.js?v=1";
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 const cap = (s) => { s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1); };
@@ -353,10 +354,12 @@ export function pedidoResumenHtml(o) {
     // 📍 Si compartió su UBICACIÓN, el enlace va CLICABLE: es lo que se abre al alistar el
     // pedido para ubicar la dirección y escribirla. Salía como texto plano, así que había que
     // seleccionarlo, copiarlo y pegarlo en el navegador — en cada pedido que llega con pin.
-    cliLines.push(mkLine("Dirección", !s.direccion ? ""
-      : esUbicacionCompartida(s.direccion)
-        ? `<a href="${esc((String(s.direccion).trim().match(/^\S+/) || [""])[0])}" target="_blank" rel="noopener noreferrer">📍 Abrir la ubicación que compartió</a>`
-        : esc(s.direccion)));
+    // (24-nov) La dirección ESCRITA y la UBICACIÓN que mandó, cada una en su renglón: la dirección la completa el equipo
+    // mirando el mapa (Editar pedido) y la ubicación no se pierde al escribirla — el rótulo la imprime como QR.
+    const _ubi = ubicacionDe(s), _dirE = direccionEscrita(s);
+    cliLines.push(mkLine("Dirección", _dirE ? esc(_dirE)
+      : _ubi ? '<span style="color:#c2410c;font-weight:700">⚠ Falta escribirla (Editar pedido)</span>' : ""));
+    if (_ubi) cliLines.push(mkLine("Ubicación", `<a href="${esc(_ubi)}" target="_blank" rel="noopener noreferrer">📍 Abrir la ubicación que compartió</a>`));
     cliLines.push(mkLine("Distrito", distReal ? esc(cap(distReal)) : ""));
     cliLines.push(mkLine("Provincia", esc(s.provincia || "Lima")));
     cliLines.push(mkLine("Referencia", s.referencia ? esc(s.referencia) : ""));
@@ -442,10 +445,11 @@ export function printRotulo(o, remitente) {
       // Con solo el pin no hay dirección que imprimir: `rowReq` lo marca "FALTA" en rojo, que
       // es justo lo que hay que ver mientras se empaca (el paso de abrir el link y escribirla
       // se saltó). Mismo criterio que el rótulo de pedidos.html.
-      rowReq("Dirección", esUbicacionCompartida(s.direccion) ? "" : (s.direccion || ""), true) +
+      rowReq("Dirección", direccionEscrita(s), true) +
       row("Distrito", (() => { const d = s.distrito || s.zona_nombre || ""; return d && d.toLowerCase() !== "lima" ? cap(d) : ""; })()) +
       row("Provincia", s.provincia || "Lima") +
       row("Referencia", s.referencia || "") +
+      filaQR(ubicacionDe(s)) +
       row("Pedido", pedido) +
       row("Detalle", atrLine, true) +
       row("Incluye", bumpsTxt, true) +
@@ -469,7 +473,8 @@ export function printRotulo(o, remitente) {
       .ft{margin-top:12px;font-size:10.5px;color:#555;text-align:center}
       @media print{ body{padding:0} .lbl{border-width:3px;max-width:none} .noprint{display:none} }
       .noprint{text-align:center;margin-top:20px} .noprint button{font-size:14px;padding:9px 20px;cursor:pointer}
-    </style></head><body>
+      ${QR_CSS}
+    </style>${QR_HEAD}</head><body>
     <div class="lbl">
       <div class="hd">
         <div class="rem">Remitente:<br><b>${esc(rem)}</b></div>
@@ -478,6 +483,7 @@ export function printRotulo(o, remitente) {
       <table>${filas}</table>
       <div class="ft">Generado por Nodo · ${new Date().toLocaleDateString("es-PE")}</div>
     </div>
+    ${QR_SCRIPT}
     <div class="noprint"><button onclick="window.print()">Imprimir</button></div>
     <script>window.onload=function(){setTimeout(function(){window.print()},250)}<\/script>
     </body></html>`;
@@ -1832,7 +1838,8 @@ export async function openEditarPedido(o, deps) {
         ${bumpHtml}
         <div class="pm-sec" id="eLima" ${zona !== "lima" ? 'style="display:none"' : ""}>
           <div class="pm-sec-h">${icon("pin","cxi")} Entrega en Lima</div>
-          <label>Dirección</label><input id="eDir" value="${esc(s.direccion || "")}"/>
+          <label>Dirección</label><input id="eDir" value="${esc(direccionEscrita(s))}" placeholder="${ubicacionDe(s) ? "Escríbela mirando el mapa de su ubicación" : ""}"/>
+          ${ubicacionDe(s) ? `<div style="font-size:12px;margin:-4px 0 8px"><a href="${esc(ubicacionDe(s))}" target="_blank" rel="noopener noreferrer">📍 Abrir la ubicación que compartió</a> — va en el rótulo como QR</div>` : ""}
           <div class="row2">
             <div><label>Distrito</label><input id="eDist" list="dlDistrito" value="${esc(s.distrito || "")}"/><datalist id="dlDistrito">${dl(EV.distrito)}</datalist></div>
             <div><label>Referencia</label><input id="eRef" value="${esc(s.referencia || "")}"/></div>
@@ -1990,6 +1997,8 @@ export async function openEditarPedido(o, deps) {
           flete: numU("#eFlete"), empaque: numU("#eEmpaqueP") });
         if (dst) ship.sede_por_confirmar = null;
       } else {
+        // 📍 La ubicación se queda en SU casilla (pedidos de antes la tenían en la dirección: se muda antes de pisarla).
+        { const _u0 = ubicacionDe(s); if (_u0 && !ship.ubicacion) ship.ubicacion = _u0; }
         Object.assign(ship, { direccion: g("#eDir").value.trim(), distrito: g("#eDist").value.trim(),
           referencia: g("#eRef").value.trim(), gps: g("#eGps").value.trim(), flete: numU("#eFleteL"), empaque: numU("#eEmpaqueL") });
         // Igual que la sede en provincia: si el operador ya puso el distrito, la marca de
