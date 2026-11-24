@@ -45,6 +45,10 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: "_site"
+      # (24-nov) GitHub registra el artefacto unos segundos DESPUÉS de subirlo: publicar al toque fallaba con «No artifacts
+      # named github-pages» aunque la subida decía «successfully uploaded». Se espera un poco antes de publicar.
+      - name: Esperar a que GitHub registre el sitio
+        run: sleep 20
       - name: Desplegar
         id: deployment
         uses: actions/deploy-pages@v4
