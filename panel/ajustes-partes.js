@@ -920,11 +920,17 @@ async function guardarYDescubrirAds(btn){
     }
     const { data:ya }=await supa.from("ad_accounts").select("account_id").eq("channel_id",st.channelId);
     const tengo=new Set((ya||[]).map(a=>a.account_id));
-    out.innerHTML=(r.de_whatsapp?`<div style="border:1px solid var(--green);background:rgba(34,197,94,.08);border-radius:10px;padding:9px 12px;font-size:12.5px;color:var(--green);margin-bottom:8px">${icon("check")} Tu token de WhatsApp ya trae el permiso de anuncios: no necesitas generar otro.</div>`:"")+
-      // Nodo tocó algo en la cuenta de Meta del dueño, así que se lo DICE. Un cambio en
-      // casa ajena que nadie anuncia es la clase de cosa que después nadie entiende.
-      (r.asignadas_por_nodo?`<div style="border:1px solid var(--green);background:rgba(34,197,94,.08);border-radius:10px;padding:9px 12px;font-size:12.5px;color:var(--green);margin-bottom:8px">${icon("check")} No estaban asignadas, así que <b>Nodo se dio acceso de solo lectura</b>. No puede crear, pausar ni gastar nada.</div>`:"")+
-      `<div style="font-size:12px;color:var(--muted);margin-bottom:6px">El token puede leer ${r.cuentas.length} cuenta(s). Agrega las que quieras seguir:</div>`+
+    // (28-nov, Rodrigo: «si el botón se llama Buscar cuentas, ¿por qué me sale ese mensaje?») Primero la RESPUESTA a lo que
+    // buscó —cuántas cuentas encontró—; cómo entró (con el token de WhatsApp) va chiquito al final.
+    const n=r.cuentas.length, nuevas=r.cuentas.filter(a=>!tengo.has(a.account_id)).length;
+    const nota=(t)=>`<div style="font-size:11.5px;color:var(--muted);margin-top:4px">${t}</div>`;
+    out.innerHTML=`<div style="border:1px solid var(--green);background:rgba(34,197,94,.08);border-radius:10px;padding:9px 12px;font-size:12.5px;color:var(--text);margin-bottom:8px">
+        <div style="color:var(--green);font-weight:700">${icon("check")} Encontré ${n} cuenta${n===1?"":"s"} publicitaria${n===1?"":"s"}${nuevas?"":` · ${n===1?"ya está agregada":"todas ya están agregadas"} a este bot`}</div>
+        ${nuevas?nota("Agrega las que quieras que siga este bot."):""}
+        ${r.de_whatsapp?nota("Usé tu misma conexión de WhatsApp: no necesitas generar otro token."):""}
+        ${r.asignadas_por_nodo?nota("No estaban asignadas, así que <b>Nodo se dio acceso de solo lectura</b>. No puede crear, pausar ni gastar nada."):""}
+        ${nota("¿Falta una cuenta recién creada? En Meta asígnala a tu usuario del sistema (Configuración del negocio → Usuarios del sistema → Asignar activos) y vuelve a buscar.")}
+      </div>`+
       r.cuentas.map(a=>`<div style="display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 11px;margin-bottom:6px">
         <span style="font-family:monospace;font-size:12.5px">${esc(a.account_id)}</span>
         <span style="color:var(--muted);font-size:12px">${esc(a.nombre||"")}${a.moneda?` · ${esc(a.moneda)}`:""}${a.activa?"":' · <span style="color:var(--amber)">inactiva</span>'}</span>
