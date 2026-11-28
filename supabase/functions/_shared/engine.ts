@@ -16225,7 +16225,7 @@ async function aQuienFueElPago(db: SupabaseClient, channelId: string, destino: u
   let cfg: any = null;
   try { const { data } = await db.from("channels").select("ocr_config").eq("id", channelId).maybeSingle(); cfg = (data as any)?.ocr_config ?? null; } catch (_) { /* sin config */ }
   const crudo = String(destino ?? ""), d = crudo.replace(/\D/g, "");
-  const legible = d.length >= 6 || (d.length >= 3 && /[*•xX·]/.test(crudo));
+  const legible = d.length >= 3;   // (27-nov: el OCR a veces da «4092» sin asteriscos: igual es el final del número)
   if (legible) {
     const metodos: any[] = Array.isArray(cfg?.metodos) ? cfg.metodos : [];
     // El nuestro: primero un celular (Yape/Plin, 9 dígitos), si no cualquier número cargado.
@@ -24151,7 +24151,9 @@ function destinoNoCoincide(ocrCfg: any, destino: unknown): boolean {
   // ENMASCARADO («*** *** 999»): Yape y Plin muestran solo los ÚLTIMOS dígitos. Antes con menos de
   // 6 no se opinaba y un Yape a otro número pasaba si el modelo se descuidaba. Con 3 a 5 visibles
   // se exige que ALGUNO de tus números termine así (si no, va a revisión: no se rechaza).
-  if (d.length >= 3 && d.length < 6 && /[*•xX·]/.test(String(destino ?? ""))) {
+  // (27-nov, Renato en Prime) …y SIN los asteriscos: el OCR a veces devuelve solo «4092» (el final de 931 934 092). Antes
+  // eso era «no se lee → no se opina» y el rescate del titular no corría: un Yape bueno salió «a otra cuenta».
+  if (d.length >= 3 && d.length < 6) {
     const cortos: string[] = (Array.isArray(ocrCfg?.metodos) ? ocrCfg.metodos : [])
       .map((m: any) => String(m?.numero ?? "").replace(/\D/g, "")).filter((n: string) => n.length >= 6);
     return cortos.length > 0 && !cortos.some((n) => n.endsWith(d));
@@ -25801,8 +25803,21 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
     const _ejPagar = _conYapeLista
       ? "«yape será mi medio de pago», «hola plin», «num», «¿a quién yapeo?», «¿es a este mismo número?», «no me deja yapear», «ya, lo quiero»"
       : "«pago por transferencia», «num», «¿a qué cuenta te pago?», «¿es a este mismo número?», «no me deja pagar», «ya, lo quiero»";
+    // 🪪 (27-nov, Rodrigo) «No me sale ese nombre»: al poner el número en Yape/Plin, la app muestra el titular RECORTADO
+    // («Percy R. Flores N.», «Percy Flo*») y no el nombre completo de los datos de pago. La IA no lo sabía y se inventó
+    // que «es el nombre del negocio». Es un DATO (no un corte): siempre el mismo texto por bot, para no mover la caché.
+    const _nombreEnApp = (() => {
+      const yp = ((info.ocr?.metodos ?? []) as any[]).find((m) => /yape|plin/i.test(String(m?.app ?? "")) && String(m?.titular ?? "").trim());
+      if (!yp) return "";
+      const w = String(yp.titular).trim().split(/\s+/).filter((x: string) => !/^(de|del|la|las|los|y)$/i.test(x));
+      const ini = (x: string) => x.charAt(0).toUpperCase() + ".";
+      const ej = w.length >= 4 ? ` (por ejemplo «${w[0]} ${ini(w[1])} ${w[2]} ${ini(w[3])}» o «${w[0]} ${w[2].slice(0, 3)}*»)` : "";
+      return `\n🪪 Al poner el número en Yape o Plin, la app muestra el nombre del titular RECORTADO o con iniciales${ej}, no completo. ` +
+        "Si el cliente dice que no le sale ese nombre o que le sale distinto, explícale eso con tus palabras y que es la misma cuenta " +
+        "(es lo único del titular que puedes escribir). Nunca digas que es el nombre del negocio ni inventes otro motivo.";
+    })();
     if (pm.length) {
-      parts.push("## Formas de pago aceptadas\n" + [...new Set(pm)].join("\n") +
+      parts.push("## Formas de pago aceptadas\n" + [...new Set(pm)].join("\n") + _nombreEnApp +
         // (30-oct) Son las del producto o las del bot: si pregunta cómo se paga, se nombran ESTAS y ninguna más (a la versión
         //  de México, que cobra con BBVA, la IA le dijo «transferencia o Yape a la cuenta de BBVA»).
         "\nSi pregunta cómo se paga, nombra ESTOS medios tal cual y ningún otro." +
@@ -29181,7 +29196,7 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _frenoV = frenoDeComprobante(_ocrLeyo, { ocr_config: _ocrCfgV, timezone: await tzDe(db, run), moneda: (ctx as any)?.moneda });
         const _destV = String(_ocrLeyo?.destino ?? ""), _digV = _destV.replace(/\D/g, "");
         const _hayNumsV = (Array.isArray(_ocrCfgV?.metodos) ? _ocrCfgV.metodos : []).some((m: any) => String(m?.numero ?? "").replace(/\D/g, "").length >= 6);
-        const _numOkV = _hayNumsV && (_digV.length >= 6 || (_digV.length >= 3 && /[*•xX·]/.test(_destV))) && !destinoNoCoincide(_ocrCfgV, _destV);
+        const _numOkV = _hayNumsV && _digV.length >= 3 && !destinoNoCoincide(_ocrCfgV, _destV);   // (27-nov: 3+ dígitos con o sin asteriscos)
         const _titOkV = titularCasa(_ocrCfgV, _ocrLeyo?.destinatario ?? _ocrLeyo?.titular) === true;
         // (el número y el titular ya los midió el código: que el OCR también los nombre no cambia nada)
         const _soloFechaV = _motV == null || (/(fecha|antig|horas?|d[ií]as?|vencid|anterior|futur)/i.test(_motV)
@@ -29327,7 +29342,9 @@ async function runIa(db: SupabaseClient, run: Run, node: Node, ctx: any) {
         const _digT = _destT.replace(/\D/g, "");
         const _hayNumsT = (Array.isArray(_ocrCfgT?.metodos) ? _ocrCfgT.metodos : []).some((m: any) => String(m?.numero ?? "").replace(/\D/g, "").length >= 6);
         // (+ el número ENMASCARADO de Yape/Plin: «*** *** 092» — solo se ven 3 dígitos y tienen que ser el final de uno tuyo)
-        const _numOk = _hayNumsT && (_digT.length >= 6 || (_digT.length >= 3 && /[*•xX·]/.test(_destT))) && !destinoNoCoincide(_ocrCfgT, _destT);
+        // (27-nov, Renato: el OCR dio «4092» sin asteriscos → el rescate no corría y un Yape bueno salió «a otra cuenta»;
+        // 5 casos en 30 días, todos aprobados a mano después. Basta que sean 3+ dígitos que terminan como uno tuyo.)
+        const _numOk = _hayNumsT && _digT.length >= 3 && !destinoNoCoincide(_ocrCfgT, _destT);
         const _nomT = _ocrLeyo?.destinatario ?? _ocrLeyo?.titular;
         const _titOk = titularCasa(_ocrCfgT, _nomT) === true;
         // 🔑 7-oct, la primera venta real de Nodo (Wilson): un Yape bueno —S/ 10 a «Percy Flo*», celular «*** *** 092»—
