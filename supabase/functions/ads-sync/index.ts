@@ -14,7 +14,7 @@
 //   scheduler). Sin token/cuentas de un canal → lo salta sin fallar.
 // ═══════════════════════════════════════════════════════════════════
 import { corsHeaders, json } from "../_shared/cors.ts";
-import { serviceClient, getAdsToken } from "../_shared/db.ts";
+import { serviceClient, getAdsToken, userClient, userOwnsChannel } from "../_shared/db.ts";
 import { fetchConTimeout } from "../_shared/http.ts";
 import { timingSafeEqual } from "../_shared/crypto.ts";
 
@@ -29,9 +29,8 @@ Deno.serve(async (req) => {
   // Solo el cron (o una invocación interna) puede correr esto.
   const secret = Deno.env.get("SCHEDULER_SECRET") ?? "";
   // En tiempo constante (un `!==` corta en el primer carácter distinto y el tiempo lo delata).
-  if (!secret || !timingSafeEqual(req.headers.get("x-scheduler-secret") ?? "", secret)) {
-    return json({ error: "no_auth" }, 401);
-  }
+  const esCron = !!secret && timingSafeEqual(req.headers.get("x-scheduler-secret") ?? "", secret);
+  if (!esCron) return await aPedido(req);
 
   // Canales que tienen al menos una cuenta de anuncios activa.
   // PAGINADO: este cron es GLOBAL de la plataforma, así que acá caben las cuentas de anuncios
@@ -64,19 +63,57 @@ Deno.serve(async (req) => {
   const until = diaLima(Date.now());
   const resumen: Record<string, unknown>[] = [];
 
-  for (const [channelId, cuentas] of porCanal) {
+  for (const [channelId, cuentas] of porCanal) await syncCanal(channelId, cuentas, since, until, resumen);
+  return json({ ok: true, canales: porCanal.size, resumen });
+});
+
+// 🔄 (28-nov-2026, Rodrigo: «¿hay manera de actualizarlo yo sin esperar la hora?» → «que solo se pueda 2 veces por hora»)
+// El botón «Actualizar anuncios» del Banco de anuncios: un usuario con sesión pide sincronizar SU bot (solo sus cuentas).
+// Máximo 2 por bot por hora (tabla ads_sync_manual, 0155), para no saturar a Meta.
+const MANUAL_POR_HORA = 2;
+async function aPedido(req: Request): Promise<Response> {
+  const auth = req.headers.get("Authorization") ?? "";
+  if (!/^Bearers+S+/.test(auth)) return json({ error: "no_auth" }, 401);
+  const { data: u } = await userClient(auth).auth.getUser().catch(() => ({ data: null as any }));
+  const uid = (u as any)?.user?.id;
+  if (!uid) return json({ error: "no_auth" }, 401);
+  let body: any = {}; try { body = await req.json(); } catch (_) { /* sin cuerpo */ }
+  const channelId = String(body?.channel_id ?? "");
+  if (!(await userOwnsChannel(db, uid, channelId))) return json({ error: "sin_acceso" }, 403);
+  const { data: cs } = await db.from("ad_accounts").select("account_id").eq("channel_id", channelId).eq("activo", true);
+  const cuentas = ((cs ?? []) as any[]).map((c) => String(c.account_id));
+  if (!cuentas.length) return json({ error: "sin_cuenta", mensaje: "Este bot no tiene una cuenta de anuncios conectada (Conexiones)." }, 400);
+  const haceUnaHora = new Date(Date.now() - 3600_000).toISOString();
+  const { data: recientes } = await db.from("ads_sync_manual").select("at").eq("channel_id", channelId).gte("at", haceUnaHora).order("at", { ascending: true });
+  const rs = (recientes ?? []) as any[];
+  if (rs.length >= MANUAL_POR_HORA) {
+    const libre = Date.parse(rs[0].at) + 3600_000;
+    const min = Math.max(1, Math.ceil((libre - Date.now()) / 60_000));
+    return json({ error: "limite", minutos: min, mensaje: `Ya se actualizó ${MANUAL_POR_HORA} veces en la última hora. Podrás de nuevo en ${min} min (o espera la actualización automática de la hora en punto).` }, 429);
+  }
+  await db.from("ads_sync_manual").insert({ channel_id: channelId, user_id: uid });
+  const diaLima = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+  const resumen: Record<string, unknown>[] = [];
+  await syncCanal(channelId, cuentas, diaLima(Date.now() - WINDOW_DAYS * 864e5), diaLima(Date.now()), resumen);
+  const err = resumen.find((r) => r.error);
+  return json({ ok: !err, quedan: MANUAL_POR_HORA - rs.length - 1, resumen, ...(err ? { mensaje: "Meta respondió con un error: " + String(err.error).slice(0, 160) } : {}) }, err ? 502 : 200);
+}
+
+// Sincroniza las cuentas de UN bot (lo usan el cron y el botón).
+async function syncCanal(channelId: string, cuentas: string[], since: string, until: string, resumen: Record<string, unknown>[]) {
+  {
     // getChannelSecrets LANZA ante un error transitorio del RPC/Vault. Estaba FUERA de todo
     // try → un hipo al desencriptar el secreto de UN canal tiraba 500 y los canales restantes
     // del loop NO se sincronizaban ese ciclo. Se acota: se salta ese canal, no se mata la corrida.
     let token: string | null = null;
     try { token = (await getAdsToken(db, channelId)).token; }
-    catch (e) { resumen.push({ channelId, error: "secreto: " + String((e as any)?.message ?? e) }); continue; }
+    catch (e) { resumen.push({ channelId, error: "secreto: " + String((e as any)?.message ?? e) }); return; }
     if (!token) {
       // Sin token (nunca conectó, o se lo quitaron): limpiar un ads_sync_error RANCIO para que el
       // banner rojo "tu token de anuncios dejó de funcionar" no quede pegado cuando ya no hay nada
       // que sincronizar (antes nunca se tocaba al saltar → el aviso vivía para siempre).
       await db.from("channels").update({ ads_sync_error: null }).eq("id", channelId).then(() => {}, () => {});
-      resumen.push({ channelId, saltado: "sin_token" }); continue;
+      resumen.push({ channelId, saltado: "sin_token" }); return;
     }
     let authErr: string | null = null;
     let otroErr: string | null = null;
@@ -101,8 +138,7 @@ Deno.serve(async (req) => {
       err ? { ads_sync_error: err } : { ads_sync_error: null, ads_sync_at: new Date().toISOString() },
     ).eq("id", channelId);
   }
-  return json({ ok: true, canales: porCanal.size, resumen });
-});
+}
 
 // Baja los insights por anuncio y día de UNA cuenta y los upserta.
 async function syncCuenta(channelId: string, acct: string, token: string, since: string, until: string): Promise<number> {

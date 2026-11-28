@@ -354,6 +354,7 @@ function pintaAds(p, a) {
       ${libres.length ? `<select class="amx-sel" id="amxAddSel"><option value="">＋ Elegir un anuncio de Meta…</option>${sug.length ? `<optgroup label="Sugeridos para ${esc(paisNom(pais))}">${sug.map(opt).join("")}</optgroup>` : ""}${resto.length ? `<optgroup label="${sug.length ? "Otros" : "Anuncios de Meta"}">${resto.map(opt).join("")}</optgroup>` : ""}</select>` : ""}
       <input class="amx-in" id="amxAddId" placeholder="…o pega el ID del anuncio" inputmode="numeric"/>
       <button class="amx-btn" id="amxAddBtn">Agregar</button>
+      <button class="amx-btn amx-sync" id="amxSync" title="Trae ahora los anuncios nuevos de Meta (programados o recién creados). Máximo 2 veces por hora; si no, se actualiza solo cada hora en punto.">${icon("refresh")} Actualizar anuncios</button>
     </div>
     <p class="amx-help">El ID está en el Administrador de anuncios de Meta, columna «Identificador del anuncio». Un anuncio va en un solo país y un solo ángulo.</p>`;
   const slug = a ? a.slug : "";
@@ -376,6 +377,27 @@ function pintaAds(p, a) {
   cablea();
   const add = () => { const v = String(document.getElementById("amxAddId").value || document.getElementById("amxAddSel")?.value || "").trim(); if (v) agregarAd(p, v, slug); };
   document.getElementById("amxAddBtn").onclick = add;
+  // 🔄 (28-nov, Rodrigo) Traer los anuncios nuevos sin esperar la hora en punto: máximo 2 veces por hora por bot (lo
+  // controla ads-sync). Al terminar se vuelve a leer la lista y se repinta esta tarjeta.
+  document.getElementById("amxSync").onclick = async (e) => {
+    const btn = e.currentTarget; if (btn.disabled) return;
+    btn.disabled = true; const txt = btn.innerHTML; btn.innerHTML = `${icon("refresh")} Actualizando…`;
+    try {
+      const antes = new Set(Object.keys(S.meta || {}));
+      const r = await supa.functions.invoke("ads-sync", { body: { channel_id: S.ctx.channelId } });
+      if (r.error) {
+        let m = ""; try { const j = await r.error.context.json(); m = j.mensaje || ""; } catch (_) {}
+        toast(m || "No se pudo actualizar los anuncios. Prueba de nuevo en un rato.", true); return;
+      }
+      const { data } = await pageAll((f2, t) => supa.from("ads_meta").select("ad_id,ad_name,adset_name,campaign_name,account_id,account_currency,estado").eq("channel_id", S.ctx.channelId).order("ad_id").range(f2, t));
+      S.meta = Object.fromEntries((data || []).map((m) => [String(m.ad_id), m]));
+      const nuevos = Object.keys(S.meta).filter((id) => !antes.has(id)).length;
+      const quedan = Number(r.data?.quedan);
+      toast((nuevos ? `Listo: ${nuevos} anuncio${nuevos === 1 ? "" : "s"} nuevo${nuevos === 1 ? "" : "s"}` : "Listo: no hay anuncios nuevos en Meta") + (Number.isFinite(quedan) ? ` · te queda${quedan === 1 ? "" : "n"} ${quedan} esta hora` : ""));
+      pintaAds(p, a);
+    } catch (_) { toast("No se pudo actualizar los anuncios (sin conexión).", true); }
+    finally { if (btn.isConnected) { btn.disabled = false; btn.innerHTML = txt; } }
+  };
   document.getElementById("amxAddId").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); add(); } };
   const sel = document.getElementById("amxAddSel"); if (sel) sel.onchange = () => sel.value && agregarAd(p, sel.value, slug);
 }
