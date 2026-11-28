@@ -55,9 +55,11 @@
   .simres{margin-top:14px;display:none}
   .simres.on{display:block}
   .badge{display:inline-flex;align-items:center;gap:6px;border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700}
-  .badge.keyword{background:#12331f;color:var(--green)} .badge.referral{background:#132a3f;color:#4aa8ff}
-  .badge.ia{background:#2a1f3f;color:#b389ff} .badge.fallback{background:#3a2e12;color:var(--amber)}
-  .badge.entrada{background:#1b222c;color:var(--muted)} .badge.none{background:var(--red-bg);color:var(--red)}
+  /* (28-nov, Rodrigo: «esta pastilla se ve en negro») Fondos fijos de modo oscuro (#2a1f3f…): en claro salían negras.
+     Ahora tintes suaves del mismo color, que se leen en los dos modos. */
+  .badge.keyword{background:rgba(34,197,94,.14);color:var(--green)} .badge.referral{background:rgba(59,130,246,.14);color:#2f7fe0}
+  .badge.ia{background:rgba(168,85,247,.14);color:var(--ia1,#a855f7)} .badge.fallback{background:rgba(245,158,11,.16);color:var(--amber)}
+  .badge.entrada{background:var(--surface-2);color:var(--muted)} .badge.none{background:var(--red-bg);color:var(--red)}
   .resline{margin-top:10px;font-size:13px;color:var(--text)} .resline b{font-weight:700}
   .resmeta{margin-top:5px;font-size:12px;color:var(--muted)}
 
