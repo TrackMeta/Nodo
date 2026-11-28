@@ -19,6 +19,9 @@ import { appsApi, appsConfigurada } from "../_shared/microapps.ts";
 import * as O from "../../../panel/orders.js";
 // El MISMO armado del texto del negocio que usa el panel al guardar (Bot → Tu negocio), para no tener dos versiones.
 import { compileNegocio, fusionarNegocio } from "../../../panel/negocio-texto.js";
+// La MISMA ficha del producto que compila el panel al guardar (Productos), para configurar productos desde aquí.
+import { parseFaq, compileFaq, fusionarFicha, compileProductoIA } from "../../../panel/producto-ia.js";
+import { sendTelegram } from "../_shared/telegram.ts";
 
 const db = serviceClient();
 const PANEL = "https://trackmeta.github.io/Nodo/panel";
@@ -443,13 +446,16 @@ const TOOLS: Tool[] = [
       const tipos = ctx.equipos.get(b.account_id)?.tipos;
       if (tipos && !tipos.includes(a?.tipo)) throw new Fallo(`El equipo de «${b.nombre}» solo vende productos de tipo ${tipos.join(" / ")}.`);
       const pre = confirmacion(a, `Crear en «${b.nombre}» el producto ${a?.emoji ? a.emoji + " " : ""}«${a.nombre}» (${a.tipo}):\n` + pres.map((p) => `• ${p.nombre}: ${dinero(Number(p.precio), b.moneda)}`).join("\n") + (a?.descripcion ? `\n\n${a.descripcion}` : "")); if (pre) return pre;
-      const config: any = {}; if (a?.descripcion) config.ia = { descripcion: String(a.descripcion) };
+      // (28-nov) La descripción va a la FICHA (ia.detalle → contexto_producto), que es lo que lee la IA al vender. Antes iba
+      // a ia.descripcion, que solo usa el ruteo: el producto creado desde aquí vendía «sin saber qué era».
+      const config: any = {};
+      if (a?.descripcion) { config.ia = { descripcion: String(a.descripcion), detalle: String(a.descripcion).trim() }; recompilarFicha(config, String(a.tipo)); }
       const { data: p, error } = await db.from("products").insert({ channel_id: b.id, nombre: String(a.nombre).trim(), tipo: a.tipo, clase: "principal", emoji: a?.emoji ?? null, config }).select("id").single();
       if (error) throw new Fallo(/tipo_no_permitido/.test(error.message) ? `Este equipo no vende productos de tipo ${a.tipo}.` : error.message);
       const { error: e2 } = await db.from("product_versions").insert(pres.map((x, i) => ({ product_id: (p as any).id, nombre: String(x.nombre), precio: Number(x.precio), orden: i, activo: true })));
       if (e2) throw new Fallo("El producto se creó, pero no sus presentaciones: " + e2.message);
       return { ok: true, hecho: `Producto «${a.nombre}» creado en «${b.nombre}» con ${pres.length} presentación(es).`,
-        siguiente_paso: "Para que el bot lo venda: abre el producto en Nodo, revisa la ficha (o usa «Armar con IA») y toca «Poner a vender».", enlace: `${PANEL}/productos.html` };
+        siguiente_paso: "Desde aquí puedes completarlo: ficha_producto (qué es, límites, preguntas), saludo_producto, palabra_clave, imagen_producto, entrega_digital, banco_anuncios, remarketing_producto y medios_pago_producto. Para que el bot lo VENDA falta un paso en el panel: abrir el producto y tocar «Poner a vender» (ahí se arma el flujo de venta).", enlace: `${PANEL}/productos.html` };
     } },
 
   { name: "crear_bot", escribe: true, description: "Crea un bot nuevo (vacío) en uno de tus equipos. Después hay que conectarle WhatsApp y la clave de IA desde el panel (Conexiones y Bot → Avanzado). Pide confirmación.",
@@ -616,6 +622,84 @@ async function porCopy(b: Ctx["bots"][0], r: ReturnType<typeof periodo>) {
 
 // ── Rendimiento (como la pantalla Rendimiento: ventas atribuidas por shipping.ad_id) ──
 function nombreAd(am: any[], id: string) { const m = am.find((x) => String(x.ad_id) === id); return m ? (m.ad_name || id) : id; }
+
+
+// ── Ayudas para configurar productos (28-nov-2026) ─────────────────────────
+const P_PROD = { type: "string", description: "Nombre (o parte del nombre) del producto." };
+const corto = (t: unknown, n: number) => { const s = String(t ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+// El producto por nombre (como cambiar_precio): exacto, si no el único que lo contiene.
+async function productoDe(b: Ctx["bots"][0], ref: unknown) {
+  const { data: ps, error } = await db.from("products").select("id, nombre, tipo, emoji, config, product_versions(id, nombre, precio, entrega, entrega_mensaje)").eq("channel_id", b.id);
+  if (error) throw new Fallo(error.message);
+  const all = (ps ?? []) as any[]; const r = norm(ref);
+  if (!all.length) throw new Fallo(`«${b.nombre}» no tiene productos todavía.`);
+  if (!r) { if (all.length === 1) return all[0]; throw new Fallo(`Dime de qué producto: ${all.map((p) => p.nombre).join(", ")}.`); }
+  const ex = all.filter((p) => p.id === String(ref) || norm(p.nombre) === r); if (ex.length === 1) return ex[0];
+  const pa = all.filter((p) => norm(p.nombre).includes(r)); if (pa.length === 1) return pa[0];
+  if (pa.length > 1) throw new Fallo(`Hay varios productos con «${ref}»: ${pa.map((p) => p.nombre).join(", ")}. ¿Cuál?`);
+  throw new Fallo(`No encontré el producto «${ref}» en «${b.nombre}». Tiene: ${all.map((p) => p.nombre).join(", ")}.`);
+}
+// Cambia solo lo que toca sobre el config FRESCO (como patchProductConfig del panel): nunca pisa lo que otro guardó.
+async function patchProducto(pid: string, fn: (c: any, tipo: string) => void) {
+  const { data, error: e0 } = await db.from("products").select("config, tipo").eq("id", pid).maybeSingle();
+  if (e0) throw new Fallo(e0.message);
+  const c = structuredClone(((data as any)?.config ?? {}) as any);
+  fn(c, String((data as any)?.tipo ?? "digital"));
+  const { error } = await db.from("products").update({ config: c }).eq("id", pid);
+  if (error) throw new Fallo(error.message);
+  return c;
+}
+// La ficha se compila igual que al guardar en el panel (panel/producto-ia.js): el motor lee contexto_producto y faq.
+function recompilarFicha(c: any, tipo: string) {
+  c.ia = c.ia || {};
+  if (!c.ia.detalle && c.contexto_producto && !c.ia._migrado) { c.ia.detalle = c.contexto_producto; c.ia._migrado = true; }
+  fusionarFicha(c);
+  if (Array.isArray(c.faq_items)) { const f = compileFaq(c.faq_items); if (f) c.faq = f; else delete c.faq; }
+  const cx = compileProductoIA(c, tipo || "digital");
+  if (cx) c.contexto_producto = cx; else delete c.contexto_producto;
+}
+// Los mensajes iniciales del producto (flujo «mensajes_iniciales» con su nodo rotador). Si no existen, se crean como
+// «Crear mensajes iniciales» del panel; si ya hay flujo de venta, el saludo pasa a él al terminar.
+async function flujoInicial(b: Ctx["bots"][0], p: any): Promise<{ flowId: string; nodoId: string; creado: boolean }> {
+  const { data: fl } = await db.from("flows").select("id").eq("product_id", p.id).eq("role", "mensajes_iniciales").eq("kind", "flow").order("created_at").limit(1).maybeSingle();
+  let flowId = (fl as any)?.id as string | undefined, creado = false;
+  if (!flowId) {
+    const folder = ((p.emoji ? p.emoji + " " : "") + p.nombre).slice(0, 60);
+    const { data: nf, error } = await db.from("flows").insert({ channel_id: b.id, product_id: p.id, kind: "flow", role: "mensajes_iniciales", nombre: "Mensajes iniciales · " + p.nombre, estado: "activo", folder }).select("id").single();
+    if (error) throw new Fallo(error.message);
+    flowId = (nf as any).id; creado = true;
+  }
+  const { data: ns } = await db.from("flow_nodes").select("id, tipo, es_inicial").eq("flow_id", flowId);
+  let nodo = ((ns ?? []) as any[]).find((n) => n.tipo === "rotador") ?? ((ns ?? []) as any[]).find((n) => n.es_inicial);
+  if (!nodo) {
+    const { data: venta } = await db.from("flows").select("id").eq("product_id", p.id).eq("role", "venta").eq("estado", "activo").limit(1).maybeSingle();
+    const { data: nn, error } = await db.from("flow_nodes").insert({ flow_id: flowId, tipo: "rotador", nombre: "Mensajes iniciales", es_inicial: true, pos_x: 80, pos_y: 80,
+      config: { activo: true, variantes: [], despues: (venta as any)?.id ? { modo: "flujo", flow_id: (venta as any).id } : { modo: "nada" } } }).select("id").single();
+    if (error) throw new Fallo(error.message);
+    nodo = nn;
+  }
+  return { flowId: flowId!, nodoId: (nodo as any).id, creado };
+}
+// Imagen por ENLACE → se baja y se sube al almacenamiento de Nodo (bucket «media», misma ruta que media-upload), para que
+// WhatsApp la pueda descargar siempre. Solo jpg/png de hasta 5 MB (lo que acepta WhatsApp como imagen).
+async function subirImagen(b: Ctx["bots"][0], url: unknown): Promise<{ url: string; mime: string; filename: string }> {
+  const u = String(url ?? "").trim();
+  if (!/^https?:\/\/\S+$/i.test(u)) throw new Fallo(`«${u}» no es un enlace válido a una imagen.`);
+  if (/drive\.google\.com\/(file|drive)|docs\.google\.com/i.test(u)) throw new Fallo("Ese es el enlace de la PÁGINA de Google Drive, no de la imagen. Usa un enlace directo a un .jpg o .png (o súbela en el panel).");
+  let res: Response;
+  try { res = await fetch(u, { signal: AbortSignal.timeout(20_000), redirect: "follow" }); } catch (e) { throw new Fallo(`No pude descargar la imagen (${String((e as any)?.message ?? e).slice(0, 80)}).`); }
+  if (!res.ok) throw new Fallo(`No pude descargar la imagen: el enlace respondió ${res.status}.`);
+  const mime = String(res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (!["image/jpeg", "image/jpg", "image/png"].includes(mime)) throw new Fallo(`Ese enlace no es una imagen jpg o png (es «${mime || "desconocido"}»).`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.length > 5 * 1024 * 1024) throw new Fallo("La imagen pesa más de 5 MB: WhatsApp no la acepta.");
+  const ext = mime === "image/png" ? "png" : "jpg";
+  const path = `acct/${b.account_id}/chat/${b.id}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await db.storage.from("media").upload(path, bytes, { contentType: mime === "image/jpg" ? "image/jpeg" : mime, upsert: false });
+  if (error) throw new Fallo("No pude guardar la imagen: " + error.message);
+  const pub = db.storage.from("media").getPublicUrl(path).data.publicUrl;
+  return { url: pub, mime: mime === "image/jpg" ? "image/jpeg" : mime, filename: path.split("/").pop()! };
+}
 
 const NUEVAS: Tool[] = [
   { name: "rendimiento", description: "Cómo le va a cada ANUNCIO, ÁNGULO o PRODUCTO en un periodo (como la pantalla Rendimiento): gasto, impresiones, CTR, CPM, chats, costo por chat, interesados, calientes, ventas, CPA, ingresos, ROAS y ganancia neta. Ordenado por gasto. Úsalo para «¿qué anuncio apago?», «¿qué ángulo vende más barato?».",
@@ -1010,6 +1094,296 @@ const NUEVAS: Tool[] = [
       return { ok: true, hecho: `Listo: el pedido de ${cliente} quedó «${O.label(estado)}».`,
         aviso_al_cliente: !avisar ? "no se le avisó (así lo pediste)" : r.aviso_error ? `NO salió: ${r.aviso_error}` : r.flow_started ? "el bot le está escribiendo (flujo de ese estado)" : r.aviso_enviado ? "se le avisó" : "no había aviso para ese estado",
         ...(Array.isArray(r.stock_alerts) && r.stock_alerts.length ? { stock: r.stock_alerts } : {}) };
+    } },
+
+  // ══════════ 🧩 CONFIGURAR UN PRODUCTO (28-nov-2026, Rodrigo: «dale con todo menos Poner a vender») ══════════
+  // Cada herramienta escribe donde escribe el panel (Productos) y en lo que el motor lee EN VIVO: no hace falta
+  // regenerar el flujo. «Poner a vender» (armar el flujo de venta) sigue siendo del panel.
+
+  { name: "ficha_producto", escribe: true, description: "Escribe la ficha que usa la IA para vender un producto: qué es y qué incluye, lo que NO incluye o no se promete, y las preguntas frecuentes con su respuesta (también objeciones). Se compila igual que en el panel. Pide confirmación.",
+    inputSchema: S({ bot: P_BOT, producto: P_PROD,
+      que_es: { type: "string", description: "Qué es, qué incluye y para quién (cuadro 1 de la ficha). Reemplaza el texto actual." },
+      no_incluye: { type: "string", description: "Lo que NO incluye, no hace o no se promete (cuadro 2). Reemplaza el texto actual." },
+      preguntas: { type: "array", items: S({ pregunta: { type: "string" }, respuesta: { type: "string" } }, ["pregunta", "respuesta"]), description: "Preguntas frecuentes u objeciones con su respuesta (cuadro 3)." },
+      preguntas_modo: { type: "string", enum: ["agregar", "reemplazar"], description: "agregar (por defecto): suma a las que ya hay. reemplazar: deja solo estas." },
+      confirmar: P_CONF }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); exigirAdmin(b);
+      const p = await productoDe(b, a?.producto);
+      const qs = ((a?.preguntas ?? []) as any[]).filter((x) => String(x?.pregunta ?? "").trim() && String(x?.respuesta ?? "").trim());
+      if (!String(a?.que_es ?? "").trim() && !String(a?.no_incluye ?? "").trim() && !qs.length) throw new Fallo("No mandaste nada para la ficha (qué es, qué no incluye o preguntas).");
+      const reempl = a?.preguntas_modo === "reemplazar";
+      const pre = confirmacion(a, `Ficha de «${p.nombre}» (${b.nombre}):` +
+        (a?.que_es ? `\n• Qué es: ${corto(a.que_es, 300)}` : "") + (a?.no_incluye ? `\n• No incluye: ${corto(a.no_incluye, 200)}` : "") +
+        (qs.length ? `\n• ${reempl ? "Reemplazar las preguntas por" : "Agregar"} ${qs.length} pregunta(s):\n` + qs.map((x) => `   – ${corto(x.pregunta, 80)} → ${corto(x.respuesta, 80)}`).join("\n") : "")); if (pre) return pre;
+      const c = await patchProducto(p.id, (c, tipo) => {
+        c.ia = c.ia || {};
+        if (!c.ia.detalle && c.contexto_producto && !c.ia._migrado) { c.ia.detalle = c.contexto_producto; c.ia._migrado = true; }
+        if (String(a?.que_es ?? "").trim()) c.ia.detalle = String(a.que_es).trim();
+        if (String(a?.no_incluye ?? "").trim()) c.ia.limites = String(a.no_incluye).trim();
+        if (qs.length) {
+          let items = reempl ? [] : (Array.isArray(c.faq_items) ? c.faq_items : parseFaq(c.faq));
+          const ya = new Set(items.map((x: any) => norm(x.q)));
+          for (const x of qs) { const k = norm(x.pregunta); if (ya.has(k)) items = items.map((i: any) => norm(i.q) === k ? { q: String(x.pregunta).trim(), a: String(x.respuesta).trim() } : i); else { items.push({ q: String(x.pregunta).trim(), a: String(x.respuesta).trim() }); ya.add(k); } }
+          c.faq_items = items;
+        }
+        recompilarFicha(c, tipo);
+      });
+      return { ok: true, hecho: `Ficha de «${p.nombre}» guardada: la IA ya la usa desde el próximo mensaje.`, preguntas: (c.faq_items ?? []).length };
+    } },
+
+  { name: "entrega_digital", escribe: true, description: "Configura qué recibe el cliente al pagar un producto DIGITAL: links (Drive, curso, grupo…) y el mensaje de bienvenida. Por defecto en todas sus presentaciones. Nunca inventes links. Pide confirmación.",
+    inputSchema: S({ bot: P_BOT, producto: P_PROD, presentacion: { type: "string", description: "Solo para esta presentación (por defecto, todas)." },
+      links: { type: "array", items: S({ nombre: { type: "string", description: "Ej. «Acceso al curso»" }, url: { type: "string" }, mensaje: { type: "string", description: "Texto que va antes del link (opcional)." } }, ["url"]) },
+      mensaje_bienvenida: { type: "string", description: "El primer mensaje de la entrega, ej. «¡Bienvenido! 🎉 Aquí tienes tu acceso»." },
+      modo: { type: "string", enum: ["agregar", "reemplazar"], description: "agregar (por defecto): suma los links. reemplazar: quita los links que había (los archivos subidos se quedan)." },
+      confirmar: P_CONF }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); exigirAdmin(b);
+      const p = await productoDe(b, a?.producto);
+      if (p.tipo !== "digital") throw new Fallo(`«${p.nombre}» es un producto ${p.tipo}: la entrega por link es para los digitales.`);
+      const links = ((a?.links ?? []) as any[]).map((l) => ({ ...l, url: String(l?.url ?? "").trim() })).filter((l) => l.url);
+      const malos = links.filter((l) => !/^https?:\/\/\S+$/i.test(l.url));
+      if (malos.length) throw new Fallo(`Estos links no son válidos (deben empezar con https://): ${malos.map((l) => l.url).join(", ")}`);
+      if (!links.length && !String(a?.mensaje_bienvenida ?? "").trim()) throw new Fallo("Mándame al menos un link o el mensaje de bienvenida.");
+      let vs = ((p.product_versions ?? []) as any[]);
+      if (String(a?.presentacion ?? "").trim()) { vs = vs.filter((v) => norm(v.nombre).includes(norm(a.presentacion))); if (vs.length !== 1) throw new Fallo(vs.length ? `Hay varias presentaciones con «${a.presentacion}»: ${vs.map((v) => v.nombre).join(", ")}.` : `No encontré la presentación «${a.presentacion}». Tiene: ${(p.product_versions ?? []).map((v: any) => v.nombre).join(", ")}.`); }
+      if (!vs.length) throw new Fallo(`«${p.nombre}» no tiene presentaciones.`);
+      const reempl = a?.modo === "reemplazar";
+      const pre = confirmacion(a, `Entrega de «${p.nombre}» → ${vs.length === 1 ? `presentación «${vs[0].nombre}»` : `sus ${vs.length} presentaciones`}:` +
+        (a?.mensaje_bienvenida ? `\n• Mensaje: ${corto(a.mensaje_bienvenida, 200)}` : "") +
+        (links.length ? `\n• ${reempl ? "Reemplazar los links por" : "Agregar"}:\n` + links.map((l) => `   – ${l.nombre || "Acceso"}: ${l.url}`).join("\n") : "")); if (pre) return pre;
+      for (const v of vs) {
+        let ent = Array.isArray(v.entrega) ? [...v.entrega] : [];
+        if (reempl && links.length) ent = ent.filter((e: any) => e?.tipo !== "link");
+        for (const l of links) if (!ent.some((e: any) => e?.tipo === "link" && e.url === l.url)) ent.push({ tipo: "link", url: l.url, nombre: String(l.nombre ?? "").trim() || "Acceso", ...(String(l.mensaje ?? "").trim() ? { mensaje: String(l.mensaje).trim() } : {}) });
+        const upd: any = { entrega: ent };
+        if (String(a?.mensaje_bienvenida ?? "").trim()) upd.entrega_mensaje = String(a.mensaje_bienvenida).trim();
+        const { error } = await db.from("product_versions").update(upd).eq("id", v.id);
+        if (error) throw new Fallo(error.message);
+      }
+      return { ok: true, hecho: `Entrega de «${p.nombre}» lista en ${vs.length} presentación(es). Se manda sola cuando se aprueba el pago.` };
+    } },
+
+  { name: "banco_anuncios", escribe: true, description: "Vincula o desvincula anuncios de Meta a un producto (Banco de anuncios): quien toque ese anuncio cae en este producto y Rendimiento lo cuenta para él. Acepta el nombre o el ID del anuncio. Pide confirmación.",
+    inputSchema: S({ bot: P_BOT, producto: P_PROD,
+      agregar: { type: "array", items: { type: "string" }, description: "Nombres o IDs de anuncios a vincular." },
+      quitar: { type: "array", items: { type: "string" }, description: "Nombres o IDs de anuncios a desvincular." },
+      confirmar: P_CONF }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); exigirAdmin(b);
+      const p = await productoDe(b, a?.producto);
+      const { data: am } = await db.from("ads_meta").select("ad_id, ad_name, campaign_name, estado").eq("channel_id", b.id);
+      const ads = (am ?? []) as any[];
+      const resolver = (ref: string) => {
+        const r = String(ref ?? "").trim(); if (!r) return null;
+        const porId = ads.find((x) => String(x.ad_id) === r.replace(/\D/g, "") && r.replace(/\D/g, "").length >= 10);
+        if (porId) return porId;
+        if (/^\d{10,}$/.test(r)) return { ad_id: r, ad_name: null };   // un ID que Nodo todavía no conoce
+        const exact = ads.filter((x) => norm(x.ad_name) === norm(r)); if (exact.length === 1) return exact[0];
+        const par = ads.filter((x) => norm(x.ad_name).includes(norm(r)));
+        if (par.length === 1) return par[0];
+        throw new Fallo(par.length ? `Hay varios anuncios con «${r}»: ${par.slice(0, 8).map((x) => x.ad_name).join(", ")}. Dime cuál (o su ID).` : `No encontré el anuncio «${r}». Si es nuevo, espera a la próxima actualización (cada hora) o pásame su ID.`);
+      };
+      const add = ((a?.agregar ?? []) as string[]).map(resolver).filter(Boolean) as any[];
+      const del = ((a?.quitar ?? []) as string[]).map(resolver).filter(Boolean) as any[];
+      if (!add.length && !del.length) throw new Fallo("Dime qué anuncios agregar o quitar.");
+      // Un anuncio vive en UN producto: si ya está en otro, se avisa (no se mueve sin que la persona lo diga).
+      const { data: otros } = await db.from("products").select("id, nombre, config").eq("channel_id", b.id).neq("id", p.id);
+      const enOtro = add.map((x) => ({ x, o: ((otros ?? []) as any[]).find((q) => Array.isArray(q.config?.ad_bank) && q.config.ad_bank.map(String).includes(String(x.ad_id))) })).filter((y) => y.o);
+      if (enOtro.length) throw new Fallo("Estos anuncios ya están en otro producto: " + enOtro.map((y) => `«${y.x.ad_name ?? y.x.ad_id}» → «${y.o.nombre}»`).join(", ") + ". Quítalos de allá primero.");
+      const nom = (x: any) => x.ad_name ? `«${x.ad_name}»` : `ID ${x.ad_id}`;
+      const pre = confirmacion(a, `Banco de anuncios de «${p.nombre}» (${b.nombre}):` + (add.length ? `\n• Vincular: ${add.map(nom).join(", ")}` : "") + (del.length ? `\n• Desvincular: ${del.map(nom).join(", ")}` : "")); if (pre) return pre;
+      const quitar = new Set(del.map((x) => String(x.ad_id)));
+      const c = await patchProducto(p.id, (c) => {
+        const banco = new Set<string>(Array.isArray(c.ad_bank) ? c.ad_bank.map(String) : []);
+        for (const x of add) banco.add(String(x.ad_id));
+        for (const id of quitar) banco.delete(id);
+        c.ad_bank = [...banco];
+      });
+      if (quitar.size) {   // también fuera de los ángulos del producto (el panel los mantiene a la par)
+        const { data: angs } = await db.from("angulos").select("id, ad_ids").eq("product_id", p.id);
+        for (const g of (angs ?? []) as any[]) {
+          const ids = (g.ad_ids ?? []).map(String); const nuevos = ids.filter((i: string) => !quitar.has(i));
+          if (nuevos.length !== ids.length) await db.from("angulos").update({ ad_ids: nuevos }).eq("id", g.id);
+        }
+      }
+      return { ok: true, hecho: `Banco de anuncios de «${p.nombre}»: ${(c.ad_bank ?? []).length} anuncio(s).`,
+        anuncios: (c.ad_bank ?? []).map((id: string) => ads.find((x) => String(x.ad_id) === id)?.ad_name ?? id) };
+    } },
+
+  { name: "palabra_clave", escribe: true, description: "Pone las palabras clave de un producto: el mensaje que trae el anuncio (o que escribe el cliente) y que abre la venta de ESE producto con su saludo. Pide confirmación.",
+    inputSchema: S({ bot: P_BOT, producto: P_PROD,
+      palabras: { type: "array", items: { type: "string" }, description: "Ej. [«quiero más información del protocolo», «calistenia»]" },
+      coincidencia: { type: "string", enum: ["contiene", "empieza", "exacta"], description: "contiene (por defecto): el mensaje la incluye en cualquier parte." },
+      modo: { type: "string", enum: ["agregar", "reemplazar"], description: "agregar (por defecto) o reemplazar las que hay." },
+      confirmar: P_CONF }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); exigirAdmin(b);
+      const p = await productoDe(b, a?.producto);
+      const pals = [...new Set(((a?.palabras ?? []) as string[]).map((x) => String(x ?? "").trim()).filter(Boolean))];
+      if (!pals.length) throw new Fallo("Dime las palabras clave.");
+      // Que no choquen con las de OTRO producto del bot (si no, el cliente cae en el producto equivocado).
+      const { data: trigs } = await db.from("flow_triggers").select("id, flow_id, config, flows!inner(product_id, estado, products(nombre))").eq("channel_id", b.id).eq("tipo", "keyword");
+      const choques: string[] = [];
+      for (const t of (trigs ?? []) as any[]) {
+        if (t.flows?.product_id === p.id) continue;
+        for (const k of (t.config?.keywords ?? []) as string[]) if (pals.some((x) => norm(x) === norm(k))) choques.push(`«${k}» (ya es de «${t.flows?.products?.nombre ?? "otro flujo"}»)`);
+      }
+      if (choques.length) throw new Fallo("Estas palabras ya las usa otro producto: " + choques.join(", ") + ".");
+      const match = ["empieza", "exacta"].includes(a?.coincidencia) ? a.coincidencia : "contiene";
+      const pre = confirmacion(a, `Palabras clave de «${p.nombre}» (${b.nombre}) — ${a?.modo === "reemplazar" ? "reemplazar por" : "agregar"} (${match}): ${pals.map((x) => `«${x}»`).join(", ")}`); if (pre) return pre;
+      const fi = await flujoInicial(b, p);
+      const { data: ya } = await db.from("flow_triggers").select("id, config").eq("flow_id", fi.flowId).eq("tipo", "keyword").maybeSingle();
+      const antes: string[] = (ya as any)?.config?.keywords ?? [];
+      const lista = a?.modo === "reemplazar" ? pals : [...new Set([...antes, ...pals.filter((x) => !antes.some((y) => norm(y) === norm(x)))])];
+      const cfgT = { keywords: lista, match };
+      const { error } = ya ? await db.from("flow_triggers").update({ config: cfgT, activo: true }).eq("id", (ya as any).id)
+        : await db.from("flow_triggers").insert({ channel_id: b.id, flow_id: fi.flowId, tipo: "keyword", config: cfgT, activo: true });
+      if (error) throw new Fallo(error.message);
+      return { ok: true, hecho: `Palabras clave de «${p.nombre}»: ${lista.map((x) => `«${x}»`).join(", ")}.` + (fi.creado ? " (Se crearon sus mensajes iniciales vacíos: ponle un saludo con «saludo_producto».)" : "") };
+    } },
+
+  { name: "saludo_producto", escribe: true, description: "Escribe los mensajes iniciales (el saludo) de un producto: lo primero que recibe quien llega por su palabra clave o anuncio. Una o varias versiones A/B; cada una con burbujas de texto y/o imágenes (por enlace público, jpg o png). Pide confirmación.",
+    inputSchema: S({ bot: P_BOT, producto: P_PROD,
+      versiones: { type: "array", items: S({ nombre: { type: "string" }, burbujas: { type: "array", items: S({ texto: { type: "string" }, imagen_url: { type: "string", description: "Enlace público directo a una imagen jpg/png (no la página de Drive)." } }) } }, ["burbujas"]), description: "Máximo 4 versiones; Nodo las reparte entre los clientes (A/B)." },
+      modo: { type: "string", enum: ["reemplazar", "agregar"], description: "reemplazar (por defecto): deja solo estas versiones. agregar: las suma a las que hay." },
+      confirmar: P_CONF }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); exigirAdmin(b);
+      const p = await productoDe(b, a?.producto);
+      const vers = ((a?.versiones ?? []) as any[]).map((v) => ({ nombre: String(v?.nombre ?? "").trim(), burbujas: ((v?.burbujas ?? []) as any[]).filter((x) => String(x?.texto ?? "").trim() || String(x?.imagen_url ?? "").trim()) })).filter((v) => v.burbujas.length);
+      if (!vers.length) throw new Fallo("Mándame al menos una versión con burbujas.");
+      if (vers.length > 4) throw new Fallo("Máximo 4 versiones.");
+      const pre = confirmacion(a, `Saludo de «${p.nombre}» (${b.nombre}) — ${a?.modo === "agregar" ? "agregar" : "reemplazar por"} ${vers.length} versión(es):\n` +
+        vers.map((v, i) => `• ${v.nombre || "Versión " + String.fromCharCode(65 + i)}:\n` + v.burbujas.map((x) => `   – ${x.imagen_url ? `🖼️ ${x.imagen_url}${x.texto ? ` · «${corto(x.texto, 80)}»` : ""}` : `«${corto(x.texto, 120)}»`}`).join("\n")).join("\n")); if (pre) return pre;
+      const variantes: any[] = [];
+      for (const [i, v] of vers.entries()) {
+        const bubbles: any[] = [];
+        for (const x of v.burbujas) {
+          if (String(x.imagen_url ?? "").trim()) { const im = await subirImagen(b, x.imagen_url); bubbles.push({ media_kind: "image", media_url: im.url, mime: im.mime, filename: im.filename, ...(String(x.texto ?? "").trim() ? { caption: String(x.texto).trim() } : {}) }); }
+          else bubbles.push({ text: String(x.texto).trim() });
+        }
+        variantes.push({ id: crypto.randomUUID(), rev: 1, nombre: v.nombre, activo: true, peso: 1, angulo: "", bubbles });
+      }
+      const fi = await flujoInicial(b, p);
+      const { data: nodo } = await db.from("flow_nodes").select("id, config").eq("id", fi.nodoId).maybeSingle();
+      const cfg = { ...(((nodo as any)?.config ?? {}) as any) };
+      const previas = a?.modo === "agregar" ? (Array.isArray(cfg.variantes) ? cfg.variantes : []).filter((x: any) => (x?.bubbles ?? []).some((bb: any) => String(bb?.text ?? "").trim() || bb?.media_url)) : [];
+      const todas = [...previas, ...variantes].slice(0, 6);
+      todas.forEach((x, i) => { if (!x.nombre) x.nombre = "Versión " + String.fromCharCode(65 + i); });
+      cfg.variantes = todas; if (cfg.activo === undefined) cfg.activo = true;
+      const { error } = await db.from("flow_nodes").update({ config: cfg }).eq("id", fi.nodoId);
+      if (error) throw new Fallo(error.message);
+      return { ok: true, hecho: `Saludo de «${p.nombre}» guardado con ${todas.length} versión(es). Sale desde el próximo cliente que llegue por su palabra clave o anuncio.` };
+    } },
+
+  { name: "remarketing_producto", escribe: true, description: "Arma la secuencia de remarketing de un producto: los mensajes que le llegan solos a quien escribió y no compró, con la espera entre uno y otro. Reemplaza los pasos de ese segmento. Pide confirmación.",
+    inputSchema: S({ bot: P_BOT, producto: P_PROD,
+      segmento: { type: "string", enum: ["general", "solo_inicio", "interactuo", "caliente", "provincia_sin_adelanto"], description: "general (por defecto): a todos. solo_inicio: solo saludó. interactuo: conversó. caliente: casi compra. provincia_sin_adelanto: físico a provincia que no pagó el adelanto." },
+      pasos: { type: "array", items: S({ espera_horas: { type: "number", description: "Horas después del mensaje anterior (el primero: después del último mensaje del cliente)." }, mensaje: { type: "string" }, imagen_url: { type: "string", description: "Imagen jpg/png por enlace público (opcional)." } }, ["espera_horas", "mensaje"]), description: "Máximo 8 pasos." },
+      confirmar: P_CONF }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); exigirAdmin(b);
+      const p = await productoDe(b, a?.producto);
+      const seg = ["solo_inicio", "interactuo", "caliente", "provincia_sin_adelanto"].includes(a?.segmento) ? a.segmento : "general";
+      const pasos = ((a?.pasos ?? []) as any[]).filter((x) => String(x?.mensaje ?? "").trim());
+      if (!pasos.length) throw new Fallo("Mándame al menos un paso con su mensaje.");
+      if (pasos.length > 8) throw new Fallo("Máximo 8 pasos.");
+      const malas = pasos.filter((x) => !(Number(x.espera_horas) >= 1 && Number(x.espera_horas) <= 720));
+      if (malas.length) throw new Fallo("Cada espera tiene que ir entre 1 hora y 30 días (720 horas).");
+      const c0 = (p.config ?? {}) as any;
+      const actualId = (c0.remarketing_seqs ?? {})[seg] ?? (seg === "general" ? c0.remarketing_seq_id : null);
+      const { data: actual } = actualId ? await db.from("sequences").select("id, nombre, pasos").eq("id", actualId).eq("channel_id", b.id).maybeSingle() : { data: null };
+      const nPrev = Array.isArray((actual as any)?.pasos) ? (actual as any).pasos.length : 0;
+      const pre = confirmacion(a, `Remarketing de «${p.nombre}» (${b.nombre}) · segmento ${seg}${nPrev ? ` — REEMPLAZA sus ${nPrev} paso(s) actuales` : ""}:\n` +
+        pasos.map((x, i) => `${i + 1}. a las ${Number(x.espera_horas)} h: «${corto(x.mensaje, 140)}»${x.imagen_url ? " 🖼️" : ""}`).join("\n") +
+        "\n(El anti-spam del bot manda: si un paso queda más seguido que su límite —18 h por defecto—, sale cuando se cumpla.)"); if (pre) return pre;
+      const pasosOk: any[] = [];
+      for (const x of pasos) {
+        const bubbles: any[] = [];
+        if (String(x.imagen_url ?? "").trim()) { const im = await subirImagen(b, x.imagen_url); bubbles.push({ media_kind: "image", media_url: im.url, mime: im.mime, filename: im.filename }); }
+        bubbles.push({ text: String(x.mensaje).trim() });
+        pasosOk.push({ umbral_silencio_seg: Math.round(Number(x.espera_horas) * 3600), rotacion: false,
+          variantes: [{ id: crypto.randomUUID(), rev: 1, nombre: "Versión A", activo: true, peso: 1, angulo: "", bubbles }] });
+      }
+      let seqId = (actual as any)?.id as string | undefined;
+      if (seqId) { const { error } = await db.from("sequences").update({ pasos: pasosOk }).eq("id", seqId); if (error) throw new Fallo(error.message); }
+      else {
+        const folder = ((p.emoji ? p.emoji + " " : "") + p.nombre).slice(0, 60);
+        const { data: s, error } = await db.from("sequences").insert({ channel_id: b.id, nombre: `Remarketing · ${p.nombre}${seg === "general" ? "" : " · " + seg}`, activo: true, pasos: pasosOk, folder, segmento: seg }).select("id").single();
+        if (error) throw new Fallo(error.message); seqId = (s as any).id;
+        await patchProducto(p.id, (c) => { c.remarketing_seqs = { ...(c.remarketing_seqs ?? {}), [seg]: seqId }; if (seg === "general") c.remarketing_seq_id = seqId; });
+      }
+      return { ok: true, hecho: `Remarketing de «${p.nombre}» (${seg}) con ${pasosOk.length} paso(s). Les llega a los nuevos que entren a ese segmento.` };
+    } },
+
+  { name: "imagen_producto", escribe: true, description: "Agrega (o quita) una imagen que la IA puede mandar cuando la conversación lo pida (foto del producto, testimonio, tabla de precios…). Va por enlace público directo (jpg o png). Pide confirmación.",
+    inputSchema: S({ bot: P_BOT, producto: P_PROD, accion: { type: "string", enum: ["agregar", "quitar"] },
+      imagen_url: { type: "string", description: "Enlace público directo a la imagen jpg/png." },
+      etiqueta: { type: "string", description: "Nombre corto, ej. «testimonio1» o «tabla_precios»." },
+      descripcion: { type: "string", description: "Cuándo mandarla, ej. «cuando pregunte si funciona, manda este testimonio»." },
+      confirmar: P_CONF }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); exigirAdmin(b);
+      const p = await productoDe(b, a?.producto);
+      const tag = String(a?.etiqueta ?? "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+      const lista: any[] = Array.isArray((p.config ?? {}).ia_multimedia) ? p.config.ia_multimedia : [];
+      if (a?.accion === "quitar") {
+        const i = lista.findIndex((m) => m?.tag === tag);
+        if (i < 0) throw new Fallo(`No hay una imagen «${tag}» en «${p.nombre}». Tiene: ${lista.map((m) => m.tag).join(", ") || "ninguna"}.`);
+        const pre = confirmacion(a, `Quitar la imagen «${tag}» de «${p.nombre}».`); if (pre) return pre;
+        await patchProducto(p.id, (c, tipo) => { c.ia_multimedia = (c.ia_multimedia ?? []).filter((m: any) => m?.tag !== tag); recompilarFicha(c, tipo); });
+        return { ok: true, hecho: `Imagen «${tag}» quitada de «${p.nombre}».` };
+      }
+      if (!tag) throw new Fallo("Ponle una etiqueta corta a la imagen (ej. «testimonio1»).");
+      if (!String(a?.descripcion ?? "").trim()) throw new Fallo("Dime cuándo debe mandarla la IA (la descripción).");
+      if (lista.some((m) => m?.tag === tag)) throw new Fallo(`Ya hay una imagen «${tag}»: usa otra etiqueta o quítala primero.`);
+      const pre = confirmacion(a, `Agregar a «${p.nombre}» la imagen «${tag}»: ${a?.imagen_url}\nCuándo: ${corto(a.descripcion, 200)}`); if (pre) return pre;
+      const im = await subirImagen(b, a?.imagen_url);
+      await patchProducto(p.id, (c, tipo) => { c.ia_multimedia = [...(c.ia_multimedia ?? []), { tag, media_kind: "image", media_url: im.url, mime: im.mime, filename: im.filename, descripcion: String(a.descripcion).trim() }]; recompilarFicha(c, tipo); });
+      return { ok: true, hecho: `Imagen «${tag}» agregada a «${p.nombre}»: la IA ya la puede mandar.` };
+    } },
+
+  { name: "medios_pago_producto", escribe: true, description: "Medios de pago PROPIOS de un producto (reemplazan a los del bot solo para ese producto). Por seguridad: nunca inventes números, y para agregar uno pide a la persona que te escriba los ÚLTIMOS 4 DÍGITOS del número (campo ultimos_4) además de confirmar. Avisa por Telegram al dueño cada vez que cambian.",
+    inputSchema: S({ bot: P_BOT, producto: P_PROD, accion: { type: "string", enum: ["agregar", "quitar", "usar_los_del_bot"], description: "usar_los_del_bot: borra los propios y vuelve a cobrar con los del bot." },
+      app: { type: "string", description: "Yape, Plin, BCP…" }, titular: { type: "string" }, numero: { type: "string" }, notas: { type: "string" },
+      ultimos_4: { type: "string", description: "Los últimos 4 dígitos del número, ESCRITOS POR LA PERSONA (verificación)." },
+      confirmar: P_CONF }),
+    run: async (ctx, a) => {
+      const b = botDe(ctx, a?.bot); exigirAdmin(b);
+      const p = await productoDe(b, a?.producto);
+      const actuales: any[] = (((p.config ?? {}).pago_propio ?? {}).metodos ?? []).filter((m: any) => m && (m.app || m.numero || m.titular));
+      let nuevos = [...actuales], vista = "";
+      if (a?.accion === "usar_los_del_bot") { nuevos = []; vista = `«${p.nombre}» deja de tener medios propios y cobra con los del bot «${b.nombre}».`; }
+      else if (a?.accion === "quitar") {
+        const i = actuales.findIndex((m) => norm(m.app) === norm(a?.app) && (!a?.numero || String(m.numero ?? "").replace(/\D/g, "").endsWith(String(a.numero).replace(/\D/g, "").slice(-4))));
+        if (i < 0) throw new Fallo(`«${p.nombre}» no tiene un medio propio «${a?.app}».`);
+        vista = `Quitar de «${p.nombre}»: ${actuales[i].app} (${actuales[i].titular ?? ""}, •••${String(actuales[i].numero ?? "").slice(-4)}).`;
+        nuevos.splice(i, 1);
+      } else {
+        const titular = String(a?.titular ?? "").trim(), numero = String(a?.numero ?? "").trim(), app = String(a?.app ?? "").trim();
+        if (!app || !titular || !numero) throw new Fallo("Para agregarlo necesito app, titular y número (pídeselos a la persona; no los inventes).");
+        const fin = numero.replace(/\D/g, "").slice(-4);
+        vista = `Agregar a «${p.nombre}» (${b.nombre}): ${app} · ${titular} · ${numero}${a?.notas ? ` (${a.notas})` : ""}.\n⚠️ Los pagos de este producto deberán llegar a ESTE número. Para confirmar, la persona tiene que escribir los últimos 4 dígitos.`;
+        if (a?.confirmar === true && String(a?.ultimos_4 ?? "").replace(/\D/g, "") !== fin) throw new Fallo("Los últimos 4 dígitos no coinciden con el número. Pídele a la persona que los escriba de nuevo.");
+        nuevos.push({ app, titular, numero, ...(String(a?.notas ?? "").trim() ? { notas: String(a.notas).trim() } : {}) });
+      }
+      const pre = confirmacion(a, vista); if (pre) return pre;
+      await patchProducto(p.id, (c, tipo) => { if (nuevos.length) c.pago_propio = { metodos: nuevos }; else delete c.pago_propio; recompilarFicha(c, tipo); });
+      // 🔔 Aviso al dueño por Telegram (cambiar a dónde llega la plata no puede pasar en silencio).
+      let avisado = false;
+      try {
+        const { data: ch } = await db.from("channels").select("telegram_chat_ids").eq("id", b.id).maybeSingle();
+        const ids = (((ch as any)?.telegram_chat_ids ?? []) as any[]).map(String);
+        const sec = await getChannelSecrets(db, b.id);
+        if (sec?.telegram_bot_token && ids.length) avisado = (await sendTelegram(sec.telegram_bot_token, ids,
+          `⚠️ Cambiaron los medios de pago de «${p.nombre}» (${b.nombre}) desde el MCP, por ${ctx.nombre || "un usuario"}.\n` +
+          (nuevos.length ? "Ahora cobra con:\n" + nuevos.map((m) => `• ${m.app} · ${m.titular} · •••${String(m.numero).replace(/\D/g, "").slice(-4)}`).join("\n") : "Ahora cobra con los medios del bot.") +
+          "\nSi no fuiste tú, revísalo en Productos → Cómo lo vende la IA.")) > 0;
+      } catch (_) { /* sin Telegram configurado */ }
+      return { ok: true, hecho: nuevos.length ? `«${p.nombre}» cobra con: ${nuevos.map((m) => `${m.app} •••${String(m.numero).replace(/\D/g, "").slice(-4)}`).join(", ")}.` : `«${p.nombre}» vuelve a cobrar con los medios del bot.`,
+        aviso_telegram: avisado ? "enviado" : "no hay Telegram configurado en este bot" };
     } },
 ];
 
