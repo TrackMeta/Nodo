@@ -73,7 +73,7 @@ Deno.serve(async (req) => {
 const MANUAL_POR_HORA = 2;
 async function aPedido(req: Request): Promise<Response> {
   const auth = req.headers.get("Authorization") ?? "";
-  if (!/^Bearers+S+/.test(auth)) return json({ error: "no_auth" }, 401);
+  if (!/^Bearer\s+\S+/.test(auth)) return json({ error: "no_auth" }, 401);
   const { data: u } = await userClient(auth).auth.getUser().catch(() => ({ data: null as any }));
   const uid = (u as any)?.user?.id;
   if (!uid) return json({ error: "no_auth" }, 401);
