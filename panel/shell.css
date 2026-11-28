@@ -509,6 +509,11 @@ body.nodo-shelled .wrap,body.nodo-shelled .app{scrollbar-gutter:stable}
   transition:background var(--t-fast),color var(--t-fast);
 }
 .nodo-link:hover{background:var(--surface-2);color:var(--text)}
+/* (27-nov, Rodrigo: «mira cómo brilla Embudo cuando se selecciona») El anillo azul del foco (:focus-visible global, con
+   2px de separación) salía alrededor del ítem activo y cortado por el borde del menú. El activo ya se ve por su fondo: sin
+   anillo. Los demás, con teclado, un borde fino POR DENTRO (no se corta). */
+.nodo-link:focus-visible{outline:none;box-shadow:inset 0 0 0 1.5px var(--brand-border,#BFD6FF)}
+.nodo-link.active:focus-visible,.nodo-link:focus:not(:focus-visible){outline:none;box-shadow:none}
 .nodo-link.active{background:var(--brand-bg);color:var(--brand);font-weight:600}
 .nodo-link.active::before{
   content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);

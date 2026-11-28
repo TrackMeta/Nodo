@@ -147,6 +147,7 @@
   .ekpi.conv .kl,html:not([data-theme="light"]) .ekpi.conv .kn,.ekpi.conv .kn{color:#fff}
   .ekpi.conv .kn{font-size:46px}
   .ekpi.conv .ks{color:rgba(255,255,255,.88)}
+  .ekpi.conv .ks-solo{font-weight:600;color:#fff;margin-top:2px}
   .ekpi.conv .mcmp{color:rgba(255,255,255,.85)} .ekpi.conv .mcmp .up{color:#BBF7D0;font-weight:600} .ekpi.conv .mcmp .down{color:#FECACA;font-weight:600}
   @media(max-width:720px){.ekpi.conv .kn{font-size:38px}}
   /* Efectividad de cierre: lo que hace la IA */
@@ -697,6 +698,11 @@ function renderMetricas(F, cmp){
   // ANTES cuentan aquí pero no en el embudo (que sigue solo a los que llegaron en estas fechas): la tarjeta lo dice.
   const antes = ventasPeriodo(c=>pasaFiltros(c) && !enRango(c)).n;
   const antesHtml = antes>0 ? ` · ${nf.format(antes)} de antes` : "";
+  // (27-nov, Rodrigo: «¿hay manera de ver ese 40%?») Con pedidos de gente de antes, la conversión SOLO de los que llegaron en
+  // estas fechas (la barra «Compraron» del embudo ÷ los que llegaron), en un renglón propio. Sin pedidos de antes es la misma.
+  const _soloEstas = antes>0 && F.total>0 ? Math.round(F.niveles.compraron/F.total*100) : null;
+  const _esHoy = !!st.range && (st.range.preset==="hoy" || (ymd(st.range.from)===ymd(new Date()) && ymd(st.range.to)===ymd(new Date())));
+  const soloHtml = _soloEstas!=null ? `<div class="ks ks-solo" title="De las ${nf.format(F.total)} personas que te escribieron por primera vez ${_esHoy?"hoy":"en estas fechas"}, ${nf.format(F.niveles.compraron)} ya compraron (la barra «Compraron» del embudo).">${_soloEstas}% solo de los chats ${_esHoy?"de hoy":"de estas fechas"}</div>` : "";
   // (el ticket con céntimos, como en Inicio: «S/ 6.50», no «S/ 7»)
   const ticket = F.ventas>0 && F.montoVentas!=null ? (CUR_SYM[CUR]||CUR)+" "+(F.montoVentas/F.ventas).toFixed(2) : "—";
   const BOT=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/><path d="M12 4v4"/><circle cx="12" cy="4" r="1"/></svg>`;
@@ -704,7 +710,7 @@ function renderMetricas(F, cmp){
     `<div class="ekpi conv"><div class="gan-olas" aria-hidden="true"><i class="o1"></i><i class="o2"></i><i class="o3"></i></div>
       <div class="kl">${zonaSub?`Conversión de ${zonaNom}`:"Conversión total"}</div>
       <span class="kn">${cv==null?"—":cv+"%"}</span>
-      <div class="ks" title="Pedidos hechos en estas fechas ÷ personas que te escribieron por primera vez en estas fechas (la misma cuenta que Inicio, Meta y Trakker).${antes>0?` ${nf.format(antes)} de esos pedidos son de gente que te escribió antes de estas fechas: cuentan aquí pero no en el embudo de abajo.`:""}">${nf.format(F.ventas)} ${F.ventas===1?"pedido":"pedidos"} ÷ ${nf.format(F.total)} chats${antesHtml}</div>${cmpHtml}</div>`+
+      <div class="ks" title="Pedidos hechos en estas fechas ÷ personas que te escribieron por primera vez en estas fechas (la misma cuenta que Inicio, Meta y Trakker).${antes>0?` ${nf.format(antes)} de esos pedidos son de gente que te escribió antes de estas fechas: cuentan aquí pero no en el embudo de abajo.`:""}">${nf.format(F.ventas)} ${F.ventas===1?"pedido":"pedidos"} ÷ ${nf.format(F.total)} chats${antesHtml}</div>${soloHtml}${cmpHtml}</div>`+
     `<div class="ekpi efec" title="De los que se interesaron de verdad, cuántos cierra el bot. No cuenta a los curiosos que solo saludan."><div class="ef-luz" aria-hidden="true"><i class="l1"></i><i class="l2"></i><i class="l3"></i><b></b><b></b><b></b><b></b></div>
       <div class="kl"><span class="miabadge">${BOT}</span>Efectividad de cierre</div>
       <span class="kn">${ef==null?"—":ef+"%"}</span>
