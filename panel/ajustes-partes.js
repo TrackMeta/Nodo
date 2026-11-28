@@ -729,6 +729,7 @@ function renderPixel(box){
           </div>
         </div>
       </details>
+      <div id="adsSyncRow"></div>
 
       <label>Cada cuánto sincronizar</label>
       <div id="adsFreqWrap" style="display:flex;gap:6px;flex-wrap:wrap"><span style="color:var(--faint);font-size:12.5px">Cargando…</span></div>
@@ -854,15 +855,16 @@ async function loadAdAccounts(){
   if(error){ box.innerHTML=`<span style="color:var(--red);font-size:12.5px">${esc(error.message)}</span>`; return; }
   { const s=st.secrets||{}, c=st.channel||{}; const on=!!(data&&data.length) && !!(s.ads_token||s.access_token) && !c.ads_sync_error;
     const bd=$("adsBadge"); if(bd){ bd.textContent=on?"Conectado":"Sin conectar"; bd.classList.toggle("on",on); bd.closest(".card")?.classList.toggle("on",on); } }
-  if(!data||!data.length){ box.innerHTML=`<span style="color:var(--faint);font-size:12.5px">Aún no agregaste ninguna cuenta.</span>`; return; }
+  if(!data||!data.length){ box.innerHTML=`<span style="color:var(--faint);font-size:12.5px">Aún no agregaste ninguna cuenta.</span>`; const fv=$("adsSyncRow"); if(fv) fv.innerHTML=""; return; }
   box.innerHTML=data.map(a=>`<div style="display:flex;align-items:center;gap:10px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 11px">
     <span style="font-family:monospace;font-size:12.5px;color:var(--text)">${esc(a.account_id)}</span>
     ${a.nombre?`<span style="color:var(--muted);font-size:12px">${esc(a.nombre)}</span>`:""}
     <button class="btn" data-del="${a.id}" style="margin-left:auto;height:30px;padding:0 11px;font-size:12px">Quitar</button>
-  </div>`).join("") +
-  // 🔄 (28-nov, Rodrigo: «ese botón debería estar también en Conexiones → Meta») El mismo del Banco de anuncios: trae
-  // ahora los anuncios y el gasto, sin esperar la hora en punto. Máximo 2 veces por hora por bot (lo controla ads-sync).
-  `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px">
+  </div>`).join("");
+  // 🔄 (28-nov, Rodrigo: «ese botón debería estar también en Conexiones → Meta» → «más abajo, debajo de agregar a mano»)
+  // El mismo del Banco de anuncios: trae ahora los anuncios y el gasto, sin esperar la hora en punto. Máximo 2 veces por
+  // hora por bot (lo controla ads-sync).
+  const fila=$("adsSyncRow"); if(fila) fila.innerHTML=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">
     <button class="btn" id="adsSyncNow" style="height:32px;padding:0 12px;font-size:12.5px" title="Trae ahora los anuncios nuevos y el gasto de Meta. Máximo 2 veces por hora.">${icon("refresh")} Actualizar anuncios</button>
     <span id="adsSyncInfo" style="color:var(--muted);font-size:12px">${textoSync(st.channel?.ads_sync_at)}</span>
   </div>`;
