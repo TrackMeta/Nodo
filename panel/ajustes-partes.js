@@ -732,7 +732,7 @@ function renderPixel(box){
 
       <label>Cada cuánto sincronizar</label>
       <div id="adsFreqWrap" style="display:flex;gap:6px;flex-wrap:wrap"><span style="color:var(--faint);font-size:12.5px">Cargando…</span></div>
-      <div class="hint">Cada cuánto Nodo baja el gasto de Meta. Si no quieres esperar, actualízalo aquí abajo (o con «Actualizar» en <b>Rendimiento</b>): hasta 2 veces por hora.</div>
+      <div class="hint">Cada cuánto Nodo baja el gasto de Meta. Si no quieres esperar, actualízalo aquí abajo (o con «Actualizar» en <b>Rendimiento</b>): hasta 10 veces por hora.</div>
       <div id="adsSyncRow"></div>
     </div>
 
@@ -865,7 +865,7 @@ async function loadAdAccounts(){
   // El mismo del Banco de anuncios: trae ahora los anuncios y el gasto, sin esperar la hora en punto. Máximo 2 veces por
   // hora por bot (lo controla ads-sync).
   const fila=$("adsSyncRow"); if(fila) fila.innerHTML=`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px">
-    <button class="btn" id="adsSyncNow" style="height:32px;padding:0 12px;font-size:12.5px" title="Trae ahora de Meta los anuncios nuevos, el gasto, los clics y el estado de cada anuncio. Máximo 2 veces por hora.">${icon("refresh")} Actualizar</button>
+    <button class="btn" id="adsSyncNow" style="height:32px;padding:0 12px;font-size:12.5px" title="Trae ahora de Meta los anuncios nuevos, el gasto, los clics y el estado de cada anuncio. Máximo 10 veces por hora.">${icon("refresh")} Actualizar</button>
     <span id="adsSyncInfo" style="color:var(--muted);font-size:12px">${textoSync(st.channel?.ads_sync_at)}</span>
   </div>`;
   const sb=$("adsSyncNow"); if(sb) sb.onclick=async()=>{

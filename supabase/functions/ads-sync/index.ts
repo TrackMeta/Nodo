@@ -69,8 +69,10 @@ Deno.serve(async (req) => {
 
 // 🔄 (28-nov-2026, Rodrigo: «¿hay manera de actualizarlo yo sin esperar la hora?» → «que solo se pueda 2 veces por hora»)
 // El botón «Actualizar anuncios» del Banco de anuncios: un usuario con sesión pide sincronizar SU bot (solo sus cuentas).
-// Máximo 2 por bot por hora (tabla ads_sync_manual, 0155), para no saturar a Meta.
-const MANUAL_POR_HORA = 2;
+// Máximo MANUAL_POR_HORA por bot por hora (tabla ads_sync_manual, 0155), para no saturar a Meta.
+// (28-nov) 2 → 10: cada «Actualizar» son ~5 llamadas por cuenta; 10/h ≈ 50 de las 200/h de la app y lejos del tope
+// por cuenta publicitaria de Meta (Rodrigo: «dime cuál debería ser uno razonable y alto»).
+const MANUAL_POR_HORA = 10;
 async function aPedido(req: Request): Promise<Response> {
   const auth = req.headers.get("Authorization") ?? "";
   if (!/^Bearer\s+\S+/.test(auth)) return json({ error: "no_auth" }, 401);

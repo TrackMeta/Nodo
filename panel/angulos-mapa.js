@@ -354,7 +354,7 @@ function pintaAds(p, a) {
       ${libres.length ? `<select class="amx-sel" id="amxAddSel"><option value="">＋ Elegir un anuncio de Meta…</option>${sug.length ? `<optgroup label="Sugeridos para ${esc(paisNom(pais))}">${sug.map(opt).join("")}</optgroup>` : ""}${resto.length ? `<optgroup label="${sug.length ? "Otros" : "Anuncios de Meta"}">${resto.map(opt).join("")}</optgroup>` : ""}</select>` : ""}
       <input class="amx-in" id="amxAddId" placeholder="…o pega el ID del anuncio" inputmode="numeric"/>
       <button class="amx-btn" id="amxAddBtn">Agregar</button>
-      <button class="amx-btn amx-sync" id="amxSync" title="Trae ahora de Meta los anuncios nuevos (programados o recién creados), el gasto, los clics y el estado de cada anuncio. Máximo 2 veces por hora; si no, se actualiza solo cada hora en punto.">${icon("refresh")} Actualizar</button>
+      <button class="amx-btn amx-sync" id="amxSync" title="Trae ahora de Meta los anuncios nuevos (programados o recién creados), el gasto, los clics y el estado de cada anuncio. Máximo 10 veces por hora; si no, se actualiza solo cada hora en punto.">${icon("refresh")} Actualizar</button>
     </div>
     <p class="amx-help">El ID está en el Administrador de anuncios de Meta, columna «Identificador del anuncio». Un anuncio va en un solo país y un solo ángulo.</p>`;
   const slug = a ? a.slug : "";
@@ -377,7 +377,7 @@ function pintaAds(p, a) {
   cablea();
   const add = () => { const v = String(document.getElementById("amxAddId").value || document.getElementById("amxAddSel")?.value || "").trim(); if (v) agregarAd(p, v, slug); };
   document.getElementById("amxAddBtn").onclick = add;
-  // 🔄 (28-nov, Rodrigo) Traer los anuncios nuevos sin esperar la hora en punto: máximo 2 veces por hora por bot (lo
+  // 🔄 (28-nov, Rodrigo) Traer los anuncios nuevos sin esperar la hora en punto: máximo 10 veces por hora por bot (lo
   // controla ads-sync). Al terminar se vuelve a leer la lista y se repinta esta tarjeta.
   document.getElementById("amxSync").onclick = async (e) => {
     const btn = e.currentTarget; if (btn.disabled) return;
