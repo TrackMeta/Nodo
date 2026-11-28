@@ -217,8 +217,11 @@ async function syncCuenta(channelId: string, acct: string, token: string, since:
 let ultimoEstados = "";
 async function syncEstados(channelId: string, acctId: string, authH: Record<string, string>): Promise<string> {
   try {
-    const { data } = await db.from("ads_meta").select("ad_id").eq("channel_id", channelId).eq("account_id", acctId);
+    const { data } = await db.from("ads_meta").select("ad_id, account_currency").eq("channel_id", channelId).eq("account_id", acctId);
     const ids = (data ?? []).map((r: any) => String(r.ad_id)).filter(Boolean);
+    // La moneda de la cuenta (la de sus anuncios conocidos): un anuncio nuevo SIN moneda hacía que Rendimiento avisara
+    // «no pude confirmar en qué moneda factura tu cuenta» (28-nov, apenas entraron los programados).
+    const monedaCuenta = ((data ?? []) as any[]).map((r) => r.account_currency).find(Boolean) ?? null;
     const filas: any[] = [];
     // Meta ya no acepta ?ids= (v26+): se lee la lista de anuncios de la cuenta (paginada) y se cruza con los conocidos.
     const conocidos = new Set(ids);
@@ -240,7 +243,8 @@ async function syncEstados(channelId: string, acctId: string, authH: Record<stri
         else if (Date.parse(String(a.created_time ?? "")) >= nuevosDesde) {
           nuevos.push({ channel_id: channelId, account_id: acctId, ad_id: id, ad_name: a.name ?? null,
             adset_id: a.adset?.id ?? null, adset_name: a.adset?.name ?? null, campaign_id: a.campaign?.id ?? null, campaign_name: a.campaign?.name ?? null,
-            estado: a.effective_status ? String(a.effective_status) : null, updated_at: new Date().toISOString() });
+            estado: a.effective_status ? String(a.effective_status) : null, updated_at: new Date().toISOString(),
+            ...(monedaCuenta ? { account_currency: monedaCuenta } : {}) });
         }
       }
       url = String(body.paging?.next ?? "").replace(/([?&])access_token=[^&]*&?/g, "$1").replace(/[?&]$/, "");
