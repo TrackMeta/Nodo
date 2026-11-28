@@ -222,18 +222,31 @@ async function syncEstados(channelId: string, acctId: string, authH: Record<stri
     const filas: any[] = [];
     // Meta ya no acepta ?ids= (v26+): se lee la lista de anuncios de la cuenta (paginada) y se cruza con los conocidos.
     const conocidos = new Set(ids);
-    let url = `${GRAPH}/${acctId}/ads?fields=id,effective_status&limit=500`, vueltas = 0;
+    // (28-nov, Rodrigo: «programé anuncios para mañana a las 5 am y no los veo en Nodo para vincularlos») Los anuncios
+    // entraban a ads_meta SOLO por los insights (cuando ya gastaron). Ahora la misma lista de la cuenta trae nombre,
+    // conjunto y campaña: un anuncio NUEVO (creado en los últimos 60 días) aparece aunque esté programado, pausado o en
+    // revisión, para vincularlo al producto antes de que arranque. Los viejos que nunca gastaron en el rango no entran
+    // (no llenar el Banco de anuncios con los de hace meses).
+    const nuevosDesde = Date.now() - 60 * 864e5;
+    const nuevos: any[] = [];
+    let url = `${GRAPH}/${acctId}/ads?fields=id,name,effective_status,created_time,adset{id,name},campaign{id,name}&limit=500`, vueltas = 0;
     while (url && vueltas++ < 20) {
       const res = await fetchConTimeout(url, { headers: authH }, 30_000);
       const body = await res.json();
       if (!res.ok || body?.error) return "error Meta: " + JSON.stringify(body?.error ?? res.status).slice(0, 300);
       for (const a of body.data ?? []) {
         const id = String(a.id);
-        if (conocidos.has(id) && a.effective_status) filas.push({ channel_id: channelId, account_id: acctId, ad_id: id, estado: String(a.effective_status) });
+        if (conocidos.has(id)) { if (a.effective_status) filas.push({ channel_id: channelId, account_id: acctId, ad_id: id, estado: String(a.effective_status) }); }
+        else if (Date.parse(String(a.created_time ?? "")) >= nuevosDesde) {
+          nuevos.push({ channel_id: channelId, account_id: acctId, ad_id: id, ad_name: a.name ?? null,
+            adset_id: a.adset?.id ?? null, adset_name: a.adset?.name ?? null, campaign_id: a.campaign?.id ?? null, campaign_name: a.campaign?.name ?? null,
+            estado: a.effective_status ? String(a.effective_status) : null, updated_at: new Date().toISOString() });
+        }
       }
       url = String(body.paging?.next ?? "").replace(/([?&])access_token=[^&]*&?/g, "$1").replace(/[?&]$/, "");
     }
     if (filas.length) { const { error } = await db.from("ads_meta").upsert(filas, { onConflict: "channel_id,ad_id" }); if (error) return "upsert: " + error.message; }
-    return filas.length + " de " + ids.length;
+    if (nuevos.length) { const { error } = await db.from("ads_meta").upsert(nuevos, { onConflict: "channel_id,ad_id" }); if (error) return "upsert nuevos: " + error.message; }
+    return filas.length + " de " + ids.length + (nuevos.length ? ` · ${nuevos.length} nuevos sin gasto (programados/pausados)` : "");
   } catch (e) { return "excepción: " + String((e as any)?.message ?? e).slice(0, 300); }
 }

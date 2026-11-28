@@ -334,12 +334,18 @@ function pintaAds(p, a) {
   const enOtro = new Map();
   for (const q of S.prods) if (String(q.id) !== String(p.id)) for (const id of bancoDe(q)) enOtro.set(id, q);
   const enEste = new Set(bancoDe(p));
-  const libres = Object.values(S.meta).filter((m) => !enEste.has(String(m.ad_id)) && !enOtro.has(String(m.ad_id)));
+  // (28-nov) Los más NUEVOS primero (el ID de Meta crece con el tiempo): ahora también llegan los programados y pausados
+  // que todavía no gastaron, y el que acabas de crear tiene que estar arriba.
+  const _idNum = (m) => String(m.ad_id || "").padStart(24, "0");
+  const libres = Object.values(S.meta).filter((m) => !enEste.has(String(m.ad_id)) && !enOtro.has(String(m.ad_id)))
+    .sort((x, y) => (_idNum(y) > _idNum(x) ? 1 : _idNum(y) < _idNum(x) ? -1 : 0));
   // Sugeridos: nombran el producto y, si hay versiones por país, son de este país (sin país → el del bot).
   const multi = famDeProd(p.id).length > 1, w = norm(p.nombre).split(/\s+/).find((x) => x.length >= 4) || norm(p.nombre);
   const sug = libres.filter((m) => { const t = norm((m.ad_name || "") + " " + (m.campaign_name || "")); return w && t.includes(w) && (!multi || (paisDeAd(m) || String(S.ctx.paisBot || "PE").toUpperCase()) === pais); });
   const resto = libres.filter((m) => !sug.includes(m));
-  const opt = (m) => `<option value="${esc(m.ad_id)}">${esc(m.ad_name || m.ad_id)}${m.campaign_name ? " · " + esc(m.campaign_name) : ""}</option>`;
+  // (28-nov) Con su estado si no está corriendo: «pausado», «en revisión»… (los programados aún no gastan).
+  const _est = (e) => { const x = String(e || "").toUpperCase(); return !x || x === "ACTIVE" ? "" : /PAUSED/.test(x) ? " (pausado)" : /PENDING_REVIEW|IN_PROCESS|PREAPPROVED/.test(x) ? " (en revisión)" : /DISAPPROVED/.test(x) ? " (rechazado)" : /ARCHIVED|DELETED/.test(x) ? " (archivado)" : ""; };
+  const opt = (m) => `<option value="${esc(m.ad_id)}">${esc(m.ad_name || m.ad_id)}${m.campaign_name ? " · " + esc(m.campaign_name) : ""}${_est(m.estado)}</option>`;
   box.innerHTML = `<h3>${icon("megaphone")} Anuncios de ${esc(paisNom(pais))}</h3>
     <p class="amx-help">${a ? `Quien toque uno de estos anuncios cae en la versión de <b>${esc(paisNom(pais))}</b> y recibe el saludo y el gancho de este ángulo.` : `Quien toque uno de estos anuncios cae en la versión de <b>${esc(paisNom(pais))}</b> de este producto.${angsDe(p.id).length ? " Elige a qué ángulo va cada uno (o déjalo sin ángulo)." : ""}`}</p>
     <div id="amxAdList">${ids.length ? fichasAds(p, a, ids) : `<div class="amx-emptyrow">${a ? "Este ángulo no tiene anuncios: nadie llega por aquí." : "Este producto todavía no tiene anuncios. Agrégalos aquí abajo."}</div>`}</div>
