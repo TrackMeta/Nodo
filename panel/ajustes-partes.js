@@ -105,7 +105,7 @@ async function loadCfg(){
   const pSecretos = st.parte==="negocio" ? Promise.resolve(null)
     : callFn("channel-config",{ action:"status", channel_id:st.channelId }).then(r=>r?.secrets||{},()=>({}));
   const [r0, tcR, mrR, secretos] = await Promise.all([
-    uno("nombre,logo_url,ia_provider,pixel_id,page_id,ad_account_id,ads_sync_error,buffer_default_seg,timezone,moneda,gsheets,negocio,ia_perfiles,entregas"),
+    uno("nombre,logo_url,ia_provider,pixel_id,page_id,ad_account_id,ads_sync_error,ads_sync_at,buffer_default_seg,timezone,moneda,gsheets,negocio,ia_perfiles,entregas"),
     uno("usd_rate"), uno("moneda_reporte"), pSecretos ]);
   let { data:ch, error:chErr } = r0;
   if(chErr){ ({ data:ch, error:chErr } = await supa.from("channels").select("nombre,logo_url,ia_provider,pixel_id,page_id,buffer_default_seg,timezone,gsheets,negocio,ia_perfiles").eq("id",st.channelId).maybeSingle()); }
@@ -841,6 +841,13 @@ async function setAdsFreq(freq){
   catch(e){ toast(e.message||"error",true); }
   finally{ if(box) box.style.opacity="1"; }
 }
+// «Se actualizan solos cada hora · última: hace 12 min» (ads_sync_at = la última sincronización completa del bot).
+function textoSync(at){
+  const t=Date.parse(at||""); const base="Se actualizan solos cada hora en punto";
+  if(!Number.isFinite(t)) return base;
+  const min=Math.max(0,Math.round((Date.now()-t)/60000));
+  return base+" · última: "+(min<1?"recién":min<60?`hace ${min} min`:`hace ${Math.round(min/60)} h`);
+}
 async function loadAdAccounts(){
   const box=$("adAccList"); if(!box) return;
   const { data,error }=await supa.from("ad_accounts").select("id,account_id,nombre").eq("channel_id",st.channelId).order("created_at");
@@ -852,7 +859,25 @@ async function loadAdAccounts(){
     <span style="font-family:monospace;font-size:12.5px;color:var(--text)">${esc(a.account_id)}</span>
     ${a.nombre?`<span style="color:var(--muted);font-size:12px">${esc(a.nombre)}</span>`:""}
     <button class="btn" data-del="${a.id}" style="margin-left:auto;height:30px;padding:0 11px;font-size:12px">Quitar</button>
-  </div>`).join("");
+  </div>`).join("") +
+  // 🔄 (28-nov, Rodrigo: «ese botón debería estar también en Conexiones → Meta») El mismo del Banco de anuncios: trae
+  // ahora los anuncios y el gasto, sin esperar la hora en punto. Máximo 2 veces por hora por bot (lo controla ads-sync).
+  `<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px">
+    <button class="btn" id="adsSyncNow" style="height:32px;padding:0 12px;font-size:12.5px" title="Trae ahora los anuncios nuevos y el gasto de Meta. Máximo 2 veces por hora.">${icon("refresh")} Actualizar anuncios</button>
+    <span id="adsSyncInfo" style="color:var(--muted);font-size:12px">${textoSync(st.channel?.ads_sync_at)}</span>
+  </div>`;
+  const sb=$("adsSyncNow"); if(sb) sb.onclick=async()=>{
+    if(sb.disabled) return; sb.disabled=true; const txt=sb.innerHTML; sb.innerHTML=`${icon("refresh")} Actualizando…`;
+    try{
+      const r=await supa.functions.invoke("ads-sync",{ body:{ channel_id:st.channelId } });
+      if(r.error){ let m=""; try{ const j=await r.error.context.json(); m=j.mensaje||""; }catch(_){} toast(m||"No se pudo actualizar los anuncios. Prueba de nuevo en un rato.",true); return; }
+      if(st.channel) st.channel.ads_sync_at=new Date().toISOString();
+      const inf=$("adsSyncInfo"); if(inf) inf.textContent=textoSync(st.channel?.ads_sync_at);
+      const q=Number(r.data?.quedan);
+      toast("Listo: anuncios y gasto al día"+(Number.isFinite(q)?` · te queda${q===1?"":"n"} ${q} esta hora`:""));
+    }catch(_){ toast("No se pudo actualizar los anuncios (sin conexión).",true); }
+    finally{ if(sb.isConnected){ sb.disabled=false; sb.innerHTML=txt; } }
+  };
   // Sin mirar el error, la cuenta simplemente reaparecía al recargar la lista y no había
   // forma de saber por qué no se fue.
   box.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{
