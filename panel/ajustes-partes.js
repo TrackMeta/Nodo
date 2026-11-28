@@ -729,11 +729,11 @@ function renderPixel(box){
           </div>
         </div>
       </details>
-      <div id="adsSyncRow"></div>
 
       <label>Cada cuánto sincronizar</label>
       <div id="adsFreqWrap" style="display:flex;gap:6px;flex-wrap:wrap"><span style="color:var(--faint);font-size:12.5px">Cargando…</span></div>
-      <div class="hint">Cada cuánto Nodo baja el gasto de Meta. También puedes forzarlo desde <b>Rendimiento</b> con el botón «Actualizar».</div>
+      <div class="hint">Cada cuánto Nodo baja el gasto de Meta. Si no quieres esperar, actualízalo aquí abajo (o con «Actualizar» en <b>Rendimiento</b>): hasta 2 veces por hora.</div>
+      <div id="adsSyncRow"></div>
     </div>
 
     <div class="card${capiOn?" on":""}">
