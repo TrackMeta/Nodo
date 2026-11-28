@@ -876,10 +876,14 @@ function renderValidador(b){
             { channel_id:st.channelId, key:"datos_pago", nombre:"Datos de pago", tipo:"text", modo:"fijo", valor:datos, descripcion:"Generado desde el Validador de comprobantes" },
             { onConflict:"channel_id,key" })
         : await supa.from("custom_fields").update({ valor:null }).eq("channel_id",st.channelId).eq("key","datos_pago");
-      if(eDp) extra=" (no se pudo actualizar {{datos_pago}})";
-      else { st.campos.loaded=false; extra=datos?" · {{datos_pago}} actualizado":" · {{datos_pago}} limpiado"; }
-    }catch(_){ extra=" (no se pudo actualizar {{datos_pago}})"; }
-    btn.disabled=false; btn.textContent=old; markClean(); toast("Validador guardado"+extra);
+      // (28-nov, Rodrigo: «arregla esa notificación») Decía «Validador guardado · {{datos_pago}} actualizado»: la variable
+      // interna a la vista. Ahora en palabras: lo que cambió para el cliente.
+      if(eDp) extra="error";
+      else { st.campos.loaded=false; extra=datos?"ok":"vacio"; }
+    }catch(_){ extra="error"; }
+    btn.disabled=false; btn.textContent=old; markClean();
+    if(extra==="error") toast("Se guardó, pero no se actualizaron los datos de pago que manda el bot. Vuelve a guardar.", true);
+    else toast(extra==="vacio" ? "Guardado · el bot ya no tiene datos de pago para mandar" : "Guardado · el bot ya usa los datos de pago nuevos");
   };
 }
 
